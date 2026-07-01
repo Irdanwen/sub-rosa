@@ -1,0 +1,86 @@
+# FORK_NOTES — Sub Rosa (fork de June / os-june)
+
+Ce fichier trace **chaque écart avec l'upstream** `open-software-network/os-june` (MIT) afin de garder
+les synchronisations soutenables. Règle : **préférer l'ajout de fichiers** ; quand un fichier upstream doit
+être modifié, garder le diff minimal, localisé, et le documenter ici.
+
+- **Upstream** : `https://github.com/open-software-network/os-june.git` (remote `upstream`)
+- **Fork base** : commit upstream `bce09361` (« Speed up macOS desktop release builds (#561) »)
+- **Origin** : `git@github.com:Irdanwen/sub-rosa.git` (privé)
+- **Releases/updater** : `Irdanwen/sub-rosa-releases` (public)
+
+---
+
+## Architecture du fork (résumé)
+
+June parle à un backend `june-api` (crate `june`) qui détient les clés fournisseur et parle aux modèles.
+Le fork **n'écrit rien** de cette logique : il **embarque `june-api` comme sidecar** et le pilote via les
+Réglages. Carpe Diem = simple remplacement de `base_URL` (endpoint OpenAI-compatible, mêmes IDs de modèles
+que Venice).
+
+**Seam runtime (le cœur)** — June lit déjà l'URL et le bearer du backend à l'exécution via variables d'env :
+- `src-tauri/src/june_api.rs::june_api_url()` lit `JUNE_API_URL` (runtime, non caché).
+- `src-tauri/src/os_accounts.rs::access_token()` → en mode local, renvoie `OS_JUNE_LOCAL_DEV_BEARER_TOKEN`
+  (gaté par `OS_JUNE_LOCAL_DEV`, user id `OS_JUNE_LOCAL_DEV_USER_ID`). Non caché.
+- `load_local_env()` (dotenvy) charge un `.env` **une seule fois** et **n'écrase pas** l'env déjà défini.
+  → Un `std::env::set_var(...)` fait dans le hook `.setup()` de Tauri est respecté par tous les appels suivants.
+
+Le module fork `src-tauri/src/carpe_diem/` :
+1. lit les réglages (base_URL en JSON non-secret, clé `cdm_` dans le **trousseau OS** via crate `keyring`) ;
+2. choisit un **port TCP libre** + génère un **bearer aléatoire** ;
+3. `set_var` en-process (`JUNE_API_URL`, `OS_JUNE_LOCAL_DEV=1`, `OS_JUNE_LOCAL_DEV_BEARER_TOKEN`, `OS_JUNE_LOCAL_DEV_USER_ID`) ;
+4. **spawn `june-api`** avec l'env enfant (`JUNE__SERVER__PORT`, `JUNE__LOCAL_DEV__*`, `JUNE__UPSTREAMS__VENICE__BASE_URL/API_KEY`) ;
+5. **health check** `/livez` avant de déclarer prêt ; redémarre au changement de clé/URL ; tue proprement au quit.
+
+### Démarrage de `june-api` (mécanisme upstream, lu en P0)
+- Dev upstream : `tauri.conf.json` → `beforeDevCommand` → `scripts/tauri-before-dev.mjs` spawn
+  `cargo run -p june -- serve` (port `JUNE_API_PORT`/8080) **et** Vite (port `VITE_PORT`/1421). Réutilise le port si déjà ouvert.
+- Le fork bascule ce dev pour que **l'app Rust** spawn le sidecar (dev = comme prod), `beforeDevCommand` ne lançant plus que Vite.
+- Config `june-api` : Figment = `AppConfig::default()` → `config.toml` (dans le CWD) → env `JUNE__…` (séparateur `__`).
+  Server bind `JUNE__SERVER__HOST:JUNE__SERVER__PORT` (défaut `127.0.0.1:8080` via config.toml `0.0.0.0:8080`).
+- Endpoints **publics** (sans auth) : `/livez`, `/readyz`, `/healthz`, `/verify`, `/v1/models`. Les autres exigent `Authorization: Bearer <token>`.
+- Auth local dev : `JUNE__LOCAL_DEV__ENABLED=true` → le bearer doit **matcher exactement** `JUNE__LOCAL_DEV__BEARER_TOKEN` ; `user_id` doit commencer par `usr_`.
+- Le catalogue live `/models` de l'upstream est fetché au boot et mergé avec `config.toml` ; échec = **dégradation gracieuse** (warning, pas de crash), on garde les modèles de `config.toml`.
+
+---
+
+## Validation P0 (2026-07-01) — Carpe Diem
+
+Clé `cdm_` de test fournie par l'utilisateur (jamais commitée ; utilisée en env local uniquement).
+
+- ✅ **Transcription directe** Carpe Diem `POST /audio/transcriptions` (multipart, `nvidia/parakeet-tdt-0.6b-v3`)
+  sur un WAV réel (macOS `say`) → **HTTP 200**, transcript renvoyé. *Le risque #1 du brief (multipart) est levé.*
+- ✅ **Génération directe** Carpe Diem `POST /chat/completions` (`zai-org-glm-5-2`) → **HTTP 200**, résumé correct, usage compté (crédits OK).
+- ✅ **`june-api` en mode local contre Carpe Diem** : boot OK, `/livez` `/readyz` `/healthz` = 200, écoute sur le port dynamique.
+- ✅ **Tous les IDs de modèles par défaut de June existent chez Carpe Diem** (catalogue de 283 modèles) :
+  `nvidia/parakeet-tdt-0.6b-v3`, `zai-org-glm-5-2`, `nvidia-nemotron-3-nano-30b-a3b`, `kimi-k2-6`, `zai-org-glm-5-1`, `zai-org-glm-5`.
+- ⚠️ **Limitation connue** : le fetch du catalogue live au boot **échoue au parse** (le parseur Venice de
+  `june-api/crates/providers/src/venice.rs` attend le schéma natif Venice ; Carpe Diem renvoie un schéma
+  OpenAI `{object:"list",data:[{id,carpe_diem_type,…}]}`). Dégradation gracieuse → **6 modèles curatés** de
+  `config.toml` (dont les défauts) restent disponibles. Correctif ciblé prévu (voir tâche dédiée) pour
+  synchroniser le catalogue complet dans le sélecteur de modèles.
+
+---
+
+## Fichiers upstream modifiés
+
+| Fichier | Raison | Re-merge |
+|---|---|---|
+| _(à compléter au fil des phases)_ | | |
+
+## Fichiers ajoutés par le fork (préférés)
+
+| Fichier | Rôle |
+|---|---|
+| `FORK_NOTES.md`, `HANDOFF.md` | Traçabilité fork + handoffs humains |
+| _(à compléter)_ | |
+
+---
+
+## Procédure de synchronisation upstream (voir aussi `.github/workflows/upstream-sync.yml`)
+
+1. `git fetch upstream`
+2. Brancher `sync/upstream-<date>` depuis `main`, `git merge upstream/main`.
+3. Conflits attendus sur les fichiers listés « modifiés » ci-dessus (surtout `tauri.conf.json`, `lib.rs`,
+   `os_accounts.rs`, scripts de build). Résoudre en gardant la logique fork (module `carpe_diem/`, branding).
+4. CI verte (`pnpm check`, `typecheck`, `test`, `test:rust`, `test:june-api`) → PR → merge.
