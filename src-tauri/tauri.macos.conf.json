@@ -10,7 +10,7 @@
       "../.tauri-hermes/hermes": "native/hermes"
     },
     "macOS": {
-      "bundleName": "June",
+      "bundleName": "Sub Rosa",
       "entitlements": "Entitlements.plist",
       "exceptionDomain": "",
       "frameworks": [],

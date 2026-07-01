@@ -1,6 +1,7 @@
 pub mod agent_hud;
 pub mod app_paths;
 pub mod audio;
+pub mod carpe_diem;
 pub mod commands;
 pub mod db;
 pub mod dictation;
@@ -264,6 +265,13 @@ pub fn run() {
             updates::set_release_channel,
             updates::fetch_update,
             updates::install_update,
+            carpe_diem::settings::carpe_diem_get_settings,
+            carpe_diem::settings::carpe_diem_set_base_url,
+            carpe_diem::settings::carpe_diem_set_api_key,
+            carpe_diem::settings::carpe_diem_clear_api_key,
+            carpe_diem::settings::carpe_diem_test_connection,
+            carpe_diem::sidecar::carpe_diem_sidecar_status,
+            carpe_diem::sidecar::carpe_diem_restart_sidecar,
         ])
         .manage(RecordingPresenceBoundsState::default())
         .manage(hermes_bridge::HermesBridge::default())
@@ -272,6 +280,10 @@ pub fn run() {
             setup_app_menu(app)?;
             menu_bar::setup(app)?;
             providers::setup(app);
+            // Carpe Diem fork: load settings, then spawn the june-api sidecar
+            // pointed at Carpe Diem (or mark "unconfigured" for onboarding).
+            carpe_diem::settings::setup(app);
+            carpe_diem::sidecar::setup(app);
             updates::setup(app);
             dictation::setup(app);
             agent_hud::setup(app);
@@ -290,6 +302,7 @@ pub fn run() {
             tauri::RunEvent::Exit => {
                 dictation::stop_helper(app);
                 hermes_bridge::shutdown(app);
+                carpe_diem::sidecar::shutdown(app);
             }
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => show_main_window(app),

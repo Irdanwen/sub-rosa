@@ -1,6 +1,6 @@
 {
   "bundle": {
-    "publisher": "Open Software Network",
+    "publisher": "Sub Rosa",
     "targets": ["nsis"],
     "windows": {
       "digestAlgorithm": "sha256",

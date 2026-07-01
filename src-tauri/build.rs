@@ -184,15 +184,15 @@ fn build_system_audio_helper() {
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
-  <string>June</string>
+  <string>Sub Rosa</string>
   <key>CFBundleExecutable</key>
   <string>june-system-audio-recorder</string>
   <key>CFBundleIdentifier</key>
-  <string>co.opensoftware.june.audio-capture</string>
+  <string>xyz.carpediem.subrosa.audio-capture</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>June</string>
+  <string>Sub Rosa</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -204,7 +204,7 @@ fn build_system_audio_helper() {
   <key>LSUIElement</key>
   <true/>
   <key>NSAudioCaptureUsageDescription</key>
-  <string>June records system audio locally so generated notes can include meeting or media audio from your Mac.</string>
+  <string>Sub Rosa records system audio locally so generated notes can include meeting or media audio from your Mac.</string>
 </dict>
 </plist>
 "#
@@ -296,15 +296,15 @@ fn build_dictation_helper() {
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
-  <string>June Dictation Helper</string>
+  <string>Sub Rosa Dictation Helper</string>
   <key>CFBundleExecutable</key>
   <string>june-dictation-helper</string>
   <key>CFBundleIdentifier</key>
-  <string>co.opensoftware.june.dictation-helper</string>
+  <string>xyz.carpediem.subrosa.dictation-helper</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>June Dictation Helper</string>
+  <string>Sub Rosa Dictation Helper</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -316,7 +316,7 @@ fn build_dictation_helper() {
   <key>LSMinimumSystemVersion</key>
   <string>{DICTATION_HELPER_MIN_MACOS_VERSION}</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>June needs microphone access to turn your speech into text.</string>
+  <string>Sub Rosa needs microphone access to turn your speech into text.</string>
 </dict>
 </plist>
 "#

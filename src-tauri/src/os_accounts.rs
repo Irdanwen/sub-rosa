@@ -34,10 +34,10 @@ const DEFAULT_LOOPBACK_PORT: u16 = 8765;
 // authorize-and-charge against the user's credits for transcription /
 // generation / dictation work.
 const OAUTH_SCOPES: &str = "profile:read billing:read billing:write credits:spend";
-// June's OS Accounts token store. Keep this app-scoped so June does not
-// touch credentials written by other Open Software apps on startup.
-const KEYCHAIN_SERVICE: &str = "co.opensoftware.june.accounts";
-const DEV_KEYCHAIN_SERVICE: &str = "co.opensoftware.june-dev.accounts";
+// OS Accounts token store (unused in Sub Rosa's local-only mode, but kept
+// app-scoped under the fork's bundle id so credentials stay isolated).
+const KEYCHAIN_SERVICE: &str = "xyz.carpediem.subrosa.accounts";
+const DEV_KEYCHAIN_SERVICE: &str = "xyz.carpediem.subrosa-dev.accounts";
 const KEYCHAIN_USER: &str = "tokens";
 const LOCAL_DEV_ENV: &str = "OS_JUNE_LOCAL_DEV";
 const LOCAL_DEV_BEARER_TOKEN_ENV: &str = "OS_JUNE_LOCAL_DEV_BEARER_TOKEN";

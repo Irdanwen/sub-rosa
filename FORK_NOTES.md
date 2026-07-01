@@ -64,16 +64,40 @@ Clé `cdm_` de test fournie par l'utilisateur (jamais commitée ; utilisée en e
 
 ## Fichiers upstream modifiés
 
-| Fichier | Raison | Re-merge |
+| Fichier(s) | Raison | Re-merge |
 |---|---|---|
-| _(à compléter au fil des phases)_ | | |
+| `src-tauri/tauri.conf.json` | `productName`/`identifier`/titres fenêtres, scheme deep-link `osjune`→`subrosa`, `beforeDevCommand`→`pnpm run dev` (l'app spawn le sidecar). `externalBin`+updater ajoutés en P5/P7. | Garder les valeurs fork ; reprendre les champs upstream nouveaux |
+| `src-tauri/tauri.macos.conf.json` / `.windows.conf.json` | `bundleName`/`publisher` rebrandés | Trivial |
+| `src-tauri/build.rs` | Helper Swift : `CFBundleIdentifier`/`DisplayName`/`Name` + usage descriptions rebrandés (`co.opensoftware.june.*`→`xyz.carpediem.subrosa.*`) | Garder les IDs fork |
+| `src-tauri/native/mac-dictation-helper/main.swift` | `ignoredBundleIdentifiers` aligné sur le nouveau bundle id du helper | 1 ligne |
+| `src-tauri/Info.plist`, `index.html` | Chaînes visibles « June »→« Sub Rosa » | Trivial |
+| `src-tauri/src/os_accounts.rs` | `KEYCHAIN_SERVICE`/`DEV_KEYCHAIN_SERVICE` rebrandés (le scheme OAuth `osjune://` interne est laissé — mort en mode local ; voir note) | 2 constantes |
+| `src-tauri/src/lib.rs` | `pub mod carpe_diem;` + `settings::setup`/`sidecar::setup` dans `.setup()` + commandes IPC dans `invoke_handler` + `sidecar::shutdown` dans `RunEvent::Exit` | Réappliquer les 4 hooks |
+| `src-tauri/icons/*` | Icônes placeholder Sub Rosa (régénérées via `tauri icon`) | Remplacer par les sources définitives |
+| `src/app/App.tsx` | Gate Carpe Diem (état + effet + `carpeDiemRequired` dans `appBlocked` + rendu du gate avant l'onboarding) | Réappliquer le bloc gate |
+| `src/components/settings/AppSettings.tsx` | Onglet « Carpe Diem » (union `SettingsTab` + `SETTINGS_TABS` + rendu de `<CarpeDiemSettings/>`) | 3 points |
+| `src/lib/tauri.ts` | Wrappers IPC `carpeDiem*` + types (ajout en fin de section provider) ; valeur `JUNE_COMMUNITY_URL`→`https://carpe-diem.xyz` | Additif |
+| ~50 fichiers `src/**` (composants + `lib/`) | Rebrand des **chaînes visibles** « June »→« Sub Rosa » (identifiants techniques laissés : `june://`, `JUNE_*`, clés `os-june:*`, noms de symboles) | Conflits attendus ; garder « Sub Rosa » dans le texte visible |
+| ~14 fichiers `src/test/**` | Assertions alignées sur la copie rebrandée ; 3 tests App ajoutent le mock `carpeDiemSidecarStatus` | Aligner sur le texte fork |
+
+> **Note deep-link scheme** : la registration OS (tauri.conf) est `subrosa`. Le callback OAuth OS Accounts
+> (`osjune://…` dans `os_accounts.rs`) est **inutilisé** en mode local (OS Accounts = hors périmètre) et laissé
+> tel quel pour minimiser le diff + éviter la casse des tests. À aligner si OS Accounts est un jour réactivé.
 
 ## Fichiers ajoutés par le fork (préférés)
 
 | Fichier | Rôle |
 |---|---|
 | `FORK_NOTES.md`, `HANDOFF.md` | Traçabilité fork + handoffs humains |
-| _(à compléter)_ | |
+| `src-tauri/src/carpe_diem/{mod,branding,settings,sidecar}.rs` | Branding Rust + store réglages/keyring + IPC + **gestionnaire de sidecar june-api** |
+| `src/lib/branding.ts` | Constantes de marque + défauts Carpe Diem (frontend) |
+| `src/components/settings/CarpeDiemSettings.tsx` | Section Réglages (base URL + clé + test + statut sidecar) |
+| `src/components/carpe-diem/CarpeDiemGate.tsx` | Écran de connexion premier lancement |
+| `src/test/carpe-diem-settings.test.tsx` | Tests UI Carpe Diem |
+
+## Escape hatch dev
+- `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
+  `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.
 
 ---
 

@@ -877,7 +877,7 @@ final class FocusTargetController {
 
     private var lastExternalApp: NSRunningApplication?
     private let ignoredBundleIdentifiers: Set<String> = [
-        "co.opensoftware.june.dictation-helper",
+        "xyz.carpediem.subrosa.dictation-helper",
     ]
 
     private init() {}
