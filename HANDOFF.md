@@ -33,12 +33,14 @@ Pour un NSIS signé (DoD-2). En **secrets GitHub** :
 - `WINDOWS_CERTIFICATE_PASSWORD` — mot de passe du `.pfx`.
   *(ou service type Azure Trusted Signing / SignPath — dans ce cas, adapter `scripts/windows-sign.ps1`.)*
 
-## 5. Clé updater Tauri — ⏳ en attente (paire générée par le fork)
-- Le fork **génère** la paire (`pnpm tauri signer generate`). La **clé publique** va dans `tauri.conf.json`.
-- L'humain stocke la **clé privée + son mot de passe** en secrets GitHub :
-  - `TAURI_SIGNING_PRIVATE_KEY` — contenu de la clé privée générée.
-  - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — mot de passe choisi à la génération (peut être vide).
-- ⚠️ La clé privée est **non récupérable** : sa perte oblige à migrer tous les clients. Ne jamais la committer.
+## 5. Clé updater Tauri — ✅ paire générée / ⏳ secret à poser
+- Paire **déjà générée** (sans passphrase) :
+  - Clé privée : `.tauri-keys/sub-rosa-updater.key` (gitignored — **jamais commitée**).
+  - Clé publique : `.tauri-keys/sub-rosa-updater.key.pub` — **déjà placée** dans `tauri.conf.json` (`plugins.updater.pubkey`).
+- À poser en **secrets GitHub** du repo `sub-rosa` :
+  - `TAURI_SIGNING_PRIVATE_KEY` — le **contenu** de `.tauri-keys/sub-rosa-updater.key` (`cat` du fichier).
+  - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — **vide** (la clé n'a pas de passphrase).
+- ⚠️ La clé privée est **non récupérable** : sa perte oblige à migrer tous les clients. Sauvegarde-la hors du repo.
 
 ## 6. Token de publication des releases — ⏳ en attente
 - Le repo source est **privé** mais les releases/updater doivent être **publics** (`sub-rosa-releases`).
