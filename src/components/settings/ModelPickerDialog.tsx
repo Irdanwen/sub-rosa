@@ -75,7 +75,7 @@ export function ModelMeta({ model }: { model: VeniceModelDto }) {
 }
 
 const NO_TOOLS_MODEL_EXPLANATION =
-  "This model can't use tools, so June's agent can't work with it. Pick a tool-capable model to use June.";
+  "This model can't use tools, so Sub Rosa's agent can't work with it. Pick a tool-capable model to use Sub Rosa.";
 
 export function ModelPickerDialog({
   open,

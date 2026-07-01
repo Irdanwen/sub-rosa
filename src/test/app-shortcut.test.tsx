@@ -139,6 +139,8 @@ vi.mock("../app/update-decision", async () => {
 });
 
 vi.mock("../lib/tauri", () => ({
+  // Sub Rosa fork: App gates on the Carpe Diem sidecar; report it configured.
+  carpeDiemSidecarStatus: vi.fn(async () => ({ status: "ready", hasApiKey: true })),
   LIVE_TRANSCRIPT_EVENT: "live-transcript-event",
   // The agent workspace mounts the pending skill-writes tray, whose loader
   // reaches the Rust bridge through this named `invoke`. A quiet stub keeps
@@ -399,7 +401,7 @@ describe("App shortcuts", () => {
     await user.click(screen.getByRole("menuitem", { name: "Sign out" }));
 
     expect(mocks.osAccountsLogout).toHaveBeenCalledWith({ clearBrowserSession: true });
-    expect(await screen.findByRole("heading", { name: "Welcome to June" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Welcome to Sub Rosa" })).toBeInTheDocument();
   });
 
   it("starts a new session with Command-N", async () => {
@@ -1136,7 +1138,7 @@ describe("App shortcuts", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Welcome to June" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Welcome to Sub Rosa" })).toBeInTheDocument();
     expect(mocks.bootstrapApp).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "New note" })).toBeNull();
 
@@ -1188,7 +1190,7 @@ describe("App shortcuts", () => {
 
     render(<App />);
 
-    expect(screen.queryByRole("heading", { name: "Welcome to June" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Welcome to Sub Rosa" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Continue with OpenSoftware" })).toBeNull();
     expect(mocks.bootstrapApp).not.toHaveBeenCalled();
 

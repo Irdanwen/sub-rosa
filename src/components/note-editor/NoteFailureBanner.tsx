@@ -97,7 +97,7 @@ export function NoteFailureBanner({
           ? audioPreserved
             ? `Your balance ran out. Your recording is saved locally, so ${topUpAction} and retry.`
             : `Your balance is too low. ${topUpLabel} to continue.`
-          : (displayMessage ?? "June couldn't finish processing this note.")}
+          : (displayMessage ?? "Sub Rosa couldn't finish processing this note.")}
         {!isBalanceIssue && audioPreserved
           ? " Your recording is saved locally, so you can retry."
           : null}

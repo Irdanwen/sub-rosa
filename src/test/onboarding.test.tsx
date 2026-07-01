@@ -166,7 +166,7 @@ describe("OnboardingFlow", () => {
 
   async function renderFlow(onComplete = vi.fn()) {
     render(<OnboardingFlow {...flowProps({ onComplete })} />);
-    await screen.findByRole("heading", { name: "Let June listen and type" });
+    await screen.findByRole("heading", { name: "Let Sub Rosa listen and type" });
     return onComplete;
   }
 
@@ -219,10 +219,10 @@ describe("OnboardingFlow", () => {
     await user.click(screen.getByRole("button", { name: "Continue" }));
     // The next step is hands-on practice. Onboarding no longer opens billing
     // or asks for a card before the user tries the product.
-    const input = await screen.findByPlaceholderText(/Tell June what to do/i);
+    const input = await screen.findByPlaceholderText(/Tell Sub Rosa what to do/i);
     await user.type(input, "hello there");
     await screen.findByRole("status", { name: "Dictation is working" });
-    await user.click(screen.getByRole("button", { name: "Start using June" }));
+    await user.click(screen.getByRole("button", { name: "Start using Sub Rosa" }));
 
     expect(onComplete).toHaveBeenCalledOnce();
     // Completion is the caller's job (App marks it), not the flow's.
@@ -233,7 +233,7 @@ describe("OnboardingFlow", () => {
     grantPermissions();
     await waitFor(() => expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: "Continue" }));
-    await screen.findByPlaceholderText(/Tell June what to do/i);
+    await screen.findByPlaceholderText(/Tell Sub Rosa what to do/i);
   }
 
   it("enables practice completion for a one-character reply", async () => {
@@ -242,11 +242,11 @@ describe("OnboardingFlow", () => {
     await walkToPractice(user);
 
     const startButton = screen.getByRole("button", {
-      name: "Start using June",
+      name: "Start using Sub Rosa",
     });
     expect(startButton).toBeDisabled();
 
-    await user.type(screen.getByPlaceholderText(/Tell June what to do/i), "h");
+    await user.type(screen.getByPlaceholderText(/Tell Sub Rosa what to do/i), "h");
 
     await screen.findByRole("status", { name: "Dictation is working" });
     expect(startButton).toBeEnabled();
@@ -278,7 +278,7 @@ describe("OnboardingFlow", () => {
     });
     setOnboardingResumeStep("dictation-practice");
     render(<OnboardingFlow {...flowProps()} />);
-    await screen.findByRole("heading", { name: "Talk to June" });
+    await screen.findByRole("heading", { name: "Talk to Sub Rosa" });
 
     await waitFor(() =>
       expect(mocks.setDictationShortcut).toHaveBeenCalledWith(
@@ -314,7 +314,7 @@ describe("OnboardingFlow", () => {
     });
     setOnboardingResumeStep("dictation-practice");
     render(<OnboardingFlow {...flowProps()} />);
-    await screen.findByRole("heading", { name: "Talk to June" });
+    await screen.findByRole("heading", { name: "Talk to Sub Rosa" });
 
     await waitFor(() => expect(screen.getAllByText("F5")).toHaveLength(2));
     expect(mocks.setDictationShortcut).not.toHaveBeenCalled();
@@ -394,21 +394,21 @@ describe("OnboardingFlow", () => {
     mocks.osAccountsLogin.mockResolvedValue(account);
     render(<OnboardingFlow {...flowProps({ account: signedOutAccount, onAccountChanged })} />);
 
-    await screen.findByRole("heading", { name: "Welcome to June" });
+    await screen.findByRole("heading", { name: "Welcome to Sub Rosa" });
     await user.click(screen.getByRole("button", { name: "Continue with OpenSoftware" }));
 
     expect(mocks.osAccountsLogin).toHaveBeenCalledOnce();
     await waitFor(() => expect(onAccountChanged).toHaveBeenCalledWith(account));
   });
 
-  it("opens the June community from the welcome step", async () => {
+  it("opens the Sub Rosa community from the welcome step", async () => {
     const user = userEvent.setup();
     render(<OnboardingFlow {...flowProps({ account: signedOutAccount })} />);
 
-    await screen.findByRole("heading", { name: "Welcome to June" });
+    await screen.findByRole("heading", { name: "Welcome to Sub Rosa" });
     await user.click(
       screen.getByRole("button", {
-        name: "June community on Telegram",
+        name: "Sub Rosa community on Telegram",
       }),
     );
 
@@ -423,7 +423,7 @@ describe("OnboardingFlow", () => {
     try {
       render(<OnboardingFlow {...flowProps({ account: signedOutAccount })} />);
 
-      await screen.findByRole("heading", { name: "Welcome to June" });
+      await screen.findByRole("heading", { name: "Welcome to Sub Rosa" });
       expect(screen.getByText("Desktop notes for your work")).toBeInTheDocument();
       expect(screen.getByText("Meeting notes from your mic")).toBeInTheDocument();
       expect(
@@ -431,10 +431,10 @@ describe("OnboardingFlow", () => {
       ).toBeInTheDocument();
       expect(screen.queryByText("Speak instead of type")).not.toBeInTheDocument();
       expect(
-        screen.queryByText(/June turns your voice into polished writing/),
+        screen.queryByText(/Sub Rosa turns your voice into polished writing/),
       ).not.toBeInTheDocument();
       expect(screen.queryByText("Effortlessly capture meetings")).not.toBeInTheDocument();
-      expect(screen.queryByText("Chat and work with June")).not.toBeInTheDocument();
+      expect(screen.queryByText("Chat and work with Sub Rosa")).not.toBeInTheDocument();
     } finally {
       restoreNavigator();
     }
@@ -443,12 +443,12 @@ describe("OnboardingFlow", () => {
   it("does not ask unsubscribed users for a card during onboarding", async () => {
     const user = userEvent.setup();
     render(<OnboardingFlow {...flowProps({ account: unsubscribedAccount })} />);
-    await screen.findByRole("heading", { name: "Let June listen and type" });
+    await screen.findByRole("heading", { name: "Let Sub Rosa listen and type" });
 
     grantPermissions();
     await waitFor(() => expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: "Continue" }));
-    await screen.findByPlaceholderText(/Tell June what to do/i);
+    await screen.findByPlaceholderText(/Tell Sub Rosa what to do/i);
 
     expect(screen.queryByRole("heading", { name: /free trial/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /Start free trial/i })).toBeNull();
@@ -458,20 +458,20 @@ describe("OnboardingFlow", () => {
   it("resumes a half-finished run at the saved step", async () => {
     setOnboardingResumeStep("dictation-practice");
     render(<OnboardingFlow {...flowProps()} />);
-    await screen.findByRole("heading", { name: "Talk to June" });
+    await screen.findByRole("heading", { name: "Talk to Sub Rosa" });
   });
 
   it("does not collect onboarding source metadata", async () => {
     const user = userEvent.setup();
     setOnboardingResumeStep("dictation-practice");
     render(<OnboardingFlow {...flowProps()} />);
-    await screen.findByRole("heading", { name: "Talk to June" });
+    await screen.findByRole("heading", { name: "Talk to Sub Rosa" });
 
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(screen.queryByRole("option")).toBeNull();
 
-    await user.type(screen.getByPlaceholderText(/Tell June what to do/i), "hello there");
-    await user.click(screen.getByRole("button", { name: "Start using June" }));
+    await user.type(screen.getByPlaceholderText(/Tell Sub Rosa what to do/i), "hello there");
+    await user.click(screen.getByRole("button", { name: "Start using Sub Rosa" }));
   });
 
   it("resets only onboarding progress when replaying the wizard", () => {
@@ -542,7 +542,7 @@ describe("OnboardingFlow", () => {
       await userEvent.click(screen.getByRole("button", { name: "Continue" }));
 
       await waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
-      expect(screen.queryByRole("heading", { name: "Talk to June" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Talk to Sub Rosa" })).not.toBeInTheDocument();
     } finally {
       restoreNavigator();
     }
@@ -571,7 +571,7 @@ describe("OnboardingFlow", () => {
       grantPermissions();
 
       await screen.findByText(
-        "Turned off in System Settings. Flip the toggle and June will notice.",
+        "Turned off in System Settings. Flip the toggle and Sub Rosa will notice.",
       );
       expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
 
@@ -616,7 +616,9 @@ describe("OnboardingFlow", () => {
       grantPermissions();
 
       expect(
-        screen.queryByText("Turned off in System Settings. Flip the toggle and June will notice."),
+        screen.queryByText(
+          "Turned off in System Settings. Flip the toggle and Sub Rosa will notice.",
+        ),
       ).not.toBeInTheDocument();
       await waitFor(() => expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled());
     } finally {

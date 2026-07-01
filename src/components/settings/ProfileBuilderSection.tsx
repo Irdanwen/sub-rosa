@@ -166,7 +166,7 @@ function BuilderShell({
       </h2>
       <p className="settings-group-description">
         Create a specialized profile with its own model, skills, MCP servers, and instructions. A
-        profile keeps June's identity unless you give it its own.{" "}
+        profile keeps Sub Rosa's identity unless you give it its own.{" "}
         {show ? (
           <span className="profile-builder-mode-note">
             New profiles target the {modeLabel} runtime
@@ -352,9 +352,9 @@ function IdentityStep({ state }: { state: ProfileBuilderState }) {
             onChange={() => state.update({ identity: "june-default" })}
           />
           <span>
-            <span className="profile-builder-radio-title">June (default)</span>
+            <span className="profile-builder-radio-title">Sub Rosa (default)</span>
             <span className="profile-builder-radio-detail">
-              Specializes June for this task. The agent still identifies as June.
+              Specializes Sub Rosa for this task. The agent still identifies as Sub Rosa.
             </span>
           </span>
         </label>
@@ -379,7 +379,7 @@ function IdentityStep({ state }: { state: ProfileBuilderState }) {
         <textarea
           value={form.soul}
           rows={4}
-          placeholder="Optional. Leave empty to keep June's instructions."
+          placeholder="Optional. Leave empty to keep Sub Rosa's instructions."
           aria-label="Custom instructions"
           onChange={(event) => state.update({ soul: event.currentTarget.value })}
         />
@@ -447,8 +447,8 @@ function ModelStep({ state }: { state: ProfileBuilderState }) {
       )}
       {support && !support.supportsTools ? (
         <p className="profile-builder-field-meta">
-          Provider: {support.model.provider}. June needs tool calling, so this model cannot be used
-          for an agent profile.
+          Provider: {support.model.provider}. Sub Rosa needs tool calling, so this model cannot be
+          used for an agent profile.
         </p>
       ) : null}
     </div>
@@ -507,7 +507,7 @@ function SkillsStep({ state }: { state: ProfileBuilderState }) {
           onChange={(event) => state.update({ keepBundledSkills: event.currentTarget.checked })}
         />
         <span>
-          Keep June's bundled skills
+          Keep Sub Rosa's bundled skills
           <span className="profile-builder-field-meta">
             Copies the default profile's skills into this one.
           </span>

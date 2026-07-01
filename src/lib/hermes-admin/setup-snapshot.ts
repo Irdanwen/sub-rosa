@@ -483,7 +483,7 @@ export function parseSetupSnapshot(input: unknown): SnapshotParseResult {
   if (schemaVersion > SETUP_SNAPSHOT_VERSION) {
     return {
       ok: false,
-      error: `This snapshot was written by a newer version of June (schema ${schemaVersion}). Update June to import it.`,
+      error: `This snapshot was written by a newer version of Sub Rosa (schema ${schemaVersion}). Update Sub Rosa to import it.`,
     };
   }
 

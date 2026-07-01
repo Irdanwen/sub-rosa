@@ -110,7 +110,7 @@ const STATE_META: Readonly<Record<McpOauthStatus, McpOauthStatusMeta>> = Object.
   "signing-in": {
     state: "signing-in",
     label: "Waiting for browser",
-    blurb: "Finish the sign-in in your browser. June is waiting for it to complete.",
+    blurb: "Finish the sign-in in your browser. Sub Rosa is waiting for it to complete.",
     tone: "neutral",
     action: "none",
   },

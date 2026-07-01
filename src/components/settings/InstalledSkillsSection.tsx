@@ -482,7 +482,7 @@ function SkillRow({
         {readOnly ? (
           <p className="installed-skill-note">
             Loaded from an external directory. It may be shared with other tools and cannot be
-            changed from June.
+            changed from Sub Rosa.
           </p>
         ) : null}
 

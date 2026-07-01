@@ -135,8 +135,8 @@ export function ExternalDirsView({
         </div>
 
         <p className="external-dirs-hint">
-          Paths can use {"~"} for your home folder and {"${VAR}"} for environment variables. June
-          shows the resolved path below each entry.
+          Paths can use {"~"} for your home folder and {"${VAR}"} for environment variables. Sub
+          Rosa shows the resolved path below each entry.
         </p>
 
         {formError ? (
@@ -295,9 +295,9 @@ function DirRow({
           ) : row.presence === "missing" ? (
             <span className="external-dir-meta-item">No skills loaded (directory not found)</span>
           ) : null}
-          <span className="external-dir-readonly" title="June does not edit external skills.">
+          <span className="external-dir-readonly" title="Sub Rosa does not edit external skills.">
             <IconLock size={12} ariaHidden />
-            Read only in June
+            Read only in Sub Rosa
           </span>
         </div>
 

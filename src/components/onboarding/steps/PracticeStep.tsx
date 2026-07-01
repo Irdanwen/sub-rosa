@@ -45,7 +45,7 @@ export function DictationPracticeStep({
   }, []);
 
   return (
-    <StepCard title="Talk to June" subtitle="Say what you want done." wide>
+    <StepCard title="Talk to Sub Rosa" subtitle="Say what you want done." wide>
       <div className="onboarding-practice-stack">
         <div className="onboarding-shortcut-row">
           <span className="onboarding-shortcut-label">
@@ -71,11 +71,11 @@ export function DictationPracticeStep({
               <JuneMark />
             </div>
             <div className="onboarding-practice-message">
-              <span className="onboarding-practice-sender">June</span>
+              <span className="onboarding-practice-sender">Sub Rosa</span>
               {greeted ? (
                 <span className="onboarding-practice-text">What should we work on first?</span>
               ) : (
-                <span className="onboarding-typing" aria-label="June is typing">
+                <span className="onboarding-typing" aria-label="Sub Rosa is typing">
                   <span />
                   <span />
                   <span />
@@ -88,7 +88,7 @@ export function DictationPracticeStep({
               className="onboarding-practice-input"
               rows={2}
               value={value}
-              placeholder="Tell June what to do..."
+              placeholder="Tell Sub Rosa what to do..."
               onChange={(event) => setValue(event.target.value)}
             />
             <div className="onboarding-practice-toolbar">
@@ -110,7 +110,7 @@ export function DictationPracticeStep({
       </div>
       {capture.error ? <p className="welcome-status">{capture.error}</p> : null}
       <StepActions
-        continueLabel="Start using June"
+        continueLabel="Start using Sub Rosa"
         onContinue={onContinue}
         continueDisabled={!succeeded}
         onSkip={onContinue}

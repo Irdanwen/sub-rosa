@@ -71,18 +71,18 @@ export function agentNotificationCopy(detail: AgentSessionStatusDetail): Notific
   const body = detail.summary?.trim() || subject;
 
   if (detail.status === "waitingForUser") {
-    return { title: "June needs your input", body };
+    return { title: "Sub Rosa needs your input", body };
   }
 
   if (detail.status === "completed") {
-    return { title: "June finished", body };
+    return { title: "Sub Rosa finished", body };
   }
 
   if (detail.status === "cancelled") {
-    return { title: "June stopped", body };
+    return { title: "Sub Rosa stopped", body };
   }
 
-  return { title: "June hit a problem", body };
+  return { title: "Sub Rosa hit a problem", body };
 }
 
 function agentNotificationGroup(detail: AgentSessionStatusDetail) {

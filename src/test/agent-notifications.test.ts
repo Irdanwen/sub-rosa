@@ -25,11 +25,11 @@ describe("agent notifications", () => {
       agentNotificationCopy({
         status: "waitingForUser",
         title: "Approve a tool",
-        summary: "June needs approval.",
+        summary: "Sub Rosa needs approval.",
       }),
     ).toEqual({
-      title: "June needs your input",
-      body: "June needs approval.",
+      title: "Sub Rosa needs your input",
+      body: "Sub Rosa needs approval.",
     });
 
     expect(
@@ -38,7 +38,7 @@ describe("agent notifications", () => {
         title: "Make a PDF",
       }),
     ).toEqual({
-      title: "June finished",
+      title: "Sub Rosa finished",
       body: "Make a PDF",
     });
   });
@@ -66,7 +66,7 @@ describe("agent notifications", () => {
     ).resolves.toBe(true);
 
     expect(notificationMocks.sendNotification).toHaveBeenCalledWith({
-      title: "June needs your input",
+      title: "Sub Rosa needs your input",
       body: "Approve execute_code.",
       group: "june-agent-session-1",
       sound: "Ping",
@@ -87,7 +87,7 @@ describe("agent notifications", () => {
 
     expect(notificationMocks.requestPermission).toHaveBeenCalledOnce();
     expect(notificationMocks.sendNotification).toHaveBeenCalledWith({
-      title: "June finished",
+      title: "Sub Rosa finished",
       body: "Make a PDF",
       group: "june-agent-session-2",
       sound: "Ping",

@@ -355,7 +355,7 @@ export class SkillsHubController {
       // is an explicit GITHUB_TOKEN configured in June — not `gh auth login`.
       const message =
         adminError.kind === "timeout"
-          ? "Install timed out. The skill source may be slow or rate-limited. GitHub-hosted skills need a GITHUB_TOKEN configured in June's settings (Team skill taps) to lift the 60/hr limit, then try again."
+          ? "Install timed out. The skill source may be slow or rate-limited. GitHub-hosted skills need a GITHUB_TOKEN configured in Sub Rosa's settings (Team skill taps) to lift the 60/hr limit, then try again."
           : adminError.safeMessage;
       this.setInstall(identifier, {
         phase: "failed",

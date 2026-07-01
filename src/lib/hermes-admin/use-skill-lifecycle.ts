@@ -408,7 +408,7 @@ export class SkillLifecycleController {
     if (!isSafeSkillName(skill.name)) {
       this.setAction(skill.name, rowAction, {
         phase: "failed",
-        error: "This skill's name cannot be reset safely from June. Reset it in Hermes.",
+        error: "This skill's name cannot be reset safely from Sub Rosa. Reset it in Hermes.",
       });
       return;
     }

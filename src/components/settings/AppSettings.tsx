@@ -62,6 +62,7 @@ import type { ReportCategory } from "../agent/composer/reportCategory";
 import { getStoredTheme, setStoredTheme, type ThemePreference } from "../../lib/theme";
 import { DEFAULT_BRAND, getStoredBrand, setStoredBrand, type BrandId } from "../../lib/brand";
 import { AccentWheel } from "./AccentWheel";
+import { CarpeDiemSettings } from "./CarpeDiemSettings";
 import {
   getReleaseChannel,
   reconcileToStable,
@@ -198,6 +199,7 @@ const MIC_TEST_DURATION_SECONDS = 5;
 
 export type SettingsTab =
   | "general"
+  | "carpe-diem"
   | "billing"
   | "shortcuts"
   | "dictation"
@@ -222,6 +224,7 @@ export type SettingsTab =
 
 export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
+  { id: "carpe-diem", label: "Carpe Diem" },
   { id: "billing", label: "Billing" },
   { id: "shortcuts", label: "Shortcuts" },
   { id: "dictation", label: "Dictation" },
@@ -937,6 +940,7 @@ export function AppSettings({
         id={`settings-panel-${activeTab}`}
         aria-labelledby={`settings-tab-${activeTab}`}
       >
+        {activeTab === "carpe-diem" ? <CarpeDiemSettings /> : null}
         {activeTab === "general" ? (
           <>
             <AccountSettingsSection
@@ -1302,9 +1306,7 @@ export function AppSettings({
                   >
                     <span className="settings-row-info">
                       <span className="settings-row-title">More options</span>
-                      <span className="settings-row-description">
-                        Advanced model settings.
-                      </span>
+                      <span className="settings-row-description">Advanced model settings.</span>
                     </span>
                     <IconChevronDownSmall
                       className="settings-more-options-chevron"
@@ -1332,7 +1334,7 @@ export function AppSettings({
                   Image generation
                 </h2>
                 <p className="settings-group-description">
-                  Choose the model June uses when you ask it to generate an image.
+                  Choose the model Sub Rosa uses when you ask it to generate an image.
                 </p>
                 <div className="settings-card">
                   <div className="settings-rows">
@@ -1407,7 +1409,7 @@ export function AppSettings({
                       <div className="settings-row-info">
                         <h3 className="settings-row-title">Updates</h3>
                         <p className="settings-row-description">
-                          Check whether a newer version of June is available.
+                          Check whether a newer version of Sub Rosa is available.
                         </p>
                       </div>
                       <div className="settings-row-control">
@@ -1472,7 +1474,7 @@ export function AppSettings({
                   <div className="settings-row-info">
                     <h3 className="settings-row-title">Community</h3>
                     <p className="settings-row-description">
-                      Join us in the June community on Telegram at{" "}
+                      Join us in the Sub Rosa community on Telegram at{" "}
                       {JUNE_COMMUNITY_URL.replace("https://", "")}.
                     </p>
                   </div>
@@ -1491,8 +1493,8 @@ export function AppSettings({
                   <div className="settings-row-info">
                     <h3 className="settings-row-title">Server verification</h3>
                     <p className="settings-row-description">
-                      June&apos;s server runs in a confidential VM. See exactly what code is running
-                      and how to verify it yourself.
+                      Sub Rosa&apos;s server runs in a confidential VM. See exactly what code is
+                      running and how to verify it yourself.
                     </p>
                   </div>
                   <div className="settings-row-control">
@@ -1511,8 +1513,9 @@ export function AppSettings({
                     <div className="settings-row-info">
                       <h3 className="settings-row-title">Report an issue</h3>
                       <p className="settings-row-description">
-                        Something not working? Describe it to June, attach a screenshot if you have
-                        one, and June will send the report to the team along with its own diagnosis.
+                        Something not working? Describe it to Sub Rosa, attach a screenshot if you
+                        have one, and Sub Rosa will send the report to the team along with its own
+                        diagnosis.
                       </p>
                     </div>
                     <div className="settings-row-control">
@@ -1783,13 +1786,10 @@ function VeniceApiKeyRow({
       <div className="settings-row-info">
         <h3 className="settings-row-title">Venice API key</h3>
         <p className="settings-row-description">
-          Use your own key for Venice models. Stored locally and sent only for
-          Venice requests.
+          Use your own key for Venice models. Stored locally and sent only for Venice requests.
         </p>
         {configured ? (
-          <p className="settings-row-description settings-row-substatus">
-            Key saved.
-          </p>
+          <p className="settings-row-description settings-row-substatus">Key saved.</p>
         ) : null}
       </div>
       <div className="settings-row-control settings-secret-control">
@@ -1806,20 +1806,11 @@ function VeniceApiKeyRow({
             if (event.key === "Enter" && canSave) onSave();
           }}
         />
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={!canSave}
-          onClick={onSave}
-        >
+        <button type="button" className="btn btn-secondary" disabled={!canSave} onClick={onSave}>
           Save
         </button>
         {configured ? (
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={onRemove}
-          >
+          <button type="button" className="btn btn-secondary" onClick={onRemove}>
             Remove
           </button>
         ) : null}

@@ -531,8 +531,8 @@ function InspectDrawer({
 
           {local ? (
             <p className="skills-hub-drawer-note">
-              <IconShield size={13} ariaHidden /> This runs a local subprocess and inherits June and
-              Hermes sandbox constraints.
+              <IconShield size={13} ariaHidden /> This runs a local subprocess and inherits Sub Rosa
+              and Hermes sandbox constraints.
             </p>
           ) : null}
 
@@ -553,7 +553,8 @@ function InspectDrawer({
 
           {needsAuthHandoff(entry) ? (
             <p className="skills-hub-drawer-note">
-              After install you sign in to finish connecting. June opens that flow in your browser.
+              After install you sign in to finish connecting. Sub Rosa opens that flow in your
+              browser.
             </p>
           ) : null}
 

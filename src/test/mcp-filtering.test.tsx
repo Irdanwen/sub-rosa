@@ -404,7 +404,7 @@ describe("mcp filtering — dialog", () => {
     );
     // Compare counts.
     expect(screen.getByText("Server exposes")).toBeTruthy();
-    expect(screen.getByText("June will expose to agent")).toBeTruthy();
+    expect(screen.getByText("Sub Rosa will expose to agent")).toBeTruthy();
     expect(screen.getByText("Blocked/destructive")).toBeTruthy();
     // Precedence: include wins.
     expect(screen.getByText(/Include wins/i)).toBeTruthy();

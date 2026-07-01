@@ -48,10 +48,10 @@ export function normalizeSteerText(text: string): string | undefined {
  */
 export function steerErrorNotice(err: unknown): string {
   if (isSessionBusyError(err)) {
-    return "June can't take an instruction right now. It already finished the previous step. Send your message normally instead.";
+    return "Sub Rosa can't take an instruction right now. It already finished the previous step. Send your message normally instead.";
   }
   if (isConnectionError(err)) {
-    return "Lost the connection to June before the instruction was sent. Reconnect and try again.";
+    return "Lost the connection to Sub Rosa before the instruction was sent. Reconnect and try again.";
   }
   return "Couldn't send that instruction. Please try again.";
 }

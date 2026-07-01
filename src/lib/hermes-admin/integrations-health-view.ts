@@ -294,7 +294,7 @@ export function buildIntegrationsHealth(inputs: IntegrationsHealthInputs): Integ
         code: "model-no-tools",
         status: "needs-setup",
         tone: "error",
-        message: `The selected model (${modelLabel}) cannot use tools, so June's agent cannot do its work.`,
+        message: `The selected model (${modelLabel}) cannot use tools, so Sub Rosa's agent cannot do its work.`,
         action: "Change to a tool-capable model.",
         target: "models",
       });

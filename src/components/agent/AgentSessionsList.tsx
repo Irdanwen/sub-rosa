@@ -256,8 +256,8 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
           <EmptyState
             label="Start your first session"
             icon={<IconBubble3 size={28} />}
-            title="Put June to work"
-            description="Ask June to check on your computer, dig through your files, or research a topic. Each session keeps one task's conversation and everything it produces in one place."
+            title="Put Sub Rosa to work"
+            description="Ask Sub Rosa to check on your computer, dig through your files, or research a topic. Each session keeps one task's conversation and everything it produces in one place."
             action={
               <button type="button" className="primary-action primary-solid" onClick={onNewSession}>
                 <IconPlusMedium size={13} />

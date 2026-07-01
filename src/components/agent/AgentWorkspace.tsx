@@ -285,7 +285,7 @@ const COMPOSER_TOKEN_ESTIMATE_CHARS_PER_TOKEN = 4;
 // What the user reads instead of the gateway's "session busy" rejection. No
 // action in the pill — the composer's send slot already shows stop while
 // June works.
-const SESSION_BUSY_NOTICE = "June is still working on the previous message.";
+const SESSION_BUSY_NOTICE = "Sub Rosa is still working on the previous message.";
 
 // Connection-shaped failures get a "Try again" on the error banner — these are
 // all our own strings (hermes-gateway.ts client errors, ensureHermesGateway),
@@ -505,13 +505,13 @@ const SANDBOX_OPTIONS = [
     unrestricted: false,
     icon: <IconShieldCheck size={16} aria-hidden />,
     title: "Sandboxed",
-    description: "June can read your files but only change its own workspace.",
+    description: "Sub Rosa can read your files but only change its own workspace.",
   },
   {
     unrestricted: true,
     icon: <IconShieldCrossed size={16} aria-hidden />,
     title: "Unrestricted",
-    description: "June can change any file your account can.",
+    description: "Sub Rosa can change any file your account can.",
   },
 ] as const;
 
@@ -582,7 +582,7 @@ const AGENT_SHORTCUTS: AgentShortcut[] = [
     key: "find-file",
     icon: <IconMagnifyingGlass size={18} />,
     title: "Find a file",
-    description: "Describe what you remember; June tracks it down.",
+    description: "Describe what you remember; Sub Rosa tracks it down.",
     prompt: "Find <a file I half-remember> on my computer and tell me where it is.",
     action: "prefill",
   },
@@ -620,10 +620,10 @@ const AGENT_SHORTCUTS: AgentShortcut[] = [
  * across launches. Exported so tests can match "any greeting".
  */
 export const HERO_GREETINGS = [
-  "What can June do for you?",
+  "What can Sub Rosa do for you?",
   "What should we work on?",
-  "Where should June start?",
-  "What can June take off your plate?",
+  "Where should Sub Rosa start?",
+  "What can Sub Rosa take off your plate?",
 ] as const;
 
 const HERO_GREETING_INDEX_KEY = "june:agent:hero-greeting";
@@ -2527,7 +2527,7 @@ export function AgentWorkspace({
     // Defense in depth: the picker already hides tool-less models, but the
     // agent bricks without function calling, so refuse one rather than switch.
     if (chosen && !modelSupportsTools(chosen)) {
-      setError(`${chosen.name} can't run June's tools, so it can't be used for the agent.`);
+      setError(`${chosen.name} can't run Sub Rosa's tools, so it can't be used for the agent.`);
       return false;
     }
     const modelName = chosen?.name ?? modelId;
@@ -2779,7 +2779,7 @@ export function AgentWorkspace({
                 hermesSessionItems.find((session) => session.id === selectedHermesSessionId)
                   ?.title ?? "Agent session",
               status: "completed",
-              summary: "June finished.",
+              summary: "Sub Rosa finished.",
               ...activityCounts,
             });
           }
@@ -3681,7 +3681,8 @@ export function AgentWorkspace({
       clearErrorForSession(sessionId);
       if (selectedHermesSessionIdRef.current === sessionId) {
         setIssueReportNotice({
-          message: "Your report was sent to the June team. Thank you for helping improve June.",
+          message:
+            "Your report was sent to the Sub Rosa team. Thank you for helping improve Sub Rosa.",
           sessionId,
         });
       }
@@ -3845,7 +3846,7 @@ export function AgentWorkspace({
       title,
       prompt: displayContent,
       status: "starting",
-      summary: "Starting June.",
+      summary: "Starting Sub Rosa.",
     });
     return { createdAt, id: sessionId, userMessage };
   }
@@ -4414,7 +4415,7 @@ export function AgentWorkspace({
       title: sessionDisplayTitle,
       prompt: displayContent,
       status: "running",
-      summary: "June is working.",
+      summary: "Sub Rosa is working.",
     });
     attachHermesSessionEventListener({
       gateway,
@@ -4733,7 +4734,7 @@ export function AgentWorkspace({
         title:
           hermesSessionItems.find((session) => session.id === sessionId)?.title ?? "Agent session",
         status: "completed",
-        summary: "June stopped.",
+        summary: "Sub Rosa stopped.",
         ...activityCounts,
       });
     }
@@ -4798,7 +4799,7 @@ export function AgentWorkspace({
               hermesSessionItems.find((session) => session.id === sessionId)?.title ??
               "Agent session",
             status: "completed",
-            summary: "June finished.",
+            summary: "Sub Rosa finished.",
             ...activityCounts,
           });
         }
@@ -5182,7 +5183,7 @@ export function AgentWorkspace({
       prompt: initialPrompt,
       title: titleFromPrompt(initialPrompt),
       status: "starting",
-      summary: "Starting June.",
+      summary: "Starting Sub Rosa.",
     });
     setSubmitting(true);
     try {
@@ -5296,7 +5297,7 @@ export function AgentWorkspace({
       prompt,
       title: titleFromPrompt(prompt),
       status: "starting",
-      summary: "Starting June.",
+      summary: "Starting Sub Rosa.",
     });
     setSubmitting(true);
     try {
@@ -6100,8 +6101,8 @@ export function AgentWorkspace({
             >
               <span>
                 {visibleIssueReportReview.report.followUps.length
-                  ? "Follow-up added. Add more context in chat, or send it to the June team."
-                  : "Report ready. Add more context in chat, or send it to the June team."}
+                  ? "Follow-up added. Add more context in chat, or send it to the Sub Rosa team."
+                  : "Report ready. Add more context in chat, or send it to the Sub Rosa team."}
               </span>
               <button
                 type="button"
@@ -6267,7 +6268,7 @@ export function AgentWorkspace({
                 : importingFiles
                   ? "Attaching file…"
                   : heroMode
-                    ? "Ask June anything, run / commands"
+                    ? "Ask Sub Rosa anything, run / commands"
                     : "Send a message"
             }
             onChange={(text, nextCategory) => {
@@ -6322,7 +6323,7 @@ export function AgentWorkspace({
                 data-unrestricted={fullModeDraft ? "true" : undefined}
                 aria-haspopup="menu"
                 aria-expanded={sandboxMenuOpen}
-                title="Change what June can touch"
+                title="Change what Sub Rosa can touch"
                 onClick={() => setSandboxMenuOpen((open) => !open)}
               >
                 {fullModeDraft ? (
@@ -6364,8 +6365,8 @@ export function AgentWorkspace({
                 <button
                   type="button"
                   className="agent-composer-stop"
-                  aria-label="Stop June"
-                  title="Stop June"
+                  aria-label="Stop Sub Rosa"
+                  title="Stop Sub Rosa"
                   disabled={stoppingSessionIds.has(selectedHermesSessionId)}
                   onClick={() => void stopHermesSession(selectedHermesSessionId)}
                 >
@@ -6451,9 +6452,9 @@ export function AgentWorkspace({
             ref={sandboxMenuRef}
             className="agent-sandbox-menu"
             role="menu"
-            aria-label="What can June change?"
+            aria-label="What can Sub Rosa change?"
           >
-            <p className="agent-sandbox-menu-title">What can June change?</p>
+            <p className="agent-sandbox-menu-title">What can Sub Rosa change?</p>
             {SANDBOX_OPTIONS.map((option, index) => (
               <button
                 key={option.title}
@@ -6494,7 +6495,7 @@ export function AgentWorkspace({
           open={confirmUnrestricted}
           onClose={() => setConfirmUnrestricted(false)}
           title="Turn on Unrestricted?"
-          description="June will be able to change any file your account can, not just its own workspace. This comes with risks like data loss if something goes wrong."
+          description="Sub Rosa will be able to change any file your account can, not just its own workspace. This comes with risks like data loss if something goes wrong."
           footer={
             <>
               <button
@@ -6910,7 +6911,7 @@ export function AgentWorkspace({
               </div>
               <p className="agent-hero-footnote">
                 {bridgeStarting || startupSessionHydrationPending
-                  ? "Getting June ready…"
+                  ? "Getting Sub Rosa ready…"
                   : heroPrivacyFootnote(generationModel, generationPrivacyBadge)}
               </p>
             </div>
@@ -7397,16 +7398,16 @@ function heroPrivacyFootnote(
   model: VeniceModelDto | undefined,
   badge: ModelPrivacyBadge | undefined,
 ): string {
-  if (!model) return "June runs locally.";
+  if (!model) return "Sub Rosa runs locally.";
   switch (badge?.mode) {
     case "e2ee":
-      return `June runs locally. Calls to ${model.name} are end-to-end encrypted.`;
+      return `Sub Rosa runs locally. Calls to ${model.name} are end-to-end encrypted.`;
     case "private":
-      return `June runs locally. Calls to ${model.name} are private.`;
+      return `Sub Rosa runs locally. Calls to ${model.name} are private.`;
     case "anonymous":
-      return `June runs locally. Calls to ${model.name} are anonymized.`;
+      return `Sub Rosa runs locally. Calls to ${model.name} are anonymized.`;
     default:
-      return `June runs locally. You're running ${model.name}.`;
+      return `Sub Rosa runs locally. You're running ${model.name}.`;
   }
 }
 
@@ -7547,7 +7548,7 @@ function PrivacyModeBadge({ badge }: { badge?: ModelPrivacyBadge }) {
 // honest unit to label.
 function UnrestrictedBadge() {
   const description =
-    "This session runs without the file sandbox: June can change any file your account can. Sandboxed sessions keep their jail and run alongside on a separate, jailed runtime.";
+    "This session runs without the file sandbox: Sub Rosa can change any file your account can. Sandboxed sessions keep their jail and run alongside on a separate, jailed runtime.";
   return (
     <HoverTip
       tip={description}
@@ -9167,7 +9168,7 @@ export function SessionCompactDialog({
         if (seq !== requestSeq.current) return;
         setErrorMessage(
           isSessionBusyError(err)
-            ? "June is running right now. Wait for the current turn to finish, then compact context."
+            ? "Sub Rosa is running right now. Wait for the current turn to finish, then compact context."
             : "Couldn't compact context. Please try again.",
         );
         setPhase("error");
@@ -9348,7 +9349,7 @@ function CreditsNoticePart({
       tone="destructive"
       role="alert"
       icon={<IconWallet3 size={14} aria-hidden />}
-      body="June stopped because your balance ran out."
+      body="Sub Rosa stopped because your balance ran out."
       actions={
         onTopUp ? (
           <button type="button" className="btn btn-secondary" onClick={onTopUp}>
@@ -9609,10 +9610,10 @@ function AgentCliAccessCard({ cliAccess }: { cliAccess?: AgentCliAccessCardProps
           </span>
         </div>
         <p>
-          June wants write access to the state folders of your coding CLIs (Claude Code, Codex,
+          Sub Rosa wants write access to the state folders of your coding CLIs (Claude Code, Codex,
           Gemini, opencode) so they stay logged in and can save their work in sandboxed sessions.
-          Those folders configure software that also runs outside June's sandbox. Enabling turns on
-          "Agent CLI access" in Settings and restarts the sandboxed runtime.
+          Those folders configure software that also runs outside Sub Rosa's sandbox. Enabling turns
+          on "Agent CLI access" in Settings and restarts the sandboxed runtime.
         </p>
         {resolved ? (
           <p className="agent-approval-result" data-choice={enabled ? "once" : "deny"}>
@@ -9722,7 +9723,7 @@ function ApprovalPart({
               // Generation unavailable (offline, signed out): keep the
               // static framing rather than an empty panel.
               <p>
-                June is paused because this request needs your explicit permission before it can
+                Sub Rosa is paused because this request needs your explicit permission before it can
                 continue.
               </p>
             )}
@@ -9894,15 +9895,15 @@ export function SudoPart({
             {part.status === "pending" ? "Waiting" : "Resolved"}
           </span>
         </div>
-        <p>{part.reason ?? "June needs elevated permissions before it can continue."}</p>
+        <p>{part.reason ?? "Sub Rosa needs elevated permissions before it can continue."}</p>
         {part.command ? <pre>{part.command}</pre> : null}
         <p
           className="agent-sudo-mode"
           data-mode={mode}
           title={
             unrestricted
-              ? "Runs with full write access, outside June's sandbox."
-              : "Runs inside June's write sandbox."
+              ? "Runs with full write access, outside Sub Rosa's sandbox."
+              : "Runs inside Sub Rosa's write sandbox."
           }
         >
           {unrestricted ? (
@@ -10001,7 +10002,7 @@ export function SecretPart({
             {part.status === "pending" ? "Waiting" : "Provided"}
           </span>
         </div>
-        <p>{part.reason ?? "June needs a secret value before it can continue."}</p>
+        <p>{part.reason ?? "Sub Rosa needs a secret value before it can continue."}</p>
         {label ? (
           <p className="agent-secret-key">
             <span>Key</span>
@@ -11415,12 +11416,14 @@ function agentStatusSummaryFromHermesEvent(
   status: AgentSessionStatusKind,
 ) {
   if (status === "waitingForUser") {
-    return event.type === "approval.request" ? "June needs approval." : "June has a question.";
+    return event.type === "approval.request"
+      ? "Sub Rosa needs approval."
+      : "Sub Rosa has a question.";
   }
-  if (status === "completed") return "June finished.";
-  if (status === "failed") return eventText(event) || "June hit a problem.";
+  if (status === "completed") return "Sub Rosa finished.";
+  if (status === "failed") return eventText(event) || "Sub Rosa hit a problem.";
   if (event.type === "status.update") {
-    return eventText(event) || "June is working.";
+    return eventText(event) || "Sub Rosa is working.";
   }
   if (event.type.startsWith("tool.")) {
     const payload = event.payload as Record<string, unknown> | undefined;
@@ -11431,7 +11434,7 @@ function agentStatusSummaryFromHermesEvent(
   if (event.type === "thinking.delta" || event.type === "reasoning.delta") {
     return "Thinking.";
   }
-  return "June is working.";
+  return "Sub Rosa is working.";
 }
 
 function visibleHermesMessageText(message: HermesSessionMessage) {

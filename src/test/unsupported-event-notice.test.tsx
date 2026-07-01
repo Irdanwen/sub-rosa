@@ -23,7 +23,7 @@ describe("UnsupportedEventNotice", () => {
     vi.stubEnv("DEV", false);
     render(<UnsupportedEventNotice notice={baseNotice} debugEnabled={false} />);
     expect(
-      screen.getByText("June received a Hermes event it does not support yet."),
+      screen.getByText("Sub Rosa received a Hermes event it does not support yet."),
     ).toBeInTheDocument();
     // Body is generic — it must not leak the raw type or payload preview when
     // not in dev/debug.

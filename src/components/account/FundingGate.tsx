@@ -28,14 +28,15 @@ export function FundingGate({ account, onRefresh, onSignOut }: Props) {
   const copy = billingRecovery
     ? {
         title: "Update billing",
-        subtitle: "Your payment needs attention. Update billing to keep using June.",
+        subtitle: "Your payment needs attention. Update billing to keep using Sub Rosa.",
         cta: "Manage billing",
         waiting: "Waiting for your billing update",
         reopen: "Reopen billing",
       }
     : {
         title: "Upgrade to continue",
-        subtitle: "Your starter credits are used up. Upgrade to a paid plan to keep using June.",
+        subtitle:
+          "Your starter credits are used up. Upgrade to a paid plan to keep using Sub Rosa.",
         cta: "Upgrade",
         waiting: "Waiting for your upgrade",
         reopen: "Reopen checkout",

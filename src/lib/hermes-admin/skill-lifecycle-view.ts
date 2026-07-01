@@ -228,7 +228,7 @@ const REASON = Object.freeze({
   notHub:
     "This skill was not installed from the Skills Hub, so it has no upstream version to update or audit.",
   externalReadOnly:
-    "This skill loads from an external directory. June treats it as read-only, so it cannot be removed or changed here.",
+    "This skill loads from an external directory. Sub Rosa treats it as read-only, so it cannot be removed or changed here.",
   bundledNotRemovable:
     "This skill ships with Hermes and cannot be uninstalled. Reset it to its shipped version instead.",
   noLocalDelete:
@@ -237,7 +237,7 @@ const REASON = Object.freeze({
   restoreBundledOnly: "Only bundled skills can be restored from upstream.",
   notInstalled: "This skill is not installed, so there is nothing to remove.",
   unknownSource:
-    "June could not determine where this skill came from, so lifecycle actions are unavailable. Manage it in Hermes.",
+    "Sub Rosa could not determine where this skill came from, so lifecycle actions are unavailable. Manage it in Hermes.",
 });
 
 /** Divergence warnings, shown before an action that could overwrite local edits. */
@@ -424,7 +424,7 @@ export function lifecycleClassMeta(lifecycleClass: SkillLifecycleClass): {
     case "external":
       return {
         label: "External",
-        blurb: "Loaded from an external directory. Read-only in June; manage it on disk.",
+        blurb: "Loaded from an external directory. Read-only in Sub Rosa; manage it on disk.",
       };
     case "unknown":
       return {

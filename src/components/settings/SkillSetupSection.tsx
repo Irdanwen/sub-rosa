@@ -289,7 +289,7 @@ function EnvSetupRow({
 
       {revealed ? (
         <p className="skill-setup-row-revealed" role="status">
-          Showing the stored value. It is not saved anywhere in June.
+          Showing the stored value. It is not saved anywhere in Sub Rosa.
         </p>
       ) : null}
 

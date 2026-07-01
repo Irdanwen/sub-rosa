@@ -77,8 +77,8 @@ export function SkillReviewView({
         Pending skill changes
       </h2>
       <p className="settings-group-description">
-        Review the skill changes the agent proposes before they land. This is how June learns new
-        procedures while keeping you in control.{" "}
+        Review the skill changes the agent proposes before they land. This is how Sub Rosa learns
+        new procedures while keeping you in control.{" "}
         <ModeNote mode={state.mode ?? mode} profile={state.profile} show={!isUnavailable} />
       </p>
 
@@ -322,7 +322,7 @@ function WriteRow({
         {!approvable && !redacted ? (
           <p className="skill-review-unreadable">
             <IconWarningSign size={13} ariaHidden />
-            June could not fully read this change, so it cannot be approved here. Reject it, or
+            Sub Rosa could not fully read this change, so it cannot be approved here. Reject it, or
             review it in Hermes.
           </p>
         ) : null}

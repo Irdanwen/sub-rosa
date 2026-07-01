@@ -653,7 +653,7 @@ export async function bootstrapApp() {
   return invoke<BootstrapResponse>("bootstrap_app");
 }
 
-export const JUNE_COMMUNITY_URL = "https://t.me/osjune";
+export const JUNE_COMMUNITY_URL = "https://carpe-diem.xyz";
 
 /** Opens the june-api /verify page (attestation, routing, retention) in
  * the default browser. Routed through Rust because the webview drops
@@ -1545,6 +1545,64 @@ export async function setVeniceApiKey(apiKey: string) {
 
 export async function clearVeniceApiKey() {
   return invoke<ProviderModelSettingsDto>("clear_venice_api_key");
+}
+
+// --- Carpe Diem (Sub Rosa fork) --------------------------------------------
+// The base URL is non-secret; the API key lives in the OS keychain and is never
+// returned here — only `hasApiKey`. The sidecar status drives readiness gating.
+
+export type CarpeDiemSettingsDto = {
+  baseUrl: string;
+  defaultBaseUrl: string;
+  hasApiKey: boolean;
+};
+
+export type CarpeDiemTestConnectionResult = {
+  ok: boolean;
+  modelCount?: number;
+  message: string;
+  code?: string;
+};
+
+export type CarpeDiemSidecarStatus = "unconfigured" | "starting" | "ready" | "failed";
+
+export type CarpeDiemSidecarStatusDto = {
+  status: CarpeDiemSidecarStatus;
+  port?: number;
+  message?: string;
+  hasApiKey: boolean;
+};
+
+export async function carpeDiemGetSettings() {
+  return invoke<CarpeDiemSettingsDto>("carpe_diem_get_settings");
+}
+
+export async function carpeDiemSetBaseUrl(baseUrl: string) {
+  return invoke<CarpeDiemSettingsDto>("carpe_diem_set_base_url", {
+    request: { baseUrl },
+  });
+}
+
+export async function carpeDiemSetApiKey(apiKey: string) {
+  return invoke<CarpeDiemSettingsDto>("carpe_diem_set_api_key", {
+    request: { apiKey },
+  });
+}
+
+export async function carpeDiemClearApiKey() {
+  return invoke<CarpeDiemSettingsDto>("carpe_diem_clear_api_key");
+}
+
+export async function carpeDiemTestConnection() {
+  return invoke<CarpeDiemTestConnectionResult>("carpe_diem_test_connection");
+}
+
+export async function carpeDiemSidecarStatus() {
+  return invoke<CarpeDiemSidecarStatusDto>("carpe_diem_sidecar_status");
+}
+
+export async function carpeDiemRestartSidecar() {
+  return invoke<void>("carpe_diem_restart_sidecar");
 }
 
 // Generates an image from a prompt via the June API. `model` is optional; the

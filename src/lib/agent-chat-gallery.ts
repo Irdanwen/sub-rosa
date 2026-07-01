@@ -170,7 +170,7 @@ export function buildAgentChatGallery(): AgentChatGallerySection[] {
             type: "image",
             status: "error",
             prompt: "a fox reading a book",
-            error: "June returned an image it can't display.",
+            error: "Sub Rosa returned an image it can't display.",
           },
         ]),
       ],

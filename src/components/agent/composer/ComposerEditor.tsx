@@ -160,7 +160,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
         attributes: {
           class: "agent-composer-editor",
           role: "textbox",
-          "aria-label": "Message June",
+          "aria-label": "Message Sub Rosa",
           "aria-multiline": "true",
         },
         handleKeyDown: (_view, event) => {

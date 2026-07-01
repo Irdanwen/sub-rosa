@@ -117,7 +117,7 @@ export function PermissionsStep({
 
   return (
     <StepCard
-      title="Let June listen and type"
+      title="Let Sub Rosa listen and type"
       subtitle={
         macLikePlatform
           ? "Dictation and meeting notes need three macOS permissions."
@@ -136,8 +136,8 @@ export function PermissionsStep({
           title="Microphone"
           detail={
             micDenied
-              ? "Turned off in System Settings. Flip the toggle and June will notice."
-              : "Hears you only when you ask June to listen."
+              ? "Turned off in System Settings. Flip the toggle and Sub Rosa will notice."
+              : "Hears you only when you ask Sub Rosa to listen."
           }
           onAllow={
             showPermissionRows
@@ -166,7 +166,7 @@ export function PermissionsStep({
               title="System audio"
               detail={
                 systemAudioDenied
-                  ? "Turned off in System Settings. Flip the toggle and June will notice."
+                  ? "Turned off in System Settings. Flip the toggle and Sub Rosa will notice."
                   : systemAudioUnsupported
                     ? "Needs macOS 14.2 or later."
                     : systemAudioStatus === "probing"

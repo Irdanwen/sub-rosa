@@ -234,7 +234,7 @@ export function RoutineDetail({
           ) : null}
           {routineUnrestricted(routine) ? (
             <HoverTip
-              tip="This routine runs with full access: when it fires, June can run commands and change any file your account can. Routines without this badge run sandboxed and cannot touch your files."
+              tip="This routine runs with full access: when it fires, Sub Rosa can run commands and change any file your account can. Routines without this badge run sandboxed and cannot touch your files."
               className="routine-meta-pill routine-meta-pill-warm"
               tabIndex={0}
             >

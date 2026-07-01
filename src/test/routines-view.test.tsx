@@ -303,13 +303,15 @@ describe("RoutinesView templates and creation", () => {
 
     // The composer bar is permanently anchored to the page bottom.
     const composer = screen.getByRole("form", {
-      name: "Describe a routine to June",
+      name: "Describe a routine to Sub Rosa",
     });
     // Its sandbox trigger reflects the default mode.
     expect(within(composer).getByRole("button", { name: /sandboxed/i })).toBeInTheDocument();
 
     await userEvent.type(within(composer).getByRole("textbox"), "watch the weather and message me");
-    await userEvent.click(within(composer).getByRole("button", { name: "Ask June to set it up" }));
+    await userEvent.click(
+      within(composer).getByRole("button", { name: "Ask Sub Rosa to set it up" }),
+    );
 
     const prompt = onCreateRoutine.mock.calls[0][0] as string;
     expect(prompt).toContain("watch the weather and message me");
@@ -328,7 +330,7 @@ describe("RoutinesView templates and creation", () => {
       await screen.findByText("Morning brief");
 
       const composer = screen.getByRole("form", {
-        name: "Describe a routine to June",
+        name: "Describe a routine to Sub Rosa",
       });
       const textbox = within(composer).getByRole("textbox", {
         name: "Describe a routine",
@@ -354,7 +356,7 @@ describe("RoutinesView templates and creation", () => {
 
     const createPage = screen.getByRole("region", { name: "New routine" });
     const describeBar = screen
-      .getByRole("form", { name: "Describe a routine to June" })
+      .getByRole("form", { name: "Describe a routine to Sub Rosa" })
       .closest(".routines-describe");
     expect(describeBar).not.toBeNull();
     expect(createPage.contains(describeBar)).toBe(false);
@@ -370,7 +372,7 @@ describe("RoutinesView templates and creation", () => {
     await screen.findByText("Morning brief");
 
     const composer = screen.getByRole("form", {
-      name: "Describe a routine to June",
+      name: "Describe a routine to Sub Rosa",
     });
     // Arm Unrestricted through the composer's sandbox menu.
     await userEvent.click(within(composer).getByRole("button", { name: /sandboxed/i }));
@@ -379,7 +381,9 @@ describe("RoutinesView templates and creation", () => {
       within(composer).getByRole("textbox"),
       "clean up my downloads folder nightly",
     );
-    await userEvent.click(within(composer).getByRole("button", { name: "Ask June to set it up" }));
+    await userEvent.click(
+      within(composer).getByRole("button", { name: "Ask Sub Rosa to set it up" }),
+    );
 
     const prompt = onCreateRoutine.mock.calls[0][0] as string;
     expect(prompt).toContain(
@@ -393,7 +397,7 @@ describe("RoutinesView templates and creation", () => {
     await screen.findByText("Morning brief");
 
     const composer = screen.getByRole("form", {
-      name: "Describe a routine to June",
+      name: "Describe a routine to Sub Rosa",
     });
     await userEvent.click(within(composer).getByRole("button", { name: /sandboxed/i }));
     expect(

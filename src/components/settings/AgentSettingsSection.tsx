@@ -219,12 +219,12 @@ export function AgentSettingsSection() {
             <div className="settings-row-info">
               <h3 className="settings-row-title">Agent CLI access</h3>
               <p className="settings-row-description">
-                Let June drive the coding CLIs you already use (Claude Code, Codex, Gemini,
+                Let Sub Rosa drive the coding CLIs you already use (Claude Code, Codex, Gemini,
                 opencode). Sandboxed sessions gain write access to those tools' own settings and
                 session folders. Some CLIs (Codex among them) will not even start without it; others
-                lose their login. Those folders configure software that also runs outside June's
-                sandbox, so leave this off unless you want June operating your CLIs. Applies to new
-                sessions.
+                lose their login. Those folders configure software that also runs outside Sub Rosa's
+                sandbox, so leave this off unless you want Sub Rosa operating your CLIs. Applies to
+                new sessions.
               </p>
             </div>
             <div className="settings-row-control">

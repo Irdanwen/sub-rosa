@@ -15,18 +15,18 @@ import { OnboardingPrimaryButton, StepCard } from "../StepChrome";
 const JUNE_POINTS = [
   {
     icon: IconSparkle,
-    title: "Chat and work with June",
-    detail: "Hand June real work. It runs the session and comes back done.",
+    title: "Chat and work with Sub Rosa",
+    detail: "Hand Sub Rosa real work. It runs the session and comes back done.",
   },
   {
     icon: IconMicrophone,
     title: "Speak instead of type",
-    detail: "June turns your voice into polished writing in any app on your computer.",
+    detail: "Sub Rosa turns your voice into polished writing in any app on your computer.",
   },
   {
     icon: IconCalendar1,
     title: "Effortlessly capture meetings",
-    detail: "June takes meeting notes without ever having to join the meeting.",
+    detail: "Sub Rosa takes meeting notes without ever having to join the meeting.",
   },
   {
     icon: IconLock,
@@ -104,7 +104,7 @@ export function SignInStep({
 
   return (
     <StepCard
-      title="Welcome to June"
+      title="Welcome to Sub Rosa"
       subtitle="Private AI for everyday life and work."
       mark
       wide
@@ -130,7 +130,7 @@ export function SignInStep({
           className="onboarding-community-link"
           onClick={() => void juneOpenCommunityPage().catch(() => undefined)}
         >
-          June community on Telegram
+          Sub Rosa community on Telegram
         </button>
         .
       </p>

@@ -48,7 +48,7 @@ const TRANSPORT_META: Readonly<Record<HermesMcpTransport, McpTransportMeta>> = O
     label: "Local (stdio)",
     risk: "local-subprocess",
     riskLabel: "Local subprocess",
-    blurb: "Runs as a local subprocess and inherits June and Hermes sandbox constraints.",
+    blurb: "Runs as a local subprocess and inherits Sub Rosa and Hermes sandbox constraints.",
   },
   http: {
     transport: "http",

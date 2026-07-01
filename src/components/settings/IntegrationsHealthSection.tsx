@@ -74,8 +74,8 @@ export function IntegrationsHealthView({
         Integrations health
       </h2>
       <p className="settings-group-description">
-        See whether June's agent is ready to work across your model, skills, toolsets, MCP servers,
-        and gateway.{" "}
+        See whether Sub Rosa's agent is ready to work across your model, skills, toolsets, MCP
+        servers, and gateway.{" "}
         <ModeNote
           mode={health.mode === "unrestricted" ? "unrestricted" : mode}
           profile={health.profile}

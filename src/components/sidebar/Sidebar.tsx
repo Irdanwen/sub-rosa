@@ -951,7 +951,7 @@ export function Sidebar({
     >
       {inSettings ? null : (
         <header className="sidebar-header">
-          <a className="sidebar-brand" href="#" aria-label="June">
+          <a className="sidebar-brand" href="#" aria-label="Sub Rosa">
             <JuneWordmark className="sidebar-brand-mark" />
           </a>
           {recordingStatus ? (
@@ -1685,7 +1685,7 @@ function ReferralDialog({
           </span>
           <p className="referral-hero-title">Give a month, get a month</p>
           <p className="referral-hero-copy">
-            Share June with a friend. They get a free month, and when they subscribe, so do you.
+            Share Sub Rosa with a friend. They get a free month, and when they subscribe, so do you.
           </p>
         </div>
         <div className="referral-panel">

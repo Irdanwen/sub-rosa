@@ -64,7 +64,7 @@ vi.mock("../app/build-info", () => ({
 }));
 
 vi.mock("../lib/tauri", () => ({
-  JUNE_COMMUNITY_URL: "https://t.me/osjune",
+  JUNE_COMMUNITY_URL: "https://carpe-diem.xyz",
   dictationSettings: mocks.dictationSettings,
   dictationHelperCommand: mocks.dictationHelperCommand,
   localAudioFileSrc: mocks.localAudioFileSrc,
@@ -782,7 +782,7 @@ describe("AppSettings", () => {
     );
 
     expect(
-      screen.getByText("Requests use your local June API. No OpenSoftware account is used."),
+      screen.getByText("Requests use your local backend. No OpenSoftware account is used."),
     ).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Billing" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
@@ -1667,9 +1667,7 @@ describe("AppSettings", () => {
 
     await user.click(screen.getByRole("button", { name: "Remove" }));
     expect(mocks.clearVeniceApiKey).toHaveBeenCalled();
-    await waitFor(() =>
-      expect(screen.queryByText("Key saved.")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("Key saved.")).not.toBeInTheDocument());
   });
 
   it("defaults the model picker to curated suggestions", async () => {
@@ -1953,7 +1951,7 @@ describe("AppSettings", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("tab", { name: "About" }));
     expect(await screen.findByText("Community")).toBeInTheDocument();
-    expect(screen.getByText(/t\.me\/osjune/)).toBeInTheDocument();
+    expect(screen.getByText(/carpe-diem\.xyz/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Join community" }));
 
@@ -2107,7 +2105,7 @@ describe("AppSettings", () => {
       name: "Allow agent CLI access",
     });
     // The disclosure names the deferred-execution risk, not just the benefit.
-    expect(screen.getByText(/runs outside June's sandbox/)).toBeInTheDocument();
+    expect(screen.getByText(/runs outside Sub Rosa's sandbox/)).toBeInTheDocument();
 
     await waitFor(() => expect(cliSwitch).toBeEnabled());
     expect(cliSwitch).toHaveAttribute("aria-checked", "false");

@@ -60,6 +60,8 @@ vi.mock("../lib/recording-sounds", () => ({
 }));
 
 vi.mock("../lib/tauri", () => ({
+  // Sub Rosa fork: App gates on the Carpe Diem sidecar; report it configured.
+  carpeDiemSidecarStatus: vi.fn(async () => ({ status: "ready", hasApiKey: true })),
   LIVE_TRANSCRIPT_EVENT: "live-transcript-event",
   bootstrapApp: mocks.bootstrapApp,
   createNote: mocks.createNote,

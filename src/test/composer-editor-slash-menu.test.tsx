@@ -30,7 +30,7 @@ describe("composer slash menu", () => {
     );
 
     const textbox = await screen.findByRole("textbox", {
-      name: "Message June",
+      name: "Message Sub Rosa",
     });
     await user.type(textbox, "/");
     await waitFor(() => expect(document.querySelector(".agent-category-menu-host")).toBeTruthy());

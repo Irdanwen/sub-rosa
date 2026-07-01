@@ -74,7 +74,7 @@ const VERDICT_META: Readonly<Record<HermesSkillScanVerdict, VerdictMeta>> = Obje
     verdict: "dangerous",
     label: "Blocked",
     tone: "danger",
-    headline: "Hermes blocked this skill. It cannot be installed from June.",
+    headline: "Hermes blocked this skill. It cannot be installed from Sub Rosa.",
     gate: "blocked",
   },
   unknown: {

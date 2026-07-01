@@ -61,7 +61,7 @@ const LABEL_COPY: Readonly<Record<McpSecurityLabelCode, McpSecurityLabel>> = Obj
   "local-subprocess": {
     code: "local-subprocess",
     label: "Local subprocess",
-    blurb: "Runs on this Mac as a child process of the Hermes and June runtime.",
+    blurb: "Runs on this Mac as a child process of the Hermes and Sub Rosa runtime.",
     tone: "caution",
   },
   "remote-server": {

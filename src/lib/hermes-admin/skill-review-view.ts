@@ -112,7 +112,7 @@ const OP_META: Readonly<Record<PendingSkillWriteOp, OpMeta>> = Object.freeze({
   unknown: {
     op: "unknown",
     label: "Change",
-    effect: "June could not read what this change does.",
+    effect: "Sub Rosa could not read what this change does.",
   },
 });
 
@@ -200,7 +200,7 @@ export const WRITE_APPROVAL_PATH = "skills.write_approval";
 
 /** The spec's gate explanation, shown next to the toggle. */
 export const WRITE_APPROVAL_ON_COPY =
-  "When approval is on, June can suggest skill improvements, but procedural memory changes do not land until you approve the diff.";
+  "When approval is on, Sub Rosa can suggest skill improvements, but procedural memory changes do not land until you approve the diff.";
 
 /** The consequence of turning the gate OFF, so the user understands they are
  * removing the human-in-the-loop check. */

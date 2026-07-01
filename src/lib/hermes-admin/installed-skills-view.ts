@@ -38,7 +38,7 @@ const SOURCE_META: Readonly<Record<HermesSkillSource, SkillSourceMeta>> = Object
     source: "external",
     label: "External",
     blurb:
-      "Loaded from an external directory. May be shared with other tools and read-only in June.",
+      "Loaded from an external directory. May be shared with other tools and read-only in Sub Rosa.",
   },
   unknown: {
     source: "unknown",

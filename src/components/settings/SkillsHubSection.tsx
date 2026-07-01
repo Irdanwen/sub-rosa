@@ -151,7 +151,7 @@ export function SkillsHubView({
         Skills hub
       </h2>
       <p className="settings-group-description">
-        Find and install skills for your sessions without leaving June. Installs apply to new
+        Find and install skills for your sessions without leaving Sub Rosa. Installs apply to new
         sessions.{" "}
         <ModeNote mode={state.mode ?? mode} profile={state.profile} show={!isUnavailable} />
       </p>
@@ -567,7 +567,7 @@ function InspectDrawer({
 
           {directUrl ? (
             <p className="skills-hub-drawer-note">
-              This installs a single SKILL.md file directly from a URL. June asks you to confirm
+              This installs a single SKILL.md file directly from a URL. Sub Rosa asks you to confirm
               before installing it because it has not been reviewed.
             </p>
           ) : null}

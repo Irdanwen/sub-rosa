@@ -322,7 +322,7 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
         onClose={() => setPendingDelete(null)}
         onConfirm={confirmDelete}
         title={`Delete “${pendingDelete?.name ?? ""}”?`}
-        description="June will stop running this routine. This can’t be undone."
+        description="Sub Rosa will stop running this routine. This can’t be undone."
         confirmLabel="Delete"
         destructive
       />
@@ -376,7 +376,7 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
             Routines
             {routines.length > 0 ? <span className="folders-count">{routines.length}</span> : null}
           </h1>
-          <p className="folders-subtitle">Automations June runs for you on a schedule.</p>
+          <p className="folders-subtitle">Automations Sub Rosa runs for you on a schedule.</p>
         </div>
         <button type="button" className="primary-action primary-solid" onClick={() => openCreate()}>
           <IconPlusMedium size={13} />
@@ -500,7 +500,7 @@ function TemplateGrid({ onPick }: { onPick: (template: RoutineTemplate) => void 
                 // The list rows spell the badge out; cards just flash the
                 // warm shield and let the tip carry the explanation.
                 <HoverTip
-                  tip="This starter needs full access: when it fires, June can run commands and change any file your account can. You confirm that before creating it."
+                  tip="This starter needs full access: when it fires, Sub Rosa can run commands and change any file your account can. You confirm that before creating it."
                   className="routines-item-badge routines-item-badge-warm routines-badge-compact"
                   tabIndex={0}
                   aria-label="Unrestricted"
@@ -578,7 +578,7 @@ function RoutineRow({
             <span className="routines-item-name">{routine.name}</span>
             {routineUnrestricted(routine) ? (
               <HoverTip
-                tip="This routine runs with full access: when it fires, June can run commands and change any file your account can. Routines without this badge run sandboxed and cannot touch your files."
+                tip="This routine runs with full access: when it fires, Sub Rosa can run commands and change any file your account can. Routines without this badge run sandboxed and cannot touch your files."
                 className="routines-item-badge routines-item-badge-warm"
                 tabIndex={0}
               >
@@ -685,7 +685,7 @@ function messageFromError(err: unknown) {
     const message = (err as { message?: unknown }).message;
     if (typeof message === "string" && message) return message;
   }
-  return "Routines are unavailable. Is June's agent running?";
+  return "Routines are unavailable. Is Sub Rosa's agent running?";
 }
 
 const DEJUNE_MODE_OPTIONS = [
@@ -699,7 +699,7 @@ const DEJUNE_MODE_OPTIONS = [
     unrestricted: true,
     icon: <IconShieldCrossed size={16} aria-hidden />,
     title: "Unrestricted",
-    description: "When it fires, June can change any file your account can.",
+    description: "When it fires, Sub Rosa can change any file your account can.",
   },
 ] as const;
 
@@ -749,7 +749,7 @@ function DescribeBar({
       <form
         ref={rootRef}
         className="routines-describe-composer"
-        aria-label="Describe a routine to June"
+        aria-label="Describe a routine to Sub Rosa"
         onSubmit={(event) => {
           event.preventDefault();
           onSubmit();
@@ -759,7 +759,7 @@ function DescribeBar({
           <GrowingTextarea
             aria-label="Describe a routine"
             value={draft}
-            placeholder="Have June help you set up a routine"
+            placeholder="Have Sub Rosa help you set up a routine"
             onChange={(event) => onDraftChange(event.currentTarget.value)}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing) return;
@@ -792,7 +792,7 @@ function DescribeBar({
                 type="submit"
                 className="agent-composer-send"
                 disabled={!draft.trim()}
-                aria-label="Ask June to set it up"
+                aria-label="Ask Sub Rosa to set it up"
               >
                 <IconArrowUp size={16} />
               </button>

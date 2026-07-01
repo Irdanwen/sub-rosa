@@ -210,7 +210,7 @@ export class InstalledSkillsController {
     if (!current) return;
     // External skills are read-only in June; never attempt a write.
     if (current.readOnly) {
-      this.error = "This skill loads from an external directory and is read-only in June.";
+      this.error = "This skill loads from an external directory and is read-only in Sub Rosa.";
       this.recompute();
       return;
     }

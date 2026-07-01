@@ -103,7 +103,7 @@ export async function generateChatImage(
   if (!parseImageDataUrl(dataUrl)) {
     return {
       status: "error",
-      message: "June returned an image it can't display.",
+      message: "Sub Rosa returned an image it can't display.",
     };
   }
 

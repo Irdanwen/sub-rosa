@@ -53,7 +53,7 @@ export function UnsupportedEventNotice({
       </div>
       <div className="agent-unsupported-notice-body">
         <p className="agent-unsupported-notice-title">
-          June received a Hermes event it does not support yet.
+          Sub Rosa received a Hermes event it does not support yet.
         </p>
         <p className="agent-unsupported-notice-text">
           This session can keep going. If something looks stuck, stop the session and try again.

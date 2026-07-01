@@ -159,7 +159,7 @@ const SOURCE_RISK: Readonly<Record<string, SourceRisk>> = Object.freeze({
   external: {
     editable: false,
     readOnly:
-      "This skill loads from an external directory. It may be shared with other tools, so June treats it as read-only.",
+      "This skill loads from an external directory. It may be shared with other tools, so Sub Rosa treats it as read-only.",
   },
 });
 
@@ -181,7 +181,8 @@ export function skillEditPolicy(input: {
   if (input.readOnly || !risk.editable) {
     return {
       editable: false,
-      readOnlyReason: risk.readOnly ?? "This skill is read-only in June and cannot be edited here.",
+      readOnlyReason:
+        risk.readOnly ?? "This skill is read-only in Sub Rosa and cannot be edited here.",
       requiresSharedSourceAck: false,
     };
   }

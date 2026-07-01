@@ -55,7 +55,7 @@ export const STEP_META: Readonly<Record<ProfileBuilderStep, { title: string; hin
   Object.freeze({
     identity: {
       title: "Identity",
-      hint: "Name the profile and decide if it specializes June or is a new agent.",
+      hint: "Name the profile and decide if it specializes Sub Rosa or is a new agent.",
     },
     model: {
       title: "Model",
@@ -239,7 +239,7 @@ export function validateStep(
       const error = validateProfileName(form.name, context.existingProfiles);
       if (!error && form.identity === "specialized" && !form.soul.trim()) {
         warnings.push(
-          "A specialized role with no instructions still behaves like June. Add a SOUL to change its behavior.",
+          "A specialized role with no instructions still behaves like Sub Rosa. Add a SOUL to change its behavior.",
         );
       }
       return { error, warnings };
@@ -369,8 +369,8 @@ export function buildCreatePlan(form: ProfileBuilderForm): PlannedChange[] {
     target: `${root}/config.yaml`,
     detail:
       form.identity === "specialized"
-        ? `Specialized June profile "${slug}" with model ${form.model || "(unset)"}.`
-        : `June profile "${slug}" (keeps June's identity) with model ${form.model || "(unset)"}.`,
+        ? `Specialized Sub Rosa profile "${slug}" with model ${form.model || "(unset)"}.`
+        : `Sub Rosa profile "${slug}" (keeps Sub Rosa's identity) with model ${form.model || "(unset)"}.`,
     risk: "info",
   });
 
@@ -388,7 +388,7 @@ export function buildCreatePlan(form: ProfileBuilderForm): PlannedChange[] {
       detail:
         form.keepSkills.length > 0
           ? `Copies ${form.keepSkills.length} bundled skill(s) from the default profile.`
-          : "Copies June's bundled skills from the default profile.",
+          : "Copies Sub Rosa's bundled skills from the default profile.",
       risk: "info",
     });
   } else {

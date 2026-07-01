@@ -8,6 +8,8 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { AccountGate, JuneMark } from "../components/account/AccountGate";
 import { FundingGate } from "../components/account/FundingGate";
+import { CarpeDiemGate } from "../components/carpe-diem/CarpeDiemGate";
+import { SIDECAR_STATUS_EVENT } from "../components/settings/CarpeDiemSettings";
 import { OnboardingFlow } from "../components/onboarding/OnboardingFlow";
 import {
   AGENT_DELETE_SESSION_EVENT,
@@ -133,6 +135,7 @@ import type {
   RecordingSourceMode,
   RecordingSourceReadinessDto,
 } from "../lib/tauri";
+import { carpeDiemSidecarStatus, type CarpeDiemSidecarStatusDto } from "../lib/tauri";
 import { useAccountStatus } from "../lib/account-status";
 import {
   applyOnboardingReplayFlag,
@@ -513,6 +516,28 @@ export function App() {
     applyOnboardingReplayFlag();
     return isOnboardingComplete();
   });
+  // Carpe Diem (Sub Rosa fork): the app can't do anything without an API key,
+  // so gate the whole app on it. `null` = status not yet loaded.
+  const [carpeDiem, setCarpeDiem] = useState<CarpeDiemSidecarStatusDto | null>(null);
+  useEffect(() => {
+    let active = true;
+    void carpeDiemSidecarStatus()
+      .then((status) => {
+        if (active) setCarpeDiem(status);
+      })
+      .catch(() => {
+        if (active) setCarpeDiem({ status: "unconfigured", hasApiKey: false });
+      });
+    const unlisten = listen<CarpeDiemSidecarStatusDto>(SIDECAR_STATUS_EVENT, (event) =>
+      setCarpeDiem(event.payload),
+    );
+    return () => {
+      active = false;
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
+  const carpeDiemLoading = carpeDiem === null;
+  const carpeDiemRequired = !carpeDiemLoading && !carpeDiem.hasApiKey;
   // The wizard handles sign-in, permissions, and hands-on practice. Funding
   // only blocks once the account snapshot positively reports no spendable
   // credits.
@@ -520,7 +545,13 @@ export function App() {
   // Onboarding counts as blocked so bootstrap, update checks, and the eager
   // permission probes hold off until the wizard finishes — the wizard owns
   // the permission prompts while it's on screen.
-  const appBlocked = accountLoading || signInRequired || fundingRequired || onboardingRequired;
+  const appBlocked =
+    accountLoading ||
+    carpeDiemLoading ||
+    carpeDiemRequired ||
+    signInRequired ||
+    fundingRequired ||
+    onboardingRequired;
   const publishAgentMenuBarState = useCallback(() => {
     void emitAgentMenuBarState(
       buildAgentMenuBarState({
@@ -1063,7 +1094,7 @@ export function App() {
           prompt: (payload) => {
             prepareUpdate(payload, mode);
           },
-          reportNoUpdate: () => setUpdateStatus("June is up to date."),
+          reportNoUpdate: () => setUpdateStatus("Sub Rosa is up to date."),
           reportFailure: (message) => {
             if (mode !== "periodic") {
               setUpdateStatus(`Update check failed: ${message}`);
@@ -1445,7 +1476,7 @@ export function App() {
           prompt,
           title: titleFromPrompt(prompt),
           status: "received",
-          summary: "June is starting.",
+          summary: "Sub Rosa is starting.",
         });
         markAgentNewSessionPending(prompt);
         setActiveView("agent");
@@ -2488,7 +2519,7 @@ export function App() {
     ? Math.max(0, Math.ceil((recordingInactivityPrompt.expiresAt - recordingInactivityNow) / 1000))
     : 0;
 
-  if (accountLoading) {
+  if (accountLoading || carpeDiemLoading) {
     return (
       <main className="account-gate-shell">
         <div
@@ -2497,7 +2528,21 @@ export function App() {
           data-tauri-drag-region
           onPointerDown={handleTitlebarPointerDown}
         />
-        <div className="welcome-screen welcome-screen-loading" aria-label="Loading account" />
+        <div className="welcome-screen welcome-screen-loading" aria-label="Loading" />
+      </main>
+    );
+  }
+
+  if (carpeDiemRequired) {
+    return (
+      <main className="account-gate-shell">
+        <div
+          className="titlebar-drag"
+          aria-hidden
+          data-tauri-drag-region
+          onPointerDown={handleTitlebarPointerDown}
+        />
+        <CarpeDiemGate />
       </main>
     );
   }
@@ -3178,7 +3223,7 @@ export function App() {
         open={recordingInactivityPrompt !== null}
         onClose={handleKeepRecordingAfterInactivityPrompt}
         title="Still in a meeting?"
-        description="June has not heard meeting audio for a while."
+        description="Sub Rosa has not heard meeting audio for a while."
         width={420}
         footer={
           <>
@@ -3201,8 +3246,8 @@ export function App() {
       >
         <div className="dialog-body">
           <p className="recording-inactivity-copy">
-            June will pause this recording in {recordingInactivitySecondsRemaining} seconds if you
-            do not answer.
+            Sub Rosa will pause this recording in {recordingInactivitySecondsRemaining} seconds if
+            you do not answer.
           </p>
         </div>
       </Dialog>
@@ -3319,7 +3364,7 @@ function UpdateRelaunchCard({
         type="button"
         className="update-relaunch-card"
         disabled={relaunching}
-        aria-label={`Relaunch to update to June ${payload.version}`}
+        aria-label={`Relaunch to update to Sub Rosa ${payload.version}`}
         onClick={onRelaunch}
       >
         <span className="update-relaunch-mark" aria-hidden>

@@ -882,7 +882,7 @@ function pathSafetyMeta(artifact: AgentArtifact): {
   return {
     key: "sandboxed",
     label: "Sandboxed copy",
-    title: "A copy inside June's sandbox, not your wider filesystem",
+    title: "A copy inside Sub Rosa's sandbox, not your wider filesystem",
     icon: <IconShieldCheck size={12} ariaHidden />,
   };
 }

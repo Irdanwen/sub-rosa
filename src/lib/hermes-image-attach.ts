@@ -110,7 +110,7 @@ const IMAGE_EXTENSION = /\.(png|jpe?g|gif|webp|tiff?)$/i;
 /** Shown when the running Hermes can't do structured image attach. The image is
  * not lost: it stays imported and its path still rides along in the prompt. */
 export const ATTACH_UNSUPPORTED_NOTICE =
-  "This version of June can't attach images to the model directly. The image is in the workspace and its path is included in your message instead.";
+  "This version of Sub Rosa can't attach images to the model directly. The image is in the workspace and its path is included in your message instead.";
 
 /** Whether a mime type is an image June can attach. */
 export function isAttachableImageType(mimeType: string): boolean {
@@ -178,7 +178,7 @@ export function attachmentBlocksSubmit(states: HermesAttachmentState[]): boolean
 /** User-facing copy for an attach failure. Never leaks JSON-RPC codes or raw
  * provider noise; never uses typographic dashes. */
 export function attachErrorNotice(displayName: string, err: unknown): string {
-  const base = `Couldn't attach "${displayName}" to June.`;
+  const base = `Couldn't attach "${displayName}" to Sub Rosa.`;
   const detail = messageFromError(err);
   if (/unsupported|not a supported|file type/i.test(detail)) {
     return `${base} That file type can't be attached as an image.`;

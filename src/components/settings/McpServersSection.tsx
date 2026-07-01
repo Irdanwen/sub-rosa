@@ -853,8 +853,8 @@ function AddServerDialog({
         {draft.transport === "stdio" ? (
           <p className="mcp-add-note">
             <IconShield size={13} ariaHidden />
-            Local servers run as subprocesses and inherit June and Hermes sandbox constraints. Enter
-            only the program path here; put arguments in their own rows.
+            Local servers run as subprocesses and inherit Sub Rosa and Hermes sandbox constraints.
+            Enter only the program path here; put arguments in their own rows.
           </p>
         ) : null}
 

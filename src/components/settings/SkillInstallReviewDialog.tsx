@@ -237,7 +237,8 @@ export function SkillInstallReviewDialog({
         {!review.installable ? (
           <p className="skill-review-blocked" role="alert">
             <IconBlock size={14} ariaHidden />
-            Hermes blocked this skill. June will not install a skill that fails the security review.
+            Hermes blocked this skill. Sub Rosa will not install a skill that fails the security
+            review.
           </p>
         ) : null}
       </div>

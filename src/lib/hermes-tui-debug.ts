@@ -120,4 +120,4 @@ export function hermesTuiDebugAvailable(): boolean {
 /** Plain-language warning shown next to the action so no one mistakes the raw
  * TUI for June's product surface. No dashes (project copy rule). */
 export const HERMES_TUI_DEBUG_WARNING =
-  "Developer debug tool. Opens this session in Hermes' raw terminal UI outside June. Not June's primary interface.";
+  "Developer debug tool. Opens this session in Hermes' raw terminal UI outside Sub Rosa. Not Sub Rosa's primary interface.";

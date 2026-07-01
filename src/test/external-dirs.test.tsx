@@ -373,7 +373,7 @@ describe("external dirs — view", () => {
     const list = screen.getByRole("list");
     expect(within(list).getByText(/Resolves to \/Users\/me\/team/)).toBeTruthy();
     expect(within(list).getByText("Writable on disk")).toBeTruthy();
-    expect(within(list).getByText("Read only in June")).toBeTruthy();
+    expect(within(list).getByText("Read only in Sub Rosa")).toBeTruthy();
     expect(within(list).getByText("2 skills found")).toBeTruthy();
   });
 

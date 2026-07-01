@@ -174,7 +174,7 @@ export function registerAgentHudDemo({ local }: AgentHudDemoOptions) {
     emitStatus({
       status: "received",
       title: "Let's start a session.",
-      summary: "Starting June.",
+      summary: "Starting Sub Rosa.",
     });
     at(1500, () => park(2, 0));
     at(5000, () => park(1, 1));

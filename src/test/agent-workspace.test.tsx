@@ -512,7 +512,7 @@ describe("AgentWorkspace", () => {
         await vi.advanceTimersByTimeAsync(50);
       });
       expect(mocks.listHermesSessions).toHaveBeenCalledTimes(1);
-      expect(screen.getByText("Getting June ready…")).toBeInTheDocument();
+      expect(screen.getByText("Getting Sub Rosa ready…")).toBeInTheDocument();
       expect(screen.queryByText(/error sending request for url/i)).toBeNull();
 
       for (const [delay, callCount] of [
@@ -526,7 +526,7 @@ describe("AgentWorkspace", () => {
           await vi.advanceTimersByTimeAsync(delay);
         });
         expect(mocks.listHermesSessions).toHaveBeenCalledTimes(callCount);
-        expect(screen.queryByText(/June is still starting/i)).toBeNull();
+        expect(screen.queryByText(/Sub Rosa is still starting/i)).toBeNull();
         expect(screen.queryByText(/error sending request for url/i)).toBeNull();
       }
 
@@ -561,7 +561,7 @@ describe("AgentWorkspace", () => {
         await vi.advanceTimersByTimeAsync(50);
       });
       expect(mocks.listHermesSessions).toHaveBeenCalledTimes(1);
-      expect(screen.getByText("Getting June ready…")).toBeInTheDocument();
+      expect(screen.getByText("Getting Sub Rosa ready…")).toBeInTheDocument();
 
       // Start a new session mid-retry. The composer is now a TipTap
       // contenteditable whose async input handling deadlocks against fake
@@ -706,7 +706,7 @@ describe("AgentWorkspace", () => {
     expect(await screen.findByText("Existing session")).toBeInTheDocument();
     await user.type(screen.getByRole("textbox"), "keep working");
     await user.click(screen.getByRole("button", { name: "Send message" }));
-    expect(await screen.findByRole("button", { name: "Stop June" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Stop Sub Rosa" })).toBeInTheDocument();
 
     act(() => {
       window.dispatchEvent(
@@ -812,7 +812,9 @@ describe("AgentWorkspace", () => {
         sessionId: "session-2",
       }),
     );
-    expect(await screen.findByText(/Your report was sent to the June team/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Your report was sent to the Sub Rosa team/),
+    ).toBeInTheDocument();
     // Drain the post-terminal refresh timer before the test ends so its
     // session refetch cannot land inside a later test's render.
     await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
@@ -1195,7 +1197,9 @@ describe("AgentWorkspace", () => {
         sessionId: "session-2",
       }),
     );
-    expect(await screen.findByText(/Your report was sent to the June team/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Your report was sent to the Sub Rosa team/),
+    ).toBeInTheDocument();
     await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
   });
 
@@ -2224,7 +2228,9 @@ describe("AgentWorkspace", () => {
 
     await user.click(screen.getByRole("button", { name: "Send report" }));
 
-    expect(await screen.findByText(/Your report was sent to the June team/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Your report was sent to the Sub Rosa team/),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/The issue report could not be sent/)).toBeNull();
     expect(screen.queryByText(/upstream_provider_failed/)).toBeNull();
     await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
@@ -2911,7 +2917,7 @@ describe("AgentWorkspace", () => {
     expect(screen.queryByText("Untitled session")).toBeNull();
     // The run is still treated as working, so the reconcile poll can pick it
     // up: the composer offers the stop control instead of an idle send.
-    expect(await screen.findByRole("button", { name: "Stop June" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Stop Sub Rosa" })).toBeInTheDocument();
   });
 
   it("renames prompt-like existing session titles after messages load", async () => {
@@ -3435,7 +3441,7 @@ describe("AgentWorkspace", () => {
     // session also renders the feature 06 steer input (another textbox), so a
     // bare textbox query would be ambiguous here.
     await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "Message June" }).textContent).toBe(""),
+      expect(screen.getByRole("textbox", { name: "Message Sub Rosa" }).textContent).toBe(""),
     );
   });
 
@@ -3505,7 +3511,7 @@ describe("AgentWorkspace", () => {
     );
 
     // The session is now working, so the composer offers a stop control.
-    const stop = await screen.findByRole("button", { name: "Stop June" });
+    const stop = await screen.findByRole("button", { name: "Stop Sub Rosa" });
     expect(mocks.gatewayEventHandlers.size).toBe(1);
     await userEvent.click(stop);
 
@@ -3516,7 +3522,7 @@ describe("AgentWorkspace", () => {
     );
     // The working flag clears even before any gateway event arrives, so the
     // stop control goes away and the session no longer reads as thinking.
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Stop June" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Stop Sub Rosa" })).toBeNull());
     // Stopping also tears down the per-session gateway listener, so a
     // straggler "running" event can't flip the session back to working.
     expect(mocks.gatewayEventHandlers.size).toBe(0);
@@ -3567,7 +3573,7 @@ describe("AgentWorkspace", () => {
       }),
     );
 
-    const stop = await screen.findByRole("button", { name: "Stop June" });
+    const stop = await screen.findByRole("button", { name: "Stop Sub Rosa" });
     await userEvent.click(stop);
 
     // The interrupt request was fired (and never resolves)...
@@ -3578,7 +3584,7 @@ describe("AgentWorkspace", () => {
     );
     // ...yet the Stop control is already gone and the listener torn down,
     // proving the stop did not block on the RPC.
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Stop June" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Stop Sub Rosa" })).toBeNull());
     expect(mocks.gatewayEventHandlers.size).toBe(0);
   });
 
@@ -4167,7 +4173,7 @@ describe("AgentWorkspace", () => {
 
     expect(
       await screen.findByText(
-        "June is paused because this request needs your explicit permission before it can continue.",
+        "Sub Rosa is paused because this request needs your explicit permission before it can continue.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(/Approve once allows only this request/)).toBeInTheDocument();
@@ -6490,7 +6496,9 @@ describe("AgentWorkspace", () => {
     const rearmed = await screen.findByRole("button", { name: "Sandboxed" });
     await user.click(rearmed);
     await user.click(screen.getByRole("menuitemradio", { name: /^Unrestricted/ }));
-    expect(screen.queryByRole("menu", { name: "What can June change?" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("menu", { name: "What can Sub Rosa change?" }),
+    ).not.toBeInTheDocument();
     // Not armed until the dialog confirms.
     expect(screen.getByRole("button", { name: "Sandboxed" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Turn on Unrestricted" }));
@@ -6531,7 +6539,9 @@ describe("AgentWorkspace", () => {
     await user.keyboard("{Escape}");
 
     await waitFor(() =>
-      expect(screen.queryByRole("menu", { name: "What can June change?" })).not.toBeInTheDocument(),
+      expect(
+        screen.queryByRole("menu", { name: "What can Sub Rosa change?" }),
+      ).not.toBeInTheDocument(),
     );
     expect(trigger).toHaveFocus();
   });
@@ -6708,7 +6718,7 @@ describe("AgentWorkspace", () => {
     );
     // The user learns what's happening in plain language, not "session busy".
     expect(
-      await screen.findByText(/June is still working on the previous message/),
+      await screen.findByText(/Sub Rosa is still working on the previous message/),
     ).toBeInTheDocument();
     // The rejected prompt never entered the session: no optimistic bubble
     // lingers in the transcript (it would render below later persisted
@@ -6768,7 +6778,7 @@ describe("AgentWorkspace", () => {
     render(<AgentWorkspace />);
 
     expect(
-      await screen.findByText(/June stopped because your balance ran out/),
+      await screen.findByText(/Sub Rosa stopped because your balance ran out/),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Error code: 402/)).toBeNull();
 
@@ -6798,7 +6808,7 @@ describe("AgentWorkspace", () => {
     render(<AgentWorkspace onTopUp={onTopUp} topUpLabel="Top up credits" />);
 
     expect(
-      await screen.findByText(/June stopped because your balance ran out/),
+      await screen.findByText(/Sub Rosa stopped because your balance ran out/),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Upgrade" })).toBeNull();
 
@@ -6823,7 +6833,9 @@ describe("AgentWorkspace", () => {
       // …plus the forced chrome samples the turn gallery can't represent.
       expect(screen.getByText("Could not connect to Hermes gateway.")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
-      expect(screen.getByText(/June is still working on the previous message/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Sub Rosa is still working on the previous message/),
+      ).toBeInTheDocument();
     } finally {
       // Always reset the module-level desired state — a failure here must not
       // leave the gallery on and cascade into later workspace mounts.
@@ -7033,7 +7045,7 @@ describe("AgentWorkspace", () => {
       render(<AgentWorkspace initialSession={existingSession} />);
 
       const composer = await screen.findByRole("textbox", {
-        name: "Message June",
+        name: "Message Sub Rosa",
       });
       await user.type(composer, "/model kimi");
       await user.click(screen.getByRole("button", { name: "Send message" }));

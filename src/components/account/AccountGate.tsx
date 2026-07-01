@@ -55,7 +55,7 @@ export function AccountGate({ account, loading, onAccountChanged }: Props) {
         <span className="welcome-mark welcome-mark-symbol" aria-hidden>
           <JuneGradientMark />
         </span>
-        <h1 className="welcome-title">Welcome to June</h1>
+        <h1 className="welcome-title">Welcome to Sub Rosa</h1>
         <p className="welcome-subtitle">{subtitle}</p>
 
         {account.configured ? (

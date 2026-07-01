@@ -20,7 +20,7 @@ export function JuneWordmark({ className }: { className?: string }) {
       viewBox="0 0 61 18"
       fill="none"
       role="img"
-      aria-label="June"
+      aria-label="Sub Rosa"
     >
       {/* "June" lettering — follows the surrounding text color. */}
       <g fill="currentColor">

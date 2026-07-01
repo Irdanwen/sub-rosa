@@ -313,7 +313,7 @@ function CompareCounts({ comparison }: { comparison: ReturnType<typeof compareTo
         <dd>{comparison.exposed} tools</dd>
       </div>
       <div className="mcp-tools-compare-item" data-tone="ok">
-        <dt>June will expose to agent</dt>
+        <dt>Sub Rosa will expose to agent</dt>
         <dd>{comparison.willExpose} tools</dd>
       </div>
       <div

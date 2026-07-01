@@ -144,7 +144,7 @@ describe("profile builder — wizard state back/next/validation", () => {
     const specialized = validForm({ identity: "specialized", soul: "" });
     const idValidation = validateStep("identity", specialized, ctx());
     expect(idValidation.error).toBeUndefined();
-    expect(idValidation.warnings.join(" ")).toMatch(/still behaves like June/i);
+    expect(idValidation.warnings.join(" ")).toMatch(/still behaves like Sub Rosa/i);
   });
 });
 
