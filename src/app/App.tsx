@@ -537,7 +537,10 @@ export function App() {
     };
   }, []);
   const carpeDiemLoading = carpeDiem === null;
-  const carpeDiemRequired = !carpeDiemLoading && !carpeDiem.hasApiKey;
+  // Gate until a key is configured AND the backend isn't in a hard-failed state
+  // — otherwise a failed sidecar would drop the user into a non-functional app.
+  const carpeDiemRequired =
+    !carpeDiemLoading && (!carpeDiem.hasApiKey || carpeDiem.status === "failed");
   // The wizard handles sign-in, permissions, and hands-on practice. Funding
   // only blocks once the account snapshot positively reports no spendable
   // credits.

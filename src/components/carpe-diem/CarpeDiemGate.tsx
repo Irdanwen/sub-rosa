@@ -3,13 +3,12 @@ import { JuneGradientMark } from "../account/AccountGate";
 import { CARPE_DIEM_DASHBOARD_URL, PRODUCT_NAME } from "../../lib/branding";
 
 /**
- * First-run gate: shown until a Carpe Diem API key is configured. Reuses the
- * welcome-screen chrome so it matches the app's existing sign-in flow.
- *
- * `onConnected` fires once the key is saved and the sidecar reports ready,
- * letting the app advance to permissions/onboarding.
+ * First-run gate: shown until a Carpe Diem API key is configured and the
+ * sidecar is not in a failed state. Reuses the welcome-screen chrome so it
+ * matches the app's existing sign-in flow. App.tsx dismisses it by re-deriving
+ * `carpeDiemRequired` from the sidecar status event.
  */
-export function CarpeDiemGate({ onConnected }: { onConnected?: () => void }) {
+export function CarpeDiemGate() {
   return (
     <div className="welcome-screen">
       <div className="welcome-card welcome-card-wide">
@@ -22,7 +21,7 @@ export function CarpeDiemGate({ onConnected }: { onConnected?: () => void }) {
           get started — no terminal, no config files.
         </p>
 
-        <CarpeDiemSettings compact onConnected={onConnected} />
+        <CarpeDiemSettings compact />
 
         <p className="welcome-terms">
           Need a key?{" "}

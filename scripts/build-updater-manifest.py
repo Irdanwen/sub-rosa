@@ -17,6 +17,9 @@ import os
 from urllib.parse import quote
 
 PLATFORM_KEYS = ("darwin-aarch64", "darwin-x86_64", "windows-x86_64")
+# Tauri v2 updater artifact extensions. Only these carry a real updater
+# signature; installer sigs (.dmg / -setup.exe) must never populate a platform.
+UPDATER_EXTS = (".app.tar.gz", ".nsis.zip")
 
 
 def platform_for(filename: str) -> str | None:
@@ -24,6 +27,10 @@ def platform_for(filename: str) -> str | None:
         if filename.startswith(f"{key}-"):
             return key
     return None
+
+
+def is_updater_artifact(filename: str) -> bool:
+    return any(filename.endswith(ext) for ext in UPDATER_EXTS)
 
 
 def main() -> int:
@@ -42,10 +49,17 @@ def main() -> int:
         if not name.endswith(".sig"):
             continue
         asset = name[: -len(".sig")]
+        if not is_updater_artifact(asset):
+            print(f"[manifest] skipping non-updater sig: {name}")
+            continue
         key = platform_for(asset)
         if key is None:
             print(f"[manifest] skipping unrecognized artifact: {asset}")
             continue
+        if not os.path.isfile(os.path.join(args.dir, asset)):
+            raise SystemExit(f"[manifest] {name} has no paired artifact {asset}; aborting")
+        if key in platforms:
+            raise SystemExit(f"[manifest] duplicate updater artifact for {key}; aborting")
         with open(os.path.join(args.dir, name), encoding="utf-8") as handle:
             signature = handle.read().strip()
         url = f"https://github.com/{args.repo}/releases/download/{quote(args.tag)}/{quote(asset)}"

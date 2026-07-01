@@ -95,13 +95,7 @@ export function CarpeDiemStatusPill({ status }: { status: CarpeDiemSidecarStatus
  * Carpe Diem connection controls: base URL + API key + Test connection, with
  * live sidecar status. Reused in the Settings tab and (compact) in onboarding.
  */
-export function CarpeDiemSettings({
-  onConnected,
-  compact = false,
-}: {
-  onConnected?: () => void;
-  compact?: boolean;
-}) {
+export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
   const { settings, status, refresh, setSettings } = useCarpeDiem();
   const [baseUrlDraft, setBaseUrlDraft] = useState("");
   const [keyDraft, setKeyDraft] = useState("");
@@ -116,12 +110,9 @@ export function CarpeDiemSettings({
     }
   }, [settings, baseUrlDraft]);
 
-  // The gate wants to advance as soon as a key is present and healthy.
-  useEffect(() => {
-    if (onConnected && status?.hasApiKey && status.status === "ready") {
-      onConnected();
-    }
-  }, [onConnected, status?.hasApiKey, status?.status]);
+  // Advancing past the onboarding gate is driven by App.tsx, which watches the
+  // sidecar status event and re-derives `carpeDiemRequired` from `hasApiKey` +
+  // status — so this component doesn't need an onConnected callback.
 
   const saveBaseUrl = useCallback(async () => {
     try {

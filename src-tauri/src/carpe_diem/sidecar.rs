@@ -20,12 +20,20 @@ use std::{
     net::TcpListener,
     path::PathBuf,
     process::{Child, Command},
-    sync::Mutex,
+    sync::{Mutex, OnceLock},
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::settings;
+
+/// Serializes a whole (re)start so two rapid settings changes can't spawn two
+/// backends and orphan one. `spawn_sidecar` has no `.await`, so holding a plain
+/// mutex across it is safe; restarts are infrequent and brief.
+fn restart_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 /// Local-dev user id handed to `june-api` (must start with `usr_`).
 const LOCAL_USER_ID: &str = "usr_local";
@@ -139,6 +147,11 @@ pub fn carpe_diem_restart_sidecar(app: AppHandle) {
 // --- internals -------------------------------------------------------------
 
 fn start_or_mark_unconfigured(app: &AppHandle) {
+    // One restart at a time: guards against two concurrent settings changes
+    // each spawning a backend and orphaning one (and racing the process env).
+    let _guard = restart_lock()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
     if !settings::is_configured() {
         stop_child(app);
         set_status(app, SidecarStatus::Unconfigured, None, None);
@@ -170,17 +183,19 @@ fn spawn_sidecar(app: &AppHandle) {
     };
     let token = uuid::Uuid::new_v4().to_string();
 
-    // Point the June client at our sidecar. june_api_url() / access_token()
-    // read these on every request and are not cached, so this takes effect for
-    // the next call — including after a restart on a new port.
-    std::env::set_var("JUNE_API_URL", format!("http://127.0.0.1:{port}"));
-    std::env::set_var("OS_JUNE_LOCAL_DEV", "1");
-    std::env::set_var("OS_JUNE_LOCAL_DEV_BEARER_TOKEN", &token);
-    std::env::set_var("OS_JUNE_LOCAL_DEV_USER_ID", LOCAL_USER_ID);
-
     let mut command = build_command(app, port, &token, &base_url, &key);
     match command.spawn() {
         Ok(child) => {
+            // Only after a successful spawn do we point the June client at the
+            // new backend. june_api_url() / access_token() read these on every
+            // request and are not cached, so this takes effect for the next
+            // call. Set here (not before spawn) so a failed spawn never leaves
+            // JUNE_API_URL aimed at a dead port. `start_or_mark_unconfigured`
+            // holds the restart lock, so these writes are never concurrent.
+            std::env::set_var("JUNE_API_URL", format!("http://127.0.0.1:{port}"));
+            std::env::set_var("OS_JUNE_LOCAL_DEV", "1");
+            std::env::set_var("OS_JUNE_LOCAL_DEV_BEARER_TOKEN", &token);
+            std::env::set_var("OS_JUNE_LOCAL_DEV_USER_ID", LOCAL_USER_ID);
             let generation = store_child(app, child, port);
             set_status(app, SidecarStatus::Starting, Some(port), None);
             spawn_health_check(app.clone(), port, generation);
@@ -323,6 +338,12 @@ fn store_child(app: &AppHandle, child: Child, port: u16) -> u64 {
     if let Some(state) = app.try_state::<SidecarState>() {
         if let Ok(mut process) = state.0.lock() {
             process.generation += 1;
+            // Reap any child we're replacing (should be None after stop_child;
+            // this guards the belt-and-suspenders case of a leftover handle).
+            if let Some(mut previous) = process.child.take() {
+                let _ = previous.kill();
+                let _ = previous.wait();
+            }
             process.child = Some(child);
             process.port = port;
             process.status = SidecarStatus::Starting;

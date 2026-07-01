@@ -104,13 +104,14 @@ pub fn setup(app: &mut tauri::App) {
 
 /// Current Carpe Diem base URL (falls back to the default when unset/empty).
 pub fn base_url() -> String {
-    mirror()
-        .lock()
-        .ok()
-        .map(|settings| settings.base_url.clone())
-        .map(|value| value.trim().trim_end_matches('/').to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(default_base_url)
+    let guard = mirror().lock().unwrap_or_else(|poison| poison.into_inner());
+    let value = guard.base_url.trim().trim_end_matches('/').to_string();
+    drop(guard);
+    if value.is_empty() {
+        default_base_url()
+    } else {
+        value
+    }
 }
 
 /// The stored Carpe Diem API key, if any. Reads the OS keychain synchronously
@@ -329,9 +330,10 @@ fn set_mirror(settings: CarpeDiemSettings) {
 }
 
 fn replace_mirror(settings: CarpeDiemSettings) {
-    if let Ok(mut current) = mirror().lock() {
-        *current = settings;
-    }
+    // Recover a poisoned lock so a prior panic can't silently drop settings
+    // updates (which would diverge the in-memory mirror from disk).
+    let mut current = mirror().lock().unwrap_or_else(|poison| poison.into_inner());
+    *current = settings;
 }
 
 fn settings_path(app: &AppHandle) -> Option<PathBuf> {
@@ -386,10 +388,26 @@ fn validate_base_url(raw: &str) -> Result<String, AppError> {
             "The base URL must start with http:// or https://.",
         ));
     }
-    if value.chars().count() > MAX_BASE_URL_CHARS || value.chars().any(|c| c.is_control()) {
+    if value.chars().count() > MAX_BASE_URL_CHARS
+        || value.chars().any(|c| c.is_control() || c.is_whitespace())
+    {
         return Err(AppError::new(
             "carpe_diem_base_url_invalid",
             "That base URL is not valid.",
+        ));
+    }
+    // Require a non-empty host after the scheme (rejects `http://` and `https:///…`).
+    let host = value
+        .strip_prefix("https://")
+        .or_else(|| value.strip_prefix("http://"))
+        .unwrap_or("")
+        .split('/')
+        .next()
+        .unwrap_or("");
+    if host.is_empty() {
+        return Err(AppError::new(
+            "carpe_diem_base_url_invalid",
+            "The base URL is missing a host.",
         ));
     }
     Ok(value.to_string())
@@ -424,6 +442,14 @@ mod tests {
         );
         assert!(validate_base_url("carpe-diem.xyz").is_err());
         assert!(validate_base_url("   ").is_err());
+        assert!(
+            validate_base_url("http://").is_err(),
+            "scheme-only has no host"
+        );
+        assert!(
+            validate_base_url("https://a b/c").is_err(),
+            "whitespace rejected"
+        );
     }
 
     #[test]
