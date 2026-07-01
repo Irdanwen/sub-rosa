@@ -19,6 +19,27 @@ const rawUserArgs = process.argv.slice(2);
 const userArgs = rawUserArgs[0] === "--" ? rawUserArgs.slice(1) : rawUserArgs;
 const target = optionValue(userArgs, "--target");
 const buildPlatform = platformForTarget(target) ?? process.platform;
+
+// Sub Rosa fork: stage the june-api sidecar (externalBin) before bundling so it
+// ships inside the app and is signed with it. Skippable via SKIP_SIDECAR_BUILD
+// (e.g. when the CI already produced the binaries in a matrix step).
+if (process.env.SKIP_SIDECAR_BUILD !== "1") {
+  const scriptDir = dirname(fileURLToPath(import.meta.url));
+  const sidecarArgs = ["build-sidecar.mjs"];
+  if (target) sidecarArgs.push("--target", target);
+  const sidecar = spawn(process.execPath, sidecarArgs, {
+    cwd: scriptDir,
+    stdio: "inherit",
+  });
+  const code = await new Promise((resolvePromise) => {
+    sidecar.on("exit", (exitCode) => resolvePromise(exitCode ?? 0));
+    sidecar.on("error", () => resolvePromise(1));
+  });
+  if (code !== 0) {
+    console.error("Sidecar build failed; aborting bundle.");
+    process.exit(code);
+  }
+}
 const bundles = platformBundles[buildPlatform];
 const config = platformConfigs[buildPlatform];
 const hasBundleOverride = userArgs.some(

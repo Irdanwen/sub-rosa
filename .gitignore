@@ -36,3 +36,9 @@ coverage
 # Agent worktrees
 .claude/worktrees/
 .worktrees/
+
+# Sub Rosa fork: staged june-api sidecar binaries (built at bundle time)
+src-tauri/binaries/
+
+# Sub Rosa fork: Tauri updater private key (human moves to GitHub secret)
+.tauri-keys/

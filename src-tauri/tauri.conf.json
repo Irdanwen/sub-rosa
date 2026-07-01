@@ -109,15 +109,16 @@
       }
     },
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUwMDUxRDBGNzYyRDU0MTgKUldRWVZDMTJEeDBGVUZWQ3VsVWxCdmhFbk9McWFVWjBGTEZZZHN0NFZRQjFZaFZRVzF4Sm9NdnkK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNCNzc2Njk1MUU4NTRBNEUKUldST1NvVWVsV1ozT3h4dzRKRXVDeXErSjJ6a0kyelFSZjNjejJBVTJpc2h6bG13K0Q2NVZ0cUkK",
       "endpoints": [
-        "https://github.com/open-software-network/os-june-releases/releases/latest/download/latest.json"
+        "https://github.com/Irdanwen/sub-rosa-releases/releases/latest/download/latest.json"
       ]
     }
   },
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
+    "externalBin": ["binaries/june-api"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -126,7 +127,8 @@
       "icons/icon.png"
     ],
     "resources": {
-      "../.tauri-hermes/hermes": "native/hermes"
+      "../.tauri-hermes/hermes": "native/hermes",
+      "../june-api/config.toml": "config.toml"
     }
   }
 }

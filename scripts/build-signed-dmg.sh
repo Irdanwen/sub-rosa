@@ -137,11 +137,18 @@ elif [[ -n "${APPLE_API_KEY_P8:-}" ]]; then
 fi
 
 cd "$ROOT_DIR"
+# Sub Rosa fork: stage the june-api sidecar (externalBin) so it is bundled and
+# signed with the app under the same Developer ID + hardened runtime. Must run
+# before `tauri build` (this script bypasses tauri-build.mjs' sidecar prebuild).
+node "$ROOT_DIR/scripts/build-sidecar.mjs" "$@"
+
 # Build the bundled Hermes runtime before the app so first launch needs no
 # network install. Runs after the keychain import above so its Mach-O files
 # (python, extension .so) get the Developer ID + hardened runtime signature
 # notarization requires.
 ./scripts/bundle-hermes-runtime.sh
+# Tauri v2 auto-merges tauri.macos.conf.json; externalBin + bundled config.toml
+# live in the base config, so the sidecar ships and is signed with the app.
 pnpm tauri build --bundles dmg "$@"
 
 shopt -s nullglob

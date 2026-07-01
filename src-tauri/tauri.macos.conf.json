@@ -7,7 +7,8 @@
     "resources": {
       "../.tauri-helper/June.app": "native/bin/June.app",
       "../.tauri-helper/June Dictation Helper.app": "native/bin/June Dictation Helper.app",
-      "../.tauri-hermes/hermes": "native/hermes"
+      "../.tauri-hermes/hermes": "native/hermes",
+      "../june-api/config.toml": "config.toml"
     },
     "macOS": {
       "bundleName": "Sub Rosa",

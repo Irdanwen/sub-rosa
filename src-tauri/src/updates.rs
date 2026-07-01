@@ -19,11 +19,11 @@ use crate::domain::types::AppError;
 
 /// Stable manifest: GitHub's `/latest` redirect resolves to the newest
 /// non-prerelease, mirroring the single endpoint baked into `tauri.conf.json`.
-const STABLE_ENDPOINT: &str = "https://github.com/open-software-network/os-june-releases/releases/latest/download/latest.json";
+const STABLE_ENDPOINT: &str = "https://github.com/Irdanwen/sub-rosa-releases/releases/latest/download/latest.json";
 /// RC manifest: published under a fixed `rc` tag (GitHub's `/latest` skips
 /// prereleases, so it can't host this), with its asset overwritten each build.
 const RC_ENDPOINT: &str =
-    "https://github.com/open-software-network/os-june-releases/releases/download/rc/latest-rc.json";
+    "https://github.com/Irdanwen/sub-rosa-releases/releases/download/rc/latest-rc.json";
 
 /// Which release stream the updater follows. The wire form is the camelCase
 /// variant name (`"stable"` / `"rc"`) shared with the frontend setting.
