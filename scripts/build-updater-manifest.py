@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+"""Assemble the Tauri v2 updater `latest.json` from collected build artifacts.
+
+Each `build` matrix job renames its updater artifact with a platform-key prefix
+(`darwin-aarch64-...`, `darwin-x86_64-...`, `windows-x86_64-...`) and ships it
+next to its detached `.sig`. This merges them into one manifest whose download
+URLs point at the public releases repo's assets for the given tag.
+
+Usage:
+  build-updater-manifest.py --dir incoming --tag v1.0.0 --version 1.0.0 \
+      --repo Irdanwen/sub-rosa-releases --out incoming/latest.json
+"""
+
+import argparse
+import json
+import os
+from urllib.parse import quote
+
+PLATFORM_KEYS = ("darwin-aarch64", "darwin-x86_64", "windows-x86_64")
+
+
+def platform_for(filename: str) -> str | None:
+    for key in PLATFORM_KEYS:
+        if filename.startswith(f"{key}-"):
+            return key
+    return None
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dir", required=True)
+    parser.add_argument("--tag", required=True)
+    parser.add_argument("--version", required=True)
+    parser.add_argument("--repo", required=True)
+    parser.add_argument("--out", required=True)
+    parser.add_argument("--notes", default="")
+    parser.add_argument("--pub-date", default="")
+    args = parser.parse_args()
+
+    platforms: dict[str, dict[str, str]] = {}
+    for name in sorted(os.listdir(args.dir)):
+        if not name.endswith(".sig"):
+            continue
+        asset = name[: -len(".sig")]
+        key = platform_for(asset)
+        if key is None:
+            print(f"[manifest] skipping unrecognized artifact: {asset}")
+            continue
+        with open(os.path.join(args.dir, name), encoding="utf-8") as handle:
+            signature = handle.read().strip()
+        url = f"https://github.com/{args.repo}/releases/download/{quote(args.tag)}/{quote(asset)}"
+        platforms[key] = {"signature": signature, "url": url}
+        print(f"[manifest] {key} -> {asset}")
+
+    if not platforms:
+        raise SystemExit("[manifest] no updater artifacts found; aborting")
+
+    manifest = {
+        "version": args.version,
+        "notes": args.notes or f"Sub Rosa {args.tag}",
+        "pub_date": args.pub_date or "",
+        "platforms": platforms,
+    }
+    with open(args.out, "w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, indent=2)
+    print(f"[manifest] wrote {args.out} with platforms: {', '.join(platforms)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

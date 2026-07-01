@@ -1,0 +1,190 @@
+name: Release
+
+# DoD-3: when `main` is tagged, build signed installers for macOS (DMG,
+# notarized) and Windows (NSIS), plus Tauri updater artifacts, and publish them
+# — together with a per-platform `latest.json` — to the PUBLIC releases repo
+# (Irdanwen/sub-rosa-releases) that the updater endpoint points at.
+#
+# Requires the secrets documented in HANDOFF.md. Until they are set, this
+# workflow is authored-but-inert (it will fail fast on missing secrets).
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build, e.g. v1.0.0"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RELEASES_REPO: Irdanwen/sub-rosa-releases
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - id: tag
+        env:
+          REF_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          tag="${REF_TAG:-$INPUT_TAG}"
+          if [ -z "$tag" ]; then echo "No tag resolved." >&2; exit 1; fi
+          # Validate strictly before this value flows into `checkout ref:` and
+          # release names — reject anything that is not a semver-ish vX.Y.Z tag.
+          if ! printf '%s' "$tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "Refusing non-semver tag: $tag" >&2; exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+            config: src-tauri/tauri.macos.conf.json
+            updater_target: darwin-aarch64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            config: src-tauri/tauri.macos.conf.json
+            updater_target: darwin-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            config: src-tauri/tauri.windows.conf.json
+            updater_target: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+
+      - name: Setup Node + pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target\njune-api -> target"
+
+      - name: Build june-api sidecar (externalBin)
+        run: node scripts/build-sidecar.mjs --target ${{ matrix.target }}
+
+      - name: Build bundled Hermes runtime (macOS)
+        if: runner.os == 'macOS'
+        run: ./scripts/bundle-hermes-runtime.sh
+      - name: Build bundled Hermes runtime (Windows)
+        if: runner.os == 'Windows'
+        run: pwsh scripts/bundle-hermes-runtime-windows.ps1
+
+      - name: Stage Windows signing certificate
+        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+        run: |
+          $bytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+          $path = Join-Path $env:RUNNER_TEMP "sub-rosa-cert.pfx"
+          [IO.File]::WriteAllBytes($path, $bytes)
+          "WINDOWS_CERTIFICATE_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build + sign app (tauri-action)
+        id: tauri
+        uses: tauri-apps/tauri-action@v0
+        env:
+          SKIP_SIDECAR_BUILD: "1"
+          # Updater signing (required by createUpdaterArtifacts)
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS Developer ID + notarization
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows signCommand (scripts/windows-sign.ps1) reads these
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        with:
+          args: --target ${{ matrix.target }} --config ${{ matrix.config }}
+
+      - name: Collect + prefix bundle and updater artifacts
+        shell: bash
+        env:
+          ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+          UPDATER_TARGET: ${{ matrix.updater_target }}
+        run: |
+          mkdir -p dist-release
+          # tauri-action returns a JSON array of produced artifact paths. Both
+          # macOS arches emit an identically named `*.app.tar.gz`; prefix every
+          # file with the updater target so nothing collides when the publish
+          # job merges all matrix outputs, and so the manifest can map platforms.
+          echo "$ARTIFACT_PATHS" | python3 -c "import sys,json,shutil,os
+          target=os.environ['UPDATER_TARGET']
+          for p in json.load(sys.stdin):
+              if os.path.isfile(p):
+                  dest=os.path.join('dist-release', f'{target}-{os.path.basename(p)}')
+                  shutil.copy(p, dest); print('collected', dest)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.target }}
+          path: dist-release/*
+          if-no-files-found: error
+
+  publish:
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: incoming
+          merge-multiple: true
+
+      - name: Assemble latest.json
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          RELEASES_REPO: ${{ env.RELEASES_REPO }}
+        run: |
+          python3 scripts/build-updater-manifest.py \
+            --dir incoming --tag "$TAG" --version "$VERSION" \
+            --repo "$RELEASES_REPO" --out incoming/latest.json
+          echo "--- latest.json ---"; cat incoming/latest.json
+
+      - name: Publish to the public releases repo
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          RELEASES_REPO: ${{ env.RELEASES_REPO }}
+        run: |
+          # Create the release (idempotent) then upload every asset + manifest.
+          gh release view "$TAG" --repo "$RELEASES_REPO" >/dev/null 2>&1 || \
+            gh release create "$TAG" --repo "$RELEASES_REPO" --title "$TAG" \
+              --notes "Sub Rosa $TAG" --verify-tag=false
+          shopt -s nullglob
+          for asset in incoming/*; do
+            [ -f "$asset" ] || continue
+            gh release upload "$TAG" "$asset" --repo "$RELEASES_REPO" --clobber
+          done
