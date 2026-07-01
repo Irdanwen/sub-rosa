@@ -95,6 +95,42 @@ Clé `cdm_` de test fournie par l'utilisateur (jamais commitée ; utilisée en e
 | `src/components/carpe-diem/CarpeDiemGate.tsx` | Écran de connexion premier lancement |
 | `src/test/carpe-diem-settings.test.tsx` | Tests UI Carpe Diem |
 
+### Distribution (P5–P8)
+
+**Modifiés en plus :**
+| Fichier | Raison |
+|---|---|
+| `src-tauri/src/updates.rs` | `STABLE_ENDPOINT`/`RC_ENDPOINT` → `Irdanwen/sub-rosa-releases` (Rust possède l'endpoint runtime de l'updater) |
+| `scripts/tauri-build.mjs` | Pré-build du sidecar (`build-sidecar.mjs`) avant le bundling ; `SKIP_SIDECAR_BUILD=1` pour la CI |
+| `scripts/build-signed-dmg.sh` | Pré-build du sidecar avant le build signé (ce script bypasse tauri-build.mjs) |
+| `README.md` | Réécrit pour Sub Rosa (install utilisateur + clé Carpe Diem + dev) + attribution |
+| `src-tauri/tauri.conf.json` | (déjà listé) + `externalBin: binaries/june-api`, resource `config.toml`, updater pubkey (nouvelle clé) + endpoint |
+
+**Ajouts :**
+| Fichier | Rôle |
+|---|---|
+| `scripts/build-sidecar.mjs` | Compile `june-api` release par triplet → `src-tauri/binaries/june-api-<triple>` |
+| `scripts/build-updater-manifest.py` | Assemble `latest.json` (préfixe les artefacts par plateforme) |
+| `.github/workflows/upstream-sync.yml` | PR de sync upstream hebdomadaire |
+| `.github/workflows/release.yml` | Build signé multi-OS + publication updater sur `sub-rosa-releases` |
+
+### Décisions produit / findings
+- **Sidecar bundling** : `externalBin` embarque `june-api` dans `Contents/MacOS/june-api` ; Tauri le **signe avec l'app**
+  (même Developer ID + hardened runtime) automatiquement. Spawn via `std::process` (pas le plugin shell) → **aucune
+  capability à ajouter**. `config.toml` bundlé en resource (cwd = resource dir en prod). Vérifié : `Sub Rosa.app` + DMG
+  contiennent le sidecar, le binaire embarqué boote contre Carpe Diem, artefacts updater `.app.tar.gz` + `.sig` générés.
+- **Seatbelt** : le write-jail de June n'est appliqué **qu'au sous-processus Hermes** (`hermes_bridge.rs`, `sandbox-exec`),
+  pas globalement → le sidecar `june-api` tourne sans restriction (le risque #2 du brief est levé).
+- **Entitlements** : `com.apple.security.device.audio-input` suffit ; le sidecar (client réseau + listener loopback)
+  n'a besoin d'aucun entitlement supplémentaire (June n'est pas App-Sandboxed).
+- **Keychain (test)** : un item créé par la CLI `security` n'est pas lisible par un binaire ad-hoc/non signé (ACL) — d'où
+  l'escape hatch `SUBROSA_DEV_API_KEY`. En prod, l'app **crée** l'item via l'UI → le relit sans souci (même identité signée).
+- **Catalogue de modèles (tâche 12, différée)** : Carpe Diem renvoie `/models` en shape OpenAI que le parseur Venice de
+  `june-api/crates/providers/src/venice.rs` rejette (parse error). Dégradation gracieuse → **6 modèles curatés** de
+  `config.toml` (parakeet, glm-5-2/5-1/5, kimi-k2-6, nemotron-nano) — exactement les défauts. Le mode local désactive le
+  billing, donc la classification de prix est sans objet. Un fallback tolérant surfacerait les 283 modèles mais alourdit
+  le merge upstream ; non nécessaire pour l'usage notes de réunion. « Tester la connexion » interroge Carpe Diem en direct.
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.
