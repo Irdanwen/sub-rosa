@@ -140,11 +140,16 @@ jobs:
           # macOS arches emit an identically named `*.app.tar.gz`; prefix every
           # file with the updater target so nothing collides when the publish
           # job merges all matrix outputs, and so the manifest can map platforms.
-          echo "$ARTIFACT_PATHS" | python3 -c "import sys,json,shutil,os
+          # Also sanitize spaces/odd chars to '.' EXACTLY as GitHub does to
+          # release asset names on upload — otherwise the staged filename (used
+          # to build the latest.json download URL) wouldn't match the uploaded
+          # asset name and the updater would 404.
+          echo "$ARTIFACT_PATHS" | python3 -c "import sys,json,shutil,os,re
           target=os.environ['UPDATER_TARGET']
           for p in json.load(sys.stdin):
               if os.path.isfile(p):
-                  dest=os.path.join('dist-release', f'{target}-{os.path.basename(p)}')
+                  base=re.sub(r'[^A-Za-z0-9._-]+', '.', os.path.basename(p))
+                  dest=os.path.join('dist-release', f'{target}-{base}')
                   shutil.copy(p, dest); print('collected', dest)"
 
       - uses: actions/upload-artifact@v4
