@@ -71,9 +71,16 @@ function hostTargetTriple() {
 }
 
 function ensureTargetInstalled(triple) {
-  const installed = spawnSync("rustup", ["target", "list", "--installed"], { encoding: "utf8" });
+  // Run rustup FROM the june-api dir so it operates on the toolchain pinned by
+  // june-api/rust-toolchain.toml (currently 1.95.0), not the ambient default.
+  // Cross-compiling the sidecar otherwise fails with "can't find crate for
+  // `core`" because the target was only added to `stable`.
+  const installed = spawnSync("rustup", ["target", "list", "--installed"], {
+    cwd: apiDir,
+    encoding: "utf8",
+  });
   if (installed.status === 0 && !installed.stdout.split(/\s+/).includes(triple)) {
-    console.log(`[build-sidecar] installing rust target ${triple}`);
-    spawnSync("rustup", ["target", "add", triple], { stdio: "inherit" });
+    console.log(`[build-sidecar] installing rust target ${triple} for june-api's toolchain`);
+    spawnSync("rustup", ["target", "add", triple], { cwd: apiDir, stdio: "inherit" });
   }
 }
