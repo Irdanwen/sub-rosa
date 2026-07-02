@@ -59,7 +59,11 @@ jobs:
             target: aarch64-apple-darwin
             config: src-tauri/tauri.macos.conf.json
             updater_target: darwin-aarch64
-          - os: macos-13
+          # x86_64 is CROSS-compiled on an Apple Silicon runner (macos-14):
+          # macos-13 Intel runners are scarce/deprecated and queue for a long
+          # time. Apple Silicon can build + sign the x86_64 target thanks to the
+          # universal macOS SDK.
+          - os: macos-14
             target: x86_64-apple-darwin
             config: src-tauri/tauri.macos.conf.json
             updater_target: darwin-x86_64
