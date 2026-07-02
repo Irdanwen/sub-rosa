@@ -91,11 +91,18 @@ jobs:
       - name: Build june-api sidecar (externalBin)
         run: node scripts/build-sidecar.mjs --target ${{ matrix.target }}
 
+      # Hermes is the optional agent runtime. Bundling it is fragile (uv/python
+      # over the network) and it is NOT required for the core meeting-notes
+      # flow: when it is absent, build.rs writes a placeholder and the app
+      # installs the managed runtime on first launch. So a failure here must
+      # not fail the release.
       - name: Build bundled Hermes runtime (macOS)
         if: runner.os == 'macOS'
+        continue-on-error: true
         run: ./scripts/bundle-hermes-runtime.sh
       - name: Build bundled Hermes runtime (Windows)
         if: runner.os == 'Windows'
+        continue-on-error: true
         run: pwsh scripts/bundle-hermes-runtime-windows.ps1
 
       - name: Stage Windows signing certificate
