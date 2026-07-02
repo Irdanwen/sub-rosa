@@ -160,6 +160,12 @@ jobs:
     needs: [resolve, build]
     runs-on: ubuntu-latest
     steps:
+      # Needed for scripts/build-updater-manifest.py (this job runs the manifest
+      # assembler, so it must have the repo checked out).
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+
       - uses: actions/download-artifact@v4
         with:
           path: incoming
