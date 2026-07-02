@@ -105,17 +105,6 @@ jobs:
         continue-on-error: true
         run: pwsh scripts/bundle-hermes-runtime-windows.ps1
 
-      - name: Stage Windows signing certificate
-        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
-        shell: pwsh
-        env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-        run: |
-          $bytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
-          $path = Join-Path $env:RUNNER_TEMP "sub-rosa-cert.pfx"
-          [IO.File]::WriteAllBytes($path, $bytes)
-          "WINDOWS_CERTIFICATE_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Append
-
       - name: Build + sign app (tauri-action)
         id: tauri
         uses: tauri-apps/tauri-action@v0
@@ -124,15 +113,13 @@ jobs:
           # Updater signing (required by createUpdaterArtifacts)
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS Developer ID + notarization
+          # macOS Developer ID signing (NOT notarization). We deliberately do
+          # NOT pass APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID: their presence — even
+          # empty — makes tauri attempt notarization and fail 401. To enable
+          # notarization later, add those secrets and re-add them here.
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Windows signCommand (scripts/windows-sign.ps1) reads these
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         with:
           args: --target ${{ matrix.target }} --config ${{ matrix.config }}
 
