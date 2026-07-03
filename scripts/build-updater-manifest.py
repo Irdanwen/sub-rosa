@@ -14,6 +14,7 @@ Usage:
 import argparse
 import json
 import os
+from datetime import datetime, timezone
 from urllib.parse import quote
 
 PLATFORM_KEYS = ("darwin-aarch64", "darwin-x86_64", "windows-x86_64")
@@ -70,10 +71,14 @@ def main() -> int:
     if not platforms:
         raise SystemExit("[manifest] no updater artifacts found; aborting")
 
+    # tauri-plugin-updater hard-fails deserialization when `pub_date` is not
+    # RFC 3339 (an empty string kills the whole update check on every client),
+    # so always emit a valid timestamp.
+    pub_date = args.pub_date or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     manifest = {
         "version": args.version,
         "notes": args.notes or f"Sub Rosa {args.tag}",
-        "pub_date": args.pub_date or "",
+        "pub_date": pub_date,
         "platforms": platforms,
     }
     with open(args.out, "w", encoding="utf-8") as handle:
