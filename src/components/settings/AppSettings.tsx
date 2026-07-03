@@ -23,7 +23,6 @@ import {
   setDictationLanguage,
   setDictationMicrophone,
   setDictationShortcut,
-  setVeniceApiKey,
   setVeniceModel,
 } from "../../lib/tauri";
 import { LANGUAGE_OPTIONS, languageLabel } from "../../lib/dictation-languages";
@@ -325,7 +324,6 @@ export function AppSettings({
   const [reconcileVersion, setReconcileVersion] = useState<string>();
   const [pickerMode, setPickerMode] = useState<ProviderModelMode>();
   const [modelSearch, setModelSearch] = useState("");
-  const [veniceApiKeyDraft, setVeniceApiKeyDraft] = useState("");
   const [showMoreModelOptions, setShowMoreModelOptions] = useState(false);
   const [internalTab, setInternalTab] = useState<SettingsTab>("general");
   const [micPopoverPlacement, setMicPopoverPlacement] =
@@ -777,28 +775,11 @@ export function AppSettings({
     }
   }
 
-  async function saveVeniceApiKey() {
-    const apiKey = veniceApiKeyDraft.trim();
-    if (!apiKey) {
-      setStatus("Enter a Venice API key before saving.");
-      return;
-    }
-    try {
-      const next = await setVeniceApiKey(apiKey);
-      setProviderSettings(next);
-      setVeniceApiKeyDraft("");
-      setStatus("Venice API key saved.");
-    } catch (error) {
-      setStatus(messageFromError(error));
-    }
-  }
-
   async function removeVeniceApiKey() {
     try {
       const next = await clearVeniceApiKey();
       setProviderSettings(next);
-      setVeniceApiKeyDraft("");
-      setStatus("Venice API key removed.");
+      setStatus("Legacy Venice key removed.");
     } catch (error) {
       setStatus(messageFromError(error));
     }
@@ -1315,13 +1296,11 @@ export function AppSettings({
                     />
                   </button>
                   {showMoreModelOptions ? (
-                    <VeniceApiKeyRow
+                    <CarpeDiemKeyRow
                       id="models-more-options"
-                      configured={providerSettings.veniceApiKeyConfigured}
-                      value={veniceApiKeyDraft}
-                      onValueChange={setVeniceApiKeyDraft}
-                      onSave={() => void saveVeniceApiKey()}
-                      onRemove={() => void removeVeniceApiKey()}
+                      legacyVeniceKeyConfigured={providerSettings.veniceApiKeyConfigured}
+                      onOpenCarpeDiemSettings={() => setActiveTab("carpe-diem")}
+                      onRemoveLegacyKey={() => void removeVeniceApiKey()}
                     />
                   ) : null}
                 </div>
@@ -1765,57 +1744,49 @@ function ModelRow({
   );
 }
 
-function VeniceApiKeyRow({
+function CarpeDiemKeyRow({
   id,
-  configured,
-  value,
-  onValueChange,
-  onSave,
-  onRemove,
+  legacyVeniceKeyConfigured,
+  onOpenCarpeDiemSettings,
+  onRemoveLegacyKey,
 }: {
   id?: string;
-  configured: boolean;
-  value: string;
-  onValueChange: (value: string) => void;
-  onSave: () => void;
-  onRemove: () => void;
+  legacyVeniceKeyConfigured: boolean;
+  onOpenCarpeDiemSettings: () => void;
+  onRemoveLegacyKey: () => void;
 }) {
-  const canSave = value.trim().length > 0;
   return (
-    <div id={id} className="settings-row settings-row-venice-key">
-      <div className="settings-row-info">
-        <h3 className="settings-row-title">Venice API key</h3>
-        <p className="settings-row-description">
-          Use your own key for Venice models. Stored locally and sent only for Venice requests.
-        </p>
-        {configured ? (
-          <p className="settings-row-description settings-row-substatus">Key saved.</p>
-        ) : null}
-      </div>
-      <div className="settings-row-control settings-secret-control">
-        <input
-          className="settings-secret-input"
-          type="password"
-          value={value}
-          autoComplete="off"
-          spellCheck={false}
-          placeholder={configured ? "Saved key hidden" : "Venice API key"}
-          aria-label="Venice API key"
-          onChange={(event) => onValueChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && canSave) onSave();
-          }}
-        />
-        <button type="button" className="btn btn-secondary" disabled={!canSave} onClick={onSave}>
-          Save
-        </button>
-        {configured ? (
-          <button type="button" className="btn btn-secondary" onClick={onRemove}>
-            Remove
+    <>
+      <div id={id} className="settings-row">
+        <div className="settings-row-info">
+          <h3 className="settings-row-title">Carpe Diem API key</h3>
+          <p className="settings-row-description">
+            Model requests use the Carpe Diem key stored in your system keychain.
+          </p>
+        </div>
+        <div className="settings-row-control">
+          <button type="button" className="btn btn-secondary" onClick={onOpenCarpeDiemSettings}>
+            Manage key
           </button>
-        ) : null}
+        </div>
       </div>
-    </div>
+      {legacyVeniceKeyConfigured ? (
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <h3 className="settings-row-title">Legacy Venice key</h3>
+            <p className="settings-row-description">
+              A Venice API key saved by an earlier version overrides your Carpe Diem key on every
+              request. Remove it to use the Carpe Diem key.
+            </p>
+          </div>
+          <div className="settings-row-control">
+            <button type="button" className="btn btn-secondary" onClick={onRemoveLegacyKey}>
+              Remove
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 

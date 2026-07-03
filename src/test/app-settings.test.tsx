@@ -1634,7 +1634,18 @@ describe("AppSettings", () => {
     }
   });
 
-  it("saves and removes a Venice API key without displaying it", async () => {
+  it("points More options at the Carpe Diem key and removes a legacy Venice key", async () => {
+    // A Venice key saved by a pre-fork build overrides the Carpe Diem key on
+    // every request, so the row must surface it and offer removal.
+    mocks.providerModelSettings.mockResolvedValue({
+      settings: {
+        transcriptionProvider: "venice",
+        transcriptionModel: "nvidia/parakeet-tdt-0.6b-v3",
+        generationModel: "zai-org-glm-5-2",
+        imageModel: "venice-sd35",
+        veniceApiKeyConfigured: true,
+      },
+    });
     const user = userEvent.setup();
     render(
       <AppSettings
@@ -1651,23 +1662,22 @@ describe("AppSettings", () => {
 
     await user.click(await screen.findByRole("tab", { name: "Models" }));
 
-    // The Venice API key lives behind "More options" so the average user never
-    // has to reason about it. It should be hidden until the row is expanded.
-    expect(screen.queryByLabelText("Venice API key")).not.toBeInTheDocument();
+    // The key rows live behind "More options" so the average user never has
+    // to reason about them. They should be hidden until the row is expanded.
+    expect(screen.queryByText("Carpe Diem API key")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /More options/ }));
 
-    const input = await screen.findByLabelText("Venice API key");
-    await user.type(input, "  vc_test_key  ");
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    // No key input here: the Carpe Diem key is managed in its own tab.
+    expect(await screen.findByText("Carpe Diem API key")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Venice API key")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Manage key" })).toBeInTheDocument();
 
-    expect(mocks.setVeniceApiKey).toHaveBeenCalledWith("vc_test_key");
-    expect(await screen.findByText("Key saved.")).toBeInTheDocument();
-    expect(input).toHaveValue("");
-    expect(screen.queryByDisplayValue("vc_test_key")).not.toBeInTheDocument();
-
+    expect(screen.getByText("Legacy Venice key")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Remove" }));
     expect(mocks.clearVeniceApiKey).toHaveBeenCalled();
-    await waitFor(() => expect(screen.queryByText("Key saved.")).not.toBeInTheDocument());
+    // clearVeniceApiKey resolves with veniceApiKeyConfigured: false, so the
+    // legacy row disappears once the refreshed settings land.
+    await waitFor(() => expect(screen.queryByText("Legacy Venice key")).not.toBeInTheDocument());
   });
 
   it("defaults the model picker to curated suggestions", async () => {

@@ -204,6 +204,11 @@ const SETTINGS_SIDEBAR_GROUPS: {
         icon: <IconSettingsGear4 size={16} />,
       },
       {
+        id: "carpe-diem",
+        label: "Carpe Diem",
+        icon: <IconServer1 size={16} />,
+      },
+      {
         id: "billing",
         label: "Billing",
         icon: <IconCreditCard1 size={16} />,
