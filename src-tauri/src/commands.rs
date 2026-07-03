@@ -571,9 +571,9 @@ pub fn june_open_verify_page() -> Result<(), AppError> {
     crate::os_accounts::open_in_browser(&crate::june_api::verify_url())
 }
 
-const JUNE_COMMUNITY_URL: &str = "https://t.me/osjune";
+const JUNE_COMMUNITY_URL: &str = "https://t.me/CarpeDiemCommu";
 
-/// Opens the June Telegram community in the default browser.
+/// Opens the Carpe Diem Telegram community in the default browser.
 #[tauri::command]
 pub fn june_open_community_page() -> Result<(), AppError> {
     crate::os_accounts::open_in_browser(JUNE_COMMUNITY_URL)

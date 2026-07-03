@@ -64,7 +64,7 @@ vi.mock("../app/build-info", () => ({
 }));
 
 vi.mock("../lib/tauri", () => ({
-  JUNE_COMMUNITY_URL: "https://carpe-diem.xyz",
+  JUNE_COMMUNITY_URL: "https://t.me/CarpeDiemCommu",
   dictationSettings: mocks.dictationSettings,
   dictationHelperCommand: mocks.dictationHelperCommand,
   localAudioFileSrc: mocks.localAudioFileSrc,
@@ -1961,7 +1961,7 @@ describe("AppSettings", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("tab", { name: "About" }));
     expect(await screen.findByText("Community")).toBeInTheDocument();
-    expect(screen.getByText(/carpe-diem\.xyz/)).toBeInTheDocument();
+    expect(screen.getByText(/t\.me\/CarpeDiemCommu/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Join community" }));
 

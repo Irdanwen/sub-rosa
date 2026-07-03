@@ -653,7 +653,9 @@ export async function bootstrapApp() {
   return invoke<BootstrapResponse>("bootstrap_app");
 }
 
-export const JUNE_COMMUNITY_URL = "https://carpe-diem.xyz";
+/** Display-only mirror of JUNE_COMMUNITY_URL in commands.rs — the Rust
+ * command is what actually opens the link; keep the two in sync. */
+export const JUNE_COMMUNITY_URL = "https://t.me/CarpeDiemCommu";
 
 /** Opens the june-api /verify page (attestation, routing, retention) in
  * the default browser. Routed through Rust because the webview drops
@@ -1020,6 +1022,13 @@ export type HermesCronJobRecord = {
 
 export async function hermesBridgeCronJobs() {
   return invoke<HermesCronJobRecord[]>("hermes_bridge_cron_jobs");
+}
+
+/** Archives a corrupted cron store so routines can start fresh; resolves to
+ * the archive path. The backend refuses when the store parses fine, so a
+ * stale corruption banner cannot throw away healthy routines. */
+export async function hermesBridgeResetCronStore() {
+  return invoke<string>("hermes_bridge_reset_cron_store");
 }
 
 export async function createHermesBridgeCronJob(input: {
