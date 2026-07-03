@@ -10,6 +10,10 @@ const AGENT_OPEN_EVENT: &str = "june:agent:open";
 // Fired at the webview when the panel swallows a right- or ctrl-click so the
 // in-DOM menu can open. Mirrored by the listener in src/agent-hud.ts.
 const AGENT_HUD_CONTEXT_MENU_EVENT: &str = "june:agent-hud:context-menu";
+// Forwards the main window's focus state to the HUD webview, which pauses the
+// expiry of finished rows while the user is away in another app. Mirrored by
+// the listener in src/agent-hud.ts.
+const AGENT_HUD_MAIN_FOCUS_EVENT: &str = "june:agent-hud:main-focus";
 const AGENT_HUD_WINDOW_WIDTH: f64 = 304.0;
 const AGENT_HUD_COLLAPSED_WINDOW_HEIGHT: f64 = 58.0;
 
@@ -33,6 +37,22 @@ pub fn setup(app: &mut tauri::App) {
     if let Err(error) = configure_agent_hud_window(app.handle()) {
         tracing::warn!(%error, "failed to configure agent HUD");
     }
+    forward_main_focus_to_agent_hud(app.handle());
+}
+
+/// The HUD webview cannot observe app activation itself (its non-activating
+/// panel never takes focus), so the main window's focus state stands in for
+/// "the user is looking at the app" and is forwarded on every change.
+fn forward_main_focus_to_agent_hud(app: &AppHandle) {
+    let Some(main) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        return;
+    };
+    let handle = app.clone();
+    main.on_window_event(move |event| {
+        if let tauri::WindowEvent::Focused(focused) = event {
+            let _ = handle.emit_to(AGENT_HUD_WINDOW_LABEL, AGENT_HUD_MAIN_FOCUS_EVENT, *focused);
+        }
+    });
 }
 
 #[tauri::command]

@@ -405,6 +405,35 @@ describe("agent HUD", () => {
     expect(hudElement().dataset.hasEntries).toBe("false");
   });
 
+  it("does not expire terminal rows while the main window is unfocused", async () => {
+    vi.useFakeTimers();
+    await loadAgentHud();
+
+    const setMainFocus = mocks.listeners.get("june:agent-hud:main-focus");
+    expect(setMainFocus).toBeTruthy();
+
+    emitStatus({
+      status: "completed",
+      title: "Summarize this",
+      summary: "Done",
+    });
+    await flushPromises();
+
+    setMainFocus?.({ payload: false });
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(hudElement().dataset.hasEntries).toBe("true");
+    expect(pillLabelElement()).toHaveTextContent("Done");
+
+    // Coming back restarts the TTL so the row lingers, then fades as usual.
+    setMainFocus?.({ payload: true });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(hudElement().dataset.hasEntries).toBe("true");
+    await vi.advanceTimersByTimeAsync(6_550);
+
+    expect(hudElement().dataset.hasEntries).toBe("false");
+  });
+
   it("briefly shows Done before hiding when the agent completes", async () => {
     vi.useFakeTimers();
     await loadAgentHud();

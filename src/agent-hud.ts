@@ -50,6 +50,12 @@ const EXPANDED_KEY = "june:agent-hud:expanded";
 // ctrl-click so the WKWebView never raises its own context menu. Keep this in
 // sync with AGENT_HUD_CONTEXT_MENU_EVENT in agent_hud.rs.
 const AGENT_HUD_CONTEXT_MENU_EVENT = "june:agent-hud:context-menu";
+// Emitted by the native shell (agent_hud.rs) when the main window gains or
+// loses focus. Terminal rows must not expire while the user is away in
+// another app: the HUD is the only surface still showing the outcome, so
+// their TTL pauses until focus returns (same reasoning as the hover hold).
+// Keep in sync with AGENT_HUD_MAIN_FOCUS_EVENT in agent_hud.rs.
+const AGENT_HUD_MAIN_FOCUS_EVENT = "june:agent-hud:main-focus";
 const MAX_VISIBLE_ROWS = 3;
 // Keep a finished session on screen long enough to actually read the "Done"
 // row before it fades out, rather than blinking away the instant it lands.
@@ -80,6 +86,10 @@ const state = {
   expanded: localStorage.getItem(EXPANDED_KEY) === "true",
   focused: false,
   hovered: false,
+  // Whether the main window has focus. Starts true: the HUD cannot know the
+  // real state until the first focus event, and assuming "away" would pin
+  // terminal rows forever if that event never arrives (demo page, tests).
+  mainFocused: true,
   menuOpen: false,
   sessions: [] as HermesSessionInfo[],
   workingSessionIds: new Set<string>(),
@@ -625,8 +635,9 @@ function scheduleStatusPrune() {
     window.clearTimeout(pruneTimer);
     pruneTimer = undefined;
   }
-  // Expiry is paused while hovered; the pointerleave render reschedules.
-  if (state.hovered) return;
+  // Expiry is paused while hovered (the pointerleave render reschedules) and
+  // while the user is away in another app (the return-focus render does).
+  if (state.hovered || !state.mainFocused) return;
   const now = Date.now();
   const expirations = [...state.pendingStatuses, ...Array.from(state.statusBySessionId.values())]
     .map((record) => terminalExpiration(record))
@@ -646,8 +657,10 @@ function terminalExpiration(record: StatusRecord) {
 }
 
 function isExpiredTerminalRecord(record: StatusRecord, now = Date.now()) {
-  // Terminal rows never expire under the pointer; the user is reading them.
-  if (state.hovered) return false;
+  // Terminal rows never expire under the pointer (the user is reading them)
+  // or while the main window is unfocused (the user is not there to see the
+  // outcome anywhere else).
+  if (state.hovered || !state.mainFocused) return false;
   const expiration = terminalExpiration(record);
   return expiration !== undefined && now > expiration;
 }
@@ -877,20 +890,32 @@ function hideFromMenu() {
 
 function setHovered(hovered: boolean) {
   if (state.hovered === hovered) return;
-  if (!hovered) {
-    // Records that expired while held under the pointer restart their TTL,
-    // so rows linger briefly instead of vanishing the instant it leaves.
-    const now = Date.now();
-    const records = [...state.pendingStatuses, ...state.statusBySessionId.values()];
-    for (const record of records) {
-      const expiration = terminalExpiration(record);
-      if (expiration !== undefined && now > expiration) {
-        record.receivedAt = now;
-      }
-    }
-  }
+  // Records that expired while held under the pointer restart their TTL,
+  // so rows linger briefly instead of vanishing the instant it leaves.
+  if (!hovered) restartExpiredTtls();
   state.hovered = hovered;
   render();
+}
+
+function setMainFocused(focused: boolean) {
+  if (state.mainFocused === focused) return;
+  // Rows that expired while the user was in another app get a fresh TTL, so
+  // they stay readable for a beat after coming back instead of vanishing the
+  // instant the app activates.
+  if (focused) restartExpiredTtls();
+  state.mainFocused = focused;
+  render();
+}
+
+function restartExpiredTtls() {
+  const now = Date.now();
+  const records = [...state.pendingStatuses, ...state.statusBySessionId.values()];
+  for (const record of records) {
+    const expiration = terminalExpiration(record);
+    if (expiration !== undefined && now > expiration) {
+      record.receivedAt = now;
+    }
+  }
 }
 
 hud?.addEventListener("pointerenter", () => {
@@ -994,6 +1019,10 @@ void listen<AgentHudVisibilityChangedDetail>(AGENT_HUD_VISIBILITY_CHANGED_EVENT,
 // pointerdown to close it again (the window pointerdown handler only fires
 // for clicks the webview actually receives).
 void listen(AGENT_HUD_CONTEXT_MENU_EVENT, () => openMenu()).catch(() => {});
+
+void listen<boolean>(AGENT_HUD_MAIN_FOCUS_EVENT, (event) => setMainFocused(event.payload)).catch(
+  () => {},
+);
 
 setIcon(pillChevron, IconChevronDownSmall, 14);
 render();
