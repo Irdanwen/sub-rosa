@@ -6,6 +6,44 @@ shell commands, and other important information, read
 
 <!-- SPECKIT END -->
 
+# Sub Rosa — fork of June (read this first)
+
+This repo is **Sub Rosa**, a rebranded fork of June (`open-software-network/os-june`, MIT)
+wired for **Carpe Diem**. The June instructions below still describe the shared architecture
+accurately — read them, but apply these fork overrides:
+
+- **Product = Sub Rosa.** Bundle id `xyz.carpediem.subrosa`, deep-link scheme `subrosa://`.
+  User-visible copy is "Sub Rosa", not "June". Technical identifiers stay upstream
+  (`june-api` crate, `JUNE_*`/`OS_JUNE_*` env vars, `june://` events, `os-june:*` storage keys).
+- **The Carpe Diem sidecar is the core of the fork.** The desktop does **not** call a hosted
+  June API and does **not** use OS Accounts. At launch the app spawns `june-api` as an
+  internal **sidecar** on a free loopback port with a random bearer token, pointed at Carpe
+  Diem (an OpenAI-compatible endpoint — same model ids as Venice) using the user's `cdm_` key
+  from the OS keychain. It re-points the June client via in-process env (`JUNE_API_URL`,
+  `OS_JUNE_LOCAL_DEV*`). All fork logic lives in `src-tauri/src/carpe_diem/` (branding,
+  keychain settings + IPC, the sidecar manager), `src/lib/branding.ts`, and
+  `src/components/{carpe-diem/, settings/CarpeDiemSettings.tsx}`.
+- **Onboarding = paste base_URL + `cdm_` key** (no `.env`, no sign-in). A first-run gate
+  blocks the app until a key is stored. In debug, inject the key with
+  `SUBROSA_DEV_API_KEY=cdm_… pnpm tauri:dev` (dev-only keychain bypass).
+- **Read [`FORK_NOTES.md`](FORK_NOTES.md)** (every upstream file the fork modified + how to
+  re-merge, plus product decisions like the curated-model-set and the macOS Hermes/helper
+  signing) and **[`HANDOFF.md`](HANDOFF.md)** (signing/updater secrets) before touching
+  branding, the sidecar, or the release pipeline.
+- **Releases + updates.** Source repo: `Irdanwen/sub-rosa` (public → free CI). Tagging
+  `vX.Y.Z` runs `.github/workflows/release.yml`: signed **and notarized** macOS (aarch64 +
+  x86_64, x86_64 cross-compiled on Apple Silicon) + unsigned Windows NSIS + Tauri updater
+  artifacts, published to the **public** `Irdanwen/sub-rosa-releases` (the updater endpoint).
+  Notarization requires deep-signing the bundled Hermes runtime + the Swift helpers (see the
+  signing steps in the workflow). Bump the version by editing `tauri.conf.json`,
+  `src-tauri/Cargo.toml`, and `package.json` by hand — `scripts/bump-version.mjs`'s
+  `import.meta.url` guard breaks on the space in the "Sub Rosa" path.
+  `.github/workflows/upstream-sync.yml` opens PRs to track upstream June.
+- **Non-goals (unchanged from June):** OS Accounts, billing, hosted June API, TEE attestation
+  of the local backend. Local mode only; confidentiality comes from Carpe Diem's own backend.
+
+---
+
 # June — Agent Instructions
 
 ## Project
