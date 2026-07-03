@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Sub Rosa app icon">
+  <defs>
+    <g id="po">
+      <path d="M0 -28 C-46 -52 -50 -116 0 -176 C50 -116 46 -52 0 -28 Z" fill="#74263A" stroke="#C06B7D" stroke-width="3.5" stroke-linejoin="round"/>
+      <path d="M0 -46 C-34 -64 -38 -108 0 -154 C38 -108 34 -64 0 -46" fill="none" stroke="#A85267" stroke-width="2" stroke-linecap="round"/>
+      <path d="M0 -64 C-24 -78 -27 -100 0 -130 C27 -100 24 -78 0 -64" fill="none" stroke="#A85267" stroke-width="2" stroke-linecap="round"/>
+    </g>
+    <g id="po2">
+      <path d="M0 -28 C-46 -52 -50 -116 0 -176 C50 -116 46 -52 0 -28 Z" fill="#7A2A3E" stroke="#C06B7D" stroke-width="3.5" stroke-linejoin="round"/>
+    </g>
+  </defs>
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="#17111A"/>
+  <g transform="translate(256,256)">
+    <use href="#po" transform="rotate(0)"/>
+    <use href="#po" transform="rotate(60)"/>
+    <use href="#po" transform="rotate(120)"/>
+    <use href="#po" transform="rotate(180)"/>
+    <use href="#po" transform="rotate(240)"/>
+    <use href="#po" transform="rotate(300)"/>
+    <use href="#po2" transform="rotate(30) scale(0.6)"/>
+    <use href="#po2" transform="rotate(90) scale(0.6)"/>
+    <use href="#po2" transform="rotate(150) scale(0.6)"/>
+    <use href="#po2" transform="rotate(210) scale(0.6)"/>
+    <use href="#po2" transform="rotate(270) scale(0.6)"/>
+    <use href="#po2" transform="rotate(330) scale(0.6)"/>
+    <circle cx="0" cy="0" r="30" fill="#7A2A3E" stroke="#C06B7D" stroke-width="2"/>
+    <path d="M0 0 a8 8 0 0 1 16 0 a12 12 0 0 1 -24 0 a16 16 0 0 1 32 0 a20 20 0 0 1 -40 0 a24 24 0 0 1 48 0" transform="translate(-8,0)" fill="none" stroke="#C06B7D" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="0" cy="0" r="12" fill="#CFA13E"/>
+  </g>
+</svg>
