@@ -362,7 +362,7 @@ fn local_dev_account_status() -> AccountStatus {
             id: local_dev_user_id(),
             handle: "local-dev".to_string(),
             email: None,
-            display_name: Some("Local developer".to_string()),
+            display_name: Some("You".to_string()),
             avatar_url: None,
         }),
         balance: Some(AccountBalance {
