@@ -17,9 +17,10 @@ import os
 from urllib.parse import quote
 
 PLATFORM_KEYS = ("darwin-aarch64", "darwin-x86_64", "windows-x86_64")
-# Tauri v2 updater artifact extensions. Only these carry a real updater
-# signature; installer sigs (.dmg / -setup.exe) must never populate a platform.
-UPDATER_EXTS = (".app.tar.gz", ".nsis.zip")
+# Tauri v2 updater artifact suffixes. macOS updates ship as `.app.tar.gz`;
+# Windows NSIS updates ship as the `-setup.exe` installer itself (each with a
+# detached `.sig`). The `.dmg` installer has no `.sig`, so it can't sneak in.
+UPDATER_EXTS = (".app.tar.gz", ".nsis.zip", "-setup.exe")
 
 
 def platform_for(filename: str) -> str | None:
