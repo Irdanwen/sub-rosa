@@ -109,6 +109,44 @@ jobs:
         continue-on-error: true
         run: pwsh scripts/bundle-hermes-runtime-windows.ps1
 
+      # Notarization rejects any unsigned nested Mach-O. Tauri signs the app
+      # shell but not the loose Python extensions (.so/.dylib) inside the bundled
+      # Hermes venv, so deep-sign every Mach-O in the runtime with Developer ID +
+      # hardened runtime + secure timestamp before Tauri bundles it.
+      - name: Sign bundled Hermes runtime (macOS)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_CERTIFICATE:-}" ]; then echo "no signing cert; skipping"; exit 0; fi
+          HERMES=.tauri-hermes/hermes
+          if [ ! -d "$HERMES" ]; then echo "no bundled hermes; skipping"; exit 0; fi
+          KC="$RUNNER_TEMP/hermes-sign.keychain-db"
+          KCPASS="sr-$RANDOM-$$"
+          security create-keychain -p "$KCPASS" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPASS" "$KC"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/hermes-cert.p12"
+          security import "$RUNNER_TEMP/hermes-cert.p12" -k "$KC" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign >/dev/null
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          count=0
+          # Sign inner-most first: reverse-depth order so nested dylibs are
+          # signed before anything that embeds them.
+          while IFS= read -r f; do
+            if file "$f" | grep -q "Mach-O"; then
+              codesign --force --timestamp --options runtime \
+                --sign "$APPLE_SIGNING_IDENTITY" "$f" && count=$((count+1))
+            fi
+          done < <(find "$HERMES" -type f | awk '{ print gsub(/\//,"/") "\t" $0 }' | sort -rn | cut -f2-)
+          echo "signed $count Mach-O files in the Hermes runtime"
+          # Remove our keychain from the search list + delete it so tauri-action's
+          # own codesign doesn't see the identity in two keychains (ambiguous).
+          security delete-keychain "$KC" || true
+
       - name: Build + sign app (tauri-action)
         id: tauri
         uses: tauri-apps/tauri-action@v0
