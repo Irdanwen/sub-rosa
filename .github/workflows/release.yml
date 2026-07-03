@@ -109,11 +109,19 @@ jobs:
         continue-on-error: true
         run: pwsh scripts/bundle-hermes-runtime-windows.ps1
 
-      # Notarization rejects any unsigned nested Mach-O. Tauri signs the app
-      # shell but not the loose Python extensions (.so/.dylib) inside the bundled
-      # Hermes venv, so deep-sign every Mach-O in the runtime with Developer ID +
-      # hardened runtime + secure timestamp before Tauri bundles it.
-      - name: Sign bundled Hermes runtime (macOS)
+      # Notarization requires EVERY nested Mach-O to be signed (Developer ID +
+      # hardened runtime + secure timestamp). Two pieces Tauri/tauri-action don't
+      # cover on their own:
+      #   1. The bundled Hermes venv's Python extensions (.so/.dylib).
+      #   2. The Swift helper apps — build.rs signs them during `cargo build`,
+      #      but only if codesign can reach the private key. tauri-action's
+      #      keychain grants that access to its OWN signing process, not to
+      #      build.rs's codesign.
+      # So we import the cert ourselves into a keychain with a broad partition
+      # list, make it the default (so build.rs's codesign + Tauri both use it),
+      # pre-sign the Hermes runtime, and do NOT let tauri-action import a second
+      # copy (which would make `codesign --sign "<identity>"` ambiguous).
+      - name: Prepare code signing + pre-sign Hermes (macOS)
         if: runner.os == 'macOS'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -122,30 +130,30 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${APPLE_CERTIFICATE:-}" ]; then echo "no signing cert; skipping"; exit 0; fi
-          HERMES=.tauri-hermes/hermes
-          if [ ! -d "$HERMES" ]; then echo "no bundled hermes; skipping"; exit 0; fi
-          KC="$RUNNER_TEMP/hermes-sign.keychain-db"
+          KC="$RUNNER_TEMP/sr-sign.keychain-db"
           KCPASS="sr-$RANDOM-$$"
           security create-keychain -p "$KCPASS" "$KC"
           security set-keychain-settings -lut 21600 "$KC"
           security unlock-keychain -p "$KCPASS" "$KC"
-          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/hermes-cert.p12"
-          security import "$RUNNER_TEMP/hermes-cert.p12" -k "$KC" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign >/dev/null
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/sr-cert.p12"
+          security import "$RUNNER_TEMP/sr-cert.p12" -k "$KC" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security >/dev/null
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" >/dev/null
+          # Single keychain, made default + first in the search list, so both
+          # build.rs's helper codesign and Tauri's app codesign find one identity.
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
-          count=0
-          # Sign inner-most first: reverse-depth order so nested dylibs are
-          # signed before anything that embeds them.
-          while IFS= read -r f; do
-            if file "$f" | grep -q "Mach-O"; then
-              codesign --force --timestamp --options runtime \
-                --sign "$APPLE_SIGNING_IDENTITY" "$f" && count=$((count+1))
-            fi
-          done < <(find "$HERMES" -type f | awk '{ print gsub(/\//,"/") "\t" $0 }' | sort -rn | cut -f2-)
-          echo "signed $count Mach-O files in the Hermes runtime"
-          # Remove our keychain from the search list + delete it so tauri-action's
-          # own codesign doesn't see the identity in two keychains (ambiguous).
-          security delete-keychain "$KC" || true
+          security default-keychain -s "$KC"
+          HERMES=.tauri-hermes/hermes
+          if [ -d "$HERMES" ]; then
+            count=0
+            while IFS= read -r f; do
+              if file "$f" | grep -q "Mach-O"; then
+                codesign --force --timestamp --options runtime \
+                  --sign "$APPLE_SIGNING_IDENTITY" "$f" && count=$((count+1)) || true
+              fi
+            done < <(find "$HERMES" -type f | awk '{ print gsub(/\//,"/") "\t" $0 }' | sort -rn | cut -f2-)
+            echo "pre-signed $count Mach-O files in the Hermes runtime"
+          fi
 
       - name: Build + sign app (tauri-action)
         id: tauri
@@ -155,12 +163,11 @@ jobs:
           # Updater signing (required by createUpdaterArtifacts)
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS Developer ID signing + notarization. All three notary vars are
-          # set, so tauri-action notarizes + staples the .app/.dmg (removing the
-          # Gatekeeper prompt). Only pass these when the secrets exist — empty
-          # values make tauri attempt notarization and fail 401.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # NOTE: APPLE_CERTIFICATE is deliberately NOT passed here — the previous
+          # step already imported it into the default keychain. Passing it again
+          # would create a second keychain with the same identity and make
+          # codesign ambiguous. We still pass the identity + notary credentials so
+          # Tauri signs (using our keychain) and notarizes + staples.
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
