@@ -117,13 +117,16 @@ jobs:
           # Updater signing (required by createUpdaterArtifacts)
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS Developer ID signing (NOT notarization). We deliberately do
-          # NOT pass APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID: their presence — even
-          # empty — makes tauri attempt notarization and fail 401. To enable
-          # notarization later, add those secrets and re-add them here.
+          # macOS Developer ID signing + notarization. All three notary vars are
+          # set, so tauri-action notarizes + staples the .app/.dmg (removing the
+          # Gatekeeper prompt). Only pass these when the secrets exist — empty
+          # values make tauri attempt notarization and fail 401.
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           args: --target ${{ matrix.target }} --config ${{ matrix.config }}
 
