@@ -7,6 +7,7 @@ import { replayOnboarding } from "./lib/onboarding";
 import { initTheme } from "./lib/theme";
 import { initBrand } from "./lib/brand";
 import "./styles/app.css";
+import "./styles/carpe-diem.css";
 
 declare global {
   interface Window {

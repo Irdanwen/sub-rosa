@@ -1,0 +1,39 @@
+/* Sub Rosa fork — Carpe Diem onboarding gate.
+ *
+ * The connect form reuses June's `settings-row` markup, but that markup is
+ * designed for the wide Settings page: `.settings-row` is a two-column grid
+ * (label | control) and `.settings-secret-control` is up to `min(520px, 50vw)`
+ * wide. Inside the 320px `.welcome-card` the control eats the row and the label
+ * column collapses to one word per line. So for the gate we widen the card and
+ * stack each field vertically, letting the input fill the row. */
+
+.welcome-card.welcome-card-wide {
+  width: min(100%, 560px);
+}
+
+.carpe-diem-connect {
+  width: 100%;
+  text-align: left;
+}
+
+.carpe-diem-connect .settings-card {
+  text-align: left;
+}
+
+.carpe-diem-connect .settings-row {
+  grid-template-columns: 1fr;
+  gap: var(--sp-2);
+  align-items: stretch;
+}
+
+.carpe-diem-connect .settings-row-control,
+.carpe-diem-connect .settings-secret-control {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.carpe-diem-connect .settings-secret-input {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
