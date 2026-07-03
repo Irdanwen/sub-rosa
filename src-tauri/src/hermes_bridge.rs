@@ -2162,17 +2162,105 @@ pub struct HermesCronJobRequest {
     pub job_id: String,
 }
 
+/// Stable code the routines UI branches on to offer a store reset instead of
+/// showing the raw wire error. Mirrored in src/lib/hermes-routines.ts.
+const CRON_STORE_CORRUPTED_CODE: &str = "hermes_cron_store_corrupted";
+
+fn cron_store_jobs_file(hermes_home: &Path) -> PathBuf {
+    hermes_home.join("cron").join("jobs.json")
+}
+
+/// Mirrors the failure modes of Hermes' `cron.jobs.load_jobs()` (jobs.py):
+/// an unreadable jobs.json, JSON that does not parse, or a top-level value
+/// that is neither an object nor an array all raise an unhandled RuntimeError
+/// there, which the dashboard's `profile=<name>` branch (unlike `profile=all`)
+/// surfaces as a bare 500 with no detail. Probing the same file locally turns
+/// that anonymous 500 into an actionable "routines store corrupted" state.
+fn cron_store_is_corrupt(hermes_home: &Path) -> bool {
+    let path = cron_store_jobs_file(hermes_home);
+    if !path.exists() {
+        return false;
+    }
+    let Ok(text) = fs::read_to_string(&path) else {
+        return true;
+    };
+    match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(value) => !(value.is_object() || value.is_array()),
+        Err(_) => true,
+    }
+}
+
 #[tauri::command]
 pub async fn hermes_bridge_cron_jobs(
     bridge: State<'_, HermesBridge>,
 ) -> Result<serde_json::Value, AppError> {
-    hermes_api_json(
-        &bridge,
+    let connections = live_connections(&bridge)?;
+    let Some(connection) = connections.first() else {
+        return Err(AppError::new(
+            "hermes_bridge_not_running",
+            "Hermes bridge is not running.",
+        ));
+    };
+    let result = hermes_connection_json(
+        connection,
         reqwest::Method::GET,
         &format!("/api/cron/jobs?{CRON_PROFILE_QUERY}"),
         None,
     )
-    .await
+    .await;
+    match result {
+        Err(error)
+            if error.message.starts_with("Hermes API returned 500")
+                && cron_store_is_corrupt(Path::new(&connection.hermes_home)) =>
+        {
+            Err(AppError::new(
+                CRON_STORE_CORRUPTED_CODE,
+                format!(
+                    "The routines database at {} is corrupted or unreadable.",
+                    cron_store_jobs_file(Path::new(&connection.hermes_home)).display()
+                ),
+            ))
+        }
+        other => other,
+    }
+}
+
+/// Moves a corrupted cron store aside (`jobs.json.corrupt-<unix-secs>`) so the
+/// routines list can start fresh, and returns the archive path. Refuses to
+/// touch a store that still parses: the UI only offers this after
+/// `hermes_bridge_cron_jobs` reported corruption, and a healthy file showing
+/// up here means the state is stale, not that routines should be discarded.
+#[tauri::command]
+pub async fn hermes_bridge_reset_cron_store(
+    bridge: State<'_, HermesBridge>,
+) -> Result<String, AppError> {
+    let connections = live_connections(&bridge)?;
+    let Some(connection) = connections.first() else {
+        return Err(AppError::new(
+            "hermes_bridge_not_running",
+            "Hermes bridge is not running.",
+        ));
+    };
+    let hermes_home = PathBuf::from(&connection.hermes_home);
+    if !cron_store_is_corrupt(&hermes_home) {
+        return Err(AppError::new(
+            "hermes_cron_store_healthy",
+            "The routines database looks healthy now; nothing was reset.",
+        ));
+    }
+    let path = cron_store_jobs_file(&hermes_home);
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0);
+    let archive = path.with_file_name(format!("jobs.json.corrupt-{stamp}"));
+    fs::rename(&path, &archive).map_err(|error| {
+        AppError::new(
+            "hermes_cron_store_reset_failed",
+            format!("Could not archive the damaged routines database: {error}"),
+        )
+    })?;
+    Ok(archive.display().to_string())
 }
 
 #[tauri::command]
@@ -6690,6 +6778,29 @@ async fn wait_for_hermes(base_url: &str, token: &str) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cron_store_probe_matches_hermes_load_jobs_failure_modes() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let cron_dir = home.path().join("cron");
+        fs::create_dir_all(&cron_dir).expect("cron dir");
+        let jobs = cron_dir.join("jobs.json");
+
+        // Missing file: Hermes returns [] without raising, so not corruption.
+        assert!(!cron_store_is_corrupt(home.path()));
+
+        // The two shapes load_jobs() accepts (dict and bare list) are healthy.
+        fs::write(&jobs, r#"{"jobs": []}"#).unwrap();
+        assert!(!cron_store_is_corrupt(home.path()));
+        fs::write(&jobs, r#"[{"id": "a"}]"#).unwrap();
+        assert!(!cron_store_is_corrupt(home.path()));
+
+        // Unparseable JSON and a wrong top-level type both raise there.
+        fs::write(&jobs, r#"{"jobs": [truncated"#).unwrap();
+        assert!(cron_store_is_corrupt(home.path()));
+        fs::write(&jobs, r#""not a database""#).unwrap();
+        assert!(cron_store_is_corrupt(home.path()));
+    }
 
     fn oauth_test_connection() -> HermesBridgeConnection {
         HermesBridgeConnection {

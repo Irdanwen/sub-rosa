@@ -4,6 +4,7 @@ import {
   ensureHermesBridgeGateway,
   hermesBridgeCronJobAction,
   hermesBridgeCronJobs,
+  hermesBridgeResetCronStore,
   hermesBridgeStatus,
   startHermesBridge,
   updateHermesBridgeCronJob,
@@ -148,6 +149,19 @@ function routineFromRecord(record: HermesCronJobRecord): RoutineJob {
 export async function listRoutines(): Promise<RoutineJob[]> {
   const records = await withBridge(() => hermesBridgeCronJobs());
   return records.map(routineFromRecord);
+}
+
+/** AppError code `listRoutines` rejects with when the on-disk cron store is
+ * corrupted (Hermes' list endpoint 500s and the local probe confirms the
+ * file is unreadable). Mirrors CRON_STORE_CORRUPTED_CODE in hermes_bridge.rs.
+ * The routines view branches on it to offer `resetRoutineStore`. */
+export const ROUTINE_STORE_CORRUPTED_CODE = "hermes_cron_store_corrupted";
+
+/** Archives the damaged cron store (jobs.json.corrupt-<timestamp>) so the
+ * routines list can load again. Resolves to the archive path; existing
+ * routines are gone from the app but recoverable from that file by hand. */
+export async function resetRoutineStore(): Promise<string> {
+  return withBridge(() => hermesBridgeResetCronStore());
 }
 
 /** Creates a routine directly through the dashboard API. The create endpoint

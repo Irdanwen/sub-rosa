@@ -24,7 +24,9 @@ import {
   listRoutines,
   pauseRoutine,
   removeRoutine,
+  resetRoutineStore,
   resumeRoutine,
+  ROUTINE_STORE_CORRUPTED_CODE,
   routineCreationPrompt,
   routineUnrestricted,
   triggerRoutine,
@@ -32,6 +34,7 @@ import {
   type RoutineJob,
   type RoutineUpdates,
 } from "../../lib/hermes-routines";
+import { errorCode } from "../../lib/errors";
 import { compactScheduleLabel, humanizeSchedule } from "../../lib/routine-schedule";
 import { useForcedEmptyStates } from "../../lib/empty-states-demo";
 import type { HermesSessionInfo } from "../../lib/tauri";
@@ -66,6 +69,11 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
   const [loadingState, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The on-disk cron store is unreadable (listRoutines rejected with
+  // ROUTINE_STORE_CORRUPTED_CODE). Rendered as an actionable reset offer
+  // instead of the raw wire error, which reads as a server outage.
+  const [storeCorrupted, setStoreCorrupted] = useState(false);
+  const [resettingStore, setResettingStore] = useState(false);
   const [query, setQuery] = useState("");
   const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set());
   const [pendingDelete, setPendingDelete] = useState<RoutineJob | null>(null);
@@ -101,8 +109,14 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
       const jobs = await listRoutines();
       setRoutines(sortRoutines(jobs));
       setError(null);
+      setStoreCorrupted(false);
       return null;
     } catch (err) {
+      if (errorCode(err) === ROUTINE_STORE_CORRUPTED_CODE) {
+        setStoreCorrupted(true);
+        setError(null);
+        return messageFromError(err);
+      }
       const message = messageFromError(err);
       setError(message);
       return message;
@@ -133,6 +147,19 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
     () => Promise.all([loadRoutines(), loadRuns()]),
     [loadRoutines, loadRuns],
   );
+
+  const resetStore = useCallback(async () => {
+    setResettingStore(true);
+    try {
+      await resetRoutineStore();
+      setStoreCorrupted(false);
+      await loadRoutines();
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setResettingStore(false);
+    }
+  }, [loadRoutines]);
 
   useEffect(() => {
     void refresh();
@@ -413,6 +440,21 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
         </div>
       ) : null}
 
+      {storeCorrupted ? (
+        <div className="error-banner agent-error-banner" role="alert">
+          <p>
+            Sub Rosa can't read the routines saved on this device because their storage file is
+            damaged. Resetting moves the damaged file aside and starts with an empty list.
+          </p>
+          <div className="agent-error-banner-actions">
+            <button type="button" disabled={resettingStore} onClick={() => void resetStore()}>
+              {resettingStore ? "Resetting…" : "Reset routines"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {/* In the corrupted state `error` only holds a failed reset attempt
+       * (load errors land in the banner above instead), so both can show. */}
       {error ? <p className="error-banner">{error}</p> : null}
 
       {loading ? (

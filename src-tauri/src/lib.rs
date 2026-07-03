@@ -195,6 +195,7 @@ pub fn run() {
             hermes_bridge::hermes_bridge_session_messages,
             hermes_bridge::delete_hermes_bridge_session,
             hermes_bridge::hermes_bridge_cron_jobs,
+            hermes_bridge::hermes_bridge_reset_cron_store,
             hermes_bridge::create_hermes_bridge_cron_job,
             hermes_bridge::update_hermes_bridge_cron_job,
             hermes_bridge::hermes_bridge_cron_job_action,

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   createRoutine: vi.fn<() => Promise<RoutineJob>>(),
   updateRoutine: vi.fn<() => Promise<RoutineJob>>(),
   triggerRoutine: vi.fn(),
+  resetRoutineStore: vi.fn<() => Promise<string>>(),
 }));
 
 vi.mock("../lib/hermes-routines", async (importOriginal) => ({
@@ -239,6 +240,39 @@ describe("RoutinesView list", () => {
     mocks.listRoutines.mockRejectedValue(new Error("gateway down"));
     renderView();
     expect(await screen.findByText("gateway down")).toBeInTheDocument();
+  });
+
+  it("offers a store reset when the cron store is corrupted, then recovers", async () => {
+    mocks.listRoutines.mockRejectedValue({
+      code: "hermes_cron_store_corrupted",
+      message: "The routines database at /tmp/jobs.json is corrupted or unreadable.",
+    });
+    mocks.resetRoutineStore.mockResolvedValue("/tmp/jobs.json.corrupt-1");
+    renderView();
+
+    // The raw wire error stays hidden behind the actionable banner.
+    const reset = await screen.findByRole("button", { name: "Reset routines" });
+    expect(screen.queryByText(/corrupted or unreadable/)).toBeNull();
+
+    mocks.listRoutines.mockResolvedValue([]);
+    await userEvent.click(reset);
+
+    expect(mocks.resetRoutineStore).toHaveBeenCalledOnce();
+    expect(await screen.findByText("Morning brief")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Reset routines" })).toBeNull();
+  });
+
+  it("keeps the reset banner and shows the failure when the reset itself fails", async () => {
+    mocks.listRoutines.mockRejectedValue({
+      code: "hermes_cron_store_corrupted",
+      message: "corrupted",
+    });
+    mocks.resetRoutineStore.mockRejectedValue(new Error("archive failed"));
+    renderView();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Reset routines" }));
+
+    expect(await screen.findByText("archive failed")).toBeInTheDocument();
   });
 });
 
