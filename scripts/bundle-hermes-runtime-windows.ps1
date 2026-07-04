@@ -131,7 +131,15 @@ function Invoke-Uv {
       Set-Location $previousLocation
     }
     foreach ($key in $ExtraEnv.Keys) {
-      [Environment]::SetEnvironmentVariable($key, $saved[$key], "Process")
+      if ($null -eq $saved[$key]) {
+        # PowerShell coerces $null to "" when binding the .NET string
+        # parameter, which would leave the variable defined with an empty
+        # value — uv then rejects it ("expected a boolish value") on every
+        # later call. Remove the variable instead of writing "".
+        Remove-Item -Path ("Env:" + $key) -ErrorAction SilentlyContinue
+      } else {
+        [Environment]::SetEnvironmentVariable($key, $saved[$key], "Process")
+      }
     }
   }
 }

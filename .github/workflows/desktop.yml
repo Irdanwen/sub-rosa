@@ -259,6 +259,31 @@ jobs:
           restore-keys: |
             tauri-cargo-target-${{ runner.os }}-
 
+      # The embedded managed-install script only ever runs on end-user
+      # machines that lack the bundled runtime, so CI never executes it —
+      # parse it (and every repo .ps1) so a syntax error can't ship.
+      - name: Parse PowerShell surfaces
+        shell: pwsh
+        run: |
+          function Assert-Parses([string]$Label, [string]$Source) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseInput($Source, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              throw "PowerShell parse errors in ${Label}:`n$(($errors | Out-String))"
+            }
+            Write-Output "parsed: $Label"
+          }
+          Get-ChildItem scripts -Filter "*.ps1" | ForEach-Object {
+            Assert-Parses $_.Name (Get-Content -Raw $_.FullName)
+          }
+          $bridge = Get-Content -Raw "src-tauri/src/hermes_bridge.rs"
+          $match = [regex]::Match($bridge, '(?s)WINDOWS_MANAGED_HERMES_INSTALL_SCRIPT: &str = r##"(.*?)"##')
+          if (!$match.Success) {
+            throw "Could not locate WINDOWS_MANAGED_HERMES_INSTALL_SCRIPT in hermes_bridge.rs."
+          }
+          Assert-Parses "WINDOWS_MANAGED_HERMES_INSTALL_SCRIPT" $match.Groups[1].Value
+
       - name: Bundle Hermes runtime
         shell: pwsh
         run: ./scripts/bundle-hermes-runtime-windows.ps1

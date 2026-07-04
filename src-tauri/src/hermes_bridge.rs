@@ -37,6 +37,16 @@ const HERMES_SOURCE_TARBALL_URL: &str =
     "https://github.com/NousResearch/hermes-agent/archive/2bd1977d8fad185c9b4be47884f7e87f1add0ce3.tar.gz";
 const HERMES_SOURCE_TARBALL_SHA256: &str =
     "7a9bd367066183898831c2760f269368ab54b458a1d1b51d14ef1f484dd490cc";
+// Standalone uv used by the Windows managed install to bootstrap its own
+// CPython — end-user Windows machines have no Python, so the installer must
+// not depend on one. Keep the version in sync with
+// scripts/bundle-hermes-runtime-windows.ps1.
+#[cfg(target_os = "windows")]
+const WINDOWS_UV_DOWNLOAD_URL: &str =
+    "https://github.com/astral-sh/uv/releases/download/0.11.15/uv-x86_64-pc-windows-msvc.zip";
+#[cfg(target_os = "windows")]
+const WINDOWS_UV_DOWNLOAD_SHA256: &str =
+    "04b98d414a9000e25e5e0e7c9f53749e66b790cdaffc582829e6f58c544ee11c";
 const FILESYSTEM_MAX_DEPTH: usize = 2;
 const FILESYSTEM_MAX_ENTRIES_PER_DIR: usize = 80;
 const HERMES_IMPORT_MAX_BYTES: u64 = 50 * 1024 * 1024;
@@ -866,7 +876,7 @@ async fn start_hermes_bridge_inner(
     let mut child = cmd.spawn().map_err(|error| {
         AppError::new(
             "hermes_bridge_start_failed",
-            format!("Could not start the June-managed Hermes runtime. {error}"),
+            format!("Could not start the built-in agent runtime. {error}"),
         )
     })?;
     let pid = child.id();
@@ -5178,7 +5188,7 @@ async fn install_managed_hermes_runtime_unix(
             AppError::new(
                 "hermes_runtime_install_failed",
                 format!(
-                    "Could not run the Hermes runtime installer. Install log: {}. {error}",
+                    "Could not run the agent runtime installer. Install log: {}. {error}",
                     install_log.display()
                 ),
             )
@@ -5189,7 +5199,7 @@ async fn install_managed_hermes_runtime_unix(
         return Err(AppError::new(
             "hermes_runtime_install_failed",
             format!(
-                "Could not set up the June-managed Hermes runtime. Install log: {}.",
+                "Could not set up the built-in agent runtime. Install log: {}.",
                 install_log.display()
             ),
         ));
@@ -5199,7 +5209,7 @@ async fn install_managed_hermes_runtime_unix(
         return Err(AppError::new(
             "hermes_runtime_install_failed",
             format!(
-                "Hermes setup completed but the runtime command was not created. Install log: {}.",
+                "Agent runtime setup completed but its command was not created. Install log: {}.",
                 install_log.display()
             ),
         ));
@@ -5257,6 +5267,8 @@ async fn install_managed_hermes_runtime_windows(
                     "JUNE_HERMES_SOURCE_TARBALL_SHA256",
                     HERMES_SOURCE_TARBALL_SHA256,
                 )
+                .env("JUNE_HERMES_UV_URL", WINDOWS_UV_DOWNLOAD_URL)
+                .env("JUNE_HERMES_UV_SHA256", WINDOWS_UV_DOWNLOAD_SHA256)
                 .env("HERMES_HOME", &hermes_home)
                 .stdin(Stdio::null())
                 .stdout(Stdio::from(log_file))
@@ -5269,7 +5281,7 @@ async fn install_managed_hermes_runtime_windows(
             AppError::new(
                 "hermes_runtime_install_failed",
                 format!(
-                    "Could not run the Windows Hermes runtime installer. Install log: {}. {error}",
+                    "Could not run the agent runtime installer. Install log: {}. {error}",
                     install_log.display()
                 ),
             )
@@ -5280,7 +5292,7 @@ async fn install_managed_hermes_runtime_windows(
         return Err(AppError::new(
             "hermes_runtime_install_failed",
             format!(
-                "Could not set up the June-managed Hermes runtime. Install log: {}.",
+                "Could not set up the built-in agent runtime. Install log: {}.",
                 install_log.display()
             ),
         ));
@@ -5290,7 +5302,7 @@ async fn install_managed_hermes_runtime_windows(
         return Err(AppError::new(
             "hermes_runtime_install_failed",
             format!(
-                "Hermes setup completed but the runtime command was not created. Install log: {}.",
+                "Agent runtime setup completed but its command was not created. Install log: {}.",
                 install_log.display()
             ),
         ));
@@ -5380,10 +5392,13 @@ $hermesHome = $env:JUNE_HERMES_HOME
 $installCommit = $env:JUNE_HERMES_INSTALL_COMMIT
 $sourceTarballUrl = $env:JUNE_HERMES_SOURCE_TARBALL_URL
 $sourceTarballSha256 = ($env:JUNE_HERMES_SOURCE_TARBALL_SHA256).ToLowerInvariant()
+$uvDownloadUrl = $env:JUNE_HERMES_UV_URL
+$uvDownloadSha256 = ($env:JUNE_HERMES_UV_SHA256).ToLowerInvariant()
 
 if ([string]::IsNullOrWhiteSpace($runtimeDir) -or
     [string]::IsNullOrWhiteSpace($installDir) -or
-    [string]::IsNullOrWhiteSpace($hermesHome)) {
+    [string]::IsNullOrWhiteSpace($hermesHome) -or
+    [string]::IsNullOrWhiteSpace($uvDownloadUrl)) {
   throw "Hermes installer paths were not provided."
 }
 
@@ -5394,34 +5409,25 @@ function Invoke-Native {
     [Parameter(Mandatory = $true)][string]$FilePath,
     [Parameter(Mandatory = $true)][string[]]$Arguments
   )
+  Write-Output ("running: " + $FilePath + " " + ($Arguments -join " "))
   & $FilePath @Arguments
   if ($LASTEXITCODE -ne 0) {
     throw "$FilePath exited with code $LASTEXITCODE"
   }
 }
 
-function Resolve-Python {
-  $candidates = @(
-    @{ Exe = "py"; Args = @("-3.11") },
-    @{ Exe = "py"; Args = @("-3.12") },
-    @{ Exe = "py"; Args = @("-3.13") },
-    @{ Exe = "python"; Args = @() },
-    @{ Exe = "python3"; Args = @() }
+function Get-VerifiedDownload {
+  param(
+    [Parameter(Mandatory = $true)][string]$Uri,
+    [Parameter(Mandatory = $true)][string]$Destination,
+    [Parameter(Mandatory = $true)][string]$Sha256
   )
-  foreach ($candidate in $candidates) {
-    try {
-      $args = @($candidate.Args + @(
-        "-c",
-        "import sys; raise SystemExit(0 if (3, 11) <= sys.version_info[:2] < (3, 14) else 1)"
-      ))
-      & $candidate.Exe @args
-      if ($LASTEXITCODE -eq 0) {
-        return $candidate
-      }
-    } catch {
-    }
+  Write-Output "downloading: $Uri"
+  Invoke-WebRequest -Uri $Uri -OutFile $Destination
+  $actual = (Get-FileHash -Algorithm SHA256 -Path $Destination).Hash.ToLowerInvariant()
+  if ($actual -ne $Sha256) {
+    throw "Checksum mismatch for $Uri. Expected $Sha256, got $actual."
   }
-  throw "Python 3.11, 3.12, or 3.13 is required to install the managed Hermes runtime on Windows."
 }
 
 if (!(Test-Path (Join-Path $installDir "pyproject.toml"))) {
@@ -5429,11 +5435,7 @@ if (!(Test-Path (Join-Path $installDir "pyproject.toml"))) {
   New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
   try {
     $archive = Join-Path $tmpDir "hermes-agent.tar.gz"
-    Invoke-WebRequest -Uri $sourceTarballUrl -OutFile $archive
-    $actualSha256 = (Get-FileHash -Algorithm SHA256 -Path $archive).Hash.ToLowerInvariant()
-    if ($actualSha256 -ne $sourceTarballSha256) {
-      throw "Hermes source archive checksum mismatch. Expected $sourceTarballSha256, got $actualSha256."
-    }
+    Get-VerifiedDownload -Uri $sourceTarballUrl -Destination $archive -Sha256 $sourceTarballSha256
     Invoke-Native "tar" @("-xzf", $archive, "-C", $tmpDir)
     $unpacked = Get-ChildItem -Path $tmpDir -Directory |
       Where-Object { $_.Name -like "hermes-agent-*" } |
@@ -5451,20 +5453,62 @@ if (!(Test-Path (Join-Path $installDir "pyproject.toml"))) {
   }
 }
 
-$python = Resolve-Python
+# Bootstrap a self-contained uv + CPython inside the runtime dir. End-user
+# Windows machines have no Python (and no compiler toolchain), so the install
+# must bring its own interpreter the same way the release bundle does.
+$uvDir = Join-Path $runtimeDir "uv"
+$uvExe = Join-Path $uvDir "uv.exe"
+if (!(Test-Path $uvExe)) {
+  $uvTmp = Join-Path $runtimeDir ("uv-download-" + [guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Force -Path $uvTmp | Out-Null
+  try {
+    $uvArchive = Join-Path $uvTmp "uv.zip"
+    Get-VerifiedDownload -Uri $uvDownloadUrl -Destination $uvArchive -Sha256 $uvDownloadSha256
+    Expand-Archive -Path $uvArchive -DestinationPath $uvTmp -Force
+    $downloadedUv = Get-ChildItem -Path $uvTmp -Recurse -File -Filter "uv.exe" |
+      Select-Object -First 1
+    if ($null -eq $downloadedUv) {
+      throw "uv archive did not contain uv.exe."
+    }
+    New-Item -ItemType Directory -Force -Path $uvDir | Out-Null
+    Move-Item -Path $downloadedUv.FullName -Destination $uvExe -Force
+  } finally {
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path $uvTmp
+  }
+}
+
+# Script-scoped uv configuration: this powershell process only runs the
+# installer, so plain $env: assignments are simpler and safer than a
+# save/restore dance (see the $null -> "" coercion bug this replaced).
+$pythonRoot = Join-Path $runtimeDir "python"
+$env:UV_NO_CONFIG = "1"
+$env:UV_PYTHON_INSTALL_DIR = $pythonRoot
+$env:UV_PYTHON_INSTALL_BIN = "0"
+
+Invoke-Native $uvExe @("python", "install", "3.11")
+$pythonInstall = Get-ChildItem -Path $pythonRoot -Directory |
+  Where-Object { $_.Name -like "cpython-3.11*" } |
+  Select-Object -First 1
+if ($null -eq $pythonInstall) {
+  throw "uv did not install a cpython-3.11 runtime under $pythonRoot."
+}
+$py = Join-Path $pythonInstall.FullName "python.exe"
+if (!(Test-Path $py)) {
+  throw "Managed Python interpreter missing at $py."
+}
+
 $venvDir = Join-Path $installDir "venv"
 if (Test-Path $venvDir) {
   Remove-Item -Recurse -Force -Path $venvDir
 }
-Invoke-Native $python.Exe @($python.Args + @("-m", "venv", $venvDir))
+Invoke-Native $uvExe @("venv", "--python", $py, $venvDir)
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
 if (!(Test-Path $venvPython)) {
   throw "Python virtual environment was not created at $venvDir."
 }
 
 Set-Location $installDir
-Invoke-Native $venvPython @("-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel")
-Invoke-Native $venvPython @("-m", "pip", "install", "-e", ".[all]")
+Invoke-Native $uvExe @("pip", "install", "-p", $venvPython, "-e", ".[all]")
 
 $homeDirs = @("cron", "sessions", "logs", "pairing", "hooks", "image_cache", "audio_cache", "memories", "skills")
 foreach ($dir in $homeDirs) {

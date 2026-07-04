@@ -95,19 +95,33 @@ jobs:
       - name: Build june-api sidecar (externalBin)
         run: node scripts/build-sidecar.mjs --target ${{ matrix.target }}
 
-      # Hermes is the optional agent runtime. Bundling it is fragile (uv/python
-      # over the network) and it is NOT required for the core meeting-notes
-      # flow: when it is absent, build.rs writes a placeholder and the app
-      # installs the managed runtime on first launch. So a failure here must
-      # not fail the release.
+      # Hermes is the agent runtime. On macOS a bundling failure is tolerable:
+      # the first-launch managed install works there (bash + curl bootstrap
+      # uv/python on their own). On Windows it is NOT: the managed fallback
+      # needs a preinstalled Python 3.11-3.13, which end-user machines don't
+      # have — shipping an NSIS without the bundled runtime ships a broken
+      # agent (v1.0.3 did exactly that when this step failed silently). So the
+      # Windows step is blocking, plus an explicit payload check below.
       - name: Build bundled Hermes runtime (macOS)
         if: runner.os == 'macOS'
         continue-on-error: true
         run: ./scripts/bundle-hermes-runtime.sh
       - name: Build bundled Hermes runtime (Windows)
         if: runner.os == 'Windows'
-        continue-on-error: true
         run: pwsh scripts/bundle-hermes-runtime-windows.ps1
+      - name: Verify bundled Hermes runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($expected in @(
+            ".tauri-hermes\hermes\bin\hermes.exe",
+            ".tauri-hermes\hermes\python\current\python.exe",
+            ".tauri-hermes\hermes\hermes-agent\pyproject.toml"
+          )) {
+            if (!(Test-Path -LiteralPath $expected -PathType Leaf)) {
+              throw "Bundled Hermes runtime is incomplete: missing $expected."
+            }
+          }
 
       # Notarization requires EVERY nested Mach-O to be signed (Developer ID +
       # hardened runtime + secure timestamp). Two pieces Tauri/tauri-action don't
