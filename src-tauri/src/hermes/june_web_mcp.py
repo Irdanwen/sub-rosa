@@ -8,6 +8,17 @@ to the June API's `/v1/web/search` and `/v1/web/fetch` endpoints. Those run on
 Venice's privacy-preserving augment endpoints, so the agent never talks to a
 third party directly and the access token never leaves the Rust process.
 
+The proxy's coordinates (base URL + token) are NOT baked in at spawn time:
+argv[1] is the path to a JSON file the app rewrites on every runtime spawn,
+and this server re-reads it on every tool call. The proxy binds an ephemeral
+port per app launch while this MCP server can be hosted by the long-lived
+Hermes gateway (launchd) that survives app restarts — spawn-time coordinates
+would go stale after the first app relaunch and every web tool call would hit
+a dead port (this is exactly what broke cron routines). A legacy spawn from a
+pre-coordinates-file config passes the base URL itself as argv[1] with the
+token in the environment; that mode is kept so old config + new script still
+works until the gateway respawns its MCP servers.
+
 It depends only on the Python standard library so it can run inside the Hermes
 runtime venv without extra packaging.
 """
@@ -15,6 +26,7 @@ runtime venv without extra packaging.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -85,21 +97,46 @@ TOOLS: list[dict[str, Any]] = [
 
 def main() -> None:
     if len(sys.argv) < 2:
-        raise SystemExit("Usage: june_web_mcp.py <proxy_base_url>")
+        raise SystemExit("Usage: june_web_mcp.py <coordinates_json_path | proxy_base_url>")
 
-    base_url = sys.argv[1].rstrip("/")
-    # The proxy token is passed via the environment rather than argv so it does
-    # not show up in process listings.
-    import os
-
-    token = os.environ.get(TOKEN_ENV_VAR, "")
+    target = sys.argv[1]
     while True:
         message = read_message()
         if message is None:
             return
-        response_message = handle_message(base_url, token, message)
+        response_message = handle_message(target, message)
         if response_message is not None:
             write_message(response_message)
+
+
+def resolve_coordinates(target: str) -> tuple[str, str]:
+    """Resolve the proxy base URL and token for THIS call.
+
+    `target` is normally the coordinates JSON file the app rewrites on every
+    runtime spawn; reading it per call is what keeps a gateway-hosted server
+    working across app restarts. A literal http(s) URL is the legacy spawn
+    shape (token in the environment).
+    """
+    if target.startswith("http://") or target.startswith("https://"):
+        return target.rstrip("/"), os.environ.get(TOKEN_ENV_VAR, "")
+
+    try:
+        with open(target, encoding="utf-8") as handle:
+            coordinates = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            "Could not read the June web proxy coordinates "
+            f"({target}): {exc}. The June app rewrites this file at "
+            "startup; is the app running?"
+        )
+
+    base_url = str(coordinates.get("base_url") or "").rstrip("/")
+    token = str(coordinates.get("token") or "")
+    if not base_url:
+        raise RuntimeError(
+            f"The June web proxy coordinates file ({target}) has no base_url."
+        )
+    return base_url, token
 
 
 def read_message() -> dict[str, Any] | None:
@@ -138,9 +175,7 @@ def write_message(payload: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
-def handle_message(
-    base_url: str, token: str, message: dict[str, Any]
-) -> dict[str, Any] | None:
+def handle_message(target: str, message: dict[str, Any]) -> dict[str, Any] | None:
     method = message.get("method")
     request_id = message.get("id")
 
@@ -160,19 +195,20 @@ def handle_message(
     if method == "tools/list":
         return response(request_id, {"tools": TOOLS})
     if method == "tools/call":
-        return call_tool(base_url, token, request_id, message.get("params") or {})
+        return call_tool(target, request_id, message.get("params") or {})
 
     if request_id is None:
         return None
     return error_response(request_id, -32601, f"Unknown method: {method}")
 
 
-def call_tool(
-    base_url: str, token: str, request_id: Any, params: dict[str, Any]
-) -> dict[str, Any]:
+def call_tool(target: str, request_id: Any, params: dict[str, Any]) -> dict[str, Any]:
     name = params.get("name")
     arguments = params.get("arguments") or {}
     try:
+        # Resolved inside the try so a missing/corrupt coordinates file
+        # surfaces as a tool error the agent can report, not a dead server.
+        base_url, token = resolve_coordinates(target)
         if name == "web_search":
             result = web_search(base_url, token, arguments)
         elif name == "web_fetch":

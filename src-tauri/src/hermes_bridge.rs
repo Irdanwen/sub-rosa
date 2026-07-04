@@ -71,9 +71,13 @@ const JUNE_CONTEXT_MCP_SCRIPT: &str = include_str!("hermes/june_context_mcp.py")
 const JUNE_WEB_MCP_SERVER_NAME: &str = "june_web";
 const JUNE_WEB_MCP_SCRIPT_NAME: &str = "june_web_mcp.py";
 const JUNE_WEB_MCP_SCRIPT: &str = include_str!("hermes/june_web_mcp.py");
-/// Environment variable the `june_web` MCP reads its loopback proxy token from.
-/// Kept out of argv so it does not appear in process listings.
-const JUNE_WEB_MCP_TOKEN_ENV: &str = "JUNE_WEB_PROXY_TOKEN";
+/// Coordinates file the `june_web` MCP re-reads on EVERY tool call to find the
+/// provider proxy. The proxy binds an ephemeral port per app launch, but the
+/// MCP server can be hosted by the launchd-managed Hermes gateway that
+/// outlives the app — coordinates baked into argv/env at spawn time go stale
+/// after the first app relaunch and every cron-routine web call then hits a
+/// dead port (ECONNREFUSED). Rewritten (atomically) on every runtime spawn.
+const JUNE_WEB_MCP_COORDS_NAME: &str = "june_web_proxy.json";
 
 /// Identity injected into every Hermes session via `SOUL.md`. Hermes loads
 /// this file from `HERMES_HOME` at prompt-build time; without it the runtime
@@ -795,7 +799,8 @@ async fn start_hermes_bridge_inner(
     let cwd_display = Some(cwd.to_string_lossy().into_owned());
     let provider_proxy = ensure_provider_proxy(bridge).await?;
     let june_context_mcp = sync_june_context_mcp(app, &command)?;
-    let june_web_mcp = sync_june_web_mcp(app, &command)?;
+    let june_web_mcp =
+        sync_june_web_mcp(app, &command, provider_proxy.port, &provider_proxy.token)?;
     sync_hermes_config(
         &hermes_home,
         provider_proxy.port,
@@ -982,6 +987,9 @@ struct JuneContextMcpConfig {
 struct JuneWebMcpConfig {
     command: String,
     script_path: PathBuf,
+    /// Path to the proxy-coordinates JSON the script re-reads per tool call
+    /// (see [`JUNE_WEB_MCP_COORDS_NAME`]).
+    coordinates_path: PathBuf,
 }
 
 #[tauri::command]
@@ -5953,7 +5961,12 @@ fn sync_june_context_mcp(
     })
 }
 
-fn sync_june_web_mcp(app: &AppHandle, hermes_command: &str) -> Result<JuneWebMcpConfig, AppError> {
+fn sync_june_web_mcp(
+    app: &AppHandle,
+    hermes_command: &str,
+    provider_proxy_port: u16,
+    provider_proxy_token: &str,
+) -> Result<JuneWebMcpConfig, AppError> {
     let data_dir = crate::app_paths::app_data_dir(app)
         .map_err(|error| AppError::new("june_web_mcp_failed", error.to_string()))?;
     let mcp_dir = data_dir.join(JUNE_CONTEXT_MCP_DIR_NAME);
@@ -5963,10 +5976,48 @@ fn sync_june_web_mcp(app: &AppHandle, hermes_command: &str) -> Result<JuneWebMcp
     fs::write(&script_path, JUNE_WEB_MCP_SCRIPT)
         .map_err(|error| AppError::new("june_web_mcp_failed", error.to_string()))?;
 
+    let coordinates_path = mcp_dir.join(JUNE_WEB_MCP_COORDS_NAME);
+    let coordinates = render_june_web_proxy_coordinates(provider_proxy_port, provider_proxy_token);
+    write_june_web_proxy_coordinates(&coordinates_path, &coordinates)
+        .map_err(|error| AppError::new("june_web_mcp_failed", error.to_string()))?;
+
     Ok(JuneWebMcpConfig {
         command: hermes_python_command(hermes_command),
         script_path,
+        coordinates_path,
     })
+}
+
+/// The JSON the `june_web` MCP re-reads per tool call. Pure so tests can
+/// assert the exact shape the Python script parses.
+fn render_june_web_proxy_coordinates(port: u16, token: &str) -> String {
+    serde_json::json!({
+        "base_url": format!("http://127.0.0.1:{port}/v1"),
+        "token": token,
+    })
+    .to_string()
+}
+
+/// Writes the coordinates file atomically (temp file + rename) so a reader
+/// that races a runtime spawn never sees a torn JSON body — the MCP server
+/// re-reads this file on every tool call. Owner-only permissions: the file
+/// carries the proxy bearer token.
+fn write_june_web_proxy_coordinates(path: &Path, contents: &str) -> std::io::Result<()> {
+    let tmp_path = path.with_extension("json.tmp");
+    {
+        use std::io::Write as _;
+        let mut file = fs::File::create(&tmp_path)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        }
+        file.write_all(contents.as_bytes())?;
+        file.sync_all()?;
+    }
+    #[cfg(windows)]
+    let _ = fs::remove_file(path);
+    fs::rename(&tmp_path, path)
 }
 
 fn hermes_python_command(hermes_command: &str) -> String {
@@ -6042,12 +6093,7 @@ fn render_hermes_config(
         }
         block
     };
-    let mcp_servers_block = render_mcp_servers_config(
-        june_context_mcp,
-        june_web_mcp,
-        base_url,
-        provider_proxy_token,
-    );
+    let mcp_servers_block = render_mcp_servers_config(june_context_mcp, june_web_mcp);
     format!(
         r#"model:
   default: {model}
@@ -6075,15 +6121,13 @@ skills:
 fn render_mcp_servers_config(
     context: Option<&JuneContextMcpConfig>,
     web: Option<&JuneWebMcpConfig>,
-    base_url: &str,
-    proxy_token: &str,
 ) -> String {
     let mut entries = String::new();
     if let Some(config) = context {
         entries.push_str(&render_context_mcp_entry(config));
     }
     if let Some(config) = web {
-        entries.push_str(&render_web_mcp_entry(config, base_url, proxy_token));
+        entries.push_str(&render_web_mcp_entry(config));
     }
     if entries.is_empty() {
         return "mcp_servers: {}\n".to_string();
@@ -6111,30 +6155,28 @@ fn render_context_mcp_entry(config: &JuneContextMcpConfig) -> String {
     )
 }
 
-/// The web MCP gets the loopback proxy base URL as an argument and the proxy
-/// token via the environment (kept out of argv). The token is the same one the
-/// model block already carries as `api_key`, so it adds no new secret to the
-/// file.
-fn render_web_mcp_entry(config: &JuneWebMcpConfig, base_url: &str, proxy_token: &str) -> String {
+/// The web MCP gets the path to the proxy-coordinates file as its argument,
+/// not the proxy URL/token themselves: the script re-reads that file on every
+/// tool call, so a server hosted by the long-lived Hermes gateway keeps
+/// working after the app relaunches on a new ephemeral proxy port. The token
+/// lives in the (0600) coordinates file rather than argv or env.
+fn render_web_mcp_entry(config: &JuneWebMcpConfig) -> String {
     format!(
         r#"  {server_name}:
     enabled: true
     command: {command}
     args:
       - {script_path}
-      - {base_url}
+      - {coordinates_path}
     env:
       PYTHONUNBUFFERED: "1"
-      {token_env}: {token}
     timeout: 30
     connect_timeout: 10
 "#,
         server_name = JUNE_WEB_MCP_SERVER_NAME,
         command = yaml_string(&config.command),
         script_path = yaml_string(&config.script_path.to_string_lossy()),
-        base_url = yaml_string(base_url),
-        token_env = JUNE_WEB_MCP_TOKEN_ENV,
-        token = yaml_string(proxy_token),
+        coordinates_path = yaml_string(&config.coordinates_path.to_string_lossy()),
     )
 }
 
@@ -7272,6 +7314,7 @@ mod tests {
         JuneWebMcpConfig {
             command: "/tmp/hermes/venv/bin/python".to_string(),
             script_path: PathBuf::from("/tmp/june/hermes-mcp/june_web_mcp.py"),
+            coordinates_path: PathBuf::from("/tmp/june/hermes-mcp/june_web_proxy.json"),
         }
     }
 
@@ -7295,11 +7338,47 @@ mod tests {
         assert!(config.contains("    command: \"/tmp/hermes/venv/bin/python\"\n"));
         assert!(config.contains("      - \"/tmp/june/hermes-mcp/june_context_mcp.py\"\n"));
         assert!(config.contains("      - \"/tmp/june/notes.sqlite3\"\n"));
-        // The web server gets the loopback proxy URL as an arg and the proxy
-        // token via env, never as a direct credential the MCP must hold.
+        // The web server gets the coordinates-file path as its arg — never
+        // the proxy URL or token, which would go stale in a gateway-hosted
+        // server the moment the app relaunches on a new ephemeral port.
         assert!(config.contains("      - \"/tmp/june/hermes-mcp/june_web_mcp.py\"\n"));
-        assert!(config.contains("      - \"http://127.0.0.1:9/v1\"\n"));
-        assert!(config.contains("      JUNE_WEB_PROXY_TOKEN: \"proxy-tok\"\n"));
+        assert!(config.contains("      - \"/tmp/june/hermes-mcp/june_web_proxy.json\"\n"));
+        assert!(!config.contains("JUNE_WEB_PROXY_TOKEN"));
+        assert!(!config.contains("      - \"http://127.0.0.1:9/v1\"\n"));
+    }
+
+    #[test]
+    fn june_web_proxy_coordinates_render_the_shape_the_script_parses() {
+        let coordinates = render_june_web_proxy_coordinates(57482, "proxy-tok");
+        let parsed: serde_json::Value = serde_json::from_str(&coordinates).expect("valid json");
+        assert_eq!(parsed["base_url"], "http://127.0.0.1:57482/v1");
+        assert_eq!(parsed["token"], "proxy-tok");
+    }
+
+    #[test]
+    fn june_web_proxy_coordinates_write_atomically_and_owner_only() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("june_web_proxy.json");
+
+        write_june_web_proxy_coordinates(&path, "{\"base_url\":\"a\",\"token\":\"b\"}")
+            .expect("first write");
+        // Rewrite over an existing file — the rename path both platforms hit
+        // on every runtime spawn after the first.
+        write_june_web_proxy_coordinates(&path, "{\"base_url\":\"c\",\"token\":\"d\"}")
+            .expect("rewrite");
+
+        let body = std::fs::read_to_string(&path).expect("read back");
+        assert_eq!(body, "{\"base_url\":\"c\",\"token\":\"d\"}");
+        assert!(!path.with_extension("json.tmp").exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let mode = std::fs::metadata(&path)
+                .expect("metadata")
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
     }
 
     #[test]
