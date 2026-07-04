@@ -73,6 +73,22 @@ pub struct TestConnectionResult {
     pub code: Option<String>,
 }
 
+/// Live balance shown in the sidebar footer. `price_multiplier` is the
+/// current Carpe Diem fraction of the upstream Venice rate (a global daily
+/// factor that resets at 00:00 UTC); it is `None` when the public pricing
+/// endpoint can't be read — the balance still shows without it. When the
+/// stored key is a Venice key (no `cdm_` prefix) the balance comes from
+/// Venice, converted to credits (1 credit = $0.01), and the factor is a
+/// fixed 1.0 since Venice bills at full rate.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CarpeDiemCreditsDto {
+    pub available_credits: f64,
+    pub escrow_credits: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price_multiplier: Option<f64>,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetBaseUrlRequest {
@@ -289,7 +305,143 @@ pub async fn carpe_diem_test_connection() -> Result<TestConnectionResult, AppErr
     }
 }
 
+#[tauri::command]
+pub async fn carpe_diem_get_credits() -> Result<CarpeDiemCreditsDto, AppError> {
+    let base = base_url();
+    let Some(key) = api_key() else {
+        return Err(AppError::new(
+            "carpe_diem_no_api_key",
+            "No Carpe Diem API key is stored yet.",
+        ));
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(TEST_TIMEOUT)
+        .build()
+        .map_err(|error| AppError::new("carpe_diem_http_client", error.to_string()))?;
+    let base = base.trim_end_matches('/').to_string();
+
+    // Route by key prefix (the fork's rule): `cdm_` keys talk to Carpe Diem;
+    // any other key is a Venice key pointed straight at api.venice.ai, which
+    // bills at full rate — hence the fixed ×1.00 factor on that path.
+    if key.starts_with("cdm_") {
+        carpe_diem_credits(&client, &base, &key).await
+    } else {
+        venice_credits(&client, &base, &key).await
+    }
+}
+
+async fn carpe_diem_credits(
+    client: &reqwest::Client,
+    base: &str,
+    key: &str,
+) -> Result<CarpeDiemCreditsDto, AppError> {
+    let credits = client
+        .get(format!("{base}/credits"))
+        .bearer_auth(key)
+        .send()
+        .await
+        .map_err(|error| AppError::new("carpe_diem_credits_unreachable", error.to_string()))?
+        .error_for_status()
+        .map_err(|error| AppError::new("carpe_diem_credits_failed", error.to_string()))?
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| AppError::new("carpe_diem_credits_failed", error.to_string()))?;
+
+    // `availableCredits` (escrow − pending − holds) is the only spendable
+    // figure; `escrowCredits` includes charges the user can't spend against.
+    let available_credits = credits
+        .get("availableCredits")
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| {
+            AppError::new(
+                "carpe_diem_credits_failed",
+                "The credits response is missing availableCredits.",
+            )
+        })?;
+    let escrow_credits = credits
+        .get("escrowCredits")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(available_credits);
+
+    // Pricing is public and lives at the operator root (the base URL minus its
+    // /v1 suffix). The multiplier is global for the day, so any entry is
+    // representative.
+    let pricing_base = base.strip_suffix("/v1").unwrap_or(base);
+    let price_multiplier = match client.get(format!("{pricing_base}/pricing")).send().await {
+        Ok(response) if response.status().is_success() => response
+            .json::<serde_json::Value>()
+            .await
+            .ok()
+            .and_then(|pricing| first_multiplier(&pricing)),
+        _ => None,
+    };
+
+    Ok(CarpeDiemCreditsDto {
+        available_credits,
+        escrow_credits,
+        price_multiplier,
+    })
+}
+
+async fn venice_credits(
+    client: &reqwest::Client,
+    base: &str,
+    key: &str,
+) -> Result<CarpeDiemCreditsDto, AppError> {
+    // `/billing/balance` needs an ADMIN key, so read the balances off
+    // `/api_keys/rate_limits`, which any INFERENCE key may call.
+    let rate_limits = client
+        .get(format!("{base}/api_keys/rate_limits"))
+        .bearer_auth(key)
+        .send()
+        .await
+        .map_err(|error| AppError::new("carpe_diem_credits_unreachable", error.to_string()))?
+        .error_for_status()
+        .map_err(|error| AppError::new("carpe_diem_credits_failed", error.to_string()))?
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| AppError::new("carpe_diem_credits_failed", error.to_string()))?;
+
+    let available_credits = venice_available_credits(&rate_limits).ok_or_else(|| {
+        AppError::new(
+            "carpe_diem_credits_failed",
+            "The rate-limits response is missing balances.",
+        )
+    })?;
+
+    Ok(CarpeDiemCreditsDto {
+        available_credits,
+        escrow_credits: available_credits,
+        price_multiplier: Some(1.0),
+    })
+}
+
 // --- internals -------------------------------------------------------------
+
+fn first_multiplier(pricing: &serde_json::Value) -> Option<f64> {
+    ["models", "fixedCost"].iter().find_map(|section| {
+        pricing
+            .get(section)?
+            .as_array()?
+            .iter()
+            .find_map(|entry| entry.get("multiplier").and_then(serde_json::Value::as_f64))
+    })
+}
+
+/// Venice balances are dollar-denominated (USD prepaid + DIEM, which is ≈ USD);
+/// 1 credit = $0.01, so the spendable total converts at ×100. `DIEM` is null
+/// when the account isn't staking — treat each missing bucket as zero, but
+/// require at least one so a shape change surfaces as an error, not "0 credits".
+fn venice_available_credits(rate_limits: &serde_json::Value) -> Option<f64> {
+    let balances = rate_limits.get("data")?.get("balances")?;
+    let usd = balances.get("USD").and_then(serde_json::Value::as_f64);
+    let diem = balances.get("DIEM").and_then(serde_json::Value::as_f64);
+    if usd.is_none() && diem.is_none() {
+        return None;
+    }
+    Some((usd.unwrap_or(0.0) + diem.unwrap_or(0.0)) * 100.0)
+}
 
 fn unreachable_result(
     base: &str,
@@ -465,6 +617,47 @@ mod tests {
             CarpeDiemSettings::default().base_url,
             branding::CARPE_DIEM_DEFAULT_BASE_URL
         );
+    }
+
+    #[test]
+    fn first_multiplier_prefers_models_then_fixed_cost() {
+        let pricing = serde_json::json!({
+            "models": [
+                { "id": "no-multiplier" },
+                { "id": "glm", "multiplier": 0.42 }
+            ],
+            "fixedCost": [{ "id": "z-image", "multiplier": 0.5 }]
+        });
+        assert_eq!(first_multiplier(&pricing), Some(0.42));
+
+        let fixed_only = serde_json::json!({
+            "models": [],
+            "fixedCost": [{ "id": "z-image", "multiplier": 0.5 }]
+        });
+        assert_eq!(first_multiplier(&fixed_only), Some(0.5));
+
+        assert_eq!(first_multiplier(&serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn venice_available_credits_sums_usd_and_diem_at_cent_rate() {
+        let both = serde_json::json!({
+            "data": { "balances": { "USD": 50.25, "DIEM": 100.0 } }
+        });
+        assert_eq!(venice_available_credits(&both), Some(15_025.0));
+
+        // DIEM is null when the account isn't staking.
+        let usd_only = serde_json::json!({
+            "data": { "balances": { "USD": 4.75, "DIEM": null } }
+        });
+        assert_eq!(venice_available_credits(&usd_only), Some(475.0));
+
+        // A response without any recognizable bucket is malformed, not zero.
+        assert_eq!(
+            venice_available_credits(&serde_json::json!({ "data": { "balances": {} } })),
+            None
+        );
+        assert_eq!(venice_available_credits(&serde_json::json!({})), None);
     }
 
     #[test]

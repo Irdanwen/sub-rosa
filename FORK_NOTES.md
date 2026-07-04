@@ -54,11 +54,10 @@ Clé `cdm_` de test fournie par l'utilisateur (jamais commitée ; utilisée en e
 - ✅ **`june-api` en mode local contre Carpe Diem** : boot OK, `/livez` `/readyz` `/healthz` = 200, écoute sur le port dynamique.
 - ✅ **Tous les IDs de modèles par défaut de June existent chez Carpe Diem** (catalogue de 283 modèles) :
   `nvidia/parakeet-tdt-0.6b-v3`, `zai-org-glm-5-2`, `nvidia-nemotron-3-nano-30b-a3b`, `kimi-k2-6`, `zai-org-glm-5-1`, `zai-org-glm-5`.
-- ⚠️ **Limitation connue** : le fetch du catalogue live au boot **échoue au parse** (le parseur Venice de
-  `june-api/crates/providers/src/venice.rs` attend le schéma natif Venice ; Carpe Diem renvoie un schéma
-  OpenAI `{object:"list",data:[{id,carpe_diem_type,…}]}`). Dégradation gracieuse → **6 modèles curatés** de
-  `config.toml` (dont les défauts) restent disponibles. Correctif ciblé prévu (voir tâche dédiée) pour
-  synchroniser le catalogue complet dans le sélecteur de modèles.
+- ✅ **Catalogue complet au boot** (résolu 2026-07-04, ex-limitation connue) : le parseur de
+  `june-api/crates/providers/src/venice.rs` retombe sur le schéma OpenAI de Carpe Diem
+  (`{object:"list",data:[{id,carpe_diem_type,…}]}`) quand le schéma Venice ne parse pas, et joint le pricing
+  opérateur → ~94 modèles (89 text + 5 asr) dans le sélecteur. Détail dans « Découvertes » plus bas.
 
 ---
 
@@ -76,9 +75,14 @@ Clé `cdm_` de test fournie par l'utilisateur (jamais commitée ; utilisée en e
 | `src-tauri/icons/*` | Icônes placeholder Sub Rosa (régénérées via `tauri icon`) | Remplacer par les sources définitives |
 | `src/app/App.tsx` | Gate Carpe Diem (état + effet + `carpeDiemRequired` dans `appBlocked` + rendu du gate avant l'onboarding) | Réappliquer le bloc gate |
 | `src/components/settings/AppSettings.tsx` | Onglet « Carpe Diem » (union `SettingsTab` + `SETTINGS_TABS` + rendu de `<CarpeDiemSettings/>`) ; Models › More options : `VeniceApiKeyRow` (BYOK Venice) remplacée par `CarpeDiemKeyRow` (lien vers l'onglet Carpe Diem + purge d'une clé Venice legacy, qui écraserait la clé `cdm_` par requête) | 3 points + 1 rangée |
-| `src/components/sidebar/Sidebar.tsx` | Entrée « Carpe Diem » ajoutée au groupe Personal de `SETTINGS_SIDEBAR_GROUPS` (sinon l'onglet est inatteignable) | 1 item |
+| `src/components/sidebar/Sidebar.tsx` | Entrée « Carpe Diem » ajoutée au groupe Personal de `SETTINGS_SIDEBAR_GROUPS` (sinon l'onglet est inatteignable) ; footer `SidebarIdentity` : une fois le solde chargé (`useCarpeDiemCredits`), le libellé « You » est remplacé par « N credits · ×0.42 » (solde disponible + facteur de prix du jour) avec icône carte | 1 item + bloc footer |
 | `src/lib/tauri.ts` | Wrappers IPC `carpeDiem*` + types (ajout en fin de section provider) ; valeur `JUNE_COMMUNITY_URL`→`https://t.me/CarpeDiemCommu` (miroir d'affichage de la constante dans `commands.rs`, qui ouvre réellement le lien) | Additif |
+| `src-tauri/src/hermes_bridge.rs` + `src-tauri/src/hermes/june_web_mcp.py` | **Bugfix (candidat upstream, 2026-07-04)** : le MCP `june_web` relit les coordonnées du proxy (port éphémère + token) depuis `hermes-mcp/june_web_proxy.json` **à chaque appel d'outil**, au lieu d'argv/env figés au spawn. Sans ça, la gateway Hermes (launchd, survit à l'app) garde le port d'un ancien lancement après relance de l'app → toutes les routines cron échouent en `web_search`/`web_fetch` avec `[Errno 61] Connection refused`. Le script garde un mode legacy (argv = URL http, token en env) pour les process spawnés depuis une vieille config. | Proposer upstream ; sinon réappliquer fichier-coordonnées + entrée YAML `june_web` |
 | `src-tauri/src/hermes_bridge.rs`, `scripts/bundle-hermes-runtime-windows.ps1`, `.github/workflows/{release,desktop}.yml` (Windows runtime, 2026-07-04) | **Fix runtime Hermes Windows** : (1) bug PowerShell dans le bundling CI — la restauration d'une env var absente écrivait `""` au lieu de la supprimer (coercion `$null`→`""` de PowerShell), tous les appels `uv` suivants échouaient (`UV_PYTHON_INSTALL_BIN … expected a boolish value`), et `continue-on-error` avalait l'échec → le NSIS v1.0.3 est sorti **sans** runtime embarqué ; (2) bundling Windows désormais bloquant dans `release.yml` + vérification explicite des fichiers du bundle ; (3) `WINDOWS_MANAGED_HERMES_INSTALL_SCRIPT` réécrit : bootstrap d'un `uv.exe` standalone épinglé (URL+SHA256 constantes dans `hermes_bridge.rs`, à garder en sync avec le .ps1) qui installe son propre CPython 3.11 — plus aucun besoin d'un Python système chez l'utilisateur ; (4) copy d'erreur visible neutralisée (« built-in agent runtime », plus de « June »/« Hermes ») ; (5) `desktop.yml` (job windows-rust) parse la syntaxe de tous les `.ps1` **et** du script embarqué | Réappliquer les 5 blocs ; garder l'URL/SHA uv en sync entre `hermes_bridge.rs` et le .ps1 |
+| `june-api/crates/providers/src/venice.rs` | **Fallback catalogue Carpe Diem** : `priced_models` tente le shape Venice puis le shape OpenAI-flat (`carpe_diem_type`) + join `GET {racine}/pricing` (structs `CarpeDiem*`, `carpe_diem_priced_model_items`). Sans lui, retour aux 6 modèles curatés de `config.toml`. | Conflits probables sur `priced_models`/`fetch_models` ; réappliquer le bloc fallback (les fns/structs `carpe_diem_*` sont additives) |
+| `src/app/App.tsx`, `src/components/sidebar/Sidebar.tsx`, `src/main.tsx` (Studio, 2026-07-04) | Vue « Studio » : cas `"studio"` dans `SidebarView`/`tabMeta`/le switch de rendu, bouton nav + quick command sidebar, import `styles/studio.css` | Réappliquer les 3 hooks (additifs) |
+| `src-tauri/tauri.conf.json` (Studio) | Scope assetProtocol `$APPDATA/studio-media/*` (affichage des fichiers de la galerie via `convertFileSrc`) | 1 entrée de scope |
+| `package.json` (Studio) | Dépendance `@xyflow/react` (canvas de workflows) | Additif |
 | ~50 fichiers `src/**` (composants + `lib/`) | Rebrand des **chaînes visibles** « June »→« Sub Rosa » (identifiants techniques laissés : `june://`, `JUNE_*`, clés `os-june:*`, noms de symboles) | Conflits attendus ; garder « Sub Rosa » dans le texte visible |
 | ~14 fichiers `src/test/**` | Assertions alignées sur la copie rebrandée ; 3 tests App ajoutent le mock `carpeDiemSidecarStatus` | Aligner sur le texte fork |
 
@@ -93,9 +97,15 @@ Clé `cdm_` de test fournie par l'utilisateur (jamais commitée ; utilisée en e
 | `FORK_NOTES.md`, `HANDOFF.md` | Traçabilité fork + handoffs humains |
 | `src-tauri/src/carpe_diem/{mod,branding,settings,sidecar}.rs` | Branding Rust + store réglages/keyring + IPC + **gestionnaire de sidecar june-api** |
 | `src/lib/branding.ts` | Constantes de marque + défauts Carpe Diem (frontend) |
+| `src/lib/carpe-diem-credits.ts` | Hook `useCarpeDiemCredits` (solde + facteur de prix pour le footer sidebar ; poll 60 s + refresh au focus) |
 | `src/components/settings/CarpeDiemSettings.tsx` | Section Réglages (base URL + clé + test + statut sidecar) |
 | `src/components/carpe-diem/CarpeDiemGate.tsx` | Écran de connexion premier lancement |
 | `src/test/carpe-diem-settings.test.tsx` | Tests UI Carpe Diem |
+| `src-tauri/src/carpe_diem/media.rs` | **Proxy média Studio** : commande générique allowlistée vers `/image/*`, `/video/*`, `/audio/*`, `/chat/completions` (clé lue du keychain, jamais exposée à la webview) ; catalogue fusionné CD `/v1/models` + contraintes du catalogue public Venice (ids identiques) + `/pricing` ; galerie d'artefacts sur disque (`$APPDATA/studio-media/`). Voir `docs/adr/0008-studio-media-proxy-in-tauri.md` |
+| `src/lib/studio/{types,client,catalog,paths,async-job,artifacts}.ts` | Lib Studio frontend : client IPC typé (retry/backoff), catalogue + groupement familles vidéo t2v/i2v + matrice lyrics musique + estimation de coûts, chemins par backend (musique = `/audio/music/*` sur CD ; retrieve superset `{id, queue_id, model}`), jobs async persistés (reprise après restart), galerie |
+| `src/lib/studio/workflow/{schema,validator,engine,store,templates,index}.ts` | Workflows média : schéma déclaratif de nodes (textInput/chat/image/tts/music/video/output), validateur (cycles DFS, kinds, params requis), engine par niveaux topologiques avec outputs typés (chaînage image→vidéo en `image_url`), persistance localStorage, templates |
+| `src/components/studio/*` + `src/styles/studio.css` | Vues Studio : Image (contraintes serveur, variants, edit/upscale, path async pour modèles lourds), Video (quote de prix, poll + chrono, reprise de jobs), Music (règles lyrics par modèle, prix par palier de durée), Workflows (canvas `@xyflow/react`, statut live par node) ; galerie commune (lightbox, export, suppression) |
+| `src/test/studio-*.test.ts` | Tests catalogue/paths/statuts + validateur + engine (28 tests) |
 
 ### Distribution (P5–P8)
 
@@ -127,11 +137,15 @@ Clé `cdm_` de test fournie par l'utilisateur (jamais commitée ; utilisée en e
   n'a besoin d'aucun entitlement supplémentaire (June n'est pas App-Sandboxed).
 - **Keychain (test)** : un item créé par la CLI `security` n'est pas lisible par un binaire ad-hoc/non signé (ACL) — d'où
   l'escape hatch `SUBROSA_DEV_API_KEY`. En prod, l'app **crée** l'item via l'UI → le relit sans souci (même identité signée).
-- **Catalogue de modèles (tâche 12, différée)** : Carpe Diem renvoie `/models` en shape OpenAI que le parseur Venice de
-  `june-api/crates/providers/src/venice.rs` rejette (parse error). Dégradation gracieuse → **6 modèles curatés** de
-  `config.toml` (parakeet, glm-5-2/5-1/5, kimi-k2-6, nemotron-nano) — exactement les défauts. Le mode local désactive le
-  billing, donc la classification de prix est sans objet. Un fallback tolérant surfacerait les 283 modèles mais alourdit
-  le merge upstream ; non nécessaire pour l'usage notes de réunion. « Tester la connexion » interroge Carpe Diem en direct.
+- **Catalogue de modèles (tâche 12, résolue 2026-07-04)** : `VeniceModelCatalog::priced_models`
+  (`june-api/crates/providers/src/venice.rs`) tente d'abord le shape Venice puis retombe sur le shape Carpe Diem
+  (OpenAI-flat + discriminant `carpe_diem_type`). Carpe Diem ignore `?type=` (une réponse = tout le catalogue) et ne
+  met pas de pricing dans `/v1/models` ; le fallback joint donc `GET {racine opérateur}/pricing` (base_url sans le
+  suffixe `/v1`) par id de modèle — prix USD/M tokens pour le texte, **USD/minute audio pour l'ASR** (converti en /s).
+  Résultat : ~94 modèles servis (89 text + 5 asr) ; les types image/vidéo/tts/musique/embedding sont ignorés (aucun
+  endpoint June ne les consomme). Un modèle sans ligne de pricing est écarté (même règle que le parseur Venice).
+  Échec du fetch/parse → dégradation gracieuse inchangée vers les 6 modèles curatés de `config.toml`.
+  C'est **le** point chaud du merge upstream dans `venice.rs` (voir tableau des fichiers modifiés).
 
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour

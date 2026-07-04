@@ -271,8 +271,17 @@ pub fn run() {
             carpe_diem::settings::carpe_diem_set_api_key,
             carpe_diem::settings::carpe_diem_clear_api_key,
             carpe_diem::settings::carpe_diem_test_connection,
+            carpe_diem::settings::carpe_diem_get_credits,
             carpe_diem::sidecar::carpe_diem_sidecar_status,
             carpe_diem::sidecar::carpe_diem_restart_sidecar,
+            carpe_diem::media::carpe_diem_media_request,
+            carpe_diem::media::carpe_diem_media_catalog,
+            carpe_diem::media::carpe_diem_media_save_artifact,
+            carpe_diem::media::carpe_diem_media_fetch_artifact,
+            carpe_diem::media::carpe_diem_media_export_artifact,
+            carpe_diem::media::carpe_diem_media_delete_artifact,
+            carpe_diem::media::carpe_diem_media_read_artifact,
+            carpe_diem::media::carpe_diem_media_list_artifacts,
         ])
         .manage(RecordingPresenceBoundsState::default())
         .manage(hermes_bridge::HermesBridge::default())

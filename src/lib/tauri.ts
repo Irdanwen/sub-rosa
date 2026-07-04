@@ -1606,6 +1606,21 @@ export async function carpeDiemTestConnection() {
   return invoke<CarpeDiemTestConnectionResult>("carpe_diem_test_connection");
 }
 
+// Live balance for the sidebar footer. `priceMultiplier` is the current Carpe
+// Diem fraction of the upstream rate (global daily factor, resets 00:00 UTC);
+// it is absent when the public pricing endpoint can't be read. With a Venice
+// key (no cdm_ prefix) the balance is Venice's USD + DIEM converted to credits
+// (1 credit = $0.01) and the factor is a fixed 1.0 (full rate).
+export type CarpeDiemCreditsDto = {
+  availableCredits: number;
+  escrowCredits: number;
+  priceMultiplier?: number;
+};
+
+export async function carpeDiemGetCredits() {
+  return invoke<CarpeDiemCreditsDto>("carpe_diem_get_credits");
+}
+
 export async function carpeDiemSidecarStatus() {
   return invoke<CarpeDiemSidecarStatusDto>("carpe_diem_sidecar_status");
 }

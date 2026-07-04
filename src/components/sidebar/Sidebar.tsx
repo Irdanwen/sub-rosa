@@ -1,6 +1,7 @@
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { IconArrowBoxRight } from "central-icons/IconArrowBoxRight";
+import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { IconZap } from "central-icons/IconZap";
 import { IconBubble3 } from "central-icons/IconBubble3";
 import { IconRobot2 } from "central-icons/IconRobot2";
@@ -73,8 +74,10 @@ import { NOTE_DND_MIME } from "../../lib/dnd";
 import { useForcedEmptyStates } from "../../lib/empty-states-demo";
 import { useRecordingPresenceBounds } from "../../lib/recording-presence-bounds";
 import { isPrimaryShortcut, primaryShortcutLabel } from "../../lib/platform";
+import { useCarpeDiemCredits } from "../../lib/carpe-diem-credits";
 import type {
   AccountStatus,
+  CarpeDiemCreditsDto,
   HermesSessionInfo,
   NoteListItemDto,
   RecordingStatusDto,
@@ -97,6 +100,7 @@ export type SidebarView =
   | "settings"
   | "folders"
   | "dictation"
+  | "studio"
   | "routines"
   | "agent"
   | "agent-sessions";
@@ -582,6 +586,13 @@ export function Sidebar({
         action: () => onChangeView("dictation"),
       },
       {
+        id: "quick:studio",
+        label: "Go to Studio",
+        icon: <IconSparkle3 size={15} />,
+        searchText: normalizeCommandQuery("studio image video music workflows go to"),
+        action: () => onChangeView("studio"),
+      },
+      {
         id: "quick:routines",
         label: "Go to Routines",
         icon: <IconZap size={15} />,
@@ -1054,6 +1065,18 @@ export function Sidebar({
                 <IconMicrophone size={16} />
               </span>
               <span className="sidebar-nav-label">Dictation</span>
+            </button>
+            <button
+              type="button"
+              className="sidebar-nav-item"
+              data-active={activeView === "studio"}
+              aria-current={activeView === "studio" ? "page" : undefined}
+              onClick={() => onChangeView("studio")}
+            >
+              <span className="sidebar-nav-icon">
+                <IconSparkle3 size={16} />
+              </span>
+              <span className="sidebar-nav-label">Studio</span>
             </button>
             <button
               type="button"
@@ -1780,6 +1803,10 @@ function SidebarIdentity({
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const name = accountDisplayName(account);
+  // Sub Rosa fork: once the Carpe Diem balance loads, the footer shows it
+  // (with the current price factor) instead of the account name.
+  const credits = useCarpeDiemCredits();
+  const label = credits ? creditsLabel(credits) : name;
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -1804,13 +1831,13 @@ function SidebarIdentity({
         className="sidebar-nav-item sidebar-identity"
         aria-haspopup="menu"
         aria-expanded={menuOpen}
-        aria-label={`${name}, account menu`}
+        aria-label={`${label}, account menu`}
         onClick={onToggleMenu}
       >
         <span className="sidebar-nav-icon">
-          <IconPeople size={18} />
+          {credits ? <IconCreditCard1 size={18} /> : <IconPeople size={18} />}
         </span>
-        <span className="sidebar-nav-label">{name}</span>
+        <span className="sidebar-nav-label">{label}</span>
       </button>
       {menuOpen ? (
         <div className="sidebar-identity-menu" role="menu">
@@ -1857,6 +1884,15 @@ function SidebarIdentity({
       ) : null}
     </div>
   );
+}
+
+// "1,234 credits · ×0.42" — the spendable balance plus the current Carpe Diem
+// price factor (the fraction of the upstream rate billed today). The factor is
+// omitted when the public pricing endpoint didn't answer.
+function creditsLabel(credits: CarpeDiemCreditsDto) {
+  const amount = Math.floor(credits.availableCredits).toLocaleString("en-US");
+  const factor = credits.priceMultiplier != null ? ` · ×${credits.priceMultiplier.toFixed(2)}` : "";
+  return `${amount} credits${factor}`;
 }
 
 function accountDisplayName(account: AccountStatus) {

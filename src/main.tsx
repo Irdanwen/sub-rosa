@@ -8,6 +8,7 @@ import { initTheme } from "./lib/theme";
 import { initBrand } from "./lib/brand";
 import "./styles/app.css";
 import "./styles/carpe-diem.css";
+import "./styles/studio.css";
 
 declare global {
   interface Window {

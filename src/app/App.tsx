@@ -26,6 +26,7 @@ import type { ReportCategory } from "../components/agent/composer/reportCategory
 import { DictationHistoryView } from "../components/dictation/DictationHistoryView";
 import { FoldersWorkspace } from "../components/folders/FoldersWorkspace";
 import { RoutinesView } from "../components/routines/RoutinesView";
+import { StudioView } from "../components/studio/StudioView";
 import { MoveNoteToFolderDialog } from "../components/folders/MoveNoteToFolderDialog";
 import { MoveSessionToProjectDialog } from "../components/folders/MoveSessionToProjectDialog";
 import { NoteEditor } from "../components/note-editor/NoteEditor";
@@ -42,6 +43,7 @@ import { BreadcrumbBar } from "../components/ui/BreadcrumbBar";
 import { IconNoteText } from "central-icons/IconNoteText";
 import { IconBubble3 } from "central-icons/IconBubble3";
 import { IconProjects } from "central-icons/IconProjects";
+import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { IconZap } from "central-icons/IconZap";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconSettingsGear4 } from "central-icons/IconSettingsGear4";
@@ -259,6 +261,11 @@ function tabMeta(
       return {
         title: "Routines",
         icon: <IconZap size={TAB_ICON_SIZE} />,
+      };
+    case "studio":
+      return {
+        title: "Studio",
+        icon: <IconSparkle3 size={TAB_ICON_SIZE} />,
       };
     case "dictation":
       return {
@@ -2844,6 +2851,8 @@ export function App() {
                     }, 80);
                   }}
                 />
+              ) : activeView === "studio" ? (
+                <StudioView />
               ) : activeView === "routines" ? (
                 <RoutinesView
                   onCreateRoutine={(prompt) => {
