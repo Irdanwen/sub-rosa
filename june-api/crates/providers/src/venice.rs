@@ -66,13 +66,32 @@ impl VeniceModelCatalog {
         }
         let mut models = BTreeMap::new();
         for model_type in [ModelType::Asr, ModelType::Text] {
-            let response = self.fetch_models(model_type.as_str()).await?;
-            models.extend(venice_priced_model_items(response, model_type));
+            let body = self.fetch_models_body(model_type.as_str()).await?;
+            match serde_json::from_str::<VeniceModelsApiResponse>(&body) {
+                Ok(response) => {
+                    models.extend(venice_priced_model_items(response, model_type));
+                }
+                Err(venice_error) => {
+                    // Sub Rosa fork: Carpe Diem serves the catalog OpenAI-flat
+                    // with a `carpe_diem_type` discriminator instead of the
+                    // Venice shape, and ignores the `?type=` filter — one
+                    // response carries every type, so a single parse covers
+                    // both loop iterations.
+                    let response = serde_json::from_str::<CarpeDiemModelsApiResponse>(&body)
+                        .map_err(|error| {
+                            tracing::warn!(%venice_error, %error, "venice: model catalog matches neither the Venice nor the Carpe Diem shape");
+                            DomainError::UpstreamProvider
+                        })?;
+                    let pricing = self.fetch_carpe_diem_pricing().await?;
+                    models.extend(carpe_diem_priced_model_items(response, &pricing));
+                    break;
+                }
+            }
         }
         Ok(models)
     }
 
-    async fn fetch_models(&self, model_type: &str) -> Result<VeniceModelsApiResponse, DomainError> {
+    async fn fetch_models_body(&self, model_type: &str) -> Result<String, DomainError> {
         let url = format!("{}/models", self.base_url);
         let response = self
             .http
@@ -91,13 +110,47 @@ impl VeniceModelCatalog {
             tracing::warn!(%status, %url, model_type, body_bytes = body.len(), "venice: model catalog non-success response");
             return Err(DomainError::UpstreamProvider);
         }
-        response
-            .json::<VeniceModelsApiResponse>()
+        response.text().await.map_err(|error| {
+            tracing::warn!(%error, %url, model_type, "venice: model catalog body read failed");
+            DomainError::UpstreamProvider
+        })
+    }
+
+    // Carpe Diem publishes per-model pricing on the operator root (one level
+    // above the `/v1` API base), multiplier-adjusted to the current dynamic
+    // rate. `/v1/models` rows carry no pricing, so the catalog is unusable
+    // without this join.
+    async fn fetch_carpe_diem_pricing(
+        &self,
+    ) -> Result<BTreeMap<String, CarpeDiemPricingRow>, DomainError> {
+        let url = format!("{}/pricing", self.base_url.trim_end_matches("/v1"));
+        let response = self
+            .http
+            .get(&url)
+            .bearer_auth(&self.api_key)
+            .send()
             .await
             .map_err(|error| {
-                tracing::warn!(%error, %url, model_type, "venice: model catalog JSON parse failed");
+                tracing::warn!(%error, %url, "carpe diem: pricing transport error");
                 DomainError::UpstreamProvider
-            })
+            })?;
+        let status = response.status();
+        if !status.is_success() {
+            tracing::warn!(%status, %url, "carpe diem: pricing non-success response");
+            return Err(DomainError::UpstreamProvider);
+        }
+        let pricing = response
+            .json::<CarpeDiemPricingResponse>()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, %url, "carpe diem: pricing JSON parse failed");
+                DomainError::UpstreamProvider
+            })?;
+        Ok(pricing
+            .models
+            .into_iter()
+            .map(|row| (row.model.clone(), row))
+            .collect())
     }
 }
 
@@ -679,6 +732,37 @@ struct VeniceModelSpec {
     offline: Option<bool>,
 }
 
+// Sub Rosa fork: the Carpe Diem catalog shape (OpenAI-flat rows enriched with
+// `carpe_diem_type`). Pricing lives in a separate `/pricing` document on the
+// operator root, joined by model id.
+#[derive(Debug, Deserialize)]
+struct CarpeDiemModelsApiResponse {
+    data: Vec<CarpeDiemModelApiItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CarpeDiemModelApiItem {
+    id: String,
+    carpe_diem_type: String,
+    privacy: Option<String>,
+    capabilities: Option<serde_json::Value>,
+    context_length: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CarpeDiemPricingResponse {
+    models: Vec<CarpeDiemPricingRow>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CarpeDiemPricingRow {
+    model: String,
+    #[serde(rename = "inputPrice")]
+    input_price: Option<f64>,
+    #[serde(rename = "outputPrice")]
+    output_price: Option<f64>,
+}
+
 fn generation_source_text(
     existing_generated_note: Option<&str>,
     manual_notes: Option<&str>,
@@ -902,6 +986,98 @@ fn venice_model_config(
     })
 }
 
+fn carpe_diem_priced_model_items(
+    response: CarpeDiemModelsApiResponse,
+    pricing: &BTreeMap<String, CarpeDiemPricingRow>,
+) -> BTreeMap<String, ModelPriceConfig> {
+    let mut models = BTreeMap::new();
+    let mut unpriced = 0_usize;
+    for item in response.data {
+        let model_type = match item.carpe_diem_type.as_str() {
+            "text" | "code" => ModelType::Text,
+            "asr" => ModelType::Asr,
+            // Image / video / tts / music / embedding models have no June
+            // endpoint to route to; only chat and transcription are consumed.
+            _ => continue,
+        };
+        match carpe_diem_model_config(&item, model_type, pricing.get(&item.id)) {
+            Some(config) => {
+                models.insert(item.id, config);
+            }
+            None => unpriced += 1,
+        }
+    }
+    if unpriced > 0 {
+        tracing::warn!(
+            unpriced,
+            "carpe diem: skipped catalog models without usable pricing"
+        );
+    }
+    models
+}
+
+fn carpe_diem_model_config(
+    item: &CarpeDiemModelApiItem,
+    model_type: ModelType,
+    pricing: Option<&CarpeDiemPricingRow>,
+) -> Option<ModelPriceConfig> {
+    let pricing = pricing?;
+    let (
+        unit,
+        credits_per_million_seconds,
+        input_credits_per_million_tokens,
+        output_credits_per_million_tokens,
+    ) = match model_type {
+        // Carpe Diem quotes ASR in USD per audio minute; June rates are per
+        // second.
+        ModelType::Asr => (
+            PriceUnit::Seconds,
+            positive_usd(pricing.input_price)
+                .and_then(|usd_per_minute| credits_per_million_seconds(usd_per_minute / 60.0)),
+            None,
+            None,
+        ),
+        ModelType::Text => (
+            PriceUnit::Tokens,
+            None,
+            positive_usd(pricing.input_price).and_then(credits_per_million_units),
+            positive_usd(pricing.output_price).and_then(credits_per_million_units),
+        ),
+    };
+    if model_type == ModelType::Asr && credits_per_million_seconds.is_none() {
+        return None;
+    }
+    if model_type == ModelType::Text
+        && (input_credits_per_million_tokens.is_none()
+            || output_credits_per_million_tokens.is_none())
+    {
+        return None;
+    }
+    Some(ModelPriceConfig {
+        unit,
+        credits_per_million_seconds,
+        input_credits_per_million_tokens,
+        output_credits_per_million_tokens,
+        provider: ModelProvider::Venice,
+        model_type,
+        display_name: item.id.clone(),
+        description: None,
+        privacy: trimmed(item.privacy.clone()),
+        pricing: None,
+        context_tokens: item.context_length,
+        traits: Vec::new(),
+        capabilities: item
+            .capabilities
+            .as_ref()
+            .map(capability_names)
+            .unwrap_or_default(),
+    })
+}
+
+fn positive_usd(value: Option<f64>) -> Option<f64> {
+    value.filter(|value| value.is_finite() && *value > 0.0)
+}
+
 fn trimmed(value: Option<String>) -> Option<String> {
     value
         .map(|value| value.trim().to_string())
@@ -995,7 +1171,8 @@ fn strip_scaffolding_tags(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        SAFETY_CONTEXT, VeniceAgentChat, VeniceGenerator, VeniceModelsApiResponse,
+        CarpeDiemModelsApiResponse, CarpeDiemPricingResponse, SAFETY_CONTEXT, VeniceAgentChat,
+        VeniceGenerator, VeniceModelsApiResponse, carpe_diem_priced_model_items,
         cleanup_generated_note_text, cleanup_source_text, generation_source_text,
         inject_safety_context, strip_scaffolding_tags, venice_priced_model_items,
     };
@@ -1671,5 +1848,139 @@ mod tests {
         let model = models.get("asr-model").expect("asr model");
 
         assert_eq!(model.credits_per_million_seconds, Some(100_000));
+    }
+
+    #[test]
+    fn maps_carpe_diem_catalog_models_with_pricing_join() {
+        let response: CarpeDiemModelsApiResponse = serde_json::from_value(serde_json::json!({
+            "object": "list",
+            "data": [
+                {
+                    "id": "text-model",
+                    "object": "model",
+                    "carpe_diem_type": "text",
+                    "tier": "frontier",
+                    "privacy": "anonymized",
+                    "capabilities": {
+                        "supportsFunctionCalling": true,
+                        "supportsVision": false
+                    },
+                    "context_length": 200_000
+                },
+                {
+                    "id": "unpriced-text-model",
+                    "object": "model",
+                    "carpe_diem_type": "text",
+                    "privacy": "private"
+                },
+                {
+                    "id": "asr-model",
+                    "object": "model",
+                    "carpe_diem_type": "asr",
+                    "privacy": "private"
+                },
+                {
+                    "id": "image-model",
+                    "object": "model",
+                    "carpe_diem_type": "image"
+                }
+            ]
+        }))
+        .expect("models response");
+        let pricing = serde_json::from_value::<CarpeDiemPricingResponse>(serde_json::json!({
+            "models": [
+                {
+                    "model": "text-model",
+                    "tier": "frontier",
+                    "inputPrice": 0.07,
+                    "outputPrice": 0.30
+                },
+                {
+                    // USD per audio minute; 0.006/min = 0.0001/s.
+                    "model": "asr-model",
+                    "tier": "standard",
+                    "inputPrice": 0.006,
+                    "outputPrice": 0
+                },
+                {
+                    "model": "image-model",
+                    "inputPrice": 1.0,
+                    "outputPrice": 1.0
+                }
+            ]
+        }))
+        .expect("pricing response")
+        .models
+        .into_iter()
+        .map(|row| (row.model.clone(), row))
+        .collect();
+
+        let models = carpe_diem_priced_model_items(response, &pricing);
+
+        assert_eq!(
+            models.keys().collect::<Vec<_>>(),
+            vec!["asr-model", "text-model"]
+        );
+        let text = models.get("text-model").expect("text model");
+        assert_eq!(text.model_type, ModelType::Text);
+        assert_eq!(text.display_name, "text-model");
+        assert_eq!(text.privacy.as_deref(), Some("anonymized"));
+        assert_eq!(text.context_tokens, Some(200_000));
+        assert_eq!(text.capabilities, vec!["supportsFunctionCalling"]);
+        assert_eq!(text.input_credits_per_million_tokens, Some(70));
+        assert_eq!(text.output_credits_per_million_tokens, Some(300));
+        let asr = models.get("asr-model").expect("asr model");
+        assert_eq!(asr.model_type, ModelType::Asr);
+        assert_eq!(asr.credits_per_million_seconds, Some(100_000));
+    }
+
+    #[tokio::test]
+    async fn falls_back_to_carpe_diem_catalog_shape() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "object": "list",
+                "data": [
+                    {
+                        "id": "text-model",
+                        "object": "model",
+                        "carpe_diem_type": "text",
+                        "privacy": "private",
+                        "context_length": 128_000
+                    }
+                ]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/pricing"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "models": [
+                    {
+                        "model": "text-model",
+                        "inputPrice": 0.5,
+                        "outputPrice": 2.0
+                    }
+                ]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let catalog = super::VeniceModelCatalog::from_config(
+            http::default_client(),
+            &UpstreamConfig {
+                base_url: format!("{}/v1", server.uri()),
+                api_key: "cdm_test".to_string(),
+            },
+        );
+        let models = catalog.priced_models().await.expect("catalog");
+
+        assert_eq!(models.len(), 1);
+        let model = models.get("text-model").expect("text model");
+        assert_eq!(model.input_credits_per_million_tokens, Some(500));
+        assert_eq!(model.output_credits_per_million_tokens, Some(2_000));
     }
 }
