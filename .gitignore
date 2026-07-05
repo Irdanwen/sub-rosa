@@ -48,3 +48,7 @@ src-tauri/binaries/
 
 # Sub Rosa fork: Tauri updater private key (human moves to GitHub secret)
 .tauri-keys/
+
+# Python bytecode (MCP scripts compiled during local checks)
+__pycache__/
+*.pyc

@@ -830,6 +830,28 @@ fn download_http_client() -> &'static reqwest::Client {
     })
 }
 
+/// True when a catalog object declares image input support: the
+/// `capabilities.supportsVision` flag (Carpe Diem flat entries and Venice
+/// `model_spec` both carry it) or a `*vision*` trait.
+fn supports_vision(value: &serde_json::Value) -> bool {
+    if value
+        .pointer("/capabilities/supportsVision")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    value
+        .get("traits")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|traits| {
+            traits
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .any(|t| t.contains("vision"))
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1048,26 +1070,4 @@ mod tests {
         assert_eq!(pricing_multiplier(&pricing), Some(0.15));
         assert_eq!(pricing_multiplier(&json!({})), None);
     }
-}
-
-/// True when a catalog object declares image input support: the
-/// `capabilities.supportsVision` flag (Carpe Diem flat entries and Venice
-/// `model_spec` both carry it) or a `*vision*` trait.
-fn supports_vision(value: &serde_json::Value) -> bool {
-    if value
-        .pointer("/capabilities/supportsVision")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
-    {
-        return true;
-    }
-    value
-        .get("traits")
-        .and_then(serde_json::Value::as_array)
-        .is_some_and(|traits| {
-            traits
-                .iter()
-                .filter_map(serde_json::Value::as_str)
-                .any(|t| t.contains("vision"))
-        })
 }
