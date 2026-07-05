@@ -631,6 +631,26 @@ pub fn load() -> Result<AppConfig, ConfigError> {
     Ok(config)
 }
 
+/// Load config from an in-memory TOML document instead of the filesystem and
+/// environment. Used by the embedded in-process server (`june-embed`), which
+/// assembles its runtime overrides programmatically and cannot rely on a
+/// working directory or process env. The caller is expected to mutate the
+/// returned config and re-check it with [`validate_config`].
+pub fn load_from_toml_str(toml: &str) -> Result<AppConfig, ConfigError> {
+    Figment::new()
+        .merge(Serialized::defaults(AppConfig::default()))
+        .merge(Toml::string(toml))
+        .extract()
+        .map_err(Box::new)
+        .map_err(ConfigError::from)
+}
+
+/// Validate a programmatically-assembled config (the embedded server path,
+/// which bypasses `load`).
+pub fn validate_config(config: &AppConfig) -> Result<(), ConfigError> {
+    validate(config)
+}
+
 const LEGACY_OS_ACCOUNTS_APP_API_KEY_PLACEHOLDER: &str = concat!("osk", "_REPLACE_ME");
 const LEGACY_OPENAI_API_KEY_PLACEHOLDER: &str = concat!("sk", "_REPLACE_ME");
 const OS_ACCOUNTS_APP_API_KEY_PLACEHOLDERS: &[&str] = &[

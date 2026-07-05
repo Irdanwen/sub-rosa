@@ -1,5 +1,5 @@
 [package]
-name = "june"
+name = "june-embed"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,22 +10,14 @@ publish.workspace = true
 [lints]
 workspace = true
 
-[[bin]]
-name = "june"
-path = "src/main.rs"
-
 [dependencies]
 anyhow = "1"
 axum.workspace = true
-clap.workspace = true
-dotenvy.workspace = true
 reqwest.workspace = true
 june-api.workspace = true
 june-config.workspace = true
 june-domain.workspace = true
-june-embed.workspace = true
 june-providers.workspace = true
 june-services.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true

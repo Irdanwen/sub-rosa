@@ -868,6 +868,7 @@ dependencies = [
  "june-api",
  "june-config",
  "june-domain",
+ "june-embed",
  "june-providers",
  "june-services",
  "reqwest",
@@ -916,6 +917,22 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "june-embed"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "june-api",
+ "june-config",
+ "june-domain",
+ "june-providers",
+ "june-services",
+ "reqwest",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -14,6 +14,7 @@ publish = false
 june-api = { path = "crates/api" }
 june-config = { path = "crates/config" }
 june-domain = { path = "crates/domain" }
+june-embed = { path = "crates/embed" }
 june-providers = { path = "crates/providers" }
 june-services = { path = "crates/services" }
 
