@@ -2,7 +2,14 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "meeting-hud",
   "description": "Meeting recording HUD: listen for status, emit control actions, drag the pill.",
-  "windows": ["meeting-hud"],
+  "platforms": [
+    "macOS",
+    "windows",
+    "linux"
+  ],
+  "windows": [
+    "meeting-hud"
+  ],
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",

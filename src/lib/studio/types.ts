@@ -50,6 +50,8 @@ export interface MediaModel {
   constraints?: ImageConstraints & VideoConstraints;
   modelSets?: string[];
   traits?: string[];
+  /** Whether the model declares image (vision) input support. */
+  supportsVision?: boolean;
   /** Venice `model_spec.pricing`, verbatim (music duration brackets, etc). */
   pricing?: Record<string, unknown>;
   /** Flat per-generation price in credits, when the backend publishes one. */

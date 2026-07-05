@@ -10,7 +10,12 @@ june-api/target/
 debug/
 release/
 .tauri-helper/
-src-tauri/gen/
+# Sub Rosa fork: gen/apple (the iOS Xcode project, Info.plist, entitlements)
+# is committed; only regenerated schemas and Xcode build products stay out.
+src-tauri/gen/schemas/
+src-tauri/gen/apple/build/
+src-tauri/gen/apple/DerivedData/
+src-tauri/gen/apple/Externals/
 src-tauri/native/bin/
 *.rs.bk
 *.rlib
@@ -33,8 +38,9 @@ coverage
 # proof under docs/verification/ is unaffected.
 /verification/
 
-# Agent worktrees
+# Agent worktrees + harness state
 .claude/worktrees/
+.claude/scheduled_tasks.lock
 .worktrees/
 
 # Sub Rosa fork: staged june-api sidecar binaries (built at bundle time)

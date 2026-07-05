@@ -844,6 +844,10 @@ export async function explainAgentApproval(input: { description: string; command
   });
 }
 
+export async function deleteAgentTask(taskId: string) {
+  return invoke<void>("delete_agent_task", { request: { taskId } });
+}
+
 export async function cancelAgentTask(taskId: string) {
   return invoke<AgentTaskDto>("cancel_agent_task", { request: { taskId } });
 }
@@ -1425,6 +1429,93 @@ export async function recoverRecording(sessionId: string, action: "validate" | "
   return invoke<NoteDto>("recover_recording", {
     request: { sessionId, action },
   });
+}
+
+/** Import an existing audio file (Files, Voice Memos, ...) as a new note and
+ * start the transcription/generation pipeline. Mobile sends the bytes (the
+ * picked file lives in a security-scoped location Rust cannot open); desktop
+ * can pass a path. */
+export async function importAudioNote(input: {
+  sourcePath?: string;
+  base64?: string;
+  fileName?: string;
+  folderId?: string;
+}) {
+  return invoke<NoteDto>("import_audio_note", { request: input });
+}
+
+// --- Mobile dictation (in-app mode; desktop dictation uses the helper) ---
+
+export type MobileDictationStatusDto = {
+  sessionId: string;
+  elapsedMs: number;
+  peak: number;
+};
+
+export type MobileDictationResultDto = {
+  text: string;
+  rawText: string;
+  language?: string;
+};
+
+export async function mobileDictationStart() {
+  return invoke<MobileDictationStatusDto>("mobile_dictation_start");
+}
+
+export async function mobileDictationStatus() {
+  return invoke<MobileDictationStatusDto | null>("mobile_dictation_status");
+}
+
+export async function mobileDictationStop(input: { style?: DictationStyle; language?: string }) {
+  return invoke<MobileDictationResultDto>("mobile_dictation_stop", { request: input });
+}
+
+export async function mobileDictationCancel() {
+  return invoke<void>("mobile_dictation_cancel");
+}
+
+export async function mobileListDictationHistory() {
+  return invoke<ListDictationHistoryResponse>("mobile_list_dictation_history");
+}
+
+export async function mobileDeleteDictationHistoryItem(id: string) {
+  return invoke<void>("mobile_delete_dictation_history_item", { id });
+}
+
+// --- Agent-lite (mobile chat over notes; desktop uses the Hermes runtime) ---
+
+export const AGENT_LITE_STATUS_EVENT = "agent-lite://status";
+export const AGENT_LITE_DONE_EVENT = "agent-lite://done";
+
+export type AgentLiteStatusDto = {
+  taskId: string;
+  stage: "thinking" | "searching-notes" | "searching-web";
+  detail?: string;
+};
+
+export type AgentLiteAttachment = {
+  /** "image" (data is a data URI) or "text" (data is the file content). */
+  kind: "image" | "text";
+  name: string;
+  data: string;
+};
+
+export async function agentLiteRun(
+  taskId: string,
+  model?: string,
+  attachments?: AgentLiteAttachment[],
+) {
+  return invoke<AgentTaskDto>("agent_lite_run", { request: { taskId, model, attachments } });
+}
+
+/** iOS only: save a Studio artifact to the photo library. */
+export async function saveToPhotos(path: string, kind: "image" | "video") {
+  return invoke<void>("save_to_photos", { request: { path, kind } });
+}
+
+/** iOS only: open the system share sheet with a text payload. */
+export async function shareText(text: string) {
+  return invoke<void>("share_text", { request: { text } });
 }
 
 export type AccountUser = {

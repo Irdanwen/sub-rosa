@@ -42,6 +42,50 @@ accurately — read them, but apply these fork overrides:
 - **Non-goals (unchanged from June):** OS Accounts, billing, hosted June API, TEE attestation
   of the local backend. Local mode only; confidentiality comes from Carpe Diem's own backend.
 
+## iOS app (fork addition, 2026-07-05)
+
+Sub Rosa also ships an **iPhone app** from this repo (Tauri 2 iOS target, Xcode project
+committed under `src-tauri/gen/apple/`). Full architecture + upstream-diff table: the
+"Portage iOS" section of [`FORK_NOTES.md`](FORK_NOTES.md). The essentials:
+
+- **No subprocesses on iOS**, so the sidecar runs **in-process**: the june-api composition
+  root lives in `june-api/crates/embed/` (`june-embed`, `config.toml` baked in via
+  `include_str!`), and `carpe_diem/sidecar.rs` has two backends — `#[cfg(desktop)]` spawns
+  the binary (unchanged), `#[cfg(mobile)]` runs `june_embed::serve` on a tokio task. Same
+  env-var contract, same `/livez`, same status events.
+- **No Hermes on mobile.** The chat is **agent-lite** (`src-tauri/src/agent_lite/`): a tool
+  loop over the chat-completions proxy with `search_notes` (local SQLite retrieval) and
+  `web_search`. Sessions share the desktop's `agent_tasks`/`agent_messages` tables.
+  Desktop-impossible surfaces (system audio, HUDs, tray, global hotkeys, updater) are
+  `#[cfg(desktop)]`-gated in `src-tauri/src/lib.rs`.
+- **Two `generate_handler!` lists in `lib.rs`** (desktop = 12-space indent, mobile =
+  8-space): the macro can't cfg individual entries, so **every new shared command must be
+  added to both**. Capability files under `src-tauri/capabilities/` must keep their
+  `platforms` field — tauri-build validates all of them for the iOS target.
+- **Audio**: cpal records on iOS once `audio/ios_session.rs` configures AVAudioSession
+  (permission prompt included); `UIBackgroundModes: audio` keeps lock-screen recording
+  alive. Native iOS bridges: `photos_ios.rs` (save to photo library), `share_ios.rs`
+  (share sheet for note export).
+- **Mobile shell**: `src/main.tsx` picks `MobileApp` (`src/app/mobile/`, screens in
+  `src/components/mobile/`) via `isMobilePlatform()`; `?mobile=1` forces it in a browser.
+  Desktop `App.tsx` is untouched. Shared pieces reused: `notesReducer`, `src/lib/tauri.ts`,
+  `NoteEditor`, `CarpeDiemSettings`, the whole `src/lib/studio/` lib (incl. the workflow
+  engine, rendered as guided "Flows" instead of the canvas).
+- **iOS gallery caveat**: never persist absolute paths — the app's data container path
+  changes across reinstalls (`listArtifacts` re-derives paths from the disk listing; the
+  asset protocol doesn't resolve in the iOS webview, media renders via base64 data URLs).
+- **Dev loops**: simulator `pnpm tauri ios dev "iPhone 17 Pro"`; inject a key with
+  `SIMCTL_CHILD_SUBROSA_DEV_API_KEY=cdm_… xcrun simctl launch booted xyz.carpediem.subrosa`.
+  Device: `pnpm tauri ios dev "iPhone de Morgan" --host` (vite must NOT be pinned to
+  127.0.0.1 — the `dev` script honors `TAURI_DEV_HOST`). Standalone install:
+  `pnpm tauri ios build --export-method debugging` then
+  `xcrun devicectl device install app --device <id> ".../gen/apple/build/arm64/Sub Rosa.ipa"`.
+  Signing uses `bundle.iOS.developmentTeam` in `tauri.ios.conf.json` (team `H6N5V777LL`);
+  regenerating `gen/apple` (`tauri ios init`) wipes the Info.plist additions (microphone,
+  `UIBackgroundModes`, photo library) — re-apply them.
+- **iOS checks**: `cargo check --target aarch64-apple-ios --lib` (and `-sim`) must stay
+  green next to the desktop checks; toolchain ≥ 1.95 (june-api workspace pin).
+
 ---
 
 # June — Agent Instructions
@@ -67,19 +111,23 @@ inside a TEE (Phala) so prompt data is not readable by its own infra.
 os-june/
 ├── src/                     # React frontend
 │   ├── app/                 # app shell, routing, update-decision
+│   │   └── mobile/          # (fork) iPhone shell: MobileApp + tab/stack navigation
 │   ├── components/          # agent (chat), settings, account, onboarding, note-editor, recorder, sidebar, ...
+│   │   └── mobile/          # (fork) mobile chrome + screens (notes, dictation, chat, studio, flows)
 │   ├── lib/                 # hermes-gateway, hermes-control-plane/, model-privacy, tauri bindings, ...
-│   ├── styles/              # app.css + tokens.css (design tokens)
+│   ├── styles/              # app.css + tokens.css (design tokens) + mobile.css (fork)
 │   └── test/                # vitest suites (all frontend tests live here)
 ├── src-tauri/               # Rust native shell (Cargo package `os-june`)
-│   ├── src/audio/           # recording, source separation, turn detection, live preview
-│   ├── src/hermes_bridge.rs # spawns + sandboxes the embedded Hermes agent runtime
+│   ├── src/audio/           # recording, source separation, turn detection, live preview (+ ios_session.rs)
+│   ├── src/hermes_bridge.rs # spawns + sandboxes the embedded Hermes agent runtime (desktop only)
+│   ├── src/agent_lite/      # (fork) mobile chat: tool loop over chat completions, no Hermes
 │   ├── src/os_accounts.rs   # OS Accounts login (PKCE), keychain token store
 │   ├── src/providers/       # model-settings persistence
 │   ├── src/commands.rs      # the Tauri command surface
-│   └── native/              # macOS system-audio helper (Swift) + dictation helper
+│   ├── native/              # macOS system-audio helper (Swift) + dictation helper
+│   └── gen/apple/           # (fork) committed iOS Xcode project (Info.plist, entitlements)
 ├── june-api/                # Rust backend (Cargo workspace, crates prefixed `june-`)
-│   └── crates/              # domain / services / providers / config / api / app  (hexagonal)
+│   └── crates/              # domain / services / providers / config / api / app / embed  (hexagonal)
 ├── docs/                    # see docs/index.md — ADRs, subsystem docs, runbooks, PRDs, QA
 ├── specs/                   # Spec Kit feature specs (001-003)
 ├── spec/                    # enforceable coding rules (see spec/index.md) — distinct from specs/

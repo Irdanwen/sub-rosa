@@ -10,7 +10,9 @@ export default defineConfig({
     __APP_COMMIT_HASH__: JSON.stringify(gitCommitHash()),
   },
   server: {
-    host: "127.0.0.1",
+    // TAURI_DEV_HOST is set by `tauri ios dev`/`tauri android dev` so a
+    // physical device can reach the dev server over the local network.
+    host: process.env.TAURI_DEV_HOST || "127.0.0.1",
     port: 1421,
     strictPort: true,
   },

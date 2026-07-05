@@ -15,7 +15,8 @@ use crate::{
     db::{migrations::run_migrations, repositories::Repositories},
     domain::{
         processing::{
-            manual_notes_for_generation, process_saved_audio, process_saved_source_audio,
+            manual_notes_for_generation, process_imported_audio, process_saved_audio,
+            process_saved_source_audio,
         },
         processing_queue,
         types::{
@@ -643,6 +644,14 @@ pub async fn start_recording(
     let repos = repositories(&app).await?;
     let note = repos.get_note(&request.note_id).await?;
     let source_mode = request.source_mode.unwrap_or_default();
+    // iOS cannot tap other apps' audio (sandbox); only the microphone records.
+    #[cfg(mobile)]
+    if source_mode == RecordingSourceMode::MicrophonePlusSystem {
+        return Err(AppError::new(
+            "source_mode_unsupported",
+            "System audio capture is not available on this device; record with the microphone.",
+        ));
+    }
     // Readiness probing and capture startup both wait on the system-audio
     // helper (up to tens of seconds); run them off the async runtime.
     let readiness = tokio::task::spawn_blocking(move || recording_source_readiness(source_mode))
@@ -1063,9 +1072,202 @@ async fn finish_recording_session(
     })
 }
 
+#[tauri::command]
+pub async fn delete_agent_task(
+    app: AppHandle,
+    request: GetAgentTaskRequest,
+) -> Result<(), AppError> {
+    let repos = repositories(&app).await?;
+    repos
+        .delete_agent_task(&request.task_id)
+        .await
+        .map_err(AppError::from)
+}
+
+/// Audio formats accepted by `import_audio_note`. WAV goes through the local
+/// pipeline; the rest are transcribed whole by the backend, which accepts
+/// these container formats natively.
+const IMPORTABLE_AUDIO_EXTENSIONS: &[&str] = &["wav", "m4a", "mp3", "aac", "mp4", "flac", "ogg"];
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportAudioNoteRequest {
+    /// Path variant (desktop file dialogs). On iOS the picked file lives in a
+    /// security-scoped location Rust cannot open, so the webview reads it and
+    /// sends the bytes instead.
+    pub source_path: Option<String>,
+    /// Bytes variant: base64 payload + original file name (for the extension
+    /// and the note title).
+    pub base64: Option<String>,
+    pub file_name: Option<String>,
+    pub folder_id: Option<String>,
+}
+
+/// Import an existing audio file (Files, Voice Memos, ...) as a new note:
+/// copy it into the note's recording dir, register a synthetic recording
+/// session + artifact, then run the transcription/generation pipeline.
+#[tauri::command]
+pub async fn import_audio_note(
+    app: AppHandle,
+    request: ImportAudioNoteRequest,
+) -> Result<NoteDto, AppError> {
+    let source_name = request
+        .file_name
+        .clone()
+        .or_else(|| {
+            request
+                .source_path
+                .as_deref()
+                .map(std::path::PathBuf::from)
+                .and_then(|path| path.file_name().map(|n| n.to_string_lossy().into_owned()))
+        })
+        .unwrap_or_default();
+    let extension = std::path::Path::new(&source_name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_lowercase)
+        .unwrap_or_default();
+    if !IMPORTABLE_AUDIO_EXTENSIONS.contains(&extension.as_str()) {
+        return Err(AppError::new(
+            "import_unsupported_format",
+            format!(
+                "This file type is not supported. Supported formats: {}.",
+                IMPORTABLE_AUDIO_EXTENSIONS.join(", ")
+            ),
+        ));
+    }
+    // Materialize the bytes variant into a temp file so both variants share
+    // the copy-into-session-dir path below.
+    let mut temp_source: Option<std::path::PathBuf> = None;
+    let source = if let Some(base64_payload) = request.base64.as_deref() {
+        use base64::Engine as _;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(base64_payload)
+            .map_err(|error| AppError::new("import_invalid_payload", error.to_string()))?;
+        let path = std::env::temp_dir().join(format!(
+            "subrosa-import-{}.{extension}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(&path, bytes)
+            .map_err(|error| AppError::new("import_copy_failed", error.to_string()))?;
+        temp_source = Some(path.clone());
+        path
+    } else {
+        std::path::PathBuf::from(request.source_path.clone().unwrap_or_default())
+    };
+    if !source.exists() {
+        return Err(AppError::new(
+            "import_file_missing",
+            "The selected audio file could not be read.",
+        ));
+    }
+
+    let paths = app_paths(&app)?;
+    let repos = repositories(&app).await?;
+    let note = repos
+        .create_note(request.folder_id.clone())
+        .await
+        .map_err(AppError::from)?;
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let session_dir = paths
+        .recording_session_dir(&note.id, &session_id)
+        .map_err(|error| AppError::new("invalid_recording_path", error.to_string()))?;
+    std::fs::create_dir_all(&session_dir)
+        .map_err(|error| AppError::new("import_copy_failed", error.to_string()))?;
+    let dest = session_dir.join(format!("imported.{extension}"));
+    std::fs::copy(&source, &dest)
+        .map_err(|error| AppError::new("import_copy_failed", error.to_string()))?;
+    if let Some(temp) = temp_source.take() {
+        let _ = std::fs::remove_file(temp);
+    }
+    let dest_str = dest.to_string_lossy().into_owned();
+    let size_bytes = std::fs::metadata(&dest)
+        .map(|metadata| metadata.len() as i64)
+        .unwrap_or_default();
+    let checksum = checksum_file(&dest).unwrap_or_default();
+
+    repos
+        .create_recording_session(
+            &note.id,
+            &session_id,
+            RecordingSourceMode::MicrophoneOnly,
+            &dest_str,
+            &dest_str,
+            None,
+        )
+        .await
+        .map_err(AppError::from)?;
+    repos
+        .update_recording_session(
+            &session_id,
+            "valid",
+            0,
+            Some(size_bytes),
+            None,
+            Some(checksum.clone()),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .map_err(AppError::from)?;
+    let artifact = repos
+        .create_audio_artifact(&note.id, &session_id, &dest_str, 0, size_bytes, &checksum)
+        .await
+        .map_err(AppError::from)?;
+
+    // Same per-note ordering discipline as finish_recording: imports queue
+    // behind any in-flight processing for the note (a fresh note here, but
+    // the queue also serializes a rapid double-import).
+    let (ticket, depth) = processing_queue::enqueue(&note.id);
+    if depth <= 1 {
+        repos
+            .set_note_status(&note.id, ProcessingStatus::Transcribing, None)
+            .await?;
+    }
+    let title = std::path::Path::new(&source_name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("Imported audio")
+        .to_string();
+    let note = repos.get_note(&note.id).await?;
+
+    let task_repos = repos.clone();
+    let task_note_id = note.id.clone();
+    let task_session_id = session_id.clone();
+    let task_artifact_id = artifact.id.clone();
+    tokio::spawn(async move {
+        let queue_lock = ticket.lock();
+        let _guard = queue_lock.lock().await;
+        if let Err(error) = process_imported_audio(
+            &task_repos,
+            &task_note_id,
+            &task_session_id,
+            &task_artifact_id,
+            dest,
+            title,
+        )
+        .await
+        {
+            let _ = task_repos
+                .set_note_status(&task_note_id, ProcessingStatus::Failed, Some(error.message))
+                .await;
+        }
+        ticket.finish();
+    });
+
+    Ok(note)
+}
+
 fn recording_source_readiness(source_mode: RecordingSourceMode) -> RecordingSourceReadinessDto {
     let (microphone_state, microphone_hint) = microphone_permission_state();
-    let microphone_ready = microphone_state == "granted";
+    // "unknown" is iOS's "not asked yet": it must count as ready so the
+    // recording attempt proceeds — start_capture raises the system permission
+    // prompt and errors cleanly if the user declines. Blocking here would
+    // make the prompt unreachable.
+    let microphone_ready = microphone_state == "granted" || microphone_state == "unknown";
     let mut sources = vec![SourceReadinessDto {
         source: RecordingSource::Microphone,
         required: true,
@@ -1078,6 +1280,7 @@ fn recording_source_readiness(source_mode: RecordingSourceMode) -> RecordingSour
             .map(|_| "openMicrophoneSettings".to_string()),
         message: microphone_hint,
     }];
+    #[cfg(desktop)]
     if source_mode == RecordingSourceMode::MicrophonePlusSystem {
         let mut system = crate::audio::system_macos::system_audio_readiness();
         if should_probe_system_audio_permission(system.ready, is_capture_active()) {
@@ -1087,6 +1290,21 @@ fn recording_source_readiness(source_mode: RecordingSourceMode) -> RecordingSour
             );
         }
         sources.push(system);
+    }
+    // Mobile: system audio never becomes ready; report it as unsupported so
+    // the UI can hide the option instead of dangling a probe.
+    #[cfg(mobile)]
+    if source_mode == RecordingSourceMode::MicrophonePlusSystem {
+        sources.push(SourceReadinessDto {
+            source: RecordingSource::System,
+            required: true,
+            ready: false,
+            permission_state: "unsupported".to_string(),
+            device_available: false,
+            capture_available: false,
+            recovery_action: None,
+            message: Some("System audio capture is not available on this device.".to_string()),
+        });
     }
     let ready = sources
         .iter()

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Sub Rosa"
+      }
+    ],
+    "security": {
+      "capabilities": ["mobile-main"]
+    }
+  },
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "externalBin": null,
+    "resources": null,
+    "iOS": {
+      "developmentTeam": "H6N5V777LL"
+    }
+  },
+  "plugins": {
+    "updater": null
+  }
+}

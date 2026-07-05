@@ -2,6 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { Agentation } from "agentation";
 import { App } from "./app/App";
+import { MobileApp } from "./app/mobile/MobileApp";
+import { isMobilePlatform } from "./lib/mobile";
 import { installNativeContextMenuGuard } from "./lib/native-context-menu";
 import { replayOnboarding } from "./lib/onboarding";
 import { initTheme } from "./lib/theme";
@@ -9,6 +11,7 @@ import { initBrand } from "./lib/brand";
 import "./styles/app.css";
 import "./styles/carpe-diem.css";
 import "./styles/studio.css";
+import "./styles/mobile.css";
 
 declare global {
   interface Window {
@@ -61,9 +64,14 @@ if (import.meta.env.DEV) {
   void import("./lib/billing-demo").then(({ registerBillingDemo }) => registerBillingDemo());
 }
 
+// The mobile (iOS/Android) build renders its own shell: bottom tabs and push
+// stacks instead of the desktop sidebar + tab strip. Same IPC, same reducer,
+// same feature components underneath.
+const Shell = isMobilePlatform() ? MobileApp : App;
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <Shell />
     {import.meta.env.DEV ? <Agentation /> : null}
   </React.StrictMode>,
 );

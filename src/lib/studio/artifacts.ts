@@ -88,18 +88,34 @@ export async function saveArtifactFromUrl(
   return register(file, metadata);
 }
 
-/** The gallery, newest first, reconciled against what is actually on disk. */
+/** The gallery, newest first, reconciled against what is actually on disk.
+ * Paths are re-derived from the disk listing rather than trusted from the
+ * stored index: on iOS the app's data container path changes across
+ * reinstalls, so a persisted absolute path can go stale while the file
+ * itself is still there. */
 export async function listArtifacts(kind?: ArtifactKind): Promise<StudioArtifact[]> {
   const index = readIndex();
-  let onDisk: Set<string> | undefined;
+  let byName: Map<string, string> | undefined;
   try {
-    const files = await invoke<Array<{ fileName: string }>>("carpe_diem_media_list_artifacts");
-    onDisk = new Set(files.map((file) => file.fileName));
+    const files = await invoke<Array<{ fileName: string; path: string }>>(
+      "carpe_diem_media_list_artifacts",
+    );
+    byName = new Map(files.map((file) => [file.fileName, file.path]));
   } catch {
     // If the disk listing fails, trust the index rather than showing nothing.
   }
-  const alive = onDisk ? index.filter((entry) => onDisk.has(entry.fileName)) : index;
-  if (alive.length !== index.length) writeIndex(alive);
+  let healed = false;
+  const alive = byName
+    ? index
+        .filter((entry) => byName.has(entry.fileName))
+        .map((entry) => {
+          const current = byName.get(entry.fileName) as string;
+          if (current === entry.path) return entry;
+          healed = true;
+          return { ...entry, path: current };
+        })
+    : index;
+  if (healed || alive.length !== index.length) writeIndex(alive);
   const sorted = [...alive].sort((a, b) => b.createdAt - a.createdAt);
   return kind ? sorted.filter((entry) => entry.kind === kind) : sorted;
 }

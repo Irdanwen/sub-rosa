@@ -563,7 +563,7 @@ async fn transcribe_preview_chunk(
         audio_path: temp_path.clone(),
         title: "Live transcript preview".to_string(),
         context,
-        language: crate::dictation::configured_transcription_language(),
+        language: crate::providers::configured_transcription_language(),
         operation_id: Some(format!("live-preview-{session_id}-{segment_id}")),
         preview: true,
     };

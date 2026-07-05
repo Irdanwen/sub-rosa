@@ -17,6 +17,13 @@ fn main() {
     build_system_audio_helper();
     build_dictation_helper();
     ensure_bundled_hermes_dir();
+    // iOS capture goes through AVAudioSession (audio/ios_session.rs); the
+    // class only registers if the framework is linked.
+    if std::env::var("CARGO_CFG_TARGET_OS").ok().as_deref() == Some("ios") {
+        println!("cargo:rustc-link-lib=framework=AVFAudio");
+        // photos_ios.rs: UIImageWriteToSavedPhotosAlbum / UISaveVideoAtPath...
+        println!("cargo:rustc-link-lib=framework=UIKit");
+    }
     tauri_build::build();
 }
 

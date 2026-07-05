@@ -78,6 +78,9 @@ const JUNE_WEB_MCP_SCRIPT: &str = include_str!("hermes/june_web_mcp.py");
 /// after the first app relaunch and every cron-routine web call then hits a
 /// dead port (ECONNREFUSED). Rewritten (atomically) on every runtime spawn.
 const JUNE_WEB_MCP_COORDS_NAME: &str = "june_web_proxy.json";
+const JUNE_MEDIA_MCP_SERVER_NAME: &str = "june_media";
+const JUNE_MEDIA_MCP_SCRIPT_NAME: &str = "june_media_mcp.py";
+const JUNE_MEDIA_MCP_SCRIPT: &str = include_str!("hermes/june_media_mcp.py");
 
 /// Identity injected into every Hermes session via `SOUL.md`. Hermes loads
 /// this file from `HERMES_HOME` at prompt-build time; without it the runtime
@@ -117,6 +120,17 @@ Clarifying questions: before acting on a request, especially the first user mess
 /// first-class capability.
 const JUNE_SOUL_WEB_MD: &str = r#"
 Web tools: you have a `june_web` MCP toolset with `web_search` and `web_fetch`. Use `web_search` for current information, recent events, or facts you are not sure of, then `web_fetch` to read a specific result or URL in full as markdown. Reach for these instead of guessing when an answer may have changed since your training, and base your reply only on what the results actually say. Some sites block automated fetching; if a fetch is refused, search for another source.
+"#;
+
+/// Appended to `SOUL.md` for every runtime. The media tools are discovered
+/// through the `june_media` MCP server configured below; this note teaches the
+/// model to reach for them instead of hand-rolling API calls (the agent
+/// session holds no media API key, so scripted attempts against the media
+/// backend can only fail). Written without the word "sandbox": this note is
+/// also part of the unsandboxed soul, which must not claim jail protections
+/// (see `unsandboxed_soul_makes_no_sandbox_claims`).
+const JUNE_SOUL_MEDIA_MD: &str = r#"
+Media tools: you have a `june_media` MCP toolset to create media. Use `generate_image` for images (it returns the saved file's path), `generate_video` then `check_media` for videos, and `generate_music` then `check_media` for music. Pick the model to fit each request: call `list_media_models` and weigh its traits, tier, price, and constraints against what the user asked for (a cheap fast model for drafts and iteration; a higher-quality or premium model for photorealism, fine detail, or text inside the image), and say which model you picked and why. Only fall back to the default model for throwaway or generic asks. These tools run through the app with the user's stored media key, so never try to generate media by calling APIs yourself or by hunting for API keys — your session has none. Generations cost real credits; videos are the expensive kind, so state the model you intend to use and get the user's confirmation before queueing a video. Generated files are saved into the app's Studio gallery; give the user the returned file path.
 "#;
 
 /// Appended to `SOUL.md` only when the Seatbelt write-jail engages on this
@@ -797,16 +811,19 @@ async fn start_hermes_bridge_inner(
         .map(std::path::PathBuf::from)
         .unwrap_or(default_cwd);
     let cwd_display = Some(cwd.to_string_lossy().into_owned());
-    let provider_proxy = ensure_provider_proxy(bridge).await?;
+    let provider_proxy = ensure_provider_proxy(app, bridge).await?;
     let june_context_mcp = sync_june_context_mcp(app, &command)?;
     let june_web_mcp =
         sync_june_web_mcp(app, &command, provider_proxy.port, &provider_proxy.token)?;
+    let june_media_mcp = sync_june_media_mcp(app, &command, &june_web_mcp.coordinates_path)?;
     sync_hermes_config(
         &hermes_home,
         provider_proxy.port,
         &provider_proxy.token,
+        &external_skill_dirs(app),
         &june_context_mcp,
         &june_web_mcp,
+        &june_media_mcp,
     )?;
 
     // Wrap the spawn in a macOS Seatbelt write-jail when possible. The model,
@@ -940,7 +957,10 @@ async fn start_hermes_bridge_inner(
 
 /// The shared provider proxy's coordinates, starting it on first use. Both
 /// runtime processes point at it through the one shared config.yaml.
-async fn ensure_provider_proxy(bridge: &HermesBridge) -> Result<SharedProviderProxyInfo, AppError> {
+async fn ensure_provider_proxy(
+    app: &AppHandle,
+    bridge: &HermesBridge,
+) -> Result<SharedProviderProxyInfo, AppError> {
     {
         let guard = bridge.provider_proxy.lock().map_err(|_| {
             AppError::new("hermes_bridge_unavailable", "Hermes bridge lock failed.")
@@ -953,7 +973,7 @@ async fn ensure_provider_proxy(bridge: &HermesBridge) -> Result<SharedProviderPr
         }
     }
     let token = random_token();
-    let started = start_june_provider_proxy(token.clone()).await?;
+    let started = start_june_provider_proxy(app.clone(), token.clone()).await?;
     let mut guard = bridge
         .provider_proxy
         .lock()
@@ -989,6 +1009,15 @@ struct JuneWebMcpConfig {
     script_path: PathBuf,
     /// Path to the proxy-coordinates JSON the script re-reads per tool call
     /// (see [`JUNE_WEB_MCP_COORDS_NAME`]).
+    coordinates_path: PathBuf,
+}
+
+/// The media MCP shares the provider proxy and its coordinates file with the
+/// web MCP; only the script differs.
+#[derive(Debug, Clone)]
+struct JuneMediaMcpConfig {
+    command: String,
+    script_path: PathBuf,
     coordinates_path: PathBuf,
 }
 
@@ -1069,17 +1098,18 @@ pub fn update_hermes_bridge_skill(
     let path = match resolve_hermes_skill_file_in_root(&skills_root, &request.name) {
         Ok(path) => path,
         Err(error) if error.code == "hermes_skill_not_found" => {
-            // Skills loaded from `~/.agents/skills` live outside the managed
-            // root and are read-only in June: the agent loads them, but the
-            // editor never writes them. Surface that instead of "not found".
-            let externals: Vec<(PathBuf, bool)> = external_skill_dirs()
+            // Skills loaded from an external dir (`~/.agents/skills` or the
+            // bundled pack) live outside the managed root and are read-only
+            // in June: the agent loads them, but the editor never writes
+            // them. Surface that instead of "not found".
+            let externals: Vec<(PathBuf, bool)> = external_skill_dirs(&app)
                 .into_iter()
                 .map(|dir| (dir, true))
                 .collect();
             if resolve_skill_in_roots(&externals, &request.name).is_ok() {
                 return Err(AppError::new(
                     "hermes_skill_read_only",
-                    "This skill loads from ~/.agents/skills and is read-only in June. Edit it on disk.",
+                    "This skill loads from a shared skills folder and is read-only in June.",
                 ));
             }
             return Err(error);
@@ -1630,7 +1660,7 @@ fn skill_search_roots(app: &AppHandle) -> Result<Vec<(PathBuf, bool)>, AppError>
     if managed.is_dir() {
         roots.push((managed, false));
     }
-    for dir in external_skill_dirs() {
+    for dir in external_skill_dirs(app) {
         roots.push((dir, true));
     }
     Ok(roots)
@@ -5988,6 +6018,30 @@ fn sync_june_web_mcp(
     })
 }
 
+/// Writes the `june_media` MCP script next to the other built-in MCP servers.
+/// It reuses the provider-proxy coordinates file the web MCP sync just wrote,
+/// so the two servers always agree on the proxy they talk to.
+fn sync_june_media_mcp(
+    app: &AppHandle,
+    hermes_command: &str,
+    coordinates_path: &Path,
+) -> Result<JuneMediaMcpConfig, AppError> {
+    let data_dir = crate::app_paths::app_data_dir(app)
+        .map_err(|error| AppError::new("june_media_mcp_failed", error.to_string()))?;
+    let mcp_dir = data_dir.join(JUNE_CONTEXT_MCP_DIR_NAME);
+    fs::create_dir_all(&mcp_dir)
+        .map_err(|error| AppError::new("june_media_mcp_failed", error.to_string()))?;
+    let script_path = mcp_dir.join(JUNE_MEDIA_MCP_SCRIPT_NAME);
+    fs::write(&script_path, JUNE_MEDIA_MCP_SCRIPT)
+        .map_err(|error| AppError::new("june_media_mcp_failed", error.to_string()))?;
+
+    Ok(JuneMediaMcpConfig {
+        command: hermes_python_command(hermes_command),
+        script_path,
+        coordinates_path: coordinates_path.to_path_buf(),
+    })
+}
+
 /// The JSON the `june_web` MCP re-reads per tool call. Pure so tests can
 /// assert the exact shape the Python script parses.
 fn render_june_web_proxy_coordinates(port: u16, token: &str) -> String {
@@ -6053,8 +6107,10 @@ fn sync_hermes_config(
     hermes_home: &std::path::Path,
     provider_proxy_port: u16,
     provider_proxy_token: &str,
+    external_skill_dirs: &[PathBuf],
     june_context_mcp: &JuneContextMcpConfig,
     june_web_mcp: &JuneWebMcpConfig,
+    june_media_mcp: &JuneMediaMcpConfig,
 ) -> Result<(), AppError> {
     let model = crate::providers::generation_model();
     let base_url = format!("http://127.0.0.1:{provider_proxy_port}/v1");
@@ -6063,9 +6119,10 @@ fn sync_hermes_config(
         &base_url,
         provider_proxy_token,
         &CRON_SANDBOXED_TOOLSETS.join(", "),
-        &external_skill_dirs(),
+        external_skill_dirs,
         Some(june_context_mcp),
         Some(june_web_mcp),
+        Some(june_media_mcp),
     );
     std::fs::write(hermes_home.join("config.yaml"), config)
         .map_err(|error| AppError::new("hermes_bridge_config_failed", error.to_string()))
@@ -6083,6 +6140,7 @@ fn render_hermes_config(
     external_skill_dirs: &[PathBuf],
     june_context_mcp: Option<&JuneContextMcpConfig>,
     june_web_mcp: Option<&JuneWebMcpConfig>,
+    june_media_mcp: Option<&JuneMediaMcpConfig>,
 ) -> String {
     let skills_block = if external_skill_dirs.is_empty() {
         "  external_dirs: []\n".to_string()
@@ -6093,7 +6151,8 @@ fn render_hermes_config(
         }
         block
     };
-    let mcp_servers_block = render_mcp_servers_config(june_context_mcp, june_web_mcp);
+    let mcp_servers_block =
+        render_mcp_servers_config(june_context_mcp, june_web_mcp, june_media_mcp);
     format!(
         r#"model:
   default: {model}
@@ -6116,11 +6175,12 @@ skills:
 }
 
 /// Renders the `mcp_servers:` block listing every built-in MCP server June
-/// registers. Both entries live under one key so Hermes deep-merges a single
-/// map; an empty map is emitted when neither is configured.
+/// registers. All entries live under one key so Hermes deep-merges a single
+/// map; an empty map is emitted when none is configured.
 fn render_mcp_servers_config(
     context: Option<&JuneContextMcpConfig>,
     web: Option<&JuneWebMcpConfig>,
+    media: Option<&JuneMediaMcpConfig>,
 ) -> String {
     let mut entries = String::new();
     if let Some(config) = context {
@@ -6128,6 +6188,9 @@ fn render_mcp_servers_config(
     }
     if let Some(config) = web {
         entries.push_str(&render_web_mcp_entry(config));
+    }
+    if let Some(config) = media {
+        entries.push_str(&render_media_mcp_entry(config));
     }
     if entries.is_empty() {
         return "mcp_servers: {}\n".to_string();
@@ -6180,18 +6243,70 @@ fn render_web_mcp_entry(config: &JuneWebMcpConfig) -> String {
     )
 }
 
+/// Same coordinates-file contract as the web MCP. The timeout is much higher
+/// than the web tools': a synchronous image generation legitimately runs up
+/// to the backend's ~60 s edge cap (plus the queue fallback), and completing
+/// a video/music job downloads the file before returning.
+fn render_media_mcp_entry(config: &JuneMediaMcpConfig) -> String {
+    format!(
+        r#"  {server_name}:
+    enabled: true
+    command: {command}
+    args:
+      - {script_path}
+      - {coordinates_path}
+    env:
+      PYTHONUNBUFFERED: "1"
+    timeout: 300
+    connect_timeout: 10
+"#,
+        server_name = JUNE_MEDIA_MCP_SERVER_NAME,
+        command = yaml_string(&config.command),
+        script_path = yaml_string(&config.script_path.to_string_lossy()),
+        coordinates_path = yaml_string(&config.coordinates_path.to_string_lossy()),
+    )
+}
+
 /// User-global skill directories Hermes loads in addition to its built-in
 /// `$HERMES_HOME/skills`. June advertises the conventional `~/.agents/skills`
 /// folder (where the `skills` CLI installs) when it exists, so a user or team
 /// can drop skills there and have every agent session pick them up. The
 /// Seatbelt write-jail only grants writes under the app's own roots, so these
 /// external skills load read-only. A missing folder is a silent no-op.
-fn external_skill_dirs() -> Vec<PathBuf> {
+fn external_skill_dirs(app: &AppHandle) -> Vec<PathBuf> {
+    merge_external_skill_dirs(user_external_skill_dirs(), bundled_skill_dir(app))
+}
+
+/// The user-level shared skill folders (`~/.agents/skills`), scanned before
+/// the bundled pack so a user copy of a skill shadows the shipped one.
+fn user_external_skill_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     for home in home_dir_candidates() {
         let candidate = home.join(".agents").join("skills");
         if candidate.is_dir() && !dirs.contains(&candidate) {
             dirs.push(candidate);
+        }
+    }
+    dirs
+}
+
+/// The default skill pack shipped in the app bundle (`resources/skills`,
+/// mapped from the repo's `.agents/skills/carpe-diem-*` in
+/// `tauri.conf.json`). Read-only like every external dir; absent when the
+/// build did not bundle it.
+fn bundled_skill_dir(app: &AppHandle) -> Option<PathBuf> {
+    let dir = app.path().resource_dir().ok()?.join("skills");
+    dir.is_dir().then_some(dir)
+}
+
+/// Orders the external skill dirs Hermes scans: user dirs first (they win
+/// name clashes), then the bundled pack. Pure so the precedence can be
+/// asserted in tests.
+fn merge_external_skill_dirs(user_dirs: Vec<PathBuf>, bundled: Option<PathBuf>) -> Vec<PathBuf> {
+    let mut dirs = user_dirs;
+    if let Some(bundled) = bundled {
+        if !dirs.contains(&bundled) {
+            dirs.push(bundled);
         }
     }
     dirs
@@ -6217,10 +6332,10 @@ fn sync_june_soul(
             JUNE_SOUL_CLI_BLOCKED_MD
         };
         format!(
-            "{JUNE_SOUL_MD}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_SANDBOX_MD}{cli_section}"
+            "{JUNE_SOUL_MD}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_SANDBOX_MD}{cli_section}"
         )
     } else {
-        format!("{JUNE_SOUL_MD}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}")
+        format!("{JUNE_SOUL_MD}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_MEDIA_MD}")
     };
     std::fs::write(hermes_home.join("SOUL.md"), soul)
         .map_err(|error| AppError::new("hermes_bridge_soul_failed", error.to_string()))
@@ -6375,7 +6490,10 @@ fn yaml_string(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
 }
 
-async fn start_june_provider_proxy(token: String) -> Result<RunningJuneProviderProxy, AppError> {
+async fn start_june_provider_proxy(
+    app: AppHandle,
+    token: String,
+) -> Result<RunningJuneProviderProxy, AppError> {
     let listener = TcpListener::bind(("127.0.0.1", 0))
         .map_err(|error| AppError::new("june_provider_proxy_failed", error.to_string()))?;
     listener
@@ -6389,6 +6507,7 @@ async fn start_june_provider_proxy(token: String) -> Result<RunningJuneProviderP
         .map_err(|error| AppError::new("june_provider_proxy_failed", error.to_string()))?;
     let (shutdown, shutdown_rx) = oneshot::channel();
     tauri::async_runtime::spawn(run_june_provider_proxy(
+        app,
         listener,
         Arc::new(token),
         shutdown_rx,
@@ -6402,6 +6521,7 @@ struct RunningJuneProviderProxy {
 }
 
 async fn run_june_provider_proxy(
+    app: AppHandle,
     listener: tokio::net::TcpListener,
     token: Arc<String>,
     mut shutdown: oneshot::Receiver<()>,
@@ -6413,8 +6533,9 @@ async fn run_june_provider_proxy(
                 match accepted {
                     Ok((stream, _)) => {
                         let token = token.clone();
+                        let app = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            let _ = handle_june_provider_connection(stream, token).await;
+                            let _ = handle_june_provider_connection(app, stream, token).await;
                         });
                     }
                     Err(error) => {
@@ -6432,6 +6553,7 @@ async fn run_june_provider_proxy(
 }
 
 async fn handle_june_provider_connection(
+    app: AppHandle,
     mut stream: tokio::net::TcpStream,
     token: Arc<String>,
 ) -> io::Result<()> {
@@ -6507,6 +6629,15 @@ async fn handle_june_provider_connection(
         }
         ("POST", "/v1/web/fetch") => {
             forward_web_tool(&mut stream, "/v1/web/fetch", &request.body).await?;
+        }
+        ("GET", "/v1/media/catalog") => {
+            forward_media_catalog(&mut stream).await?;
+        }
+        ("POST", "/v1/media/request") => {
+            forward_media_request(&mut stream, &request.body).await?;
+        }
+        ("POST", "/v1/media/save") => {
+            forward_media_save(&app, &mut stream, &request.body).await?;
         }
         _ => {
             write_json_response(
@@ -6745,6 +6876,150 @@ async fn forward_web_tool(
             .await
         }
     }
+}
+
+/// Relays the Studio's merged model catalog ([`crate::carpe_diem::media`]) to
+/// the `june_media` MCP: backend, per-model type/tier/traits, generation
+/// constraints, and prices. This is what lets the agent pick a model suited
+/// to each request instead of a hardcoded default.
+async fn forward_media_catalog(stream: &mut tokio::net::TcpStream) -> io::Result<()> {
+    match crate::carpe_diem::media::carpe_diem_media_catalog().await {
+        Ok(catalog) => {
+            let body = serde_json::to_value(&catalog).unwrap_or_else(|_| serde_json::json!({}));
+            write_json_response(stream, 200, body).await
+        }
+        Err(error) => write_media_proxy_error(stream, &error).await,
+    }
+}
+
+/// Forwards a media request from the `june_media` MCP to the same allowlisted
+/// media proxy the Studio uses ([`crate::carpe_diem::media`]), so the agent
+/// gets exactly the Studio's reach: media-family paths only, the API key
+/// attached inside the Rust process, binary bodies base64-encoded. The
+/// proxy's response DTO is relayed as JSON with a 200 — upstream failures are
+/// visible in its `status`/`ok` fields, which keeps transport errors (the
+/// non-200s below) distinct from backend errors.
+async fn forward_media_request(
+    stream: &mut tokio::net::TcpStream,
+    request_body: &[u8],
+) -> io::Result<()> {
+    let request =
+        match serde_json::from_slice::<crate::carpe_diem::media::MediaRequestDto>(request_body) {
+            Ok(request) => request,
+            Err(error) => {
+                return write_json_response(
+                    stream,
+                    400,
+                    serde_json::json!({
+                        "error": { "message": format!("Invalid media request: {error}") }
+                    }),
+                )
+                .await;
+            }
+        };
+    match crate::carpe_diem::media::carpe_diem_media_request(request).await {
+        Ok(response) => {
+            let body = serde_json::to_value(&response).unwrap_or_else(|_| serde_json::json!({}));
+            write_json_response(stream, 200, body).await
+        }
+        Err(error) => write_media_proxy_error(stream, &error).await,
+    }
+}
+
+/// Body accepted by `/v1/media/save`: exactly one of `url` (the app downloads
+/// it) or `base64` (the app decodes it), plus the file extension.
+#[derive(Debug, Deserialize)]
+struct MediaSaveRequest {
+    url: Option<String>,
+    base64: Option<String>,
+    extension: String,
+}
+
+/// Persists a generation into the Studio gallery on the agent's behalf and
+/// returns `{path, fileName, bytes}`. Downloads and writes run in the June
+/// process: the sandboxed agent can read the gallery but never needs write
+/// access to it (or the API key a backend-host download attaches).
+async fn forward_media_save(
+    app: &AppHandle,
+    stream: &mut tokio::net::TcpStream,
+    request_body: &[u8],
+) -> io::Result<()> {
+    let request = match serde_json::from_slice::<MediaSaveRequest>(request_body) {
+        Ok(request) => request,
+        Err(error) => {
+            return write_json_response(
+                stream,
+                400,
+                serde_json::json!({
+                    "error": { "message": format!("Invalid media save request: {error}") }
+                }),
+            )
+            .await;
+        }
+    };
+    let saved = match (request.url, request.base64) {
+        (Some(url), None) => {
+            crate::carpe_diem::media::carpe_diem_media_fetch_artifact(
+                app.clone(),
+                crate::carpe_diem::media::FetchArtifactRequest {
+                    url,
+                    extension: request.extension,
+                },
+            )
+            .await
+        }
+        (None, Some(base64)) => {
+            crate::carpe_diem::media::carpe_diem_media_save_artifact(
+                app.clone(),
+                crate::carpe_diem::media::SaveArtifactRequest {
+                    base64,
+                    extension: request.extension,
+                },
+            )
+            .await
+        }
+        _ => {
+            return write_json_response(
+                stream,
+                400,
+                serde_json::json!({
+                    "error": { "message": "Provide exactly one of url or base64." }
+                }),
+            )
+            .await;
+        }
+    };
+    match saved {
+        Ok(artifact) => {
+            let body = serde_json::to_value(&artifact).unwrap_or_else(|_| serde_json::json!({}));
+            write_json_response(stream, 200, body).await
+        }
+        Err(error) => write_media_proxy_error(stream, &error).await,
+    }
+}
+
+/// Maps a media-proxy [`AppError`] onto the loopback response: caller mistakes
+/// (disallowed path, bad payload, missing key) come back as 400 so the MCP
+/// reports them verbatim; everything else is a 502 upstream/transport failure.
+async fn write_media_proxy_error(
+    stream: &mut tokio::net::TcpStream,
+    error: &AppError,
+) -> io::Result<()> {
+    let status = match error.code.as_str() {
+        "media_method_not_allowed"
+        | "media_path_not_allowed"
+        | "media_no_api_key"
+        | "media_artifact_invalid" => 400,
+        _ => 502,
+    };
+    write_json_response(
+        stream,
+        status,
+        serde_json::json!({
+            "error": { "code": error.code, "message": error.message }
+        }),
+    )
+    .await
 }
 
 async fn write_raw_response(
@@ -7285,6 +7560,7 @@ mod tests {
             &dirs,
             None,
             None,
+            None,
         );
 
         assert!(config.contains("model:\n  default: \"glm\""));
@@ -7295,6 +7571,30 @@ mod tests {
     }
 
     #[test]
+    fn bundled_skill_pack_is_scanned_after_user_dirs() {
+        // A user copy of a bundled skill must shadow the shipped one, so the
+        // bundled resources dir has to come last in `external_dirs`.
+        let merged = merge_external_skill_dirs(
+            vec![PathBuf::from("/Users/dev/.agents/skills")],
+            Some(PathBuf::from(
+                "/Applications/App.app/Contents/Resources/skills",
+            )),
+        );
+        assert_eq!(
+            merged,
+            vec![
+                PathBuf::from("/Users/dev/.agents/skills"),
+                PathBuf::from("/Applications/App.app/Contents/Resources/skills"),
+            ]
+        );
+
+        // No bundled pack (dev build without resources): user dirs only.
+        let merged =
+            merge_external_skill_dirs(vec![PathBuf::from("/Users/dev/.agents/skills")], None);
+        assert_eq!(merged, vec![PathBuf::from("/Users/dev/.agents/skills")]);
+    }
+
+    #[test]
     fn render_hermes_config_emits_empty_external_dirs_when_none() {
         let config = render_hermes_config(
             "glm",
@@ -7302,6 +7602,7 @@ mod tests {
             "tok",
             "web",
             &[],
+            None,
             None,
             None,
         );
@@ -7318,10 +7619,19 @@ mod tests {
         }
     }
 
+    fn test_june_media_mcp_config() -> JuneMediaMcpConfig {
+        JuneMediaMcpConfig {
+            command: "/tmp/hermes/venv/bin/python".to_string(),
+            script_path: PathBuf::from("/tmp/june/hermes-mcp/june_media_mcp.py"),
+            coordinates_path: PathBuf::from("/tmp/june/hermes-mcp/june_web_proxy.json"),
+        }
+    }
+
     #[test]
     fn render_hermes_config_registers_june_context_mcp_server() {
         let context = test_june_context_mcp_config();
         let web = test_june_web_mcp_config();
+        let media = test_june_media_mcp_config();
         let config = render_hermes_config(
             "glm",
             "http://127.0.0.1:9/v1",
@@ -7330,18 +7640,22 @@ mod tests {
             &[],
             Some(&context),
             Some(&web),
+            Some(&media),
         );
 
-        // Both built-in servers live under one mcp_servers map.
+        // All built-in servers live under one mcp_servers map.
         assert!(config.contains("mcp_servers:\n  june_context:\n"));
         assert!(config.contains("  june_web:\n"));
+        assert!(config.contains("  june_media:\n"));
         assert!(config.contains("    command: \"/tmp/hermes/venv/bin/python\"\n"));
         assert!(config.contains("      - \"/tmp/june/hermes-mcp/june_context_mcp.py\"\n"));
         assert!(config.contains("      - \"/tmp/june/notes.sqlite3\"\n"));
-        // The web server gets the coordinates-file path as its arg — never
-        // the proxy URL or token, which would go stale in a gateway-hosted
-        // server the moment the app relaunches on a new ephemeral port.
+        // The web and media servers get the coordinates-file path as their
+        // arg — never the proxy URL or token, which would go stale in a
+        // gateway-hosted server the moment the app relaunches on a new
+        // ephemeral port.
         assert!(config.contains("      - \"/tmp/june/hermes-mcp/june_web_mcp.py\"\n"));
+        assert!(config.contains("      - \"/tmp/june/hermes-mcp/june_media_mcp.py\"\n"));
         assert!(config.contains("      - \"/tmp/june/hermes-mcp/june_web_proxy.json\"\n"));
         assert!(!config.contains("JUNE_WEB_PROXY_TOKEN"));
         assert!(!config.contains("      - \"http://127.0.0.1:9/v1\"\n"));
@@ -7389,6 +7703,7 @@ mod tests {
             "tok",
             "web",
             &[],
+            None,
             None,
             None,
         );
@@ -7682,7 +7997,9 @@ mod tests {
 
         let mcp = test_june_context_mcp_config();
         let web = test_june_web_mcp_config();
-        sync_hermes_config(home.path(), 4242, "proxy-token", &mcp, &web).expect("sync config");
+        let media = test_june_media_mcp_config();
+        sync_hermes_config(home.path(), 4242, "proxy-token", &[], &mcp, &web, &media)
+            .expect("sync config");
 
         let config = std::fs::read_to_string(home.path().join("config.yaml")).expect("read config");
         assert!(config.contains("platform_toolsets:"));

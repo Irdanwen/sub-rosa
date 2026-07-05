@@ -177,6 +177,20 @@ pub fn configured_transcription_provider() -> String {
     current_settings().transcription_provider
 }
 
+/// Transcription language preference. Sourced from the dictation settings on
+/// desktop; mobile has no dictation settings store yet, so transcription
+/// falls back to auto-detection.
+pub fn configured_transcription_language() -> Option<String> {
+    #[cfg(desktop)]
+    {
+        crate::dictation::configured_transcription_language()
+    }
+    #[cfg(mobile)]
+    {
+        None
+    }
+}
+
 pub fn provider_configured() -> bool {
     crate::june_api::configured()
 }

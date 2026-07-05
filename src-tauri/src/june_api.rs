@@ -851,7 +851,7 @@ pub fn verify_url() -> String {
 /// last complete sentence so the UI never shows a mid-word fragment. Returns
 /// `None` when nothing presentable survives (e.g. the cap landed inside an
 /// unterminated think block), which callers surface as a generation error.
-fn extract_chat_completion_text(value: &serde_json::Value) -> Option<String> {
+pub fn extract_chat_completion_text(value: &serde_json::Value) -> Option<String> {
     let choice = value.get("choices")?.as_array()?.first()?;
     let content = choice.get("message")?.get("content")?.as_str()?;
     let text = strip_think_blocks(content);

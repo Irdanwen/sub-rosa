@@ -360,6 +360,78 @@ impl Repositories {
         Ok(Some(item))
     }
 
+    /// Free-text context retrieval for the agent-lite chat: newest notes and
+    /// transcripts whose title or content matches the query, trimmed to
+    /// snippets. LIKE keeps it simple and index-free; the corpus is one
+    /// user's local notes, not a search engine (FTS5 is a later upgrade).
+    pub async fn search_note_context(
+        &self,
+        search: &str,
+        limit: i64,
+    ) -> Result<Vec<NoteContextSnippet>, sqlx::error::Error> {
+        let pattern = format!(
+            "%{}%",
+            search
+                .trim()
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        );
+        let limit = limit.clamp(1, 20);
+        let rows = query(
+            "SELECT id, title, COALESCE(edited_content, generated_content, '') AS content, updated_at
+             FROM notes
+             WHERE title LIKE ? ESCAPE '\\' OR edited_content LIKE ? ESCAPE '\\' OR generated_content LIKE ? ESCAPE '\\'
+             ORDER BY updated_at DESC
+             LIMIT ?",
+        )
+        .bind(&pattern)
+        .bind(&pattern)
+        .bind(&pattern)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        let mut snippets: Vec<NoteContextSnippet> = rows
+            .into_iter()
+            .map(|row| {
+                let content: String = row.get("content");
+                NoteContextSnippet {
+                    note_id: row.get("id"),
+                    title: row.get("title"),
+                    kind: "note".to_string(),
+                    snippet: snippet_around_match(&content, search, 700),
+                    updated_at: row.get("updated_at"),
+                }
+            })
+            .collect();
+        let remaining = limit - snippets.len() as i64;
+        if remaining > 0 {
+            let rows = query(
+                "SELECT t.note_id AS note_id, n.title AS title, t.text AS content, t.created_at AS updated_at
+                 FROM transcripts t
+                 JOIN notes n ON n.id = t.note_id
+                 WHERE t.text LIKE ? ESCAPE '\\'
+                 ORDER BY t.created_at DESC
+                 LIMIT ?",
+            )
+            .bind(&pattern)
+            .bind(remaining)
+            .fetch_all(&self.pool)
+            .await?;
+            snippets.extend(rows.into_iter().map(|row| {
+                let content: String = row.get("content");
+                NoteContextSnippet {
+                    note_id: row.get("note_id"),
+                    title: row.get("title"),
+                    kind: "transcript".to_string(),
+                    snippet: snippet_around_match(&content, search, 700),
+                    updated_at: row.get("updated_at"),
+                }
+            }));
+        }
+        Ok(snippets)
+    }
+
     pub async fn list_dictation_history(
         &self,
         limit: i64,
@@ -918,6 +990,29 @@ impl Repositories {
             paths.extend(self.audio_artifact_paths_for_note(note_id).await?);
         }
         Ok(paths)
+    }
+
+    /// Delete a chat session and everything hanging off it (messages, tool
+    /// events, folder assignments). Used by the mobile swipe action.
+    pub async fn delete_agent_task(&self, task_id: &str) -> Result<(), sqlx::error::Error> {
+        let mut tx = self.pool.begin().await?;
+        query("DELETE FROM agent_tool_events WHERE task_id = ?")
+            .bind(task_id)
+            .execute(&mut *tx)
+            .await?;
+        query("DELETE FROM agent_messages WHERE task_id = ?")
+            .bind(task_id)
+            .execute(&mut *tx)
+            .await?;
+        query("DELETE FROM session_folders WHERE session_id = ?")
+            .bind(task_id)
+            .execute(&mut *tx)
+            .await?;
+        query("DELETE FROM agent_tasks WHERE id = ?")
+            .bind(task_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await
     }
 
     pub async fn delete_note(&self, note_id: &str) -> Result<(), sqlx::error::Error> {
@@ -2607,6 +2702,49 @@ fn dictionary_entry_from_row(row: sqlx_sqlite::SqliteRow) -> DictionaryEntryDto 
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
     }
+}
+
+/// One retrieval hit for the agent-lite chat: which note it came from, and a
+/// snippet of the matching content.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteContextSnippet {
+    pub note_id: String,
+    pub title: String,
+    /// "note" (generated/edited content) or "transcript".
+    pub kind: String,
+    pub snippet: String,
+    pub updated_at: String,
+}
+
+/// A window of `max_chars` around the first case-insensitive match of
+/// `search`, or the head of the content when nothing matches (title hits).
+fn snippet_around_match(content: &str, search: &str, max_chars: usize) -> String {
+    let trimmed = content.trim();
+    if trimmed.chars().count() <= max_chars {
+        return trimmed.to_string();
+    }
+    let lower_content = trimmed.to_lowercase();
+    let lower_search = search.trim().to_lowercase();
+    let match_byte = if lower_search.is_empty() {
+        None
+    } else {
+        lower_content.find(&lower_search)
+    };
+    let chars: Vec<char> = trimmed.chars().collect();
+    let match_char_index = match_byte
+        .map(|byte| lower_content[..byte].chars().count())
+        .unwrap_or(0);
+    let start = match_char_index.saturating_sub(max_chars / 4);
+    let end = (start + max_chars).min(chars.len());
+    let mut snippet: String = chars[start..end].iter().collect();
+    if start > 0 {
+        snippet.insert_str(0, "...");
+    }
+    if end < chars.len() {
+        snippet.push_str("...");
+    }
+    snippet
 }
 
 fn dictation_history_item_from_row(row: sqlx_sqlite::SqliteRow) -> DictationHistoryItemDto {

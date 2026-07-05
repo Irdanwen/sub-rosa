@@ -98,6 +98,7 @@ import { messageFromError } from "../lib/errors";
 import { parseDictationHelperEvent } from "../lib/dictation-events";
 import { listHermesSessions, titleFromPrompt } from "../lib/hermes-adapter";
 import { upsertLiveTranscriptEvent } from "../lib/live-transcript-preview";
+import { recordingToStatus } from "../lib/recording-status";
 import {
   RECORDING_INACTIVITY_RESPONSE_MS,
   RECORDING_INACTIVITY_SNOOZE_MS,
@@ -3539,32 +3540,6 @@ function isCreateNoteShortcut(event: KeyboardEvent) {
 
 function stringPayloadValue(value: unknown) {
   return typeof value === "string" ? value : undefined;
-}
-
-function recordingToStatus(recording: {
-  id: string;
-  noteId?: string;
-  sourceMode?: RecordingStatusDto["sourceMode"];
-  state: RecordingStatusDto["state"];
-  elapsedMs: number;
-  level: RecordingStatusDto["level"];
-  livePreviewEnabled?: RecordingStatusDto["livePreviewEnabled"];
-  sources?: RecordingStatusDto["sources"];
-  warnings?: RecordingStatusDto["warnings"];
-}): RecordingStatusDto {
-  return {
-    sessionId: recording.id,
-    noteId: recording.noteId,
-    sourceMode: recording.sourceMode,
-    state: recording.state,
-    elapsedMs: recording.elapsedMs,
-    level: recording.level,
-    silenceWarning: false,
-    bytesWritten: 0,
-    livePreviewEnabled: recording.livePreviewEnabled ?? false,
-    sources: recording.sources,
-    warnings: recording.warnings,
-  };
 }
 
 function startingRecordingStatus(

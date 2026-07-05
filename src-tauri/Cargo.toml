@@ -9,7 +9,9 @@ rust-version = "1.80.0"
 
 [lib]
 name = "os_june_lib"
-crate-type = ["rlib"]
+# staticlib/cdylib are required by the iOS (Tauri mobile) build; rlib keeps
+# the desktop binary and unit tests linking against the same crate.
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
 name = "os-june"
@@ -43,18 +45,45 @@ tauri = { version = "2.8.0", features = ["protocol-asset", "macos-private-api", 
 tauri-plugin-deep-link = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
-tauri-plugin-process = "2.3.1"
-tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
-tauri-plugin-updater = "2.10.1"
+tauri-plugin-os = "2"
 thiserror = "2.0"
 tokio = { version = "1.42", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 tracing = "0.1"
 urlencoding = "2"
 uuid = { version = "1.11", features = ["serde", "v4"] }
 zeroize = { version = "1", features = ["derive"] }
+tauri-plugin-clipboard-manager = "2.3.2"
+tauri-plugin-haptics = "2.3.2"
+
+# Desktop-only plugins: updater/single-instance have no mobile support, and
+# the process plugin (relaunch) is desktop-shaped. The iOS build must not pull
+# them in.
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+tauri-plugin-process = "2.3.1"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-updater = "2.10.1"
+
+# The apple-native keyring backend (security-framework) covers both macOS and
+# iOS keychains.
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+# Mobile cannot spawn the june-api sidecar binary (no subprocesses on iOS);
+# the same server runs in-process instead. Desktop keeps the external binary,
+# so this dependency compiles only for mobile targets. objc2 drives the
+# AVAudioSession plumbing required before cpal can record on iOS.
+[target.'cfg(target_os = "ios")'.dependencies]
+june-embed = { path = "../june-api/crates/embed" }
+block2 = "0.6"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSArray",
+    "NSString",
+    "NSError",
+] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-keyring = { version = "3", features = ["apple-native"] }
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = [
     "std",

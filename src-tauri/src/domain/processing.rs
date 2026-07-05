@@ -318,6 +318,34 @@ pub async fn process_saved_audio(
         dictionary_context.as_deref(),
     )
     .await;
+    persist_transcript_and_generate(
+        repos,
+        note_id,
+        session_id,
+        audio_artifact_id,
+        transcript,
+        title,
+        existing_generated_note,
+        manual_notes,
+    )
+    .await
+}
+
+/// The shared tail of every single-source pipeline: persist the transcript,
+/// generate the structured note, persist the generation, flip the note to
+/// ready. Used by the recorded path (`process_saved_audio`) and the imported
+/// path (`process_imported_audio`).
+#[allow(clippy::too_many_arguments)]
+async fn persist_transcript_and_generate(
+    repos: &Repositories,
+    note_id: &str,
+    session_id: &str,
+    audio_artifact_id: &str,
+    transcript: TranscriptionProviderResult,
+    title: String,
+    existing_generated_note: Option<String>,
+    manual_notes: Option<String>,
+) -> Result<NoteDto, AppError> {
     let transcript_row = repos
         .create_transcript(
             note_id,
@@ -375,6 +403,86 @@ pub async fn process_saved_audio(
         )
         .await?;
     Ok(note)
+}
+
+/// Process an audio file imported from outside the recorder (Files, Voice
+/// Memos, ...). WAV files reuse the recorded-audio pipeline (turn detection,
+/// chunked transcription); compressed formats (m4a, mp3, ...) are sent whole
+/// to the transcription endpoint, which accepts them natively — there is no
+/// local decoder for them, and the upstream models handle long files.
+#[allow(clippy::too_many_arguments)]
+pub async fn process_imported_audio(
+    repos: &Repositories,
+    note_id: &str,
+    session_id: &str,
+    audio_artifact_id: &str,
+    audio_path: PathBuf,
+    title: String,
+) -> Result<NoteDto, AppError> {
+    let is_wav = audio_path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("wav"));
+    if is_wav {
+        return process_saved_audio(
+            repos,
+            note_id,
+            session_id,
+            audio_artifact_id,
+            audio_path,
+            title,
+            None,
+            None,
+        )
+        .await;
+    }
+
+    repos
+        .set_note_status(note_id, ProcessingStatus::Transcribing, None)
+        .await?;
+    let transcription_provider = crate::providers::configured_transcription_provider();
+    let dictionary_entries = repos.list_dictionary_entries().await?;
+    let dictionary_context = build_dictionary_context(&dictionary_entries);
+    let transcript = match transcribe_saved_audio(TranscriptionRequest {
+        provider: transcription_provider.clone(),
+        audio_path,
+        title: title.clone(),
+        context: dictionary_context.clone(),
+        language: crate::providers::configured_transcription_language(),
+        operation_id: Some(note_id.to_string()),
+        preview: false,
+    })
+    .await
+    {
+        Ok(transcript) => transcript,
+        Err(error) => {
+            repos
+                .set_note_status(
+                    note_id,
+                    ProcessingStatus::Failed,
+                    Some(error.message.clone()),
+                )
+                .await?;
+            return Err(error);
+        }
+    };
+    let transcript = maybe_post_process_note_transcript(
+        &transcription_provider,
+        transcript,
+        dictionary_context.as_deref(),
+    )
+    .await;
+    persist_transcript_and_generate(
+        repos,
+        note_id,
+        session_id,
+        audio_artifact_id,
+        transcript,
+        title,
+        None,
+        None,
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -830,7 +938,7 @@ async fn transcribe_prepared_audio(
     transcriber: TurnTranscriber,
     request: TranscribePreparedAudioRequest,
 ) -> Result<TranscriptionProviderResult, AppError> {
-    let request_language = crate::dictation::configured_transcription_language();
+    let request_language = crate::providers::configured_transcription_language();
     let chunk_dir = request.temp_dir.join("chunks");
     let audio_paths = if request.audio_path.exists() {
         split_wav_for_transcription(&request.audio_path, &chunk_dir, &request.chunk_stem)?

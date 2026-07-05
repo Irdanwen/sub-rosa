@@ -2,30 +2,42 @@
 //!
 //! June already resolves the backend URL and bearer token from process env at
 //! runtime (`JUNE_API_URL`, `OS_JUNE_LOCAL_DEV*`). This module turns the
-//! Carpe Diem settings into a locally spawned `june-api` and points the client
+//! Carpe Diem settings into a locally running `june-api` and points the client
 //! at it, entirely at runtime:
 //!
 //! 1. read the base URL + API key from [`super::settings`];
 //! 2. pick a free TCP port and generate a random bearer token;
 //! 3. `set_var` the client-facing env (URL + local-dev bearer) in-process,
 //!    which the June client reads on its next request (values are not cached);
-//! 4. spawn `june-api` in local mode with the Carpe Diem upstream config passed
-//!    as child-process env (`JUNE__…`);
+//! 4. run `june-api` in local mode with the Carpe Diem upstream config —
+//!    **desktop**: spawned as a child process with `JUNE__…` env;
+//!    **mobile (iOS)**: subprocesses are forbidden, so the same server runs
+//!    in-process on a Tokio task via the `june-embed` crate;
 //! 5. poll `/livez` until ready, tracking status for the UI.
 //!
-//! The sidecar restarts when the key/URL change and is killed on app exit.
+//! The sidecar restarts when the key/URL change and is stopped on app exit.
 
 use serde::Serialize;
+#[cfg(desktop)]
+use std::path::PathBuf;
+#[cfg(desktop)]
+use std::process::{Child, Command};
 use std::{
     net::TcpListener,
-    path::PathBuf,
-    process::{Child, Command},
     sync::{Mutex, OnceLock},
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::settings;
+
+/// Handle to the running backend. Killing it stops the backend: on desktop we
+/// kill the child process, on mobile we resolve the in-process server's
+/// graceful-shutdown future by dropping/sending on the oneshot.
+#[cfg(desktop)]
+type Backend = Child;
+#[cfg(mobile)]
+type Backend = tokio::sync::oneshot::Sender<()>;
 
 /// Serializes a whole (re)start so two rapid settings changes can't spawn two
 /// backends and orphan one. `spawn_sidecar` has no `.await`, so holding a plain
@@ -60,7 +72,7 @@ pub enum SidecarStatus {
 }
 
 struct Process {
-    child: Option<Child>,
+    child: Option<Backend>,
     port: u16,
     status: SidecarStatus,
     message: Option<String>,
@@ -117,6 +129,37 @@ pub fn on_settings_changed(app: &AppHandle) {
 /// Kill the child on app exit.
 pub fn shutdown(app: &AppHandle) {
     stop_child(app);
+}
+
+/// Mobile resume hook: iOS can reclaim the loopback listener while the app
+/// is suspended, leaving `JUNE_API_URL` pointing at a dead port ("error
+/// sending request" on the next call). On foreground, probe `/livez` and
+/// restart the embedded server if it stopped answering.
+#[cfg(mobile)]
+pub fn ensure_alive(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let port = app
+            .try_state::<SidecarState>()
+            .and_then(|state| state.0.lock().ok().map(|process| process.port))
+            .unwrap_or(0);
+        if port == 0 {
+            return;
+        }
+        let alive = reqwest::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .ok();
+        let Some(client) = alive else { return };
+        let url = format!("http://127.0.0.1:{port}/livez");
+        let healthy = matches!(
+            client.get(&url).send().await,
+            Ok(response) if response.status().is_success()
+        );
+        if !healthy {
+            on_settings_changed(&app);
+        }
+    });
 }
 
 #[tauri::command]
@@ -183,10 +226,9 @@ fn spawn_sidecar(app: &AppHandle) {
     };
     let token = uuid::Uuid::new_v4().to_string();
 
-    let mut command = build_command(app, port, &token, &base_url, &key);
-    match command.spawn() {
-        Ok(child) => {
-            // Only after a successful spawn do we point the June client at the
+    match start_backend(app, port, &token, &base_url, &key) {
+        Ok(backend) => {
+            // Only after a successful start do we point the June client at the
             // new backend. june_api_url() / access_token() read these on every
             // request and are not cached, so this takes effect for the next
             // call. Set here (not before spawn) so a failed spawn never leaves
@@ -196,7 +238,7 @@ fn spawn_sidecar(app: &AppHandle) {
             std::env::set_var("OS_JUNE_LOCAL_DEV", "1");
             std::env::set_var("OS_JUNE_LOCAL_DEV_BEARER_TOKEN", &token);
             std::env::set_var("OS_JUNE_LOCAL_DEV_USER_ID", LOCAL_USER_ID);
-            let generation = store_child(app, child, port);
+            let generation = store_child(app, backend, port);
             set_status(app, SidecarStatus::Starting, Some(port), None);
             spawn_health_check(app.clone(), port, generation);
         }
@@ -211,7 +253,61 @@ fn spawn_sidecar(app: &AppHandle) {
     }
 }
 
+/// Desktop backend: spawn the `june-api` binary as a child process.
+#[cfg(desktop)]
+fn start_backend(
+    app: &AppHandle,
+    port: u16,
+    token: &str,
+    base_url: &str,
+    key: &str,
+) -> std::io::Result<Backend> {
+    build_command(app, port, token, base_url, key).spawn()
+}
+
+/// Mobile backend: run the same server in-process (`june-embed`) on a Tokio
+/// task. The returned oneshot sender is the kill switch — dropping it (or
+/// sending on it) resolves the server's graceful-shutdown future.
+#[cfg(mobile)]
+fn start_backend(
+    app: &AppHandle,
+    port: u16,
+    token: &str,
+    base_url: &str,
+    key: &str,
+) -> std::io::Result<Backend> {
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let options = june_embed::EmbedOptions {
+        port,
+        bearer_token: token.to_string(),
+        user_id: LOCAL_USER_ID.to_string(),
+        upstream_base_url: base_url.to_string(),
+        upstream_api_key: key.to_string(),
+    };
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        // Resolve on either an explicit stop or the sender being dropped by a
+        // restart — both mean "this backend generation is done".
+        let shutdown = async move {
+            let _ = shutdown_rx.await;
+        };
+        if let Err(error) = june_embed::serve(options, shutdown).await {
+            // Bind/config errors surface here (there is no spawn error on the
+            // in-process path). The health-check timeout would eventually flag
+            // it, but reporting now gives the UI a real message immediately.
+            set_status(
+                &app,
+                SidecarStatus::Failed,
+                Some(port),
+                Some(format!("Couldn't start the local backend: {error}")),
+            );
+        }
+    });
+    Ok(shutdown_tx)
+}
+
 /// Common `JUNE__…` env for the child: local mode + Carpe Diem upstream.
+#[cfg(desktop)]
 fn apply_june_api_env(command: &mut Command, port: u16, token: &str, base_url: &str, key: &str) {
     command
         .env("JUNE__SERVER__HOST", "127.0.0.1")
@@ -223,7 +319,7 @@ fn apply_june_api_env(command: &mut Command, port: u16, token: &str, base_url: &
         .env("JUNE__UPSTREAMS__VENICE__API_KEY", key);
 }
 
-#[cfg(debug_assertions)]
+#[cfg(all(desktop, debug_assertions))]
 fn build_command(_app: &AppHandle, port: u16, token: &str, base_url: &str, key: &str) -> Command {
     let api_dir = dev_june_api_dir();
     let prebuilt = api_dir.join("target/debug/june");
@@ -243,7 +339,7 @@ fn build_command(_app: &AppHandle, port: u16, token: &str, base_url: &str, key: 
     command
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(all(desktop, not(debug_assertions)))]
 fn build_command(app: &AppHandle, port: u16, token: &str, base_url: &str, key: &str) -> Command {
     // Release: run the bundled `june-api` sidecar shipped next to the app
     // binary (declared as `externalBin`; see Phase 5). CWD is set to the
@@ -258,7 +354,7 @@ fn build_command(app: &AppHandle, port: u16, token: &str, base_url: &str, key: &
     command
 }
 
-#[cfg(debug_assertions)]
+#[cfg(all(desktop, debug_assertions))]
 fn dev_june_api_dir() -> PathBuf {
     // <repo>/src-tauri -> <repo>/june-api
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -267,7 +363,7 @@ fn dev_june_api_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("june-api"))
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(all(desktop, not(debug_assertions)))]
 fn bundled_sidecar_path(_app: &AppHandle) -> PathBuf {
     // Tauri places `externalBin` next to the main executable. The plain name
     // (without the target-triple suffix) is what ships inside the bundle.
@@ -282,7 +378,7 @@ fn bundled_sidecar_path(_app: &AppHandle) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(name))
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(all(desktop, not(debug_assertions)))]
 fn bundled_sidecar_cwd(app: &AppHandle) -> Option<PathBuf> {
     // Bundled `config.toml` lives under the resource dir (see Phase 5).
     app.path().resource_dir().ok()
@@ -334,15 +430,30 @@ fn spawn_health_check(app: AppHandle, port: u16, generation: u64) {
     });
 }
 
-fn store_child(app: &AppHandle, child: Child, port: u16) -> u64 {
+/// Stop a backend handle: kill + reap the child process on desktop, resolve
+/// the in-process server's shutdown future on mobile.
+#[cfg(desktop)]
+fn kill_backend(mut backend: Backend) {
+    let _ = backend.kill();
+    let _ = backend.wait();
+}
+
+#[cfg(mobile)]
+fn kill_backend(backend: Backend) {
+    // Sending (or just dropping the sender) resolves the graceful-shutdown
+    // future inside `june_embed::serve`.
+    let _ = backend.send(());
+}
+
+fn store_child(app: &AppHandle, child: Backend, port: u16) -> u64 {
     if let Some(state) = app.try_state::<SidecarState>() {
         if let Ok(mut process) = state.0.lock() {
             process.generation += 1;
-            // Reap any child we're replacing (should be None after stop_child;
-            // this guards the belt-and-suspenders case of a leftover handle).
-            if let Some(mut previous) = process.child.take() {
-                let _ = previous.kill();
-                let _ = previous.wait();
+            // Reap any backend we're replacing (should be None after
+            // stop_child; this guards the belt-and-suspenders case of a
+            // leftover handle).
+            if let Some(previous) = process.child.take() {
+                kill_backend(previous);
             }
             process.child = Some(child);
             process.port = port;
@@ -360,9 +471,8 @@ fn stop_child(app: &AppHandle) {
             // Bump generation so any in-flight health check for the old child
             // becomes stale and won't report Ready after we've killed it.
             process.generation += 1;
-            if let Some(mut child) = process.child.take() {
-                let _ = child.kill();
-                let _ = child.wait();
+            if let Some(child) = process.child.take() {
+                kill_backend(child);
             }
         }
     }

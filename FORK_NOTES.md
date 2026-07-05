@@ -79,6 +79,8 @@ Clé `cdm_` de test fournie par l'utilisateur (jamais commitée ; utilisée en e
 | `src/lib/tauri.ts` | Wrappers IPC `carpeDiem*` + types (ajout en fin de section provider) ; valeur `JUNE_COMMUNITY_URL`→`https://t.me/CarpeDiemCommu` (miroir d'affichage de la constante dans `commands.rs`, qui ouvre réellement le lien) | Additif |
 | `src-tauri/src/hermes_bridge.rs` + `src-tauri/src/hermes/june_web_mcp.py` | **Bugfix (candidat upstream, 2026-07-04)** : le MCP `june_web` relit les coordonnées du proxy (port éphémère + token) depuis `hermes-mcp/june_web_proxy.json` **à chaque appel d'outil**, au lieu d'argv/env figés au spawn. Sans ça, la gateway Hermes (launchd, survit à l'app) garde le port d'un ancien lancement après relance de l'app → toutes les routines cron échouent en `web_search`/`web_fetch` avec `[Errno 61] Connection refused`. Le script garde un mode legacy (argv = URL http, token en env) pour les process spawnés depuis une vieille config. | Proposer upstream ; sinon réappliquer fichier-coordonnées + entrée YAML `june_web` |
 | `src-tauri/src/hermes_bridge.rs`, `scripts/bundle-hermes-runtime-windows.ps1`, `.github/workflows/{release,desktop}.yml` (Windows runtime, 2026-07-04) | **Fix runtime Hermes Windows** : (1) bug PowerShell dans le bundling CI — la restauration d'une env var absente écrivait `""` au lieu de la supprimer (coercion `$null`→`""` de PowerShell), tous les appels `uv` suivants échouaient (`UV_PYTHON_INSTALL_BIN … expected a boolish value`), et `continue-on-error` avalait l'échec → le NSIS v1.0.3 est sorti **sans** runtime embarqué ; (2) bundling Windows désormais bloquant dans `release.yml` + vérification explicite des fichiers du bundle ; (3) `WINDOWS_MANAGED_HERMES_INSTALL_SCRIPT` réécrit : bootstrap d'un `uv.exe` standalone épinglé (URL+SHA256 constantes dans `hermes_bridge.rs`, à garder en sync avec le .ps1) qui installe son propre CPython 3.11 — plus aucun besoin d'un Python système chez l'utilisateur ; (4) copy d'erreur visible neutralisée (« built-in agent runtime », plus de « June »/« Hermes ») ; (5) `desktop.yml` (job windows-rust) parse la syntaxe de tous les `.ps1` **et** du script embarqué | Réappliquer les 5 blocs ; garder l'URL/SHA uv en sync entre `hermes_bridge.rs` et le .ps1 |
+| `src-tauri/tauri.conf.json` + `src-tauri/src/hermes_bridge.rs` (skills bundlés, 2026-07-05) | **Pack de skills Carpe Diem par défaut** : les 15 dossiers `.agents/skills/carpe-diem-*` du repo sont bundlés en resources (`resources/skills/`) et `external_skill_dirs(app)` (ex-`external_skill_dirs()`) ajoute `resource_dir/skills` **après** les `~/.agents/skills` utilisateur (une copie utilisateur shadow le skill livré ; helpers `bundled_skill_dir`/`merge_external_skill_dirs`, précédence testée). Read-only dans l'éditeur de skills comme tout external dir. `tauri.ios.conf.json` garde `resources: null` → rien ne part sur iOS (pas de Hermes mobile). | Réappliquer les 16 entrées resources + le trio de fns ; re-lister les dossiers si le pack skills change |
+| `src-tauri/src/hermes_bridge.rs` + `src-tauri/src/hermes/june_media_mcp.py` (nouveau) (MCP média agent, 2026-07-05) | **Outils média de l'agent** : MCP `june_media` (`generate_image`, `generate_video`, `generate_music`, `check_media`, `list_media_models`) sur le patron `june_web` (script + fichier de coordonnées partagé, relu à chaque appel). Le provider proxy loopback gagne 3 routes : `POST /v1/media/request` (délègue au proxy allowlisté du Studio `carpe_diem::media::carpe_diem_media_request` — la clé reste dans le process Rust), `POST /v1/media/save` (télécharge/décode dans la galerie `studio-media/` via les commandes artifact, retourne le path) et `GET /v1/media/catalog` (relaye le catalogue fusionné du Studio — traits/tier/prix/contraintes par modèle — pour que l'agent choisisse le modèle adapté à chaque demande ; défaut = trait Venice `default`, jamais l'ordre alphabétique). `AppHandle` threadé dans le proxy (`ensure_provider_proxy(app, bridge)`). Note `JUNE_SOUL_MEDIA_MD` ajoutée aux deux souls (sans le mot « sandbox », gardé par `unsandboxed_soul_makes_no_sandbox_claims`). Motivation : le jail Seatbelt bloque le keychain, donc le CLI du skill carpe-diem-media ne peut pas résoudre de clé en session sandboxée. | Réappliquer script + consts + 2 routes + threading AppHandle + entrée YAML + soul note |
 | `june-api/crates/providers/src/venice.rs` | **Fallback catalogue Carpe Diem** : `priced_models` tente le shape Venice puis le shape OpenAI-flat (`carpe_diem_type`) + join `GET {racine}/pricing` (structs `CarpeDiem*`, `carpe_diem_priced_model_items`). Sans lui, retour aux 6 modèles curatés de `config.toml`. | Conflits probables sur `priced_models`/`fetch_models` ; réappliquer le bloc fallback (les fns/structs `carpe_diem_*` sont additives) |
 | `src/app/App.tsx`, `src/components/sidebar/Sidebar.tsx`, `src/main.tsx` (Studio, 2026-07-04) | Vue « Studio » : cas `"studio"` dans `SidebarView`/`tabMeta`/le switch de rendu, bouton nav + quick command sidebar, import `styles/studio.css` | Réappliquer les 3 hooks (additifs) |
 | `src-tauri/tauri.conf.json` (Studio) | Scope assetProtocol `$APPDATA/studio-media/*` (affichage des fichiers de la galerie via `convertFileSrc`) | 1 entrée de scope |
@@ -147,9 +149,79 @@ Clé `cdm_` de test fournie par l'utilisateur (jamais commitée ; utilisée en e
   Échec du fetch/parse → dégradation gracieuse inchangée vers les 6 modèles curatés de `config.toml`.
   C'est **le** point chaud du merge upstream dans `venice.rs` (voir tableau des fichiers modifiés).
 
+## Portage iOS (2026-07-05)
+
+L'app iPhone partage le frontend React et le core Rust ; Tauri 2 cible iOS via le projet Xcode
+généré (`src-tauri/gen/apple/`, committé). Décisions structurantes :
+
+- **Sidecar in-process** : iOS interdit les sous-processus. La composition root de june-api a été
+  extraite dans **`june-api/crates/embed/` (`june-embed`)** — `crates/app/src/main.rs` devient un
+  CLI mince par-dessus — et `carpe_diem/sidecar.rs` a deux backends (`#[cfg(desktop)]` = spawn du
+  binaire inchangé ; `#[cfg(mobile)]` = `june_embed::serve` sur une tâche tokio, shutdown par
+  oneshot). Contrat inchangé : mêmes 4 env vars, même `/livez`, mêmes événements de statut.
+  `config.toml` est embarqué par `include_str!` (pas de resource path dans le sandbox iOS).
+- **Pas de Hermes sur mobile** : l'agent est **agent-lite** (`src-tauri/src/agent_lite/`) — boucle
+  d'outils sur `/v1/chat/completions` avec `search_notes` (LIKE sur notes+transcripts locaux,
+  `Repositories::search_note_context`) et `web_search` (`/v1/web/search`). Sessions dans les mêmes
+  tables `agent_tasks`/`agent_messages`. Desktop garde Hermes.
+- **Audio** : cpal enregistre sur iOS, mais il faut configurer/activer `AVAudioSession` avant
+  d'ouvrir le stream — `src-tauri/src/audio/ios_session.rs` (objc2, framework AVFAudio lié dans
+  build.rs). `UIBackgroundModes: audio` (Info.plist) couvre l'écran verrouillé. Capture système
+  et mode `MicrophonePlusSystem` refusés sur mobile.
+- **Deux listes `generate_handler!`** dans `lib.rs` (desktop complète / mobile sous-ensemble) —
+  la macro ne cfg-e pas les entrées individuelles. **Garder les commandes partagées en sync.**
+- **Shell mobile dédié** : `src/main.tsx` choisit `MobileApp` (`src/app/mobile/`) via
+  `isMobilePlatform()` (plugin-os ; override `?mobile=1` en dev navigateur). `App.tsx` desktop
+  intact. Le shell réutilise `notesReducer`, les wrappers IPC, `NoteEditor`, `CarpeDiemSettings`.
+- **Keychain** : crate `keyring` étendu à `cfg(any(macos, ios))` — validé sur simulateur (probe
+  debug au boot, `lib.rs`).
+
+**Fichiers upstream modifiés (iOS) :**
+| Fichier(s) | Raison | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | cfg-gating des modules/plugins/setup desktop, split des deux listes de handlers, `#[tauri::mobile_entry_point]`, probe keychain debug | Réappliquer le gating ; toute nouvelle commande partagée va dans **les deux** listes |
+| `src-tauri/Cargo.toml` | `crate-type` staticlib/cdylib, plugins desktop sous `cfg(not(ios/android))`, keyring étendu iOS, deps iOS (`june-embed`, objc2), plugins os/clipboard | Garder les blocs target |
+| `src-tauri/build.rs` | `rustc-link-lib=framework=AVFAudio` pour iOS | 3 lignes |
+| `src-tauri/src/carpe_diem/sidecar.rs` | Backend embedded mobile (voir ci-dessus) | Réappliquer le split |
+| `src-tauri/src/audio/capture.rs` | Hooks `ios_session` (configure/deactivate), branche permission iOS | 3 hooks |
+| `src-tauri/src/commands.rs` | Rejet `MicrophonePlusSystem` sur mobile, readiness système « unsupported », commande `import_audio_note` | Additif |
+| `src-tauri/src/domain/processing.rs` | Tail factorisé `persist_transcript_and_generate` + `process_imported_audio` (m4a/mp3 envoyés entiers au backend) ; langue via `providers::configured_transcription_language` | Réappliquer la factorisation |
+| `src-tauri/src/providers/mod.rs` | `configured_transcription_language()` (shim desktop→dictation / mobile→None) | Additif |
+| `src-tauri/src/db/repositories.rs` | `search_note_context` + `NoteContextSnippet` (retrieval agent-lite) | Additif |
+| `src-tauri/src/june_api.rs` | `extract_chat_completion_text` passé `pub` | 1 ligne |
+| `june-api/Cargo.toml`, `crates/app/*` | Workspace + CLI mince sur `june-embed` | Réappliquer l'extraction |
+| `june-api/crates/config/src/lib.rs` | `load_from_toml_str` + `validate_config` (config programmatique) | Additif |
+| `src/main.tsx` | Choix du shell desktop/mobile + import `mobile.css` | 4 lignes |
+| `src/app/App.tsx` | `recordingToStatus` extrait vers `src/lib/recording-status.ts` | 1 import |
+| `src/components/studio/ImageStudio.tsx` | Logique queue/heavy extraite vers `src/lib/studio/generate-image.ts` | 1 import + 1 appel |
+| `src/lib/tauri.ts` | Wrappers `importAudioNote`, `mobileDictation*`, `agentLiteRun` + types | Additif |
+| `vite.config.ts` | `host: TAURI_DEV_HOST \|\| 127.0.0.1` (dev sur device) | 1 ligne |
+| `src-tauri/capabilities/*.json` | `platforms` desktop ajoutés (sinon tauri-build iOS rejette `process:allow-restart`) ; permission clipboard | Garder `platforms` |
+| `.gitignore` | `src-tauri/gen/` affiné : gen/apple committé, schemas/build ignorés | Garder |
+
+**Ajouts iOS :**
+| Fichier | Rôle |
+|---|---|
+| `june-api/crates/embed/` | Composition root partagée + `serve()` embarquable |
+| `src-tauri/gen/apple/` | Projet Xcode (Info.plist : micro + `UIBackgroundModes` audio) |
+| `src-tauri/tauri.ios.conf.json` | 1 fenêtre, pas d'externalBin/resources/updater |
+| `src-tauri/capabilities/mobile-main.json` | Capability du webview mobile |
+| `src-tauri/src/audio/ios_session.rs` | AVAudioSession (objc2) |
+| `src-tauri/src/dictation_mobile.rs` | Dictée in-app (cpal→WAV→`/v1/dictate`+cleanup, historique partagé) |
+| `src-tauri/src/agent_lite/mod.rs` | Boucle d'outils agent-lite |
+| `src/lib/mobile.ts`, `src/lib/recording-status.ts`, `src/lib/studio/generate-image.ts` | Détection plateforme + helpers factorisés |
+| `src/app/mobile/{MobileApp.tsx,nav.ts}` | Shell mobile (gates, état, navigation tabs+stack) |
+| `src/components/mobile/**` | TabBar, StackHeader, écrans Notes/NoteDetail/Folders/Dictation/Agent/Studio/Settings |
+| `src/styles/mobile.css` | Chrome mobile (safe areas, 44 pt, tab bar, chat, studio) |
+
+**Reste à faire (iOS)** : test micro sur iPhone physique (spike AVAudioSession réel), gestion des
+interruptions/changements de route audio, partage (share sheet), lane TestFlight
+(`tauri ios build --export-method app-store-connect` + fastlane), CI `ios-release.yml`.
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.
+- Sur simulateur iOS : `SIMCTL_CHILD_SUBROSA_DEV_API_KEY=cdm_… xcrun simctl launch booted xyz.carpediem.subrosa`.
 
 ---
 

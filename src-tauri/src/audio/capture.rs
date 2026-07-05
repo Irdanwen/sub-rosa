@@ -109,11 +109,24 @@ struct CaptureStats {
 }
 
 pub fn microphone_permission_state() -> (String, Option<String>) {
-    let host = cpal::default_host();
-    if host.default_input_device().is_some() {
-        ("granted".to_string(), None)
-    } else {
-        ("denied".to_string(), Some(microphone_permission_hint()))
+    // iOS has a real permission API; device presence is meaningless there
+    // (the microphone always enumerates, granted or not).
+    #[cfg(target_os = "ios")]
+    {
+        return match super::ios_session::record_permission() {
+            "granted" => ("granted".to_string(), None),
+            "denied" => ("denied".to_string(), Some(microphone_permission_hint())),
+            _ => ("unknown".to_string(), None),
+        };
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let host = cpal::default_host();
+        if host.default_input_device().is_some() {
+            ("granted".to_string(), None)
+        } else {
+            ("denied".to_string(), Some(microphone_permission_hint()))
+        }
     }
 }
 
@@ -126,7 +139,15 @@ fn microphone_permission_hint() -> String {
     {
         "Enable microphone access in Windows privacy settings.".to_string()
     }
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    #[cfg(target_os = "ios")]
+    {
+        "Enable microphone access in Settings for this app.".to_string()
+    }
+    #[cfg(all(
+        not(target_os = "macos"),
+        not(target_os = "windows"),
+        not(target_os = "ios")
+    ))]
     {
         "Enable microphone access in your system privacy settings.".to_string()
     }
@@ -146,6 +167,16 @@ pub fn start_capture(
             "recording_already_active",
             "A previous recording is still active. June attempted to save it locally; please try again.",
         ));
+    }
+
+    // iOS: raise the system microphone prompt if the user was never asked
+    // (and fail cleanly on denial), then put the shared AVAudioSession in a
+    // recording category and activate it before cpal opens the input stream,
+    // or capture yields silence.
+    #[cfg(target_os = "ios")]
+    {
+        super::ios_session::ensure_record_permission()?;
+        super::ios_session::configure_for_recording()?;
     }
 
     let host = cpal::default_host();
@@ -516,6 +547,10 @@ fn finalize_recording(recording: ActiveRecording) -> Result<FinishedRecording, A
             elapsed_ms: recording_dto.elapsed_ms,
         });
     }
+    // Recording is over: release the audio session so other apps' audio
+    // resumes and iOS stops keeping us alive in the background.
+    #[cfg(target_os = "ios")]
+    super::ios_session::deactivate();
     Ok(FinishedRecording {
         session_id,
         note_id,

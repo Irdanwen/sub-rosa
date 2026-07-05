@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile-main",
+  "description": "Mobile main webview access to the shared June command surface.",
+  "platforms": ["iOS", "android"],
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "deep-link:default",
+    "notification:default",
+    "dialog:allow-open",
+    "os:default",
+    "clipboard-manager:allow-write-text",
+    "haptics:default"
+  ]
+}

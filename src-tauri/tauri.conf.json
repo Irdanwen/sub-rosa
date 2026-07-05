@@ -131,7 +131,22 @@
     ],
     "resources": {
       "../.tauri-hermes/hermes": "native/hermes",
-      "../june-api/config.toml": "config.toml"
+      "../june-api/config.toml": "config.toml",
+      "../.agents/skills/carpe-diem-api-overview": "skills/carpe-diem-api-overview",
+      "../.agents/skills/carpe-diem-audio-music": "skills/carpe-diem-audio-music",
+      "../.agents/skills/carpe-diem-audio-speech": "skills/carpe-diem-audio-speech",
+      "../.agents/skills/carpe-diem-audio-transcription": "skills/carpe-diem-audio-transcription",
+      "../.agents/skills/carpe-diem-auth": "skills/carpe-diem-auth",
+      "../.agents/skills/carpe-diem-chat": "skills/carpe-diem-chat",
+      "../.agents/skills/carpe-diem-credits": "skills/carpe-diem-credits",
+      "../.agents/skills/carpe-diem-embeddings": "skills/carpe-diem-embeddings",
+      "../.agents/skills/carpe-diem-errors": "skills/carpe-diem-errors",
+      "../.agents/skills/carpe-diem-image-edit": "skills/carpe-diem-image-edit",
+      "../.agents/skills/carpe-diem-image-generate": "skills/carpe-diem-image-generate",
+      "../.agents/skills/carpe-diem-media": "skills/carpe-diem-media",
+      "../.agents/skills/carpe-diem-models": "skills/carpe-diem-models",
+      "../.agents/skills/carpe-diem-provider": "skills/carpe-diem-provider",
+      "../.agents/skills/carpe-diem-video": "skills/carpe-diem-video"
     }
   }
 }

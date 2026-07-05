@@ -213,6 +213,8 @@ pub struct MediaModelDto {
     pub model_sets: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub traits: Vec<String>,
+    /// Whether the model declares image (vision) input support.
+    pub supports_vision: bool,
     /// Venice `model_spec.pricing`, verbatim (per-generation USD, per-duration
     /// brackets for music...).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -330,6 +332,7 @@ fn merge_carpe_diem_catalog(
                     .cloned(),
                 model_sets: string_list(spec.and_then(|spec| spec.get("model_sets"))),
                 traits: string_list(spec.and_then(|spec| spec.get("traits"))),
+                supports_vision: supports_vision(entry) || spec.is_some_and(supports_vision),
                 pricing: spec
                     .and_then(|spec| spec.get("pricing"))
                     .filter(|value| !value.is_null())
@@ -375,6 +378,7 @@ fn venice_catalog_models(catalog: &serde_json::Value) -> Vec<MediaModelDto> {
                 ),
                 model_sets: string_list(spec.and_then(|spec| spec.get("model_sets"))),
                 traits: string_list(spec.and_then(|spec| spec.get("traits"))),
+                supports_vision: spec.is_some_and(supports_vision),
                 cost_credits: pricing.and_then(flat_generation_usd).map(|usd| usd * 100.0),
                 constraints: constraints.cloned(),
                 pricing: pricing.cloned(),
@@ -1044,4 +1048,26 @@ mod tests {
         assert_eq!(pricing_multiplier(&pricing), Some(0.15));
         assert_eq!(pricing_multiplier(&json!({})), None);
     }
+}
+
+/// True when a catalog object declares image input support: the
+/// `capabilities.supportsVision` flag (Carpe Diem flat entries and Venice
+/// `model_spec` both carry it) or a `*vision*` trait.
+fn supports_vision(value: &serde_json::Value) -> bool {
+    if value
+        .pointer("/capabilities/supportsVision")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    value
+        .get("traits")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|traits| {
+            traits
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .any(|t| t.contains("vision"))
+        })
 }
