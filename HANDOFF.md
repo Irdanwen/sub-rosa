@@ -54,20 +54,17 @@ Pour signer plus tard : poser `WINDOWS_CERTIFICATE` (`.pfx` base64) + `WINDOWS_C
 - Vérifier `THIRD_PARTY_NOTICES.md` (runtime **Hermes** de l'agent) pour la redistribuabilité dans un binaire
   distribué. Signaler tout doute avant distribution large.
 
-## 9. iOS / TestFlight — ✅ lane construite / ⏳ fiche App Store Connect
+## 9. iOS / TestFlight — ✅ opérationnel (premier build uploadé le 2026-07-06)
 
 **Fait (2026-07-06)** : build App Store validé en local — `pnpm tauri ios build --export-method
 app-store-connect` produit une IPA signée **Apple Distribution: Morgan Magalhaes (H6N5V777LL)**
 avec le profil App Store (certificat créé automatiquement par la session Xcode du Mac ;
 aucun `.p12` à gérer). Workflow CI : `.github/workflows/ios-release.yml` (dispatch manuel).
 
-**Reste 1 action humaine — créer la fiche d'app** (l'upload échoue sinon sur
-« Error Downloading App Information », le bundle id n'ayant pas d'app record) :
-1. https://appstoreconnect.apple.com → Apps → « + » → **Nouvelle app**.
-2. Plateforme **iOS** ; nom **Sub Rosa** (si pris : « Sub Rosa Notes » ou variante) ;
-   identifiant **xyz.carpediem.subrosa** (déjà enregistré sur le portail par la signature
-   automatique) ; SKU libre (ex. `subrosa-ios`).
-3. Puis relancer l'upload local :
+**Fiche d'app créée + premier build uploadé (2026-07-06).** Le premier build peut demander
+la conformité chiffrement dans TestFlight (« Missing Compliance » → chiffrement standard
+HTTPS = exempt) ; les suivants sont couverts par `ITSAppUsesNonExemptEncryption=false`
+dans l'Info.plist. Pour uploader un nouveau build local :
    ```bash
    xcodebuild -exportArchive \
      -archivePath "src-tauri/gen/apple/build/os-june_iOS.xcarchive" \
