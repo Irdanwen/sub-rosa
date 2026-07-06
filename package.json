@@ -43,7 +43,7 @@
     "@tiptap/react": "^3.27.1",
     "@tiptap/starter-kit": "^3.27.1",
     "@tiptap/suggestion": "3.27.1",
-    "@xyflow/react": "^12.11.1",
+    "@xyflow/react": "^12.11.2",
     "border-beam": "^1.2.0",
     "central-icons": "npm:@central-icons-react/round-outlined-radius-3-stroke-2@1.1.233",
     "central-icons-filled": "npm:@central-icons-react/round-filled-radius-3-stroke-2@1.1.241",
