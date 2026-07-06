@@ -208,7 +208,7 @@ foreach ($rel in @("plugins\platforms\raft\adapter.py", "plugins\platforms\disco
   $content = Get-Content -LiteralPath $f -Raw
   if ($content.Contains($cronShadowGood)) { $cronShadowPatched = 1; continue }
   if (!$content.Contains($cronShadowBad)) {
-    Fail "$rel: expected cron-shadow insert line not found - upstream changed, re-audit the fix."
+    Fail "${rel}: expected cron-shadow insert line not found - upstream changed, re-audit the fix."
   }
   $content = $content.Replace($cronShadowBad, $cronShadowGood)
   Set-Content -LiteralPath $f -Value $content -NoNewline
