@@ -1,0 +1,124 @@
+name: iOS release (TestFlight)
+
+# Builds the iOS app (App Store signing) and uploads the IPA to App Store
+# Connect / TestFlight. Manual dispatch while the lane stabilizes; wire it to
+# tags once two runs have passed cleanly.
+#
+# Required secrets (see HANDOFF.md §7):
+# - APPLE_API_KEY_ID       App Store Connect API key id (e.g. 2X9R4HXF34)
+# - APPLE_API_ISSUER       App Store Connect issuer id (UUID)
+# - APPLE_API_KEY_P8       The AuthKey_<id>.p8 content, base64-encoded
+# - APPLE_TEAM_ID          Already set for macOS signing (H6N5V777LL)
+#
+# Signing uses Xcode cloud-managed certificates: with the API key,
+# `-allowProvisioningUpdates` creates/fetches the Apple Distribution
+# certificate and App Store profile on the runner — no .p12 to maintain.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or tag to build (default: main)"
+        required: false
+        default: "main"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-upload:
+    runs-on: macos-14
+    steps:
+      # Dispatch inputs come from maintainers, but validate anyway before the
+      # value reaches checkout (same discipline as release.yml's tag guard).
+      - name: Validate ref input
+        env:
+          INPUT_REF: ${{ github.event.inputs.ref }}
+        run: |
+          if ! printf '%s' "$INPUT_REF" | grep -qE '^[A-Za-z0-9._/-]{1,120}$'; then
+            echo "Refusing suspicious ref: $INPUT_REF" >&2; exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref }}
+
+      - name: Setup Node + pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target\njune-api -> target"
+
+      - name: Write App Store Connect API key
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          if [ -z "$APPLE_API_KEY_ID" ] || [ -z "$APPLE_API_KEY_P8" ]; then
+            echo "Missing APPLE_API_KEY_ID / APPLE_API_KEY_P8 secrets." >&2; exit 1
+          fi
+          mkdir -p ~/private_keys
+          printf '%s' "$APPLE_API_KEY_P8" | base64 -d > ~/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Archive (App Store signing via cloud-managed certificates)
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcodebuild archive \
+            -project "src-tauri/gen/apple/os-june.xcodeproj" \
+            -scheme os-june_iOS \
+            -configuration release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/subrosa.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8 \
+            -authenticationKeyID "$APPLE_API_KEY_ID" \
+            -authenticationKeyIssuerID "$APPLE_API_ISSUER" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic
+
+      - name: Export and upload to TestFlight
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          cat > build/ExportOptions-asc.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>destination</key>
+            <string>upload</string>
+            <key>teamID</key>
+            <string>${APPLE_TEAM_ID}</string>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath build/subrosa.xcarchive \
+            -exportOptionsPlist build/ExportOptions-asc.plist \
+            -exportPath build/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8 \
+            -authenticationKeyID "$APPLE_API_KEY_ID" \
+            -authenticationKeyIssuerID "$APPLE_API_ISSUER"

@@ -134,3 +134,51 @@ fn microphone_denied_error() -> AppError {
         "Microphone access is not allowed. Enable it in Settings for this app.",
     )
 }
+
+/// Observe `AVAudioSessionInterruptionNotification` for the app's lifetime:
+/// when a call or Siri takes the audio session, the active note recording is
+/// paused so it can be resumed from the UI afterwards. Installed once at app
+/// setup; the observer block leaks by design (process-lifetime).
+pub fn install_interruption_observer() {
+    use objc2_foundation::NSString;
+
+    let Some(center_class) = objc2::runtime::AnyClass::get(c"NSNotificationCenter") else {
+        return;
+    };
+    unsafe {
+        let center: *mut AnyObject = msg_send![center_class, defaultCenter];
+        if center.is_null() {
+            return;
+        }
+        let name = NSString::from_str("AVAudioSessionInterruptionNotification");
+        let handler = block2::RcBlock::new(move |notification: *mut AnyObject| {
+            // userInfo[AVAudioSessionInterruptionTypeKey] == 1 (began)
+            let began = (|| -> Option<bool> {
+                let user_info: *mut AnyObject = msg_send![notification, userInfo];
+                if user_info.is_null() {
+                    return None;
+                }
+                let key = NSString::from_str("AVAudioSessionInterruptionTypeKey");
+                let value: *mut AnyObject = msg_send![user_info, objectForKey: &*key];
+                if value.is_null() {
+                    return None;
+                }
+                let raw: u64 = msg_send![value, unsignedLongLongValue];
+                Some(raw == 1)
+            })()
+            .unwrap_or(false);
+            if began {
+                crate::audio::capture::pause_active_capture_for_interruption();
+            }
+        });
+        let _observer: *mut AnyObject = msg_send![
+            center,
+            addObserverForName: &*name,
+            object: std::ptr::null_mut::<AnyObject>(),
+            queue: std::ptr::null_mut::<AnyObject>(),
+            usingBlock: &*handler
+        ];
+        // Keep the block alive for the process lifetime.
+        std::mem::forget(handler);
+    }
+}

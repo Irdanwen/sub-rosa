@@ -1,9 +1,11 @@
 import { listen } from "@tauri-apps/api/event";
 import { IconArrowUp } from "central-icons/IconArrowUp";
+import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconPaperclip1 } from "central-icons/IconPaperclip1";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { messageFromError } from "../../../lib/errors";
+import { hapticSelection } from "../../../lib/haptics";
 import { hapticImpact, hapticNotify } from "../../../lib/haptics";
 import { useKeyboardInset } from "../../../lib/keyboard-inset";
 import { SimpleMarkdown } from "../../../lib/simple-markdown";
@@ -22,10 +24,13 @@ import {
   getAgentTask,
   listAgentTasks,
   listSessionFolders,
+  mobileDictationStart,
+  mobileDictationStop,
   removeSessionFromFolder,
   sendAgentMessage,
   suggestAgentSessionTitle,
 } from "../../../lib/tauri";
+import { JuneGradientMark } from "../../account/AccountGate";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { EmptyState } from "../../ui/EmptyState";
 import { ModelSheet } from "../ModelSheet";
@@ -223,6 +228,9 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [attachments, setAttachments] = useState<AgentLiteAttachment[]>([]);
+  const [animatingId, setAnimatingId] = useState<string | null>(null);
+  const [dictating, setDictating] = useState(false);
+  const knownIdsRef = useRef<Set<string> | null>(null);
   const taskIdRef = useRef<string | undefined>(sessionId);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const attachInputRef = useRef<HTMLInputElement | null>(null);
@@ -261,6 +269,25 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [task?.messages.length, stage]);
 
+  // Replies that arrive during this visit type themselves out; history that
+  // loads with the screen renders instantly.
+  useEffect(() => {
+    if (!task) return;
+    if (knownIdsRef.current === null) {
+      knownIdsRef.current = new Set(task.messages.map((message) => message.id));
+      return;
+    }
+    const known = knownIdsRef.current;
+    const fresh = task.messages.filter((message) => !known.has(message.id));
+    for (const message of fresh) known.add(message.id);
+    const reply = fresh.filter((message) => message.role === "assistant").at(-1);
+    if (reply) setAnimatingId(reply.id);
+  }, [task]);
+
+  const scrollToBottom = useCallback(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, []);
+
   const selectModel = useCallback((modelId: string) => {
     setModel(modelId);
     setPickerOpen(false);
@@ -297,6 +324,27 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
     };
     reader.readAsText(file);
   }, []);
+
+  const toggleDictation = useCallback(async () => {
+    if (dictating) {
+      setDictating(false);
+      try {
+        const result = await mobileDictationStop({ style: "standard" });
+        setDraft((current) => (current ? `${current} ${result.text}` : result.text));
+        hapticNotify("success");
+      } catch (err) {
+        setError(messageFromError(err));
+      }
+      return;
+    }
+    try {
+      await mobileDictationStart();
+      setDictating(true);
+      hapticImpact("medium");
+    } catch (err) {
+      setError(messageFromError(err));
+    }
+  }, [dictating]);
 
   const send = useCallback(async () => {
     const content = draft.trim();
@@ -356,30 +404,33 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
       : stage?.stage === "searching-web"
         ? "Searching the web"
         : "Thinking";
-  const activeModelLabel = shortModelLabel(model) || "Model";
+  const activeModelLabel = shortModelLabel(model) || "Default model";
 
   return (
     <div className="mobile-screen-root mobile-chat">
-      <StackHeader
-        title={task?.title.trim() || "New chat"}
-        onBack={onBack}
-        backLabel="Chats"
-        trailing={
-          <button
-            type="button"
-            className="mobile-model-chip"
-            onClick={() => setPickerOpen(true)}
-            aria-label="Choose model"
-          >
-            {activeModelLabel}
-          </button>
-        }
-      />
+      <StackHeader title={task?.title.trim() || "New chat"} onBack={onBack} backLabel="Chats" />
       <div className="mobile-chat-scroll" ref={scrollRef}>
+        {!task?.messages.length && !running ? (
+          <div className="mobile-chat-hero">
+            <span className="mobile-chat-hero-mark" aria-hidden>
+              <JuneGradientMark />
+            </span>
+            <h2 className="mobile-chat-hero-greeting">{greeting()}</h2>
+            <p className="mobile-chat-hero-hint">Your notes, the web, and vision models.</p>
+          </div>
+        ) : null}
         {task?.messages.map((message) => (
           <div key={message.id} className="mobile-chat-bubble" data-role={message.role}>
             {message.role === "assistant" ? (
-              <SimpleMarkdown text={message.content} />
+              message.id === animatingId ? (
+                <TypewriterMarkdown
+                  text={message.content}
+                  onTick={scrollToBottom}
+                  onDone={() => setAnimatingId(null)}
+                />
+              ) : (
+                <SimpleMarkdown text={message.content} />
+              )
             ) : (
               message.content
             )}
@@ -418,7 +469,7 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
             ))}
           </div>
         ) : null}
-        <div className="mobile-chat-composer">
+        <div className="mobile-chat-composer-card">
           <input
             ref={attachInputRef}
             type="file"
@@ -432,15 +483,8 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
               event.target.value = "";
             }}
           />
-          <button
-            type="button"
-            className="mobile-icon-button"
-            aria-label="Attach a file"
-            onClick={() => attachInputRef.current?.click()}
-          >
-            <IconPaperclip1 size={18} />
-          </button>
           <textarea
+            className="mobile-chat-input"
             value={draft}
             placeholder="Ask about your notes"
             rows={1}
@@ -463,15 +507,43 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
               }
             }}
           />
-          <button
-            type="button"
-            className="mobile-chat-send"
-            aria-label="Send"
-            disabled={(!draft.trim() && attachments.length === 0) || running}
-            onClick={() => void send()}
-          >
-            <IconArrowUp size={18} />
-          </button>
+          <div className="mobile-chat-composer-row">
+            <button
+              type="button"
+              className="mobile-composer-round"
+              aria-label="Attach a file"
+              onClick={() => attachInputRef.current?.click()}
+            >
+              <IconPaperclip1 size={17} />
+            </button>
+            <button
+              type="button"
+              className="mobile-composer-model"
+              onClick={() => setPickerOpen(true)}
+              aria-label="Choose model"
+            >
+              {activeModelLabel}
+            </button>
+            <span className="mobile-composer-spacer" />
+            <button
+              type="button"
+              className="mobile-composer-round"
+              data-active={dictating ? "true" : undefined}
+              aria-label={dictating ? "Stop dictation" : "Dictate"}
+              onClick={() => void toggleDictation()}
+            >
+              <IconMicrophone size={17} />
+            </button>
+            <button
+              type="button"
+              className="mobile-chat-send"
+              aria-label="Send"
+              disabled={(!draft.trim() && attachments.length === 0) || running}
+              onClick={() => void send()}
+            >
+              <IconArrowUp size={18} />
+            </button>
+          </div>
         </div>
       </div>
       {pickerOpen ? (
@@ -529,4 +601,60 @@ async function downscaleImageFile(file: File, maxDim = 2048): Promise<string> {
   if (!context) throw new Error("canvas unavailable");
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+/** Time-of-day greeting in the device language (French or English). */
+function greeting(): string {
+  const hour = new Date().getHours();
+  const french = (navigator.language || "").toLowerCase().startsWith("fr");
+  if (french) {
+    if (hour < 5) return "Bonne nuit";
+    if (hour < 12) return "Bonjour";
+    if (hour < 18) return "Bon apres-midi";
+    return "Bonsoir";
+  }
+  if (hour < 5) return "Good night";
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+/** Progressive reveal of a fresh reply with faint haptic ticks while it
+ * "types" — the backend is not streaming, so the finished text plays back
+ * at reading speed instead of appearing as a wall. */
+function TypewriterMarkdown({
+  text,
+  onTick,
+  onDone,
+}: {
+  text: string;
+  onTick?: () => void;
+  onDone?: () => void;
+}) {
+  const [visible, setVisible] = useState(0);
+  const onTickRef = useRef(onTick);
+  const onDoneRef = useRef(onDone);
+  onTickRef.current = onTick;
+  onDoneRef.current = onDone;
+
+  useEffect(() => {
+    let index = 0;
+    let frame = 0;
+    // ~3 seconds for a long answer, faster for short ones.
+    const step = Math.max(3, Math.ceil(text.length / 130));
+    const interval = window.setInterval(() => {
+      index = Math.min(text.length, index + step);
+      frame += 1;
+      if (frame % 5 === 0) hapticSelection();
+      setVisible(index);
+      onTickRef.current?.();
+      if (index >= text.length) {
+        window.clearInterval(interval);
+        onDoneRef.current?.();
+      }
+    }, 24);
+    return () => window.clearInterval(interval);
+  }, [text]);
+
+  return <SimpleMarkdown text={text.slice(0, visible)} />;
 }

@@ -390,6 +390,26 @@ pub fn start_capture(
     })
 }
 
+/// Pause the active recording regardless of its session id. Used by the iOS
+/// audio-interruption observer (incoming call, Siri): the interruption also
+/// silences the input stream, so pausing keeps elapsed time honest and the
+/// UI in a resumable state instead of recording dead air.
+pub fn pause_active_capture_for_interruption() {
+    let session_id = {
+        let Ok(active) = ACTIVE_RECORDING.lock() else {
+            return;
+        };
+        let Some(recording) = active.as_ref() else {
+            return;
+        };
+        if recording.paused {
+            return;
+        }
+        recording.session_id.clone()
+    };
+    let _ = pause_capture(&session_id);
+}
+
 pub fn pause_capture(session_id: &str) -> Result<CaptureRecoverySnapshot, AppError> {
     let mut active = lock_active()?;
     let recording = active_for_session(active.as_mut(), session_id)?;

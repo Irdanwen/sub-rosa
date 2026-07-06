@@ -1340,3 +1340,153 @@
   font-size: var(--fs-sm);
   text-align: left;
 }
+
+/* --- Chat hero + composer card (Claude-app-inspired) --------------------------- */
+
+.mobile-chat-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding: var(--sp-8) var(--sp-6);
+  text-align: center;
+}
+
+.mobile-chat-hero-mark {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+}
+
+.mobile-chat-hero-mark svg {
+  width: 100%;
+  height: 100%;
+}
+
+.mobile-chat-hero-greeting {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: var(--fs-2xl);
+  color: var(--foreground);
+}
+
+.mobile-chat-hero-hint {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.mobile-chat-composer-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: var(--sp-2) var(--sp-3);
+  margin-bottom: calc(var(--sp-2) + env(safe-area-inset-bottom));
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-2xl);
+  background: var(--card);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.06);
+}
+
+.mobile-chat-input {
+  border: none;
+  background: none;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  line-height: 1.4;
+  resize: none;
+  outline: none;
+  max-height: 120px;
+  padding: var(--sp-1) var(--sp-1) 0;
+}
+
+.mobile-chat-composer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.mobile-composer-round {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--background);
+  color: var(--foreground);
+  flex-shrink: 0;
+}
+
+.mobile-composer-round[data-active="true"] {
+  background: var(--record, var(--destructive));
+  border-color: transparent;
+  color: #fff;
+  animation: mobile-dictate-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes mobile-dictate-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(200 60 60 / 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgb(200 60 60 / 0);
+  }
+}
+
+.mobile-composer-model {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  max-width: 46vw;
+  padding: 0 var(--sp-3);
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--muted);
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-composer-spacer {
+  flex: 1;
+}
+
+/* The send circle flips to high contrast when armed, like the reference. */
+.mobile-chat-send {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  width: 36px;
+  height: 36px;
+}
+
+.mobile-chat-send:disabled {
+  opacity: 0.35;
+}
+
+/* Header icon buttons get the quiet circled outline of the reference app. */
+.mobile-stack-header .mobile-icon-button {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+}
+
+/* The old flat composer strip is superseded by the card. */
+.mobile-chat-composer-stack {
+  border-top: none;
+  background: transparent;
+}
+
+.mobile-chat-attachments {
+  padding: var(--sp-2) var(--sp-4) 0;
+}

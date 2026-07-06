@@ -447,6 +447,11 @@ pub fn run() {
                     });
                 eprintln!("[subrosa] keychain probe: {probe:?}");
             }
+            // Pause an active recording when a call or Siri interrupts the
+            // audio session (the input goes silent anyway; a clean pause is
+            // resumable from the UI).
+            #[cfg(target_os = "ios")]
+            audio::ios_session::install_interruption_observer();
             // Carpe Diem fork: load settings, then start the june-api sidecar
             // pointed at Carpe Diem (or mark "unconfigured" for onboarding).
             // On desktop the sidecar is a child process; on mobile it runs

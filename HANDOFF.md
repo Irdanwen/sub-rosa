@@ -53,3 +53,34 @@ Pour signer plus tard : poser `WINDOWS_CERTIFICATE` (`.pfx` base64) + `WINDOWS_C
 ## 8. Licences tierces — ➖ à confirmer
 - Vérifier `THIRD_PARTY_NOTICES.md` (runtime **Hermes** de l'agent) pour la redistribuabilité dans un binaire
   distribué. Signaler tout doute avant distribution large.
+
+## 9. iOS / TestFlight — ✅ lane construite / ⏳ fiche App Store Connect
+
+**Fait (2026-07-06)** : build App Store validé en local — `pnpm tauri ios build --export-method
+app-store-connect` produit une IPA signée **Apple Distribution: Morgan Magalhaes (H6N5V777LL)**
+avec le profil App Store (certificat créé automatiquement par la session Xcode du Mac ;
+aucun `.p12` à gérer). Workflow CI : `.github/workflows/ios-release.yml` (dispatch manuel).
+
+**Reste 1 action humaine — créer la fiche d'app** (l'upload échoue sinon sur
+« Error Downloading App Information », le bundle id n'ayant pas d'app record) :
+1. https://appstoreconnect.apple.com → Apps → « + » → **Nouvelle app**.
+2. Plateforme **iOS** ; nom **Sub Rosa** (si pris : « Sub Rosa Notes » ou variante) ;
+   identifiant **xyz.carpediem.subrosa** (déjà enregistré sur le portail par la signature
+   automatique) ; SKU libre (ex. `subrosa-ios`).
+3. Puis relancer l'upload local :
+   ```bash
+   xcodebuild -exportArchive \
+     -archivePath "src-tauri/gen/apple/build/os-june_iOS.xcarchive" \
+     -exportOptionsPlist /tmp/asc-upload/ExportOptions.plist \
+     -exportPath /tmp/asc-upload/out -allowProvisioningUpdates
+   ```
+   (le plist = method app-store-connect + destination upload + teamID ; la session Xcode
+   authentifie). Le build apparaît ensuite dans TestFlight après le traitement Apple.
+
+**Pour la CI** (`ios-release.yml`) : poser les secrets `APPLE_API_KEY_ID`,
+`APPLE_API_ISSUER`, `APPLE_API_KEY_P8` (clé API App Store Connect, rôle App Manager,
+`.p8` en base64) — la signature cloud crée le certificat sur le runner.
+
+**À savoir** : icônes iOS = placeholders (mêmes sources que §7) ; l'App Store refusera une
+icône 1024 avec canal alpha — fournir les icônes définitives avant la première soumission
+publique (TestFlight interne est plus tolérant).
