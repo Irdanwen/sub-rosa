@@ -317,6 +317,9 @@ fn apply_june_api_env(command: &mut Command, port: u16, token: &str, base_url: &
         .env("JUNE__LOCAL_DEV__USER_ID", LOCAL_USER_ID)
         .env("JUNE__UPSTREAMS__VENICE__BASE_URL", base_url)
         .env("JUNE__UPSTREAMS__VENICE__API_KEY", key);
+    // Both build_command variants funnel through here — keeps the june-api
+    // child from opening a terminal window on Windows.
+    crate::win_console::hide_console(command);
 }
 
 #[cfg(all(desktop, debug_assertions))]

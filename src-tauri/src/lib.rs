@@ -36,6 +36,7 @@ pub mod share_ios;
 pub mod theme_icon;
 #[cfg(desktop)]
 pub mod updates;
+pub mod win_console;
 
 #[cfg(desktop)]
 use serde::Deserialize;

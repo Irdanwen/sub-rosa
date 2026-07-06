@@ -166,6 +166,11 @@ unpacked="$(find "$work" -maxdepth 1 -type d -name 'hermes-agent-*' | head -1)"
 mkdir -p "$out"
 mv "$unpacked" "$out/hermes-agent"
 
+# Fork patch: fix the plugins/cron sys.path shadow that 500s the Routines page.
+# See scripts/patch-hermes-cron-shadow.sh for the full root-cause writeup. Runs
+# before the web-UI build so a stale checkout can never ship the bug.
+"$root/scripts/patch-hermes-cron-shadow.sh" "$out/hermes-agent"
+
 # Dev-only weight the runtime never imports. Conservative on purpose: web/ and
 # ui-tui/ stay (hermes resolves them relative to its project root), and they
 # are small without node_modules, which we never ship.

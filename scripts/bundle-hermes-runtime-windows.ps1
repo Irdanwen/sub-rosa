@@ -194,6 +194,31 @@ if ($null -eq $unpacked) {
 Move-Item -Path $unpacked.FullName -Destination (Join-Path $out "hermes-agent")
 $agentDir = Join-Path $out "hermes-agent"
 
+# Fork patch: fix the plugins/cron sys.path shadow that 500s the Routines page.
+# Mirror of scripts/patch-hermes-cron-shadow.sh (see it for the root cause).
+# The two platform adapters insert their grandparent (hermes-agent/plugins) at
+# sys.path[0], shadowing the core `cron` package with the plugins/cron plugin;
+# point the insert at the hermes-agent root (parents[3]) instead.
+$cronShadowBad  = 'sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))'
+$cronShadowGood = 'sys.path.insert(0, str(_Path(__file__).resolve().parents[3]))'
+$cronShadowPatched = 0
+foreach ($rel in @("plugins\platforms\raft\adapter.py", "plugins\platforms\discord\adapter.py")) {
+  $f = Join-Path $agentDir $rel
+  if (!(Test-Path -LiteralPath $f -PathType Leaf)) { continue }
+  $content = Get-Content -LiteralPath $f -Raw
+  if ($content.Contains($cronShadowGood)) { $cronShadowPatched = 1; continue }
+  if (!$content.Contains($cronShadowBad)) {
+    Fail "$rel: expected cron-shadow insert line not found - upstream changed, re-audit the fix."
+  }
+  $content = $content.Replace($cronShadowBad, $cronShadowGood)
+  Set-Content -LiteralPath $f -Value $content -NoNewline
+  $cronShadowPatched = 1
+  Log "patched cron-shadow: $rel"
+}
+if ($cronShadowPatched -eq 0) {
+  Fail "no adapter files present to patch - hermes layout changed."
+}
+
 foreach ($prune in @("tests", "website", "apps", ".github")) {
   Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $agentDir $prune)
 }

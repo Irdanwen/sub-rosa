@@ -884,9 +884,19 @@ async fn start_hermes_bridge_inner(
             cmd
         }
     };
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+    cmd.stdin(Stdio::null());
+    // Keep the dashboard's stdout/stderr: uvicorn writes unhandled route
+    // exceptions ("Exception in ASGI application" + traceback) to stderr and
+    // nowhere else, so with Stdio::null() every dashboard 500 is
+    // undiagnosable — on the user's machine as much as on ours.
+    match open_dashboard_log(&hermes_home) {
+        Some((log_for_stdout, log_for_stderr)) => {
+            cmd.stdout(log_for_stdout).stderr(log_for_stderr);
+        }
+        None => {
+            cmd.stdout(Stdio::null()).stderr(Stdio::null());
+        }
+    }
     apply_isolated_hermes_env(
         &mut cmd,
         &hermes_home,
@@ -4582,6 +4592,7 @@ fn spawn_hermes_gateway_start(connection: &HermesBridgeConnection) -> Result<(),
             format!("Could not run `hermes gateway start`. {error}"),
         )
     })?;
+    answer_gateway_install_prompts(&mut child);
     // Reap the short-lived CLI off the async runtime so it never lingers as a
     // zombie, and surface a non-zero exit in the app log for diagnosis.
     tauri::async_runtime::spawn_blocking(move || match child.wait() {
@@ -4598,20 +4609,27 @@ fn spawn_hermes_gateway_start(connection: &HermesBridgeConnection) -> Result<(),
 
 async fn run_hermes_gateway_start(connection: &HermesBridgeConnection) -> Result<(), AppError> {
     let mut cmd = hermes_gateway_start_command(connection);
-    let status = tauri::async_runtime::spawn_blocking(move || cmd.status())
-        .await
-        .map_err(|error| {
-            AppError::new(
-                "hermes_gateway_start_failed",
-                format!("Could not wait for `hermes gateway start`. {error}"),
-            )
-        })?
-        .map_err(|error| {
-            AppError::new(
-                "hermes_gateway_start_failed",
-                format!("Could not run `hermes gateway start`. {error}"),
-            )
-        })?;
+    // spawn + wait rather than status(): on Windows the install prompts must
+    // be answered through the piped stdin before the child can exit.
+    let status = tauri::async_runtime::spawn_blocking(move || {
+        cmd.spawn().and_then(|mut child| {
+            answer_gateway_install_prompts(&mut child);
+            child.wait()
+        })
+    })
+    .await
+    .map_err(|error| {
+        AppError::new(
+            "hermes_gateway_start_failed",
+            format!("Could not wait for `hermes gateway start`. {error}"),
+        )
+    })?
+    .map_err(|error| {
+        AppError::new(
+            "hermes_gateway_start_failed",
+            format!("Could not run `hermes gateway start`. {error}"),
+        )
+    })?;
     if !status.success() {
         return Err(AppError::new(
             "hermes_gateway_start_failed",
@@ -4642,14 +4660,44 @@ fn build_hermes_gateway_start_command(
     hermes_home: &Path,
 ) -> Command {
     let mut cmd = Command::new(&connection.command);
-    cmd.args(["gateway", "start"]);
+    if cfg!(windows) {
+        // `gateway start` is a dead end on a fresh Windows install: with no
+        // service registered it asks "Install it now? [Y/n]", and Hermes'
+        // prompt_yes_no() exits on the EOF it reads from a closed stdin (it
+        // never consults HERMES_NONINTERACTIVE), so the gateway is never
+        // installed and routines never fire. `gateway install` is idempotent
+        // and reads its two intent questions from these env vars; the one
+        // prompt left (UAC elevation for non-admin accounts) is answered "n"
+        // through the piped stdin — see answer_gateway_install_prompts — so
+        // the install lands on the Startup-folder fallback instead of dying.
+        cmd.args(["gateway", "install"]);
+        cmd.env("HERMES_GATEWAY_INSTALL_START_NOW", "1");
+        cmd.env("HERMES_GATEWAY_INSTALL_START_ON_LOGIN", "1");
+    } else {
+        cmd.args(["gateway", "start"]);
+    }
     // No sandbox-status hint: `gateway start` is a helper invocation, not the
     // agent runtime, so it never builds a system prompt.
     apply_isolated_hermes_env(&mut cmd, hermes_home, &connection.token, None);
     cmd.env("HERMES_NONINTERACTIVE", "1");
     cmd.current_dir(hermes_home);
-    cmd.stdin(Stdio::null());
+    if cfg!(windows) {
+        cmd.stdin(Stdio::piped());
+    } else {
+        cmd.stdin(Stdio::null());
+    }
     cmd
+}
+
+/// Answers the prompts the Windows `gateway install` can still raise — the
+/// UAC elevation question and its access-denied retry, both defaulting to
+/// "n" — then closes stdin so any prompt added upstream later EOFs instead of
+/// hanging the install forever. No-op elsewhere: stdin is null there.
+fn answer_gateway_install_prompts(child: &mut std::process::Child) {
+    if let Some(mut stdin) = child.stdin.take() {
+        use io::Write as _;
+        let _ = stdin.write_all(b"n\nn\nn\nn\n");
+    }
 }
 
 /// Opens `<hermes_home>/logs/gateway-start.log` for appending and writes the
@@ -4657,6 +4705,29 @@ fn build_hermes_gateway_start_command(
 /// the spawner. Returns two handles (stdout, stderr) onto the same file, or
 /// `None` when the log can't be opened — the spawn then proceeds silenced
 /// rather than failing gateway startup over diagnostics.
+/// Opens `logs/dashboard.log` for the bridge (dashboard) process's
+/// stdout/stderr. Truncated on every spawn: the file holds the current
+/// process's output only, so uvicorn chatter can't grow it unbounded across
+/// months while the traceback of the latest failure stays easy to find.
+fn open_dashboard_log(hermes_home: &Path) -> Option<(std::fs::File, std::fs::File)> {
+    let log_dir = hermes_home.join("logs");
+    fs::create_dir_all(&log_dir).ok()?;
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(log_dir.join("dashboard.log"))
+        .ok()?;
+    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+    use io::Write as _;
+    let _ = writeln!(
+        file,
+        "=== dashboard started {timestamp} (stdout+stderr of the June bridge process) ==="
+    );
+    let clone = file.try_clone().ok()?;
+    Some((file, clone))
+}
+
 fn open_gateway_start_log(hermes_home: &Path) -> Option<(std::fs::File, std::fs::File)> {
     let log_dir = hermes_home.join("logs");
     fs::create_dir_all(&log_dir).ok()?;
@@ -5286,32 +5357,33 @@ async fn install_managed_hermes_runtime_windows(
         let install_dir = install_dir.clone();
         let hermes_home = hermes_home.to_path_buf();
         tokio::task::spawn_blocking(move || {
-            Command::new("powershell.exe")
-                .args([
-                    "-NoLogo",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-Command",
-                    WINDOWS_MANAGED_HERMES_INSTALL_SCRIPT,
-                ])
-                .env("JUNE_HERMES_RUNTIME_DIR", &runtime_dir)
-                .env("JUNE_HERMES_INSTALL_DIR", &install_dir)
-                .env("JUNE_HERMES_HOME", &hermes_home)
-                .env("JUNE_HERMES_INSTALL_COMMIT", HERMES_AGENT_INSTALL_COMMIT)
-                .env("JUNE_HERMES_SOURCE_TARBALL_URL", HERMES_SOURCE_TARBALL_URL)
-                .env(
-                    "JUNE_HERMES_SOURCE_TARBALL_SHA256",
-                    HERMES_SOURCE_TARBALL_SHA256,
-                )
-                .env("JUNE_HERMES_UV_URL", WINDOWS_UV_DOWNLOAD_URL)
-                .env("JUNE_HERMES_UV_SHA256", WINDOWS_UV_DOWNLOAD_SHA256)
-                .env("HERMES_HOME", &hermes_home)
-                .stdin(Stdio::null())
-                .stdout(Stdio::from(log_file))
-                .stderr(Stdio::from(log_file_for_stderr))
-                .status()
+            let mut cmd = Command::new("powershell.exe");
+            crate::win_console::hide_console(&mut cmd);
+            cmd.args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                WINDOWS_MANAGED_HERMES_INSTALL_SCRIPT,
+            ])
+            .env("JUNE_HERMES_RUNTIME_DIR", &runtime_dir)
+            .env("JUNE_HERMES_INSTALL_DIR", &install_dir)
+            .env("JUNE_HERMES_HOME", &hermes_home)
+            .env("JUNE_HERMES_INSTALL_COMMIT", HERMES_AGENT_INSTALL_COMMIT)
+            .env("JUNE_HERMES_SOURCE_TARBALL_URL", HERMES_SOURCE_TARBALL_URL)
+            .env(
+                "JUNE_HERMES_SOURCE_TARBALL_SHA256",
+                HERMES_SOURCE_TARBALL_SHA256,
+            )
+            .env("JUNE_HERMES_UV_URL", WINDOWS_UV_DOWNLOAD_URL)
+            .env("JUNE_HERMES_UV_SHA256", WINDOWS_UV_DOWNLOAD_SHA256)
+            .env("HERMES_HOME", &hermes_home)
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(log_file))
+            .stderr(Stdio::from(log_file_for_stderr))
+            .status()
         })
         .await
         .map_err(|error| AppError::new("hermes_runtime_install_failed", error.to_string()))?
@@ -5396,6 +5468,23 @@ sed -e 's/^\$UV_CMD/"$UV_CMD"/g' \
   -e 's/\([^"]\)\$UV_CMD/\1"$UV_CMD"/g' "$install_dir/scripts/install.sh" \
   > "$install_dir/scripts/install.sh.quoted"
 mv "$install_dir/scripts/install.sh.quoted" "$install_dir/scripts/install.sh"
+
+# Fix the plugins/cron sys.path shadow that 500s the Routines page (mirror of
+# scripts/patch-hermes-cron-shadow.sh). The raft and discord platform adapters
+# insert their grandparent (hermes-agent/plugins) at sys.path[0], so top-level
+# `import cron` finds the plugins/cron plugin instead of the core cron package
+# and every dashboard cron endpoint raises ImportError -> HTTP 500. Point the
+# insert at the hermes-agent root (parents[3]) instead. Scoped to just these
+# two files (the gateway/platforms/*.py inserts are one level shallower, so
+# their parents[2] is already the root and must be left alone). Idempotent and
+# applied outside the download guard so a retry re-patches an existing tree.
+for cron_shadow_rel in plugins/platforms/raft/adapter.py plugins/platforms/discord/adapter.py; do
+  cron_shadow_file="$install_dir/$cron_shadow_rel"
+  [ -f "$cron_shadow_file" ] || continue
+  sed -e 's/resolve()\.parents\[2\]))/resolve().parents[3]))/g' \
+    "$cron_shadow_file" > "$cron_shadow_file.cron-shadow"
+  mv "$cron_shadow_file.cron-shadow" "$cron_shadow_file"
+done
 
 run_stage() {
   local stage="$1"
@@ -5488,6 +5577,22 @@ if (!(Test-Path (Join-Path $installDir "pyproject.toml"))) {
     Move-Item -Path $unpacked.FullName -Destination $installDir
   } finally {
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path $tmpDir
+  }
+}
+
+# Fix the plugins/cron sys.path shadow that 500s the Routines page (mirror of
+# scripts/patch-hermes-cron-shadow.sh). The raft and discord platform adapters
+# insert hermes-agent/plugins at sys.path[0], so top-level `import cron` finds
+# the plugins/cron plugin instead of core cron and every dashboard cron endpoint
+# raises ImportError -> HTTP 500. Point the insert at the hermes-agent root
+# (parents[3]). Scoped to the two adapters (gateway/platforms/*.py already use
+# the root). Idempotent and outside the download guard so retries re-patch.
+foreach ($cronShadowRel in @("plugins\platforms\raft\adapter.py", "plugins\platforms\discord\adapter.py")) {
+  $cronShadowFile = Join-Path $installDir $cronShadowRel
+  if (Test-Path -LiteralPath $cronShadowFile -PathType Leaf) {
+    $cronShadowText = Get-Content -LiteralPath $cronShadowFile -Raw
+    $cronShadowText = $cronShadowText.Replace("resolve().parents[2]))", "resolve().parents[3]))")
+    Set-Content -LiteralPath $cronShadowFile -Value $cronShadowText -NoNewline
   }
 }
 
@@ -5618,6 +5723,9 @@ fn apply_isolated_hermes_env(
     if let Some(hint) = environment_hint {
         cmd.env("HERMES_ENVIRONMENT_HINT", hint);
     }
+    // Every Hermes spawn goes through here (dashboard, CLI runs, gateway
+    // install) — the one chokepoint to keep Windows consoles invisible.
+    crate::win_console::hide_console(cmd);
 }
 
 /// Builds the Seatbelt profile, writes it to disk, and returns the path to hand
@@ -7791,7 +7899,13 @@ mod tests {
             .get_args()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect();
-        assert_eq!(args, ["gateway", "start"]);
+        if cfg!(windows) {
+            // Windows must go through `install`: `start` on a never-installed
+            // service prompts, and Hermes' prompt_yes_no exits on stdin EOF.
+            assert_eq!(args, ["gateway", "install"]);
+        } else {
+            assert_eq!(args, ["gateway", "start"]);
+        }
         let envs: std::collections::HashMap<String, String> = cmd
             .get_envs()
             .filter_map(|(key, value)| {
@@ -7811,6 +7925,20 @@ mod tests {
             envs.get("HERMES_NONINTERACTIVE").map(String::as_str),
             Some("1")
         );
+        if cfg!(windows) {
+            // Answers the two install intent questions without a prompt; the
+            // remaining UAC question is fed "n" via the piped stdin.
+            assert_eq!(
+                envs.get("HERMES_GATEWAY_INSTALL_START_NOW")
+                    .map(String::as_str),
+                Some("1")
+            );
+            assert_eq!(
+                envs.get("HERMES_GATEWAY_INSTALL_START_ON_LOGIN")
+                    .map(String::as_str),
+                Some("1")
+            );
+        }
         assert_eq!(cmd.get_current_dir(), Some(Path::new("/tmp/hermes-home")));
     }
 
