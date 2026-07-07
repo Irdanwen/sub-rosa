@@ -83,53 +83,30 @@ jobs:
           mkdir -p ~/private_keys
           printf '%s' "$APPLE_API_KEY_P8" | base64 -d > ~/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8
 
-      - name: Build frontend
-        run: pnpm build
+      # Build through the Tauri CLI (not a raw `xcodebuild archive`): the Xcode
+      # "Build Rust Code" phase runs `tauri ios xcode-script`, which needs the
+      # `<identifier>-server-addr` file that only `tauri ios build`/`dev` writes
+      # — a direct xcodebuild archive panics on the missing file. Tauri does the
+      # App Store cloud-managed signing itself when handed the ASC key via the
+      # APPLE_API_* env vars (Key ID in APPLE_API_KEY, .p8 in APPLE_API_KEY_PATH),
+      # and produces a signed .ipa. Frontend build runs via beforeBuildCommand.
+      - name: Build iOS app (archive + export via Tauri)
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_KEY_PATH: /Users/runner/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          pnpm tauri ios build --export-method app-store-connect --verbose
 
-      - name: Archive (App Store signing via cloud-managed certificates)
+      - name: Upload to TestFlight
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          xcodebuild archive \
-            -project "src-tauri/gen/apple/os-june.xcodeproj" \
-            -scheme os-june_iOS \
-            -configuration release \
-            -destination 'generic/platform=iOS' \
-            -archivePath build/subrosa.xcarchive \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8 \
-            -authenticationKeyID "$APPLE_API_KEY_ID" \
-            -authenticationKeyIssuerID "$APPLE_API_ISSUER" \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
-            CODE_SIGN_STYLE=Automatic
-
-      - name: Export and upload to TestFlight
-        env:
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          cat > build/ExportOptions-asc.plist <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>app-store-connect</string>
-            <key>destination</key>
-            <string>upload</string>
-            <key>teamID</key>
-            <string>${APPLE_TEAM_ID}</string>
-          </dict>
-          </plist>
-          PLIST
-          xcodebuild -exportArchive \
-            -archivePath build/subrosa.xcarchive \
-            -exportOptionsPlist build/ExportOptions-asc.plist \
-            -exportPath build/export \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8 \
-            -authenticationKeyID "$APPLE_API_KEY_ID" \
-            -authenticationKeyIssuerID "$APPLE_API_ISSUER"
+          IPA=$(find src-tauri/gen/apple/build -name '*.ipa' -print | head -1)
+          if [ -z "$IPA" ]; then echo "No .ipa produced by tauri ios build." >&2; exit 1; fi
+          echo "Uploading $IPA to TestFlight"
+          # altool reads the key from ~/private_keys/AuthKey_<APPLE_API_KEY_ID>.p8
+          xcrun altool --upload-app --type ios --file "$IPA" \
+            --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
