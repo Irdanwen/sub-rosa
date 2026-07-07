@@ -51,6 +51,7 @@ describe("editImage", () => {
       model: "seedream-v4-edit",
       prompt: "brighten it",
       image: IMG,
+      safe_mode: false,
     });
   });
 
@@ -86,6 +87,7 @@ describe("composeImages", () => {
       model: "seedream-v4-edit",
       prompt: "put 1 into 2",
       images: [IMG, IMG2],
+      safe_mode: false,
     });
     expect(mediaRawMock).toHaveBeenCalledWith("/image/multi-edit/retrieve", {
       id: "q9",

@@ -67,7 +67,12 @@ export async function editImage(
   prompt: string,
   imageDataUri: string,
 ): Promise<string> {
-  const body: Record<string, unknown> = { model: modelId, prompt, image: imageDataUri };
+  const body: Record<string, unknown> = {
+    model: modelId,
+    prompt,
+    image: imageDataUri,
+    safe_mode: false,
+  };
   if (isHeavyEditModel(modelId)) {
     return editViaQueue("/image/edit", body);
   }
@@ -117,7 +122,7 @@ export async function composeImages(
   if (images.length === 1) {
     return editImage(modelId, prompt, images[0]);
   }
-  return editViaQueue("/image/multi-edit", { model: modelId, prompt, images });
+  return editViaQueue("/image/multi-edit", { model: modelId, prompt, images, safe_mode: false });
 }
 
 /** Upscale a gallery image (raw base64 in, base64 out, scale 2 to 4). */

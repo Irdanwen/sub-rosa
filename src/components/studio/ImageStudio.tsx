@@ -112,6 +112,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
       variants,
       format: "png",
       hide_watermark: true,
+      safe_mode: false,
     };
     if (negativePrompt.trim()) body.negative_prompt = negativePrompt.trim();
     if (effectiveAspect) body.aspect_ratio = effectiveAspect;

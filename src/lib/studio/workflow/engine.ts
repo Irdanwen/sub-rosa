@@ -203,6 +203,7 @@ async function executeNode(
         prompt: resolvePrompt(stringParam(params, "prompt") ?? "", inputText),
         hide_watermark: booleanParam(params, "hideWatermark") ?? true,
         format: "png",
+        safe_mode: false,
       };
       const negativePrompt = stringParam(params, "negativePrompt");
       if (negativePrompt) body.negative_prompt = negativePrompt;

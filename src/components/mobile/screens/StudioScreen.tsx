@@ -306,6 +306,7 @@ function ImagePanel({
           variants: 1,
           format: "png",
           hide_watermark: true,
+          safe_mode: false,
         });
       }
       if (images.length === 0) throw new Error("The backend returned no image.");
