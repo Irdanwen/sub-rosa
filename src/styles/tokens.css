@@ -259,6 +259,9 @@
 
   /* Shadows ---------------------------------------------------------- */
   --shadow-sm: 0 1px 2px oklch(24% 0.002 84.59 / 6%);
+  /* Compact overlay depth: fits inside the dictation HUD's transparent
+   * native gutter, unlike --shadow-md's card shadow (#643). */
+  --shadow-hud: 0 1px 2px oklch(24% 0.002 84.59 / 5%), 0 4px 12px oklch(24% 0.002 84.59 / 8%);
   --shadow-md: 0 4px 12px oklch(24% 0.002 84.59 / 6%), 0 1px 2px oklch(24% 0.002 84.59 / 4%);
   --shadow-lg: 0 18px 40px oklch(24% 0.002 84.59 / 10%), 0 2px 6px oklch(24% 0.002 84.59 / 6%);
   --shadow-inset: 0 0 0 1px oklch(0% 0 none / 4%);
@@ -357,6 +360,7 @@
   --selection-foreground: var(--foreground);
 
   --shadow-sm: 0 1px 2px oklch(0% 0 none / 30%);
+  --shadow-hud: 0 1px 2px oklch(0% 0 none / 18%), 0 4px 12px oklch(0% 0 none / 28%);
   --shadow-md: 0 4px 12px oklch(0% 0 none / 32%), 0 1px 2px oklch(0% 0 none / 24%);
   --shadow-lg: 0 18px 40px oklch(0% 0 none / 40%), 0 2px 6px oklch(0% 0 none / 28%);
   --shadow-inset: 0 0 0 1px oklch(100% 0 none / 5%);
