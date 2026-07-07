@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { normalizeJobStatus } from "../lib/studio/async-job";
 import {
   estimateCostCredits,
+  imageEditModels,
   musicCapabilities,
   videoFamilies,
   videoFamilyKey,
@@ -52,6 +53,47 @@ describe("video family grouping", () => {
     expect(videoFamilyKey(model({ id: "wan-2-7-image-to-video", mediaType: "imageToVideo" }))).toBe(
       "wan-2-7",
     );
+  });
+
+  it("keeps reference-to-video in its own slot instead of clobbering image-to-video", () => {
+    // Both are typed `imageToVideo`; a single slot used to drop whichever
+    // registered second. The reference variant must stay reachable.
+    const grouped = videoFamilies(
+      catalog([
+        model({ id: "wan-2-7-image-to-video", mediaType: "imageToVideo" }),
+        model({ id: "wan-2-7-reference-to-video", mediaType: "imageToVideo" }),
+      ]),
+    );
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0].imageModel?.id).toBe("wan-2-7-image-to-video");
+    expect(grouped[0].referenceModel?.id).toBe("wan-2-7-reference-to-video");
+  });
+});
+
+describe("image edit models", () => {
+  it("adds the unlisted qwen-edit-uncensored passthrough on Carpe Diem, once", () => {
+    const models = imageEditModels(
+      catalog([
+        model({ id: "seedream-v4-edit", mediaType: "imageEdit", name: "Seedream v4 Edit" }),
+      ]),
+    );
+    expect(models.map((entry) => entry.id)).toContain("qwen-edit-uncensored");
+  });
+
+  it("does not duplicate it when the operator already lists it", () => {
+    const models = imageEditModels(
+      catalog([model({ id: "qwen-edit-uncensored", mediaType: "imageEdit" })]),
+    );
+    expect(models.filter((entry) => entry.id === "qwen-edit-uncensored")).toHaveLength(1);
+  });
+
+  it("leaves the Venice-direct catalog untouched", () => {
+    const venice: MediaCatalog = {
+      backend: "venice",
+      priceMultiplier: 1,
+      models: [model({ id: "seedream-v4-edit", mediaType: "imageEdit" })],
+    };
+    expect(imageEditModels(venice).map((entry) => entry.id)).toEqual(["seedream-v4-edit"]);
   });
 });
 

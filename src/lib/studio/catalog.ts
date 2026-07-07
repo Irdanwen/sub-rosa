@@ -40,12 +40,41 @@ export function modelsOfType(catalog: MediaCatalog, type: MediaType): MediaModel
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** One video family = up to two backend models sharing a display name. */
+/** Edit models Carpe Diem forwards to Venice but does not advertise in its
+ * operator `/v1/models` catalog. Verified callable via `/image/edit` (an
+ * unknown id returns `Invalid model id`, these return an image). Surfaced so
+ * the picker can offer them; deduped against the live catalog in case the
+ * operator later lists them. Only for the Carpe Diem backend — Venice-direct
+ * already exposes its full catalog. */
+const CARPE_DIEM_EXTRA_EDIT_MODELS: MediaModel[] = [
+  {
+    id: "qwen-edit-uncensored",
+    name: "Qwen edit (uncensored)",
+    mediaType: "imageEdit",
+    tier: "standard",
+    offline: false,
+  },
+];
+
+/** Edit models for the picker: the catalog's `imageEdit` entries plus the
+ * known-good unlisted Carpe Diem passthroughs. */
+export function imageEditModels(catalog: MediaCatalog): MediaModel[] {
+  const live = modelsOfType(catalog, "imageEdit");
+  if (catalog.backend !== "carpe-diem") return live;
+  const seen = new Set(live.map((model) => model.id));
+  const extras = CARPE_DIEM_EXTRA_EDIT_MODELS.filter((model) => !seen.has(model.id));
+  return [...live, ...extras].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** One video family = the backend models sharing a display name, split by the
+ * direction they accept: text-to-video, image-to-video (animate a still), and
+ * reference-to-video (a photo drives style/subject, not the first frame). */
 export interface VideoFamily {
   key: string;
   name: string;
   textModel?: MediaModel;
   imageModel?: MediaModel;
+  referenceModel?: MediaModel;
   modelSets: string[];
 }
 
@@ -80,9 +109,18 @@ function stripDirectionWords(name: string): string {
     .trim();
 }
 
+/** image-to-video and reference-to-video share the `imageToVideo` catalog type;
+ * the direction word in the id (or display name) tells them apart. A single
+ * `imageModel` slot silently dropped every reference-to-video variant, so they
+ * get their own slot here. */
+function isReferenceToVideo(model: MediaModel): boolean {
+  const hay = `${model.id} ${model.name}`.toLowerCase();
+  return hay.includes("reference-to-video") || hay.includes("reference to video");
+}
+
 export function videoFamilies(catalog: MediaCatalog): VideoFamily[] {
   const families = new Map<string, VideoFamily>();
-  const register = (model: MediaModel, slot: "textModel" | "imageModel") => {
+  const register = (model: MediaModel, slot: "textModel" | "imageModel" | "referenceModel") => {
     const key = videoFamilyKey(model);
     const existing = families.get(key);
     const family: VideoFamily = existing ?? {
@@ -97,7 +135,9 @@ export function videoFamilies(catalog: MediaCatalog): VideoFamily[] {
     families.set(key, family);
   };
   for (const model of modelsOfType(catalog, "video")) register(model, "textModel");
-  for (const model of modelsOfType(catalog, "imageToVideo")) register(model, "imageModel");
+  for (const model of modelsOfType(catalog, "imageToVideo")) {
+    register(model, isReferenceToVideo(model) ? "referenceModel" : "imageModel");
+  }
   return [...families.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 

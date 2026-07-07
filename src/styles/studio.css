@@ -410,6 +410,50 @@
   background: var(--muted);
 }
 
+.studio-edit-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.studio-edit-source {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  background: var(--muted);
+}
+
+.studio-edit-source img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.studio-edit-source-remove {
+  position: absolute;
+  top: var(--sp-1);
+  right: var(--sp-1);
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: none;
+  color: white;
+  background: rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.studio-edit-source-remove:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
 /* --- workflows -------------------------------------------------------------- */
 
 .studio-workflows {

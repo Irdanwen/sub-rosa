@@ -18,12 +18,13 @@ import {
   estimateCostCredits,
   fetchMediaCatalog,
   formatCredits,
+  imageEditModels,
   modelsOfType,
   musicCapabilities,
   videoFamilies,
 } from "../../../lib/studio/catalog";
 import { mediaJson } from "../../../lib/studio/client";
-import { editImage, upscaleImage } from "../../../lib/studio/edit-image";
+import { composeImages, MAX_COMPOSE_IMAGES, upscaleImage } from "../../../lib/studio/edit-image";
 import { generateImages } from "../../../lib/studio/generate-image";
 import { type PersistedJob, pendingJobs, useMediaJob } from "../../../lib/studio/async-job";
 import {
@@ -43,6 +44,7 @@ import { StackHeader } from "../StackHeader";
 import { FlowsPanel } from "./FlowsPanel";
 
 type StudioMode = "image" | "video" | "music" | "flows";
+type ImageMode = "generate" | "edit" | "upscale";
 
 function videoUrlFrom(response: Record<string, unknown>): string | undefined {
   const url = response.video_url ?? response.url;
@@ -66,8 +68,10 @@ export function StudioScreen() {
   const [mode, setMode] = useState<StudioMode>("image");
   const [artifacts, setArtifacts] = useState<StudioArtifact[]>([]);
   const [preview, setPreview] = useState<StudioArtifact | null>(null);
-  // Lifted so the lightbox's "use as reference" can feed the image panel.
+  // Lifted so the lightbox's "use as reference" can feed the image panel and
+  // jump it straight into its Edit sub-mode.
   const [imageRefs, setImageRefs] = useState<string[]>([]);
+  const [imageMode, setImageMode] = useState<ImageMode>("generate");
 
   useEffect(() => {
     fetchMediaCatalog()
@@ -120,9 +124,10 @@ export function StudioScreen() {
   const handleUseAsReference = useCallback(async (artifact: StudioArtifact) => {
     try {
       const dataUrl = await artifactDataUrl(artifact);
-      setImageRefs((current) => [...current, dataUrl]);
+      setImageRefs((current) => [...current, dataUrl].slice(-MAX_COMPOSE_IMAGES));
       setPreview(null);
       setMode("image");
+      setImageMode("edit");
       hapticNotify("success");
     } catch {
       // The tile stays; the user can retry.
@@ -178,6 +183,8 @@ export function StudioScreen() {
             {mode === "image" ? (
               <ImagePanel
                 catalog={catalog}
+                mode={imageMode}
+                onModeChange={setImageMode}
                 references={imageRefs}
                 onReferencesChange={setImageRefs}
                 galleryImages={galleryImages}
@@ -236,47 +243,60 @@ function ModelPickerButton({
 
 // --- Image ------------------------------------------------------------------
 
+/** Strip a `data:...;base64,` prefix so the raw bytes can go to /image/upscale,
+ * which (unlike /image/edit) rejects a data URI. */
+function rawBase64(dataUri: string): string {
+  return dataUri.replace(/^data:[^,]+,/, "");
+}
+
 function ImagePanel({
   catalog,
+  mode,
+  onModeChange,
   references,
   onReferencesChange,
   galleryImages,
   onGenerated,
 }: {
   catalog: MediaCatalog;
+  mode: ImageMode;
+  onModeChange: (mode: ImageMode) => void;
   references: string[];
   onReferencesChange: (refs: string[]) => void;
   galleryImages: StudioArtifact[];
   onGenerated: () => void;
 }) {
-  // With reference photos attached the request becomes an edit, served by
-  // its own model family.
   const generateModels = useMemo(() => modelsOfType(catalog, "image"), [catalog]);
-  const editModels = useMemo(() => modelsOfType(catalog, "imageEdit"), [catalog]);
-  const editing = references.length > 0;
-  const models = editing ? editModels : generateModels;
+  const editModels = useMemo(() => imageEditModels(catalog), [catalog]);
+  const models = mode === "edit" ? editModels : generateModels;
   const [generateModelId, setGenerateModelId] = useState(generateModels[0]?.id ?? "");
   const [editModelId, setEditModelId] = useState(editModels[0]?.id ?? "");
-  const modelId = editing ? editModelId : generateModelId;
+  const modelId = mode === "edit" ? editModelId : generateModelId;
   const model = models.find((entry) => entry.id === modelId) ?? models[0];
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Upscale keeps its own single-image source and factor, separate from the
+  // shared edit references.
+  const [upscaleRefs, setUpscaleRefs] = useState<string[]>([]);
+  const [scale, setScale] = useState<2 | 3 | 4>(2);
   const cost = model
     ? estimateCostCredits(model, { multiplier: catalog.priceMultiplier })
     : undefined;
 
   const generate = useCallback(async () => {
     if (!model || !prompt.trim() || busy) return;
+    if (mode === "edit" && references.length === 0) return;
     setBusy(true);
     setError(null);
     try {
       let images: string[];
-      if (editing) {
-        // The edit endpoint takes a single image; extra references stay
-        // visible in the UI but only the first one is sent.
-        images = [await editImage(model.id, prompt.trim(), references[0])];
+      if (mode === "edit") {
+        // One reference edits that photo; two or three compose them into a
+        // single image (Carpe Diem's multi-edit). The picker is capped to
+        // MAX_COMPOSE_IMAGES, so every reference here is sent.
+        images = [await composeImages(model.id, prompt.trim(), references)];
       } else {
         images = await generateImages(model.id, {
           model: model.id,
@@ -302,56 +322,141 @@ function ImagePanel({
     } finally {
       setBusy(false);
     }
-  }, [model, prompt, busy, editing, references, onGenerated]);
+  }, [model, prompt, busy, mode, references, onGenerated]);
+
+  const upscale = useCallback(async () => {
+    if (upscaleRefs.length === 0 || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await upscaleImage(rawBase64(upscaleRefs[0]), scale);
+      await saveArtifactFromBase64(result, "png", {
+        kind: "image",
+        model: "upscale",
+        prompt: `Upscaled image (x${scale})`,
+      });
+      hapticNotify("success");
+      setUpscaleRefs([]);
+      onGenerated();
+    } catch (err) {
+      hapticNotify("error");
+      setError(err instanceof Error ? err.message : "The upscale failed.");
+    } finally {
+      setBusy(false);
+    }
+  }, [upscaleRefs, scale, busy, onGenerated]);
 
   return (
     <div className="mobile-studio-form">
-      <ModelPickerButton
-        label={editing ? "Edit model" : "Image model"}
-        value={model?.id ?? ""}
-        onOpen={() => setPickerOpen(true)}
-      />
-      <ReferencePicker
-        references={references}
-        onChange={onReferencesChange}
-        galleryImages={galleryImages}
-        hint={
-          references.length > 1
-            ? "This model uses the first reference; the others stay handy here."
-            : references.length === 1
-              ? "The prompt describes the edit to apply."
-              : undefined
-        }
-      />
-      <textarea
-        className="mobile-studio-prompt"
-        value={prompt}
-        rows={3}
-        placeholder={
-          editing ? "Describe how to transform the photo" : "Describe the image to generate"
-        }
-        onChange={(event) => setPrompt(event.target.value)}
-      />
-      <button
-        type="button"
-        className="mobile-studio-generate"
-        disabled={!model || !prompt.trim() || busy}
-        onClick={() => void generate()}
-      >
-        {busy ? <Spinner /> : "Generate"}
-        {!busy && cost !== undefined ? (
-          <span className="mobile-studio-cost">{formatCredits(cost)}</span>
-        ) : null}
-      </button>
-      {busy && editing ? (
-        <p className="mobile-studio-progress" data-shimmer="true">
-          Editing. Heavy models can take a minute or two.
-        </p>
-      ) : null}
+      <div className="mobile-segmented" role="tablist" aria-label="Image mode">
+        {(["generate", "edit", "upscale"] as const).map((entry) => (
+          <button
+            key={entry}
+            type="button"
+            role="tab"
+            aria-selected={mode === entry}
+            className="mobile-segmented-item"
+            data-active={mode === entry ? "true" : undefined}
+            onClick={() => onModeChange(entry)}
+          >
+            {entry === "generate" ? "Generate" : entry === "edit" ? "Edit" : "Upscale"}
+          </button>
+        ))}
+      </div>
+
+      {mode === "upscale" ? (
+        <>
+          <ReferencePicker
+            references={upscaleRefs}
+            onChange={(refs) => setUpscaleRefs(refs.slice(-1))}
+            galleryImages={galleryImages}
+            hint={
+              upscaleRefs.length === 0
+                ? "Pick an image to enlarge (at least 256 by 256 pixels)."
+                : undefined
+            }
+          />
+          <div className="mobile-pill-row" role="radiogroup" aria-label="Upscale factor">
+            {([2, 3, 4] as const).map((factor) => (
+              <button
+                key={factor}
+                type="button"
+                className="mobile-pill"
+                data-active={scale === factor ? "true" : undefined}
+                onClick={() => setScale(factor)}
+              >
+                {`x${factor}`}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="mobile-studio-generate"
+            disabled={upscaleRefs.length === 0 || busy}
+            onClick={() => void upscale()}
+          >
+            {busy ? <Spinner /> : `Upscale x${scale}`}
+          </button>
+        </>
+      ) : (
+        <>
+          <ModelPickerButton
+            label={mode === "edit" ? "Edit model" : "Image model"}
+            value={model?.id ?? ""}
+            onOpen={() => setPickerOpen(true)}
+          />
+          {mode === "edit" ? (
+            <ReferencePicker
+              references={references}
+              onChange={(refs) => onReferencesChange(refs.slice(0, MAX_COMPOSE_IMAGES))}
+              galleryImages={galleryImages}
+              hint={
+                references.length > 1
+                  ? `Combining ${references.length} photos into one (up to ${MAX_COMPOSE_IMAGES}).`
+                  : references.length === 1
+                    ? "The prompt describes the edit. Add another photo to combine them."
+                    : "Add a photo to edit, or two to three to combine."
+              }
+            />
+          ) : null}
+          <textarea
+            className="mobile-studio-prompt"
+            value={prompt}
+            rows={3}
+            placeholder={
+              mode === "edit"
+                ? references.length > 1
+                  ? "Describe how to combine the photos"
+                  : "Describe how to transform the photo"
+                : "Describe the image to generate"
+            }
+            onChange={(event) => setPrompt(event.target.value)}
+          />
+          <button
+            type="button"
+            className="mobile-studio-generate"
+            disabled={
+              !model || !prompt.trim() || busy || (mode === "edit" && references.length === 0)
+            }
+            onClick={() => void generate()}
+          >
+            {busy ? <Spinner /> : "Generate"}
+            {!busy && cost !== undefined ? (
+              <span className="mobile-studio-cost">{formatCredits(cost)}</span>
+            ) : null}
+          </button>
+          {busy && mode === "edit" ? (
+            <p className="mobile-studio-progress" data-shimmer="true">
+              {references.length > 1 ? "Combining photos" : "Editing"}. Heavy models can take a
+              minute or two.
+            </p>
+          ) : null}
+        </>
+      )}
       {error ? <p className="mobile-dictation-error">{error}</p> : null}
       {pickerOpen ? (
         <ModelSheet
-          title={editing ? "Edit model" : "Image model"}
+          title={mode === "edit" ? "Edit model" : "Image model"}
           entries={models.map((entry) => ({
             id: entry.id,
             name: entry.name,
@@ -360,7 +465,7 @@ function ImagePanel({
           selectedId={model?.id ?? ""}
           onSelect={(id) => {
             if (id) {
-              if (editing) setEditModelId(id);
+              if (mode === "edit") setEditModelId(id);
               else setGenerateModelId(id);
             }
             setPickerOpen(false);
@@ -374,6 +479,17 @@ function ImagePanel({
 
 // --- Video ------------------------------------------------------------------
 
+/** The three video intents. Text needs no photo; "animate" uses one photo as
+ * the opening frame (image-to-video); "reference" uses one or more photos to
+ * steer style/subject while the prompt drives the action (reference-to-video). */
+type VideoMode = "text" | "image" | "reference";
+
+const VIDEO_MODE_SLOT: Record<VideoMode, "textModel" | "imageModel" | "referenceModel"> = {
+  text: "textModel",
+  image: "imageModel",
+  reference: "referenceModel",
+};
+
 function VideoPanel({
   catalog,
   galleryImages,
@@ -384,14 +500,26 @@ function VideoPanel({
   onGenerated: () => void;
 }) {
   const families = useMemo(() => videoFamilies(catalog), [catalog]);
-  const [familyKey, setFamilyKey] = useState(families[0]?.key ?? "");
-  const family = families.find((entry) => entry.key === familyKey) ?? families[0];
+  // Only offer a mode when at least one family provides that direction.
+  const availableModes = useMemo<VideoMode[]>(
+    () =>
+      (["text", "image", "reference"] as const).filter((entry) =>
+        families.some((family) => family[VIDEO_MODE_SLOT[entry]]),
+      ),
+    [families],
+  );
+  const [mode, setMode] = useState<VideoMode>("text");
+  const effectiveMode = availableModes.includes(mode) ? mode : (availableModes[0] ?? "text");
+  const slot = VIDEO_MODE_SLOT[effectiveMode];
+  const familiesForMode = useMemo(
+    () => families.filter((family) => family[slot]),
+    [families, slot],
+  );
+  const [familyKey, setFamilyKey] = useState("");
+  const family = familiesForMode.find((entry) => entry.key === familyKey) ?? familiesForMode[0];
+  const model = family?.[slot];
+  const needsReference = effectiveMode !== "text";
   const [references, setReferences] = useState<string[]>([]);
-  // A reference photo switches the family to its image-to-video variant.
-  const model = references.length
-    ? (family?.imageModel ?? family?.textModel)
-    : (family?.textModel ?? family?.imageModel);
-  const referenceUsable = Boolean(references.length && family?.imageModel);
   const constraints = model?.constraints;
   const [prompt, setPrompt] = useState("");
   const [duration, setDuration] = useState("");
@@ -415,14 +543,19 @@ function VideoPanel({
 
   const durationOptions = constraints?.durations ?? [];
   const effectiveDuration = duration || durationOptions[0] || "";
+  const referenceReady = !needsReference || references.length > 0;
 
   const queueBody = useCallback((): Record<string, unknown> | undefined => {
     if (!model || !prompt.trim()) return undefined;
+    if (needsReference && references.length === 0) return undefined;
     const body: Record<string, unknown> = { model: model.id, prompt: prompt.trim() };
     if (effectiveDuration) body.duration = effectiveDuration;
-    if (referenceUsable) body.image_url = references[0];
+    // image-to-video takes one opening frame; reference-to-video takes the set
+    // of style/subject references.
+    if (effectiveMode === "image") body.image_url = references[0];
+    else if (effectiveMode === "reference") body.image_urls = references;
     return body;
-  }, [model, prompt, effectiveDuration, references, referenceUsable]);
+  }, [model, prompt, effectiveDuration, references, needsReference, effectiveMode]);
 
   useEffect(() => {
     setQuote(undefined);
@@ -475,6 +608,27 @@ function VideoPanel({
 
   return (
     <div className="mobile-studio-form">
+      {availableModes.length > 1 ? (
+        <div className="mobile-segmented" role="tablist" aria-label="Video mode">
+          {availableModes.map((entry) => (
+            <button
+              key={entry}
+              type="button"
+              role="tab"
+              aria-selected={effectiveMode === entry}
+              className="mobile-segmented-item"
+              data-active={effectiveMode === entry ? "true" : undefined}
+              onClick={() => {
+                setMode(entry);
+                setFamilyKey("");
+                if (entry === "text") setReferences([]);
+              }}
+            >
+              {entry === "text" ? "Text" : entry === "image" ? "Animate a photo" : "Reference"}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <ModelPickerButton
         label="Video model"
         value={family?.name ?? ""}
@@ -495,25 +649,37 @@ function VideoPanel({
           ))}
         </div>
       ) : null}
-      {family?.imageModel ? (
+      {needsReference ? (
         <ReferencePicker
           references={references}
           onChange={setReferences}
           galleryImages={galleryImages}
-          hint={references.length ? "The clip animates from the first photo." : undefined}
+          hint={
+            effectiveMode === "image"
+              ? "The clip animates from this photo (its opening frame)."
+              : references.length > 1
+                ? "All these photos steer the style and subject."
+                : "This photo steers the style and subject; the prompt drives the action."
+          }
         />
       ) : null}
       <textarea
         className="mobile-studio-prompt"
         value={prompt}
         rows={3}
-        placeholder={references.length ? "Describe the motion" : "Describe the video to generate"}
+        placeholder={
+          effectiveMode === "image"
+            ? "Describe the motion"
+            : effectiveMode === "reference"
+              ? "Describe the scene to build from the reference"
+              : "Describe the video to generate"
+        }
         onChange={(event) => setPrompt(event.target.value)}
       />
       <button
         type="button"
         className="mobile-studio-generate"
-        disabled={!model || !prompt.trim() || busy}
+        disabled={!model || !prompt.trim() || !referenceReady || busy}
         onClick={start}
       >
         {busy ? <Spinner /> : "Generate"}
@@ -521,6 +687,13 @@ function VideoPanel({
           <span className="mobile-studio-cost">{formatCredits(quote)}</span>
         ) : null}
       </button>
+      {needsReference && references.length === 0 ? (
+        <p className="mobile-reference-hint">
+          {effectiveMode === "image"
+            ? "Add a photo to animate."
+            : "Add at least one reference photo."}
+        </p>
+      ) : null}
       {busy ? (
         <p className="mobile-studio-progress" data-shimmer="true">
           Rendering video. You can leave this tab; the job resumes.
@@ -542,10 +715,15 @@ function VideoPanel({
       {pickerOpen ? (
         <ModelSheet
           title="Video model"
-          entries={families.map((entry) => ({
+          entries={familiesForMode.map((entry) => ({
             id: entry.key,
             name: entry.name,
-            subtitle: entry.imageModel ? "text + photo reference" : "text to video",
+            subtitle:
+              effectiveMode === "text"
+                ? "text to video"
+                : effectiveMode === "image"
+                  ? "animate a photo"
+                  : "reference to video",
           }))}
           selectedId={family?.key ?? ""}
           onSelect={(id) => {

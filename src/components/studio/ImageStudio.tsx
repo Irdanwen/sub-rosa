@@ -6,9 +6,10 @@
 import { IconImagesSparkle } from "central-icons/IconImagesSparkle";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { saveArtifactFromBase64, readArtifactBase64 } from "../../lib/studio/artifacts";
-import { estimateCostCredits } from "../../lib/studio/catalog";
+import { estimateCostCredits, imageEditModels } from "../../lib/studio/catalog";
 import { modelsOfType } from "../../lib/studio/catalog";
 import { MediaError, mediaGet, mediaRaw } from "../../lib/studio/client";
+import { composeImages, MAX_COMPOSE_IMAGES } from "../../lib/studio/edit-image";
 import { generateImages } from "../../lib/studio/generate-image";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { EmptyState } from "../ui/EmptyState";
@@ -31,7 +32,7 @@ type ImageMode = "generate" | "edit" | "upscale";
 export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
   const [mode, setMode] = useState<ImageMode>("generate");
   const generateModels = useMemo(() => modelsOfType(catalog, "image"), [catalog]);
-  const editModels = useMemo(() => modelsOfType(catalog, "imageEdit"), [catalog]);
+  const editModels = useMemo(() => imageEditModels(catalog), [catalog]);
 
   const [modelId, setModelId] = useState(generateModels[0]?.id ?? "");
   const model = generateModels.find((entry) => entry.id === modelId);
@@ -51,12 +52,15 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
   const [artifacts, setArtifacts] = useState<StudioArtifact[]>([]);
   const [galleryEpoch, setGalleryEpoch] = useState(0);
 
-  // Edit + upscale state.
+  // Edit takes one to three source images (two or more compose into one via
+  // multi-edit); upscale keeps a single source.
+  const [editSources, setEditSources] = useState<string[]>([]);
   const [sourceDataUri, setSourceDataUri] = useState("");
   const [editModelId, setEditModelId] = useState(editModels[0]?.id ?? "");
   const [editPrompt, setEditPrompt] = useState("");
   const [upscaleScale, setUpscaleScale] = useState<"2" | "3" | "4">("2");
   const [upscaleEnhance, setUpscaleEnhance] = useState(false);
+  const editInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Style presets are a Venice nicety the backend may not expose: hide the
@@ -142,25 +146,20 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
   ]);
 
   const runEdit = useCallback(async () => {
-    if (!sourceDataUri || !editPrompt.trim() || !editModelId || busy) return;
+    if (editSources.length === 0 || !editPrompt.trim() || !editModelId || busy) return;
     setBusy(true);
     setError(undefined);
     try {
-      const response = await mediaRaw("/image/edit", {
-        model: editModelId,
-        prompt: editPrompt.trim(),
-        image: sourceDataUri,
-      });
-      if (!response.ok || !response.bodyBase64) {
-        throw new MediaError("The edit did not return an image.", { status: response.status });
-      }
-      await registerResults([response.bodyBase64], editModelId, editPrompt.trim());
+      // One source edits that image; two or three compose into one. composeImages
+      // routes to /image/edit or /image/multi-edit and handles the async queue.
+      const image = await composeImages(editModelId, editPrompt.trim(), editSources);
+      await registerResults([image], editModelId, editPrompt.trim());
     } catch (editError) {
       setError(editError instanceof Error ? editError.message : "The edit failed.");
     } finally {
       setBusy(false);
     }
-  }, [sourceDataUri, editPrompt, editModelId, busy, registerResults]);
+  }, [editSources, editPrompt, editModelId, busy, registerResults]);
 
   const runUpscale = useCallback(async () => {
     if (!sourceDataUri || busy) return;
@@ -196,9 +195,23 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
     reader.readAsDataURL(file);
   }, []);
 
+  const onAddEditFile = useCallback((file: File | undefined) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        const dataUri = reader.result;
+        setEditSources((current) => [...current, dataUri].slice(0, MAX_COMPOSE_IMAGES));
+      }
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
   const sendToEdit = useCallback(async (artifact: StudioArtifact) => {
     const base64 = await readArtifactBase64(artifact);
-    setSourceDataUri(`data:image/png;base64,${base64}`);
+    setEditSources((current) =>
+      [...current, `data:image/png;base64,${base64}`].slice(0, MAX_COMPOSE_IMAGES),
+    );
     setMode("edit");
   }, []);
 
@@ -206,7 +219,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
   const canSubmit = isGenerate
     ? Boolean(model && prompt.trim())
     : mode === "edit"
-      ? Boolean(sourceDataUri && editPrompt.trim() && editModelId)
+      ? Boolean(editSources.length > 0 && editPrompt.trim() && editModelId)
       : Boolean(sourceDataUri);
 
   const controls = (
@@ -318,6 +331,77 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
             />
           </StudioField>
         </>
+      ) : mode === "edit" ? (
+        <>
+          <StudioField
+            label="Source images"
+            hint={
+              editSources.length > 1
+                ? `Combining ${editSources.length}`
+                : `Add up to ${MAX_COMPOSE_IMAGES} to combine`
+            }
+          >
+            <div className="studio-upload">
+              {editSources.length > 0 ? (
+                <div className="studio-edit-sources">
+                  {editSources.map((source, index) => (
+                    <div key={`${index}-${source.slice(-24)}`} className="studio-edit-source">
+                      <img src={source} alt={`Source ${index + 1}`} />
+                      <button
+                        type="button"
+                        className="studio-edit-source-remove"
+                        aria-label={`Remove source ${index + 1}`}
+                        onClick={() =>
+                          setEditSources((current) => current.filter((_, i) => i !== index))
+                        }
+                      >
+                        <span aria-hidden>x</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {editSources.length < MAX_COMPOSE_IMAGES ? (
+                <button
+                  type="button"
+                  className="studio-secondary-button"
+                  onClick={() => editInputRef.current?.click()}
+                >
+                  {editSources.length > 0 ? "Add another image" : "Choose an image"}
+                </button>
+              ) : null}
+              <input
+                ref={editInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                hidden
+                onChange={(event) => {
+                  onAddEditFile(event.target.files?.[0]);
+                  event.target.value = "";
+                }}
+              />
+            </div>
+          </StudioField>
+          <StudioField label="Model">
+            <ModelSelect
+              models={editModels}
+              value={editModelId || null}
+              onChange={setEditModelId}
+              ariaLabel="Edit model"
+            />
+          </StudioField>
+          <StudioField label="Instruction">
+            <textarea
+              className="studio-textarea"
+              rows={3}
+              value={editPrompt}
+              placeholder={
+                editSources.length > 1 ? "Describe how to combine them" : "Describe the change"
+              }
+              onChange={(event) => setEditPrompt(event.target.value)}
+            />
+          </StudioField>
+        </>
       ) : (
         <>
           <StudioField label="Source image">
@@ -341,45 +425,21 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
               />
             </div>
           </StudioField>
-          {mode === "edit" ? (
-            <>
-              <StudioField label="Model">
-                <ModelSelect
-                  models={editModels}
-                  value={editModelId || null}
-                  onChange={setEditModelId}
-                  ariaLabel="Edit model"
-                />
-              </StudioField>
-              <StudioField label="Instruction">
-                <textarea
-                  className="studio-textarea"
-                  rows={3}
-                  value={editPrompt}
-                  placeholder="Describe the change"
-                  onChange={(event) => setEditPrompt(event.target.value)}
-                />
-              </StudioField>
-            </>
-          ) : (
-            <>
-              <StudioField label="Scale">
-                <PillGroup
-                  options={[{ value: "2" }, { value: "3" }, { value: "4" }]}
-                  value={upscaleScale}
-                  onChange={setUpscaleScale}
-                  ariaLabel="Upscale factor"
-                />
-              </StudioField>
-              <StudioField label="Enhance" hint="AI detail pass">
-                <Switch
-                  checked={upscaleEnhance}
-                  onCheckedChange={setUpscaleEnhance}
-                  aria-label="Enhance while upscaling"
-                />
-              </StudioField>
-            </>
-          )}
+          <StudioField label="Scale">
+            <PillGroup
+              options={[{ value: "2" }, { value: "3" }, { value: "4" }]}
+              value={upscaleScale}
+              onChange={setUpscaleScale}
+              ariaLabel="Upscale factor"
+            />
+          </StudioField>
+          <StudioField label="Enhance" hint="AI detail pass">
+            <Switch
+              checked={upscaleEnhance}
+              onCheckedChange={setUpscaleEnhance}
+              aria-label="Enhance while upscaling"
+            />
+          </StudioField>
         </>
       )}
     </>
@@ -394,7 +454,15 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
     >
       {busy ? <Spinner aria-hidden /> : null}
       <span>
-        {busy ? "Working..." : isGenerate ? "Generate" : mode === "edit" ? "Apply edit" : "Upscale"}
+        {busy
+          ? "Working..."
+          : isGenerate
+            ? "Generate"
+            : mode === "edit"
+              ? editSources.length > 1
+                ? "Combine images"
+                : "Apply edit"
+              : "Upscale"}
       </span>
       {isGenerate && !busy ? <CostHint credits={totalCost} /> : null}
     </button>
