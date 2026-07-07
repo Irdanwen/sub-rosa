@@ -2085,6 +2085,35 @@ input:focus-visible,
 /* Collapsed-by-default tool row: a single quiet line (icon · name · status),
  * with the raw output tucked behind a disclosure so it never floods the
  * conversation. */
+/* The activity rail bundles the turn's Thinking disclosure and every tool row
+ * into one column so the work reads as a single continuous process. Once there
+ * are two or more steps to connect, a quiet vertical spine runs down the left
+ * (data-connected), set just outside the rows' icon column. A lone step stays
+ * flush — a spine bracketing one line reads as clutter. */
+.agent-activity-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: 100%;
+  min-width: 0;
+}
+
+.agent-activity-rail[data-connected="true"] {
+  position: relative;
+  padding-left: var(--sp-4);
+}
+
+.agent-activity-rail[data-connected="true"]::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 6px;
+  width: 1.5px;
+  border-radius: var(--r-pill);
+  background: var(--border);
+}
+
 .agent-tool-stack {
   display: flex;
   flex-direction: column;
@@ -2189,6 +2218,22 @@ input:focus-visible,
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The live row tints its glyph to match the running spinner, so icon + name
+ * shimmer + spinner all read as the one active step. Hover still wins (the
+ * whole row firms to --foreground). */
+.agent-tool-disclosure[data-status="running"] .agent-tool-icon {
+  color: var(--warm-strong);
+}
+
+/* Elapsed time on the running step — quiet, tabular so the digits don't jitter
+ * as they tick, sized down so it stays subordinate to the activity name. */
+.agent-tool-elapsed {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Status sits beside the name (not floated to the far edge) so the row reads
@@ -2409,6 +2454,40 @@ input:focus-visible,
 .agent-generated-image-download:focus-visible {
   background: var(--muted);
   color: var(--foreground);
+}
+
+/* Click-to-enlarge overlay for an inline generated image. Full-viewport
+ * backdrop; the image scales to fit with room to breathe; anywhere-click
+ * dismisses. */
+.agent-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: var(--sp-6);
+  background: rgb(0 0 0 / 0.72);
+  cursor: zoom-out;
+  animation: agent-image-lightbox-in var(--t-fast) var(--ease-out);
+}
+
+.agent-image-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  object-fit: contain;
+}
+
+@keyframes agent-image-lightbox-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* Artifact viewer ----------------------------------------------------

@@ -34,9 +34,17 @@ import { IconDeepSearch } from "central-icons/IconDeepSearch";
 import { IconCheckCircle2 } from "central-icons/IconCheckCircle2";
 import { IconConcise } from "central-icons/IconConcise";
 import { IconDotGrid1x3Horizontal } from "central-icons/IconDotGrid1x3Horizontal";
+import { IconChecklist } from "central-icons/IconChecklist";
+import { IconCode } from "central-icons/IconCode";
+import { IconFileEdit } from "central-icons/IconFileEdit";
 import { IconFiles } from "central-icons/IconFiles";
 import { IconFileSparkle } from "central-icons/IconFileSparkle";
 import { IconFileText } from "central-icons/IconFileText";
+import { IconGit } from "central-icons/IconGit";
+import { IconGithub } from "central-icons/IconGithub";
+import { IconGlobe } from "central-icons/IconGlobe";
+import { IconHammer } from "central-icons/IconHammer";
+import { IconImages1 } from "central-icons/IconImages1";
 import { IconGauge } from "central-icons/IconGauge";
 import { IconGhost2 } from "central-icons/IconGhost2";
 import { IconHeartBeat } from "central-icons/IconHeartBeat";
@@ -231,6 +239,7 @@ import {
   slashModelResolutionError,
 } from "../../lib/agent-composer-slash-commands";
 import { generateChatImage } from "../../lib/chat-image-generation";
+import { artifactDataUrl } from "../../lib/artifact-media";
 import { IMAGE_GENERATION_ENABLED } from "../../lib/feature-flags";
 import { ComposerEditor, type ComposerEditorHandle } from "./composer/ComposerEditor";
 import { CategoryIcon } from "./composer/CategoryIcon";
@@ -263,7 +272,11 @@ import {
   type AgentChatTurn,
   type LiveHermesEvent,
 } from "../../lib/agent-chat-runtime";
-import { toolActivitySentence } from "../../lib/agent-tool-labels";
+import {
+  type ToolActivityKind,
+  toolActivityKind,
+  toolActivitySentence,
+} from "../../lib/agent-tool-labels";
 import {
   buildAgentChatGallery,
   buildAgentErrorGallery,
@@ -8953,19 +8966,31 @@ function AgentChatTurnRow({
   return (
     <article className="agent-assistant-turn" data-status={turn.status}>
       <div className="agent-assistant-turn-body">
-        {reasoningParts.length > 0 ? (
-          <AgentThinkingGroup
-            reasoning={reasoningParts}
-            running={thinkingRunning}
-            open={thinkingIsOpen}
-            onOpenChange={(open) => onThinkingOpenChange(thinkingKey, open)}
-          />
-        ) : null}
-        {toolParts.length > 0 ? (
-          <div className="agent-tool-stack">
-            {toolParts.map((tool) => (
-              <AgentToolPartRow key={`tool:${tool.id}`} part={tool} />
-            ))}
+        {reasoningParts.length > 0 || toolParts.length > 0 ? (
+          // Thinking + every tool step share one left-railed column so the work
+          // reads as a single continuous process, not loose lines. The spine
+          // only appears once there are two or more steps to connect.
+          <div
+            className="agent-activity-rail"
+            data-connected={
+              (reasoningParts.length > 0 ? 1 : 0) + toolParts.length >= 2 ? "true" : undefined
+            }
+          >
+            {reasoningParts.length > 0 ? (
+              <AgentThinkingGroup
+                reasoning={reasoningParts}
+                running={thinkingRunning}
+                open={thinkingIsOpen}
+                onOpenChange={(open) => onThinkingOpenChange(thinkingKey, open)}
+              />
+            ) : null}
+            {toolParts.length > 0 ? (
+              <div className="agent-tool-stack">
+                {toolParts.map((tool) => (
+                  <AgentToolPartRow key={`tool:${tool.id}`} part={tool} />
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
         {turn.parts.map((part, index) =>
@@ -9044,6 +9069,21 @@ function AgentChatTurnRow({
             />
           ) : null,
         )}
+        {(() => {
+          // Preview Studio-gallery images the agent named in prose (the
+          // `june_media` MCP returns a file path, not an inline image part).
+          // Skip any path already shown as an `image` part (the `/image`
+          // slash command) so nothing renders twice.
+          const imagePartPaths = new Set(
+            turn.parts.flatMap((part) => (part.type === "image" && part.path ? [part.path] : [])),
+          );
+          const mediaPaths = studioMediaImagePaths(textParts.map((part) => part.text)).filter(
+            (path) => !imagePartPaths.has(path),
+          );
+          return mediaPaths.map((path) => (
+            <AgentInlineMediaImage key={`${turn.id}:media:${path}`} path={path} />
+          ));
+        })()}
         <AgentArtifactList
           artifacts={artifacts ?? []}
           onDownload={onDownloadArtifact}
@@ -9399,6 +9439,95 @@ function SteeringPart({
       <span className="agent-steering-text">{part.text}</span>
       <time>{relativeDate(createdAt)}</time>
     </div>
+  );
+}
+
+// Absolute paths to Studio-gallery images the agent names in its reply. The
+// `june_media` MCP saves generations into `studio-media/` and returns the file
+// path as prose, so — unlike the `/image` slash command — no inline `image`
+// part rides the stream. We surface a preview by scanning the assistant text
+// for those paths and reading each back through the gallery IPC. The prefix
+// (e.g. ".../Application Support/") legitimately contains spaces, so the prefix
+// segment stops only at a newline, backtick, or quote rather than any
+// whitespace; the filename is a UUID with no spaces. Deduped and capped.
+const STUDIO_MEDIA_IMAGE_RE =
+  /\/(?:[^\n`"']*?\/)?studio-media\/[A-Za-z0-9._-]+\.(?:png|jpe?g|webp|gif)/gi;
+const MAX_INLINE_MEDIA_IMAGES = 6;
+
+export function studioMediaImagePaths(texts: string[]): string[] {
+  const seen = new Set<string>();
+  for (const text of texts) {
+    for (const match of text.matchAll(STUDIO_MEDIA_IMAGE_RE)) {
+      seen.add(match[0]);
+      if (seen.size >= MAX_INLINE_MEDIA_IMAGES) return [...seen];
+    }
+  }
+  return [...seen];
+}
+
+// A Studio-gallery image the agent generated, rendered inline from its file
+// path. The bytes are read through the gallery IPC (the sandboxed webview can't
+// read the file directly), then shown as a data URL; clicking enlarges it in a
+// self-contained overlay. A path that no longer resolves renders nothing rather
+// than a broken frame.
+function AgentInlineMediaImage({ path }: { path: string }) {
+  const [state, setState] = useState<{ url: string } | "error" | null>(null);
+  const [zoomed, setZoomed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setState(null);
+    artifactDataUrl({ path })
+      .then((url) => {
+        if (!cancelled) setState({ url });
+      })
+      .catch(() => {
+        if (!cancelled) setState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+
+  if (state === "error") return null;
+  const name = path.split("/").pop() || "Generated image";
+  if (state === null) {
+    return (
+      <div className="agent-generated-image" data-status="running" role="status" aria-live="polite">
+        <div className="agent-generated-image-placeholder">
+          <span className="text-shimmer">Loading image…</span>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <>
+      <figure className="agent-generated-image" data-status="complete">
+        <button
+          type="button"
+          className="agent-generated-image-frame"
+          onClick={() => setZoomed(true)}
+          aria-label={`Enlarge ${name}`}
+          title="Enlarge image"
+        >
+          <img src={state.url} alt={name} draggable={false} />
+        </button>
+        <figcaption className="agent-generated-image-bar">
+          <span className="agent-generated-image-name" title={name}>
+            {name}
+          </span>
+        </figcaption>
+      </figure>
+      {zoomed ? (
+        <button
+          type="button"
+          className="agent-image-lightbox"
+          onClick={() => setZoomed(false)}
+          aria-label="Close image"
+        >
+          <img src={state.url} alt={name} />
+        </button>
+      ) : null}
+    </>
   );
 }
 
@@ -10110,6 +10239,48 @@ function AgentThinkingGroup({
   );
 }
 
+// One glyph per activity family (derived from the human label, see
+// toolActivityKind) so a glance reads *what kind* of work is happening — a
+// globe for browsing, a magnifier for searching, a pencil for edits — instead
+// of the same console mark on every row. Unknown work keeps the console glyph.
+const TOOL_ACTIVITY_ICONS: Record<ToolActivityKind, typeof IconConsoleSimple> = {
+  command: IconConsoleSimple,
+  browse: IconGlobe,
+  search: IconMagnifyingGlass,
+  "search-images": IconImages1,
+  edit: IconFileEdit,
+  read: IconFileText,
+  images: IconImages1,
+  github: IconGithub,
+  repo: IconGit,
+  tests: IconChecklist,
+  build: IconHammer,
+  check: IconCode,
+  tool: IconConsoleSimple,
+};
+
+// A running row shows how long the step has been going, so a slow command reads
+// as alive rather than stuck. The clock starts when this client first sees the
+// row running (tool events carry no start time) and stops the moment it isn't —
+// completed rows drop the timer entirely, so a reloaded transcript never shows
+// a bogus "since page load" duration.
+function useRunningElapsedLabel(running: boolean): string | null {
+  const [now, setNow] = useState(() => Date.now());
+  const startRef = useRef<number | null>(null);
+  if (running && startRef.current === null) startRef.current = Date.now();
+  else if (!running && startRef.current !== null) startRef.current = null;
+  useEffect(() => {
+    if (!running) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [running]);
+  if (!running || startRef.current === null) return null;
+  const secs = Math.floor((now - startRef.current) / 1000);
+  if (secs < 1) return null;
+  if (secs < 60) return `${secs}s`;
+  return `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, "0")}s`;
+}
+
 // Tool activity is collapsed to a single quiet row by default — name + status —
 // so the conversation isn't buried under raw tool output (skill dumps, command
 // logs). The full output is one click away when the row has a body.
@@ -10127,13 +10298,16 @@ function AgentToolDisclosure({
   redacted?: boolean;
 }) {
   const body = text && text.trim() ? text : null;
+  const running = status === "running";
+  const Glyph = TOOL_ACTIVITY_ICONS[toolActivityKind(name)];
+  const elapsed = useRunningElapsedLabel(running);
   const summary = (expandable: boolean) => (
     <>
       {/* On hover the tool glyph cross-fades to a plain-text affordance —
        * "+" when closed, "−" when open. Text instead of svg icons: glyphs
        * render on the text baseline grid, so the swap can't hitch a pixel. */}
       <span className="agent-tool-icon">
-        <IconConsoleSimple size={15} className="agent-tool-icon-glyph" />
+        <Glyph size={15} className="agent-tool-icon-glyph" />
         {expandable ? (
           <>
             <span className="agent-tool-icon-expand">+</span>
@@ -10141,7 +10315,10 @@ function AgentToolDisclosure({
           </>
         ) : null}
       </span>
-      <span className="agent-tool-name">{name}</span>
+      {/* The live row shimmers its name (same sweep as "Thinking") so the eye
+       * lands on what's happening now; done rows read as quiet muted text. */}
+      <span className={running ? "agent-tool-name text-shimmer" : "agent-tool-name"}>{name}</span>
+      {elapsed ? <span className="agent-tool-elapsed">{elapsed}</span> : null}
       {statusNode}
       {redacted ? <span className="agent-redacted">Redacted</span> : null}
     </>

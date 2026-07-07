@@ -10,6 +10,7 @@ import {
   HERO_GREETINGS,
   SkillsToolsPanel,
   resetAgentSessionContinuity,
+  studioMediaImagePaths,
   type AgentSessionsChangedDetail,
 } from "../components/agent/AgentWorkspace";
 import {
@@ -7172,5 +7173,42 @@ describe("AgentWorkspace", () => {
       });
       expect(within(panel).queryByRole("option", { name: /Enclave Mini/ })).not.toBeInTheDocument();
     });
+  });
+});
+
+describe("studioMediaImagePaths", () => {
+  it("extracts a studio-media image path whose prefix contains spaces", () => {
+    const text =
+      "L'image est enregistrée :\n" +
+      "- Fichier : `/Users/morgan/Library/Application Support/xyz.carpediem.subrosa/studio-media/9edf71a8-9f70-4505-82dc-631d737a7b08.png`";
+    expect(studioMediaImagePaths([text])).toEqual([
+      "/Users/morgan/Library/Application Support/xyz.carpediem.subrosa/studio-media/9edf71a8-9f70-4505-82dc-631d737a7b08.png",
+    ]);
+  });
+
+  it("dedupes repeats and matches jpg/jpeg/webp/gif across parts", () => {
+    const png = "/data/App Support/app/studio-media/a.png";
+    const jpg = "/data/App Support/app/studio-media/b.jpeg";
+    const webp = "/data/App Support/app/studio-media/c.webp";
+    expect(studioMediaImagePaths([`saved ${png} and ${png}`, `also ${jpg}`, webp])).toEqual([
+      png,
+      jpg,
+      webp,
+    ]);
+  });
+
+  it("ignores non-studio-media paths and non-image extensions", () => {
+    expect(
+      studioMediaImagePaths([
+        "/Users/me/Documents/photo.png",
+        "/data/app/studio-media/notes.txt",
+        "no path here at all",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("caps the number of previews", () => {
+    const texts = Array.from({ length: 10 }, (_, i) => `/data/app/studio-media/img-${i}.png`);
+    expect(studioMediaImagePaths(texts)).toHaveLength(6);
   });
 });

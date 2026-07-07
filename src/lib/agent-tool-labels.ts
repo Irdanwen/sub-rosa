@@ -33,6 +33,46 @@ export function toolActivitySentence(toolName: string | undefined, payload?: unk
   return label === "Tool" ? "Using a tool." : `${label}.`;
 }
 
+/** A coarse activity family, derived from the human label so the UI can pick a
+ * matching glyph without re-classifying. The renderer owns the label -> icon
+ * map (this module stays free of view concerns / icon imports). Unknown or
+ * humanized labels fall through to "tool". */
+export type ToolActivityKind =
+  | "command"
+  | "browse"
+  | "search"
+  | "search-images"
+  | "edit"
+  | "read"
+  | "images"
+  | "github"
+  | "repo"
+  | "tests"
+  | "build"
+  | "check"
+  | "tool";
+
+const ACTIVITY_KIND_BY_LABEL: Record<string, ToolActivityKind> = {
+  "Running command": "command",
+  Browsing: "browse",
+  "Searching web": "search",
+  Searching: "search",
+  "Searching files": "search",
+  "Searching images": "search-images",
+  "Editing files": "edit",
+  "Reading files": "read",
+  "Working with images": "images",
+  "Using GitHub": "github",
+  "Inspecting repository": "repo",
+  "Running tests": "tests",
+  Building: "build",
+  "Checking code": "check",
+};
+
+export function toolActivityKind(label: string): ToolActivityKind {
+  return ACTIVITY_KIND_BY_LABEL[label] ?? "tool";
+}
+
 export function humanizeToolName(value: string) {
   const cleaned = value
     .replace(/^tools?[._-]/i, "")

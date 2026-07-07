@@ -64,6 +64,19 @@ const JUNE_PROVIDER_PROXY_MAX_HEADER_BYTES: usize = 32 * 1024;
 // window and degrades to the context-overflow notice (recognizable wording in
 // `read_http_request`).
 const JUNE_PROVIDER_PROXY_MAX_BODY_BYTES: usize = 3 * 1024 * 1024;
+// The `/v1/media/*` routes carry base64-encoded media, not chat text: a saved
+// PNG or an image-edit source image dwarfs a prompt (a photorealistic 1024²
+// PNG is routinely 2-4 MB raw, ~2.7-5.3 MB once base64-encoded), so the
+// chat-sized cap above rejected ordinary generations. Base64 inflates ~4/3, so
+// 48 MiB covers a ~36 MB source file — well beyond anything the media tools
+// produce. Loopback + bearer-gated, so the larger transient buffer is safe.
+const JUNE_PROVIDER_PROXY_MAX_MEDIA_BODY_BYTES: usize = 48 * 1024 * 1024;
+// An over-cap body is drained (up to this ceiling) before the proxy answers, so
+// the client finishes its write and reads the JSON error instead of hitting
+// EPIPE ("Broken pipe") on a half-sent request. Beyond the ceiling we give up
+// and let the connection close.
+const JUNE_PROVIDER_PROXY_DRAIN_CEILING_BYTES: usize = 64 * 1024 * 1024;
+const JUNE_MEDIA_PROXY_PATH_PREFIX: &str = "/v1/media/";
 const JUNE_CONTEXT_MCP_SERVER_NAME: &str = "june_context";
 const JUNE_CONTEXT_MCP_DIR_NAME: &str = "hermes-mcp";
 const JUNE_CONTEXT_MCP_SCRIPT_NAME: &str = "june_context_mcp.py";
@@ -6759,6 +6772,7 @@ async fn handle_june_provider_connection(
     Ok(())
 }
 
+#[derive(Debug)]
 struct HttpRequest {
     method: String,
     path: String,
@@ -6818,18 +6832,43 @@ async fn read_http_request(stream: &mut tokio::net::TcpStream) -> io::Result<Htt
             }
         })
         .unwrap_or(0);
-    if content_length > JUNE_PROVIDER_PROXY_MAX_BODY_BYTES {
-        // The handler turns this into a 400 for the client. Phrase it as a
-        // context overflow (JUN-169): the wording carries the tokens Hermes'
-        // overflow patterns match ("maximum context length") and the frontend
-        // classifier keys on (`prompt_too_long`), so an over-cap body degrades
-        // into the recoverable context-overflow notice instead of a raw
-        // transport error that re-wedges or dead-ends the session.
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
+    // Media saves/edits carry base64 payloads far larger than a chat prompt, so
+    // the `/v1/media/*` routes get their own cap.
+    let is_media_route = path.starts_with(JUNE_MEDIA_PROXY_PATH_PREFIX);
+    let max_body = if is_media_route {
+        JUNE_PROVIDER_PROXY_MAX_MEDIA_BODY_BYTES
+    } else {
+        JUNE_PROVIDER_PROXY_MAX_BODY_BYTES
+    };
+    if content_length > max_body {
+        // Drain the announced body first (bounded by the ceiling) so the client
+        // completes its write and reads our error instead of hitting EPIPE
+        // ("Broken pipe") on a half-sent request — the failure mode that made an
+        // oversized media save look like a flaky proxy connection.
+        if content_length <= JUNE_PROVIDER_PROXY_DRAIN_CEILING_BYTES {
+            let mut drained = buffer.len().saturating_sub(header_end);
+            while drained < content_length {
+                let read = stream.read(&mut chunk).await?;
+                if read == 0 {
+                    break;
+                }
+                drained += read;
+            }
+        }
+        // The handler turns this into a 400 for the client. For chat, phrase it
+        // as a context overflow (JUN-169): the wording carries the tokens
+        // Hermes' overflow patterns match ("maximum context length") and the
+        // frontend classifier keys on (`prompt_too_long`), so an over-cap body
+        // degrades into the recoverable context-overflow notice instead of a raw
+        // transport error that re-wedges or dead-ends the session. Media has no
+        // such recovery, so it gets a plain size-limit message the agent relays.
+        let message = if is_media_route {
+            "media_payload_too_large: the media file exceeds the proxy's size limit."
+        } else {
             "prompt_too_long: the request body exceeds the model's maximum \
-             context length. Reduce the length of the messages and retry.",
-        ));
+             context length. Reduce the length of the messages and retry."
+        };
+        return Err(io::Error::new(io::ErrorKind::InvalidData, message));
     }
     let mut body = buffer[header_end..].to_vec();
     while body.len() < content_length {
@@ -7966,6 +8005,85 @@ mod tests {
 
         assert_eq!(error.code, "hermes_gateway_start_failed");
         assert!(error.message.contains("exited"));
+    }
+
+    /// A base64 media save legitimately exceeds the chat-sized body cap; the
+    /// `/v1/media/*` routes must accept a body above it (previously rejected,
+    /// surfacing to the agent as a "Broken pipe").
+    #[tokio::test]
+    async fn media_route_accepts_body_above_the_chat_cap() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            read_http_request(&mut stream).await
+        });
+
+        let body_len = JUNE_PROVIDER_PROXY_MAX_BODY_BYTES + 4096;
+        let mut client = tokio::net::TcpStream::connect(addr).await.unwrap();
+        client
+            .write_all(
+                format!("POST /v1/media/save HTTP/1.1\r\nContent-Length: {body_len}\r\n\r\n")
+                    .as_bytes(),
+            )
+            .await
+            .unwrap();
+        write_body(&mut client, body_len).await;
+
+        let request = server
+            .await
+            .unwrap()
+            .expect("a media body under the media cap should parse");
+        assert_eq!(request.path, "/v1/media/save");
+        assert_eq!(request.body.len(), body_len);
+    }
+
+    /// An over-cap body must be drained before the proxy answers, so the client
+    /// finishes its write and reads the rejection instead of hitting EPIPE
+    /// ("Broken pipe") on a half-sent request.
+    #[tokio::test]
+    async fn oversized_body_is_drained_so_the_client_is_not_broken_piped() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            read_http_request(&mut stream).await
+        });
+
+        let body_len = JUNE_PROVIDER_PROXY_MAX_BODY_BYTES + 4096;
+        let mut client = tokio::net::TcpStream::connect(addr).await.unwrap();
+        client
+            .write_all(
+                format!("POST /v1/chat/completions HTTP/1.1\r\nContent-Length: {body_len}\r\n\r\n")
+                    .as_bytes(),
+            )
+            .await
+            .unwrap();
+        // Every write must succeed: if the proxy closed without draining, the
+        // client would be broken-piped partway through the body.
+        write_body(&mut client, body_len).await;
+
+        let error = server
+            .await
+            .unwrap()
+            .expect_err("an over-cap chat body should be rejected");
+        assert!(error.to_string().starts_with("prompt_too_long"));
+    }
+
+    /// Writes `len` bytes to `client` in chunks, asserting each write lands (the
+    /// proof that the server drained rather than severing the connection).
+    async fn write_body(client: &mut tokio::net::TcpStream, len: usize) {
+        let chunk = vec![b'x'; 64 * 1024];
+        let mut sent = 0;
+        while sent < len {
+            let take = (len - sent).min(chunk.len());
+            client
+                .write_all(&chunk[..take])
+                .await
+                .expect("client write should not be broken-piped");
+            sent += take;
+        }
+        client.flush().await.unwrap();
     }
 
     #[test]
