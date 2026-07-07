@@ -49,13 +49,22 @@ jobs:
         with:
           ref: ${{ github.event.inputs.ref }}
 
+      # Pick the newest installed Xcode. Apple requires the iOS 26 SDK (Xcode 26+)
+      # for App Store / TestFlight uploads — an older Xcode archives fine but the
+      # upload is rejected with an SDK-version validation error. macos-15 ships
+      # Xcode 26.x (not as default), so select the highest and hard-fail if < 26.
       - name: Select latest Xcode
         run: |
-          LATEST=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)
-          if [ -z "$LATEST" ]; then LATEST=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1); fi
+          LATEST=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$LATEST" ]; then echo "No Xcode found under /Applications." >&2; exit 1; fi
           echo "Selecting $LATEST"
           sudo xcode-select -s "$LATEST/Contents/Developer"
           xcodebuild -version
+          MAJOR=$(xcodebuild -version | sed -n 's/^Xcode \([0-9][0-9]*\).*/\1/p')
+          if [ "${MAJOR:-0}" -lt 26 ]; then
+            echo "Xcode >= 26 (iOS 26 SDK) required for App Store upload; got $MAJOR." >&2
+            exit 1
+          fi
 
       - name: Setup Node + pnpm
         uses: actions/setup-node@v4
