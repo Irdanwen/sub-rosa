@@ -19,7 +19,8 @@ import { IconShieldCheck } from "central-icons/IconShieldCheck";
 import { IconStopCircle } from "central-icons/IconStopCircle";
 import { IconToolbox } from "central-icons/IconToolbox";
 import { IconTrashCan } from "central-icons/IconTrashCan";
-import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import { open as openFileDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { isMacDesktopPlatform } from "../../lib/platform";
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
 import { IconAnonymous } from "central-icons/IconAnonymous";
@@ -105,7 +106,8 @@ import {
   importHermesBridgeFileBytes,
   listVeniceModels,
   listAgentTasks,
-  downloadHermesBridgeFile,
+  saveHermesBridgeFile,
+  copyHermesBridgeFileToClipboard,
   openHermesTuiDebug,
   osAccountsUpgrade,
   providerModelSettings,
@@ -5777,8 +5779,22 @@ export function AgentWorkspace({
   // Every file the conversation has surfaced, in turn order — the session
   // bar's files button keeps them reachable after their cards scroll away.
   const surfacedArtifacts = [...turnArtifacts.values()].flat().concat(devArtifacts);
-  const downloadArtifact = (artifact: AgentArtifact) =>
-    void downloadHermesBridgeFile(artifact.path).catch((err: unknown) =>
+  // "Download" opens a native save dialog so the user picks the folder and
+  // name (the old behavior copied silently into ~/Downloads with no feedback,
+  // which read as broken). A cancelled dialog returns null — a no-op.
+  const downloadArtifact = async (artifact: AgentArtifact) => {
+    try {
+      const destination = await saveDialog({ defaultPath: artifact.name });
+      if (!destination) return;
+      await saveHermesBridgeFile(artifact.path, destination);
+    } catch (err) {
+      setError(messageFromError(err));
+    }
+  };
+  // Copy the file itself onto the OS clipboard (pasteable into Finder), not its
+  // text. Only surfaced on macOS (see `canCopyFile` in the panel).
+  const copyArtifactFile = (artifact: AgentArtifact) =>
+    void copyHermesBridgeFileToClipboard(artifact.path).catch((err: unknown) =>
       setError(messageFromError(err)),
     );
   const openArtifact = (artifact: AgentArtifact) => setArtifactPanel({ view: "file", artifact });
@@ -5787,11 +5803,15 @@ export function AgentWorkspace({
   // imported workspace file; "open" enlarges it in the same file viewer any
   // generated file uses. The image part carries its bytes inline for the
   // thumbnail, but the affordances key off the imported path on disk.
-  const downloadGeneratedImage = (part: Extract<AgentChatPart, { type: "image" }>) => {
+  const downloadGeneratedImage = async (part: Extract<AgentChatPart, { type: "image" }>) => {
     if (!part.path) return;
-    void downloadHermesBridgeFile(part.path).catch((err: unknown) =>
-      setError(messageFromError(err)),
-    );
+    try {
+      const destination = await saveDialog({ defaultPath: part.name?.trim() || undefined });
+      if (!destination) return;
+      await saveHermesBridgeFile(part.path, destination);
+    } catch (err) {
+      setError(messageFromError(err));
+    }
   };
   const openGeneratedImage = (part: Extract<AgentChatPart, { type: "image" }>) => {
     if (!part.path) return;
@@ -6976,6 +6996,7 @@ export function AgentWorkspace({
                   onShowList={() => setArtifactPanel({ view: "list" })}
                   onOpen={openArtifact}
                   onDownload={downloadArtifact}
+                  onCopyFile={copyArtifactFile}
                   onClose={() => setArtifactPanel(null)}
                 />,
                 document.querySelector(".app-shell") ?? document.body,
@@ -10465,6 +10486,7 @@ function AgentArtifactPanel({
   onShowList,
   onOpen,
   onDownload,
+  onCopyFile,
   onClose,
 }: {
   artifacts: AgentArtifact[];
@@ -10472,9 +10494,13 @@ function AgentArtifactPanel({
   onShowList: () => void;
   onOpen: (artifact: AgentArtifact) => void;
   onDownload: (artifact: AgentArtifact) => void;
+  onCopyFile: (artifact: AgentArtifact) => void;
   onClose: () => void;
 }) {
   const artifact = state.view === "file" ? state.artifact : null;
+  // Copying the file itself onto the clipboard is a macOS-only affordance
+  // (NSPasteboard file references); resolve once per mount.
+  const canCopyFile = useMemo(() => isMacDesktopPlatform(), []);
   const [preview, setPreview] = useState<AgentArtifactPreview>({
     kind: "loading",
   });
@@ -10695,6 +10721,17 @@ function AgentArtifactPanel({
               onClick={() => setFilterOpen(true)}
             >
               <IconMagnifyingGlass size={15} />
+            </button>
+          ) : null}
+          {artifact && canCopyFile ? (
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={`Copy ${artifact.name} to clipboard`}
+              title="Copy file"
+              onClick={() => onCopyFile(artifact)}
+            >
+              <IconClipboard size={15} />
             </button>
           ) : null}
           {artifact ? (

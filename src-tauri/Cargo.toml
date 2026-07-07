@@ -1,6 +1,6 @@
 [package]
 name = "os-june"
-version = "1.2.0"
+version = "1.2.1"
 description = "Sub Rosa"
 authors = ["Open Software Network"]
 license = "MIT"
@@ -91,11 +91,14 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
     "NSImage",
     "NSMenu",
     "NSMenuItem",
+    "NSPasteboard",
     "NSResponder",
 ] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "std",
+    "NSArray",
     "NSString",
+    "NSURL",
     "NSValue",
     "NSData",
     "NSGeometry",

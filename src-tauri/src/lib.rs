@@ -239,6 +239,8 @@ pub fn run() {
             hermes_bridge::hermes_bridge_messaging_platforms,
             hermes_bridge::hermes_bridge_filesystem_snapshot,
             hermes_bridge::download_hermes_bridge_file,
+            hermes_bridge::save_hermes_bridge_file,
+            hermes_bridge::copy_hermes_bridge_file_to_clipboard,
             hermes_bridge::hermes_bridge_file_preview,
             hermes_bridge::hermes_bridge_file_text,
             hermes_bridge::import_hermes_bridge_file,

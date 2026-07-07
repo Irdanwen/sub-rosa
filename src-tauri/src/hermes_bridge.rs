@@ -608,6 +608,13 @@ pub struct DownloadHermesFileRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SaveHermesFileRequest {
+    pub path: String,
+    pub destination: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HermesFilePreviewRequest {
     pub path: String,
 }
@@ -2474,6 +2481,86 @@ pub async fn download_hermes_bridge_file(
     fs::copy(&requested, &destination)
         .map_err(|error| AppError::new("hermes_file_download_failed", error.to_string()))?;
     Ok(destination.to_string_lossy().into_owned())
+}
+
+/// Copies a workspace file to a destination the user picked in a native save
+/// dialog. Unlike `download_hermes_bridge_file` (which drops the file into
+/// ~/Downloads with no prompt), this lets the user choose any folder and name.
+#[tauri::command]
+pub async fn save_hermes_bridge_file(
+    app: AppHandle,
+    request: SaveHermesFileRequest,
+) -> Result<(), AppError> {
+    let requested = validate_hermes_file_path(&app, &request.path)?;
+    let destination = PathBuf::from(&request.destination);
+    if !destination.is_absolute() {
+        return Err(AppError::new(
+            "hermes_file_save_failed",
+            "The save destination must be an absolute path.",
+        ));
+    }
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| AppError::new("hermes_file_save_failed", error.to_string()))?;
+    }
+    fs::copy(&requested, &destination)
+        .map_err(|error| AppError::new("hermes_file_save_failed", error.to_string()))?;
+    Ok(())
+}
+
+/// Puts a workspace file onto the OS clipboard as a file reference (pasteable
+/// into Finder, mail, etc.), not as text. Only macOS is supported; other
+/// desktops return an unsupported error and the UI hides the affordance.
+#[tauri::command]
+pub async fn copy_hermes_bridge_file_to_clipboard(
+    app: AppHandle,
+    request: HermesFilePreviewRequest,
+) -> Result<(), AppError> {
+    let requested = validate_hermes_file_path(&app, &request.path)?;
+    copy_file_to_clipboard(&app, requested)
+}
+
+/// Writes a file URL to the general `NSPasteboard` so it pastes into Finder as
+/// the file itself. Runs on the main thread because the write touches AppKit.
+#[cfg(target_os = "macos")]
+fn copy_file_to_clipboard(app: &AppHandle, path: PathBuf) -> Result<(), AppError> {
+    use objc2::rc::Retained;
+    use objc2::runtime::ProtocolObject;
+    use objc2_app_kit::{NSPasteboard, NSPasteboardWriting};
+    use objc2_foundation::{NSArray, NSString, NSURL};
+
+    let path_str = path.to_string_lossy().into_owned();
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.run_on_main_thread(move || {
+        let pasteboard = NSPasteboard::generalPasteboard();
+        pasteboard.clearContents();
+        let ns_path = NSString::from_str(&path_str);
+        let url = NSURL::fileURLWithPath(&ns_path);
+        let writer: Retained<ProtocolObject<dyn NSPasteboardWriting>> =
+            ProtocolObject::from_retained(url);
+        let objects = NSArray::from_retained_slice(&[writer]);
+        let ok = pasteboard.writeObjects(&objects);
+        let _ = tx.send(ok);
+    })
+    .map_err(|error| AppError::new("hermes_file_clipboard_failed", error.to_string()))?;
+    let ok = rx
+        .recv()
+        .map_err(|error| AppError::new("hermes_file_clipboard_failed", error.to_string()))?;
+    if !ok {
+        return Err(AppError::new(
+            "hermes_file_clipboard_failed",
+            "The clipboard rejected the file.",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn copy_file_to_clipboard(_app: &AppHandle, _path: PathBuf) -> Result<(), AppError> {
+    Err(AppError::new(
+        "hermes_file_clipboard_unsupported",
+        "Copying a file to the clipboard is only supported on macOS.",
+    ))
 }
 
 #[tauri::command]

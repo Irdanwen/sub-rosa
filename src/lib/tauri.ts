@@ -932,6 +932,18 @@ export async function downloadHermesBridgeFile(path: string) {
   return invoke<string>("download_hermes_bridge_file", { request: { path } });
 }
 
+// Copies a workspace file to a destination the user picked in a native save
+// dialog (any folder + name), unlike the silent copy-to-Downloads above.
+export async function saveHermesBridgeFile(path: string, destination: string) {
+  return invoke<void>("save_hermes_bridge_file", { request: { path, destination } });
+}
+
+// Puts a workspace file on the OS clipboard as a file reference (pasteable into
+// Finder). macOS only; other platforms reject it (the UI hides the button).
+export async function copyHermesBridgeFileToClipboard(path: string) {
+  return invoke<void>("copy_hermes_bridge_file_to_clipboard", { request: { path } });
+}
+
 export async function hermesBridgeFilePreview(path: string) {
   return invoke<string | null>("hermes_bridge_file_preview", {
     request: { path },

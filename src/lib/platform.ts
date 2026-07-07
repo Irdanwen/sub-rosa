@@ -1,3 +1,24 @@
+import { platform as osPlatform } from "@tauri-apps/plugin-os";
+
+let cachedMacDesktop: boolean | null = null;
+
+/**
+ * True only on the macOS desktop shell (not iOS, not Windows). Used to gate
+ * macOS-only affordances such as copying a file to the NSPasteboard. Resolved
+ * from plugin-os `platform()`, which the native layer injects before the
+ * webview loads; in a plain browser (vitest) the plugin throws and we treat
+ * the platform as non-macOS.
+ */
+export function isMacDesktopPlatform(): boolean {
+  if (cachedMacDesktop !== null) return cachedMacDesktop;
+  try {
+    cachedMacDesktop = osPlatform() === "macos";
+  } catch {
+    cachedMacDesktop = false;
+  }
+  return cachedMacDesktop;
+}
+
 export function isMacLikePlatform() {
   const platform =
     typeof navigator === "undefined" ? "" : `${navigator.platform} ${navigator.userAgent}`;

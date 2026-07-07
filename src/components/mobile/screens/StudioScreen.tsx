@@ -3,6 +3,7 @@ import {
   artifactDataUrl,
   evictArtifactDataUrl,
   useArtifactDataUrl,
+  useArtifactThumbnail,
 } from "../../../lib/artifact-media";
 import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
 import { hapticNotify } from "../../../lib/haptics";
@@ -25,6 +26,7 @@ import {
 } from "../../../lib/studio/catalog";
 import { mediaJson } from "../../../lib/studio/client";
 import { composeImages, MAX_COMPOSE_IMAGES, upscaleImage } from "../../../lib/studio/edit-image";
+import { prepareEditReference } from "../../../lib/studio/downscale";
 import { generateImages } from "../../../lib/studio/generate-image";
 import { type PersistedJob, pendingJobs, useMediaJob } from "../../../lib/studio/async-job";
 import {
@@ -410,6 +412,7 @@ function ImagePanel({
               references={references}
               onChange={(refs) => onReferencesChange(refs.slice(0, MAX_COMPOSE_IMAGES))}
               galleryImages={galleryImages}
+              prepare={prepareEditReference}
               hint={
                 references.length > 1
                   ? `Combining ${references.length} photos into one (up to ${MAX_COMPOSE_IMAGES}).`
@@ -936,7 +939,7 @@ function Gallery({
 }
 
 function GalleryCell({ artifact, onOpen }: { artifact: StudioArtifact; onOpen: () => void }) {
-  const src = useArtifactDataUrl(artifact);
+  const src = useArtifactThumbnail(artifact);
   return (
     <button type="button" className="mobile-studio-cell" onClick={onOpen}>
       {src ? (
@@ -1097,11 +1100,15 @@ function ReferencePicker({
   onChange,
   galleryImages,
   hint,
+  prepare,
 }: {
   references: string[];
   onChange: (refs: string[]) => void;
   galleryImages: StudioArtifact[];
   hint?: string;
+  /** Transform a picked photo before it enters the reference list (e.g.
+   * downscale below the backend's size cap). Defaults to identity. */
+  prepare?: (dataUrl: string) => Promise<string>;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -1110,12 +1117,12 @@ function ReferencePicker({
     async (artifact: StudioArtifact) => {
       try {
         const dataUrl = await artifactDataUrl(artifact);
-        onChange([...references, dataUrl]);
+        onChange([...references, prepare ? await prepare(dataUrl) : dataUrl]);
       } finally {
         setGalleryOpen(false);
       }
     },
-    [references, onChange],
+    [references, onChange, prepare],
   );
 
   return (
@@ -1130,8 +1137,10 @@ function ReferencePicker({
           event.target.value = "";
           if (!file) return;
           const reader = new FileReader();
-          reader.onload = () => {
-            if (typeof reader.result === "string") onChange([...references, reader.result]);
+          reader.onload = async () => {
+            if (typeof reader.result !== "string") return;
+            const dataUrl = prepare ? await prepare(reader.result) : reader.result;
+            onChange([...references, dataUrl]);
           };
           reader.readAsDataURL(file);
         }}
