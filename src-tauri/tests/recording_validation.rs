@@ -191,6 +191,23 @@ fn accepts_reasonable_positive_drift_for_long_recordings() {
 }
 
 #[test]
+fn accepts_clock_drift_shortfall_for_long_recordings() {
+    // Windows/WASAPI capture clock drift: ~45 min recording whose WAV ends up
+    // ~12s (0.44%) shorter than the app-measured elapsed time. This is drift,
+    // not a truncated file, so it must still be accepted.
+    let validation = readable_validation(2_718_372, 2_706_494);
+
+    assert!(source_audio_passes_validation(
+        RecordingSource::Microphone,
+        &validation
+    ));
+    assert!(source_audio_passes_validation(
+        RecordingSource::System,
+        &validation
+    ));
+}
+
+#[test]
 fn rejects_excessively_long_audio_for_short_recordings() {
     let validation = readable_validation(1_000, 121_000);
 

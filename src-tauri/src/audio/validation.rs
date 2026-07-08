@@ -7,6 +7,13 @@ pub const MIN_RECORDING_MS: i64 = 1_000;
 const MIN_POSITIVE_DURATION_DRIFT_MS: i64 = 60_000;
 const MAX_POSITIVE_DURATION_DRIFT_MS: i64 = 10 * 60_000;
 const POSITIVE_DURATION_DRIFT_RATIO_DENOMINATOR: i64 = 4;
+// The audio-capture clock drifts from the app wall clock, so a long recording's
+// WAV can end up slightly shorter than the elapsed time we measured (notably on
+// Windows/WASAPI). Allow a proportional shortfall — ~5% of the expected duration,
+// capped — so genuine clock drift is not mistaken for a truncated file, while a
+// large deficit (a real truncation) is still rejected.
+const NEGATIVE_DURATION_DRIFT_RATIO_DENOMINATOR: i64 = 20;
+const MAX_NEGATIVE_DURATION_DRIFT_MS: i64 = 3 * 60_000;
 
 #[derive(Debug, Clone, Copy)]
 pub struct AudioValidationConfig {
@@ -117,12 +124,14 @@ pub fn source_audio_passes_validation(
     let expected_duration_ms = validation.expected_duration_ms.max(0);
     let positive_tolerance_ms =
         positive_duration_drift_tolerance_ms(expected_duration_ms, config.duration_tolerance_ms);
+    let negative_tolerance_ms =
+        negative_duration_drift_tolerance_ms(expected_duration_ms, config.duration_tolerance_ms);
     // A slightly longer WAV can still be processed because long recordings can
     // drift from the app clock. Keep an upper bound so stale long files do not
     // get transcribed for short sessions.
     let is_not_truncated = validation
         .actual_duration_ms
-        .saturating_add(config.duration_tolerance_ms)
+        .saturating_add(negative_tolerance_ms)
         >= expected_duration_ms;
     let is_not_stale_long_audio =
         validation.actual_duration_ms <= expected_duration_ms.saturating_add(positive_tolerance_ms);
@@ -142,6 +151,16 @@ fn positive_duration_drift_tolerance_ms(expected_duration_ms: i64, base_toleranc
             MIN_POSITIVE_DURATION_DRIFT_MS,
             MAX_POSITIVE_DURATION_DRIFT_MS,
         )
+        .max(base_tolerance_ms)
+}
+
+fn negative_duration_drift_tolerance_ms(expected_duration_ms: i64, base_tolerance_ms: i64) -> i64 {
+    let proportional_tolerance_ms =
+        expected_duration_ms / NEGATIVE_DURATION_DRIFT_RATIO_DENOMINATOR;
+    // No lower proportional floor here (unlike the positive side): short
+    // recordings keep the tight base tolerance so real truncations still fail.
+    proportional_tolerance_ms
+        .min(MAX_NEGATIVE_DURATION_DRIFT_MS)
         .max(base_tolerance_ms)
 }
 
