@@ -241,6 +241,7 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
   const taskIdRef = useRef<string | undefined>(sessionId);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const attachInputRef = useRef<HTMLInputElement | null>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const keyboardInset = useKeyboardInset();
 
   useEffect(() => {
@@ -290,6 +291,15 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [task?.messages.length, stage]);
+
+  // Grow the composer with its content (up to a few lines, then scroll) so
+  // multi-line drafts stay visible instead of hiding above a one-row box.
+  useEffect(() => {
+    const el = chatInputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+  }, [draft]);
 
   // Replies that arrive during this visit type themselves out; history that
   // loads with the screen renders instantly.
@@ -539,6 +549,7 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
             }}
           />
           <textarea
+            ref={chatInputRef}
             className="mobile-chat-input"
             value={draft}
             placeholder="Ask about your notes"
@@ -697,7 +708,7 @@ function greeting(): string {
   if (french) {
     if (hour < 5) return "Bonne nuit";
     if (hour < 12) return "Bonjour";
-    if (hour < 18) return "Bon apres-midi";
+    if (hour < 18) return "Bon après-midi";
     return "Bonsoir";
   }
   if (hour < 5) return "Good night";

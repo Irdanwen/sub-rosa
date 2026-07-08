@@ -1,4 +1,6 @@
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
+import { IconClipboard } from "central-icons/IconClipboard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   artifactDataUrl,
@@ -1144,8 +1146,21 @@ function Lightbox({
   const [saved, setSaved] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [promptCopied, setPromptCopied] = useState(false);
   const canSaveToPhotos =
     isMobilePlatform() && (artifact.kind === "image" || artifact.kind === "video");
+
+  const copyPrompt = useCallback(async () => {
+    if (!artifact.prompt) return;
+    try {
+      await writeText(artifact.prompt);
+      hapticNotify("success");
+      setPromptCopied(true);
+      window.setTimeout(() => setPromptCopied(false), 1600);
+    } catch {
+      // Copy is a convenience; ignore transient clipboard failures.
+    }
+  }, [artifact.prompt]);
 
   const save = useCallback(async () => {
     try {
@@ -1202,7 +1217,20 @@ function Lightbox({
         ) : (
           <Spinner />
         )}
-        {artifact.prompt ? <p className="mobile-studio-preview-prompt">{artifact.prompt}</p> : null}
+        {artifact.prompt ? (
+          <div className="mobile-studio-preview-prompt">
+            <p className="mobile-studio-preview-prompt-text">{artifact.prompt}</p>
+            <button
+              type="button"
+              className="mobile-studio-preview-copy"
+              onClick={() => void copyPrompt()}
+              aria-label="Copy prompt"
+            >
+              {promptCopied ? <IconCheckmark1Small size={14} /> : <IconClipboard size={14} />}
+              {promptCopied ? "Copied" : "Copy prompt"}
+            </button>
+          </div>
+        ) : null}
         {error ? <p className="mobile-dictation-error">{error}</p> : null}
         <div className="mobile-studio-preview-actions">
           {canSaveToPhotos ? (

@@ -851,7 +851,10 @@
   position: absolute;
   inset: 0;
   border: none;
-  background: var(--scrim, rgb(0 0 0 / 0.82));
+  /* A media viewer overlays white images + light text, so it needs a solidly
+     dark backdrop in both themes — not the light theme `--scrim` (12% ink),
+     which let the gallery show through. */
+  background: rgb(0 0 0 / 0.92);
 }
 
 .mobile-studio-preview-body {
@@ -860,30 +863,71 @@
   flex-direction: column;
   align-items: center;
   gap: var(--sp-3);
-  max-width: 92vw;
+  width: 92vw;
   max-height: 88vh;
-  pointer-events: none;
+  overflow-y: auto;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  pointer-events: auto;
 }
 
 .mobile-studio-preview-body img,
 .mobile-studio-preview-body video {
   max-width: 92vw;
-  max-height: 62vh;
+  max-height: 56vh;
   border-radius: var(--r-lg);
   pointer-events: auto;
 }
 
+/* Prompt lives in its own readable card (light text on a dark panel), scrolls
+   if long, and carries a copy button. */
 .mobile-studio-preview-prompt {
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-radius: var(--r-md);
+  background: rgb(255 255 255 / 0.1);
+  pointer-events: auto;
+}
+
+.mobile-studio-preview-prompt-text {
+  margin: 0;
   color: #fff;
   font-size: var(--fs-sm);
-  margin: 0;
-  text-align: center;
-  max-height: 3em;
-  overflow: hidden;
+  line-height: 1.45;
+  max-height: 22vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.mobile-studio-preview-copy {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--r-pill);
+  border: 1px solid rgb(255 255 255 / 0.25);
+  background: transparent;
+  color: #fff;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.mobile-studio-preview-copy:active {
+  background: rgb(255 255 255 / 0.15);
 }
 
 .mobile-studio-preview-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: var(--sp-2);
   pointer-events: auto;
 }
@@ -1843,7 +1887,8 @@
   line-height: 1.4;
   resize: none;
   outline: none;
-  max-height: 120px;
+  max-height: 140px;
+  overflow-y: auto;
   padding: var(--sp-1) var(--sp-1) 0;
 }
 
