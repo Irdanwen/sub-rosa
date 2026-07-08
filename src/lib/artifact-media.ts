@@ -11,10 +11,15 @@ import type { StudioArtifact } from "./studio/types";
  */
 const cache = new Map<string, string>();
 const thumbCache = new Map<string, string>();
-const CACHE_MAX_ENTRIES = 60;
+// Thumbnails are small (downsized JPEGs), so keep enough to cover a whole
+// gallery (the on-disk index caps at 200) and avoid re-decoding on scroll.
+// Full-resolution data URLs (opened images, whole videos/tracks) are heavy, so
+// hold only a handful.
+const THUMB_CACHE_MAX = 200;
+const FULL_CACHE_MAX = 24;
 
-function remember(store: Map<string, string>, key: string, value: string) {
-  if (store.size >= CACHE_MAX_ENTRIES) {
+function remember(store: Map<string, string>, key: string, value: string, max: number) {
+  if (store.size >= max) {
     const oldest = store.keys().next().value;
     if (oldest) store.delete(oldest);
   }
@@ -51,7 +56,7 @@ export async function artifactDataUrl(artifact: Pick<StudioArtifact, "path">): P
   if (cached) return cached;
   const base64 = await readArtifactBase64(artifact);
   const url = `data:${mimeFor(artifact.path)};base64,${base64}`;
-  remember(cache, artifact.path, url);
+  remember(cache, artifact.path, url, FULL_CACHE_MAX);
   return url;
 }
 
@@ -69,7 +74,7 @@ export async function artifactThumbnail(
   const full = await artifactDataUrl(artifact);
   if (artifact.kind !== "image") return full;
   const thumb = await makeThumbnail(full);
-  remember(thumbCache, artifact.path, thumb);
+  remember(thumbCache, artifact.path, thumb, THUMB_CACHE_MAX);
   return thumb;
 }
 

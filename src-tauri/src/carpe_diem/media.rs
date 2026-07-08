@@ -768,19 +768,28 @@ fn validate_extension(raw: &str) -> Result<String, AppError> {
 }
 
 /// Resolves the `video_url`/`audio_url` a retrieve response returns. Absolute
-/// URLs pass through; absolute paths join the backend origin; bare paths join
-/// the operator root (Carpe Diem's join rule: files live under `/api/operator`,
-/// not under `/api/operator/v1`).
+/// URLs pass through; everything else joins the *operator root* (the base minus
+/// its `/v1` API suffix), because Carpe Diem's retrieve returns file paths
+/// relative to that root (e.g. `/v1/video/file/<id>` -> the file actually lives
+/// at `<origin>/api/operator/v1/video/file/<id>`, not at `<origin>/v1/...`).
+/// A leading-slash path that *already* carries the operator mount hangs off the
+/// bare origin instead, so a fully-qualified `/api/operator/...` path is not
+/// double-prefixed.
 fn resolve_media_url(base_url: &str, raw: &str) -> String {
     let raw = raw.trim();
     if raw.starts_with("http://") || raw.starts_with("https://") {
         return raw.to_string();
     }
     let base = base_url.trim_end_matches('/');
-    if let Some(path) = raw.strip_prefix('/') {
-        return format!("{}/{path}", origin(base));
-    }
     let operator_root = base.strip_suffix("/v1").unwrap_or(base);
+    if let Some(path) = raw.strip_prefix('/') {
+        let root_origin = origin(operator_root);
+        let mount = operator_root.strip_prefix(&root_origin).unwrap_or("");
+        if !mount.is_empty() && (raw == mount || raw.starts_with(&format!("{mount}/"))) {
+            return format!("{root_origin}/{path}");
+        }
+        return format!("{operator_root}/{path}");
+    }
     format!("{operator_root}/{raw}")
 }
 
@@ -895,7 +904,19 @@ mod tests {
             resolve_media_url(base, "https://cdn.example.com/file.mp4"),
             "https://cdn.example.com/file.mp4"
         );
-        // Absolute paths join the origin.
+        // The real retrieve shape: `video_url`/`audio_url` is a `/v1/...` path
+        // relative to the operator root, so the mount must be preserved (this
+        // is the case the earlier origin-join broke, 404ing every download).
+        assert_eq!(
+            resolve_media_url(base, "/v1/video/file/abc"),
+            "https://carpe-diem.xyz/api/operator/v1/video/file/abc"
+        );
+        assert_eq!(
+            resolve_media_url(base, "/v1/audio/music/file/def"),
+            "https://carpe-diem.xyz/api/operator/v1/audio/music/file/def"
+        );
+        // An absolute path that already carries the operator mount hangs off the
+        // bare origin (no double `/api/operator`).
         assert_eq!(
             resolve_media_url(base, "/api/operator/files/abc.mp4"),
             "https://carpe-diem.xyz/api/operator/files/abc.mp4"

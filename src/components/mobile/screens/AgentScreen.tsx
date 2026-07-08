@@ -1,11 +1,13 @@
 import { listen } from "@tauri-apps/api/event";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconArrowUp } from "central-icons/IconArrowUp";
+import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
+import { IconClipboard } from "central-icons/IconClipboard";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconPaperclip1 } from "central-icons/IconPaperclip1";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { messageFromError } from "../../../lib/errors";
-import { hapticSelection } from "../../../lib/haptics";
 import { hapticImpact, hapticNotify } from "../../../lib/haptics";
 import { useKeyboardInset } from "../../../lib/keyboard-inset";
 import { SimpleMarkdown } from "../../../lib/simple-markdown";
@@ -33,6 +35,7 @@ import {
 import { JuneGradientMark } from "../../account/AccountGate";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { EmptyState } from "../../ui/EmptyState";
+import { Spinner } from "../../ui/Spinner";
 import { ModelSheet } from "../ModelSheet";
 import { StackHeader } from "../StackHeader";
 import { SwipeableRow } from "../SwipeableRow";
@@ -222,6 +225,10 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
   const [draft, setDraft] = useState("");
   const [running, setRunning] = useState(false);
   const [stage, setStage] = useState<AgentLiteStatusDto | null>(null);
+  // The ordered stages of the current run, so the status bubble reads as a
+  // short activity log (thinking -> searching notes -> searching web) rather
+  // than a single flickering line.
+  const [steps, setSteps] = useState<AgentLiteStatusDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState(storedChatModel);
   const [models, setModels] = useState<MediaModel[]>([]);
@@ -251,13 +258,28 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
 
   useEffect(() => {
     const unlistenStatus = listen<AgentLiteStatusDto>(AGENT_LITE_STATUS_EVENT, (event) => {
-      if (event.payload.taskId === taskIdRef.current) setStage(event.payload);
+      if (event.payload.taskId !== taskIdRef.current) return;
+      setStage(event.payload);
+      setSteps((prev) => {
+        const last = prev.at(-1);
+        if (last && last.stage === event.payload.stage && last.detail === event.payload.detail) {
+          return prev;
+        }
+        return [...prev, event.payload];
+      });
     });
     const unlistenDone = listen<AgentTaskDto>(AGENT_LITE_DONE_EVENT, (event) => {
       if (event.payload.id !== taskIdRef.current) return;
       setTask(event.payload);
       setStage(null);
+      setSteps([]);
       setRunning(false);
+      // Fire the "reply is ready" haptic here, off the canonical completion
+      // signal, rather than off the invoke resolving: it lands reliably even
+      // if the reply reached us through the event first. Errors are signalled
+      // from send()'s catch (the run rejects), so only mark success here to
+      // avoid a double buzz.
+      if (event.payload.status === "completed") hapticNotify("success");
     });
     return () => {
       void unlistenStatus.then((fn) => fn());
@@ -360,6 +382,7 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
     setAttachments([]);
     setError(null);
     setRunning(true);
+    setSteps([]);
     hapticImpact("light");
     try {
       let current = task;
@@ -383,7 +406,6 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
         turnAttachments.length ? turnAttachments : undefined,
       );
       setTask(finished);
-      hapticNotify("success");
     } catch (err) {
       hapticNotify("error");
       setError(messageFromError(err));
@@ -395,6 +417,7 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
     } finally {
       setRunning(false);
       setStage(null);
+      setSteps([]);
     }
   }, [draft, attachments, running, task, model]);
 
@@ -429,7 +452,10 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
                   onDone={() => setAnimatingId(null)}
                 />
               ) : (
-                <SimpleMarkdown text={message.content} />
+                <>
+                  <SimpleMarkdown text={message.content} />
+                  <CopyReplyButton text={message.content} />
+                </>
               )
             ) : (
               message.content
@@ -438,10 +464,39 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
         ))}
         {running ? (
           <div className="mobile-chat-bubble mobile-chat-status" data-role="assistant">
-            <span data-shimmer="true">
-              {stageLabel}
-              {stage?.detail ? ` : ${stage.detail}` : ""}...
-            </span>
+            <ul className="mobile-chat-steps">
+              {steps.map((step, i) => {
+                const active = i === steps.length - 1;
+                return (
+                  <li
+                    key={`${step.stage}-${i}`}
+                    className="mobile-chat-step"
+                    data-active={active ? "true" : undefined}
+                  >
+                    <span className="mobile-chat-step-icon" aria-hidden>
+                      {active ? <Spinner aria-hidden /> : <IconCheckmark1Small size={12} />}
+                    </span>
+                    <span
+                      className="mobile-chat-step-label"
+                      data-shimmer={active ? "true" : undefined}
+                    >
+                      {stageText(step.stage)}
+                      {step.detail ? ` · ${step.detail}` : ""}
+                    </span>
+                  </li>
+                );
+              })}
+              {steps.length === 0 ? (
+                <li className="mobile-chat-step" data-active="true">
+                  <span className="mobile-chat-step-icon" aria-hidden>
+                    <Spinner aria-hidden />
+                  </span>
+                  <span className="mobile-chat-step-label" data-shimmer="true">
+                    {stageLabel}
+                  </span>
+                </li>
+              ) : null}
+            </ul>
           </div>
         ) : null}
         {error ? <p className="mobile-dictation-error">{error}</p> : null}
@@ -573,6 +628,38 @@ function shortModelLabel(modelId: string): string {
   return modelId.length > 18 ? `${modelId.slice(0, 17)}…` : modelId;
 }
 
+function stageText(stage: AgentLiteStatusDto["stage"]): string {
+  if (stage === "searching-notes") return "Searching your notes";
+  if (stage === "searching-web") return "Searching the web";
+  return "Thinking";
+}
+
+/** Copies a finished reply to the clipboard, with a brief confirmation. */
+function CopyReplyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(async () => {
+    try {
+      await writeText(text);
+      hapticImpact("light");
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // Copy is a convenience; a transient clipboard failure is not worth a toast.
+    }
+  }, [text]);
+  return (
+    <button
+      type="button"
+      className="mobile-chat-copy"
+      onClick={() => void copy()}
+      aria-label="Copy reply"
+    >
+      {copied ? <IconCheckmark1Small size={13} /> : <IconClipboard size={13} />}
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
 /** Camera photos are far larger than vision models need; cap the long edge
  * and re-encode as JPEG so requests stay fast and within body limits. Loads
  * through a data URL (not a blob URL): the app CSP allows `data:` images
@@ -619,9 +706,11 @@ function greeting(): string {
   return "Good evening";
 }
 
-/** Progressive reveal of a fresh reply with faint haptic ticks while it
- * "types" — the backend is not streaming, so the finished text plays back
- * at reading speed instead of appearing as a wall. */
+/** Progressive reveal of a fresh reply — the backend is not streaming, so the
+ * finished text plays back at reading speed instead of appearing as a wall.
+ * The "reply is ready" haptic fires once on completion (see the done listener),
+ * not per frame: a stream of rapid selection ticks gets coalesced by the Taptic
+ * Engine and swallows the completion buzz. */
 function TypewriterMarkdown({
   text,
   onTick,
@@ -639,13 +728,10 @@ function TypewriterMarkdown({
 
   useEffect(() => {
     let index = 0;
-    let frame = 0;
     // ~3 seconds for a long answer, faster for short ones.
     const step = Math.max(3, Math.ceil(text.length / 130));
     const interval = window.setInterval(() => {
       index = Math.min(text.length, index + step);
-      frame += 1;
-      if (frame % 5 === 0) hapticSelection();
       setVisible(index);
       onTickRef.current?.();
       if (index >= text.length) {

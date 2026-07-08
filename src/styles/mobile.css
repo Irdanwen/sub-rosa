@@ -553,6 +553,62 @@
   color: var(--muted-foreground);
 }
 
+/* Agent activity log while a reply is being produced. */
+.mobile-chat-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.mobile-chat-step {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.mobile-chat-step[data-active="true"] {
+  color: var(--foreground);
+}
+
+.mobile-chat-step-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--brand);
+}
+
+.mobile-chat-step-icon .spinner {
+  transform: scale(0.6);
+  transform-origin: center;
+}
+
+/* Copy button under a finished assistant reply. */
+.mobile-chat-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.mobile-chat-copy:active {
+  background: var(--muted);
+}
+
 .mobile-chat-composer {
   display: flex;
   align-items: flex-end;
@@ -655,12 +711,125 @@
 }
 
 .mobile-studio-cell {
+  position: relative;
   border: none;
   padding: 0;
   background: none;
   aspect-ratio: 1;
   border-radius: var(--r-sm);
   overflow: hidden;
+}
+
+.mobile-studio-cell[data-selected="true"] {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+/* Gallery toolbar: search + select toggle above the grid/list. */
+.mobile-studio-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.mobile-studio-gallery-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.mobile-studio-search {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-subtle);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+}
+
+.mobile-studio-empty-hint {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  padding: var(--sp-4) 0;
+  text-align: center;
+}
+
+/* Selection affordances. */
+.mobile-studio-cell-check {
+  position: absolute;
+  top: var(--sp-1);
+  right: var(--sp-1);
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-pill);
+  border: 1.5px solid #fff;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+}
+
+.mobile-studio-cell-check[data-on="true"] {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.mobile-studio-row-check {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-pill);
+  border: 1.5px solid var(--border-strong, var(--border-subtle));
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+
+.mobile-studio-row-check[data-on="true"] {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.mobile-music-row[data-selected="true"] {
+  background: var(--brand-tint);
+  border-radius: var(--r-md);
+}
+
+.mobile-studio-select-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--card);
+  border: 1px solid var(--border-subtle);
+  font-size: var(--fs-sm);
+}
+
+.mobile-studio-delete-selected {
+  min-height: 34px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-pill);
+  border: none;
+  background: var(--danger, #e5484d);
+  color: #fff;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mobile-studio-delete-selected:disabled {
+  opacity: 0.5;
 }
 
 .mobile-studio-cell img {
@@ -969,6 +1138,115 @@
 .simple-markdown .simple-markdown-heading {
   display: block;
   margin: var(--sp-2) 0 var(--sp-1);
+  font-weight: 650;
+}
+
+.simple-markdown .simple-markdown-heading[data-level="1"] {
+  font-size: 1.15em;
+}
+
+.simple-markdown .simple-markdown-heading[data-level="2"] {
+  font-size: 1.08em;
+}
+
+/* Fenced code block: header (language + copy) over a scrollable body. */
+.simple-markdown-code {
+  margin: 0 0 var(--sp-2);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  background: var(--muted);
+}
+
+.simple-markdown-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.simple-markdown-code-lang {
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+  font-variant: small-caps;
+  letter-spacing: 0.02em;
+}
+
+.simple-markdown-code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2);
+  border: none;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.simple-markdown-code-copy:active {
+  background: var(--card);
+}
+
+.simple-markdown-code pre {
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Lightweight syntax-highlight tokens. */
+.simple-markdown .tok-comment {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+.simple-markdown .tok-string {
+  color: #46a758;
+}
+.simple-markdown .tok-number {
+  color: #d5901f;
+}
+.simple-markdown .tok-keyword {
+  color: #8e6fd8;
+  font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+  .simple-markdown .tok-string {
+    color: #6fce7e;
+  }
+  .simple-markdown .tok-number {
+    color: #e0a852;
+  }
+  .simple-markdown .tok-keyword {
+    color: #b79cf0;
+  }
+}
+
+/* Pipe tables: scroll horizontally rather than overflow the bubble. */
+.simple-markdown-table-wrap {
+  margin: 0 0 var(--sp-2);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.simple-markdown-table {
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  min-width: 100%;
+}
+
+.simple-markdown-table th,
+.simple-markdown-table td {
+  border: 1px solid var(--border-subtle);
+  padding: var(--sp-1) var(--sp-2);
+  white-space: nowrap;
+}
+
+.simple-markdown-table th {
+  background: var(--muted);
+  font-weight: 600;
 }
 
 /* --- Credits ---------------------------------------------------------------- */
@@ -1101,6 +1379,170 @@
   padding: var(--sp-3) 0;
   color: var(--destructive);
   font-size: var(--fs-sm);
+}
+
+/* --- Workflows hub + linear editor ------------------------------------------ */
+
+.mobile-flows-section {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+.mobile-flows-template {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.mobile-flows-template .mobile-sheet-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-flows-template-edit {
+  flex: none;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.mobile-workflow-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.mobile-workflow-step {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
+  background: var(--card);
+}
+
+.mobile-workflow-step[data-status="running"] {
+  border-color: var(--brand);
+}
+
+.mobile-workflow-step[data-status="error"] {
+  border-color: var(--destructive);
+}
+
+.mobile-workflow-step-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.mobile-workflow-step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: var(--r-pill);
+  background: var(--brand-tint);
+  color: var(--foreground);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.mobile-workflow-step-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.mobile-workflow-step-actions {
+  display: inline-flex;
+  gap: var(--sp-1);
+}
+
+.mobile-workflow-step-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.mobile-workflow-step-actions button:disabled {
+  opacity: 0.35;
+}
+
+.mobile-workflow-step-desc {
+  margin: var(--sp-1) 0 var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+
+.mobile-workflow-step-params {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.mobile-workflow-param {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.mobile-workflow-param-hint {
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+
+.mobile-workflow-select {
+  height: 38px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+}
+
+.mobile-workflow-add-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.mobile-workflow-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.mobile-workflow-editor-actions .mobile-studio-generate {
+  flex: 1;
+}
+
+.mobile-workflow-delete {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2);
+  border: none;
+  background: transparent;
+  color: var(--destructive);
+  font-size: var(--fs-sm);
+  cursor: pointer;
 }
 
 /* --- Round-2 device feedback ------------------------------------------------- */

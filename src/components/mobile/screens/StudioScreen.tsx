@@ -1,3 +1,4 @@
+import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   artifactDataUrl,
@@ -201,10 +202,15 @@ export function StudioScreen() {
             ) : mode === "music" ? (
               <MusicPanel catalog={catalog} onGenerated={refreshGallery} />
             ) : (
-              <FlowsPanel onGenerated={refreshGallery} />
+              <FlowsPanel catalog={catalog} onGenerated={refreshGallery} />
             )}
             {galleryKind ? (
-              <Gallery items={galleryItems} kind={galleryKind} onOpen={setPreview} />
+              <Gallery
+                items={galleryItems}
+                kind={galleryKind}
+                onOpen={setPreview}
+                onChanged={refreshGallery}
+              />
             ) : null}
           </>
         )}
@@ -542,7 +548,13 @@ function VideoPanel({
   });
 
   useEffect(() => {
-    setResumable(pendingJobs("video"));
+    const pending = pendingJobs("video");
+    if (pending.length === 0) return;
+    // Re-attach to the newest already-paid-for job automatically (poll +
+    // download its result), and keep any older ones as manual "Resume" chips.
+    const [newest, ...rest] = pending;
+    setResumable(rest);
+    void job.resume(newest, videoUrlFrom);
   }, []);
 
   const durationOptions = constraints?.durations ?? [];
@@ -766,7 +778,11 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
   });
 
   useEffect(() => {
-    setResumable(pendingJobs("music"));
+    const pending = pendingJobs("music");
+    if (pending.length === 0) return;
+    const [newest, ...rest] = pending;
+    setResumable(rest);
+    void job.resume(newest, audioUrlFrom);
   }, []);
 
   const duration = caps.durationSeconds
@@ -906,11 +922,60 @@ function Gallery({
   items,
   kind,
   onOpen,
+  onChanged,
 }: {
   items: StudioArtifact[];
   kind: ArtifactKind;
   onOpen: (artifact: StudioArtifact) => void;
+  onChanged: () => void;
 }) {
+  const [query, setQuery] = useState("");
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [deleting, setDeleting] = useState(false);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(
+      (artifact) =>
+        (artifact.prompt ?? "").toLowerCase().includes(q) ||
+        (artifact.model ?? "").toLowerCase().includes(q),
+    );
+  }, [items, query]);
+
+  const toggle = useCallback((path: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
+
+  const exitSelection = useCallback(() => {
+    setSelecting(false);
+    setSelected(new Set());
+  }, []);
+
+  const deleteSelected = useCallback(async () => {
+    if (selected.size === 0) return;
+    setDeleting(true);
+    const targets = items.filter((artifact) => selected.has(artifact.path));
+    for (const artifact of targets) {
+      try {
+        await deleteArtifact(artifact);
+        evictArtifactDataUrl(artifact.path);
+      } catch {
+        // Leave failures in place; the next refresh reconciles with disk.
+      }
+    }
+    setDeleting(false);
+    hapticNotify("success");
+    exitSelection();
+    onChanged();
+  }, [items, selected, exitSelection, onChanged]);
+
   if (items.length === 0) {
     return (
       <EmptyState
@@ -921,28 +986,94 @@ function Gallery({
       />
     );
   }
-  if (kind === "music") {
-    return (
-      <ul className="mobile-note-list" aria-label="Generated tracks">
-        {items.map((artifact) => (
-          <MusicRow key={artifact.path} artifact={artifact} />
-        ))}
-      </ul>
-    );
-  }
+
   return (
-    <div className="mobile-studio-grid">
-      {items.map((artifact) => (
-        <GalleryCell key={artifact.path} artifact={artifact} onOpen={() => onOpen(artifact)} />
-      ))}
+    <div className="mobile-studio-gallery">
+      <div className="mobile-studio-gallery-bar">
+        <input
+          className="mobile-studio-search"
+          type="search"
+          value={query}
+          placeholder={
+            kind === "music"
+              ? "Search tracks"
+              : kind === "video"
+                ? "Search videos"
+                : "Search images"
+          }
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <button
+          type="button"
+          className="mobile-chip-button"
+          onClick={() => (selecting ? exitSelection() : setSelecting(true))}
+        >
+          {selecting ? "Done" : "Select"}
+        </button>
+      </div>
+      {filtered.length === 0 ? (
+        <p className="mobile-studio-empty-hint">No results for “{query.trim()}”.</p>
+      ) : kind === "music" ? (
+        <ul className="mobile-note-list" aria-label="Generated tracks">
+          {filtered.map((artifact) => (
+            <MusicRow
+              key={artifact.path}
+              artifact={artifact}
+              selecting={selecting}
+              selected={selected.has(artifact.path)}
+              onToggle={() => toggle(artifact.path)}
+            />
+          ))}
+        </ul>
+      ) : (
+        <div className="mobile-studio-grid">
+          {filtered.map((artifact) => (
+            <GalleryCell
+              key={artifact.path}
+              artifact={artifact}
+              selecting={selecting}
+              selected={selected.has(artifact.path)}
+              onOpen={() => (selecting ? toggle(artifact.path) : onOpen(artifact))}
+            />
+          ))}
+        </div>
+      )}
+      {selecting ? (
+        <div className="mobile-studio-select-bar">
+          <span>{selected.size} selected</span>
+          <button
+            type="button"
+            className="mobile-studio-delete-selected"
+            disabled={selected.size === 0 || deleting}
+            onClick={() => void deleteSelected()}
+          >
+            {deleting ? <Spinner /> : `Delete${selected.size ? ` (${selected.size})` : ""}`}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function GalleryCell({ artifact, onOpen }: { artifact: StudioArtifact; onOpen: () => void }) {
+function GalleryCell({
+  artifact,
+  onOpen,
+  selecting = false,
+  selected = false,
+}: {
+  artifact: StudioArtifact;
+  onOpen: () => void;
+  selecting?: boolean;
+  selected?: boolean;
+}) {
   const src = useArtifactThumbnail(artifact);
   return (
-    <button type="button" className="mobile-studio-cell" onClick={onOpen}>
+    <button
+      type="button"
+      className="mobile-studio-cell"
+      data-selected={selected ? "true" : undefined}
+      onClick={onOpen}
+    >
       {src ? (
         artifact.kind === "video" ? (
           <video src={src} muted playsInline preload="metadata" />
@@ -952,14 +1083,44 @@ function GalleryCell({ artifact, onOpen }: { artifact: StudioArtifact; onOpen: (
       ) : (
         <span className="mobile-studio-cell-loading" aria-hidden />
       )}
+      {selecting ? (
+        <span
+          className="mobile-studio-cell-check"
+          data-on={selected ? "true" : undefined}
+          aria-hidden
+        >
+          {selected ? <IconCheckmark1Small size={14} /> : null}
+        </span>
+      ) : null}
     </button>
   );
 }
 
-function MusicRow({ artifact }: { artifact: StudioArtifact }) {
+function MusicRow({
+  artifact,
+  selecting,
+  selected,
+  onToggle,
+}: {
+  artifact: StudioArtifact;
+  selecting: boolean;
+  selected: boolean;
+  onToggle: () => void;
+}) {
   const src = useArtifactDataUrl(artifact);
   return (
-    <li className="mobile-music-row">
+    <li className="mobile-music-row" data-selected={selected ? "true" : undefined}>
+      {selecting ? (
+        <button
+          type="button"
+          className="mobile-studio-row-check"
+          data-on={selected ? "true" : undefined}
+          onClick={onToggle}
+          aria-label={selected ? "Deselect track" : "Select track"}
+        >
+          {selected ? <IconCheckmark1Small size={14} /> : null}
+        </button>
+      ) : null}
       <span className="mobile-note-row-title">{artifact.prompt?.slice(0, 60) || "Track"}</span>
       {src ? <audio src={src} controls preload="metadata" /> : <Spinner />}
     </li>

@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MediaError, mediaJson } from "./client";
+import { ensureNotificationPermission, notifyMediaJobDone } from "./media-notifications";
 
 export const POLL_INTERVAL_MS = 3_000;
 /** ~15 minutes at the default interval; video renders can take a while. */
@@ -237,6 +238,9 @@ export function useMediaJob<T>(onCompleted: (result: T, job: PersistedJob) => Pr
         });
         await onCompletedRef.current(result, job);
         removePersistedJob(job.id);
+        // Best-effort local notification: long renders finish while the user is
+        // elsewhere in (or just returning to) the app.
+        void notifyMediaJobDone(job.kind, job.prompt);
         setState({ phase: "idle" });
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
@@ -290,6 +294,10 @@ export function useMediaJob<T>(onCompleted: (result: T, job: PersistedJob) => Pr
         createdAt: Date.now(),
       };
       persistJob(job);
+      // Ask for notification permission in context: the user just started a
+      // generation that can take minutes, so a "when it's done" prompt reads
+      // naturally here.
+      void ensureNotificationPermission();
       await attach(job, options.getResult);
     },
     [attach],
