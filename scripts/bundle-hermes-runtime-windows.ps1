@@ -219,6 +219,32 @@ if ($cronShadowPatched -eq 0) {
   Fail "no adapter files present to patch - hermes layout changed."
 }
 
+# Fork patch: accept the Windows webview origin on WebSocket upgrades.
+# Mirror of scripts/patch-hermes-ws-origin.sh (see it for the root cause).
+# The dashboard's /api/ws DNS-rebinding guard only accepts http(s) Origins
+# whose host is in _LOOPBACK_HOST_VALUES; the Windows Tauri webview lives on
+# http://tauri.localhost, so every chat WebSocket was refused (close 4403
+# before accept) -> "Could not connect to Hermes gateway." *.localhost is
+# loopback-only per RFC 6761, so the entry adds no rebinding surface.
+$wsOriginFile = Join-Path $agentDir "hermes_cli\web_server.py"
+# Leading indentation anchors the match to the _LOOPBACK_HOST_VALUES member
+# line; the same substring also appears unindented inside the unrelated
+# _local_dashboard_request local_hosts literal, which must stay untouched.
+$wsOriginBad  = '    "localhost", "127.0.0.1", "::1",'
+$wsOriginGood = '    "localhost", "127.0.0.1", "::1", "tauri.localhost",'
+if (!(Test-Path -LiteralPath $wsOriginFile -PathType Leaf)) {
+  Fail "hermes_cli\web_server.py missing - hermes layout changed, re-audit the ws-origin fix."
+}
+$wsOriginText = Get-Content -LiteralPath $wsOriginFile -Raw
+if (!$wsOriginText.Contains('"tauri.localhost"')) {
+  if (!$wsOriginText.Contains($wsOriginBad)) {
+    Fail "web_server.py: expected _LOOPBACK_HOST_VALUES line not found - upstream changed, re-audit the ws-origin fix."
+  }
+  $wsOriginText = $wsOriginText.Replace($wsOriginBad, $wsOriginGood)
+  Set-Content -LiteralPath $wsOriginFile -Value $wsOriginText -NoNewline
+  Log "patched ws-origin: hermes_cli\web_server.py"
+}
+
 foreach ($prune in @("tests", "website", "apps", ".github")) {
   Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $agentDir $prune)
 }

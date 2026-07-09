@@ -5596,6 +5596,22 @@ for cron_shadow_rel in plugins/platforms/raft/adapter.py plugins/platforms/disco
   mv "$cron_shadow_file.cron-shadow" "$cron_shadow_file"
 done
 
+# Accept the Windows webview origin (http://tauri.localhost) on WebSocket
+# upgrades (mirror of scripts/patch-hermes-ws-origin.sh — see it for the root
+# cause). The /api/ws DNS-rebinding guard only accepts http(s) Origins whose
+# host is in _LOOPBACK_HOST_VALUES; the Windows Tauri webview lives on
+# http://tauri.localhost, so every chat WebSocket handshake was refused.
+# *.localhost is loopback-only per RFC 6761, so no rebinding surface is added.
+# Anchored to the indented member line (the unindented twin inside
+# _local_dashboard_request must stay untouched). Idempotent (a patched line no
+# longer matches) and outside the download guard so retries re-patch.
+ws_origin_file="$install_dir/hermes_cli/web_server.py"
+if [ -f "$ws_origin_file" ]; then
+  sed -e 's/^    "localhost", "127\.0\.0\.1", "::1",$/    "localhost", "127.0.0.1", "::1", "tauri.localhost",/' \
+    "$ws_origin_file" > "$ws_origin_file.ws-origin"
+  mv "$ws_origin_file.ws-origin" "$ws_origin_file"
+fi
+
 run_stage() {
   local stage="$1"
   HERMES_HOME="$hermes_home" HERMES_INSTALL_DIR="$install_dir" \
@@ -5703,6 +5719,26 @@ foreach ($cronShadowRel in @("plugins\platforms\raft\adapter.py", "plugins\platf
     $cronShadowText = Get-Content -LiteralPath $cronShadowFile -Raw
     $cronShadowText = $cronShadowText.Replace("resolve().parents[2]))", "resolve().parents[3]))")
     Set-Content -LiteralPath $cronShadowFile -Value $cronShadowText -NoNewline
+  }
+}
+
+# Accept the Windows webview origin (http://tauri.localhost) on WebSocket
+# upgrades (mirror of scripts/patch-hermes-ws-origin.sh — see it for the root
+# cause). The /api/ws DNS-rebinding guard only accepts http(s) Origins whose
+# host is in _LOOPBACK_HOST_VALUES; the Windows Tauri webview lives on
+# http://tauri.localhost, so every chat WebSocket handshake was refused
+# (close 4403 before accept) -> "Could not connect to Hermes gateway."
+# *.localhost is loopback-only per RFC 6761, so no rebinding surface is
+# added. The leading indentation anchors the match to the frozenset member
+# line (an unindented twin inside _local_dashboard_request must stay
+# untouched). Idempotent via the tauri.localhost guard; outside the download
+# guard so retries re-patch an existing tree.
+$wsOriginFile = Join-Path $installDir "hermes_cli\web_server.py"
+if (Test-Path -LiteralPath $wsOriginFile -PathType Leaf) {
+  $wsOriginText = Get-Content -LiteralPath $wsOriginFile -Raw
+  if (!$wsOriginText.Contains('"tauri.localhost"')) {
+    $wsOriginText = $wsOriginText.Replace('    "localhost", "127.0.0.1", "::1",', '    "localhost", "127.0.0.1", "::1", "tauri.localhost",')
+    Set-Content -LiteralPath $wsOriginFile -Value $wsOriginText -NoNewline
   }
 }
 

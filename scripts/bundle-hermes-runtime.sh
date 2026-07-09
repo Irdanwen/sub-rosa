@@ -171,6 +171,10 @@ mv "$unpacked" "$out/hermes-agent"
 # before the web-UI build so a stale checkout can never ship the bug.
 "$root/scripts/patch-hermes-cron-shadow.sh" "$out/hermes-agent"
 
+# Fork patch: accept the Windows webview origin (http://tauri.localhost) on
+# WebSocket upgrades. See scripts/patch-hermes-ws-origin.sh for the writeup.
+"$root/scripts/patch-hermes-ws-origin.sh" "$out/hermes-agent"
+
 # Dev-only weight the runtime never imports. Conservative on purpose: web/ and
 # ui-tui/ stay (hermes resolves them relative to its project root), and they
 # are small without node_modules, which we never ship.
