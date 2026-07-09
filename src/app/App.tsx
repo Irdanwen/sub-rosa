@@ -87,6 +87,7 @@ import {
 } from "../lib/tauri";
 import { playRecordingSound, preloadRecordingSounds } from "../lib/recording-sounds";
 import { isMacLikePlatform, isPrimaryShortcut } from "../lib/platform";
+import { mergeSourceReadiness } from "../lib/source-readiness";
 import { MEETING_START_TRANSCRIPTION_EVENT } from "../lib/events";
 import {
   AGENT_GALLERY_EVENT,
@@ -402,8 +403,13 @@ export function App() {
   const [preparingUpdate, setPreparingUpdate] = useState(false);
   const [relaunchingUpdate, setRelaunchingUpdate] = useState(false);
   const [updateProgress, setUpdateProgress] = useState<UpdateInstallProgress | null>(null);
-  const systemGranted = !!sourceReadiness?.sources.find((source) => source.source === "system")
-    ?.ready;
+  // `ready` only says this Mac is capable of system capture; the grant is the
+  // permission state, which only a microphone-plus-system probe establishes.
+  const systemSourceReadiness = sourceReadiness?.sources.find(
+    (source) => source.source === "system",
+  );
+  const systemGranted =
+    systemSourceReadiness?.ready === true && systemSourceReadiness.permissionState === "granted";
   const recordingState = state.recordingStatus?.state;
   const captureActive =
     recordingState === "recording" ||
@@ -2249,7 +2255,7 @@ export function App() {
       try {
         setCheckingSourceReadiness(true);
         const readiness = await checkRecordingSourceReadiness(sourceMode);
-        setSourceReadiness(readiness);
+        setSourceReadiness((previous) => mergeSourceReadiness(previous, readiness));
 
         const micSource = readiness.sources.find((source) => source.source === "microphone");
         if (!micSource?.ready) {

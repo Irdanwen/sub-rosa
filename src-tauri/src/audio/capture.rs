@@ -146,6 +146,14 @@ pub fn microphone_permission_state() -> (String, Option<String>) {
     }
 }
 
+pub fn microphone_device_available() -> bool {
+    cpal::default_host().default_input_device().is_some()
+}
+
+pub fn microphone_device_hint() -> String {
+    "No microphone input device is available.".to_string()
+}
+
 fn microphone_permission_hint() -> String {
     #[cfg(target_os = "macos")]
     {

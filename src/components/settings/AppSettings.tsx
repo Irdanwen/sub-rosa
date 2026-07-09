@@ -70,6 +70,7 @@ import {
   type ReleaseChannel,
 } from "../../lib/updater";
 import { isMacLikePlatform } from "../../lib/platform";
+import { systemAudioAvailability } from "../../lib/source-readiness";
 import { parseDictationHelperEvent } from "../../lib/dictation-events";
 import { dispatchProviderModelSettingsChanged } from "../../lib/model-privacy";
 import { ProviderLogo } from "./ProviderLogo";
@@ -364,9 +365,14 @@ export function AppSettings({
   const microphoneReadiness = sourceReadiness?.sources.find(
     (source) => source.source === "microphone",
   );
-  const systemState = systemReadiness?.permissionState;
-  const systemDenied = systemState === "denied" || systemState === "restricted";
-  const systemUnavailable = !macLikePlatform || systemState === "unsupported";
+  const systemAvailability = systemAudioAvailability(sourceReadiness);
+  // Denied and granted-but-uncapturable both lock the switch, but only a real
+  // denial is fixable in System Settings: the uncapturable helper recovers on
+  // restart, so sending the user to grant an already-granted permission would
+  // be a dead end. The status label tells the two apart.
+  const systemDenied = systemAvailability === "denied";
+  const systemLocked = systemDenied || systemAvailability === "unavailable";
+  const systemUnavailable = !macLikePlatform || systemAvailability === "unsupported";
 
   useEffect(() => {
     capturingShortcutRef.current = capturingShortcut;
@@ -1236,7 +1242,7 @@ export function AppSettings({
                       ) : null}
                       <Switch
                         checked={systemOn}
-                        disabled={checkingSourceReadiness || systemDenied}
+                        disabled={checkingSourceReadiness || systemLocked}
                         aria-label="Capture system audio for notes"
                         onCheckedChange={(next) =>
                           onSourceModeChange(next ? "microphonePlusSystem" : "microphoneOnly")
@@ -1694,7 +1700,15 @@ function sourcePermissionStatus(
   source?: RecordingSourceReadinessDto["sources"][number],
 ): PermissionStatusView {
   if (!source) return { label: "Checking", tone: "unknown" };
-  if (source.ready) return { label: "Allowed", tone: "allowed" };
+  // The two halves are independent: permissionState is the grant, `ready` is
+  // whether this Mac can actually capture. A microphone-only check never asks
+  // for the grant, and a granted source can still be uncapturable (the helper
+  // reports `system_audio_capture_unavailable`, recoverable by restarting).
+  if (source.permissionState === "granted") {
+    return source.ready
+      ? { label: "Allowed", tone: "allowed" }
+      : { label: "Unavailable", tone: "attention" };
+  }
   return permissionStatus(source.permissionState);
 }
 

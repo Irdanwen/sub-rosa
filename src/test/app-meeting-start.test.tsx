@@ -184,7 +184,7 @@ describe("meeting start transcription event", () => {
       sourceMode: "microphonePlusSystem",
       sources: [
         { source: "microphone", ready: true },
-        { source: "system", ready: true },
+        { source: "system", ready: true, permissionState: "granted" },
       ],
     });
     mocks.startRecording.mockResolvedValue(recording());
