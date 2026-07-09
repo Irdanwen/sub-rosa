@@ -4,6 +4,22 @@
  * adaptations. Only loaded when the mobile shell renders (see main.tsx). */
 
 .mobile-shell {
+  /* Phone-only layout values. The shared gutter keeps every screen's content
+   * on the same left edge (iOS lists use 16-20px, not the desktop 10px), and
+   * the FAB clearance reserves room so floating pills never cover list rows. */
+  --mobile-gutter: max(var(--sp-6), env(safe-area-inset-left), env(safe-area-inset-right));
+  --mobile-fab-clearance: 108px;
+  /* The desktop type scale (13px body) reads small at arm's length; re-map
+   * the shared tokens inside the phone shell so every token-driven surface
+   * (rows, bubbles, sheets, the editor) steps up together. `--dynamic-type`
+   * is the iOS text-size factor measured at boot (lib/dynamic-type.ts); it
+   * stays 1 everywhere else. */
+  --fs-xs: calc(12px * var(--dynamic-type, 1));
+  --fs-sm: calc(13px * var(--dynamic-type, 1));
+  --fs-md: calc(15px * var(--dynamic-type, 1));
+  --fs-lg: calc(16px * var(--dynamic-type, 1));
+  --fs-xl: calc(18px * var(--dynamic-type, 1));
+  --fs-2xl: calc(22px * var(--dynamic-type, 1));
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   position: fixed;
@@ -27,6 +43,26 @@
 
 .mobile-shell-loading {
   background: var(--background);
+  align-items: center;
+  justify-content: center;
+}
+
+/* First-paint spinner: two crossing arcs of the brand mark would be heavy,
+ * so a quiet token-driven ring keeps the launch from reading as a hang. */
+.mobile-shell-loading::after {
+  content: "";
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--muted-foreground);
+  animation: mobile-loading-spin 800ms linear infinite;
+}
+
+@keyframes mobile-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .mobile-screen {
@@ -44,10 +80,70 @@
   padding-top: env(safe-area-inset-top);
 }
 
+/* --- Stack transitions ----------------------------------------------------- */
+
+/* The screen wrapper remounts on every push/pop/tab switch (keyed in
+ * MobileApp); the data attribute picks the entrance. Transform + opacity
+ * only, so the animation stays on the compositor. */
+.mobile-screen[data-nav="push"] > * {
+  animation: mobile-nav-push 300ms var(--ease-spring);
+}
+
+.mobile-screen[data-nav="pop"] > * {
+  animation: mobile-nav-pop 260ms var(--ease-spring);
+}
+
+.mobile-screen[data-nav="tab"] > * {
+  animation: mobile-nav-tab 180ms var(--ease-out);
+}
+
+/* Depth cues while a screen is being edge-swiped: a soft shadow along its
+ * left edge, and the revealed strip beneath dims like the settled page
+ * sitting under an iOS push. */
+.mobile-screen[data-swiping="true"] {
+  /* The screen normally rides the shell's background; while dragged it needs
+   * its own opaque surface so the dimmed strip only shows in the gap. */
+  background: var(--background);
+  box-shadow: -12px 0 32px oklch(0% 0 none / 18%);
+}
+
+.mobile-shell:has(.mobile-screen[data-swiping="true"]) {
+  background: color-mix(in oklch, var(--background) 84%, black);
+}
+
+@keyframes mobile-nav-push {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes mobile-nav-pop {
+  from {
+    transform: translateX(-28%);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes mobile-nav-tab {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* --- Stack header ------------------------------------------------------- */
 
 .mobile-stack-header {
-  padding: var(--sp-2) var(--sp-4) var(--sp-2);
+  padding: var(--sp-2) var(--mobile-gutter) var(--sp-2);
 }
 
 .mobile-stack-header-row {
@@ -122,7 +218,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  margin: 0 var(--sp-4) var(--sp-2);
+  margin: 0 var(--mobile-gutter) var(--sp-2);
   padding: 0 var(--sp-3);
   min-height: 40px;
   border-radius: var(--r-lg);
@@ -143,7 +239,7 @@
 .mobile-folder-strip {
   display: flex;
   gap: var(--sp-2);
-  padding: 0 var(--sp-4) var(--sp-2);
+  padding: 0 var(--mobile-gutter) var(--sp-2);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
@@ -174,8 +270,35 @@
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 0 var(--sp-4);
+  padding: 0 var(--mobile-gutter);
   padding-bottom: calc(var(--sp-12) + env(safe-area-inset-bottom));
+}
+
+/* When a floating record pill rides over the list, reserve its lane so the
+ * last rows can scroll clear of it. */
+.mobile-screen-root:has(.mobile-record-fab) .mobile-list-scroll {
+  padding-bottom: calc(var(--mobile-fab-clearance) + env(safe-area-inset-bottom));
+}
+
+/* Pull-to-refresh indicator: a collapsible band above the list content whose
+ * height tracks the drag (no transition mid-drag, eased on release). */
+.mobile-ptr-indicator {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 0;
+  overflow: hidden;
+  padding-bottom: 0;
+  color: var(--muted-foreground);
+  transition: height 200ms var(--ease-out);
+}
+
+.mobile-ptr-indicator[data-dragging="true"] {
+  transition: none;
+}
+
+.mobile-ptr-indicator .spinner {
+  margin-bottom: var(--sp-3);
 }
 
 .mobile-note-list {
@@ -184,6 +307,39 @@
   padding: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* Skeleton rows while a list loads: quiet pulsing bars in the row rhythm. */
+.mobile-skeleton-row {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 60px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mobile-skeleton-bar {
+  height: 12px;
+  border-radius: var(--r-pill);
+  background: var(--muted);
+  animation: mobile-skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes mobile-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-skeleton-bar {
+    animation: none;
+  }
 }
 
 .mobile-note-row {
@@ -233,6 +389,13 @@
   color: var(--muted-foreground);
   white-space: nowrap;
   overflow: hidden;
+}
+
+/* text-overflow doesn't reach into a flex container's children: the preview
+ * span needs its own ellipsis or it hard-clips mid-glyph at the row edge. */
+.mobile-note-row-subtitle > span:not(.note-recording-dot) {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
 
@@ -246,7 +409,7 @@
 
 .mobile-record-fab {
   position: absolute;
-  right: var(--sp-4);
+  right: var(--mobile-gutter);
   bottom: calc(72px + env(safe-area-inset-bottom));
   display: inline-flex;
   align-items: center;
@@ -289,12 +452,19 @@
   color: var(--muted-foreground);
 }
 
+/* `--accent` is a *surface* token (a near-background fill), so it rendered
+ * the active tab almost invisible. The active state wants a foreground: the
+ * brand-derived strong tone that already themes the recorder family. */
 .mobile-tab-bar-item[data-active="true"] {
-  color: var(--accent);
+  color: var(--warm-strong);
+}
+
+.mobile-tab-bar-item[data-active="true"] .mobile-tab-bar-label {
+  font-weight: var(--fw-medium);
 }
 
 .mobile-tab-bar-label {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 /* --- Note detail ----------------------------------------------------------- */
@@ -304,7 +474,7 @@
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 0 var(--sp-4);
+  padding: 0 var(--mobile-gutter);
   padding-bottom: calc(var(--sp-8) + env(safe-area-inset-bottom));
 }
 
@@ -315,7 +485,7 @@
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 0 var(--sp-4);
+  padding: 0 var(--mobile-gutter);
   padding-bottom: calc(var(--sp-12) + env(safe-area-inset-bottom));
 }
 
@@ -373,8 +543,8 @@
 .mobile-error-banner {
   position: absolute;
   top: calc(env(safe-area-inset-top) + var(--sp-2));
-  left: var(--sp-4);
-  right: var(--sp-4);
+  left: var(--mobile-gutter);
+  right: var(--mobile-gutter);
   z-index: 40;
   padding: var(--sp-3) var(--sp-4);
   border: none;
@@ -383,7 +553,19 @@
   color: var(--primary-foreground);
   font-size: var(--fs-sm);
   text-align: left;
-  box-shadow: 0 6px 24px rgb(0 0 0 / 0.2);
+  box-shadow: var(--shadow-lg);
+  animation: mobile-banner-in 220ms var(--ease-spring);
+}
+
+@keyframes mobile-banner-in {
+  from {
+    transform: translateY(-12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 /* --- Dictation ---------------------------------------------------------------- */
@@ -413,6 +595,7 @@
 }
 
 .mobile-dictation-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -422,7 +605,27 @@
   border-radius: 50%;
   background: var(--record, var(--accent));
   color: var(--accent-foreground);
-  transition: box-shadow 120ms var(--ease-out);
+}
+
+/* Voice-level halo. `--dictation-level` (0-1, set inline while recording)
+ * scales the ring; transform + opacity keep the animation on the compositor. */
+.mobile-dictation-button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 50%;
+  background: var(--brand-tint);
+  opacity: 0;
+  transform: scale(1);
+  transition:
+    transform 120ms var(--ease-out),
+    opacity 160ms var(--ease-out);
+}
+
+.mobile-dictation-button[data-recording="true"]::before {
+  opacity: 1;
+  transform: scale(calc(1.08 + var(--dictation-level, 0) * 0.45));
 }
 
 .mobile-dictation-button[data-recording="true"] {
@@ -519,7 +722,7 @@
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: var(--sp-2) var(--sp-4);
+  padding: var(--sp-2) var(--mobile-gutter);
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
@@ -980,7 +1183,7 @@
 
 .mobile-segmented {
   display: flex;
-  margin: 0 var(--sp-4) var(--sp-3);
+  margin: 0 var(--mobile-gutter) var(--sp-3);
   padding: 3px;
   border-radius: var(--r-lg);
   background: var(--muted);
@@ -1001,6 +1204,13 @@
   background: var(--card);
   color: var(--foreground);
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.08);
+}
+
+/* Segmented control used inside an already-padded scroll pane: drop the
+ * screen-gutter margins so it aligns with sibling cards. */
+.mobile-segmented-flush {
+  margin-left: 0;
+  margin-right: 0;
 }
 
 .mobile-pill-row {
@@ -1058,6 +1268,40 @@
   background: var(--background);
   border-radius: var(--r-2xl) var(--r-2xl) 0 0;
   padding: var(--sp-4) var(--sp-4) calc(var(--sp-4) + env(safe-area-inset-bottom));
+}
+
+.mobile-sheet {
+  animation: mobile-sheet-in 280ms var(--ease-spring);
+  transition: transform 200ms var(--ease-out);
+}
+
+@keyframes mobile-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-sheet {
+    animation: none;
+  }
+}
+
+/* Grabber + title double as the drag-to-dismiss handle. */
+.mobile-sheet-handle {
+  touch-action: none;
+}
+
+.mobile-sheet-grabber {
+  display: block;
+  width: 36px;
+  height: 5px;
+  margin: 0 auto var(--sp-3);
+  border-radius: var(--r-pill);
+  background: var(--border);
 }
 
 .mobile-sheet-title {
@@ -1512,6 +1756,7 @@
 }
 
 .mobile-workflow-step-actions button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1522,6 +1767,12 @@
   background: transparent;
   color: var(--muted-foreground);
   cursor: pointer;
+}
+
+.mobile-workflow-step-actions button::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
 }
 
 .mobile-workflow-step-actions button:disabled {
@@ -1563,6 +1814,15 @@
   font-size: var(--fs-sm);
 }
 
+/* Button-shaped param pickers (they open a bottom sheet, not a native menu). */
+.mobile-workflow-picker {
+  display: flex;
+  align-items: center;
+  text-align: left;
+  min-height: 44px;
+  height: auto;
+}
+
 .mobile-workflow-add-list {
   display: flex;
   flex-direction: column;
@@ -1602,6 +1862,12 @@
 .mobile-note-detail .record-dock {
   max-width: calc(100vw - var(--sp-8));
   align-self: center;
+}
+
+/* The desktop display-size title (30px serif in a single-line input) clips
+ * long titles on a phone width; step it down so most titles fit. */
+.mobile-note-detail .note-title {
+  font-size: var(--fs-2xl);
 }
 
 .mobile-note-detail .record-consent-note-surface .inline-notice-message {
@@ -1757,6 +2023,25 @@
   background: var(--background);
 }
 
+/* Floating "jump to latest" pill, shown when the reader scrolled up while a
+ * reply is still growing below. */
+.mobile-chat-jump {
+  position: absolute;
+  right: var(--mobile-gutter);
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--shadow-md);
+}
+
 .mobile-chat-composer-stack .mobile-chat-composer {
   border-top: none;
 }
@@ -1878,6 +2163,12 @@
   box-shadow: 0 6px 24px rgb(0 0 0 / 0.06);
 }
 
+/* With the keyboard up, the stack already rides on the keyboard inset and the
+ * home-indicator area is covered, so the safe-area share would double-count. */
+.mobile-chat-composer-stack[data-keyboard="true"] .mobile-chat-composer-card {
+  margin-bottom: var(--sp-2);
+}
+
 .mobile-chat-input {
   border: none;
   background: none;
@@ -1899,6 +2190,7 @@
 }
 
 .mobile-composer-round {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1911,20 +2203,42 @@
   flex-shrink: 0;
 }
 
+/* Keep the compact 36px look but give every round control the 44px hit area
+ * Apple's guidance asks for. */
+.mobile-composer-round::after,
+.mobile-chat-send::after,
+.mobile-stack-header .mobile-icon-button::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+}
+
 .mobile-composer-round[data-active="true"] {
   background: var(--record, var(--destructive));
   border-color: transparent;
-  color: #fff;
+  color: var(--primary-foreground);
+}
+
+/* The pulse rides a separate ring element so only transform/opacity animate
+ * (compositor-friendly; a box-shadow pulse repaints every frame). */
+.mobile-composer-round[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 2px solid var(--record, var(--destructive));
   animation: mobile-dictate-pulse 1.2s ease-in-out infinite;
 }
 
 @keyframes mobile-dictate-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgb(200 60 60 / 0.35);
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
   }
-  50% {
-    box-shadow: 0 0 0 8px rgb(200 60 60 / 0);
+  100% {
+    transform: scale(1.45);
+    opacity: 0;
   }
 }
 
@@ -1950,6 +2264,7 @@
 
 /* The send circle flips to high contrast when armed, like the reference. */
 .mobile-chat-send {
+  position: relative;
   background: var(--primary);
   color: var(--primary-foreground);
   width: 36px;
@@ -1962,6 +2277,7 @@
 
 /* Header icon buttons get the quiet circled outline of the reference app. */
 .mobile-stack-header .mobile-icon-button {
+  position: relative;
   width: 38px;
   height: 38px;
   border: 1px solid var(--border);
@@ -1975,5 +2291,26 @@
 }
 
 .mobile-chat-attachments {
-  padding: var(--sp-2) var(--sp-4) 0;
+  padding: var(--sp-2) var(--mobile-gutter) 0;
+}
+
+/* --- Reduced motion ------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-screen[data-nav] > * {
+    animation: none;
+  }
+
+  .mobile-composer-round[data-active="true"]::before {
+    animation: none;
+    opacity: 0.4;
+  }
+
+  .mobile-error-banner {
+    animation: none;
+  }
+
+  .swipe-row-content {
+    transition: none !important;
+  }
 }

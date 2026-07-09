@@ -1,6 +1,7 @@
 import { CarpeDiemSettings } from "../settings/CarpeDiemSettings";
 import { JuneGradientMark } from "../account/AccountGate";
 import { CARPE_DIEM_DASHBOARD_URL, PRODUCT_NAME } from "../../lib/branding";
+import { isMobilePlatform } from "../../lib/mobile";
 
 /**
  * First-run gate: shown until a Carpe Diem API key is configured and the
@@ -9,6 +10,7 @@ import { CARPE_DIEM_DASHBOARD_URL, PRODUCT_NAME } from "../../lib/branding";
  * `carpeDiemRequired` from the sidecar status event.
  */
 export function CarpeDiemGate() {
+  const mobile = isMobilePlatform();
   return (
     <div className="welcome-screen">
       <div className="welcome-card welcome-card-wide">
@@ -17,8 +19,9 @@ export function CarpeDiemGate() {
         </span>
         <h1 className="welcome-title">Welcome to {PRODUCT_NAME}</h1>
         <p className="welcome-subtitle">
-          {PRODUCT_NAME} turns your meetings into notes on your Mac. Connect your Carpe Diem key to
-          get started — no terminal, no config files.
+          {mobile
+            ? `${PRODUCT_NAME} turns your meetings into notes, right on your iPhone. Paste your Carpe Diem key to get started.`
+            : `${PRODUCT_NAME} turns your meetings into notes on your computer. Connect your Carpe Diem key to get started: no terminal, no config files.`}
         </p>
 
         <CarpeDiemSettings compact />

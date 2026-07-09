@@ -475,7 +475,7 @@ function BundleEditor({
             disabled={!validation.canSave || saving}
             onClick={() => void handleSave()}
           >
-            {saving ? "Saving..." : "Save bundle"}
+            {saving ? "Saving…" : "Save bundle"}
           </button>
         </div>
         <ModeNote mode={mode} profile={state.profile} show />

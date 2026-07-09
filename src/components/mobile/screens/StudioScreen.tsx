@@ -41,7 +41,15 @@ import {
   supportsVideoQuote,
 } from "../../../lib/studio/paths";
 import type { ArtifactKind, MediaCatalog, StudioArtifact } from "../../../lib/studio/types";
-import { saveToPhotos } from "../../../lib/tauri";
+import { saveToPhotos, setPlaybackAudioSession } from "../../../lib/tauri";
+
+/** Best-effort iOS audio-session flip around media playback: `.playback`
+ * keeps generated music/video audible past the lock screen and the silent
+ * switch. No-op off iOS (the command only exists there). */
+function markMediaPlayback(active: boolean) {
+  if (!isMobilePlatform()) return;
+  void setPlaybackAudioSession(active).catch(() => undefined);
+}
 import { EmptyState } from "../../ui/EmptyState";
 import { Spinner } from "../../ui/Spinner";
 import { ModelSheet } from "../ModelSheet";
@@ -413,7 +421,7 @@ function ImagePanel({
         <>
           <ModelPickerButton
             label={mode === "edit" ? "Edit model" : "Image model"}
-            value={model?.id ?? ""}
+            value={model?.name ?? ""}
             onOpen={() => setPickerOpen(true)}
           />
           {mode === "edit" ? (
@@ -836,7 +844,7 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
     <div className="mobile-studio-form">
       <ModelPickerButton
         label="Music model"
-        value={model?.id ?? ""}
+        value={model?.name ?? ""}
         onOpen={() => setPickerOpen(true)}
       />
       <textarea
@@ -1124,7 +1132,18 @@ function MusicRow({
         </button>
       ) : null}
       <span className="mobile-note-row-title">{artifact.prompt?.slice(0, 60) || "Track"}</span>
-      {src ? <audio src={src} controls preload="metadata" /> : <Spinner />}
+      {src ? (
+        <audio
+          src={src}
+          controls
+          preload="metadata"
+          onPlay={() => markMediaPlayback(true)}
+          onPause={() => markMediaPlayback(false)}
+          onEnded={() => markMediaPlayback(false)}
+        />
+      ) : (
+        <Spinner />
+      )}
     </li>
   );
 }
@@ -1144,7 +1163,7 @@ function Lightbox({
 }) {
   const src = useArtifactDataUrl(artifact);
   const [saved, setSaved] = useState(false);
-  const [upscaling, setUpscaling] = useState(false);
+  const [upscaling, setUpscaling] = useState<2 | 4 | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [promptCopied, setPromptCopied] = useState(false);
   const canSaveToPhotos =
@@ -1176,7 +1195,7 @@ function Lightbox({
   const upscale = useCallback(
     async (scale: 2 | 4) => {
       if (upscaling) return;
-      setUpscaling(true);
+      setUpscaling(scale);
       setError(null);
       try {
         const base64 = await readArtifactBase64(artifact);
@@ -1193,7 +1212,7 @@ function Lightbox({
         hapticNotify("error");
         setError(err instanceof Error ? err.message : "The upscale failed.");
       } finally {
-        setUpscaling(false);
+        setUpscaling(null);
       }
     },
     [artifact, upscaling, onUpscaled, onClose],
@@ -1210,7 +1229,15 @@ function Lightbox({
       <div className="mobile-studio-preview-body">
         {src ? (
           artifact.kind === "video" ? (
-            <video src={src} controls autoPlay playsInline />
+            <video
+              src={src}
+              controls
+              autoPlay
+              playsInline
+              onPlay={() => markMediaPlayback(true)}
+              onPause={() => markMediaPlayback(false)}
+              onEnded={() => markMediaPlayback(false)}
+            />
           ) : (
             <img src={src} alt={artifact.prompt ?? "Generated image"} />
           )
@@ -1243,18 +1270,18 @@ function Lightbox({
               <button
                 type="button"
                 className="mobile-chip-button"
-                disabled={upscaling}
+                disabled={upscaling !== null}
                 onClick={() => void upscale(2)}
               >
-                {upscaling ? <Spinner /> : "Upscale x2"}
+                {upscaling === 2 ? <Spinner /> : "Upscale x2"}
               </button>
               <button
                 type="button"
                 className="mobile-chip-button"
-                disabled={upscaling}
+                disabled={upscaling !== null}
                 onClick={() => void upscale(4)}
               >
-                Upscale x4
+                {upscaling === 4 ? <Spinner /> : "Upscale x4"}
               </button>
             </>
           ) : null}

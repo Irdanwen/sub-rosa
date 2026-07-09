@@ -365,7 +365,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
               {editSources.length < MAX_COMPOSE_IMAGES ? (
                 <button
                   type="button"
-                  className="studio-secondary-button"
+                  className="btn btn-secondary"
                   onClick={() => editInputRef.current?.click()}
                 >
                   {editSources.length > 0 ? "Add another image" : "Choose an image"}
@@ -412,7 +412,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
               ) : null}
               <button
                 type="button"
-                className="studio-secondary-button"
+                className="btn btn-secondary"
                 onClick={() => fileInputRef.current?.click()}
               >
                 {sourceDataUri ? "Replace image" : "Choose an image"}
@@ -456,7 +456,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
       {busy ? <Spinner aria-hidden /> : null}
       <span>
         {busy
-          ? "Working..."
+          ? "Working…"
           : isGenerate
             ? "Generate"
             : mode === "edit"

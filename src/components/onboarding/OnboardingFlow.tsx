@@ -11,6 +11,14 @@ import { usePermissionStatuses, useSystemAudioStatus } from "./use-permission-st
 
 type StepId = "sign-in" | "permissions" | "dictation-practice";
 
+// Announced by the progress bar so screen readers hear where they are, not
+// just a bare step count.
+const STEP_LABELS: Record<StepId, string> = {
+  "sign-in": "Sign in",
+  permissions: "Permissions",
+  "dictation-practice": "Try dictation",
+};
+
 // The product default: bare fn, mirroring DictationShortcutSetting::bare_fn()
 // on the Rust side.
 const FN_SHORTCUT = {
@@ -159,7 +167,7 @@ export function OnboardingFlow({ account, onAccountChanged, onComplete }: Props)
         ) : null}
         <nav
           className="onboarding-progress"
-          aria-label={`Setup progress: step ${stepIndex + 1} of ${steps.length}`}
+          aria-label={`Setup progress: step ${stepIndex + 1} of ${steps.length}, ${STEP_LABELS[stepId]}`}
         >
           {steps.map((id, index) => (
             <span

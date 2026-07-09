@@ -192,7 +192,7 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
             ) : null}
             <button
               type="button"
-              className="studio-secondary-button"
+              className="btn btn-secondary"
               onClick={() => fileInputRef.current?.click()}
             >
               {referenceDataUri ? "Replace image" : "Choose an image"}
@@ -267,7 +267,7 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
               ? ` - ${formatElapsed(job.state.elapsedMs)}`
               : ""}
           </span>
-          <button type="button" className="studio-secondary-button" onClick={job.cancel}>
+          <button type="button" className="btn btn-secondary" onClick={job.cancel}>
             Stop waiting
           </button>
         </div>
@@ -293,16 +293,12 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
             A video from an earlier session may still be rendering: "{pending.prompt.slice(0, 80)}"
           </span>
           <span className="studio-card-actions">
-            <button
-              type="button"
-              className="studio-secondary-button"
-              onClick={() => resume(pending)}
-            >
+            <button type="button" className="btn btn-secondary" onClick={() => resume(pending)}>
               Check on it
             </button>
             <button
               type="button"
-              className="studio-secondary-button"
+              className="btn btn-secondary"
               onClick={() => {
                 removePersistedJob(pending.id);
                 setResumable((jobs) => jobs.filter((entry) => entry.id !== pending.id));

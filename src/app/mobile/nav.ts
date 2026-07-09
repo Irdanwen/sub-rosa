@@ -75,10 +75,11 @@ export function useMobileNav(initialTab: MobileTab = "notes") {
   }, []);
 
   const top = nav.stacks[nav.tab].at(-1);
+  const depth = nav.stacks[nav.tab].length;
 
   return useMemo(
-    () => ({ tab: nav.tab, top, switchTab, push, pop, replaceTop }),
-    [nav.tab, top, switchTab, push, pop, replaceTop],
+    () => ({ tab: nav.tab, top, depth, switchTab, push, pop, replaceTop }),
+    [nav.tab, top, depth, switchTab, push, pop, replaceTop],
   );
 }
 

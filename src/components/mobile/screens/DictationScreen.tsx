@@ -105,6 +105,7 @@ export function DictationScreen() {
   const copyResult = useCallback(async (text: string) => {
     try {
       await writeText(text);
+      hapticImpact("light");
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch (err) {
@@ -127,7 +128,7 @@ export function DictationScreen() {
           ) : (
             <p className="mobile-dictation-hint">
               {phase === "processing"
-                ? "Transcribing..."
+                ? "Transcribing…"
                 : "Tap the microphone, speak, then tap again to get clean text."}
             </p>
           )}
@@ -140,7 +141,9 @@ export function DictationScreen() {
             onClick={() => void (phase === "recording" ? stop() : start())}
             style={
               phase === "recording"
-                ? { boxShadow: `0 0 0 ${Math.min(24, 4 + peak * 60)}px var(--brand-tint)` }
+                ? // Drives the halo ring's scale (a transform stays on the
+                  // compositor; the old box-shadow spread repainted per poll).
+                  ({ "--dictation-level": Math.min(1, peak * 2.5) } as React.CSSProperties)
                 : undefined
             }
           >

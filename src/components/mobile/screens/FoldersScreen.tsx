@@ -97,6 +97,7 @@ export function FolderScreen({
         title="Delete this note?"
         description="The note, its audio, and its transcript are removed from this device."
         confirmLabel="Delete"
+        destructive
         onConfirm={() => {
           if (confirmDelete) onDeleteNote(confirmDelete.id);
           setConfirmDelete(null);

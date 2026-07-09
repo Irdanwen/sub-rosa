@@ -95,7 +95,7 @@ export function FundingGate({ account, onRefresh, onSignOut }: Props) {
                   disabled={checking}
                   onClick={() => void handleCheckNow()}
                 >
-                  {checking ? "Checking..." : "Check again"}
+                  {checking ? "Checking…" : "Check again"}
                 </button>
               </div>
               <p className="funding-hint">

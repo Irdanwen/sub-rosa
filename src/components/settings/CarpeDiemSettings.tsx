@@ -59,34 +59,20 @@ export function useCarpeDiem() {
   return { settings, status, error, refresh, setSettings };
 }
 
-const STATUS_COPY: Record<CarpeDiemSidecarStatusDto["status"], { label: string; tone: string }> = {
-  unconfigured: { label: "Not connected", tone: "var(--text-secondary, #8a8a8a)" },
-  starting: { label: "Starting…", tone: "var(--brand, #936862)" },
-  ready: { label: "Connected", tone: "#3f9a5a" },
-  failed: { label: "Backend error", tone: "#c0503f" },
+const STATUS_COPY: Record<CarpeDiemSidecarStatusDto["status"], string> = {
+  unconfigured: "Not connected",
+  starting: "Starting…",
+  ready: "Connected",
+  failed: "Backend error",
 };
 
 export function CarpeDiemStatusPill({ status }: { status: CarpeDiemSidecarStatusDto | null }) {
-  const info = STATUS_COPY[status?.status ?? "unconfigured"];
+  const state = status?.status ?? "unconfigured";
   return (
-    <span
-      className="settings-row-substatus"
-      role="status"
-      aria-live="polite"
-      style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-    >
-      <span
-        aria-hidden
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: 999,
-          background: info.tone,
-          display: "inline-block",
-        }}
-      />
-      {info.label}
-      {status?.message ? ` — ${status.message}` : ""}
+    <span className="settings-row-substatus carpe-diem-status" role="status" aria-live="polite">
+      <span className="carpe-diem-status-dot" data-state={state} aria-hidden />
+      {STATUS_COPY[state]}
+      {status?.message ? `: ${status.message}` : ""}
     </span>
   );
 }
@@ -283,8 +269,8 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
               </p>
               {test.kind === "done" ? (
                 <p
-                  className="settings-row-description settings-row-substatus"
-                  style={{ color: test.result.ok ? "#3f9a5a" : "#c0503f" }}
+                  className="settings-row-description settings-row-substatus carpe-diem-test-result"
+                  data-ok={test.result.ok ? "true" : "false"}
                 >
                   {test.result.message}
                 </p>

@@ -48,6 +48,7 @@ import { IconZap } from "central-icons/IconZap";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconSettingsGear4 } from "central-icons/IconSettingsGear4";
 import { Dialog } from "../components/ui/Dialog";
+import { Spinner } from "../components/ui/Spinner";
 import {
   assignNoteToFolder,
   assignSessionToFolder,
@@ -1050,7 +1051,7 @@ export function App() {
       setPreparingUpdate(true);
       setReadyUpdate(null);
       setUpdateProgress(null);
-      setUpdateStatus(mode === "manual" ? "Downloading update..." : null);
+      setUpdateStatus(mode === "manual" ? "Downloading update…" : null);
 
       void prepareJuneUpdate({
         update: payload.update,
@@ -1058,7 +1059,7 @@ export function App() {
           setUpdateProgress(progress);
           if (mode === "manual" && !updateProgressHiddenRef.current) {
             setUpdateStatus(
-              progress.state === "installing" ? "Preparing update..." : "Downloading update...",
+              progress.state === "installing" ? "Preparing update…" : "Downloading update…",
             );
           }
         },
@@ -1092,12 +1093,12 @@ export function App() {
       if (preparingUpdateRef.current) {
         if (mode === "manual") {
           updateProgressHiddenRef.current = false;
-          setUpdateStatus("Downloading update...");
+          setUpdateStatus("Downloading update…");
         }
         return;
       }
       checkingUpdateRef.current = true;
-      if (mode === "manual") setUpdateStatus("Checking for updates...");
+      if (mode === "manual") setUpdateStatus("Checking for updates…");
       else if (mode === "launch") setUpdateStatus(null);
       void checkForJuneUpdate(
         {
@@ -2539,7 +2540,9 @@ export function App() {
           data-tauri-drag-region
           onPointerDown={handleTitlebarPointerDown}
         />
-        <div className="welcome-screen welcome-screen-loading" aria-label="Loading" />
+        <div className="welcome-screen welcome-screen-loading" role="status" aria-label="Loading">
+          <Spinner />
+        </div>
       </main>
     );
   }
@@ -3201,7 +3204,9 @@ export function App() {
                   </div>
                 </div>
               ) : (
-                <section className="editor-empty" aria-label="Opening note" />
+                <section className="editor-empty" role="status" aria-label="Opening note">
+                  <Spinner />
+                </section>
               )}
             </div>
           </div>
@@ -3387,7 +3392,7 @@ function UpdateRelaunchCard({
           <span
             className={relaunching ? "update-relaunch-title text-shimmer" : "update-relaunch-title"}
           >
-            {relaunching ? "Relaunching..." : "Relaunch to update"}
+            {relaunching ? "Relaunching…" : "Relaunch to update"}
           </span>
           <span className={status ? "update-relaunch-status" : undefined}>{meta}</span>
         </span>

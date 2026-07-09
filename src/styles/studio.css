@@ -197,25 +197,8 @@
   cursor: default;
 }
 
-.studio-secondary-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-2);
-  min-height: var(--control-sm);
-  padding: var(--sp-1) var(--sp-4);
-  font: inherit;
-  font-size: var(--fs-sm);
-  color: var(--foreground);
-  background: var(--surface-subtle);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-md);
-  cursor: pointer;
-}
-
-.studio-secondary-button:hover {
-  background: var(--muted);
-}
+/* Secondary actions use the app-wide `btn btn-secondary` (one button
+ * vocabulary; the old .studio-secondary-button variant was folded in). */
 
 .studio-cost {
   font-size: var(--fs-xs);

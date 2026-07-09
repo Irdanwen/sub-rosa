@@ -88,7 +88,7 @@ export function DictationPracticeStep({
               className="onboarding-practice-input"
               rows={2}
               value={value}
-              placeholder="Tell Sub Rosa what to do..."
+              placeholder="Tell Sub Rosa what to do…"
               onChange={(event) => setValue(event.target.value)}
             />
             <div className="onboarding-practice-toolbar">

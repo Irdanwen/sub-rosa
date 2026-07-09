@@ -10,6 +10,7 @@ import type {
 } from "../../../lib/tauri";
 import { shareText } from "../../../lib/tauri";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
+import { Spinner } from "../../ui/Spinner";
 import { NoteEditor } from "../../note-editor/NoteEditor";
 import { StackHeader } from "../StackHeader";
 
@@ -129,7 +130,9 @@ export function NoteDetailScreen({
             onTabChange={onTabChange}
           />
         ) : (
-          <section className="editor-empty" aria-label="Opening note" />
+          <section className="editor-empty" role="status" aria-label="Opening note">
+            <Spinner />
+          </section>
         )}
       </div>
       <ConfirmDialog
@@ -137,6 +140,7 @@ export function NoteDetailScreen({
         title="Delete this note?"
         description="The note, its audio, and its transcript are removed from this device."
         confirmLabel="Delete"
+        destructive
         onConfirm={() => {
           setConfirmDelete(false);
           onDelete();

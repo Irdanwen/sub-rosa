@@ -7,6 +7,7 @@ import { useMemo, useRef, useState } from "react";
 import type { FolderDto, NoteListItemDto } from "../../../lib/tauri";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { EmptyState } from "../../ui/EmptyState";
+import { PullToRefresh } from "../PullToRefresh";
 import { StackHeader } from "../StackHeader";
 import { SwipeableRow } from "../SwipeableRow";
 import { NoteRow } from "./NoteRow";
@@ -24,6 +25,7 @@ type NotesScreenProps = {
   onOpenFolder: (folderId: string) => void;
   onDeleteNote: (noteId: string) => void;
   onArchiveNote: (noteId: string) => void;
+  onRefresh: () => Promise<unknown>;
 };
 
 export function NotesScreen({
@@ -38,6 +40,7 @@ export function NotesScreen({
   onOpenFolder,
   onDeleteNote,
   onArchiveNote,
+  onRefresh,
 }: NotesScreenProps) {
   const [query, setQuery] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<NoteListItemDto | null>(null);
@@ -123,7 +126,7 @@ export function NotesScreen({
           ))}
         </div>
       ) : null}
-      <div className="mobile-list-scroll">
+      <PullToRefresh className="mobile-list-scroll" onRefresh={onRefresh}>
         {visibleNotes.length === 0 ? (
           <EmptyState
             title={query ? "No matches" : "No notes yet"}
@@ -157,7 +160,7 @@ export function NotesScreen({
             ))}
           </ul>
         )}
-      </div>
+      </PullToRefresh>
       <button type="button" className="mobile-record-fab" onClick={onRecord}>
         <IconMicrophone size={22} aria-hidden />
         <span>Record</span>
@@ -167,6 +170,7 @@ export function NotesScreen({
         title="Delete this note?"
         description="The note, its audio, and its transcript are removed from this device."
         confirmLabel="Delete"
+        destructive
         onConfirm={() => {
           if (confirmDelete) onDeleteNote(confirmDelete.id);
           setConfirmDelete(null);

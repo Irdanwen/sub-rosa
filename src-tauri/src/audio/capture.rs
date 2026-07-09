@@ -390,6 +390,16 @@ pub fn start_capture(
     })
 }
 
+/// Whether a recording session currently holds the audio pipeline. The iOS
+/// playback-session command checks this so releasing the session after media
+/// playback never tears it down under a live capture.
+pub fn has_active_capture() -> bool {
+    ACTIVE_RECORDING
+        .lock()
+        .map(|active| active.is_some())
+        .unwrap_or(false)
+}
+
 /// Pause the active recording regardless of its session id. Used by the iOS
 /// audio-interruption observer (incoming call, Siri): the interruption also
 /// silences the input stream, so pausing keeps elapsed time honest and the

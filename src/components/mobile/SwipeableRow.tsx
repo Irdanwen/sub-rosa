@@ -1,4 +1,5 @@
 import { type ReactNode, useRef, useState } from "react";
+import { hapticSelection } from "../../lib/haptics";
 
 export type SwipeAction = {
   label: string;
@@ -12,8 +13,9 @@ const OPEN_THRESHOLD = 40;
 
 /**
  * iOS-style swipe-to-reveal row: dragging left uncovers trailing action
- * buttons (delete/archive). Pointer-events based so it works in the webview;
- * vertical scrolling wins when the gesture is steeper than sideways.
+ * buttons (delete/archive). Touch-events based (the webview delivers touch,
+ * not pointer, for these drags); vertical scrolling wins when the gesture is
+ * steeper than sideways.
  */
 export function SwipeableRow({
   actions,
@@ -52,7 +54,12 @@ export function SwipeableRow({
   const onTouchEnd = () => {
     setDragging(false);
     if (!start.current) return;
-    setOffset((current) => (current < -OPEN_THRESHOLD ? -maxOffset : 0));
+    setOffset((current) => {
+      const next = current < -OPEN_THRESHOLD ? -maxOffset : 0;
+      // A soft tick when the actions snap open, like the platform's rows.
+      if (next !== 0 && start.current && start.current.offset === 0) hapticSelection();
+      return next;
+    });
     start.current = null;
     locked.current = null;
   };

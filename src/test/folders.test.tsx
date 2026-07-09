@@ -295,7 +295,7 @@ describe("folders UI", () => {
       );
 
       expect(hermesMocks.listHermesSessions).toHaveBeenCalledTimes(1);
-      expect(screen.getByText("No sessions yet")).toBeInTheDocument();
+      expect(screen.getByText(/No sessions yet/)).toBeInTheDocument();
 
       await act(async () => {
         await Promise.resolve();
@@ -397,7 +397,7 @@ describe("folders UI", () => {
       sidebarStates?.(false);
     });
 
-    await waitFor(() => expect(screen.getByText("No sessions yet")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/No sessions yet/)).toBeInTheDocument());
   });
 
   it("keeps the sidebar agent session list capped after workspace refreshes", async () => {

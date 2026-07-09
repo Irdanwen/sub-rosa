@@ -50,9 +50,120 @@ import { useMobileNav } from "./nav";
 export function MobileApp() {
   const [state, dispatch] = useReducer(notesReducer, undefined, createInitialState);
   const [error, setError] = useState<string | null>(null);
+
+  // Errors slide in at the top and clear themselves; lingering red banners
+  // read as a broken app and can sit over the header forever.
+  useEffect(() => {
+    if (!error) return;
+    const timer = window.setTimeout(() => setError(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [error]);
   const [liveTranscriptEvents, setLiveTranscriptEvents] = useState<LiveTranscriptEventDto[]>([]);
   const [sourceReadiness, setSourceReadiness] = useState<RecordingSourceReadinessDto | undefined>();
   const nav = useMobileNav();
+
+  // Screen-entrance direction: push slides in from the right, pop settles
+  // back from the left, tab switches cross-fade. Derived with the render-time
+  // setState pattern (StrictMode-safe, unlike a ref mutated during render).
+  const [navMark, setNavMark] = useState<{
+    tab: typeof nav.tab;
+    depth: number;
+    motion?: "push" | "pop" | "tab";
+  }>({ tab: nav.tab, depth: nav.depth });
+  if (navMark.tab !== nav.tab || navMark.depth !== nav.depth) {
+    setNavMark({
+      tab: nav.tab,
+      depth: nav.depth,
+      motion: navMark.tab !== nav.tab ? "tab" : nav.depth > navMark.depth ? "push" : "pop",
+    });
+  }
+  const navMotion =
+    navMark.tab === nav.tab && navMark.depth === nav.depth ? navMark.motion : undefined;
+
+  // Interactive edge-swipe back: a drag that starts on the left edge tracks
+  // the finger (the screen translates live, styled directly on the element so
+  // no re-render runs per frame), then commits past 35% width or a right
+  // flick, mirroring the platform's back gesture.
+  const screenRef = useRef<HTMLDivElement | null>(null);
+  const edgeSwipe = useRef<{
+    x: number;
+    y: number;
+    active: boolean;
+    width: number;
+    lastX: number;
+    lastT: number;
+    vx: number;
+  } | null>(null);
+  const canPop = nav.depth > 0;
+  const onShellTouchStart = useCallback(
+    (event: React.TouchEvent) => {
+      const touch = event.touches[0];
+      if (!canPop || touch.clientX > 24) {
+        edgeSwipe.current = null;
+        return;
+      }
+      edgeSwipe.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        active: false,
+        width: window.innerWidth,
+        lastX: touch.clientX,
+        lastT: event.timeStamp,
+        vx: 0,
+      };
+    },
+    [canPop],
+  );
+  const onShellTouchMove = useCallback((event: React.TouchEvent) => {
+    const drag = edgeSwipe.current;
+    if (!drag) return;
+    const touch = event.touches[0];
+    const deltaX = touch.clientX - drag.x;
+    const deltaY = Math.abs(touch.clientY - drag.y);
+    if (!drag.active) {
+      // Steep gestures are scrolls: hand the touch back untouched.
+      if (deltaY > 12 && deltaY > deltaX) {
+        edgeSwipe.current = null;
+        return;
+      }
+      if (deltaX < 10) return;
+      drag.active = true;
+      // Depth cues while the screen is held: an edge shadow on the dragged
+      // screen and a dimmed strip underneath (see [data-swiping] in CSS).
+      screenRef.current?.setAttribute("data-swiping", "true");
+    }
+    const deltaT = event.timeStamp - drag.lastT;
+    if (deltaT > 0) drag.vx = (touch.clientX - drag.lastX) / deltaT;
+    drag.lastX = touch.clientX;
+    drag.lastT = event.timeStamp;
+    const el = screenRef.current;
+    if (el) {
+      el.style.transition = "none";
+      el.style.transform = `translateX(${Math.max(0, deltaX)}px)`;
+    }
+  }, []);
+  const onShellTouchEnd = useCallback(() => {
+    const drag = edgeSwipe.current;
+    edgeSwipe.current = null;
+    const el = screenRef.current;
+    if (!drag?.active || !el) return;
+    const deltaX = drag.lastX - drag.x;
+    const commit = deltaX > drag.width * 0.35 || drag.vx > 0.5;
+    el.style.transition = "transform 200ms var(--ease-out)";
+    if (commit) {
+      el.style.transform = `translateX(${drag.width}px)`;
+      window.setTimeout(() => nav.pop(), 180);
+    } else {
+      el.style.transform = "translateX(0)";
+      window.setTimeout(() => {
+        if (screenRef.current === el) {
+          el.style.transition = "";
+          el.style.transform = "";
+          el.removeAttribute("data-swiping");
+        }
+      }, 220);
+    }
+  }, [nav]);
 
   // --- Carpe Diem gate (mirrors App.tsx): nothing works without a key. ---
   const [carpeDiem, setCarpeDiem] = useState<CarpeDiemSidecarStatusDto | null>(null);
@@ -355,6 +466,13 @@ export function MobileApp() {
     [nav],
   );
 
+  // Pull-to-refresh on the notes list: re-run the bootstrap payload (notes +
+  // folders + recoveries in one round trip).
+  const handleRefreshNotes = useCallback(async () => {
+    const payload = await bootstrapApp();
+    dispatch({ type: "bootstrapLoaded", payload });
+  }, []);
+
   const handleCreateFolder = useCallback(async (name: string) => {
     try {
       const folder = await createFolder(name);
@@ -459,6 +577,7 @@ export function MobileApp() {
             onOpenFolder={(folderId) => nav.push({ view: "folder", folderId })}
             onDeleteNote={(noteId) => void handleDeleteNote(noteId)}
             onArchiveNote={(noteId) => void handleArchiveNote(noteId)}
+            onRefresh={handleRefreshNotes}
           />
         );
         break;
@@ -501,7 +620,18 @@ export function MobileApp() {
           {error}
         </button>
       ) : null}
-      <div className="mobile-screen">{screen}</div>
+      <div
+        className="mobile-screen"
+        data-nav={navMotion}
+        key={`${nav.tab}:${nav.depth}`}
+        ref={screenRef}
+        onTouchStart={onShellTouchStart}
+        onTouchMove={onShellTouchMove}
+        onTouchEnd={onShellTouchEnd}
+        onTouchCancel={onShellTouchEnd}
+      >
+        {screen}
+      </div>
       {showTabBar ? <TabBar active={nav.tab} onSelect={nav.switchTab} /> : null}
     </div>
   );

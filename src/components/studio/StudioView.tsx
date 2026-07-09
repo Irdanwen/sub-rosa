@@ -76,7 +76,7 @@ export function StudioView() {
           title="Couldn't load the model catalog"
           description={error ?? "The media backend didn't answer."}
           action={
-            <button type="button" className="studio-secondary-button" onClick={retry}>
+            <button type="button" className="btn btn-secondary" onClick={retry}>
               Try again
             </button>
           }

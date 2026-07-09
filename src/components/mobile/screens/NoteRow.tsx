@@ -18,22 +18,22 @@ export function NoteRow({ note, recording, onSelect }: NoteRowProps) {
       effectiveStatus === "generating" ||
       effectiveStatus === "validating");
 
+  // No wrapping <li> here: callers render rows inside their own <li> (with
+  // SwipeableRow between), and nested list items are invalid DOM.
   return (
-    <li>
-      <button type="button" className="mobile-note-row" onClick={onSelect}>
-        <span className="mobile-note-row-icon" aria-hidden>
-          <IconNoteText size={16} />
+    <button type="button" className="mobile-note-row" onClick={onSelect}>
+      <span className="mobile-note-row-icon" aria-hidden>
+        <IconNoteText size={16} />
+      </span>
+      <span className="mobile-note-row-body">
+        <span className="mobile-note-row-title">{title}</span>
+        <span className="mobile-note-row-subtitle">
+          {recording ? <span className="note-recording-dot" aria-hidden /> : null}
+          <span data-shimmer={processing ? "true" : undefined}>{preview}</span>
         </span>
-        <span className="mobile-note-row-body">
-          <span className="mobile-note-row-title">{title}</span>
-          <span className="mobile-note-row-subtitle">
-            {recording ? <span className="note-recording-dot" aria-hidden /> : null}
-            <span data-shimmer={processing ? "true" : undefined}>{preview}</span>
-          </span>
-        </span>
-        <span className="mobile-note-row-time">{formatNoteTime(note.updatedAt)}</span>
-      </button>
-    </li>
+      </span>
+      <span className="mobile-note-row-time">{formatNoteTime(note.updatedAt)}</span>
+    </button>
   );
 }
 

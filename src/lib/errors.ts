@@ -7,6 +7,21 @@ export function messageFromError(err: unknown) {
   return String(err);
 }
 
+/** Shapes that mean "a programmer error leaked", not "something the user can
+ * act on". Shown raw they read as a broken app; views swap in their fallback. */
+const DEVELOPER_ERROR_PATTERN =
+  /cannot read propert|is not a function|undefined is not an object|null is not an object|\[object [A-Za-z]+\]|unexpected token/i;
+
+/** `messageFromError`, but developer-shaped messages (TypeError text, `[object
+ * Object]`, …) are replaced by the caller's human fallback so error banners
+ * never surface raw exception internals. Backend errors already arrive with a
+ * human `message` field and pass through untouched. */
+export function friendlyErrorMessage(err: unknown, fallback: string) {
+  const message = messageFromError(err);
+  if (!message.trim() || DEVELOPER_ERROR_PATTERN.test(message)) return fallback;
+  return message;
+}
+
 /** Stable error code from a thrown Tauri `AppError` (`{ code, message }`),
  * or undefined for anything without one. Lets callers branch on a specific
  * failure (e.g. "referrals_unavailable") instead of matching message text. */

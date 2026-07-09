@@ -1,8 +1,9 @@
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconStar } from "central-icons/IconStar";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { hapticSelection } from "../../lib/haptics";
+import { useKeyboardInset } from "../../lib/keyboard-inset";
 
 export type ModelSheetEntry = {
   id: string;
@@ -57,6 +58,23 @@ export function ModelSheet({
 }: ModelSheetProps) {
   const [query, setQuery] = useState("");
   const [favorites, setFavorites] = useState<Set<string>>(readFavorites);
+  const keyboardInset = useKeyboardInset();
+
+  // Drag-to-dismiss from the grabber/title zone (the list keeps its scroll).
+  const [dragY, setDragY] = useState(0);
+  const dragStart = useRef<number | null>(null);
+  const onHandleTouchStart = (event: React.TouchEvent) => {
+    dragStart.current = event.touches[0].clientY;
+  };
+  const onHandleTouchMove = (event: React.TouchEvent) => {
+    if (dragStart.current === null) return;
+    setDragY(Math.max(0, event.touches[0].clientY - dragStart.current));
+  };
+  const onHandleTouchEnd = () => {
+    if (dragY > 80) onClose();
+    else setDragY(0);
+    dragStart.current = null;
+  };
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -93,8 +111,22 @@ export function ModelSheet({
         role="dialog"
         aria-label={title}
         onClick={(event) => event.stopPropagation()}
+        style={{
+          transform: dragY ? `translateY(${dragY}px)` : undefined,
+          transition: dragStart.current !== null ? "none" : undefined,
+          paddingBottom: keyboardInset || undefined,
+        }}
       >
-        <h2 className="mobile-sheet-title">{title}</h2>
+        <div
+          className="mobile-sheet-handle"
+          onTouchStart={onHandleTouchStart}
+          onTouchMove={onHandleTouchMove}
+          onTouchEnd={onHandleTouchEnd}
+          onTouchCancel={onHandleTouchEnd}
+        >
+          <span className="mobile-sheet-grabber" aria-hidden />
+          <h2 className="mobile-sheet-title">{title}</h2>
+        </div>
         <div className="mobile-search mobile-sheet-search">
           <IconMagnifyingGlass size={16} aria-hidden />
           <input

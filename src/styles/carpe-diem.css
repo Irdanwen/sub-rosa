@@ -37,3 +37,52 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* Connection status line: a state-tinted dot next to quiet copy. Tones come
+ * from the theme tokens so dark mode and accent changes track automatically. */
+.carpe-diem-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  /* The shared .settings-row-substatus tint is success-green; here the dot
+   * carries the state, so the copy stays neutral ("Not connected" must not
+   * read as a good sign). */
+  color: var(--muted-foreground);
+}
+
+.carpe-diem-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--muted-foreground);
+}
+
+.carpe-diem-status-dot[data-state="starting"] {
+  background: var(--brand);
+}
+
+.carpe-diem-status-dot[data-state="ready"] {
+  background: var(--success);
+}
+
+.carpe-diem-status-dot[data-state="failed"] {
+  background: var(--destructive);
+}
+
+.carpe-diem-test-result[data-ok="true"] {
+  color: var(--success);
+}
+
+.carpe-diem-test-result[data-ok="false"] {
+  color: var(--destructive);
+}
+
+/* Links inside the connect card inherit the warm palette instead of the
+ * webview's default blue. */
+.carpe-diem-connect a,
+.settings-row-description a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

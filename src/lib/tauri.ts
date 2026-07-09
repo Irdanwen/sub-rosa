@@ -1526,6 +1526,13 @@ export async function saveToPhotos(path: string, kind: "image" | "video") {
 }
 
 /** iOS only: open the system share sheet with a text payload. */
+// iOS only: flips the shared AVAudioSession into the playback category before
+// Studio media plays (so audio survives the lock screen and the silent
+// switch) and releases it once playback stops. Desktop has no such command.
+export async function setPlaybackAudioSession(active: boolean) {
+  return invoke<void>("set_playback_audio_session", { active });
+}
+
 export async function shareText(text: string) {
   return invoke<void>("share_text", { request: { text } });
 }

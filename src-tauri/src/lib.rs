@@ -402,6 +402,8 @@ pub fn run() {
         photos_ios::save_to_photos,
         #[cfg(target_os = "ios")]
         share_ios::share_text,
+        #[cfg(target_os = "ios")]
+        audio::ios_session::set_playback_audio_session,
         providers::provider_model_settings,
         providers::list_venice_models,
         providers::set_venice_model,

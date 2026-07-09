@@ -434,7 +434,7 @@ function SkillDocumentEditor({ state }: { state: SkillDetailState }) {
           onClick={() => setConfirming(true)}
         >
           <IconFloppyDisk1 size={14} ariaHidden />
-          {state.saving ? "Saving..." : "Review and save"}
+          {state.saving ? "Saving…" : "Review and save"}
         </button>
       </div>
 

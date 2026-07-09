@@ -730,7 +730,7 @@ function FolderChip({
                     <IconProjects size={14} />
                     <span className="move-to-folder-item-name">{folder.name}</span>
                     <span className="move-to-folder-item-check" aria-hidden>
-                      {isAssigned ? "✓" : ""}
+                      {isAssigned ? <IconCheckmark1 size={12} /> : null}
                     </span>
                   </button>
                 );
@@ -826,11 +826,11 @@ function processingStageMessage(status: ProcessingStageStatus): string {
 function processingMessage(status: NoteDto["processingStatus"]): string | null {
   switch (status) {
     case "validating":
-      return "Preparing audio...";
+      return "Preparing audio…";
     case "transcribing":
-      return "Transcribing audio...";
+      return "Transcribing audio…";
     case "generating":
-      return "Generating notes...";
+      return "Generating notes…";
     default:
       return null;
   }

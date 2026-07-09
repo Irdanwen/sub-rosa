@@ -473,7 +473,11 @@ function sampleImageBytes(): Uint8Array {
   const context = canvas.getContext("2d");
   if (context) {
     const gradient = context.createLinearGradient(0, 0, 480, 320);
-    gradient.addColorStop(0, "#936862");
+    // Canvas can't read CSS custom properties; resolve the live accent so
+    // the sample tracks the selected brand color instead of a frozen rose.
+    const brand =
+      getComputedStyle(document.documentElement).getPropertyValue("--brand").trim() || "#936862";
+    gradient.addColorStop(0, brand);
     gradient.addColorStop(1, "#f4e3d7");
     context.fillStyle = gradient;
     context.fillRect(0, 0, 480, 320);
@@ -8144,7 +8148,7 @@ function SkillEditorPanel({
             disabled={!dirty || saving || loading || !document}
             onClick={onSave}
           >
-            {saving ? "Saving..." : "Save changes"}
+            {saving ? "Saving…" : "Save changes"}
           </button>
         )}
       </footer>
@@ -8465,7 +8469,7 @@ function MessagingPlatformDetail({
           disabled={!hasEdits || isSavingEnv}
           onClick={() => onSaveEnv(platform)}
         >
-          {isSavingEnv ? "Saving..." : "Save changes"}
+          {isSavingEnv ? "Saving…" : "Save changes"}
         </button>
       </footer>
     </div>

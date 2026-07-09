@@ -168,7 +168,7 @@ describe("Sidebar primary navigation", () => {
     const search = within(palette).getByRole("searchbox", { name: "Search" });
     await waitFor(() => expect(search).toHaveFocus());
     expect(
-      within(palette).getByPlaceholderText("Search meeting notes, sessions, or jump to..."),
+      within(palette).getByPlaceholderText("Search meeting notes, sessions, or jump to…"),
     ).toBeInTheDocument();
     expect(within(palette).getByText("Recents")).toBeInTheDocument();
     expect(within(palette).getByText("Roadmap")).toBeInTheDocument();

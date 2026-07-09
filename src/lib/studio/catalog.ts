@@ -253,6 +253,7 @@ function round2(value: number): number {
 }
 
 export function formatCredits(credits: number): string {
-  if (credits >= 100) return `${Math.round(credits)} credits`;
+  // Thousands separators keep large balances scannable ("12,450 credits").
+  if (credits >= 100) return `${Math.round(credits).toLocaleString("en-US")} credits`;
   return `${credits.toFixed(credits < 1 ? 2 : 1)} credits`;
 }

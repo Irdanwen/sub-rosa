@@ -1168,7 +1168,7 @@ export function Sidebar({
                 ) : (
                   <div className="sidebar-empty">
                     {agentSessions.length === 0
-                      ? "No sessions yet"
+                      ? "No sessions yet. Press ⌘N to start one."
                       : filteredAgentSessions.length === 0
                         ? "No matches"
                         : "No other sessions"}
@@ -1605,7 +1605,7 @@ function CommandPalette({
             value={query}
             onChange={(event) => onQueryChange(event.currentTarget.value)}
             onKeyDown={onKeyDown}
-            placeholder="Search meeting notes, sessions, or jump to..."
+            placeholder="Search meeting notes, sessions, or jump to…"
             aria-label="Search"
             aria-activedescendant={
               items[activeIndex] ? `command-palette-item-${activeIndex}` : undefined

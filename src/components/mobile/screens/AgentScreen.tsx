@@ -1,5 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { IconArrowDown } from "central-icons/IconArrowDown";
 import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
@@ -7,7 +8,7 @@ import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconPaperclip1 } from "central-icons/IconPaperclip1";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { messageFromError } from "../../../lib/errors";
+import { friendlyErrorMessage, messageFromError } from "../../../lib/errors";
 import { hapticImpact, hapticNotify } from "../../../lib/haptics";
 import { useKeyboardInset } from "../../../lib/keyboard-inset";
 import { SimpleMarkdown } from "../../../lib/simple-markdown";
@@ -37,6 +38,7 @@ import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { EmptyState } from "../../ui/EmptyState";
 import { Spinner } from "../../ui/Spinner";
 import { ModelSheet } from "../ModelSheet";
+import { PullToRefresh } from "../PullToRefresh";
 import { StackHeader } from "../StackHeader";
 import { SwipeableRow } from "../SwipeableRow";
 
@@ -68,12 +70,20 @@ export function AgentScreen({
   const [archivedIds, setArchivedIds] = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState<AgentTaskDto | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    listAgentTasks()
-      .then((response) => setTasks(response.items))
-      .catch(() => undefined);
-    listSessionFolders()
+    const sessions = listAgentTasks()
+      .then((response) => {
+        setTasks(response.items);
+        setLoadError(null);
+      })
+      .catch((err: unknown) => {
+        // A silent failure here read as "you have no chats"; name it instead.
+        setLoadError(friendlyErrorMessage(err, "Couldn't load your chats."));
+      });
+    const folders = listSessionFolders()
       .then((rows) => {
         if (!archiveFolderId) {
           setArchivedIds(new Set());
@@ -86,10 +96,11 @@ export function AgentScreen({
         );
       })
       .catch(() => undefined);
+    return Promise.all([sessions, folders]).finally(() => setLoading(false));
   }, [archiveFolderId]);
 
   useEffect(() => {
-    refresh();
+    void refresh();
   }, [refresh]);
 
   const archive = useCallback(
@@ -162,8 +173,27 @@ export function AgentScreen({
           </button>
         }
       />
-      <div className="mobile-list-scroll">
-        {active.length === 0 && archived.length === 0 ? (
+      <PullToRefresh className="mobile-list-scroll" onRefresh={refresh}>
+        {loading ? (
+          <ul className="mobile-note-list" aria-hidden>
+            {[0, 1, 2].map((row) => (
+              <li key={row} className="mobile-skeleton-row">
+                <span className="mobile-skeleton-bar" style={{ width: "62%" }} />
+                <span className="mobile-skeleton-bar" style={{ width: "84%" }} />
+              </li>
+            ))}
+          </ul>
+        ) : loadError && active.length === 0 && archived.length === 0 ? (
+          <EmptyState
+            title="Couldn't load your chats"
+            description={loadError}
+            action={
+              <button type="button" className="mobile-chip-button" onClick={() => void refresh()}>
+                Try again
+              </button>
+            }
+          />
+        ) : active.length === 0 && archived.length === 0 ? (
           <EmptyState
             title="Ask about your notes"
             description="Start a chat to search your meetings and the web."
@@ -198,12 +228,13 @@ export function AgentScreen({
             ) : null}
           </>
         )}
-      </div>
+      </PullToRefresh>
       <ConfirmDialog
         open={confirmDelete !== null}
         title="Delete this chat?"
         description="The conversation and its messages are removed from this device."
         confirmLabel="Delete"
+        destructive
         onConfirm={() => {
           if (confirmDelete) void remove(confirmDelete.id);
           setConfirmDelete(null);
@@ -240,6 +271,11 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
   const knownIdsRef = useRef<Set<string> | null>(null);
   const taskIdRef = useRef<string | undefined>(sessionId);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Whether the reader is at (or near) the newest message. Auto-scroll only
+  // follows new content while pinned, so scrolling up to reread history is
+  // never fought; a "jump to latest" pill appears instead.
+  const pinnedRef = useRef(true);
+  const [showJump, setShowJump] = useState(false);
   const attachInputRef = useRef<HTMLInputElement | null>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const keyboardInset = useKeyboardInset();
@@ -289,8 +325,17 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
   }, []);
 
   useEffect(() => {
+    if (!pinnedRef.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [task?.messages.length, stage]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+    pinnedRef.current = pinned;
+    setShowJump(!pinned);
+  }, []);
 
   // Grow the composer with its content (up to a few lines, then scroll) so
   // multi-line drafts stay visible instead of hiding above a one-row box.
@@ -317,7 +362,14 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
   }, [task]);
 
   const scrollToBottom = useCallback(() => {
+    if (!pinnedRef.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, []);
+
+  const jumpToLatest = useCallback(() => {
+    pinnedRef.current = true;
+    setShowJump(false);
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, []);
 
   const selectModel = useCallback((modelId: string) => {
@@ -437,12 +489,14 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
       : stage?.stage === "searching-web"
         ? "Searching the web"
         : "Thinking";
-  const activeModelLabel = shortModelLabel(model) || "Default model";
+  // Prefer the catalog's display name ("Claude Opus 4.7") over the raw id.
+  const activeModelLabel =
+    models.find((entry) => entry.id === model)?.name || shortModelLabel(model) || "Default model";
 
   return (
     <div className="mobile-screen-root mobile-chat">
       <StackHeader title={task?.title.trim() || "New chat"} onBack={onBack} backLabel="Chats" />
-      <div className="mobile-chat-scroll" ref={scrollRef}>
+      <div className="mobile-chat-scroll" ref={scrollRef} onScroll={handleScroll}>
         {!task?.messages.length && !running ? (
           <div className="mobile-chat-hero">
             <span className="mobile-chat-hero-mark" aria-hidden>
@@ -511,7 +565,21 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
         ) : null}
         {error ? <p className="mobile-dictation-error">{error}</p> : null}
       </div>
-      <div className="mobile-chat-composer-stack" style={{ marginBottom: keyboardInset }}>
+      {showJump ? (
+        <button
+          type="button"
+          className="mobile-chat-jump"
+          aria-label="Jump to latest message"
+          onClick={jumpToLatest}
+        >
+          <IconArrowDown size={16} />
+        </button>
+      ) : null}
+      <div
+        className="mobile-chat-composer-stack"
+        data-keyboard={keyboardInset > 0 ? "true" : undefined}
+        style={{ marginBottom: keyboardInset }}
+      >
         {attachments.length > 0 ? (
           <div className="mobile-chat-attachments">
             {attachments.map((entry, index) => (

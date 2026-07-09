@@ -29,6 +29,9 @@ if (import.meta.env.DEV) {
 initTheme();
 initBrand();
 installNativeContextMenuGuard();
+if (isMobilePlatform()) {
+  void import("./lib/dynamic-type").then(({ initDynamicType }) => initDynamicType());
+}
 
 // Console driver for the agent HUD overlay window: __agentHud("demo") etc.
 // from this window's devtools. Emits on the Tauri bus only, so fake demo

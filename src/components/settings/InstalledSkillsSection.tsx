@@ -195,7 +195,7 @@ export function InstalledSkillsView({
               onClick={lifecycle.checkForUpdates}
             >
               <IconArrowRotateClockwise size={14} ariaHidden />
-              {lifecycle.sweeping ? "Checking..." : "Check for updates"}
+              {lifecycle.sweeping ? "Checking…" : "Check for updates"}
             </button>
           ) : null}
           {lifecycle && updatableCount > 0 ? (

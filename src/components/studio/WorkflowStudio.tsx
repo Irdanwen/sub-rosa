@@ -531,7 +531,7 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
             )
           }
         />
-        <button type="button" className="studio-secondary-button" onClick={newWorkflow}>
+        <button type="button" className="btn btn-secondary" onClick={newWorkflow}>
           New
         </button>
         <Select
@@ -553,12 +553,12 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
         />
         <span className="studio-spacer" />
         {current ? (
-          <button type="button" className="studio-secondary-button" onClick={removeCurrent}>
+          <button type="button" className="btn btn-secondary" onClick={removeCurrent}>
             Delete
           </button>
         ) : null}
         {running ? (
-          <button type="button" className="studio-secondary-button" onClick={stop}>
+          <button type="button" className="btn btn-secondary" onClick={stop}>
             Stop
           </button>
         ) : (

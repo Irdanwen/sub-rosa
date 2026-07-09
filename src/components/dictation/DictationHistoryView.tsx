@@ -19,6 +19,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { friendlyErrorMessage } from "../../lib/errors";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Dialog } from "../ui/Dialog";
 import { EmptyState } from "../ui/EmptyState";
@@ -149,8 +150,10 @@ export function DictationHistoryView({ onNavigateToSettings }: DictationHistoryV
 
   const groups = useMemo(() => groupHistoryItems(filtered), [filtered]);
 
-  const pushToTalk = settings?.pushToTalkShortcut.label ?? "Ctrl+Opt+D";
-  const toggle = settings?.toggleShortcut.label ?? "Ctrl+Opt+T";
+  // Both shortcuts are nullable on the wire (either can be unbound), so the
+  // inner access needs its own optional chain or the whole view crashes.
+  const pushToTalk = settings?.pushToTalkShortcut?.label ?? "Ctrl+Opt+D";
+  const toggle = settings?.toggleShortcut?.label ?? "Ctrl+Opt+T";
 
   // Show each optional feature only while it's still unconfigured, and only
   // once we know its state (avoids the card flashing in then vanishing). The
@@ -591,9 +594,5 @@ function isSameDate(left: Date, right: Date) {
 }
 
 function messageFromError(err: unknown) {
-  if (err && typeof err === "object" && "message" in err) {
-    const message = (err as { message?: unknown }).message;
-    if (typeof message === "string") return message;
-  }
-  return "Dictation history is unavailable.";
+  return friendlyErrorMessage(err, "Dictation history is unavailable.");
 }

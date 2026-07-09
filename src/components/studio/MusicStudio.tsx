@@ -142,7 +142,7 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
                 className="studio-textarea"
                 rows={5}
                 value={lyrics}
-                placeholder={"Verse 1: ...\nChorus: ..."}
+                placeholder={"Verse 1: …\nChorus: …"}
                 onChange={(event) => setLyrics(event.target.value)}
               />
             </StudioField>
@@ -176,7 +176,7 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
           ? ` - ${formatElapsed(job.state.elapsedMs)}`
           : ""}
       </span>
-      <button type="button" className="studio-secondary-button" onClick={job.cancel}>
+      <button type="button" className="btn btn-secondary" onClick={job.cancel}>
         Stop waiting
       </button>
     </div>
@@ -199,16 +199,12 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
             A track from an earlier session may still be rendering: "{pending.prompt.slice(0, 80)}"
           </span>
           <span className="studio-card-actions">
-            <button
-              type="button"
-              className="studio-secondary-button"
-              onClick={() => resume(pending)}
-            >
+            <button type="button" className="btn btn-secondary" onClick={() => resume(pending)}>
               Check on it
             </button>
             <button
               type="button"
-              className="studio-secondary-button"
+              className="btn btn-secondary"
               onClick={() => {
                 removePersistedJob(pending.id);
                 setResumable((jobs) => jobs.filter((entry) => entry.id !== pending.id));

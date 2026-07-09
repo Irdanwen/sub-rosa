@@ -1,5 +1,6 @@
 import { IconArrowDown } from "central-icons/IconArrowDown";
 import { IconArrowUp } from "central-icons/IconArrowUp";
+import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconTrashCan } from "central-icons/IconTrashCan";
 import { useCallback, useMemo, useState } from "react";
 import { hapticImpact, hapticNotify } from "../../../lib/haptics";
@@ -22,6 +23,7 @@ import {
 import { runAndSaveWorkflow } from "../../../lib/studio/workflow-run";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { Spinner } from "../../ui/Spinner";
+import { ModelSheet } from "../ModelSheet";
 import { FlowStepOutput } from "./FlowsPanel";
 
 // The node types a user can add as a step. `output` is appended automatically
@@ -286,6 +288,7 @@ export function WorkflowEditor({
         title="Delete this workflow?"
         description="This removes the workflow. Generated media in your gallery is kept."
         confirmLabel="Delete"
+        destructive
         onConfirm={() => {
           deleteWorkflow(workflow.id);
           setConfirmDelete(false);
@@ -342,48 +345,65 @@ function ParamField({
       param.type === "model" ? modelsOfType(catalog, (param.mediaType ?? "text") as MediaType) : [],
     [param.type, param.mediaType, catalog],
   );
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   if (param.type === "model") {
     const current = typeof value === "string" ? value : "";
+    const currentName = models.find((model) => model.id === current)?.name;
     return (
-      <label className="mobile-workflow-param">
+      <div className="mobile-workflow-param">
         <span>
           {param.label}
           {param.required ? " *" : ""}
         </span>
-        <select
-          className="mobile-workflow-select"
-          value={current}
-          onChange={(event) => onChange(event.target.value)}
+        <button
+          type="button"
+          className="mobile-workflow-select mobile-workflow-picker"
+          onClick={() => setPickerOpen(true)}
         >
-          <option value="">Choose a model</option>
-          {models.map((model) => (
-            <option key={model.id} value={model.id}>
-              {model.name}
-            </option>
-          ))}
-        </select>
-      </label>
+          {currentName || current || "Choose a model"}
+        </button>
+        {pickerOpen ? (
+          <ModelSheet
+            title={param.label}
+            entries={models.map((model) => ({ id: model.id, name: model.name }))}
+            selectedId={current}
+            onSelect={(id) => {
+              onChange(id);
+              setPickerOpen(false);
+            }}
+            onClose={() => setPickerOpen(false)}
+          />
+        ) : null}
+      </div>
     );
   }
 
   if (param.type === "enum") {
     const current = typeof value === "string" ? value : ((param.default as string) ?? "");
     return (
-      <label className="mobile-workflow-param">
+      <div className="mobile-workflow-param">
         <span>{param.label}</span>
-        <select
-          className="mobile-workflow-select"
-          value={current}
-          onChange={(event) => onChange(event.target.value)}
+        <button
+          type="button"
+          className="mobile-workflow-select mobile-workflow-picker"
+          onClick={() => setPickerOpen(true)}
         >
-          {(param.enumValues ?? []).map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </label>
+          {current || "Choose"}
+        </button>
+        {pickerOpen ? (
+          <OptionSheet
+            title={param.label}
+            options={param.enumValues ?? []}
+            selected={current}
+            onSelect={(option) => {
+              onChange(option);
+              setPickerOpen(false);
+            }}
+            onClose={() => setPickerOpen(false)}
+          />
+        ) : null}
+      </div>
     );
   }
 
@@ -452,5 +472,46 @@ function ParamField({
         onChange={(event) => onChange(event.target.value)}
       />
     </label>
+  );
+}
+
+/** Minimal bottom sheet for short fixed option lists (aspect ratios, styles):
+ * the ModelSheet chrome without search or favorites, which would be noise for
+ * a handful of values. */
+function OptionSheet({
+  title,
+  options,
+  selected,
+  onSelect,
+  onClose,
+}: {
+  title: string;
+  options: string[];
+  selected: string;
+  onSelect: (option: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="mobile-sheet-backdrop" onClick={onClose}>
+      <div
+        className="mobile-sheet"
+        role="dialog"
+        aria-label={title}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <span className="mobile-sheet-grabber" aria-hidden />
+        <h2 className="mobile-sheet-title">{title}</h2>
+        <ul className="mobile-sheet-list">
+          {options.map((option) => (
+            <li key={option}>
+              <button type="button" className="mobile-sheet-item" onClick={() => onSelect(option)}>
+                <span className="mobile-sheet-item-title">{option}</span>
+                {selected === option ? <IconCheckmark1Small size={16} aria-hidden /> : null}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
   );
 }

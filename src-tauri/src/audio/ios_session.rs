@@ -67,6 +67,49 @@ pub fn configure_for_recording() -> Result<(), AppError> {
     Ok(())
 }
 
+/// Put the shared audio session in playback mode and activate it, so Studio
+/// media keeps playing with the screen locked or the silent switch on
+/// (`.playback` + `UIBackgroundModes: audio` is the policy pair). Recording
+/// takes the session back through `configure_for_recording` when it starts.
+pub fn configure_for_playback() -> Result<(), AppError> {
+    let session = shared_session()?;
+    let category = NSString::from_str("AVAudioSessionCategoryPlayback");
+    unsafe {
+        let result: Result<(), Retained<NSError>> =
+            msg_send![session, setCategory: &*category, error: _];
+        result.map_err(|error| {
+            AppError::new(
+                "audio_session_failed",
+                error.localizedDescription().to_string(),
+            )
+        })?;
+        let result: Result<(), Retained<NSError>> = msg_send![session, setActive: true, error: _];
+        result.map_err(|error| {
+            AppError::new(
+                "audio_session_failed",
+                error.localizedDescription().to_string(),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// Frontend-invoked around Studio media playback: `active: true` before play
+/// (playback category, so audio survives the lock screen and the silent
+/// switch), `active: false` when it stops. Releasing is best-effort and a
+/// no-op while a recording holds the session.
+#[tauri::command]
+pub fn set_playback_audio_session(active: bool) -> Result<(), AppError> {
+    if active {
+        configure_for_playback()
+    } else {
+        if !crate::audio::capture::has_active_capture() {
+            deactivate();
+        }
+        Ok(())
+    }
+}
+
 /// Release the audio session once recording finishes so other apps' audio
 /// resumes. Errors are ignored: deactivation is best-effort cleanup.
 pub fn deactivate() {

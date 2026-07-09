@@ -265,7 +265,7 @@ function Footer({
             disabled={!canCreate || creating}
             onClick={() => state.createProfile()}
           >
-            {creating ? (state.create.message ?? "Creating...") : "Create profile"}
+            {creating ? (state.create.message ?? "Creating…") : "Create profile"}
           </button>
           <button
             type="button"
@@ -273,7 +273,7 @@ function Footer({
             disabled={!canCreate || creating}
             onClick={() => state.createProfile({ startTestSession: true })}
           >
-            {creating ? (state.create.message ?? "Creating...") : "Create and start test session"}
+            {creating ? (state.create.message ?? "Creating…") : "Create and start test session"}
           </button>
         </div>
       ) : (

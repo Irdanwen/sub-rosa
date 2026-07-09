@@ -34,7 +34,7 @@ import {
   type RoutineJob,
   type RoutineUpdates,
 } from "../../lib/hermes-routines";
-import { errorCode } from "../../lib/errors";
+import { errorCode, friendlyErrorMessage } from "../../lib/errors";
 import { compactScheduleLabel, humanizeSchedule } from "../../lib/routine-schedule";
 import { useForcedEmptyStates } from "../../lib/empty-states-demo";
 import type { HermesSessionInfo } from "../../lib/tauri";
@@ -723,11 +723,7 @@ function timeValue(iso: string | null | undefined) {
 }
 
 function messageFromError(err: unknown) {
-  if (err && typeof err === "object" && "message" in err) {
-    const message = (err as { message?: unknown }).message;
-    if (typeof message === "string" && message) return message;
-  }
-  return "Routines are unavailable. Is Sub Rosa's agent running?";
+  return friendlyErrorMessage(err, "Routines are unavailable. Is Sub Rosa's agent running?");
 }
 
 const DEJUNE_MODE_OPTIONS = [

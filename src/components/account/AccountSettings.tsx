@@ -105,7 +105,7 @@ export function AccountSettingsSection({ account, loading, onAccountChanged }: P
                 {account.localDev
                   ? "Local mode"
                   : loading
-                    ? "Checking sign-in..."
+                    ? "Checking sign-in…"
                     : account.signedIn
                       ? displayName(account)
                       : "Not signed in"}
