@@ -16,7 +16,7 @@ import {
   listArtifacts,
   readArtifactBase64,
   saveArtifactFromBase64,
-  saveArtifactFromUrl,
+  saveArtifactFromResult,
 } from "../../../lib/studio/artifacts";
 import {
   estimateCostCredits,
@@ -31,7 +31,13 @@ import { mediaJson } from "../../../lib/studio/client";
 import { composeImages, MAX_COMPOSE_IMAGES, upscaleImage } from "../../../lib/studio/edit-image";
 import { prepareEditReference } from "../../../lib/studio/downscale";
 import { generateImages } from "../../../lib/studio/generate-image";
-import { type PersistedJob, pendingJobs, useMediaJob } from "../../../lib/studio/async-job";
+import {
+  fileResultFrom,
+  type MediaFileResult,
+  type PersistedJob,
+  pendingJobs,
+  useMediaJob,
+} from "../../../lib/studio/async-job";
 import {
   VIDEO_QUEUE_PATH,
   VIDEO_QUOTE_PATH,
@@ -59,15 +65,10 @@ import { FlowsPanel } from "./FlowsPanel";
 type StudioMode = "image" | "video" | "music" | "flows";
 type ImageMode = "generate" | "edit" | "upscale";
 
-function videoUrlFrom(response: Record<string, unknown>): string | undefined {
-  const url = response.video_url ?? response.url;
-  return typeof url === "string" && url.trim() ? url : undefined;
-}
-
-function audioUrlFrom(response: Record<string, unknown>): string | undefined {
-  const url = response.audio_url ?? response.url;
-  return typeof url === "string" && url.trim() ? url : undefined;
-}
+const videoResultFrom = fileResultFrom("video_url", "url");
+// Carpe Diem streams the finished track as the retrieve body (one shot);
+// Venice answers JSON with an `audio_url`. Both shapes must be accepted.
+const audioResultFrom = fileResultFrom("audio_url", "url");
 
 /**
  * Mobile Studio: image, video, music, and guided flows over the shared studio
@@ -547,8 +548,8 @@ function VideoPanel({
   const [resumable, setResumable] = useState<PersistedJob[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const job = useMediaJob<string>(async (url, finished) => {
-    await saveArtifactFromUrl(url, "mp4", {
+  const job = useMediaJob<MediaFileResult>(async (result, finished) => {
+    await saveArtifactFromResult(result, "mp4", {
       kind: "video",
       model: finished.model,
       prompt: finished.prompt,
@@ -564,7 +565,7 @@ function VideoPanel({
     // download its result), and keep any older ones as manual "Resume" chips.
     const [newest, ...rest] = pending;
     setResumable(rest);
-    void job.resume(newest, videoUrlFrom);
+    void job.resume(newest, videoResultFrom);
   }, []);
 
   const durationOptions = constraints?.durations ?? [];
@@ -620,14 +621,14 @@ function VideoPanel({
         path: VIDEO_RETRIEVE_PATH,
         body: retrieveBody(queueId, model.id),
       }),
-      getResult: videoUrlFrom,
+      getResult: videoResultFrom,
     });
   }, [queueBody, model, prompt, job]);
 
   const resume = useCallback(
     (pending: PersistedJob) => {
       setResumable((jobs) => jobs.filter((entry) => entry.id !== pending.id));
-      void job.resume(pending, videoUrlFrom);
+      void job.resume(pending, videoResultFrom);
     },
     [job],
   );
@@ -777,8 +778,8 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
   const [resumable, setResumable] = useState<PersistedJob[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const job = useMediaJob<string>(async (url, finished) => {
-    await saveArtifactFromUrl(url, "mp3", {
+  const job = useMediaJob<MediaFileResult>(async (result, finished) => {
+    await saveArtifactFromResult(result, "mp3", {
       kind: "music",
       model: finished.model,
       prompt: finished.prompt,
@@ -792,7 +793,7 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
     if (pending.length === 0) return;
     const [newest, ...rest] = pending;
     setResumable(rest);
-    void job.resume(newest, audioUrlFrom);
+    void job.resume(newest, audioResultFrom);
   }, []);
 
   const duration = caps.durationSeconds
@@ -828,14 +829,14 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
         path: paths.retrieve,
         body: retrieveBody(queueId, model.id),
       }),
-      getResult: audioUrlFrom,
+      getResult: audioResultFrom,
     });
   }, [model, prompt, caps, instrumental, lyrics, duration, job, paths]);
 
   const resume = useCallback(
     (pending: PersistedJob) => {
       setResumable((jobs) => jobs.filter((entry) => entry.id !== pending.id));
-      void job.resume(pending, audioUrlFrom);
+      void job.resume(pending, audioResultFrom);
     },
     [job],
   );

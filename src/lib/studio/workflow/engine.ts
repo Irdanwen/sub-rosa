@@ -4,7 +4,7 @@
 // feeds a video node as an image_url data URI); every other cross-media edge
 // degrades to a short text mention in the child's input.
 
-import { pollUntilDone } from "../async-job";
+import { fileResultFrom, type MediaFileResult, pollUntilDone } from "../async-job";
 import { fetchMediaCatalog } from "../catalog";
 import { mediaBinary, mediaJson } from "../client";
 import { musicPaths, retrieveBody } from "../paths";
@@ -14,7 +14,9 @@ import { validateWorkflow } from "./validator";
 export type NodeOutput =
   | { kind: "text"; text: string }
   | { kind: "image"; base64: string; mimeType: string }
-  | { kind: "audio"; url?: string; base64?: string; mimeType: string }
+  // `source` tells savers which gallery bucket the audio belongs to — with
+  // base64 delivery, music and speech are otherwise indistinguishable.
+  | { kind: "audio"; url?: string; base64?: string; mimeType: string; source?: "music" | "speech" }
   | { kind: "video"; url: string };
 
 export interface NodeRunResult {
@@ -230,7 +232,12 @@ async function executeNode(
       const voice = stringParam(params, "voice");
       if (voice) body.voice = voice;
       const { base64, contentType } = await mediaBinary("/audio/speech", body, signal);
-      return { kind: "audio", base64, mimeType: contentType ?? TTS_MIME[format] ?? "audio/mpeg" };
+      return {
+        kind: "audio",
+        base64,
+        mimeType: contentType ?? TTS_MIME[format] ?? "audio/mpeg",
+        source: "speech",
+      };
     }
 
     case "music": {
@@ -250,14 +257,15 @@ async function executeNode(
       const { backend } = await fetchMediaCatalog();
       const paths = musicPaths(backend);
       const queued = await mediaJson<Record<string, unknown>>(paths.queue, body, signal);
-      const url = await pollUntilDone<string>({
+      // Carpe Diem streams the finished track as the retrieve body (one
+      // shot); Venice answers JSON with an `audio_url`.
+      const result = await pollUntilDone<MediaFileResult>({
         retrievePath: paths.retrieve,
         retrieveBody: retrieveBody(queueId(queued), model),
-        getResult: (response) =>
-          typeof response.audio_url === "string" ? response.audio_url : undefined,
+        getResult: fileResultFrom("audio_url", "url"),
         signal,
       });
-      return { kind: "audio", url, mimeType: "audio/mpeg" };
+      return { kind: "audio", ...result, mimeType: "audio/mpeg", source: "music" };
     }
 
     case "video": {

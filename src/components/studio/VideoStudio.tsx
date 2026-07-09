@@ -5,9 +5,11 @@
 
 import { IconVideo } from "central-icons/IconVideo";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { saveArtifactFromUrl } from "../../lib/studio/artifacts";
+import { saveArtifactFromResult } from "../../lib/studio/artifacts";
 import {
+  fileResultFrom,
   formatElapsed,
+  type MediaFileResult,
   pendingJobs,
   removePersistedJob,
   useMediaJob,
@@ -32,10 +34,7 @@ import { GalleryStrip } from "./GalleryStrip";
 import { GenerationLayout } from "./GenerationLayout";
 import { effectiveOption, PillGroup, StudioField } from "./controls";
 
-function videoUrlFrom(response: Record<string, unknown>): string | undefined {
-  const url = response.video_url ?? response.url;
-  return typeof url === "string" && url.trim() ? url : undefined;
-}
+const videoResultFrom = fileResultFrom("video_url", "url");
 
 export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
   const families = useMemo(() => videoFamilies(catalog), [catalog]);
@@ -67,8 +66,8 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
   const effectiveAspect = effectiveOption(aspectOptions, aspectRatio);
   const effectiveResolution = effectiveOption(resolutionOptions, resolution);
 
-  const job = useMediaJob<string>(async (url, finished) => {
-    await saveArtifactFromUrl(url, "mp4", {
+  const job = useMediaJob<MediaFileResult>(async (result, finished) => {
+    await saveArtifactFromResult(result, "mp4", {
       kind: "video",
       model: finished.model,
       prompt: finished.prompt,
@@ -133,14 +132,14 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
         path: VIDEO_RETRIEVE_PATH,
         body: retrieveBody(queueId, model.id),
       }),
-      getResult: videoUrlFrom,
+      getResult: videoResultFrom,
     });
   }, [queueBody, model, prompt, job]);
 
   const resume = useCallback(
     (pending: PersistedJob) => {
       setResumable((jobs) => jobs.filter((entry) => entry.id !== pending.id));
-      void job.resume(pending, videoUrlFrom);
+      void job.resume(pending, videoResultFrom);
     },
     [job],
   );

@@ -3,9 +3,11 @@
 
 import { IconAudio } from "central-icons/IconAudio";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { saveArtifactFromUrl } from "../../lib/studio/artifacts";
+import { saveArtifactFromResult } from "../../lib/studio/artifacts";
 import {
+  fileResultFrom,
   formatElapsed,
+  type MediaFileResult,
   pendingJobs,
   removePersistedJob,
   useMediaJob,
@@ -21,10 +23,9 @@ import { GalleryStrip } from "./GalleryStrip";
 import { GenerationLayout } from "./GenerationLayout";
 import { CostHint, ModelSelect, SliderField, StudioField } from "./controls";
 
-function audioUrlFrom(response: Record<string, unknown>): string | undefined {
-  const url = response.audio_url ?? response.url;
-  return typeof url === "string" && url.trim() ? url : undefined;
-}
+// Carpe Diem streams the finished track as the retrieve body (one shot);
+// Venice answers JSON with an `audio_url`. Both shapes must be accepted.
+const audioResultFrom = fileResultFrom("audio_url", "url");
 
 export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
   const models = useMemo(() => modelsOfType(catalog, "music"), [catalog]);
@@ -40,8 +41,8 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
   const [resumable, setResumable] = useState<PersistedJob[]>([]);
   const [galleryEpoch, setGalleryEpoch] = useState(0);
 
-  const job = useMediaJob<string>(async (url, finished) => {
-    await saveArtifactFromUrl(url, "mp3", {
+  const job = useMediaJob<MediaFileResult>(async (result, finished) => {
+    await saveArtifactFromResult(result, "mp3", {
       kind: "music",
       model: finished.model,
       prompt: finished.prompt,
@@ -91,14 +92,14 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
         path: paths.retrieve,
         body: retrieveBody(queueId, model.id),
       }),
-      getResult: audioUrlFrom,
+      getResult: audioResultFrom,
     });
   }, [model, prompt, caps, instrumental, lyrics, duration, job, paths]);
 
   const resume = useCallback(
     (pending: PersistedJob) => {
       setResumable((jobs) => jobs.filter((entry) => entry.id !== pending.id));
-      void job.resume(pending, audioUrlFrom);
+      void job.resume(pending, audioResultFrom);
     },
     [job],
   );

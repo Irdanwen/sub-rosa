@@ -20,10 +20,21 @@ vi.mock("../lib/studio/client", () => {
     mediaJson: vi.fn(),
     mediaBinary: vi.fn(),
     mediaGet: vi.fn(),
+    mediaRaw: vi.fn(),
   };
 });
 
-import { mediaBinary, mediaJson } from "../lib/studio/client";
+// The music node resolves the backend (Carpe Diem vs Venice paths) from the
+// cached catalog; pin it so the test never reaches a Tauri invoke.
+vi.mock("../lib/studio/catalog", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/studio/catalog")>();
+  return {
+    ...original,
+    fetchMediaCatalog: vi.fn(async () => ({ backend: "carpe-diem", models: [] })),
+  };
+});
+
+import { mediaBinary, mediaJson, mediaRaw } from "../lib/studio/client";
 import {
   resolvePrompt,
   runWorkflow,
@@ -40,6 +51,7 @@ import {
 
 const mediaJsonMock = vi.mocked(mediaJson);
 const mediaBinaryMock = vi.mocked(mediaBinary);
+const mediaRawMock = vi.mocked(mediaRaw);
 
 function node(
   id: string,
@@ -70,6 +82,7 @@ function callsTo(path: string): unknown[][] {
 beforeEach(() => {
   mediaJsonMock.mockReset();
   mediaBinaryMock.mockReset();
+  mediaRawMock.mockReset();
 });
 
 describe("topoLevels", () => {
@@ -207,10 +220,17 @@ describe("runWorkflow", () => {
   it("queues a video and retrieves it with the id and the model", async () => {
     mediaJsonMock.mockImplementation(async (path: string) => {
       if (path === "/video/queue") return { id: "vid-1" };
-      if (path === "/video/retrieve") {
-        return { status: "completed", video_url: "https://cdn.example/clip.mp4" };
-      }
       throw new Error(`Unexpected path: ${path}`);
+    });
+    mediaRawMock.mockImplementation(async (path: string) => {
+      if (path === "/video/retrieve") {
+        return {
+          status: 200,
+          ok: true,
+          json: { status: "completed", video_url: "https://cdn.example/clip.mp4" },
+        };
+      }
+      throw new Error(`Unexpected retrieve path: ${path}`);
     });
 
     const results = await runWorkflow(
@@ -234,7 +254,7 @@ describe("runWorkflow", () => {
 
     // Retrieve sends the superset shape: Venice reads `id`, Carpe Diem reads
     // `queue_id` + `model` (both required there).
-    const retrieveBody = callsTo("/video/retrieve")[0]?.[1];
+    const retrieveBody = mediaRawMock.mock.calls.find((call) => call[0] === "/video/retrieve")?.[1];
     expect(retrieveBody).toEqual({
       id: "vid-1",
       queue_id: "vid-1",
@@ -244,6 +264,40 @@ describe("runWorkflow", () => {
     expect(results.get("out")?.output).toEqual({
       kind: "video",
       url: "https://cdn.example/clip.mp4",
+    });
+  });
+
+  it("treats a binary music retrieve response as the finished track", async () => {
+    mediaJsonMock.mockImplementation(async (path: string) => {
+      if (path === "/audio/music/queue") return { queue_id: "song-1" };
+      throw new Error(`Unexpected path: ${path}`);
+    });
+    // Carpe Diem answers the poll with the MP3 itself once the job is done
+    // (one shot — the job is dropped server-side right after), not with a
+    // completed-status JSON carrying an audio_url.
+    mediaRawMock.mockImplementation(async () => ({
+      status: 200,
+      ok: true,
+      bodyBase64: "TVAzREFUQQ==",
+      contentType: "audio/mpeg",
+    }));
+
+    const results = await runWorkflow(
+      workflow(
+        [
+          node("in", "textInput", { text: "an upbeat jazz rock instrumental" }),
+          node("track", "music", { model: "elevenlabs-music" }),
+          node("out", "output"),
+        ],
+        [edge("in", "track"), edge("track", "out")],
+      ),
+    );
+
+    expect(results.get("out")?.output).toEqual({
+      kind: "audio",
+      base64: "TVAzREFUQQ==",
+      mimeType: "audio/mpeg",
+      source: "music",
     });
   });
 

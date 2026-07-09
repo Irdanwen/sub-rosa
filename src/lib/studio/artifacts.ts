@@ -4,6 +4,7 @@
 // reconciling against the disk on load drops entries whose file is gone.
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import type { MediaFileResult } from "./async-job";
 import type { ArtifactFile, ArtifactKind, StudioArtifact } from "./types";
 
 const GALLERY_STORAGE_KEY = "os-june:studio-gallery";
@@ -86,6 +87,18 @@ export async function saveArtifactFromUrl(
     request: { url, extension },
   });
   return register(file, metadata);
+}
+
+/** Saves a finished async job's file, whichever way the backend delivered
+ * it (a download URL, or the bytes when the retrieve streamed the file). */
+export async function saveArtifactFromResult(
+  result: MediaFileResult,
+  extension: string,
+  metadata: ArtifactMetadata,
+): Promise<StudioArtifact> {
+  return "url" in result
+    ? saveArtifactFromUrl(result.url, extension, metadata)
+    : saveArtifactFromBase64(result.base64, extension, metadata);
 }
 
 /** The gallery, newest first, reconciled against what is actually on disk.

@@ -7,7 +7,7 @@
 // to pending jobs on mount instead of orphaning them.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MediaError, mediaJson } from "./client";
+import { MediaError, mediaJson, mediaRaw } from "./client";
 import { ensureNotificationPermission, notifyMediaJobDone } from "./media-notifications";
 
 export const POLL_INTERVAL_MS = 3_000;
@@ -85,11 +85,20 @@ export async function pollUntilDone<T>(options: PollOptions<T>): Promise<T> {
     }
     let response: Record<string, unknown> | undefined;
     try {
-      response = await mediaJson<Record<string, unknown>>(
-        options.retrievePath,
-        options.retrieveBody,
-        options.signal,
-      );
+      const raw = await mediaRaw(options.retrievePath, options.retrieveBody, options.signal);
+      if (raw.json && typeof raw.json === "object") {
+        response = raw.json as Record<string, unknown>;
+      } else if (raw.bodyBase64) {
+        // Some backends answer a finished job with the file itself instead of
+        // a completed-status JSON, and drop the job server-side right after
+        // (Carpe Diem music). This response IS the delivery: skipping it means
+        // the next poll 404s and the paid result is lost.
+        response = {
+          status: "completed",
+          body_base64: raw.bodyBase64,
+          content_type: raw.contentType,
+        };
+      }
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") throw error;
       // A 4xx on retrieve is not transient: the job id is wrong or expired.
@@ -119,6 +128,27 @@ export async function pollUntilDone<T>(options: PollOptions<T>): Promise<T> {
     "The job is taking longer than expected. It may still finish - check again later.",
     { status: 0 },
   );
+}
+
+/** A finished job's file, whichever way the backend delivered it: a URL to
+ * download, or the bytes themselves when the retrieve streamed the file. */
+export type MediaFileResult = { url: string } | { base64: string };
+
+/** Builds a `getResult` for file-producing jobs: reads the first non-empty
+ * URL field from a JSON response, and falls back to the synthesized binary
+ * body when the backend delivered the file directly. */
+export function fileResultFrom(
+  ...urlFields: string[]
+): (response: Record<string, unknown>) => MediaFileResult | undefined {
+  return (response) => {
+    for (const field of urlFields) {
+      const url = response[field];
+      if (typeof url === "string" && url.trim()) return { url };
+    }
+    const base64 = response.body_base64;
+    if (typeof base64 === "string" && base64) return { base64 };
+    return undefined;
+  };
 }
 
 // --- persisted pending jobs ---------------------------------------------------

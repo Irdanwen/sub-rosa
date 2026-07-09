@@ -38,11 +38,14 @@ export async function runAndSaveWorkflow(
     } else if (output.kind === "video") {
       await saveArtifactFromUrl(output.url, "mp4", { ...metadata, kind: "video" });
     } else if (output.kind === "audio" && output.url) {
-      await saveArtifactFromUrl(output.url, "mp3", { ...metadata, kind: "music" });
+      await saveArtifactFromUrl(output.url, "mp3", {
+        ...metadata,
+        kind: output.source ?? "music",
+      });
     } else if (output.kind === "audio" && output.base64) {
       await saveArtifactFromBase64(output.base64, audioExtension(output.mimeType), {
         ...metadata,
-        kind: "speech",
+        kind: output.source ?? "speech",
       });
     }
   }
