@@ -11,6 +11,13 @@ name: Release
 on:
   push:
     tags: ["v*.*.*"]
+    # Remote-agent stand-in for the tag push and the dispatch button: those
+    # sessions can only push branches (their git relay rejects refs/tags and
+    # their Actions API access is read-only, so workflow_dispatch is out of
+    # reach too). Pushing release-run/vX.Y.Z builds the EXISTING tag vX.Y.Z
+    # (create it first via tag-version.yml); resolve derives the tag from the
+    # branch name and everything downstream checks out the tag ref as usual.
+    branches: ["release-run/**"]
   workflow_dispatch:
     inputs:
       tag:
@@ -38,8 +45,13 @@ jobs:
         env:
           REF_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           INPUT_TAG: ${{ github.event.inputs.tag }}
+          BRANCH_REF: ${{ github.ref_type == 'branch' && github.ref_name || '' }}
         run: |
-          tag="${REF_TAG:-$INPUT_TAG}"
+          branch_tag=""
+          case "$BRANCH_REF" in
+            release-run/*) branch_tag="${BRANCH_REF#release-run/}" ;;
+          esac
+          tag="${REF_TAG:-${INPUT_TAG:-$branch_tag}}"
           if [ -z "$tag" ]; then echo "No tag resolved." >&2; exit 1; fi
           # Validate strictly before this value flows into `checkout ref:` and
           # release names — reject anything that is not a semver-ish vX.Y.Z tag.
