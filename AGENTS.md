@@ -86,6 +86,51 @@ committed under `src-tauri/gen/apple/`). Full architecture + upstream-diff table
 - **iOS checks**: `cargo check --target aarch64-apple-ios --lib` (and `-sim`) must stay
   green next to the desktop checks; toolchain ≥ 1.95 (june-api workspace pin).
 
+## Cross-conversation memory (fork addition, 2026-07-10)
+
+Sub Rosa remembers durable facts about the user across conversations, on both
+shells (shipped in v1.4.0). Design + rejected alternatives:
+[`docs/adr/0009-local-cross-conversation-memory.md`](docs/adr/0009-local-cross-conversation-memory.md);
+re-merge checklist: the memory entries in [`FORK_NOTES.md`](FORK_NOTES.md). The
+essentials for anyone touching chat, prompts, or the DB:
+
+- **Store**: the `memories` table (migration `010_memory.sql`, repository
+  methods in `db/repositories.rs`). All writes go through the Rust process —
+  the `june_context` MCP reads the same SQLite file read-only, never write to
+  it from Python. Migration comments must contain **no semicolons**
+  (`run_migrations` splits statements on `;`).
+- **Module**: `src-tauri/src/memory/` — `mod.rs` (settings `memory.json`:
+  `enabled`/`auto_extract`, CRUD commands, the shared `prompt_block`),
+  `extract.rs` (every-3rd-assistant-reply extraction over the last 5+5
+  messages; importance 1-10 where LOWER is more important, > 8 discarded),
+  `recall.rs` (BGE-M3 embeddings via a **direct Carpe Diem `/embeddings`
+  call** — the ADR-0008 pattern, NOT the sidecar — f32 LE blobs, hybrid
+  LIKE + cosine merged with RRF, keyword-only fallback when offline).
+- **Injection seams** (don't invent new ones): desktop = the `user_memory`
+  param of `sync_june_soul` in `hermes_bridge.rs` (written at Hermes spawn, so
+  mid-session facts land next start); mobile = `build_system_prompt` in
+  `agent_lite/mod.rs` (rebuilt every turn). On-demand recall beyond the
+  injected top-20: `search_user_memories` in `june_context_mcp.py` (withheld
+  via the `--memory=off` argv when the master toggle is off) and the
+  `search_memories` agent-lite tool.
+- **Extraction triggers**: mobile is a Rust post-turn hook
+  (`maybe_extract_after_agent_lite_turn`); desktop transcripts live in Hermes,
+  so the trigger is the frontend (`src/lib/memory.ts`,
+  `noteAssistantTurnCompleted` wired into AgentWorkspace's terminal-event
+  handler) calling the `memory_extract` command. Keep the cadence/window
+  constants in `src/lib/memory.ts` in sync with `memory/extract.rs`.
+- **Everything is best-effort**: extraction, embedding backfill, and recall
+  failures log and degrade — they must never break a chat turn or surface as
+  UI errors.
+- **UI**: Settings › Memory (`MemorySettingsSection.tsx`; the tab must exist
+  in BOTH `AppSettings.tsx` and `SETTINGS_SIDEBAR_GROUPS` in `Sidebar.tsx`)
+  and the mobile Settings section (`components/mobile/MemorySettings.tsx`).
+  Disabling memory stops using it but never deletes; deletion is the explicit
+  "forget" actions only.
+- **Vocabulary**: "memory (user memory)" is a CONTEXT.md term — distinct from
+  Hermes' own memory *directory*. Memory commands are shared commands: any new
+  one goes in **both** `generate_handler!` lists.
+
 ---
 
 # June — Agent Instructions
@@ -121,6 +166,7 @@ os-june/
 │   ├── src/audio/           # recording, source separation, turn detection, live preview (+ ios_session.rs)
 │   ├── src/hermes_bridge.rs # spawns + sandboxes the embedded Hermes agent runtime (desktop only)
 │   ├── src/agent_lite/      # (fork) mobile chat: tool loop over chat completions, no Hermes
+│   ├── src/memory/          # (fork) cross-conversation user memory: settings, extraction, hybrid recall
 │   ├── src/os_accounts.rs   # OS Accounts login (PKCE), keychain token store
 │   ├── src/providers/       # model-settings persistence
 │   ├── src/commands.rs      # the Tauri command surface
