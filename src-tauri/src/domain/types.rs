@@ -536,6 +536,48 @@ pub struct AgentToolEventDto {
     pub completed_at: Option<String>,
 }
 
+/// A durable fact about the user, remembered across conversations. Extracted
+/// automatically from agent chats or added manually in Settings; injected into
+/// the system prompt of future desktop (Hermes) and mobile (agent-lite) chats.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryDto {
+    pub id: String,
+    pub text: String,
+    pub source: MemorySource,
+    /// 1 (essential) to 10 (trivial) — lower is more important.
+    pub importance: i64,
+    pub disabled: bool,
+    pub has_embedding: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum MemorySource {
+    Auto,
+    Manual,
+}
+
+impl MemorySource {
+    pub fn as_db(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Manual => "manual",
+        }
+    }
+}
+
+impl From<&str> for MemorySource {
+    fn from(value: &str) -> Self {
+        match value {
+            "manual" => Self::Manual,
+            _ => Self::Auto,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAgentTaskRequest {

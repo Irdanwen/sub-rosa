@@ -48,6 +48,8 @@ const mocks = vi.hoisted(() => ({
   listVeniceModels: vi.fn(),
   listAgentTasks: vi.fn(),
   downloadHermesBridgeFile: vi.fn(),
+  saveHermesBridgeFile: vi.fn(),
+  saveDialog: vi.fn(),
   osAccountsUpgrade: vi.fn(),
   setVeniceModel: vi.fn(),
   providerModelSettings: vi.fn(),
@@ -105,6 +107,7 @@ vi.mock("../lib/tauri", () => ({
   listVeniceModels: mocks.listVeniceModels,
   listAgentTasks: mocks.listAgentTasks,
   downloadHermesBridgeFile: mocks.downloadHermesBridgeFile,
+  saveHermesBridgeFile: mocks.saveHermesBridgeFile,
   osAccountsUpgrade: mocks.osAccountsUpgrade,
   providerModelSettings: mocks.providerModelSettings,
   retryAgentTask: mocks.retryAgentTask,
@@ -124,6 +127,14 @@ vi.mock("../lib/tauri", () => ({
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: mocks.listen,
+}));
+
+// jsdom has no Tauri IPC: the artifact download flow opens a native save
+// dialog first, so `save` resolves to a destination path (configurable per
+// test) and `open` quietly declines.
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn(async () => null),
+  save: mocks.saveDialog,
 }));
 
 vi.mock("../lib/hermes-adapter", async (importOriginal) => ({
@@ -307,6 +318,8 @@ describe("AgentWorkspace", () => {
       previewDataUrl: null,
     }));
     mocks.downloadHermesBridgeFile.mockResolvedValue("/Users/alex/Downloads/sample.pdf");
+    mocks.saveDialog.mockResolvedValue("/Users/alex/Downloads/sample.pdf");
+    mocks.saveHermesBridgeFile.mockResolvedValue(undefined);
     mocks.ensureHermesBridgeSession.mockResolvedValue({});
     mocks.deleteHermesSession.mockResolvedValue(undefined);
     mocks.suggestAgentSessionTitle.mockResolvedValue({
@@ -4750,7 +4763,13 @@ describe("AgentWorkspace", () => {
 
     await user.click(screen.getByRole("button", { name: "Download sample.pdf" }));
 
-    expect(mocks.downloadHermesBridgeFile).toHaveBeenCalledWith(samplePath);
+    // The flow asks for a destination, then copies the workspace file there.
+    await waitFor(() => {
+      expect(mocks.saveHermesBridgeFile).toHaveBeenCalledWith(
+        samplePath,
+        "/Users/alex/Downloads/sample.pdf",
+      );
+    });
   });
 
   it("renders a workspace file's download card only on the first response that mentions it", async () => {

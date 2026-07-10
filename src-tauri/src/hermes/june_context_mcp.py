@@ -26,6 +26,34 @@ SNIPPET_CHARS = 900
 DICTATION_HISTORY_RETENTION_DAYS = 7
 
 
+# The recall tool over stored user memories is withheld when the app spawns
+# this server with --memory=off (the user's master memory toggle).
+MEMORY_TOOL: dict[str, Any] = {
+    "name": "search_user_memories",
+    "description": (
+        "Search durable facts remembered about the user from past "
+        "conversations (preferences, projects, constraints). The most "
+        "important facts are already injected into your context; use this to "
+        "look up more when the user references something from an earlier "
+        "conversation. Leave the query empty to list the top facts."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Search text, in the user's language. Leave empty to list the most important memories.",
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": MAX_LIMIT,
+                "default": DEFAULT_LIMIT,
+            },
+        },
+    },
+}
+
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_meeting_notes",
@@ -77,14 +105,15 @@ TOOLS: list[dict[str, Any]] = [
 
 def main() -> None:
     if len(sys.argv) < 2:
-        raise SystemExit("Usage: june_context_mcp.py <notes.sqlite3>")
+        raise SystemExit("Usage: june_context_mcp.py <notes.sqlite3> [--memory=off]")
 
     db_path = Path(sys.argv[1]).expanduser()
+    memory_enabled = "--memory=off" not in sys.argv[2:]
     while True:
         message = read_message()
         if message is None:
             return
-        response = handle_message(db_path, message)
+        response = handle_message(db_path, message, memory_enabled)
         if response is not None:
             write_message(response)
 
@@ -125,7 +154,9 @@ def write_message(payload: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
-def handle_message(db_path: Path, message: dict[str, Any]) -> dict[str, Any] | None:
+def handle_message(
+    db_path: Path, message: dict[str, Any], memory_enabled: bool = True
+) -> dict[str, Any] | None:
     method = message.get("method")
     request_id = message.get("id")
 
@@ -143,16 +174,22 @@ def handle_message(db_path: Path, message: dict[str, Any]) -> dict[str, Any] | N
     if method == "ping":
         return response(request_id, {})
     if method == "tools/list":
-        return response(request_id, {"tools": TOOLS})
+        tools = TOOLS + [MEMORY_TOOL] if memory_enabled else TOOLS
+        return response(request_id, {"tools": tools})
     if method == "tools/call":
-        return call_tool(db_path, request_id, message.get("params") or {})
+        return call_tool(db_path, request_id, message.get("params") or {}, memory_enabled)
 
     if request_id is None:
         return None
     return error_response(request_id, -32601, f"Unknown method: {method}")
 
 
-def call_tool(db_path: Path, request_id: Any, params: dict[str, Any]) -> dict[str, Any]:
+def call_tool(
+    db_path: Path,
+    request_id: Any,
+    params: dict[str, Any],
+    memory_enabled: bool = True,
+) -> dict[str, Any]:
     name = params.get("name")
     arguments = params.get("arguments") or {}
     try:
@@ -160,6 +197,8 @@ def call_tool(db_path: Path, request_id: Any, params: dict[str, Any]) -> dict[st
             result = search_meeting_notes(db_path, arguments)
         elif name == "search_dictation_history":
             result = search_dictation_history(db_path, arguments)
+        elif name == "search_user_memories" and memory_enabled:
+            result = search_user_memories(db_path, arguments)
         else:
             return error_response(request_id, -32602, f"Unknown tool: {name}")
     except Exception as exc:
@@ -306,6 +345,50 @@ def search_dictation_history(db_path: Path, arguments: dict[str, Any]) -> dict[s
             "textSnippet": snippet(row["text"] or "", query),
             "language": row["language"],
             "provider": row["provider"],
+            "createdAt": row["created_at"],
+        }
+        for row in rows
+    ]
+    return {"query": query, "count": len(items), "items": items}
+
+
+def search_user_memories(db_path: Path, arguments: dict[str, Any]) -> dict[str, Any]:
+    query = str(arguments.get("query") or "").strip()
+    limit = bounded_limit(arguments.get("limit"))
+
+    if not db_path.exists():
+        return {"query": query, "items": [], "message": "June notes database does not exist yet."}
+
+    clauses = ["disabled = 0"]
+    params: list[Any] = []
+    if query:
+        clauses.append("lower(coalesce(text, '')) LIKE ?")
+        params.append(f"%{query.lower()}%")
+    where = "WHERE " + " AND ".join(clauses)
+
+    # importance is 1 (essential) to 10 (trivial): most important first, then
+    # newest, matching the ranking used for the injected memory block.
+    sql = f"""
+        SELECT id, text, importance, created_at
+        FROM memories
+        {where}
+        ORDER BY importance ASC, created_at DESC, rowid DESC
+        LIMIT ?
+    """
+    params.append(limit)
+
+    try:
+        with connect_readonly(db_path) as conn:
+            rows = conn.execute(sql, params).fetchall()
+    except sqlite3.OperationalError:
+        # Older databases predate the memories table (migration not run yet).
+        return {"query": query, "items": [], "message": "No memories are stored yet."}
+
+    items = [
+        {
+            "id": row["id"],
+            "text": row["text"],
+            "importance": row["importance"],
             "createdAt": row["created_at"],
         }
         for row in rows

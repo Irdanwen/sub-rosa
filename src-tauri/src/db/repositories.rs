@@ -2,8 +2,8 @@ use crate::domain::types::{
     AgentMessageDto, AgentMessageRole, AgentSafetyProfile, AgentTaskDto, AgentTaskListResponse,
     AgentTaskStatus, AgentToolEventDto, AgentToolEventStatus, AppError, AudioArtifactDto,
     DictationHistoryItemDto, DictionaryEntryDto, FolderDto, ListDictationHistoryResponse,
-    ListNotesResponse, NoteDto, NoteListItemDto, ProcessingStatus, RecordingSourceMode,
-    RecordingState, SessionFolderDto, TranscriptDto,
+    ListNotesResponse, MemoryDto, MemorySource, NoteDto, NoteListItemDto, ProcessingStatus,
+    RecordingSourceMode, RecordingState, SessionFolderDto, TranscriptDto,
 };
 use chrono::{Duration, SecondsFormat, Utc};
 use sqlx::query::query;
@@ -12,6 +12,10 @@ use sqlx_sqlite::SqlitePool;
 use uuid::Uuid;
 
 const DICTATION_HISTORY_RETENTION_DAYS: i64 = 7;
+
+/// Shared SELECT column list for memory rows (see [`memory_from_row`]).
+const MEMORY_COLUMNS: &str = "id, text, source, importance, disabled, \
+     embedding IS NOT NULL AS has_embedding, created_at, updated_at";
 
 #[derive(Clone)]
 pub struct Repositories {
@@ -430,6 +434,208 @@ impl Repositories {
             }));
         }
         Ok(snippets)
+    }
+
+    /// Every memory, newest first, for the management UI (disabled ones
+    /// included so the user can re-enable them).
+    pub async fn list_memories(&self) -> Result<Vec<MemoryDto>, sqlx::error::Error> {
+        let rows = query(&format!(
+            "SELECT {MEMORY_COLUMNS} FROM memories ORDER BY created_at DESC, rowid DESC"
+        ))
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(memory_from_row).collect())
+    }
+
+    pub async fn insert_memory(
+        &self,
+        text: &str,
+        source: MemorySource,
+        importance: i64,
+    ) -> Result<MemoryDto, sqlx::error::Error> {
+        let now = timestamp();
+        let memory = MemoryDto {
+            id: Uuid::new_v4().to_string(),
+            text: text.trim().to_string(),
+            source,
+            importance: importance.clamp(1, 10),
+            disabled: false,
+            has_embedding: false,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+        query(
+            "INSERT INTO memories (id, text, source, importance, disabled, created_at, updated_at)
+             VALUES (?, ?, ?, ?, 0, ?, ?)",
+        )
+        .bind(&memory.id)
+        .bind(&memory.text)
+        .bind(memory.source.as_db())
+        .bind(memory.importance)
+        .bind(&memory.created_at)
+        .bind(&memory.updated_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(memory)
+    }
+
+    /// Case-insensitive existence check so the extractor never stores the
+    /// same fact twice (the model also sees existing memories, but this guard
+    /// is the deterministic backstop).
+    pub async fn memory_with_text_exists(&self, text: &str) -> Result<bool, sqlx::error::Error> {
+        let row = query("SELECT 1 FROM memories WHERE lower(trim(text)) = lower(trim(?)) LIMIT 1")
+            .bind(text)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.is_some())
+    }
+
+    /// Edits a memory's text and/or disabled flag. A text change clears the
+    /// stored embedding — the vector describes the old wording.
+    pub async fn update_memory(
+        &self,
+        memory_id: &str,
+        text: Option<&str>,
+        disabled: Option<bool>,
+    ) -> Result<MemoryDto, AppError> {
+        let now = timestamp();
+        if let Some(text) = text.map(str::trim).filter(|value| !value.is_empty()) {
+            query("UPDATE memories SET text = ?, embedding = NULL, updated_at = ? WHERE id = ?")
+                .bind(text)
+                .bind(&now)
+                .bind(memory_id)
+                .execute(&self.pool)
+                .await?;
+        }
+        if let Some(disabled) = disabled {
+            query("UPDATE memories SET disabled = ?, updated_at = ? WHERE id = ?")
+                .bind(disabled as i64)
+                .bind(&now)
+                .bind(memory_id)
+                .execute(&self.pool)
+                .await?;
+        }
+        let row = query(&format!(
+            "SELECT {MEMORY_COLUMNS} FROM memories WHERE id = ?"
+        ))
+        .bind(memory_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AppError::new("memory_not_found", "Memory was not found."))?;
+        Ok(memory_from_row(row))
+    }
+
+    pub async fn delete_memory(&self, memory_id: &str) -> Result<(), AppError> {
+        let result = query("DELETE FROM memories WHERE id = ?")
+            .bind(memory_id)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::new("memory_not_found", "Memory was not found."));
+        }
+        Ok(())
+    }
+
+    pub async fn delete_all_memories(&self) -> Result<(), sqlx::error::Error> {
+        query("DELETE FROM memories").execute(&self.pool).await?;
+        Ok(())
+    }
+
+    /// The prompt-injection set: enabled memories, most important first
+    /// (importance 1 beats 10), newest first within a tier.
+    pub async fn top_memories(&self, limit: i64) -> Result<Vec<MemoryDto>, sqlx::error::Error> {
+        let rows = query(&format!(
+            "SELECT {MEMORY_COLUMNS} FROM memories
+             WHERE disabled = 0
+             ORDER BY importance ASC, created_at DESC, rowid DESC
+             LIMIT ?"
+        ))
+        .bind(limit.clamp(1, 200))
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(memory_from_row).collect())
+    }
+
+    /// Keyword recall over enabled memories (same LIKE pattern as
+    /// [`Self::search_note_context`]); the semantic half of recall merges
+    /// with this in `memory::recall`.
+    pub async fn search_memories(
+        &self,
+        search: &str,
+        limit: i64,
+    ) -> Result<Vec<MemoryDto>, sqlx::error::Error> {
+        let pattern = format!(
+            "%{}%",
+            search
+                .trim()
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        );
+        let rows = query(&format!(
+            "SELECT {MEMORY_COLUMNS} FROM memories
+             WHERE disabled = 0 AND text LIKE ? ESCAPE '\\'
+             ORDER BY importance ASC, created_at DESC
+             LIMIT ?"
+        ))
+        .bind(&pattern)
+        .bind(limit.clamp(1, 50))
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(memory_from_row).collect())
+    }
+
+    /// Memories still awaiting a vector, oldest first, for the best-effort
+    /// embedding backfill.
+    pub async fn memories_missing_embedding(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<MemoryDto>, sqlx::error::Error> {
+        let rows = query(&format!(
+            "SELECT {MEMORY_COLUMNS} FROM memories
+             WHERE embedding IS NULL AND disabled = 0
+             ORDER BY created_at ASC
+             LIMIT ?"
+        ))
+        .bind(limit.clamp(1, 200))
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(memory_from_row).collect())
+    }
+
+    pub async fn set_memory_embedding(
+        &self,
+        memory_id: &str,
+        embedding: &[u8],
+    ) -> Result<(), sqlx::error::Error> {
+        query("UPDATE memories SET embedding = ? WHERE id = ?")
+            .bind(embedding)
+            .bind(memory_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Enabled memories with their raw embedding bytes (little-endian f32),
+    /// for in-process cosine scoring during recall.
+    pub async fn memories_with_embeddings(
+        &self,
+    ) -> Result<Vec<MemoryEmbeddingRow>, sqlx::error::Error> {
+        let rows = query(&format!(
+            "SELECT {MEMORY_COLUMNS}, embedding FROM memories WHERE disabled = 0"
+        ))
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                let embedding: Option<Vec<u8>> = row.get("embedding");
+                MemoryEmbeddingRow {
+                    memory: memory_from_row(row),
+                    embedding,
+                }
+            })
+            .collect())
     }
 
     pub async fn list_dictation_history(
@@ -2702,6 +2908,28 @@ fn dictionary_entry_from_row(row: sqlx_sqlite::SqliteRow) -> DictionaryEntryDto 
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
     }
+}
+
+fn memory_from_row(row: sqlx_sqlite::SqliteRow) -> MemoryDto {
+    let source: String = row.get("source");
+    MemoryDto {
+        id: row.get("id"),
+        text: row.get("text"),
+        source: MemorySource::from(source.as_str()),
+        importance: row.get("importance"),
+        disabled: row.get::<i64, _>("disabled") != 0,
+        has_embedding: row.get::<i64, _>("has_embedding") != 0,
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    }
+}
+
+/// A memory plus its raw stored vector, for in-process semantic scoring.
+#[derive(Debug, Clone)]
+pub struct MemoryEmbeddingRow {
+    pub memory: MemoryDto,
+    /// Little-endian f32 bytes; `None` while the backfill hasn't reached it.
+    pub embedding: Option<Vec<u8>>,
 }
 
 /// One retrieval hit for the agent-lite chat: which note it came from, and a

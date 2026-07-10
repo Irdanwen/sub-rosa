@@ -116,7 +116,7 @@ You are helpful, knowledgeable, and direct. Communicate clearly, admit uncertain
 /// discovered through the `june_context` MCP server configured below; this
 /// prompt note teaches the model when to spend tool calls on that local data.
 const JUNE_SOUL_CONTEXT_MD: &str = r#"
-June context tools: you have access to a local `june_context` MCP toolset for searching the user's June meeting notes, saved note transcripts, and dictation history. Use it when the user asks about prior meetings, calls, recordings, notes, decisions, follow-ups, or dictated text. Query it on demand instead of assuming you already know those entries, and summarize only what the retrieved results support.
+June context tools: you have access to a local `june_context` MCP toolset for searching the user's June meeting notes, saved note transcripts, dictation history, and stored user memories. Use it when the user asks about prior meetings, calls, recordings, notes, decisions, follow-ups, or dictated text — and use `search_user_memories` when the user references something from an earlier conversation that is not in your injected memory block. Query it on demand instead of assuming you already know those entries, and summarize only what the retrieved results support.
 "#;
 
 /// Appended to `SOUL.md` for every runtime. This calibrates June's first-turn
@@ -866,7 +866,13 @@ async fn start_hermes_bridge_inner(
     } else {
         sandboxed
     };
-    sync_june_soul(&hermes_home, sandbox_available, agent_cli_access)?;
+    let user_memory = crate::memory::prompt_block_for_app(app).await;
+    sync_june_soul(
+        &hermes_home,
+        sandbox_available,
+        agent_cli_access,
+        user_memory.as_deref(),
+    )?;
     if sandboxed {
         eprintln!("Spawning Hermes under the macOS Seatbelt write-jail.");
     } else if full_mode {
@@ -1031,6 +1037,10 @@ struct JuneContextMcpConfig {
     command: String,
     script_path: PathBuf,
     database_path: PathBuf,
+    /// Snapshot of the user's memory master toggle at spawn time: when off,
+    /// the MCP is launched with `--memory=off` so the recall tool is not even
+    /// advertised to the agent.
+    memory_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -6196,6 +6206,7 @@ fn sync_june_context_mcp(
         command: hermes_python_command(hermes_command),
         script_path,
         database_path: paths.database_path,
+        memory_enabled: crate::memory::settings().enabled,
     })
 }
 
@@ -6407,6 +6418,11 @@ fn render_mcp_servers_config(
 }
 
 fn render_context_mcp_entry(config: &JuneContextMcpConfig) -> String {
+    let memory_arg = if config.memory_enabled {
+        String::new()
+    } else {
+        "      - \"--memory=off\"\n".to_string()
+    };
     format!(
         r#"  {server_name}:
     enabled: true
@@ -6414,7 +6430,7 @@ fn render_context_mcp_entry(config: &JuneContextMcpConfig) -> String {
     args:
       - {script_path}
       - {database_path}
-    env:
+{memory_arg}    env:
       PYTHONUNBUFFERED: "1"
     timeout: 30
     connect_timeout: 10
@@ -6528,11 +6544,21 @@ fn merge_external_skill_dirs(user_dirs: Vec<PathBuf>, bundled: Option<PathBuf>) 
 /// this machine actually engage the jail (it's omitted when sandbox-exec is
 /// missing or the escape-hatch env var disabled it, so the agent never
 /// claims a protection that isn't enforced).
+///
+/// `user_memory` is the cross-conversation facts block from
+/// `memory::prompt_block_for_app` (None when memory is disabled or empty).
+/// SOUL.md is written at spawn time, so facts extracted mid-session appear
+/// at the next runtime start; on-demand recall covers the gap through the
+/// `june_context` MCP.
 fn sync_june_soul(
     hermes_home: &std::path::Path,
     sandbox_available: bool,
     agent_cli_access: bool,
+    user_memory: Option<&str>,
 ) -> Result<(), AppError> {
+    let memory_section = user_memory
+        .map(|block| format!("\n{block}"))
+        .unwrap_or_default();
     let soul = if sandbox_available {
         let cli_section = if agent_cli_access {
             JUNE_SOUL_CLI_ALLOWED_MD
@@ -6540,10 +6566,10 @@ fn sync_june_soul(
             JUNE_SOUL_CLI_BLOCKED_MD
         };
         format!(
-            "{JUNE_SOUL_MD}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_SANDBOX_MD}{cli_section}"
+            "{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_SANDBOX_MD}{cli_section}"
         )
     } else {
-        format!("{JUNE_SOUL_MD}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_MEDIA_MD}")
+        format!("{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_MEDIA_MD}")
     };
     std::fs::write(hermes_home.join("SOUL.md"), soul)
         .map_err(|error| AppError::new("hermes_bridge_soul_failed", error.to_string()))
@@ -7627,6 +7653,7 @@ mod tests {
             command: "/tmp/hermes/venv/bin/python".to_string(),
             script_path: PathBuf::from("/tmp/june/hermes-mcp/june_context_mcp.py"),
             database_path: PathBuf::from("/tmp/june/notes.sqlite3"),
+            memory_enabled: true,
         }
     }
 
@@ -8360,7 +8387,7 @@ mod tests {
         )
         .expect("seed default soul");
 
-        sync_june_soul(home.path(), true, false).expect("sync soul");
+        sync_june_soul(home.path(), true, false, None).expect("sync soul");
 
         let soul = std::fs::read_to_string(home.path().join("SOUL.md")).expect("read soul");
         assert!(soul.contains("You are June"));
@@ -8372,7 +8399,7 @@ mod tests {
     fn sandboxed_soul_describes_the_write_jail() {
         let home = tempfile::tempdir().expect("tempdir");
 
-        sync_june_soul(home.path(), true, false).expect("sync soul");
+        sync_june_soul(home.path(), true, false, None).expect("sync soul");
 
         let soul = std::fs::read_to_string(home.path().join("SOUL.md")).expect("read soul");
         assert!(soul.contains("Seatbelt"));
@@ -8397,20 +8424,54 @@ mod tests {
     fn june_soul_describes_local_context_tools() {
         let home = tempfile::tempdir().expect("tempdir");
 
-        sync_june_soul(home.path(), false, false).expect("sync soul");
+        sync_june_soul(home.path(), false, false, None).expect("sync soul");
 
         let soul = std::fs::read_to_string(home.path().join("SOUL.md")).expect("read soul");
         assert!(soul.contains("june_context"));
         assert!(soul.contains("meeting notes"));
         assert!(soul.contains("dictation history"));
+        assert!(soul.contains("search_user_memories"));
         assert!(soul.contains("Query it on demand"));
+    }
+
+    #[test]
+    fn june_soul_includes_user_memory_block_when_provided() {
+        let home = tempfile::tempdir().expect("tempdir");
+
+        let block = "User memory: durable facts remembered from the user's previous conversations.\n- Répond toujours en français.\n";
+        sync_june_soul(home.path(), false, false, Some(block)).expect("sync soul");
+
+        let soul = std::fs::read_to_string(home.path().join("SOUL.md")).expect("read soul");
+        assert!(soul.contains("User memory:"));
+        assert!(soul.contains("- Répond toujours en français."));
+        // The facts sit between the identity and the tool notes so they read
+        // as background context, not as instructions about a specific tool.
+        let memory_at = soul.find("User memory:").expect("memory position");
+        let context_at = soul.find("June context tools:").expect("context position");
+        assert!(memory_at < context_at);
+
+        // Without a block the header never appears.
+        sync_june_soul(home.path(), false, false, None).expect("sync soul");
+        let soul = std::fs::read_to_string(home.path().join("SOUL.md")).expect("read soul");
+        assert!(!soul.contains("User memory:"));
+    }
+
+    #[test]
+    fn context_mcp_entry_disables_memory_recall_when_toggled_off() {
+        let enabled = render_context_mcp_entry(&test_june_context_mcp_config());
+        assert!(!enabled.contains("--memory=off"));
+
+        let mut config = test_june_context_mcp_config();
+        config.memory_enabled = false;
+        let disabled = render_context_mcp_entry(&config);
+        assert!(disabled.contains("- \"--memory=off\""));
     }
 
     #[test]
     fn june_soul_asks_for_clarification_before_costly_ambiguous_work() {
         let home = tempfile::tempdir().expect("tempdir");
 
-        sync_june_soul(home.path(), false, false).expect("sync soul");
+        sync_june_soul(home.path(), false, false, None).expect("sync soul");
 
         let soul = std::fs::read_to_string(home.path().join("SOUL.md")).expect("read soul");
         assert!(soul.contains("Clarifying questions"));
@@ -8424,7 +8485,7 @@ mod tests {
     fn june_soul_describes_web_tools() {
         let home = tempfile::tempdir().expect("tempdir");
 
-        sync_june_soul(home.path(), false, false).expect("sync soul");
+        sync_june_soul(home.path(), false, false, None).expect("sync soul");
 
         let soul = std::fs::read_to_string(home.path().join("SOUL.md")).expect("read soul");
         assert!(soul.contains("june_web"));
@@ -8436,7 +8497,7 @@ mod tests {
     fn sandboxed_soul_with_cli_access_describes_the_grant() {
         let home = tempfile::tempdir().expect("tempdir");
 
-        sync_june_soul(home.path(), true, true).expect("sync soul");
+        sync_june_soul(home.path(), true, true, None).expect("sync soul");
 
         let soul = std::fs::read_to_string(home.path().join("SOUL.md")).expect("read soul");
         assert!(soul.contains("the user enabled Agent CLI access"));
@@ -8452,7 +8513,7 @@ mod tests {
     fn unsandboxed_soul_makes_no_sandbox_claims() {
         let home = tempfile::tempdir().expect("tempdir");
 
-        sync_june_soul(home.path(), false, false).expect("sync soul");
+        sync_june_soul(home.path(), false, false, None).expect("sync soul");
 
         let soul = std::fs::read_to_string(home.path().join("SOUL.md")).expect("read soul");
         assert!(soul.contains("You are June"));

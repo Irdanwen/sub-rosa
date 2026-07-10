@@ -20,6 +20,7 @@ import { IconStopCircle } from "central-icons/IconStopCircle";
 import { IconToolbox } from "central-icons/IconToolbox";
 import { IconTrashCan } from "central-icons/IconTrashCan";
 import { open as openFileDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { noteAssistantTurnCompleted } from "../../lib/memory";
 import { isMacDesktopPlatform } from "../../lib/platform";
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
@@ -4100,6 +4101,12 @@ export function AgentWorkspace({
         unlisten();
         if (!activityCounts) {
           clearSessionActivity(storedSessionId);
+        }
+        if (status === "completed") {
+          // Cross-conversation memory: every 3rd completed assistant turn
+          // feeds the recent window to the extraction model (fire-and-forget;
+          // the helper checks the user's memory settings first).
+          noteAssistantTurnCompleted(storedSessionId);
         }
         // Delivery guarantee: any steer not consumed by a tool result this turn
         // (Hermes only injects steers into tool output) would otherwise be lost.

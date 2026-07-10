@@ -488,7 +488,9 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
       ? "Searching your notes"
       : stage?.stage === "searching-web"
         ? "Searching the web"
-        : "Thinking";
+        : stage?.stage === "searching-memory"
+          ? "Recalling your memories"
+          : "Thinking";
   // Prefer the catalog's display name ("Claude Opus 4.7") over the raw id.
   const activeModelLabel =
     models.find((entry) => entry.id === model)?.name || shortModelLabel(model) || "Default model";
@@ -710,6 +712,7 @@ function shortModelLabel(modelId: string): string {
 function stageText(stage: AgentLiteStatusDto["stage"]): string {
   if (stage === "searching-notes") return "Searching your notes";
   if (stage === "searching-web") return "Searching the web";
+  if (stage === "searching-memory") return "Recalling your memories";
   return "Thinking";
 }
 

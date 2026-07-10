@@ -383,6 +383,30 @@ export type AgentTaskListResponse = {
   items: AgentTaskDto[];
 };
 
+export type MemorySource = "auto" | "manual";
+
+export type MemoryDto = {
+  id: string;
+  text: string;
+  source: MemorySource;
+  /** 1 (essential) to 10 (trivial) — lower is more important. */
+  importance: number;
+  disabled: boolean;
+  hasEmbedding: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MemorySettings = {
+  enabled: boolean;
+  autoExtract: boolean;
+};
+
+export type MemoryListResponse = {
+  items: MemoryDto[];
+  settings: MemorySettings;
+};
+
 export type SuggestAgentSessionTitleResponse = {
   title: string;
 };
@@ -748,6 +772,48 @@ export async function deleteDictionaryEntry(entryId: string) {
 
 export async function listAgentTasks() {
   return invoke<AgentTaskListResponse>("list_agent_tasks");
+}
+
+export async function memoryGetSettings() {
+  return invoke<MemorySettings>("memory_get_settings");
+}
+
+export async function memorySetSettings(input: MemorySettings) {
+  return invoke<MemorySettings>("memory_set_settings", { request: input });
+}
+
+export async function memoryList() {
+  return invoke<MemoryListResponse>("memory_list");
+}
+
+export async function memoryAdd(text: string) {
+  return invoke<MemoryDto>("memory_add", { request: { text } });
+}
+
+export async function memoryUpdate(input: { memoryId: string; text?: string; disabled?: boolean }) {
+  return invoke<MemoryDto>("memory_update", { request: input });
+}
+
+export async function memoryDelete(memoryId: string) {
+  return invoke<void>("memory_delete", { request: { memoryId } });
+}
+
+export async function memoryClear() {
+  return invoke<void>("memory_clear");
+}
+
+/** One (role, content) entry of the window sent to memory extraction. */
+export type MemoryConversationMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type MemoryExtractResult = {
+  added: number;
+};
+
+export async function memoryExtract(messages: MemoryConversationMessage[]) {
+  return invoke<MemoryExtractResult>("memory_extract", { request: { messages } });
 }
 
 export async function agentHudShow() {
@@ -1501,7 +1567,7 @@ export const AGENT_LITE_DONE_EVENT = "agent-lite://done";
 
 export type AgentLiteStatusDto = {
   taskId: string;
-  stage: "thinking" | "searching-notes" | "searching-web";
+  stage: "thinking" | "searching-notes" | "searching-web" | "searching-memory";
   detail?: string;
 };
 

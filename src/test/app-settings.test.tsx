@@ -2025,7 +2025,8 @@ describe("AppSettings", () => {
     await user.click(screen.getByRole("button", { name: "Files" }));
 
     expect(await screen.findByText("Workspace")).toBeInTheDocument();
-    expect(screen.getByText("Memory")).toBeInTheDocument();
+    // "Memory" also names a settings tab now, so scope to the files heading.
+    expect(screen.getByRole("heading", { name: "Memory" })).toBeInTheDocument();
     expect(screen.getByText("sample.pdf")).toBeInTheDocument();
     expect(screen.getByText("USER.md")).toBeInTheDocument();
     expect(screen.queryByText("Logs")).toBeNull();

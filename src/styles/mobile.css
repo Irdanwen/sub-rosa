@@ -2294,6 +2294,119 @@
   padding: var(--sp-2) var(--mobile-gutter) 0;
 }
 
+/* --- Memory settings ------------------------------------------------------------ */
+
+.mobile-memory {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.mobile-memory-add {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.mobile-memory-add input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  font-size: var(--fs-md);
+}
+
+.mobile-memory-add button {
+  min-height: 44px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.mobile-memory-add button:disabled {
+  opacity: 0.35;
+}
+
+.mobile-memory-empty,
+.mobile-memory-error {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.mobile-memory-error {
+  color: var(--destructive);
+}
+
+.mobile-memory-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mobile-memory-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mobile-memory-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mobile-memory-text {
+  font-size: var(--fs-md);
+  overflow-wrap: anywhere;
+}
+
+.mobile-memory-row[data-paused="true"] .mobile-memory-text {
+  color: var(--muted-foreground);
+}
+
+.mobile-memory-meta {
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+
+.mobile-memory-row-actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
+.mobile-memory-row-actions button {
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  font-size: var(--fs-sm);
+}
+
+.mobile-memory-delete {
+  color: var(--destructive);
+}
+
+.mobile-memory-clear {
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  font-size: var(--fs-md);
+  color: var(--destructive);
+}
+
 /* --- Reduced motion ------------------------------------------------------------ */
 
 @media (prefers-reduced-motion: reduce) {

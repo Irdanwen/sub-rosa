@@ -32,7 +32,7 @@ const SYSTEM_PROMPT: &str = "You are Sub Rosa's assistant on the user's device. 
 #[serde(rename_all = "camelCase")]
 pub struct AgentLiteStatusDto {
     pub task_id: String,
-    /// "thinking" | "searching-notes" | "searching-web"
+    /// "thinking" | "searching-notes" | "searching-web" | "searching-memory"
     pub stage: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
@@ -94,6 +94,10 @@ pub async fn agent_lite_run(
                 .await?;
             let task = repos.get_agent_task(&task_id).await?;
             let _ = app.emit(AGENT_LITE_DONE_EVENT, &task);
+            // Best-effort memory extraction (every 3rd assistant reply);
+            // runs detached so a slow or failing extraction never delays
+            // the answer the user is already reading.
+            crate::memory::extract::maybe_extract_after_agent_lite_turn(&app, task_id.clone());
             Ok(task)
         }
         Err(error) => {
@@ -120,9 +124,13 @@ async fn run_turn(
     attachments: &[AgentLiteAttachment],
 ) -> Result<String, AppError> {
     let task = repos.get_agent_task(task_id).await?;
+    // Cross-conversation memory rides in the system prompt, rebuilt every
+    // turn so facts extracted a moment ago apply immediately. System messages
+    // are never persisted to agent_messages, so this cannot leak into history.
+    let memory_block = crate::memory::prompt_block(repos).await;
     let mut messages = vec![serde_json::json!({
         "role": "system",
-        "content": SYSTEM_PROMPT,
+        "content": build_system_prompt(memory_block.as_deref()),
     })];
     for message in &task.messages {
         let role = match message.role {
@@ -155,7 +163,7 @@ async fn run_turn(
         } else {
             serde_json::json!({
                 "messages": messages,
-                "tools": tool_definitions(),
+                "tools": tool_definitions(crate::memory::settings().enabled),
                 "tool_choice": "auto",
                 "temperature": 0.3,
                 "max_tokens": 4000,
@@ -260,6 +268,32 @@ async fn execute_tool(
                 Err(error) => format!("Note search failed: {error}"),
             }
         }
+        "search_memories" => {
+            emit_status(app, task_id, "searching-memory", Some(query.to_string()));
+            if !crate::memory::settings().enabled {
+                return "Memory is disabled in the user's settings.".to_string();
+            }
+            match crate::memory::recall::recall(repos, query, 8).await {
+                Ok(memories) if memories.is_empty() => {
+                    "No stored memories match that query.".to_string()
+                }
+                Ok(memories) => {
+                    let items: Vec<serde_json::Value> = memories
+                        .iter()
+                        .map(|memory| {
+                            serde_json::json!({
+                                "text": memory.text,
+                                "importance": memory.importance,
+                                "createdAt": memory.created_at,
+                            })
+                        })
+                        .collect();
+                    serde_json::to_string(&items)
+                        .unwrap_or_else(|_| "Memory search failed to serialize.".to_string())
+                }
+                Err(error) => format!("Memory search failed: {}", error.message),
+            }
+        }
         "web_search" => {
             emit_status(app, task_id, "searching-web", Some(query.to_string()));
             let body = serde_json::json!({ "query": query, "limit": 5 });
@@ -278,9 +312,9 @@ async fn execute_tool(
     }
 }
 
-fn tool_definitions() -> serde_json::Value {
-    serde_json::json!([
-        {
+fn tool_definitions(memory_enabled: bool) -> serde_json::Value {
+    let mut tools = vec![
+        serde_json::json!({
             "type": "function",
             "function": {
                 "name": "search_notes",
@@ -296,8 +330,8 @@ fn tool_definitions() -> serde_json::Value {
                     "required": ["query"]
                 }
             }
-        },
-        {
+        }),
+        serde_json::json!({
             "type": "function",
             "function": {
                 "name": "web_search",
@@ -310,8 +344,37 @@ fn tool_definitions() -> serde_json::Value {
                     "required": ["query"]
                 }
             }
-        }
-    ])
+        }),
+    ];
+    if memory_enabled {
+        tools.push(serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "search_memories",
+                "description": "Search durable facts remembered about the user from past conversations (preferences, projects, constraints). The most important facts are already in your context; use this to look up more when the user references something from an earlier conversation.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Short keyword query, in the user's language."
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        }));
+    }
+    serde_json::Value::Array(tools)
+}
+
+/// The per-turn system prompt: the static instructions plus, when memory is
+/// enabled and non-empty, the user's remembered facts.
+fn build_system_prompt(memory_block: Option<&str>) -> String {
+    match memory_block {
+        Some(block) => format!("{SYSTEM_PROMPT}\n\n{block}"),
+        None => SYSTEM_PROMPT.to_string(),
+    }
 }
 
 fn emit_status(app: &AppHandle, task_id: &str, stage: &str, detail: Option<String>) {
@@ -395,4 +458,41 @@ fn readable_upstream_error(body: &[u8]) -> String {
         }
     }
     String::from_utf8_lossy(body).chars().take(300).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn system_prompt_appends_memory_block_when_present() {
+        let plain = build_system_prompt(None);
+        assert_eq!(plain, SYSTEM_PROMPT);
+
+        let block = "User memory: facts.\n- Répond toujours en français.\n";
+        let with_memory = build_system_prompt(Some(block));
+        assert!(with_memory.starts_with(SYSTEM_PROMPT));
+        assert!(with_memory.ends_with(block));
+    }
+
+    #[test]
+    fn memory_tool_is_only_advertised_when_memory_is_enabled() {
+        let with_memory = tool_definitions(true);
+        let names: Vec<&str> = with_memory
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .filter_map(|tool| tool.pointer("/function/name")?.as_str())
+            .collect();
+        assert_eq!(names, vec!["search_notes", "web_search", "search_memories"]);
+
+        let without_memory = tool_definitions(false);
+        let names: Vec<&str> = without_memory
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .filter_map(|tool| tool.pointer("/function/name")?.as_str())
+            .collect();
+        assert_eq!(names, vec!["search_notes", "web_search"]);
+    }
 }

@@ -17,6 +17,8 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0005](adr/0005-source-separated-audio-capture.md) — one WAV per source, re-interleaved as turns
 - [adr/0006](adr/0006-embed-hermes-sandboxed-runtime.md) — embed the pinned Hermes runtime as sandboxed child processes
 - [adr/0007](adr/0007-model-capability-source-of-truth.md) — model capabilities come from the live Venice catalog, not marketing traits
+- [adr/0008](adr/0008-studio-media-proxy-in-tauri.md) — Studio media calls go through a fork-owned Tauri proxy, not June API
+- [adr/0009](adr/0009-local-cross-conversation-memory.md) — cross-conversation user memory: local SQLite, prompt-time injection, direct embeddings
 
 ## Enforceable rules (spec/)
 

@@ -6,6 +6,7 @@ import { PRODUCT_NAME } from "../../../lib/branding";
 import { formatCredits } from "../../../lib/studio/catalog";
 import { type ThemePreference, getStoredTheme, setStoredTheme } from "../../../lib/theme";
 import { hapticSelection } from "../../../lib/haptics";
+import { MemorySettings } from "../MemorySettings";
 import { StackHeader } from "../StackHeader";
 
 const THEME_OPTIONS: Array<{ id: ThemePreference; label: string }> = [
@@ -80,6 +81,10 @@ export function SettingsScreen() {
               </button>
             ))}
           </div>
+        </section>
+        <section className="mobile-settings-section">
+          <h2 className="mobile-settings-section-title">Memory</h2>
+          <MemorySettings />
         </section>
         <section className="mobile-settings-section">
           <h2 className="mobile-settings-section-title">Carpe Diem</h2>

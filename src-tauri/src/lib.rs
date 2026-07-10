@@ -24,6 +24,7 @@ pub mod macos_menu_icons;
 pub mod meeting_detection;
 #[cfg(desktop)]
 pub mod meeting_hud;
+pub mod memory;
 #[cfg(desktop)]
 pub mod menu_bar;
 pub mod os_accounts;
@@ -322,6 +323,14 @@ pub fn run() {
             updates::set_release_channel,
             updates::fetch_update,
             updates::install_update,
+            memory::memory_get_settings,
+            memory::memory_set_settings,
+            memory::memory_list,
+            memory::memory_add,
+            memory::memory_update,
+            memory::memory_delete,
+            memory::memory_clear,
+            memory::extract::memory_extract,
             carpe_diem::settings::carpe_diem_get_settings,
             carpe_diem::settings::carpe_diem_set_base_url,
             carpe_diem::settings::carpe_diem_set_api_key,
@@ -410,6 +419,14 @@ pub fn run() {
         providers::set_venice_api_key,
         providers::clear_venice_api_key,
         providers::generate_image,
+        memory::memory_get_settings,
+        memory::memory_set_settings,
+        memory::memory_list,
+        memory::memory_add,
+        memory::memory_update,
+        memory::memory_delete,
+        memory::memory_clear,
+        memory::extract::memory_extract,
         carpe_diem::settings::carpe_diem_get_settings,
         carpe_diem::settings::carpe_diem_set_base_url,
         carpe_diem::settings::carpe_diem_set_api_key,
@@ -463,6 +480,7 @@ pub fn run() {
             // in-process (subprocess spawning is forbidden on iOS).
             carpe_diem::settings::setup(app);
             carpe_diem::sidecar::setup(app);
+            memory::setup(app);
             #[cfg(desktop)]
             {
                 updates::setup(app);

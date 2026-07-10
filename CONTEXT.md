@@ -156,6 +156,16 @@ group; an MCP server is an external tool provider (June ships `june_context`
 and `june_web`).
 _Avoid_: using "tool" for all three.
 
+**Memory (user memory)**:
+A durable fact about the user stored in the local `memories` table, extracted
+automatically from chats (or added manually in Settings) and injected into
+future conversations on both shells (see
+[ADR-0009](docs/adr/0009-local-cross-conversation-memory.md)). Distinct from
+Hermes' own memory *directory* (runtime workspace files) and from note
+content.
+_Avoid_: history, context (unqualified), Hermes memory (that is the runtime's
+folder, not this store).
+
 ### AI work & billing
 
 **Dictation**:

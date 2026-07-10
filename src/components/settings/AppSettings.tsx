@@ -94,6 +94,7 @@ import { SkillsHubSection } from "./SkillsHubSection";
 import { TeamTapsSection } from "./TeamTapsSection";
 import { ToolsetsSection } from "./ToolsetsSection";
 import { DictionarySettingsSection } from "./DictionarySettingsSection";
+import { MemorySettingsSection } from "./MemorySettingsSection";
 import { MicTestControl, type MicTestState } from "./MicTestControl";
 import { StyleSettingsSection } from "./StyleSettingsSection";
 
@@ -205,6 +206,7 @@ export type SettingsTab =
   | "audio"
   | "models"
   | "agent"
+  | "memory"
   | "skills"
   | "external-dirs"
   | "skill-review"
@@ -230,6 +232,7 @@ export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "audio", label: "Audio" },
   { id: "models", label: "Models" },
   { id: "agent", label: "Agent" },
+  { id: "memory", label: "Memory" },
   { id: "skills", label: "Installed skills" },
   { id: "external-dirs", label: "External skill directories" },
   { id: "skill-review", label: "Pending skill changes" },
@@ -1332,6 +1335,7 @@ export function AppSettings({
         ) : null}
 
         {activeTab === "agent" ? <AgentSettingsSection /> : null}
+        {activeTab === "memory" ? <MemorySettingsSection /> : null}
 
         {activeTab === "skills" ? <InstalledSkillsSection /> : null}
         {activeTab === "external-dirs" ? <ExternalDirsSection /> : null}
