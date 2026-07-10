@@ -202,6 +202,15 @@ jobs:
           restore-keys: |
             tauri-cargo-target-${{ runner.os }}-
 
+      # tauri-build validates every externalBin path at compile time, and the
+      # june-api sidecar is only built for real bundles (release.yml). An empty
+      # placeholder satisfies the existence check — nothing in clippy or the
+      # tests executes the sidecar binary.
+      - name: Stage placeholder june-api sidecar (externalBin)
+        run: |
+          mkdir -p src-tauri/binaries
+          touch "src-tauri/binaries/june-api-$(rustc -vV | sed -n 's/host: //p')"
+
       - name: Clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
