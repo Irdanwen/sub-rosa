@@ -344,6 +344,7 @@ pub async fn cleanup_text(params: DictateCleanupRequestParams) -> Result<String,
 }
 
 pub async fn list_models(model_type: &str) -> Result<Vec<ModelDto>, AppError> {
+    ensure_sidecar_ready().await;
     let url = format!("{}/v1/models", june_api_url());
     let response = http_client()
         .get(url)
@@ -390,6 +391,7 @@ pub async fn proxy_agent_chat_completions(
 ) -> Result<AgentChatCompletionsResponse, AppError> {
     normalize_agent_chat_request_for_proxy(&mut body);
     let send_venice_api_key = body_model_accepts_venice_api_key(&body);
+    ensure_sidecar_ready().await;
     let url = format!("{}/v1/chat/completions", june_api_url());
     let mut token = crate::os_accounts::access_token().await?;
     for attempt in 0..2 {
@@ -968,7 +970,9 @@ where
     // access_token() now pre-emptively refreshes if the cached JWT is stale,
     // so multipart bodies (which can't be replayed on a 401) go out with a
     // known-fresh token. Form is not Clone, so a retry-on-401 fallback isn't
-    // possible here anyway.
+    // possible here anyway — which is also why the sidecar heal below runs
+    // before the send instead of retrying after a connection error.
+    ensure_sidecar_ready().await;
     let url = format!("{}{}", june_api_url(), path);
     let token = crate::os_accounts::access_token().await?;
     let request = http_client().post(&url).bearer_auth(token).multipart(form);
@@ -987,6 +991,7 @@ async fn authed_send<F>(
 where
     F: Fn(&reqwest::Client, String, String) -> reqwest::RequestBuilder,
 {
+    ensure_sidecar_ready().await;
     let client = http_client();
     let url = format!("{}{}", june_api_url(), path);
     let mut token = crate::os_accounts::access_token().await?;
@@ -1155,6 +1160,21 @@ fn title_or_placeholder(title: &str) -> String {
         trimmed.to_string()
     }
 }
+
+/// Mobile: heal the in-process sidecar before a request goes out — iOS can
+/// reclaim its loopback listener while the app is suspended, and the resume
+/// hook restarts it asynchronously, so a request fired right after
+/// foregrounding would otherwise race the restart and hit a dead port.
+/// Best-effort: proceeds after a bounded wait even if the heal fails.
+#[cfg(mobile)]
+async fn ensure_sidecar_ready() {
+    crate::carpe_diem::sidecar::ensure_ready_for_request().await;
+}
+
+/// Desktop: no-op — the sidecar is a child process whose listener survives
+/// the app losing focus, and desktop has its own lifecycle management.
+#[cfg(desktop)]
+async fn ensure_sidecar_ready() {}
 
 fn june_api_url() -> String {
     crate::os_accounts::load_local_env();

@@ -49,6 +49,16 @@ fn restart_lock() -> &'static Mutex<()> {
 
 /// Local-dev user id handed to `june-api` (must start with `usr_`).
 const LOCAL_USER_ID: &str = "usr_local";
+/// App handle for the request-side heal (`ensure_ready_for_request`), set at
+/// `setup`. Same global-handle pattern as `agent_hud`.
+#[cfg(mobile)]
+static APP: OnceLock<AppHandle> = OnceLock::new();
+/// How long a request-side heal waits for the restarted backend to report
+/// Ready before letting the request proceed (and fail) as before. The
+/// in-process server binds in well under a second; this only pads for the
+/// health-check poll cadence.
+#[cfg(mobile)]
+const REQUEST_HEAL_TIMEOUT: Duration = Duration::from_secs(15);
 /// Emitted to the frontend whenever the sidecar status changes.
 pub const SIDECAR_STATUS_EVENT: &str = "carpe-diem://sidecar-status";
 /// How long to wait for `/livez` before declaring the sidecar failed. Generous
@@ -110,6 +120,8 @@ pub struct SidecarStatusDto {
 /// Registers state and starts the sidecar (if a key is configured) at app boot.
 pub fn setup(app: &mut tauri::App) {
     app.manage(SidecarState(Mutex::new(Process::default())));
+    #[cfg(mobile)]
+    let _ = APP.set(app.handle().clone());
     let handle = app.handle().clone();
     // Spawn off the setup thread: starting the backend must not block the UI.
     tauri::async_runtime::spawn(async move {
@@ -143,23 +155,77 @@ pub fn ensure_alive(app: &AppHandle) {
             .try_state::<SidecarState>()
             .and_then(|state| state.0.lock().ok().map(|process| process.port))
             .unwrap_or(0);
-        if port == 0 {
-            return;
-        }
-        let alive = reqwest::Client::builder()
-            .timeout(Duration::from_secs(2))
-            .build()
-            .ok();
-        let Some(client) = alive else { return };
-        let url = format!("http://127.0.0.1:{port}/livez");
-        let healthy = matches!(
-            client.get(&url).send().await,
-            Ok(response) if response.status().is_success()
-        );
-        if !healthy {
+        if port != 0 && !probe(port).await {
             on_settings_changed(&app);
         }
     });
+}
+
+/// Request-side guard (mobile): make sure the embedded backend answers before
+/// a June API call goes out. `ensure_alive` heals asynchronously on resume,
+/// so a request fired right after foregrounding can race the restart and hit
+/// the dead port anyway; probing (and healing) here closes that window.
+/// Best-effort by design: on Failed/Unconfigured or timeout the request
+/// proceeds and surfaces its own error, exactly as it would have without
+/// this guard.
+#[cfg(mobile)]
+pub async fn ensure_ready_for_request() {
+    let Some(app) = APP.get() else { return };
+    match sidecar_snapshot(app) {
+        None | Some((SidecarStatus::Unconfigured, _)) => return,
+        // A restart is already underway (resume hook or a concurrent
+        // request); just wait for it below.
+        Some((SidecarStatus::Starting, _)) => {}
+        Some((SidecarStatus::Ready, port)) if port != 0 && probe(port).await => return,
+        // Ready-but-dead (iOS reclaimed the listener) or Failed: restart.
+        Some(_) => on_settings_changed(app),
+    }
+    let started = Instant::now();
+    while started.elapsed() < REQUEST_HEAL_TIMEOUT {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        match sidecar_snapshot(app) {
+            Some((SidecarStatus::Starting, _)) => {}
+            // The restart just triggered may not have flipped the status to
+            // Starting yet, so a Ready here can be stale — trust it only once
+            // the port actually answers.
+            Some((SidecarStatus::Ready, port)) => {
+                if port != 0 && probe(port).await {
+                    return;
+                }
+            }
+            // Failed, Unconfigured, or lost state: the request should go out
+            // now and fail on its own terms.
+            _ => return,
+        }
+    }
+}
+
+#[cfg(mobile)]
+fn sidecar_snapshot(app: &AppHandle) -> Option<(SidecarStatus, u16)> {
+    app.try_state::<SidecarState>().and_then(|state| {
+        state
+            .0
+            .lock()
+            .ok()
+            .map(|process| (process.status, process.port))
+    })
+}
+
+/// One `/livez` probe against the loopback backend. Short timeout: a live
+/// in-process server answers in single-digit milliseconds.
+#[cfg(mobile)]
+async fn probe(port: u16) -> bool {
+    let Ok(client) = reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+    else {
+        return false;
+    };
+    let url = format!("http://127.0.0.1:{port}/livez");
+    matches!(
+        client.get(&url).send().await,
+        Ok(response) if response.status().is_success()
+    )
 }
 
 #[tauri::command]
