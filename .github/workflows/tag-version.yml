@@ -1,0 +1,38 @@
+name: tag-version
+
+# Creates a semver tag server-side, for sessions that can push branches but
+# not tags (remote-agent git relays commonly restrict refs/tags). A tag
+# created here with GITHUB_TOKEN deliberately does NOT trigger release.yml
+# (GitHub suppresses workflow runs for refs pushed with GITHUB_TOKEN), so
+# after this run completes, dispatch release.yml manually with the same tag.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Semver tag to create, e.g. v1.4.2"
+        required: true
+      sha:
+        description: "Commit SHA to tag (defaults to the head of the ref this run targets)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Create and push tag
+        env:
+          TAG: ${{ inputs.tag }}
+          SHA: ${{ inputs.sha || github.sha }}
+        run: |
+          # Same strict gate as release.yml's resolve job: this value flows
+          # into a ref name, so reject anything that is not semver-ish.
+          if ! printf '%s' "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "Refusing non-semver tag: $TAG" >&2; exit 1
+          fi
+          git tag "$TAG" "$SHA"
+          git push origin "refs/tags/$TAG"
