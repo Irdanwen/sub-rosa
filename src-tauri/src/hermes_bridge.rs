@@ -6499,9 +6499,9 @@ fn user_external_skill_dirs() -> Vec<PathBuf> {
 }
 
 /// The default skill pack shipped in the app bundle (`resources/skills`,
-/// mapped from the repo's `.agents/skills/carpe-diem-*` in
-/// `tauri.conf.json`). Read-only like every external dir; absent when the
-/// build did not bundle it.
+/// mapped from the repo's `.agents/skills/` pack — `carpe-diem-*` plus
+/// `remotion-best-practices` — in `tauri.conf.json`). Read-only like every
+/// external dir; absent when the build did not bundle it.
 fn bundled_skill_dir(app: &AppHandle) -> Option<PathBuf> {
     let dir = app.path().resource_dir().ok()?.join("skills");
     dir.is_dir().then_some(dir)

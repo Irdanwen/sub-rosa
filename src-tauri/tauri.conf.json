@@ -146,7 +146,8 @@
       "../.agents/skills/carpe-diem-media": "skills/carpe-diem-media",
       "../.agents/skills/carpe-diem-models": "skills/carpe-diem-models",
       "../.agents/skills/carpe-diem-provider": "skills/carpe-diem-provider",
-      "../.agents/skills/carpe-diem-video": "skills/carpe-diem-video"
+      "../.agents/skills/carpe-diem-video": "skills/carpe-diem-video",
+      "../.agents/skills/remotion-best-practices": "skills/remotion-best-practices"
     }
   }
 }

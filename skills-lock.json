@@ -24,6 +24,12 @@
       "sourceType": "git",
       "skillPath": "skills/os-rust-backend-ci/SKILL.md",
       "computedHash": "bb6b29f50ea874c4b754a568f09ac0465dc57521810444be7a7439006d290f9a"
+    },
+    "remotion-best-practices": {
+      "source": "remotion-dev/skills",
+      "sourceType": "github",
+      "skillPath": "skills/remotion/SKILL.md",
+      "computedHash": "5284f294f0bad7c1217d24af5044a5c672d9202b218331db33e833d64ce121a4"
     }
   }
 }
