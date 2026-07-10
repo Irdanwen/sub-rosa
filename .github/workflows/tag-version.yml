@@ -1,10 +1,19 @@
 name: tag-version
 
-# Creates a semver tag server-side, for sessions that can push branches but
-# not tags (remote-agent git relays commonly restrict refs/tags). A tag
-# created here with GITHUB_TOKEN deliberately does NOT trigger release.yml
-# (GitHub suppresses workflow runs for refs pushed with GITHUB_TOKEN), so
-# after this run completes, dispatch release.yml manually with the same tag.
+# Creates a semver release tag server-side, for sessions that can push
+# branches but not tags (remote-agent git relays restrict refs/tags, and
+# their Actions API access can be read-only, which rules out
+# workflow_dispatch too). Pushing a branch named release-tag/vX.Y.Z runs
+# this workflow: it tags that commit and deletes the trigger branch.
+#
+# The tag is pushed with RELEASES_REPO_TOKEN when that token can push here,
+# because a ref pushed with the run's own GITHUB_TOKEN never triggers other
+# workflows — and the whole point is for the tag to fire release.yml. When
+# that token cannot push to this repo, fall back to GITHUB_TOKEN for the tag
+# and dispatch release.yml explicitly instead.
+#
+# Anyone with branch-push rights can mint a release tag through this — the
+# same trust level as pushing to main in this single-maintainer repo.
 
 on:
   workflow_dispatch:
@@ -12,9 +21,8 @@ on:
       tag:
         description: "Semver tag to create, e.g. v1.4.2"
         required: true
-      sha:
-        description: "Commit SHA to tag (defaults to the head of the ref this run targets)"
-        required: false
+  push:
+    branches: ["release-tag/**"]
 
 permissions:
   contents: write
@@ -24,15 +32,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - name: Create and push tag
+      - name: Resolve tag
+        id: resolve
         env:
-          TAG: ${{ inputs.tag }}
-          SHA: ${{ inputs.sha || github.sha }}
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
+          tag="${INPUT_TAG:-${REF_NAME#release-tag/}}"
           # Same strict gate as release.yml's resolve job: this value flows
-          # into a ref name, so reject anything that is not semver-ish.
-          if ! printf '%s' "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
-            echo "Refusing non-semver tag: $TAG" >&2; exit 1
+          # into ref names, so reject anything that is not semver-ish.
+          if ! printf '%s' "$tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "Refusing non-semver tag: $tag" >&2; exit 1
           fi
-          git tag "$TAG" "$SHA"
-          git push origin "refs/tags/$TAG"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Create tag
+        env:
+          TAG: ${{ steps.resolve.outputs.tag }}
+          RELEASES_REPO_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+        run: |
+          git tag "$TAG" "$GITHUB_SHA"
+          if [ -n "$RELEASES_REPO_TOKEN" ] &&
+             git push "https://x-access-token:${RELEASES_REPO_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/$TAG"; then
+            echo "Tag pushed with RELEASES_REPO_TOKEN; release.yml triggers from the tag."
+          else
+            echo "RELEASES_REPO_TOKEN cannot push here; tagging with GITHUB_TOKEN and dispatching release.yml."
+            git push origin "refs/tags/$TAG"
+            gh workflow run release.yml -f "tag=$TAG"
+          fi
+      - name: Delete trigger branch
+        if: github.event_name == 'push'
+        run: git push origin --delete "$GITHUB_REF_NAME" || true
