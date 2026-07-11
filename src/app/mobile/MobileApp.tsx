@@ -12,6 +12,7 @@ import { SettingsScreen } from "../../components/mobile/screens/SettingsScreen";
 import { StudioScreen } from "../../components/mobile/screens/StudioScreen";
 import { errorCode, messageFromError } from "../../lib/errors";
 import { hapticImpact, hapticNotify } from "../../lib/haptics";
+import { useKeyboardInset } from "../../lib/keyboard-inset";
 import { upsertLiveTranscriptEvent } from "../../lib/live-transcript-preview";
 import { recordingToStatus } from "../../lib/recording-status";
 import {
@@ -61,6 +62,17 @@ export function MobileApp() {
   const [liveTranscriptEvents, setLiveTranscriptEvents] = useState<LiveTranscriptEventDto[]>([]);
   const [sourceReadiness, setSourceReadiness] = useState<RecordingSourceReadinessDto | undefined>();
   const nav = useMobileNav();
+  // The Chat tab roots on a conversation, not the history list. The active
+  // session id lives here rather than in the screen because navigation
+  // remounts screens; the epoch key forces a clean remount when the
+  // conversation is swapped (new chat, or a chat picked from history).
+  const [agentSessionId, setAgentSessionId] = useState<string | undefined>(undefined);
+  const [agentChatEpoch, setAgentChatEpoch] = useState(0);
+  const openChatSession = useCallback((sessionId?: string) => {
+    setAgentSessionId(sessionId);
+    setAgentChatEpoch((epoch) => epoch + 1);
+  }, []);
+  const keyboardInset = useKeyboardInset();
 
   // Screen-entrance direction: push slides in from the right, pop settles
   // back from the left, tab switches cross-fade. Derived with the render-time
@@ -546,6 +558,24 @@ export function MobileApp() {
     );
   } else if (top?.view === "agent-session") {
     screen = <AgentSessionScreen sessionId={top.sessionId} onBack={nav.pop} />;
+  } else if (top?.view === "agent-history") {
+    screen = (
+      <AgentScreen
+        onBack={nav.pop}
+        onOpenSession={(sessionId) => {
+          // Picking a chat (or "new chat") swaps the tab's root conversation
+          // and settles back onto it.
+          openChatSession(sessionId);
+          nav.pop();
+        }}
+        archiveFolderId={archiveFolder?.id}
+        ensureArchiveFolder={async () => {
+          if (archiveFolder?.id) return archiveFolder.id;
+          const created = await handleCreateFolder("Archive");
+          return created?.id;
+        }}
+      />
+    );
   } else if (top?.view === "folder") {
     const folder = state.folders.find((item) => item.id === top.folderId);
     screen = (
@@ -585,15 +615,15 @@ export function MobileApp() {
         screen = <DictationScreen />;
         break;
       case "agent":
+        // The tab lands straight in a conversation (fresh, or the one already
+        // underway); the history list is one tap away in the chat header.
         screen = (
-          <AgentScreen
-            onOpenSession={(sessionId) => nav.push({ view: "agent-session", sessionId })}
-            archiveFolderId={archiveFolder?.id}
-            ensureArchiveFolder={async () => {
-              if (archiveFolder?.id) return archiveFolder.id;
-              const created = await handleCreateFolder("Archive");
-              return created?.id;
-            }}
+          <AgentSessionScreen
+            key={`chat-${agentChatEpoch}`}
+            sessionId={agentSessionId}
+            onSessionCreated={setAgentSessionId}
+            onOpenHistory={() => nav.push({ view: "agent-history" })}
+            onNewChat={() => openChatSession(undefined)}
           />
         );
         break;
@@ -606,7 +636,10 @@ export function MobileApp() {
     }
   }
 
-  const showTabBar = !top || top.view === "folder";
+  // The keyboard covers the tab bar anyway; hiding it while typing keeps
+  // keyboard-inset math simple (the inset is measured from the window bottom,
+  // which is only the screen's bottom edge when the tab bar is gone).
+  const showTabBar = (!top || top.view === "folder") && keyboardInset === 0;
 
   return (
     <div className="mobile-shell">

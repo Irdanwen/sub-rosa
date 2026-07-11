@@ -74,6 +74,10 @@ pub async fn agent_lite_run(
     let task_id = request.task_id;
     let model = request.model.filter(|value| !value.trim().is_empty());
     let attachments = request.attachments.unwrap_or_default();
+    // Locking the screen mid-turn suspends the process and used to kill the
+    // reply; hold a background task for the whole turn (every tool-loop
+    // request included) so it survives the lock.
+    let _background = crate::ios_background::BackgroundTask::begin("agent-lite-turn");
     repos
         .update_agent_task_status(&task_id, AgentTaskStatus::Running, Some("Working."), None)
         .await?;

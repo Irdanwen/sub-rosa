@@ -72,7 +72,7 @@ Clé `cdm_` de test fournie par l'utilisateur (jamais commitée ; utilisée en e
 | `src-tauri/Info.plist`, `index.html` | Chaînes visibles « June »→« Sub Rosa » | Trivial |
 | `src-tauri/src/os_accounts.rs` | `KEYCHAIN_SERVICE`/`DEV_KEYCHAIN_SERVICE` rebrandés (le scheme OAuth `osjune://` interne est laissé — mort en mode local ; voir note) | 2 constantes |
 | `src-tauri/src/lib.rs` | `pub mod carpe_diem;` + `settings::setup`/`sidecar::setup` dans `.setup()` + commandes IPC dans `invoke_handler` + `sidecar::shutdown` dans `RunEvent::Exit` | Réappliquer les 4 hooks |
-| `src-tauri/icons/*` | Icônes placeholder Sub Rosa (régénérées via `tauri icon`) | Remplacer par les sources définitives |
+| `src-tauri/icons/*`, `src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/*` | Icônes définitives Sub Rosa (rose sur fond prune, source `AppIcon.icns` 1024px sur le ProtonDrive `Projets Crypto/Sub-Rosa/`). ⚠️ `tauri icon` écrit les icônes iOS **directement dans l'appiconset de `gen/apple`** (jamais dans `icons/ios/`, qui n'est qu'une copie de courtoisie) ; ensuite retirer le canal alpha de tous les PNG iOS (App Store le refuse), p.ex. via un round-trip CoreGraphics `noneSkipLast` | Regénérer via `tauri icon`, resynchroniser `icons/ios/` depuis l'appiconset, puis aplatir l'alpha des PNG iOS |
 | `src/app/App.tsx` | Gate Carpe Diem (état + effet + `carpeDiemRequired` dans `appBlocked` + rendu du gate avant l'onboarding) | Réappliquer le bloc gate |
 | `src/components/settings/AppSettings.tsx` | Onglet « Carpe Diem » (union `SettingsTab` + `SETTINGS_TABS` + rendu de `<CarpeDiemSettings/>`) ; Models › More options : `VeniceApiKeyRow` (BYOK Venice) remplacée par `CarpeDiemKeyRow` (lien vers l'onglet Carpe Diem + purge d'une clé Venice legacy, qui écraserait la clé `cdm_` par requête) | 3 points + 1 rangée |
 | `src/components/sidebar/Sidebar.tsx` | Entrée « Carpe Diem » ajoutée au groupe Personal de `SETTINGS_SIDEBAR_GROUPS` (sinon l'onglet est inatteignable) ; footer `SidebarIdentity` : une fois le solde chargé (`useCarpeDiemCredits`), le libellé « You » est remplacé par « N credits · ×0.42 » (solde disponible + facteur de prix du jour) avec icône carte | 1 item + bloc footer |
@@ -197,7 +197,7 @@ généré (`src-tauri/gen/apple/`, committé). Décisions structurantes :
 | `src-tauri/src/domain/processing.rs` | Tail factorisé `persist_transcript_and_generate` + `process_imported_audio` (m4a/mp3 envoyés entiers au backend) ; langue via `providers::configured_transcription_language` | Réappliquer la factorisation |
 | `src-tauri/src/providers/mod.rs` | `configured_transcription_language()` (shim desktop→dictation / mobile→None) | Additif |
 | `src-tauri/src/db/repositories.rs` | `search_note_context` + `NoteContextSnippet` (retrieval agent-lite) | Additif |
-| `src-tauri/src/june_api.rs` | `extract_chat_completion_text` passé `pub` | 1 ligne |
+| `src-tauri/src/june_api.rs` | `extract_chat_completion_text` passé `pub` ; retry transport unique dans `proxy_agent_chat_completions` (verrouillage d'écran iOS : la connexion tombe pendant la suspension, on soigne le sidecar et on rejoue le tour au réveil) | 1 ligne + le bloc retry |
 | `june-api/Cargo.toml`, `crates/app/*` | Workspace + CLI mince sur `june-embed` | Réappliquer l'extraction |
 | `june-api/crates/config/src/lib.rs` | `load_from_toml_str` + `validate_config` (config programmatique) | Additif |
 | `src/main.tsx` | Choix du shell desktop/mobile + import `mobile.css` | 4 lignes |
@@ -217,7 +217,8 @@ généré (`src-tauri/gen/apple/`, committé). Décisions structurantes :
 | `src-tauri/capabilities/mobile-main.json` | Capability du webview mobile |
 | `src-tauri/src/audio/ios_session.rs` | AVAudioSession (objc2) |
 | `src-tauri/src/dictation_mobile.rs` | Dictée in-app (cpal→WAV→`/v1/dictate`+cleanup, historique partagé) |
-| `src-tauri/src/agent_lite/mod.rs` | Boucle d'outils agent-lite |
+| `src-tauri/src/agent_lite/mod.rs` | Boucle d'outils agent-lite (tient un `ios_background::BackgroundTask` pendant tout le tour) |
+| `src-tauri/src/ios_background.rs` | Garde RAII `beginBackgroundTaskWithName:` (objc2) : ~30 s de sursis après verrouillage d'écran pour finir un tour de chat ; no-op hors iOS |
 | `src/lib/mobile.ts`, `src/lib/recording-status.ts`, `src/lib/studio/generate-image.ts` | Détection plateforme + helpers factorisés |
 | `src/app/mobile/{MobileApp.tsx,nav.ts}` | Shell mobile (gates, état, navigation tabs+stack) |
 | `src/components/mobile/**` | TabBar, StackHeader, écrans Notes/NoteDetail/Folders/Dictation/Agent/Studio/Settings |

@@ -399,10 +399,23 @@ pub async fn proxy_agent_chat_completions(
             .post(&url)
             .bearer_auth(&token)
             .json(&body);
-        let response = with_venice_api_key("/v1/chat/completions", request, send_venice_api_key)
-            .send()
-            .await
-            .map_err(network_error)?;
+        let response =
+            match with_venice_api_key("/v1/chat/completions", request, send_venice_api_key)
+                .send()
+                .await
+            {
+                Ok(response) => response,
+                // A screen lock on iOS suspends the process and severs the
+                // connection; the error only surfaces once the app wakes, at
+                // which point the loopback sidecar may be gone too. Heal it and
+                // replay the turn once instead of showing a network error.
+                Err(error) if attempt == 0 => {
+                    tracing::warn!("agent chat send failed, retrying once: {error}");
+                    ensure_sidecar_ready().await;
+                    continue;
+                }
+                Err(error) => return Err(network_error(error)),
+            };
         if response.status() == reqwest::StatusCode::UNAUTHORIZED && attempt == 0 {
             token = crate::os_accounts::refresh_access_token().await?;
             continue;

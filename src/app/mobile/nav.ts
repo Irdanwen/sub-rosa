@@ -12,7 +12,8 @@ export type MobileTab = "notes" | "dictation" | "agent" | "studio" | "settings";
 export type MobileRoute =
   | { view: "note"; noteId: string }
   | { view: "folder"; folderId: string }
-  | { view: "agent-session"; sessionId?: string };
+  | { view: "agent-session"; sessionId?: string }
+  | { view: "agent-history" };
 
 export type MobileNav = {
   tab: MobileTab;

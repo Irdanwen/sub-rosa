@@ -17,6 +17,7 @@ pub mod dictation_mobile;
 pub mod domain;
 #[cfg(desktop)]
 pub mod hermes_bridge;
+pub mod ios_background;
 pub mod june_api;
 #[cfg(desktop)]
 pub mod macos_menu_icons;

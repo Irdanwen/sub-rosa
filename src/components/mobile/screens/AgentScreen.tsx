@@ -4,15 +4,17 @@ import { IconArrowDown } from "central-icons/IconArrowDown";
 import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
+import { IconClock } from "central-icons/IconClock";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconPaperclip1 } from "central-icons/IconPaperclip1";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
 import { friendlyErrorMessage, messageFromError } from "../../../lib/errors";
-import { hapticImpact, hapticNotify } from "../../../lib/haptics";
+import { hapticImpact, hapticNotify, hapticSelection } from "../../../lib/haptics";
 import { useKeyboardInset } from "../../../lib/keyboard-inset";
 import { SimpleMarkdown } from "../../../lib/simple-markdown";
-import { fetchMediaCatalog, modelsOfType } from "../../../lib/studio/catalog";
+import { fetchMediaCatalog, formatCredits, modelsOfType } from "../../../lib/studio/catalog";
 import type { MediaModel } from "../../../lib/studio/types";
 import {
   AGENT_LITE_DONE_EVENT,
@@ -57,6 +59,8 @@ type AgentScreenProps = {
   /** Resolves (creating if needed) the shared Archive folder id. */
   ensureArchiveFolder: () => Promise<string | undefined>;
   archiveFolderId?: string;
+  /** Present when the list is pushed over a conversation (the default shape). */
+  onBack?: () => void;
 };
 
 /** Session list for the mobile chat (agent-lite), with swipe to archive
@@ -65,6 +69,7 @@ export function AgentScreen({
   onOpenSession,
   ensureArchiveFolder,
   archiveFolderId,
+  onBack,
 }: AgentScreenProps) {
   const [tasks, setTasks] = useState<AgentTaskDto[]>([]);
   const [archivedIds, setArchivedIds] = useState<Set<string>>(new Set());
@@ -160,8 +165,9 @@ export function AgentScreen({
   return (
     <div className="mobile-screen-root">
       <StackHeader
-        title="Chat"
+        title="Chats"
         large
+        onBack={onBack}
         trailing={
           <button
             type="button"
@@ -247,11 +253,22 @@ export function AgentScreen({
 
 type AgentSessionScreenProps = {
   sessionId?: string;
-  onBack: () => void;
+  /** Absent when the conversation is the Chat tab's root screen. */
+  onBack?: () => void;
+  /** Reports the lazily created task id so the shell can restore it later. */
+  onSessionCreated?: (sessionId: string) => void;
+  onOpenHistory?: () => void;
+  onNewChat?: () => void;
 };
 
 /** One chat thread: history + composer + live status while agent-lite runs. */
-export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProps) {
+export function AgentSessionScreen({
+  sessionId,
+  onBack,
+  onSessionCreated,
+  onOpenHistory,
+  onNewChat,
+}: AgentSessionScreenProps) {
   const [task, setTask] = useState<AgentTaskDto | null>(null);
   const [draft, setDraft] = useState("");
   const [running, setRunning] = useState(false);
@@ -279,6 +296,10 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
   const attachInputRef = useRef<HTMLInputElement | null>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const keyboardInset = useKeyboardInset();
+  const credits = useCarpeDiemCredits();
+  // Last status stage felt through the Taptic Engine, so each stage of the
+  // run (thinking -> searching notes -> searching web) ticks exactly once.
+  const lastStepKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -296,6 +317,13 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
   useEffect(() => {
     const unlistenStatus = listen<AgentLiteStatusDto>(AGENT_LITE_STATUS_EVENT, (event) => {
       if (event.payload.taskId !== taskIdRef.current) return;
+      // A soft tick per stage change: the phone reports progress in the hand
+      // without the screen (a stage repeat stays silent).
+      const stepKey = `${event.payload.stage}|${event.payload.detail ?? ""}`;
+      if (lastStepKeyRef.current !== stepKey) {
+        lastStepKeyRef.current = stepKey;
+        hapticSelection();
+      }
       setStage(event.payload);
       setSteps((prev) => {
         const last = prev.at(-1);
@@ -307,6 +335,7 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
     });
     const unlistenDone = listen<AgentTaskDto>(AGENT_LITE_DONE_EVENT, (event) => {
       if (event.payload.id !== taskIdRef.current) return;
+      lastStepKeyRef.current = null;
       setTask(event.payload);
       setStage(null);
       setSteps([]);
@@ -445,6 +474,7 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
     setError(null);
     setRunning(true);
     setSteps([]);
+    lastStepKeyRef.current = null;
     hapticImpact("light");
     try {
       let current = task;
@@ -452,6 +482,7 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
         current = await createAgentTask({ prompt: stored, runPlaceholder: false });
         taskIdRef.current = current.id;
         setTask(current);
+        onSessionCreated?.(current.id);
         // Best-effort title; the chat continues regardless.
         void suggestAgentSessionTitle(stored).catch(() => undefined);
       } else {
@@ -481,7 +512,7 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
       setStage(null);
       setSteps([]);
     }
-  }, [draft, attachments, running, task, model]);
+  }, [draft, attachments, running, task, model, onSessionCreated]);
 
   const stageLabel =
     stage?.stage === "searching-notes"
@@ -497,7 +528,46 @@ export function AgentSessionScreen({ sessionId, onBack }: AgentSessionScreenProp
 
   return (
     <div className="mobile-screen-root mobile-chat">
-      <StackHeader title={task?.title.trim() || "New chat"} onBack={onBack} backLabel="Chats" />
+      <StackHeader
+        title={task?.title.trim() || "New chat"}
+        onBack={onBack}
+        backLabel="Chats"
+        trailing={
+          <>
+            {credits ? (
+              // Compact form (no "credits" word): the pill shares the header
+              // with the title and two buttons, unlike Studio's roomy one.
+              <span className="mobile-credits-pill" aria-label="Available credits">
+                {formatCredits(credits.availableCredits).replace(" credits", "")}
+                {typeof credits.priceMultiplier === "number"
+                  ? ` · x${credits.priceMultiplier.toFixed(2)}`
+                  : ""}
+              </span>
+            ) : null}
+            {onOpenHistory ? (
+              <button
+                type="button"
+                className="mobile-icon-button"
+                aria-label="Chat history"
+                onClick={onOpenHistory}
+              >
+                <IconClock size={20} />
+              </button>
+            ) : null}
+            {onNewChat ? (
+              <button
+                type="button"
+                className="mobile-icon-button"
+                aria-label="New chat"
+                disabled={running}
+                onClick={onNewChat}
+              >
+                <IconPlusMedium size={20} />
+              </button>
+            ) : null}
+          </>
+        }
+      />
       <div className="mobile-chat-scroll" ref={scrollRef} onScroll={handleScroll}>
         {!task?.messages.length && !running ? (
           <div className="mobile-chat-hero">
@@ -790,9 +860,10 @@ function greeting(): string {
 
 /** Progressive reveal of a fresh reply — the backend is not streaming, so the
  * finished text plays back at reading speed instead of appearing as a wall.
- * The "reply is ready" haptic fires once on completion (see the done listener),
- * not per frame: a stream of rapid selection ticks gets coalesced by the Taptic
- * Engine and swallows the completion buzz. */
+ * The "reply is ready" buzz fires once on arrival (the done listener); while
+ * the text types out, a sparse selection tick (~every 190 ms, never per frame)
+ * makes the phone purr along without the Taptic Engine coalescing it into
+ * mush or swallowing that arrival buzz. */
 function TypewriterMarkdown({
   text,
   onTick,
@@ -810,10 +881,14 @@ function TypewriterMarkdown({
 
   useEffect(() => {
     let index = 0;
+    let frame = 0;
     // ~3 seconds for a long answer, faster for short ones.
     const step = Math.max(3, Math.ceil(text.length / 130));
     const interval = window.setInterval(() => {
       index = Math.min(text.length, index + step);
+      frame += 1;
+      // Every 8th frame at 24 ms/frame keeps ticks ~190 ms apart.
+      if (frame % 8 === 0 && index < text.length) hapticSelection();
       setVisible(index);
       onTickRef.current?.();
       if (index >= text.length) {
