@@ -233,6 +233,10 @@ pub async fn mobile_dictation_stop(
     #[cfg(target_os = "ios")]
     crate::audio::ios_session::deactivate();
 
+    // The audio session no longer keeps the app alive past this point; hold
+    // background time so a screen lock doesn't kill the transcription.
+    let _background = crate::ios_background::BackgroundTask::begin("dictation-transcribe");
+
     let repos = crate::commands::repositories(&app).await?;
     let dictionary_entries = repos.list_dictionary_entries().await?;
     let dictionary_context = build_dictionary_context(&dictionary_entries);

@@ -1318,6 +1318,20 @@ impl Repositories {
         tx.commit().await
     }
 
+    /// Notes whose processing died on a transport error — the request to the
+    /// local backend never completed (e.g. iOS suspended the app mid-flight).
+    /// The match is on reqwest's stable "error sending request" wording.
+    pub async fn list_notes_failed_in_transit(&self) -> Result<Vec<String>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT id FROM notes
+             WHERE processing_status = 'failed'
+               AND last_error LIKE '%error sending request%'",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(|row| row.get("id")).collect())
+    }
+
     pub async fn set_note_status(
         &self,
         note_id: &str,

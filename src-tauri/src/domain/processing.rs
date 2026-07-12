@@ -267,6 +267,9 @@ pub async fn process_saved_audio(
     existing_generated_note: Option<String>,
     manual_notes: Option<String>,
 ) -> Result<NoteDto, AppError> {
+    // Locking the phone suspends the app mid-pipeline and kills the in-flight
+    // transcribe/generate request; hold background time across the whole run.
+    let _background = crate::ios_background::BackgroundTask::begin("note-processing");
     repos
         .set_note_status(note_id, ProcessingStatus::Transcribing, None)
         .await?;
@@ -419,6 +422,7 @@ pub async fn process_imported_audio(
     audio_path: PathBuf,
     title: String,
 ) -> Result<NoteDto, AppError> {
+    let _background = crate::ios_background::BackgroundTask::begin("note-processing");
     let is_wav = audio_path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -496,6 +500,7 @@ pub async fn process_saved_source_audio(
     existing_generated_note: Option<String>,
     manual_notes: Option<String>,
 ) -> Result<NoteDto, AppError> {
+    let _background = crate::ios_background::BackgroundTask::begin("note-processing");
     repos
         .set_note_status(note_id, ProcessingStatus::Transcribing, None)
         .await?;

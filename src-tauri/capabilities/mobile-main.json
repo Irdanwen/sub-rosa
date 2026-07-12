@@ -11,6 +11,8 @@
     "dialog:allow-open",
     "os:default",
     "clipboard-manager:allow-write-text",
-    "haptics:default"
+    "haptics:allow-impact-feedback",
+    "haptics:allow-notification-feedback",
+    "haptics:allow-selection-feedback"
   ]
 }

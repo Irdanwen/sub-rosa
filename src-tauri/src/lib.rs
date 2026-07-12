@@ -525,6 +525,10 @@ pub fn run() {
                 meeting_detection::setup(app);
             }
             repair_agent_task_statuses_on_app_start(app);
+            // Notes killed in transit by a suspension in a previous session
+            // (Resumed doesn't fire on a cold launch, so sweep here too).
+            #[cfg(mobile)]
+            commands::resume_interrupted_processing(app.handle());
             #[cfg(desktop)]
             {
                 hermes_bridge::start_on_app_start(app);
@@ -543,6 +547,9 @@ pub fn run() {
             #[cfg(mobile)]
             tauri::RunEvent::Resumed => {
                 carpe_diem::sidecar::ensure_alive(app);
+                // Notes whose processing died while suspended self-heal here
+                // (the retry waits for the sidecar via the request-side heal).
+                commands::resume_interrupted_processing(app);
             }
             tauri::RunEvent::Exit => {
                 #[cfg(desktop)]

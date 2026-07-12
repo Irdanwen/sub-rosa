@@ -1431,6 +1431,40 @@ pub async fn retry_processing(
     Ok(note)
 }
 
+/// Resume-time sweep (mobile): re-run notes whose processing died on a
+/// transport error while the app was suspended — a screen lock kills the
+/// in-flight loopback request even with the background-task grace period.
+/// Best-effort: any failure leaves the note in its failed state, where the
+/// manual retry still applies.
+#[cfg(mobile)]
+pub fn resume_interrupted_processing(app: &AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static SWEEPING: AtomicBool = AtomicBool::new(false);
+    if SWEEPING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let sweep = async {
+            let repos = repositories(&app).await?;
+            let note_ids = repos.list_notes_failed_in_transit().await?;
+            for note_id in note_ids {
+                let _ = retry_processing(
+                    app.clone(),
+                    RetryProcessingRequest {
+                        note_id,
+                        step: None,
+                    },
+                )
+                .await;
+            }
+            Ok::<(), AppError>(())
+        };
+        let _ = sweep.await;
+        SWEEPING.store(false, Ordering::SeqCst);
+    });
+}
+
 async fn retry_audio_sources(
     repos: &Repositories,
     paths: &AppPaths,

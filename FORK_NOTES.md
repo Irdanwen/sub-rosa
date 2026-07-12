@@ -222,11 +222,12 @@ généré (`src-tauri/gen/apple/`, committé). Décisions structurantes :
 | `june-api/crates/embed/` | Composition root partagée + `serve()` embarquable |
 | `src-tauri/gen/apple/` | Projet Xcode (Info.plist : micro + `UIBackgroundModes` audio) |
 | `src-tauri/tauri.ios.conf.json` | 1 fenêtre, pas d'externalBin/resources/updater |
-| `src-tauri/capabilities/mobile-main.json` | Capability du webview mobile |
+| `src-tauri/capabilities/mobile-main.json` | Capability du webview mobile (⚠️ `haptics:default` n'existe pas dans tauri-plugin-haptics — lister les `haptics:allow-*` explicites, sinon tous les invokes haptics sont refusés en silence) |
 | `src-tauri/src/audio/ios_session.rs` | AVAudioSession (objc2) |
 | `src-tauri/src/dictation_mobile.rs` | Dictée in-app (cpal→WAV→`/v1/dictate`+cleanup, historique partagé) |
 | `src-tauri/src/agent_lite/mod.rs` | Boucle d'outils agent-lite (tient un `ios_background::BackgroundTask` pendant tout le tour) |
-| `src-tauri/src/ios_background.rs` | Garde RAII `beginBackgroundTaskWithName:` (objc2) : ~30 s de sursis après verrouillage d'écran pour finir un tour de chat ; no-op hors iOS |
+| `src-tauri/src/ios_background.rs` | Garde RAII `beginBackgroundTaskWithName:` (objc2) : ~30 s de sursis après verrouillage d'écran ; tenue par le tour agent-lite, les pipelines de traitement de note (`domain/processing.rs`) et la transcription de dictée ; no-op hors iOS |
+| Sweep `resume_interrupted_processing` (`commands.rs`) | Au `Resumed` et au lancement : re-traite les notes en `failed` avec `last_error LIKE '%error sending request%'` (requête tuée par la suspension iOS) ; s'appuie sur le heal request-side du sidecar |
 | `src/lib/mobile.ts`, `src/lib/recording-status.ts`, `src/lib/studio/generate-image.ts` | Détection plateforme + helpers factorisés |
 | `src/app/mobile/{MobileApp.tsx,nav.ts}` | Shell mobile (gates, état, navigation tabs+stack) |
 | `src/components/mobile/**` | TabBar, StackHeader, écrans Notes/NoteDetail/Folders/Dictation/Agent/Studio/Settings |
