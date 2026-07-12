@@ -560,3 +560,248 @@
 .studio-validation [data-severity="error"] {
   color: var(--destructive);
 }
+
+/* --- Film studio (ADR-0010) ------------------------------------------------ */
+
+.film-project-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.film-project-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+}
+
+.film-project-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.film-project-title {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.film-project-state {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.film-project-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+/* Director mode */
+
+.film-director {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.film-director-loading {
+  display: flex;
+  justify-content: center;
+  padding: var(--sp-5);
+}
+
+.film-director .btn {
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-sm);
+}
+
+.film-gates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.film-gate {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+}
+
+.film-gate-name {
+  min-width: 8rem;
+  text-transform: capitalize;
+}
+
+.film-gate-badge {
+  color: var(--muted-foreground);
+}
+
+.film-gate[data-status="approved"] .film-gate-badge {
+  color: var(--success, var(--muted-foreground));
+}
+
+.film-gate[data-status="rejected"] .film-gate-badge {
+  color: var(--destructive);
+}
+
+.film-gate-actions {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.film-gate-reject {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+}
+
+.film-chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-height: 20rem;
+  overflow-y: auto;
+  padding: var(--sp-3);
+  background: var(--card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+
+.film-chat-empty {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.film-chat-message {
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+  white-space: pre-wrap;
+  max-width: 85%;
+}
+
+.film-chat-message[data-role="user"] {
+  align-self: flex-end;
+  background: var(--accent);
+  border: 1px solid var(--border-subtle);
+}
+
+.film-chat-message[data-role="assistant"] {
+  align-self: flex-start;
+  background: var(--background);
+  border: 1px solid var(--border-subtle);
+}
+
+.film-chat-activity {
+  margin-left: var(--sp-2);
+  color: var(--muted-foreground);
+}
+
+.film-chat-composer {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: flex-end;
+  margin-top: var(--sp-2);
+}
+
+.film-chat-composer .studio-textarea {
+  flex: 1;
+}
+
+.film-board-totals {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.film-scene-title {
+  margin: var(--sp-3) 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.film-shot-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.film-shot {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.film-shot-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  color: inherit;
+  text-align: left;
+}
+
+.film-shot-frame {
+  width: 4rem;
+  border-radius: var(--r-sm);
+}
+
+.film-shot-status {
+  color: var(--muted-foreground);
+}
+
+.film-shot[data-status="failed"] .film-shot-status {
+  color: var(--destructive);
+}
+
+.film-shot-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.film-takes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.film-shot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: center;
+}
+
+.film-shot-actions .studio-input {
+  flex: 1;
+  min-width: 12rem;
+}

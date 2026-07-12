@@ -731,7 +731,7 @@ pub async fn carpe_diem_media_list_artifacts(
 
 // --- internals ---------------------------------------------------------------
 
-fn artifacts_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
+pub(crate) fn artifacts_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
     let dir = app
         .path()
         .app_data_dir()

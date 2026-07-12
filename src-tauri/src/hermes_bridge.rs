@@ -94,6 +94,9 @@ const JUNE_WEB_MCP_COORDS_NAME: &str = "june_web_proxy.json";
 const JUNE_MEDIA_MCP_SERVER_NAME: &str = "june_media";
 const JUNE_MEDIA_MCP_SCRIPT_NAME: &str = "june_media_mcp.py";
 const JUNE_MEDIA_MCP_SCRIPT: &str = include_str!("hermes/june_media_mcp.py");
+const JUNE_FILMS_MCP_SERVER_NAME: &str = "june_films";
+const JUNE_FILMS_MCP_SCRIPT_NAME: &str = "june_films_mcp.py";
+const JUNE_FILMS_MCP_SCRIPT: &str = include_str!("hermes/june_films_mcp.py");
 
 /// Identity injected into every Hermes session via `SOUL.md`. Hermes loads
 /// this file from `HERMES_HOME` at prompt-build time; without it the runtime
@@ -144,6 +147,14 @@ Web tools: you have a `june_web` MCP toolset with `web_search` and `web_fetch`. 
 /// (see `unsandboxed_soul_makes_no_sandbox_claims`).
 const JUNE_SOUL_MEDIA_MD: &str = r#"
 Media tools: you have a `june_media` MCP toolset to create media. Use `generate_image` for images (it returns the saved file's path), `generate_video` then `check_media` for videos, and `generate_music` then `check_media` for music. Pick the model to fit each request: call `list_media_models` and weigh its traits, tier, price, and constraints against what the user asked for (a cheap fast model for drafts and iteration; a higher-quality or premium model for photorealism, fine detail, or text inside the image), and say which model you picked and why. Only fall back to the default model for throwaway or generic asks. These tools run through the app with the user's stored media key, so never try to generate media by calling APIs yourself or by hunting for API keys — your session has none. Generations cost real credits; videos are the expensive kind, so state the model you intend to use and get the user's confirmation before queueing a video. Generated files are saved into the app's Studio gallery; give the user the returned file path.
+"#;
+
+/// Appended to `SOUL.md` for every runtime. Film production is discovered
+/// through the `june_films` MCP server configured below; the note stresses
+/// that films move real money (DIEM) and that every launch needs an agreed
+/// budget cap. Same no-"sandbox"-wording constraint as the media note.
+const JUNE_SOUL_FILMS_MD: &str = r#"
+Film tools: you have a `june_films` MCP toolset that produces complete short films (brief to final cut) through the first-party Videomaker studio. Start with `film_studio_status`; if film production is not activated, ask the user to activate it in Settings > Film studio - you cannot. The standard flow is `create_film_project` then `start_film_run` with the user's brief. Films are the most expensive thing you can create (typically hundreds of DIEM): always agree a DIEM budget with the user first, pass it as the cap, and never raise a cap on your own - when a quote exceeds it, report the figure and let the user decide. Production runs server-side for tens of minutes; check `film_status` on demand rather than polling, and the finished film is downloaded into the app's Studio gallery automatically (or via `export_film`). Only approve or reject phase gates when the user explicitly told you their decision.
 "#;
 
 /// Appended to `SOUL.md` only when the Seatbelt write-jail engages on this
@@ -836,6 +847,7 @@ async fn start_hermes_bridge_inner(
     let june_web_mcp =
         sync_june_web_mcp(app, &command, provider_proxy.port, &provider_proxy.token)?;
     let june_media_mcp = sync_june_media_mcp(app, &command, &june_web_mcp.coordinates_path)?;
+    let june_films_mcp = sync_june_films_mcp(app, &command, &june_web_mcp.coordinates_path)?;
     sync_hermes_config(
         &hermes_home,
         provider_proxy.port,
@@ -844,6 +856,7 @@ async fn start_hermes_bridge_inner(
         &june_context_mcp,
         &june_web_mcp,
         &june_media_mcp,
+        &june_films_mcp,
     )?;
 
     // Wrap the spawn in a macOS Seatbelt write-jail when possible. The model,
@@ -1056,6 +1069,12 @@ struct JuneWebMcpConfig {
 /// web MCP; only the script differs.
 #[derive(Debug, Clone)]
 struct JuneMediaMcpConfig {
+    command: String,
+    script_path: PathBuf,
+    coordinates_path: PathBuf,
+}
+
+struct JuneFilmsMcpConfig {
     command: String,
     script_path: PathBuf,
     coordinates_path: PathBuf,
@@ -6297,6 +6316,29 @@ fn sync_june_media_mcp(
     })
 }
 
+/// Writes the `june_films` MCP script next to the other built-in MCP servers.
+/// Same coordinates-file contract as the web and media MCPs.
+fn sync_june_films_mcp(
+    app: &AppHandle,
+    hermes_command: &str,
+    coordinates_path: &Path,
+) -> Result<JuneFilmsMcpConfig, AppError> {
+    let data_dir = crate::app_paths::app_data_dir(app)
+        .map_err(|error| AppError::new("june_films_mcp_failed", error.to_string()))?;
+    let mcp_dir = data_dir.join(JUNE_CONTEXT_MCP_DIR_NAME);
+    fs::create_dir_all(&mcp_dir)
+        .map_err(|error| AppError::new("june_films_mcp_failed", error.to_string()))?;
+    let script_path = mcp_dir.join(JUNE_FILMS_MCP_SCRIPT_NAME);
+    fs::write(&script_path, JUNE_FILMS_MCP_SCRIPT)
+        .map_err(|error| AppError::new("june_films_mcp_failed", error.to_string()))?;
+
+    Ok(JuneFilmsMcpConfig {
+        command: hermes_python_command(hermes_command),
+        script_path,
+        coordinates_path: coordinates_path.to_path_buf(),
+    })
+}
+
 /// The JSON the `june_web` MCP re-reads per tool call. Pure so tests can
 /// assert the exact shape the Python script parses.
 fn render_june_web_proxy_coordinates(port: u16, token: &str) -> String {
@@ -6366,6 +6408,7 @@ fn sync_hermes_config(
     june_context_mcp: &JuneContextMcpConfig,
     june_web_mcp: &JuneWebMcpConfig,
     june_media_mcp: &JuneMediaMcpConfig,
+    june_films_mcp: &JuneFilmsMcpConfig,
 ) -> Result<(), AppError> {
     let model = crate::providers::generation_model();
     let base_url = format!("http://127.0.0.1:{provider_proxy_port}/v1");
@@ -6378,6 +6421,7 @@ fn sync_hermes_config(
         Some(june_context_mcp),
         Some(june_web_mcp),
         Some(june_media_mcp),
+        Some(june_films_mcp),
     );
     std::fs::write(hermes_home.join("config.yaml"), config)
         .map_err(|error| AppError::new("hermes_bridge_config_failed", error.to_string()))
@@ -6387,6 +6431,7 @@ fn sync_hermes_config(
 /// rendered YAML (including the `skills.external_dirs` block) can be asserted in
 /// tests. Hermes deep-merges these keys over its own defaults, so June only
 /// writes the values it controls.
+#[allow(clippy::too_many_arguments)]
 fn render_hermes_config(
     model: &str,
     base_url: &str,
@@ -6396,6 +6441,7 @@ fn render_hermes_config(
     june_context_mcp: Option<&JuneContextMcpConfig>,
     june_web_mcp: Option<&JuneWebMcpConfig>,
     june_media_mcp: Option<&JuneMediaMcpConfig>,
+    june_films_mcp: Option<&JuneFilmsMcpConfig>,
 ) -> String {
     let skills_block = if external_skill_dirs.is_empty() {
         "  external_dirs: []\n".to_string()
@@ -6406,8 +6452,12 @@ fn render_hermes_config(
         }
         block
     };
-    let mcp_servers_block =
-        render_mcp_servers_config(june_context_mcp, june_web_mcp, june_media_mcp);
+    let mcp_servers_block = render_mcp_servers_config(
+        june_context_mcp,
+        june_web_mcp,
+        june_media_mcp,
+        june_films_mcp,
+    );
     format!(
         r#"model:
   default: {model}
@@ -6436,6 +6486,7 @@ fn render_mcp_servers_config(
     context: Option<&JuneContextMcpConfig>,
     web: Option<&JuneWebMcpConfig>,
     media: Option<&JuneMediaMcpConfig>,
+    films: Option<&JuneFilmsMcpConfig>,
 ) -> String {
     let mut entries = String::new();
     if let Some(config) = context {
@@ -6446,6 +6497,9 @@ fn render_mcp_servers_config(
     }
     if let Some(config) = media {
         entries.push_str(&render_media_mcp_entry(config));
+    }
+    if let Some(config) = films {
+        entries.push_str(&render_films_mcp_entry(config));
     }
     if entries.is_empty() {
         return "mcp_servers: {}\n".to_string();
@@ -6527,6 +6581,29 @@ fn render_media_mcp_entry(config: &JuneMediaMcpConfig) -> String {
     )
 }
 
+/// Same coordinates-file contract again. The timeout is the highest of the
+/// built-in servers: a studio chat turn legitimately runs for minutes when it
+/// generates assets, and the export downloads a whole film.
+fn render_films_mcp_entry(config: &JuneFilmsMcpConfig) -> String {
+    format!(
+        r#"  {server_name}:
+    enabled: true
+    command: {command}
+    args:
+      - {script_path}
+      - {coordinates_path}
+    env:
+      PYTHONUNBUFFERED: "1"
+    timeout: 900
+    connect_timeout: 10
+"#,
+        server_name = JUNE_FILMS_MCP_SERVER_NAME,
+        command = yaml_string(&config.command),
+        script_path = yaml_string(&config.script_path.to_string_lossy()),
+        coordinates_path = yaml_string(&config.coordinates_path.to_string_lossy()),
+    )
+}
+
 /// User-global skill directories Hermes loads in addition to its built-in
 /// `$HERMES_HOME/skills`. June advertises the conventional `~/.agents/skills`
 /// folder (where the `skills` CLI installs) when it exists, so a user or team
@@ -6602,10 +6679,10 @@ fn sync_june_soul(
             JUNE_SOUL_CLI_BLOCKED_MD
         };
         format!(
-            "{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_SANDBOX_MD}{cli_section}"
+            "{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_FILMS_MD}{JUNE_SOUL_SANDBOX_MD}{cli_section}"
         )
     } else {
-        format!("{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_MEDIA_MD}")
+        format!("{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_FILMS_MD}")
     };
     std::fs::write(hermes_home.join("SOUL.md"), soul)
         .map_err(|error| AppError::new("hermes_bridge_soul_failed", error.to_string()))
@@ -6908,6 +6985,9 @@ async fn handle_june_provider_connection(
         }
         ("POST", "/v1/media/save") => {
             forward_media_save(&app, &mut stream, &request.body).await?;
+        }
+        ("POST", "/v1/films/request") => {
+            forward_films_request(&app, &mut stream, &request.body).await?;
         }
         _ => {
             write_json_response(
@@ -7291,6 +7371,207 @@ async fn forward_media_save(
             write_json_response(stream, 200, body).await
         }
         Err(error) => write_media_proxy_error(stream, &error).await,
+    }
+}
+
+/// `/v1/films/request` — typed film-production actions for the `june_films`
+/// MCP (ADR-0010). Desktop only: the videomaker module never compiles for
+/// mobile, so other targets answer 404. Secrets stay in the Rust process;
+/// the MCP only names an action and JSON params.
+#[cfg(desktop)]
+async fn forward_films_request(
+    app: &AppHandle,
+    stream: &mut tokio::net::TcpStream,
+    request_body: &[u8],
+) -> io::Result<()> {
+    let payload = match serde_json::from_slice::<serde_json::Value>(request_body) {
+        Ok(payload) => payload,
+        Err(error) => {
+            return write_json_response(
+                stream,
+                400,
+                serde_json::json!({
+                    "error": { "message": format!("Invalid films request: {error}") }
+                }),
+            )
+            .await;
+        }
+    };
+    let action = payload
+        .get("action")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let params = payload
+        .get("params")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    match films_dispatch(app.clone(), &action, params).await {
+        Ok(value) => write_json_response(stream, 200, value).await,
+        Err(error) => {
+            let status = match error.code.as_str() {
+                "films_unknown_action"
+                | "films_invalid_params"
+                | "videomaker_invalid"
+                | "videomaker_not_activated"
+                | "videomaker_no_carpe_diem_key" => 400,
+                _ => 502,
+            };
+            write_json_response(
+                stream,
+                status,
+                serde_json::json!({
+                    "error": { "code": error.code, "message": error.message }
+                }),
+            )
+            .await
+        }
+    }
+}
+
+#[cfg(not(desktop))]
+async fn forward_films_request(
+    _app: &AppHandle,
+    stream: &mut tokio::net::TcpStream,
+    _request_body: &[u8],
+) -> io::Result<()> {
+    write_json_response(
+        stream,
+        404,
+        serde_json::json!({
+            "error": { "message": "Film production is available on desktop only." }
+        }),
+    )
+    .await
+}
+
+/// Action → videomaker command. Params reuse the commands' own camelCase
+/// request shapes, so the MCP, the webview, and this proxy stay one contract.
+#[cfg(desktop)]
+async fn films_dispatch(
+    app: AppHandle,
+    action: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    use crate::videomaker::{self, commands as film_commands, director, projects};
+    use serde_json::Value;
+
+    fn required_param(params: &Value, key: &str) -> Result<String, AppError> {
+        params
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| AppError::new("films_invalid_params", format!("{key} is required")))
+    }
+    fn parsed<T: serde::de::DeserializeOwned>(params: Value) -> Result<T, AppError> {
+        serde_json::from_value(params)
+            .map_err(|error| AppError::new("films_invalid_params", error.to_string()))
+    }
+    fn as_json<T: serde::Serialize>(value: T) -> Result<Value, AppError> {
+        serde_json::to_value(value)
+            .map_err(|error| AppError::new("films_serialize_failed", error.to_string()))
+    }
+
+    match action {
+        "settings" => as_json(videomaker::dto()),
+        "account_status" => as_json(film_commands::videomaker_account_status(app).await?),
+        "list_projects" => projects::videomaker_list_projects(app).await,
+        "create_project" => projects::videomaker_create_project(app, parsed(params)?).await,
+        "start_run" => projects::videomaker_start_run(app, parsed(params)?).await,
+        "status" => {
+            projects::videomaker_project_status(app, required_param(&params, "slug")?).await
+        }
+        "overview" => {
+            projects::videomaker_project_overview(app, required_param(&params, "slug")?).await
+        }
+        "runs" => projects::videomaker_list_runs(app, required_param(&params, "slug")?).await,
+        "cancel_run" => {
+            projects::videomaker_cancel_run(
+                app,
+                required_param(&params, "slug")?,
+                required_param(&params, "runId")?,
+            )
+            .await
+        }
+        "produce" => {
+            let confirmed = params.get("confirmedCostDiem").and_then(Value::as_f64);
+            projects::videomaker_produce(app, required_param(&params, "slug")?, confirmed).await
+        }
+        "export" => {
+            as_json(projects::videomaker_export_film(app, required_param(&params, "slug")?).await?)
+        }
+        "gates" => director::videomaker_gates(app, required_param(&params, "slug")?).await,
+        "gate_approve" => director::videomaker_gate_approve(app, parsed(params)?).await,
+        "gate_reject" => director::videomaker_gate_reject(app, parsed(params)?).await,
+        "chat" => {
+            director::videomaker_chat(
+                app,
+                required_param(&params, "slug")?,
+                required_param(&params, "message")?,
+            )
+            .await
+        }
+        "board" => director::videomaker_board(app, required_param(&params, "slug")?).await,
+        "failures" => director::videomaker_failures(app, required_param(&params, "slug")?).await,
+        "transcript" => {
+            director::videomaker_transcript(app, required_param(&params, "slug")?).await
+        }
+        "shot_takes" => {
+            director::videomaker_shot_takes(
+                app,
+                required_param(&params, "slug")?,
+                required_param(&params, "shotId")?,
+            )
+            .await
+        }
+        "take_select" => {
+            let version = params
+                .get("version")
+                .and_then(Value::as_u64)
+                .and_then(|value| u32::try_from(value).ok())
+                .ok_or_else(|| AppError::new("films_invalid_params", "version is required"))?;
+            director::videomaker_take_select(
+                app,
+                required_param(&params, "slug")?,
+                required_param(&params, "shotId")?,
+                version,
+            )
+            .await
+        }
+        "shot_retake" => {
+            let prompt = params
+                .get("prompt")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            director::videomaker_shot_retake(
+                app,
+                required_param(&params, "slug")?,
+                required_param(&params, "shotId")?,
+                prompt,
+            )
+            .await
+        }
+        "shot_requeue" => {
+            director::videomaker_shot_requeue(
+                app,
+                required_param(&params, "slug")?,
+                required_param(&params, "shotId")?,
+            )
+            .await
+        }
+        "shot_skip" => {
+            director::videomaker_shot_skip(
+                app,
+                required_param(&params, "slug")?,
+                required_param(&params, "shotId")?,
+            )
+            .await
+        }
+        _ => Err(AppError::new(
+            "films_unknown_action",
+            format!("Unknown films action: {action}"),
+        )),
     }
 }
 
@@ -7858,6 +8139,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
 
         assert!(config.contains("model:\n  default: \"glm\""));
@@ -7902,6 +8184,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
 
         assert!(config.contains("skills:\n  external_dirs: []\n"));
@@ -7924,11 +8207,20 @@ mod tests {
         }
     }
 
+    fn test_june_films_mcp_config() -> JuneFilmsMcpConfig {
+        JuneFilmsMcpConfig {
+            command: "/tmp/hermes/venv/bin/python".to_string(),
+            script_path: PathBuf::from("/tmp/june/hermes-mcp/june_films_mcp.py"),
+            coordinates_path: PathBuf::from("/tmp/june/hermes-mcp/june_web_proxy.json"),
+        }
+    }
+
     #[test]
     fn render_hermes_config_registers_june_context_mcp_server() {
         let context = test_june_context_mcp_config();
         let web = test_june_web_mcp_config();
         let media = test_june_media_mcp_config();
+        let films = test_june_films_mcp_config();
         let config = render_hermes_config(
             "glm",
             "http://127.0.0.1:9/v1",
@@ -7938,21 +8230,24 @@ mod tests {
             Some(&context),
             Some(&web),
             Some(&media),
+            Some(&films),
         );
 
         // All built-in servers live under one mcp_servers map.
         assert!(config.contains("mcp_servers:\n  june_context:\n"));
         assert!(config.contains("  june_web:\n"));
         assert!(config.contains("  june_media:\n"));
+        assert!(config.contains("  june_films:\n"));
         assert!(config.contains("    command: \"/tmp/hermes/venv/bin/python\"\n"));
         assert!(config.contains("      - \"/tmp/june/hermes-mcp/june_context_mcp.py\"\n"));
         assert!(config.contains("      - \"/tmp/june/notes.sqlite3\"\n"));
-        // The web and media servers get the coordinates-file path as their
-        // arg — never the proxy URL or token, which would go stale in a
+        // The web, media, and films servers get the coordinates-file path as
+        // their arg — never the proxy URL or token, which would go stale in a
         // gateway-hosted server the moment the app relaunches on a new
         // ephemeral port.
         assert!(config.contains("      - \"/tmp/june/hermes-mcp/june_web_mcp.py\"\n"));
         assert!(config.contains("      - \"/tmp/june/hermes-mcp/june_media_mcp.py\"\n"));
+        assert!(config.contains("      - \"/tmp/june/hermes-mcp/june_films_mcp.py\"\n"));
         assert!(config.contains("      - \"/tmp/june/hermes-mcp/june_web_proxy.json\"\n"));
         assert!(!config.contains("JUNE_WEB_PROXY_TOKEN"));
         assert!(!config.contains("      - \"http://127.0.0.1:9/v1\"\n"));
@@ -8000,6 +8295,7 @@ mod tests {
             "tok",
             "web",
             &[],
+            None,
             None,
             None,
             None,
@@ -8394,8 +8690,18 @@ mod tests {
         let mcp = test_june_context_mcp_config();
         let web = test_june_web_mcp_config();
         let media = test_june_media_mcp_config();
-        sync_hermes_config(home.path(), 4242, "proxy-token", &[], &mcp, &web, &media)
-            .expect("sync config");
+        let films = test_june_films_mcp_config();
+        sync_hermes_config(
+            home.path(),
+            4242,
+            "proxy-token",
+            &[],
+            &mcp,
+            &web,
+            &media,
+            &films,
+        )
+        .expect("sync config");
 
         let config = std::fs::read_to_string(home.path().join("config.yaml")).expect("read config");
         assert!(config.contains("platform_toolsets:"));

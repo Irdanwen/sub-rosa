@@ -1805,6 +1805,184 @@ export async function carpeDiemRestartSidecar() {
   return invoke<void>("carpe_diem_restart_sidecar");
 }
 
+// --- Videomaker film production (ADR-0010, desktop only) --------------------
+// The Films surface drives the first-party Videomaker Studio API. Secrets
+// (Studio wallet, vmk_ token, cdm_ key) never reach the webview; the wallet
+// address is public by design (it is the account id).
+
+export type VideomakerSettingsDto = {
+  baseUrl: string;
+  defaultBaseUrl: string;
+  activated: boolean;
+  walletAddress?: string;
+  hasCarpeDiemKey: boolean;
+};
+
+export type VideomakerAccountStatusDto = {
+  walletAddress: string;
+  hasKey: boolean;
+  balance: Record<string, unknown> | null;
+  quota: Record<string, unknown> | null;
+};
+
+export async function videomakerGetSettings() {
+  return invoke<VideomakerSettingsDto>("videomaker_get_settings");
+}
+
+export async function videomakerSetBaseUrl(baseUrl: string) {
+  return invoke<VideomakerSettingsDto>("videomaker_set_base_url", {
+    request: { baseUrl },
+  });
+}
+
+export async function videomakerActivate() {
+  return invoke<VideomakerSettingsDto>("videomaker_activate", {
+    request: { consent: true },
+  });
+}
+
+export async function videomakerDeactivate() {
+  return invoke<VideomakerSettingsDto>("videomaker_deactivate");
+}
+
+export async function videomakerAccountStatus() {
+  return invoke<VideomakerAccountStatusDto>("videomaker_account_status");
+}
+
+// Film projects (raw Videomaker payloads; shapes are the studio's own —
+// typed views live in src/lib/films/).
+
+export type VideomakerFilmArtifactDto = {
+  path: string;
+  fileName: string;
+  bytes: number;
+};
+
+export async function videomakerListProjects() {
+  return invoke<Record<string, unknown>>("videomaker_list_projects");
+}
+
+export async function videomakerCreateProject(request: {
+  title: string;
+  aspectRatio?: string;
+  targetDurationSeconds?: number;
+  autonomous: boolean;
+  budgetCeilingDiem?: number;
+}) {
+  return invoke<Record<string, unknown>>("videomaker_create_project", { request });
+}
+
+export async function videomakerDeleteProject(slug: string) {
+  return invoke<void>("videomaker_delete_project", { slug });
+}
+
+export async function videomakerProjectOverview(slug: string) {
+  return invoke<Record<string, unknown>>("videomaker_project_overview", { slug });
+}
+
+export async function videomakerProjectStatus(slug: string) {
+  return invoke<Record<string, unknown>>("videomaker_project_status", { slug });
+}
+
+export async function videomakerStartRun(request: {
+  slug: string;
+  brief: string;
+  maxCostDiem?: number;
+  produce: boolean;
+}) {
+  return invoke<Record<string, unknown>>("videomaker_start_run", { request });
+}
+
+export async function videomakerListRuns(slug: string) {
+  return invoke<Record<string, unknown>>("videomaker_list_runs", { slug });
+}
+
+export async function videomakerCancelRun(slug: string, runId: string) {
+  return invoke<Record<string, unknown>>("videomaker_cancel_run", { slug, runId });
+}
+
+export async function videomakerProduce(slug: string, confirmedCostDiem?: number) {
+  return invoke<Record<string, unknown>>("videomaker_produce", {
+    slug,
+    confirmedCostDiem,
+  });
+}
+
+export async function videomakerExportFilm(slug: string) {
+  return invoke<VideomakerFilmArtifactDto>("videomaker_export_film", { slug });
+}
+
+export async function videomakerWatchProject(slug: string) {
+  return invoke<void>("videomaker_watch_project", { slug });
+}
+
+export async function videomakerUnwatchProject(slug: string) {
+  return invoke<void>("videomaker_unwatch_project", { slug });
+}
+
+// Director mode (gated projects): gates, chat, board, takes.
+
+export async function videomakerGates(slug: string) {
+  return invoke<Record<string, unknown>>("videomaker_gates", { slug });
+}
+
+export async function videomakerGateApprove(request: {
+  slug: string;
+  phase: string;
+  decisionReason?: string;
+  entityId?: string;
+}) {
+  return invoke<Record<string, unknown>>("videomaker_gate_approve", { request });
+}
+
+export async function videomakerGateReject(request: {
+  slug: string;
+  phase: string;
+  decisionReason?: string;
+  entityId?: string;
+}) {
+  return invoke<Record<string, unknown>>("videomaker_gate_reject", { request });
+}
+
+export async function videomakerBoard(slug: string) {
+  return invoke<Record<string, unknown>>("videomaker_board", { slug });
+}
+
+export async function videomakerFailures(slug: string) {
+  return invoke<Record<string, unknown>>("videomaker_failures", { slug });
+}
+
+export async function videomakerTranscript(slug: string) {
+  return invoke<Record<string, unknown>>("videomaker_transcript", { slug });
+}
+
+export async function videomakerShotTakes(slug: string, shotId: string) {
+  return invoke<Record<string, unknown>>("videomaker_shot_takes", { slug, shotId });
+}
+
+export async function videomakerTakeSelect(slug: string, shotId: string, version: number) {
+  return invoke<Record<string, unknown>>("videomaker_take_select", { slug, shotId, version });
+}
+
+export async function videomakerShotRetake(slug: string, shotId: string, prompt?: string) {
+  return invoke<Record<string, unknown>>("videomaker_shot_retake", { slug, shotId, prompt });
+}
+
+export async function videomakerShotRequeue(slug: string, shotId: string) {
+  return invoke<Record<string, unknown>>("videomaker_shot_requeue", { slug, shotId });
+}
+
+export async function videomakerShotSkip(slug: string, shotId: string) {
+  return invoke<Record<string, unknown>>("videomaker_shot_skip", { slug, shotId });
+}
+
+/** One streamed chat turn with the studio crew; resolves with the final
+ * reply once the turn completes (tool progress arrives via
+ * `june://videomaker-chat` events). May take minutes on asset turns. */
+export async function videomakerChat(slug: string, message: string) {
+  return invoke<Record<string, unknown>>("videomaker_chat", { slug, message });
+}
+
 // Generates an image from a prompt via the June API. `model` is optional; the
 // backend falls back to the saved default image model when it is omitted.
 export async function generateImage(prompt: string, model?: string) {

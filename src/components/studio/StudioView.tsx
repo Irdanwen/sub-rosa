@@ -7,6 +7,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { EmptyState } from "../ui/EmptyState";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { Spinner } from "../ui/Spinner";
+import { FilmStudio } from "./FilmStudio";
 import { ImageStudio } from "./ImageStudio";
 import { MusicStudio } from "./MusicStudio";
 import { VideoStudio } from "./VideoStudio";
@@ -18,14 +19,20 @@ const WorkflowStudio = lazy(() =>
   import("./WorkflowStudio").then((module) => ({ default: module.WorkflowStudio })),
 );
 
-type StudioTab = "image" | "video" | "music" | "workflows";
+type StudioTab = "image" | "video" | "music" | "films" | "workflows";
 
 const TAB_STORAGE_KEY = "os-june:studio-tab";
 
 function initialTab(): StudioTab {
   try {
     const saved = window.localStorage.getItem(TAB_STORAGE_KEY);
-    if (saved === "image" || saved === "video" || saved === "music" || saved === "workflows") {
+    if (
+      saved === "image" ||
+      saved === "video" ||
+      saved === "music" ||
+      saved === "films" ||
+      saved === "workflows"
+    ) {
       return saved;
     }
   } catch {
@@ -63,11 +70,16 @@ export function StudioView() {
             { value: "image", label: "Image" },
             { value: "video", label: "Video" },
             { value: "music", label: "Music" },
+            { value: "films", label: "Films" },
             { value: "workflows", label: "Workflows" },
           ]}
         />
       </header>
-      {loading ? (
+      {tab === "films" ? (
+        // Films drives Videomaker, not the Carpe Diem media catalog — it must
+        // render (and explain itself) even when the catalog is unavailable.
+        <FilmStudio />
+      ) : loading ? (
         <div className="studio-loading">
           <Spinner aria-label="Loading models" />
         </div>

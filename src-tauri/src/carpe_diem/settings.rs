@@ -194,6 +194,10 @@ pub async fn carpe_diem_set_api_key(
     .map_err(|error| AppError::new("carpe_diem_keychain", error.to_string()))?
     .map_err(|error| AppError::new("carpe_diem_keychain", error.to_string()))?;
     super::sidecar::on_settings_changed(&app);
+    // Videomaker bills whatever key is registered server-side; keep it in
+    // sync with a rotated key (best-effort, desktop-only surface).
+    #[cfg(desktop)]
+    crate::videomaker::on_carpe_diem_key_changed(&app);
     Ok(dto())
 }
 
@@ -208,6 +212,10 @@ pub async fn carpe_diem_clear_api_key(app: AppHandle) -> Result<CarpeDiemSetting
     .await
     .map_err(|error| AppError::new("carpe_diem_keychain", error.to_string()))?;
     super::sidecar::on_settings_changed(&app);
+    // A removed key should stop billing entirely: delete Videomaker's
+    // server-side copy too (best-effort, desktop-only surface).
+    #[cfg(desktop)]
+    crate::videomaker::on_carpe_diem_key_cleared(&app);
     Ok(dto())
 }
 

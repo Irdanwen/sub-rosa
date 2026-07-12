@@ -62,6 +62,7 @@ import { getStoredTheme, setStoredTheme, type ThemePreference } from "../../lib/
 import { DEFAULT_BRAND, getStoredBrand, setStoredBrand, type BrandId } from "../../lib/brand";
 import { AccentWheel } from "./AccentWheel";
 import { CarpeDiemSettings } from "./CarpeDiemSettings";
+import { VideomakerSettings } from "./VideomakerSettings";
 import {
   getReleaseChannel,
   reconcileToStable,
@@ -200,6 +201,7 @@ const MIC_TEST_DURATION_SECONDS = 5;
 export type SettingsTab =
   | "general"
   | "carpe-diem"
+  | "film-studio"
   | "billing"
   | "shortcuts"
   | "dictation"
@@ -226,6 +228,7 @@ export type SettingsTab =
 export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "carpe-diem", label: "Carpe Diem" },
+  { id: "film-studio", label: "Film studio" },
   { id: "billing", label: "Billing" },
   { id: "shortcuts", label: "Shortcuts" },
   { id: "dictation", label: "Dictation" },
@@ -925,6 +928,7 @@ export function AppSettings({
         aria-labelledby={`settings-tab-${activeTab}`}
       >
         {activeTab === "carpe-diem" ? <CarpeDiemSettings /> : null}
+        {activeTab === "film-studio" ? <VideomakerSettings /> : null}
         {activeTab === "general" ? (
           <>
             <AccountSettingsSection

@@ -166,6 +166,49 @@ content.
 _Avoid_: history, context (unqualified), Hermes memory (that is the runtime's
 folder, not this store).
 
+### Film production (fork)
+
+**Videomaker** (Videomaker Studio):
+The first-party film-production service (`studio.furetier.com`) Sub Rosa
+drives over REST to produce complete short films. Accounts are Ethereum
+wallets; all generation bills the user's Carpe Diem key in **DIEM**. See
+[ADR-0010](docs/adr/0010-videomaker-film-production.md).
+_Avoid_: Furetier (the domain, not the product), "the film API".
+
+**Film project**:
+One Videomaker production (a slug): brief, production bible, assets,
+shotlist, storyboard, shots, final cut. Purged server-side after 7 idle days.
+Distinct from Studio **video generation** (single clips via Carpe Diem).
+_Avoid_: video (unqualified — a film is many shots; a video is one clip).
+
+**Run**:
+Videomaker's server-side one-shot driver: it advances a film project through
+every creative phase from a brief and optionally starts production under a
+cost cap. Re-POSTing a run *resumes* it (state-based).
+_Avoid_: job, pipeline.
+
+**Phase gate**:
+A server-enforced approval checkpoint between film phases (`concept`,
+`bible`, `asset_pack`, `shotlist`, `storyboard`, `production`, `final`).
+Autonomous projects skip gates but then *require* a budget ceiling.
+_Avoid_: step, milestone.
+
+**Shot** / **Take**:
+A shot is one planned 4-15 s unit of the shotlist; a take is one rendered
+attempt at a shot (selectable, retakeable). Selecting a take is free;
+retaking spends DIEM.
+_Avoid_: scene (a scene groups shots), clip.
+
+**DIEM**:
+The Carpe Diem credit unit all Videomaker costs are quoted in. Never convert
+to currency in UI copy, and never confuse with OS Accounts **credits**.
+_Avoid_: dollars, credits (that is OS Accounts).
+
+**Studio wallet**:
+The app-managed secp256k1 keypair that *is* the user's Videomaker account
+(SIWE identity only — holds no funds, never exported, keychain-stored).
+_Avoid_: crypto wallet, account key (ambiguous with the `cdm_` API key).
+
 ### AI work & billing
 
 **Dictation**:
@@ -295,6 +338,12 @@ _Avoid_: entitlement (that is the code-signing sense).
   Venice-served LLM the runtime calls.
 - **"channel"** is overloaded: a **Source** lane (mic/system), a **release
   channel** (stable/rc), or a WAV interleave channel. Qualify.
+- **"video"** is overloaded between Studio **video generation** (one clip, one
+  Carpe Diem call) and a **film project** (a full Videomaker production of many
+  shots). Say which.
+- **"wallet"** in fork code means the **Studio wallet** (SIWE identity for
+  Videomaker), never a funds-holding crypto wallet and never the OS Accounts
+  wallet.
 
 ## Example dialogue
 

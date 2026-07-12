@@ -64,6 +64,15 @@ function register(file: ArtifactFile, metadata: ArtifactMetadata): StudioArtifac
   return artifact;
 }
 
+/** Indexes a file that Rust already wrote into the gallery directory (the
+ * Films watcher downloads final cuts itself; only the index entry is missing). */
+export function registerDownloadedArtifact(
+  file: ArtifactFile,
+  metadata: ArtifactMetadata,
+): StudioArtifact {
+  return register(file, metadata);
+}
+
 /** Persists a base64 payload (sync image result, TTS audio) to the gallery. */
 export async function saveArtifactFromBase64(
   base64: string,

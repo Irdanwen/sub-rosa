@@ -19,6 +19,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0007](adr/0007-model-capability-source-of-truth.md) — model capabilities come from the live Venice catalog, not marketing traits
 - [adr/0008](adr/0008-studio-media-proxy-in-tauri.md) — Studio media calls go through a fork-owned Tauri proxy, not June API
 - [adr/0009](adr/0009-local-cross-conversation-memory.md) — cross-conversation user memory: local SQLite, prompt-time injection, direct embeddings
+- [adr/0010](adr/0010-videomaker-film-production.md) — film production via Videomaker Studio: direct client, app-managed wallet, SSE watcher
 
 ## Enforceable rules (spec/)
 
