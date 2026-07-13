@@ -23,6 +23,7 @@ import { open as openFileDialog, save as saveDialog } from "@tauri-apps/plugin-d
 import { noteAssistantTurnCompleted } from "../../lib/memory";
 import { isMacDesktopPlatform } from "../../lib/platform";
 import { AnimatePresence, motion } from "framer-motion";
+import { EASE_OUT } from "../../lib/motion";
 import { createPortal } from "react-dom";
 import { IconAnonymous } from "central-icons/IconAnonymous";
 import { IconArrowCornerDownRight } from "central-icons/IconArrowCornerDownRight";
@@ -6128,7 +6129,7 @@ export function AgentWorkspace({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.22, ease: "easeOut" }}
+              transition={{ duration: 0.22, ease: EASE_OUT }}
             >
               <DotSpinner />
               {busyNotice ?? SESSION_BUSY_NOTICE}
@@ -6141,7 +6142,7 @@ export function AgentWorkspace({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.22, ease: "easeOut" }}
+              transition={{ duration: 0.22, ease: EASE_OUT }}
             >
               <span>
                 {visibleIssueReportReview.report.followUps.length
@@ -6178,7 +6179,7 @@ export function AgentWorkspace({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.22, ease: "easeOut" }}
+              transition={{ duration: 0.22, ease: EASE_OUT }}
             >
               {visibleIssueReportNotice}
             </motion.p>
@@ -6190,7 +6191,7 @@ export function AgentWorkspace({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.22, ease: "easeOut" }}
+              transition={{ duration: 0.22, ease: EASE_OUT }}
             >
               {visibleModelSwitchNotice}
             </motion.p>

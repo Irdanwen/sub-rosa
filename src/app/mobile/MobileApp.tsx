@@ -43,6 +43,44 @@ import { createInitialState, notesReducer } from "../state/app-state";
 import { useMobileNav } from "./nav";
 
 /**
+ * Error banner with a real exit path: replacing the message re-runs the
+ * entrance (keyed), and clearing it plays a short leave transition before
+ * unmount instead of hard-popping away mid-glance.
+ */
+function MobileErrorBanner({ error, onDismiss }: { error: string | null; onDismiss: () => void }) {
+  const [shown, setShown] = useState<string | null>(error);
+  const [exiting, setExiting] = useState(false);
+  useEffect(() => {
+    if (error) {
+      setShown(error);
+      setExiting(false);
+      return;
+    }
+    // Error cleared: play the leave, then drop the banner. (With nothing
+    // shown these set states that are already null/false — harmless.)
+    setExiting(true);
+    const timer = window.setTimeout(() => {
+      setShown(null);
+      setExiting(false);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [error]);
+  if (!shown) return null;
+  return (
+    <button
+      type="button"
+      className="mobile-error-banner"
+      key={shown}
+      data-exiting={exiting || undefined}
+      onClick={onDismiss}
+      aria-label="Dismiss error"
+    >
+      {shown}
+    </button>
+  );
+}
+
+/**
  * The iPhone/Android shell: bottom tab bar plus per-tab push stacks, reusing
  * the desktop state reducer, IPC layer, and feature components (NoteEditor,
  * CarpeDiemSettings) without the desktop chrome (sidebar, tab strip, HUDs).
@@ -160,12 +198,20 @@ export function MobileApp() {
     const el = screenRef.current;
     if (!drag?.active || !el) return;
     const deltaX = drag.lastX - drag.x;
-    const commit = deltaX > drag.width * 0.35 || drag.vx > 0.5;
-    el.style.transition = "transform 200ms var(--ease-out)";
+    // Commit on distance, or on a modest flick that has actually travelled —
+    // the old 0.5 px/ms gate demanded a violent throw.
+    const commit = deltaX > drag.width * 0.35 || (drag.vx > 0.2 && deltaX > 24);
     if (commit) {
+      // Momentum handoff: the screen leaves at the finger's speed instead of
+      // decelerating identically after a throw and a slow release; the pop
+      // fires when the slide lands, not on a fixed timer.
+      const remaining = Math.max(1, drag.width - Math.max(0, deltaX));
+      const duration = Math.min(280, Math.max(120, remaining / Math.max(drag.vx, 0.9)));
+      el.style.transition = `transform ${Math.round(duration)}ms var(--ease-out)`;
       el.style.transform = `translateX(${drag.width}px)`;
-      window.setTimeout(() => nav.pop(), 180);
+      window.setTimeout(() => nav.pop(), Math.round(duration) - 20);
     } else {
+      el.style.transition = "transform 200ms var(--ease-out)";
       el.style.transform = "translateX(0)";
       window.setTimeout(() => {
         if (screenRef.current === el) {
@@ -643,16 +689,7 @@ export function MobileApp() {
 
   return (
     <div className="mobile-shell">
-      {error ? (
-        <button
-          type="button"
-          className="mobile-error-banner"
-          onClick={() => setError(null)}
-          aria-label="Dismiss error"
-        >
-          {error}
-        </button>
-      ) : null}
+      <MobileErrorBanner error={error} onDismiss={() => setError(null)} />
       <div
         className="mobile-screen"
         data-nav={navMotion}

@@ -182,13 +182,16 @@ body {
   width: 100%;
   /* Headroom: cap the growth below the 22px box so loud peaks don't crowd the
    * top/bottom edges of the pill. */
-  height: calc(3px + var(--level, 0) * 15px);
-  border-radius: 999px;
+  height: 18px;
   background: var(--hud-bar);
   transform: translateY(50%);
-  /* 22ms linear height tween — matches the playground's CSS_MS so the
-   * inter-syllable motion smooths identically to the tuning tool. */
-  transition: height 22ms linear;
+  /* Amplitude is a symmetric clip, not a height: animating height relayouts
+   * every bar 60×/s on the main thread while clip-path stays at paint level.
+   * inset(… round) keeps the caps as round as the old border-radius pill.
+   * 7.5px = (18px - 3px rest) / 2 per edge. The 22ms linear tween matches the
+   * playground's CSS_MS so inter-syllable motion smooths identically. */
+  clip-path: inset(calc(7.5px - var(--level, 0) * 7.5px) 0 round 999px);
+  transition: clip-path 22ms linear;
 }
 
 .hud-braille {

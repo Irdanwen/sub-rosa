@@ -406,7 +406,8 @@ function InstallControl({
         <span className="skills-hub-install-bar" aria-hidden>
           <span
             className="skills-hub-install-bar-fill"
-            style={pct !== undefined ? { width: `${pct}%` } : undefined}
+            // scaleX, not width: width relayouts on every install tick.
+            style={pct !== undefined ? { transform: `scaleX(${pct / 100})` } : undefined}
             data-indeterminate={pct === undefined || undefined}
           />
         </span>

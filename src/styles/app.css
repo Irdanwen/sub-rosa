@@ -417,7 +417,12 @@ input:focus-visible,
   color: var(--primary-foreground);
   transition:
     background-color var(--t-fast) var(--ease-out),
-    border-color var(--t-fast) var(--ease-out);
+    border-color var(--t-fast) var(--ease-out),
+    transform var(--t-med) var(--ease-out);
+}
+
+.agent-icon-button:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .agent-new-task {
@@ -3820,6 +3825,14 @@ input:focus-visible,
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  /* The dot's static color already says "live"; the expanding ring is the
+   * kind of slow looping oscillation reduced-motion users opt out of. */
+  .agent-activity-indicator > span {
+    animation: none;
+  }
+}
+
 /* Pinned chatbox. Like the note recorder, it's fixed to the card's bottom edge
  * (riding the sidebar/card gutters) so the conversation scrolls behind it in
  * the main card scroller and the card's bottom fade dissolves content into it.
@@ -4529,6 +4542,13 @@ input:focus-visible,
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .agent-composer-model-flyout,
+  .agent-composer-model-flyout[data-side="right"] {
+    animation-name: fade-in;
+  }
+}
+
 .agent-composer-model-detail .agent-composer-model-surface {
   gap: var(--sp-1);
   width: 220px;
@@ -4602,6 +4622,13 @@ input:focus-visible,
 .agent-composer-model-hovercard[data-side="right"] {
   clip-path: inset(-48px -48px -48px 0);
   animation-name: agent-composer-model-flyout-right;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-composer-model-hovercard,
+  .agent-composer-model-hovercard[data-side="right"] {
+    animation-name: fade-in;
+  }
 }
 
 .agent-composer-model-all-panel {
@@ -5415,7 +5442,10 @@ input:focus-visible,
   font-family: var(--font-serif);
   font-weight: 400;
   font-size: var(--fs-display);
-  letter-spacing: 0;
+  /* Display type tightens as it grows (tracking is size-derived): loose
+   * default leading + zero tracking read gangly at 30px serif. */
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
 }
 
 /* In the hero the composer leaves its fixed bottom dock and sits inline at
@@ -5886,12 +5916,19 @@ input:focus-visible,
   color: var(--muted-foreground);
   transition:
     background-color var(--t-fast) var(--ease-out),
-    color var(--t-fast) var(--ease-out);
+    color var(--t-fast) var(--ease-out),
+    transform var(--t-med) var(--ease-out);
 }
 
 .icon-button:hover {
   background: var(--sidebar-accent);
   color: var(--foreground);
+}
+
+/* Press feedback: pressable surfaces depress slightly so the UI confirms it
+ * heard the click the instant it lands (on press, not on release). */
+.icon-button:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 /* Sidebar search ---------------------------------------------------- */
@@ -6811,6 +6848,32 @@ input:focus-visible,
   box-shadow:
     0 16px 36px oklch(0% 0 none / 12%),
     0 2px 6px oklch(0% 0 none / 6%);
+  /* Menus scale in from their anchor edge (they open below the cursor or
+   * trigger), never hard-pop: 120ms is fast enough to feel instant while
+   * killing the display-toggle jump. */
+  transform-origin: top;
+  animation: context-menu-in 120ms var(--ease-out);
+}
+
+@keyframes context-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+/* Shared opacity-only enter — the reduced-motion stand-in for any entrance
+ * that normally moves or scales (comprehension fade stays, movement goes). */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-menu {
+    animation-name: fade-in;
+  }
 }
 
 .context-menu button {
@@ -8131,8 +8194,11 @@ input:focus-visible,
 
 @media (prefers-reduced-motion: reduce) {
   /* framer-motion already drops the slide and blur for the stage swap (it reads
-     prefers-reduced-motion); this just rests the label's shimmer. */
-  .note-processing-roll-item {
+     prefers-reduced-motion); this rests every looping shimmer sweep too — the
+     gradient settles on its resting mix, the label still reads "working". */
+  .note-processing-roll-item,
+  .transcript-processing-label,
+  .text-shimmer {
     animation: none;
   }
 }
@@ -8332,13 +8398,19 @@ input:focus-visible,
   cursor: pointer;
   transition:
     background-color var(--t-fast) var(--ease-out),
-    border-color var(--t-fast) var(--ease-out);
+    border-color var(--t-fast) var(--ease-out),
+    transform var(--t-med) var(--ease-out);
 }
 
 .empty-state button:hover,
 .primary-action:hover {
   background: var(--muted);
   border-color: var(--ring);
+}
+
+.empty-state button:active:not(:disabled),
+.primary-action:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 /* Recorder ---------------------------------------------------------- */
@@ -8583,13 +8655,15 @@ input:focus-visible,
  * pull eases in slowly, no abrupt edge to the resolve. */
 .record-options-row {
   opacity: 0;
-  filter: blur(8px);
+  filter: blur(4px);
   transform: translateY(-4px);
+  /* Blur stays ≤4px: animated blur is resampled every frame in WKWebView, and
+   * a permanent will-change kept a compositing layer alive per row for the
+   * panel's whole lifetime — the one-shot reveal doesn't need the hint. */
   transition:
     opacity 260ms var(--ease-out),
     filter 380ms var(--ease-out),
     transform 260ms var(--ease-out);
-  will-change: filter, opacity, transform;
 }
 
 .record-options-panel[data-open="true"] .record-options-row {
@@ -8699,7 +8773,6 @@ input:focus-visible,
   transition:
     width 360ms var(--ease-out),
     box-shadow var(--t-med) var(--ease-out);
-  will-change: width;
 }
 
 .record-shell[data-state="idle"] {
@@ -8874,13 +8947,17 @@ input:focus-visible,
   bottom: 50%;
   width: 100%;
   /* Grows toward the 30px box with a little headroom at the edges. The shared
-   * meter drives --level per frame; the 24ms transition smooths sub-frame steps
+   * meter drives --level per frame; the 18ms transition smooths sub-frame steps
    * (sharpened from 40ms to match the HUD so the carrier shimmer reads crisp). */
-  height: calc(3px + var(--level, 0) * 24px);
-  border-radius: 999px;
+  height: 27px;
   background: var(--foreground);
   transform: translateY(50%);
-  transition: height 18ms linear;
+  /* Amplitude is a clip, not a height: animating height relayouts every bar
+   * 60×/s on the main thread, while clip-path resolves at paint/composite.
+   * inset(… round) keeps the pill caps perfectly round at every level
+   * (a scaleY would squash them). 12px = (27px - 3px rest) / 2 per edge. */
+  clip-path: inset(calc(12px - var(--level, 0) * 12px) 0 round 999px);
+  transition: clip-path 18ms linear;
 }
 
 .recorder-bar[data-state="paused"] .waveform span {
@@ -8992,6 +9069,9 @@ input:focus-visible,
   color: var(--foreground);
   font-size: var(--fs-md);
   box-shadow: var(--shadow-md);
+  /* Centering lives here, not only in the keyframe, so the reduced-motion
+   * fade (and any future animation: none) can't shift the card off-center. */
+  transform: translateX(-50%);
   animation: message-card-enter var(--t-med) var(--ease-out) both;
 }
 
@@ -9003,6 +9083,12 @@ input:focus-visible,
   to {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-card {
+    animation-name: fade-in;
   }
 }
 
@@ -9385,6 +9471,9 @@ input:focus-visible,
    * consistent with the standalone settings page. A panel gap here on top of
    * that margin double-spaced the sections. */
   gap: 0;
+  /* The panel is keyed by tab, so switching sections cross-fades in briefly
+   * instead of teleporting. Opacity-only: safe under reduced motion too. */
+  animation: fade-in var(--t-fast) var(--ease-out);
 }
 
 .settings-title {
@@ -9683,6 +9772,13 @@ input:focus-visible,
   transition: none;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .accent-wheel-pop[data-phase="open"] .accent-wheel-bloom,
+  .accent-wheel-pop[data-phase="closing"] .accent-wheel-bloom {
+    animation: none;
+  }
+}
+
 @keyframes accent-bloom-in {
   from {
     opacity: 0;
@@ -9785,7 +9881,7 @@ input:focus-visible,
   border-radius: inherit;
   background: var(--foreground);
   transform-origin: left center;
-  transition: transform 90ms ease-out;
+  transition: transform 90ms var(--ease-out);
 }
 
 .settings-mic-test-time {
@@ -9914,7 +10010,7 @@ input:focus-visible,
   border-radius: inherit;
   background: color-mix(in oklch, var(--success) 76%, var(--foreground));
   transform-origin: left center;
-  transition: transform 160ms ease-out;
+  transition: transform var(--t-med) var(--ease-out);
 }
 
 /* Near-empty allowance: warm the fill so green never reads as "plenty left". */
@@ -9943,7 +10039,10 @@ input:focus-visible,
 }
 
 .balance-refresh-icon {
-  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  /* One full turn per refresh click; 360ms matches the other documented icon
+   * rotations (.record-options-trigger svg) — a faster spin reads as a faster
+   * refresh. Token curve, not a hand-typed copy of it. */
+  transition: transform 360ms var(--ease-out);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -13827,7 +13926,12 @@ input:focus-visible,
   cursor: pointer;
   transition:
     background-color var(--t-fast) var(--ease-out),
-    color var(--t-fast) var(--ease-out);
+    color var(--t-fast) var(--ease-out),
+    transform var(--t-med) var(--ease-out);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .btn-secondary {
@@ -14405,12 +14509,17 @@ input:focus-visible,
   cursor: pointer;
   transition:
     background-color var(--t-fast) var(--ease-out),
-    color var(--t-fast) var(--ease-out);
+    color var(--t-fast) var(--ease-out),
+    transform var(--t-med) var(--ease-out);
 }
 
 .ghost-icon-button:hover {
   background: var(--muted);
   color: var(--foreground);
+}
+
+.ghost-icon-button:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .ghost-icon-button:focus-visible {
@@ -15866,6 +15975,18 @@ input:focus-visible,
   animation: meetings-bulk-bar-in var(--t-slow) var(--ease-spring);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .meetings-bulk-bar {
+    animation: none;
+  }
+
+  /* Keep an exit *animation* (the unmount waits on animationend) but make it
+   * the opacity-only fade — no 24px slide for reduced-motion users. */
+  .meetings-bulk-bar[data-exit="slide"] {
+    animation-name: meetings-bulk-bar-out-fade;
+  }
+}
+
 /* During either exit the bar is inert and shows its last real content. */
 .meetings-bulk-bar[data-exit] {
   pointer-events: none;
@@ -16758,6 +16879,7 @@ input:focus-visible,
 
 @media (prefers-reduced-motion: reduce) {
   .note-recording-dot,
+  .sidebar-recording-indicator[data-state="recording"] .sidebar-recording-dot,
   .folder-note-subtitle [data-shimmer="true"] {
     animation: none;
   }
@@ -17568,6 +17690,12 @@ input:focus-visible,
   animation: dialog-card-in var(--t-med) var(--ease-spring);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .dialog-card {
+    animation-name: fade-in;
+  }
+}
+
 .dialog-header {
   display: flex;
   align-items: center;
@@ -17967,6 +18095,9 @@ input:focus-visible,
   min-width: 0;
   color: var(--foreground);
   -webkit-app-region: no-drag;
+  /* Anchored above the sidebar update button: rise + scale from the bottom
+   * edge it emerges from, not from a disembodied center. */
+  transform-origin: bottom center;
   animation: update-popover-in var(--t-med) var(--ease-spring) both;
 }
 
@@ -18063,8 +18194,11 @@ input:focus-visible,
   transition: transform var(--t-slow) var(--ease-spring);
 }
 
-.update-relaunch-card:hover:not(:disabled) .update-relaunch-arrow {
-  transform: translateX(3px);
+/* Hover motion only for real pointers — a tap would latch the nudge. */
+@media (hover: hover) and (pointer: fine) {
+  .update-relaunch-card:hover:not(:disabled) .update-relaunch-arrow {
+    transform: translateX(3px);
+  }
 }
 
 .update-status-card {
@@ -18141,10 +18275,14 @@ input:focus-visible,
 
 .update-progress-fill {
   height: 100%;
-  min-width: 8px;
+  width: 100%;
   border-radius: inherit;
   background: var(--foreground);
-  transition: width var(--t-fast) var(--ease-out);
+  /* Progress moves as a composited scaleX, not width — width relayouts on
+   * every download tick. The JS floors the scale so a sliver always shows. */
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--t-fast) var(--ease-out);
 }
 
 .update-progress-percent {
@@ -18291,6 +18429,23 @@ input:focus-visible,
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
+  /* Opens under its trigger's left edge — scale in from that corner instead
+   * of hard-popping into place. */
+  transform-origin: top left;
+  animation: move-to-folder-in var(--t-med) var(--ease-out);
+}
+
+@keyframes move-to-folder-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .move-to-folder-popover {
+    animation-name: fade-in;
+  }
 }
 
 .move-to-folder-search {
@@ -19598,10 +19753,14 @@ input:focus-visible,
 .skills-hub-install-bar-fill {
   display: block;
   height: 100%;
-  width: 0;
+  width: 100%;
   border-radius: 999px;
   background: var(--primary);
-  transition: width 0.2s ease;
+  /* Composited scaleX progress (width relayouts per install tick); the
+   * indeterminate sweep below owns transform while it runs. */
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--t-med) var(--ease-out);
 }
 
 .skills-hub-install-bar-fill[data-indeterminate] {
@@ -19615,6 +19774,15 @@ input:focus-visible,
   }
   100% {
     transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skills-hub-install-bar-fill[data-indeterminate] {
+    animation: none;
+    width: 100%;
+    transform: none;
+    opacity: 0.6;
   }
 }
 

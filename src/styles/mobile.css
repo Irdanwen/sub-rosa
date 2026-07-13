@@ -206,10 +206,14 @@
   border-radius: var(--r-md);
   background: none;
   color: var(--foreground);
+  transition: transform var(--t-med) var(--ease-out);
 }
 
+/* On touch a background swap alone reads as hover; the press should also
+ * physically depress. Same recipe as the desktop base buttons. */
 .mobile-icon-button:active {
   background: var(--muted);
+  transform: scale(0.94);
 }
 
 /* --- Search + folder strip ---------------------------------------------- */
@@ -450,6 +454,13 @@
   border: none;
   background: none;
   color: var(--muted-foreground);
+  transition: transform var(--t-med) var(--ease-out);
+}
+
+/* The single most-tapped control on the phone must react to the finger the
+ * instant it lands — a tab that only changes color on commit feels dead. */
+.mobile-tab-bar-item:active {
+  transform: scale(0.92);
 }
 
 /* `--accent` is a *surface* token (a near-background fill), so it rendered
@@ -555,6 +566,17 @@
   text-align: left;
   box-shadow: var(--shadow-lg);
   animation: mobile-banner-in 220ms var(--ease-spring);
+  transition:
+    opacity 160ms var(--ease-out),
+    transform 160ms var(--ease-out);
+}
+
+/* Exit mirrors the entrance path (spatial consistency): back up and out the
+ * way it came, slightly quicker than it arrived. */
+.mobile-error-banner[data-exiting] {
+  opacity: 0;
+  transform: translateY(-12px);
+  pointer-events: none;
 }
 
 @keyframes mobile-banner-in {
@@ -810,6 +832,7 @@
 
 .mobile-chat-copy:active {
   background: var(--muted);
+  transform: scale(0.96);
 }
 
 .mobile-chat-composer {
@@ -1125,6 +1148,7 @@
 
 .mobile-studio-preview-copy:active {
   background: rgb(255 255 255 / 0.15);
+  transform: scale(0.96);
 }
 
 .mobile-studio-preview-actions {
@@ -1265,9 +1289,22 @@
   max-height: 70vh;
   display: flex;
   flex-direction: column;
-  background: var(--background);
+  /* Translucent material, not an opaque slab: the dimmed screen reads
+   * through the glass so the sheet feels like a layer over the app rather
+   * than a page replacing it (apple-design §12). */
+  background: color-mix(in oklch, var(--background) 82%, transparent);
+  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
   border-radius: var(--r-2xl) var(--r-2xl) 0 0;
   padding: var(--sp-4) var(--sp-4) calc(var(--sp-4) + env(safe-area-inset-bottom));
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .mobile-sheet {
+    background: var(--background);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 .mobile-sheet {
@@ -1476,6 +1513,15 @@
 
 .simple-markdown-code-copy:active {
   background: var(--card);
+  transform: scale(0.96);
+}
+
+/* Shared release ease for the small copy chips: press lands instantly,
+ * release settles instead of snapping. */
+.mobile-chat-copy,
+.mobile-studio-preview-copy,
+.simple-markdown-code-copy {
+  transition: transform var(--t-med) var(--ease-out);
 }
 
 .simple-markdown-code pre {
@@ -2409,9 +2455,17 @@
 
 /* --- Reduced motion ------------------------------------------------------------ */
 
+/* Opacity-only stand-in for the nav slides: reduced motion still deserves a
+ * comprehension crossfade between screens, just not the movement. */
+@keyframes mobile-nav-fade {
+  from {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mobile-screen[data-nav] > * {
-    animation: none;
+    animation: mobile-nav-fade var(--t-med) ease both;
   }
 
   .mobile-composer-round[data-active="true"]::before {
@@ -2423,7 +2477,19 @@
     animation: none;
   }
 
+  /* Keep the leave as a pure fade — no upward slide. */
+  .mobile-error-banner[data-exiting] {
+    transform: none;
+  }
+
   .swipe-row-content {
     transition: none !important;
+  }
+
+  /* Parity with the desktop spinner: rest the rotation, keep a dimmed ring
+   * so loading still reads as loading. */
+  .mobile-shell-loading::after {
+    animation: none;
+    opacity: 0.6;
   }
 }

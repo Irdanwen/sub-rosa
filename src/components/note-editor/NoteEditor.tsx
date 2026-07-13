@@ -10,6 +10,7 @@ import { IconCheckmark1 } from "central-icons-filled/IconCheckmark1";
 import { IconChevronBottom } from "central-icons-filled/IconChevronBottom";
 import { IconMicrophone } from "central-icons-filled/IconMicrophone";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { EASE_OUT } from "../../lib/motion";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Switch } from "../ui/Switch";
 import type {
@@ -447,7 +448,7 @@ export function NoteEditor({
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  transition={{ duration: 0.22, ease: "easeOut" }}
+                  transition={{ duration: 0.22, ease: EASE_OUT }}
                 >
                   <InlineNotice
                     className="record-consent-note-surface"
@@ -523,14 +524,14 @@ export function NoteEditor({
                         transition: {
                           duration: 0.22,
                           delay: 0.14,
-                          ease: [0.22, 1, 0.36, 1],
+                          ease: EASE_OUT,
                         },
                       }}
                       exit={{
                         opacity: 0,
                         transition: {
                           duration: 0.12,
-                          ease: [0.22, 1, 0.36, 1],
+                          ease: EASE_OUT,
                         },
                       }}
                     >
@@ -554,14 +555,14 @@ export function NoteEditor({
                         transition: {
                           duration: 0.22,
                           delay: 0.12,
-                          ease: [0.22, 1, 0.36, 1],
+                          ease: EASE_OUT,
                         },
                       }}
                       exit={{
                         opacity: 0,
                         transition: {
                           duration: 0.12,
-                          ease: [0.22, 1, 0.36, 1],
+                          ease: EASE_OUT,
                         },
                       }}
                     >
@@ -778,7 +779,7 @@ function ProcessingProgressIndicator({
             exit={reduceMotion ? { opacity: 0 } : { y: "-65%", opacity: 0, filter: "blur(5px)" }}
             transition={{
               duration: reduceMotion ? 0.15 : 0.5,
-              ease: [0.22, 1, 0.36, 1],
+              ease: EASE_OUT,
             }}
           >
             {processingStageMessage(status)}

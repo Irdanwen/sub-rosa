@@ -924,6 +924,8 @@ export function AppSettings({
       <div
         className="settings-tab-panel"
         role="tabpanel"
+        // Remount per tab so the section cross-fades in instead of teleporting.
+        key={activeTab}
         id={`settings-panel-${activeTab}`}
         aria-labelledby={`settings-tab-${activeTab}`}
       >

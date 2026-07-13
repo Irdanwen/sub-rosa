@@ -57,6 +57,14 @@
    * in the app means this token. */
   --fw-medium: 600;
 
+  /* Tracking + leading are size-derived, never one blanket value: display
+   * sizes tighten (letters drift apart as type grows), body stays neutral.
+   * Pair these with --fs-2xl/--fs-display wherever those sizes are used. */
+  --tracking-display: -0.015em;
+  --tracking-2xl: -0.01em;
+  --leading-display: 1.1;
+  --leading-2xl: 1.2;
+
   /* Spacing ---------------------------------------------------------- */
   --sp-px: 2px;
   --sp-1: 4px;

@@ -3,7 +3,8 @@ import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { EASE_OUT } from "../lib/motion";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { AccountGate, JuneMark } from "../components/account/AccountGate";
@@ -290,6 +291,9 @@ function tabMeta(
 
 export function App() {
   const replayOnboarding = shouldReplayOnboarding();
+  // framer-motion does not drop `y` movement by itself under reduced motion;
+  // surfaces that slide (the global recorder dock) branch on this.
+  const reduceMotion = useReducedMotion();
   const [state, dispatch] = useReducer(notesReducer, undefined, createInitialState);
   const [error, setError] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -3215,16 +3219,16 @@ export function App() {
               <motion.div
                 key="global-recorder"
                 className="global-recorder-dock"
-                initial={{ opacity: 0, y: -8 }}
+                initial={{ opacity: 0, y: reduceMotion ? 0 : -8 }}
                 animate={{
                   opacity: 1,
                   y: 0,
-                  transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
+                  transition: { duration: 0.22, ease: EASE_OUT },
                 }}
                 exit={{
                   opacity: 0,
-                  y: -8,
-                  transition: { duration: 0.14, ease: [0.22, 1, 0.36, 1] },
+                  y: reduceMotion ? 0 : -8,
+                  transition: { duration: 0.14, ease: EASE_OUT },
                 }}
               >
                 <GlobalRecorderPill
@@ -3416,8 +3420,12 @@ function UpdateStatusCard({
   onDismiss: () => void;
 }) {
   const percent = updateProgressPercent(progress);
-  const progressWidth =
-    progress?.state === "installing" && percent === undefined ? "100%" : `${percent ?? 0}%`;
+  // scaleX, not width: width relayouts on every download tick. Floored so a
+  // sliver of fill is always visible (the old min-width: 8px).
+  const progressScale =
+    progress?.state === "installing" && percent === undefined
+      ? 1
+      : Math.max(0.05, (percent ?? 0) / 100);
   const failed = status.toLowerCase().includes("failed");
 
   return (
@@ -3443,7 +3451,10 @@ function UpdateStatusCard({
       {progress ? (
         <div className="update-progress" aria-hidden>
           <div className="update-progress-track">
-            <div className="update-progress-fill" style={{ width: progressWidth }} />
+            <div
+              className="update-progress-fill"
+              style={{ transform: `scaleX(${progressScale})` }}
+            />
           </div>
           {percent !== undefined ? (
             <span className="update-progress-percent">{percent}%</span>

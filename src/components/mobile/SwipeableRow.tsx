@@ -1,5 +1,6 @@
 import { type ReactNode, useRef, useState } from "react";
 import { hapticSelection } from "../../lib/haptics";
+import { FLICK_VELOCITY, rubberband } from "../../lib/motion";
 
 export type SwipeAction = {
   label: string;
@@ -28,11 +29,15 @@ export function SwipeableRow({
   const [dragging, setDragging] = useState(false);
   const start = useRef<{ x: number; y: number; offset: number } | null>(null);
   const locked = useRef<"horizontal" | "vertical" | null>(null);
+  // Short position/time history so release knows the finger's velocity — a
+  // quick flick should open the actions even under the distance threshold.
+  const motionState = useRef({ lastX: 0, lastT: 0, vx: 0 });
   const maxOffset = actions.length * ACTION_WIDTH;
 
   const onTouchStart = (event: React.TouchEvent) => {
     const touch = event.touches[0];
     start.current = { x: touch.clientX, y: touch.clientY, offset };
+    motionState.current = { lastX: touch.clientX, lastT: event.timeStamp, vx: 0 };
     locked.current = null;
   };
 
@@ -47,15 +52,28 @@ export function SwipeableRow({
       if (locked.current === "horizontal") setDragging(true);
     }
     if (locked.current !== "horizontal") return;
-    const next = Math.min(0, Math.max(-maxOffset * 1.2, start.current.offset + deltaX));
+    const deltaT = event.timeStamp - motionState.current.lastT;
+    if (deltaT > 0) {
+      motionState.current.vx = (touch.clientX - motionState.current.lastX) / deltaT;
+    }
+    motionState.current.lastX = touch.clientX;
+    motionState.current.lastT = event.timeStamp;
+    // Past fully-open, resist progressively (rubber-band) instead of a wall.
+    const raw = Math.min(0, start.current.offset + deltaX);
+    const next = raw < -maxOffset ? -maxOffset + rubberband(raw + maxOffset, ACTION_WIDTH) : raw;
     setOffset(next);
   };
 
   const onTouchEnd = () => {
     setDragging(false);
     if (!start.current) return;
+    const { vx } = motionState.current;
     setOffset((current) => {
-      const next = current < -OPEN_THRESHOLD ? -maxOffset : 0;
+      // Velocity decides ties: a leftward flick opens from any distance, a
+      // rightward flick closes even while past the open threshold.
+      const flickOpen = vx < -FLICK_VELOCITY;
+      const flickClose = vx > FLICK_VELOCITY;
+      const next = flickClose ? 0 : flickOpen || current < -OPEN_THRESHOLD ? -maxOffset : 0;
       // A soft tick when the actions snap open, like the platform's rows.
       if (next !== 0 && start.current && start.current.offset === 0) hapticSelection();
       return next;
@@ -87,7 +105,9 @@ export function SwipeableRow({
         className="swipe-row-content"
         style={{
           transform: `translateX(${offset}px)`,
-          transition: dragging ? "none" : "transform 200ms ease",
+          // The iOS drawer curve, not bare `ease` — the settle should read
+          // like the row carrying its momentum home.
+          transition: dragging ? "none" : "transform 240ms var(--ease-spring)",
         }}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}

@@ -257,13 +257,15 @@ body:active {
   left: 0;
   bottom: 50%;
   width: 100%;
-  height: calc(3px + var(--level, 0) * 15px);
-  border-radius: 999px;
+  height: 18px;
   background: var(--foreground);
   transform: translateY(50%);
-  /* 22ms linear height tween — same as the dictation HUD (.hud-bar), which
-   * matches the playground's CSS_MS, so both waveforms smooth identically. */
-  transition: height 22ms linear;
+  /* Amplitude is a symmetric clip, not a height — same rationale and values
+   * as the dictation HUD (.hud-bar): no per-frame relayout, caps stay round,
+   * 22ms linear matches the playground's CSS_MS so both waveforms smooth
+   * identically. 7.5px = (18px - 3px rest) / 2 per edge. */
+  clip-path: inset(calc(7.5px - var(--level, 0) * 7.5px) 0 round 999px);
+  transition: clip-path 22ms linear;
 }
 
 /* Paused: bars settle and dim (the meter also stops the carrier shimmer). */

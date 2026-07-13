@@ -27,6 +27,9 @@
   font-size: var(--fs-display);
   font-weight: 400;
   color: var(--foreground);
+  /* Display type: size-derived negative tracking + tight leading. */
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
 }
 
 .studio-subtitle {
@@ -288,6 +291,13 @@
   }
   50% {
     opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-image-skeleton {
+    animation: none;
+    opacity: 0.7;
   }
 }
 

@@ -1,5 +1,6 @@
 import { type ReactNode, useRef, useState } from "react";
 import { hapticImpact } from "../../lib/haptics";
+import { rubberband } from "../../lib/motion";
 import { Spinner } from "../ui/Spinner";
 
 /** Pull distance (px, post-resistance) that arms a refresh on release. */
@@ -49,7 +50,10 @@ export function PullToRefresh({
       if (pull !== 0) setPull(0);
       return;
     }
-    const next = Math.min(88, delta * 0.45);
+    // Progressive rubber-band, not a linear factor with a hard 88px ceiling:
+    // resistance rises with the pull and never freezes mid-gesture. The 300px
+    // dimension keeps the trigger reachable at the same ~125px of travel.
+    const next = rubberband(delta, 300);
     if (next >= TRIGGER && !state.buzzed) {
       state.buzzed = true;
       hapticImpact("light");

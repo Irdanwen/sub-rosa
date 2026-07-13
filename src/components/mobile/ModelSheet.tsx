@@ -4,6 +4,7 @@ import { IconStar } from "central-icons/IconStar";
 import { useMemo, useRef, useState } from "react";
 import { hapticSelection } from "../../lib/haptics";
 import { useKeyboardInset } from "../../lib/keyboard-inset";
+import { EASE_OUT_CSS, FLICK_VELOCITY } from "../../lib/motion";
 
 export type ModelSheetEntry = {
   id: string;
@@ -63,15 +64,63 @@ export function ModelSheet({
   // Drag-to-dismiss from the grabber/title zone (the list keeps its scroll).
   const [dragY, setDragY] = useState(0);
   const dragStart = useRef<number | null>(null);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const backdropRef = useRef<HTMLDivElement | null>(null);
+  const dismissing = useRef(false);
+  // Track the finger's velocity so release inherits the throw: a flick
+  // dismisses under the distance threshold, and the exit starts at the
+  // finger's speed instead of a canned tween.
+  const motionState = useRef({ lastY: 0, lastT: 0, vy: 0 });
+
+  /** Animate the sheet off-screen from wherever the finger left it, then close. */
+  const dismiss = (fromY: number, vy: number) => {
+    if (dismissing.current) return;
+    dismissing.current = true;
+    const el = sheetRef.current;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!el || reduceMotion || typeof el.animate !== "function") {
+      onClose();
+      return;
+    }
+    const remaining = Math.max(1, el.offsetHeight - fromY);
+    // Momentum handoff: the exit takes as long as the throw would need,
+    // clamped so a slow release still leaves briskly.
+    const duration = Math.min(320, Math.max(140, remaining / Math.max(vy, 0.6)));
+    el.style.transition = "none";
+    el.animate(
+      [
+        { transform: `translateY(${fromY}px)` },
+        { transform: `translateY(${el.offsetHeight + 12}px)` },
+      ],
+      { duration, easing: EASE_OUT_CSS, fill: "forwards" },
+    );
+    backdropRef.current?.animate([{ opacity: 1 }, { opacity: 0 }], {
+      duration,
+      easing: "ease",
+      fill: "forwards",
+    });
+    window.setTimeout(onClose, duration);
+  };
+
   const onHandleTouchStart = (event: React.TouchEvent) => {
-    dragStart.current = event.touches[0].clientY;
+    const touch = event.touches[0];
+    dragStart.current = touch.clientY;
+    motionState.current = { lastY: touch.clientY, lastT: event.timeStamp, vy: 0 };
   };
   const onHandleTouchMove = (event: React.TouchEvent) => {
     if (dragStart.current === null) return;
-    setDragY(Math.max(0, event.touches[0].clientY - dragStart.current));
+    const touch = event.touches[0];
+    const deltaT = event.timeStamp - motionState.current.lastT;
+    if (deltaT > 0) {
+      motionState.current.vy = (touch.clientY - motionState.current.lastY) / deltaT;
+    }
+    motionState.current.lastY = touch.clientY;
+    motionState.current.lastT = event.timeStamp;
+    setDragY(Math.max(0, touch.clientY - dragStart.current));
   };
   const onHandleTouchEnd = () => {
-    if (dragY > 80) onClose();
+    const { vy } = motionState.current;
+    if (dragY > 80 || vy > FLICK_VELOCITY) dismiss(dragY, vy);
     else setDragY(0);
     dragStart.current = null;
   };
@@ -105,9 +154,10 @@ export function ModelSheet({
   };
 
   return (
-    <div className="mobile-sheet-backdrop" onClick={onClose}>
+    <div className="mobile-sheet-backdrop" ref={backdropRef} onClick={() => dismiss(dragY, 0.8)}>
       <div
         className="mobile-sheet"
+        ref={sheetRef}
         role="dialog"
         aria-label={title}
         onClick={(event) => event.stopPropagation()}
