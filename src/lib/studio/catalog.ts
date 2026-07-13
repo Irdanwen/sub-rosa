@@ -18,8 +18,9 @@ export async function fetchMediaCatalog(force = false): Promise<MediaCatalog> {
   if (!inflight) {
     inflight = invoke<MediaCatalog>("carpe_diem_media_catalog")
       .then((catalog) => {
-        cached = { catalog, fetchedAt: Date.now() };
-        return catalog;
+        const patched = withVideoDurationFallbacks(catalog);
+        cached = { catalog: patched, fetchedAt: Date.now() };
+        return patched;
       })
       .finally(() => {
         inflight = undefined;
@@ -64,6 +65,36 @@ export function imageEditModels(catalog: MediaCatalog): MediaModel[] {
   const seen = new Set(live.map((model) => model.id));
   const extras = CARPE_DIEM_EXTRA_EDIT_MODELS.filter((model) => !seen.has(model.id));
   return [...live, ...extras].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Duration menus for video families whose constraints never arrive. Venice's
+ * public catalog does not list these models, so the merged catalog carries no
+ * `durations` and the studios queued without a `duration` — which these models
+ * reject with a 400 ("duration Required"). Bounds probed live against
+ * `/video/quote` (2026-07-13). Matched by id substring, most specific first;
+ * only applied when the catalog has no durations, so live constraints win the
+ * moment Venice publishes them. */
+const VIDEO_DURATION_FALLBACKS: Array<{ match: string; durations: string[] }> = [
+  { match: "seedance-1-5-pro", durations: secondsRange(4, 12) },
+  { match: "seedance", durations: secondsRange(4, 15) },
+];
+
+function secondsRange(min: number, max: number): string[] {
+  return Array.from({ length: max - min + 1 }, (_, index) => `${min + index}s`);
+}
+
+export function withVideoDurationFallbacks(catalog: MediaCatalog): MediaCatalog {
+  return {
+    ...catalog,
+    models: catalog.models.map((model) => {
+      if (model.mediaType !== "video" && model.mediaType !== "imageToVideo") return model;
+      if (model.constraints?.durations?.length) return model;
+      const id = model.id.toLowerCase();
+      const fallback = VIDEO_DURATION_FALLBACKS.find((entry) => id.includes(entry.match));
+      if (!fallback) return model;
+      return { ...model, constraints: { ...model.constraints, durations: fallback.durations } };
+    }),
+  };
 }
 
 /** One video family = the backend models sharing a display name, split by the

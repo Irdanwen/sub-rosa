@@ -6,6 +6,7 @@ import {
   musicCapabilities,
   videoFamilies,
   videoFamilyKey,
+  withVideoDurationFallbacks,
 } from "../lib/studio/catalog";
 import { musicPaths, retrieveBody, supportsVideoQuote } from "../lib/studio/paths";
 import type { MediaCatalog, MediaModel } from "../lib/studio/types";
@@ -67,6 +68,39 @@ describe("video family grouping", () => {
     expect(grouped).toHaveLength(1);
     expect(grouped[0].imageModel?.id).toBe("wan-2-7-image-to-video");
     expect(grouped[0].referenceModel?.id).toBe("wan-2-7-reference-to-video");
+  });
+});
+
+describe("video duration fallbacks", () => {
+  it("fills durations for seedance models the catalogs never constrain", () => {
+    const patched = withVideoDurationFallbacks(
+      catalog([
+        model({ id: "seedance-2-0-image-to-video", mediaType: "imageToVideo" }),
+        model({ id: "seedance-1-5-pro-text-to-video", mediaType: "video" }),
+        model({ id: "wan-2-7-text-to-video", mediaType: "video" }),
+      ]),
+    );
+    const byId = new Map(patched.models.map((entry) => [entry.id, entry]));
+    const seedance2 = byId.get("seedance-2-0-image-to-video")?.constraints?.durations;
+    expect(seedance2?.[0]).toBe("4s");
+    expect(seedance2?.at(-1)).toBe("15s");
+    const seedance15 = byId.get("seedance-1-5-pro-text-to-video")?.constraints?.durations;
+    expect(seedance15?.at(-1)).toBe("12s");
+    // Unlisted families stay untouched (no fabricated menus).
+    expect(byId.get("wan-2-7-text-to-video")?.constraints).toBeUndefined();
+  });
+
+  it("never overrides durations the live catalog already publishes", () => {
+    const patched = withVideoDurationFallbacks(
+      catalog([
+        model({
+          id: "seedance-2-0-image-to-video",
+          mediaType: "imageToVideo",
+          constraints: { durations: ["5s", "10s"] },
+        }),
+      ]),
+    );
+    expect(patched.models[0].constraints?.durations).toEqual(["5s", "10s"]);
   });
 });
 
