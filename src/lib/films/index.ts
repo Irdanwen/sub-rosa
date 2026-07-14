@@ -275,6 +275,70 @@ export function parseTakes(raw: unknown): FilmTake[] {
   });
 }
 
+// --- reference images ----------------------------------------------------------
+
+export const FILM_REF_ROLES = ["character", "location", "style", "object"] as const;
+export type FilmRefRole = (typeof FILM_REF_ROLES)[number];
+
+export const FILM_REF_ROLE_LABELS: Record<FilmRefRole, string> = {
+  character: "Character",
+  location: "Location",
+  style: "Style",
+  object: "Object",
+};
+
+/// A reference image picked in the form, before upload. `base64Data` is the
+/// original file (sent to the studio); `previewDataUri` is a downscaled copy
+/// (thumbnail + what the brief improver analyzes).
+export type FilmBriefRef = {
+  /** Client-side identity (list key), never sent anywhere. */
+  id: string;
+  role: FilmRefRole;
+  label: string;
+  fileName: string;
+  base64Data: string;
+  previewDataUri: string;
+};
+
+export type UploadedFilmRef = {
+  publicUrl: string;
+  relativePath: string;
+};
+
+export function parseUploadedRef(raw: unknown): UploadedFilmRef | null {
+  const payload = record(raw);
+  const publicUrl = str(payload.public_url);
+  const relativePath = str(payload.relative_path);
+  if (!publicUrl || !relativePath) return null;
+  return { publicUrl, relativePath };
+}
+
+function refLabelSuffix(label: string): string {
+  return label.trim() ? ` "${label.trim()}"` : "";
+}
+
+/// One standalone reference line (director-chat attachments).
+export function filmRefLine(ref: { role: FilmRefRole; label: string; url: string }): string {
+  return `Reference image (${ref.role}${refLabelSuffix(ref.label)}): ${ref.url}`;
+}
+
+/// The block appended to an autonomous brief (or seeded into the director
+/// chat) once the picked references are uploaded. Numbering matches the order
+/// the improver saw ("Reference image N"), so the two stay coherent.
+export function buildRefsManifest(
+  refs: Array<{ role: FilmRefRole; label: string; url: string }>,
+): string {
+  if (refs.length === 0) return "";
+  const lines = refs.map(
+    (ref, index) =>
+      `- Reference image ${index + 1} (${ref.role}${refLabelSuffix(ref.label)}): ${ref.url}`,
+  );
+  return [
+    "Reference images (already uploaded to the studio - anchor the matching characters, locations, or visual style on them):",
+    ...lines,
+  ].join("\n");
+}
+
 // --- event subscriptions -------------------------------------------------------
 
 function listenTauri(eventName: string, handler: (event: FilmEvent) => void): () => void {

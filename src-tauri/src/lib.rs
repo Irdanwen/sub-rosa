@@ -369,6 +369,8 @@ pub fn run() {
             videomaker::projects::videomaker_export_film,
             videomaker::projects::videomaker_watch_project,
             videomaker::projects::videomaker_unwatch_project,
+            videomaker::projects::videomaker_upload_ref,
+            videomaker::brief::videomaker_improve_brief,
             videomaker::director::videomaker_gates,
             videomaker::director::videomaker_gate_approve,
             videomaker::director::videomaker_gate_reject,

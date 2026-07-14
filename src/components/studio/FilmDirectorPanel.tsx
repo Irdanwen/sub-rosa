@@ -5,24 +5,31 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  FILM_REF_ROLE_LABELS,
+  FILM_REF_ROLES,
   type FilmBoard,
+  type FilmBriefRef,
   type FilmChatMessage,
   type FilmGate,
   type FilmProject,
   type FilmTake,
+  filmRefLine,
   listenFilmChatEvents,
   parseBoard,
   parseGates,
   parseProduceOutcome,
   parseTakes,
   parseTranscript,
+  parseUploadedRef,
 } from "../../lib/films";
+import { readFilmRef } from "../../lib/films/refs";
 import {
   videomakerBoard,
   videomakerChat,
   videomakerGateApprove,
   videomakerGateReject,
   videomakerGates,
+  videomakerImproveBrief,
   videomakerProduce,
   videomakerShotRequeue,
   videomakerShotRetake,
@@ -30,8 +37,10 @@ import {
   videomakerShotTakes,
   videomakerTakeSelect,
   videomakerTranscript,
+  videomakerUploadRef,
 } from "../../lib/tauri";
 import { Spinner } from "../ui/Spinner";
+import { PillGroup } from "./controls";
 
 type ErrorLike = { message?: string };
 
@@ -46,7 +55,14 @@ function gateBadge(gate: FilmGate): string {
   return "pending";
 }
 
-export function FilmDirectorPanel({ project }: { project: FilmProject }) {
+export function FilmDirectorPanel({
+  project,
+  initialDraft,
+}: {
+  project: FilmProject;
+  /** Seeds the chat composer (e.g. the refs manifest handed off at creation). */
+  initialDraft?: string;
+}) {
   const slug = project.slug;
   const [gates, setGates] = useState<FilmGate[]>([]);
   const [board, setBoard] = useState<FilmBoard | null>(null);
@@ -55,9 +71,16 @@ export function FilmDirectorPanel({ project }: { project: FilmProject }) {
   const [error, setError] = useState<string | null>(null);
 
   // Chat turn state.
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialDraft ?? "");
   const [turnBusy, setTurnBusy] = useState(false);
   const [turnActivity, setTurnActivity] = useState<string | null>(null);
+  // Attach flow: pick → set role/name → upload on confirm.
+  const [pendingAttach, setPendingAttach] = useState<FilmBriefRef | null>(null);
+  const [attachBusy, setAttachBusy] = useState(false);
+  const attachInputRef = useRef<HTMLInputElement | null>(null);
+  // AI improvement of the drafted message (preview, never a silent rewrite).
+  const [improving, setImproving] = useState(false);
+  const [improvedDraft, setImprovedDraft] = useState<string | null>(null);
 
   // Gate decision state.
   const [rejectingPhase, setRejectingPhase] = useState<string | null>(null);
@@ -125,6 +148,7 @@ export function FilmDirectorPanel({ project }: { project: FilmProject }) {
     const message = draft.trim();
     if (!message || turnBusy) return;
     setDraft("");
+    setImprovedDraft(null);
     setTurnBusy(true);
     setTurnActivity(null);
     setError(null);
@@ -149,6 +173,72 @@ export function FilmDirectorPanel({ project }: { project: FilmProject }) {
       setTurnActivity(null);
     }
   }, [draft, turnBusy, slug, refresh]);
+
+  /// Stage a picked image: the user assigns a role and a name before the
+  /// upload, so the crew knows what the reference anchors.
+  const pickAttachment = useCallback(async (files: FileList | null) => {
+    const file = files?.[0];
+    if (!file) return;
+    setError(null);
+    try {
+      setPendingAttach(await readFilmRef(file, "character"));
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
+  }, []);
+
+  /// Upload the staged image and hand its signed URL to the crew via the
+  /// composer draft (the user can still edit or annotate before sending).
+  const confirmAttachment = useCallback(async () => {
+    if (!pendingAttach || attachBusy) return;
+    setAttachBusy(true);
+    setError(null);
+    try {
+      const parsed = parseUploadedRef(
+        await videomakerUploadRef({
+          slug,
+          fileName: pendingAttach.fileName,
+          base64Data: pendingAttach.base64Data,
+        }),
+      );
+      if (!parsed) {
+        throw new Error(`The studio did not accept "${pendingAttach.fileName}".`);
+      }
+      const line = filmRefLine({
+        role: pendingAttach.role,
+        label: pendingAttach.label,
+        url: parsed.publicUrl,
+      });
+      setDraft((current) => (current.trim() ? `${current}\n${line}` : line));
+      setPendingAttach(null);
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setAttachBusy(false);
+    }
+  }, [slug, pendingAttach, attachBusy]);
+
+  /// Sharpen the drafted message. A brand-new project gets the full brief
+  /// treatment (the first chat message IS the brief); mid-project notes get
+  /// the lighter "direction" pass.
+  const improveDraft = useCallback(async () => {
+    const message = draft.trim();
+    if (!message || improving) return;
+    setImproving(true);
+    setError(null);
+    try {
+      const improved = await videomakerImproveBrief({
+        brief: message,
+        title: project.title,
+        mode: messages.length === 0 ? "brief" : "direction",
+      });
+      setImprovedDraft(improved);
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setImproving(false);
+    }
+  }, [draft, improving, project.title, messages.length]);
 
   const decideGate = useCallback(
     async (phase: string, approve: boolean, reason?: string) => {
@@ -323,6 +413,83 @@ export function FilmDirectorPanel({ project }: { project: FilmProject }) {
           ) : null}
           <div ref={chatEndRef} />
         </div>
+        {improvedDraft ? (
+          <div className="film-brief-preview">
+            <p className="film-brief-preview-title">Improved message</p>
+            <pre className="film-brief-preview-text">{improvedDraft}</pre>
+            <div className="studio-card-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setDraft(improvedDraft);
+                  setImprovedDraft(null);
+                }}
+              >
+                Use this message
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setImprovedDraft(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {pendingAttach ? (
+          <div className="film-ref-card">
+            <img
+              src={pendingAttach.previewDataUri}
+              alt={pendingAttach.fileName}
+              className="film-ref-thumb"
+            />
+            <div className="film-ref-meta">
+              <PillGroup
+                options={FILM_REF_ROLES.map((role) => ({
+                  value: role,
+                  label: FILM_REF_ROLE_LABELS[role],
+                }))}
+                value={pendingAttach.role}
+                onChange={(role) =>
+                  setPendingAttach((current) => (current ? { ...current, role } : current))
+                }
+                ariaLabel="Reference role"
+              />
+              <input
+                className="studio-input"
+                type="text"
+                value={pendingAttach.label}
+                placeholder="Name it for the crew (optional)"
+                aria-label="Reference name"
+                onChange={(event) =>
+                  setPendingAttach((current) =>
+                    current ? { ...current, label: event.target.value } : current,
+                  )
+                }
+              />
+            </div>
+            <div className="studio-card-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={attachBusy}
+                onClick={() => void confirmAttachment()}
+              >
+                {attachBusy ? "Uploading..." : "Add to message"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={attachBusy}
+                onClick={() => setPendingAttach(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="film-chat-composer">
           <textarea
             className="studio-textarea"
@@ -338,6 +505,32 @@ export function FilmDirectorPanel({ project }: { project: FilmProject }) {
               }
             }}
           />
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={attachBusy || turnBusy || pendingAttach !== null}
+            onClick={() => attachInputRef.current?.click()}
+          >
+            Attach image
+          </button>
+          <input
+            ref={attachInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            hidden
+            onChange={(event) => {
+              void pickAttachment(event.target.files);
+              event.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={!draft.trim() || improving || turnBusy}
+            onClick={() => void improveDraft()}
+          >
+            {improving ? "Improving..." : "Improve with AI"}
+          </button>
           <button
             type="button"
             className="studio-primary-button"

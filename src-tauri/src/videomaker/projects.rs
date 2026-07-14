@@ -308,6 +308,77 @@ pub async fn download_export(app: &AppHandle, slug: &str) -> Result<FilmArtifact
     })
 }
 
+/// Decoded-size cap for reference uploads; mirrors the studio's
+/// `VIDEOMAKER_MAX_UPLOAD_BYTES` default so oversized picks fail fast and
+/// locally instead of burning a 25 MB upload on a guaranteed 413.
+const MAX_REF_BYTES: usize = 25 * 1024 * 1024;
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadRefRequest {
+    pub slug: String,
+    pub file_name: String,
+    /// Raw base64 of the image bytes (no `data:` prefix). The studio
+    /// MIME-sniffs server-side and only accepts png/jpg/webp.
+    pub base64_data: String,
+}
+
+/// `POST /projects/{slug}/refs` — upload a reference image the crew anchors
+/// characters, locations, or the visual style on. Returns the studio payload
+/// (`relative_path`, signed `public_url`, `bytes`).
+#[tauri::command]
+pub async fn videomaker_upload_ref(
+    app: AppHandle,
+    request: UploadRefRequest,
+) -> Result<Value, AppError> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(request.base64_data.trim())
+        .map_err(|error| {
+            AppError::new("videomaker_invalid", format!("Invalid image data: {error}"))
+        })?;
+    if bytes.is_empty() {
+        return Err(AppError::new(
+            "videomaker_invalid",
+            "The reference image is empty.",
+        ));
+    }
+    if bytes.len() > MAX_REF_BYTES {
+        return Err(AppError::new(
+            "videomaker_invalid",
+            "Reference images must be 25 MB or less.",
+        ));
+    }
+    let mime = sniff_image_mime(&bytes).ok_or_else(|| {
+        AppError::new(
+            "videomaker_invalid",
+            "Reference images must be PNG, JPEG, or WebP.",
+        )
+    })?;
+    super::client::upload(
+        &app,
+        &format!("/projects/{}/refs", request.slug),
+        request.file_name.trim(),
+        mime,
+        bytes,
+    )
+    .await
+}
+
+/// Magic-byte sniff for the three formats the studio accepts. The server
+/// re-sniffs authoritatively; this just refuses obvious junk before upload.
+fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.starts_with(b"\xff\xd8\xff") {
+        Some("image/jpeg")
+    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
+}
+
 /// Join a possibly-relative signed URL against the studio origin.
 fn resolve_url(base: &str, url: &str) -> String {
     if url.starts_with("http://") || url.starts_with("https://") {
@@ -338,5 +409,20 @@ mod tests {
             resolve_url(base, "https://cdn.example/x.mp4"),
             "https://cdn.example/x.mp4"
         );
+    }
+
+    #[test]
+    fn sniffs_only_the_formats_the_studio_accepts() {
+        assert_eq!(
+            sniff_image_mime(b"\x89PNG\r\n\x1a\n0000"),
+            Some("image/png")
+        );
+        assert_eq!(sniff_image_mime(b"\xff\xd8\xff\xe000"), Some("image/jpeg"));
+        assert_eq!(
+            sniff_image_mime(b"RIFF\x00\x00\x00\x00WEBPVP8 "),
+            Some("image/webp")
+        );
+        assert_eq!(sniff_image_mime(b"GIF89a000000"), None);
+        assert_eq!(sniff_image_mime(b""), None);
     }
 }

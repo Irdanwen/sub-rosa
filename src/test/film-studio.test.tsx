@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   videomakerStartRun: vi.fn(),
   videomakerExportFilm: vi.fn(),
   videomakerDeleteProject: vi.fn(),
+  videomakerUploadRef: vi.fn(),
+  videomakerImproveBrief: vi.fn(),
 }));
 
 vi.mock("../lib/tauri", () => ({
@@ -19,6 +21,8 @@ vi.mock("../lib/tauri", () => ({
   videomakerStartRun: mocks.videomakerStartRun,
   videomakerExportFilm: mocks.videomakerExportFilm,
   videomakerDeleteProject: mocks.videomakerDeleteProject,
+  videomakerUploadRef: mocks.videomakerUploadRef,
+  videomakerImproveBrief: mocks.videomakerImproveBrief,
 }));
 
 // GalleryStrip talks to the artifact commands; keep the suite focused on the
@@ -28,7 +32,13 @@ vi.mock("../components/studio/GalleryStrip", () => ({
 }));
 
 import { FilmStudio } from "../components/studio/FilmStudio";
-import { parseProduceOutcome, parseProjectList, parseStatus } from "../lib/films";
+import {
+  buildRefsManifest,
+  parseProduceOutcome,
+  parseProjectList,
+  parseStatus,
+  parseUploadedRef,
+} from "../lib/films";
 
 const project = (over: Record<string, unknown> = {}) => ({
   slug: "ab12cd34ef56-neon-alley-duel",
@@ -92,6 +102,22 @@ describe("FilmStudio", () => {
     );
   });
 
+  it("develops the brief with AI and only applies it on accept", async () => {
+    mocks.videomakerImproveBrief.mockResolvedValue("Logline: two rivals, one alley.");
+    render(<FilmStudio />);
+    const briefInput = await screen.findByLabelText("Film brief");
+    fireEvent.change(briefInput, { target: { value: "Two rivals in the rain." } });
+    fireEvent.click(screen.getByRole("button", { name: "Improve with AI" }));
+    expect(await screen.findByText("Logline: two rivals, one alley.")).toBeInTheDocument();
+    // The draft is untouched until the user accepts the preview.
+    expect(briefInput).toHaveValue("Two rivals in the rain.");
+    fireEvent.click(screen.getByRole("button", { name: "Use this brief" }));
+    expect(briefInput).toHaveValue("Logline: two rivals, one alley.");
+    expect(mocks.videomakerImproveBrief).toHaveBeenCalledWith(
+      expect.objectContaining({ brief: "Two rivals in the rain.", targetDurationSeconds: 60 }),
+    );
+  });
+
   it("offers the gallery download only once the final cut exists", async () => {
     mocks.videomakerListProjects.mockResolvedValue({
       projects: [project(), project({ slug: "done-slug", title: "Done film", final_mp4: true })],
@@ -142,5 +168,31 @@ describe("films payload parsing", () => {
       needsConfirmation: false,
       projectedCostDiem: undefined,
     });
+  });
+
+  it("parses an uploaded reference and rejects incomplete payloads", () => {
+    expect(
+      parseUploadedRef({
+        relative_path: "slug/assets/uploads/a.png",
+        public_url: "https://studio.furetier.com/assets/slug/assets/uploads/a.png?sig=x",
+        bytes: 42,
+      }),
+    ).toEqual({
+      publicUrl: "https://studio.furetier.com/assets/slug/assets/uploads/a.png?sig=x",
+      relativePath: "slug/assets/uploads/a.png",
+    });
+    expect(parseUploadedRef({ bytes: 42 })).toBeNull();
+    expect(parseUploadedRef("nope")).toBeNull();
+  });
+
+  it("builds a refs manifest the crew can anchor on", () => {
+    expect(buildRefsManifest([])).toBe("");
+    const manifest = buildRefsManifest([
+      { role: "character", label: "Nera", url: "https://s/1.png" },
+      { role: "style", label: "  ", url: "https://s/2.png" },
+    ]);
+    expect(manifest).toContain('- Reference image 1 (character "Nera"): https://s/1.png');
+    expect(manifest).toContain("- Reference image 2 (style): https://s/2.png");
+    expect(manifest.startsWith("Reference images (already uploaded")).toBe(true);
   });
 });

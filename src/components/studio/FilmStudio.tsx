@@ -5,22 +5,31 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  buildRefsManifest,
+  FILM_REF_ROLE_LABELS,
+  FILM_REF_ROLES,
+  type FilmBriefRef,
   type FilmEvent,
   type FilmProject,
+  type FilmRefRole,
   type FilmStatus,
   listenFilmEvents,
   parseProjectList,
   parseStatus,
+  parseUploadedRef,
 } from "../../lib/films";
+import { readFilmRef } from "../../lib/films/refs";
 import { registerDownloadedArtifact } from "../../lib/studio/artifacts";
 import {
   videomakerCreateProject,
   videomakerDeleteProject,
   videomakerExportFilm,
   videomakerGetSettings,
+  videomakerImproveBrief,
   videomakerListProjects,
   videomakerProjectStatus,
   videomakerStartRun,
+  videomakerUploadRef,
 } from "../../lib/tauri";
 import { EmptyState } from "../ui/EmptyState";
 import { Spinner } from "../ui/Spinner";
@@ -31,6 +40,7 @@ import { PillGroup, StudioField } from "./controls";
 
 const ASPECT_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
 const STATUS_REFRESH_DEBOUNCE_MS = 3_000;
+const MAX_REFS = 4;
 
 type ErrorLike = { message?: string };
 
@@ -77,6 +87,16 @@ export function FilmStudio() {
   const [budgetDiem, setBudgetDiem] = useState(300);
   const [directed, setDirected] = useState(false);
   const [creating, setCreating] = useState(false);
+  // Reference images picked for the next film (uploaded at produce time —
+  // the studio's upload endpoint needs the project to exist first).
+  const [refs, setRefs] = useState<FilmBriefRef[]>([]);
+  const refInputRef = useRef<HTMLInputElement | null>(null);
+  // AI brief development: the improved text lands in a preview the user
+  // explicitly accepts — never a silent overwrite of their draft.
+  const [improving, setImproving] = useState(false);
+  const [improvedBrief, setImprovedBrief] = useState<string | null>(null);
+  // Refs manifest awaiting hand-off to the director chat, keyed by slug.
+  const [directorSeeds, setDirectorSeeds] = useState<Record<string, string>>({});
   const [galleryEpoch, setGalleryEpoch] = useState(0);
   const [busySlug, setBusySlug] = useState<string | null>(null);
   const [expandedSlug, setExpandedSlug] = useState<string | null>(null);
@@ -174,6 +194,78 @@ export function FilmStudio() {
     (directed || (brief.trim().length > 0 && budgetDiem > 0)) &&
     !creating;
 
+  const addRefs = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setError(null);
+    try {
+      const picked = await Promise.all(
+        Array.from(files).map((file) => readFilmRef(file, "character")),
+      );
+      setRefs((current) => [...current, ...picked].slice(0, MAX_REFS));
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
+  }, []);
+
+  const updateRef = useCallback((index: number, patch: Partial<FilmBriefRef>) => {
+    setRefs((current) =>
+      current.map((ref, position) => (position === index ? { ...ref, ...patch } : ref)),
+    );
+  }, []);
+
+  const removeRef = useCallback((index: number) => {
+    setRefs((current) => current.filter((_, position) => position !== index));
+  }, []);
+
+  const improveBrief = useCallback(async () => {
+    if (!brief.trim() || improving) return;
+    setImproving(true);
+    setError(null);
+    try {
+      const improved = await videomakerImproveBrief({
+        brief: brief.trim(),
+        title: title.trim() || undefined,
+        aspectRatio,
+        targetDurationSeconds: durationSeconds,
+        refs: refs.map((ref) => ({
+          role: ref.role,
+          label: ref.label.trim() || undefined,
+          dataUri: ref.previewDataUri,
+        })),
+      });
+      setImprovedBrief(improved);
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setImproving(false);
+    }
+  }, [brief, improving, title, aspectRatio, durationSeconds, refs]);
+
+  /// Upload the picked references to a freshly created project and return the
+  /// manifest block the crew reads. Throws with a project-aware message so a
+  /// failed upload never silently drops a reference.
+  const uploadRefs = useCallback(
+    async (slug: string): Promise<string> => {
+      if (refs.length === 0) return "";
+      const uploaded: Array<{ role: FilmRefRole; label: string; url: string }> = [];
+      for (const ref of refs) {
+        const parsed = parseUploadedRef(
+          await videomakerUploadRef({
+            slug,
+            fileName: ref.fileName,
+            base64Data: ref.base64Data,
+          }),
+        );
+        if (!parsed) {
+          throw new Error(`The studio did not accept the reference image "${ref.fileName}".`);
+        }
+        uploaded.push({ role: ref.role, label: ref.label, url: parsed.publicUrl });
+      }
+      return buildRefsManifest(uploaded);
+    },
+    [refs],
+  );
+
   const produceFilm = useCallback(async () => {
     if (!canCreate) return;
     setCreating(true);
@@ -189,13 +281,27 @@ export function FilmStudio() {
       });
       const slug = (created as { project?: { slug?: string } }).project?.slug;
       if (!slug) throw new Error("Videomaker did not return a project.");
+      let manifest = "";
+      try {
+        manifest = await uploadRefs(slug);
+      } catch (cause) {
+        // The project exists but a reference is missing: stop before the run
+        // so the crew never starts without the anchors the user picked.
+        throw new Error(
+          `The project was created, but a reference image failed to upload (${errorMessage(cause)}). Production was not started: remove the image or produce again.`,
+        );
+      }
       if (directed) {
+        if (manifest) {
+          setDirectorSeeds((current) => ({ ...current, [slug]: `${manifest}\n\n` }));
+        }
         setNotice("Project created. Open it below and give the crew your brief.");
         setExpandedSlug(slug);
       } else {
+        const fullBrief = manifest ? `${brief.trim()}\n\n${manifest}` : brief.trim();
         await videomakerStartRun({
           slug,
-          brief: brief.trim(),
+          brief: fullBrief,
           maxCostDiem: budgetDiem,
           produce: true,
         });
@@ -203,6 +309,8 @@ export function FilmStudio() {
       }
       setTitle("");
       setBrief("");
+      setRefs([]);
+      setImprovedBrief(null);
       await refreshProjects();
       void refreshStatus(slug);
     } catch (cause) {
@@ -218,6 +326,7 @@ export function FilmStudio() {
     budgetDiem,
     directed,
     brief,
+    uploadRefs,
     refreshProjects,
     refreshStatus,
   ]);
@@ -322,8 +431,107 @@ export function FilmStudio() {
                 placeholder="A rain-soaked cyberpunk alley at night. Two rivals face off..."
                 aria-label="Film brief"
               />
+              <div className="film-brief-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={!brief.trim() || improving || creating}
+                  onClick={() => void improveBrief()}
+                >
+                  {improving ? "Improving..." : "Improve with AI"}
+                </button>
+                <span className="film-brief-hint">
+                  Develops your draft into a full production brief
+                  {refs.length > 0 ? ", anchored on your reference images" : ""}.
+                </span>
+              </div>
+              {improvedBrief ? (
+                <div className="film-brief-preview">
+                  <p className="film-brief-preview-title">Improved brief</p>
+                  <pre className="film-brief-preview-text">{improvedBrief}</pre>
+                  <div className="studio-card-actions">
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        setBrief(improvedBrief);
+                        setImprovedBrief(null);
+                      }}
+                    >
+                      Use this brief
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => setImprovedBrief(null)}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </StudioField>
           )}
+          <StudioField
+            label="Reference images"
+            hint="Up to 4 images the studio anchors characters, locations, or the visual style on."
+          >
+            <div className="film-refs">
+              {refs.map((ref, index) => (
+                <div key={ref.id} className="film-ref-card">
+                  <img src={ref.previewDataUri} alt={ref.fileName} className="film-ref-thumb" />
+                  <div className="film-ref-meta">
+                    <PillGroup
+                      options={FILM_REF_ROLES.map((role) => ({
+                        value: role,
+                        label: FILM_REF_ROLE_LABELS[role],
+                      }))}
+                      value={ref.role}
+                      onChange={(role) => updateRef(index, { role })}
+                      ariaLabel={`Role of ${ref.fileName}`}
+                    />
+                    <input
+                      className="studio-input"
+                      type="text"
+                      value={ref.label}
+                      placeholder="Name it for the brief (optional)"
+                      onChange={(event) => updateRef(index, { label: event.target.value })}
+                      aria-label={`Name of ${ref.fileName}`}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => removeRef(index)}
+                    aria-label={`Remove ${ref.fileName}`}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              {refs.length < MAX_REFS ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={creating}
+                  onClick={() => refInputRef.current?.click()}
+                >
+                  Add an image
+                </button>
+              ) : null}
+              <input
+                ref={refInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                hidden
+                onChange={(event) => {
+                  void addRefs(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+            </div>
+          </StudioField>
           <StudioField label="Aspect ratio">
             <PillGroup
               options={ASPECT_RATIOS.map((ratio) => ({ value: ratio }))}
@@ -445,7 +653,12 @@ export function FilmStudio() {
                       </span>
                     </div>
                   ) : null}
-                  {expandedSlug === project.slug ? <FilmDirectorPanel project={project} /> : null}
+                  {expandedSlug === project.slug ? (
+                    <FilmDirectorPanel
+                      project={project}
+                      initialDraft={directorSeeds[project.slug]}
+                    />
+                  ) : null}
                 </li>
               );
             })}

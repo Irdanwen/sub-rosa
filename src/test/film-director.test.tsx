@@ -14,9 +14,18 @@ const mocks = vi.hoisted(() => ({
   videomakerShotRetake: vi.fn(),
   videomakerShotRequeue: vi.fn(),
   videomakerShotSkip: vi.fn(),
+  videomakerUploadRef: vi.fn(),
+  videomakerImproveBrief: vi.fn(),
 }));
 
 vi.mock("../lib/tauri", () => ({ ...mocks }));
+
+// readFilmRef reads a File and downscales it through a canvas/Image pipeline
+// jsdom can't drive; the component's staging behavior is what this suite
+// exercises, so stub it with a deterministic staged ref (refs.ts has its own
+// unit test for the read/downscale path).
+const refsMocks = vi.hoisted(() => ({ readFilmRef: vi.fn() }));
+vi.mock("../lib/films/refs", () => ({ readFilmRef: refsMocks.readFilmRef }));
 
 import { FilmDirectorPanel } from "../components/studio/FilmDirectorPanel";
 import { parseBoard, parseGates, parseTakes, parseTranscript } from "../lib/films";
@@ -82,6 +91,73 @@ describe("FilmDirectorPanel", () => {
       expect(mocks.videomakerChat).toHaveBeenCalledWith("slug-a", "Write the production bible"),
     );
     expect(await screen.findByText("Bible drafted.")).toBeInTheDocument();
+  });
+
+  it("develops an empty-transcript draft as a brief and applies it on accept", async () => {
+    mocks.videomakerImproveBrief.mockResolvedValue("Logline: sharpened.");
+    render(<FilmDirectorPanel project={project} />);
+    const composer = await screen.findByLabelText("Message the studio crew");
+    fireEvent.change(composer, { target: { value: "two rivals, an alley" } });
+    fireEvent.click(screen.getByRole("button", { name: "Improve with AI" }));
+    expect(await screen.findByText("Logline: sharpened.")).toBeInTheDocument();
+    // First message of a fresh project = the brief; the draft waits for accept.
+    expect(mocks.videomakerImproveBrief).toHaveBeenCalledWith({
+      brief: "two rivals, an alley",
+      title: "Neon alley duel",
+      mode: "brief",
+    });
+    expect(composer).toHaveValue("two rivals, an alley");
+    fireEvent.click(screen.getByRole("button", { name: "Use this message" }));
+    expect(composer).toHaveValue("Logline: sharpened.");
+  });
+
+  it("sharpens a mid-project note in direction mode", async () => {
+    mocks.videomakerTranscript.mockResolvedValue({
+      messages: [{ role: "assistant", content: "Bible drafted." }],
+    });
+    mocks.videomakerImproveBrief.mockResolvedValue("Scene 2: colder light.");
+    render(<FilmDirectorPanel project={project} />);
+    const composer = await screen.findByLabelText("Message the studio crew");
+    fireEvent.change(composer, { target: { value: "make it colder" } });
+    fireEvent.click(screen.getByRole("button", { name: "Improve with AI" }));
+    await waitFor(() =>
+      expect(mocks.videomakerImproveBrief).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: "direction" }),
+      ),
+    );
+  });
+
+  it("stages an attachment with a role and hands the signed URL to the draft", async () => {
+    refsMocks.readFilmRef.mockResolvedValue({
+      id: "r1",
+      role: "character",
+      label: "",
+      fileName: "nera.png",
+      base64Data: "AQID",
+      previewDataUri: "data:image/png;base64,AQID",
+    });
+    mocks.videomakerUploadRef.mockResolvedValue({
+      relative_path: "slug-a/assets/uploads/x.png",
+      public_url: "https://studio/assets/x.png?sig=1",
+      bytes: 3,
+    });
+    render(<FilmDirectorPanel project={project} />);
+    await screen.findByLabelText("Message the studio crew");
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    const file = new File([new Uint8Array([1, 2, 3])], "nera.png", { type: "image/png" });
+    fireEvent.change(input as HTMLInputElement, { target: { files: [file] } });
+    const nameInput = await screen.findByLabelText("Reference name");
+    fireEvent.change(nameInput, { target: { value: "Nera" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add to message" }));
+    await waitFor(() =>
+      expect(mocks.videomakerUploadRef).toHaveBeenCalledWith(
+        expect.objectContaining({ slug: "slug-a", fileName: "nera.png", base64Data: "AQID" }),
+      ),
+    );
+    expect(screen.getByLabelText("Message the studio crew")).toHaveValue(
+      'Reference image (character "Nera"): https://studio/assets/x.png?sig=1',
+    );
   });
 
   it("runs the produce handshake: quote first, then confirm", async () => {

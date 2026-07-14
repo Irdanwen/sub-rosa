@@ -122,6 +122,60 @@ pub async fn send(app: &tauri::AppHandle, request: Request) -> Result<Value, App
     finish(second).await
 }
 
+/// Multipart image upload (`POST /projects/{slug}/refs`). Same auth and
+/// one-shot 401 self-heal as [`send`]; a multipart body cannot be replayed
+/// from a builder, so the form is rebuilt per attempt.
+pub async fn upload(
+    app: &tauri::AppHandle,
+    path: &str,
+    file_name: &str,
+    mime: &str,
+    bytes: Vec<u8>,
+) -> Result<Value, AppError> {
+    let Some(token) = super::stored_token() else {
+        return Err(AppError::new(
+            "videomaker_not_activated",
+            "Film production is not activated yet. Activate it in Settings > Film studio.",
+        ));
+    };
+    let first = dispatch_upload(path, file_name, mime, bytes.clone(), &token).await?;
+    if first.status().as_u16() != 401 {
+        return finish(first).await;
+    }
+    let token = super::auth::mint_and_store_token(app).await?;
+    let second = dispatch_upload(path, file_name, mime, bytes, &token).await?;
+    finish(second).await
+}
+
+async fn dispatch_upload(
+    path: &str,
+    file_name: &str,
+    mime: &str,
+    bytes: Vec<u8>,
+    token: &str,
+) -> Result<reqwest::Response, AppError> {
+    let url = format!("{}{}", super::api_root(), path);
+    let part = reqwest::multipart::Part::bytes(bytes)
+        .file_name(file_name.to_string())
+        .mime_str(mime)
+        .map_err(|error| AppError::new("videomaker_invalid", error.to_string()))?;
+    let form = reqwest::multipart::Form::new().part("file", part);
+    http_client()
+        .post(&url)
+        .bearer_auth(token)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|error| {
+            let base = super::base_url();
+            if error.is_timeout() {
+                AppError::new("videomaker_unreachable", format!("{base} timed out."))
+            } else {
+                AppError::new("videomaker_unreachable", format!("Couldn't reach {base}."))
+            }
+        })
+}
+
 async fn dispatch(request: &Request, token: &str) -> Result<reqwest::Response, AppError> {
     let url = format!("{}{}", super::api_root(), request.path);
     let client = http_client();

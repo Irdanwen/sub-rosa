@@ -1912,6 +1912,27 @@ export async function videomakerExportFilm(slug: string) {
   return invoke<VideomakerFilmArtifactDto>("videomaker_export_film", { slug });
 }
 
+export async function videomakerUploadRef(request: {
+  slug: string;
+  fileName: string;
+  /** Raw base64 of the image bytes (no data-URI prefix). */
+  base64Data: string;
+}) {
+  return invoke<Record<string, unknown>>("videomaker_upload_ref", { request });
+}
+
+export async function videomakerImproveBrief(request: {
+  brief: string;
+  title?: string;
+  aspectRatio?: string;
+  targetDurationSeconds?: number;
+  /** "brief" (default) develops a full brief; "direction" sharpens a crew note. */
+  mode?: "brief" | "direction";
+  refs?: Array<{ role: string; label?: string; dataUri?: string }>;
+}) {
+  return invoke<string>("videomaker_improve_brief", { request });
+}
+
 export async function videomakerWatchProject(slug: string) {
   return invoke<void>("videomaker_watch_project", { slug });
 }

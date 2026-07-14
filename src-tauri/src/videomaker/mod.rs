@@ -16,6 +16,7 @@
 //! handles money itself, it only makes spend explicit and confirmed.
 
 pub mod auth;
+pub mod brief;
 pub mod client;
 pub mod commands;
 pub mod director;
