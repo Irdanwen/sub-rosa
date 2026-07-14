@@ -242,7 +242,7 @@ impl VeniceTranscriber {
             let body = response.text().await.unwrap_or_default();
             tracing::error!(%status, %url, model = %model_id, body_bytes = body.len(), retryable, "venice: non-success response");
             return Err(UpstreamAttemptError {
-                error: DomainError::UpstreamProvider,
+                error: retry::error_for_status(status),
                 retryable,
             });
         }
@@ -491,7 +491,7 @@ impl VeniceChat {
             let body_text = response.text().await.unwrap_or_default();
             tracing::error!(%status, %url, model = %body.model, body_bytes = body_text.len(), retryable, "venice: chat non-success response");
             return Err(UpstreamAttemptError {
-                error: DomainError::UpstreamProvider,
+                error: retry::error_for_status(status),
                 retryable,
             });
         }
@@ -565,7 +565,7 @@ impl VeniceChat {
                 body_bytes = body.len(),
                 "venice: agent chat non-success response"
             );
-            return Err(DomainError::UpstreamProvider);
+            return Err(retry::error_for_status(status));
         }
         let usage = usage_from_chat_body(&body, &content_type)?;
         Ok(AgentChatCompletion {
@@ -1180,7 +1180,7 @@ mod tests {
     use june_config::ModelType;
     use june_config::UpstreamConfig;
     use june_domain::{
-        AgentChatCompleter, AgentChatRequest, GenerationRequest, Generator, ModelId,
+        AgentChatCompleter, AgentChatRequest, DomainError, GenerationRequest, Generator, ModelId,
         ProviderCredentials,
     };
     use pretty_assertions::assert_eq;
@@ -1575,6 +1575,42 @@ mod tests {
 
         assert_eq!(completion.usage.prompt_tokens, 1);
         assert_eq!(completion.usage.completion_tokens, 2);
+    }
+
+    #[tokio::test]
+    async fn agent_chat_402_surfaces_as_insufficient_credits() {
+        // The upstream key is the user's own Carpe Diem key: a 402 means their
+        // prepaid balance cannot cover the request, not that the provider
+        // failed. It must reach the client as insufficient_credits (which both
+        // shells already render as a credits notice) instead of collapsing
+        // into the generic 502 upstream_provider_failed.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(402).set_body_json(json!({
+                "error": "Payment rail cannot cover this request",
+                "code": "PAYMENT_REQUIRED"
+            })))
+            .mount(&server)
+            .await;
+        let agent = VeniceAgentChat::from_config(
+            http::default_client(),
+            &UpstreamConfig {
+                api_key: "venice_key".to_string(),
+                base_url: server.uri(),
+            },
+        );
+
+        let error = agent
+            .complete(AgentChatRequest {
+                body: json!({ "messages": [{ "role": "user", "content": "hi" }] }),
+                model: ModelId("text-model".to_string()),
+                provider_credentials: ProviderCredentials::default(),
+            })
+            .await
+            .expect_err("402 should error");
+
+        assert_eq!(error, DomainError::InsufficientCredits);
     }
 
     #[tokio::test]

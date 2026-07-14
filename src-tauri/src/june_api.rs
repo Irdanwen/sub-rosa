@@ -1062,9 +1062,12 @@ where
         return Err(AppError::new("unauthorized", "Not signed in."));
     }
     if envelope.error_code == Some(ERR_INSUFFICIENT_CREDITS) {
+        // Fork wording: credits are the user's Carpe Diem prepaid balance,
+        // not a June plan. Keep "balance is too low" — the frontend's
+        // isInsufficientCreditsMessage string-matches it.
         return Err(AppError::new(
             "insufficient_credits",
-            "Your balance is too low. Upgrade to continue.",
+            "Your Carpe Diem balance is too low. Top up your credits to continue.",
         ));
     }
     let _ = path;

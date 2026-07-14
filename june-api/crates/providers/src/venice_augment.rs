@@ -108,16 +108,18 @@ impl VeniceAugment {
             let body_text = response.text().await.unwrap_or_default();
             tracing::error!(%status, url = %endpoint.url, body_bytes = body_text.len(), retryable, "venice augment: non-success response");
             // Only a 400 means the upstream rejected this specific input.
-            // Auth/billing/config failures (401, 403, 402, ...) are ours, not
-            // the user's, and must stay provider failures so they are not
-            // reported to the agent as a fixable bad request.
+            // Auth/config failures (401, 403, ...) are ours, not the user's,
+            // and must stay provider failures so they are not reported to the
+            // agent as a fixable bad request. A 402 is the exception: the
+            // upstream key is the user's own Carpe Diem key, so it surfaces
+            // as insufficient_credits (see retry::error_for_status).
             if status == StatusCode::BAD_REQUEST {
                 return Err(UpstreamAttemptError::fatal(DomainError::InvalidInput {
                     reason: endpoint.client_error_reason.to_string(),
                 }));
             }
             return Err(UpstreamAttemptError {
-                error: DomainError::UpstreamProvider,
+                error: retry::error_for_status(status),
                 retryable,
             });
         }

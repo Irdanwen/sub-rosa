@@ -72,7 +72,7 @@ impl VeniceImageGenerator {
                 }));
             }
             return Err(UpstreamAttemptError {
-                error: DomainError::UpstreamProvider,
+                error: retry::error_for_status(status),
                 retryable,
             });
         }

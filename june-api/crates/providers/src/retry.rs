@@ -25,6 +25,20 @@ impl UpstreamAttemptError {
     }
 }
 
+/// Classify a non-success upstream status into the domain error the client
+/// should see. A 402 means the account behind the configured upstream key
+/// cannot pay for the request — in this fork that key is the user's own
+/// Carpe Diem key, so it surfaces as `insufficient_credits` (something the
+/// user can act on) instead of collapsing into the generic
+/// `upstream_provider_failed`. Every other status stays a provider failure.
+pub(crate) fn error_for_status(status: StatusCode) -> DomainError {
+    if status == StatusCode::PAYMENT_REQUIRED {
+        DomainError::InsufficientCredits
+    } else {
+        DomainError::UpstreamProvider
+    }
+}
+
 /// Transient HTTP statuses worth one more attempt: request timeout, rate
 /// limit, and any 5xx. Everything else (4xx) is deterministic and must not
 /// be replayed.
@@ -44,8 +58,25 @@ pub(crate) fn is_retryable_transport_error(error: &reqwest::Error) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::is_retryable_status;
+    use super::{error_for_status, is_retryable_status};
+    use june_domain::DomainError;
     use reqwest::StatusCode;
+
+    #[test]
+    fn payment_required_maps_to_insufficient_credits() {
+        assert_eq!(
+            error_for_status(StatusCode::PAYMENT_REQUIRED),
+            DomainError::InsufficientCredits
+        );
+        assert_eq!(
+            error_for_status(StatusCode::INTERNAL_SERVER_ERROR),
+            DomainError::UpstreamProvider
+        );
+        assert_eq!(
+            error_for_status(StatusCode::UNAUTHORIZED),
+            DomainError::UpstreamProvider
+        );
+    }
 
     #[test]
     fn server_errors_and_rate_limits_are_retryable() {

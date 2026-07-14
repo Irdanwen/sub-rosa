@@ -181,6 +181,16 @@ async fn run_turn(
             let status = response.status;
             let body = response.collect_body().await.unwrap_or_default();
             let detail = readable_upstream_error(&body);
+            // 402 means the user's Carpe Diem balance (not the provider)
+            // rejected the request — say so instead of a raw status line. The
+            // wording deliberately matches isInsufficientCreditsMessage in
+            // src/lib/errors.ts.
+            if status == 402 || detail == "insufficient_credits" {
+                return Err(AppError::new(
+                    "agent_lite_credits",
+                    "Your Carpe Diem balance is too low to cover this request. Top up your credits, then try again.",
+                ));
+            }
             return Err(AppError::new(
                 "agent_lite_failed",
                 format!("The assistant request failed with status {status}: {detail}"),
