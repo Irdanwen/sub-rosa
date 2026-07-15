@@ -345,6 +345,7 @@ pub fn run() {
             updates::set_release_channel,
             updates::fetch_update,
             updates::install_update,
+            updates::relaunch_for_update,
             memory::memory_get_settings,
             memory::memory_set_settings,
             memory::memory_list,

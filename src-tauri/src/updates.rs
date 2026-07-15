@@ -261,6 +261,30 @@ pub async fn install_update(
     Ok(())
 }
 
+/// Relaunches June after an in-app update has been staged, running the same
+/// child-process teardown app quit does *before* the process restarts.
+///
+/// The plugin `relaunch()` (and `AppHandle::restart()` on the main thread)
+/// restarts without a guaranteed pass through the `RunEvent::Exit` cleanup that
+/// reaps June's children. On an update the `.app` bundle is swapped, so a
+/// skipped teardown orphans the dictation helper — which keeps the global
+/// CGEventTap and its stdio — and the relaunched instance then cannot bring up a
+/// clean helper, so every helper-reported permission (dictation mic and
+/// accessibility) reads missing even though the grants are intact (JUN-338).
+/// Tearing down explicitly here guarantees the helper (and the Hermes runtime)
+/// are gone before the new instance starts.
+#[tauri::command]
+pub fn relaunch_for_update(app: AppHandle) {
+    crate::dictation::stop_helper(&app);
+    crate::hermes_bridge::shutdown(&app);
+    // Fork addition: the Carpe Diem june-api sidecar is a child process too, so
+    // tear it down here for the same reason as the helper/Hermes -- `restart()`
+    // can skip the normal `RunEvent::Exit` teardown and orphan it, leaking its
+    // loopback listener (JUN-338).
+    crate::carpe_diem::sidecar::shutdown(&app);
+    app.restart();
+}
+
 #[tauri::command]
 pub fn get_release_channel(
     state: State<'_, ReleaseChannelState>,
