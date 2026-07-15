@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-15
 ---
 
@@ -10,9 +10,30 @@ date: 2026-07-15
 > Videomaker** (`~/Documents/Codage/Bots/Videomaker`,
 > `src/videomaker/api/routers/runs.py`, `src/videomaker/bootstrap.py`). Videomaker
 > has no ADR practice of its own, so this decision is recorded here alongside its
-> parent, [ADR-0010](0010-videomaker-film-production.md). Status is **proposed**:
-> this ADR captures the design and its guardrails for a decision, it is not yet
-> built.
+> parent, [ADR-0010](0010-videomaker-film-production.md).
+
+## Addendum — 2026-07-15 (accepted; phase 1 shipped, rest deferred)
+
+The approach was accepted, and the highest-ROI piece shipped. **Phase 1's
+run-driver hardening is live** (Videomaker commit `ac1dec8`, deployed): the
+Venice client marks a per-tenant "transient upstream error" when it raises
+`QuotaExhausted` (402 prepaid-rail flap) or `ProviderCapacityExhausted` (503
+capacity), and `_drive_run` backs off and retries the same phase (15s→120s cap,
+~30 min budget) instead of counting such an empty turn toward `_STALL_LIMIT` —
+so a run rides out a multi-minute Carpe Diem window instead of dying. Genuine
+no-progress still fails as before; exhausting the transient budget fails with
+an actionable "POST a new run to resume."
+
+**The rest is deferred, deliberately.** The Sub Rosa payment-rail work
+(v1.10.0–v1.12.0: the Payment panel, the rail switch, the proactive
+switch prompt) removed the *dominant* cause of the failures this ADR set out to
+survive — the 402 storms were rail-routing (an empty prepaid rail while credits
+sat unused), now visible and one-click-fixable in the app. What remains for the
+guardian (a watchdog that resumes `interrupted` runs after a gateway restart,
+the escalation/notification layer, conversational control) addresses a mostly
+dev-time artifact (concurrent VPS deploys) plus rarer transient 503s. Revisit —
+build the watchdog-resume next — only if films start failing in steady-state
+operation. The money-safety invariants below remain binding for any such work.
 
 An autonomous film run (`POST /api/projects/{slug}/runs`) can stall on transient
 infrastructure faults that have nothing to do with the film, the app, the model,

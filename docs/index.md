@@ -20,7 +20,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0008](adr/0008-studio-media-proxy-in-tauri.md) — Studio media calls go through a fork-owned Tauri proxy, not June API
 - [adr/0009](adr/0009-local-cross-conversation-memory.md) — cross-conversation user memory: local SQLite, prompt-time injection, direct embeddings
 - [adr/0010](adr/0010-videomaker-film-production.md) — film production via Videomaker Studio: direct client, app-managed wallet, SSE watcher
-- [adr/0011](adr/0011-autonomous-film-run-supervision.md) — **(proposed)** autonomous film-run supervision: a deterministic server-side guardian + driver hardening, not an in-app opus agent
+- [adr/0011](adr/0011-autonomous-film-run-supervision.md) — autonomous film-run supervision: a deterministic server-side guardian + driver hardening, not an in-app opus agent (phase 1 shipped; watchdog-resume deferred)
 
 ## Enforceable rules (spec/)
 
