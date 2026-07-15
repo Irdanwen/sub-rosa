@@ -1062,12 +1062,14 @@ where
         return Err(AppError::new("unauthorized", "Not signed in."));
     }
     if envelope.error_code == Some(ERR_INSUFFICIENT_CREDITS) {
-        // Fork wording: credits are the user's Carpe Diem prepaid balance,
-        // not a June plan. Keep "balance is too low" — the frontend's
+        // Fork wording: Carpe Diem bills two separate rails (a prepaid account
+        // and a credits pool), and the active one can be empty while the other
+        // has funds — so "top up" is not always the fix. Point at the Payment
+        // panel. Keep "balance is too low" — the frontend's
         // isInsufficientCreditsMessage string-matches it.
         return Err(AppError::new(
             "insufficient_credits",
-            "Your Carpe Diem balance is too low. Top up your credits to continue.",
+            "Your Carpe Diem balance is too low, or your active payment rail is out of funds. Open Settings and check Carpe Diem (prepaid account and credits are billed separately).",
         ));
     }
     let _ = path;

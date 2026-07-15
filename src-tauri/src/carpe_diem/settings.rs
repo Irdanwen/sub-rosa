@@ -425,6 +425,195 @@ async fn venice_credits(
     })
 }
 
+/// Rail-aware payment view for the Settings › Carpe Diem "Payment" panel.
+///
+/// Carpe Diem bills through one of two rails the user owns: a self-custodial
+/// **prepaid account** (USDC, withdrawable) and a non-refundable **credits**
+/// pool (1 credit = $0.01), plus x402 for agents. `rail` = `"auto"` prefers the
+/// prepaid account when one is registered; and when `rail_fallback` is false, an
+/// **empty active rail returns 402 even if the other rail has funds**. Surfacing
+/// all of this is the whole point of the panel: an empty prepaid account while
+/// credits sit unused is exactly what silently 402s a request while the balance
+/// *looks* fine (the sidebar footer shows the credits pool, not the active
+/// rail). Carpe Diem keys only — Venice keys have no rails.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CarpeDiemBillingDto {
+    /// The shared, non-refundable credits pool.
+    pub available_credits: f64,
+    /// The same pool in dollars (`availableUsdc`).
+    pub available_usdc: f64,
+    /// The separate self-custodial prepaid account (USDC).
+    pub prepaid_registered: bool,
+    pub prepaid_usdc_balance: f64,
+    /// Active rail: `"auto" | "credits" | "prepaid"`.
+    pub rail: String,
+    /// Whether an empty active rail falls back to the other one.
+    pub rail_fallback: bool,
+    pub has_prepaid_account: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetRailRequest {
+    pub rail: String,
+}
+
+/// Aggregate the rail-aware billing view (credits pool + prepaid account +
+/// active rail). Carpe Diem keys only.
+#[tauri::command]
+pub async fn carpe_diem_get_billing() -> Result<CarpeDiemBillingDto, AppError> {
+    let (base, key, client) = billing_ctx()?;
+    fetch_billing(&client, &base, &key).await
+}
+
+/// Switch the active payment rail (`auto` / `credits` / `prepaid`) and return
+/// the refreshed billing view. This is the in-app escape hatch for the "empty
+/// prepaid, unused credits" trap: force `credits` to spend the pool.
+#[tauri::command]
+pub async fn carpe_diem_set_rail(request: SetRailRequest) -> Result<CarpeDiemBillingDto, AppError> {
+    let rail = request.rail.trim();
+    if !matches!(rail, "auto" | "credits" | "prepaid") {
+        return Err(AppError::new(
+            "carpe_diem_invalid_rail",
+            "Rail must be auto, credits, or prepaid.",
+        ));
+    }
+    let (base, key, client) = billing_ctx()?;
+    client
+        .post(format!("{base}/prepaid/rail"))
+        .bearer_auth(&key)
+        .json(&serde_json::json!({ "rail": rail }))
+        .send()
+        .await
+        .map_err(|error| AppError::new("carpe_diem_billing_unreachable", error.to_string()))?
+        .error_for_status()
+        .map_err(|error| AppError::new("carpe_diem_set_rail_failed", error.to_string()))?;
+    fetch_billing(&client, &base, &key).await
+}
+
+/// Shared setup for the billing commands: the base URL, a `cdm_` key, and an
+/// HTTP client. Rejects Venice keys (no payment rails there).
+fn billing_ctx() -> Result<(String, String, reqwest::Client), AppError> {
+    let Some(key) = api_key() else {
+        return Err(AppError::new(
+            "carpe_diem_no_api_key",
+            "No Carpe Diem API key is stored yet.",
+        ));
+    };
+    if !key.starts_with("cdm_") {
+        return Err(AppError::new(
+            "carpe_diem_billing_unsupported",
+            "Payment rails apply to Carpe Diem keys only.",
+        ));
+    }
+    let base = base_url().trim_end_matches('/').to_string();
+    let client = reqwest::Client::builder()
+        .timeout(TEST_TIMEOUT)
+        .build()
+        .map_err(|error| AppError::new("carpe_diem_http_client", error.to_string()))?;
+    Ok((base, key, client))
+}
+
+async fn fetch_billing(
+    client: &reqwest::Client,
+    base: &str,
+    key: &str,
+) -> Result<CarpeDiemBillingDto, AppError> {
+    // The credits pool is authoritative — a shape change here is a real error.
+    let credits = billing_get_json(client, &format!("{base}/credits"), key).await?;
+    let available_credits = credits
+        .get("availableCredits")
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| {
+            AppError::new(
+                "carpe_diem_billing_failed",
+                "The credits response is missing availableCredits.",
+            )
+        })?;
+    let available_usdc = credits
+        .get("availableUsdc")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(available_credits / 100.0);
+
+    // Rail + prepaid status are best-effort: a partial account (no prepaid) must
+    // still render a credits-only picture, never break the panel.
+    let rail_json = billing_get_json(client, &format!("{base}/prepaid/rail"), key)
+        .await
+        .ok();
+    let (rail, rail_fallback, has_prepaid_account) = rail_json
+        .as_ref()
+        .map(|value| {
+            (
+                value
+                    .get("rail")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("auto")
+                    .to_string(),
+                value
+                    .get("fallback")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
+                value
+                    .get("hasPrepaidAccount")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
+            )
+        })
+        .unwrap_or_else(|| ("credits".to_string(), false, false));
+
+    let status_json = billing_get_json(client, &format!("{base}/prepaid/status"), key)
+        .await
+        .ok();
+    let prepaid_registered = status_json
+        .as_ref()
+        .and_then(|value| value.get("registered").and_then(serde_json::Value::as_bool))
+        .unwrap_or(false);
+    let prepaid_usdc_balance = status_json
+        .as_ref()
+        .and_then(|value| parse_decimal(value.get("usdcBalance")))
+        .unwrap_or(0.0);
+
+    Ok(CarpeDiemBillingDto {
+        available_credits,
+        available_usdc,
+        prepaid_registered,
+        prepaid_usdc_balance,
+        rail,
+        rail_fallback,
+        has_prepaid_account,
+    })
+}
+
+async fn billing_get_json(
+    client: &reqwest::Client,
+    url: &str,
+    key: &str,
+) -> Result<serde_json::Value, AppError> {
+    client
+        .get(url)
+        .bearer_auth(key)
+        .send()
+        .await
+        .map_err(|error| AppError::new("carpe_diem_billing_unreachable", error.to_string()))?
+        .error_for_status()
+        .map_err(|error| AppError::new("carpe_diem_billing_failed", error.to_string()))?
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| AppError::new("carpe_diem_billing_failed", error.to_string()))
+}
+
+/// Carpe Diem returns on-chain USDC amounts as 6-decimal STRINGS
+/// (e.g. `"4.642904"`); tolerate a bare number too.
+fn parse_decimal(value: Option<&serde_json::Value>) -> Option<f64> {
+    let value = value?;
+    value.as_f64().or_else(|| {
+        value
+            .as_str()
+            .and_then(|text| text.trim().parse::<f64>().ok())
+    })
+}
+
 // --- internals -------------------------------------------------------------
 
 fn first_multiplier(pricing: &serde_json::Value) -> Option<f64> {
@@ -593,6 +782,21 @@ fn normalize_api_key(raw: &str) -> Result<String, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_decimal_reads_string_and_number_usdc_amounts() {
+        // Carpe Diem returns on-chain balances as 6-decimal strings.
+        assert_eq!(
+            parse_decimal(Some(&serde_json::json!("4.642904"))),
+            Some(4.642904)
+        );
+        assert_eq!(parse_decimal(Some(&serde_json::json!("0"))), Some(0.0));
+        // Tolerate a bare number too.
+        assert_eq!(parse_decimal(Some(&serde_json::json!(1.5))), Some(1.5));
+        // Junk / missing → None (never a silent 0).
+        assert_eq!(parse_decimal(Some(&serde_json::json!("abc"))), None);
+        assert_eq!(parse_decimal(None), None);
+    }
 
     #[test]
     fn validate_base_url_trims_and_requires_scheme() {

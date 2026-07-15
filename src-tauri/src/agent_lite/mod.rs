@@ -188,7 +188,7 @@ async fn run_turn(
             if status == 402 || detail == "insufficient_credits" {
                 return Err(AppError::new(
                     "agent_lite_credits",
-                    "Your Carpe Diem balance is too low to cover this request. Top up your credits, then try again.",
+                    "Your Carpe Diem balance is too low, or your active payment rail is empty. Check Carpe Diem in Settings (prepaid account and credits are billed separately).",
                 ));
             }
             return Err(AppError::new(

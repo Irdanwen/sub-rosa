@@ -1797,6 +1797,28 @@ export async function carpeDiemGetCredits() {
   return invoke<CarpeDiemCreditsDto>("carpe_diem_get_credits");
 }
 
+export type CarpeDiemRail = "auto" | "credits" | "prepaid";
+
+/** Rail-aware payment view: the credits pool and the separate prepaid account,
+ * plus the active rail. Carpe Diem keys only. */
+export type CarpeDiemBillingDto = {
+  availableCredits: number;
+  availableUsdc: number;
+  prepaidRegistered: boolean;
+  prepaidUsdcBalance: number;
+  rail: CarpeDiemRail;
+  railFallback: boolean;
+  hasPrepaidAccount: boolean;
+};
+
+export async function carpeDiemGetBilling() {
+  return invoke<CarpeDiemBillingDto>("carpe_diem_get_billing");
+}
+
+export async function carpeDiemSetRail(rail: CarpeDiemRail) {
+  return invoke<CarpeDiemBillingDto>("carpe_diem_set_rail", { request: { rail } });
+}
+
 export async function carpeDiemSidecarStatus() {
   return invoke<CarpeDiemSidecarStatusDto>("carpe_diem_sidecar_status");
 }

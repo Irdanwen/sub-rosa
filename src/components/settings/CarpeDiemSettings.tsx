@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useId, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
+  type CarpeDiemBillingDto,
   carpeDiemClearApiKey,
+  carpeDiemGetBilling,
   carpeDiemGetSettings,
+  type CarpeDiemRail,
   carpeDiemRestartSidecar,
   carpeDiemSetApiKey,
   carpeDiemSetBaseUrl,
-  carpeDiemSidecarStatus,
-  carpeDiemTestConnection,
+  carpeDiemSetRail,
   type CarpeDiemSettingsDto,
   type CarpeDiemSidecarStatusDto,
   type CarpeDiemTestConnectionResult,
+  carpeDiemSidecarStatus,
+  carpeDiemTestConnection,
 } from "../../lib/tauri";
+import { deriveBilling, formatUsd } from "../../lib/carpe-diem-billing";
 import { messageFromError } from "../../lib/errors";
 import { CARPE_DIEM_DASHBOARD_URL, CARPE_DIEM_KEY_PREFIX } from "../../lib/branding";
 
@@ -77,9 +82,131 @@ export function CarpeDiemStatusPill({ status }: { status: CarpeDiemSidecarStatus
   );
 }
 
+const RAIL_LABELS: Record<CarpeDiemRail, string> = {
+  auto: "Automatic",
+  credits: "Credits",
+  prepaid: "Prepaid account",
+};
+
+/** Rail-aware payment panel. Carpe Diem bills one rail at a time — a prepaid
+ * account and a credits pool are separate balances, and the active rail can be
+ * empty while the other has funds (a 402 that "top up" doesn't fix). Shows both
+ * balances + the active rail, warns when the active rail is out of funds, and
+ * lets the user switch rails. Renders nothing for Venice keys (no rails) or
+ * before the first successful fetch. */
+function CarpeDiemPayment({ hasApiKey }: { hasApiKey: boolean }) {
+  const [billing, setBilling] = useState<CarpeDiemBillingDto | null>(null);
+  const [supported, setSupported] = useState(true);
+  const [busy, setBusy] = useState<CarpeDiemRail | null>(null);
+  const [error, setError] = useState<string>();
+
+  const load = useCallback(async () => {
+    try {
+      setBilling(await carpeDiemGetBilling());
+      setSupported(true);
+    } catch {
+      // Venice key (no rails) or unreachable — hide the panel silently.
+      setSupported(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (hasApiKey) void load();
+    else setBilling(null);
+  }, [hasApiKey, load]);
+
+  const switchRail = useCallback(async (rail: CarpeDiemRail) => {
+    setBusy(rail);
+    setError(undefined);
+    try {
+      setBilling(await carpeDiemSetRail(rail));
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setBusy(null);
+    }
+  }, []);
+
+  if (!hasApiKey || !supported || !billing) return null;
+  const view = deriveBilling(billing);
+  const rails: CarpeDiemRail[] = billing.hasPrepaidAccount
+    ? ["auto", "credits", "prepaid"]
+    : ["auto", "credits"];
+
+  return (
+    <div className="settings-card carpe-diem-payment">
+      <div className="settings-rows">
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <h3 className="settings-row-title">Payment</h3>
+            <p className="settings-row-description">
+              Carpe Diem bills one rail at a time. Your prepaid account and credits are separate
+              balances — the active rail is what actually pays.
+            </p>
+            {view.activeRailEmpty ? (
+              <p className="settings-row-description carpe-diem-payment-warning" role="status">
+                Your active rail ({RAIL_LABELS[view.effectiveRail].toLowerCase()}) is out of funds,
+                so requests will fail.{" "}
+                {view.fundsElsewhere
+                  ? `Your ${
+                      view.effectiveRail === "prepaid" ? "credits" : "prepaid account"
+                    } still has ${formatUsd(view.otherBalanceUsdc)} — switch rails below.`
+                  : "Add funds on the Carpe Diem site."}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <h3 className="settings-row-title">Balances</h3>
+            <p className="settings-row-description">
+              Prepaid account:{" "}
+              {billing.prepaidRegistered ? formatUsd(billing.prepaidUsdcBalance) : "not set up"}
+              {" · "}
+              Credits: {formatUsd(billing.availableUsdc)} (
+              {billing.availableCredits.toLocaleString()} credits)
+            </p>
+          </div>
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <h3 className="settings-row-title">Active rail</h3>
+            <p className="settings-row-description">
+              {RAIL_LABELS[billing.rail]}
+              {billing.rail === "auto" ? ` — paying via ${view.effectiveRail}` : ""}
+            </p>
+            {error ? (
+              <p className="settings-row-description settings-row-substatus" data-ok="false">
+                {error}
+              </p>
+            ) : null}
+          </div>
+          <div className="settings-row-control carpe-diem-rail-choices">
+            {rails.map((rail) => (
+              <button
+                key={rail}
+                type="button"
+                className="btn btn-secondary"
+                aria-pressed={billing.rail === rail}
+                disabled={busy !== null || billing.rail === rail}
+                onClick={() => void switchRail(rail)}
+              >
+                {busy === rail ? "…" : RAIL_LABELS[rail]}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
- * Carpe Diem connection controls: base URL + API key + Test connection, with
- * live sidecar status. Reused in the Settings tab and (compact) in onboarding.
+ * Carpe Diem connection controls: base URL + API key + Test connection + the
+ * rail-aware Payment panel, with live sidecar status. Reused in the Settings
+ * tab and (compact) in onboarding.
  */
 export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
   const { settings, status, refresh, setSettings } = useCarpeDiem();
@@ -298,6 +425,7 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
           </div>
         </div>
       </div>
+      <CarpeDiemPayment hasApiKey={hasApiKey} />
       {notice ? <p className="settings-row-description settings-row-substatus">{notice}</p> : null}
     </div>
   );

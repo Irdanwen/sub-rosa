@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   carpeDiemClearApiKey: vi.fn(),
   carpeDiemTestConnection: vi.fn(),
   carpeDiemRestartSidecar: vi.fn(),
+  carpeDiemGetBilling: vi.fn(),
+  carpeDiemSetRail: vi.fn(),
   listen: vi.fn(),
 }));
 
@@ -20,6 +22,8 @@ vi.mock("../lib/tauri", () => ({
   carpeDiemClearApiKey: mocks.carpeDiemClearApiKey,
   carpeDiemTestConnection: mocks.carpeDiemTestConnection,
   carpeDiemRestartSidecar: mocks.carpeDiemRestartSidecar,
+  carpeDiemGetBilling: mocks.carpeDiemGetBilling,
+  carpeDiemSetRail: mocks.carpeDiemSetRail,
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
@@ -38,6 +42,19 @@ beforeEach(() => {
   mocks.listen.mockResolvedValue(() => {});
   mocks.carpeDiemGetSettings.mockResolvedValue(settingsDto());
   mocks.carpeDiemSidecarStatus.mockResolvedValue({ status: "unconfigured", hasApiKey: false });
+  // Default: no billing (Venice key / unreachable) → the Payment panel hides.
+  mocks.carpeDiemGetBilling.mockRejectedValue(new Error("unsupported"));
+});
+
+const billingDto = (over: Record<string, unknown> = {}) => ({
+  availableCredits: 1000,
+  availableUsdc: 10,
+  prepaidRegistered: true,
+  prepaidUsdcBalance: 0,
+  rail: "auto",
+  railFallback: false,
+  hasPrepaidAccount: true,
+  ...over,
 });
 
 describe("CarpeDiemSettings", () => {
@@ -91,5 +108,27 @@ describe("CarpeDiemSettings", () => {
     render(<CarpeDiemSettings />);
     fireEvent.click(await screen.findByRole("button", { name: "Test connection" }));
     expect(await screen.findByText(/The API key was rejected/i)).toBeInTheDocument();
+  });
+
+  it("warns when the active rail is empty and switches rails to credits", async () => {
+    mocks.carpeDiemGetSettings.mockResolvedValue(settingsDto({ hasApiKey: true }));
+    mocks.carpeDiemGetBilling.mockResolvedValue(billingDto());
+    mocks.carpeDiemSetRail.mockResolvedValue(billingDto({ rail: "credits" }));
+    render(<CarpeDiemSettings />);
+    // The empty-prepaid-while-credits-available warning appears (text is split
+    // across nodes by interpolation, so match a single-node substring).
+    expect(await screen.findByText(/is out of funds/i)).toBeInTheDocument();
+    expect(screen.getByText(/switch rails below/i)).toBeInTheDocument();
+    // Switching to the credits rail calls the backend.
+    fireEvent.click(screen.getByRole("button", { name: "Credits" }));
+    await waitFor(() => expect(mocks.carpeDiemSetRail).toHaveBeenCalledWith("credits"));
+  });
+
+  it("hides the Payment panel for a key with no payment rails", async () => {
+    mocks.carpeDiemGetSettings.mockResolvedValue(settingsDto({ hasApiKey: true }));
+    mocks.carpeDiemGetBilling.mockRejectedValue(new Error("carpe_diem_billing_unsupported"));
+    render(<CarpeDiemSettings />);
+    await screen.findByRole("button", { name: "Test connection" });
+    expect(screen.queryByText("Payment")).not.toBeInTheDocument();
   });
 });

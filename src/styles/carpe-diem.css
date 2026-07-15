@@ -86,3 +86,23 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+/* Rail-aware Payment panel (fork: Carpe Diem prepaid vs credits) */
+.carpe-diem-payment {
+  margin-top: var(--sp-3);
+}
+
+.carpe-diem-payment-warning {
+  color: var(--destructive);
+}
+
+.carpe-diem-rail-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.carpe-diem-rail-choices .btn[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
