@@ -29,6 +29,7 @@ import {
   videomakerListProjects,
   videomakerProjectStatus,
   videomakerStartRun,
+  videomakerUpdateBudget,
   videomakerUploadRef,
 } from "../../lib/tauri";
 import { EmptyState } from "../ui/EmptyState";
@@ -100,16 +101,22 @@ export function FilmStudio() {
   const [galleryEpoch, setGalleryEpoch] = useState(0);
   const [busySlug, setBusySlug] = useState<string | null>(null);
   const [expandedSlug, setExpandedSlug] = useState<string | null>(null);
+  // Per-project "raise the budget ceiling" input + in-flight slug.
+  const [budgetDraft, setBudgetDraft] = useState<Record<string, string>>({});
+  const [budgetBusy, setBudgetBusy] = useState<string | null>(null);
 
   const refreshTimers = useRef<Record<string, number>>({});
 
   const refreshProjects = useCallback(async () => {
     try {
       const raw = await videomakerListProjects();
-      setProjects(parseProjectList(raw));
+      const list = parseProjectList(raw);
+      setProjects(list);
       setError(null);
+      return list;
     } catch (cause) {
       setError(errorMessage(cause));
+      return [] as FilmProject[];
     }
   }, []);
 
@@ -130,7 +137,11 @@ export function FilmStudio() {
         if (cancelled) return;
         setActivated(settings.activated);
         if (settings.activated) {
-          await refreshProjects();
+          const list = await refreshProjects();
+          // Load each project's status up front so spent/ceiling and the
+          // raise-ceiling control show immediately — idle/done projects emit
+          // no SSE events, so they'd otherwise never populate a status.
+          if (!cancelled) for (const p of list) void refreshStatus(p.slug);
         }
       } catch (cause) {
         if (!cancelled) setError(errorMessage(cause));
@@ -141,7 +152,7 @@ export function FilmStudio() {
     return () => {
       cancelled = true;
     };
-  }, [refreshProjects]);
+  }, [refreshProjects, refreshStatus]);
 
   // Live progress from the Rust SSE watcher.
   useEffect(() => {
@@ -330,6 +341,34 @@ export function FilmStudio() {
     refreshProjects,
     refreshStatus,
   ]);
+
+  const raiseBudget = useCallback(
+    async (slug: string) => {
+      const ceiling = Number(budgetDraft[slug]);
+      if (!Number.isFinite(ceiling) || ceiling <= 0) {
+        setError("Enter a budget ceiling greater than zero.");
+        return;
+      }
+      setBudgetBusy(slug);
+      setError(null);
+      setNotice(null);
+      try {
+        await videomakerUpdateBudget({ slug, ceilingDiem: ceiling });
+        setNotice(`Budget ceiling set to ${formatDiem(ceiling)}.`);
+        setBudgetDraft((current) => {
+          const next = { ...current };
+          delete next[slug];
+          return next;
+        });
+        await refreshStatus(slug);
+      } catch (cause) {
+        setError(errorMessage(cause));
+      } finally {
+        setBudgetBusy(null);
+      }
+    },
+    [budgetDraft, refreshStatus],
+  );
 
   const downloadFilm = useCallback(async (project: FilmProject) => {
     setBusySlug(project.slug);
@@ -651,6 +690,40 @@ export function FilmStudio() {
                           ? ` of ${formatDiem(status.cost.ceilingDiem)}`
                           : ""}
                       </span>
+                    </div>
+                  ) : null}
+                  {status?.cost.ceilingDiem ? (
+                    <div className="film-budget">
+                      {status.cost.spentDiem >= status.cost.ceilingDiem ? (
+                        <p className="film-budget-over">
+                          Over the {formatDiem(status.cost.ceilingDiem)} budget ceiling. Raise it to
+                          reshoot or keep producing.
+                        </p>
+                      ) : null}
+                      <div className="film-budget-raise">
+                        <input
+                          className="studio-input"
+                          type="number"
+                          min={Math.ceil(status.cost.ceilingDiem) + 1}
+                          placeholder={`New ceiling (now ${formatDiem(status.cost.ceilingDiem)})`}
+                          value={budgetDraft[project.slug] ?? ""}
+                          onChange={(event) =>
+                            setBudgetDraft((current) => ({
+                              ...current,
+                              [project.slug]: event.target.value,
+                            }))
+                          }
+                          aria-label={`New budget ceiling for ${project.title}`}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          disabled={budgetBusy === project.slug || !budgetDraft[project.slug]}
+                          onClick={() => void raiseBudget(project.slug)}
+                        >
+                          {budgetBusy === project.slug ? "Raising..." : "Raise ceiling"}
+                        </button>
+                      </div>
                     </div>
                   ) : null}
                   {expandedSlug === project.slug ? (

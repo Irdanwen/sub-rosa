@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   videomakerDeleteProject: vi.fn(),
   videomakerUploadRef: vi.fn(),
   videomakerImproveBrief: vi.fn(),
+  videomakerUpdateBudget: vi.fn(),
 }));
 
 vi.mock("../lib/tauri", () => ({
@@ -23,6 +24,7 @@ vi.mock("../lib/tauri", () => ({
   videomakerDeleteProject: mocks.videomakerDeleteProject,
   videomakerUploadRef: mocks.videomakerUploadRef,
   videomakerImproveBrief: mocks.videomakerImproveBrief,
+  videomakerUpdateBudget: mocks.videomakerUpdateBudget,
 }));
 
 // GalleryStrip talks to the artifact commands; keep the suite focused on the
@@ -132,6 +134,26 @@ describe("FilmStudio", () => {
     expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(2);
     fireEvent.click(download);
     await waitFor(() => expect(mocks.videomakerExportFilm).toHaveBeenCalledWith("done-slug"));
+  });
+
+  it("raises the budget ceiling on an over-budget project", async () => {
+    mocks.videomakerListProjects.mockResolvedValue({ projects: [project({ slug: "over" })] });
+    mocks.videomakerProjectStatus.mockResolvedValue({
+      daemon: "idle",
+      queue: { queued: 0, running: 0, blocked_quota: 0, done: 6, failed: 2 },
+      cost: { spent_diem: 46.6, pending_diem: 0, projected_diem: 46.6, ceiling_diem: 40 },
+      wallet_empty: false,
+    });
+    mocks.videomakerUpdateBudget.mockResolvedValue({ settings: { budget_ceiling_diem: 60 } });
+    render(<FilmStudio />);
+    // Over-budget notice appears (spent >= ceiling).
+    expect(await screen.findByText(/Over the .* budget ceiling/)).toBeInTheDocument();
+    const input = screen.getByLabelText("New budget ceiling for Neon alley duel");
+    fireEvent.change(input, { target: { value: "60" } });
+    fireEvent.click(screen.getByRole("button", { name: "Raise ceiling" }));
+    await waitFor(() =>
+      expect(mocks.videomakerUpdateBudget).toHaveBeenCalledWith({ slug: "over", ceilingDiem: 60 }),
+    );
   });
 });
 

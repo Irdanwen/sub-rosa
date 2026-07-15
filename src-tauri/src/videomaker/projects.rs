@@ -94,6 +94,38 @@ pub async fn videomaker_create_project(
     Ok(created)
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateBudgetRequest {
+    pub slug: String,
+    pub ceiling_diem: f64,
+}
+
+/// Raise (or set) the hard DIEM spend ceiling on an existing project. The
+/// studio's spend guard reads `budget_ceiling_diem` at every enqueue, so a
+/// project that has spent up to its cap can't render or reshoot until the
+/// ceiling is raised — this is the only in-app way to give it more room.
+/// Goes through the studio's settings endpoint (persisted server-side); it
+/// moves no money by itself.
+#[tauri::command]
+pub async fn videomaker_update_budget(
+    app: AppHandle,
+    request: UpdateBudgetRequest,
+) -> Result<Value, AppError> {
+    if !request.ceiling_diem.is_finite() || request.ceiling_diem <= 0.0 {
+        return Err(AppError::new(
+            "videomaker_invalid",
+            "The budget ceiling must be greater than zero.",
+        ));
+    }
+    let body = json!({ "settings": { "budget_ceiling_diem": request.ceiling_diem } });
+    send(
+        &app,
+        Request::post(format!("/projects/{}/model-prefs", request.slug), body),
+    )
+    .await
+}
+
 /// Permanent server-side delete (kills the daemon, purges files) + local
 /// cleanup (watcher, persisted slug, exported marker — the downloaded film
 /// stays in the gallery, it belongs to the user).

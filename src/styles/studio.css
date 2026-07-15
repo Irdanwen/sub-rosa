@@ -620,6 +620,28 @@
   color: var(--muted-foreground);
 }
 
+.film-budget {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.film-budget-over {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--destructive);
+}
+
+.film-budget-raise {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+}
+
+.film-budget-raise .studio-input {
+  max-width: 16rem;
+}
+
 /* Director mode */
 
 .film-director {

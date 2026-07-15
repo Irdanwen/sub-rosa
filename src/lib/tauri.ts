@@ -1921,6 +1921,10 @@ export async function videomakerUploadRef(request: {
   return invoke<Record<string, unknown>>("videomaker_upload_ref", { request });
 }
 
+export async function videomakerUpdateBudget(request: { slug: string; ceilingDiem: number }) {
+  return invoke<Record<string, unknown>>("videomaker_update_budget", { request });
+}
+
 export async function videomakerImproveBrief(request: {
   brief: string;
   title?: string;
