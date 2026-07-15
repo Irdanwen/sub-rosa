@@ -10,6 +10,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from
 import { AccountGate, JuneMark } from "../components/account/AccountGate";
 import { FundingGate } from "../components/account/FundingGate";
 import { CarpeDiemGate } from "../components/carpe-diem/CarpeDiemGate";
+import { RailSwitchBanner } from "../components/carpe-diem/RailSwitchBanner";
 import { SIDECAR_STATUS_EVENT } from "../components/settings/CarpeDiemSettings";
 import { OnboardingFlow } from "../components/onboarding/OnboardingFlow";
 import {
@@ -2813,6 +2814,7 @@ export function App() {
               onEnableAccessibility={handleEnableAccessibility}
             />
           ) : null}
+          <RailSwitchBanner />
           <div
             ref={mainPanelBodyRef}
             className="main-panel-body"

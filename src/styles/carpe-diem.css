@@ -106,3 +106,33 @@
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* Proactive rail-switch prompt (fork: offer to switch when the active rail is dry) */
+.carpe-diem-rail-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  margin: var(--sp-2) var(--sp-3) 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--card);
+  font-size: var(--fs-sm);
+}
+
+.carpe-diem-rail-prompt.compact {
+  margin: var(--sp-2);
+  border-radius: var(--r-lg);
+}
+
+.carpe-diem-rail-prompt-text {
+  color: var(--foreground);
+}
+
+.carpe-diem-rail-prompt-actions {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+}

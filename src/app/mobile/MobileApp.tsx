@@ -1,6 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { CarpeDiemGate } from "../../components/carpe-diem/CarpeDiemGate";
+import { RailSwitchBanner } from "../../components/carpe-diem/RailSwitchBanner";
 import { SIDECAR_STATUS_EVENT } from "../../components/settings/CarpeDiemSettings";
 import { TabBar } from "../../components/mobile/TabBar";
 import { AgentScreen, AgentSessionScreen } from "../../components/mobile/screens/AgentScreen";
@@ -690,6 +691,7 @@ export function MobileApp() {
   return (
     <div className="mobile-shell">
       <MobileErrorBanner error={error} onDismiss={() => setError(null)} />
+      <RailSwitchBanner compact />
       <div
         className="mobile-screen"
         data-nav={navMotion}

@@ -1794,6 +1794,9 @@ export type CarpeDiemCreditsDto = {
   /** Which rail this balance is for: the footer shows the balance that actually
    * pays (prepaid amounts are the account's USDC as credits). Absent for Venice. */
   rail?: "credits" | "prepaid";
+  /** When the active rail is empty but the other rail holds funds, the rail to
+   * propose switching to. Drives the proactive rail-switch prompt. */
+  suggestSwitchTo?: "credits" | "prepaid";
 };
 
 export async function carpeDiemGetCredits() {

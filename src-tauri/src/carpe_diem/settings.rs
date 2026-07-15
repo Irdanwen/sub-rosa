@@ -93,6 +93,12 @@ pub struct CarpeDiemCreditsDto {
     /// $0.01). `None` for Venice keys (no rails).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rail: Option<String>,
+    /// When the ACTIVE rail is out of funds but the OTHER rail holds money, the
+    /// rail to propose switching to (`"credits"` | `"prepaid"`). Lets the app
+    /// offer a one-click switch instead of letting the request 402. `None` when
+    /// the active rail can pay, or nothing is elsewhere.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggest_switch_to: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -377,6 +383,10 @@ async fn carpe_diem_credits(
         .get("escrowCredits")
         .and_then(serde_json::Value::as_f64)
         .unwrap_or(pool_available);
+    let pool_usdc = credits
+        .get("availableUsdc")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(pool_available / 100.0);
 
     // Rail-aware: the footer must show the balance that ACTUALLY pays, not always
     // the credits pool — a prepaid rail spends the prepaid account, and showing
@@ -399,20 +409,25 @@ async fn carpe_diem_credits(
         .unwrap_or(false);
     let rail = effective_rail(raw_rail, has_prepaid);
 
+    // Always read the prepaid balance: it's the active balance on the prepaid
+    // rail AND the "funds elsewhere" signal that drives the switch proposal.
+    let prepaid_usdc = billing_get_json(client, &format!("{base}/prepaid/status"), key)
+        .await
+        .ok()
+        .and_then(|value| parse_decimal(value.get("usdcBalance")))
+        .unwrap_or(0.0);
+
     let (available_credits, escrow_credits) = if rail == "prepaid" {
         // Prepaid account USDC → credits-equivalent (1 credit = $0.01).
-        let status = billing_get_json(client, &format!("{base}/prepaid/status"), key)
-            .await
-            .ok();
-        let usdc = status
-            .as_ref()
-            .and_then(|value| parse_decimal(value.get("usdcBalance")))
-            .unwrap_or(0.0);
-        let credits_equiv = usdc * 100.0;
+        let credits_equiv = prepaid_usdc * 100.0;
         (credits_equiv, credits_equiv)
     } else {
         (pool_available, pool_escrow)
     };
+
+    // Proactive: when the active rail can't pay but the other rail holds money,
+    // tell the app which rail to offer switching to — instead of a bare 402.
+    let suggest_switch_to = suggest_switch(rail, prepaid_usdc, pool_usdc).map(str::to_string);
 
     // Pricing is public and lives at the operator root (the base URL minus its
     // /v1 suffix). The multiplier is global for the day, so any entry is
@@ -432,6 +447,7 @@ async fn carpe_diem_credits(
         escrow_credits,
         price_multiplier,
         rail: Some(rail.to_string()),
+        suggest_switch_to,
     })
 }
 
@@ -444,6 +460,23 @@ fn effective_rail(rail: &str, has_prepaid_account: bool) -> &'static str {
         "credits" => "credits",
         _ if has_prepaid_account => "prepaid",
         _ => "credits",
+    }
+}
+
+/// If the ACTIVE rail can't cover even a trivial request (< 1 cent) but the
+/// OTHER rail holds funds, which rail to propose switching to — else `None`.
+/// Both balances are in USDC.
+fn suggest_switch(rail: &str, prepaid_usdc: f64, pool_usdc: f64) -> Option<&'static str> {
+    const MIN_SPENDABLE_USDC: f64 = 0.01;
+    let (active, other, other_rail) = if rail == "prepaid" {
+        (prepaid_usdc, pool_usdc, "credits")
+    } else {
+        (pool_usdc, prepaid_usdc, "prepaid")
+    };
+    if active < MIN_SPENDABLE_USDC && other >= MIN_SPENDABLE_USDC {
+        Some(other_rail)
+    } else {
+        None
     }
 }
 
@@ -478,6 +511,7 @@ async fn venice_credits(
         escrow_credits: available_credits,
         price_multiplier: Some(1.0),
         rail: None,
+        suggest_switch_to: None,
     })
 }
 
@@ -838,6 +872,19 @@ fn normalize_api_key(raw: &str) -> Result<String, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn suggest_switch_proposes_the_funded_rail_only_when_active_is_empty() {
+        // Active prepaid empty, credits pool funded → propose credits (the trap).
+        assert_eq!(suggest_switch("prepaid", 0.0, 10.0), Some("credits"));
+        // Active credits empty, prepaid funded → propose prepaid.
+        assert_eq!(suggest_switch("credits", 0.0, 0.0).is_none(), true);
+        assert_eq!(suggest_switch("credits", 4.6, 0.0), Some("prepaid"));
+        // Active rail can pay → no proposal.
+        assert_eq!(suggest_switch("prepaid", 5.0, 10.0), None);
+        // Both empty → nothing to propose.
+        assert_eq!(suggest_switch("prepaid", 0.0, 0.0), None);
+    }
 
     #[test]
     fn effective_rail_resolves_auto_to_prepaid_only_when_an_account_exists() {
