@@ -48,10 +48,13 @@ export function SettingsScreen() {
               <span className="mobile-credits-value">
                 {formatCredits(credits.availableCredits)}
               </span>
-              <span className="mobile-credits-label">credits available</span>
+              <span className="mobile-credits-label">
+                {credits.rail === "prepaid" ? "prepaid balance" : "credits available"}
+              </span>
             </div>
             <div className="mobile-credits-side">
-              {credits.escrowCredits > 0 ? (
+              {credits.rail === "prepaid" ? <span>prepaid rail</span> : null}
+              {credits.rail !== "prepaid" && credits.escrowCredits > 0 ? (
                 <span>{formatCredits(credits.escrowCredits)} in escrow</span>
               ) : null}
               {typeof credits.priceMultiplier === "number" ? (

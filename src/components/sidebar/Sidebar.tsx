@@ -1899,8 +1899,11 @@ function SidebarIdentity({
 // omitted when the public pricing endpoint didn't answer.
 function creditsLabel(credits: CarpeDiemCreditsDto) {
   const amount = Math.floor(credits.availableCredits).toLocaleString("en-US");
+  // The balance follows the active rail; flag a prepaid balance so it isn't
+  // mistaken for the (possibly larger, unused) credits pool.
+  const railHint = credits.rail === "prepaid" ? " · prepaid" : "";
   const factor = credits.priceMultiplier != null ? ` · ×${credits.priceMultiplier.toFixed(2)}` : "";
-  return `${amount} credits${factor}`;
+  return `${amount} credits${railHint}${factor}`;
 }
 
 function accountDisplayName(account: AccountStatus) {

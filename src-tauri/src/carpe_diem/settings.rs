@@ -87,6 +87,12 @@ pub struct CarpeDiemCreditsDto {
     pub escrow_credits: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub price_multiplier: Option<f64>,
+    /// The rail this balance is FOR (`"credits"` | `"prepaid"`), so the footer
+    /// shows the balance that actually pays — not always the credits pool. The
+    /// prepaid figure is the account's USDC converted to credits (1 credit =
+    /// $0.01). `None` for Venice keys (no rails).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rail: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -358,7 +364,7 @@ async fn carpe_diem_credits(
 
     // `availableCredits` (escrow − pending − holds) is the only spendable
     // figure; `escrowCredits` includes charges the user can't spend against.
-    let available_credits = credits
+    let pool_available = credits
         .get("availableCredits")
         .and_then(serde_json::Value::as_f64)
         .ok_or_else(|| {
@@ -367,10 +373,46 @@ async fn carpe_diem_credits(
                 "The credits response is missing availableCredits.",
             )
         })?;
-    let escrow_credits = credits
+    let pool_escrow = credits
         .get("escrowCredits")
         .and_then(serde_json::Value::as_f64)
-        .unwrap_or(available_credits);
+        .unwrap_or(pool_available);
+
+    // Rail-aware: the footer must show the balance that ACTUALLY pays, not always
+    // the credits pool — a prepaid rail spends the prepaid account, and showing
+    // the (unused) pool there is exactly what hid the empty-rail 402. Best-effort:
+    // default to the pool if the rail endpoints are absent.
+    let rail_json = billing_get_json(client, &format!("{base}/prepaid/rail"), key)
+        .await
+        .ok();
+    let raw_rail = rail_json
+        .as_ref()
+        .and_then(|value| value.get("rail").and_then(serde_json::Value::as_str))
+        .unwrap_or("credits");
+    let has_prepaid = rail_json
+        .as_ref()
+        .and_then(|value| {
+            value
+                .get("hasPrepaidAccount")
+                .and_then(serde_json::Value::as_bool)
+        })
+        .unwrap_or(false);
+    let rail = effective_rail(raw_rail, has_prepaid);
+
+    let (available_credits, escrow_credits) = if rail == "prepaid" {
+        // Prepaid account USDC → credits-equivalent (1 credit = $0.01).
+        let status = billing_get_json(client, &format!("{base}/prepaid/status"), key)
+            .await
+            .ok();
+        let usdc = status
+            .as_ref()
+            .and_then(|value| parse_decimal(value.get("usdcBalance")))
+            .unwrap_or(0.0);
+        let credits_equiv = usdc * 100.0;
+        (credits_equiv, credits_equiv)
+    } else {
+        (pool_available, pool_escrow)
+    };
 
     // Pricing is public and lives at the operator root (the base URL minus its
     // /v1 suffix). The multiplier is global for the day, so any entry is
@@ -389,7 +431,20 @@ async fn carpe_diem_credits(
         available_credits,
         escrow_credits,
         price_multiplier,
+        rail: Some(rail.to_string()),
     })
+}
+
+/// The rail that actually pays: `"auto"` resolves to the prepaid account when
+/// one is registered, else the credits pool. Mirrors `deriveBilling` in the
+/// frontend so the footer balance and the Payment panel agree.
+fn effective_rail(rail: &str, has_prepaid_account: bool) -> &'static str {
+    match rail {
+        "prepaid" => "prepaid",
+        "credits" => "credits",
+        _ if has_prepaid_account => "prepaid",
+        _ => "credits",
+    }
 }
 
 async fn venice_credits(
@@ -422,6 +477,7 @@ async fn venice_credits(
         available_credits,
         escrow_credits: available_credits,
         price_multiplier: Some(1.0),
+        rail: None,
     })
 }
 
@@ -782,6 +838,16 @@ fn normalize_api_key(raw: &str) -> Result<String, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn effective_rail_resolves_auto_to_prepaid_only_when_an_account_exists() {
+        assert_eq!(effective_rail("auto", true), "prepaid");
+        assert_eq!(effective_rail("auto", false), "credits");
+        assert_eq!(effective_rail("credits", true), "credits");
+        assert_eq!(effective_rail("prepaid", false), "prepaid");
+        // Unknown value degrades like "auto".
+        assert_eq!(effective_rail("weird", true), "prepaid");
+    }
 
     #[test]
     fn parse_decimal_reads_string_and_number_usdc_amounts() {

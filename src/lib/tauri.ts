@@ -1791,6 +1791,9 @@ export type CarpeDiemCreditsDto = {
   availableCredits: number;
   escrowCredits: number;
   priceMultiplier?: number;
+  /** Which rail this balance is for: the footer shows the balance that actually
+   * pays (prepaid amounts are the account's USDC as credits). Absent for Venice. */
+  rail?: "credits" | "prepaid";
 };
 
 export async function carpeDiemGetCredits() {
