@@ -28,6 +28,7 @@ import {
   videomakerImproveBrief,
   videomakerListProjects,
   videomakerProjectStatus,
+  videomakerSetAutonomous,
   videomakerStartRun,
   videomakerUpdateBudget,
   videomakerUploadRef,
@@ -104,6 +105,8 @@ export function FilmStudio() {
   // Per-project "raise the budget ceiling" input + in-flight slug.
   const [budgetDraft, setBudgetDraft] = useState<Record<string, string>>({});
   const [budgetBusy, setBudgetBusy] = useState<string | null>(null);
+  // Per-project directed/autonomous flip in flight.
+  const [autonomyBusy, setAutonomyBusy] = useState<string | null>(null);
 
   const refreshTimers = useRef<Record<string, number>>({});
 
@@ -368,6 +371,35 @@ export function FilmStudio() {
       }
     },
     [budgetDraft, refreshStatus],
+  );
+
+  // Flip a film between directed (approve each phase) and autonomous (hands-off). Turning
+  // autonomy ON needs a hard DIEM cap, so it reuses the project's current ceiling; if there
+  // is none yet, the user must set one first. The studio resumes a gate-paused run on the flip.
+  const setAutonomy = useCallback(
+    async (slug: string, next: boolean, ceilingDiem?: number) => {
+      if (next && !(ceilingDiem && ceilingDiem > 0)) {
+        setError("Set a budget ceiling before switching this film to autonomous.");
+        return;
+      }
+      setAutonomyBusy(slug);
+      setError(null);
+      setNotice(null);
+      try {
+        await videomakerSetAutonomous({ slug, autonomous: next, budgetCeilingDiem: ceilingDiem });
+        setNotice(
+          next
+            ? "Now running autonomously — the studio approves each phase and finishes hands-off."
+            : "Now directed — the studio pauses for your approval at each phase.",
+        );
+        await refreshStatus(slug);
+      } catch (cause) {
+        setError(errorMessage(cause));
+      } finally {
+        setAutonomyBusy(null);
+      }
+    },
+    [refreshStatus],
   );
 
   const downloadFilm = useCallback(async (project: FilmProject) => {
@@ -690,6 +722,27 @@ export function FilmStudio() {
                           ? ` of ${formatDiem(status.cost.ceilingDiem)}`
                           : ""}
                       </span>
+                    </div>
+                  ) : null}
+                  {status ? (
+                    <div className="film-autonomy">
+                      <StudioField
+                        label="Direct it yourself"
+                        hint={
+                          status.autonomous
+                            ? "Off - the studio is finishing hands-off. Turn on to approve each phase."
+                            : "On - the studio pauses for your approval at each phase. Turn off to let it finish hands-off."
+                        }
+                      >
+                        <Switch
+                          checked={!status.autonomous}
+                          disabled={autonomyBusy === project.slug}
+                          onCheckedChange={(directed) =>
+                            void setAutonomy(project.slug, !directed, status.cost.ceilingDiem)
+                          }
+                          aria-label={`Direct ${project.title} yourself`}
+                        />
+                      </StudioField>
                     </div>
                   ) : null}
                   {status?.cost.ceilingDiem ? (

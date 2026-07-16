@@ -33,6 +33,8 @@ export type FilmStatus = {
     ceilingDiem?: number;
   };
   walletEmpty: boolean;
+  /** True when phase gates self-approve (hands-off) rather than await the user's sign-off. */
+  autonomous: boolean;
 };
 
 export type FilmRun = {
@@ -95,6 +97,7 @@ export function parseStatus(raw: unknown): FilmStatus {
       ceilingDiem: typeof cost.ceiling_diem === "number" ? cost.ceiling_diem : undefined,
     },
     walletEmpty: status.wallet_empty === true,
+    autonomous: status.autonomous === true,
   };
 }
 

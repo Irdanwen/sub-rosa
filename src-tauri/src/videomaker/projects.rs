@@ -126,6 +126,47 @@ pub async fn videomaker_update_budget(
     .await
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetAutonomousRequest {
+    pub slug: String,
+    pub autonomous: bool,
+    /// Passed through when switching a film TO autonomous — unattended production must keep a hard
+    /// DIEM cap (the studio only enforces the ceiling requirement for agent/PAT callers, so we
+    /// enforce it here for the human path too). Ignored when switching back to directed.
+    pub budget_ceiling_diem: Option<f64>,
+}
+
+/// Switch an EXISTING film between directed (you approve each phase) and autonomous
+/// (the studio self-approves and runs hands-off). Mirrors the create-time choice, so a
+/// directed film you no longer want to babysit can be handed off mid-flight — the studio
+/// resumes a gate-paused run on the flip. Autonomy is never unbounded: turning it on
+/// requires a positive DIEM ceiling, exactly like creation. Moves no money by itself.
+#[tauri::command]
+pub async fn videomaker_set_autonomous(
+    app: AppHandle,
+    request: SetAutonomousRequest,
+) -> Result<Value, AppError> {
+    if request.autonomous && !request.budget_ceiling_diem.is_some_and(|cap| cap > 0.0) {
+        return Err(AppError::new(
+            "videomaker_invalid",
+            "Autonomous production needs a positive DIEM budget ceiling.",
+        ));
+    }
+    let mut settings = json!({ "autonomous": request.autonomous });
+    if let Some(ceiling) = request.budget_ceiling_diem {
+        if ceiling > 0.0 {
+            settings["budget_ceiling_diem"] = json!(ceiling);
+        }
+    }
+    let body = json!({ "settings": settings });
+    send(
+        &app,
+        Request::post(format!("/projects/{}/model-prefs", request.slug), body),
+    )
+    .await
+}
+
 /// Permanent server-side delete (kills the daemon, purges files) + local
 /// cleanup (watcher, persisted slug, exported marker — the downloaded film
 /// stays in the gallery, it belongs to the user).

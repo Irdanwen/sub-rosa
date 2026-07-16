@@ -373,6 +373,7 @@ pub fn run() {
             videomaker::projects::videomaker_unwatch_project,
             videomaker::projects::videomaker_upload_ref,
             videomaker::projects::videomaker_update_budget,
+            videomaker::projects::videomaker_set_autonomous,
             videomaker::brief::videomaker_improve_brief,
             videomaker::director::videomaker_gates,
             videomaker::director::videomaker_gate_approve,

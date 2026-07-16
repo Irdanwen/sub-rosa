@@ -1953,6 +1953,15 @@ export async function videomakerUpdateBudget(request: { slug: string; ceilingDie
   return invoke<Record<string, unknown>>("videomaker_update_budget", { request });
 }
 
+export async function videomakerSetAutonomous(request: {
+  slug: string;
+  autonomous: boolean;
+  /** Required when switching TO autonomous (a hard DIEM cap for unattended production). */
+  budgetCeilingDiem?: number;
+}) {
+  return invoke<Record<string, unknown>>("videomaker_set_autonomous", { request });
+}
+
 export async function videomakerImproveBrief(request: {
   brief: string;
   title?: string;
