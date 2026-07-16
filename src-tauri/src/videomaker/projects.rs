@@ -270,20 +270,12 @@ fn watch_slug(app: &AppHandle, slug: &str) -> Result<(), AppError> {
 /// the path in `exported_films`. The signed URL needs no bearer; it may be
 /// relative to the studio origin.
 pub async fn download_export(app: &AppHandle, slug: &str) -> Result<FilmArtifactDto, AppError> {
-    if let Some(path) = super::settings_snapshot().exported_films.get(slug) {
-        if std::path::Path::new(path).is_file() {
-            let file_name = std::path::Path::new(path)
-                .file_name()
-                .map(|name| name.to_string_lossy().to_string())
-                .unwrap_or_default();
-            let bytes = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
-            return Ok(FilmArtifactDto {
-                path: path.clone(),
-                file_name,
-                bytes,
-            });
-        }
-    }
+    // No cache short-circuit: a finished film can be re-finalized server-side
+    // (reshoots, restored audio), so an explicit export must always fetch the
+    // CURRENT master — returning the stale local copy is exactly the "I still
+    // download the old version" bug. The watcher's auto-download stays
+    // once-per-project via its own `exported_films` guard (events.rs::maybe_export).
+    let previous = super::settings_snapshot().exported_films.get(slug).cloned();
     let export = send(app, Request::get(format!("/projects/{slug}/export"))).await?;
     let url = export
         .get("url")
@@ -333,6 +325,13 @@ pub async fn download_export(app: &AppHandle, slug: &str) -> Result<FilmArtifact
             .exported_films
             .insert(slug.to_string(), absolute.clone());
     })?;
+    // Drop the previous local copy so a re-download doesn't leave a stale
+    // duplicate in the disk-derived gallery.
+    if let Some(old) = previous {
+        if old != absolute {
+            let _ = std::fs::remove_file(&old);
+        }
+    }
     Ok(FilmArtifactDto {
         path: absolute,
         file_name,
