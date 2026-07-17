@@ -180,7 +180,39 @@ describe("Sidebar primary navigation", () => {
     expect(screen.queryByRole("dialog", { name: "Search" })).toBeNull();
   });
 
-  it("shows and accepts the Windows command palette shortcut", async () => {
+  it("opens the command prompt with Command-K while the sidebar is collapsed", async () => {
+    const { container } = render(
+      <Sidebar
+        notes={notes}
+        activeView="notes"
+        collapsed
+        onChangeView={vi.fn()}
+        onSelectNote={vi.fn()}
+        onDeleteNote={vi.fn()}
+        onOpenMoveDialog={vi.fn()}
+        onRemoveNoteFromFolder={vi.fn()}
+        onNewAgentSession={vi.fn()}
+        onSelectAgentSession={vi.fn()}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+
+    const prompt = screen.getByRole("dialog", { name: "Search" });
+    // The fork's palette input is `type="search"` (role searchbox), not the
+    // upstream text input.
+    const search = within(prompt).getByRole("searchbox", { name: "Search" });
+    await waitFor(() => expect(search).toHaveFocus());
+
+    // The collapsed sidebar is `display: none`, so the prompt must live outside
+    // the sidebar subtree (portaled to the body) to stay visible.
+    const sidebar = container.querySelector(".sidebar");
+    expect(sidebar).not.toBeNull();
+    expect(sidebar?.contains(prompt)).toBe(false);
+    expect(document.body.contains(prompt)).toBe(true);
+  });
+
+  it("shows and accepts the Windows command prompt shortcut", async () => {
     const restoreNavigator = stubNavigatorPlatform(
       "Win32",
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
