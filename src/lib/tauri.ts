@@ -370,6 +370,9 @@ export type AgentTaskDto = {
   status: AgentTaskStatus;
   safetyProfile: AgentSafetyProfile;
   hermesSessionId?: string;
+  /** The chat model this session last ran with (agent-lite); absent means the
+   * app default applies. */
+  model?: string;
   progressSummary?: string;
   lastError?: string;
   createdAt: string;
@@ -841,8 +844,17 @@ export async function createAgentTask(input: {
   title?: string;
   safetyProfile?: AgentSafetyProfile;
   runPlaceholder?: boolean;
+  /** The chat model the new session should record (agent-lite). */
+  model?: string;
 }) {
   return invoke<AgentTaskDto>("create_agent_task", { request: input });
+}
+
+/** Remembers the chat model a mobile (agent-lite) session runs with, so the
+ * picker restores it on reopen and a mid-conversation switch survives. An empty
+ * model clears the override (the app default applies). */
+export async function setAgentTaskModel(input: { taskId: string; model: string }) {
+  return invoke<AgentTaskDto>("set_agent_task_model", { request: input });
 }
 
 export async function getAgentTask(taskId: string) {
@@ -920,6 +932,13 @@ export async function cancelAgentTask(taskId: string) {
 
 export async function retryAgentTask(taskId: string) {
   return invoke<AgentTaskDto>("retry_agent_task", { request: { taskId } });
+}
+
+/** Duplicate a mobile (agent-lite) chat onto another model: a new task with the
+ * same transcript, bound to the chosen model, so the conversation can branch
+ * onto a different model while the original stays untouched. */
+export async function forkAgentTask(input: { sourceTaskId: string; model?: string }) {
+  return invoke<AgentTaskDto>("fork_agent_task", { request: input });
 }
 
 export async function listAgentToolEvents(taskId: string) {

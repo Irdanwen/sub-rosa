@@ -15,6 +15,7 @@ import { hapticImpact, hapticNotify, hapticSelection } from "../../../lib/haptic
 import { useKeyboardInset } from "../../../lib/keyboard-inset";
 import { SimpleMarkdown } from "../../../lib/simple-markdown";
 import { fetchMediaCatalog, formatCredits, modelsOfType } from "../../../lib/studio/catalog";
+import { resolveTurnModel } from "../../../lib/vision-routing";
 import type { MediaModel } from "../../../lib/studio/types";
 import {
   AGENT_LITE_DONE_EVENT,
@@ -26,6 +27,7 @@ import {
   assignSessionToFolder,
   createAgentTask,
   deleteAgentTask,
+  forkAgentTask,
   getAgentTask,
   listAgentTasks,
   listSessionFolders,
@@ -33,6 +35,7 @@ import {
   mobileDictationStop,
   removeSessionFromFolder,
   sendAgentMessage,
+  setAgentTaskModel,
   suggestAgentSessionTitle,
 } from "../../../lib/tauri";
 import { JuneGradientMark } from "../../account/AccountGate";
@@ -257,6 +260,8 @@ type AgentSessionScreenProps = {
   onBack?: () => void;
   /** Reports the lazily created task id so the shell can restore it later. */
   onSessionCreated?: (sessionId: string) => void;
+  /** Opens an existing chat (used after forking onto another model). */
+  onOpenSession?: (sessionId: string) => void;
   onOpenHistory?: () => void;
   onNewChat?: () => void;
 };
@@ -266,6 +271,7 @@ export function AgentSessionScreen({
   sessionId,
   onBack,
   onSessionCreated,
+  onOpenSession,
   onOpenHistory,
   onNewChat,
 }: AgentSessionScreenProps) {
@@ -278,6 +284,12 @@ export function AgentSessionScreen({
   // than a single flickering line.
   const [steps, setSteps] = useState<AgentLiteStatusDto[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // A failed turn leaves the user's message persisted but unanswered, so it can
+  // be re-run without retyping (optionally on a different model). `canRetry`
+  // gates the "Try again" affordance on the error; the ref keeps the failed
+  // turn's attachment payloads (cleared from the composer) for the re-run.
+  const [canRetry, setCanRetry] = useState(false);
+  const retryAttachmentsRef = useRef<AgentLiteAttachment[]>([]);
   const [model, setModel] = useState(storedChatModel);
   const [models, setModels] = useState<MediaModel[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -304,7 +316,12 @@ export function AgentSessionScreen({
   useEffect(() => {
     if (!sessionId) return;
     getAgentTask(sessionId)
-      .then(setTask)
+      .then((loaded) => {
+        setTask(loaded);
+        // Restore the model this session last ran with, so reopening a chat
+        // keeps its model rather than snapping back to the global default.
+        if (loaded.model) setModel(loaded.model);
+      })
       .catch((err: unknown) => setError(messageFromError(err)));
   }, [sessionId]);
 
@@ -405,12 +422,38 @@ export function AgentSessionScreen({
     setModel(modelId);
     setPickerOpen(false);
     try {
+      // The global default seeds the model for the NEXT new chat.
       if (modelId) localStorage.setItem(CHAT_MODEL_STORAGE_KEY, modelId);
       else localStorage.removeItem(CHAT_MODEL_STORAGE_KEY);
     } catch {
       // Persistence is a nicety; the in-memory choice still applies.
     }
+    // For an already-open chat, remember the switch on the session itself so it
+    // survives reopen (independent of the global default). Best effort: a failed
+    // write only means the picker will fall back to the default next time.
+    const openTaskId = taskIdRef.current;
+    if (openTaskId) {
+      void setAgentTaskModel({ taskId: openTaskId, model: modelId }).catch(() => undefined);
+    }
   }, []);
+
+  // Fork this chat onto another model: a copy carrying the same transcript,
+  // bound to the chosen model, opened in its own thread so the original stays
+  // untouched (comparing two models, or reasking a busy turn on a fresh one).
+  const forkChat = useCallback(
+    (modelId: string) => {
+      const sourceTaskId = taskIdRef.current;
+      setPickerOpen(false);
+      if (!sourceTaskId) return;
+      void forkAgentTask({ sourceTaskId, model: modelId })
+        .then((forked) => {
+          hapticNotify("success");
+          onOpenSession?.(forked.id);
+        })
+        .catch((err: unknown) => setError(messageFromError(err)));
+    },
+    [onOpenSession],
+  );
 
   const addAttachment = useCallback((file: File) => {
     const isImage = file.type.startsWith("image/");
@@ -472,6 +515,7 @@ export function AgentSessionScreen({
     setDraft("");
     setAttachments([]);
     setError(null);
+    setCanRetry(false);
     setRunning(true);
     setSteps([]);
     lastStepKeyRef.current = null;
@@ -479,7 +523,11 @@ export function AgentSessionScreen({
     try {
       let current = task;
       if (!current) {
-        current = await createAgentTask({ prompt: stored, runPlaceholder: false });
+        current = await createAgentTask({
+          prompt: stored,
+          runPlaceholder: false,
+          model: model || undefined,
+        });
         taskIdRef.current = current.id;
         setTask(current);
         onSessionCreated?.(current.id);
@@ -493,9 +541,16 @@ export function AgentSessionScreen({
         });
         setTask(current);
       }
+      // An image turn routes to a vision-capable model even when the chosen
+      // chat model is text-only, so attaching a photo just works.
+      const turnModel = resolveTurnModel({
+        selectedModelId: model,
+        models,
+        hasImages: turnAttachments.some((entry) => entry.kind === "image"),
+      });
       const finished = await agentLiteRun(
         current.id,
-        model || undefined,
+        turnModel || undefined,
         turnAttachments.length ? turnAttachments : undefined,
       );
       setTask(finished);
@@ -503,16 +558,65 @@ export function AgentSessionScreen({
       hapticNotify("error");
       setError(messageFromError(err));
       if (taskIdRef.current) {
+        // The message is persisted but unanswered: offer a re-run (which can
+        // use a freshly chosen model), keeping this turn's attachment payloads.
+        retryAttachmentsRef.current = turnAttachments;
+        setCanRetry(true);
         getAgentTask(taskIdRef.current)
           .then(setTask)
           .catch(() => undefined);
+      } else {
+        // Task creation itself failed, so nothing was persisted. Restore the
+        // composer so the user's message and attachments are never lost.
+        setDraft(content);
+        setAttachments(turnAttachments);
       }
     } finally {
       setRunning(false);
       setStage(null);
       setSteps([]);
     }
-  }, [draft, attachments, running, task, model, onSessionCreated]);
+  }, [draft, attachments, running, task, model, models, onSessionCreated]);
+
+  // Re-run the last (failed) turn without retyping. The message is already
+  // persisted, so this only re-issues the run — and it uses the CURRENT model,
+  // so switching the picker then retrying continues the chat on another model.
+  const retryTurn = useCallback(async () => {
+    const taskId = taskIdRef.current;
+    if (!taskId || running) return;
+    setError(null);
+    setCanRetry(false);
+    setRunning(true);
+    setSteps([]);
+    lastStepKeyRef.current = null;
+    hapticImpact("light");
+    const turnAttachments = retryAttachmentsRef.current;
+    try {
+      const turnModel = resolveTurnModel({
+        selectedModelId: model,
+        models,
+        hasImages: turnAttachments.some((entry) => entry.kind === "image"),
+      });
+      const finished = await agentLiteRun(
+        taskId,
+        turnModel || undefined,
+        turnAttachments.length ? turnAttachments : undefined,
+      );
+      setTask(finished);
+      retryAttachmentsRef.current = [];
+    } catch (err) {
+      hapticNotify("error");
+      setError(messageFromError(err));
+      setCanRetry(true);
+      getAgentTask(taskId)
+        .then(setTask)
+        .catch(() => undefined);
+    } finally {
+      setRunning(false);
+      setStage(null);
+      setSteps([]);
+    }
+  }, [running, model, models]);
 
   const stageLabel =
     stage?.stage === "searching-notes"
@@ -635,7 +739,16 @@ export function AgentSessionScreen({
             </ul>
           </div>
         ) : null}
-        {error ? <p className="mobile-dictation-error">{error}</p> : null}
+        {error ? (
+          <div className="mobile-chat-error" role="alert">
+            <p className="mobile-dictation-error">{error}</p>
+            {canRetry ? (
+              <button type="button" className="mobile-chat-retry" onClick={() => void retryTurn()}>
+                Try again
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {showJump ? (
         <button
@@ -767,6 +880,7 @@ export function AgentSessionScreen({
           defaultOption={{ label: "Default", subtitle: "Recommended model" }}
           error={modelsError}
           onSelect={selectModel}
+          onFork={task ? forkChat : undefined}
           onClose={() => setPickerOpen(false)}
         />
       ) : null}

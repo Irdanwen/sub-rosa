@@ -103,6 +103,10 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
         }
     }
     ensure_column(_pool, "agent_tasks", "hermes_session_id", "TEXT").await?;
+    // `model` records the chat model this session last ran with, so reopening a
+    // mobile (agent-lite) chat restores its model in the picker and a
+    // mid-conversation switch is remembered. NULL means "use the app default".
+    ensure_column(_pool, "agent_tasks", "model", "TEXT").await?;
     // `external_id` records the Hermes-side identity of hydrated agent
     // messages so concurrent hydrations cannot double-insert the same
     // message. The dedupe DELETE in this migration scans `agent_messages`,

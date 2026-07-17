@@ -672,6 +672,27 @@
   text-align: center;
 }
 
+/* A failed turn shows its message with a one-tap re-run beneath it. */
+.mobile-chat-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.mobile-chat-retry {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
 .mobile-dictation-result {
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
@@ -2017,6 +2038,11 @@
 }
 
 .mobile-favorite-button {
+  color: var(--muted-foreground);
+}
+
+/* Branch action per model row: fork the chat onto that model. */
+.mobile-fork-button {
   color: var(--muted-foreground);
 }
 

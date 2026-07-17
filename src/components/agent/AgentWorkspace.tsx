@@ -5290,6 +5290,22 @@ export function AgentWorkspace({
     rememberComposerDraft(composerDraftKeyRef.current, text, null, []);
   }
 
+  // Re-send the most recent user message on the open Hermes chat. A turn that
+  // died on a transient upstream-busy error leaves the message in the
+  // transcript but unanswered; this re-asks it without a retype. The send uses
+  // the session's current model, so switching the composer model first retries
+  // on the new one. No-op while a turn is in flight or when there is nothing to
+  // re-ask.
+  function retryLastHermesUserTurn() {
+    if (!selectedHermesSessionId || workingSessionIds.has(selectedHermesSessionId)) return;
+    const lastUserTurn = [...hermesTurns].reverse().find((turn) => turn.role === "user");
+    const text = lastUserTurn ? userPromptTextForTurn(lastUserTurn) : "";
+    if (!text.trim()) return;
+    void submitHermesSession(text).catch((err: unknown) => {
+      setBusyNotice(messageFromError(err));
+    });
+  }
+
   function setComposerAttachments(
     nextValue: AgentAttachment[] | ((current: AgentAttachment[]) => AgentAttachment[]),
   ) {
@@ -6698,6 +6714,7 @@ export function AgentWorkspace({
           }
           branchingMessageId={branchingMessageId}
           onEditUserPrompt={editUserPrompt}
+          onRetry={retryLastHermesUserTurn}
         />
       ))}
       {workingSessionIds.has(selectedHermesSessionId) && hermesTurns.at(-1)?.role === "user" ? (
@@ -8800,6 +8817,7 @@ function AgentChatTurnRow({
   topUpLabel,
   onBranch,
   onEditUserPrompt,
+  onRetry,
   branchingMessageId,
   turn,
 }: {
@@ -8834,6 +8852,10 @@ function AgentChatTurnRow({
    * Optional: only Hermes-session rows pass it — task rows and the dev gallery
    * omit it, so the action is absent there. */
   onBranch?: (messageId: string, sessionId?: string) => void;
+  /** Re-send the last user message after a transient failure (upstream busy),
+   * so a dead turn need not be retyped. Optional: only live Hermes-chat rows
+   * pass it — task rows and the dev gallery omit it, so the action is absent. */
+  onRetry?: () => void;
   /** The message id a branch is currently in flight for, so its action shows a
    * working/disabled state. */
   branchingMessageId?: string | null;
@@ -9101,7 +9123,7 @@ function AgentChatTurnRow({
             part.kind === "context-overflow" ? (
               <ContextOverflowNoticePart key={`${turn.id}:notice:${index}`} />
             ) : part.kind === "upstream-busy" ? (
-              <UpstreamBusyNoticePart key={`${turn.id}:notice:${index}`} />
+              <UpstreamBusyNoticePart key={`${turn.id}:notice:${index}`} onRetry={onRetry} />
             ) : (
               <CreditsNoticePart
                 key={`${turn.id}:notice:${index}`}
@@ -9478,7 +9500,7 @@ function ContextOverflowNoticePart() {
 // capacity (an upstream 429). It is transient and specific to the busy model, so
 // the honest recovery is to wait a few seconds and send again, or switch to
 // another model from the composer — not a balance top-up or a smaller input.
-function UpstreamBusyNoticePart() {
+function UpstreamBusyNoticePart({ onRetry }: { onRetry?: () => void }) {
   return (
     <InlineNotice
       className="agent-upstream-busy-notice"
@@ -9486,6 +9508,16 @@ function UpstreamBusyNoticePart() {
       role="alert"
       icon={<IconArrowRotateClockwise size={14} aria-hidden />}
       body="This model is busy right now. Wait a few seconds and send again, or switch to another model."
+      actions={
+        onRetry ? (
+          // Re-sends the same message so a busy turn need not be retyped. The
+          // send uses the session's current model, so switching the composer
+          // model first retries on the new one.
+          <button type="button" className="btn btn-secondary" onClick={onRetry}>
+            Try again
+          </button>
+        ) : undefined
+      }
     />
   );
 }

@@ -23,6 +23,7 @@ async fn creates_agent_task_with_message_and_tool_events() {
             "Summarize my open desktop windows",
             None,
             AgentSafetyProfile::AutonomousPrivate,
+            None,
         )
         .await
         .expect("task should be created");
@@ -63,6 +64,7 @@ async fn pauses_active_agent_tasks_on_launch() {
             "Book time to review the design",
             None,
             AgentSafetyProfile::default(),
+            None,
         )
         .await
         .expect("task should be created");
@@ -91,7 +93,12 @@ async fn pauses_active_agent_tasks_on_launch() {
 async fn repair_completes_stale_running_task_with_assistant_reply() {
     let repos = test_repositories().await;
     let task = repos
-        .create_agent_task("Collect release notes", None, AgentSafetyProfile::default())
+        .create_agent_task(
+            "Collect release notes",
+            None,
+            AgentSafetyProfile::default(),
+            None,
+        )
         .await
         .expect("task should be created");
     repos
@@ -119,7 +126,12 @@ async fn repair_completes_stale_running_task_with_assistant_reply() {
 async fn repair_skips_requeued_task_whose_latest_message_is_from_the_user() {
     let repos = test_repositories().await;
     let task = repos
-        .create_agent_task("Plan the offsite", None, AgentSafetyProfile::default())
+        .create_agent_task(
+            "Plan the offsite",
+            None,
+            AgentSafetyProfile::default(),
+            None,
+        )
         .await
         .expect("task should be created");
     // First turn answered, then the user sent a follow-up that re-queued
@@ -150,7 +162,12 @@ async fn repair_leaves_paused_and_waiting_tasks_alone() {
     let repos = test_repositories().await;
     for status in [AgentTaskStatus::Paused, AgentTaskStatus::WaitingForUser] {
         let task = repos
-            .create_agent_task("Review the design", None, AgentSafetyProfile::default())
+            .create_agent_task(
+                "Review the design",
+                None,
+                AgentSafetyProfile::default(),
+                None,
+            )
             .await
             .expect("task should be created");
         repos
@@ -183,7 +200,12 @@ async fn repair_leaves_paused_and_waiting_tasks_alone() {
 async fn guarded_status_update_does_not_resurrect_cancelled_tasks() {
     let repos = test_repositories().await;
     let task = repos
-        .create_agent_task("Clean up downloads", None, AgentSafetyProfile::default())
+        .create_agent_task(
+            "Clean up downloads",
+            None,
+            AgentSafetyProfile::default(),
+            None,
+        )
         .await
         .expect("task should be created");
     repos
@@ -230,7 +252,7 @@ async fn guarded_status_update_does_not_resurrect_cancelled_tasks() {
 async fn guarded_status_update_applies_allowed_transitions() {
     let repos = test_repositories().await;
     let task = repos
-        .create_agent_task("Summarize inbox", None, AgentSafetyProfile::default())
+        .create_agent_task("Summarize inbox", None, AgentSafetyProfile::default(), None)
         .await
         .expect("task should be created");
 
@@ -261,6 +283,7 @@ async fn hydrated_messages_dedupe_by_external_id_and_legacy_content() {
             "Find the meeting notes",
             None,
             AgentSafetyProfile::default(),
+            None,
         )
         .await
         .expect("task should be created");
@@ -336,11 +359,11 @@ async fn hydrated_messages_dedupe_by_external_id_and_legacy_content() {
 async fn detects_hermes_sessions_bound_to_other_tasks() {
     let repos = test_repositories().await;
     let first = repos
-        .create_agent_task("Same prompt", None, AgentSafetyProfile::default())
+        .create_agent_task("Same prompt", None, AgentSafetyProfile::default(), None)
         .await
         .expect("task should be created");
     let second = repos
-        .create_agent_task("Same prompt", None, AgentSafetyProfile::default())
+        .create_agent_task("Same prompt", None, AgentSafetyProfile::default(), None)
         .await
         .expect("task should be created");
     repos
@@ -356,4 +379,145 @@ async fn detects_hermes_sessions_bound_to_other_tasks() {
         .hermes_session_bound_to_other_task(&first.id, "session-1")
         .await
         .expect("check should succeed"));
+}
+
+#[tokio::test]
+async fn agent_task_remembers_its_chat_model() {
+    let repos = test_repositories().await;
+
+    // Created with a model: it round-trips through get and list.
+    let with_model = repos
+        .create_agent_task(
+            "Draft a reply",
+            None,
+            AgentSafetyProfile::default(),
+            Some("venice-uncensored"),
+        )
+        .await
+        .expect("task should be created");
+    assert_eq!(with_model.model.as_deref(), Some("venice-uncensored"));
+    let loaded = repos
+        .get_agent_task(&with_model.id)
+        .await
+        .expect("task should load");
+    assert_eq!(loaded.model.as_deref(), Some("venice-uncensored"));
+    let listed = repos.list_agent_tasks().await.expect("list should load");
+    assert_eq!(
+        listed
+            .items
+            .iter()
+            .find(|task| task.id == with_model.id)
+            .and_then(|task| task.model.as_deref()),
+        Some("venice-uncensored"),
+    );
+
+    // Created without a model: it reads back as None (the app default applies).
+    let without_model = repos
+        .create_agent_task(
+            "Draft another reply",
+            None,
+            AgentSafetyProfile::default(),
+            None,
+        )
+        .await
+        .expect("task should be created");
+    assert_eq!(without_model.model, None);
+
+    // A whitespace model at creation is normalized to None, not an empty id.
+    let blank_model = repos
+        .create_agent_task(
+            "Third reply",
+            None,
+            AgentSafetyProfile::default(),
+            Some("  "),
+        )
+        .await
+        .expect("task should be created");
+    assert_eq!(blank_model.model, None);
+
+    // A mid-conversation switch is remembered.
+    repos
+        .set_agent_task_model(&without_model.id, Some("qwen3-4b"))
+        .await
+        .expect("model should update");
+    assert_eq!(
+        repos
+            .get_agent_task(&without_model.id)
+            .await
+            .expect("task should load")
+            .model
+            .as_deref(),
+        Some("qwen3-4b"),
+    );
+
+    // Clearing with an empty model falls back to the app default (NULL).
+    repos
+        .set_agent_task_model(&without_model.id, Some(""))
+        .await
+        .expect("model should clear");
+    assert_eq!(
+        repos
+            .get_agent_task(&without_model.id)
+            .await
+            .expect("task should load")
+            .model,
+        None,
+    );
+}
+
+#[tokio::test]
+async fn fork_agent_task_copies_transcript_onto_another_model() {
+    let repos = test_repositories().await;
+    let source = repos
+        .create_agent_task(
+            "Compare these sites",
+            None,
+            AgentSafetyProfile::default(),
+            Some("model-a"),
+        )
+        .await
+        .expect("source task should be created");
+    // create seeds the prompt as the first user message; add an assistant reply
+    // so the fork has a real two-turn transcript to carry.
+    repos
+        .add_agent_message(
+            &source.id,
+            AgentMessageRole::Assistant,
+            "Here is a comparison.",
+        )
+        .await
+        .expect("assistant message should be added");
+
+    let fork = repos
+        .fork_agent_task(&source.id, Some("model-b"))
+        .await
+        .expect("fork should be created");
+
+    // A new task on model B, carrying the whole transcript in order.
+    assert_ne!(fork.id, source.id);
+    assert_eq!(fork.model.as_deref(), Some("model-b"));
+    assert_eq!(fork.title, source.title);
+    // The fork opens idle, never as a phantom running task.
+    assert_eq!(fork.status, AgentTaskStatus::Completed);
+    assert_eq!(fork.messages.len(), 2);
+    assert_eq!(fork.messages[0].role, AgentMessageRole::User);
+    assert_eq!(fork.messages[0].content, "Compare these sites");
+    assert_eq!(fork.messages[1].role, AgentMessageRole::Assistant);
+    assert_eq!(fork.messages[1].content, "Here is a comparison.");
+
+    // The original chat is untouched by the fork.
+    let original = repos
+        .get_agent_task(&source.id)
+        .await
+        .expect("source should reload");
+    assert_eq!(original.model.as_deref(), Some("model-a"));
+    assert_eq!(original.messages.len(), 2);
+
+    // An empty target model falls back to the source chat's own model.
+    let fork_default = repos
+        .fork_agent_task(&source.id, None)
+        .await
+        .expect("default fork should be created");
+    assert_eq!(fork_default.model.as_deref(), Some("model-a"));
+    assert_eq!(fork_default.messages.len(), 2);
 }

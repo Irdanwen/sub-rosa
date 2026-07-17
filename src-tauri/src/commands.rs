@@ -27,15 +27,15 @@ use crate::{
             CreateDictionaryEntryRequest, CreateFolderRequest, CreateNoteRequest,
             DeleteDictionaryEntryRequest, DeleteFolderRequest, DeleteNoteRequest,
             DeleteNotesRequest, DictionaryEntryDto, ExplainAgentApprovalRequest,
-            ExplainAgentApprovalResponse, FinishRecordingResponse, GetAgentTaskRequest,
-            GetNoteRequest, ListNotesRequest, ListNotesResponse, MicrophonePermissionResponse,
-            NoteDto, OpenPrivacySettingsRequest, ProcessingStatus, RecordingSessionDto,
-            RecordingSource, RecordingSourceMode, RecordingSourceReadinessDto, RecordingStatusDto,
-            RemoveNoteFromFolderRequest, RemoveSessionFromFolderRequest, RenameFolderRequest,
-            RetryProcessingRequest, SaveAgentAssistantMessageRequest,
+            ExplainAgentApprovalResponse, FinishRecordingResponse, ForkAgentTaskRequest,
+            GetAgentTaskRequest, GetNoteRequest, ListNotesRequest, ListNotesResponse,
+            MicrophonePermissionResponse, NoteDto, OpenPrivacySettingsRequest, ProcessingStatus,
+            RecordingSessionDto, RecordingSource, RecordingSourceMode, RecordingSourceReadinessDto,
+            RecordingStatusDto, RemoveNoteFromFolderRequest, RemoveSessionFromFolderRequest,
+            RenameFolderRequest, RetryProcessingRequest, SaveAgentAssistantMessageRequest,
             SaveAgentHermesSessionRequest, SendAgentMessageRequest, SessionFolderDto,
-            SessionRequest, SourceReadinessDto, StartRecordingRequest, SubmitIssueReportRequest,
-            SubmitIssueReportResponse, SuggestAgentSessionTitleRequest,
+            SessionRequest, SetAgentTaskModelRequest, SourceReadinessDto, StartRecordingRequest,
+            SubmitIssueReportRequest, SubmitIssueReportResponse, SuggestAgentSessionTitleRequest,
             SuggestAgentSessionTitleResponse, UpdateDictionaryEntryRequest, UpdateNoteRequest,
         },
     },
@@ -323,6 +323,7 @@ pub async fn create_agent_task(
             prompt,
             request.title.as_deref(),
             request.safety_profile.unwrap_or_default(),
+            request.model.as_deref(),
         )
         .await?;
     if request.run_placeholder.unwrap_or(true) {
@@ -420,6 +421,35 @@ pub async fn save_agent_hermes_session(
         .set_agent_task_hermes_session(&request.task_id, hermes_session_id)
         .await?;
     Ok(repos.get_agent_task(&request.task_id).await?)
+}
+
+/// Remembers the chat model a mobile (agent-lite) session runs with, so the
+/// picker restores it on reopen and a mid-conversation switch survives. Best
+/// effort from the caller's view: an empty model clears the override.
+#[tauri::command]
+pub async fn set_agent_task_model(
+    app: AppHandle,
+    request: SetAgentTaskModelRequest,
+) -> Result<AgentTaskDto, AppError> {
+    let repos = repositories(&app).await?;
+    repos
+        .set_agent_task_model(&request.task_id, Some(request.model.as_str()))
+        .await?;
+    Ok(repos.get_agent_task(&request.task_id).await?)
+}
+
+/// Duplicate a mobile (agent-lite) chat onto another model: a new task with the
+/// same transcript, bound to the chosen model, so the conversation can branch
+/// onto a different model while the original stays untouched.
+#[tauri::command]
+pub async fn fork_agent_task(
+    app: AppHandle,
+    request: ForkAgentTaskRequest,
+) -> Result<AgentTaskDto, AppError> {
+    let repos = repositories(&app).await?;
+    Ok(repos
+        .fork_agent_task(&request.source_task_id, request.model.as_deref())
+        .await?)
 }
 
 #[tauri::command]

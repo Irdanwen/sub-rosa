@@ -604,7 +604,18 @@ export function MobileApp() {
       />
     );
   } else if (top?.view === "agent-session") {
-    screen = <AgentSessionScreen sessionId={top.sessionId} onBack={nav.pop} />;
+    screen = (
+      <AgentSessionScreen
+        sessionId={top.sessionId}
+        onBack={nav.pop}
+        onOpenSession={(sessionId) => {
+          // Forking swaps the tab's root conversation onto the fork and pops
+          // this pushed thread, so the user lands on the new model's chat.
+          openChatSession(sessionId);
+          nav.pop();
+        }}
+      />
+    );
   } else if (top?.view === "agent-history") {
     screen = (
       <AgentScreen
@@ -669,6 +680,7 @@ export function MobileApp() {
             key={`chat-${agentChatEpoch}`}
             sessionId={agentSessionId}
             onSessionCreated={setAgentSessionId}
+            onOpenSession={openChatSession}
             onOpenHistory={() => nav.push({ view: "agent-history" })}
             onNewChat={() => openChatSession(undefined)}
           />

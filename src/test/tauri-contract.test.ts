@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   checkRecordingSourceReadiness,
+  createAgentTask,
   ensureHermesBridgeGateway,
   finishRecording,
+  forkAgentTask,
   getNote,
   juneOpenCommunityPage,
   recoverRecording,
   retryProcessing,
+  setAgentTaskModel,
   startRecording,
   updateNote,
 } from "../lib/tauri";
@@ -89,5 +92,27 @@ describe("Tauri command contracts", () => {
     await juneOpenCommunityPage();
 
     expect(mocks.invoke).toHaveBeenCalledWith("june_open_community_page");
+  });
+
+  it("threads the chat model through create and remembers a switch per session", async () => {
+    // A new mobile chat records the model it starts on.
+    await createAgentTask({ prompt: "Draft a reply", runPlaceholder: false, model: "qwen3-4b" });
+    // A mid-conversation switch is persisted on the session itself.
+    await setAgentTaskModel({ taskId: "task-1", model: "venice-uncensored" });
+
+    expect(mocks.invoke).toHaveBeenNthCalledWith(1, "create_agent_task", {
+      request: { prompt: "Draft a reply", runPlaceholder: false, model: "qwen3-4b" },
+    });
+    expect(mocks.invoke).toHaveBeenNthCalledWith(2, "set_agent_task_model", {
+      request: { taskId: "task-1", model: "venice-uncensored" },
+    });
+  });
+
+  it("forks a chat onto another model with a stable request shape", async () => {
+    await forkAgentTask({ sourceTaskId: "task-1", model: "venice-uncensored" });
+
+    expect(mocks.invoke).toHaveBeenCalledWith("fork_agent_task", {
+      request: { sourceTaskId: "task-1", model: "venice-uncensored" },
+    });
   });
 });

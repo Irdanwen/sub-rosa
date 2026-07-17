@@ -1,3 +1,4 @@
+import { IconBranchSimple } from "central-icons/IconBranchSimple";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconStar } from "central-icons/IconStar";
@@ -41,6 +42,10 @@ type ModelSheetProps = {
   error?: string | null;
   onSelect: (id: string) => void;
   onClose: () => void;
+  /** When set, each model row gains a branch action that forks the chat onto
+   * that model (leaving the original untouched) instead of switching in place.
+   * Omitted where forking makes no sense (e.g. Studio), so no button shows. */
+  onFork?: (id: string) => void;
 };
 
 /**
@@ -56,6 +61,7 @@ export function ModelSheet({
   error,
   onSelect,
   onClose,
+  onFork,
 }: ModelSheetProps) {
   const [query, setQuery] = useState("");
   const [favorites, setFavorites] = useState<Set<string>>(readFavorites);
@@ -216,6 +222,16 @@ export function ModelSheet({
                 </span>
                 {selectedId === entry.id ? <IconCheckmark1Small size={16} aria-hidden /> : null}
               </button>
+              {onFork ? (
+                <button
+                  type="button"
+                  className="mobile-icon-button mobile-fork-button"
+                  aria-label={`Fork chat to ${entry.name || entry.id}`}
+                  onClick={() => onFork(entry.id)}
+                >
+                  <IconBranchSimple size={16} />
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="mobile-icon-button mobile-favorite-button"

@@ -6776,6 +6776,39 @@ describe("AgentWorkspace", () => {
     expect(screen.queryByText("Hermes gateway is not connected.")).toBeNull();
   });
 
+  it("re-sends the last user message when a busy turn's Try again is clicked", async () => {
+    const user = userEvent.setup();
+    // A persisted turn that died on an upstream saturation error renders as the
+    // upstream-busy notice, which now carries a one-tap resend.
+    mocks.listHermesSessionMessages.mockResolvedValue([
+      {
+        id: "m1",
+        role: "user",
+        content: "Compare these three sites",
+        timestamp: "2026-06-10T10:00:00Z",
+      },
+      {
+        id: "m2",
+        role: "assistant",
+        content: "model_infra_saturated",
+        timestamp: "2026-06-10T10:00:01Z",
+      },
+    ]);
+
+    render(<AgentWorkspace />);
+    expect(await screen.findByText("Existing session")).toBeInTheDocument();
+
+    // Retry re-asks the last user message verbatim, without a retype.
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
+
+    await waitFor(() =>
+      expect(mocks.gatewayRequest).toHaveBeenCalledWith("prompt.submit", {
+        session_id: "runtime-session-1",
+        text: "Compare these three sites",
+      }),
+    );
+  });
+
   it("renders an out-of-credits notice with an upgrade action instead of the raw 402 error", async () => {
     const user = userEvent.setup();
     mocks.osAccountsUpgrade.mockResolvedValue(undefined);

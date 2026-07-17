@@ -500,6 +500,9 @@ pub struct AgentTaskDto {
     pub status: AgentTaskStatus,
     pub safety_profile: AgentSafetyProfile,
     pub hermes_session_id: Option<String>,
+    /// The chat model this session last ran with (agent-lite). `None` means the
+    /// app default applies; set at creation and on a mid-conversation switch.
+    pub model: Option<String>,
     pub progress_summary: Option<String>,
     pub last_error: Option<String>,
     pub created_at: String,
@@ -588,6 +591,10 @@ pub struct CreateAgentTaskRequest {
     pub safety_profile: Option<AgentSafetyProfile>,
     #[serde(default)]
     pub run_placeholder: Option<bool>,
+    /// The chat model the new session should record (agent-lite). Omitted or
+    /// empty leaves it NULL so the app default applies.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -617,6 +624,25 @@ pub struct SaveAgentAssistantMessageRequest {
 pub struct SaveAgentHermesSessionRequest {
     pub task_id: String,
     pub hermes_session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetAgentTaskModelRequest {
+    pub task_id: String,
+    /// The chat model id to remember for this session. Empty/whitespace clears
+    /// it (NULL), so the session falls back to the app default.
+    pub model: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForkAgentTaskRequest {
+    pub source_task_id: String,
+    /// The chat model the fork should run on. Empty/whitespace falls back to the
+    /// source chat's own model.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

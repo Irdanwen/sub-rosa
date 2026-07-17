@@ -726,7 +726,7 @@ impl Repositories {
     pub async fn list_agent_tasks(&self) -> Result<AgentTaskListResponse, sqlx::error::Error> {
         let rows = query(
             "SELECT id, title, prompt, status, safety_profile, progress_summary, last_error,
-                    hermes_session_id, created_at, updated_at, completed_at
+                    hermes_session_id, model, created_at, updated_at, completed_at
              FROM agent_tasks
              ORDER BY updated_at DESC, rowid DESC
              LIMIT 200",
@@ -743,6 +743,7 @@ impl Repositories {
         prompt: &str,
         title: Option<&str>,
         safety_profile: AgentSafetyProfile,
+        model: Option<&str>,
     ) -> Result<AgentTaskDto, sqlx::error::Error> {
         let now = timestamp();
         let task_id = Uuid::new_v4().to_string();
@@ -752,17 +753,24 @@ impl Repositories {
             .filter(|value| !value.is_empty())
             .map(str::to_string)
             .unwrap_or_else(|| title_from_prompt(trimmed_prompt));
+        // An empty/whitespace model is stored as NULL so it reads back as "use
+        // the app default" rather than an unusable empty model id.
+        let model = model
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
 
         let mut tx = self.pool.begin().await?;
         query(
             "INSERT INTO agent_tasks
-             (id, title, prompt, status, safety_profile, progress_summary, created_at, updated_at)
-             VALUES (?, ?, ?, 'queued', ?, 'Queued for the agent runtime.', ?, ?)",
+             (id, title, prompt, status, safety_profile, progress_summary, model, created_at, updated_at)
+             VALUES (?, ?, ?, 'queued', ?, 'Queued for the agent runtime.', ?, ?, ?)",
         )
         .bind(&task_id)
         .bind(title)
         .bind(trimmed_prompt)
         .bind(safety_profile.as_db())
+        .bind(model)
         .bind(&now)
         .bind(&now)
         .execute(&mut *tx)
@@ -781,10 +789,66 @@ impl Repositories {
         self.get_agent_task(&task_id).await
     }
 
+    /// Duplicate a chat onto another model: a new task carrying the source
+    /// transcript verbatim, bound to `model` (falling back to the source's own
+    /// model when none is given). Lets a conversation branch onto a different
+    /// model while the original stays untouched. Only messages are copied — tool
+    /// events are per-run and do not shape the model's view of the history.
+    pub async fn fork_agent_task(
+        &self,
+        source_task_id: &str,
+        model: Option<&str>,
+    ) -> Result<AgentTaskDto, sqlx::error::Error> {
+        let source = self.get_agent_task(source_task_id).await?;
+        let now = timestamp();
+        let new_task_id = Uuid::new_v4().to_string();
+        let model = model
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .or(source.model.clone());
+
+        let mut tx = self.pool.begin().await?;
+        // A fork is an idle snapshot to continue from, never active work, so it
+        // opens 'completed' rather than inheriting a transient running/queued
+        // status from the source (which would read as a phantom running task).
+        query(
+            "INSERT INTO agent_tasks
+             (id, title, prompt, status, safety_profile, progress_summary, model, created_at, updated_at)
+             VALUES (?, ?, ?, 'completed', ?, 'Forked to another model.', ?, ?, ?)",
+        )
+        .bind(&new_task_id)
+        .bind(&source.title)
+        .bind(&source.prompt)
+        .bind(source.safety_profile.as_db())
+        .bind(model)
+        .bind(&now)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await?;
+        // Preserve order by carrying each message's original created_at (agent
+        // messages sort by created_at ASC), so the fork reads as the same thread.
+        for message in &source.messages {
+            query(
+                "INSERT INTO agent_messages (id, task_id, role, content, created_at)
+                 VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(Uuid::new_v4().to_string())
+            .bind(&new_task_id)
+            .bind(message.role.as_db())
+            .bind(&message.content)
+            .bind(&message.created_at)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        self.get_agent_task(&new_task_id).await
+    }
+
     pub async fn get_agent_task(&self, task_id: &str) -> Result<AgentTaskDto, sqlx::error::Error> {
         let row = query(
             "SELECT id, title, prompt, status, safety_profile, progress_summary, last_error,
-                    hermes_session_id, created_at, updated_at, completed_at
+                    hermes_session_id, model, created_at, updated_at, completed_at
              FROM agent_tasks
              WHERE id = ?",
         )
@@ -804,6 +868,26 @@ impl Repositories {
     ) -> Result<(), sqlx::error::Error> {
         query("UPDATE agent_tasks SET hermes_session_id = ? WHERE id = ?")
             .bind(hermes_session_id)
+            .bind(task_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Remembers the chat model a session runs with (agent-lite). An
+    /// empty/whitespace model clears it (NULL) so the session falls back to the
+    /// app default. Does not touch `updated_at`: a model switch is not activity.
+    pub async fn set_agent_task_model(
+        &self,
+        task_id: &str,
+        model: Option<&str>,
+    ) -> Result<(), sqlx::error::Error> {
+        let model = model
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        query("UPDATE agent_tasks SET model = ? WHERE id = ?")
+            .bind(model)
             .bind(task_id)
             .execute(&self.pool)
             .await?;
@@ -3007,6 +3091,7 @@ fn agent_task_from_row(row: sqlx_sqlite::SqliteRow) -> AgentTaskDto {
         status: AgentTaskStatus::from(row.get::<String, _>("status").as_str()),
         safety_profile: AgentSafetyProfile::from(row.get::<String, _>("safety_profile").as_str()),
         hermes_session_id: row.get("hermes_session_id"),
+        model: row.get("model"),
         progress_summary: row.get("progress_summary"),
         last_error: row.get("last_error"),
         created_at: row.get("created_at"),
