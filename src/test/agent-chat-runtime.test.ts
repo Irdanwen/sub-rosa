@@ -1424,6 +1424,73 @@ describe("Agent chat runtime", () => {
     ]);
   });
 
+  it("folds a live upstream rate-limit error event into an upstream-busy notice", () => {
+    // The exact shape the Hermes runtime surfaces when the June API sidecar
+    // returns the new 429 upstream_rate_limited (the reported incident: a busy
+    // model wrongly read as a hard provider failure).
+    const rateLimited = "API call failed after 3 retries: HTTP 429: upstream_rate_limited";
+    const turns = buildAgentChatTurns(
+      [],
+      [],
+      [
+        {
+          type: "error",
+          receivedAt: "2026-06-04T10:00:01.000Z",
+          payload: { message: rateLimited },
+        },
+      ],
+    );
+
+    expect(turns[0]?.parts).toEqual([{ type: "notice", kind: "upstream-busy", text: rateLimited }]);
+  });
+
+  it("folds a failed rate-limit message.complete into an upstream-busy notice", () => {
+    const text = "Venice rate limit reached — please retry in a few seconds.";
+    const turns = buildHermesSessionChatTurns(
+      [],
+      [
+        {
+          type: "message.complete",
+          receivedAt: "2026-06-04T10:00:01.000Z",
+          payload: { text, status: "error" },
+        },
+      ],
+    );
+
+    expect(turns[0]?.parts).toEqual([{ type: "notice", kind: "upstream-busy", text }]);
+  });
+
+  it("folds a persisted prefixed rate-limit error into an upstream-busy notice", () => {
+    const persisted = "Error: HTTP 429: upstream_rate_limited";
+    const turns = buildHermesSessionChatTurns([
+      {
+        id: "1",
+        role: "assistant",
+        content: persisted,
+        timestamp: "2026-06-04T10:00:00.000Z",
+      },
+    ]);
+
+    expect(turns[0]?.parts).toEqual([{ type: "notice", kind: "upstream-busy", text: persisted }]);
+  });
+
+  it("keeps a persisted answer that discusses rate limits as prose", () => {
+    // A saved answer, not an error — the persisted path has no failure flag, so
+    // a mid-sentence mention of a rate limit must stay text, never reload as a
+    // notice that drops the real answer (mirrors the context-overflow guard).
+    const prose = "Most providers enforce a rate limit of a few requests per second.";
+    const turns = buildHermesSessionChatTurns([
+      {
+        id: "1",
+        role: "assistant",
+        content: prose,
+        timestamp: "2026-06-04T10:00:00.000Z",
+      },
+    ]);
+
+    expect(turns[0]?.parts).toEqual([{ type: "text", text: prose, status: "complete" }]);
+  });
+
   it("keeps a successful message.complete that mentions context length as prose", () => {
     const prose = "The maximum context length for GLM 5.2 is 200k tokens.";
     const turns = buildHermesSessionChatTurns(

@@ -170,6 +170,7 @@ pub(crate) async fn submit(
             // variant forces a deliberate mapping instead of silently
             // collapsing into upstream_provider_failed.
             DomainError::MeteringProvider => ApiError::Metering,
+            DomainError::UpstreamRateLimited => ApiError::UpstreamRateLimited,
             DomainError::UpstreamProvider
             | DomainError::ModelNotPriced
             | DomainError::InsufficientCredits => ApiError::Upstream,

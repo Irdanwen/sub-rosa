@@ -14,6 +14,8 @@ pub enum ServiceError {
     AuthorizationDenied,
     #[error("upstream_provider_failed")]
     UpstreamProvider,
+    #[error("upstream_rate_limited")]
+    UpstreamRateLimited,
     #[error("metering_provider_failed")]
     MeteringProvider,
     #[error("invalid_input: {reason}")]
@@ -37,6 +39,7 @@ impl From<DomainError> for ServiceError {
             DomainError::ModelNotPriced => Self::ModelNotPriced,
             DomainError::InsufficientCredits => Self::InsufficientCredits,
             DomainError::UpstreamProvider => Self::UpstreamProvider,
+            DomainError::UpstreamRateLimited => Self::UpstreamRateLimited,
             DomainError::MeteringProvider => Self::MeteringProvider,
             DomainError::InvalidInput { reason } => Self::InvalidInput { reason },
         }

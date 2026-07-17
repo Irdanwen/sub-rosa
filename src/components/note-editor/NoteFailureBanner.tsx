@@ -1,6 +1,6 @@
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { useState } from "react";
-import { isInsufficientCreditsMessage } from "../../lib/errors";
+import { isInsufficientCreditsMessage, isUpstreamRateLimitedMessage } from "../../lib/errors";
 
 export type FailureKind = "balance_low" | "generic";
 
@@ -42,6 +42,8 @@ function friendlyFailureSegment(message: string) {
     friendly = "The processing service returned an invalid response.";
   } else if (normalized.includes("metering_provider_failed")) {
     friendly = "Billing is temporarily unavailable. Please try again in a moment.";
+  } else if (isUpstreamRateLimitedMessage(body)) {
+    friendly = "The transcription provider is busy right now. Please try again in a few seconds.";
   } else if (normalized.includes("upstream_provider_failed")) {
     friendly = "The transcription provider could not process this audio.";
   }

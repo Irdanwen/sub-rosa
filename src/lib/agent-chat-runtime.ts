@@ -9,6 +9,8 @@ import {
   isContextOverflowErrorSentinel,
   isContextOverflowMessage,
   isInsufficientCreditsMessage,
+  isUpstreamRateLimitedErrorSentinel,
+  isUpstreamRateLimitedMessage,
 } from "./errors";
 import { isScheduledRunPreamble, stripScheduledRunPreamble } from "./hermes-adapter";
 import { displayedUserMessageText } from "./issue-report-prompt";
@@ -102,12 +104,13 @@ export type AgentChatSecretPart = {
 };
 
 /** A turn-level condition the user can act on, rendered as a notice card
- * instead of raw error text: `credits` (the balance ran out) or
- * `context-overflow` (the request outgrew the model's context / the agent
- * request-size limit and cannot be retried as-is — JUN-169). */
+ * instead of raw error text: `credits` (the balance ran out), `context-overflow`
+ * (the request outgrew the model's context / the agent request-size limit and
+ * cannot be retried as-is — JUN-169), or `upstream-busy` (the model provider is
+ * momentarily rate-limited / at capacity — wait and retry, or switch models). */
 export type AgentChatNoticePart = {
   type: "notice";
-  kind: "credits" | "context-overflow";
+  kind: "credits" | "context-overflow" | "upstream-busy";
   text: string;
 };
 
@@ -258,7 +261,9 @@ export function buildHermesSessionChatTurns(
       if (content) {
         turn.parts.push(
           (turn.role === "assistant"
-            ? (creditsNoticeFromTurnText(content) ?? persistedContextOverflowNotice(content))
+            ? (creditsNoticeFromTurnText(content) ??
+              persistedUpstreamBusyNotice(content) ??
+              persistedContextOverflowNotice(content))
             : undefined) ?? {
             type: "text",
             text: content,
@@ -348,10 +353,33 @@ function persistedContextOverflowNotice(text: string): AgentChatNoticePart | und
     : undefined;
 }
 
+// A turn that died because the model provider was momentarily rate-limited / at
+// capacity (June API `upstream_rate_limited`, the raw gateway
+// `UPSTREAM_RATE_LIMIT`, or the Hermes retry wrapper's "HTTP 429" text) folds
+// into a "busy, retry shortly" card instead of a raw error. Unlike a context
+// overflow the tokens never occur in ordinary prose, so the same matcher serves
+// both the live and persisted paths — no strict/loose split needed.
+function upstreamBusyNotice(text: string): AgentChatNoticePart | undefined {
+  return isUpstreamRateLimitedMessage(text)
+    ? { type: "notice", kind: "upstream-busy", text }
+    : undefined;
+}
+
+// The persisted counterpart of upstreamBusyNotice: a reloaded turn carries no
+// failure flag, so only the strict rate-limit sentinel may fold — a saved answer
+// that discusses "rate limits" in prose must stay text (mirrors the credits and
+// context-overflow persisted paths).
+function persistedUpstreamBusyNotice(text: string): AgentChatNoticePart | undefined {
+  return isUpstreamRateLimitedErrorSentinel(text)
+    ? { type: "notice", kind: "upstream-busy", text }
+    : undefined;
+}
+
 // Resolve the most specific actionable notice for a failed turn's text: a
-// billing failure first (most specific), then a context overflow.
+// billing failure first (most specific), then a rate limit, then a context
+// overflow.
 function turnNotice(text: string): AgentChatNoticePart | undefined {
-  return creditsNotice(text) ?? contextOverflowNotice(text);
+  return creditsNotice(text) ?? upstreamBusyNotice(text) ?? contextOverflowNotice(text);
 }
 
 // Assistant text only counts as a billing failure when it's the runtime's
@@ -365,6 +393,7 @@ function messageToTurn(message: AgentMessageDto): AgentChatTurn {
   const notice =
     message.role === "assistant"
       ? (creditsNoticeFromTurnText(message.content) ??
+        persistedUpstreamBusyNotice(message.content) ??
         persistedContextOverflowNotice(message.content))
       : undefined;
   return {
@@ -465,7 +494,8 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
       // — an ordinary sentence that mentions "context length" stays prose.
       const failed = stringValue(payload?.status)?.toLowerCase() === "error";
       const notice = text
-        ? (creditsNoticeFromTurnText(text) ?? (failed ? contextOverflowNotice(text) : undefined))
+        ? (creditsNoticeFromTurnText(text) ??
+          (failed ? (upstreamBusyNotice(text) ?? contextOverflowNotice(text)) : undefined))
         : undefined;
       if (notice) {
         // The complete text is authoritative for the turn (see

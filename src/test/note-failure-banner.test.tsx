@@ -37,6 +37,17 @@ describe("userFacingFailureMessage", () => {
       "Microphone: The processing service returned an invalid response.",
     );
   });
+
+  it("turns an upstream rate limit into a busy-retry message, not a hard failure", () => {
+    // A 429 from the provider is transient — the guidance must say "busy, try
+    // again" rather than the generic upstream_provider_failed wording.
+    expect(userFacingFailureMessage("upstream_rate_limited")).toBe(
+      "The transcription provider is busy right now. Please try again in a few seconds.",
+    );
+    expect(userFacingFailureMessage("Microphone: Venice rate limit reached")).toBe(
+      "Microphone: The transcription provider is busy right now. Please try again in a few seconds.",
+    );
+  });
 });
 
 describe("NoteFailureBanner", () => {

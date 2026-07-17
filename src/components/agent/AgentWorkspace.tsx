@@ -9080,6 +9080,8 @@ function AgentChatTurnRow({
           ) : part.type === "notice" ? (
             part.kind === "context-overflow" ? (
               <ContextOverflowNoticePart key={`${turn.id}:notice:${index}`} />
+            ) : part.kind === "upstream-busy" ? (
+              <UpstreamBusyNoticePart key={`${turn.id}:notice:${index}`} />
             ) : (
               <CreditsNoticePart
                 key={`${turn.id}:notice:${index}`}
@@ -9448,6 +9450,22 @@ function ContextOverflowNoticePart() {
       role="alert"
       icon={<IconExclamationTriangle size={14} aria-hidden />}
       body="This message is too large for the model's context. Try attaching a smaller file, splitting it into parts, or starting a new session."
+    />
+  );
+}
+
+// A turn that died because the model provider was momentarily rate-limited or at
+// capacity (an upstream 429). It is transient and specific to the busy model, so
+// the honest recovery is to wait a few seconds and send again, or switch to
+// another model from the composer — not a balance top-up or a smaller input.
+function UpstreamBusyNoticePart() {
+  return (
+    <InlineNotice
+      className="agent-upstream-busy-notice"
+      tone="warning"
+      role="alert"
+      icon={<IconArrowRotateClockwise size={14} aria-hidden />}
+      body="This model is busy right now. Wait a few seconds and send again, or switch to another model."
     />
   );
 }

@@ -26,16 +26,22 @@ impl UpstreamAttemptError {
 }
 
 /// Classify a non-success upstream status into the domain error the client
-/// should see. A 402 means the account behind the configured upstream key
-/// cannot pay for the request — in this fork that key is the user's own
-/// Carpe Diem key, so it surfaces as `insufficient_credits` (something the
-/// user can act on) instead of collapsing into the generic
-/// `upstream_provider_failed`. Every other status stays a provider failure.
+/// should see. Two statuses carry a signal the user can act on and must not
+/// collapse into the generic `upstream_provider_failed`:
+/// - **402** means the account behind the configured upstream key cannot pay
+///   for the request — in this fork that key is the user's own Carpe Diem key,
+///   so it surfaces as `insufficient_credits`.
+/// - **429** means the upstream provider is momentarily rate-limited/at
+///   capacity — a transient "busy, retry shortly" condition, surfaced as
+///   `upstream_rate_limited` (a retryable 429 with `Retry-After` at the
+///   boundary) rather than an opaque 502.
+///
+/// Every other status stays a genuine provider failure.
 pub(crate) fn error_for_status(status: StatusCode) -> DomainError {
-    if status == StatusCode::PAYMENT_REQUIRED {
-        DomainError::InsufficientCredits
-    } else {
-        DomainError::UpstreamProvider
+    match status {
+        StatusCode::PAYMENT_REQUIRED => DomainError::InsufficientCredits,
+        StatusCode::TOO_MANY_REQUESTS => DomainError::UpstreamRateLimited,
+        _ => DomainError::UpstreamProvider,
     }
 }
 
@@ -76,6 +82,20 @@ mod tests {
             error_for_status(StatusCode::UNAUTHORIZED),
             DomainError::UpstreamProvider
         );
+    }
+
+    #[test]
+    fn too_many_requests_maps_to_rate_limited_not_provider_failure() {
+        // Regression: an upstream 429 (provider momentarily rate-limited) used
+        // to collapse into DomainError::UpstreamProvider -> a 502
+        // upstream_provider_failed the user could not act on. It must stay a
+        // distinct, retryable rate-limit signal.
+        assert_eq!(
+            error_for_status(StatusCode::TOO_MANY_REQUESTS),
+            DomainError::UpstreamRateLimited
+        );
+        // A 429 is still worth one more attempt before it surfaces.
+        assert!(is_retryable_status(StatusCode::TOO_MANY_REQUESTS));
     }
 
     #[test]

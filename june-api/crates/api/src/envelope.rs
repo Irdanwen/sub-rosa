@@ -11,11 +11,16 @@ pub const ERR_UNPROCESSABLE: i32 = 4201;
 pub const ERR_INSUFFICIENT_CREDITS: i32 = 4301;
 pub const ERR_PAYLOAD_TOO_LARGE: i32 = 4131;
 pub const ERR_AUTHORIZATION_DENIED: i32 = 4401;
+pub(crate) const ERR_UPSTREAM_RATE_LIMITED: i32 = 4291;
 pub const ERR_INTERNAL: i32 = 5000;
 pub const ERR_UPSTREAM: i32 = 5001;
 pub const ERR_METERING: i32 = 5031;
 pub const ERR_TIMEOUT: i32 = 5041;
 pub(crate) const TRANSIENT_RETRY_AFTER_SECS: u64 = 2;
+/// Backoff hint for an upstream rate limit. Longer than the metering
+/// concurrency cap (`TRANSIENT_RETRY_AFTER_SECS`): a provider 429 clears on the
+/// order of seconds, not milliseconds, so a too-eager retry just trips it again.
+pub(crate) const UPSTREAM_RATE_LIMIT_RETRY_AFTER_SECS: u64 = 5;
 
 #[derive(Serialize)]
 pub struct ApiResponse<T> {

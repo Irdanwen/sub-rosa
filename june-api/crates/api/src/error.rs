@@ -1,7 +1,8 @@
 use crate::envelope::{
     ERR_AUTHORIZATION_DENIED, ERR_BAD_REQUEST, ERR_INSUFFICIENT_CREDITS, ERR_INTERNAL,
     ERR_METERING, ERR_PAYLOAD_TOO_LARGE, ERR_UNAUTHORIZED, ERR_UNPROCESSABLE, ERR_UPSTREAM,
-    TRANSIENT_RETRY_AFTER_SECS, error_response, error_response_with_retry_after,
+    ERR_UPSTREAM_RATE_LIMITED, TRANSIENT_RETRY_AFTER_SECS, UPSTREAM_RATE_LIMIT_RETRY_AFTER_SECS,
+    error_response, error_response_with_retry_after,
 };
 use axum::{http::StatusCode, response::IntoResponse};
 use june_domain::AuthError;
@@ -24,6 +25,8 @@ pub enum ApiError {
     AuthorizationDenied,
     #[error("upstream_provider_failed")]
     Upstream,
+    #[error("upstream_rate_limited")]
+    UpstreamRateLimited,
     #[error("metering_provider_failed")]
     Metering,
     #[error("internal_error")]
@@ -89,6 +92,17 @@ impl IntoResponse for ApiError {
                 ERR_UPSTREAM,
                 "upstream_provider_failed",
             ),
+            // The upstream provider is momentarily rate-limited/at capacity (a
+            // 429 from the gateway). Surface it as a retryable 429 with a
+            // `Retry-After` — the same "busy, retry shortly" contract as
+            // `AuthorizationDenied` — instead of pretending the provider failed
+            // with a 502 the user cannot act on.
+            Self::UpstreamRateLimited => error_response_with_retry_after(
+                StatusCode::TOO_MANY_REQUESTS,
+                ERR_UPSTREAM_RATE_LIMITED,
+                "upstream_rate_limited",
+                UPSTREAM_RATE_LIMIT_RETRY_AFTER_SECS,
+            ),
             // The metering/billing provider (OS Accounts) failed — a service
             // dependency outage, NOT the LLM gateway. Distinct status + code so
             // the two can be told apart from the symptom alone.
@@ -114,6 +128,7 @@ impl From<ServiceError> for ApiError {
             ServiceError::InsufficientCredits => Self::InsufficientCredits,
             ServiceError::AuthorizationDenied => Self::AuthorizationDenied,
             ServiceError::UpstreamProvider => Self::Upstream,
+            ServiceError::UpstreamRateLimited => Self::UpstreamRateLimited,
             ServiceError::MeteringProvider => Self::Metering,
             ServiceError::InvalidInput { reason } => Self::bad_request(reason),
         }
@@ -177,6 +192,29 @@ mod tests {
         let body = body_json(response).await;
         assert_eq!(body["error_code"], 5001);
         assert_eq!(body["message"], "upstream_provider_failed");
+    }
+
+    #[tokio::test]
+    async fn upstream_rate_limit_maps_to_429_with_retry_after() {
+        // Regression: an upstream 429 (provider momentarily rate-limited) used
+        // to surface as 502 upstream_provider_failed — the app told users the
+        // provider had failed when the model was simply busy and a short retry
+        // (or a different model) would have worked. It now carries its own
+        // retryable 429 + Retry-After, mirroring authorization_denied.
+        let response = ApiError::from(ServiceError::UpstreamRateLimited).into_response();
+
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::RETRY_AFTER)
+                .and_then(|value| value.to_str().ok()),
+            Some("5")
+        );
+        let body = body_json(response).await;
+        assert_eq!(body["error_code"], 4291);
+        assert_eq!(body["message"], "upstream_rate_limited");
+        assert_eq!(body["success"], false);
     }
 
     #[tokio::test]

@@ -346,6 +346,13 @@ pub enum DomainError {
     InsufficientCredits,
     #[error("upstream provider failed")]
     UpstreamProvider,
+    /// The upstream provider is momentarily rate-limited or at capacity (an
+    /// HTTP 429 from the gateway) — a transient "busy, retry shortly" signal,
+    /// NOT a genuine provider failure. Kept distinct from `UpstreamProvider` so
+    /// the boundary can answer with a retryable 429 + `Retry-After` instead of
+    /// collapsing into an opaque 502 the user cannot act on.
+    #[error("upstream provider rate limited")]
+    UpstreamRateLimited,
     /// The metering/billing provider (OS Accounts) call failed or was rejected
     /// — distinct from an LLM provider failure so the two can be told apart at
     /// the API boundary and in logs.
