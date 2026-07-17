@@ -52,28 +52,31 @@ export function isInsufficientCreditsMessage(message?: string) {
   );
 }
 
-/** Whether an error message means the upstream provider is momentarily
- * rate-limited / at capacity (a transient "busy, retry shortly" condition),
- * distinct from a genuine provider failure. Matches the June API's
- * `upstream_rate_limited` (429), the raw gateway `UPSTREAM_RATE_LIMIT` code, and
- * the provider's human "rate limit reached" / "too many requests" wording. Like
- * {@link isInsufficientCreditsMessage}, string matching is a known weakness: the
- * same condition reaches us as plain text from several layers (the June API's
- * friendly message, the raw provider error, the Hermes runtime's retry wrapper).
- * The tokens never occur in ordinary assistant prose, so unlike a context
- * overflow this needs no strict/loose split — but still apply it only where the
- * turn is already known to have failed. */
+/** Whether an error message means the upstream provider is momentarily *busy* —
+ * rate-limited (HTTP 429) or at capacity / saturated / warming up (HTTP 503) — a
+ * transient "retry shortly, or switch models" condition, distinct from a genuine
+ * provider failure. The June API sidecar normalizes both 429 and 503 to the
+ * `upstream_rate_limited` message, so that token is the primary match; the
+ * saturation/capacity terms (`MODEL_INFRA_SATURATED`, `NO_PROVIDER_CAPACITY`, …)
+ * and the human "rate limit reached" / "saturated upstream" wording cover a raw
+ * provider body that reaches us un-normalized (mobile agent-lite, leaked bodies).
+ * Like {@link isInsufficientCreditsMessage}, string matching is a known weakness:
+ * the same condition arrives as plain text from several layers (the sidecar's
+ * message, the raw provider error, the Hermes runtime's retry wrapper). The
+ * tokens never occur in ordinary assistant prose, so unlike a context overflow
+ * this needs no strict/loose split — but still apply it only where the turn is
+ * already known to have failed. */
 export function isUpstreamRateLimitedMessage(message?: string) {
   if (!message) return false;
-  return /upstream_rate_limit|rate[ _-]?limit(?:ed| reached| exceeded)|too many requests/i.test(
+  return /upstream_rate_limit|rate[ _-]?limit(?:ed| reached| exceeded)|too many requests|infra[ _]?saturated|saturated upstream|no_provider(?:_capacity)?|insufficient_provider_capacity|provider_capacity/i.test(
     message,
   );
 }
 
-/** STRICT upstream-rate-limit match for a persisted/reloaded turn that carries
- * no failure flag — mirrors {@link isContextOverflowErrorSentinel}. The broad
+/** STRICT upstream-busy match for a persisted/reloaded turn that carries no
+ * failure flag — mirrors {@link isContextOverflowErrorSentinel}. The broad
  * matcher above would wrongly fold a saved answer that merely discusses "rate
- * limits" into an error notice, dropping the real answer. A real rate-limit
+ * limits" into an error notice, dropping the real answer. A real busy/rate-limit
  * error either leads with the June API's "Error:" runtime sentinel (how Hermes
  * persists a provider failure) or the message LEADS with its own token/shape;
  * a mid-sentence mention stays text. */
@@ -81,7 +84,7 @@ export function isUpstreamRateLimitedErrorSentinel(message?: string) {
   if (!message) return false;
   const text = message.trimStart();
   if (/^error:/i.test(text)) return isUpstreamRateLimitedMessage(text);
-  return /^(upstream_rate_limited|rate[ _-]?limit(?:ed| reached| exceeded)|too many requests)\b/i.test(
+  return /^(upstream_rate_limited|rate[ _-]?limit(?:ed| reached| exceeded)|too many requests|model_infra_saturated|no_provider(?:_capacity)?)\b/i.test(
     text,
   );
 }

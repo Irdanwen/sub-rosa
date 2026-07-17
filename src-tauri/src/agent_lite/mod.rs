@@ -191,14 +191,15 @@ async fn run_turn(
                     "Your Carpe Diem balance is too low, or your active payment rail is empty. Check Carpe Diem in Settings (prepaid account and credits are billed separately).",
                 ));
             }
-            // 429 (or the provider's rate-limit wording) means the model is
-            // momentarily busy, NOT that the request failed — tell the user to
-            // wait and retry or switch models instead of showing a raw status
-            // line. The June API sidecar surfaces this as `upstream_rate_limited`
-            // (see error_for_status); a direct provider 429 reads "rate limit
-            // reached". The check mirrors isUpstreamRateLimitedMessage in
-            // src/lib/errors.ts.
-            if status == 429 || is_rate_limit_detail(&detail) {
+            // 429 (rate-limited) or 503 (capacity / MODEL_INFRA_SATURATED — the
+            // dominant flavour for a hot model) means the model is momentarily
+            // busy, NOT that the request failed — tell the user to wait and retry
+            // or switch models instead of showing a raw status line. The June API
+            // sidecar surfaces both as `upstream_rate_limited` (see
+            // error_for_status); a direct provider body reads "rate limit
+            // reached" / "saturated upstream". The check mirrors
+            // isUpstreamRateLimitedMessage in src/lib/errors.ts.
+            if status == 429 || status == 503 || is_rate_limit_detail(&detail) {
                 return Err(AppError::new(
                     "agent_lite_rate_limited",
                     "This model is busy right now. Wait a few seconds and send again, or switch to another model.",
@@ -487,16 +488,20 @@ fn readable_upstream_error(body: &[u8]) -> String {
     String::from_utf8_lossy(body).chars().take(300).collect()
 }
 
-/// Whether an upstream error detail means the provider is momentarily
+/// Whether an upstream error detail means the provider is momentarily *busy* —
 /// rate-limited (the June API sidecar's `upstream_rate_limited`, or a direct
-/// provider "rate limit reached" / "too many requests"). Mirrors
-/// isUpstreamRateLimitedMessage in src/lib/errors.ts.
+/// provider "rate limit reached" / "too many requests") or at capacity /
+/// saturated (`MODEL_INFRA_SATURATED`, `NO_PROVIDER_CAPACITY`, "saturated
+/// upstream"). Mirrors isUpstreamRateLimitedMessage in src/lib/errors.ts.
 fn is_rate_limit_detail(detail: &str) -> bool {
     let lower = detail.to_ascii_lowercase();
     lower.contains("rate_limit")
         || lower.contains("rate limit")
         || lower.contains("rate-limit")
         || lower.contains("too many requests")
+        || lower.contains("saturated")
+        || lower.contains("no_provider")
+        || lower.contains("provider_capacity")
 }
 
 #[cfg(test)]
@@ -505,14 +510,19 @@ mod tests {
 
     #[test]
     fn rate_limit_detail_matches_sidecar_and_direct_provider_wording() {
-        // The June API sidecar's message for an upstream 429.
+        // The June API sidecar's message for an upstream 429 / 503.
         assert!(is_rate_limit_detail("upstream_rate_limited"));
         // A direct provider 429 (Carpe Diem / Venice).
         assert!(is_rate_limit_detail(
             "Venice rate limit reached — please retry in a few seconds."
         ));
         assert!(is_rate_limit_detail("Too Many Requests"));
-        // A genuine provider failure must NOT read as a rate limit.
+        // A direct provider 503 capacity/saturation (the dominant hot-model case).
+        assert!(is_rate_limit_detail(
+            "Model kimi-k3 is currently saturated upstream. Retry after 9s."
+        ));
+        assert!(is_rate_limit_detail("NO_PROVIDER_CAPACITY"));
+        // A genuine provider failure must NOT read as busy.
         assert!(!is_rate_limit_detail("upstream_provider_failed"));
     }
 

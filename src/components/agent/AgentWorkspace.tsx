@@ -2465,28 +2465,37 @@ export function AgentWorkspace({
   const generationModelRequestSequence = useRef(0);
   const loadGenerationModel = useCallback(async () => {
     const requestId = ++generationModelRequestSequence.current;
-    try {
-      const [settingsResponse, modelsResponse] = await Promise.all([
-        providerModelSettings(),
-        listVeniceModels("generation"),
-      ]);
-      const selectedModelId =
-        settingsResponse.settings.generationModel || modelsResponse.selectedModel;
-      if (requestId === generationModelRequestSequence.current) {
-        defaultGenerationModelIdRef.current = selectedModelId;
-        generationModelsRef.current = modelsResponse.models;
-        setGenerationModels(modelsResponse.models);
-        setDefaultGenerationModelId(selectedModelId);
-      }
-      return { models: modelsResponse.models, selectedModelId };
-    } catch {
-      if (requestId === generationModelRequestSequence.current) {
-        defaultGenerationModelIdRef.current = "";
-        generationModelsRef.current = [];
-        setDefaultGenerationModelId("");
-      }
-      return null;
-    }
+    // The persisted default (providerModelSettings — a local file read) and the
+    // live catalog (listVeniceModels -> sidecar /v1/models) fail independently:
+    // a flapping upstream or a still-booting sidecar can reject the catalog
+    // fetch while the stored setting is always available. Settle them separately
+    // so a transient catalog outage never blanks the picker and traps the user
+    // on a dead model with no way to switch — the model chip is hidden whenever
+    // it has no selected model (ComposerModelPicker returns null), so blanking
+    // the default id used to make the whole selector vanish on the hero screen.
+    const [settingsResult, modelsResult] = await Promise.allSettled([
+      providerModelSettings(),
+      listVeniceModels("generation"),
+    ]);
+    if (requestId !== generationModelRequestSequence.current) return null;
+
+    // Keep the last-known catalog on a fetch failure rather than emptying it.
+    const models =
+      modelsResult.status === "fulfilled" ? modelsResult.value.models : generationModelsRef.current;
+    // Prefer the persisted default, then the catalog's suggestion, then the
+    // last-known id — never blank a known selection on a transient failure.
+    const selectedModelId =
+      (settingsResult.status === "fulfilled"
+        ? settingsResult.value.settings.generationModel
+        : "") ||
+      (modelsResult.status === "fulfilled" ? modelsResult.value.selectedModel : "") ||
+      defaultGenerationModelIdRef.current;
+
+    defaultGenerationModelIdRef.current = selectedModelId;
+    generationModelsRef.current = models;
+    setGenerationModels(models);
+    setDefaultGenerationModelId(selectedModelId);
+    return { models, selectedModelId };
   }, []);
 
   useEffect(() => {
@@ -4819,18 +4828,29 @@ export function AgentWorkspace({
           liveEventsRef.current,
         );
         const activityCounts = clearSessionActivity(sessionId);
+        // A live `error` frame is the only record of a mid-loop model failure:
+        // Hermes logs it but never persists it as an assistant message, so once
+        // a tool-call assistant message exists the persisted rebuild has no
+        // error part and the turn would settle silently (the reported "the chat
+        // just stops"). Everything else is now reflected in `messages`, so keep
+        // only the error frames across the clear — buildHermesSessionChatTurns
+        // folds them back into a visible notice/error part.
+        const preservedErrors = (liveEventsRef.current[sessionId] ?? []).filter(
+          (event) => event.type === "error",
+        );
+        const turnFailed = preservedErrors.length > 0;
         if (wasActive) {
           dispatchAgentSessionStatus({
             sessionId,
             title:
               hermesSessionItems.find((session) => session.id === sessionId)?.title ??
               "Agent session",
-            status: "completed",
-            summary: "Sub Rosa finished.",
+            status: turnFailed ? "failed" : "completed",
+            summary: turnFailed ? "Sub Rosa hit a problem." : "Sub Rosa finished.",
             ...activityCounts,
           });
         }
-        liveEventsRef.current = { ...liveEventsRef.current, [sessionId]: [] };
+        liveEventsRef.current = { ...liveEventsRef.current, [sessionId]: preservedErrors };
         setLiveEvents(liveEventsRef.current);
       }
       await loadHermesSessions();

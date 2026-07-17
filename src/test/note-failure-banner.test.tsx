@@ -38,14 +38,21 @@ describe("userFacingFailureMessage", () => {
     );
   });
 
-  it("turns an upstream rate limit into a busy-retry message, not a hard failure", () => {
-    // A 429 from the provider is transient — the guidance must say "busy, try
-    // again" rather than the generic upstream_provider_failed wording.
+  it("turns an upstream rate limit or capacity saturation into a busy-retry message", () => {
+    // A 429 (rate limit) or 503 (MODEL_INFRA_SATURATED — the dominant flavour
+    // for a hot model) is transient — the guidance must say "busy, try again"
+    // rather than the generic upstream_provider_failed wording.
     expect(userFacingFailureMessage("upstream_rate_limited")).toBe(
       "The transcription provider is busy right now. Please try again in a few seconds.",
     );
     expect(userFacingFailureMessage("Microphone: Venice rate limit reached")).toBe(
       "Microphone: The transcription provider is busy right now. Please try again in a few seconds.",
+    );
+    expect(userFacingFailureMessage("Model kimi-k3 is currently saturated upstream")).toBe(
+      "The transcription provider is busy right now. Please try again in a few seconds.",
+    );
+    expect(userFacingFailureMessage("MODEL_INFRA_SATURATED")).toBe(
+      "The transcription provider is busy right now. Please try again in a few seconds.",
     );
   });
 });

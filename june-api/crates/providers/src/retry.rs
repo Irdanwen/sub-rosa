@@ -26,21 +26,28 @@ impl UpstreamAttemptError {
 }
 
 /// Classify a non-success upstream status into the domain error the client
-/// should see. Two statuses carry a signal the user can act on and must not
+/// should see. Some statuses carry a signal the user can act on and must not
 /// collapse into the generic `upstream_provider_failed`:
 /// - **402** means the account behind the configured upstream key cannot pay
 ///   for the request — in this fork that key is the user's own Carpe Diem key,
 ///   so it surfaces as `insufficient_credits`.
-/// - **429** means the upstream provider is momentarily rate-limited/at
-///   capacity — a transient "busy, retry shortly" condition, surfaced as
-///   `upstream_rate_limited` (a retryable 429 with `Retry-After` at the
-///   boundary) rather than an opaque 502.
+/// - **429** (rate-limited) and **503** (capacity / saturation / warm-up, e.g.
+///   `MODEL_INFRA_SATURATED`, `NO_PROVIDER_CAPACITY`, `TEE_NOT_READY`) both mean
+///   the upstream provider is momentarily *busy* — a transient "retry shortly,
+///   or switch models" condition, NOT a genuine failure. They surface as
+///   `upstream_rate_limited` (a retryable response with `Retry-After` at the
+///   boundary) rather than an opaque 502. Live traffic showed 503
+///   `MODEL_INFRA_SATURATED` is the dominant flavour for a hot model, so it must
+///   be grouped here and not left to collapse into `upstream_provider_failed`
+///   (ADR-0012, 2026-07-17 addendum).
 ///
-/// Every other status stays a genuine provider failure.
+/// Every other status (500/502/504, …) stays a genuine provider failure.
 pub(crate) fn error_for_status(status: StatusCode) -> DomainError {
     match status {
         StatusCode::PAYMENT_REQUIRED => DomainError::InsufficientCredits,
-        StatusCode::TOO_MANY_REQUESTS => DomainError::UpstreamRateLimited,
+        StatusCode::TOO_MANY_REQUESTS | StatusCode::SERVICE_UNAVAILABLE => {
+            DomainError::UpstreamRateLimited
+        }
         _ => DomainError::UpstreamProvider,
     }
 }
@@ -85,17 +92,32 @@ mod tests {
     }
 
     #[test]
-    fn too_many_requests_maps_to_rate_limited_not_provider_failure() {
-        // Regression: an upstream 429 (provider momentarily rate-limited) used
-        // to collapse into DomainError::UpstreamProvider -> a 502
-        // upstream_provider_failed the user could not act on. It must stay a
-        // distinct, retryable rate-limit signal.
+    fn busy_statuses_map_to_rate_limited_not_provider_failure() {
+        // Regression: an upstream 429 (rate-limited) or 503 (capacity /
+        // MODEL_INFRA_SATURATED — the dominant flavour for a hot model in live
+        // traffic) used to collapse into DomainError::UpstreamProvider -> a 502
+        // upstream_provider_failed the user could not act on. Both must stay a
+        // distinct, retryable "busy" signal (ADR-0012 addendum).
         assert_eq!(
             error_for_status(StatusCode::TOO_MANY_REQUESTS),
             DomainError::UpstreamRateLimited
         );
-        // A 429 is still worth one more attempt before it surfaces.
+        assert_eq!(
+            error_for_status(StatusCode::SERVICE_UNAVAILABLE),
+            DomainError::UpstreamRateLimited
+        );
+        // A genuine gateway failure stays a provider failure, not "busy".
+        assert_eq!(
+            error_for_status(StatusCode::BAD_GATEWAY),
+            DomainError::UpstreamProvider
+        );
+        assert_eq!(
+            error_for_status(StatusCode::INTERNAL_SERVER_ERROR),
+            DomainError::UpstreamProvider
+        );
+        // Both busy statuses are still worth one more attempt before surfacing.
         assert!(is_retryable_status(StatusCode::TOO_MANY_REQUESTS));
+        assert!(is_retryable_status(StatusCode::SERVICE_UNAVAILABLE));
     }
 
     #[test]

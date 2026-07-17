@@ -1460,6 +1460,74 @@ describe("Agent chat runtime", () => {
     expect(turns[0]?.parts).toEqual([{ type: "notice", kind: "upstream-busy", text }]);
   });
 
+  it("surfaces a live error event even when the turn already persisted tool calls", () => {
+    // Bug: a model call that fails AFTER tool use dies silently. Hermes persists
+    // the assistant tool-call message (empty content) but never persists the
+    // error, so the rebuilt transcript is reasoning+tools with no failure. The
+    // only record is the live `error` frame — it must still fold onto the
+    // persisted turns and render (a notice here) rather than vanish.
+    const turns = buildHermesSessionChatTurns(
+      [
+        {
+          id: "u1",
+          role: "user",
+          content: "read the config",
+          timestamp: "2026-06-04T10:00:00.000Z",
+        },
+        {
+          id: "a1",
+          role: "assistant",
+          content: "",
+          tool_calls: [
+            { id: "t1", type: "function", function: { name: "read_files", arguments: "{}" } },
+          ],
+          timestamp: "2026-06-04T10:00:01.000Z",
+        },
+        {
+          id: "t1",
+          role: "tool",
+          tool_call_id: "t1",
+          content: "config contents",
+          timestamp: "2026-06-04T10:00:02.000Z",
+        },
+      ] as unknown as HermesSessionMessage[],
+      [
+        {
+          type: "error",
+          receivedAt: "2026-06-04T10:00:03.000Z",
+          payload: { message: "API call failed after 3 retries: HTTP 503: upstream_rate_limited" },
+        },
+      ],
+    );
+
+    const allParts = turns.flatMap((turn) => turn.parts);
+    expect(allParts.some((part) => part.type === "notice" && part.kind === "upstream-busy")).toBe(
+      true,
+    );
+    // The tool activity the user already saw is preserved too.
+    expect(allParts.some((part) => part.type === "tool")).toBe(true);
+  });
+
+  it("folds a live 503 capacity-saturation error event into an upstream-busy notice", () => {
+    // A hot model returns 503 MODEL_INFRA_SATURATED far more often than a 429;
+    // it is the same transient "busy" condition and must fold the same way, not
+    // collapse into the opaque upstream_provider_failed (ADR-0012 addendum).
+    const saturated = "Model kimi-k3 is currently saturated upstream. Retry after 9s.";
+    const turns = buildAgentChatTurns(
+      [],
+      [],
+      [
+        {
+          type: "error",
+          receivedAt: "2026-06-04T10:00:01.000Z",
+          payload: { message: saturated },
+        },
+      ],
+    );
+
+    expect(turns[0]?.parts).toEqual([{ type: "notice", kind: "upstream-busy", text: saturated }]);
+  });
+
   it("folds a persisted prefixed rate-limit error into an upstream-busy notice", () => {
     const persisted = "Error: HTTP 429: upstream_rate_limited";
     const turns = buildHermesSessionChatTurns([

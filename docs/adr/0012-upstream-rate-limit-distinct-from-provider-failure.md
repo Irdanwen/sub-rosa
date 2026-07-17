@@ -5,6 +5,31 @@ date: 2026-07-17
 
 # Upstream rate limits are a distinct, retryable error, not a generic provider failure
 
+## Addendum — 2026-07-17 (accepted; scope extended to 503 same day)
+
+The original decision scoped the "busy" reclassification to **429 only** and
+deferred 503 as "an easy follow-up if capacity errors become a recurring
+user-visible pain." Hours later, production Hermes logs and live probes on the
+user's Mac proved that pain is already here and is in fact the *dominant*
+flavour: a hot model (`kimi-k3`) flaps between `429 UPSTREAM_RATE_LIMIT`,
+`502`, and — most often — **`503 MODEL_INFRA_SATURATED`** (`retry-after: 9`). A
+scheduled routine and a chat turn both died on `HTTP 502/503`, and the 502/503
+still collapsed into the opaque `upstream_provider_failed` even with the 429 fix.
+
+So `error_for_status` now maps **both `429` and `503`** to
+`DomainError::UpstreamRateLimited` (name kept to avoid churn on the just-shipped
+v1.15.0 identifiers; the user-facing surface was always "busy"). The sidecar
+normalizes both to the `upstream_rate_limited` message, so the existing frontend
+matcher folds them into the same "busy, retry / switch model" notice; the matcher
+and the mobile `is_rate_limit_detail` also learned the raw saturation vocabulary
+(`MODEL_INFRA_SATURATED`, `NO_PROVIDER_CAPACITY`, "saturated upstream") for
+un-normalized bodies. Genuine gateway failures (500/502/504) still stay
+`upstream_provider_failed`. Shipped alongside two related bug fixes (not ADRs):
+the composer model-selector no longer blanks on a transient `/v1/models` failure
+(so a flapping upstream can't trap the user on a dead model), and a chat turn
+that fails *after* tool calls now surfaces the error instead of settling
+silently (the live `error` frame is preserved across the session refresh).
+
 ## Context
 
 When the Carpe Diem gateway is momentarily rate-limited or at capacity for a
