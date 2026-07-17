@@ -324,7 +324,15 @@ async fn execute_tool(
         }
         "web_search" => {
             emit_status(app, task_id, "searching-web", Some(query.to_string()));
-            let body = serde_json::json!({ "query": query, "limit": 5 });
+            // The June API web handler requires a non-empty `requestId` (it
+            // scopes metering idempotency); omit it and the call is rejected
+            // with a 400 before it ever reaches the web. A fresh id per call is
+            // correct here — agent-lite does not retry the tool.
+            let body = serde_json::json!({
+                "query": query,
+                "limit": 5,
+                "requestId": uuid::Uuid::new_v4().to_string(),
+            });
             match june_api::forward_web_request("/v1/web/search", &body).await {
                 Ok(response) if (200..300).contains(&response.status) => {
                     String::from_utf8_lossy(&response.body)
