@@ -930,6 +930,49 @@
   opacity: 0.8;
 }
 
+/* --- Generate settings (negative prompt, ratio, resolution, steps, variants, seed) --- */
+
+.mobile-studio-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.mobile-studio-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.mobile-studio-field-label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
+}
+
+.mobile-studio-field-value {
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.mobile-studio-input {
+  min-height: 44px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  outline: none;
+}
+
+.mobile-studio-slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
 .mobile-studio-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

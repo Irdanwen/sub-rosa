@@ -1,7 +1,7 @@
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   artifactDataUrl,
   evictArtifactDataUrl,
@@ -268,6 +268,67 @@ function rawBase64(dataUri: string): string {
   return dataUri.replace(/^data:[^,]+,/, "");
 }
 
+/** The current value when the model still offers it, else its first option. A
+ * stored choice can go stale when the model changes and drops that option. */
+function pickEffective(options: string[], value: string): string {
+  return value && options.includes(value) ? value : (options[0] ?? "");
+}
+
+/** A labelled settings row: a caption above its control (pills, an input...). */
+function StudioSetting({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="mobile-studio-field">
+      <div className="mobile-studio-field-head">
+        <span className="mobile-studio-field-label">{label}</span>
+        {hint ? <span className="mobile-studio-field-value">{hint}</span> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** A labelled integer slider with a live value readout (Steps, Variants). */
+function SliderSetting({
+  label,
+  min,
+  max,
+  value,
+  onChange,
+}: {
+  label: string;
+  min: number;
+  max: number;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div className="mobile-studio-field">
+      <div className="mobile-studio-field-head">
+        <span className="mobile-studio-field-label">{label}</span>
+        <span className="mobile-studio-field-value">{value}</span>
+      </div>
+      <input
+        type="range"
+        className="mobile-studio-slider"
+        min={min}
+        max={max}
+        step={1}
+        value={value}
+        aria-label={label}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+    </div>
+  );
+}
+
 function ImagePanel({
   catalog,
   mode,
@@ -293,6 +354,16 @@ function ImagePanel({
   const modelId = mode === "edit" ? editModelId : generateModelId;
   const model = models.find((entry) => entry.id === modelId) ?? models[0];
   const [prompt, setPrompt] = useState("");
+  // Generate-only settings, at parity with the desktop image studio. They are
+  // constraint-driven: aspect/resolution/steps only show when the model exposes
+  // them, and `variants` fans out into that many images (heavy models render
+  // one queue job per variant — see generate-image.ts).
+  const [negativePrompt, setNegativePrompt] = useState("");
+  const [aspectRatio, setAspectRatio] = useState("");
+  const [resolution, setResolution] = useState("");
+  const [steps, setSteps] = useState(0);
+  const [variants, setVariants] = useState(1);
+  const [seed, setSeed] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -300,9 +371,19 @@ function ImagePanel({
   // shared edit references.
   const [upscaleRefs, setUpscaleRefs] = useState<string[]>([]);
   const [scale, setScale] = useState<2 | 3 | 4>(2);
-  const cost = model
+
+  const constraints = mode === "generate" ? model?.constraints : undefined;
+  const aspectOptions = constraints?.aspectRatios ?? [];
+  const resolutionOptions = constraints?.resolutions ?? [];
+  const maxSteps = constraints?.steps?.max ?? 0;
+  const defaultSteps = constraints?.steps?.default ?? 1;
+  const effectiveAspect = pickEffective(aspectOptions, aspectRatio);
+  const effectiveResolution = pickEffective(resolutionOptions, resolution);
+  const baseCost = model
     ? estimateCostCredits(model, { multiplier: catalog.priceMultiplier })
     : undefined;
+  // Generate is billed per variant; edit/upscale are single-shot.
+  const cost = baseCost !== undefined && mode === "generate" ? baseCost * variants : baseCost;
 
   const generate = useCallback(async () => {
     if (!model || !prompt.trim() || busy) return;
@@ -317,14 +398,20 @@ function ImagePanel({
         // MAX_COMPOSE_IMAGES, so every reference here is sent.
         images = [await composeImages(model.id, prompt.trim(), references)];
       } else {
-        images = await generateImages(model.id, {
+        const body: Record<string, unknown> = {
           model: model.id,
           prompt: prompt.trim(),
-          variants: 1,
+          variants,
           format: "png",
           hide_watermark: true,
           safe_mode: false,
-        });
+        };
+        if (negativePrompt.trim()) body.negative_prompt = negativePrompt.trim();
+        if (effectiveAspect) body.aspect_ratio = effectiveAspect;
+        if (effectiveResolution) body.resolution = effectiveResolution;
+        if (maxSteps > 0 && steps > 0) body.steps = steps;
+        if (seed.trim() && Number.isFinite(Number(seed))) body.seed = Number(seed);
+        images = await generateImages(model.id, body);
       }
       if (images.length === 0) throw new Error("The backend returned no image.");
       for (const base64 of images) {
@@ -342,7 +429,21 @@ function ImagePanel({
     } finally {
       setBusy(false);
     }
-  }, [model, prompt, busy, mode, references, onGenerated]);
+  }, [
+    model,
+    prompt,
+    busy,
+    mode,
+    references,
+    onGenerated,
+    variants,
+    negativePrompt,
+    effectiveAspect,
+    effectiveResolution,
+    maxSteps,
+    steps,
+    seed,
+  ]);
 
   const upscale = useCallback(async () => {
     if (upscaleRefs.length === 0 || busy) return;
@@ -453,6 +554,78 @@ function ImagePanel({
             }
             onChange={(event) => setPrompt(event.target.value)}
           />
+          {mode === "generate" ? (
+            <>
+              <textarea
+                className="mobile-studio-prompt"
+                value={negativePrompt}
+                rows={2}
+                placeholder="Negative prompt (optional)"
+                aria-label="Negative prompt"
+                onChange={(event) => setNegativePrompt(event.target.value)}
+              />
+              {aspectOptions.length > 0 ? (
+                <StudioSetting label="Aspect ratio">
+                  <div className="mobile-pill-row" role="radiogroup" aria-label="Aspect ratio">
+                    {aspectOptions.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        className="mobile-pill"
+                        data-active={effectiveAspect === option ? "true" : undefined}
+                        onClick={() => setAspectRatio(option)}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </StudioSetting>
+              ) : null}
+              {resolutionOptions.length > 0 ? (
+                <StudioSetting label="Resolution">
+                  <div className="mobile-pill-row" role="radiogroup" aria-label="Resolution">
+                    {resolutionOptions.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        className="mobile-pill"
+                        data-active={effectiveResolution === option ? "true" : undefined}
+                        onClick={() => setResolution(option)}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </StudioSetting>
+              ) : null}
+              {maxSteps > 1 ? (
+                <SliderSetting
+                  label="Steps"
+                  min={1}
+                  max={maxSteps}
+                  value={steps > 0 ? Math.min(steps, maxSteps) : defaultSteps}
+                  onChange={setSteps}
+                />
+              ) : null}
+              <SliderSetting
+                label="Variants"
+                min={1}
+                max={4}
+                value={variants}
+                onChange={setVariants}
+              />
+              <StudioSetting label="Seed" hint="Blank for random">
+                <input
+                  className="mobile-studio-input"
+                  inputMode="numeric"
+                  value={seed}
+                  placeholder="Random"
+                  aria-label="Seed"
+                  onChange={(event) => setSeed(event.target.value.replace(/[^0-9]/g, ""))}
+                />
+              </StudioSetting>
+            </>
+          ) : null}
           <button
             type="button"
             className="mobile-studio-generate"
