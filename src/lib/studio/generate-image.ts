@@ -21,8 +21,18 @@ function imagesFromResponse(response: GenerateResponse): string[] {
     .filter((image) => image.trim().length > 0);
 }
 
-/** Async queue path: JSON while pending, raw image bytes once done. */
-async function generateViaQueue(body: Record<string, unknown>): Promise<string[]> {
+/** Clamp a requested variant count to the API's documented 1–4 range. */
+function normalizeVariants(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(4, Math.floor(n));
+}
+
+/**
+ * Submit one queue job and poll until it yields an image. `retrieve` returns
+ * JSON while pending and raw image bytes once done.
+ */
+async function runQueueJob(body: Record<string, unknown>): Promise<string> {
   const queued = await mediaJson<Record<string, unknown>>("/image/generate/queue", body);
   const queueId = queued.queue_id ?? queued.id;
   if (typeof queueId !== "string" || !queueId) {
@@ -30,7 +40,7 @@ async function generateViaQueue(body: Record<string, unknown>): Promise<string[]
   }
   for (let attempt = 0; attempt < IMAGE_QUEUE_MAX_ATTEMPTS; attempt += 1) {
     const response = await mediaRaw("/image/generate/retrieve", { queue_id: queueId });
-    if (response.bodyBase64) return [response.bodyBase64];
+    if (response.bodyBase64) return response.bodyBase64;
     const json = response.json as Record<string, unknown> | undefined;
     const status = typeof json?.status === "string" ? json.status.toLowerCase() : "";
     if (status === "failed" || status === "error") {
@@ -42,6 +52,43 @@ async function generateViaQueue(body: Record<string, unknown>): Promise<string[]
   throw new MediaError("The image is taking longer than expected. Try again later.", {
     status: 0,
   });
+}
+
+/**
+ * Async queue path. Unlike the sync endpoint, `retrieve` returns exactly one
+ * image per job, so `variants` has to be fanned out into one queue job per
+ * variant instead of expanded server-side. Jobs run concurrently; a fixed seed
+ * is offset per job so the variants differ instead of collapsing to the same
+ * image (an unset seed defaults to random per job, so those differ naturally).
+ * Partial success returns whatever completed — the async path bills only on
+ * retrievable success, so we never discard paid images over one failed sibling.
+ */
+async function generateViaQueue(body: Record<string, unknown>): Promise<string[]> {
+  const variants = normalizeVariants(body.variants);
+  if (variants <= 1) {
+    return [await runQueueJob(body)];
+  }
+  const seed = typeof body.seed === "number" && Number.isFinite(body.seed) ? body.seed : undefined;
+  const settled = await Promise.allSettled(
+    Array.from({ length: variants }, (_unused, index) => {
+      const jobBody: Record<string, unknown> = { ...body, variants: 1 };
+      if (seed !== undefined) jobBody.seed = seed + index;
+      return runQueueJob(jobBody);
+    }),
+  );
+  const images = settled
+    .filter((result): result is PromiseFulfilledResult<string> => result.status === "fulfilled")
+    .map((result) => result.value);
+  if (images.length === 0) {
+    const rejection = settled.find((result) => result.status === "rejected");
+    throw (
+      (rejection as PromiseRejectedResult | undefined)?.reason ??
+      new MediaError("The generation failed.", { status: 200 })
+    );
+  }
+  // Partial success is fine: the async path bills only on retrievable success,
+  // so we return whatever completed rather than discard paid images.
+  return images;
 }
 
 /**
