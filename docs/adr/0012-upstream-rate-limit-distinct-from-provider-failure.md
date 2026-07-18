@@ -5,6 +5,39 @@ date: 2026-07-17
 
 # Upstream rate limits are a distinct, retryable error, not a generic provider failure
 
+## Addendum — 2026-07-17 (accepted; surface an interrupted turn on reload)
+
+A production incident closed the last gap this ADR left open. A desktop chat on
+`zai-org-glm-5-2` did tool work, then its follow-up model call returned
+`502 upstream_provider_failed` three times; the runtime gave up and the session
+sat idle for hours. The user's report: "nothing has happened for hours." The
+502 is correct to keep as a hard failure (this ADR's decision stands — we do not
+reclassify 5xx as busy), but the turn was **invisible**: Hermes persists no
+assistant row for a model call that never returned, so on the next rebuild from
+the DB the transcript ends on the last tool result with no sign it was cut off.
+The addendum above surfaces the live `error` frame, but that frame is in-memory
+only — a reload (or, here, any rebuild after the live buffer cleared) loses it.
+
+**Decision:** detect an interrupted turn from the durable **persisted message
+shape**, not from error text. A completed agent loop always ends on a plain
+assistant answer, so a session whose last message is a `tool` result (or an
+assistant message that emitted tool calls but never resolved) was cut off.
+`hermesMessagesEndInterrupted` (in `src/lib/agent-chat-runtime.ts`) tests that
+shape; `withInterruptedTurnNotice` appends a new `interrupted` chat notice
+("This turn stopped before it finished… Try again, or switch to another model.")
+reusing the existing retry action. The caller
+(`AgentWorkspace`) gates it on the session being idle — neither working (a live
+tool tail is just the next call in flight) nor awaiting input (approval /
+clarify) — and the notice yields to any more specific live notice already folded
+onto the turn (credits / upstream-busy / overflow win).
+
+Because it keys on structure, not the error string, it makes **every** silent
+interruption visible (502, a crash, the app quit mid-turn) without asserting the
+provider merely "busy" — so it does not reclassify the 502 and does not hide a
+real outage. Chosen over persisting an error row in Hermes: that would edit the
+pinned runtime (fork re-merge cost, `FORK_NOTES`) for a purely presentational
+win the frontend can infer on its own. Frontend-only, no June API change.
+
 ## Addendum — 2026-07-17 (accepted; scope extended to 503 same day)
 
 The original decision scoped the "busy" reclassification to **429 only** and

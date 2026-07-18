@@ -4,8 +4,10 @@ import {
   buildHermesSessionChatTurns,
   completedHermesMessageText,
   displayedComposerUserMessageText,
+  hermesMessagesEndInterrupted,
   repairContractionSpacing,
   toolEventKey,
+  withInterruptedTurnNotice,
 } from "../lib/agent-chat-runtime";
 import { categoryPrompt } from "../lib/issue-report-prompt";
 import { explicitSkillInvocationPrompt } from "../lib/skill-slash-commands";
@@ -1713,5 +1715,94 @@ describe("Agent chat runtime", () => {
       name: "Subagent 3 of 5",
       status: "failed",
     });
+  });
+});
+
+describe("interrupted-turn detection", () => {
+  // The exact tail an aborted turn persists: a user prompt, an assistant
+  // preamble + tool call, and the tool result — with no assistant answer after,
+  // because the follow-up model call 502'd and the runtime wrote no error row.
+  const interruptedMessages = (): HermesSessionMessage[] =>
+    [
+      {
+        id: "u1",
+        role: "user",
+        content: "compare the sites",
+        timestamp: "2026-07-17T20:24:00.000Z",
+      },
+      {
+        id: "a1",
+        role: "assistant",
+        content: "Real benchmark data found. Let me get accurate model counts.",
+        tool_calls: [
+          { id: "t1", type: "function", function: { name: "terminal", arguments: "{}" } },
+        ],
+        timestamp: "2026-07-17T20:34:40.000Z",
+      },
+      {
+        id: "t1",
+        role: "tool",
+        tool_call_id: "t1",
+        content: "carpe-models.json count 296",
+        timestamp: "2026-07-17T20:34:41.000Z",
+      },
+    ] as unknown as HermesSessionMessage[];
+
+  const answeredMessages = (): HermesSessionMessage[] =>
+    [
+      { id: "u1", role: "user", content: "hi", timestamp: "2026-07-17T20:24:00.000Z" },
+      {
+        id: "a1",
+        role: "assistant",
+        content: "Here is the comparison.",
+        timestamp: "2026-07-17T20:24:01.000Z",
+      },
+    ] as unknown as HermesSessionMessage[];
+
+  it("detects a transcript that ends on an unanswered tool result", () => {
+    expect(hermesMessagesEndInterrupted(interruptedMessages())).toBe(true);
+  });
+
+  it("detects a transcript that ends on an unresolved assistant tool call", () => {
+    const messages = interruptedMessages().slice(0, 2); // drop the tool result
+    expect(hermesMessagesEndInterrupted(messages)).toBe(true);
+  });
+
+  it("does not flag a session that ends on a normal assistant answer", () => {
+    expect(hermesMessagesEndInterrupted(answeredMessages())).toBe(false);
+    expect(hermesMessagesEndInterrupted([])).toBe(false);
+  });
+
+  it("appends an interrupted notice to the last turn when cut off", () => {
+    const turns = withInterruptedTurnNotice(buildHermesSessionChatTurns(interruptedMessages()), {
+      interrupted: true,
+    });
+    expect(turns.at(-1)?.parts.at(-1)).toEqual({ type: "notice", kind: "interrupted", text: "" });
+    // The tool activity the user already saw is preserved alongside the notice.
+    expect(turns.at(-1)?.parts.some((part) => part.type === "tool")).toBe(true);
+  });
+
+  it("is a no-op when not interrupted, and for an empty transcript", () => {
+    const answered = buildHermesSessionChatTurns(answeredMessages());
+    expect(withInterruptedTurnNotice(answered, { interrupted: false })).toBe(answered);
+    expect(withInterruptedTurnNotice([], { interrupted: true })).toEqual([]);
+  });
+
+  it("does not stack on top of a more specific live error notice", () => {
+    // A live upstream-busy frame already folded a notice onto the turn; the
+    // structural interrupted check must not add a second, less specific one.
+    const turns = withInterruptedTurnNotice(
+      buildHermesSessionChatTurns(interruptedMessages(), [
+        {
+          type: "error",
+          receivedAt: "2026-07-17T20:39:51.000Z",
+          payload: { message: "API call failed after 3 retries: HTTP 503: upstream_rate_limited" },
+        },
+      ]),
+      { interrupted: true },
+    );
+    const notices = turns.flatMap((turn) => turn.parts).filter((part) => part.type === "notice");
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ kind: "upstream-busy" });
   });
 });

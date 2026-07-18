@@ -106,11 +106,13 @@ export type AgentChatSecretPart = {
 /** A turn-level condition the user can act on, rendered as a notice card
  * instead of raw error text: `credits` (the balance ran out), `context-overflow`
  * (the request outgrew the model's context / the agent request-size limit and
- * cannot be retried as-is — JUN-169), or `upstream-busy` (the model provider is
- * momentarily rate-limited / at capacity — wait and retry, or switch models). */
+ * cannot be retried as-is — JUN-169), `upstream-busy` (the model provider is
+ * momentarily rate-limited / at capacity — wait and retry, or switch models), or
+ * `interrupted` (a reloaded turn that stopped mid agent-loop with no persisted
+ * reason — see {@link withInterruptedTurnNotice}). */
 export type AgentChatNoticePart = {
   type: "notice";
-  kind: "credits" | "context-overflow" | "upstream-busy";
+  kind: "credits" | "context-overflow" | "upstream-busy" | "interrupted";
   text: string;
 };
 
@@ -284,6 +286,52 @@ export function buildHermesSessionChatTurns(
       turn.parts.some((part) => part.type === "tool" || partText(part).trim()),
     ),
   );
+}
+
+// A turn that stopped mid agent-loop leaves the transcript ending on a tool
+// result the model never responded to: the follow-up model call failed and the
+// runtime gave up (e.g. a 502 `upstream_provider_failed` after its retries — the
+// deliberately-hard provider failure of ADR-0012), or the app closed mid-turn.
+// None of that persists as an error message (unlike a rate limit, Hermes writes
+// no assistant row for the dead call), so a session rebuilt from the DB shows
+// the tool result and simply stops, with no sign it was cut off — the reported
+// symptom of a chat that "did nothing for hours". The live `error` frame that
+// ADR-0012's addendum surfaces is in-memory only and gone after a reload, so the
+// persisted message shape is the sole durable signal.
+//
+// The signal is at the message level, not the rendered parts: an agent loop only
+// ends by emitting a plain assistant *answer* (no tool calls), so a completed
+// session never ends on a tool result — that always draws a following model
+// turn. A trailing `tool` message (or a trailing assistant message that emitted
+// tool calls but never resolved) therefore means the loop was cut off. The
+// caller must confirm the session is idle first — a still-working session sits
+// on a tool result only because the next model call is legitimately in flight,
+// and a session awaiting user input (approval / clarify) is not interrupted.
+export function hermesMessagesEndInterrupted(messages: HermesSessionMessage[]): boolean {
+  const last = messages.at(-1);
+  if (!last) return false;
+  if (last.role === "tool") return true;
+  if (last.role === "assistant") return parseToolCalls(last.tool_calls).length > 0;
+  return false;
+}
+
+// Append an `interrupted` notice to the final turn when the session ended mid
+// agent-loop (see {@link hermesMessagesEndInterrupted}) and the caller has
+// confirmed it is idle. Returns the input unchanged when it did not, when there
+// are no turns, or when the final turn already carries a notice (a live
+// credits / upstream-busy / overflow frame is more specific and wins) — so it is
+// safe to wrap every render. Pure: it copies the mutated turn, never edits it in
+// place.
+export function withInterruptedTurnNotice(
+  turns: AgentChatTurn[],
+  options: { interrupted: boolean },
+): AgentChatTurn[] {
+  const last = turns[turns.length - 1];
+  if (!options.interrupted || !last || last.parts.some((part) => part.type === "notice")) {
+    return turns;
+  }
+  const notice: AgentChatNoticePart = { type: "notice", kind: "interrupted", text: "" };
+  return [...turns.slice(0, -1), { ...last, parts: [...last.parts, notice] }];
 }
 
 // Contraction/possessive enclitics the gateway tokenizes as their own chunk

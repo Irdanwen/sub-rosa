@@ -269,8 +269,10 @@ import {
   buildAgentChatTurns,
   buildHermesSessionChatTurns,
   displayedComposerUserMessageText,
+  hermesMessagesEndInterrupted,
   repairContractionSpacing,
   textFromHermesContent,
+  withInterruptedTurnNotice,
   type AgentApprovalChoice,
   type AgentChatPart,
   type AgentChatTurn,
@@ -5787,15 +5789,28 @@ export function AgentWorkspace({
       // with the gateway-derived turns, ordered by createdAt. Array.sort is
       // stable, and an image turn's createdAt is minted strictly after its user
       // prompt, so the image always renders below the prompt that produced it.
-      [
-        ...mergeThinkingTurns(
-          buildHermesSessionChatTurns(
-            selectedHermesMessages,
-            liveEvents[selectedHermesSessionId] ?? [],
+      // Then flag a session that stopped mid agent-loop with no persisted error
+      // (the reload gap ADR-0012's live-frame fix can't cover). Only when it is
+      // idle: a still-working session sits on a tool result because the next
+      // model call is in flight, and one awaiting input (approval / clarify) is
+      // not interrupted — either would misread as a dead turn.
+      withInterruptedTurnNotice(
+        [
+          ...mergeThinkingTurns(
+            buildHermesSessionChatTurns(
+              selectedHermesMessages,
+              liveEvents[selectedHermesSessionId] ?? [],
+            ),
           ),
-        ),
-        ...(imageTurnsBySession[selectedHermesSessionId] ?? []),
-      ].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+          ...(imageTurnsBySession[selectedHermesSessionId] ?? []),
+        ].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+        {
+          interrupted:
+            !workingSessionIds.has(selectedHermesSessionId) &&
+            !waitingSessionIds.has(selectedHermesSessionId) &&
+            hermesMessagesEndInterrupted(selectedHermesMessages),
+        },
+      )
     : [];
   const taskTurns = selectedTask
     ? mergeThinkingTurns(
@@ -9124,6 +9139,8 @@ function AgentChatTurnRow({
               <ContextOverflowNoticePart key={`${turn.id}:notice:${index}`} />
             ) : part.kind === "upstream-busy" ? (
               <UpstreamBusyNoticePart key={`${turn.id}:notice:${index}`} onRetry={onRetry} />
+            ) : part.kind === "interrupted" ? (
+              <InterruptedNoticePart key={`${turn.id}:notice:${index}`} onRetry={onRetry} />
             ) : (
               <CreditsNoticePart
                 key={`${turn.id}:notice:${index}`}
@@ -9513,6 +9530,33 @@ function UpstreamBusyNoticePart({ onRetry }: { onRetry?: () => void }) {
           // Re-sends the same message so a busy turn need not be retyped. The
           // send uses the session's current model, so switching the composer
           // model first retries on the new one.
+          <button type="button" className="btn btn-secondary" onClick={onRetry}>
+            Try again
+          </button>
+        ) : undefined
+      }
+    />
+  );
+}
+
+// A turn that stopped before the model finished — the follow-up model call
+// failed and the runtime gave up (an upstream 502 the retries could not clear),
+// or the app closed mid-turn. Nothing persisted the reason, so on reload the
+// transcript would otherwise just stop on a tool result with no sign it was cut
+// off. Surface it honestly and offer the same wait / retry / switch-model
+// recovery as an upstream-busy turn. Unlike that notice this is inferred from
+// the transcript shape, not an error string, so the wording never asserts the
+// provider is only "busy" (a 502 may be a real outage — ADR-0012).
+function InterruptedNoticePart({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <InlineNotice
+      className="agent-interrupted-notice"
+      tone="warning"
+      role="alert"
+      icon={<IconArrowRotateClockwise size={14} aria-hidden />}
+      body="This turn stopped before it finished, likely because the model provider was briefly unavailable. Try again, or switch to another model."
+      actions={
+        onRetry ? (
           <button type="button" className="btn btn-secondary" onClick={onRetry}>
             Try again
           </button>
