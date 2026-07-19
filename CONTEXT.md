@@ -122,6 +122,15 @@ write-jail, default) or `unrestricted`. Opt-in is per session; June keeps one
 gateway per mode so an unrestricted session can't un-sandbox others.
 _Avoid_: permission, profile.
 
+**Working folder**:
+The user-picked directory a session's runtime is started in (its cwd) and —
+sandboxed — the one user directory the write-jail explicitly re-grants after
+validation (`hermes_working_dir.rs`, ADR-0014). Chosen per new session in the
+hero composer; absence means the default **workspace** under the Hermes home.
+_Avoid_: project dir; workspace (that's the Hermes-home scratch area); folder
+(unqualified — `folders`/projects are the session-grouping feature, no
+filesystem meaning).
+
 **Stored session id** vs **runtime session id**:
 The persistent id June keys all UI and history on, versus the live process's
 per-resume id. `session.create` returns both; conflating them attaches

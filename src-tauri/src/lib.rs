@@ -17,6 +17,8 @@ pub mod dictation_mobile;
 pub mod domain;
 #[cfg(desktop)]
 pub mod hermes_bridge;
+#[cfg(desktop)]
+pub mod hermes_working_dir;
 pub mod ios_background;
 pub mod june_api;
 #[cfg(desktop)]
@@ -265,6 +267,8 @@ pub fn run() {
             hermes_bridge::delete_hermes_bridge_cron_job,
             hermes_bridge::start_hermes_bridge,
             hermes_bridge::stop_hermes_bridge,
+            hermes_working_dir::validate_agent_working_dir,
+            hermes_working_dir::reveal_agent_working_dir,
             hermes_bridge::toggle_hermes_bridge_skill,
             hermes_bridge::get_hermes_bridge_skill,
             hermes_bridge::update_hermes_bridge_skill,

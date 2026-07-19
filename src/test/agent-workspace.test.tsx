@@ -50,6 +50,9 @@ const mocks = vi.hoisted(() => ({
   downloadHermesBridgeFile: vi.fn(),
   saveHermesBridgeFile: vi.fn(),
   saveDialog: vi.fn(),
+  openDialog: vi.fn(),
+  validateAgentWorkingDir: vi.fn(),
+  revealAgentWorkingDir: vi.fn(),
   osAccountsUpgrade: vi.fn(),
   setVeniceModel: vi.fn(),
   providerModelSettings: vi.fn(),
@@ -111,6 +114,8 @@ vi.mock("../lib/tauri", () => ({
   osAccountsUpgrade: mocks.osAccountsUpgrade,
   providerModelSettings: mocks.providerModelSettings,
   retryAgentTask: mocks.retryAgentTask,
+  revealAgentWorkingDir: mocks.revealAgentWorkingDir,
+  validateAgentWorkingDir: mocks.validateAgentWorkingDir,
   setHermesAgentCliAccess: mocks.setHermesAgentCliAccess,
   setVeniceModel: mocks.setVeniceModel,
   saveAgentAssistantMessage: mocks.saveAgentAssistantMessage,
@@ -133,7 +138,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 // dialog first, so `save` resolves to a destination path (configurable per
 // test) and `open` quietly declines.
 vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: vi.fn(async () => null),
+  open: mocks.openDialog,
   save: mocks.saveDialog,
 }));
 
@@ -278,14 +283,19 @@ describe("AgentWorkspace", () => {
     });
     // Mirrors the backend: starting a mode yields a status that contains
     // that mode's connection (alongside any other live mode).
-    mocks.startHermesBridge.mockImplementation(async (_cwd?: string, fullMode?: boolean) => {
-      const connection = {
-        port: 61234,
-        wsUrl: "ws://127.0.0.1:61234",
-        fullMode: Boolean(fullMode),
-      };
-      return { running: true, connection, connections: [connection] };
-    });
+    mocks.startHermesBridge.mockImplementation(
+      async (options?: { fullMode?: boolean; workingDir?: string | null }) => {
+        const connection = {
+          port: 61234,
+          wsUrl: "ws://127.0.0.1:61234",
+          fullMode: Boolean(options?.fullMode),
+          workingDir: options?.workingDir ?? null,
+        };
+        return { running: true, connection, connections: [connection] };
+      },
+    );
+    mocks.openDialog.mockResolvedValue(null);
+    mocks.revealAgentWorkingDir.mockResolvedValue(undefined);
     mocks.listHermesSessions.mockResolvedValue([existingSession]);
     mocks.listHermesSessionMessages.mockResolvedValue([]);
     mocks.hermesAgentCliAccess.mockResolvedValue({ enabled: false });
@@ -6527,7 +6537,9 @@ describe("AgentWorkspace", () => {
     await user.type(screen.getByRole("textbox"), "risky task");
     await user.click(screen.getByRole("button", { name: "Start session" }));
 
-    await waitFor(() => expect(mocks.startHermesBridge).toHaveBeenCalledWith(undefined, true));
+    await waitFor(() =>
+      expect(mocks.startHermesBridge).toHaveBeenCalledWith({ fullMode: true, workingDir: null }),
+    );
 
     // The confirm is once per app session: with the acknowledgment stored,
     // the next arm goes straight through without the dialog.
@@ -6616,7 +6628,12 @@ describe("AgentWorkspace", () => {
 
     // The send brings up the sandboxed process for this session — the
     // unrestricted one (and its in-flight work) is left alone.
-    await waitFor(() => expect(mocks.startHermesBridge).toHaveBeenCalledWith(undefined, false));
+    await waitFor(() =>
+      expect(mocks.startHermesBridge).toHaveBeenCalledWith({
+        fullMode: false,
+        workingDir: undefined,
+      }),
+    );
     await waitFor(() =>
       expect(mocks.gatewayRequest).toHaveBeenCalledWith(
         "prompt.submit",
@@ -6644,7 +6661,9 @@ describe("AgentWorkspace", () => {
     await user.type(screen.getByRole("textbox"), "continue");
     await user.click(screen.getByRole("button", { name: "Send message" }));
 
-    await waitFor(() => expect(mocks.startHermesBridge).toHaveBeenCalledWith(undefined, true));
+    await waitFor(() =>
+      expect(mocks.startHermesBridge).toHaveBeenCalledWith({ fullMode: true, workingDir: null }),
+    );
   });
 
   it("serves both modes concurrently — neither runtime is torn down", async () => {
@@ -6709,6 +6728,122 @@ describe("AgentWorkspace", () => {
     for (const instance of mocks.gatewayInstances) {
       expect(instance.close).not.toHaveBeenCalled();
     }
+  });
+
+  it("arms a working folder for the new session and requires it at start", async () => {
+    window.sessionStorage.setItem(
+      AGENT_NEW_SESSION_PENDING_KEY,
+      JSON.stringify({ createdAt: Date.now() }),
+    );
+    const user = userEvent.setup();
+    mocks.openDialog.mockResolvedValue("/Users/me/Projects/demo-raw");
+    mocks.validateAgentWorkingDir.mockResolvedValue({
+      path: "/Users/me/Projects/demo",
+      displayName: "demo",
+      broad: false,
+    });
+    render(<AgentWorkspace />);
+
+    // The chip rests on the app workspace for a fresh hero.
+    const trigger = await screen.findByRole("button", { name: "App workspace" });
+    await user.click(trigger);
+    await user.click(screen.getByRole("menuitem", { name: /Choose folder/ }));
+
+    // The raw pick goes through backend validation; the chip shows the
+    // CANONICAL folder's name, never the raw dialog value.
+    await screen.findByRole("button", { name: "demo" });
+    expect(mocks.validateAgentWorkingDir).toHaveBeenCalledWith("/Users/me/Projects/demo-raw");
+
+    await user.type(screen.getByRole("textbox"), "work in my project");
+    await user.click(screen.getByRole("button", { name: "Start session" }));
+    // The live process serves the default workspace, so requiring the
+    // folder restarts that mode's runtime into it.
+    await waitFor(() =>
+      expect(mocks.startHermesBridge).toHaveBeenCalledWith({
+        fullMode: false,
+        workingDir: "/Users/me/Projects/demo",
+      }),
+    );
+    // The new session records the folder for its follow-ups (keyed by the
+    // stored session id the gateway's session.create returned).
+    await waitFor(() =>
+      expect(
+        JSON.parse(window.localStorage.getItem("june.agent.sessionWorkingDirs") ?? "{}"),
+      ).toMatchObject({ "session-2": "/Users/me/Projects/demo" }),
+    );
+  });
+
+  it("confirms a broad folder before arming it", async () => {
+    window.sessionStorage.setItem(
+      AGENT_NEW_SESSION_PENDING_KEY,
+      JSON.stringify({ createdAt: Date.now() }),
+    );
+    const user = userEvent.setup();
+    mocks.openDialog.mockResolvedValue("/Users/me/Documents");
+    mocks.validateAgentWorkingDir.mockResolvedValue({
+      path: "/Users/me/Documents",
+      displayName: "Documents",
+      broad: true,
+    });
+    render(<AgentWorkspace />);
+
+    await user.click(await screen.findByRole("button", { name: "App workspace" }));
+    await user.click(screen.getByRole("menuitem", { name: /Choose folder/ }));
+
+    // Broad picks (Documents, Desktop, Downloads) confirm before arming.
+    const dialog = await screen.findByRole("dialog", { name: "Use a broad folder?" });
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: "App workspace" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "App workspace" }));
+    await user.click(screen.getByRole("menuitem", { name: /Choose folder/ }));
+    const again = await screen.findByRole("dialog", { name: "Use a broad folder?" });
+    await user.click(within(again).getByRole("button", { name: "Use this folder" }));
+    expect(await screen.findByRole("button", { name: "Documents" })).toBeInTheDocument();
+  });
+
+  it("falls back to the app workspace when the session's folder is gone", async () => {
+    // The session recorded a folder that no longer resolves (deleted,
+    // unmounted drive): the start call refuses it, the send retries in the
+    // default workspace, a notice explains — and the record survives so a
+    // restored folder re-applies on a later send.
+    window.localStorage.setItem(
+      "june.agent.sessionWorkingDirs",
+      JSON.stringify({ "session-1": "/Users/me/Projects/gone" }),
+    );
+    const user = userEvent.setup();
+    mocks.startHermesBridge.mockRejectedValueOnce({
+      code: "working_dir_unavailable",
+      message: "The working folder can't be opened right now.",
+    });
+    render(<AgentWorkspace initialSession={existingSession} />);
+    expect(await screen.findByText("Existing session")).toBeInTheDocument();
+
+    // The session bar shows the recorded folder; clicking it reveals it.
+    await user.click(screen.getByRole("button", { name: "gone" }));
+    expect(mocks.revealAgentWorkingDir).toHaveBeenCalledWith("/Users/me/Projects/gone");
+
+    await user.type(screen.getByRole("textbox"), "continue");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() =>
+      expect(mocks.gatewayRequest).toHaveBeenCalledWith(
+        "prompt.submit",
+        expect.objectContaining({ text: "continue" }),
+      ),
+    );
+
+    // The folder was required once and refused. The backend refuses BEFORE
+    // stopping the mode's process, so the fallback finds the running
+    // default-workspace runtime still live and reuses it — no second start.
+    expect(mocks.startHermesBridge).toHaveBeenCalledTimes(1);
+    expect(mocks.startHermesBridge).toHaveBeenCalledWith({
+      fullMode: false,
+      workingDir: "/Users/me/Projects/gone",
+    });
+    expect(await screen.findByText(/isn't available right now/)).toBeInTheDocument();
+    expect(
+      JSON.parse(window.localStorage.getItem("june.agent.sessionWorkingDirs") ?? "{}")["session-1"],
+    ).toBe("/Users/me/Projects/gone");
   });
 
   it("explains a busy rejection and removes the ghost bubble", async () => {

@@ -165,6 +165,7 @@ const JUNE_SOUL_SANDBOX_MD: &str = r#"
 Your environment: sessions run by default inside a macOS kernel sandbox (Seatbelt) that the June app applies to you and to every subprocess you start. It is a write-jail, part of the same privacy-by-architecture story. The user chooses the mode per session: sessions are Sandboxed unless they explicitly started this one in Unrestricted mode. When a "Sandbox status for this session" line appears in your environment notes, it is the authoritative answer for the current session — trust it over any assumption. In a sandboxed session:
 
 - You can write only inside your own area — your Hermes home (including your workspace), your runtime directory, and your temp directory. Writes anywhere else (the user's dotfiles, Desktop, Documents, system settings) are denied by the kernel.
+- The user can also give a session a working folder: when a "Working folder for this session" line appears in your environment notes, that folder is your current directory and the jail explicitly allows writes inside it (credential stores stay blocked). Work on the user's files there directly. Without that line, no user folder is writable.
 - Reads stay broad so you can work with the user's files, except credential stores (~/.ssh, ~/.aws, ~/.gnupg, keychains, .netrc), which are blocked.
 - When a command fails with "operation not permitted" on a write outside your area, that is the sandbox working as designed. Don't retry or look for workarounds: produce the file in your workspace and tell the user where it is, or ask them to do that one step. If the user wants you to write outside the jail, they can start a new session in Unrestricted mode.
 - If the user asks whether you can damage their system, answer honestly: in a sandboxed session, destructive writes outside your workspace are blocked at the kernel level, not just by policy; in an Unrestricted session that protection is off because they chose to turn it off.
@@ -203,19 +204,46 @@ Agent CLIs (Claude Code, Codex, Gemini, opencode): the user enabled Agent CLI ac
 const JUNE_HINT_SANDBOXED: &str = "Sandbox status for this session: Sandboxed. The June app's macOS Seatbelt write-jail is active for this process and every subprocess you start; writes outside your own area are denied by the kernel.";
 const JUNE_HINT_UNRESTRICTED: &str = "Sandbox status for this session: Unrestricted. The user explicitly started this session with June's sandbox off, so no Seatbelt write-jail applies to this process: you can write anywhere the user's account can. Be deliberate with destructive operations, and do not describe this session as sandboxed.";
 
-/// Picks the sandbox-status hint for a spawn. `None` when the jail never
-/// engages on this machine (non-macOS, sandbox-exec missing, or disabled by
-/// env): SOUL.md then carries no sandbox section, and a status line about a
-/// nonexistent jail would only confuse the agent.
-fn environment_hint_for_spawn(full_mode: bool, sandbox_available: bool) -> Option<&'static str> {
-    if !sandbox_available {
-        return None;
+/// Composes the per-spawn environment hint. The sandbox-status line appears
+/// only when the jail can engage on this machine (non-macOS, missing
+/// sandbox-exec, or the escape-hatch env var would make it a claim about a
+/// nonexistent jail). The working-folder line appears whenever the spawn got
+/// a validated per-session folder — including on Windows, where there is no
+/// jail but the agent still needs to know where it works. `None` when there
+/// is nothing to say.
+fn environment_hint_for_spawn(
+    full_mode: bool,
+    sandbox_available: bool,
+    working_dir: Option<&Path>,
+) -> Option<String> {
+    let mut lines: Vec<String> = Vec::new();
+    if sandbox_available {
+        lines.push(
+            if full_mode {
+                JUNE_HINT_UNRESTRICTED
+            } else {
+                JUNE_HINT_SANDBOXED
+            }
+            .to_string(),
+        );
     }
-    Some(if full_mode {
-        JUNE_HINT_UNRESTRICTED
+    if let Some(dir) = working_dir {
+        let dir = dir.to_string_lossy();
+        lines.push(if sandbox_available && !full_mode {
+            format!(
+                "Working folder for this session: {dir}. The user picked it; it is your current directory, and the write-jail explicitly allows writes inside it (credential stores stay blocked). Work on the user's files there directly instead of copying them into your workspace."
+            )
+        } else {
+            format!(
+                "Working folder for this session: {dir}. The user picked it; it is your current directory. Work on the user's files there directly instead of copying them into your workspace."
+            )
+        });
+    }
+    if lines.is_empty() {
+        None
     } else {
-        JUNE_HINT_SANDBOXED
-    })
+        Some(lines.join(" "))
+    }
 }
 
 /// Flag file in the app data dir that records the "Agent CLI access"
@@ -351,6 +379,12 @@ pub struct HermesBridgeConnection {
     pub command: String,
     pub hermes_home: String,
     pub cwd: Option<String>,
+    /// The validated per-session working folder this process was spawned
+    /// into, or `None` when it runs in the default workspace. Distinct from
+    /// `cwd` (always set, display-oriented): this is the canonical value the
+    /// frontend's mismatch check compares against a session's recorded
+    /// folder, so "default" must stay representable as absence.
+    pub working_dir: Option<String>,
     pub provider_proxy_port: u16,
     pub pid: u32,
     /// True when this process is wrapped in the macOS Seatbelt write-jail.
@@ -380,11 +414,29 @@ pub struct HermesBridgeStatus {
     pub message: Option<String>,
 }
 
+/// A working-folder requirement for a start call. The *presence* of this
+/// object is what makes it a requirement: `path: Some(_)` demands that
+/// validated folder, `path: None` demands the default workspace. A request
+/// without the object expresses no preference and reuses whatever cwd the
+/// mode's live process already has — background callers (auto-start,
+/// reconnects) must never move a runtime some session deliberately pointed
+/// at a folder.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkingDirRequest {
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StartHermesBridgeRequest {
+    /// The session's working-folder requirement (see `WorkingDirRequest`).
+    /// When the mode's live process serves a different folder, that process
+    /// is restarted into the required one: the cwd and the Seatbelt grant
+    /// are fixed at spawn and can't change on a live process.
     #[serde(default)]
-    pub cwd: Option<String>,
+    pub working_dir: Option<WorkingDirRequest>,
     /// `Some(_)` names the mode to ensure; the other mode's process (if
     /// any) is left untouched — the two run side by side. `None` means "no
     /// preference": ensure the sandboxed default, so background callers
@@ -411,6 +463,11 @@ pub struct OpenHermesTuiDebugRequest {
     pub session_id: String,
     #[serde(default)]
     pub unrestricted: bool,
+    /// The session's recorded working folder, when it has one, so the debug
+    /// TUI runs under the exact profile (and in the exact folder) June used
+    /// for the session. Validated like every other working-dir input.
+    #[serde(default)]
+    pub working_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -759,7 +816,7 @@ pub fn start_on_app_start(app: &tauri::App) {
             &app,
             &bridge,
             StartHermesBridgeRequest {
-                cwd: None,
+                working_dir: None,
                 full_mode: None,
             },
         )
@@ -812,12 +869,48 @@ async fn start_hermes_bridge_inner(
     // runs side by side so a session in one mode never kills the other's
     // in-flight work.
     let full_mode = request.full_mode.unwrap_or(false);
+    // Resolve the working-folder requirement before the reuse check so the
+    // mismatch comparison and the spawn agree on one validated canonical
+    // path. Outer None = no preference; inner None = the default workspace.
+    let working_dir_requirement: Option<Option<PathBuf>> = match &request.working_dir {
+        None => None,
+        Some(required) => match required
+            .path
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            None => Some(None),
+            Some(path) => Some(Some(
+                crate::hermes_working_dir::validate_working_dir(app, path)?.path,
+            )),
+        },
+    };
     let connections = live_connections(bridge)?;
-    if connections
+    if let Some(connection) = connections
         .iter()
-        .any(|connection| connection.full_mode == full_mode)
+        .find(|connection| connection.full_mode == full_mode)
     {
-        return Ok(status_for(connections, Some(full_mode)));
+        let working_dir_matches = match &working_dir_requirement {
+            None => true,
+            Some(required) => {
+                connection.working_dir.as_deref()
+                    == required
+                        .as_ref()
+                        .map(|path| path.to_string_lossy())
+                        .as_deref()
+            }
+        };
+        if working_dir_matches {
+            return Ok(status_for(connections, Some(full_mode)));
+        }
+        // The mode's process serves a different working folder. The cwd and
+        // (in sandboxed mode) the Seatbelt grant are fixed at spawn, so the
+        // only way to honor the requirement is to restart this mode's
+        // process into the required folder. In-flight runs of the same mode
+        // die with it; the interrupted-turn surfacing (v1.20.0) reports them
+        // with a retry, and the other mode's process is untouched.
+        stop_hermes_mode(bridge, full_mode)?;
     }
 
     let port = pick_port()?;
@@ -834,13 +927,11 @@ async fn start_hermes_bridge_inner(
     let default_cwd = hermes_home.join("workspace");
     std::fs::create_dir_all(&default_cwd)
         .map_err(|error| AppError::new("hermes_bridge_workspace_failed", error.to_string()))?;
-    let cwd = request
-        .cwd
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(std::path::PathBuf::from)
-        .unwrap_or(default_cwd);
+    // Only a validated requirement can move the cwd off the default
+    // workspace: `working_dir_requirement` is the single source for both the
+    // spawn cwd and (below) the Seatbelt grant, so they can never disagree.
+    let custom_working_dir: Option<PathBuf> = working_dir_requirement.flatten();
+    let cwd = custom_working_dir.clone().unwrap_or(default_cwd);
     let cwd_display = Some(cwd.to_string_lossy().into_owned());
     let provider_proxy = ensure_provider_proxy(app, bridge).await?;
     let june_context_mcp = sync_june_context_mcp(app, &command)?;
@@ -869,7 +960,12 @@ async fn start_hermes_bridge_inner(
     let sandbox_profile = if full_mode {
         None
     } else {
-        prepare_sandbox(app, &hermes_home, agent_cli_access)
+        prepare_sandbox(
+            app,
+            &hermes_home,
+            agent_cli_access,
+            custom_working_dir.as_deref(),
+        )
     };
     let sandboxed = sandbox_profile.is_some();
     // SOUL.md is shared by both processes (single home), so its sandbox
@@ -936,12 +1032,9 @@ async fn start_hermes_bridge_inner(
             cmd.stdout(Stdio::null()).stderr(Stdio::null());
         }
     }
-    apply_isolated_hermes_env(
-        &mut cmd,
-        &hermes_home,
-        &token,
-        environment_hint_for_spawn(full_mode, sandbox_available),
-    );
+    let environment_hint =
+        environment_hint_for_spawn(full_mode, sandbox_available, custom_working_dir.as_deref());
+    apply_isolated_hermes_env(&mut cmd, &hermes_home, &token, environment_hint.as_deref());
     cmd.current_dir(&cwd);
 
     let mut child = cmd.spawn().map_err(|error| {
@@ -959,6 +1052,9 @@ async fn start_hermes_bridge_inner(
         command,
         hermes_home: hermes_home.to_string_lossy().into_owned(),
         cwd: cwd_display,
+        working_dir: custom_working_dir
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned()),
         provider_proxy_port: provider_proxy.port,
         pid,
         sandboxed,
@@ -2474,7 +2570,27 @@ pub async fn hermes_bridge_filesystem_snapshot(
         .as_ref()
         .map(|item| PathBuf::from(&item.hermes_home))
         .unwrap_or(resolve_june_hermes_home(&app)?);
-    let roots = filesystem_roots(&hermes_home)?
+    let mut candidates = filesystem_roots(&hermes_home)?;
+    // The live runtimes' working folders browse alongside the app-owned
+    // roots, so what the agent produced in the user's folder is visible
+    // without leaving the app. Keyed by index: at most one per mode process.
+    for (index, connection) in status
+        .connections
+        .iter()
+        .filter(|connection| connection.working_dir.is_some())
+        .enumerate()
+    {
+        let Some(dir) = connection.working_dir.as_ref() else {
+            continue;
+        };
+        candidates.push(FilesystemRootCandidate {
+            id: format!("working-dir-{}", index + 1),
+            label: "Working folder".to_string(),
+            path: PathBuf::from(dir),
+            description: "The user-picked folder the active session works in.".to_string(),
+        });
+    }
+    let roots = dedupe_filesystem_roots(candidates)
         .into_iter()
         .filter_map(|root| {
             if !root.path.exists() {
@@ -2730,7 +2846,7 @@ fn validate_hermes_file_path(app: &AppHandle, path: &str) -> Result<PathBuf, App
     if !requested.is_file() {
         return Err(AppError::new(
             "hermes_file_download_failed",
-            "Only files in the Hermes workspace or memory can be downloaded.",
+            "Only files in the Hermes workspace, memory, or the active working folder can be downloaded.",
         ));
     }
     if is_hidden_secret_path(&requested) {
@@ -2741,15 +2857,36 @@ fn validate_hermes_file_path(app: &AppHandle, path: &str) -> Result<PathBuf, App
     }
     let allowed = filesystem_roots(&hermes_home)?
         .into_iter()
-        .filter_map(|root| root.path.canonicalize().ok())
+        .map(|root| root.path)
+        // The live runtimes' working folders are browsable roots too (the
+        // Files panel lists them), so their files must preview/download.
+        .chain(live_working_dirs(app))
+        .filter_map(|root| root.canonicalize().ok())
         .any(|root| requested.starts_with(root));
     if !allowed {
         return Err(AppError::new(
             "hermes_file_download_denied",
-            "Only files in this app's Hermes workspace or memory can be downloaded.",
+            "Only files in this app's Hermes workspace, memory, or the active working folder can be downloaded.",
         ));
     }
     Ok(requested)
+}
+
+/// The working folders of the live runtime processes (at most one per mode,
+/// deduped). Used to widen the browsable/downloadable roots to what the
+/// active sessions actually work in.
+fn live_working_dirs(app: &AppHandle) -> Vec<PathBuf> {
+    let bridge = app.state::<HermesBridge>();
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for connection in live_connections(&bridge).unwrap_or_default() {
+        if let Some(dir) = connection.working_dir {
+            let dir = PathBuf::from(dir);
+            if !dirs.contains(&dir) {
+                dirs.push(dir);
+            }
+        }
+    }
+    dirs
 }
 
 fn validate_dropped_file_path(path: &str) -> Result<PathBuf, AppError> {
@@ -4913,6 +5050,7 @@ fn build_hermes_tui_debug_launcher_script(
     token: &str,
     environment_hint: Option<&str>,
     sandbox_profile: Option<&Path>,
+    working_dir: Option<&Path>,
     trace_line: &str,
 ) -> String {
     let mut script = String::new();
@@ -4939,6 +5077,14 @@ fn build_hermes_tui_debug_launcher_script(
         script.push_str(&format!(
             "export HERMES_ENVIRONMENT_HINT={}\n",
             shell_single_quote(hint)
+        ));
+    }
+    if let Some(dir) = working_dir {
+        // Same cwd as the dashboard spawn for this session, so relative
+        // paths in the debugged session resolve identically.
+        script.push_str(&format!(
+            "cd {} || exit 1\n",
+            shell_single_quote(&dir.to_string_lossy())
         ));
     }
     let quoted_args: Vec<String> = args.iter().map(|arg| shell_single_quote(arg)).collect();
@@ -4993,17 +5139,27 @@ pub async fn open_hermes_tui_debug(
     // session store, but kept for env parity with the dashboard runtime.
     let full_mode = request.unrestricted;
     let agent_cli_access = agent_cli_access_enabled(&app);
+    let working_dir = match request
+        .working_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        None => None,
+        Some(path) => Some(crate::hermes_working_dir::validate_working_dir(&app, path)?.path),
+    };
     let sandbox_profile = if full_mode {
         None
     } else {
-        prepare_sandbox(&app, &hermes_home, agent_cli_access)
+        prepare_sandbox(&app, &hermes_home, agent_cli_access, working_dir.as_deref())
     };
     let sandbox_available = if full_mode {
         sandbox_would_engage(&app, &hermes_home)
     } else {
         sandbox_profile.is_some()
     };
-    let environment_hint = environment_hint_for_spawn(full_mode, sandbox_available);
+    let environment_hint =
+        environment_hint_for_spawn(full_mode, sandbox_available, working_dir.as_deref());
     let mode_label = if full_mode {
         "unrestricted"
     } else {
@@ -5023,8 +5179,9 @@ pub async fn open_hermes_tui_debug(
         &args,
         &hermes_home,
         &token,
-        environment_hint,
+        environment_hint.as_deref(),
         sandbox_profile.as_deref(),
+        working_dir.as_deref(),
         &trace_line,
     );
 
@@ -5904,7 +6061,12 @@ fn apply_isolated_hermes_env(
 /// jailed agent can't rewrite the policy that governs it or the one the next
 /// spawn will read.
 #[cfg(target_os = "macos")]
-fn prepare_sandbox(app: &AppHandle, hermes_home: &Path, agent_cli_access: bool) -> Option<PathBuf> {
+fn prepare_sandbox(
+    app: &AppHandle,
+    hermes_home: &Path,
+    agent_cli_access: bool,
+    working_dir: Option<&Path>,
+) -> Option<PathBuf> {
     // The caller logs the sandboxed/unsandboxed outcome; this only short-circuits.
     if env_flag_enabled(JUNE_HERMES_DISABLE_SANDBOX_ENV) {
         return None;
@@ -5917,12 +6079,17 @@ fn prepare_sandbox(app: &AppHandle, hermes_home: &Path, agent_cli_access: bool) 
     let write_roots = sandbox_write_roots(hermes_home, &runtime_dir);
     let config_write_path = sandbox_config_write_path(hermes_home);
     let config_temp_prefix = sandbox_config_temp_prefix(hermes_home);
+    // `working_dir` only ever arrives here through
+    // `hermes_working_dir::validate_working_dir` (the spawn re-validates on
+    // every start) — this is the "explicit, validated grant" that lets the
+    // jail span one user-picked folder without ever widening past it.
     let profile = build_sandbox_profile(
         &home,
         &write_roots,
         &config_write_path,
         &config_temp_prefix,
         agent_cli_access,
+        working_dir,
     );
     let app_data_dir = crate::app_paths::app_data_dir(app).ok()?;
     if std::fs::create_dir_all(&app_data_dir).is_err() {
@@ -5943,6 +6110,7 @@ fn prepare_sandbox(
     _app: &AppHandle,
     _hermes_home: &Path,
     _agent_cli_access: bool,
+    _working_dir: Option<&Path>,
 ) -> Option<PathBuf> {
     None
 }
@@ -6056,6 +6224,7 @@ fn build_sandbox_profile(
     config_write_path: &Path,
     config_temp_prefix: &Path,
     agent_cli_access: bool,
+    working_dir: Option<&Path>,
 ) -> String {
     let mut out = String::new();
     out.push_str("(version 1)\n");
@@ -6098,6 +6267,23 @@ fn build_sandbox_profile(
         sbpl_regex_escape(&config_temp_prefix.to_string_lossy())
     ));
     out.push_str(")\n\n");
+
+    if let Some(working_dir) = working_dir {
+        // The one user-directory grant, and it exists only because
+        // `validate_working_dir` accepted this exact canonical path (the
+        // spawn re-validates every start). The trailing secret write-deny
+        // below still outranks it, so even a folder that somehow gained a
+        // credential store keeps those paths unwritable.
+        out.push_str(";; Working folder (per-session, user-picked, validated): the one\n");
+        out.push_str(";; user directory this session may write. See\n");
+        out.push_str(";; docs/adr/0014-per-session-working-folder.md.\n");
+        out.push_str("(allow file-write*\n");
+        out.push_str(&format!(
+            "  (subpath {})\n",
+            sbpl_quote(&working_dir.to_string_lossy())
+        ));
+        out.push_str(")\n\n");
+    }
 
     if agent_cli_access {
         out.push_str(";; Agent CLI state (explicit user opt-in from Settings > Agent):\n");
@@ -6144,23 +6330,37 @@ fn build_sandbox_profile(
     out.push_str(";; Secret-read denylist: reads are otherwise open so June can work on\n");
     out.push_str(";; the user's files, but credential stores stay off-limits.\n");
     out.push_str("(deny file-read*\n");
-    for relative in [
-        ".ssh",
-        ".aws",
-        ".gnupg",
-        ".kube",
-        ".docker",
-        ".config/gcloud",
-        ".config/gh",
-        "Library/Keychains",
-    ] {
+    for relative in crate::hermes_working_dir::SECRET_STORE_DIRS {
         out.push_str(&format!(
             "  (subpath {})\n",
             sbpl_quote(&home.join(relative).to_string_lossy())
         ));
     }
     out.push_str("  (subpath \"/Library/Keychains\")\n");
-    for relative in [".netrc", ".git-credentials", ".npmrc", ".pypirc", ".pgpass"] {
+    for relative in crate::hermes_working_dir::SECRET_STORE_FILES {
+        out.push_str(&format!(
+            "  (literal {})\n",
+            sbpl_quote(&home.join(relative).to_string_lossy())
+        ));
+    }
+    out.push_str(")\n\n");
+
+    // Last on purpose: in SBPL the later rule wins, so this deny outranks
+    // every write grant above it. Working-dir validation already refuses
+    // folders that contain (or live inside) a credential store; this is the
+    // second, kernel-level line for the same invariant — no grant, present
+    // or future, may make a credential store writable.
+    out.push_str(";; Secret-write denylist: credential stores stay unwritable even when a\n");
+    out.push_str(";; write grant above (workspace, working folder, CLI state) spans them.\n");
+    out.push_str("(deny file-write*\n");
+    for relative in crate::hermes_working_dir::SECRET_STORE_DIRS {
+        out.push_str(&format!(
+            "  (subpath {})\n",
+            sbpl_quote(&home.join(relative).to_string_lossy())
+        ));
+    }
+    out.push_str("  (subpath \"/Library/Keychains\")\n");
+    for relative in crate::hermes_working_dir::SECRET_STORE_FILES {
         out.push_str(&format!(
             "  (literal {})\n",
             sbpl_quote(&home.join(relative).to_string_lossy())
@@ -7749,6 +7949,7 @@ mod tests {
             command: "/usr/local/bin/hermes".to_string(),
             hermes_home: "/tmp/hermes-home".to_string(),
             cwd: None,
+            working_dir: None,
             provider_proxy_port: 9000,
             pid: 4242,
             sandboxed: true,
@@ -8368,6 +8569,7 @@ mod tests {
             command: "/opt/hermes/bin/hermes".to_string(),
             hermes_home: "/tmp/hermes-home".to_string(),
             cwd: None,
+            working_dir: None,
             provider_proxy_port: 2,
             pid: 3,
             sandboxed: true,
@@ -8439,6 +8641,7 @@ mod tests {
             command: "/usr/bin/false".to_string(),
             hermes_home: home.path().to_string_lossy().into_owned(),
             cwd: None,
+            working_dir: None,
             provider_proxy_port: 2,
             pid: 3,
             sandboxed: true,
@@ -8555,6 +8758,7 @@ mod tests {
             "tok",
             Some(JUNE_HINT_SANDBOXED),
             Some(Path::new("/tmp/profile.sb")),
+            None,
             "trace: june session sess-1",
         );
 
@@ -8586,6 +8790,7 @@ mod tests {
             "tok",
             Some(JUNE_HINT_UNRESTRICTED),
             None,
+            None,
             "trace: june session sess-2",
         );
 
@@ -8610,6 +8815,7 @@ mod tests {
             "tok",
             None,
             None,
+            None,
             "trace",
         );
         // The id stays one inert single-quoted literal: its embedded quote is
@@ -8628,17 +8834,38 @@ mod tests {
         // session sandboxed?" — SOUL.md is shared and can only describe the
         // split.
         assert_eq!(
-            environment_hint_for_spawn(false, true),
+            environment_hint_for_spawn(false, true, None).as_deref(),
             Some(JUNE_HINT_SANDBOXED)
         );
         assert_eq!(
-            environment_hint_for_spawn(true, true),
+            environment_hint_for_spawn(true, true, None).as_deref(),
             Some(JUNE_HINT_UNRESTRICTED)
         );
         // No jail on this machine → SOUL.md has no sandbox section, and a
         // status line about a nonexistent jail would contradict it.
-        assert_eq!(environment_hint_for_spawn(false, false), None);
-        assert_eq!(environment_hint_for_spawn(true, false), None);
+        assert_eq!(environment_hint_for_spawn(false, false, None), None);
+        assert_eq!(environment_hint_for_spawn(true, false, None), None);
+    }
+
+    #[test]
+    fn environment_hint_announces_the_working_folder() {
+        let dir = Path::new("/Users/test/Projects/demo");
+        // Sandboxed: the hint must pair the folder with the jail's explicit
+        // write grant, so the agent doesn't refuse to write where it can.
+        let sandboxed = environment_hint_for_spawn(false, true, Some(dir)).expect("hint");
+        assert!(sandboxed.starts_with(JUNE_HINT_SANDBOXED));
+        assert!(sandboxed.contains("Working folder for this session: /Users/test/Projects/demo"));
+        assert!(sandboxed.contains("allows writes inside it"));
+        // Unrestricted: the folder line appears without the grant wording.
+        let unrestricted = environment_hint_for_spawn(true, true, Some(dir)).expect("hint");
+        assert!(unrestricted.starts_with(JUNE_HINT_UNRESTRICTED));
+        assert!(unrestricted.contains("Working folder for this session:"));
+        assert!(!unrestricted.contains("allows writes inside it"));
+        // No jail on this machine (Windows, escape hatch): the folder line
+        // still ships alone — the agent must know where it works everywhere.
+        let bare = environment_hint_for_spawn(false, false, Some(dir)).expect("hint");
+        assert!(bare.starts_with("Working folder for this session:"));
+        assert!(!bare.contains("Sandbox status"));
     }
 
     #[test]
@@ -9034,6 +9261,7 @@ mod tests {
             &config_path,
             &config_temp_prefix,
             false,
+            None,
         );
 
         // Allow-everything base, then a hard write-jail re-granting the root.
@@ -9088,6 +9316,7 @@ mod tests {
             &config_path,
             &config_temp_prefix,
             true,
+            None,
         );
 
         // The CLI state dirs become writable...
@@ -9154,6 +9383,7 @@ mod tests {
             &config_path,
             &config_temp_prefix,
             false,
+            None,
         );
         let profile_path = home.join("test.sb");
         std::fs::write(&profile_path, &profile_text).expect("write profile");
@@ -9243,6 +9473,7 @@ mod tests {
             &config_path,
             &config_temp_prefix,
             true,
+            None,
         );
         let profile_path = home.join("test.sb");
         std::fs::write(&profile_path, &profile_text).expect("write profile");
@@ -9291,6 +9522,110 @@ mod tests {
         assert!(
             !outside.exists(),
             "write outside the jail must stay denied with CLI access on"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sandbox_profile_grants_the_working_folder_and_still_denies_secrets() {
+        let home = PathBuf::from("/Users/test");
+        let workspace = PathBuf::from("/Users/test/Library/Application Support/june/hermes");
+        let working_dir = PathBuf::from("/Users/test/Projects/Un projet");
+        let config_path = sandbox_config_write_path(&workspace);
+        let config_temp_prefix = sandbox_config_temp_prefix(&workspace);
+        let profile = build_sandbox_profile(
+            &home,
+            std::slice::from_ref(&workspace),
+            &config_path,
+            &config_temp_prefix,
+            false,
+            Some(&working_dir),
+        );
+
+        // The validated folder is granted, after the blanket deny.
+        assert!(profile.contains("(subpath \"/Users/test/Projects/Un projet\")"));
+        let deny_at = profile.find("(deny file-write*)").expect("deny present");
+        let grant_at = profile
+            .find("(subpath \"/Users/test/Projects/Un projet\")")
+            .expect("working dir grant present");
+        assert!(deny_at < grant_at);
+        // The secret WRITE deny comes after every grant: in SBPL the later
+        // rule wins, so ordering is the enforcement.
+        let write_deny_at = profile
+            .find(";; Secret-write denylist")
+            .expect("secret write deny present");
+        assert!(grant_at < write_deny_at);
+        assert!(profile[write_deny_at..].contains("(subpath \"/Users/test/.ssh\")"));
+
+        // Without a working dir, no user folder appears anywhere.
+        let bare = build_sandbox_profile(
+            &home,
+            std::slice::from_ref(&workspace),
+            &config_path,
+            &config_temp_prefix,
+            false,
+            None,
+        );
+        assert!(!bare.contains("Projects"));
+        assert!(!bare.contains(";; Working folder"));
+    }
+
+    /// Kernel-level proof of the working-folder story: the granted folder is
+    /// writable, and — layering test — a credential store stays unwritable
+    /// even when the grant spans it (validation refuses such folders, but
+    /// the profile must hold on its own).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn working_dir_profile_is_enforced_by_the_kernel() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let home = std::fs::canonicalize(dir.path()).expect("canonicalize home");
+        let workspace = home.join("workspace");
+        std::fs::create_dir_all(&workspace).expect("create workspace");
+        let project = home.join("Projects").join("demo app");
+        std::fs::create_dir_all(&project).expect("create project");
+        std::fs::create_dir_all(home.join(".ssh")).expect("create .ssh");
+
+        let config_path = sandbox_config_write_path(&workspace);
+        let config_temp_prefix = sandbox_config_temp_prefix(&workspace);
+        // Deliberately grant HOME itself as the working dir for the layering
+        // assertion — the strongest case the write-deny must survive.
+        let profile_text = build_sandbox_profile(
+            &home,
+            std::slice::from_ref(&workspace),
+            &config_path,
+            &config_temp_prefix,
+            false,
+            Some(&home),
+        );
+        let profile_path = workspace.join("test.sb");
+        std::fs::write(&profile_path, &profile_text).expect("write profile");
+
+        let run = |script: &str| {
+            std::process::Command::new(SANDBOX_EXEC_PATH)
+                .arg("-f")
+                .arg(&profile_path)
+                .arg("/bin/bash")
+                .arg("-c")
+                .arg(script)
+                .output()
+                .expect("run sandbox-exec")
+        };
+
+        // Allowed: a write inside the granted folder (path with spaces).
+        let inside = project.join("notes.md");
+        let out = run(&format!("echo ok > {}", sbpl_shell_quote(&inside)));
+        assert!(
+            out.status.success() && inside.exists(),
+            "working folder write should be allowed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+
+        // Denied: the credential store, even though the grant spans it.
+        let secret = home.join(".ssh").join("id_new");
+        run(&format!("echo bad > {}", sbpl_shell_quote(&secret)));
+        assert!(
+            !secret.exists(),
+            "secret store write must stay denied inside a granted folder"
         );
     }
 

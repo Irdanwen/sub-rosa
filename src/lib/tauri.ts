@@ -422,6 +422,11 @@ export type HermesBridgeConnection = {
   command: string;
   hermesHome: string;
   cwd?: string | null;
+  /** The validated per-session working folder this process was spawned into,
+   * or null/absent for the default workspace. Canonical: the mismatch check
+   * compares it to a session's recorded folder as a plain string equality.
+   * Mirrors the Rust connection field. */
+  workingDir?: string | null;
   providerProxyPort: number;
   pid: number;
   /** True when the runtime is wrapped in the macOS Seatbelt write-jail (false
@@ -1174,12 +1179,51 @@ export async function updateHermesBridgeMessagingPlatform(input: {
   });
 }
 
-/** `fullMode` is an explicit mode choice: passing it restarts a running
- * runtime whose mode differs (the sandbox is applied at spawn). Omit it to
- * reuse whatever is running — fresh starts are always sandboxed. */
-export async function startHermesBridge(cwd?: string, fullMode?: boolean) {
+/** Ensures the runtime process for a write-access mode.
+ *
+ * `fullMode` names the mode to ensure (fresh starts without it are always
+ * sandboxed). `workingDir` is tri-state: `undefined` expresses no preference
+ * and reuses whatever folder the mode's live process already has; `null`
+ * requires the default workspace; a string requires that validated folder.
+ * A requirement that differs from the live process's folder restarts that
+ * mode's runtime (cwd and the Seatbelt grant are fixed at spawn). */
+export async function startHermesBridge(options?: {
+  fullMode?: boolean;
+  workingDir?: string | null;
+}) {
+  const { fullMode, workingDir } = options ?? {};
   return invoke<HermesBridgeStatus>("start_hermes_bridge", {
-    request: { cwd, fullMode },
+    request: {
+      fullMode,
+      ...(workingDir !== undefined ? { workingDir: { path: workingDir } } : {}),
+    },
+  });
+}
+
+export type WorkingDirValidation = {
+  /** Canonical path — store and compare this, never the raw pick. */
+  path: string;
+  /** The folder's own name, for the composer chip. */
+  displayName: string;
+  /** True for broad picks (Documents, Desktop, Downloads): confirm before
+   * adopting. */
+  broad: boolean;
+};
+
+/** Validates a candidate working folder against the backend's guard rails
+ * (secret stores, system folders, the app's own data dir) and returns its
+ * canonical form. Throws an AppError with code `working_dir_invalid` or
+ * `working_dir_unavailable`. */
+export async function validateAgentWorkingDir(path: string) {
+  return invoke<WorkingDirValidation>("validate_agent_working_dir", {
+    request: { path },
+  });
+}
+
+/** Opens the folder in the OS file manager (Finder / Explorer). */
+export async function revealAgentWorkingDir(path: string) {
+  return invoke<void>("reveal_agent_working_dir", {
+    request: { path },
   });
 }
 
@@ -1435,7 +1479,13 @@ export async function hermesDeleteSkillBundle(input: {
 /** Developer-only: resume a June session in Hermes' own raw TUI in a Terminal
  * window. `unrestricted` mirrors the session's mode so the debug session runs
  * under the same Seatbelt jail June used. macOS only; rejects elsewhere. */
-export async function openHermesTuiDebug(input: { sessionId: string; unrestricted: boolean }) {
+export async function openHermesTuiDebug(input: {
+  sessionId: string;
+  unrestricted: boolean;
+  /** The session's recorded working folder, so the debug TUI runs under the
+   * exact profile (and in the exact folder) June used for the session. */
+  workingDir?: string;
+}) {
   return invoke<void>("open_hermes_tui_debug", { request: input });
 }
 

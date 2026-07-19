@@ -5671,6 +5671,59 @@ input:focus-visible,
   color: var(--foreground);
 }
 
+/* Working-folder chip: shares the sandbox trigger's chrome; the label
+ * truncates so a deep folder name can't stretch the toolbar. */
+.agent-workdir-trigger-label {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A custom folder reads as an active choice, not an alarm — foreground
+ * emphasis rather than the unrestricted warm tint. */
+.agent-workdir-trigger[data-custom="true"] {
+  color: var(--foreground);
+}
+
+.agent-workdir-menu .agent-workdir-option-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Session-bar chip for the recorded working folder; twin of
+ * .agent-session-files, click reveals the folder in the file manager. */
+.agent-session-workdir {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: var(--control-md);
+  max-width: 200px;
+  border: 0;
+  border-radius: var(--r-md);
+  padding: 0 var(--sp-3);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.agent-session-workdir svg {
+  flex: 0 0 auto;
+  color: color-mix(in oklch, var(--muted-foreground) 72%, transparent);
+}
+
+.agent-session-workdir .agent-session-workdir-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-session-workdir:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
 /* Session-bar twin of .agent-safety-badge in the warm terracotta family: the
  * runtime is live without the write-jail. */
 .agent-sandbox-badge {

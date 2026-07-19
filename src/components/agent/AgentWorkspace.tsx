@@ -114,9 +114,11 @@ import {
   osAccountsUpgrade,
   providerModelSettings,
   retryAgentTask,
+  revealAgentWorkingDir,
   setHermesAgentCliAccess,
   setVeniceModel,
   startHermesBridge,
+  validateAgentWorkingDir,
   submitIssueReport,
   suggestAgentSessionTitle,
   toggleHermesBridgeSkill,
@@ -259,6 +261,15 @@ import {
   rememberSessionMode,
   sessionUnrestricted,
 } from "../../lib/agent-session-modes";
+import {
+  forgetSessionWorkingDir,
+  pushRecentWorkingDir,
+  recentWorkingDirs,
+  rememberSessionWorkingDir,
+  removeRecentWorkingDir,
+  sessionWorkingDir,
+  workingDirDisplayName,
+} from "../../lib/agent-session-working-dir";
 import { HERMES_TUI_DEBUG_WARNING, hermesTuiDebugAvailable } from "../../lib/hermes-tui-debug";
 import {
   AGENT_CLI_ACCESS_ENABLED_MESSAGE,
@@ -537,6 +548,17 @@ const SANDBOX_OPTIONS = [
     description: "Sub Rosa can change any file your account can.",
   },
 ] as const;
+
+/** True when an invoke rejection is one of the backend's working-folder
+ * refusals — the codes `hermes_working_dir.rs` reserves for a folder that is
+ * gone (`working_dir_unavailable`) or no longer passes validation
+ * (`working_dir_invalid`). Sends fall back to the default workspace on
+ * these; anything else propagates. */
+function isWorkingDirError(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const code = (err as { code?: unknown }).code;
+  return code === "working_dir_unavailable" || code === "working_dir_invalid";
+}
 
 type AgentShortcut = {
   key: string;
@@ -1347,6 +1369,24 @@ export function AgentWorkspace({
   // without the OS sandbox. Read through a ref inside the async submit path.
   const [fullModeDraft, setFullModeDraft] = useState(false);
   const fullModeDraftRef = useRef(false);
+  // The working folder is picked per new session, like the write-access
+  // mode: null = the default workspace. The stored value is the CANONICAL
+  // path from validate_agent_working_dir, never the raw dialog pick.
+  const [workingDirDraft, setWorkingDirDraft] = useState<string | null>(null);
+  const workingDirDraftRef = useRef<string | null>(null);
+  const [workdirMenuOpen, setWorkdirMenuOpen] = useState(false);
+  const workdirTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const workdirMenuRef = useRef<HTMLDivElement | null>(null);
+  const workdirFirstItemRef = useRef<HTMLButtonElement | null>(null);
+  const workdirMenuWasOpenRef = useRef(false);
+  // A broad pick (Documents, Desktop, Downloads) confirms before arming.
+  const [confirmBroadWorkingDir, setConfirmBroadWorkingDir] = useState<{
+    path: string;
+    displayName: string;
+  } | null>(null);
+  // Non-blocking notice when a send fell back to the default workspace
+  // because the session's recorded folder is gone (deleted, unmounted).
+  const [workingDirNotice, setWorkingDirNotice] = useState<string | null>(null);
   const [sandboxMenuOpen, setSandboxMenuOpen] = useState(false);
   // Codex-style speed bump: picking Unrestricted from the menu confirms in a
   // dialog before arming, instead of a persistent warning line.
@@ -2237,6 +2277,13 @@ export function AgentWorkspace({
     setFullModeDraft(false);
     setSandboxMenuOpen(false);
     setConfirmUnrestricted(false);
+    // The working folder re-arms to the default workspace with the mode: a
+    // deliberate per-session choice, never sticky state carried over from
+    // the last session (recents make re-picking one click).
+    workingDirDraftRef.current = null;
+    setWorkingDirDraft(null);
+    setWorkdirMenuOpen(false);
+    setConfirmBroadWorkingDir(null);
   }, [heroMode]);
 
   // The sandbox picker closes on a click anywhere outside it or Esc, same as
@@ -2262,6 +2309,30 @@ export function AgentWorkspace({
       window.removeEventListener("keydown", onKey);
     };
   }, [sandboxMenuOpen]);
+
+  // The working-folder picker closes on a click outside it or Esc, same as
+  // the sandbox picker above.
+  useEffect(() => {
+    if (!workdirMenuOpen) return;
+    function onPointer(event: MouseEvent) {
+      const target = event.target as Node;
+      if (workdirMenuRef.current?.contains(target)) return;
+      if (workdirTriggerRef.current?.contains(target)) return;
+      setWorkdirMenuOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setWorkdirMenuOpen(false);
+      }
+    }
+    window.addEventListener("mousedown", onPointer);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onPointer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [workdirMenuOpen]);
 
   // The "+" popover closes on a click outside it or Esc, same as the sandbox
   // picker above.
@@ -2348,6 +2419,17 @@ export function AgentWorkspace({
     sandboxMenuWasOpenRef.current = false;
     sandboxTriggerRef.current?.focus();
   }, [sandboxMenuOpen]);
+
+  useLayoutEffect(() => {
+    if (workdirMenuOpen) {
+      workdirMenuWasOpenRef.current = true;
+      workdirFirstItemRef.current?.focus();
+      return;
+    }
+    if (!workdirMenuWasOpenRef.current) return;
+    workdirMenuWasOpenRef.current = false;
+    workdirTriggerRef.current?.focus();
+  }, [workdirMenuOpen]);
 
   // The conversation scroller's thumb fades in with scroll activity and back
   // out when idle (native-overlay feel; see scroll-thumb-fade.ts). The hero
@@ -3675,10 +3757,58 @@ export function AgentWorkspace({
     }
   }
 
+  /** Adopts a validated folder as the new-session draft (post broad-confirm
+   * when needed). Only canonical, backend-validated paths reach here. */
+  function armWorkingDirDraft(path: string) {
+    workingDirDraftRef.current = path;
+    setWorkingDirDraft(path);
+    pushRecentWorkingDir(path);
+    setWorkingDirNotice(null);
+  }
+
+  /** Runs a candidate folder through backend validation, then arms it (via
+   * the broad-pick confirmation when flagged). Shared by the native picker
+   * and the recents menu — recents re-validate on every use because a folder
+   * can vanish or turn invalid between sessions. */
+  async function adoptWorkingDirCandidate(candidate: string) {
+    try {
+      const validation = await validateAgentWorkingDir(candidate);
+      if (validation.broad) {
+        setConfirmBroadWorkingDir({
+          path: validation.path,
+          displayName: validation.displayName,
+        });
+        return;
+      }
+      armWorkingDirDraft(validation.path);
+    } catch (err) {
+      if (isWorkingDirError(err)) {
+        removeRecentWorkingDir(candidate);
+      }
+      setError(messageFromError(err));
+    }
+  }
+
+  async function pickWorkingDir() {
+    setWorkdirMenuOpen(false);
+    try {
+      const selected = await openFileDialog({
+        directory: true,
+        multiple: false,
+        title: "Choose a working folder",
+      });
+      if (!selected || Array.isArray(selected)) return;
+      await adoptWorkingDirCandidate(selected);
+    } catch (err) {
+      setError(messageFromError(err));
+    }
+  }
+
   // A success notice about one report reads fine anywhere, but not stale on
   // a conversation the user opened later.
   useEffect(() => {
     setIssueReportNotice(null);
+    setWorkingDirNotice(null);
   }, [selectedHermesSessionId]);
 
   /** Sends the captured report plus June's diagnostic reply (the last
@@ -4267,9 +4397,36 @@ export function AgentWorkspace({
     // the mode its session was created with. Without this, one Unrestricted
     // session would leave the runtime unsandboxed under every other
     // session's follow-ups.
+    //
+    // The working folder rides the same seam: every send requires the target
+    // session's recorded folder (null = the default workspace), and the
+    // backend restarts the mode's runtime when the live process serves a
+    // different one — so a session's folder is re-enforced exactly like its
+    // mode. A folder that vanished (deleted, unmounted drive) falls back to
+    // the default workspace for this send with a notice, never a dead turn;
+    // the record is kept so a restored folder re-applies on the next send.
+    const requiredWorkingDir = targetSessionId
+      ? (sessionWorkingDir(targetSessionId) ?? null)
+      : workingDirDraftRef.current;
+    const ensureGatewayForSend = async (mode: boolean) => {
+      try {
+        return await ensureHermesGateway(mode, requiredWorkingDir);
+      } catch (err) {
+        if (requiredWorkingDir === null || !isWorkingDirError(err)) throw err;
+        setError(null);
+        setWorkingDirNotice(
+          `The working folder "${workingDirDisplayName(requiredWorkingDir)}" isn't available right now. This message runs in the app workspace.`,
+        );
+        if (!targetSessionId) {
+          workingDirDraftRef.current = null;
+          setWorkingDirDraft(null);
+        }
+        return await ensureHermesGateway(mode, null);
+      }
+    };
     const { created, gateway, sessionTitle, storedSessionId } = await (async () => {
       const [nextGateway, nextSessionTitle] = await Promise.all([
-        ensureHermesGateway(
+        ensureGatewayForSend(
           targetSessionId ? sessionUnrestricted(targetSessionId) : fullModeDraftRef.current,
         ),
         titlePromise ?? Promise.resolve(undefined),
@@ -4311,6 +4468,10 @@ export function AgentWorkspace({
     }
     if (!targetSessionId) {
       rememberSessionMode(storedSessionId, fullModeDraftRef.current);
+      rememberSessionWorkingDir(storedSessionId, workingDirDraftRef.current);
+      if (workingDirDraftRef.current) {
+        pushRecentWorkingDir(workingDirDraftRef.current);
+      }
     }
     const sessionDisplayTitle = sessionTitle || fallbackSessionTitle;
     const ensureStoredHermesSession = () =>
@@ -4527,11 +4688,28 @@ export function AgentWorkspace({
   // (the sandbox is applied at spawn and can't change on a live process, so
   // per-session modes mean a process per mode) — ensuring one never touches
   // the other's process or in-flight work.
-  async function ensureHermesGateway(fullMode = false) {
+  //
+  // `workingDir` is the target session's working-folder requirement, same
+  // tri-state as startHermesBridge: undefined = no preference (background
+  // callers must never move a runtime a session pointed at a folder), null =
+  // the default workspace, string = that folder. The send path passes it; a
+  // requirement that differs from the live process's folder restarts that
+  // mode's runtime (the backend owns the comparison and the restart).
+  async function ensureHermesGateway(fullMode = false, workingDir?: string | null) {
     let connection = hermesConnectionForMode(bridge.running ? bridge : undefined, fullMode);
-    if (!connection) {
-      const next = await startBridge(fullMode);
+    const mismatch =
+      connection !== undefined &&
+      workingDir !== undefined &&
+      (connection.workingDir ?? null) !== workingDir;
+    if (!connection || mismatch) {
+      const next = await startBridge(fullMode, workingDir);
       connection = hermesConnectionForMode(next, fullMode);
+      if (mismatch) {
+        // The restart killed the process the mode's gateway was talking to.
+        // Detach its (possibly still-open) socket so the reconnect below
+        // dials the new process instead of reusing a dying connection.
+        gatewaysRef.current.get(fullMode)?.close();
+      }
     }
     const wsUrl = connection?.wsUrl;
     if (!wsUrl) throw new Error("Hermes bridge did not return a gateway URL.");
@@ -4672,11 +4850,11 @@ export function AgentWorkspace({
     }
   }
 
-  async function startBridge(fullMode?: boolean) {
+  async function startBridge(fullMode?: boolean, workingDir?: string | null) {
     setBridgeStarting(true);
     setError(null);
     try {
-      const status = await startHermesBridge(undefined, fullMode);
+      const status = await startHermesBridge({ fullMode, workingDir });
       setBridge(status);
       return status;
     } catch (err) {
@@ -5121,7 +5299,10 @@ export function AgentWorkspace({
       }
       // Carry the source session's write-access mode onto the fork so its
       // follow-ups route to the matching runtime (mirrors session.create).
+      // The working folder rides along for the same reason: the forked
+      // transcript's file references only make sense in the same folder.
       rememberSessionMode(result.sessionId, unrestricted);
+      rememberSessionWorkingDir(result.sessionId, sessionWorkingDir(modeSessionId) ?? null);
       // Open the fork. Selecting it triggers the message-fetch effect, which
       // fills the forked transcript. The source session is left untouched.
       newSessionModeRef.current = false;
@@ -5634,8 +5815,10 @@ export function AgentWorkspace({
     // sidebar/sessions-list AGENT_DELETE_SESSION_EVENT), so this is the one
     // place that drops the session's Unrestricted record — a stale entry
     // would hand full write access to any future session that recycled the
-    // id.
+    // id. Same reasoning for the working-folder record: a stale entry would
+    // point a recycled id at a folder its user never picked.
     forgetSessionMode(sessionId);
+    forgetSessionWorkingDir(sessionId);
   }
 
   async function deleteSelectedHermesSession(sessionId: string) {
@@ -6431,6 +6614,31 @@ export function AgentWorkspace({
                 <IconChevronDownSmall size={12} aria-hidden />
               </button>
             ) : null}
+            {heroMode ? (
+              // The working folder is a per-new-session choice like the mode,
+              // so its picker lives in the same toolbar. Same sibling-menu
+              // pattern (the box clips overflow for the FLIP glide).
+              <button
+                type="button"
+                ref={workdirTriggerRef}
+                className="agent-sandbox-trigger agent-workdir-trigger"
+                data-custom={workingDirDraft ? "true" : undefined}
+                aria-haspopup="menu"
+                aria-expanded={workdirMenuOpen}
+                title={
+                  workingDirDraft
+                    ? `Working folder: ${workingDirDraft}`
+                    : "Choose where Sub Rosa works"
+                }
+                onClick={() => setWorkdirMenuOpen((open) => !open)}
+              >
+                <IconFolder1 size={14} aria-hidden />
+                <span className="agent-workdir-trigger-label">
+                  {workingDirDraft ? workingDirDisplayName(workingDirDraft) : "App workspace"}
+                </span>
+                <IconChevronDownSmall size={12} aria-hidden />
+              </button>
+            ) : null}
             <div className="agent-composer-actions">
               <ComposerModelPicker
                 open={composerModelOpen}
@@ -6587,6 +6795,75 @@ export function AgentWorkspace({
             ))}
           </div>
         ) : null}
+        {heroMode && workdirMenuOpen ? (
+          <div
+            ref={workdirMenuRef}
+            className="agent-sandbox-menu agent-workdir-menu"
+            role="menu"
+            aria-label="Where does Sub Rosa work?"
+          >
+            <p className="agent-sandbox-menu-title">Where does Sub Rosa work?</p>
+            <button
+              ref={workdirFirstItemRef}
+              type="button"
+              role="menuitemradio"
+              aria-checked={workingDirDraft === null}
+              onClick={() => {
+                setWorkdirMenuOpen(false);
+                workingDirDraftRef.current = null;
+                setWorkingDirDraft(null);
+              }}
+            >
+              <IconFolder1 size={16} aria-hidden />
+              <span className="agent-sandbox-option">
+                <span className="agent-sandbox-option-title">App workspace</span>
+                <span className="agent-sandbox-option-desc">
+                  Sub Rosa's own folder inside the app.
+                </span>
+              </span>
+              {workingDirDraft === null ? (
+                <IconCheckmark1Small size={16} aria-hidden className="agent-sandbox-option-check" />
+              ) : null}
+            </button>
+            {recentWorkingDirs().map((dir) => (
+              <button
+                key={dir}
+                type="button"
+                role="menuitemradio"
+                aria-checked={workingDirDraft === dir}
+                onClick={() => {
+                  setWorkdirMenuOpen(false);
+                  // Re-validated on every use: a recent can vanish or turn
+                  // invalid between sessions.
+                  void adoptWorkingDirCandidate(dir);
+                }}
+              >
+                <IconFolder1 size={16} aria-hidden />
+                <span className="agent-sandbox-option">
+                  <span className="agent-sandbox-option-title">{workingDirDisplayName(dir)}</span>
+                  <span className="agent-sandbox-option-desc agent-workdir-option-path">{dir}</span>
+                </span>
+                {workingDirDraft === dir ? (
+                  <IconCheckmark1Small
+                    size={16}
+                    aria-hidden
+                    className="agent-sandbox-option-check"
+                  />
+                ) : null}
+              </button>
+            ))}
+            <div className="agent-attach-menu-divider" aria-hidden="true" />
+            <button type="button" role="menuitem" onClick={() => void pickWorkingDir()}>
+              <IconFolders size={16} aria-hidden />
+              <span className="agent-sandbox-option">
+                <span className="agent-sandbox-option-title">Choose folder…</span>
+                <span className="agent-sandbox-option-desc">
+                  Sub Rosa works in the folder you pick: it reads and writes files there.
+                </span>
+              </span>
+            </button>
+          </div>
+        ) : null}
         <Dialog
           open={confirmUnrestricted}
           onClose={() => setConfirmUnrestricted(false)}
@@ -6612,6 +6889,41 @@ export function AgentWorkspace({
                 }}
               >
                 Turn on Unrestricted
+              </button>
+            </>
+          }
+        >
+          {null}
+        </Dialog>
+        <Dialog
+          open={confirmBroadWorkingDir !== null}
+          onClose={() => setConfirmBroadWorkingDir(null)}
+          title="Use a broad folder?"
+          description={
+            confirmBroadWorkingDir
+              ? `Sub Rosa will be able to change everything in "${confirmBroadWorkingDir.displayName}". A narrower project folder keeps mistakes contained.`
+              : ""
+          }
+          footer={
+            <>
+              <button
+                type="button"
+                className="primary-action"
+                onClick={() => setConfirmBroadWorkingDir(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary-action primary-solid"
+                onClick={() => {
+                  if (confirmBroadWorkingDir) {
+                    armWorkingDirDraft(confirmBroadWorkingDir.path);
+                  }
+                  setConfirmBroadWorkingDir(null);
+                }}
+              >
+                Use this folder
               </button>
             </>
           }
@@ -6911,6 +7223,20 @@ export function AgentWorkspace({
             !selectedHermesSessionIsProvisional &&
             sessionUnrestricted(selectedHermesSessionId)
           }
+          // Like the mode badge: describes the selected session's recorded
+          // folder (re-enforced on every send), not the live runtime.
+          workingDir={
+            !newSessionMode && !selectedHermesSessionIsProvisional
+              ? sessionWorkingDir(selectedHermesSessionId)
+              : undefined
+          }
+          onRevealWorkingDir={() => {
+            const dir = sessionWorkingDir(selectedHermesSessionId);
+            if (!dir) return;
+            void revealAgentWorkingDir(dir).catch((err: unknown) =>
+              setError(messageFromError(err)),
+            );
+          }}
           title={
             !newSessionMode && selectedHermesSessionId
               ? (selectedHermesSession?.title ?? "")
@@ -6949,6 +7275,7 @@ export function AgentWorkspace({
                   void openHermesTuiDebug({
                     sessionId: selectedHermesSessionId,
                     unrestricted: sessionUnrestricted(selectedHermesSessionId),
+                    workingDir: sessionWorkingDir(selectedHermesSessionId),
                   }).catch((err: unknown) => setError(messageFromError(err)));
                 }
               : undefined
@@ -7040,6 +7367,21 @@ export function AgentWorkspace({
                   sourceTitle={branchedNotice.sourceTitle}
                   onDismiss={() => setBranchedNotice(null)}
                 />
+              ) : null}
+              {workingDirNotice ? (
+                // Reassurance, not an error: the send went through, just in
+                // the default workspace instead of the missing folder.
+                <div className="agent-branched-banner" role="status">
+                  <IconFolder1 size={14} aria-hidden />
+                  <p>{workingDirNotice}</p>
+                  <button
+                    type="button"
+                    aria-label="Dismiss"
+                    onClick={() => setWorkingDirNotice(null)}
+                  >
+                    <IconCrossMedium size={14} />
+                  </button>
+                </div>
               ) : null}
               {detailContent}
               {composer}
@@ -7669,10 +8011,12 @@ function AgentSessionBar({
   origin,
   privacyBadge,
   fullMode,
+  workingDir,
   title,
   artifactCount = 0,
   artifactsOpen = false,
   onToggleArtifacts,
+  onRevealWorkingDir,
   onRename,
   onDelete,
   onShowUsage,
@@ -7682,10 +8026,14 @@ function AgentSessionBar({
   origin?: AgentWorkspaceOrigin;
   privacyBadge?: ModelPrivacyBadge;
   fullMode?: boolean;
+  /** The session's recorded working folder, shown as a chip that reveals the
+   * folder in the OS file manager. Absent for default-workspace sessions. */
+  workingDir?: string;
   title?: string;
   artifactCount?: number;
   artifactsOpen?: boolean;
   onToggleArtifacts?: () => void;
+  onRevealWorkingDir?: () => void;
   onRename?: (title: string) => void;
   onDelete?: () => void;
   onShowUsage?: () => void;
@@ -7789,6 +8137,17 @@ function AgentSessionBar({
         </ol>
       </nav>
       <div className="detail-bar-actions">
+        {workingDir ? (
+          <button
+            type="button"
+            className="agent-session-workdir"
+            title={`Working folder: ${workingDir}. Click to show it in your file manager.`}
+            onClick={onRevealWorkingDir}
+          >
+            <IconFolder1 size={13} aria-hidden />
+            <span className="agent-session-workdir-label">{workingDirDisplayName(workingDir)}</span>
+          </button>
+        ) : null}
         {fullMode ? <UnrestrictedBadge /> : null}
         {onToggleArtifacts && artifactCount > 0 ? (
           <button
@@ -8342,7 +8701,7 @@ export function FilesystemPanel({
     <section className="agent-management-panel" aria-label="Agent filesystem">
       <ManagementToolbar
         loading={loading}
-        placeholder="Search workspace and memory"
+        placeholder="Search workspace, memory, and working folder"
         query={query}
         onQueryChange={onQueryChange}
         onRefresh={onRefresh}

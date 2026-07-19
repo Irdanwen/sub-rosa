@@ -23,6 +23,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0011](adr/0011-autonomous-film-run-supervision.md) — autonomous film-run supervision: a deterministic server-side guardian + driver hardening, not an in-app opus agent (phase 1 shipped; watchdog-resume deferred)
 - [adr/0012](adr/0012-upstream-rate-limit-distinct-from-provider-failure.md) — upstream 429 rate limits become a distinct, retryable `upstream_rate_limited` error + "busy, retry / switch model" notice, not an opaque 502
 - [adr/0013](adr/0013-mid-conversation-model-switching.md) — mid-conversation model switching: the model is a per-turn property; continuity via in-place switch + retry + fork-onto-another-model, not a live Hermes `/model` rebind
+- [adr/0014](adr/0014-per-session-working-folder.md) — per-session working folder: a validated Seatbelt write grant + restart-on-mismatch routing, not process-per-folder or an unvalidated cwd grant
 
 ## Enforceable rules (spec/)
 
