@@ -1702,9 +1702,25 @@ impl Repositories {
         .bind(final_path)
         .execute(&self.pool)
         .await?;
-        self.set_note_status(note_id, ProcessingStatus::Recording, None)
-            .await?;
-        self.add_checkpoint(session_id, "start", None).await
+        // A new capture may be stacked while an earlier recording from this
+        // note is still processing. Keep that active stage and its warning;
+        // the recording session row is the source of truth for live capture.
+        query(
+            "UPDATE notes
+             SET processing_status = 'recording', last_error = NULL, updated_at = ?
+             WHERE id = ?
+               AND processing_status NOT IN ('transcribing', 'generating')",
+        )
+        .bind(timestamp())
+        .bind(note_id)
+        .execute(&self.pool)
+        .await?;
+        if let Err(error) = self.add_checkpoint(session_id, "start", None).await {
+            eprintln!(
+                "failed to persist start checkpoint for recording session {session_id}: {error}"
+            );
+        }
+        Ok(())
     }
 
     pub async fn recording_session_source_mode(

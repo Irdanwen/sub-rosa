@@ -52,18 +52,6 @@ const DICTATION_CLEANUP_RETRY_MIN_CHUNK_BYTES: usize = 300;
 /// App-context slug sent with dictation cleanup when the paste target is a
 /// known kind of app, so the cleaned text is laid out for that surface.
 /// Email is the only recognized context today.
-const APP_CONTEXT_EMAIL: &str = "email";
-/// Native email clients by bundle id. Browser webmail (Gmail, Outlook web)
-/// needs focused-tab detection and is a deliberate follow-up.
-const EMAIL_APP_BUNDLE_IDS: &[&str] = &[
-    "com.apple.mail",
-    "com.microsoft.Outlook",
-    "com.readdle.SparkDesktop",
-    "com.readdle.smartemail-Mac",
-    "it.bloop.airmail2",
-    "com.mimestream.Mimestream",
-    "com.superhuman.electron",
-];
 const DICTATION_AUDIO_ACTIVITY_THRESHOLD: f32 = 0.04;
 const DICTATION_EVENT_LOG: &str = "dictation-events.log";
 
@@ -2050,6 +2038,10 @@ async fn maybe_cleanup_dictation_result(
         Err(error) => return Err(error),
     };
     let transcript_bytes = transcript.text.trim().len();
+    // Sub Rosa does not detect the paste-target app (upstream's email-dictation
+    // layout #597 is not ported); keep the chunked-cleanup fix (JUN-212) with a
+    // neutral context.
+    let app_context: Option<String> = None;
     tracing::info!(
         provider,
         style = ?style,
@@ -2062,6 +2054,7 @@ async fn maybe_cleanup_dictation_result(
     match cleanup_dictation_text(
         &transcript.text,
         dictionary_context.as_deref(),
+        app_context,
         style,
         session_id,
         utterance_id,
@@ -2104,6 +2097,7 @@ fn dictation_cleanup_timeout(text_bytes: usize) -> Duration {
 async fn cleanup_dictation_text(
     text: &str,
     dictionary_context: Option<&str>,
+    app_context: Option<String>,
     style: DictationStyle,
     session_id: String,
     utterance_id: String,

@@ -2089,6 +2089,7 @@ async fn cleanup_note_transcript_text(
             style: "note_transcript_cleanup".to_string(),
             session_id: "note_transcript".to_string(),
             utterance_id: uuid::Uuid::new_v4().to_string(),
+            app_context: None,
         }),
     )
     .await

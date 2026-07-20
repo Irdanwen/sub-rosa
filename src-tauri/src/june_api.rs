@@ -108,6 +108,10 @@ pub struct DictateCleanupRequestParams {
     pub style: String,
     pub session_id: String,
     pub utterance_id: String,
+    /// App-layout hint (e.g. "email") for the paste target. Sub Rosa does not
+    /// detect the target app yet (upstream's email-dictation feature #597 is
+    /// not ported), so this stays `None` and is not forwarded to june-api.
+    pub app_context: Option<String>,
 }
 
 /// Response from the agent chat-completions proxy. Holds the upstream
