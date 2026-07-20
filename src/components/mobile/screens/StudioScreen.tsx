@@ -19,18 +19,35 @@ import {
   saveArtifactFromResult,
 } from "../../../lib/studio/artifacts";
 import {
+  defaultEditModel,
   estimateCostCredits,
   fetchMediaCatalog,
   formatCredits,
   imageEditModels,
   modelsOfType,
   musicCapabilities,
+  musicModels,
+  soundEffectsModels,
+  supportsBackgroundRemoval,
   videoFamilies,
 } from "../../../lib/studio/catalog";
-import { mediaJson } from "../../../lib/studio/client";
-import { composeImages, MAX_COMPOSE_IMAGES, upscaleImage } from "../../../lib/studio/edit-image";
+import {
+  generateSpeech,
+  SPEECH_FORMATS,
+  SPEECH_INPUT_LIMIT,
+  SPEECH_SPEED,
+  type SpeechFormat,
+} from "../../../lib/studio/speech";
+import { mediaGet, mediaJson } from "../../../lib/studio/client";
+import { enhanceImagePrompt } from "../../../lib/studio/enhance-prompt";
+import {
+  composeImages,
+  MAX_COMPOSE_IMAGES,
+  removeBackground,
+  upscaleImage,
+} from "../../../lib/studio/edit-image";
 import { prepareEditReference } from "../../../lib/studio/downscale";
-import { generateImages } from "../../../lib/studio/generate-image";
+import { compareBodies, generateImages } from "../../../lib/studio/generate-image";
 import {
   fileResultFrom,
   type MediaFileResult,
@@ -62,8 +79,9 @@ import { ModelSheet } from "../ModelSheet";
 import { StackHeader } from "../StackHeader";
 import { FlowsPanel } from "./FlowsPanel";
 
-type StudioMode = "image" | "video" | "music" | "flows";
-type ImageMode = "generate" | "edit" | "upscale";
+type StudioMode = "image" | "video" | "audio" | "flows";
+type ImageMode = "generate" | "edit" | "upscale" | "cutout";
+type AudioMode = "music" | "speech" | "sfx";
 
 const videoResultFrom = fileResultFrom("video_url", "url");
 // Carpe Diem streams the finished track as the retrieve body (one shot);
@@ -86,6 +104,8 @@ export function StudioScreen() {
   // jump it straight into its Edit sub-mode.
   const [imageRefs, setImageRefs] = useState<string[]>([]);
   const [imageMode, setImageMode] = useState<ImageMode>("generate");
+  // Lifted so the gallery under the audio tab follows the active sub-mode.
+  const [audioMode, setAudioMode] = useState<AudioMode>("music");
 
   useEffect(() => {
     fetchMediaCatalog()
@@ -109,8 +129,8 @@ export function StudioScreen() {
       ? "image"
       : mode === "video"
         ? "video"
-        : mode === "music"
-          ? "music"
+        : mode === "audio"
+          ? audioMode
           : undefined;
   const galleryItems = useMemo(
     () => (galleryKind ? artifacts.filter((artifact) => artifact.kind === galleryKind) : artifacts),
@@ -165,7 +185,7 @@ export function StudioScreen() {
         }
       />
       <div className="mobile-segmented" role="tablist" aria-label="Studio mode">
-        {(["image", "video", "music", "flows"] as const).map((entry) => (
+        {(["image", "video", "audio", "flows"] as const).map((entry) => (
           <button
             key={entry}
             type="button"
@@ -179,8 +199,8 @@ export function StudioScreen() {
               ? "Image"
               : entry === "video"
                 ? "Video"
-                : entry === "music"
-                  ? "Music"
+                : entry === "audio"
+                  ? "Audio"
                   : "Flows"}
           </button>
         ))}
@@ -210,8 +230,13 @@ export function StudioScreen() {
                 galleryImages={galleryImages}
                 onGenerated={refreshGallery}
               />
-            ) : mode === "music" ? (
-              <MusicPanel catalog={catalog} onGenerated={refreshGallery} />
+            ) : mode === "audio" ? (
+              <AudioPanel
+                catalog={catalog}
+                mode={audioMode}
+                onModeChange={setAudioMode}
+                onGenerated={refreshGallery}
+              />
             ) : (
               <FlowsPanel catalog={catalog} onGenerated={refreshGallery} />
             )}
@@ -235,6 +260,7 @@ export function StudioScreen() {
             preview.kind === "image" ? () => void handleUseAsReference(preview) : undefined
           }
           onUpscaled={refreshGallery}
+          canRemoveBackground={Boolean(catalog && supportsBackgroundRemoval(catalog))}
         />
       ) : null}
     </div>
@@ -348,11 +374,16 @@ function ImagePanel({
 }) {
   const generateModels = useMemo(() => modelsOfType(catalog, "image"), [catalog]);
   const editModels = useMemo(() => imageEditModels(catalog), [catalog]);
+  const cutoutAvailable = supportsBackgroundRemoval(catalog);
   const models = mode === "edit" ? editModels : generateModels;
   const [generateModelId, setGenerateModelId] = useState(generateModels[0]?.id ?? "");
-  const [editModelId, setEditModelId] = useState(editModels[0]?.id ?? "");
+  // Empty = "Automatic": a sensible default edit model is resolved on use.
+  const [editModelId, setEditModelId] = useState("");
   const modelId = mode === "edit" ? editModelId : generateModelId;
-  const model = models.find((entry) => entry.id === modelId) ?? models[0];
+  const model =
+    mode === "edit"
+      ? (models.find((entry) => entry.id === modelId) ?? defaultEditModel(catalog) ?? models[0])
+      : (models.find((entry) => entry.id === modelId) ?? models[0]);
   const [prompt, setPrompt] = useState("");
   // Generate-only settings, at parity with the desktop image studio. They are
   // constraint-driven: aspect/resolution/steps only show when the model exposes
@@ -367,10 +398,42 @@ function ImagePanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  // Upscale keeps its own single-image source and factor, separate from the
+  // Side-by-side comparison: extra models that render the same prompt, one
+  // image each, next to the main model's output.
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [comparePickerOpen, setComparePickerOpen] = useState(false);
+  // Output and prompt niceties, at parity with the desktop image studio.
+  const [stylePreset, setStylePreset] = useState("");
+  const [styles, setStyles] = useState<string[]>([]);
+  const [stylePickerOpen, setStylePickerOpen] = useState(false);
+  const [format, setFormat] = useState<"png" | "webp" | "jpeg">("png");
+  const [hideWatermark, setHideWatermark] = useState(true);
+  const [embedExif, setEmbedExif] = useState(false);
+  const [improvePrompt, setImprovePrompt] = useState(false);
+  // Upscale and cutout share one single-image source, separate from the
   // shared edit references.
   const [upscaleRefs, setUpscaleRefs] = useState<string[]>([]);
   const [scale, setScale] = useState<2 | 3 | 4>(2);
+
+  // Style presets are a Venice nicety the backend may not expose: hide the
+  // picker when the request fails rather than surfacing an error.
+  useEffect(() => {
+    let cancelled = false;
+    mediaGet<{ data?: string[] }>("/image/styles")
+      .then((response) => {
+        if (!cancelled && Array.isArray(response?.data)) setStyles(response.data);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // The cutout mode disappears when the backend loses the endpoint; leave no
+  // orphaned selection.
+  useEffect(() => {
+    if (!cutoutAvailable && mode === "cutout") onModeChange("generate");
+  }, [cutoutAvailable, mode, onModeChange]);
 
   const constraints = mode === "generate" ? model?.constraints : undefined;
   const aspectOptions = constraints?.aspectRatios ?? [];
@@ -379,11 +442,30 @@ function ImagePanel({
   const defaultSteps = constraints?.steps?.default ?? 1;
   const effectiveAspect = pickEffective(aspectOptions, aspectRatio);
   const effectiveResolution = pickEffective(resolutionOptions, resolution);
+  const compareModels = useMemo(
+    () =>
+      compareIds
+        .filter((id) => id !== model?.id)
+        .map((id) => generateModels.find((entry) => entry.id === id))
+        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)),
+    [compareIds, model, generateModels],
+  );
+  const comparing = mode === "generate" && compareModels.length > 0;
   const baseCost = model
     ? estimateCostCredits(model, { multiplier: catalog.priceMultiplier })
     : undefined;
-  // Generate is billed per variant; edit/upscale are single-shot.
-  const cost = baseCost !== undefined && mode === "generate" ? baseCost * variants : baseCost;
+  // Generate is billed per variant (or per compared model); edit/upscale are
+  // single-shot.
+  const cost = comparing
+    ? [model, ...compareModels].reduce<number | undefined>((sum, entry) => {
+        if (!entry) return sum;
+        const each = estimateCostCredits(entry, { multiplier: catalog.priceMultiplier });
+        if (each === undefined) return sum;
+        return (sum ?? 0) + each;
+      }, undefined)
+    : baseCost !== undefined && mode === "generate"
+      ? baseCost * variants
+      : baseCost;
 
   const generate = useCallback(async () => {
     if (!model || !prompt.trim() || busy) return;
@@ -391,7 +473,46 @@ function ImagePanel({
     setBusy(true);
     setError(null);
     try {
+      // Optional AI pass that expands the prompt before generation. Best
+      // effort: a failure falls back to the prompt as typed.
+      const usedPrompt =
+        mode === "generate" && improvePrompt
+          ? await enhanceImagePrompt(prompt.trim(), catalog)
+          : prompt.trim();
+      if (comparing) {
+        // Comparison run: the same prompt across every selected model, one
+        // image each; per-model settings limited to what each supports.
+        const runs = compareBodies([model, ...compareModels], usedPrompt, {
+          negativePrompt,
+          seed: seed.trim() && Number.isFinite(Number(seed)) ? Number(seed) : undefined,
+          aspectRatio: effectiveAspect || undefined,
+        });
+        const settled = await Promise.allSettled(
+          runs.map(async ({ model: target, body }) => {
+            const images = await generateImages(target.id, body);
+            if (images.length === 0) throw new Error("The backend returned no image.");
+            for (const base64 of images) {
+              await saveArtifactFromBase64(base64, "png", {
+                kind: "image",
+                model: target.id,
+                prompt: usedPrompt,
+              });
+            }
+          }),
+        );
+        const failures = settled.filter(
+          (result): result is PromiseRejectedResult => result.status === "rejected",
+        );
+        if (failures.length === settled.length) throw failures[0].reason;
+        if (failures.length > 0) {
+          setError("Some models failed; the rest landed in the gallery.");
+        }
+        hapticNotify("success");
+        onGenerated();
+        return;
+      }
       let images: string[];
+      let extension = "png";
       if (mode === "edit") {
         // One reference edits that photo; two or three compose them into a
         // single image (Carpe Diem's multi-edit). The picker is capped to
@@ -400,26 +521,36 @@ function ImagePanel({
       } else {
         const body: Record<string, unknown> = {
           model: model.id,
-          prompt: prompt.trim(),
+          prompt: usedPrompt,
           variants,
-          format: "png",
-          hide_watermark: true,
+          format,
+          hide_watermark: hideWatermark,
           safe_mode: false,
         };
+        if (embedExif) body.embed_exif_metadata = true;
+        if (stylePreset) body.style_preset = stylePreset;
         if (negativePrompt.trim()) body.negative_prompt = negativePrompt.trim();
         if (effectiveAspect) body.aspect_ratio = effectiveAspect;
         if (effectiveResolution) body.resolution = effectiveResolution;
         if (maxSteps > 0 && steps > 0) body.steps = steps;
         if (seed.trim() && Number.isFinite(Number(seed))) body.seed = Number(seed);
         images = await generateImages(model.id, body);
+        extension = format;
       }
       if (images.length === 0) throw new Error("The backend returned no image.");
       for (const base64 of images) {
-        await saveArtifactFromBase64(base64, "png", {
+        await saveArtifactFromBase64(base64, extension, {
           kind: "image",
           model: model.id,
-          prompt: prompt.trim(),
+          prompt: usedPrompt,
         });
+      }
+      if (mode === "edit") {
+        // Chain: the result becomes the next source, so successive edits
+        // build on each other while every step stays in the gallery.
+        const chained = await prepareEditReference(`data:image/png;base64,${images[0]}`);
+        onReferencesChange([chained]);
+        setPrompt("");
       }
       hapticNotify("success");
       onGenerated();
@@ -434,7 +565,16 @@ function ImagePanel({
     prompt,
     busy,
     mode,
+    comparing,
+    compareModels,
+    catalog,
+    improvePrompt,
+    format,
+    hideWatermark,
+    embedExif,
+    stylePreset,
     references,
+    onReferencesChange,
     onGenerated,
     variants,
     negativePrompt,
@@ -467,10 +607,36 @@ function ImagePanel({
     }
   }, [upscaleRefs, scale, busy, onGenerated]);
 
+  const cutout = useCallback(async () => {
+    if (upscaleRefs.length === 0 || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await removeBackground(upscaleRefs[0]);
+      await saveArtifactFromBase64(result, "png", {
+        kind: "image",
+        model: "background-remover",
+        prompt: "Background removed",
+      });
+      hapticNotify("success");
+      setUpscaleRefs([]);
+      onGenerated();
+    } catch (err) {
+      hapticNotify("error");
+      setError(err instanceof Error ? err.message : "The cutout failed.");
+    } finally {
+      setBusy(false);
+    }
+  }, [upscaleRefs, busy, onGenerated]);
+
+  const modes: ImageMode[] = cutoutAvailable
+    ? ["generate", "edit", "upscale", "cutout"]
+    : ["generate", "edit", "upscale"];
+
   return (
     <div className="mobile-studio-form">
       <div className="mobile-segmented" role="tablist" aria-label="Image mode">
-        {(["generate", "edit", "upscale"] as const).map((entry) => (
+        {modes.map((entry) => (
           <button
             key={entry}
             type="button"
@@ -480,12 +646,39 @@ function ImagePanel({
             data-active={mode === entry ? "true" : undefined}
             onClick={() => onModeChange(entry)}
           >
-            {entry === "generate" ? "Generate" : entry === "edit" ? "Edit" : "Upscale"}
+            {entry === "generate"
+              ? "Generate"
+              : entry === "edit"
+                ? "Edit"
+                : entry === "upscale"
+                  ? "Upscale"
+                  : "Cutout"}
           </button>
         ))}
       </div>
 
-      {mode === "upscale" ? (
+      {mode === "cutout" ? (
+        <>
+          <ReferencePicker
+            references={upscaleRefs}
+            onChange={(refs) => setUpscaleRefs(refs.slice(-1))}
+            galleryImages={galleryImages}
+            hint={
+              upscaleRefs.length === 0
+                ? "Pick an image; the background lifts out into a transparent PNG."
+                : undefined
+            }
+          />
+          <button
+            type="button"
+            className="mobile-studio-generate"
+            disabled={upscaleRefs.length === 0 || busy}
+            onClick={() => void cutout()}
+          >
+            {busy ? <Spinner /> : "Remove background"}
+          </button>
+        </>
+      ) : mode === "upscale" ? (
         <>
           <ReferencePicker
             references={upscaleRefs}
@@ -523,7 +716,7 @@ function ImagePanel({
         <>
           <ModelPickerButton
             label={mode === "edit" ? "Edit model" : "Image model"}
-            value={model?.name ?? ""}
+            value={mode === "edit" && !editModelId ? "Automatic" : (model?.name ?? "")}
             onOpen={() => setPickerOpen(true)}
           />
           {mode === "edit" ? (
@@ -607,13 +800,42 @@ function ImagePanel({
                   onChange={setSteps}
                 />
               ) : null}
-              <SliderSetting
-                label="Variants"
-                min={1}
-                max={4}
-                value={variants}
-                onChange={setVariants}
-              />
+              {!comparing ? (
+                <SliderSetting
+                  label="Variants"
+                  min={1}
+                  max={4}
+                  value={variants}
+                  onChange={setVariants}
+                />
+              ) : null}
+              <StudioSetting
+                label="Compare models"
+                hint={comparing ? `${compareModels.length + 1} side by side` : "Optional"}
+              >
+                <div className="mobile-reference-actions">
+                  {compareModels.map((entry) => (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      className="mobile-chip-button"
+                      aria-label={`Stop comparing with ${entry.name}`}
+                      onClick={() =>
+                        setCompareIds((current) => current.filter((id) => id !== entry.id))
+                      }
+                    >
+                      {entry.name} x
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="mobile-chip-button"
+                    onClick={() => setComparePickerOpen(true)}
+                  >
+                    Add a model
+                  </button>
+                </div>
+              </StudioSetting>
               <StudioSetting label="Seed" hint="Blank for random">
                 <input
                   className="mobile-studio-input"
@@ -624,6 +846,52 @@ function ImagePanel({
                   onChange={(event) => setSeed(event.target.value.replace(/[^0-9]/g, ""))}
                 />
               </StudioSetting>
+              {styles.length > 0 ? (
+                <ModelPickerButton
+                  label="Style"
+                  value={stylePreset || "None"}
+                  onOpen={() => setStylePickerOpen(true)}
+                />
+              ) : null}
+              <label className="mobile-toggle-row">
+                <input
+                  type="checkbox"
+                  checked={improvePrompt}
+                  onChange={(event) => setImprovePrompt(event.target.checked)}
+                />
+                <span>Improve prompt with AI</span>
+              </label>
+              <StudioSetting label="Format">
+                <div className="mobile-pill-row" role="radiogroup" aria-label="Image format">
+                  {(["png", "webp", "jpeg"] as const).map((entry) => (
+                    <button
+                      key={entry}
+                      type="button"
+                      className="mobile-pill"
+                      data-active={format === entry ? "true" : undefined}
+                      onClick={() => setFormat(entry)}
+                    >
+                      {entry}
+                    </button>
+                  ))}
+                </div>
+              </StudioSetting>
+              <label className="mobile-toggle-row">
+                <input
+                  type="checkbox"
+                  checked={hideWatermark}
+                  onChange={(event) => setHideWatermark(event.target.checked)}
+                />
+                <span>Hide watermark</span>
+              </label>
+              <label className="mobile-toggle-row">
+                <input
+                  type="checkbox"
+                  checked={embedExif}
+                  onChange={(event) => setEmbedExif(event.target.checked)}
+                />
+                <span>Embed prompt in metadata</span>
+              </label>
             </>
           ) : null}
           <button
@@ -654,17 +922,51 @@ function ImagePanel({
           entries={models.map((entry) => ({
             id: entry.id,
             name: entry.name,
-            subtitle: entry.tier,
+            subtitle: [entry.tier, entry.privacy].filter(Boolean).join(" · "),
           }))}
-          selectedId={model?.id ?? ""}
+          selectedId={mode === "edit" ? editModelId : (model?.id ?? "")}
+          defaultOption={
+            mode === "edit"
+              ? { label: "Automatic", subtitle: "Picks a capable edit model" }
+              : undefined
+          }
           onSelect={(id) => {
-            if (id) {
-              if (mode === "edit") setEditModelId(id);
-              else setGenerateModelId(id);
-            }
+            if (mode === "edit") setEditModelId(id);
+            else if (id) setGenerateModelId(id);
             setPickerOpen(false);
           }}
           onClose={() => setPickerOpen(false)}
+        />
+      ) : null}
+      {comparePickerOpen ? (
+        <ModelSheet
+          title="Compare with"
+          entries={generateModels
+            .filter((entry) => entry.id !== model?.id && !compareIds.includes(entry.id))
+            .map((entry) => ({
+              id: entry.id,
+              name: entry.name,
+              subtitle: [entry.tier, entry.privacy].filter(Boolean).join(" · "),
+            }))}
+          selectedId=""
+          onSelect={(id) => {
+            if (id) setCompareIds((current) => [...current, id]);
+            setComparePickerOpen(false);
+          }}
+          onClose={() => setComparePickerOpen(false)}
+        />
+      ) : null}
+      {stylePickerOpen ? (
+        <ModelSheet
+          title="Style"
+          entries={styles.map((entry) => ({ id: entry, name: entry, subtitle: "" }))}
+          selectedId={stylePreset}
+          defaultOption={{ label: "None", subtitle: "No style preset" }}
+          onSelect={(id) => {
+            setStylePreset(id);
+            setStylePickerOpen(false);
+          }}
+          onClose={() => setStylePickerOpen(false)}
         />
       ) : null}
     </div>
@@ -716,6 +1018,7 @@ function VideoPanel({
   const [references, setReferences] = useState<string[]>([]);
   const constraints = model?.constraints;
   const [prompt, setPrompt] = useState("");
+  const [negativePrompt, setNegativePrompt] = useState("");
   const [duration, setDuration] = useState("");
   const [quote, setQuote] = useState<number | undefined>(undefined);
   const [resumable, setResumable] = useState<PersistedJob[]>([]);
@@ -749,13 +1052,19 @@ function VideoPanel({
     if (!model || !prompt.trim()) return undefined;
     if (needsReference && references.length === 0) return undefined;
     const body: Record<string, unknown> = { model: model.id, prompt: prompt.trim() };
+    if (negativePrompt.trim()) body.negative_prompt = negativePrompt.trim();
     if (effectiveDuration) body.duration = effectiveDuration;
-    // image-to-video takes one opening frame; reference-to-video takes the set
-    // of style/subject references.
-    if (effectiveMode === "image") body.image_url = references[0];
-    else if (effectiveMode === "reference") body.image_urls = references;
+    // image-to-video takes one opening frame (a second photo becomes the end
+    // frame - that pair also drives the transition models); reference-to-video
+    // takes the set of style/subject references.
+    if (effectiveMode === "image") {
+      body.image_url = references[0];
+      if (references[1]) body.end_image_url = references[1];
+    } else if (effectiveMode === "reference") {
+      body.reference_image_urls = references;
+    }
     return body;
-  }, [model, prompt, effectiveDuration, references, needsReference, effectiveMode]);
+  }, [model, prompt, negativePrompt, effectiveDuration, references, needsReference, effectiveMode]);
 
   useEffect(() => {
     setQuote(undefined);
@@ -852,11 +1161,13 @@ function VideoPanel({
       {needsReference ? (
         <ReferencePicker
           references={references}
-          onChange={setReferences}
+          onChange={(refs) => setReferences(effectiveMode === "image" ? refs.slice(0, 2) : refs)}
           galleryImages={galleryImages}
           hint={
             effectiveMode === "image"
-              ? "The clip animates from this photo (its opening frame)."
+              ? references.length > 1
+                ? "First photo opens the clip; the second is its end frame."
+                : "The clip animates from this photo. Add a second to set the end frame."
               : references.length > 1
                 ? "All these photos steer the style and subject."
                 : "This photo steers the style and subject; the prompt drives the action."
@@ -875,6 +1186,14 @@ function VideoPanel({
               : "Describe the video to generate"
         }
         onChange={(event) => setPrompt(event.target.value)}
+      />
+      <textarea
+        className="mobile-studio-prompt"
+        value={negativePrompt}
+        rows={2}
+        placeholder="Negative prompt (optional)"
+        aria-label="Negative prompt"
+        onChange={(event) => setNegativePrompt(event.target.value)}
       />
       <button
         type="button"
@@ -939,8 +1258,371 @@ function VideoPanel({
 
 // --- Music ------------------------------------------------------------------
 
+// --- Audio (music / speech / sound effects) -----------------------------------
+
+function AudioPanel({
+  catalog,
+  mode,
+  onModeChange,
+  onGenerated,
+}: {
+  catalog: MediaCatalog;
+  mode: AudioMode;
+  onModeChange: (mode: AudioMode) => void;
+  onGenerated: () => void;
+}) {
+  return (
+    <div className="mobile-studio-form">
+      <div className="mobile-segmented" role="tablist" aria-label="Audio mode">
+        {(["music", "speech", "sfx"] as const).map((entry) => (
+          <button
+            key={entry}
+            type="button"
+            role="tab"
+            aria-selected={mode === entry}
+            className="mobile-segmented-item"
+            data-active={mode === entry ? "true" : undefined}
+            onClick={() => onModeChange(entry)}
+          >
+            {entry === "music" ? "Music" : entry === "speech" ? "Speech" : "Effects"}
+          </button>
+        ))}
+      </div>
+      {mode === "music" ? (
+        <MusicPanel catalog={catalog} onGenerated={onGenerated} />
+      ) : mode === "speech" ? (
+        <SpeechPanel catalog={catalog} onGenerated={onGenerated} />
+      ) : (
+        <SfxPanel catalog={catalog} onGenerated={onGenerated} />
+      )}
+    </div>
+  );
+}
+
+function SpeechPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerated: () => void }) {
+  const models = useMemo(() => modelsOfType(catalog, "tts"), [catalog]);
+  const [modelId, setModelId] = useState(models[0]?.id ?? "");
+  const model = models.find((entry) => entry.id === modelId) ?? models[0];
+  const voices = model?.voices ?? [];
+  const [voice, setVoice] = useState("");
+  const effectiveVoice = pickEffective(voices, voice);
+  const [text, setText] = useState("");
+  const [speed, setSpeed] = useState(SPEECH_SPEED.default);
+  const [format, setFormat] = useState<SpeechFormat>("mp3");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [voicePickerOpen, setVoicePickerOpen] = useState(false);
+  const abortRef = useRef<AbortController | undefined>(undefined);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  const generate = useCallback(async () => {
+    if (!model || !text.trim() || busy) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setBusy(true);
+    setError(null);
+    try {
+      const input = text.trim().slice(0, SPEECH_INPUT_LIMIT);
+      const { base64 } = await generateSpeech({
+        model: model.id,
+        input,
+        voice: effectiveVoice || undefined,
+        speed,
+        format,
+        signal: controller.signal,
+      });
+      await saveArtifactFromBase64(base64, format, {
+        kind: "speech",
+        model: model.id,
+        prompt: input,
+      });
+      hapticNotify("success");
+      onGenerated();
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === "AbortError")) {
+        hapticNotify("error");
+        setError(err instanceof Error ? err.message : "The narration failed.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [model, text, busy, effectiveVoice, speed, format, onGenerated]);
+
+  return (
+    <>
+      <ModelPickerButton
+        label="Speech model"
+        value={model?.name ?? ""}
+        onOpen={() => setPickerOpen(true)}
+      />
+      {voices.length > 0 ? (
+        <ModelPickerButton
+          label="Voice"
+          value={effectiveVoice}
+          onOpen={() => setVoicePickerOpen(true)}
+        />
+      ) : null}
+      <textarea
+        className="mobile-studio-prompt"
+        value={text}
+        rows={4}
+        maxLength={SPEECH_INPUT_LIMIT}
+        placeholder="Text to narrate"
+        aria-label="Text to narrate"
+        onChange={(event) => setText(event.target.value)}
+      />
+      <div className="mobile-studio-field">
+        <div className="mobile-studio-field-head">
+          <span className="mobile-studio-field-label">Speed</span>
+          <span className="mobile-studio-field-value">{`x${speed}`}</span>
+        </div>
+        <input
+          type="range"
+          className="mobile-studio-slider"
+          min={SPEECH_SPEED.min}
+          max={SPEECH_SPEED.max}
+          step={SPEECH_SPEED.step}
+          value={speed}
+          aria-label="Speed"
+          onChange={(event) => setSpeed(Number(event.target.value))}
+        />
+      </div>
+      <StudioSetting label="Format">
+        <div className="mobile-pill-row" role="radiogroup" aria-label="Audio format">
+          {SPEECH_FORMATS.map((entry) => (
+            <button
+              key={entry}
+              type="button"
+              className="mobile-pill"
+              data-active={format === entry ? "true" : undefined}
+              onClick={() => setFormat(entry)}
+            >
+              {entry}
+            </button>
+          ))}
+        </div>
+      </StudioSetting>
+      <button
+        type="button"
+        className="mobile-studio-generate"
+        disabled={!model || !text.trim() || busy}
+        onClick={() => void generate()}
+      >
+        {busy ? <Spinner /> : "Generate"}
+      </button>
+      {busy ? (
+        <button
+          type="button"
+          className="mobile-chip-button"
+          onClick={() => abortRef.current?.abort()}
+        >
+          Cancel
+        </button>
+      ) : null}
+      {error ? <p className="mobile-dictation-error">{error}</p> : null}
+      {pickerOpen ? (
+        <ModelSheet
+          title="Speech model"
+          entries={models.map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            subtitle: [entry.tier, entry.privacy].filter(Boolean).join(" · "),
+          }))}
+          selectedId={model?.id ?? ""}
+          onSelect={(id) => {
+            if (id) setModelId(id);
+            setPickerOpen(false);
+          }}
+          onClose={() => setPickerOpen(false)}
+        />
+      ) : null}
+      {voicePickerOpen ? (
+        <ModelSheet
+          title="Voice"
+          entries={voices.map((entry) => ({ id: entry, name: entry, subtitle: "" }))}
+          selectedId={effectiveVoice}
+          onSelect={(id) => {
+            if (id) setVoice(id);
+            setVoicePickerOpen(false);
+          }}
+          onClose={() => setVoicePickerOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** Effects are described in a line, not a paragraph. */
+const SFX_PROMPT_LIMIT = 250;
+
+function SfxPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerated: () => void }) {
+  const models = useMemo(() => soundEffectsModels(catalog), [catalog]);
+  const paths = musicPaths(catalog.backend);
+  const [modelId, setModelId] = useState(models[0]?.id ?? "");
+  const model = models.find((entry) => entry.id === modelId) ?? models[0];
+  const caps = musicCapabilities(model?.id ?? "");
+  const [prompt, setPrompt] = useState("");
+  const [autoDuration, setAutoDuration] = useState(true);
+  const [durationSeconds, setDurationSeconds] = useState(5);
+  const [resumable, setResumable] = useState<PersistedJob[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const job = useMediaJob<MediaFileResult>(async (result, finished) => {
+    await saveArtifactFromResult(result, "mp3", {
+      kind: "sfx",
+      model: finished.model,
+      prompt: finished.prompt,
+    });
+    hapticNotify("success");
+    onGenerated();
+  });
+
+  useEffect(() => {
+    const pending = pendingJobs("sfx");
+    if (pending.length === 0) return;
+    const [newest, ...rest] = pending;
+    setResumable(rest);
+    void job.resume(newest, audioResultFrom);
+  }, []);
+
+  const duration = caps.durationSeconds
+    ? Math.min(Math.max(durationSeconds, caps.durationSeconds.min), caps.durationSeconds.max)
+    : durationSeconds;
+  const cost = model
+    ? estimateCostCredits(model, {
+        durationSeconds: autoDuration ? undefined : duration,
+        multiplier: catalog.priceMultiplier,
+      })
+    : undefined;
+  const busy =
+    job.state.phase === "queueing" ||
+    job.state.phase === "queued" ||
+    job.state.phase === "processing";
+
+  const start = useCallback(() => {
+    if (!model || !prompt.trim()) return;
+    const body: Record<string, unknown> = {
+      model: model.id,
+      prompt: prompt.trim().slice(0, SFX_PROMPT_LIMIT),
+    };
+    if (!autoDuration) body.duration_seconds = duration;
+    void job.start({
+      kind: "sfx",
+      model: model.id,
+      prompt: prompt.trim(),
+      extension: "mp3",
+      queuePath: paths.queue,
+      queueBody: body,
+      retrieve: (queueId) => ({
+        path: paths.retrieve,
+        body: retrieveBody(queueId, model.id),
+      }),
+      getResult: audioResultFrom,
+    });
+  }, [model, prompt, autoDuration, duration, job, paths]);
+
+  const resume = useCallback(
+    (pending: PersistedJob) => {
+      setResumable((jobs) => jobs.filter((entry) => entry.id !== pending.id));
+      void job.resume(pending, audioResultFrom);
+    },
+    [job],
+  );
+
+  return (
+    <>
+      <ModelPickerButton
+        label="Effect model"
+        value={model?.name ?? ""}
+        onOpen={() => setPickerOpen(true)}
+      />
+      <textarea
+        className="mobile-studio-prompt"
+        value={prompt}
+        rows={2}
+        maxLength={SFX_PROMPT_LIMIT}
+        placeholder="Describe a short sound (a door creak, rain on glass)"
+        onChange={(event) => setPrompt(event.target.value)}
+      />
+      <label className="mobile-toggle-row">
+        <input
+          type="checkbox"
+          checked={autoDuration}
+          onChange={(event) => setAutoDuration(event.target.checked)}
+        />
+        <span>Auto duration</span>
+      </label>
+      {!autoDuration && caps.durationSeconds ? (
+        <div className="mobile-studio-field">
+          <div className="mobile-studio-field-head">
+            <span className="mobile-studio-field-label">Duration</span>
+            <span className="mobile-studio-field-value">{`${duration}s`}</span>
+          </div>
+          <input
+            type="range"
+            className="mobile-studio-slider"
+            min={caps.durationSeconds.min}
+            max={caps.durationSeconds.max}
+            step={caps.durationSeconds.step}
+            value={duration}
+            aria-label="Duration"
+            onChange={(event) => setDurationSeconds(Number(event.target.value))}
+          />
+        </div>
+      ) : null}
+      <button
+        type="button"
+        className="mobile-studio-generate"
+        disabled={!model || !prompt.trim() || busy}
+        onClick={start}
+      >
+        {busy ? <Spinner /> : "Generate"}
+        {!busy && cost !== undefined ? (
+          <span className="mobile-studio-cost">{formatCredits(cost)}</span>
+        ) : null}
+      </button>
+      {busy ? (
+        <p className="mobile-studio-progress" data-shimmer="true">
+          Rendering. You can leave this tab; the job resumes.
+        </p>
+      ) : null}
+      {job.state.phase === "failed" ? (
+        <p className="mobile-dictation-error">{job.state.message}</p>
+      ) : null}
+      {resumable.map((pending) => (
+        <button
+          key={pending.id}
+          type="button"
+          className="mobile-chip-button"
+          onClick={() => resume(pending)}
+        >
+          Resume: {pending.prompt.slice(0, 40)}
+        </button>
+      ))}
+      {pickerOpen ? (
+        <ModelSheet
+          title="Effect model"
+          entries={models.map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            subtitle: [entry.tier, entry.privacy].filter(Boolean).join(" · "),
+          }))}
+          selectedId={model?.id ?? ""}
+          onSelect={(id) => {
+            if (id) setModelId(id);
+            setPickerOpen(false);
+          }}
+          onClose={() => setPickerOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
 function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerated: () => void }) {
-  const models = useMemo(() => modelsOfType(catalog, "music"), [catalog]);
+  const models = useMemo(() => musicModels(catalog), [catalog]);
   const paths = musicPaths(catalog.backend);
   const [modelId, setModelId] = useState(models[0]?.id ?? "");
   const model = models.find((entry) => entry.id === modelId) ?? models[0];
@@ -1015,7 +1697,7 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
   );
 
   return (
-    <div className="mobile-studio-form">
+    <>
       <ModelPickerButton
         label="Music model"
         value={model?.name ?? ""}
@@ -1086,7 +1768,7 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
           entries={models.map((entry) => ({
             id: entry.id,
             name: entry.name,
-            subtitle: entry.tier,
+            subtitle: [entry.tier, entry.privacy].filter(Boolean).join(" · "),
           }))}
           selectedId={model?.id ?? ""}
           onSelect={(id) => {
@@ -1096,7 +1778,7 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
           onClose={() => setPickerOpen(false)}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -1160,11 +1842,21 @@ function Gallery({
     onChanged();
   }, [items, selected, exitSelection, onChanged]);
 
+  const isAudioKind = kind === "music" || kind === "speech" || kind === "sfx";
+
   if (items.length === 0) {
     return (
       <EmptyState
         title={
-          kind === "image" ? "No images yet" : kind === "video" ? "No videos yet" : "No tracks yet"
+          kind === "image"
+            ? "No images yet"
+            : kind === "video"
+              ? "No videos yet"
+              : kind === "speech"
+                ? "No narrations yet"
+                : kind === "sfx"
+                  ? "No sound effects yet"
+                  : "No tracks yet"
         }
         description="Everything you generate stays on this device."
       />
@@ -1179,11 +1871,7 @@ function Gallery({
           type="search"
           value={query}
           placeholder={
-            kind === "music"
-              ? "Search tracks"
-              : kind === "video"
-                ? "Search videos"
-                : "Search images"
+            isAudioKind ? "Search audio" : kind === "video" ? "Search videos" : "Search images"
           }
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -1197,8 +1885,8 @@ function Gallery({
       </div>
       {filtered.length === 0 ? (
         <p className="mobile-studio-empty-hint">No results for “{query.trim()}”.</p>
-      ) : kind === "music" ? (
-        <ul className="mobile-note-list" aria-label="Generated tracks">
+      ) : isAudioKind ? (
+        <ul className="mobile-note-list" aria-label="Generated audio">
           {filtered.map((artifact) => (
             <MusicRow
               key={artifact.path}
@@ -1328,16 +2016,20 @@ function Lightbox({
   onDelete,
   onUseAsReference,
   onUpscaled,
+  canRemoveBackground = false,
 }: {
   artifact: StudioArtifact;
   onClose: () => void;
   onDelete: () => void;
   onUseAsReference?: () => void;
   onUpscaled: () => void;
+  /** Backend-dependent: the cutout endpoint only exists on some backends. */
+  canRemoveBackground?: boolean;
 }) {
   const src = useArtifactDataUrl(artifact);
   const [saved, setSaved] = useState(false);
   const [upscaling, setUpscaling] = useState<2 | 4 | null>(null);
+  const [cuttingOut, setCuttingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [promptCopied, setPromptCopied] = useState(false);
   const canSaveToPhotos =
@@ -1391,6 +2083,29 @@ function Lightbox({
     },
     [artifact, upscaling, onUpscaled, onClose],
   );
+
+  const removeBg = useCallback(async () => {
+    if (cuttingOut) return;
+    setCuttingOut(true);
+    setError(null);
+    try {
+      const base64 = await readArtifactBase64(artifact);
+      const result = await removeBackground(base64);
+      await saveArtifactFromBase64(result, "png", {
+        kind: "image",
+        model: "background-remover",
+        prompt: `${artifact.prompt ?? "Image"} (cutout)`,
+      });
+      hapticNotify("success");
+      onUpscaled();
+      onClose();
+    } catch (err) {
+      hapticNotify("error");
+      setError(err instanceof Error ? err.message : "The cutout failed.");
+    } finally {
+      setCuttingOut(false);
+    }
+  }, [artifact, cuttingOut, onUpscaled, onClose]);
 
   return (
     <div className="mobile-studio-preview" role="dialog" aria-label="Media preview">
@@ -1457,6 +2172,16 @@ function Lightbox({
               >
                 {upscaling === 4 ? <Spinner /> : "Upscale x4"}
               </button>
+              {canRemoveBackground ? (
+                <button
+                  type="button"
+                  className="mobile-chip-button"
+                  disabled={cuttingOut}
+                  onClick={() => void removeBg()}
+                >
+                  {cuttingOut ? <Spinner /> : "Remove background"}
+                </button>
+              ) : null}
             </>
           ) : null}
           {onUseAsReference ? (
@@ -1502,7 +2227,22 @@ function ReferencePicker({
   prepare?: (dataUrl: string) => Promise<string>;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
+
+  const readPicked = useCallback(
+    (file: File | undefined) => {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async () => {
+        if (typeof reader.result !== "string") return;
+        const dataUrl = prepare ? await prepare(reader.result) : reader.result;
+        onChange([...references, dataUrl]);
+      };
+      reader.readAsDataURL(file);
+    },
+    [references, onChange, prepare],
+  );
 
   const addFromGallery = useCallback(
     async (artifact: StudioArtifact) => {
@@ -1524,16 +2264,19 @@ function ReferencePicker({
         accept="image/*"
         hidden
         onChange={(event) => {
-          const file = event.target.files?.[0];
+          readPicked(event.target.files?.[0]);
           event.target.value = "";
-          if (!file) return;
-          const reader = new FileReader();
-          reader.onload = async () => {
-            if (typeof reader.result !== "string") return;
-            const dataUrl = prepare ? await prepare(reader.result) : reader.result;
-            onChange([...references, dataUrl]);
-          };
-          reader.readAsDataURL(file);
+        }}
+      />
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        hidden
+        onChange={(event) => {
+          readPicked(event.target.files?.[0]);
+          event.target.value = "";
         }}
       />
       {references.length > 0 ? (
@@ -1560,6 +2303,15 @@ function ReferencePicker({
         >
           Add a photo
         </button>
+        {isMobilePlatform() ? (
+          <button
+            type="button"
+            className="mobile-chip-button"
+            onClick={() => cameraRef.current?.click()}
+          >
+            Take a photo
+          </button>
+        ) : null}
         {galleryImages.length > 0 ? (
           <button type="button" className="mobile-chip-button" onClick={() => setGalleryOpen(true)}>
             From gallery

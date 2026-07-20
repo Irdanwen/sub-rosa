@@ -35,6 +35,7 @@ const KIND_TITLE: Record<PersistedJobKind, string> = {
   video: "Your video is ready",
   music: "Your track is ready",
   image: "Your image is ready",
+  sfx: "Your sound effect is ready",
 };
 
 /** Post a "generation ready" notification, if permission was granted. Silently

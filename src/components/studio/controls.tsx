@@ -58,7 +58,16 @@ export function PillGroup<T extends string>({
   );
 }
 
-/** Model picker fed by the merged catalog; shows the tier as a suffix. */
+/** One-line descriptor for a model: tier plus its privacy posture ("private"
+ * = zero retention, "anonymized" = provider may keep anonymized prompts). */
+export function modelDescriptor(model: MediaModel): string {
+  const parts = [model.tier, model.privacy].filter(
+    (entry): entry is string => typeof entry === "string" && entry.length > 0,
+  );
+  return parts.join(" · ");
+}
+
+/** Model picker fed by the merged catalog; shows tier + privacy as a suffix. */
 export function ModelSelect({
   models,
   value,
@@ -76,10 +85,13 @@ export function ModelSelect({
       placeholder="Choose a model"
       ariaLabel={ariaLabel}
       onChange={onChange}
-      options={models.map((model) => ({
-        value: model.id,
-        label: model.tier ? `${model.name} (${model.tier})` : model.name,
-      }))}
+      options={models.map((model) => {
+        const descriptor = modelDescriptor(model);
+        return {
+          value: model.id,
+          label: descriptor ? `${model.name} (${descriptor})` : model.name,
+        };
+      })}
     />
   );
 }

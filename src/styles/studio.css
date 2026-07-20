@@ -45,6 +45,116 @@
   color: var(--muted-foreground);
 }
 
+/* Assemble: the ordered cut list and its inline preview player. */
+.studio-cutlist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.studio-cut {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--card);
+}
+
+.studio-cut-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.studio-cut-title {
+  font-size: var(--fs-sm);
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-cut-trim {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.studio-cut-trim label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.studio-cut-trim .studio-input {
+  width: 64px;
+}
+
+.studio-cut-length {
+  margin-left: auto;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.studio-assemble-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-5);
+}
+
+/* Comparison chips: one removable chip per extra model in a side-by-side run. */
+.studio-compare-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.studio-compare-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.studio-compare-chip:hover {
+  border-color: var(--border);
+}
+
+/* Video job list: failed cards read as errors, live ones as progress. */
+.studio-resume[data-phase="failed"] {
+  border-color: var(--destructive);
+}
+
+.studio-queue-hint {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+/* Audio tab: the mode switch sits above its studio, aligned left. */
+.studio-audio {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  align-items: flex-start;
+}
+
+.studio-audio > .studio-generation {
+  width: 100%;
+}
+
 /* --- generation layout ------------------------------------------------- */
 
 .studio-generation {

@@ -153,7 +153,7 @@ export function fileResultFrom(
 
 // --- persisted pending jobs ---------------------------------------------------
 
-export type PersistedJobKind = "video" | "music" | "image";
+export type PersistedJobKind = "video" | "music" | "image" | "sfx";
 
 /** Everything needed to re-attach to a queued generation after a restart. */
 export interface PersistedJob {
@@ -350,6 +350,174 @@ export function useMediaJob<T>(onCompleted: (result: T, job: PersistedJob) => Pr
   const reset = useCallback(() => setState({ phase: "idle" }), []);
 
   return { state, start, resume, cancel, reset };
+}
+
+// --- multi-job hook -----------------------------------------------------------
+
+/** One entry in a view's live job list. Completed jobs leave the list (their
+ * artifact lands in the gallery); failed ones stay until dismissed. */
+export interface QueuedJobState {
+  job: PersistedJob;
+  phase: "queued" | "processing" | "failed";
+  elapsedMs: number;
+  message?: string;
+}
+
+/**
+ * Drives any number of concurrent async generations for one view: queue,
+ * persist, poll each independently, report all of them as a list. The single
+ * `getResult` is fixed at the hook level because a view polls one media kind.
+ * `useMediaJob` remains for the single-slot views (mobile).
+ */
+export function useMediaJobQueue<T>(
+  onCompleted: (result: T, job: PersistedJob) => Promise<void>,
+  getResult: (response: Record<string, unknown>) => T | undefined,
+) {
+  const [jobs, setJobs] = useState<QueuedJobState[]>([]);
+  const controllers = useRef(new Map<string, AbortController>());
+  const onCompletedRef = useRef(onCompleted);
+  onCompletedRef.current = onCompleted;
+  const getResultRef = useRef(getResult);
+  getResultRef.current = getResult;
+
+  useEffect(() => {
+    const tick = window.setInterval(() => {
+      setJobs((current) =>
+        current.map((entry) =>
+          entry.phase === "failed"
+            ? entry
+            : { ...entry, elapsedMs: Date.now() - entry.job.createdAt },
+        ),
+      );
+    }, 1_000);
+    return () => window.clearInterval(tick);
+  }, []);
+
+  useEffect(
+    () => () => {
+      for (const controller of controllers.current.values()) controller.abort();
+    },
+    [],
+  );
+
+  const patchJob = useCallback((id: string, patch: Partial<QueuedJobState>) => {
+    setJobs((current) =>
+      current.map((entry) => (entry.job.id === id ? { ...entry, ...patch } : entry)),
+    );
+  }, []);
+
+  const attach = useCallback(
+    async (job: PersistedJob) => {
+      if (controllers.current.has(job.id)) return;
+      const controller = new AbortController();
+      controllers.current.set(job.id, controller);
+      setJobs((current) => [
+        { job, phase: "queued" as const, elapsedMs: Date.now() - job.createdAt },
+        ...current.filter((entry) => entry.job.id !== job.id),
+      ]);
+      try {
+        const result = await pollUntilDone<T>({
+          retrievePath: job.retrievePath,
+          retrieveBody: job.retrieveBody,
+          getResult: (response) => getResultRef.current(response),
+          signal: controller.signal,
+          onPhase: (phase) => {
+            if (phase === "queued" || phase === "processing") patchJob(job.id, { phase });
+          },
+        });
+        await onCompletedRef.current(result, job);
+        removePersistedJob(job.id);
+        void notifyMediaJobDone(job.kind, job.prompt);
+        setJobs((current) => current.filter((entry) => entry.job.id !== job.id));
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          // Stop-waiting: the card goes, the persisted job stays for later.
+          setJobs((current) => current.filter((entry) => entry.job.id !== job.id));
+          return;
+        }
+        // Terminal failure: the backend won't finish this job, drop it.
+        if (!(error instanceof MediaError && error.status === 0)) {
+          removePersistedJob(job.id);
+        }
+        patchJob(job.id, {
+          phase: "failed",
+          message: error instanceof Error ? error.message : "The generation failed.",
+        });
+      } finally {
+        controllers.current.delete(job.id);
+      }
+    },
+    [patchJob],
+  );
+
+  const start = useCallback(
+    async (options: Omit<StartJobOptions<T>, "getResult">) => {
+      let queueId: string;
+      try {
+        const queued = await mediaJson<Record<string, unknown>>(
+          options.queuePath,
+          options.queueBody,
+        );
+        const id = queued.queue_id ?? queued.id;
+        if (typeof id !== "string" || !id) {
+          throw new MediaError("The backend did not return a job id.", { status: 200 });
+        }
+        queueId = id;
+      } catch (error) {
+        // The submit itself failed: nothing was paid for, surface it as a
+        // failed card the user can dismiss.
+        const failed: PersistedJob = {
+          id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          kind: options.kind,
+          model: options.model,
+          prompt: options.prompt,
+          queueId: "",
+          retrievePath: "",
+          retrieveBody: {},
+          extension: options.extension,
+          createdAt: Date.now(),
+        };
+        setJobs((current) => [
+          {
+            job: failed,
+            phase: "failed" as const,
+            elapsedMs: 0,
+            message: error instanceof Error ? error.message : "Queueing the generation failed.",
+          },
+          ...current,
+        ]);
+        return;
+      }
+      const retrieve = options.retrieve(queueId);
+      const job: PersistedJob = {
+        id: queueId,
+        kind: options.kind,
+        model: options.model,
+        prompt: options.prompt,
+        queueId,
+        retrievePath: retrieve.path,
+        retrieveBody: retrieve.body,
+        extension: options.extension,
+        createdAt: Date.now(),
+      };
+      persistJob(job);
+      void ensureNotificationPermission();
+      await attach(job);
+    },
+    [attach],
+  );
+
+  /** Stops polling one job. The backend keeps rendering (and billing) — the
+   * persisted entry stays so it can be re-attached later. */
+  const stop = useCallback((id: string) => {
+    controllers.current.get(id)?.abort();
+  }, []);
+
+  const dismiss = useCallback((id: string) => {
+    setJobs((current) => current.filter((entry) => entry.job.id !== id));
+  }, []);
+
+  return { jobs, start, resume: attach, stop, dismiss };
 }
 
 export function formatElapsed(elapsedMs: number): string {

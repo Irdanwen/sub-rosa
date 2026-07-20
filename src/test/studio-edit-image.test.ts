@@ -24,7 +24,7 @@ vi.mock("../lib/studio/client", () => {
 });
 
 import { MediaError, mediaJson, mediaRaw } from "../lib/studio/client";
-import { composeImages, editImage } from "../lib/studio/edit-image";
+import { composeImages, editImage, removeBackground } from "../lib/studio/edit-image";
 
 const mediaJsonMock = vi.mocked(mediaJson);
 const mediaRawMock = vi.mocked(mediaRaw);
@@ -122,5 +122,25 @@ describe("composeImages", () => {
     await expect(composeImages("seedream-v4-edit", "x", ["", "  "])).rejects.toThrow(
       /at least one image/i,
     );
+  });
+});
+
+describe("removeBackground", () => {
+  it("strips a data-URI prefix and posts plain base64 to /image/background-remove", async () => {
+    mediaRawMock.mockResolvedValueOnce(rawImage("CUTOUT"));
+    const result = await removeBackground(IMG);
+    expect(result).toBe("CUTOUT");
+    expect(mediaRawMock).toHaveBeenCalledWith("/image/background-remove", { image: "AAAA" });
+  });
+
+  it("passes raw base64 through untouched", async () => {
+    mediaRawMock.mockResolvedValueOnce(rawImage("CUTOUT"));
+    await removeBackground("ZZZZ");
+    expect(mediaRawMock).toHaveBeenCalledWith("/image/background-remove", { image: "ZZZZ" });
+  });
+
+  it("surfaces a missing image as an error", async () => {
+    mediaRawMock.mockResolvedValueOnce({ status: 200, ok: true });
+    await expect(removeBackground(IMG)).rejects.toThrow(/did not return an image/i);
   });
 });

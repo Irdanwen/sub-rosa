@@ -98,14 +98,16 @@ export function withVideoDurationFallbacks(catalog: MediaCatalog): MediaCatalog 
 }
 
 /** One video family = the backend models sharing a display name, split by the
- * direction they accept: text-to-video, image-to-video (animate a still), and
- * reference-to-video (a photo drives style/subject, not the first frame). */
+ * direction they accept: text-to-video, image-to-video (animate a still),
+ * reference-to-video (a photo drives style/subject, not the first frame), and
+ * video-to-video (restyle or upscale an existing clip). */
 export interface VideoFamily {
   key: string;
   name: string;
   textModel?: MediaModel;
   imageModel?: MediaModel;
   referenceModel?: MediaModel;
+  videoModel?: MediaModel;
   modelSets: string[];
 }
 
@@ -149,9 +151,31 @@ function isReferenceToVideo(model: MediaModel): boolean {
   return hay.includes("reference-to-video") || hay.includes("reference to video");
 }
 
+/** Video upscalers (e.g. `topaz-video-upscale`) take a source clip plus an
+ * `upscale_factor` instead of a prompt-driven restyle. */
+export function isVideoUpscaleModel(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  return id.includes("video-upscale") || id.includes("upscale-video");
+}
+
+/** video-to-video variants (restyle a clip) and upscalers share the `video`
+ * catalog type with text-to-video; without their own slot they used to shadow
+ * (or be shadowed by) the text variant of the same family. */
+function isVideoToVideo(model: MediaModel): boolean {
+  const hay = `${model.id} ${model.name}`.toLowerCase();
+  return (
+    hay.includes("video-to-video") ||
+    hay.includes("video to video") ||
+    isVideoUpscaleModel(model.id)
+  );
+}
+
 export function videoFamilies(catalog: MediaCatalog): VideoFamily[] {
   const families = new Map<string, VideoFamily>();
-  const register = (model: MediaModel, slot: "textModel" | "imageModel" | "referenceModel") => {
+  const register = (
+    model: MediaModel,
+    slot: "textModel" | "imageModel" | "referenceModel" | "videoModel",
+  ) => {
     const key = videoFamilyKey(model);
     const existing = families.get(key);
     const family: VideoFamily = existing ?? {
@@ -165,7 +189,9 @@ export function videoFamilies(catalog: MediaCatalog): VideoFamily[] {
     }
     families.set(key, family);
   };
-  for (const model of modelsOfType(catalog, "video")) register(model, "textModel");
+  for (const model of modelsOfType(catalog, "video")) {
+    register(model, isVideoToVideo(model) ? "videoModel" : "textModel");
+  }
   for (const model of modelsOfType(catalog, "imageToVideo")) {
     register(model, isReferenceToVideo(model) ? "referenceModel" : "imageModel");
   }
@@ -179,6 +205,54 @@ function familyDisplayName(model: MediaModel): string {
     if (stripped) return stripped;
   }
   return videoFamilyKey(model);
+}
+
+/** The "Automatic" edit model: a capable, reasonably priced default so the
+ * edit surfaces work without picking a model first. Preference order favors
+ * instruction-following editors that handle both photos and renders well;
+ * unknown catalogs fall back to their first edit model. */
+const AUTO_EDIT_PREFERENCE = [
+  "qwen-image-2-edit",
+  "seedream-v5-lite-edit",
+  "seedream-v4-edit",
+  "nano-banana-2-edit",
+];
+
+export function defaultEditModel(catalog: MediaCatalog): MediaModel | undefined {
+  const models = imageEditModels(catalog);
+  for (const preferred of AUTO_EDIT_PREFERENCE) {
+    const hit = models.find((model) => model.id.toLowerCase() === preferred);
+    if (hit) return hit;
+  }
+  return models[0];
+}
+
+/** Background removal is a dedicated Venice endpoint
+ * (`/image/background-remove`), not a model call. The Carpe Diem operator does
+ * not mirror it yet - its catalog lists `bria-bg-remover` but no route accepts
+ * that model (probed 2026-07-20), so the surface only lights up on the Venice
+ * backend until the operator adds the mirror (as it did for `/image/multi-edit`). */
+export function supportsBackgroundRemoval(catalog: MediaCatalog): boolean {
+  return catalog.backend === "venice";
+}
+
+/** Sound-effect generators ride the music queue (same `music` catalog type,
+ * same endpoints) but are a different tool: short foley or ambience from a
+ * one-line description, not a track. The catalogs don't flag them, so they
+ * are told apart by id. */
+export function isSoundEffectsModel(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  return id.includes("sound-effect") || id.includes("mmaudio");
+}
+
+/** Music models for the music surface: the `music` catalog type minus the
+ * sound-effect generators, which get their own surface. */
+export function musicModels(catalog: MediaCatalog): MediaModel[] {
+  return modelsOfType(catalog, "music").filter((model) => !isSoundEffectsModel(model.id));
+}
+
+export function soundEffectsModels(catalog: MediaCatalog): MediaModel[] {
+  return modelsOfType(catalog, "music").filter((model) => isSoundEffectsModel(model.id));
 }
 
 /** Per-model music input rules. The catalogs don't publish these, so this is

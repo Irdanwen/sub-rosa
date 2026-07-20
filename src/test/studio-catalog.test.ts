@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { normalizeJobStatus } from "../lib/studio/async-job";
 import {
+  defaultEditModel,
   estimateCostCredits,
   imageEditModels,
+  isSoundEffectsModel,
   musicCapabilities,
+  musicModels,
+  soundEffectsModels,
+  supportsBackgroundRemoval,
   videoFamilies,
   videoFamilyKey,
   withVideoDurationFallbacks,
@@ -54,6 +59,22 @@ describe("video family grouping", () => {
     expect(videoFamilyKey(model({ id: "wan-2-7-image-to-video", mediaType: "imageToVideo" }))).toBe(
       "wan-2-7",
     );
+  });
+
+  it("routes video-to-video and upscalers to their own slot instead of shadowing text", () => {
+    const grouped = videoFamilies(
+      catalog([
+        model({ id: "wan-2-7-text-to-video", mediaType: "video" }),
+        model({ id: "wan-2-7-video-to-video", mediaType: "video" }),
+        model({ id: "topaz-video-upscale", mediaType: "video" }),
+      ]),
+    );
+    const wan = grouped.find((family) => family.key === "wan-2-7");
+    expect(wan?.textModel?.id).toBe("wan-2-7-text-to-video");
+    expect(wan?.videoModel?.id).toBe("wan-2-7-video-to-video");
+    const topaz = grouped.find((family) => family.key.includes("topaz"));
+    expect(topaz?.videoModel?.id).toBe("topaz-video-upscale");
+    expect(topaz?.textModel).toBeUndefined();
   });
 
   it("keeps reference-to-video in its own slot instead of clobbering image-to-video", () => {
@@ -166,6 +187,50 @@ describe("music input rules", () => {
   });
 });
 
+describe("automatic edit model", () => {
+  it("prefers the capable default, then falls back to the first edit model", () => {
+    const preferred = catalog([
+      model({ id: "seedream-v4-edit", mediaType: "imageEdit" }),
+      model({ id: "qwen-image-2-edit", mediaType: "imageEdit" }),
+    ]);
+    expect(defaultEditModel(preferred)?.id).toBe("qwen-image-2-edit");
+
+    const fallback = catalog([model({ id: "firered-image-edit", mediaType: "imageEdit" })]);
+    expect(defaultEditModel(fallback)?.id).toBe("firered-image-edit");
+  });
+});
+
+describe("background removal support", () => {
+  it("only lights up on the Venice backend (Carpe Diem has no callable route)", () => {
+    expect(supportsBackgroundRemoval(catalog([]))).toBe(false);
+    expect(supportsBackgroundRemoval({ backend: "venice", priceMultiplier: 1, models: [] })).toBe(
+      true,
+    );
+  });
+});
+
+describe("music vs sound effects partition", () => {
+  const audio = catalog([
+    model({ id: "elevenlabs-music", mediaType: "music" }),
+    model({ id: "elevenlabs-sound-effects-v2", mediaType: "music" }),
+    model({ id: "mmaudio-v2-text-to-audio", mediaType: "music" }),
+    model({ id: "ace-step-15", mediaType: "music" }),
+  ]);
+
+  it("flags sound-effect generators by id", () => {
+    expect(isSoundEffectsModel("elevenlabs-sound-effects-v2")).toBe(true);
+    expect(isSoundEffectsModel("mmaudio-v2-text-to-audio")).toBe(true);
+    expect(isSoundEffectsModel("elevenlabs-music")).toBe(false);
+  });
+
+  it("splits the music catalog type into two disjoint surfaces", () => {
+    const music = musicModels(audio).map((entry) => entry.id);
+    const sfx = soundEffectsModels(audio).map((entry) => entry.id);
+    expect(music).toEqual(["ace-step-15", "elevenlabs-music"]);
+    expect(sfx).toEqual(["elevenlabs-sound-effects-v2", "mmaudio-v2-text-to-audio"]);
+  });
+});
+
 describe("backend paths", () => {
   it("routes music endpoints by backend", () => {
     expect(musicPaths("carpe-diem")).toEqual({
@@ -186,6 +251,9 @@ describe("backend paths", () => {
     });
     expect(supportsVideoQuote("ltx-2-pro")).toBe(false);
     expect(supportsVideoQuote("kling-2.6-pro-text-to-video")).toBe(true);
+    // Probed 2026-07-20: quote rejects these families outright.
+    expect(supportsVideoQuote("wan-2-7-video-to-video")).toBe(false);
+    expect(supportsVideoQuote("topaz-video-upscale")).toBe(false);
   });
 });
 

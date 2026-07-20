@@ -22,7 +22,7 @@ vi.mock("../lib/studio/client", () => {
   };
 });
 
-import { generateImages } from "../lib/studio/generate-image";
+import { compareBodies, generateImages } from "../lib/studio/generate-image";
 import { MediaError, mediaJson, mediaRaw } from "../lib/studio/client";
 
 const mediaJsonMock = vi.mocked(mediaJson);
@@ -147,5 +147,46 @@ describe("generateImages — queue variant fan-out", () => {
       expect.objectContaining({ variants: 2 }),
     );
     expect(mediaRawMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("compareBodies — side-by-side model comparison", () => {
+  const wan = {
+    id: "wan-2-7-text-to-image",
+    name: "Wan 2.7",
+    mediaType: "image" as const,
+    offline: false,
+    constraints: { aspectRatios: ["1:1", "16:9"] },
+  };
+  const flux = {
+    id: "flux-2-pro",
+    name: "Flux 2 Pro",
+    mediaType: "image" as const,
+    offline: false,
+  };
+
+  it("builds one single-variant body per model, keeping only supported settings", () => {
+    const runs = compareBodies([wan, flux], "a fox", {
+      negativePrompt: "blurry",
+      seed: 42,
+      aspectRatio: "16:9",
+    });
+    expect(runs).toHaveLength(2);
+    for (const { body } of runs) {
+      expect(body.variants).toBe(1);
+      expect(body.prompt).toBe("a fox");
+      expect(body.negative_prompt).toBe("blurry");
+      expect(body.seed).toBe(42);
+    }
+    // Wan offers 16:9; Flux publishes no aspect list, so it gets none.
+    expect(runs[0].body.aspect_ratio).toBe("16:9");
+    expect("aspect_ratio" in runs[1].body).toBe(false);
+  });
+
+  it("dedupes repeated models and omits blank optional settings", () => {
+    const runs = compareBodies([wan, wan, flux], "a fox", { negativePrompt: "  " });
+    expect(runs.map((run) => run.model.id)).toEqual(["wan-2-7-text-to-image", "flux-2-pro"]);
+    expect("negative_prompt" in runs[0].body).toBe(false);
+    expect("seed" in runs[0].body).toBe(false);
   });
 });

@@ -125,6 +125,23 @@ export async function composeImages(
   return editViaQueue("/image/multi-edit", { model: modelId, prompt, images, safe_mode: false });
 }
 
+/**
+ * Produce a transparent cutout (binary `image/png` with alpha) via Venice's
+ * dedicated `/image/background-remove` endpoint. Accepts a data URI or raw
+ * base64 (the endpoint wants plain base64). Venice-only today: the Carpe Diem
+ * operator's catalog lists `bria-bg-remover` but no route accepts it (probed
+ * 2026-07-20: `/image/background-remove` 404s, edit and generate reject the
+ * model id) — gate callers with `supportsBackgroundRemoval`.
+ */
+export async function removeBackground(imageDataUriOrBase64: string): Promise<string> {
+  const image = imageDataUriOrBase64.replace(/^data:[^,]*,/, "");
+  const response = await mediaRaw("/image/background-remove", { image });
+  if (!response.ok || !response.bodyBase64) {
+    throw new MediaError("The cutout did not return an image.", { status: response.status });
+  }
+  return response.bodyBase64;
+}
+
 /** Upscale a gallery image (raw base64 in, base64 out, scale 2 to 4). */
 export async function upscaleImage(base64: string, scale: 2 | 3 | 4): Promise<string> {
   const response = await mediaRaw("/image/upscale", { image: base64, scale });

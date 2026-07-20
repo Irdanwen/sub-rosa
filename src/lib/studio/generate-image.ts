@@ -1,4 +1,5 @@
 import { MediaError, mediaJson, mediaRaw } from "./client";
+import type { MediaModel } from "./types";
 
 /** Models whose sync path exceeds the edge cap: queue from the start. */
 const HEAVY_IMAGE_MODELS = ["gpt-image", "nano-banana-pro", "recraft-v4-pro"];
@@ -89,6 +90,48 @@ async function generateViaQueue(body: Record<string, unknown>): Promise<string[]
   // Partial success is fine: the async path bills only on retrievable success,
   // so we return whatever completed rather than discard paid images.
   return images;
+}
+
+export interface CompareGenerateOptions {
+  negativePrompt?: string;
+  seed?: number;
+  aspectRatio?: string;
+}
+
+/**
+ * One request body per model for a side-by-side comparison run: the same
+ * prompt everywhere, one image each, and only the settings a given model
+ * supports (the aspect ratio is dropped for models that don't offer the
+ * chosen one instead of failing that model's render).
+ */
+export function compareBodies(
+  models: MediaModel[],
+  prompt: string,
+  options: CompareGenerateOptions = {},
+): Array<{ model: MediaModel; body: Record<string, unknown> }> {
+  const seen = new Set<string>();
+  const unique = models.filter((model) => {
+    if (seen.has(model.id)) return false;
+    seen.add(model.id);
+    return true;
+  });
+  return unique.map((model) => {
+    const body: Record<string, unknown> = {
+      model: model.id,
+      prompt,
+      variants: 1,
+      format: "png",
+      hide_watermark: true,
+      safe_mode: false,
+    };
+    if (options.negativePrompt?.trim()) body.negative_prompt = options.negativePrompt.trim();
+    if (options.seed !== undefined && Number.isFinite(options.seed)) body.seed = options.seed;
+    const aspects = model.constraints?.aspectRatios ?? [];
+    if (options.aspectRatio && aspects.includes(options.aspectRatio)) {
+      body.aspect_ratio = options.aspectRatio;
+    }
+    return { model, body };
+  });
 }
 
 /**

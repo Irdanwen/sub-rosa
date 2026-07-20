@@ -29,7 +29,10 @@ export function retrieveBody(queueId: string, model: string): Record<string, unk
 }
 
 /** `/video/quote` 400s on some families even with a valid payload — skip the
- * quote for those and queue directly. */
+ * quote for those and queue directly. The video-to-video and video-upscale
+ * families reject every quote probe (2026-07-20), like ltx always has. */
 export function supportsVideoQuote(modelId: string): boolean {
-  return !modelId.toLowerCase().startsWith("ltx");
+  const id = modelId.toLowerCase();
+  if (id.startsWith("ltx")) return false;
+  return !(id.includes("video-to-video") || id.includes("video-upscale"));
 }

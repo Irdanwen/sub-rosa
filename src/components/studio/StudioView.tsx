@@ -7,9 +7,10 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { EmptyState } from "../ui/EmptyState";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { Spinner } from "../ui/Spinner";
+import { AssembleStudio } from "./AssembleStudio";
+import { AudioStudio } from "./AudioStudio";
 import { FilmStudio } from "./FilmStudio";
 import { ImageStudio } from "./ImageStudio";
-import { MusicStudio } from "./MusicStudio";
 import { VideoStudio } from "./VideoStudio";
 import { useMediaCatalog } from "./useMediaCatalog";
 
@@ -19,17 +20,20 @@ const WorkflowStudio = lazy(() =>
   import("./WorkflowStudio").then((module) => ({ default: module.WorkflowStudio })),
 );
 
-type StudioTab = "image" | "video" | "music" | "films" | "workflows";
+type StudioTab = "image" | "video" | "audio" | "assemble" | "films" | "workflows";
 
 const TAB_STORAGE_KEY = "os-june:studio-tab";
 
 function initialTab(): StudioTab {
   try {
     const saved = window.localStorage.getItem(TAB_STORAGE_KEY);
+    // "music" is the tab's pre-audio name; saved values must keep resolving.
+    if (saved === "music") return "audio";
     if (
       saved === "image" ||
       saved === "video" ||
-      saved === "music" ||
+      saved === "audio" ||
+      saved === "assemble" ||
       saved === "films" ||
       saved === "workflows"
     ) {
@@ -59,7 +63,7 @@ export function StudioView() {
         <div className="studio-header-copy">
           <h1>Studio</h1>
           <p className="studio-subtitle">
-            Generate images, videos, and music, or chain them into workflows.
+            Generate images, videos, and audio, or chain them into workflows.
           </p>
         </div>
         <SegmentedControl
@@ -69,7 +73,8 @@ export function StudioView() {
           options={[
             { value: "image", label: "Image" },
             { value: "video", label: "Video" },
-            { value: "music", label: "Music" },
+            { value: "audio", label: "Audio" },
+            { value: "assemble", label: "Assemble" },
             { value: "films", label: "Films" },
             { value: "workflows", label: "Workflows" },
           ]}
@@ -97,8 +102,10 @@ export function StudioView() {
         <ImageStudio catalog={catalog} />
       ) : tab === "video" ? (
         <VideoStudio catalog={catalog} />
-      ) : tab === "music" ? (
-        <MusicStudio catalog={catalog} />
+      ) : tab === "audio" ? (
+        <AudioStudio catalog={catalog} />
+      ) : tab === "assemble" ? (
+        <AssembleStudio />
       ) : (
         <Suspense
           fallback={

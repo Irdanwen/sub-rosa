@@ -1,19 +1,24 @@
-// Music studio: async queue + poll, like video, with per-model input rules
-// (lyrics required / optional / forbidden) and duration-bracket pricing.
+// Sound-effects studio: short foley and ambience from a one-line description.
+// Rides the same async music queue as the music studio - only the model set,
+// the input rules, and the copy differ.
 
-import { IconAudio } from "central-icons/IconAudio";
+import { IconSoundFx } from "central-icons/IconSoundFx";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { saveArtifactFromResult } from "../../lib/studio/artifacts";
 import {
   fileResultFrom,
   formatElapsed,
   type MediaFileResult,
+  type PersistedJob,
   pendingJobs,
   removePersistedJob,
   useMediaJob,
-  type PersistedJob,
 } from "../../lib/studio/async-job";
-import { estimateCostCredits, musicCapabilities, musicModels } from "../../lib/studio/catalog";
+import {
+  estimateCostCredits,
+  musicCapabilities,
+  soundEffectsModels,
+} from "../../lib/studio/catalog";
 import { musicPaths, retrieveBody } from "../../lib/studio/paths";
 import type { MediaCatalog } from "../../lib/studio/types";
 import { EmptyState } from "../ui/EmptyState";
@@ -23,27 +28,30 @@ import { GalleryStrip } from "./GalleryStrip";
 import { GenerationLayout } from "./GenerationLayout";
 import { CostHint, ModelSelect, SliderField, StudioField } from "./controls";
 
-// Carpe Diem streams the finished track as the retrieve body (one shot);
-// Venice answers JSON with an `audio_url`. Both shapes must be accepted.
+/** Effects are described in a line, not a paragraph - and some backends cut
+ * long descriptions anyway. */
+export const SFX_PROMPT_LIMIT = 250;
+
 const audioResultFrom = fileResultFrom("audio_url", "url");
 
-export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
-  const models = useMemo(() => musicModels(catalog), [catalog]);
+export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
+  const models = useMemo(() => soundEffectsModels(catalog), [catalog]);
   const paths = musicPaths(catalog.backend);
   const [modelId, setModelId] = useState(models[0]?.id ?? "");
-  const model = models.find((entry) => entry.id === modelId);
-  const caps = musicCapabilities(modelId);
+  const model = models.find((entry) => entry.id === modelId) ?? models[0];
+  const caps = musicCapabilities(model?.id ?? "");
 
   const [prompt, setPrompt] = useState("");
-  const [lyrics, setLyrics] = useState("");
-  const [instrumental, setInstrumental] = useState(false);
-  const [durationSeconds, setDurationSeconds] = useState(60);
+  // Auto duration lets the model size the effect to the description; the
+  // slider only appears (and is only sent) when the user takes over.
+  const [autoDuration, setAutoDuration] = useState(true);
+  const [durationSeconds, setDurationSeconds] = useState(5);
   const [resumable, setResumable] = useState<PersistedJob[]>([]);
   const [galleryEpoch, setGalleryEpoch] = useState(0);
 
   const job = useMediaJob<MediaFileResult>(async (result, finished) => {
     await saveArtifactFromResult(result, "mp3", {
-      kind: "music",
+      kind: "sfx",
       model: finished.model,
       prompt: finished.prompt,
     });
@@ -51,38 +59,34 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
   });
 
   useEffect(() => {
-    setResumable(pendingJobs("music"));
+    setResumable(pendingJobs("sfx"));
   }, []);
 
   const duration = caps.durationSeconds
     ? Math.min(Math.max(durationSeconds, caps.durationSeconds.min), caps.durationSeconds.max)
-    : undefined;
+    : durationSeconds;
   const costCredits = model
     ? estimateCostCredits(model, {
-        durationSeconds: duration,
+        durationSeconds: autoDuration ? undefined : duration,
         multiplier: catalog.priceMultiplier,
       })
     : undefined;
 
-  const lyricsMissing = caps.lyrics === "required" && !instrumental && !lyrics.trim();
   const busy =
     job.state.phase === "queueing" ||
     job.state.phase === "queued" ||
     job.state.phase === "processing";
-  const canSubmit = Boolean(model && prompt.trim()) && !lyricsMissing && !busy;
+  const canSubmit = Boolean(model && prompt.trim()) && !busy;
 
   const start = useCallback(() => {
     if (!model || !prompt.trim()) return;
-    const body: Record<string, unknown> = { model: model.id, prompt: prompt.trim() };
-    if (caps.lyrics !== "none" && !instrumental && lyrics.trim()) {
-      body.lyrics_prompt = lyrics.trim();
-    }
-    if (caps.instrumental && caps.lyrics !== "none" && instrumental) {
-      body.force_instrumental = true;
-    }
-    if (duration !== undefined) body.duration_seconds = duration;
+    const body: Record<string, unknown> = {
+      model: model.id,
+      prompt: prompt.trim().slice(0, SFX_PROMPT_LIMIT),
+    };
+    if (!autoDuration) body.duration_seconds = duration;
     void job.start({
-      kind: "music",
+      kind: "sfx",
       model: model.id,
       prompt: prompt.trim(),
       extension: "mp3",
@@ -94,7 +98,7 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
       }),
       getResult: audioResultFrom,
     });
-  }, [model, prompt, caps, instrumental, lyrics, duration, job, paths]);
+  }, [model, prompt, autoDuration, duration, job, paths]);
 
   const resume = useCallback(
     (pending: PersistedJob) => {
@@ -109,48 +113,32 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
       <StudioField label="Model">
         <ModelSelect
           models={models}
-          value={modelId || null}
+          value={model?.id ?? null}
           onChange={setModelId}
-          ariaLabel="Music model"
+          ariaLabel="Sound effect model"
         />
       </StudioField>
-      <StudioField label="Prompt">
+      <StudioField
+        label="Description"
+        hint={`${Math.min(prompt.length, SFX_PROMPT_LIMIT)} / ${SFX_PROMPT_LIMIT}`}
+      >
         <textarea
           className="studio-textarea"
-          rows={4}
+          rows={3}
           value={prompt}
-          placeholder="Genre, mood, tempo, instruments"
+          maxLength={SFX_PROMPT_LIMIT}
+          placeholder="A heavy wooden door creaks open"
           onChange={(event) => setPrompt(event.target.value)}
         />
       </StudioField>
-      {caps.lyrics !== "none" ? (
-        <>
-          {caps.instrumental ? (
-            <StudioField label="Instrumental" hint="No vocals">
-              <Switch
-                checked={instrumental}
-                onCheckedChange={setInstrumental}
-                aria-label="Instrumental only"
-              />
-            </StudioField>
-          ) : null}
-          {!instrumental ? (
-            <StudioField
-              label="Lyrics"
-              hint={caps.lyrics === "required" ? "Required for this model" : "Optional"}
-            >
-              <textarea
-                className="studio-textarea"
-                rows={5}
-                value={lyrics}
-                placeholder={"Verse 1: …\nChorus: …"}
-                onChange={(event) => setLyrics(event.target.value)}
-              />
-            </StudioField>
-          ) : null}
-        </>
-      ) : null}
-      {caps.durationSeconds && duration !== undefined ? (
+      <StudioField label="Auto duration" hint="Let the model pick">
+        <Switch
+          checked={autoDuration}
+          onCheckedChange={setAutoDuration}
+          aria-label="Auto duration"
+        />
+      </StudioField>
+      {!autoDuration && caps.durationSeconds ? (
         <SliderField
           label="Duration"
           min={caps.durationSeconds.min}
@@ -171,7 +159,7 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
         {job.state.phase === "queued"
           ? "Queued, waiting for a slot"
           : job.state.phase === "processing"
-            ? "Composing your track"
+            ? "Rendering your effect"
             : "Submitting"}
         {job.state.phase === "queued" || job.state.phase === "processing"
           ? ` - ${formatElapsed(job.state.elapsedMs)}`
@@ -183,7 +171,7 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
     </div>
   ) : (
     <button type="button" className="studio-primary-button" disabled={!canSubmit} onClick={start}>
-      <span>Generate music</span>
+      <span>Generate effect</span>
       <CostHint credits={costCredits} />
     </button>
   );
@@ -191,13 +179,11 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
   return (
     <GenerationLayout controls={controls} action={action}>
       {job.state.phase === "failed" ? <p className="studio-error">{job.state.message}</p> : null}
-      {lyricsMissing && prompt.trim() ? (
-        <p className="studio-error">This model needs lyrics, or switch to instrumental.</p>
-      ) : null}
       {resumable.map((pending) => (
         <div key={pending.id} className="studio-resume">
           <span>
-            A track from an earlier session may still be rendering: "{pending.prompt.slice(0, 80)}"
+            An effect from an earlier session may still be rendering: "{pending.prompt.slice(0, 80)}
+            "
           </span>
           <span className="studio-card-actions">
             <button type="button" className="btn btn-secondary" onClick={() => resume(pending)}>
@@ -217,14 +203,14 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
         </div>
       ))}
       <GalleryStrip
-        kind="music"
+        kind="sfx"
         epoch={galleryEpoch}
         empty={
           !busy ? (
             <EmptyState
-              icon={<IconAudio size={22} />}
-              title="No tracks yet"
-              description="Describe a genre and mood, then generate. Tracks usually take 20 to 90 seconds."
+              icon={<IconSoundFx size={22} />}
+              title="No sound effects yet"
+              description="Describe a short sound: a door creak, rain on glass, a sci-fi whoosh."
             />
           ) : null
         }
