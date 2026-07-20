@@ -80,6 +80,13 @@
   padding-top: env(safe-area-inset-top);
 }
 
+/* The rail-switch prompt (fork) mounts above the screen and already clears the
+ * status-bar safe area (see carpe-diem.css). When it's showing, the screen
+ * below must not add the top inset a second time or a tall gap opens up. */
+.mobile-shell:has(> .carpe-diem-rail-prompt) .mobile-screen-root {
+  padding-top: 0;
+}
+
 /* --- Stack transitions ----------------------------------------------------- */
 
 /* The screen wrapper remounts on every push/pop/tab switch (keyed in
@@ -1508,6 +1515,18 @@
 
 /* --- Simple markdown (chat bubbles) --------------------------------------------- */
 
+/* ABC Diatype's default figures are tabular (wide fixed-width cells), which
+ * strands the dot with air around it in numbered-list markers and decimals
+ * ("3 .", "0 . 46"). Prose reads better in proportional figures anyway, and
+ * font-variant-numeric is inherited and honored by the decimal ::marker, so
+ * this closes the gap for both the marker and body text. */
+.simple-markdown {
+  font-variant-numeric: proportional-nums;
+  font-feature-settings:
+    "tnum" 0,
+    "pnum" 1;
+}
+
 .simple-markdown p {
   margin: 0 0 var(--sp-2);
 }
@@ -1670,7 +1689,13 @@
   background: var(--brand-tint);
   color: var(--foreground);
   font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
+  /* Proportional (not tabular) figures: ABC Diatype's tabular cells leave the
+   * decimal dots stranded ("0 . 46 credits · x0 . 93"). The pill sizes to its
+   * content, so the width jitter tabular-nums would prevent is a non-issue. */
+  font-variant-numeric: proportional-nums;
+  font-feature-settings:
+    "tnum" 0,
+    "pnum" 1;
   white-space: nowrap;
 }
 

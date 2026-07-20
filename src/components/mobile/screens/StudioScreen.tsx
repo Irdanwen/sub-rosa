@@ -1984,7 +1984,9 @@ function GalleryCell({
     >
       {src ? (
         artifact.kind === "video" ? (
-          <video src={src} muted playsInline preload="metadata" />
+          // `#t=0.1` nudges WKWebView to decode and paint the first frame as a
+          // poster; without it the grid tile stays black until played.
+          <video src={`${src}#t=0.1`} muted playsInline preload="metadata" />
         ) : (
           <img src={src} alt={artifact.prompt ?? "Generated image"} />
         )

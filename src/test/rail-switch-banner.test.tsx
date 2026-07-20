@@ -29,11 +29,11 @@ describe("RailSwitchBanner", () => {
     mocks.carpeDiemGetCredits.mockResolvedValue(emptyPrepaid);
     mocks.carpeDiemSetRail.mockResolvedValue({ availableCredits: 1000, rail: "credits" });
     render(<RailSwitchBanner />);
-    expect(await screen.findByText(/out of funds/i)).toBeInTheDocument();
+    expect(await screen.findByText(/balance is empty/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Switch to credits" }));
     await waitFor(() => expect(mocks.carpeDiemSetRail).toHaveBeenCalledWith("credits"));
     // After a successful switch the prompt hides itself.
-    await waitFor(() => expect(screen.queryByText(/out of funds/i)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(/balance is empty/i)).not.toBeInTheDocument());
   });
 
   it("renders nothing when no switch is suggested", async () => {
@@ -50,9 +50,9 @@ describe("RailSwitchBanner", () => {
   it("can be dismissed without switching", async () => {
     mocks.carpeDiemGetCredits.mockResolvedValue(emptyPrepaid);
     render(<RailSwitchBanner />);
-    await screen.findByText(/out of funds/i);
+    await screen.findByText(/balance is empty/i);
     fireEvent.click(screen.getByRole("button", { name: "Not now" }));
-    await waitFor(() => expect(screen.queryByText(/out of funds/i)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(/balance is empty/i)).not.toBeInTheDocument());
     expect(mocks.carpeDiemSetRail).not.toHaveBeenCalled();
   });
 });

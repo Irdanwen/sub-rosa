@@ -37,7 +37,7 @@ export function RailSwitchBanner({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`carpe-diem-rail-prompt${compact ? " compact" : ""}`} role="status">
       <span className="carpe-diem-rail-prompt-text">
-        Your {from} is out of funds, but your {to} has money left. Switch to keep going?
+        Your {from} balance is empty, but your {to} balance still has funds. Switch to keep going?
       </span>
       <div className="carpe-diem-rail-prompt-actions">
         <button

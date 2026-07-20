@@ -21,6 +21,8 @@ pub mod hermes_bridge;
 pub mod hermes_working_dir;
 pub mod ios_background;
 pub mod june_api;
+#[cfg(target_os = "ios")]
+pub mod keyboard_ios;
 #[cfg(desktop)]
 pub mod macos_menu_icons;
 #[cfg(desktop)]
@@ -524,6 +526,10 @@ pub fn run() {
             // resumable from the UI).
             #[cfg(target_os = "ios")]
             audio::ios_session::install_interruption_observer();
+            // Drop WKWebView's keyboard form-assistant bar (prev/next + Done);
+            // Sub Rosa's single-field inputs don't use it. See keyboard_ios.
+            #[cfg(target_os = "ios")]
+            keyboard_ios::hide_form_assistant_bar();
             // Carpe Diem fork: load settings, then start the june-api sidecar
             // pointed at Carpe Diem (or mark "unconfigured" for onboarding).
             // On desktop the sidecar is a child process; on mobile it runs

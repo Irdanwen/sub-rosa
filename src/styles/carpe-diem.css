@@ -123,7 +123,11 @@
 }
 
 .carpe-diem-rail-prompt.compact {
-  margin: var(--sp-2);
+  /* Mobile-only variant: this prompt is the top-most in-flow chrome in the
+   * mobile shell, so it must clear the status-bar safe area itself. While it
+   * shows, the screen root's own top inset is dropped (see mobile.css) so the
+   * inset isn't counted twice. */
+  margin: calc(var(--sp-2) + env(safe-area-inset-top)) var(--sp-2) var(--sp-2);
   border-radius: var(--r-lg);
 }
 
