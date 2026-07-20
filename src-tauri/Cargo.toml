@@ -57,13 +57,14 @@ zeroize = { version = "1", features = ["derive"] }
 tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-haptics = "2.3.2"
 
-# Desktop-only plugins: updater/single-instance have no mobile support, and
-# the process plugin (relaunch) is desktop-shaped. The iOS build must not pull
-# them in.
+# Desktop-only plugins: updater/single-instance have no mobile support, the
+# process plugin (relaunch) is desktop-shaped, and autostart (launch at login)
+# is a desktop concept. The iOS build must not pull them in.
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 tauri-plugin-process = "2.3.1"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-updater = "2.10.1"
+tauri-plugin-autostart = "2.5.1"
 # Videomaker film production (ADR-0010, desktop-only surface): the Studio
 # wallet signs SIWE messages (EIP-191 keccak digest over secp256k1). Kept off
 # the mobile build — the Films surface is macOS + Windows.

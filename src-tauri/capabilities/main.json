@@ -17,6 +17,7 @@
     "notification:default",
     "dialog:allow-open",
     "dialog:allow-save",
-    "process:allow-restart"
+    "process:allow-restart",
+    "autostart:default"
   ]
 }
