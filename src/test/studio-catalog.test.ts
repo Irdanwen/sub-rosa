@@ -4,6 +4,7 @@ import {
   defaultEditModel,
   estimateCostCredits,
   imageEditModels,
+  isSeedanceModel,
   isSoundEffectsModel,
   musicCapabilities,
   musicModels,
@@ -122,6 +123,16 @@ describe("video duration fallbacks", () => {
       ]),
     );
     expect(patched.models[0].constraints?.durations).toEqual(["5s", "10s"]);
+  });
+});
+
+describe("seedance detection", () => {
+  it("flags every seedance variant by id and leaves other families alone", () => {
+    expect(isSeedanceModel("seedance-2-0-image-to-video")).toBe(true);
+    expect(isSeedanceModel("seedance-1-5-pro-reference-to-video")).toBe(true);
+    expect(isSeedanceModel("Seedance-2-0-text-to-video")).toBe(true);
+    expect(isSeedanceModel("wan-2-7-image-to-video")).toBe(false);
+    expect(isSeedanceModel("kling-2.5-turbo-pro-image-to-video")).toBe(false);
   });
 });
 

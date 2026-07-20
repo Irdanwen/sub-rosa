@@ -324,6 +324,27 @@
   color: var(--muted-foreground);
 }
 
+/* Seedance face-media consent: a labeled checkbox gating reference renders. */
+.studio-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.studio-consent input {
+  margin-top: 2px;
+}
+
+.studio-consent-meta {
+  display: block;
+  margin-top: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+
 .studio-progress {
   display: flex;
   align-items: center;

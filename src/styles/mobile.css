@@ -1494,6 +1494,18 @@
   font-size: var(--fs-md);
 }
 
+/* The seedance consent label wraps to two lines, so pin the checkbox to the
+   top and soften the attestation copy. */
+.mobile-studio-consent {
+  align-items: flex-start;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.mobile-studio-consent input {
+  margin-top: 2px;
+}
+
 /* --- Simple markdown (chat bubbles) --------------------------------------------- */
 
 .simple-markdown p {

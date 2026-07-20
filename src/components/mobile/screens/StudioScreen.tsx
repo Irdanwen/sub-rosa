@@ -32,6 +32,12 @@ import {
   videoFamilies,
 } from "../../../lib/studio/catalog";
 import {
+  hasSeedanceConsent,
+  needsSeedanceConsent,
+  rememberSeedanceConsent,
+  withSeedanceConsent,
+} from "../../../lib/studio/consent";
+import {
   generateSpeech,
   SPEECH_FORMATS,
   SPEECH_INPUT_LIMIT,
@@ -1016,6 +1022,10 @@ function VideoPanel({
   const model = family?.[slot];
   const needsReference = effectiveMode !== "text";
   const [references, setReferences] = useState<string[]>([]);
+  // Seedance needs a face-media attestation for any clip built from a photo;
+  // remembered so the box stays ticked across sessions.
+  const [consent, setConsent] = useState(hasSeedanceConsent);
+  const needsConsent = needsSeedanceConsent(model, needsReference);
   const constraints = model?.constraints;
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
@@ -1063,8 +1073,18 @@ function VideoPanel({
     } else if (effectiveMode === "reference") {
       body.reference_image_urls = references;
     }
-    return body;
-  }, [model, prompt, negativePrompt, effectiveDuration, references, needsReference, effectiveMode]);
+    return needsConsent && consent ? withSeedanceConsent(body) : body;
+  }, [
+    model,
+    prompt,
+    negativePrompt,
+    effectiveDuration,
+    references,
+    needsReference,
+    effectiveMode,
+    needsConsent,
+    consent,
+  ]);
 
   useEffect(() => {
     setQuote(undefined);
@@ -1195,10 +1215,26 @@ function VideoPanel({
         aria-label="Negative prompt"
         onChange={(event) => setNegativePrompt(event.target.value)}
       />
+      {needsConsent ? (
+        <label className="mobile-toggle-row mobile-studio-consent">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(event) => {
+              setConsent(event.target.checked);
+              rememberSeedanceConsent(event.target.checked);
+            }}
+          />
+          <span>
+            I have the right to use this photo and accept this model's face-media policy for anyone
+            shown in it.
+          </span>
+        </label>
+      ) : null}
       <button
         type="button"
         className="mobile-studio-generate"
-        disabled={!model || !prompt.trim() || !referenceReady || busy}
+        disabled={!model || !prompt.trim() || !referenceReady || (needsConsent && !consent) || busy}
         onClick={start}
       >
         {busy ? <Spinner /> : "Generate"}

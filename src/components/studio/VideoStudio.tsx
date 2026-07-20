@@ -21,11 +21,17 @@ import {
 } from "../../lib/studio/async-job";
 import {
   formatCredits,
+  isSeedanceModel,
   isVideoUpscaleModel,
   type VideoFamily,
   videoFamilies,
 } from "../../lib/studio/catalog";
 import { mediaJson } from "../../lib/studio/client";
+import {
+  hasSeedanceConsent,
+  rememberSeedanceConsent,
+  withSeedanceConsent,
+} from "../../lib/studio/consent";
 import {
   retrieveBody,
   supportsVideoQuote,
@@ -131,6 +137,21 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
 
   const isUpscale = Boolean(model && isVideoUpscaleModel(model.id));
 
+  // Seedance gates any clip built from a photo behind a face-media attestation,
+  // remembered so it is asked once. A comparison render can target several
+  // models at once, so any seedance target in a reference direction pulls it in.
+  const [consent, setConsent] = useState(hasSeedanceConsent);
+  const referenceDirection = effectiveDirection === "image" || effectiveDirection === "reference";
+  const consentTargets = useMemo(
+    () =>
+      [model, ...alsoFamilies.map((entry) => entry[slot])].filter((entry): entry is MediaModel =>
+        Boolean(entry),
+      ),
+    [model, alsoFamilies, slot],
+  );
+  const needsConsent =
+    referenceDirection && consentTargets.some((target) => isSeedanceModel(target.id));
+
   // The gallery's own clips are the natural v2v sources; refresh the list as
   // finished renders land.
   useEffect(() => {
@@ -199,6 +220,12 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
       } else if (effectiveDirection === "video") {
         body.video_url = sourceVideo;
       }
+      // Only the seedance targets carry the face-media attestation, and only
+      // once the user has acknowledged it.
+      const referenceRender = effectiveDirection === "image" || effectiveDirection === "reference";
+      if (referenceRender && consent && isSeedanceModel(target.id)) {
+        return withSeedanceConsent(body);
+      }
       return body;
     },
     [
@@ -213,6 +240,7 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
       duration,
       aspectRatio,
       resolution,
+      consent,
     ],
   );
 
@@ -306,7 +334,7 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
 
   const multiplier = catalog.priceMultiplier ?? 1;
   const quoteCredits = quote !== undefined ? quote * 100 * multiplier : undefined;
-  const canSubmit = Boolean(queueBody());
+  const canSubmit = Boolean(queueBody()) && (!needsConsent || consent);
 
   const controls = (
     <>
@@ -548,6 +576,25 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
             </StudioField>
           ) : null}
         </>
+      ) : null}
+      {needsConsent ? (
+        <label className="studio-consent">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(event) => {
+              setConsent(event.currentTarget.checked);
+              rememberSeedanceConsent(event.currentTarget.checked);
+            }}
+          />
+          <span>
+            I have the right to use this photo and accept the model's face-media policy for anyone
+            shown in it.
+            <span className="studio-consent-meta">
+              Seedance requires this before it will build a clip from a photo of a person.
+            </span>
+          </span>
+        </label>
       ) : null}
       <StudioField label="Prompt" hint={isUpscale ? "Optional" : undefined}>
         <textarea

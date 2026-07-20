@@ -158,6 +158,14 @@ export function isVideoUpscaleModel(modelId: string): boolean {
   return id.includes("video-upscale") || id.includes("upscale-video");
 }
 
+/** The seedance family. Its image/reference-to-video endpoint gates any
+ * reference that carries a human face behind a face-media consent attestation
+ * (see `./consent`), so the studios need to tell it apart from every other
+ * video model. Matched by id substring across every seedance variant. */
+export function isSeedanceModel(modelId: string): boolean {
+  return modelId.toLowerCase().includes("seedance");
+}
+
 /** video-to-video variants (restyle a clip) and upscalers share the `video`
  * catalog type with text-to-video; without their own slot they used to shadow
  * (or be shadowed by) the text variant of the same family. */
