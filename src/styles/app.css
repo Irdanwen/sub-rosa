@@ -18618,6 +18618,22 @@ input:focus-visible,
   );
 }
 
+.welcome-screen-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  color: var(--muted-foreground);
+}
+
+.welcome-screen-loading .spinner {
+  color: var(--brand);
+}
+
+.welcome-screen-loading p {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
 .welcome-card {
   width: min(100%, 320px);
   display: flex;

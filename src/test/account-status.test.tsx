@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { useAccountStatus } from "../lib/account-status";
+import { ACCOUNT_STATUS_TIMEOUT_MS, useAccountStatus } from "../lib/account-status";
 import type { AccountStatus } from "../lib/tauri";
 
 const mocks = vi.hoisted(() => ({
@@ -14,8 +14,14 @@ vi.mock("../lib/tauri", () => ({
 }));
 
 function StatusProbe({ forceLogoutOnMount = false }: { forceLogoutOnMount?: boolean }) {
-  const account = useAccountStatus({ forceLogoutOnMount }).account;
-  return <div>{account.signedIn ? "Signed in" : "Signed out"}</div>;
+  const { account, error, loading } = useAccountStatus({ forceLogoutOnMount });
+  return (
+    <div>
+      <div>{account.signedIn ? "Signed in" : "Signed out"}</div>
+      <div>{loading ? "Loading" : "Ready"}</div>
+      {error ? <div>{error}</div> : null}
+    </div>
+  );
 }
 
 describe("useAccountStatus", () => {
@@ -35,5 +41,19 @@ describe("useAccountStatus", () => {
     await screen.findByText("Signed out");
     expect(mocks.osAccountsLogout.mock.calls[0]?.[0]?.clearBrowserSession).not.toBe(true);
     await waitFor(() => expect(calls).toEqual(["logout", "status"]));
+  });
+
+  it("leaves the loading gate with a retryable error when the account lookup stalls", async () => {
+    vi.useFakeTimers();
+    mocks.osAccountsStatus.mockImplementation(() => new Promise<AccountStatus>(() => {}));
+
+    render(<StatusProbe />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ACCOUNT_STATUS_TIMEOUT_MS);
+    });
+
+    expect(screen.getByText("Ready")).toBeInTheDocument();
+    expect(screen.getByText("Account status took too long. Please try again.")).toBeInTheDocument();
+    vi.useRealTimers();
   });
 });

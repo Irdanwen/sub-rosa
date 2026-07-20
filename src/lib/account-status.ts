@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
+import { withTimeout } from "./async-timeout";
 import { osAccountsLogout, osAccountsStatus } from "./tauri";
 import type { AccountStatus } from "./tauri";
+
+export const ACCOUNT_STATUS_TIMEOUT_MS = 8_000;
+const ACCOUNT_STATUS_TIMEOUT_MESSAGE = "Account status took too long. Please try again.";
 
 const EMPTY_STATUS: AccountStatus = { signedIn: false, configured: false };
 const DEMO_ACCOUNT: AccountStatus = {
@@ -40,7 +44,11 @@ export function useAccountStatus(options: UseAccountStatusOptions = {}): UseAcco
       return DEMO_ACCOUNT;
     }
     try {
-      const next = await osAccountsStatus();
+      const next = await withTimeout(
+        osAccountsStatus(),
+        ACCOUNT_STATUS_TIMEOUT_MS,
+        ACCOUNT_STATUS_TIMEOUT_MESSAGE,
+      );
       setAccount(next);
       setError(undefined);
       return next;
@@ -57,6 +65,11 @@ export function useAccountStatus(options: UseAccountStatusOptions = {}): UseAcco
       if (forceLogoutOnMount && !browserOnboardingDemoEnabled()) {
         await osAccountsLogout();
       }
+      // Sub Rosa runs the account lookup in local-dev mode (no hosted OS
+      // Accounts), so there is no separate keychain-only fast path to derive
+      // first paint from (upstream's osAccountsStatusLocal). The single bounded
+      // refresh below (8s, then a retryable error card) is what keeps a stalled
+      // lookup from leaving the window blank.
       await refresh();
     }
     loadInitialStatus().finally(() => {

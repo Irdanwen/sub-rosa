@@ -7,7 +7,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { EASE_OUT } from "../lib/motion";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { AccountGate, JuneMark } from "../components/account/AccountGate";
+import { AccountGate, AccountStatusFailure, JuneMark } from "../components/account/AccountGate";
 import { FundingGate } from "../components/account/FundingGate";
 import { CarpeDiemGate } from "../components/carpe-diem/CarpeDiemGate";
 import { RailSwitchBanner } from "../components/carpe-diem/RailSwitchBanner";
@@ -2565,8 +2565,25 @@ export function App() {
           onPointerDown={handleTitlebarPointerDown}
         />
         <div className="welcome-screen welcome-screen-loading" role="status" aria-label="Loading">
-          <Spinner />
+          <Spinner aria-label="Starting Sub Rosa" />
+          <p>Starting Sub Rosa...</p>
         </div>
+      </main>
+    );
+  }
+
+  // Blank-window guard (#853): if the account lookup itself stalled or errored
+  // (bounded to 8s), surface a retryable card instead of an empty shell.
+  if (accountError && !account.signedIn && !devAccountsUnconfigured) {
+    return (
+      <main className="account-gate-shell">
+        <div
+          className="titlebar-drag"
+          aria-hidden
+          data-tauri-drag-region
+          onPointerDown={handleTitlebarPointerDown}
+        />
+        <AccountStatusFailure message={accountError} onRetry={refreshAccount} />
       </main>
     );
   }
