@@ -1561,6 +1561,77 @@ describe("Agent chat runtime", () => {
     expect(turns[0]?.parts).toEqual([{ type: "text", text: prose, status: "complete" }]);
   });
 
+  it("folds a live provider-failure error event into a provider-failed notice", () => {
+    // The exact shape the Hermes runtime surfaces when the June API sidecar's
+    // backed-off retries could not clear an upstream 500/502/504. It used to
+    // render as a raw "Error" part dumping upstream_provider_failed; it must
+    // fold into an actionable notice without ever claiming the model is merely
+    // busy (ADR-0012).
+    const failed = "API call failed after 3 retries: HTTP 502: upstream_provider_failed";
+    const turns = buildAgentChatTurns(
+      [],
+      [],
+      [
+        {
+          type: "error",
+          receivedAt: "2026-06-04T10:00:01.000Z",
+          payload: { message: failed },
+        },
+      ],
+    );
+
+    expect(turns[0]?.parts).toEqual([{ type: "notice", kind: "provider-failed", text: failed }]);
+  });
+
+  it("folds the loopback proxy's transport wrapper into a provider-failed notice", () => {
+    // The Tauri proxy's own wrapper when the sidecar call itself dies (the
+    // "June agent provider failed: <transport error>" 502 body).
+    const failed = "June agent provider failed: error sending request for url";
+    const turns = buildAgentChatTurns(
+      [],
+      [],
+      [
+        {
+          type: "error",
+          receivedAt: "2026-06-04T10:00:01.000Z",
+          payload: { message: failed },
+        },
+      ],
+    );
+
+    expect(turns[0]?.parts).toEqual([{ type: "notice", kind: "provider-failed", text: failed }]);
+  });
+
+  it("folds a persisted prefixed provider failure into a provider-failed notice", () => {
+    const persisted = "Error: HTTP 502: upstream_provider_failed";
+    const turns = buildHermesSessionChatTurns([
+      {
+        id: "1",
+        role: "assistant",
+        content: persisted,
+        timestamp: "2026-06-04T10:00:00.000Z",
+      },
+    ]);
+
+    expect(turns[0]?.parts).toEqual([{ type: "notice", kind: "provider-failed", text: persisted }]);
+  });
+
+  it("keeps a persisted answer that discusses provider failures as prose", () => {
+    // Mirrors the rate-limit guard above: a saved answer that merely mentions
+    // the upstream_provider_failed token mid-sentence must stay text.
+    const prose = "The upstream_provider_failed message means the gateway had a problem.";
+    const turns = buildHermesSessionChatTurns([
+      {
+        id: "1",
+        role: "assistant",
+        content: prose,
+        timestamp: "2026-06-04T10:00:00.000Z",
+      },
+    ]);
+
+    expect(turns[0]?.parts).toEqual([{ type: "text", text: prose, status: "complete" }]);
+  });
+
   it("keeps a successful message.complete that mentions context length as prose", () => {
     const prose = "The maximum context length for GLM 5.2 is 200k tokens.";
     const turns = buildHermesSessionChatTurns(

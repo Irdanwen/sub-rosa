@@ -9,6 +9,8 @@ import {
   isContextOverflowErrorSentinel,
   isContextOverflowMessage,
   isInsufficientCreditsMessage,
+  isUpstreamProviderFailureErrorSentinel,
+  isUpstreamProviderFailureMessage,
   isUpstreamRateLimitedErrorSentinel,
   isUpstreamRateLimitedMessage,
 } from "./errors";
@@ -107,12 +109,14 @@ export type AgentChatSecretPart = {
  * instead of raw error text: `credits` (the balance ran out), `context-overflow`
  * (the request outgrew the model's context / the agent request-size limit and
  * cannot be retried as-is — JUN-169), `upstream-busy` (the model provider is
- * momentarily rate-limited / at capacity — wait and retry, or switch models), or
+ * momentarily rate-limited / at capacity — wait and retry, or switch models),
+ * `provider-failed` (a genuine upstream 500/502/504 the sidecar's retries could
+ * not clear — try again or switch models, never worded as "busy", ADR-0012), or
  * `interrupted` (a reloaded turn that stopped mid agent-loop with no persisted
  * reason — see {@link withInterruptedTurnNotice}). */
 export type AgentChatNoticePart = {
   type: "notice";
-  kind: "credits" | "context-overflow" | "upstream-busy" | "interrupted";
+  kind: "credits" | "context-overflow" | "upstream-busy" | "provider-failed" | "interrupted";
   text: string;
 };
 
@@ -265,7 +269,8 @@ export function buildHermesSessionChatTurns(
           (turn.role === "assistant"
             ? (creditsNoticeFromTurnText(content) ??
               persistedUpstreamBusyNotice(content) ??
-              persistedContextOverflowNotice(content))
+              persistedContextOverflowNotice(content) ??
+              persistedProviderFailureNotice(content))
             : undefined) ?? {
             type: "text",
             text: content,
@@ -423,11 +428,38 @@ function persistedUpstreamBusyNotice(text: string): AgentChatNoticePart | undefi
     : undefined;
 }
 
+// A turn that died on a genuine provider failure (an upstream 500/502/504 the
+// sidecar's backed-off retries could not clear). Kept distinct from the busy
+// notice on purpose — ADR-0012: a 5xx must never claim the model is merely
+// busy — but the recovery the user can act on has the same shape (try again,
+// or switch models), so it folds into a first-class notice instead of a raw
+// "upstream_provider_failed" error dump.
+function providerFailureNotice(text: string): AgentChatNoticePart | undefined {
+  return isUpstreamProviderFailureMessage(text)
+    ? { type: "notice", kind: "provider-failed", text }
+    : undefined;
+}
+
+// The persisted counterpart of providerFailureNotice: a reloaded turn carries
+// no failure flag, so only the strict sentinel may fold — a saved answer that
+// discusses provider failures in prose must stay text (mirrors the credits,
+// busy, and context-overflow persisted paths).
+function persistedProviderFailureNotice(text: string): AgentChatNoticePart | undefined {
+  return isUpstreamProviderFailureErrorSentinel(text)
+    ? { type: "notice", kind: "provider-failed", text }
+    : undefined;
+}
+
 // Resolve the most specific actionable notice for a failed turn's text: a
 // billing failure first (most specific), then a rate limit, then a context
-// overflow.
+// overflow, then a genuine provider failure (least specific).
 function turnNotice(text: string): AgentChatNoticePart | undefined {
-  return creditsNotice(text) ?? upstreamBusyNotice(text) ?? contextOverflowNotice(text);
+  return (
+    creditsNotice(text) ??
+    upstreamBusyNotice(text) ??
+    contextOverflowNotice(text) ??
+    providerFailureNotice(text)
+  );
 }
 
 // Assistant text only counts as a billing failure when it's the runtime's
@@ -442,7 +474,8 @@ function messageToTurn(message: AgentMessageDto): AgentChatTurn {
     message.role === "assistant"
       ? (creditsNoticeFromTurnText(message.content) ??
         persistedUpstreamBusyNotice(message.content) ??
-        persistedContextOverflowNotice(message.content))
+        persistedContextOverflowNotice(message.content) ??
+        persistedProviderFailureNotice(message.content))
       : undefined;
   return {
     id: message.id,
@@ -543,7 +576,11 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
       const failed = stringValue(payload?.status)?.toLowerCase() === "error";
       const notice = text
         ? (creditsNoticeFromTurnText(text) ??
-          (failed ? (upstreamBusyNotice(text) ?? contextOverflowNotice(text)) : undefined))
+          (failed
+            ? (upstreamBusyNotice(text) ??
+              contextOverflowNotice(text) ??
+              providerFailureNotice(text))
+            : undefined))
         : undefined;
       if (notice) {
         // The complete text is authoritative for the turn (see

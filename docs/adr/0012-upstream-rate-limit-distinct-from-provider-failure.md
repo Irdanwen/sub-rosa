@@ -5,6 +5,45 @@ date: 2026-07-17
 
 # Upstream rate limits are a distinct, retryable error, not a generic provider failure
 
+## Addendum — 2026-07-20 (accepted; backed-off retries on the agent-chat path + a provider-failed notice)
+
+Recurring user pain on hot Kimi models: chat turns kept dying on provider
+errors. Reading the gateway's own API documentation closed the diagnosis — it
+explicitly classifies **429, 502 and 503 as transient** ("retry with
+exponential backoff, e.g. 1s → 2s → 4s, a few attempts"), yet the agent-chat
+upstream call (`VeniceChat::complete_raw`) was the **only** upstream path with
+no retry at all: the cleaner and the transcribers already had the bounded
+`UPSTREAM_ATTEMPTS` replay, so every one-off Venice flap on the chat path
+surfaced straight to the user. Two decisions:
+
+1. **Retry the agent-chat upstream call with exponential backoff.**
+   `complete_raw` now makes up to `AGENT_CHAT_ATTEMPTS = 3` attempts with
+   `AGENT_CHAT_BACKOFF` doubling from 1s (so 1s, then 2s — the gateway's own
+   recommendation; the 300ms `UPSTREAM_RETRY_BACKOFF` used elsewhere lands
+   inside the same flap), on retryable statuses (408/429/5xx) and retryable
+   transport errors. A body-read failure after a 200 is deliberately **not**
+   replayed: that generation already ran (and billed) upstream. Replays cannot
+   double-charge June metering either — it settles only after success. Worst
+   case adds ~3s to a turn against a 600s request budget. Both shells benefit
+   (desktop Hermes and mobile agent-lite reach upstream through the same
+   sidecar call), and Hermes' own 3-attempt wrapper now multiplies with a
+   backed-off inner replay instead of hammering the same flap.
+2. **A genuine failure that survives the retries folds into a first-class
+   `provider-failed` notice** instead of a raw "Error: … upstream_provider_failed"
+   part (until now only 429/503 had a friendly card). Desktop: new matchers
+   `isUpstreamProviderFailureMessage` / `isUpstreamProviderFailureErrorSentinel`
+   (`src/lib/errors.ts` — the strict sentinel keeps the JUN-169 guard: persisted
+   prose that merely mentions the token stays text), notice kind
+   `provider-failed` (`agent-chat-runtime.ts`, folded on the live error, failed
+   message.complete, and persisted paths), card `ProviderFailedNoticePart`
+   (`AgentWorkspace.tsx`: "The model provider could not answer this message.
+   Try again, or switch to another model." + the retry affordance). Mobile:
+   `agent_lite_provider_failed` with the same wording (`is_provider_failure_detail`).
+   This does **not** reclassify the 5xx — the original decision stands: the
+   wire shape (`502 upstream_provider_failed`) is untouched and the wording
+   never claims the model is merely busy; it only upgrades the *presentation*
+   of a hard failure to something actionable.
+
 ## Addendum — 2026-07-17 (accepted; surface an interrupted turn on reload)
 
 A production incident closed the last gap this ADR left open. A desktop chat on

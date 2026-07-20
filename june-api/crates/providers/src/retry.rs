@@ -9,6 +9,17 @@ use std::time::Duration;
 pub(crate) const UPSTREAM_ATTEMPTS: u32 = 2;
 pub(crate) const UPSTREAM_RETRY_BACKOFF: Duration = Duration::from_millis(300);
 
+/// The interactive agent-chat path gets one more attempt and a real,
+/// exponential backoff (1s, then 2s): the gateway documents 429/502/503 as
+/// transient ("retry with exponential backoff"), and live traffic shows a hot
+/// model flapping between 502 and 503 for a few seconds — a 300ms replay lands
+/// inside the same flap, a backed-off one lands after it. Worst case adds ~3s
+/// to a turn the user is already waiting on (the request budget is 600s), and
+/// a replay can never double-charge: metering settles only after success, and
+/// a non-success status delivered no completion.
+pub(crate) const AGENT_CHAT_ATTEMPTS: u32 = 3;
+pub(crate) const AGENT_CHAT_BACKOFF: Duration = Duration::from_secs(1);
+
 /// A single failed upstream attempt, classified so the caller knows whether
 /// another attempt is worth making.
 pub(crate) struct UpstreamAttemptError {

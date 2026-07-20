@@ -89,6 +89,34 @@ export function isUpstreamRateLimitedErrorSentinel(message?: string) {
   );
 }
 
+/** Whether an error message means the upstream provider genuinely failed to
+ * answer (an upstream 500/502/504 the sidecar's backed-off retries could not
+ * clear) — the June API's `upstream_provider_failed`, the loopback proxy's
+ * "June agent provider failed: …" transport wrapper, or a raw gateway
+ * `VENICE_ERROR` body. Deliberately distinct from the *busy* condition
+ * ({@link isUpstreamRateLimitedMessage}): a genuine failure must never claim
+ * the model is merely busy (ADR-0012). It is still usually transient on the
+ * gateway's side, so the actionable guidance is try again / switch models —
+ * shown as a notice card instead of a raw error dump. Same string-matching
+ * weakness as the other matchers here; apply only where the turn is already
+ * known to have failed. */
+export function isUpstreamProviderFailureMessage(message?: string) {
+  if (!message) return false;
+  return /upstream_provider_failed|june agent provider failed|venice_error/i.test(message);
+}
+
+/** STRICT provider-failure match for a persisted/reloaded turn that carries no
+ * failure flag — mirrors {@link isUpstreamRateLimitedErrorSentinel}. A saved
+ * answer that merely *discusses* provider failures must stay text: only the
+ * runtime's "Error:" sentinel or a message that LEADS with one of the raw
+ * tokens may fold. */
+export function isUpstreamProviderFailureErrorSentinel(message?: string) {
+  if (!message) return false;
+  const text = message.trimStart();
+  if (/^error:/i.test(text)) return isUpstreamProviderFailureMessage(text);
+  return /^(upstream_provider_failed|june agent provider failed|venice_error)\b/i.test(text);
+}
+
 /** Whether an error message means the request outgrew the model's context (or
  * the agent request-size limit) — a hard size failure the user must act on
  * (trim the input, attach a smaller file, start a fresh session), NOT something

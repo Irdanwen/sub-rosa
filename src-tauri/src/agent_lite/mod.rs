@@ -205,6 +205,18 @@ async fn run_turn(
                     "This model is busy right now. Wait a few seconds and send again, or switch to another model.",
                 ));
             }
+            // A genuine provider failure (upstream 500/502/504 the sidecar's
+            // backed-off retries could not clear). Deliberately NOT worded as
+            // "busy" (ADR-0012), but the failure is usually transient on the
+            // gateway's side, so guide the user to retry or switch models
+            // instead of dumping `upstream_provider_failed`. Mirrors
+            // isUpstreamProviderFailureMessage in src/lib/errors.ts.
+            if is_provider_failure_detail(&detail) {
+                return Err(AppError::new(
+                    "agent_lite_provider_failed",
+                    "The model provider could not answer this message. Send again, or switch to another model.",
+                ));
+            }
             return Err(AppError::new(
                 "agent_lite_failed",
                 format!("The assistant request failed with status {status}: {detail}"),
@@ -512,6 +524,15 @@ fn is_rate_limit_detail(detail: &str) -> bool {
         || lower.contains("provider_capacity")
 }
 
+/// Whether an upstream error detail means the provider genuinely failed — the
+/// June API sidecar's `upstream_provider_failed` (an upstream 500/502/504) or
+/// a raw gateway `VENICE_ERROR` body. Distinct from the busy vocabulary above
+/// (ADR-0012). Mirrors isUpstreamProviderFailureMessage in src/lib/errors.ts.
+fn is_provider_failure_detail(detail: &str) -> bool {
+    let lower = detail.to_ascii_lowercase();
+    lower.contains("upstream_provider_failed") || lower.contains("venice_error")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -532,6 +553,17 @@ mod tests {
         assert!(is_rate_limit_detail("NO_PROVIDER_CAPACITY"));
         // A genuine provider failure must NOT read as busy.
         assert!(!is_rate_limit_detail("upstream_provider_failed"));
+    }
+
+    #[test]
+    fn provider_failure_detail_matches_sidecar_and_gateway_wording() {
+        // The June API sidecar's message for an upstream 500/502/504.
+        assert!(is_provider_failure_detail("upstream_provider_failed"));
+        // A raw gateway body that reaches us un-normalized.
+        assert!(is_provider_failure_detail("VENICE_ERROR"));
+        // Busy vocabulary stays on its own branch.
+        assert!(!is_provider_failure_detail("upstream_rate_limited"));
+        assert!(!is_provider_failure_detail("MODEL_INFRA_SATURATED"));
     }
 
     #[test]

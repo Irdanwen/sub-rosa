@@ -535,16 +535,60 @@ impl VeniceChat {
             }
         }
         let url = format!("{}/chat/completions", self.base_url);
+        let api_key = venice_api_key(&self.api_key, provider_credentials);
+        // Bounded retry with exponential backoff on transient failures — the
+        // gateway documents 429/502/503 as transient, and a hot model flaps
+        // between them for a few seconds. A replay is safe here: a non-success
+        // status delivered no completion and metering settles only after
+        // success. A body-read failure after a 200 is NOT replayed — that
+        // generation already ran (and billed) upstream.
+        let mut backoff = retry::AGENT_CHAT_BACKOFF;
+        for attempt in 0..retry::AGENT_CHAT_ATTEMPTS {
+            let error = match self.complete_raw_once(&url, &body, api_key).await {
+                Ok(completion) => return Ok(completion),
+                Err(error) => error,
+            };
+            if error.retryable && attempt + 1 < retry::AGENT_CHAT_ATTEMPTS {
+                tracing::warn!(
+                    %url,
+                    model = %model.0,
+                    attempt,
+                    "venice: transient agent chat failure, retrying"
+                );
+                tokio::time::sleep(backoff).await;
+                backoff *= 2;
+                continue;
+            }
+            return Err(error.error);
+        }
+        Err(DomainError::UpstreamProvider)
+    }
+
+    async fn complete_raw_once(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+        api_key: &str,
+    ) -> Result<AgentChatCompletion, UpstreamAttemptError> {
+        // The caller already stamped the model id into the body.
+        let model = body
+            .get("model")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
         let response = self
             .http
-            .post(&url)
-            .bearer_auth(venice_api_key(&self.api_key, provider_credentials))
-            .json(&body)
+            .post(url)
+            .bearer_auth(api_key)
+            .json(body)
             .send()
             .await
             .map_err(|error| {
-                tracing::error!(%error, %url, model = %model.0, "venice: agent chat transport error");
-                DomainError::UpstreamProvider
+                let retryable = retry::is_retryable_transport_error(&error);
+                tracing::error!(%error, %url, model, retryable, "venice: agent chat transport error");
+                UpstreamAttemptError {
+                    error: DomainError::UpstreamProvider,
+                    retryable,
+                }
             })?;
         let status = response.status();
         let content_type = response
@@ -553,21 +597,28 @@ impl VeniceChat {
             .and_then(|value| value.to_str().ok())
             .unwrap_or("application/json")
             .to_string();
-        let body = response.bytes().await.map_err(|error| {
-            tracing::error!(%error, %url, model = %model.0, "venice: agent chat body read failed");
-            DomainError::UpstreamProvider
-        })?;
         if !status.is_success() {
+            let retryable = retry::is_retryable_status(status);
+            let body = response.bytes().await.unwrap_or_default();
             tracing::error!(
                 %status,
                 %url,
-                model = %model.0,
+                model,
                 body_bytes = body.len(),
+                retryable,
                 "venice: agent chat non-success response"
             );
-            return Err(retry::error_for_status(status));
+            return Err(UpstreamAttemptError {
+                error: retry::error_for_status(status),
+                retryable,
+            });
         }
-        let usage = usage_from_chat_body(&body, &content_type)?;
+        let body = response.bytes().await.map_err(|error| {
+            tracing::error!(%error, %url, model, "venice: agent chat body read failed");
+            UpstreamAttemptError::fatal(DomainError::UpstreamProvider)
+        })?;
+        let usage =
+            usage_from_chat_body(&body, &content_type).map_err(UpstreamAttemptError::fatal)?;
         Ok(AgentChatCompletion {
             body: body.to_vec(),
             content_type,
@@ -1575,6 +1626,86 @@ mod tests {
 
         assert_eq!(completion.usage.prompt_tokens, 1);
         assert_eq!(completion.usage.completion_tokens, 2);
+    }
+
+    #[tokio::test]
+    async fn agent_chat_retries_a_transient_502_then_succeeds() {
+        // The gateway documents 502/503 as transient failures to retry with
+        // backoff. A single upstream flap used to surface straight to the user
+        // as upstream_provider_failed; a bounded replay must absorb it.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(502)
+                    .set_body_json(json!({ "error": "upstream flap", "code": "VENICE_ERROR" })),
+            )
+            .up_to_n_times(1)
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "choices": [{ "message": { "content": "hi" } }],
+                "usage": { "prompt_tokens": 1, "completion_tokens": 2 }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let agent = VeniceAgentChat::from_config(
+            http::default_client(),
+            &UpstreamConfig {
+                api_key: "venice_key".to_string(),
+                base_url: server.uri(),
+            },
+        );
+
+        let completion = agent
+            .complete(AgentChatRequest {
+                body: json!({ "messages": [{ "role": "user", "content": "hi" }] }),
+                model: ModelId("text-model".to_string()),
+                provider_credentials: ProviderCredentials::default(),
+            })
+            .await
+            .expect("second attempt succeeds");
+
+        assert_eq!(completion.usage.completion_tokens, 2);
+    }
+
+    #[tokio::test]
+    async fn agent_chat_does_not_retry_a_deterministic_400() {
+        // 4xx (other than 408/429) is deterministic: replaying a rejected
+        // request just re-sends the same bad payload. Exactly one upstream
+        // call must happen.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(400)
+                    .set_body_json(json!({ "error": "bad request", "code": "BAD_REQUEST" })),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let agent = VeniceAgentChat::from_config(
+            http::default_client(),
+            &UpstreamConfig {
+                api_key: "venice_key".to_string(),
+                base_url: server.uri(),
+            },
+        );
+
+        let error = agent
+            .complete(AgentChatRequest {
+                body: json!({ "messages": [{ "role": "user", "content": "hi" }] }),
+                model: ModelId("text-model".to_string()),
+                provider_credentials: ProviderCredentials::default(),
+            })
+            .await
+            .expect_err("400 should error without a replay");
+
+        assert_eq!(error, DomainError::UpstreamProvider);
     }
 
     #[tokio::test]

@@ -9498,6 +9498,8 @@ function AgentChatTurnRow({
               <ContextOverflowNoticePart key={`${turn.id}:notice:${index}`} />
             ) : part.kind === "upstream-busy" ? (
               <UpstreamBusyNoticePart key={`${turn.id}:notice:${index}`} onRetry={onRetry} />
+            ) : part.kind === "provider-failed" ? (
+              <ProviderFailedNoticePart key={`${turn.id}:notice:${index}`} onRetry={onRetry} />
             ) : part.kind === "interrupted" ? (
               <InterruptedNoticePart key={`${turn.id}:notice:${index}`} onRetry={onRetry} />
             ) : (
@@ -9889,6 +9891,30 @@ function UpstreamBusyNoticePart({ onRetry }: { onRetry?: () => void }) {
           // Re-sends the same message so a busy turn need not be retyped. The
           // send uses the session's current model, so switching the composer
           // model first retries on the new one.
+          <button type="button" className="btn btn-secondary" onClick={onRetry}>
+            Try again
+          </button>
+        ) : undefined
+      }
+    />
+  );
+}
+
+// A turn that died on a genuine provider failure (an upstream 500/502/504 the
+// sidecar's backed-off retries could not clear). Unlike the busy notice this
+// never claims the model is merely busy (ADR-0012) — but the failure is
+// usually transient on the gateway's side, so the honest recovery is the
+// same: try again, or switch to another model.
+function ProviderFailedNoticePart({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <InlineNotice
+      className="agent-provider-failed-notice"
+      tone="warning"
+      role="alert"
+      icon={<IconExclamationTriangle size={14} aria-hidden />}
+      body="The model provider could not answer this message. Try again, or switch to another model."
+      actions={
+        onRetry ? (
           <button type="button" className="btn btn-secondary" onClick={onRetry}>
             Try again
           </button>
