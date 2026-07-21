@@ -1,7 +1,7 @@
 pub mod capture;
+pub mod echo;
 #[cfg(target_os = "ios")]
 pub mod ios_session;
-pub mod echo;
 pub mod live_preview;
 pub mod recovery;
 pub mod system_macos;
