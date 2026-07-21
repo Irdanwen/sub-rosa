@@ -767,6 +767,40 @@ describe("agent HUD", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("agent_hud_hide");
     expect(mocks.invoke).not.toHaveBeenCalledWith("agent_hud_show");
   });
+
+  it("settles every active row at idle even when one row matched by subject", async () => {
+    await loadAgentHud();
+
+    emitStatus({
+      status: "running",
+      title: "Draft launch notes",
+      summary: "Working",
+      activeCount: 2,
+    });
+    emitStatus({
+      status: "running",
+      title: "Review the branch",
+      summary: "Working",
+      activeCount: 2,
+    });
+    await flushPromises();
+    expect(stackElement().querySelectorAll(".dot-spinner").length).toBeGreaterThan(0);
+
+    // A settled status matches one row by subject (title) and the status stream
+    // reports no active work. Both rows must go terminal — not just the matched
+    // one, which used to leave the other stuck "running" until its own expiry.
+    emitStatus({
+      status: "completed",
+      title: "Draft launch notes",
+      summary: "Done.",
+      activeCount: 0,
+    });
+    await flushPromises();
+
+    expect(stackElement().querySelectorAll(".dot-spinner").length).toBe(0);
+    expect(stackElement()).toHaveTextContent("Draft launch notes");
+    expect(stackElement()).toHaveTextContent("Review the branch");
+  });
 });
 
 async function loadAgentHud() {

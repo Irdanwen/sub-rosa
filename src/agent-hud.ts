@@ -597,19 +597,21 @@ function replacePendingWithTerminalStatus(record: StatusRecord) {
     replaced = true;
     return terminalRecord(record, item);
   });
-  if (replaced) return true;
   if (record.activeCount === 0) {
     const activePending = state.pendingStatuses.filter((item) => isActiveStatus(item.status));
-    // No subject matched, but the status stream says no active work remains.
-    // Mark all anonymous pending rows terminal as a best-effort cleanup; each
+    // The status stream says no active work remains. Mark every still-active
+    // anonymous row terminal even when one row already matched by subject; each
     // row keeps its own title, while the terminal summary comes from this
     // final record and may describe only the last session that reported.
+    // (Settling only the matched subject left the other rows stuck "running"
+    // until their own expiry — the "settle all rows at idle" fix.)
     state.pendingStatuses = [
       ...activePending.map((item) => terminalRecord(record, item)),
       ...state.pendingStatuses.filter((item) => !isActiveStatus(item.status)),
     ].slice(0, MAX_VISIBLE_ROWS);
-    return activePending.length > 0;
+    return replaced || activePending.length > 0;
   }
+  if (replaced) return true;
   const activePending = state.pendingStatuses.filter((item) => isActiveStatus(item.status));
   if (activePending.length === 1) {
     state.pendingStatuses = state.pendingStatuses.map((item) =>
