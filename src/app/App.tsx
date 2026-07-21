@@ -32,6 +32,7 @@ import { StudioView } from "../components/studio/StudioView";
 import { MoveNoteToFolderDialog } from "../components/folders/MoveNoteToFolderDialog";
 import { MoveSessionToProjectDialog } from "../components/folders/MoveSessionToProjectDialog";
 import { NoteEditor } from "../components/note-editor/NoteEditor";
+import { exportNoteAsPdf } from "../lib/note-pdf";
 import { GlobalRecorderPill } from "../components/recorder/GlobalRecorderPill";
 import type { GlobalRecorderDemoApi } from "../lib/global-recorder-demo";
 import type { UpdateCardDemoApi } from "../lib/update-card-demo";
@@ -3167,6 +3168,7 @@ export function App() {
                       onRecoverRecording={(sessionId) => handleRecovery(sessionId, "validate")}
                       onDiscardRecording={(sessionId) => handleRecovery(sessionId, "discard")}
                       onTitleChange={(title) => void handleUpdateNote({ title })}
+                      onExportPdf={() => exportNoteAsPdf(selectedNote.title)}
                       onContentChange={(sourceNoteId, editedContent) => {
                         // Blur fired by an editor that was already torn
                         // down on note-switch — ignore so we don't write

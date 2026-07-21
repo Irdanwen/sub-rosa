@@ -1,5 +1,6 @@
 import { IconClipboard } from "central-icons/IconClipboard";
 import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
+import { IconArrowDownWall } from "central-icons/IconArrowDownWall";
 import { IconProjects } from "central-icons/IconProjects";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconMicrophoneOff } from "central-icons/IconMicrophoneOff";
@@ -47,6 +48,7 @@ type NoteEditorProps = {
   sourceReadiness?: RecordingSourceReadinessDto;
   recovery?: RecoverableRecordingDto;
   onTitleChange: (title: string) => void;
+  onExportPdf?: () => void;
   onContentChange: (noteId: string, content: string) => void;
   onSourceModeChange: (mode: RecordingSourceMode) => void;
   onEnableSystemAudio: () => void;
@@ -126,6 +128,7 @@ export function NoteEditor({
   sourceReadiness,
   recovery,
   onTitleChange,
+  onExportPdf,
   onContentChange,
   onSourceModeChange,
   onEnableSystemAudio,
@@ -323,6 +326,17 @@ export function NoteEditor({
           options={TABS}
           onValueChange={onTabChange}
         />
+        {onExportPdf ? (
+          <button
+            type="button"
+            className="note-header-actions note-export-pdf"
+            onClick={onExportPdf}
+            aria-label="Export as PDF"
+            title="Export as PDF"
+          >
+            <IconArrowDownWall aria-hidden="true" />
+          </button>
+        ) : null}
       </header>
 
       <section className="editor-content">
