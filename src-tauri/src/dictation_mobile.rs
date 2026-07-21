@@ -275,6 +275,8 @@ pub async fn mobile_dictation_stop(
         style,
         session_id: dictation.session_id,
         utterance_id,
+        // Sub Rosa does not detect the paste-target app (upstream #597 unported).
+        app_context: None,
     })
     .await
     .unwrap_or_else(|_| raw_text.clone());
