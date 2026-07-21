@@ -489,9 +489,13 @@ mod tests {
     #[tokio::test]
     async fn search_retries_then_fails_on_upstream_5xx() {
         let server = MockServer::start().await;
+        // A genuine server error (500), not 503: ADR-0012 classifies 503 as
+        // MODEL_INFRA_SATURATED -> retryable UpstreamRateLimited, while 500/502
+        // remain a real UpstreamProvider failure. This test covers the failure
+        // path, so it must use a status the shared error_for_status maps there.
         Mock::given(method("POST"))
             .and(path("/augment/search"))
-            .respond_with(ResponseTemplate::new(503))
+            .respond_with(ResponseTemplate::new(500))
             .mount(&server)
             .await;
 
