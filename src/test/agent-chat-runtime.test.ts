@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  appendLiveHermesEvent,
   buildAgentChatTurns,
   buildHermesSessionChatTurns,
   completedHermesMessageText,
   displayedComposerUserMessageText,
+  HERMES_LIVE_EVENT_LIMIT,
   hermesMessagesEndInterrupted,
+  type LiveHermesEvent,
   repairContractionSpacing,
   toolEventKey,
   withInterruptedTurnNotice,
@@ -1875,5 +1878,67 @@ describe("interrupted-turn detection", () => {
     const notices = turns.flatMap((turn) => turn.parts).filter((part) => part.type === "notice");
     expect(notices).toHaveLength(1);
     expect(notices[0]).toMatchObject({ kind: "upstream-busy" });
+  });
+});
+
+describe("appendLiveHermesEvent", () => {
+  const delta = (messageId: string, text: string, session = "s1"): LiveHermesEvent => ({
+    type: "message.delta",
+    session_id: session,
+    payload: { message_id: messageId, delta: text },
+    receivedAt: "2026-07-21T00:00:00.000Z",
+  });
+
+  function fold(events: LiveHermesEvent[]): LiveHermesEvent[] {
+    return events.reduce<LiveHermesEvent[]>((acc, event) => appendLiveHermesEvent(acc, event), []);
+  }
+
+  it("compacts consecutive deltas of the same message into one accumulated event", () => {
+    const events = fold([delta("m1", "Hello"), delta("m1", " "), delta("m1", "world")]);
+    expect(events).toHaveLength(1);
+    expect((events[0].payload as { delta: string }).delta).toBe("Hello world");
+    // The opening frame's timestamp is preserved.
+    expect(events[0].receivedAt).toBe("2026-07-21T00:00:00.000Z");
+  });
+
+  it("keeps a long streamed reply as a single event so it never evicts its own prefix", () => {
+    const deltas = Array.from({ length: 500 }, (_, index) => delta("m1", `${index} `));
+    const events = fold([
+      { type: "message.start", session_id: "s1", payload: { message_id: "m1" }, receivedAt: "t" },
+      ...deltas,
+    ]);
+    // message.start + one folded delta — never the 200-cap eviction that used to
+    // drop the opening chunks of a long response.
+    expect(events).toHaveLength(2);
+    expect(events[0].type).toBe("message.start");
+    expect((events[1].payload as { delta: string }).delta).toContain("0 ");
+    expect((events[1].payload as { delta: string }).delta).toContain("499 ");
+  });
+
+  it("does not merge across a different message id", () => {
+    const events = fold([delta("m1", "a"), delta("m2", "b")]);
+    expect(events).toHaveLength(2);
+    expect((events[0].payload as { delta: string }).delta).toBe("a");
+    expect((events[1].payload as { delta: string }).delta).toBe("b");
+  });
+
+  it("does not merge across a different session", () => {
+    const events = fold([delta("m1", "a", "s1"), delta("m1", "b", "s2")]);
+    expect(events).toHaveLength(2);
+  });
+
+  it("still bounds unrelated events to the limit", () => {
+    const events = fold(
+      Array.from(
+        { length: HERMES_LIVE_EVENT_LIMIT + 50 },
+        (_, index): LiveHermesEvent => ({
+          type: "tool.progress",
+          session_id: "s1",
+          payload: { id: `t${index}` },
+          receivedAt: "t",
+        }),
+      ),
+    );
+    expect(events).toHaveLength(HERMES_LIVE_EVENT_LIMIT);
   });
 });

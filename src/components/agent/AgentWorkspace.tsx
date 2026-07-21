@@ -283,6 +283,7 @@ import {
   hermesMessagesEndInterrupted,
   repairContractionSpacing,
   textFromHermesContent,
+  appendLiveHermesEvent,
   withInterruptedTurnNotice,
   type AgentApprovalChoice,
   type AgentChatPart,
@@ -4182,10 +4183,10 @@ export function AgentWorkspace({
       // unconditional call is safe for every kind. Mode rides along so each
       // artifact can show its blast radius (sandboxed copy vs unrestricted path).
       hermesArtifactStore.record(classified, hermesModeFor(storedSessionId));
-      const nextSessionEvents = [
-        ...(liveEventsRef.current[storedSessionId] ?? []),
+      const nextSessionEvents = appendLiveHermesEvent(
+        liveEventsRef.current[storedSessionId] ?? [],
         liveEvent,
-      ].slice(-200);
+      );
       liveEventsRef.current = {
         ...liveEventsRef.current,
         [storedSessionId]: nextSessionEvents,
@@ -5324,7 +5325,7 @@ export function AgentWorkspace({
 
   function pushLiveEvent(key: string, event: HermesGatewayEvent) {
     const liveEvent = { ...event, receivedAt: new Date().toISOString() };
-    const nextEvents = [...(liveEventsRef.current[key] ?? []), liveEvent].slice(-200);
+    const nextEvents = appendLiveHermesEvent(liveEventsRef.current[key] ?? [], liveEvent);
     liveEventsRef.current = {
       ...liveEventsRef.current,
       [key]: nextEvents,

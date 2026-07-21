@@ -1187,6 +1187,57 @@ function deltaEventText(event: HermesGatewayEvent) {
   return "";
 }
 
+function liveEventMessageId(event: HermesGatewayEvent): string | undefined {
+  const payload = event.payload as Record<string, unknown> | undefined;
+  const id = payload?.message_id;
+  return typeof id === "string" && id ? id : undefined;
+}
+
+/** Bounded per-session live-event tail. Matches the historical `.slice(-200)`. */
+export const HERMES_LIVE_EVENT_LIMIT = 200;
+
+/**
+ * Append a live gateway event to the bounded per-session tail, compacting a run
+ * of `message.delta` frames for the same message into a single accumulated
+ * event first.
+ *
+ * A long streamed assistant reply emits hundreds of `message.delta` frames.
+ * Storing each one and then keeping only the last `HERMES_LIVE_EVENT_LIMIT`
+ * events evicts the reply's own opening chunks (and its `message.start`), so the
+ * rendered turn loses its prefix until the terminal `message.complete` arrives.
+ * Consecutive deltas are one logical append-only value, so folding them keeps
+ * the whole streamed message as one event that can never evict itself. Frames of
+ * a different kind (a tool step, thinking) break the run, matching the renderer,
+ * which only concatenates consecutive deltas onto the current assistant turn.
+ */
+export function appendLiveHermesEvent(
+  events: LiveHermesEvent[],
+  event: LiveHermesEvent,
+): LiveHermesEvent[] {
+  const previous = events.at(-1);
+  const messageId = liveEventMessageId(event);
+  if (
+    previous &&
+    previous.type === "message.delta" &&
+    event.type === "message.delta" &&
+    previous.session_id === event.session_id &&
+    messageId !== undefined &&
+    liveEventMessageId(previous) === messageId
+  ) {
+    const merged: LiveHermesEvent = {
+      ...event,
+      payload: {
+        ...(event.payload as Record<string, unknown>),
+        delta: deltaEventText(previous) + deltaEventText(event),
+      },
+      // Keep the opening frame's timestamp so the turn's start time is stable.
+      receivedAt: previous.receivedAt,
+    };
+    return [...events.slice(0, -1), merged];
+  }
+  return [...events, event].slice(-HERMES_LIVE_EVENT_LIMIT);
+}
+
 function messageTimestamp(message: HermesSessionMessage) {
   return timestampString(message.timestamp ?? message.created_at);
 }
