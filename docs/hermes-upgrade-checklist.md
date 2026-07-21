@@ -27,11 +27,11 @@ The concrete tools this checklist drives:
 
 ## Version
 
-Pinned Hermes version: `v2026.6.19`.
+Pinned Hermes version: `v2026.7.20`.
 
 This is the version `PINNED_HERMES_VERSION` in
 `src/lib/hermes-control-plane/compatibility/matrix.ts` records and
-`docs/hermes-upstream-v2026.6.19.md` pins. `pnpm hermes:upgrade-check` fails if
+`docs/hermes-upstream-v2026.7.20.md` pins. `pnpm hermes:upgrade-check` fails if
 these three drift apart.
 
 On a bump, set the new version here, in the matrix constant, and in a new pin
@@ -56,7 +56,7 @@ unit test together. The smoke test will fail to start otherwise.
 
 Re-confirm every dashboard REST endpoint June consumes still exists on the new
 build. The authoritative list is in the pin note's "Compatibility checked"
-section (`docs/hermes-upstream-v2026.6.19.md`). For each endpoint:
+section (`docs/hermes-upstream-v2026.7.20.md`). For each endpoint:
 
 - still present and unchanged: no action.
 - changed shape: update the June caller and its test.
@@ -162,7 +162,7 @@ record an explicit decision and reflect it on the matrix:
   the rough plan.
 - `unsupported`: June deliberately will not expose it. Note why.
 
-Carry forward the pending decisions from `docs/hermes-upstream-v2026.6.19.md`
+Carry forward the pending decisions from `docs/hermes-upstream-v2026.7.20.md`
 ("Additional June integration work") and resolve or restate each: Photon
 iMessage setup UI, Raft profile and wake-event mapping, WhatsApp Cloud
 credentials, Automation Blueprints vs the Routines editor, inline rendering of
@@ -184,9 +184,8 @@ dashes, plain hyphens for ranges. Cover only what users can actually rely on
 from June UI (matrix `supported`), not raw upstream capabilities June has not
 exposed. Keep it short and concrete, for example:
 
-> Updated the bundled agent runtime to Hermes v2026.6.19. Background subagents
-> now show per-agent progress in the activity drawer, and you can attach an
-> imported image to an agent turn.
+> Updated June's bundled agent runtime to Hermes 0.19. Agent responses start
+> faster, and mid-task updates stay visible while June verifies its work.
 
 ## CI guard
 

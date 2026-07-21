@@ -29,6 +29,7 @@ export function classifyHermesEvent(raw: HermesGatewayEvent): JuneHermesEvent {
   switch (type) {
     case "message.start":
     case "message.delta":
+    case "message.interim":
     case "message.complete":
       return classifyTranscript(type, sessionId, payload);
 
@@ -57,6 +58,17 @@ export function classifyHermesEvent(raw: HermesGatewayEvent): JuneHermesEvent {
 
     case "error":
       return classifyError(sessionId, payload);
+
+    case "tool.output_risk":
+      // Hermes 0.19 metadata, not a tool lifecycle frame. Keeping it out of
+      // the broad tool.* fallback prevents a completed card from reopening as
+      // generic progress until June has a dedicated risk-metadata surface.
+      return {
+        kind: "unsupported",
+        sessionId,
+        rawType: type,
+        sanitizedPayload: payload === undefined ? undefined : sanitizePayload(payload),
+      };
 
     default:
       break;
@@ -89,10 +101,11 @@ function classifyTranscript(
   payload: RawHermesPayload | undefined,
 ): JuneHermesEvent {
   const complete = type === "message.complete";
+  const interim = type === "message.interim";
   const delta =
     type === "message.delta"
       ? rawDeltaText(payload)
-      : complete
+      : complete || interim
         ? rawCompleteText(payload)
         : undefined;
   return {
@@ -101,6 +114,8 @@ function classifyTranscript(
     messageId: stringValue(payload?.message_id) ?? stringValue(payload?.messageId),
     delta,
     complete,
+    interim,
+    responsePreviewed: payload?.response_previewed === true,
     role: messageRole(payload),
   };
 }

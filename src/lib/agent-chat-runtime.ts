@@ -530,6 +530,10 @@ function assistantTurnForTimestamp(turns: AgentChatTurn[], createdAt: string | u
 
 function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[]) {
   let currentAssistant: AgentChatTurn | null = null;
+  // Hermes 0.19 seals mid-turn commentary as `message.interim`; remember the
+  // bubble it produced so a previewed final (`response_previewed`) can fold
+  // back into it instead of duplicating the text as a second turn.
+  let lastInterimAssistant: AgentChatTurn | null = null;
   const toolCreatedTurns = new Set<AgentChatTurn>();
 
   for (const event of events) {
@@ -557,6 +561,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
     if (event.type === "message.start") {
       currentAssistant = createAssistantTurn(turns, event.receivedAt);
       currentAssistant.status = "running";
+      lastInterimAssistant = null;
       continue;
     }
 
@@ -567,9 +572,40 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
       continue;
     }
 
+    if (event.type === "message.interim") {
+      // Hermes 0.19 seals mid-turn assistant commentary (before tool calls or
+      // the final answer) as its own event. Render it as a completed bubble and
+      // remember it, so a message.complete that only extends this preview folds
+      // back in instead of duplicating the text.
+      if (text) {
+        currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+        completeAssistantTextPart(currentAssistant.parts, text);
+        currentAssistant.status = "complete";
+        completeRunningParts(currentAssistant.parts);
+        lastInterimAssistant = currentAssistant;
+        currentAssistant = null;
+      }
+      continue;
+    }
+
     if (event.type === "message.complete") {
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
       const payload = event.payload as Record<string, unknown> | undefined;
+      // Hermes 0.19: when the final response only extends an interim preview
+      // (response_previewed), settle it back into that same bubble so the
+      // preview is not duplicated as a second turn.
+      const previewText = lastInterimAssistant
+        ? assistantTextFromParts(lastInterimAssistant.parts)
+        : "";
+      const settlesInterimPreview = Boolean(
+        payload?.response_previewed === true &&
+          lastInterimAssistant &&
+          text &&
+          (text.startsWith(previewText) || previewText.startsWith(text)),
+      );
+      if (settlesInterimPreview && lastInterimAssistant) {
+        currentAssistant = lastInterimAssistant;
+      }
+      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
       // A billing failure is recognizable from its "Error:" text prefix; a
       // context overflow is not, so only fold it when the turn actually failed
       // — an ordinary sentence that mentions "context length" stays prose.
@@ -594,6 +630,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
       currentAssistant.status = "complete";
       completeRunningParts(currentAssistant.parts);
       currentAssistant = null;
+      lastInterimAssistant = null;
       continue;
     }
 
@@ -673,6 +710,12 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
     }
 
     if (event.type.startsWith("tool.")) {
+      if (event.type === "tool.output_risk") {
+        // Hermes 0.19 risk metadata, not a tool lifecycle frame. Falling into
+        // the tool-card branch below would reopen a completed card as generic
+        // progress, so skip it until June has a dedicated risk surface.
+        continue;
+      }
       if (isClarifyToolEvent(event)) {
         if (event.type.includes("complete") || event.type.includes("fail")) {
           completePendingClarifyParts((currentAssistant ?? lastAssistantTurn(turns))?.parts ?? []);
@@ -930,6 +973,15 @@ function appendAssistantTextPart(
 // `message.complete` carries the authoritative full text for the turn, so we
 // reconcile it against the concatenation of every streamed text part rather
 // than only the last one (a turn can interleave text -> tool -> text).
+// Concatenated text of an assistant turn's text parts. Used to decide whether a
+// Hermes 0.19 final response merely extends an interim preview (feature 20).
+function assistantTextFromParts(parts: AgentChatPart[]) {
+  return parts
+    .filter((part): part is AgentChatTextPart => part.type === "text")
+    .map((part) => part.text)
+    .join("");
+}
+
 function completeAssistantTextPart(parts: AgentChatPart[], text: string) {
   if (!text.trim()) return;
   const textParts = parts.filter((part): part is AgentChatTextPart => part.type === "text");

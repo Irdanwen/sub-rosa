@@ -245,7 +245,8 @@ if (!$wsOriginText.Contains('"tauri.localhost"')) {
   Log "patched ws-origin: hermes_cli\web_server.py"
 }
 
-foreach ($prune in @("tests", "website", "apps", ".github")) {
+# Hermes 0.19 web imports apps/shared, so apps must remain through the build.
+foreach ($prune in @("tests", "website", ".github")) {
   Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $agentDir $prune)
 }
 
@@ -289,7 +290,8 @@ try {
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
   (Join-Path $agentDir "node_modules"),
   (Join-Path $agentDir "web\node_modules"),
-  (Join-Path $agentDir "ui-tui\node_modules")
+  (Join-Path $agentDir "ui-tui\node_modules"),
+  (Join-Path $agentDir "apps")
 if (!(Test-Path -LiteralPath (Join-Path $agentDir "hermes_cli\web_dist\index.html") -PathType Leaf)) {
   Fail "web_dist missing after build."
 }

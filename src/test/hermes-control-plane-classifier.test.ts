@@ -20,6 +20,7 @@ const CURRENT_GATEWAY_EVENT_NAMES = [
   "session.info",
   "message.start",
   "message.delta",
+  "message.interim",
   "message.complete",
   "thinking.delta",
   "reasoning.delta",
@@ -108,6 +109,25 @@ describe("classifyHermesEvent — transcript", () => {
       throw new Error("expected transcript");
     }
   });
+
+  it("classifies Hermes 0.19 interim commentary as a sealed transcript segment", () => {
+    const interim = classifyHermesEvent(
+      event("message.interim", {
+        message_id: "m1",
+        text: "Let me verify that.",
+        already_streamed: true,
+      }),
+    );
+    expect(interim).toMatchObject({
+      kind: "transcript",
+      sessionId: "sess-1",
+      messageId: "m1",
+      delta: "Let me verify that.",
+      complete: false,
+      interim: true,
+      responsePreviewed: false,
+    });
+  });
 });
 
 describe("classifyHermesEvent — reasoning", () => {
@@ -124,6 +144,22 @@ describe("classifyHermesEvent — reasoning", () => {
 });
 
 describe("classifyHermesEvent — tools", () => {
+  it("keeps Hermes 0.19 output-risk metadata out of tool progress cards", () => {
+    expect(
+      classifyHermesEvent(
+        event("tool.output_risk", {
+          tool_call_id: "tc1",
+          risk: "sensitive-output",
+        }),
+      ),
+    ).toMatchObject({
+      kind: "unsupported",
+      sessionId: "sess-1",
+      rawType: "tool.output_risk",
+      sanitizedPayload: { tool_call_id: "tc1", risk: "sensitive-output" },
+    });
+  });
+
   it("maps tool phases and preserves metadata for tool cards", () => {
     const start = classifyHermesEvent(
       event("tool.start", {
