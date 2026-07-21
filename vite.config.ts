@@ -15,6 +15,14 @@ export default defineConfig({
     host: process.env.TAURI_DEV_HOST || "127.0.0.1",
     port: 1421,
     strictPort: true,
+    // Vite's file watcher must not descend into the Rust build-output dirs.
+    // On Windows, cargo locks `.exe`/pdb files in `target/` while linking, and
+    // `fs.watch` throws EBUSY on locked files. An unhandled watcher error
+    // crashes Vite and tears down `tauri dev` mid-compile. macOS's FSEvents
+    // watcher doesn't hit this, so the gap only shows on Windows (upstream #624).
+    watch: {
+      ignored: ["**/src-tauri/target/**", "**/june-api/target/**"],
+    },
   },
   envPrefix: ["VITE_", "TAURI_"],
   build: {
