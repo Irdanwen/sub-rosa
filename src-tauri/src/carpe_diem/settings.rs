@@ -878,7 +878,7 @@ mod tests {
         // Active prepaid empty, credits pool funded → propose credits (the trap).
         assert_eq!(suggest_switch("prepaid", 0.0, 10.0), Some("credits"));
         // Active credits empty, prepaid funded → propose prepaid.
-        assert_eq!(suggest_switch("credits", 0.0, 0.0).is_none(), true);
+        assert!(suggest_switch("credits", 0.0, 0.0).is_none());
         assert_eq!(suggest_switch("credits", 4.6, 0.0), Some("prepaid"));
         // Active rail can pay → no proposal.
         assert_eq!(suggest_switch("prepaid", 5.0, 10.0), None);
