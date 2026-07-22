@@ -307,7 +307,39 @@ impl Debug for UpstreamsConfig {
 pub struct UpstreamConfig {
     #[serde(default)]
     pub api_key: String,
+    /// Base for OpenAI-standard passthrough inference (chat completions, audio
+    /// transcription). In the Sub Rosa fork this may target Carpe Diem's
+    /// best-price `/router` rail. Catalog/model, image, and web-augmentation
+    /// calls do NOT use this verbatim — they derive the `/v1` rail via
+    /// [`UpstreamConfig::catalog_base_url`], because those endpoints exist only
+    /// under `/v1`, never under `/router`.
     pub base_url: String,
+}
+
+impl UpstreamConfig {
+    /// Operator root: `base_url` minus a trailing `/router` or `/v1` rail
+    /// segment. Carpe Diem publishes pricing at the operator root (one level
+    /// above either rail), so the pricing join derives its base from here.
+    pub fn operator_root(&self) -> &str {
+        let base = self.base_url.trim_end_matches('/');
+        base.strip_suffix("/router")
+            .or_else(|| base.strip_suffix("/v1"))
+            .unwrap_or(base)
+    }
+
+    /// Base for endpoints absent from the `/router` best-price rail — the model
+    /// catalog (`/models`), image generation (`/image/*`), and web augmentation
+    /// (`/augment/*`). When `base_url` targets `/router` this rewrites it to the
+    /// `/v1` rail; otherwise `base_url` is returned unchanged (covers a plain
+    /// `/v1` base, a Venice-direct base, and test/loopback bases that carry no
+    /// rail segment). Upstream June (whose base is always `/v1`) is unaffected.
+    pub fn catalog_base_url(&self) -> String {
+        let base = self.base_url.trim_end_matches('/');
+        match base.strip_suffix("/router") {
+            Some(root) => format!("{root}/v1"),
+            None => base.to_string(),
+        }
+    }
 }
 
 impl Debug for UpstreamConfig {
@@ -1156,6 +1188,41 @@ mod tests {
         let result = validate(&config);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn catalog_base_url_rewrites_router_to_v1_but_leaves_other_bases_untouched() {
+        use super::UpstreamConfig;
+        let with = |base: &str| UpstreamConfig {
+            api_key: String::new(),
+            base_url: base.to_string(),
+        };
+        // `/router` → `/v1` for catalog/image/augment (absent from `/router`).
+        let router = with("https://carpe-diem.xyz/api/operator/router");
+        assert_eq!(
+            router.catalog_base_url(),
+            "https://carpe-diem.xyz/api/operator/v1"
+        );
+        assert_eq!(router.operator_root(), "https://carpe-diem.xyz/api/operator");
+        // A `/v1` base (existing installs, upstream June) is unchanged.
+        let v1 = with("https://carpe-diem.xyz/api/operator/v1");
+        assert_eq!(
+            v1.catalog_base_url(),
+            "https://carpe-diem.xyz/api/operator/v1"
+        );
+        assert_eq!(v1.operator_root(), "https://carpe-diem.xyz/api/operator");
+        // A Venice-direct base is unchanged (no `/router` rail there).
+        let venice = with("https://api.venice.ai/api/v1");
+        assert_eq!(venice.catalog_base_url(), "https://api.venice.ai/api/v1");
+        // A trailing slash and a bare loopback/test base are handled.
+        assert_eq!(
+            with("https://carpe-diem.xyz/api/operator/router/").catalog_base_url(),
+            "https://carpe-diem.xyz/api/operator/v1"
+        );
+        assert_eq!(
+            with("http://127.0.0.1:8080").catalog_base_url(),
+            "http://127.0.0.1:8080"
+        );
     }
 
     #[test]

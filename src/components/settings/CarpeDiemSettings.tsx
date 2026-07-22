@@ -19,6 +19,10 @@ import {
 import { deriveBilling, formatUsd } from "../../lib/carpe-diem-billing";
 import { messageFromError } from "../../lib/errors";
 import { CARPE_DIEM_DASHBOARD_URL, CARPE_DIEM_KEY_PREFIX } from "../../lib/branding";
+import { SegmentedControl } from "../ui/SegmentedControl";
+
+/** The two Carpe Diem endpoint rails the user chooses between. */
+type EndpointChoice = "v1" | "router";
 
 export const SIDECAR_STATUS_EVENT = "carpe-diem://sidecar-status";
 
@@ -210,45 +214,38 @@ function CarpeDiemPayment({ hasApiKey }: { hasApiKey: boolean }) {
  */
 export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
   const { settings, status, refresh, setSettings } = useCarpeDiem();
-  const [baseUrlDraft, setBaseUrlDraft] = useState("");
   const [keyDraft, setKeyDraft] = useState("");
   const [notice, setNotice] = useState<string>();
   const [test, setTest] = useState<TestState>({ kind: "idle" });
   const keyInputId = useId();
 
-  // Seed the base URL field once settings load, without clobbering edits.
-  useEffect(() => {
-    if (settings && baseUrlDraft === "") {
-      setBaseUrlDraft(settings.baseUrl);
-    }
-  }, [settings, baseUrlDraft]);
-
   // Advancing past the onboarding gate is driven by App.tsx, which watches the
   // sidecar status event and re-derives `carpeDiemRequired` from `hasApiKey` +
   // status — so this component doesn't need an onConnected callback.
 
-  const saveBaseUrl = useCallback(async () => {
-    try {
-      const next = await carpeDiemSetBaseUrl(baseUrlDraft);
-      setSettings(next);
-      setNotice("Base URL saved.");
-      setTest({ kind: "idle" });
-    } catch (err) {
-      setNotice(messageFromError(err));
-    }
-  }, [baseUrlDraft, setSettings]);
+  // The stored base is one of the two known rails; default to Router (the app
+  // default) while settings are still loading so the control doesn't flash.
+  const endpoint: EndpointChoice =
+    settings && settings.baseUrl === settings.v1BaseUrl ? "v1" : "router";
 
-  const resetBaseUrl = useCallback(async () => {
-    if (!settings) return;
-    setBaseUrlDraft(settings.defaultBaseUrl);
-    try {
-      const next = await carpeDiemSetBaseUrl(settings.defaultBaseUrl);
-      setSettings(next);
-      setNotice("Base URL reset to the default.");
-    } catch (err) {
-      setNotice(messageFromError(err));
-    }
-  }, [settings, setSettings]);
+  const selectEndpoint = useCallback(
+    async (choice: EndpointChoice) => {
+      if (!settings) return;
+      const url = choice === "router" ? settings.routerBaseUrl : settings.v1BaseUrl;
+      if (url === settings.baseUrl) return;
+      try {
+        const next = await carpeDiemSetBaseUrl(url);
+        setSettings(next);
+        setNotice(
+          choice === "router" ? "Switched to the Router endpoint." : "Switched to the V1 endpoint.",
+        );
+        setTest({ kind: "idle" });
+      } catch (err) {
+        setNotice(messageFromError(err));
+      }
+    },
+    [settings, setSettings],
+  );
 
   const saveKey = useCallback(async () => {
     try {
@@ -290,51 +287,32 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
 
   const hasApiKey = settings?.hasApiKey ?? false;
   const canSaveKey = keyDraft.trim().length > 0;
-  const canSaveBaseUrl =
-    baseUrlDraft.trim().length > 0 && baseUrlDraft.trim() !== settings?.baseUrl;
 
   return (
     <div className={compact ? "carpe-diem-connect" : "settings-group"}>
       {!compact ? <h2 className="settings-group-heading">Carpe Diem</h2> : null}
       <div className="settings-card">
         <div className="settings-rows">
-          {/* Base URL */}
+          {/* Endpoint (V1 vs Router) */}
           <div className="settings-row">
             <div className="settings-row-info">
-              <h3 className="settings-row-title">Base URL</h3>
+              <h3 className="settings-row-title">Endpoint</h3>
               <p className="settings-row-description">
-                The Carpe Diem endpoint. Leave the default unless you were told to change it.
+                {endpoint === "router"
+                  ? "Router: served by the cheapest market, so some requests may leave Carpe Diem's confidential network."
+                  : "V1: every request stays inside Carpe Diem's confidential network, at standard price."}
               </p>
             </div>
-            <div className="settings-row-control settings-secret-control">
-              <input
-                className="settings-secret-input"
-                type="text"
-                value={baseUrlDraft}
-                autoComplete="off"
-                spellCheck={false}
-                placeholder={settings?.defaultBaseUrl ?? "https://…"}
-                aria-label="Carpe Diem base URL"
-                onChange={(event) => setBaseUrlDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && canSaveBaseUrl) void saveBaseUrl();
-                }}
+            <div className="settings-row-control">
+              <SegmentedControl<EndpointChoice>
+                aria-label="Carpe Diem endpoint"
+                value={endpoint}
+                onValueChange={(value) => void selectEndpoint(value)}
+                options={[
+                  { value: "v1", label: "V1", ariaLabel: "V1 (private)" },
+                  { value: "router", label: "Router", ariaLabel: "Router (best price)" },
+                ]}
               />
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={!canSaveBaseUrl}
-                onClick={() => void saveBaseUrl()}
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => void resetBaseUrl()}
-              >
-                Reset
-              </button>
             </div>
           </div>
 

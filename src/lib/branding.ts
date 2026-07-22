@@ -20,8 +20,15 @@ export const UPSTREAM_ATTRIBUTION = "Based on June (open-software-network/os-jun
 
 // --- Carpe Diem provider defaults ------------------------------------------
 
-/** Default, editable base URL for the Carpe Diem OpenAI-compatible endpoint. */
-export const CARPE_DIEM_DEFAULT_BASE_URL = "https://carpe-diem.xyz/api/operator/v1";
+/**
+ * Default, editable base URL for the Carpe Diem OpenAI-compatible endpoint —
+ * the `/router` best-price aggregator rail. Chat, embeddings, and audio route
+ * through it; endpoints absent from `/router` (model catalog, image/video, web
+ * augmentation, credits/pricing) are derived onto the `/v1` rail in the Rust
+ * layer. The functional default lives in `src-tauri` `carpe_diem::branding`;
+ * keep this mirror in sync. Installs that already stored `/v1` keep it.
+ */
+export const CARPE_DIEM_DEFAULT_BASE_URL = "https://carpe-diem.xyz/api/operator/router";
 
 /** Where a user creates a key and buys credits. Linked from onboarding. */
 export const CARPE_DIEM_DASHBOARD_URL = "https://carpe-diem.xyz";

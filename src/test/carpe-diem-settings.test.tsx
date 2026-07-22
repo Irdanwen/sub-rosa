@@ -31,8 +31,10 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
 import { CarpeDiemSettings } from "../components/settings/CarpeDiemSettings";
 
 const settingsDto = (over: Record<string, unknown> = {}) => ({
-  baseUrl: "https://carpe-diem.xyz/api/operator/v1",
-  defaultBaseUrl: "https://carpe-diem.xyz/api/operator/v1",
+  baseUrl: "https://carpe-diem.xyz/api/operator/router",
+  defaultBaseUrl: "https://carpe-diem.xyz/api/operator/router",
+  routerBaseUrl: "https://carpe-diem.xyz/api/operator/router",
+  v1BaseUrl: "https://carpe-diem.xyz/api/operator/v1",
   hasApiKey: false,
   ...over,
 });
@@ -58,12 +60,33 @@ const billingDto = (over: Record<string, unknown> = {}) => ({
 });
 
 describe("CarpeDiemSettings", () => {
-  it("renders base URL + API key fields and a link to get a key", async () => {
+  it("renders the endpoint choice + API key fields and a link to get a key", async () => {
     render(<CarpeDiemSettings />);
     expect(await screen.findByLabelText("Carpe Diem API key")).toBeInTheDocument();
-    expect(screen.getByLabelText("Carpe Diem base URL")).toBeInTheDocument();
+    // The free-form base URL input is gone; a V1/Router choice replaces it.
+    expect(screen.queryByLabelText("Carpe Diem base URL")).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Carpe Diem endpoint" })).toBeInTheDocument();
+    // The default base is the Router rail, so it reads as selected.
+    expect(screen.getByRole("button", { name: "Router (best price)" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "V1 (private)" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /get a key/i })).toBeInTheDocument();
     expect(screen.getByText(/Not connected/i)).toBeInTheDocument();
+  });
+
+  it("switches the endpoint to V1 via the backend command", async () => {
+    mocks.carpeDiemSetBaseUrl.mockResolvedValue(
+      settingsDto({ baseUrl: "https://carpe-diem.xyz/api/operator/v1" }),
+    );
+    render(<CarpeDiemSettings />);
+    fireEvent.click(await screen.findByRole("button", { name: "V1 (private)" }));
+    await waitFor(() =>
+      expect(mocks.carpeDiemSetBaseUrl).toHaveBeenCalledWith(
+        "https://carpe-diem.xyz/api/operator/v1",
+      ),
+    );
   });
 
   it("saves the API key via the backend command", async () => {

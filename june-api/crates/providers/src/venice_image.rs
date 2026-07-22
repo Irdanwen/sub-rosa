@@ -33,7 +33,9 @@ impl VeniceImageGenerator {
         Self {
             http,
             api_key: config.api_key.clone(),
-            base_url: config.base_url.trim_end_matches('/').to_string(),
+            // Image generation lives only on the `/v1` rail (the `/router`
+            // aggregator reshapes images to a different OpenAI contract).
+            base_url: config.catalog_base_url(),
         }
     }
 

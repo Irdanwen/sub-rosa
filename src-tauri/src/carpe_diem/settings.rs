@@ -58,6 +58,16 @@ impl Default for CarpeDiemSettings {
 pub struct CarpeDiemSettingsDto {
     pub base_url: String,
     pub default_base_url: String,
+    /// The two endpoint choices the Settings UI offers instead of a free-form
+    /// URL, both built from the current base's operator root:
+    /// - `router_base_url` — the `/router` best-price aggregator (chat routed to
+    ///   the cheapest market, may leave Carpe Diem's confidential network);
+    /// - `v1_base_url` — the `/v1` private rail (every request stays inside
+    ///   Carpe Diem's confidential network, standard price).
+    ///
+    /// The UI stores whichever the user picks via `carpe_diem_set_base_url`.
+    pub router_base_url: String,
+    pub v1_base_url: String,
     pub has_api_key: bool,
 }
 
@@ -130,7 +140,11 @@ pub fn setup(app: &mut tauri::App) {
 
 // --- Values read by the sidecar --------------------------------------------
 
-/// Current Carpe Diem base URL (falls back to the default when unset/empty).
+/// Current Carpe Diem base URL — the **inference rail** (falls back to the
+/// default when unset/empty). This is what chat, embeddings, and audio
+/// transcription hit, so a `/router` base routes them through the best-price
+/// aggregator. Endpoints absent from `/router` derive their base from
+/// [`catalog_base_url`] / [`operator_root`] instead.
 pub fn base_url() -> String {
     let guard = mirror().lock().unwrap_or_else(|poison| poison.into_inner());
     let value = guard.base_url.trim().trim_end_matches('/').to_string();
@@ -139,6 +153,49 @@ pub fn base_url() -> String {
         default_base_url()
     } else {
         value
+    }
+}
+
+/// Operator root: [`base_url`] minus a trailing `/router` or `/v1` rail segment
+/// (e.g. `https://carpe-diem.xyz/api/operator`). Carpe Diem serves public
+/// `/pricing` at this root, one level above either rail.
+pub fn operator_root() -> String {
+    operator_root_of(&base_url())
+}
+
+/// The `/v1` catalog rail, for endpoints Carpe Diem does NOT expose under the
+/// `/router` best-price aggregator: the model catalog (`/models`), image/video
+/// generation and the media proxy (`/image/*`, `/video/*`), and billing
+/// (`/credits`, `/prepaid/*`). When the stored base targets `/router` this
+/// rewrites it to `/v1`; a `/v1` base, a Venice-direct base, or a suffix-less
+/// base is returned unchanged.
+pub fn catalog_base_url() -> String {
+    catalog_base_url_of(&base_url())
+}
+
+/// The catalog (`/v1`) form of the *default* base URL — the standard Carpe Diem
+/// endpoint every account has. Used to decide whether a customized base must be
+/// forwarded to side services that bill on `/v1` (Videomaker).
+pub fn default_catalog_base_url() -> String {
+    catalog_base_url_of(&default_base_url())
+}
+
+/// Pure core of [`operator_root`] (see it for semantics). Split out so it is
+/// testable without touching the process-global settings mirror.
+fn operator_root_of(base: &str) -> String {
+    let base = base.trim_end_matches('/');
+    base.strip_suffix("/router")
+        .or_else(|| base.strip_suffix("/v1"))
+        .unwrap_or(base)
+        .to_string()
+}
+
+/// Pure core of [`catalog_base_url`] (see it for semantics).
+fn catalog_base_url_of(base: &str) -> String {
+    let base = base.trim_end_matches('/');
+    match base.strip_suffix("/router") {
+        Some(root) => format!("{root}/v1"),
+        None => base.to_string(),
     }
 }
 
@@ -248,10 +305,13 @@ pub async fn carpe_diem_test_connection() -> Result<TestConnectionResult, AppErr
         .build()
         .map_err(|error| AppError::new("carpe_diem_http_client", error.to_string()))?;
     let base = base.trim_end_matches('/').to_string();
+    // The catalog lives only on the `/v1` rail; the chat probe below uses the
+    // inference rail (`base`) so the test exercises whatever chat actually hits.
+    let catalog = catalog_base_url();
 
     // 1) Reachability + catalog size (public on Carpe Diem, so proves the URL).
     let model_count = match client
-        .get(format!("{base}/models"))
+        .get(format!("{catalog}/models"))
         .bearer_auth(&key)
         .send()
         .await
@@ -327,7 +387,6 @@ pub async fn carpe_diem_test_connection() -> Result<TestConnectionResult, AppErr
 
 #[tauri::command]
 pub async fn carpe_diem_get_credits() -> Result<CarpeDiemCreditsDto, AppError> {
-    let base = base_url();
     let Some(key) = api_key() else {
         return Err(AppError::new(
             "carpe_diem_no_api_key",
@@ -339,7 +398,9 @@ pub async fn carpe_diem_get_credits() -> Result<CarpeDiemCreditsDto, AppError> {
         .timeout(TEST_TIMEOUT)
         .build()
         .map_err(|error| AppError::new("carpe_diem_http_client", error.to_string()))?;
-    let base = base.trim_end_matches('/').to_string();
+    // Billing (`/credits`, `/prepaid/*`, `/api_keys/rate_limits`) and pricing
+    // live only on the `/v1` rail, never `/router`.
+    let base = catalog_base_url();
 
     // Route by key prefix (the fork's rule): `cdm_` keys talk to Carpe Diem;
     // any other key is a Venice key pointed straight at api.venice.ai, which
@@ -597,7 +658,8 @@ fn billing_ctx() -> Result<(String, String, reqwest::Client), AppError> {
             "Payment rails apply to Carpe Diem keys only.",
         ));
     }
-    let base = base_url().trim_end_matches('/').to_string();
+    // Billing endpoints (`/credits`, `/prepaid/*`) live only on the `/v1` rail.
+    let base = catalog_base_url();
     let client = reqwest::Client::builder()
         .timeout(TEST_TIMEOUT)
         .build()
@@ -749,9 +811,12 @@ fn unreachable_result(
 }
 
 fn dto() -> CarpeDiemSettingsDto {
+    let root = operator_root();
     CarpeDiemSettingsDto {
         base_url: base_url(),
         default_base_url: default_base_url(),
+        router_base_url: format!("{root}/router"),
+        v1_base_url: format!("{root}/v1"),
         has_api_key: api_key().is_some(),
     }
 }
@@ -941,6 +1006,38 @@ mod tests {
         assert_eq!(
             CarpeDiemSettings::default().base_url,
             branding::CARPE_DIEM_DEFAULT_BASE_URL
+        );
+    }
+
+    #[test]
+    fn catalog_and_operator_root_derive_the_v1_rail_from_router() {
+        // `/router` → `/v1` for catalog/billing (absent from the router rail).
+        assert_eq!(
+            catalog_base_url_of("https://carpe-diem.xyz/api/operator/router"),
+            "https://carpe-diem.xyz/api/operator/v1"
+        );
+        assert_eq!(
+            operator_root_of("https://carpe-diem.xyz/api/operator/router/"),
+            "https://carpe-diem.xyz/api/operator"
+        );
+        // A `/v1` base (existing installs) is unchanged; operator root strips it.
+        assert_eq!(
+            catalog_base_url_of("https://carpe-diem.xyz/api/operator/v1"),
+            "https://carpe-diem.xyz/api/operator/v1"
+        );
+        assert_eq!(
+            operator_root_of("https://carpe-diem.xyz/api/operator/v1"),
+            "https://carpe-diem.xyz/api/operator"
+        );
+        // A Venice-direct base has no `/router` rail → catalog unchanged.
+        assert_eq!(
+            catalog_base_url_of("https://api.venice.ai/api/v1"),
+            "https://api.venice.ai/api/v1"
+        );
+        // The default base URL resolves to the standard `/v1` endpoint.
+        assert_eq!(
+            default_catalog_base_url(),
+            "https://carpe-diem.xyz/api/operator/v1"
         );
     }
 

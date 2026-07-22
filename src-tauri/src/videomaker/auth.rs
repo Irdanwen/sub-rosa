@@ -126,8 +126,12 @@ pub async fn register_carpe_diem_key(_app: &tauri::AppHandle) -> Result<(), AppE
     let wallet = ensure_wallet().await?;
     let client = open_cookie_session(&wallet).await?;
     let mut body = json!({ "api_key": api_key });
-    let carpe_diem_base = crate::carpe_diem::settings::base_url();
-    if carpe_diem_base != crate::carpe_diem::branding::CARPE_DIEM_DEFAULT_BASE_URL {
+    // Videomaker generates images/videos, which Carpe Diem serves only on the
+    // `/v1` rail — forward the catalog base, not the `/router` inference rail.
+    // Omit it when it already matches the standard endpoint Videomaker defaults
+    // to, so only a genuinely customized base is sent.
+    let carpe_diem_base = crate::carpe_diem::settings::catalog_base_url();
+    if carpe_diem_base != crate::carpe_diem::settings::default_catalog_base_url() {
         body["base_url"] = json!(carpe_diem_base);
     }
     let response = client

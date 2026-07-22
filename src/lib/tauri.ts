@@ -1817,6 +1817,12 @@ export async function clearVeniceApiKey() {
 export type CarpeDiemSettingsDto = {
   baseUrl: string;
   defaultBaseUrl: string;
+  // The two endpoint choices offered in Settings, both built from the current
+  // base's operator root. `routerBaseUrl` = the `/router` best-price rail (may
+  // leave Carpe Diem's confidential network); `v1BaseUrl` = the `/v1` private
+  // rail. The UI stores whichever the user picks via `carpeDiemSetBaseUrl`.
+  routerBaseUrl: string;
+  v1BaseUrl: string;
   hasApiKey: boolean;
 };
 

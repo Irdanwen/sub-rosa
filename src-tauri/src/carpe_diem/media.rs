@@ -94,7 +94,9 @@ pub async fn carpe_diem_media_request(
             "No API key is stored yet.",
         ));
     };
-    let url = format!("{}{}", settings::base_url(), request.path);
+    // Media (`/image/*`, `/video/*`, `/audio/*`, catalogs) lives only on the
+    // `/v1` rail — the `/router` aggregator does not serve these paths.
+    let url = format!("{}{}", settings::catalog_base_url(), request.path);
     let mut builder = media_http_client().request(method, &url).bearer_auth(&key);
     if let Some(body) = &request.body {
         builder = builder.json(body);
@@ -244,12 +246,14 @@ pub async fn carpe_diem_media_catalog() -> Result<MediaCatalogDto, AppError> {
             "No API key is stored yet.",
         ));
     };
-    let base = settings::base_url();
     let client = media_http_client();
 
     if key.starts_with("cdm_") {
-        let operator_root = base.strip_suffix("/v1").unwrap_or(&base).to_string();
-        let models_url = format!("{base}/models");
+        // The catalog lives on the `/v1` rail and pricing at the operator root;
+        // neither is served under the `/router` aggregator.
+        let catalog = settings::catalog_base_url();
+        let operator_root = settings::operator_root();
+        let models_url = format!("{catalog}/models");
         let pricing_url = format!("{operator_root}/pricing");
         let (primary, venice, pricing) = tokio::join!(
             fetch_json(client, &models_url, Some(&key)),
@@ -268,6 +272,8 @@ pub async fn carpe_diem_media_catalog() -> Result<MediaCatalogDto, AppError> {
             models: merge_carpe_diem_catalog(&primary, venice.as_ref(), pricing.as_ref()),
         })
     } else {
+        // Venice-direct key: its base already targets `/v1`; no rail rewrite.
+        let base = settings::base_url();
         let catalog = fetch_json(client, &format!("{base}/models?type=all"), Some(&key)).await?;
         Ok(MediaCatalogDto {
             backend: "venice".to_string(),
@@ -558,7 +564,9 @@ pub async fn carpe_diem_media_fetch_artifact(
     request: FetchArtifactRequest,
 ) -> Result<ArtifactDto, AppError> {
     let extension = validate_extension(&request.extension)?;
-    let base = settings::base_url();
+    // Media artifacts are produced and served on the `/v1` rail; resolve
+    // relative URLs against it, not the `/router` inference rail.
+    let base = settings::catalog_base_url();
     let url = resolve_media_url(&base, &request.url);
     let mut builder = download_http_client().get(&url);
     // Only attach the key to the backend's own host — a signed CDN URL on
@@ -781,7 +789,10 @@ fn resolve_media_url(base_url: &str, raw: &str) -> String {
         return raw.to_string();
     }
     let base = base_url.trim_end_matches('/');
-    let operator_root = base.strip_suffix("/v1").unwrap_or(base);
+    let operator_root = base
+        .strip_suffix("/router")
+        .or_else(|| base.strip_suffix("/v1"))
+        .unwrap_or(base);
     if let Some(path) = raw.strip_prefix('/') {
         let root_origin = origin(operator_root);
         let mount = operator_root.strip_prefix(&root_origin).unwrap_or("");
