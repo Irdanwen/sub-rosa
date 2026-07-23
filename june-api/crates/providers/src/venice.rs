@@ -825,33 +825,15 @@ const EVENT_STREAM_CONTENT_TYPE: &str = "text/event-stream";
 /// least a finish chunk plus `[DONE]`, so the stream stays valid and non-empty
 /// even if the message is absent or its `content` is null. Only `choices[0]` is
 /// projected — the agents request a single completion.
-fn synthesize_sse_stream(json_body: &[u8]) -> Option<(Vec<u8>, TokenUsage)> {
-    let value = serde_json::from_slice::<serde_json::Value>(json_body).ok()?;
-    if !value.is_object() {
-        return None;
-    }
-    let id = value
-        .get("id")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("chatcmpl-carpe-router");
-    let model = value
-        .get("model")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("");
-    let created = value
-        .get("created")
-        .and_then(serde_json::Value::as_i64)
-        .unwrap_or(0);
-    let choice = value.get("choices").and_then(|choices| choices.get(0));
-    let message = choice.and_then(|choice| choice.get("message"));
-    let finish_reason = choice
-        .and_then(|choice| choice.get("finish_reason"))
-        .filter(|reason| !reason.is_null())
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!("stop"));
-
-    // Reconstruct the assistant delta, preserving reasoning so the client can
-    // still render the "thinking" panel for reasoning models.
+/// Projects a buffered assistant `message` into the streaming `delta` shape,
+/// preserving reasoning (so the client can still render the "thinking" panel)
+/// and tool calls. Tool calls must survive the rebuild: the agent opens most
+/// turns with one (skill loading, `web_fetch`, …), and a delta without them reads
+/// as an empty reply. Streaming deltas key tool calls by `index`, which the
+/// buffered message shape may omit — backfill it from the position.
+fn assistant_delta_from_message(
+    message: Option<&serde_json::Value>,
+) -> serde_json::Map<String, serde_json::Value> {
     let mut delta = serde_json::Map::new();
     delta.insert("role".to_string(), serde_json::json!("assistant"));
     delta.insert(
@@ -883,6 +865,55 @@ fn synthesize_sse_stream(json_body: &[u8]) -> Option<(Vec<u8>, TokenUsage)> {
     {
         delta.insert("reasoning_details".to_string(), details);
     }
+    if let Some(tool_calls) = message
+        .and_then(|message| message.get("tool_calls"))
+        .and_then(serde_json::Value::as_array)
+        .filter(|calls| !calls.is_empty())
+    {
+        let calls: Vec<serde_json::Value> = tool_calls
+            .iter()
+            .enumerate()
+            .map(|(position, call)| {
+                let mut call = call.clone();
+                if let Some(object) = call.as_object_mut() {
+                    object
+                        .entry("index".to_string())
+                        .or_insert_with(|| serde_json::json!(position));
+                }
+                call
+            })
+            .collect();
+        delta.insert("tool_calls".to_string(), serde_json::Value::Array(calls));
+    }
+    delta
+}
+
+fn synthesize_sse_stream(json_body: &[u8]) -> Option<(Vec<u8>, TokenUsage)> {
+    let value = serde_json::from_slice::<serde_json::Value>(json_body).ok()?;
+    if !value.is_object() {
+        return None;
+    }
+    let id = value
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("chatcmpl-carpe-router");
+    let model = value
+        .get("model")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    let created = value
+        .get("created")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0);
+    let choice = value.get("choices").and_then(|choices| choices.get(0));
+    let message = choice.and_then(|choice| choice.get("message"));
+    let finish_reason = choice
+        .and_then(|choice| choice.get("finish_reason"))
+        .filter(|reason| !reason.is_null())
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!("stop"));
+
+    let delta = assistant_delta_from_message(message);
 
     let usage_value = value.get("usage").cloned();
     let chunk = |choice_body: serde_json::Value, usage: Option<&serde_json::Value>| {
@@ -2409,6 +2440,66 @@ mod tests {
         assert!(text.contains("\"usage\""));
         assert_eq!(usage.prompt_tokens, 20);
         assert_eq!(usage.completion_tokens, 9);
+    }
+
+    #[test]
+    fn synthesize_sse_stream_preserves_tool_calls() {
+        // A `/router`-shaped tool-call completion (openai-gpt-56-terra): empty
+        // content, encrypted reasoning, and the tool call the agent needs. The
+        // upstream entry carries an `index`; a second entry without one must be
+        // backfilled from its position.
+        let body = json!({
+            "id": "gen-tools",
+            "model": "openai-gpt-56-terra",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "type": "function",
+                            "index": 0,
+                            "id": "call_abc",
+                            "function": { "name": "get_time", "arguments": "{\"city\":\"Paris\"}" }
+                        },
+                        {
+                            "type": "function",
+                            "id": "call_def",
+                            "function": { "name": "get_weather", "arguments": "{}" }
+                        }
+                    ],
+                    "reasoning_details": [{ "type": "reasoning.encrypted", "data": "gAAA…" }]
+                },
+                "finish_reason": "tool_calls"
+            }],
+            "usage": { "prompt_tokens": 1567, "completion_tokens": 28 }
+        })
+        .to_string();
+
+        let (sse, usage) = synthesize_sse_stream(body.as_bytes()).expect("synthesized");
+        let text = String::from_utf8(sse).expect("utf8");
+
+        let first_frame = text
+            .split("\n\n")
+            .next()
+            .and_then(|frame| frame.strip_prefix("data: "))
+            .expect("first frame");
+        let chunk: serde_json::Value = serde_json::from_str(first_frame).expect("chunk json");
+        let delta = &chunk["choices"][0]["delta"];
+        let calls = delta["tool_calls"]
+            .as_array()
+            .expect("tool_calls forwarded");
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0]["id"], "call_abc");
+        assert_eq!(calls[0]["index"], 0);
+        assert_eq!(calls[0]["function"]["name"], "get_time");
+        assert_eq!(calls[0]["function"]["arguments"], "{\"city\":\"Paris\"}");
+        // The index-less entry is backfilled from its position.
+        assert_eq!(calls[1]["index"], 1);
+        assert_eq!(calls[1]["id"], "call_def");
+        assert_eq!(text.matches("\"finish_reason\":\"tool_calls\"").count(), 1);
+        assert_eq!(usage.completion_tokens, 28);
     }
 
     #[test]

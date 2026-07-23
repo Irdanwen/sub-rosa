@@ -91,3 +91,22 @@ requiring Venice's shape:
 Supersedes nothing; complements [ADR-0012](0012-upstream-rate-limit-distinct-from-provider-failure.md)
 (there the upstream genuinely 5xx'd and a backed-off retry was right; here the
 upstream returns 200 and the sidecar was manufacturing the 502).
+
+## Addendum (2026-07-23): synthesized SSE must also carry tool calls
+
+The v1.26.1 synthesis rebuilt `content`, `reasoning_content`, and
+`reasoning_details` but dropped `message.tool_calls`. A tool-call turn on
+`/router` (buffered JSON with `finish_reason: "tool_calls"` and an empty
+`content`) therefore reached the agent as an empty delta; Hermes retried,
+exhausted its fallbacks, and surfaced "No reply: the model returned empty
+content after retries". Because the agent opens most turns with a tool call
+(skill loading, web fetch), this broke chat outright for tool-capable reasoning
+models (observed with `openai-gpt-56-terra`, whose reasoning is additionally
+encrypted, leaving no visible fallback text at all).
+
+Fix: the delta projection (`assistant_delta_from_message`) now forwards
+`tool_calls`, backfilling the per-entry `index` (required by the streaming
+delta shape) from the array position when the buffered message omits it.
+Validated against the live `/router` rail: a `stream: true` + `tools` request
+through the sidecar now yields a tool-call delta chunk, `finish_reason:
+"tool_calls"`, a usage frame, and `[DONE]`.
