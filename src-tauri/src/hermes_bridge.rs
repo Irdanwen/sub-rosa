@@ -7335,6 +7335,7 @@ approvals:
   cron_mode: deny
 display:
   skin: mono
+  busy_input_mode: queue
 platform_toolsets:
   cron: [{cron_toolsets}]
 skills:
@@ -9552,6 +9553,32 @@ mod tests {
 
         assert!(config.contains("skills:\n  external_dirs: []\n"));
         assert!(!config.contains("    - "));
+    }
+
+    /// Hermes 0.19 changed the gateway's busy policy: a `prompt.submit` that
+    /// lands while a turn is running is no longer rejected with 4009 "session
+    /// busy" — under the default `busy_input_mode: interrupt` it queues the
+    /// prompt AND kills the live turn, which surfaced as "Operation
+    /// interrupted: waiting for model response" replies whenever a send raced
+    /// an active turn (duplicate sends, steer follow-up resends). June's
+    /// composer was designed around the non-destructive 4009 contract, so the
+    /// config must pin `queue`: the racing prompt waits its turn instead of
+    /// destroying the one in flight.
+    #[test]
+    fn render_hermes_config_pins_queue_busy_input_mode() {
+        let config = render_hermes_config(
+            "glm",
+            "http://127.0.0.1:9/v1",
+            "tok",
+            "web",
+            &[],
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert!(config.contains("display:\n  skin: mono\n  busy_input_mode: queue\n"));
     }
 
     fn test_june_web_mcp_config() -> JuneWebMcpConfig {
