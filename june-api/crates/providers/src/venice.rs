@@ -580,6 +580,8 @@ impl VeniceChat {
             .get("model")
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default();
+        let client_wants_stream =
+            body.get("stream").and_then(serde_json::Value::as_bool) == Some(true);
         let response = self
             .http
             .post(url)
@@ -622,11 +624,34 @@ impl VeniceChat {
             tracing::error!(%error, %url, model, "venice: agent chat body read failed");
             UpstreamAttemptError::fatal(DomainError::UpstreamProvider)
         })?;
-        let usage =
-            usage_from_chat_body(&body, &content_type).map_err(UpstreamAttemptError::fatal)?;
+        // The generation already ran (and billed) upstream, so a 200 must never
+        // collapse into a client-facing error here. Carpe Diem's `/router` rail
+        // (a) returns `content: null` for reasoning models and (b) ignores
+        // `stream: true`, answering with a buffered `application/json` body even
+        // when the client asked for SSE — which would surface to the agent as an
+        // "empty stream with no finish_reason". Normalize both into the
+        // Venice/OpenAI contract the caller expects instead of failing.
+        let upstream_is_sse = content_type.contains("text/event-stream");
+        let (out_body, out_content_type, usage) = if client_wants_stream && !upstream_is_sse {
+            synthesize_sse_stream(&body).map_or_else(
+                || {
+                    // Body was not a JSON completion we could rebuild — pass it
+                    // through unchanged rather than fabricate a stream.
+                    let usage = usage_from_chat_body(&body, &content_type).unwrap_or_default();
+                    (body.to_vec(), content_type.clone(), usage)
+                },
+                |(sse, usage)| (sse, EVENT_STREAM_CONTENT_TYPE.to_string(), usage),
+            )
+        } else {
+            let usage = usage_from_chat_body(&body, &content_type).unwrap_or_else(|_| {
+                tracing::warn!(%url, model, "venice: usage frame unreadable on 200, metering as zero");
+                TokenUsage::default()
+            });
+            (body.to_vec(), content_type, usage)
+        };
         Ok(AgentChatCompletion {
-            body: body.to_vec(),
-            content_type,
+            body: out_body,
+            content_type: out_content_type,
             provider: PROVIDER_NAME.to_string(),
             usage,
         })
@@ -687,7 +712,14 @@ struct ChatCompletionResponse {
 impl ChatCompletionResponse {
     fn first_choice_text(&self) -> Option<String> {
         let message = &self.choices.first()?.message;
-        Some(message.content.trim().to_string())
+        Some(
+            message
+                .content
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+        )
     }
 
     fn usage_or_error(&self) -> Result<TokenUsage, DomainError> {
@@ -706,7 +738,12 @@ struct ChatCompletionChoice {
 
 #[derive(Debug, Deserialize)]
 struct ChatCompletionMessage {
-    content: String,
+    // The Carpe Diem `/router` rail returns `content: null` for reasoning
+    // models (the visible answer is empty; the text lives in `reasoning`), so
+    // this must tolerate a missing/null field rather than fail the whole parse
+    // and collapse a valid 200 into `upstream_provider_failed`.
+    #[serde(default)]
+    content: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -733,9 +770,16 @@ fn usage_from_chat_body(body: &[u8], content_type: &str) -> Result<TokenUsage, D
     if content_type.contains("text/event-stream") {
         return usage_from_sse(body);
     }
-    let parsed = serde_json::from_slice::<ChatCompletionResponse>(body)
+    // Read usage straight off a lenient `Value` rather than binding the whole
+    // typed `ChatCompletionResponse`: the `/router` rail returns `content:
+    // null` for reasoning models, and usage is a top-level sibling of
+    // `choices`, so metering must not depend on the message shape.
+    let value = serde_json::from_slice::<serde_json::Value>(body)
         .map_err(|_| DomainError::UpstreamProvider)?;
-    parsed.usage_or_error()
+    value
+        .get("usage")
+        .and_then(token_usage_from_value)
+        .ok_or(DomainError::UpstreamProvider)
 }
 
 fn usage_from_sse(body: &[u8]) -> Result<TokenUsage, DomainError> {
@@ -764,6 +808,127 @@ fn token_usage_from_value(value: &serde_json::Value) -> Option<TokenUsage> {
         prompt_tokens: value.get("prompt_tokens")?.as_u64()?,
         completion_tokens: value.get("completion_tokens")?.as_u64()?,
     })
+}
+
+/// Content type for a Server-Sent Events stream.
+const EVENT_STREAM_CONTENT_TYPE: &str = "text/event-stream";
+
+/// Rebuilds a buffered non-streaming chat completion into the SSE frames a
+/// streaming client expects. Carpe Diem's `/router` rail ignores `stream: true`
+/// and answers with a single `chat.completion` JSON object; a client that asked
+/// for a stream (the desktop and mobile agents both do) would otherwise see an
+/// "empty stream with no `finish_reason`". We mirror the `/v1` (Venice) SSE shape:
+/// a content/reasoning chunk, a finish chunk, an optional usage frame, `[DONE]`.
+///
+/// Returns `None` only when the body is not a JSON object we can rebuild, so the
+/// caller can fall back to passthrough. When it does rebuild, it always emits at
+/// least a finish chunk plus `[DONE]`, so the stream stays valid and non-empty
+/// even if the message is absent or its `content` is null. Only `choices[0]` is
+/// projected — the agents request a single completion.
+fn synthesize_sse_stream(json_body: &[u8]) -> Option<(Vec<u8>, TokenUsage)> {
+    let value = serde_json::from_slice::<serde_json::Value>(json_body).ok()?;
+    if !value.is_object() {
+        return None;
+    }
+    let id = value
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("chatcmpl-carpe-router");
+    let model = value
+        .get("model")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    let created = value
+        .get("created")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0);
+    let choice = value.get("choices").and_then(|choices| choices.get(0));
+    let message = choice.and_then(|choice| choice.get("message"));
+    let finish_reason = choice
+        .and_then(|choice| choice.get("finish_reason"))
+        .filter(|reason| !reason.is_null())
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!("stop"));
+
+    // Reconstruct the assistant delta, preserving reasoning so the client can
+    // still render the "thinking" panel for reasoning models.
+    let mut delta = serde_json::Map::new();
+    delta.insert("role".to_string(), serde_json::json!("assistant"));
+    delta.insert(
+        "content".to_string(),
+        serde_json::json!(
+            message
+                .and_then(|message| message.get("content"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+        ),
+    );
+    if let Some(reasoning) = message
+        .and_then(|message| {
+            message
+                .get("reasoning_content")
+                .or_else(|| message.get("reasoning"))
+        })
+        .and_then(serde_json::Value::as_str)
+        .filter(|reasoning| !reasoning.is_empty())
+    {
+        delta.insert(
+            "reasoning_content".to_string(),
+            serde_json::json!(reasoning),
+        );
+    }
+    if let Some(details) = message
+        .and_then(|message| message.get("reasoning_details"))
+        .cloned()
+    {
+        delta.insert("reasoning_details".to_string(), details);
+    }
+
+    let usage_value = value.get("usage").cloned();
+    let chunk = |choice_body: serde_json::Value, usage: Option<&serde_json::Value>| {
+        let mut chunk = serde_json::json!({
+            "id": id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [choice_body],
+        });
+        if let (Some(object), Some(usage)) = (chunk.as_object_mut(), usage) {
+            object.insert("usage".to_string(), usage.clone());
+        }
+        chunk
+    };
+
+    let mut frames = vec![
+        chunk(
+            serde_json::json!({"index": 0, "delta": delta, "finish_reason": serde_json::Value::Null}),
+            None,
+        ),
+        chunk(
+            serde_json::json!({"index": 0, "delta": {}, "finish_reason": finish_reason}),
+            None,
+        ),
+    ];
+    if let Some(usage) = usage_value.as_ref() {
+        frames.push(chunk(
+            serde_json::json!({"index": 0, "delta": {}, "finish_reason": serde_json::Value::Null}),
+            Some(usage),
+        ));
+    }
+
+    let mut out = String::new();
+    for frame in &frames {
+        out.push_str("data: ");
+        out.push_str(&frame.to_string());
+        out.push_str("\n\n");
+    }
+    out.push_str("data: [DONE]\n\n");
+
+    let usage = usage_value
+        .as_ref()
+        .and_then(token_usage_from_value)
+        .unwrap_or_default();
+    Some((out.into_bytes(), usage))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1234,10 +1399,11 @@ fn strip_scaffolding_tags(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        CarpeDiemModelsApiResponse, CarpeDiemPricingResponse, SAFETY_CONTEXT, VeniceAgentChat,
-        VeniceGenerator, VeniceModelsApiResponse, carpe_diem_priced_model_items,
-        cleanup_generated_note_text, cleanup_source_text, generation_source_text,
-        inject_safety_context, strip_scaffolding_tags, venice_priced_model_items,
+        CarpeDiemModelsApiResponse, CarpeDiemPricingResponse, ChatCompletionResponse,
+        EVENT_STREAM_CONTENT_TYPE, SAFETY_CONTEXT, VeniceAgentChat, VeniceGenerator,
+        VeniceModelsApiResponse, carpe_diem_priced_model_items, cleanup_generated_note_text,
+        cleanup_source_text, generation_source_text, inject_safety_context, strip_scaffolding_tags,
+        synthesize_sse_stream, usage_from_chat_body, venice_priced_model_items,
     };
     use crate::http;
     use june_config::ModelType;
@@ -2161,5 +2327,212 @@ mod tests {
         let model = models.get("text-model").expect("text model");
         assert_eq!(model.input_credits_per_million_tokens, Some(500));
         assert_eq!(model.output_credits_per_million_tokens, Some(2_000));
+    }
+
+    // ---- Carpe Diem `/router` rail normalization (fork) ----
+
+    #[test]
+    fn usage_from_chat_body_reads_usage_despite_null_content() {
+        // The `/router` rail returns `content: null` for reasoning models; the
+        // metering read must survive it instead of collapsing to 502.
+        let body = json!({
+            "choices": [{ "index": 0, "message": { "role": "assistant", "content": null, "reasoning": "thinking" }, "finish_reason": "length" }],
+            "usage": { "prompt_tokens": 12, "completion_tokens": 7 }
+        })
+        .to_string();
+        let usage = usage_from_chat_body(body.as_bytes(), "application/json").expect("usage");
+        assert_eq!(usage.prompt_tokens, 12);
+        assert_eq!(usage.completion_tokens, 7);
+    }
+
+    #[test]
+    fn usage_from_chat_body_reads_usage_without_message_shape() {
+        // Usage is a top-level sibling of `choices`; a missing/odd message must
+        // not stop metering.
+        let body = json!({
+            "choices": [],
+            "usage": { "prompt_tokens": 3, "completion_tokens": 4 }
+        })
+        .to_string();
+        let usage = usage_from_chat_body(body.as_bytes(), "application/json").expect("usage");
+        assert_eq!(usage.prompt_tokens, 3);
+        assert_eq!(usage.completion_tokens, 4);
+    }
+
+    #[test]
+    fn first_choice_text_tolerates_null_content() {
+        let parsed: ChatCompletionResponse = serde_json::from_value(json!({
+            "choices": [{ "message": { "role": "assistant", "content": null } }],
+            "usage": { "prompt_tokens": 1, "completion_tokens": 1 }
+        }))
+        .expect("parse");
+        assert_eq!(parsed.first_choice_text(), Some(String::new()));
+    }
+
+    #[test]
+    fn synthesize_sse_stream_rebuilds_router_json() {
+        // A `/router`-shaped completion: reasoning model, `content: null`.
+        let body = json!({
+            "id": "gen-abc",
+            "object": "chat.completion",
+            "created": 1_784_000_000_i64,
+            "model": "kimi-k3",
+            "choices": [{
+                "index": 0,
+                "message": { "role": "assistant", "content": null, "reasoning": "the answer is 391" },
+                "finish_reason": "length"
+            }],
+            "usage": { "prompt_tokens": 20, "completion_tokens": 9 }
+        })
+        .to_string();
+
+        let (sse, usage) = synthesize_sse_stream(body.as_bytes()).expect("synthesized");
+        let text = String::from_utf8(sse).expect("utf8");
+
+        // Valid, non-empty SSE terminated with [DONE].
+        assert!(text.ends_with("data: [DONE]\n\n"));
+        // Every non-[DONE] frame is a JSON `chat.completion.chunk`.
+        for frame in text.split("\n\n").filter(|line| !line.is_empty()) {
+            let payload = frame.strip_prefix("data: ").expect("data prefix");
+            if payload == "[DONE]" {
+                continue;
+            }
+            let chunk: serde_json::Value = serde_json::from_str(payload).expect("chunk json");
+            assert_eq!(chunk["object"], "chat.completion.chunk");
+            assert_eq!(chunk["model"], "kimi-k3");
+            assert_eq!(chunk["id"], "gen-abc");
+        }
+        // Carries a finish_reason and the reasoning so the "thinking" panel renders.
+        assert!(text.contains("\"finish_reason\":\"length\""));
+        assert!(text.contains("\"reasoning_content\":\"the answer is 391\""));
+        // A usage frame is emitted and usage is metered.
+        assert!(text.contains("\"usage\""));
+        assert_eq!(usage.prompt_tokens, 20);
+        assert_eq!(usage.completion_tokens, 9);
+    }
+
+    #[test]
+    fn synthesize_sse_stream_preserves_string_content() {
+        let body = json!({
+            "model": "llama-3.3-70b",
+            "choices": [{ "index": 0, "message": { "role": "assistant", "content": "OK" }, "finish_reason": "stop" }],
+            "usage": { "prompt_tokens": 5, "completion_tokens": 2 }
+        })
+        .to_string();
+        let (sse, _usage) = synthesize_sse_stream(body.as_bytes()).expect("synthesized");
+        let text = String::from_utf8(sse).expect("utf8");
+        assert!(text.contains("\"content\":\"OK\""));
+        assert!(text.contains("\"finish_reason\":\"stop\""));
+    }
+
+    #[test]
+    fn synthesize_sse_stream_rejects_non_object_body() {
+        assert!(synthesize_sse_stream(b"not json at all").is_none());
+        assert!(synthesize_sse_stream(b"[1, 2, 3]").is_none());
+    }
+
+    fn agent_chat_for(server: &MockServer) -> VeniceAgentChat {
+        VeniceAgentChat::from_config(
+            http::default_client(),
+            &UpstreamConfig {
+                api_key: "cdm_test".to_string(),
+                base_url: server.uri(),
+            },
+        )
+    }
+
+    fn stream_request(stream: bool) -> AgentChatRequest {
+        AgentChatRequest {
+            body: json!({
+                "model": "kimi-k3",
+                "messages": [{ "role": "user", "content": "hi" }],
+                "stream": stream
+            }),
+            model: ModelId("kimi-k3".to_string()),
+            provider_credentials: ProviderCredentials::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn agent_chat_synthesizes_sse_when_router_ignores_stream() {
+        // The `/router` rail ignores `stream: true` and returns buffered JSON
+        // with `content: null`. The proxy must hand the streaming client valid
+        // SSE, not a 502 and not a lone JSON object.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "gen-xyz",
+                "object": "chat.completion",
+                "model": "kimi-k3",
+                "choices": [{ "index": 0, "message": { "role": "assistant", "content": null, "reasoning": "thinking" }, "finish_reason": "length" }],
+                "usage": { "prompt_tokens": 30, "completion_tokens": 11 }
+            })))
+            .mount(&server)
+            .await;
+
+        let completion = agent_chat_for(&server)
+            .complete(stream_request(true))
+            .await
+            .expect("completion");
+
+        assert_eq!(completion.content_type, EVENT_STREAM_CONTENT_TYPE);
+        let text = String::from_utf8(completion.body).expect("utf8");
+        assert!(text.contains("chat.completion.chunk"));
+        assert!(text.contains("\"finish_reason\":\"length\""));
+        assert!(text.ends_with("data: [DONE]\n\n"));
+        assert_eq!(completion.usage.prompt_tokens, 30);
+        assert_eq!(completion.usage.completion_tokens, 11);
+    }
+
+    #[tokio::test]
+    async fn agent_chat_passes_through_real_sse_stream() {
+        // When the upstream already streams SSE, pass it through untouched.
+        let server = MockServer::start().await;
+        let upstream = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1}}\n\ndata: [DONE]\n\n";
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(upstream, "text/event-stream"))
+            .mount(&server)
+            .await;
+
+        let completion = agent_chat_for(&server)
+            .complete(stream_request(true))
+            .await
+            .expect("completion");
+
+        assert!(completion.content_type.contains("text/event-stream"));
+        assert_eq!(String::from_utf8(completion.body).expect("utf8"), upstream);
+        assert_eq!(completion.usage.prompt_tokens, 2);
+        assert_eq!(completion.usage.completion_tokens, 1);
+    }
+
+    #[tokio::test]
+    async fn agent_chat_passes_through_json_for_non_stream_client() {
+        // A non-streaming client with a `content: null` body must still get its
+        // JSON completion and correct metering — never a 502.
+        let server = MockServer::start().await;
+        let upstream = json!({
+            "id": "gen-json",
+            "object": "chat.completion",
+            "model": "kimi-k3",
+            "choices": [{ "index": 0, "message": { "role": "assistant", "content": null, "reasoning": "t" }, "finish_reason": "length" }],
+            "usage": { "prompt_tokens": 8, "completion_tokens": 3 }
+        });
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(upstream.clone()))
+            .mount(&server)
+            .await;
+
+        let completion = agent_chat_for(&server)
+            .complete(stream_request(false))
+            .await
+            .expect("completion");
+
+        assert!(completion.content_type.contains("application/json"));
+        assert!(!completion.content_type.contains("event-stream"));
+        assert_eq!(completion.usage.prompt_tokens, 8);
+        assert_eq!(completion.usage.completion_tokens, 3);
     }
 }

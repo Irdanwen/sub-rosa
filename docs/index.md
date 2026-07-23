@@ -24,6 +24,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0012](adr/0012-upstream-rate-limit-distinct-from-provider-failure.md) — upstream 429 rate limits become a distinct, retryable `upstream_rate_limited` error + "busy, retry / switch model" notice, not an opaque 502
 - [adr/0013](adr/0013-mid-conversation-model-switching.md) — mid-conversation model switching: the model is a per-turn property; continuity via in-place switch + retry + fork-onto-another-model, not a live Hermes `/model` rebind
 - [adr/0014](adr/0014-per-session-working-folder.md) — per-session working folder: a validated Seatbelt write grant + restart-on-mismatch routing, not process-per-folder or an unvalidated cwd grant
+- [adr/0015](adr/0015-normalize-carpe-diem-router-responses.md) — june-api normalizes the Carpe Diem `/router` rail (null content + non-streamed JSON) into the Venice/OpenAI SSE contract instead of collapsing a 200 into a 502; a successful upstream never becomes a client-facing error
 
 ## Enforceable rules (spec/)
 
