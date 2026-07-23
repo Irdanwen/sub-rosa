@@ -238,9 +238,12 @@ import {
   skillSlashResolutionError,
 } from "../../lib/skill-slash-commands";
 import {
+  goalDispatchNoticeText,
+  type HermesGoalDispatchResponse,
   isBuiltinComposerSlashCommand,
   parseBuiltinComposerSlashCommand,
   parseSlashFileArguments,
+  parseSlashGoalArgument,
   resolveSlashModel,
   slashModelResolutionError,
 } from "../../lib/agent-composer-slash-commands";
@@ -1351,6 +1354,14 @@ export function AgentWorkspace({
     message: string;
     sessionId: string | null;
   } | null>(null);
+  // Result of the last `/goal` command (set / status / pause / resume /
+  // clear), scoped to the session it acted on like the model-switch notice.
+  // The ongoing loop itself reports through the session status line (the
+  // runtime emits `status.update {kind: "goal"}` verdicts after each turn).
+  const [goalNotice, setGoalNotice] = useState<{
+    message: string;
+    sessionId: string | null;
+  } | null>(null);
   // Feature 07: after a successful fork, the banner that tells the user the
   // freshly-opened session was branched from another. Keyed by the NEW
   // session's id so it shows only while that session is selected, then clears
@@ -2125,6 +2136,10 @@ export function AgentWorkspace({
   const visibleModelSwitchNotice =
     modelSwitchNotice && modelSwitchNotice.sessionId === (selectedHermesSessionId ?? null)
       ? modelSwitchNotice.message
+      : null;
+  const visibleGoalNotice =
+    goalNotice && goalNotice.sessionId === (selectedHermesSessionId ?? null)
+      ? goalNotice.message
       : null;
   // Unsupported Hermes events for the selected session surface a generic,
   // recoverable notice (and sanitized dev details). Subscribing to the store's
@@ -3179,6 +3194,11 @@ export function AgentWorkspace({
       return true;
     }
 
+    if (parsed.name === "goal") {
+      await runGoalSlashCommand(parsed.argument, commandText);
+      return true;
+    }
+
     await runFileSlashCommand(parsed.argument, commandText);
     return true;
   }
@@ -3357,6 +3377,113 @@ export function AgentWorkspace({
     if (imported) clearComposerCommandDraft(commandText);
   }
 
+  // `/goal <text>` arms the runtime's goal loop on the session: after every
+  // turn a judge model decides "done or keep going" and Hermes feeds itself a
+  // continuation prompt until the goal is met, the per-goal turn budget runs
+  // out, or the user pauses/clears it. `/goal status|pause|resume|clear`
+  // drive the same loop ("stop"/"done" are aliases of clear). Three send
+  // shapes, matched to the session state:
+  // - control verbs → dispatch only, result in the composer notice;
+  // - set while a turn is RUNNING → dispatch only: the post-turn judge picks
+  //   the goal up when the current turn completes, so the running work is
+  //   never interrupted and no second prompt races the busy gateway;
+  // - set while idle (or on a fresh session) → the goal text is also the
+  //   kickoff prompt, armed via submitHermesSession's beforePrompt seam so
+  //   the goal exists before the turn it must judge.
+  async function runGoalSlashCommand(argument: string, commandText: string) {
+    const request = parseSlashGoalArgument(argument);
+    const sessionId = newSessionModeRef.current ? undefined : selectedHermesSessionId;
+    if (request.kind !== "set") {
+      if (!sessionId) {
+        setError("Open a conversation to check or change its goal.");
+        return;
+      }
+      try {
+        const response = await dispatchGoalToSession(
+          sessionId,
+          request.kind === "status" ? "" : request.kind,
+        );
+        clearComposerCommandDraft(commandText);
+        setError(null);
+        setGoalNotice({ message: goalDispatchNoticeText(response), sessionId });
+      } catch (err) {
+        setError(messageFromError(err));
+      }
+      return;
+    }
+    if (sessionId && workingSessionIdsRef.current.has(sessionId)) {
+      try {
+        const response = await dispatchGoalToSession(sessionId, request.goal);
+        clearComposerCommandDraft(commandText);
+        setError(null);
+        setGoalNotice({
+          message: `${goalDispatchNoticeText(response)} Sub Rosa keeps going when the current step finishes.`,
+          sessionId,
+        });
+      } catch (err) {
+        setError(messageFromError(err));
+      }
+      return;
+    }
+    // Same double-send guard and hero teardown as the main submit path: the
+    // kickoff creates a session and runs a turn, so a second Enter during the
+    // in-flight create must bounce off `submitting`.
+    const heroMode = newSessionModeRef.current;
+    if (heroMode) setHeroLeaving(true);
+    setSubmitting(true);
+    try {
+      setError(null);
+      await submitHermesSession(request.goal, undefined, {
+        beforePrompt: async ({ gateway, runtimeSessionId, storedSessionId }) => {
+          const response = (await createHermesMethods(gateway).dispatchGoalCommand({
+            sessionId: runtimeSessionId,
+            arg: request.goal,
+          })) as HermesGoalDispatchResponse;
+          setGoalNotice({
+            message: goalDispatchNoticeText(response),
+            sessionId: storedSessionId,
+          });
+        },
+      });
+      clearComposerCommandDraft(commandText);
+    } catch (err) {
+      if (isSessionBusyError(err)) {
+        setError(null);
+        setBusyNotice(SESSION_BUSY_NOTICE);
+      } else {
+        setError(messageFromError(err));
+      }
+    } finally {
+      setSubmitting(false);
+      // On success the hero is gone; on failure this fades it back in behind
+      // the still-typed command so the user can retry.
+      setHeroLeaving(false);
+    }
+  }
+
+  /** Dispatches a `/goal` subcommand to the session's live gateway, resolving
+   * the runtime session id first (resuming the stored session when this is
+   * its first touch since app start). */
+  async function dispatchGoalToSession(storedSessionId: string, arg: string) {
+    const gateway = await ensureHermesGateway(sessionUnrestricted(storedSessionId));
+    let runtimeSessionId = runtimeSessionIds[storedSessionId];
+    if (!runtimeSessionId) {
+      const resumed = (
+        await gateway.request<HermesRuntimeSessionResponse>("session.resume", {
+          session_id: storedSessionId,
+          cols: 96,
+        })
+      ).session_id;
+      if (!resumed) throw new Error("Hermes could not resume the session.");
+      runtimeSessionId = resumed;
+      setRuntimeSessionIds((current) => ({ ...current, [storedSessionId]: resumed }));
+    }
+    return (await createHermesMethods(gateway).dispatchGoalCommand({
+      sessionId: runtimeSessionId,
+      arg,
+    })) as HermesGoalDispatchResponse;
+  }
+
   function clearComposerCommandDraft(commandText: string) {
     if (draftRef.current.trim() !== commandText.trim()) return;
     if (categoryRef.current) return;
@@ -3526,6 +3653,7 @@ export function AgentWorkspace({
         };
       }
       setIssueReportNotice(null);
+      setGoalNotice(null);
       await submitHermesSession(runtimeContent, undefined, {
         displayContent: prepared.displayContent,
         titleContent: prepared.titleContent,
@@ -4323,6 +4451,16 @@ export function AgentWorkspace({
        * the selected id is the canonical stored id (optimistic migration doesn't
        * move the selection). */
       skipPrompt?: boolean;
+      /** Runs after the runtime session exists and right before
+       * `prompt.submit` (the `/goal` flow): session-scoped state the upcoming
+       * turn depends on (e.g. arming the goal loop the post-turn judge reads)
+       * is applied here so it cannot race the turn. A rejection aborts the
+       * send through the same cleanup path as a failed submit. */
+      beforePrompt?: (context: {
+        gateway: HermesGatewayClient;
+        runtimeSessionId: string;
+        storedSessionId: string;
+      }) => Promise<void>;
     },
   ): Promise<string | undefined> {
     const displayContent = options?.displayContent ?? content;
@@ -4624,6 +4762,13 @@ export function AgentWorkspace({
       storedSessionId,
     });
     try {
+      // Session-scoped pre-turn state (the `/goal` flow) applies here, inside
+      // the same try as the submit: a failed hook aborts the send through the
+      // shared cleanup below instead of launching a turn missing the state it
+      // was supposed to run under.
+      if (options?.beforePrompt) {
+        await options.beforePrompt({ gateway, runtimeSessionId, storedSessionId });
+      }
       // Feature 15: record the outbound prompt.submit in the trace buffer. Its
       // params are sanitized before storage (the text is the user's own prompt,
       // kept; any secret-like value would be masked). This is the primary
@@ -6429,6 +6574,18 @@ export function AgentWorkspace({
               transition={{ duration: 0.22, ease: EASE_OUT }}
             >
               {visibleModelSwitchNotice}
+            </motion.p>
+          ) : visibleGoalNotice ? (
+            <motion.p
+              key="goal-notice"
+              className="agent-composer-notice"
+              role="status"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.22, ease: EASE_OUT }}
+            >
+              {visibleGoalNotice}
             </motion.p>
           ) : null}
         </AnimatePresence>

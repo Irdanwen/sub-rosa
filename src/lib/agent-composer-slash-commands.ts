@@ -1,6 +1,6 @@
 import { IMAGE_GENERATION_ENABLED } from "./feature-flags";
 
-export type BuiltinComposerSlashCommandName = "model" | "file" | "image";
+export type BuiltinComposerSlashCommandName = "model" | "file" | "image" | "goal";
 
 export type BuiltinComposerSlashCommandDef = {
   name: BuiltinComposerSlashCommandName;
@@ -40,6 +40,12 @@ const BASE_BUILTIN_COMPOSER_SLASH_COMMANDS: BuiltinComposerSlashCommandDef[] = [
     label: "File",
     description: "Attach files to this message.",
     insertText: "/file ",
+  },
+  {
+    name: "goal",
+    label: "Goal",
+    description: "Work autonomously until a goal is done.",
+    insertText: "/goal ",
   },
 ];
 
@@ -83,6 +89,42 @@ export function matchBuiltinComposerSlashCommands(query: string) {
 
 export function isBuiltinComposerSlashCommand(input: string) {
   return Boolean(parseBuiltinComposerSlashCommand(input));
+}
+
+/** What a `/goal` invocation asks for. Control verbs mirror the runtime's
+ * `/goal` subcommands (`hermes_cli/goals.py`); anything else is the goal text.
+ * `stop` and `done` are accepted as aliases of `clear`, matching the runtime. */
+export type SlashGoalRequest =
+  | { kind: "status" | "pause" | "resume" | "clear" }
+  | { kind: "set"; goal: string };
+
+export function parseSlashGoalArgument(argument: string): SlashGoalRequest {
+  const text = argument.trim();
+  const verb = text.toLowerCase();
+  if (!text || verb === "status") return { kind: "status" };
+  if (verb === "pause") return { kind: "pause" };
+  if (verb === "resume") return { kind: "resume" };
+  if (verb === "clear" || verb === "stop" || verb === "done") return { kind: "clear" };
+  return { kind: "set", goal: text };
+}
+
+/** The gateway's `command.dispatch {name: "goal"}` result. `exec` carries the
+ * control-verb output; `send` carries the set-goal notice plus the kickoff
+ * message the caller submits as a normal user turn. */
+export type HermesGoalDispatchResponse = {
+  type?: string;
+  output?: string;
+  notice?: string;
+  message?: string;
+};
+
+/** One-line composer notice for a goal dispatch result. The runtime's texts
+ * are multi-line (verdict + controls reminder); the composer notice slot is a
+ * single line, so keep the first line only. */
+export function goalDispatchNoticeText(response: HermesGoalDispatchResponse): string {
+  const text = (response.output ?? response.notice ?? "").trim();
+  const firstLine = text.split("\n", 1)[0]?.trim() ?? "";
+  return firstLine || "Goal updated.";
 }
 
 export function parseSlashFileArguments(argument: string): SlashFileArgumentsResult {
@@ -179,7 +221,7 @@ export function slashModelResolutionError(
 }
 
 function isBuiltinComposerSlashCommandName(name: string): name is BuiltinComposerSlashCommandName {
-  return name === "model" || name === "file" || name === "image";
+  return name === "model" || name === "file" || name === "image" || name === "goal";
 }
 
 function normalizeSlashCommandQuery(value: string) {

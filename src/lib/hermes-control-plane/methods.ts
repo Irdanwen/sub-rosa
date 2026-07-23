@@ -41,6 +41,12 @@ export type DispatchCommandParams = {
   command: string;
   args?: Record<string, unknown>;
 };
+export type DispatchGoalCommandParams = {
+  sessionId: string;
+  /** A `/goal` subcommand ("", "status", "pause", "resume", "clear") or the
+   * goal text itself — the gateway treats any non-verb text as a new goal. */
+  arg: string;
+};
 export type SwitchActiveSessionModelParams = {
   /** The running session's write-access mode. Carried so callers route the
    * dispatch through the gateway that owns this session's process; the seam
@@ -83,6 +89,15 @@ export type HermesMethods = {
   compressSession(params: CompressSessionParams): Promise<unknown>;
   getSessionUsage(params: SessionUsageParams): Promise<unknown>;
   dispatchCommand(params: DispatchCommandParams): Promise<unknown>;
+  /** Drives the runtime's `/goal` loop (set / status / pause / resume /
+   * clear) on a live session. Deliberately NOT built on {@link
+   * dispatchCommand}: `goal` is one of the gateway's pending-input commands,
+   * which `command.dispatch` only routes through its `name`/`arg` params (the
+   * pinned server ignores a `command` string for them — verified against the
+   * live gateway). Setting a goal returns `{type: "send", notice, message}`
+   * and the caller must submit `message` as a normal user turn to kick the
+   * loop off; control verbs return `{type: "exec", output}`. */
+  dispatchGoalCommand(params: DispatchGoalCommandParams): Promise<unknown>;
   /** Switches the model on a LIVE session by dispatching the `/model <model>`
    * slash command (built on {@link dispatchCommand}). The gateway's result is
    * the source of truth that the switch took — there is no separate confirming
@@ -123,6 +138,13 @@ export function createHermesMethods(client: HermesRequestLike): HermesMethods {
         session_id: sessionId,
         command,
         ...defined({ args }),
+      });
+    },
+    dispatchGoalCommand({ sessionId, arg }) {
+      return request("command.dispatch", {
+        session_id: sessionId,
+        name: "goal",
+        arg,
       });
     },
     switchActiveSessionModel({ sessionId, model }) {

@@ -156,6 +156,17 @@ const JUNE_SOUL_MEDIA_MD: &str = r#"
 Media tools: you have a `june_media` MCP toolset to create media. Use `generate_image` for images (it returns the saved file's path), `generate_video` then `check_media` for videos, and `generate_music` then `check_media` for music. Pick the model to fit each request: call `list_media_models` and weigh its traits, tier, price, and constraints against what the user asked for (a cheap fast model for drafts and iteration; a higher-quality or premium model for photorealism, fine detail, or text inside the image), and say which model you picked and why. Only fall back to the default model for throwaway or generic asks. These tools run through the app with the user's stored media key, so never try to generate media by calling APIs yourself or by hunting for API keys — your session has none. Generations cost real credits; videos are the expensive kind, so state the model you intend to use and get the user's confirmation before queueing a video. Generated files are saved into the app's Studio gallery; give the user the returned file path.
 "#;
 
+/// Appended to `SOUL.md` for every runtime. Long-running work must ride the
+/// runtime's background-process wake-up (the gateway's notification poller
+/// chains a new agent turn when a `notify_on_complete`/`watch_patterns`
+/// process finishes) instead of being chunked into turns that stall until the
+/// user re-prompts "continue". Written without the word "sandbox": this note
+/// is also part of the unsandboxed soul (see
+/// `unsandboxed_soul_makes_no_sandbox_claims`).
+const JUNE_SOUL_LONG_TASKS_MD: &str = r#"
+Long-running work: never split a long task into small turns that wait for the user to tell you to continue - the user should not have to re-prompt you to keep going. When a command or script will run for more than a couple of minutes (large batches, long builds, repeated API calls, big downloads), start it with the terminal tool as a background process (`background=true`) with `notify_on_complete=true` (or `watch_patterns` for progress markers you want to react to), tell the user what is running, then end your turn. The app wakes you automatically with the output when the process finishes or a pattern matches: pick the work back up immediately and drive it to completion. Only end a turn with nothing pending when the task is actually done or you genuinely need input from the user. If a run fails or times out partway, relaunch the remainder the same way instead of reporting and stopping.
+"#;
+
 /// Appended to `SOUL.md` for every runtime. Film production is discovered
 /// through the `june_films` MCP server configured below; the note stresses
 /// that films move real money (DIEM) and that every launch needs an agreed
@@ -7329,7 +7340,10 @@ fn render_hermes_config(
   api_key: {provider_proxy_token}
   api_mode: chat_completions
 agent:
-  max_turns: 90
+  max_turns: 200
+  gateway_timeout: 7200
+  gateway_timeout_warning: 3600
+  gateway_auto_continue_freshness: 10800
 approvals:
   mode: manual
   cron_mode: deny
@@ -7546,10 +7560,10 @@ fn sync_june_soul(
             JUNE_SOUL_CLI_BLOCKED_MD
         };
         format!(
-            "{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_FILMS_MD}{JUNE_SOUL_SANDBOX_MD}{cli_section}"
+            "{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_LONG_TASKS_MD}{JUNE_SOUL_FILMS_MD}{JUNE_SOUL_SANDBOX_MD}{cli_section}"
         )
     } else {
-        format!("{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_FILMS_MD}")
+        format!("{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_LONG_TASKS_MD}{JUNE_SOUL_FILMS_MD}")
     };
     std::fs::write(hermes_home.join("SOUL.md"), soul)
         .map_err(|error| AppError::new("hermes_bridge_soul_failed", error.to_string()))
@@ -9581,6 +9595,42 @@ mod tests {
         assert!(config.contains("display:\n  skin: mono\n  busy_input_mode: queue\n"));
     }
 
+    /// Long agent runs (multi-hundred-call batches, big builds) died at the
+    /// Hermes defaults and the user had to re-prompt "continue" in a loop.
+    /// Scope of each raised key, verified in the pinned runtime source:
+    /// - `max_turns` 90 → 200: the per-turn tool-iteration budget. Read by
+    ///   BOTH the desktop chat channel (`tui_gateway/server.py` builds the
+    ///   agent with `max_iterations=_cfg_max_turns(cfg, 90)`) and the
+    ///   platform gateway, so this is the raise the chat actually feels.
+    /// - `gateway_timeout` 1800 → 7200 (warning 900 → 3600): the platform
+    ///   gateway's inactivity kill (`gateway/run.py`; the TUI channel never
+    ///   reads it). Governs Routines/cron agent runs stuck in one long tool
+    ///   call. Kept non-zero so a truly wedged agent still gets evicted.
+    /// - `gateway_auto_continue_freshness` 3600 → 10800: must stay LARGER
+    ///   than `gateway_timeout` — the freshness window decides whether an
+    ///   interrupted platform-gateway turn auto-resumes on the next message,
+    ///   so a window shorter than the timeout would classify every
+    ///   timeout-adjacent interruption as stale and silently drop the resume
+    ///   (upstream's 3600 covers its 1800 default the same way).
+    #[test]
+    fn render_hermes_config_extends_long_run_budgets() {
+        let config = render_hermes_config(
+            "glm",
+            "http://127.0.0.1:9/v1",
+            "tok",
+            "web",
+            &[],
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert!(config.contains(
+            "agent:\n  max_turns: 200\n  gateway_timeout: 7200\n  gateway_timeout_warning: 3600\n  gateway_auto_continue_freshness: 10800\n"
+        ));
+    }
+
     fn test_june_web_mcp_config() -> JuneWebMcpConfig {
         JuneWebMcpConfig {
             command: "/tmp/hermes/venv/bin/python".to_string(),
@@ -10265,6 +10315,27 @@ mod tests {
         assert!(!soul.contains("name the sandbox as the cause"));
         // Access already granted: there is nothing to request.
         assert!(!soul.contains("[REQUEST:AGENT_CLI_ACCESS]"));
+    }
+
+    /// The gateway's notification poller only continues a long task by itself
+    /// when the model parks the work in a background process with a completion
+    /// notification — a model that chunks the work into interactive turns
+    /// stalls until the user re-prompts. Both soul variants must teach the
+    /// background + `notify_on_complete` pattern.
+    #[test]
+    fn june_soul_teaches_background_continuation_for_long_work() {
+        for sandboxed in [true, false] {
+            let home = tempfile::tempdir().expect("tempdir");
+
+            sync_june_soul(home.path(), sandboxed, false, None).expect("sync soul");
+
+            let soul = std::fs::read_to_string(home.path().join("SOUL.md")).expect("read soul");
+            assert!(soul.contains("Long-running work"));
+            assert!(soul.contains("`background=true`"));
+            assert!(soul.contains("`notify_on_complete=true`"));
+            assert!(soul.contains("`watch_patterns`"));
+            assert!(soul.contains("re-prompt you to keep going"));
+        }
     }
 
     #[test]

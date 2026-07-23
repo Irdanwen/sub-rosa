@@ -143,7 +143,7 @@ const methods: HermesCompatibilitySection = {
   "command.dispatch": {
     status: "supported",
     rationale:
-      "The composer model picker switches a live session by dispatching /model via switchActiveSessionModel (command.dispatch) and only claims success on the gateway ack; covered by hermes-model-switch and agent-workspace tests.",
+      "The composer model picker switches a live session by dispatching /model via switchActiveSessionModel (command.dispatch) and only claims success on the gateway ack; covered by hermes-model-switch and agent-workspace tests. The composer's /goal command drives the runtime's goal loop through the same method via dispatchGoalCommand, using the name/arg params pending-input commands require.",
     since: PIN,
   },
   "subagent.interrupt": {

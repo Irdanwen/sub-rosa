@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  goalDispatchNoticeText,
   matchBuiltinComposerSlashCommands,
   parseBuiltinComposerSlashCommand,
   parseSlashFileArguments,
+  parseSlashGoalArgument,
   resolveSlashModel,
   slashModelResolutionError,
 } from "../lib/agent-composer-slash-commands";
@@ -26,12 +28,54 @@ describe("agent composer built-in slash commands", () => {
     expect(parseBuiltinComposerSlashCommand("/Users/alex/Desktop/report.pdf summarize")).toBeNull();
   });
 
+  it("parses the goal command", () => {
+    expect(parseBuiltinComposerSlashCommand("/goal finish the comparison")).toEqual({
+      name: "goal",
+      argument: "finish the comparison",
+    });
+  });
+
   it("hides image generation from built-in slash suggestions", () => {
     expect(matchBuiltinComposerSlashCommands("")).toEqual([
       expect.objectContaining({ name: "model" }),
       expect.objectContaining({ name: "file" }),
+      expect.objectContaining({ name: "goal" }),
     ]);
     expect(matchBuiltinComposerSlashCommands("image")).toEqual([]);
+  });
+
+  it("maps goal arguments to the runtime's subcommands", () => {
+    expect(parseSlashGoalArgument("")).toEqual({ kind: "status" });
+    expect(parseSlashGoalArgument("  Status ")).toEqual({ kind: "status" });
+    expect(parseSlashGoalArgument("pause")).toEqual({ kind: "pause" });
+    expect(parseSlashGoalArgument("resume")).toEqual({ kind: "resume" });
+    // stop/done are the runtime's aliases of clear.
+    expect(parseSlashGoalArgument("clear")).toEqual({ kind: "clear" });
+    expect(parseSlashGoalArgument("STOP")).toEqual({ kind: "clear" });
+    expect(parseSlashGoalArgument("done")).toEqual({ kind: "clear" });
+    expect(parseSlashGoalArgument("run all 234 calls, then score them")).toEqual({
+      kind: "set",
+      goal: "run all 234 calls, then score them",
+    });
+    // A goal that merely starts with a verb is still a goal.
+    expect(parseSlashGoalArgument("pause the pipeline after step 3")).toEqual({
+      kind: "set",
+      goal: "pause the pipeline after step 3",
+    });
+  });
+
+  it("keeps only the first line of a goal dispatch result for the notice", () => {
+    expect(
+      goalDispatchNoticeText({
+        type: "send",
+        notice: "⊙ Goal set (20-turn budget): ship it\nI'll keep working until the goal is done.",
+        message: "ship it",
+      }),
+    ).toBe("⊙ Goal set (20-turn budget): ship it");
+    expect(goalDispatchNoticeText({ type: "exec", output: "✓ Goal cleared." })).toBe(
+      "✓ Goal cleared.",
+    );
+    expect(goalDispatchNoticeText({})).toBe("Goal updated.");
   });
 
   it("parses quoted file paths", () => {
