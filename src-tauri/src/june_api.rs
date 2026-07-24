@@ -1978,7 +1978,12 @@ fn june_home_requires_current_information(message: &str) -> bool {
         ]
         .iter()
         .any(|phrase| has_phrase(phrase));
-    let asks_for_live_results = asks_for_facts && has_any(&["score", "scores"]);
+    let asks_for_live_results = asks_for_facts
+        && has_any(&["score", "scores"])
+        && (recency
+            || has_any(&["game", "games", "match", "matches", "sport", "sports"])
+            || has_phrase(&["the", "score"])
+            || has_phrase(&["the", "scores"]));
 
     (inherently_current && (asks_for_facts || recency))
         || (time_sensitive_topic && recency && asks_for_facts)
@@ -4492,6 +4497,8 @@ data: \"data\":{\"content\":\"Joined\",\"titleSuggestion\":null,\"provider\":\"v
             "How do I set up events in Google Calendar?",
             "What's a good game for 4 players?",
             "What's a reasonable price range for a laptop?",
+            "What's my credit score?",
+            "How do I improve my SAT score?",
         ] {
             assert!(
                 !june_home_requires_current_information(prompt),
