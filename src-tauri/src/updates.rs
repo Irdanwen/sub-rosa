@@ -191,10 +191,18 @@ pub async fn fetch_update(
     let channel = current_channel(&app);
     let endpoint = tauri::Url::parse(channel.endpoint())
         .map_err(|error| AppError::new("update_check_failed", error.to_string()))?;
-    let update = app
+    let updater = app
         .updater_builder()
         .endpoints(vec![endpoint])
-        .map_err(|error| AppError::new("update_check_failed", error.to_string()))?
+        .map_err(|error| AppError::new("update_check_failed", error.to_string()))?;
+    #[cfg(windows)]
+    let updater = {
+        let exit_app = app.clone();
+        updater.on_before_exit(move || {
+            crate::shutdown::finalize_updater_exit(&exit_app);
+        })
+    };
+    let update = updater
         // The comparator is the sole downgrade gate; routing the default path
         // through `should_update` too keeps all install-decision logic in one
         // tested place. With reconcile=false this is exactly `remote > current`.
@@ -225,6 +233,7 @@ pub async fn fetch_update(
 /// a fresh `fetch_update` (the frontend re-checks before retrying).
 #[tauri::command]
 pub async fn install_update(
+    _app: AppHandle,
     pending: State<'_, PendingUpdate>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<(), AppError> {
@@ -239,6 +248,34 @@ pub async fn install_update(
     let finished_channel = on_event;
     let mut started = false;
 
+    #[cfg(windows)]
+    {
+        // `Update::install` exits the process and its before-exit callback
+        // cannot cancel that action. Download first, then finish June's
+        // fallible cleanup while an error can still keep the renderer alive.
+        let bytes = update
+            .download(
+                move |chunk_length, content_length| {
+                    if !started {
+                        started = true;
+                        let _ = progress_channel.send(DownloadEvent::Started { content_length });
+                    }
+                    let _ = progress_channel.send(DownloadEvent::Progress { chunk_length });
+                },
+                move || {
+                    let _ = finished_channel.send(DownloadEvent::Finished);
+                },
+            )
+            .await
+            .map_err(|error| AppError::new("update_install_failed", error.to_string()))?;
+        crate::shutdown::prepare_for_updater_exit(&_app)?;
+        if let Err(error) = update.install(bytes) {
+            crate::shutdown::cancel_updater_exit(&_app);
+            return Err(AppError::new("update_install_failed", error.to_string()));
+        }
+    }
+
+    #[cfg(not(windows))]
     update
         .download_and_install(
             move |chunk_length, content_length| {
@@ -260,8 +297,8 @@ pub async fn install_update(
     Ok(())
 }
 
-/// Relaunches June after an in-app update has been staged, running the same
-/// child-process teardown app quit does *before* the process restarts.
+/// Relaunches June after an in-app update has been staged through the same
+/// idempotent shutdown coordinator used by ordinary app quit.
 ///
 /// The plugin `relaunch()` (and `AppHandle::restart()` on the main thread)
 /// restarts without a guaranteed pass through the `RunEvent::Exit` cleanup that
@@ -270,13 +307,13 @@ pub async fn install_update(
 /// CGEventTap and its stdio — and the relaunched instance then cannot bring up a
 /// clean helper, so every helper-reported permission (dictation mic and
 /// accessibility) reads missing even though the grants are intact (JUN-338).
-/// Tearing down explicitly here guarantees the helper (and the Hermes runtime)
-/// are gone before the new instance starts.
+/// The coordinator latches Restart, performs teardown off the main event loop,
+/// and schedules the final restart on the main thread after cleanup or its hard
+/// aggregate deadline. A concurrent quit request shares the same cleanup and
+/// cannot replace the already-latched restart.
 #[tauri::command]
-pub async fn relaunch_for_update(app: AppHandle) {
-    crate::dictation::stop_helper(&app);
-    crate::hermes_bridge::shutdown(&app).await;
-    app.restart();
+pub async fn relaunch_for_update(app: AppHandle) -> Result<(), AppError> {
+    crate::shutdown::request_restart(&app)
 }
 
 #[tauri::command]

@@ -1169,38 +1169,19 @@ async fn await_authorization_code(
     }
 }
 
-// Branded loopback success page. Self-contained (the loopback origin can't
-// reach the app's bundled fonts/assets), but mirrors the OS Accounts / June
-// look: warm-grey surface, inset card, OS mark, calm hierarchy — and follows
-// the system light/dark preference.
+// Branded loopback success page for the dev-only sign-in loopback: the shared
+// template from connectors/oauth.rs (embedded fonts, baked clay tokens, the
+// welcome-surface look) with sign-in copy.
 #[cfg(debug_assertions)]
-const SUCCESS_BODY: &str = r##"<!doctype html>
-<html lang=en>
-<meta charset=utf-8>
-<meta name=viewport content="width=device-width,initial-scale=1">
-<title>June</title>
-<style>
-  :root{--bg:#f1f0ed;--card:#fff;--fg:#2b2a28;--muted:#8a8884;--border:#e7e4de;--mark-fg:#fff;--ok:#2c6747;--ok-soft:#e7efe9}
-  @media (prefers-color-scheme:dark){:root{--bg:#181817;--card:#252423;--fg:#fafafa;--muted:#b2b0ac;--border:rgba(255,255,255,.10);--mark-fg:#181817;--ok:#6fbf94;--ok-soft:rgba(111,191,148,.16)}}
-  *{box-sizing:border-box}
-  html,body{height:100%}
-  body{margin:0;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
-  .card{display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;max-width:340px;padding:36px 32px;text-align:center;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
-  .mark{display:grid;place-items:center;width:40px;height:40px;border-radius:11px;background:var(--fg);color:var(--mark-fg);font-weight:700;font-size:15px;letter-spacing:.06em}
-  .check{display:inline-flex;align-items:center;gap:7px;padding:4px 11px 4px 9px;border-radius:999px;background:var(--ok-soft);color:var(--ok);font-size:12.5px;font-weight:600}
-  .check svg{width:13px;height:13px}
-  .title{margin:0;font-size:17px;font-weight:600;letter-spacing:-.01em}
-  .sub{margin:0;font-size:14px;line-height:1.5;color:var(--muted)}
-</style>
-<body>
-  <main class=card>
-    <div class=mark>OS</div>
-    <span class=check><svg viewBox="0 0 14 14" fill=none stroke=currentColor stroke-width=1.8 stroke-linecap=round stroke-linejoin=round><path d="M3 7.5 6 10l5-6"/></svg>Signed in</span>
-    <h1 class=title>Signed in to June</h1>
-    <p class=sub>You can close this tab and return to the app.</p>
-  </main>
-</body>
-</html>"##;
+use std::sync::LazyLock;
+#[cfg(debug_assertions)]
+static SUCCESS_BODY: LazyLock<String> = LazyLock::new(|| {
+    crate::connectors::oauth::success_page(
+        "Signed in",
+        "Signed in to June",
+        "You can close this tab and return to the app.",
+    )
+});
 
 /// Accept connections until one hits `/callback`. Every per-socket read is
 /// bounded so a slow-loris client on the loopback port can't stall the
@@ -1240,7 +1221,7 @@ async fn await_callback(listener: &TcpListener, expected_state: &str) -> Result<
                 return Err(missing_code_error());
             }
             CallbackCode::Code(code) => {
-                write_http(&mut stream, "200 OK", SUCCESS_BODY).await;
+                write_http(&mut stream, "200 OK", &SUCCESS_BODY).await;
                 return Ok(code);
             }
         }
@@ -2152,29 +2133,85 @@ fn random_b64url(bytes: usize) -> String {
     URL_SAFE_NO_PAD.encode(&buf)
 }
 
+#[cfg(target_os = "windows")]
+pub(crate) fn open_in_browser(url: &str) -> Result<(), AppError> {
+    open_with_windows_shell(url, |target| {
+        use windows::{
+            core::{w, PCWSTR},
+            Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
+        };
+
+        // `target` remains alive for the duration of this synchronous call.
+        let result = unsafe {
+            ShellExecuteW(
+                None,
+                w!("open"),
+                PCWSTR(target.as_ptr()),
+                None,
+                None,
+                SW_SHOWNORMAL,
+            )
+        };
+        result.0 as isize
+    })
+}
+
+#[cfg(not(target_os = "windows"))]
 pub(crate) fn open_in_browser(url: &str) -> Result<(), AppError> {
     let mut command = browser_open_command(url);
     let mut child = command
         .spawn()
         .map_err(|e| AppError::new("browser_open_failed", e.to_string()))?;
-    // Reap the short-lived `open` process off-thread so it doesn't linger as
-    // a zombie until the app exits.
+    // Reap the short-lived platform launcher off-thread so it doesn't linger
+    // as a zombie until the app exits.
     std::thread::spawn(move || {
         let _ = child.wait();
     });
     Ok(())
 }
 
+#[cfg(any(target_os = "windows", test))]
+fn open_with_windows_shell(
+    url: &str,
+    execute: impl FnOnce(&[u16]) -> isize,
+) -> Result<(), AppError> {
+    if url.contains('\0') {
+        return Err(AppError::new(
+            "browser_open_failed",
+            "Browser target contains an embedded NUL",
+        ));
+    }
+
+    let mut target: Vec<u16> = url.encode_utf16().collect();
+    target.push(0);
+    let result = execute(&target);
+    if result > 32 {
+        return Ok(());
+    }
+
+    let reason = match result {
+        0 => "system resource failure",
+        2 => "target path not found",
+        3 => "target path not found",
+        5 => "access denied",
+        8 => "insufficient memory",
+        27 => "incomplete association",
+        28 => "DDE timeout",
+        29 => "DDE transaction failure",
+        30 => "DDE busy",
+        31 => "no registered association",
+        32 => "required DLL unavailable",
+        _ => "shell activation failure",
+    };
+    Err(AppError::new(
+        "browser_open_failed",
+        format!("Could not open browser: {reason} (ShellExecuteW code {result})"),
+    ))
+}
+
 #[cfg(target_os = "macos")]
 fn browser_open_command(url: &str) -> std::process::Command {
     let mut command = std::process::Command::new("open");
-    command.arg(url);
-    command
-}
-
-#[cfg(target_os = "windows")]
-fn browser_open_command(url: &str) -> std::process::Command {
-    let mut command = std::process::Command::new("explorer.exe");
     command.arg(url);
     command
 }
@@ -2189,6 +2226,98 @@ fn browser_open_command(url: &str) -> std::process::Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_shell_preserves_complex_browser_target() {
+        let url = format!(
+            "https://accounts.example.test/login?redirect=https%3A%2F%2Fapp.example.test%2Fcallback%3Fa%3D1%26b%3Dtwo&state={}&label=Zażółć🚀%20gęślą",
+            "x".repeat(2048)
+        );
+
+        open_with_windows_shell(&url, |target| {
+            assert_eq!(target.last(), Some(&0));
+            assert!(!target[..target.len() - 1].contains(&0));
+            assert_eq!(
+                String::from_utf16(&target[..target.len() - 1]).unwrap(),
+                url
+            );
+            33
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn windows_shell_preserves_long_browser_target() {
+        let query = "pkce%2Fvalue%26with%3Descapes&part=".repeat(256);
+        let url = format!("https://accounts.example.test/authorize?{query}");
+
+        open_with_windows_shell(&url, |target| {
+            let decoded = String::from_utf16(&target[..target.len() - 1]).unwrap();
+            assert_eq!(decoded.len(), url.len());
+            assert_eq!(decoded, url);
+            33
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn windows_shell_preserves_custom_scheme_target() {
+        let target_url = "ms-settings:privacy-microphone";
+
+        open_with_windows_shell(target_url, |target| {
+            assert_eq!(target.last(), Some(&0));
+            assert_eq!(
+                String::from_utf16(&target[..target.len() - 1]).unwrap(),
+                target_url
+            );
+            33
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn windows_shell_rejects_embedded_nul_without_executing() {
+        let error = open_with_windows_shell("https://example.test/\0secret", |_| {
+            panic!("executor must not be called")
+        })
+        .unwrap_err();
+
+        assert_eq!(error.code, "browser_open_failed");
+        assert!(error.message.contains("embedded NUL"));
+    }
+
+    #[test]
+    fn windows_shell_classifies_result_boundaries() {
+        assert!(open_with_windows_shell("https://example.test", |_| 33).is_ok());
+
+        for (code, expected_reason) in [
+            (32, "required DLL unavailable"),
+            (31, "no registered association"),
+            (0, "system resource failure"),
+            (26, "shell activation failure"),
+        ] {
+            let error = open_with_windows_shell("https://example.test", |_| code).unwrap_err();
+            assert_eq!(error.code, "browser_open_failed");
+            assert!(error.message.contains(expected_reason));
+            assert!(error.message.contains(&format!("code {code}")));
+        }
+    }
+
+    #[test]
+    fn windows_shell_failure_does_not_expose_browser_target() {
+        let secret = "oauth-secret-do-not-log";
+        let url = format!("https://example.test/login?token={secret}");
+        let error = open_with_windows_shell(&url, |_| 31).unwrap_err();
+
+        assert_eq!(error.code, "browser_open_failed");
+        assert!(!error.message.contains(&url));
+        assert!(!error.message.contains(secret));
+        assert!(error
+            .details
+            .as_ref()
+            .map(|details| !details.to_string().contains(secret))
+            .unwrap_or(true));
+    }
 
     fn account_status_for_plan(
         plan: Option<&str>,

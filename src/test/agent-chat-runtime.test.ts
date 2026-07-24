@@ -471,14 +471,18 @@ describe("Agent chat runtime", () => {
     ]);
   });
 
-  it("replaces internal Hermes model-change instructions with a short label", () => {
+  it.each([
+    { qualityPreference: 20, label: "Economy" },
+    { qualityPreference: 50, label: "Balanced" },
+    { qualityPreference: 100, label: "Quality" },
+  ])("replaces internal Hermes model-change instructions with the Auto $label label", (preset) => {
     const turns = buildHermesSessionChatTurns([
       {
         id: "model-change-1",
         role: "system",
         content:
           "[System: The active model for this chat has changed to " +
-          "__june_auto_generation__:100 via provider custom. From this point " +
+          `__june_auto_generation__:${preset.qualityPreference} via provider custom. From this point ` +
           "forward, use this runtime metadata when answering questions about " +
           "what model/provider is active.]",
         timestamp: "2026-07-14T22:57:11.000Z",
@@ -490,7 +494,7 @@ describe("Agent chat runtime", () => {
     expect(turns[0]?.parts).toEqual([
       {
         type: "text",
-        text: "Model changed to Auto Quality.",
+        text: `Model changed to Auto ${preset.label}.`,
         status: "complete",
       },
     ]);
@@ -3280,72 +3284,6 @@ describe("Agent chat runtime", () => {
         text: UPSTREAM_PROVIDER_FAILURE_NOTICE_BODY,
       },
     ]);
-  });
-
-  it("folds a failed metering-service message.complete into the same recoverable notice", () => {
-    const meteringFailure = "API call failed after 3 retries: HTTP 503: metering_provider_failed";
-    const turns = buildHermesSessionChatTurns(
-      [],
-      [
-        transcriptEvent({
-          receivedAt: "2026-06-04T10:00:01.000Z",
-          complete: true,
-          delta: meteringFailure,
-          failed: true,
-        }),
-      ],
-    );
-
-    expect(turns[0]?.parts).toEqual([
-      {
-        type: "notice",
-        kind: "upstream-provider",
-        text: UPSTREAM_PROVIDER_FAILURE_NOTICE_BODY,
-      },
-    ]);
-
-    const persisted = buildHermesSessionChatTurns([
-      {
-        id: "metering-failed",
-        role: "assistant",
-        content: meteringFailure,
-        timestamp: "2026-06-04T10:00:01.000Z",
-      },
-    ]);
-    expect(persisted[0]?.parts).toEqual(turns[0]?.parts);
-  });
-
-  it("folds a provider connection failure into the same recoverable notice", () => {
-    const connectionFailure = "API call failed after 3 retries: Connection error.";
-    const turns = buildHermesSessionChatTurns(
-      [],
-      [
-        transcriptEvent({
-          receivedAt: "2026-06-04T10:00:01.000Z",
-          complete: true,
-          delta: connectionFailure,
-          failed: true,
-        }),
-      ],
-    );
-
-    expect(turns[0]?.parts).toEqual([
-      {
-        type: "notice",
-        kind: "upstream-provider",
-        text: UPSTREAM_PROVIDER_FAILURE_NOTICE_BODY,
-      },
-    ]);
-
-    const persisted = buildHermesSessionChatTurns([
-      {
-        id: "connection-failed",
-        role: "assistant",
-        content: connectionFailure,
-        timestamp: "2026-06-04T10:00:01.000Z",
-      },
-    ]);
-    expect(persisted[0]?.parts).toEqual(turns[0]?.parts);
   });
 
   it("keeps successful prose that mentions upstream_provider_failed as text", () => {

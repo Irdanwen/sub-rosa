@@ -334,6 +334,11 @@ pub async fn transcribe_saved_audio(
         .part("audio", audio_part(audio, &filename, &request.audio_path)?);
     if request.preview {
         form = form.text("preview", "true");
+        // Builds that carry the Live transcription setting disclose its cost;
+        // a preview request from such a build is therefore consented billable
+        // usage. Legacy clients never send this field and keep zero-credit
+        // preview settlement (JUN-375, ADR-0002 addendum).
+        form = form.text("previewOptedIn", "true");
     }
     if let Some(context) = request
         .context
@@ -1189,6 +1194,45 @@ pub async fn forward_web_request(
     })
 }
 
+/// Streams a web-tool request body from the on-device provider proxy into
+/// June API without first materializing the complete JSON document.
+///
+/// `access_token()` refreshes stale cached credentials before returning. Like
+/// multipart uploads, this one-shot body cannot be replayed after a server-side
+/// 401, so it deliberately relies on that pre-flight refresh instead of
+/// `authed_send`'s response-triggered retry.
+pub async fn forward_streaming_web_request(
+    path: &str,
+    body: reqwest::Body,
+    content_length: usize,
+) -> Result<WebProxyResponse, AppError> {
+    let url = format!("{}{}", june_api_url(), path);
+    let token = crate::os_accounts::access_token().await?;
+    let request = http_client()
+        .post(url)
+        .bearer_auth(token)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header(reqwest::header::CONTENT_LENGTH, content_length)
+        .body(body);
+    let response = with_venice_api_key(path, request, true)
+        .send()
+        .await
+        .map_err(network_error)?;
+    let status = response.status().as_u16();
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("application/json")
+        .to_string();
+    let bytes = response.bytes().await.map_err(network_error)?;
+    Ok(WebProxyResponse {
+        status,
+        content_type,
+        body: bytes.to_vec(),
+    })
+}
+
 /// Forwards an image tool request (`/v1/image/generate` or `/v1/image/edit`) to
 /// the June API with the user's access token, returning the raw response so the
 /// loopback proxy can pass the metered envelope straight through to the local
@@ -1600,8 +1644,6 @@ pub struct JuneHomeChatMessage {
 pub struct JuneHomeChatRequest {
     messages: Vec<JuneHomeChatMessage>,
     history_context: Option<String>,
-    model: Option<String>,
-    reasoning_effort: Option<String>,
     profile: Option<String>,
 }
 
@@ -2014,23 +2056,6 @@ pub async fn june_home_chat(
         .map(str::trim)
         .filter(|profile| !profile.is_empty())
         .map(str::to_string);
-    let model = request
-        .model
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("__june_auto_generation__:0")
-        .to_string();
-    let reasoning_effort = request
-        .reasoning_effort
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        // "none" mirrors the composer's Low stop (thinking-level.ts): Home is
-        // conversational, so by default the model answers without a separate
-        // reasoning pass.
-        .unwrap_or("none")
-        .to_string();
     let mut messages = vec![serde_json::json!({
         "role": "system",
         "content": JUNE_HOME_CHAT_SYSTEM_PROMPT,
@@ -2075,8 +2100,10 @@ pub async fn june_home_chat(
     };
 
     let response = proxy_agent_chat_completions(serde_json::json!({
-        "model": model,
-        "reasoning_effort": reasoning_effort,
+        // Home's lightweight route is intentionally independent of the
+        // selected Agent model. Focused handoffs capture normal Agent defaults.
+        "model": "__june_auto_generation__:0",
+        "reasoning_effort": "minimal",
         "messages": messages,
         "tools": [{
             "type": "function",

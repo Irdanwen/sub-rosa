@@ -244,3 +244,72 @@ canonical `os-june` binary. The development runner creates that launcher as a
 hard link after every build. A copied or independently built executable with
 an allowed-looking name is rejected. Packaged helper verification remains
 unchanged.
+
+## Addendum - virtual action cursor (2026-07-21)
+
+This addendum clarifies the earlier no-cursor wording: Computer use must never
+move or follow the user's real pointer. Once an attended task sends its first
+valid, eligible Computer use action, June may show a separate, semi-transparent
+Computer use cursor at the virtual action position. The cursor is a
+nonactivating, click-through panel and does not change the background input,
+focus, or active-Space invariants above.
+
+The signed helper remains the only process that resolves Accessibility element
+centers. It sends June a private pointer notification for click positions and
+drag endpoints; the main process converts the screenshot-local coordinates to
+screen coordinates using the selected window's complete bounds. Every show and
+move is bound to the current task epoch. Stop increments that epoch and hides
+the panel before helper teardown so queued notifications cannot make an old
+cursor reappear.
+
+## Addendum - macOS Screen Recording responsible app (2026-07-21)
+
+This addendum corrects the earlier statement that both TCC grants attach to the
+nested helper identity. Accessibility attaches to `June Computer Use Driver`,
+but macOS attributes Screen Recording to the signed outer June app that launches
+the helper. The helper's preflight observes that responsible-app grant, and its
+native request creates the outer June entry in System Settings.
+
+June therefore requests the next missing grant before opening its matching
+privacy pane. Accessibility setup names and, when needed, offers the nested
+helper as a drag source. Screen Recording setup names and offers the signed
+outer June app as its separate drag source; it never tells the user to add the
+helper to that list. The private transport, helper parent authentication,
+capture execution, and app-owned broker policy are unchanged.
+
+## Addendum - agent-run-scoped tool exposure and driver prewarm (2026-07-23)
+
+Under June's default profile, an explicit request to use Computer use narrows
+the Hermes agent snapshot to the single `june_computer_use` MCP server for that
+agent run. The desktop may only subtract names from the gateway process
+allowlist; the gateway rejects an attempt to add a toolset. Named profiles keep
+their own tool policy and reject this launch-profile scope. It waits only for
+requested local MCP servers while unrelated MCP discovery continues in the
+process-wide background. A later ordinary agent run restores the normal June
+allowlist by refreshing the existing agent snapshot, without rebuilding the
+agent or reconnecting MCP clients. Queued prompts with different scopes do not
+merge. The optional compute-host frame cannot carry the restriction, so a
+session that uses the scope stays on its inline executor thereafter. This
+preserves one owner for history, steering, and interruption instead of switching
+between stale live agents. The separate broad slash-command worker remains lazy
+for a scoped session and starts only if the user later dispatches a slash
+command.
+
+June deliberately does not use Hermes' deferred tool-search bridge for this
+path. Computer use must remain a direct app-owned tool with its native approval
+and attended-run semantics visible to the model. The upstream
+`macos-computer-use` skill is also disabled: its driver instructions describe a
+different trust boundary and duplicate the concise workflow already present in
+June's tool schema.
+
+Once every readiness gate is already satisfied, June starts the persistent
+private driver off the first-action path. App startup, enabling Computer use,
+status refresh, and main-window focus all enter the same driver mutex and cache
+used by a real action, so concurrent attempts remain single-flight. A captured
+task epoch makes Stop, grant revocation, or readiness loss win over an in-flight
+prewarm. Normal attended-lease cleanup clears every attended lease, pending
+approval, target, app authorization, capture, and visible companion state, but
+retains the initialized no-authority driver as the next attended task's prewarm.
+Explicit Stop, grant revocation, readiness loss, and shutdown still invalidate
+its epoch and terminate it. Authorization, target validation, rollout, plan,
+model, billing, and approval behavior remain unchanged.

@@ -2,6 +2,7 @@ import type {
   BootstrapResponse,
   FolderDto,
   NoteDto,
+  NotePatchDto,
   NoteListItemDto,
   ProcessingStatus,
   RecoverableRecordingDto,
@@ -23,6 +24,16 @@ export type NotesAction =
   | { type: "bootstrapLoaded"; payload: BootstrapResponse }
   | { type: "noteLoaded"; note: NoteDto }
   | { type: "noteUpdated"; note: NoteDto }
+  | {
+      type: "notePatched";
+      noteId: string;
+      patch: Partial<Omit<NotePatchDto, "id">>;
+    }
+  | {
+      type: "noteProcessingStageChanged";
+      noteId: string;
+      processingStatus: ProcessingStatus;
+    }
   | { type: "noteProcessingUpdated"; note: NoteDto }
   | { type: "recordingStatusChanged"; status: RecordingStatusDto }
   | { type: "recordingStatusCleared" }
@@ -70,6 +81,10 @@ export function notesReducer(state: NotesState, action: NotesAction): NotesState
     // regress an in-flight pipeline or reopen a terminal one.
     case "noteUpdated":
       return applyNoteUpdate(state, mergeNoteUpdate(state, action.note));
+    case "notePatched":
+      return applyNotePatch(state, action.noteId, action.patch);
+    case "noteProcessingStageChanged":
+      return applyNoteProcessingStage(state, action.noteId, action.processingStatus);
     // Authoritative results of commands whose purpose is to change the
     // processing status (retry, recover, finish recording). Applied as-is so
     // they can restart processing on a note that already sits in a terminal
@@ -160,6 +175,52 @@ export function notesReducer(state: NotesState, action: NotesAction): NotesState
     default:
       return state;
   }
+}
+
+function applyNotePatch(
+  state: NotesState,
+  noteId: string,
+  patch: Partial<Omit<NotePatchDto, "id">>,
+): NotesState {
+  const selectedNote =
+    state.selectedNote?.id === noteId
+      ? mergeDefined<NoteDto>(state.selectedNote, patch)
+      : state.selectedNote;
+  const notes = state.notes.map((note) => {
+    if (note.id !== noteId) return note;
+    return mergeDefined(note, {
+      title: patch.title,
+      preview: patch.preview,
+      updatedAt: patch.updatedAt,
+    });
+  });
+  return {
+    ...state,
+    notes,
+    selectedNote,
+  };
+}
+
+function applyNoteProcessingStage(
+  state: NotesState,
+  noteId: string,
+  processingStatus: ProcessingStatus,
+): NotesState {
+  return {
+    ...state,
+    selectedNote:
+      state.selectedNote?.id === noteId
+        ? { ...state.selectedNote, processingStatus }
+        : state.selectedNote,
+    notes: state.notes.map((note) => (note.id === noteId ? { ...note, processingStatus } : note)),
+  };
+}
+
+function mergeDefined<T extends object>(current: T, patch: Partial<T>): T {
+  const defined = Object.fromEntries(
+    Object.entries(patch).filter(([, value]) => value !== undefined && value !== null),
+  ) as Partial<T>;
+  return { ...current, ...defined };
 }
 
 function applyNoteUpdate(state: NotesState, note: NoteDto): NotesState {

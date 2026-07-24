@@ -28,15 +28,23 @@ are enabled.
    identifier `co.opensoftware.june.computer-use-driver`. A packaged helper
    also requires the signed outer June app with the same Developer ID team.
 3. In System Settings > Privacy & Security, inspect Accessibility and Screen
-   Recording separately. Removing a macOS grant may require June to be quit and
-   reopened before macOS reports the new state.
-4. Return to June. The setup page polls while incomplete and reconfigures the
-   runtime when the signed helper becomes capturable.
+   Recording separately. Accessibility names `June Computer Use Driver`;
+   Screen Recording names the outer `June` app because macOS assigns capture to
+   the responsible launcher. If either entry is absent, drag the matching card
+   from June into that pane: the helper card for Accessibility, or the outer
+   June card for Screen Recording. Removing a macOS grant may require June to
+   be quit and reopened before macOS reports the new state.
+4. Return to June. The visible setup page polls one signed-helper probe at a
+   time while incomplete and reconfigures the runtime when the helper becomes
+   capturable. Polling pauses while the page is hidden and refreshes when it
+   becomes visible again.
 5. If the driver crashed, Stop clears its private child and the next eligible
    task starts a new one. Never start an upstream daemon beside June.
 6. The first access to each target app asks once for access during the current
    task. Click Allow for this task. Captures and actions in that verified app do
-   not ask again until the task ends or Stop is pressed.
+   not ask again until the task ends or Stop is pressed. If June later asks to
+   open that same already-approved running app by display name, the broker
+   reuses its exact verified identity instead of showing a second alias prompt.
 7. A Stage Manager shelf window is restored automatically after the app is
    allowed. June first activates its own window, then raises the exact target
    window into June's current group without a separate approval. If restore
@@ -53,10 +61,19 @@ from System Settings.
 
 Every macOS `make dev` launch gives the debug Computer use helper a stable
 bundle identifier derived from the current worktree path. The launch registers
-that helper with LaunchServices, clears Accessibility and Screen Recording for
-that exact identifier, and removes stale debug staging copies before Tauri
-copies the signed bundle again. This provides a fresh permission walkthrough
-on every dev restart without changing another worktree's TCC state.
+that helper with LaunchServices, clears Accessibility for the helper identifier,
+clears Screen Recording for the outer June development app identifier, and
+removes stale debug staging copies before Tauri copies the signed bundle again.
+This provides a fresh permission walkthrough on every dev restart without
+resetting Screen Recording for the wrong responsible app.
+
+The Screen Recording reset is deferred (not treated as a failure) when the app
+bundle identifier is not yet registered with LaunchServices. This is expected on
+a clean worktree where `tauri dev` runs the Cargo binary directly instead of a
+packaged `.app` bundle. In that state there are no TCC grants to clear, so the
+launch proceeds normally. Once a June app with that identifier has been built
+and run at least once, LaunchServices knows the bundle and subsequent resets
+succeed.
 
 The Tauri dev runner executes a hard-linked product-name alias of Cargo's
 `os-june` binary. The normal alias is `target/**/June`; supported issue
@@ -75,7 +92,10 @@ node scripts/computer-use-self-test.mjs --permissions-only \
 The launch log prints the effective identifier and reset result. The production
 helper always keeps `co.opensoftware.june.computer-use-driver`; release builds
 never run the automatic reset. A successful reset removes prior grants but does
-not grant either permission or bypass the explanatory Continue action.
+not grant either permission or bypass the explanatory Continue action. A
+deferred Screen Recording reset means the app bundle was not known to
+LaunchServices; macOS will prompt for Screen Recording on first capture as if
+no prior grant existed.
 
 ## Build and release diagnosis
 

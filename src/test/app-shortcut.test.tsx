@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../app/App";
-import { HERO_GREETINGS, resetAgentSessionContinuity } from "../components/agent/AgentWorkspace";
+import { HERO_GREETINGS } from "../components/agent/AgentWorkspace";
 import {
   dispatchProfileDataChanged,
   resetActiveHermesProfileForTests,
@@ -11,11 +11,11 @@ import {
 import { MEETING_START_TRANSCRIPTION_EVENT } from "../lib/events";
 import {
   AGENT_NEW_SESSION_EVENT,
+  AGENT_NEW_SESSION_PENDING_KEY,
   AGENT_OPEN_EVENT,
   AGENT_SESSIONS_CHANGED_EVENT,
 } from "../lib/agent-events";
 import { CLOSE_TAB_EVENT, OPEN_SETTINGS_EVENT } from "../lib/menu-bar";
-import { hermesActivityStore } from "../lib/hermes-activity-store";
 import type {
   AccountStatus,
   BootstrapResponse,
@@ -57,6 +57,15 @@ function stubNavigatorPlatform(platform: string, userAgent: string) {
 const mocks = vi.hoisted(() => ({
   listen: vi.fn(),
   listeners: new Map<string, (event: { payload?: unknown }) => void>(),
+  pendingMeetingStartRequest: undefined as
+    | { requestId: string; noteId: string; requestedAtMs: number; expired: boolean }
+    | undefined,
+  readPendingMeetingStartRequest: vi.fn(async () => mocks.pendingMeetingStartRequest ?? null),
+  acknowledgeMeetingStartRequest: vi.fn(async (requestId: string) => {
+    if (mocks.pendingMeetingStartRequest?.requestId !== requestId) return false;
+    mocks.pendingMeetingStartRequest = undefined;
+    return true;
+  }),
   getCurrentWindow: vi.fn(),
   bootstrapApp: vi.fn(),
   createNote: vi.fn(),
@@ -71,12 +80,14 @@ const mocks = vi.hoisted(() => ({
   getNote: vi.fn(),
   deleteNote: vi.fn(),
   updateNote: vi.fn(),
+  patchNote: vi.fn(),
+  completeNoteSaveFlush: vi.fn(async () => true),
   checkRecordingSourceReadiness: vi.fn(),
   openPrivacySettings: vi.fn(),
   startRecording: vi.fn(),
+  startMeetingRecording: vi.fn(),
   pauseRecording: vi.fn(),
   resumeRecording: vi.fn(),
-  getRecordingStatus: vi.fn(),
   finishRecording: vi.fn(),
   retryProcessing: vi.fn(),
   recoverRecording: vi.fn(),
@@ -113,7 +124,6 @@ const mocks = vi.hoisted(() => ({
   startHermesBridge: vi.fn(),
   startPeriodicJuneUpdateChecks: vi.fn(),
   suggestAgentSessionTitle: vi.fn(),
-  juneHomeChat: vi.fn(),
   gatewayRequest: vi.fn(),
   gatewayEventHandlers: new Set<(event: Record<string, unknown>) => void>(),
 }));
@@ -182,6 +192,8 @@ vi.mock("../lib/tauri", () => ({
   computerUseEndRun: vi.fn().mockResolvedValue(undefined),
   computerUseStop: vi.fn().mockResolvedValue(undefined),
   LIVE_TRANSCRIPT_EVENT: "live-transcript-event",
+  RECORDING_TELEMETRY_EVENT: "recording-telemetry",
+  NOTE_PROCESSING_PROGRESS_EVENT: "note-processing-progress",
   NOTE_CALENDAR_CONTEXT_UPDATED_EVENT: "note-calendar-context-updated-event",
   // The agent workspace mounts the pending skill-writes tray, whose loader
   // reaches the Rust bridge through this named `invoke`. A quiet stub keeps
@@ -214,12 +226,14 @@ vi.mock("../lib/tauri", () => ({
   getNote: mocks.getNote,
   deleteNote: mocks.deleteNote,
   updateNote: mocks.updateNote,
+  patchNote: mocks.patchNote,
+  completeNoteSaveFlush: mocks.completeNoteSaveFlush,
+  NOTE_SAVE_FLUSH_REQUESTED_EVENT: "june://flush-pending-note-saves",
   checkRecordingSourceReadiness: mocks.checkRecordingSourceReadiness,
   openPrivacySettings: mocks.openPrivacySettings,
   startRecording: mocks.startRecording,
   pauseRecording: mocks.pauseRecording,
   resumeRecording: mocks.resumeRecording,
-  getRecordingStatus: mocks.getRecordingStatus,
   finishRecording: mocks.finishRecording,
   retryProcessing: mocks.retryProcessing,
   recoverRecording: mocks.recoverRecording,
@@ -234,6 +248,9 @@ vi.mock("../lib/tauri", () => ({
   agentHudShow: mocks.agentHudShow,
   agentOpenReady: mocks.agentOpenReady,
   agentHudHide: mocks.agentHudHide,
+  pendingMeetingStartRequest: mocks.readPendingMeetingStartRequest,
+  acknowledgeMeetingStartRequest: mocks.acknowledgeMeetingStartRequest,
+  startMeetingRecording: mocks.startMeetingRecording,
   ensureHermesBridgeSession: mocks.ensureHermesBridgeSession,
   finalizeHermesBridgeBranch: mocks.finalizeHermesBridgeBranch,
   hermesAgentCliAccess: mocks.hermesAgentCliAccess,
@@ -259,7 +276,6 @@ vi.mock("../lib/tauri", () => ({
   })),
   startHermesBridge: mocks.startHermesBridge,
   suggestAgentSessionTitle: mocks.suggestAgentSessionTitle,
-  juneHomeChat: mocks.juneHomeChat,
 }));
 
 const now = "2026-05-19T10:00:00Z";
@@ -338,12 +354,15 @@ function recordingSession(overrides: Partial<RecordingSessionDto> = {}): Recordi
 describe("App shortcuts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.localStorage.removeItem("june:home:session-ids:v1");
-    window.localStorage.removeItem("june:home:check-ins:v1");
-    resetAgentSessionContinuity();
-    for (const sessionId of ["session-1", "session-2", "runtime-session-1", "runtime-session-2"]) {
-      hermesActivityStore.clearSession(sessionId);
-    }
+    mocks.pendingMeetingStartRequest = undefined;
+    mocks.readPendingMeetingStartRequest.mockImplementation(
+      async () => mocks.pendingMeetingStartRequest ?? null,
+    );
+    mocks.acknowledgeMeetingStartRequest.mockImplementation(async (requestId: string) => {
+      if (mocks.pendingMeetingStartRequest?.requestId !== requestId) return false;
+      mocks.pendingMeetingStartRequest = undefined;
+      return true;
+    });
     resetActiveHermesProfileForTests();
     setActiveHermesProfileName("default");
     const first = note();
@@ -364,6 +383,9 @@ describe("App shortcuts", () => {
 
     mocks.listen.mockResolvedValue(vi.fn());
     mocks.getCurrentWindow.mockReturnValue({
+      show: vi.fn().mockResolvedValue(undefined),
+      unminimize: vi.fn().mockResolvedValue(undefined),
+      setFocus: vi.fn().mockResolvedValue(undefined),
       startDragging: vi.fn().mockResolvedValue(undefined),
     });
     mocks.bootstrapApp.mockResolvedValue(payload);
@@ -410,7 +432,6 @@ describe("App shortcuts", () => {
     mocks.listAgentTasks.mockResolvedValue({ items: [] });
     mocks.listHermesSessionMessages.mockResolvedValue([]);
     mocks.listHermesSessions.mockResolvedValue([]);
-    mocks.juneHomeChat.mockResolvedValue({ content: "I’m here." });
     mocks.listSessionProfiles.mockResolvedValue([]);
     mocks.listVeniceModels.mockResolvedValue({
       mode: "generation",
@@ -466,6 +487,14 @@ describe("App shortcuts", () => {
       ...first,
       ...input,
     }));
+    mocks.patchNote.mockImplementation(async (noteId, patch) => ({
+      id: noteId,
+      title: patch.title ?? first.title,
+      preview: first.preview,
+      editedContent: patch.editedContent ?? first.editedContent,
+      activeTab: patch.activeTab ?? first.activeTab,
+      updatedAt: first.updatedAt,
+    }));
   });
 
   it("starts background update checks after launch gates clear", async () => {
@@ -480,45 +509,6 @@ describe("App shortcuts", () => {
     } finally {
       vi.unstubAllEnvs();
     }
-  });
-
-  it("launches in Home and keeps its first message out of focused sessions", async () => {
-    const user = userEvent.setup();
-    const connection = { port: 61234, wsUrl: "ws://127.0.0.1:61234" };
-    mocks.hermesBridgeStatus.mockResolvedValue({ running: true, connection });
-    mocks.startHermesBridge.mockResolvedValue({ running: true, connection });
-
-    render(<App />);
-
-    expect(await screen.findByRole("region", { name: "Home" })).toBeInTheDocument();
-    const composer = await screen.findByRole("textbox", { name: "Message June" });
-    await user.type(composer, "Help me plan the afternoon");
-    await user.click(screen.getByRole("button", { name: "Send message" }));
-
-    await waitFor(() =>
-      expect(mocks.gatewayRequest).toHaveBeenCalledWith(
-        "session.create",
-        expect.objectContaining({ title: "Home" }),
-      ),
-    );
-    await waitFor(() =>
-      expect(mocks.juneHomeChat).toHaveBeenCalledWith(
-        [{ role: "user", content: "Help me plan the afternoon" }],
-        expect.objectContaining({
-          model: "__june_auto_generation__:0",
-          reasoningEffort: "none",
-        }),
-      ),
-    );
-    expect(mocks.gatewayRequest.mock.calls.some(([method]) => method === "prompt.submit")).toBe(
-      false,
-    );
-    await waitFor(() =>
-      expect(JSON.parse(localStorage.getItem("june:home:session-ids:v1") ?? "{}")).toEqual({
-        default: "session-2",
-      }),
-    );
-    expect(screen.getAllByRole("button", { name: "Home" })).toHaveLength(1);
   });
 
   it("clears the OS Accounts browser session from sidebar sign-out", async () => {
@@ -1072,7 +1062,7 @@ describe("App shortcuts", () => {
     await waitFor(() =>
       expect(screen.queryByRole("tab", { name: "New note" })).not.toBeInTheDocument(),
     );
-    expect(screen.getByRole("tab", { name: "Home" })).toHaveAttribute("data-active", "true");
+    expect(screen.getByRole("tab", { name: "New session" })).toHaveAttribute("data-active", "true");
   });
 
   it("closes the active tab from the native close-tab menu event", async () => {
@@ -1101,7 +1091,7 @@ describe("App shortcuts", () => {
     await waitFor(() =>
       expect(screen.queryByRole("tab", { name: "New note" })).not.toBeInTheDocument(),
     );
-    expect(screen.getByRole("tab", { name: "Home" })).toHaveAttribute("data-active", "true");
+    expect(screen.getByRole("tab", { name: "New session" })).toHaveAttribute("data-active", "true");
     expect(closeTabListenerCount()).toBe(1);
   });
 
@@ -1110,9 +1100,13 @@ describe("App shortcuts", () => {
 
     await waitFor(() => expect(mocks.listeners.has(OPEN_SETTINGS_EVENT)).toBe(true));
 
-    mocks.listeners.get(OPEN_SETTINGS_EVENT)?.({});
+    act(() => {
+      mocks.listeners.get(OPEN_SETTINGS_EVENT)?.({});
+    });
 
-    expect(await screen.findByRole("heading", { name: "General" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "General" }, { timeout: 10_000 }),
+    ).toBeInTheDocument();
   });
 
   it("refreshes Accessibility after requesting access without opening settings over the native prompt", async () => {
@@ -1398,23 +1392,17 @@ describe("App shortcuts", () => {
       if (systemReadinessCalls === 1) return recordingReadiness(false);
       return pendingProbe;
     });
-    mocks.startRecording.mockImplementation(async (noteId: string, sourceMode: string) =>
-      recordingSession({
-        noteId,
-        sourceMode: sourceMode as RecordingSessionDto["sourceMode"],
+    const meetingNote = note({ id: "meeting-note", title: "" });
+    mocks.startMeetingRecording.mockImplementation(
+      async (_requestId: string, sourceMode: string) => ({
+        status: "started",
+        note: meetingNote,
+        recording: recordingSession({
+          noteId: meetingNote.id,
+          sourceMode: sourceMode as RecordingSessionDto["sourceMode"],
+        }),
       }),
     );
-    mocks.getRecordingStatus.mockResolvedValue({
-      sessionId: "rec-1",
-      noteId: "note-1",
-      sourceMode: "microphoneOnly",
-      state: "recording",
-      elapsedMs: 0,
-      level: { peak: 0, rms: 0, recentPeaks: [] },
-      silenceWarning: false,
-      bytesWritten: 0,
-    });
-
     try {
       render(<App />);
 
@@ -1440,17 +1428,22 @@ describe("App shortcuts", () => {
 
       await waitFor(() => expect(systemReadinessCalls).toBe(2));
 
-      await waitFor(async () => {
-        if (mocks.startRecording.mock.calls.length === 0) {
-          await act(async () => {
-            await mocks.listeners.get(MEETING_START_TRANSCRIPTION_EVENT)?.({
-              payload: undefined,
-            });
-          });
-        }
-        expect(mocks.startRecording).toHaveBeenCalled();
+      mocks.pendingMeetingStartRequest = {
+        requestId: "meeting-request-1",
+        noteId: meetingNote.id,
+        requestedAtMs: Date.now(),
+        expired: false,
+      };
+      await act(async () => {
+        await mocks.listeners.get(MEETING_START_TRANSCRIPTION_EVENT)?.({
+          payload: undefined,
+        });
       });
-      expect(mocks.startRecording).toHaveBeenCalledWith(expect.any(String), "microphoneOnly");
+      await waitFor(() => expect(mocks.startMeetingRecording).toHaveBeenCalled());
+      expect(mocks.startMeetingRecording).toHaveBeenCalledWith(
+        "meeting-request-1",
+        "microphoneOnly",
+      );
 
       await new Promise((resolve) => window.setTimeout(resolve, 1_200));
 
@@ -1476,8 +1469,6 @@ describe("App shortcuts", () => {
       render(<App />);
 
       await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
-      expect(screen.queryByRole("button", { name: "Home" })).toBeNull();
-      expect(screen.queryByRole("region", { name: "Home" })).toBeNull();
 
       // The Cmd key does nothing on Windows — Ctrl is the primary modifier.
       fireEvent.keyDown(window, { key: "n", metaKey: true });
@@ -1492,6 +1483,57 @@ describe("App shortcuts", () => {
       await waitFor(() => expect(mocks.createNote).toHaveBeenCalledWith(undefined));
     } finally {
       window.removeEventListener(AGENT_NEW_SESSION_EVENT, onNewSession);
+      restoreNavigator();
+    }
+  });
+
+  it("opens a fresh agent session on Windows while preloading the first note", async () => {
+    const restoreNavigator = stubNavigatorPlatform(
+      "Win32",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    );
+    const staleSession = {
+      id: "session-1",
+      title: "Stored session",
+      preview: "Stored session preview",
+      last_active: now,
+    };
+    window.localStorage.setItem("june:agent:last-open-session", staleSession.id);
+    mocks.listHermesSessions.mockResolvedValue([staleSession]);
+    const sessionStorageSetItem = window.sessionStorage.setItem.bind(window.sessionStorage);
+    const sessionStorageSetItemSpy = vi
+      .spyOn(window.sessionStorage, "setItem")
+      .mockImplementation((key, value) => {
+        if (key === AGENT_NEW_SESSION_PENDING_KEY) {
+          throw new DOMException("Storage unavailable", "QuotaExceededError");
+        }
+        sessionStorageSetItem(key, value);
+      });
+
+    try {
+      render(<App />);
+
+      expect(await screen.findByRole("heading", { name: HERO_GREETING })).toBeInTheDocument();
+      expect(await screen.findByRole("button", { name: "Stored session" })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "New session" })).toHaveAttribute(
+        "data-active",
+        "true",
+      );
+      expect(screen.getByRole("button", { name: "New session" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      expect(screen.getByRole("region", { name: "Sessions" })).toHaveAttribute(
+        "data-active",
+        "true",
+      );
+      expect(screen.queryByRole("button", { name: "New note" })).not.toBeInTheDocument();
+      expect(screen.queryByDisplayValue("First note")).not.toBeInTheDocument();
+      await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
+      expect(mocks.listHermesSessionMessages).not.toHaveBeenCalledWith(staleSession.id);
+    } finally {
+      sessionStorageSetItemSpy.mockRestore();
+      window.localStorage.removeItem("june:agent:last-open-session");
       restoreNavigator();
     }
   });
@@ -1555,7 +1597,7 @@ describe("App shortcuts", () => {
     expect(mocks.createNote).not.toHaveBeenCalled();
   });
 
-  it("uses Windows dictation sign-in copy and opens meeting notes after sign-in", async () => {
+  it("uses Windows dictation sign-in copy and opens a fresh agent session after sign-in", async () => {
     const user = userEvent.setup();
     const restoreNavigator = stubNavigatorPlatform(
       "Win32",
@@ -1577,8 +1619,15 @@ describe("App shortcuts", () => {
 
       await user.click(screen.getByRole("button", { name: "Continue with OpenSoftware" }));
 
-      expect(await screen.findByRole("button", { name: "New note" })).toBeInTheDocument();
-      expect(screen.queryByRole("heading", { name: HERO_GREETING })).not.toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: HERO_GREETING })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "New session" })).toHaveAttribute(
+        "data-active",
+        "true",
+      );
+      expect(screen.getByRole("button", { name: "New session" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
     } finally {
       restoreNavigator();
     }

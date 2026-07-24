@@ -1,7 +1,8 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../app/App";
+import { NOTE_PROCESSING_RECONCILE_INTERVAL_MS } from "../app/use-note-processing-events";
 import {
   resetActiveHermesProfileForTests,
   setActiveHermesProfileName,
@@ -19,16 +20,24 @@ import type {
   NoteDto,
   RecoverableRecordingDto,
   RecordingSessionDto,
-  RecordingStatusDto,
 } from "../lib/tauri";
 
 type TauriListener = (event: { payload: unknown }) => unknown;
 
 const mocks = vi.hoisted(() => ({
   listeners: new Map<string, TauriListener>(),
+  pendingMeetingStartRequest: undefined as
+    | { requestId: string; noteId: string; requestedAtMs: number; expired: boolean }
+    | undefined,
   listen: vi.fn((event: string, listener: TauriListener) => {
     mocks.listeners.set(event, listener);
     return Promise.resolve(vi.fn());
+  }),
+  readPendingMeetingStartRequest: vi.fn(async () => mocks.pendingMeetingStartRequest ?? null),
+  acknowledgeMeetingStartRequest: vi.fn(async (requestId: string) => {
+    if (mocks.pendingMeetingStartRequest?.requestId !== requestId) return false;
+    mocks.pendingMeetingStartRequest = undefined;
+    return true;
   }),
   getCurrentWindow: vi.fn(),
   bootstrapApp: vi.fn(),
@@ -47,9 +56,12 @@ const mocks = vi.hoisted(() => ({
   downloadNoteAudio: vi.fn(),
   revealPath: vi.fn(),
   updateNote: vi.fn(),
+  patchNote: vi.fn(),
+  completeNoteSaveFlush: vi.fn(async () => true),
   checkRecordingSourceReadiness: vi.fn(),
   openPrivacySettings: vi.fn(),
   startRecording: vi.fn(),
+  startMeetingRecording: vi.fn(),
   pauseRecording: vi.fn(),
   resumeRecording: vi.fn(),
   getRecordingStatus: vi.fn(),
@@ -66,6 +78,7 @@ const mocks = vi.hoisted(() => ({
   osAccountsLogin: vi.fn(),
   osAccountsCancelLogin: vi.fn(),
   osAccountsLogout: vi.fn(),
+  osAccountsReferralSummary: vi.fn(async () => undefined),
   osAccountsUpgrade: vi.fn(),
   osAccountsUpgradeSession: vi.fn(),
   osAccountsChangePlan: vi.fn(),
@@ -127,7 +140,10 @@ vi.mock("../lib/tauri", () => ({
   computerUseEndRun: vi.fn().mockResolvedValue(undefined),
   computerUseStop: vi.fn().mockResolvedValue(undefined),
   LIVE_TRANSCRIPT_EVENT: "live-transcript-event",
+  RECORDING_TELEMETRY_EVENT: "recording-telemetry",
+  NOTE_PROCESSING_PROGRESS_EVENT: "note-processing-progress",
   NOTE_CALENDAR_CONTEXT_UPDATED_EVENT: "june://note-calendar-context-updated",
+  NOTE_SAVE_FLUSH_REQUESTED_EVENT: "june://flush-pending-note-saves",
   bootstrapApp: mocks.bootstrapApp,
   createNote: mocks.createNote,
   createFolder: mocks.createFolder,
@@ -150,6 +166,8 @@ vi.mock("../lib/tauri", () => ({
   downloadNoteAudio: mocks.downloadNoteAudio,
   revealPath: mocks.revealPath,
   updateNote: mocks.updateNote,
+  patchNote: mocks.patchNote,
+  completeNoteSaveFlush: mocks.completeNoteSaveFlush,
   checkRecordingSourceReadiness: mocks.checkRecordingSourceReadiness,
   openPrivacySettings: mocks.openPrivacySettings,
   startRecording: mocks.startRecording,
@@ -170,12 +188,16 @@ vi.mock("../lib/tauri", () => ({
   osAccountsLogin: mocks.osAccountsLogin,
   osAccountsCancelLogin: mocks.osAccountsCancelLogin,
   osAccountsLogout: mocks.osAccountsLogout,
+  osAccountsReferralSummary: mocks.osAccountsReferralSummary,
   osAccountsUpgrade: mocks.osAccountsUpgrade,
   osAccountsUpgradeSession: mocks.osAccountsUpgradeSession,
   osAccountsChangePlan: mocks.osAccountsChangePlan,
   agentHudShow: mocks.agentHudShow,
   agentOpenReady: mocks.agentOpenReady,
   agentHudHide: mocks.agentHudHide,
+  pendingMeetingStartRequest: mocks.readPendingMeetingStartRequest,
+  acknowledgeMeetingStartRequest: mocks.acknowledgeMeetingStartRequest,
+  startMeetingRecording: mocks.startMeetingRecording,
   // The agent workspace mounts at launch; a quiet, not-running bridge keeps
   // these tests focused on the meetings surfaces.
   hermesBridgeStatus: vi.fn(async () => ({ running: false })),
@@ -255,6 +277,35 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function stubNoteDetailScroller(initialScrollTop: number) {
+  const element = document.querySelector<HTMLElement>(".note-detail-scroll");
+  if (!element) throw new Error("Expected the note detail scroller to be mounted");
+  let scrollTop = initialScrollTop;
+  Object.defineProperties(element, {
+    scrollHeight: { configurable: true, get: () => 1000 },
+    clientHeight: { configurable: true, get: () => 400 },
+    scrollTop: {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value;
+      },
+    },
+  });
+  const scrollTo = vi.fn(({ top }: ScrollToOptions) => {
+    scrollTop = Math.min(Number(top), 600);
+    element.dispatchEvent(new Event("scroll"));
+  });
+  Object.defineProperty(element, "scrollTo", { configurable: true, value: scrollTo });
+  return {
+    element,
+    scrollTo,
+    setScrollTop(value: number) {
+      scrollTop = value;
+    },
+  };
+}
+
 describe("notes recording reliability", () => {
   const first = note();
   // Draft on purpose: drafts were the worst case for the wrong-note
@@ -271,6 +322,15 @@ describe("notes recording reliability", () => {
     clearMaxGrantWait();
     vi.clearAllMocks();
     mocks.listeners.clear();
+    mocks.pendingMeetingStartRequest = undefined;
+    mocks.readPendingMeetingStartRequest.mockImplementation(
+      async () => mocks.pendingMeetingStartRequest ?? null,
+    );
+    mocks.acknowledgeMeetingStartRequest.mockImplementation(async (requestId: string) => {
+      if (mocks.pendingMeetingStartRequest?.requestId !== requestId) return false;
+      mocks.pendingMeetingStartRequest = undefined;
+      return true;
+    });
     resetActiveHermesProfileForTests();
     mocks.listFolders.mockResolvedValue([]);
     mocks.listHermesSessions.mockResolvedValue([]);
@@ -290,6 +350,9 @@ describe("notes recording reliability", () => {
     };
 
     mocks.getCurrentWindow.mockReturnValue({
+      show: vi.fn().mockResolvedValue(undefined),
+      unminimize: vi.fn().mockResolvedValue(undefined),
+      setFocus: vi.fn().mockResolvedValue(undefined),
       startDragging: vi.fn().mockResolvedValue(undefined),
     });
     mocks.bootstrapApp.mockResolvedValue(payload);
@@ -316,6 +379,11 @@ describe("notes recording reliability", () => {
       ],
     });
     mocks.startRecording.mockResolvedValue(recording());
+    mocks.startMeetingRecording.mockResolvedValue({
+      status: "started",
+      note: first,
+      recording: recording(),
+    });
     mocks.getRecordingStatus.mockResolvedValue({
       sessionId: "rec-1",
       state: "recording",
@@ -376,29 +444,37 @@ describe("notes recording reliability", () => {
       ...first,
       ...input,
     }));
+    mocks.patchNote.mockImplementation(async (noteId, patch) => ({
+      id: noteId,
+      title: patch.title ?? first.title,
+      preview: first.preview,
+      editedContent: patch.editedContent ?? first.editedContent,
+      activeTab: patch.activeTab ?? first.activeTab,
+      updatedAt: now,
+    }));
   });
 
   async function startRecordingOnFirstNote() {
     render(<App />);
     await waitFor(() => expect(mocks.listeners.has(MEETING_START_TRANSCRIPTION_EVENT)).toBe(true));
     await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
-    // The meeting-start listener silently drops events until the effect
-    // re-subscribes with bootstrapped=true — and that happens in a passive
-    // effect of a commit made outside act (getNote's resolution), so on slow
-    // (coverage) runs the listener in the map can still be a stale closure
-    // when we fire. Re-fire until the live listener takes the event; the
-    // calls-length guard makes a successful start fire exactly once, so this
-    // can never double-start a recording.
-    await waitFor(async () => {
-      if (mocks.startRecording.mock.calls.length === 0) {
-        await act(async () => {
-          await mocks.listeners.get(MEETING_START_TRANSCRIPTION_EVENT)?.({
-            payload: undefined,
-          });
-        });
-      }
-      expect(mocks.startRecording).toHaveBeenCalledWith("note-1", "microphonePlusSystem");
+    mocks.pendingMeetingStartRequest = {
+      requestId: "meeting-request-1",
+      noteId: "note-1",
+      requestedAtMs: Date.now(),
+      expired: false,
+    };
+    await act(async () => {
+      await mocks.listeners.get(MEETING_START_TRANSCRIPTION_EVENT)?.({
+        payload: undefined,
+      });
     });
+    await waitFor(() =>
+      expect(mocks.startMeetingRecording).toHaveBeenCalledWith(
+        "meeting-request-1",
+        "microphonePlusSystem",
+      ),
+    );
   }
 
   async function startRecordingDirectlyOnFirstNote() {
@@ -458,6 +534,47 @@ describe("notes recording reliability", () => {
 
     expect(await screen.findByText("Google Calendar")).toBeInTheDocument();
     expect(screen.getByText("june@example.com")).toBeInTheDocument();
+  });
+
+  it("flushes pending note edits and acknowledges the native app-quit barrier", async () => {
+    render(<App />);
+    await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
+    await userEvent.click(await screen.findByRole("button", { name: "Meeting notes" }));
+    await userEvent.click(screen.getByRole("button", { name: /First note Preview/ }));
+    const title = await screen.findByDisplayValue("First note");
+    mocks.patchNote.mockClear();
+
+    await userEvent.type(title, " unsaved");
+    await act(async () => {
+      await mocks.listeners.get("june://flush-pending-note-saves")?.({
+        payload: { requestId: "flush-1" },
+      });
+    });
+
+    expect(mocks.patchNote).toHaveBeenCalledWith("note-1", {
+      title: "First note unsaved",
+    });
+    expect(mocks.completeNoteSaveFlush).toHaveBeenCalledWith("flush-1");
+  });
+
+  it("does not acknowledge app quit when pending note persistence fails", async () => {
+    mocks.patchNote.mockRejectedValue(new Error("database busy"));
+    render(<App />);
+    await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
+    await userEvent.click(await screen.findByRole("button", { name: "Meeting notes" }));
+    await userEvent.click(screen.getByRole("button", { name: /First note Preview/ }));
+    const title = await screen.findByDisplayValue("First note");
+    mocks.completeNoteSaveFlush.mockClear();
+
+    await userEvent.type(title, " unsaved");
+    await act(async () => {
+      await mocks.listeners.get("june://flush-pending-note-saves")?.({
+        payload: { requestId: "flush-failed" },
+      });
+    });
+
+    expect(mocks.completeNoteSaveFlush).not.toHaveBeenCalled();
+    expect(await screen.findByText("database busy")).toBeInTheDocument();
   });
 
   it("ignores calendar context without profile provenance after a renderer reload", async () => {
@@ -799,6 +916,51 @@ describe("notes recording reliability", () => {
     expect(screen.getByText("Provisional words survive Stop")).toBeInTheDocument();
   });
 
+  it("follows live transcription until the reader scrolls upward, then resumes at the bottom", async () => {
+    await startRecordingOnFirstNote();
+    await waitFor(() => expect(mocks.listeners.has("live-transcript-event")).toBe(true));
+    const scroller = stubNoteDetailScroller(100);
+
+    await userEvent.click(screen.getByRole("button", { name: "Transcription" }));
+    await waitFor(() =>
+      expect(scroller.scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: "smooth" }),
+    );
+    scroller.scrollTo.mockClear();
+
+    const emitPreview = async (segmentId: string, text: string, startMs: number) => {
+      await act(async () => {
+        await mocks.listeners.get("live-transcript-event")?.({
+          payload: {
+            noteId: "note-1",
+            sessionId: "rec-1",
+            sourceMode: "microphonePlusSystem",
+            source: "microphone",
+            segmentId,
+            startMs,
+            endMs: startMs + 4000,
+            text,
+            stability: "final",
+          },
+        });
+      });
+    };
+
+    await emitPreview("microphone-0", "First live words", 0);
+    await waitFor(() => expect(scroller.scrollTo).toHaveBeenCalledTimes(1));
+
+    scroller.scrollTo.mockClear();
+    scroller.setScrollTop(100);
+    fireEvent.wheel(scroller.element);
+    fireEvent.scroll(scroller.element);
+    await emitPreview("microphone-1", "Words while reading above", 4000);
+    expect(scroller.scrollTo).not.toHaveBeenCalled();
+
+    scroller.setScrollTop(600);
+    fireEvent.scroll(scroller.element);
+    await emitPreview("microphone-2", "Following resumes", 8000);
+    await waitFor(() => expect(scroller.scrollTo).toHaveBeenCalledTimes(1));
+  });
+
   it("does not clear a newer preview when the note still has queued recordings", async () => {
     mocks.finishRecording.mockResolvedValue({
       note: { ...first, activeTab: "transcription", queuedRecordings: 1 },
@@ -857,49 +1019,58 @@ describe("notes recording reliability", () => {
     );
   });
 
-  it("does not overlap active recording status polls", async () => {
-    const pendingStatus = deferred<RecordingStatusDto>();
-    const resumedStatus = deferred<RecordingStatusDto>();
-    mocks.getRecordingStatus
-      .mockReturnValueOnce(pendingStatus.promise)
-      .mockReturnValue(resumedStatus.promise);
-
+  it("updates recording status from native telemetry without polling", async () => {
     await startRecordingOnFirstNote();
     await screen.findByRole("button", { name: "Done" });
-    await waitFor(() => expect(mocks.getRecordingStatus).toHaveBeenCalledTimes(1));
-
-    await new Promise((resolve) => window.setTimeout(resolve, 180));
-
-    expect(mocks.getRecordingStatus).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mocks.listeners.has("recording-telemetry")).toBe(true));
+    expect(mocks.getRecordingStatus).not.toHaveBeenCalled();
 
     await act(async () => {
-      pendingStatus.resolve({
-        sessionId: "rec-1",
-        state: "recording",
-        elapsedMs: 500,
-        level: { peak: 0.2, rms: 0.1, recentPeaks: [0.2] },
-        silenceWarning: false,
-        bytesWritten: 2048,
+      await mocks.listeners.get("recording-telemetry")?.({
+        payload: {
+          sessionId: "rec-1",
+          state: "recording",
+          elapsedMs: 1500,
+          level: { peak: 0.2, rms: 0.1, recentPeaks: [0.2] },
+          silenceWarning: false,
+          sources: [],
+          warnings: [],
+        },
       });
-      await pendingStatus.promise;
     });
-    await waitFor(() => expect(mocks.getRecordingStatus).toHaveBeenCalledTimes(2));
-    resumedStatus.resolve({
-      sessionId: "rec-1",
-      state: "recording",
-      elapsedMs: 550,
-      level: { peak: 0.2, rms: 0.1, recentPeaks: [0.2] },
-      silenceWarning: false,
-      bytesWritten: 2048,
+    expect(await screen.findByText("00:01")).toBeInTheDocument();
+    expect(mocks.getRecordingStatus).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await mocks.listeners.get("recording-telemetry")?.({
+        payload: {
+          sessionId: "rec-1",
+          state: "idle",
+          elapsedMs: 1500,
+          level: { peak: 0, rms: 0, recentPeaks: [] },
+          silenceWarning: false,
+          sources: [],
+          warnings: [],
+        },
+      });
     });
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument(),
+    );
   });
 
   it("ignores meeting-start signals while a recording is already live", async () => {
     await startRecordingOnFirstNote();
 
     mocks.createNote.mockClear();
-    mocks.startRecording.mockClear();
+    mocks.startMeetingRecording.mockClear();
 
+    mocks.pendingMeetingStartRequest = {
+      requestId: "meeting-request-2",
+      noteId: "meeting-note-2",
+      requestedAtMs: Date.now(),
+      expired: false,
+    };
     await act(async () => {
       await mocks.listeners.get(MEETING_START_TRANSCRIPTION_EVENT)?.({
         payload: undefined,
@@ -907,34 +1078,40 @@ describe("notes recording reliability", () => {
     });
 
     expect(mocks.createNote).not.toHaveBeenCalled();
-    expect(mocks.startRecording).not.toHaveBeenCalled();
+    expect(mocks.startMeetingRecording).not.toHaveBeenCalled();
+    expect(mocks.acknowledgeMeetingStartRequest).toHaveBeenCalledWith("meeting-request-2");
   });
 
-  it("claims a meeting-start attempt before creating the fresh note", async () => {
+  it("serializes duplicate meeting events while native startup is pending", async () => {
     const fresh = note({
       id: "fresh-note",
       title: "New note",
       generatedContent: undefined,
       processingStatus: "draft",
     });
-    const pendingCreate = deferred<NoteDto>();
-    mocks.createNote.mockReturnValue(pendingCreate.promise);
-    mocks.startRecording.mockResolvedValue(recording({ noteId: "fresh-note" }));
+    const pendingStart = deferred<{
+      status: "started";
+      note: NoteDto;
+      recording: RecordingSessionDto;
+    }>();
+    mocks.startMeetingRecording.mockReturnValue(pendingStart.promise);
 
     render(<App />);
     await waitFor(() => expect(mocks.listeners.has(MEETING_START_TRANSCRIPTION_EVENT)).toBe(true));
     await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
 
-    await waitFor(() => {
-      if (mocks.createNote.mock.calls.length === 0) {
-        act(() => {
-          void mocks.listeners.get(MEETING_START_TRANSCRIPTION_EVENT)?.({
-            payload: undefined,
-          });
-        });
-      }
-      expect(mocks.createNote).toHaveBeenCalledTimes(1);
+    mocks.pendingMeetingStartRequest = {
+      requestId: "meeting-request-1",
+      noteId: fresh.id,
+      requestedAtMs: Date.now(),
+      expired: false,
+    };
+    act(() => {
+      void mocks.listeners.get(MEETING_START_TRANSCRIPTION_EVENT)?.({
+        payload: undefined,
+      });
     });
+    await waitFor(() => expect(mocks.startMeetingRecording).toHaveBeenCalledTimes(1));
 
     act(() => {
       void mocks.listeners.get(MEETING_START_TRANSCRIPTION_EVENT)?.({
@@ -942,153 +1119,132 @@ describe("notes recording reliability", () => {
       });
     });
 
-    expect(mocks.createNote).toHaveBeenCalledTimes(1);
-    expect(mocks.startRecording).not.toHaveBeenCalled();
+    expect(mocks.startMeetingRecording).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      pendingCreate.resolve(fresh);
-      await pendingCreate.promise;
+      pendingStart.resolve({
+        status: "started",
+        note: fresh,
+        recording: recording({ noteId: fresh.id }),
+      });
+      await pendingStart.promise;
     });
 
     await waitFor(() =>
-      expect(mocks.startRecording).toHaveBeenCalledWith("fresh-note", "microphonePlusSystem"),
+      expect(mocks.acknowledgeMeetingStartRequest).toHaveBeenCalledWith("meeting-request-1"),
     );
-    expect(mocks.createNote).toHaveBeenCalledTimes(1);
+    expect(mocks.startMeetingRecording).toHaveBeenCalledTimes(1);
   });
 
-  it("removes the fresh meeting note when recording fails to start", async () => {
-    const fresh = note({
-      id: "fresh-note",
-      title: "New note",
-      generatedContent: undefined,
-      processingStatus: "draft",
+  it("acknowledges a visible native startup failure", async () => {
+    mocks.startMeetingRecording.mockResolvedValue({
+      status: "failed",
+      error: {
+        code: "source_not_ready",
+        message: "Microphone is not ready.",
+      },
     });
-    mocks.createNote.mockResolvedValue(fresh);
-    mocks.getNote.mockImplementation(async (noteId: string) => {
-      if (noteId === "fresh-note") return fresh;
-      if (noteId === "note-2") return second;
-      return first;
+
+    render(<App />);
+    await waitFor(() => expect(mocks.listeners.has(MEETING_START_TRANSCRIPTION_EVENT)).toBe(true));
+    await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
+
+    mocks.pendingMeetingStartRequest = {
+      requestId: "meeting-request-1",
+      noteId: "failed-meeting-note",
+      requestedAtMs: Date.now(),
+      expired: false,
+    };
+    await act(async () => {
+      await mocks.listeners.get(MEETING_START_TRANSCRIPTION_EVENT)?.({
+        payload: undefined,
+      });
     });
-    mocks.checkRecordingSourceReadiness.mockResolvedValue({
-      sourceMode: "microphonePlusSystem",
-      sources: [
-        {
-          source: "microphone",
-          ready: false,
+    expect(await screen.findByText("Microphone is not ready.")).toBeInTheDocument();
+    expect(mocks.acknowledgeMeetingStartRequest).toHaveBeenCalledWith("meeting-request-1");
+  });
+
+  it("releases the start latch after a terminal native failure", async () => {
+    const fresh = note({ id: "second-fresh-note", title: "Second fresh note" });
+    mocks.startMeetingRecording
+      .mockResolvedValueOnce({
+        status: "failed",
+        error: {
+          code: "capture_start_timeout",
+          message: "Could not start the microphone. Try again.",
+        },
+      })
+      .mockResolvedValueOnce({
+        status: "started",
+        note: fresh,
+        recording: recording({ noteId: fresh.id }),
+      });
+
+    render(<App />);
+    await waitFor(() => expect(mocks.listeners.has(MEETING_START_TRANSCRIPTION_EVENT)).toBe(true));
+    await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
+
+    mocks.pendingMeetingStartRequest = {
+      requestId: "meeting-request-1",
+      noteId: "failed-meeting-note",
+      requestedAtMs: Date.now(),
+      expired: false,
+    };
+    await act(async () => {
+      await mocks.listeners.get(MEETING_START_TRANSCRIPTION_EVENT)?.({
+        payload: undefined,
+      });
+    });
+    await waitFor(() => expect(mocks.startMeetingRecording).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.pendingMeetingStartRequest).toBeUndefined());
+
+    mocks.pendingMeetingStartRequest = {
+      requestId: "meeting-request-2",
+      noteId: fresh.id,
+      requestedAtMs: Date.now(),
+      expired: false,
+    };
+    await act(async () => {
+      await mocks.listeners.get(MEETING_START_TRANSCRIPTION_EVENT)?.({
+        payload: undefined,
+      });
+    });
+    await waitFor(() => expect(mocks.startMeetingRecording).toHaveBeenCalledTimes(2));
+  });
+
+  it("retains and retries a request after an IPC failure", async () => {
+    mocks.startMeetingRecording
+      .mockRejectedValueOnce(new Error("webview IPC was interrupted"))
+      .mockResolvedValueOnce({
+        status: "failed",
+        error: {
+          code: "source_not_ready",
           message: "Microphone is not ready.",
         },
-        { source: "system", ready: true, permissionState: "granted" },
-      ],
-    });
+      });
 
     render(<App />);
     await waitFor(() => expect(mocks.listeners.has(MEETING_START_TRANSCRIPTION_EVENT)).toBe(true));
     await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
 
-    await waitFor(async () => {
-      if (mocks.deleteNote.mock.calls.length === 0) {
-        await act(async () => {
-          await mocks.listeners.get(MEETING_START_TRANSCRIPTION_EVENT)?.({
-            payload: undefined,
-          });
-        });
-      }
-      expect(mocks.deleteNote).toHaveBeenCalledWith("fresh-note");
+    mocks.pendingMeetingStartRequest = {
+      requestId: "meeting-request-1",
+      noteId: "failed-meeting-note",
+      requestedAtMs: Date.now(),
+      expired: false,
+    };
+    await act(async () => {
+      await mocks.listeners.get(MEETING_START_TRANSCRIPTION_EVENT)?.({
+        payload: undefined,
+      });
     });
-    expect(mocks.listNotes).toHaveBeenCalled();
-    expect(mocks.startRecording).not.toHaveBeenCalled();
-  });
-
-  it("removes the fresh note when recording start times out and releases the start latch", async () => {
-    const fresh = note({
-      id: "fresh-note",
-      title: "New note",
-      generatedContent: undefined,
-      processingStatus: "draft",
+    expect(mocks.acknowledgeMeetingStartRequest).not.toHaveBeenCalled();
+    await waitFor(() => expect(mocks.startMeetingRecording).toHaveBeenCalledTimes(2), {
+      timeout: 2_000,
     });
-    mocks.createNote
-      .mockResolvedValueOnce(fresh)
-      .mockResolvedValueOnce(note({ id: "second-fresh-note", title: "Second fresh note" }));
-    mocks.getNote.mockImplementation(async (noteId: string) => {
-      if (noteId === "fresh-note") return fresh;
-      if (noteId === "note-2") return second;
-      return first;
-    });
-    mocks.startRecording
-      .mockRejectedValueOnce({
-        code: "capture_start_timeout",
-        message: "Could not start the microphone. Try again, or check the selected input device.",
-      })
-      .mockResolvedValueOnce(recording({ noteId: "second-fresh-note" }));
-
-    render(<App />);
-    await waitFor(() => expect(mocks.listeners.has(MEETING_START_TRANSCRIPTION_EVENT)).toBe(true));
-    await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
-
-    await waitFor(async () => {
-      if (mocks.deleteNote.mock.calls.length === 0) {
-        await act(async () => {
-          await mocks.listeners.get(MEETING_START_TRANSCRIPTION_EVENT)?.({
-            payload: undefined,
-          });
-        });
-      }
-      expect(mocks.deleteNote).toHaveBeenCalledWith("fresh-note");
-    });
-    expect(mocks.startRecording).toHaveBeenCalledTimes(1);
-
-    await waitFor(async () => {
-      if (mocks.startRecording.mock.calls.length < 2) {
-        await act(async () => {
-          await mocks.listeners.get(MEETING_START_TRANSCRIPTION_EVENT)?.({
-            payload: undefined,
-          });
-        });
-      }
-      expect(mocks.startRecording).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  it("restores the previous meeting selection when cleanup deletion fails", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const fresh = note({
-      id: "fresh-note",
-      title: "New note",
-      generatedContent: undefined,
-      processingStatus: "draft",
-    });
-    mocks.createNote.mockResolvedValue(fresh);
-    mocks.deleteNote.mockRejectedValue(new Error("delete failed"));
-    mocks.getNote.mockImplementation(async (noteId: string) => {
-      if (noteId === "fresh-note") return fresh;
-      if (noteId === "note-2") return second;
-      return first;
-    });
-    mocks.startRecording.mockRejectedValue({
-      code: "capture_start_timeout",
-      message: "Could not start the microphone. Try again, or check the selected input device.",
-    });
-
-    render(<App />);
-    await waitFor(() => expect(mocks.listeners.has(MEETING_START_TRANSCRIPTION_EVENT)).toBe(true));
-    await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
-
-    await waitFor(async () => {
-      if (mocks.listNotes.mock.calls.length === 0) {
-        await act(async () => {
-          await mocks.listeners.get(MEETING_START_TRANSCRIPTION_EVENT)?.({
-            payload: undefined,
-          });
-        });
-      }
-      expect(mocks.listNotes).toHaveBeenCalled();
-    });
-    expect(warn).toHaveBeenCalledWith(
-      "Failed to delete note after recording start failed",
-      expect.any(Error),
+    await waitFor(() =>
+      expect(mocks.acknowledgeMeetingStartRequest).toHaveBeenCalledWith("meeting-request-1"),
     );
-    expect(screen.getByLabelText("Note title")).toHaveValue("First note");
-    warn.mockRestore();
   });
 
   it("clears the recorder presence and disables retry when a recovery is discarded", async () => {
@@ -1248,7 +1404,7 @@ describe("notes recording reliability", () => {
     await startRecordingOnFirstNote();
 
     // note-1 is "ready" (terminal); stacking another take must still flip it
-    // back to transcribing so the shimmer shows and polling resumes.
+    // back to transcribing so the shimmer shows and progress events apply.
     await userEvent.click(screen.getByRole("button", { name: "Done" }));
     await waitFor(() => expect(mocks.finishRecording).toHaveBeenCalledWith("rec-1"));
 
@@ -1344,56 +1500,288 @@ describe("notes recording reliability", () => {
     );
   });
 
-  it("polls newly persisted turns while note transcription remains active", async () => {
+  it("refetches the full note only when processing emits done", async () => {
     const selectedNote = note({
       processingStatus: "transcribing",
       activeTab: "transcription",
       sourceTranscripts: [],
     });
-    let pollResponse = selectedNote;
+    const completedNote = {
+      ...selectedNote,
+      processingStatus: "ready" as const,
+      updatedAt: "2026-05-19T10:00:03Z",
+      sourceTranscripts: [
+        {
+          id: "turn-1",
+          text: "The completed note is visible.",
+          source: "microphone" as const,
+          sourceMode: "microphonePlusSystem" as const,
+          startMs: 0,
+          endMs: 4_000,
+          turnIndex: 0,
+          language: "en",
+          status: "succeeded" as const,
+          recordedSilence: false,
+        },
+      ],
+    };
     mocks.bootstrapApp.mockResolvedValue({
       folders: [],
       notes: [selectedNote],
       activeRecoveries: [],
       providerConfigured: true,
     });
-    mocks.getNote.mockImplementation(async () => pollResponse);
+    let processingDone = false;
+    mocks.getNote.mockImplementation(async () => (processingDone ? completedNote : selectedNote));
 
     render(<App />);
     await userEvent.click(await screen.findByRole("button", { name: "Meeting notes" }));
-    await userEvent.click(screen.getByRole("button", { name: /First note Preview/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /First note Preview/ }));
     await waitFor(() => expect(screen.getByText("Transcribing audio")).toBeInTheDocument());
+    await waitFor(() => expect(mocks.listeners.has("note-processing-progress")).toBe(true));
 
-    expect(screen.queryByText("The first saved turn is visible.")).not.toBeInTheDocument();
     mocks.getNote.mockClear();
-    pollResponse = {
+    await act(async () => {
+      await mocks.listeners.get("note-processing-progress")?.({
+        payload: {
+          noteId: selectedNote.id,
+          recordingSessionId: "recording-1",
+          stage: "generating",
+          processingStatus: "generating",
+          revision: "2026-05-19T10:00:02Z",
+        },
+      });
+    });
+    expect(mocks.getNote).not.toHaveBeenCalled();
+    expect(screen.queryByText("The completed note is visible.")).not.toBeInTheDocument();
+
+    processingDone = true;
+    await act(async () => {
+      await mocks.listeners.get("note-processing-progress")?.({
+        payload: {
+          noteId: selectedNote.id,
+          recordingSessionId: "recording-1",
+          stage: "done",
+          processingStatus: "ready",
+          revision: completedNote.updatedAt,
+        },
+      });
+    });
+
+    await waitFor(() => expect(mocks.getNote).toHaveBeenCalledTimes(1));
+    expect(mocks.getNote).toHaveBeenCalledWith(selectedNote.id);
+    expect(await screen.findByText("The completed note is visible.")).toBeInTheDocument();
+  });
+
+  it("retries a terminal hydration that fails transiently", async () => {
+    const selectedNote = note({
+      processingStatus: "generating",
+      activeTab: "transcription",
+      sourceTranscripts: [],
+    });
+    const completedNote = {
       ...selectedNote,
-      processingStatus: "transcribing",
+      processingStatus: "ready" as const,
+      updatedAt: "2026-05-19T10:00:05Z",
       sourceTranscripts: [
         {
-          id: "turn-1",
-          text: "The first saved turn is visible.",
-          source: "microphone",
-          sourceMode: "microphonePlusSystem",
+          id: "turn-terminal-retry",
+          text: "Recovered after terminal hydration failed.",
+          source: "microphone" as const,
+          sourceMode: "microphonePlusSystem" as const,
           startMs: 0,
           endMs: 4_000,
           turnIndex: 0,
           language: "en",
-          status: "succeeded",
+          status: "succeeded" as const,
           recordedSilence: false,
         },
       ],
     };
+    mocks.bootstrapApp.mockResolvedValue({
+      folders: [],
+      notes: [selectedNote],
+      activeRecoveries: [],
+      providerConfigured: true,
+    });
+    mocks.getNote.mockResolvedValue(selectedNote);
 
-    await waitFor(
-      () => {
-        expect(mocks.getNote).toHaveBeenCalledWith(selectedNote.id);
-        expect(screen.getByText("The first saved turn is visible.")).toBeInTheDocument();
-      },
-      { timeout: 3_000 },
-    );
-    const transcribingStatus = screen.getByText("Transcribing audio");
-    expect(transcribingStatus.closest('[role="status"]')).not.toBeNull();
+    render(<App />);
+    await userEvent.click(await screen.findByRole("button", { name: "Meeting notes" }));
+    await userEvent.click(await screen.findByRole("button", { name: /First note Preview/ }));
+    await waitFor(() => expect(mocks.listeners.has("note-processing-progress")).toBe(true));
+
+    mocks.getNote.mockClear();
+    mocks.getNote
+      .mockRejectedValueOnce(new Error("Temporary note read failure"))
+      .mockResolvedValue(completedNote);
+    const setTimeoutSpy = vi.spyOn(window, "setTimeout");
+
+    try {
+      await act(async () => {
+        await mocks.listeners.get("note-processing-progress")?.({
+          payload: {
+            noteId: selectedNote.id,
+            recordingSessionId: "recording-1",
+            stage: "done",
+            processingStatus: "ready",
+            revision: completedNote.updatedAt,
+          },
+        });
+      });
+
+      await waitFor(() => expect(mocks.getNote).toHaveBeenCalledTimes(1));
+      let retry: TimerHandler | undefined;
+      await waitFor(() => {
+        retry = setTimeoutSpy.mock.calls.find(
+          ([, delay]) => delay === NOTE_PROCESSING_RECONCILE_INTERVAL_MS,
+        )?.[0];
+        expect(retry).toBeTypeOf("function");
+      });
+
+      await act(async () => {
+        if (typeof retry === "function") retry();
+      });
+
+      await waitFor(() => expect(mocks.getNote).toHaveBeenCalledTimes(2));
+      expect(
+        await screen.findByText("Recovered after terminal hydration failed."),
+      ).toBeInTheDocument();
+    } finally {
+      setTimeoutSpy.mockRestore();
+    }
+  });
+
+  it.each([
+    ["window focus", () => window.dispatchEvent(new Event("focus"))],
+    ["visible document", () => document.dispatchEvent(new Event("visibilitychange"))],
+  ])("recovers a dropped done event when the %s resumes", async (_surface, resume) => {
+    const selectedNote = note({
+      processingStatus: "transcribing",
+      activeTab: "transcription",
+      sourceTranscripts: [],
+    });
+    const completedNote = {
+      ...selectedNote,
+      processingStatus: "ready" as const,
+      updatedAt: "2026-05-19T10:00:03Z",
+      sourceTranscripts: [
+        {
+          id: "turn-focus-recovery",
+          text: "Recovered after the done event was dropped.",
+          source: "microphone" as const,
+          sourceMode: "microphonePlusSystem" as const,
+          startMs: 0,
+          endMs: 4_000,
+          turnIndex: 0,
+          language: "en",
+          status: "succeeded" as const,
+          recordedSilence: false,
+        },
+      ],
+    };
+    mocks.bootstrapApp.mockResolvedValue({
+      folders: [],
+      notes: [selectedNote],
+      activeRecoveries: [],
+      providerConfigured: true,
+    });
+    let processingDone = false;
+    mocks.getNote.mockImplementation(async () => (processingDone ? completedNote : selectedNote));
+
+    render(<App />);
+    await userEvent.click(await screen.findByRole("button", { name: "Meeting notes" }));
+    await userEvent.click(await screen.findByRole("button", { name: /First note Preview/ }));
+    await waitFor(() => expect(screen.getByText("Transcribing audio")).toBeInTheDocument());
+
+    mocks.getNote.mockClear();
+    processingDone = true;
+    await act(async () => resume());
+
+    await waitFor(() => expect(mocks.getNote).toHaveBeenCalledTimes(1));
+    expect(mocks.getNote).toHaveBeenCalledWith(selectedNote.id);
+    expect(
+      await screen.findByText("Recovered after the done event was dropped."),
+    ).toBeInTheDocument();
+  });
+
+  it("does not install the slow backstop when no note is actively processing", async () => {
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
+    try {
+      render(<App />);
+      await waitFor(() => expect(mocks.listeners.has("note-processing-progress")).toBe(true));
+      expect(
+        setIntervalSpy.mock.calls.some(
+          ([, delay]) => delay === NOTE_PROCESSING_RECONCILE_INTERVAL_MS,
+        ),
+      ).toBe(false);
+    } finally {
+      setIntervalSpy.mockRestore();
+    }
+  });
+
+  it("recovers a dropped done event through the slow processing-only backstop", async () => {
+    const selectedNote = note({
+      processingStatus: "generating",
+      activeTab: "transcription",
+      sourceTranscripts: [],
+    });
+    const completedNote = {
+      ...selectedNote,
+      processingStatus: "ready" as const,
+      updatedAt: "2026-05-19T10:00:04Z",
+      sourceTranscripts: [
+        {
+          id: "turn-backstop-recovery",
+          text: "Recovered by the slow processing backstop.",
+          source: "system" as const,
+          sourceMode: "microphonePlusSystem" as const,
+          startMs: 0,
+          endMs: 4_000,
+          turnIndex: 0,
+          language: "en",
+          status: "succeeded" as const,
+          recordedSilence: false,
+        },
+      ],
+    };
+    mocks.bootstrapApp.mockResolvedValue({
+      folders: [],
+      notes: [selectedNote],
+      activeRecoveries: [],
+      providerConfigured: true,
+    });
+    let processingDone = false;
+    mocks.getNote.mockImplementation(async () => (processingDone ? completedNote : selectedNote));
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
+
+    try {
+      render(<App />);
+      await userEvent.click(await screen.findByRole("button", { name: "Meeting notes" }));
+      await userEvent.click(await screen.findByRole("button", { name: /First note Preview/ }));
+
+      let backstop: TimerHandler | undefined;
+      await waitFor(() => {
+        backstop = setIntervalSpy.mock.calls.find(
+          ([, delay]) => delay === NOTE_PROCESSING_RECONCILE_INTERVAL_MS,
+        )?.[0];
+        expect(backstop).toBeTypeOf("function");
+      });
+
+      mocks.getNote.mockClear();
+      processingDone = true;
+      await act(async () => {
+        if (typeof backstop === "function") backstop();
+      });
+
+      await waitFor(() => expect(mocks.getNote).toHaveBeenCalledTimes(1));
+      expect(mocks.getNote).toHaveBeenCalledWith(selectedNote.id);
+      expect(
+        await screen.findByText("Recovered by the slow processing backstop."),
+      ).toBeInTheDocument();
+    } finally {
+      setIntervalSpy.mockRestore();
+    }
   });
 
   it("keeps retry failures scoped to the failed note", async () => {
@@ -1490,8 +1878,7 @@ describe("notes recording reliability", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Transcription" }));
     await waitFor(() =>
-      expect(mocks.updateNote).toHaveBeenCalledWith({
-        noteId: "note-1",
+      expect(mocks.patchNote).toHaveBeenCalledWith("note-1", {
         activeTab: "transcription",
       }),
     );

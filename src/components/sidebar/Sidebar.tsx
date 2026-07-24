@@ -56,12 +56,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import {
-  AGENT_SESSION_RENAMED_EVENT,
-  markAgentNewSessionPending,
-  type AgentSessionRenamedDetail,
-  type AgentSessionsChangedDetail,
-} from "../agent/AgentWorkspace";
+import { markAgentNewSessionPending } from "../agent/session-persistence";
 import { CategoryIcon } from "../agent/composer/CategoryIcon";
 import { JuneWordmark } from "../brand/JuneWordmark";
 import { AccountAvatar, accountDisplayName } from "../account/AccountAvatar";
@@ -70,7 +65,10 @@ import {
   AGENT_DELETE_SESSION_EVENT,
   AGENT_NEW_SESSION_EVENT,
   AGENT_SESSIONS_CHANGED_EVENT,
+  AGENT_SESSION_RENAMED_EVENT,
   emitAgentSessionsChanged,
+  type AgentSessionRenamedDetail,
+  type AgentSessionsChangedDetail,
 } from "../../lib/agent-events";
 import {
   deleteHermesSession,
@@ -101,7 +99,7 @@ import {
 } from "../../lib/session-profile-filter";
 import { JuneMark } from "../account/AccountGate";
 import { OPEN_REFERRAL_DIALOG_EVENT } from "../referral/ReferralNudge";
-import { SETTINGS_TABS, type SettingsTab } from "../settings/AppSettings";
+import { SETTINGS_TABS, type SettingsTab } from "../settings/settings-config";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CopyLinkField } from "../ui/CopyLinkField";
 import { Dialog } from "../ui/Dialog";
@@ -116,6 +114,7 @@ import {
   type DateFormatChangedDetail,
   type DateFormatPreference,
 } from "../../lib/date-format";
+import { buildSidebarSessionLists } from "./sidebar-session-lists";
 
 const NO_AGENT_SESSIONS: HermesSessionInfo[] = [];
 
@@ -453,6 +452,7 @@ export function Sidebar({
   const [referralCopyError, setReferralCopyError] = useState<string | null>(null);
   const [referralCopied, setReferralCopied] = useState(false);
   const searchShortcut = primaryShortcutLabel("K");
+  const newSessionShortcut = primaryShortcutLabel("N");
   const inSettings = activeView === "settings";
   const [allAgentSessions, setAgentSessions] = useState<HermesSessionInfo[]>([]);
   // Chats belong to the profile they were created under (ADR 0031): the
@@ -551,41 +551,22 @@ export function Sidebar({
       `${session.title ?? ""} ${session.preview ?? ""}`.toLowerCase().includes(normalized),
     );
   }, [agentSessions, query]);
-  const pinnedAgentSessionOrder = useMemo(
-    () => buildPinnedSessionOrderIndex(pinnedAgentSessionIds),
-    [pinnedAgentSessionIds],
-  );
-  const pinnedAgentSessions = useMemo(
+  const sidebarSessionLists = useMemo(
     () =>
-      filteredAgentSessions
-        .filter(
-          (session) => pinnedAgentSessionIds.has(session.id) && !completedSessionIds[session.id],
-        )
-        .sort(
-          (a, b) =>
-            pinnedSessionOrder(pinnedAgentSessionOrder, a.id) -
-            pinnedSessionOrder(pinnedAgentSessionOrder, b.id),
-        ),
-    [filteredAgentSessions, pinnedAgentSessionIds, pinnedAgentSessionOrder, completedSessionIds],
-  );
-  const visibleAgentSessions = useMemo(
-    () =>
-      filteredAgentSessions
-        .filter(
-          (session) => !pinnedAgentSessionIds.has(session.id) && !completedSessionIds[session.id],
-        )
-        .slice(0, AGENT_SIDEBAR_SESSION_LIMIT),
+      buildSidebarSessionLists(
+        filteredAgentSessions,
+        pinnedAgentSessionIds,
+        completedSessionIds,
+        AGENT_SIDEBAR_SESSION_LIMIT,
+      ),
     [filteredAgentSessions, pinnedAgentSessionIds, completedSessionIds],
   );
-  const completedAgentSessions = useMemo(
-    () =>
-      filteredAgentSessions
-        .filter((session) => Boolean(completedSessionIds[session.id]))
-        .sort((a, b) =>
-          (completedSessionIds[b.id] ?? "").localeCompare(completedSessionIds[a.id] ?? ""),
-        ),
-    [filteredAgentSessions, completedSessionIds],
-  );
+  const pinnedAgentSessions = sidebarSessionLists.pinned;
+  const visibleAgentSessions = sidebarSessionLists.visible;
+  const completedAgentSessions = sidebarSessionLists.completed;
+  const hasMorePinnedAgentSessions = sidebarSessionLists.pinnedTotal > pinnedAgentSessions.length;
+  const hasMoreCompletedAgentSessions =
+    sidebarSessionLists.completedTotal > completedAgentSessions.length;
 
   async function loadReferralSummary() {
     if (!account.signedIn || account.localDev) return;
@@ -1199,6 +1180,7 @@ export function Sidebar({
     menu?.kind === "agent-session"
       ? agentSessions.find((session) => session.id === menu.sessionId)
       : undefined;
+  const newAgentSessionActive = activeView === "agent" && !selectedAgentSessionId;
 
   return (
     <aside
@@ -1266,11 +1248,20 @@ export function Sidebar({
                 <span className="sidebar-nav-label">Home</span>
               </button>
             ) : null}
-            <button type="button" className="sidebar-nav-item" onClick={handleNewAgentSession}>
+            <button
+              type="button"
+              className="sidebar-nav-item"
+              data-active={newAgentSessionActive || undefined}
+              aria-current={newAgentSessionActive ? "page" : undefined}
+              onClick={handleNewAgentSession}
+            >
               <span className="sidebar-nav-icon">
                 <IconPlusMedium size={15} />
               </span>
               <span className="sidebar-nav-label">New session</span>
+              <kbd className="sidebar-nav-shortcut" aria-hidden="true">
+                {newSessionShortcut}
+              </kbd>
             </button>
             <button
               type="button"
@@ -1331,8 +1322,19 @@ export function Sidebar({
               className="sidebar-section sidebar-pinned-section"
               aria-label="Pinned agent sessions"
             >
-              <div className="section-title">
+              <div
+                className={`section-title${hasMorePinnedAgentSessions ? " section-title-with-action" : ""}`}
+              >
                 <span className="section-title-label">Pinned</span>
+                {hasMorePinnedAgentSessions ? (
+                  <button
+                    type="button"
+                    className="section-view-all"
+                    onClick={() => onChangeView("agent-sessions")}
+                  >
+                    View all
+                  </button>
+                ) : null}
               </div>
               <div className="notes-nav sidebar-pinned-list">
                 {pinnedAgentSessions.map((session) => (
@@ -1434,7 +1436,18 @@ export function Sidebar({
                 >
                   Completed
                 </button>
-                <span className="folders-count">{completedAgentSessions.length}</span>
+                <span className="sidebar-section-title-meta">
+                  <span className="folders-count">{sidebarSessionLists.completedTotal}</span>
+                  {hasMoreCompletedAgentSessions ? (
+                    <button
+                      type="button"
+                      className="section-view-all"
+                      onClick={() => onChangeView("agent-sessions")}
+                    >
+                      View all
+                    </button>
+                  ) : null}
+                </span>
               </div>
               {completedCollapsed ? null : (
                 <div className="notes-nav sidebar-completed-list">
@@ -1624,7 +1637,7 @@ function SidebarRecordingIndicator({
       title="Open recording"
     >
       <span className="sidebar-recording-dot" aria-hidden />
-      <Waveform level={meterLevel} active={recording} />
+      <Waveform level={meterLevel} sessionId={status.sessionId} active={recording} />
     </button>
   );
 }
@@ -2241,20 +2254,6 @@ function writePinnedAgentSessionIds(ids: ReadonlySet<string>) {
   }
 }
 
-function buildPinnedSessionOrderIndex(ids: ReadonlySet<string>) {
-  const indexById = new Map<string, number>();
-  let index = 0;
-  for (const id of ids) {
-    indexById.set(id, index);
-    index += 1;
-  }
-  return indexById;
-}
-
-function pinnedSessionOrder(indexById: ReadonlyMap<string, number>, sessionId: string) {
-  return indexById.get(sessionId) ?? Number.MAX_SAFE_INTEGER;
-}
-
 function AgentSessionRow({
   session,
   selected,
@@ -2288,10 +2287,13 @@ function AgentSessionRow({
   const status = waiting ? "waitingForUser" : working ? "running" : undefined;
   const time = formatSessionTime(sessionTimestamp(session), dateFormat);
   const menuRef = useRef<HTMLButtonElement>(null);
+  const [menuFocused, setMenuFocused] = useState(false);
 
   return (
     <article
-      className="note-row agent-sidebar-row"
+      className={`note-row agent-sidebar-row${
+        menuFocused ? " agent-sidebar-row-menu-focused" : ""
+      }`}
       data-selected={selected}
       data-status={status}
       data-menu-open={menuOpen || undefined}
@@ -2354,6 +2356,8 @@ function AgentSessionRow({
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           disabled={deleting}
+          onFocus={(event) => setMenuFocused(event.currentTarget.matches(":focus-visible"))}
+          onBlur={() => setMenuFocused(false)}
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();

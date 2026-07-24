@@ -17,7 +17,7 @@ function providerFailure(id: string): AgentChatTurn {
       {
         type: "notice",
         kind: "upstream-provider",
-        text: "June's service is temporarily unavailable. Your message is saved.",
+        text: "The model service is temporarily unavailable. Your answer is saved.",
       },
     ],
   };

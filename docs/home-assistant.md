@@ -38,9 +38,9 @@ contract or an ADR.
 Ordinary text-only Home turns use the lightweight native `june_home_chat` path.
 It sends a compact relationship prompt and one structured `start_task` tool,
 which avoids loading the full Hermes agent prompt and tool catalog for a short
-conversation. The selected Home model and reasoning effort are captured at the
-Send boundary and passed through to this request. Auto Economy and Low are
-fixed Home defaults, not visible composer choices.
+conversation. Auto Economy and Low (`minimal`) are internal Home defaults, not
+visible composer choices or client-provided overrides. They do not read or
+mutate the normal Agent model selection.
 
 The lightweight path has no live external sources. Clear requests for news,
 weather, prices, scores, schedules, current events, or what is happening today

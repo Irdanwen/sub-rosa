@@ -1,0 +1,420 @@
+import type { AgentChatPart, AgentChatTurn } from "../../lib/agent-chat-runtime";
+import { getActiveHermesProfileName } from "../../lib/active-hermes-profile";
+import {
+  buildJuneHomeConversationContext,
+  forgetJuneHomeStoredSessionId,
+  isJuneHomeStartTaskTool,
+  readJuneHomeStoredSessionId,
+  type JuneHomeConversationContext,
+  type JuneHomeTaskRequest,
+  writeJuneHomeStoredSessionId,
+} from "../../lib/june-home";
+import type { JuneHomeChatResponse } from "../../lib/tauri";
+
+export type HomeTaskHandoff = JuneHomeTaskRequest & {
+  id: string;
+  status: "starting" | "running" | "failed";
+  storedSessionId?: string;
+  error?: string;
+};
+
+export const HOME_DEMO_SEEDED_EVENT = "june:agent:home-demo-seeded";
+const HOME_TASK_HANDOFFS_STORAGE_KEY = "june.home.taskHandoffs.v1";
+const HOME_DIRECT_TURNS_STORAGE_KEY = "june.home.directTurns.v1";
+const HOME_DEMO_BACKUP_STORAGE_KEY = "june.home.demoBackup.v3";
+
+function readRecord(storageKey: string): Record<string, unknown> {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(storageKey) ?? "{}") as unknown;
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeRecord(storageKey: string, value: Record<string, unknown>) {
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(value));
+  } catch {
+    // Home stays usable for this launch when browser storage is unavailable.
+  }
+}
+
+function validHomeTurn(value: unknown): value is AgentChatTurn {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const turn = value as AgentChatTurn;
+  return (
+    typeof turn.id === "string" &&
+    (turn.role === "user" || turn.role === "assistant") &&
+    typeof turn.createdAt === "string" &&
+    Array.isArray(turn.parts)
+  );
+}
+
+export function readHomeDirectTurns(storedSessionId: string | undefined): AgentChatTurn[] {
+  if (!storedSessionId) return [];
+  const turns = readRecord(HOME_DIRECT_TURNS_STORAGE_KEY)[storedSessionId];
+  return Array.isArray(turns) ? turns.filter(validHomeTurn) : [];
+}
+
+export function persistHomeDirectTurns(storedSessionId: string, turns: AgentChatTurn[]) {
+  const records = readRecord(HOME_DIRECT_TURNS_STORAGE_KEY);
+  // The relationship thread is intentionally long-lived. Keep all turns while
+  // storage permits it, then retain the deepest viable recent tail.
+  const candidates = [turns, turns.slice(-2000), turns.slice(-1000), turns.slice(-400)];
+  const attemptedLengths = new Set<number>();
+  for (const candidate of candidates) {
+    if (attemptedLengths.has(candidate.length)) continue;
+    attemptedLengths.add(candidate.length);
+    try {
+      window.localStorage.setItem(
+        HOME_DIRECT_TURNS_STORAGE_KEY,
+        JSON.stringify({ ...records, [storedSessionId]: candidate }),
+      );
+      return;
+    } catch {
+      // Try the next smaller durable tail.
+    }
+  }
+}
+
+export function insertHomeDirectReply(
+  storedSessionId: string,
+  userTurnId: string,
+  assistantTurn: AgentChatTurn,
+): AgentChatTurn[] {
+  const turns = readHomeDirectTurns(storedSessionId);
+  const userIndex = turns.findIndex((turn) => turn.id === userTurnId);
+  const next =
+    userIndex < 0
+      ? [...turns, assistantTurn]
+      : [...turns.slice(0, userIndex + 1), assistantTurn, ...turns.slice(userIndex + 1)];
+  persistHomeDirectTurns(storedSessionId, next);
+  return next;
+}
+
+export function readHomeTaskHandoffs(storedSessionId: string | undefined): HomeTaskHandoff[] {
+  if (!storedSessionId) return [];
+  const values = readRecord(HOME_TASK_HANDOFFS_STORAGE_KEY)[storedSessionId];
+  if (!Array.isArray(values)) return [];
+  return values
+    .map((value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+      const legacy = value as Record<string, unknown>;
+      if (typeof legacy.sessionId !== "string" || typeof legacy.storedSessionId === "string") {
+        return value;
+      }
+      const { sessionId, ...rest } = legacy;
+      return { ...rest, storedSessionId: sessionId };
+    })
+    .filter((value): value is HomeTaskHandoff => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+      const handoff = value as HomeTaskHandoff;
+      return (
+        typeof handoff.id === "string" &&
+        typeof handoff.title === "string" &&
+        typeof handoff.prompt === "string" &&
+        (handoff.status === "starting" ||
+          handoff.status === "running" ||
+          handoff.status === "failed") &&
+        (handoff.status !== "running" || typeof handoff.storedSessionId === "string")
+      );
+    });
+}
+
+export function persistHomeTaskHandoffs(storedSessionId: string, handoffs: HomeTaskHandoff[]) {
+  const records = readRecord(HOME_TASK_HANDOFFS_STORAGE_KEY);
+  const durable = handoffs
+    .filter((handoff) => handoff.status === "failed" || Boolean(handoff.storedSessionId))
+    .slice(-24);
+  writeRecord(HOME_TASK_HANDOFFS_STORAGE_KEY, {
+    ...records,
+    [storedSessionId]: durable,
+  });
+}
+
+function textForTurn(turn: AgentChatTurn): string {
+  return turn.parts
+    .filter((part): part is Extract<AgentChatPart, { type: "text" }> => part.type === "text")
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+export function homeConversationContextFromTurns(
+  turns: AgentChatTurn[],
+): JuneHomeConversationContext {
+  const messages = [...turns]
+    .sort(
+      (left, right) =>
+        left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
+    )
+    .filter(
+      (turn): turn is AgentChatTurn & { role: "user" | "assistant" } =>
+        turn.role === "user" || turn.role === "assistant",
+    )
+    .map((turn) => {
+      const text = textForTurn(turn);
+      const delegated = turn.parts.some(
+        (part) => part.type === "tool" && isJuneHomeStartTaskTool(part.name),
+      );
+      return {
+        role: turn.role,
+        content: text || (delegated ? "I created a focused session for that task." : ""),
+        createdAt: turn.createdAt,
+      };
+    })
+    .filter((message) => message.content);
+  return buildJuneHomeConversationContext(messages);
+}
+
+const homeDirectChatChains = new Map<string, Promise<void>>();
+
+export function enqueueHomeDirectChat(storedSessionId: string, operation: () => Promise<void>) {
+  const previous = homeDirectChatChains.get(storedSessionId) ?? Promise.resolve();
+  const request = previous.catch(() => undefined).then(operation);
+  const tail = request.catch(() => undefined);
+  homeDirectChatChains.set(storedSessionId, tail);
+  void tail.finally(() => {
+    if (homeDirectChatChains.get(storedSessionId) === tail) {
+      homeDirectChatChains.delete(storedSessionId);
+    }
+  });
+  return request;
+}
+
+type HomeDemoSnapshot = {
+  profile: string;
+  sessionId?: string;
+  demoSessionId: string;
+  directTurns: unknown;
+  handoffs: unknown;
+};
+
+function readDemoSnapshot(): HomeDemoSnapshot | undefined {
+  if (!import.meta.env.DEV || typeof window === "undefined") return undefined;
+  try {
+    const value = JSON.parse(
+      window.localStorage.getItem(HOME_DEMO_BACKUP_STORAGE_KEY) ?? "null",
+    ) as HomeDemoSnapshot | null;
+    return value && typeof value.profile === "string" && typeof value.demoSessionId === "string"
+      ? value
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+let homeDemoSnapshot = readDemoSnapshot();
+let homeDemoReplyIndex = 0;
+
+export function homeDemoEnabled(profile: string) {
+  return Boolean(homeDemoSnapshot?.profile === profile);
+}
+
+export async function homeDemoReply(
+  profile: string,
+  onDelta: (content: string) => void,
+): Promise<JuneHomeChatResponse | undefined> {
+  if (!homeDemoEnabled(profile)) return undefined;
+  const replies = [
+    "That makes sense. What would help you move it forward?",
+    "I’m with you. We can talk it through here, or open a focused session if it needs deeper work.",
+    "Got it. I’ll stay with what you’ve shared here and won’t fill in missing context.",
+  ];
+  await new Promise((resolve) => window.setTimeout(resolve, 450));
+  const content = replies[homeDemoReplyIndex % replies.length];
+  homeDemoReplyIndex += 1;
+  for (const chunk of content.match(/.{1,18}(?:\s|$)/g) ?? [content]) {
+    onDelta(chunk);
+    await new Promise((resolve) => window.setTimeout(resolve, 90));
+  }
+  return { content };
+}
+
+function demoTurn(
+  id: string,
+  role: "user" | "assistant",
+  text: string,
+  createdAt: string,
+): AgentChatTurn {
+  return {
+    id: `home-demo-${id}`,
+    role,
+    createdAt,
+    status: "complete",
+    parts: [{ type: "text", text, status: "complete" }],
+  };
+}
+
+function demoTaskTurn(id: string, createdAt: string): AgentChatTurn {
+  return {
+    id: `home-demo-${id}`,
+    role: "assistant",
+    createdAt,
+    status: "complete",
+    parts: [
+      {
+        type: "tool",
+        id,
+        name: "mcp_june_home_start_task",
+        text: "",
+        status: "complete",
+      },
+    ],
+  };
+}
+
+function seedHomeDemo(storedSessionId: string) {
+  const now = Date.now();
+  const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
+  persistHomeDirectTurns(storedSessionId, [
+    demoTurn(
+      "preference-user",
+      "user",
+      "I do my best writing before noon. Can we keep that in mind when we plan my days?",
+      at(4 * 24 * 60 + 90),
+    ),
+    demoTurn(
+      "preference-assistant",
+      "assistant",
+      "That’s useful context. I’ll treat mornings as your preferred writing window.",
+      at(4 * 24 * 60 + 89),
+    ),
+    demoTurn(
+      "rich-user",
+      "user",
+      "Give me a quick launch snapshot and show me how you’d structure it.",
+      at(2 * 24 * 60 + 40),
+    ),
+    demoTurn(
+      "rich-assistant",
+      "assistant",
+      `## Launch snapshot
+
+The migration is **complete**, the staging cron is *still open*, and \`release/verify\` is next.
+
+- Production tokens are healthy
+- ~~Re-run the migration~~ is no longer needed
+- The [release notes](https://example.com) need a final pass
+
+| Area | State | Next step |
+| --- | --- | --- |
+| Migration | Complete | Monitor |
+| Staging cron | Open | Fix audience |
+| Release | Ready | Verify |
+
+\`\`\`ts
+const nextStep = "verify staging cron";
+\`\`\`
+
+Anything after a table or code block keeps rendering in the same response.`,
+      at(2 * 24 * 60 + 39),
+    ),
+    demoTurn(
+      "today-user",
+      "user",
+      "Morning. I want to protect my writing time, but the staging cron is nagging at me.",
+      at(170),
+    ),
+    demoTurn(
+      "today-assistant",
+      "assistant",
+      "Keep the morning for writing. Give the cron one contained slot after lunch; if it turns out deeper, I can open a focused session.",
+      at(169),
+    ),
+    demoTurn(
+      "starting-user",
+      "user",
+      "Create a focused session to draft the launch brief.",
+      at(150),
+    ),
+    demoTaskTurn("demo-starting", at(149)),
+    demoTurn("running-user", "user", "Open a focused session to review the launch risks.", at(135)),
+    demoTaskTurn("demo-running", at(134)),
+    demoTurn("failed-user", "user", "Start another session for the rollout checklist.", at(120)),
+    demoTaskTurn("demo-failed", at(119)),
+  ]);
+  const handoffs: HomeTaskHandoff[] = [
+    {
+      id: "home-task-demo-starting",
+      title: "Draft launch brief",
+      prompt: "Draft the launch brief.",
+      status: "starting",
+    },
+    {
+      id: "home-task-demo-running",
+      title: "Review launch risks",
+      prompt: "Research and summarize the launch risks.",
+      status: "running",
+      storedSessionId: "home-demo-focused-session",
+    },
+    {
+      id: "home-task-demo-failed",
+      title: "Build rollout checklist",
+      prompt: "Build the rollout checklist.",
+      status: "failed",
+      error: "The session could not be created. Please try again.",
+    },
+  ];
+  writeRecord(HOME_TASK_HANDOFFS_STORAGE_KEY, {
+    ...readRecord(HOME_TASK_HANDOFFS_STORAGE_KEY),
+    [storedSessionId]: handoffs,
+  });
+  window.dispatchEvent(new CustomEvent(HOME_DEMO_SEEDED_EVENT));
+}
+
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  (window as unknown as Record<string, unknown>).__homeDemo = (mode: boolean | "empty" = true) => {
+    if (mode === false) {
+      const snapshot = homeDemoSnapshot ?? readDemoSnapshot();
+      if (!snapshot) return "Home demo is already off.";
+      const direct = readRecord(HOME_DIRECT_TURNS_STORAGE_KEY);
+      const handoffs = readRecord(HOME_TASK_HANDOFFS_STORAGE_KEY);
+      if (snapshot.directTurns === undefined) delete direct[snapshot.demoSessionId];
+      else direct[snapshot.demoSessionId] = snapshot.directTurns;
+      if (snapshot.handoffs === undefined) delete handoffs[snapshot.demoSessionId];
+      else handoffs[snapshot.demoSessionId] = snapshot.handoffs;
+      writeRecord(HOME_DIRECT_TURNS_STORAGE_KEY, direct);
+      writeRecord(HOME_TASK_HANDOFFS_STORAGE_KEY, handoffs);
+      if (snapshot.sessionId) {
+        writeJuneHomeStoredSessionId(snapshot.profile, snapshot.sessionId);
+      } else {
+        forgetJuneHomeStoredSessionId(snapshot.profile, snapshot.demoSessionId);
+      }
+      window.localStorage.removeItem(HOME_DEMO_BACKUP_STORAGE_KEY);
+      homeDemoSnapshot = undefined;
+      window.dispatchEvent(new CustomEvent(HOME_DEMO_SEEDED_EVENT));
+      return "Home demo off; your previous Home thread is restored.";
+    }
+
+    const profile = getActiveHermesProfileName();
+    if (homeDemoSnapshot && homeDemoSnapshot.profile !== profile) {
+      return `Home demo is active for ${homeDemoSnapshot.profile}. Run __homeDemo(false) first.`;
+    }
+    if (!homeDemoSnapshot) {
+      const sessionId = readJuneHomeStoredSessionId(profile);
+      const demoSessionId = sessionId ?? "home-demo-session";
+      homeDemoSnapshot = {
+        profile,
+        sessionId,
+        demoSessionId,
+        directTurns: readRecord(HOME_DIRECT_TURNS_STORAGE_KEY)[demoSessionId],
+        handoffs: readRecord(HOME_TASK_HANDOFFS_STORAGE_KEY)[demoSessionId],
+      };
+      window.localStorage.setItem(HOME_DEMO_BACKUP_STORAGE_KEY, JSON.stringify(homeDemoSnapshot));
+    }
+    const storedSessionId = readJuneHomeStoredSessionId(profile) ?? homeDemoSnapshot.demoSessionId;
+    writeJuneHomeStoredSessionId(profile, storedSessionId);
+    if (mode === "empty") {
+      persistHomeDirectTurns(storedSessionId, []);
+      persistHomeTaskHandoffs(storedSessionId, []);
+      window.dispatchEvent(new CustomEvent(HOME_DEMO_SEEDED_EVENT));
+      return "Home demo is showing the empty first-open state.";
+    }
+    seedHomeDemo(storedSessionId);
+    return 'Home demo seeded. Use __homeDemo("empty") for first-open and __homeDemo(false) to restore your thread.';
+  };
+}

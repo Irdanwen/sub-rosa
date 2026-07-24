@@ -1,6 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RECORD_NOTICES_DEMO_SESSION_ID } from "../app/processing-polling";
+import { RECORD_NOTICES_DEMO_SESSION_ID } from "../app/processing-demo-ids";
 import { NoteEditor } from "../components/note-editor/NoteEditor";
 import { type RecordNoticesDemoApi, registerRecordNoticesDemo } from "../lib/record-notices-demo";
 import type { NoteDto, RecordingStatusDto } from "../lib/tauri";
@@ -27,6 +27,7 @@ const editorProps = {
   sourceMode: "microphonePlusSystem" as const,
   onTitleChange: vi.fn(),
   onContentChange: vi.fn(),
+  onFlushNote: vi.fn(),
   onSourceModeChange: vi.fn(),
   onEnableSystemAudio: vi.fn(),
   onEnableMicrophone: vi.fn(),

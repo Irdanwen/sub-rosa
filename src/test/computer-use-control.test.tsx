@@ -1,9 +1,10 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const tauriMocks = vi.hoisted(() => ({
   computerUseStatus: vi.fn(),
+  computerUseRequestPermissions: vi.fn(),
   setComputerUseGrant: vi.fn(),
   computerUseStop: vi.fn(),
   openPrivacySettings: vi.fn(),
@@ -13,6 +14,7 @@ const tauriMocks = vi.hoisted(() => ({
 vi.mock("../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/tauri")>()),
   computerUseStatus: tauriMocks.computerUseStatus,
+  computerUseRequestPermissions: tauriMocks.computerUseRequestPermissions,
   setComputerUseGrant: tauriMocks.setComputerUseGrant,
   computerUseStop: tauriMocks.computerUseStop,
   openPrivacySettings: tauriMocks.openPrivacySettings,
@@ -42,6 +44,9 @@ function status(overrides: Partial<ComputerUseStatusDto> = {}): ComputerUseStatu
 
 beforeEach(() => {
   tauriMocks.computerUseStatus.mockResolvedValue(status());
+  tauriMocks.computerUseRequestPermissions.mockResolvedValue(
+    status({ grantEnabled: true, state: "permission_missing" }),
+  );
   tauriMocks.setComputerUseGrant.mockResolvedValue(
     status({ grantEnabled: true, state: "permission_missing" }),
   );
@@ -93,6 +98,7 @@ describe("ComputerUseControl", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent(/Captures are never analytics/);
 
     await userEvent.click(screen.getByRole("button", { name: "Open Accessibility settings" }));
+    expect(tauriMocks.computerUseRequestPermissions).toHaveBeenCalledTimes(1);
     expect(tauriMocks.openPrivacySettings).toHaveBeenCalledWith("accessibility");
     expect(screen.queryByRole("button", { name: "Continue to macOS access" })).toBeNull();
   });
@@ -105,8 +111,217 @@ describe("ComputerUseControl", () => {
 
     expect(await screen.findByText("Step 2 of 2")).toBeInTheDocument();
     expect(screen.getByText("Allow Screen recording")).toBeInTheDocument();
+    expect(screen.getByText(/assigns Screen recording to June itself/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Drag June to the open System Settings list",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Drag June below/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Open Screen recording settings" }));
+    expect(tauriMocks.computerUseRequestPermissions).toHaveBeenCalledTimes(1);
     expect(tauriMocks.openPrivacySettings).toHaveBeenCalledWith("screenRecording");
+  });
+
+  it("coalesces repeated permission probes before opening Screen recording settings", async () => {
+    tauriMocks.computerUseStatus.mockResolvedValue(
+      status({ grantEnabled: true, accessibility: true, state: "permission_missing" }),
+    );
+    let finishPermissionProbe: ((value: ComputerUseStatusDto) => void) | undefined;
+    tauriMocks.computerUseRequestPermissions.mockImplementationOnce(
+      () =>
+        new Promise<ComputerUseStatusDto>((resolve) => {
+          finishPermissionProbe = resolve;
+        }),
+    );
+    render(<ComputerUseControl onOpenModels={vi.fn()} onOpenBilling={vi.fn()} />);
+
+    const button = await screen.findByRole("button", { name: "Open Screen recording settings" });
+    await userEvent.click(button);
+    await userEvent.click(button);
+
+    expect(tauriMocks.computerUseRequestPermissions).toHaveBeenCalledTimes(1);
+    expect(tauriMocks.openPrivacySettings).not.toHaveBeenCalled();
+
+    const readyStatus = status({
+      grantEnabled: true,
+      accessibility: true,
+      screenRecording: true,
+      ready: true,
+      state: "ready",
+    });
+    tauriMocks.computerUseStatus.mockResolvedValue(readyStatus);
+    finishPermissionProbe?.(readyStatus);
+    await waitFor(() => expect(tauriMocks.openPrivacySettings).toHaveBeenCalledTimes(2));
+    expect(tauriMocks.openPrivacySettings).toHaveBeenLastCalledWith("screenRecording");
+    await screen.findByText("Ready");
+  });
+
+  it("waits for each status poll before scheduling the next one", async () => {
+    vi.useFakeTimers();
+    try {
+      const incomplete = status({ grantEnabled: true, state: "permission_missing" });
+      let finishPoll: ((value: ComputerUseStatusDto) => void) | undefined;
+      tauriMocks.computerUseStatus
+        .mockResolvedValueOnce(incomplete)
+        .mockImplementationOnce(
+          () =>
+            new Promise<ComputerUseStatusDto>((resolve) => {
+              finishPoll = resolve;
+            }),
+        )
+        .mockResolvedValue(incomplete);
+
+      render(<ComputerUseControl onOpenModels={vi.fn()} onOpenBilling={vi.fn()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(tauriMocks.computerUseStatus).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+      expect(tauriMocks.computerUseStatus).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(tauriMocks.computerUseStatus).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        finishPoll?.(incomplete);
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+      expect(tauriMocks.computerUseStatus).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("pauses status polling while the settings page is hidden", async () => {
+    vi.useFakeTimers();
+    let visibility: DocumentVisibilityState = "visible";
+    const visibilitySpy = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => visibility);
+    try {
+      const incomplete = status({ grantEnabled: true, state: "permission_missing" });
+      tauriMocks.computerUseStatus.mockResolvedValue(incomplete);
+      render(<ComputerUseControl onOpenModels={vi.fn()} onOpenBilling={vi.fn()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+      expect(tauriMocks.computerUseStatus).toHaveBeenCalledTimes(2);
+
+      visibility = "hidden";
+      act(() => document.dispatchEvent(new Event("visibilitychange")));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(tauriMocks.computerUseStatus).toHaveBeenCalledTimes(2);
+
+      visibility = "visible";
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+        await Promise.resolve();
+      });
+      expect(tauriMocks.computerUseStatus).toHaveBeenCalledTimes(3);
+    } finally {
+      visibilitySpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("coalesces a permission probe across an unmount and remount", async () => {
+    tauriMocks.computerUseStatus.mockResolvedValue(
+      status({ grantEnabled: true, accessibility: true, state: "permission_missing" }),
+    );
+    let finishPermissionProbe: ((value: ComputerUseStatusDto) => void) | undefined;
+    tauriMocks.computerUseRequestPermissions.mockImplementationOnce(
+      () =>
+        new Promise<ComputerUseStatusDto>((resolve) => {
+          finishPermissionProbe = resolve;
+        }),
+    );
+    const first = render(<ComputerUseControl onOpenModels={vi.fn()} onOpenBilling={vi.fn()} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Open Screen recording settings" }),
+    );
+
+    first.unmount();
+    render(<ComputerUseControl onOpenModels={vi.fn()} onOpenBilling={vi.fn()} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Open Screen recording settings" }),
+    );
+
+    expect(tauriMocks.computerUseRequestPermissions).toHaveBeenCalledTimes(1);
+    const readyStatus = status({
+      grantEnabled: true,
+      accessibility: true,
+      screenRecording: true,
+      ready: true,
+      state: "ready",
+    });
+    tauriMocks.computerUseStatus.mockResolvedValue(readyStatus);
+    finishPermissionProbe?.(readyStatus);
+    await screen.findByText("Ready");
+  });
+
+  it("queues a newly reached permission pane behind an active probe", async () => {
+    tauriMocks.computerUseStatus.mockResolvedValue(
+      status({ grantEnabled: true, state: "permission_missing" }),
+    );
+    let finishAccessibilityProbe: ((value: ComputerUseStatusDto) => void) | undefined;
+    let finishScreenRecordingProbe: ((value: ComputerUseStatusDto) => void) | undefined;
+    tauriMocks.computerUseRequestPermissions
+      .mockImplementationOnce(
+        () =>
+          new Promise<ComputerUseStatusDto>((resolve) => {
+            finishAccessibilityProbe = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<ComputerUseStatusDto>((resolve) => {
+            finishScreenRecordingProbe = resolve;
+          }),
+      );
+    const first = render(<ComputerUseControl onOpenModels={vi.fn()} onOpenBilling={vi.fn()} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Open Accessibility settings" }),
+    );
+
+    first.unmount();
+    tauriMocks.computerUseStatus.mockResolvedValue(
+      status({ grantEnabled: true, accessibility: true, state: "permission_missing" }),
+    );
+    render(<ComputerUseControl onOpenModels={vi.fn()} onOpenBilling={vi.fn()} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Open Screen recording settings" }),
+    );
+
+    expect(tauriMocks.computerUseRequestPermissions).toHaveBeenCalledTimes(1);
+    finishAccessibilityProbe?.(
+      status({ grantEnabled: true, accessibility: true, state: "permission_missing" }),
+    );
+    await waitFor(() => expect(tauriMocks.computerUseRequestPermissions).toHaveBeenCalledTimes(2));
+    const readyStatus = status({
+      grantEnabled: true,
+      accessibility: true,
+      screenRecording: true,
+      ready: true,
+      state: "ready",
+    });
+    tauriMocks.computerUseStatus.mockResolvedValue(readyStatus);
+    finishScreenRecordingProbe?.(readyStatus);
+    await screen.findByText("Ready");
   });
 
   it("keeps Accessibility labeled as step 1 when Screen recording was allowed first", async () => {
@@ -125,13 +340,49 @@ describe("ComputerUseControl", () => {
     );
     render(<ComputerUseControl onOpenModels={vi.fn()} onOpenBilling={vi.fn()} />);
 
-    expect(await screen.findByText("June is not in the list?")).toBeInTheDocument();
+    expect(await screen.findByText("Driver is not in the list?")).toBeInTheDocument();
     expect(
       screen.getByRole("button", {
         name: "Drag June Computer Use Driver to the open System Settings list",
       }),
     ).toBeInTheDocument();
     expect(screen.getByText(/Drag the helper below/)).toBeInTheDocument();
+  });
+
+  it("registers the permission owner represented by each drag card", async () => {
+    tauriMocks.computerUseStatus.mockResolvedValue(
+      status({ grantEnabled: true, state: "permission_missing" }),
+    );
+    const { unmount } = render(
+      <ComputerUseControl onOpenModels={vi.fn()} onOpenBilling={vi.fn()} />,
+    );
+
+    await screen.findByRole("button", {
+      name: "Drag June Computer Use Driver to the open System Settings list",
+    });
+    await waitFor(() =>
+      expect(tauriMocks.setComputerUsePermissionDragBounds).toHaveBeenCalledWith(
+        expect.objectContaining({ width: expect.any(Number), height: expect.any(Number) }),
+        "helper",
+      ),
+    );
+
+    unmount();
+    tauriMocks.setComputerUsePermissionDragBounds.mockClear();
+    tauriMocks.computerUseStatus.mockResolvedValue(
+      status({ grantEnabled: true, accessibility: true, state: "permission_missing" }),
+    );
+    render(<ComputerUseControl onOpenModels={vi.fn()} onOpenBilling={vi.fn()} />);
+
+    await screen.findByRole("button", {
+      name: "Drag June to the open System Settings list",
+    });
+    await waitFor(() =>
+      expect(tauriMocks.setComputerUsePermissionDragBounds).toHaveBeenCalledWith(
+        expect.objectContaining({ width: expect.any(Number), height: expect.any(Number) }),
+        "host",
+      ),
+    );
   });
 
   it("does not expose helper transport errors while permissions are incomplete", async () => {

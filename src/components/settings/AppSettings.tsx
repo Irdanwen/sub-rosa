@@ -29,9 +29,12 @@ import {
   setDictationMicrophone,
   setDictationShortcut,
   setImageSafeMode,
+  setLiveTranscription,
   setCostQuality,
   setVeniceApiKey,
   setVeniceModel,
+  connectorsApplyRuntime,
+  unpackBundledExtension,
 } from "../../lib/tauri";
 import { LANGUAGE_OPTIONS, languageLabel } from "../../lib/dictation-languages";
 import { autostartEnabled, autostartSupported, setAutostartEnabled } from "../../lib/autostart";
@@ -69,6 +72,7 @@ import { SegmentedControl } from "../ui/SegmentedControl";
 import { InlineNotice } from "../ui/InlineNotice";
 import { Switch } from "../ui/Switch";
 import { HoverTip } from "../ui/HoverTip";
+import { toast } from "../ui/Toaster";
 import { APP_COMMIT_HASH, APP_VERSION } from "../../app/build-info";
 import type { ReportCategory } from "../agent/composer/reportCategory";
 import { getStoredTheme, setStoredTheme, type ThemePreference } from "../../lib/theme";
@@ -118,6 +122,12 @@ import {
 } from "./ModelPickerPopover";
 import { DEFAULT_IMAGE_MODEL, imageModelCatalog } from "../../lib/image-models";
 import { IMAGE_GENERATION_ENABLED, VIDEO_GENERATION_ENABLED } from "../../lib/feature-flags";
+import {
+  INITIAL_EXPERIMENTAL_UNLOCK_CLICK_STATE,
+  registerExperimentalUnlockClick,
+  setExperimentalFlags,
+  useExperimentalFlags,
+} from "../../lib/experimental-flags";
 import { DEFAULT_VIDEO_MODEL, VIDEO_MODELS } from "../../lib/video-models";
 import { AgentSettingsSection } from "./AgentSettingsSection";
 import { ConnectorsSection } from "./ConnectorsSection";
@@ -138,6 +148,8 @@ import { SetupSnapshotSection } from "./SetupSnapshotSection";
 import { SkillBundlesSection } from "./SkillBundlesSection";
 import { SkillsHubSection } from "./SkillsHubSection";
 import { TeamTapsSection } from "./TeamTapsSection";
+import { SETTINGS_TABS, type SettingsTab } from "./settings-config";
+export { SETTINGS_TABS, type SettingsTab } from "./settings-config";
 import { ToolsetsSection } from "./ToolsetsSection";
 import { DictionarySettingsSection } from "./DictionarySettingsSection";
 import { MemorySettingsSection } from "./MemorySettingsSection";
@@ -297,6 +309,7 @@ const DEFAULT_PROVIDER_MODELS: ProviderModelSettingsDto = {
   // On by default, matching the Rust providers default.
   imageSafeMode: true,
   imageSafeModePromptDismissed: false,
+  liveTranscription: true,
 };
 
 type ProviderModelSettingsSnapshot = {
@@ -336,61 +349,6 @@ async function activeProfileTextModel(profileName: string): Promise<string | und
 }
 
 const MIC_TEST_DURATION_SECONDS = 5;
-
-export type SettingsTab =
-  | "general"
-  | "appearance"
-  | "billing"
-  | "shortcuts"
-  | "dictation"
-  | "audio"
-  | "models"
-  | "agent"
-  | "memory"
-  | "connectors"
-  | "skills"
-  | "external-dirs"
-  | "skill-review"
-  | "mcp"
-  | "mcp-catalog"
-  | "mcp-diagnostics"
-  | "mcp-security"
-  | "skills-hub"
-  | "taps"
-  | "toolsets"
-  | "bundles"
-  | "profile-builder"
-  | "integrations-health"
-  | "import-export"
-  | "about";
-
-export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
-  { id: "general", label: "General" },
-  { id: "appearance", label: "Appearance" },
-  { id: "billing", label: "Billing" },
-  { id: "shortcuts", label: "Shortcuts" },
-  { id: "dictation", label: "Dictation" },
-  { id: "audio", label: "Audio" },
-  { id: "models", label: "Models" },
-  { id: "agent", label: "Agent" },
-  { id: "memory", label: "Memory" },
-  { id: "connectors", label: "Plugins" },
-  { id: "skills", label: "Installed skills" },
-  { id: "external-dirs", label: "External skill directories" },
-  { id: "skill-review", label: "Pending skill changes" },
-  { id: "mcp", label: "MCP servers" },
-  { id: "mcp-catalog", label: "MCP catalog" },
-  { id: "mcp-diagnostics", label: "MCP diagnostics" },
-  { id: "mcp-security", label: "MCP security" },
-  { id: "skills-hub", label: "Skills hub" },
-  { id: "taps", label: "Team skill taps" },
-  { id: "toolsets", label: "Toolsets" },
-  { id: "bundles", label: "Bundles" },
-  { id: "profile-builder", label: "Profiles" },
-  { id: "integrations-health", label: "Integrations health" },
-  { id: "import-export", label: "Import / export" },
-  { id: "about", label: "About" },
-];
 
 /**
  * The shared settings page header (Codex-app style): a large serif page title
@@ -544,6 +502,19 @@ export function AppSettings({
   const fontScale = useFontScaleId();
   const [dateFormat, setDateFormat] = useState<DateFormatPreference>(() => getStoredDateFormat());
   const [releaseChannel, setReleaseChannelValue] = useState<ReleaseChannel>("stable");
+  const experimentalFlags = useExperimentalFlags();
+  const experimentalUnlockClicksRef = useRef({
+    ...INITIAL_EXPERIMENTAL_UNLOCK_CLICK_STATE,
+  });
+  const experimentalUnlockingRef = useRef(false);
+  const runtimeFlagBaselineCandidateRef = useRef<boolean | null>(null);
+  const runtimeFlagStatusLoadedRef = useRef(false);
+  const [runtimeBrowserUseBaseline, setRuntimeBrowserUseBaseline] = useState<boolean | null>(null);
+  const [agentRuntimeRunning, setAgentRuntimeRunning] = useState(false);
+  const [experimentalOperation, setExperimentalOperation] = useState<
+    "flags" | "restart" | "unpack"
+  >();
+  const [experimentalError, setExperimentalError] = useState<string>();
   // Set only when a leave-rc switch turns up an installable stable, so the
   // bespoke in-context confirm below the toggle can name the exact version.
   const [reconcileVersion, setReconcileVersion] = useState<string>();
@@ -561,7 +532,8 @@ export function AppSettings({
   // billing June credits (Auto never uses the key), so the save surfaces an
   // explicit billing choice: switch to a Venice model or knowingly keep Auto.
   const [veniceKeyAutoBillingChoiceOpen, setVeniceKeyAutoBillingChoiceOpen] = useState(false);
-  const [showMoreModelOptions, setShowMoreModelOptions] = useState(false);
+  const [showMoreVoiceOptions, setShowMoreVoiceOptions] = useState(false);
+  const [showMoreTextOptions, setShowMoreTextOptions] = useState(false);
   const [showMoreImageOptions, setShowMoreImageOptions] = useState(false);
   const [localModelSetupVisible, setLocalModelSetupVisible] = useState(false);
   const [localModelStatus, setLocalModelStatus] = useState<string>();
@@ -617,6 +589,28 @@ export function AppSettings({
     capabilities.platform === "windows"
       ? "Shortcut must include Ctrl, Alt, Shift, or Win."
       : MODIFIER_REQUIRED_MESSAGE;
+
+  useEffect(() => {
+    if (!experimentalFlags.loaded || runtimeFlagStatusLoadedRef.current) return;
+    runtimeFlagBaselineCandidateRef.current ??= experimentalFlags.browserUseEnabled;
+    let cancelled = false;
+    const baseline = runtimeFlagBaselineCandidateRef.current;
+    void hermesBridgeStatus()
+      .then((bridge) => {
+        if (cancelled) return;
+        runtimeFlagStatusLoadedRef.current = true;
+        setAgentRuntimeRunning(bridge.running);
+        setRuntimeBrowserUseBaseline(baseline);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        runtimeFlagStatusLoadedRef.current = true;
+        setRuntimeBrowserUseBaseline(baseline);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [experimentalFlags.loaded, experimentalFlags.browserUseEnabled]);
   const setActiveTab = (tab: SettingsTab) => {
     if (controlled) {
       onTabChange?.(tab);
@@ -1198,8 +1192,8 @@ export function AppSettings({
     setModelSearch("");
   }
 
-  // Optimistic apply + persisted save, shared by the Models row's segmented
-  // control and the model picker popover's Auto section.
+  // Optimistic apply + persisted save for the Models row's segmented Auto
+  // preference control.
   function applyCostQuality(costQuality: number) {
     setProviderSettings((current) => ({ ...current, costQuality }));
     saveCostQuality(costQuality);
@@ -1299,7 +1293,7 @@ export function AppSettings({
       setLocalModelSetupVisible(true);
       // The confirm affordance lives behind More options; reveal it so the
       // status message's instruction is reachable.
-      setShowMoreModelOptions(true);
+      setShowMoreTextOptions(true);
       setLocalModelStatus(
         "This endpoint is not on this machine. Requests will leave your device. Confirm in More options to enable it.",
       );
@@ -1398,6 +1392,20 @@ export function AppSettings({
       setVeniceApiKeyDraft("");
       setStatus("Venice API key removed.");
       dispatchProviderModelSettingsChanged({ mode: "generation", modelId: next.generationModel });
+    } catch (error) {
+      setStatus(messageFromError(error));
+    }
+  }
+
+  async function toggleLiveTranscription(enabled: boolean) {
+    try {
+      const next = await setLiveTranscription(enabled);
+      setProviderSettings(next);
+      setStatus(
+        enabled
+          ? "Live transcription on: the transcript streams while you record."
+          : "Live transcription off: the transcript appears after the recording ends.",
+      );
     } catch (error) {
       setStatus(messageFromError(error));
     }
@@ -1508,7 +1516,7 @@ export function AppSettings({
   // disable, is left as the user set it.
   useEffect(() => {
     if (localModelEnabled) {
-      setShowMoreModelOptions(true);
+      setShowMoreTextOptions(true);
       setLocalModelSetupVisible(true);
     }
   }, [localModelEnabled]);
@@ -1626,6 +1634,77 @@ export function AppSettings({
   function languagePopoverStyle(): CSSProperties {
     return selectPopoverStyle(languagePopoverPlacement, selectedLanguageIndex);
   }
+
+  function handleReleaseVersionClick() {
+    if (
+      !experimentalFlags.loaded ||
+      experimentalFlags.unlocked ||
+      experimentalUnlockingRef.current
+    ) {
+      return;
+    }
+    const next = registerExperimentalUnlockClick(experimentalUnlockClicksRef.current, Date.now());
+    experimentalUnlockClicksRef.current = next.state;
+    if (!next.unlocked) return;
+
+    experimentalUnlockingRef.current = true;
+    setExperimentalError(undefined);
+    void setExperimentalFlags({
+      unlocked: true,
+      browser_use: experimentalFlags.browser_use,
+    })
+      .then(() => toast("Experiments are unlocked"))
+      .catch((error) => setExperimentalError(messageFromError(error)))
+      .finally(() => {
+        experimentalUnlockingRef.current = false;
+      });
+  }
+
+  async function updateExperimentalFlags(update: { unlocked?: boolean; browser_use?: boolean }) {
+    setExperimentalOperation("flags");
+    setExperimentalError(undefined);
+    try {
+      await setExperimentalFlags({
+        unlocked: update.unlocked ?? experimentalFlags.unlocked,
+        browser_use: update.browser_use ?? experimentalFlags.browser_use,
+      });
+    } catch (error) {
+      setExperimentalError(messageFromError(error));
+    } finally {
+      setExperimentalOperation(undefined);
+    }
+  }
+
+  async function restartAgentForExperimentalFlags() {
+    setExperimentalOperation("restart");
+    setExperimentalError(undefined);
+    try {
+      await connectorsApplyRuntime();
+      setRuntimeBrowserUseBaseline(experimentalFlags.browserUseEnabled);
+      setAgentRuntimeRunning((await hermesBridgeStatus()).running);
+    } catch (error) {
+      setExperimentalError(messageFromError(error));
+    } finally {
+      setExperimentalOperation(undefined);
+    }
+  }
+
+  async function unpackExperimentalExtension() {
+    setExperimentalOperation("unpack");
+    setExperimentalError(undefined);
+    try {
+      await unpackBundledExtension();
+    } catch (error) {
+      setExperimentalError(messageFromError(error));
+    } finally {
+      setExperimentalOperation(undefined);
+    }
+  }
+
+  const experimentalRestartNeeded =
+    agentRuntimeRunning &&
+    runtimeBrowserUseBaseline !== null &&
+    runtimeBrowserUseBaseline !== experimentalFlags.browserUseEnabled;
 
   return skillDetailOpen && openSkill ? (
     // Notes-parity drill-in: the detail shell replaces the settings page
@@ -2084,15 +2163,18 @@ export function AppSettings({
           <>
             <SettingsPageHeader
               title="Models"
-              blurb="Choose the models June uses for transcription, notes, and agent responses."
+              blurb="Choose the models June uses for voice, text, image, and video."
             />
             <section
               className="settings-group settings-models-group"
-              aria-labelledby="models-heading"
+              aria-labelledby="voice-models-heading"
             >
-              <h2 id="models-heading" className="settings-group-heading">
-                AI models
+              <h2 id="voice-models-heading" className="settings-group-heading">
+                Voice
               </h2>
+              <p className="settings-group-description">
+                Choose the model June uses for note transcription and dictation.
+              </p>
               {showingActiveProfileModels ? (
                 <p className="settings-models-profile-note">
                   Showing models for the active profile: {activeProfileName}. Switch to the default
@@ -2103,6 +2185,7 @@ export function AppSettings({
                 <div className="settings-rows">
                   <ModelRow
                     mode="transcription"
+                    beforeDivider
                     title="Transcription"
                     description="Speech-to-text for note recordings and dictation."
                     value={modelValueForMode("transcription")}
@@ -2124,8 +2207,71 @@ export function AppSettings({
                     onSelect={(modelId) => selectModelFromPicker("transcription", modelId)}
                     readOnly={showingActiveProfileModels}
                   />
+                  <div className="settings-row-divider" aria-hidden />
+                  <button
+                    type="button"
+                    className="settings-more-options-trigger settings-more-options-row"
+                    aria-label="More options for voice"
+                    aria-expanded={showMoreVoiceOptions}
+                    aria-controls="voice-more-options-panel"
+                    onClick={() => setShowMoreVoiceOptions((open) => !open)}
+                  >
+                    <span className="settings-row-info">
+                      <span className="settings-row-title">More options</span>
+                      <span className="settings-row-description">Advanced voice settings</span>
+                    </span>
+                    <IconChevronDownSmall
+                      className="settings-more-options-chevron"
+                      size={14}
+                      aria-hidden
+                    />
+                  </button>
+                  {showMoreVoiceOptions ? (
+                    <div id="voice-more-options-panel" className="settings-more-options-panel">
+                      <div className="settings-row">
+                        <div className="settings-row-info">
+                          <h3 className="settings-row-title">Live transcription</h3>
+                          <p className="settings-row-description">
+                            Show a live transcript while you record. This transcribes audio twice,
+                            so it may use extra credits; turning it off shows the transcript only
+                            after the recording ends.
+                          </p>
+                        </div>
+                        <div className="settings-row-control">
+                          <Switch
+                            checked={providerSettings.liveTranscription}
+                            aria-label="Show a live transcript while recording"
+                            onCheckedChange={toggleLiveTranscription}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </section>
+
+            <section
+              className="settings-group settings-models-group"
+              aria-labelledby="text-models-heading"
+            >
+              <h2 id="text-models-heading" className="settings-group-heading">
+                Text
+              </h2>
+              <p className="settings-group-description">
+                Choose the model June uses for generated notes and agent responses.
+              </p>
+              {showingActiveProfileModels ? (
+                <p className="settings-models-profile-note">
+                  Showing models for the active profile: {activeProfileName}. Switch to the default
+                  profile to edit global models.
+                </p>
+              ) : null}
+              <div className="settings-card settings-models-card">
+                <div className="settings-rows">
                   <ModelRow
                     mode="generation"
+                    beforeDivider={providerSettings.generationModel !== "open-software/auto"}
                     title="Text"
                     description="Used for generated notes and agent responses."
                     value={modelValueForMode("generation")}
@@ -2153,7 +2299,7 @@ export function AppSettings({
                     readOnly={showingActiveProfileModels}
                   />
                   {providerSettings.generationModel === "open-software/auto" ? (
-                    <div className="settings-row">
+                    <div className="settings-row settings-row-before-divider">
                       <div className="settings-row-info">
                         <span className="settings-row-title">Auto preference</span>
                         <span className="settings-row-description">
@@ -2182,14 +2328,14 @@ export function AppSettings({
                   <button
                     type="button"
                     className="settings-more-options-trigger settings-more-options-row"
-                    aria-label="More options for AI models"
-                    aria-expanded={showMoreModelOptions}
-                    aria-controls="models-more-options-panel"
-                    onClick={() => setShowMoreModelOptions((open) => !open)}
+                    aria-label="More options for text"
+                    aria-expanded={showMoreTextOptions}
+                    aria-controls="text-more-options-panel"
+                    onClick={() => setShowMoreTextOptions((open) => !open)}
                   >
                     <span className="settings-row-info">
                       <span className="settings-row-title">More options</span>
-                      <span className="settings-row-description">Advanced model settings</span>
+                      <span className="settings-row-description">Advanced text settings</span>
                     </span>
                     <IconChevronDownSmall
                       className="settings-more-options-chevron"
@@ -2197,8 +2343,8 @@ export function AppSettings({
                       aria-hidden
                     />
                   </button>
-                  {showMoreModelOptions ? (
-                    <div id="models-more-options-panel" className="settings-more-options-panel">
+                  {showMoreTextOptions ? (
+                    <div id="text-more-options-panel" className="settings-more-options-panel">
                       <VeniceApiKeyRow
                         configured={providerSettings.veniceApiKeyConfigured}
                         value={veniceApiKeyDraft}
@@ -2386,6 +2532,7 @@ export function AppSettings({
                     {IMAGE_GENERATION_ENABLED ? (
                       <ModelRow
                         mode="image"
+                        beforeDivider={!VIDEO_GENERATION_ENABLED}
                         title="Image"
                         description="Used when you generate an image from chat."
                         value={modelValueForMode("image")}
@@ -2409,6 +2556,7 @@ export function AppSettings({
                     {VIDEO_GENERATION_ENABLED ? (
                       <ModelRow
                         mode="video"
+                        beforeDivider
                         title="Video"
                         description="Used when you generate a video from chat."
                         value={modelValueForMode("video")}
@@ -2545,7 +2693,13 @@ export function AppSettings({
                     <h3 className="settings-row-title settings-meta-label">Release version</h3>
                   </div>
                   <div className="settings-row-control">
-                    <span className="settings-meta-value">{APP_VERSION}</span>
+                    <button
+                      type="button"
+                      className="settings-meta-value settings-meta-unlock-trigger"
+                      onClick={handleReleaseVersionClick}
+                    >
+                      {APP_VERSION}
+                    </button>
                   </div>
                 </div>
 
@@ -2711,6 +2865,100 @@ export function AppSettings({
                 ) : null}
               </div>
             </div>
+
+            {experimentalFlags.unlocked ? (
+              <div className="settings-card experiments-card">
+                <div className="settings-rows">
+                  <div className="settings-row">
+                    <div className="settings-row-info">
+                      <h3 className="settings-row-title">Experiments</h3>
+                      <p className="settings-row-description">
+                        Runtime overrides for features that ship dark. They apply to this install
+                        only.
+                      </p>
+                    </div>
+                    <div className="settings-row-control">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={experimentalOperation !== undefined}
+                        onClick={() => void updateExperimentalFlags({ unlocked: false })}
+                      >
+                        Hide again
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="settings-row">
+                    <div className="settings-row-info">
+                      <h3 className="settings-row-title">Browser use</h3>
+                      <p className="settings-row-description">
+                        Enable Browser use on this install while the public feature remains off.
+                        Turning it off applies fully after June restarts.
+                      </p>
+                    </div>
+                    <div className="settings-row-control">
+                      <Switch
+                        checked={experimentalFlags.browser_use}
+                        disabled={experimentalOperation !== undefined}
+                        aria-label="Enable experimental Browser use"
+                        onCheckedChange={(browser_use) =>
+                          void updateExperimentalFlags({ browser_use })
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  {experimentalRestartNeeded ? (
+                    <div className="settings-row">
+                      <div className="settings-row-info">
+                        <h3 className="settings-row-title">Agent runtime</h3>
+                        <p className="settings-row-description">
+                          Restart the agent to apply the Browser use change.
+                        </p>
+                      </div>
+                      <div className="settings-row-control">
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          disabled={experimentalOperation === "restart"}
+                          onClick={() => void restartAgentForExperimentalFlags()}
+                        >
+                          {experimentalOperation === "restart" ? "Restarting..." : "Restart agent"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="settings-row">
+                    <div className="settings-row-info">
+                      <h3 className="settings-row-title">Browser extension (unpacked)</h3>
+                      <p className="settings-row-description">
+                        Open chrome://extensions, turn on Developer mode, choose Load unpacked, and
+                        select the revealed folder.
+                      </p>
+                    </div>
+                    <div className="settings-row-control">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={experimentalOperation === "unpack"}
+                        onClick={() => void unpackExperimentalExtension()}
+                      >
+                        {experimentalOperation === "unpack"
+                          ? "Unpacking..."
+                          : "Unpack and reveal folder"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {experimentalError ? (
+                  <p className="settings-row-error" role="alert">
+                    {experimentalError}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </section>
         ) : null}
       </div>
@@ -2983,6 +3231,7 @@ function numericPayload(value: unknown) {
 
 function ModelRow({
   mode,
+  beforeDivider = false,
   title,
   description,
   value,
@@ -3004,6 +3253,7 @@ function ModelRow({
   summarySuppressed,
 }: {
   mode: ProviderModelMode;
+  beforeDivider?: boolean;
   title: string;
   description: string;
   value: string;
@@ -3027,7 +3277,11 @@ function ModelRow({
   const model = selectedModel(options, value);
   const modelLabel = `${title.toLowerCase()} model`;
   return (
-    <div className="settings-row settings-model-row">
+    <div
+      className={`settings-row settings-model-row${
+        beforeDivider ? " settings-row-before-divider" : ""
+      }`}
+    >
       <div className="settings-row-info">
         <h3 className="settings-row-title">{title}</h3>
         <p className="settings-row-description">{description}</p>
@@ -3051,7 +3305,11 @@ function ModelRow({
             aria-expanded={readOnly ? false : open}
             disabled={readOnly}
           >
-            <span className="model-summary-logo" aria-hidden>
+            <span
+              className="model-summary-logo"
+              data-brand={model.id === AUTO_MODEL_ID ? "june" : undefined}
+              aria-hidden
+            >
               <ProviderLogo provider={model.provider} id={model.id} name={model.name} />
             </span>
             <span className="model-summary-name">{model.name}</span>
@@ -3070,12 +3328,17 @@ function ModelRow({
             popoverRef={popoverRef}
             searchRef={searchRef}
             className="settings-model-popover"
-            title={modelLabel[0].toUpperCase() + modelLabel.slice(1)}
+            title={
+              modelLabel === "text model"
+                ? undefined
+                : modelLabel[0].toUpperCase() + modelLabel.slice(1)
+            }
             ariaLabel={`Choose ${modelLabel}`}
             onFlyoutChange={onFlyoutChange}
             onSearchChange={onSearchChange}
             onSelect={onSelect}
             onCostQualityChange={onCostQualityChange}
+            showAutoPreference={false}
           />
         ) : null}
       </div>

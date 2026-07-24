@@ -101,14 +101,17 @@ describe("Computer use development restart", () => {
     expect(() => writeFileSync(path.join(releaseBundle, "still-present"), "test")).not.toThrow();
   });
 
-  it("registers the helper before resetting both grants for one worktree", () => {
+  it("registers the helper and resets each grant for its responsible app", () => {
     const run = vi.fn(() => ({ status: 0, stdout: "", stderr: "" }));
-    const bundleIdentifier = "co.opensoftware.june.computer-use-driver.dev.w123456789abc";
+    const helperBundleIdentifier = "co.opensoftware.june.computer-use-driver.dev.w123456789abc";
+    const appBundleIdentifier = "co.opensoftware.june.codex.jun278";
     const bundlePath = "/tmp/june-worktree/.tauri-helper/June Computer Use Driver.app";
 
-    expect(resetComputerUseDevGrants({ bundlePath, bundleIdentifier }, run)).toEqual([
-      "Accessibility",
-      "ScreenCapture",
+    expect(
+      resetComputerUseDevGrants({ bundlePath, helperBundleIdentifier, appBundleIdentifier }, run),
+    ).toEqual([
+      { service: "Accessibility", bundleIdentifier: helperBundleIdentifier, status: "reset" },
+      { service: "ScreenCapture", bundleIdentifier: appBundleIdentifier, status: "reset" },
     ]);
     expect(run.mock.calls).toEqual([
       [
@@ -116,8 +119,76 @@ describe("Computer use development restart", () => {
         ["-f", bundlePath],
         { encoding: "utf8" },
       ],
-      ["/usr/bin/tccutil", ["reset", "Accessibility", bundleIdentifier], { encoding: "utf8" }],
-      ["/usr/bin/tccutil", ["reset", "ScreenCapture", bundleIdentifier], { encoding: "utf8" }],
+      [
+        "/usr/bin/tccutil",
+        ["reset", "Accessibility", helperBundleIdentifier],
+        { encoding: "utf8" },
+      ],
+      ["/usr/bin/tccutil", ["reset", "ScreenCapture", appBundleIdentifier], { encoding: "utf8" }],
     ]);
+  });
+
+  it("defers ScreenCapture reset when the app bundle is not registered with LaunchServices", () => {
+    const helperOK = { status: 0, stdout: "", stderr: "" };
+    const screenCaptureMiss = {
+      status: 64,
+      stdout: "",
+      stderr:
+        'tccutil: No such bundle identifier "co.opensoftware.june": The operation couldn\u2019t be completed. (OSStatus error -10814.)\n',
+    };
+    const run = vi.fn((_bin, args) =>
+      args[0] === "reset" && args[1] === "ScreenCapture" ? screenCaptureMiss : helperOK,
+    );
+    const helperBundleIdentifier = "co.opensoftware.june.computer-use-driver.dev.w123456789abc";
+    const appBundleIdentifier = "co.opensoftware.june";
+    const bundlePath = "/tmp/june-worktree/.tauri-helper/June Computer Use Driver.app";
+
+    expect(
+      resetComputerUseDevGrants({ bundlePath, helperBundleIdentifier, appBundleIdentifier }, run),
+    ).toEqual([
+      { service: "Accessibility", bundleIdentifier: helperBundleIdentifier, status: "reset" },
+      { service: "ScreenCapture", bundleIdentifier: appBundleIdentifier, status: "deferred" },
+    ]);
+  });
+
+  it("throws when the Accessibility helper is not registered with LaunchServices", () => {
+    const helperMiss = {
+      status: 64,
+      stdout: "",
+      stderr:
+        'tccutil: No such bundle identifier "co.opensoftware.june.computer-use-driver.dev.w123456789abc": The operation couldn\u2019t be completed. (OSStatus error -10814.)\n',
+    };
+    const run = vi.fn((_bin, args) => (args[0] === "reset" ? helperMiss : { status: 0 }));
+    const helperBundleIdentifier = "co.opensoftware.june.computer-use-driver.dev.w123456789abc";
+    const appBundleIdentifier = "co.opensoftware.june";
+    const bundlePath = "/tmp/june-worktree/.tauri-helper/June Computer Use Driver.app";
+
+    expect(() =>
+      resetComputerUseDevGrants({ bundlePath, helperBundleIdentifier, appBundleIdentifier }, run),
+    ).toThrow(`Could not reset Accessibility for ${helperBundleIdentifier}`);
+    expect(run).not.toHaveBeenCalledWith(
+      "/usr/bin/tccutil",
+      ["reset", "ScreenCapture", appBundleIdentifier],
+      { encoding: "utf8" },
+    );
+  });
+
+  it("still throws on an unrelated tccutil failure", () => {
+    const helperOK = { status: 0, stdout: "", stderr: "" };
+    const unrelatedFailure = {
+      status: 1,
+      stdout: "",
+      stderr: "tccutil: unexpected error\n",
+    };
+    const run = vi.fn((_bin, args) =>
+      args[0] === "reset" && args[1] === "ScreenCapture" ? unrelatedFailure : helperOK,
+    );
+    const helperBundleIdentifier = "co.opensoftware.june.computer-use-driver.dev.w123456789abc";
+    const appBundleIdentifier = "co.opensoftware.june";
+    const bundlePath = "/tmp/june-worktree/.tauri-helper/June Computer Use Driver.app";
+
+    expect(() =>
+      resetComputerUseDevGrants({ bundlePath, helperBundleIdentifier, appBundleIdentifier }, run),
+    ).toThrow("Could not reset ScreenCapture for co.opensoftware.june: tccutil: unexpected error");
   });
 });

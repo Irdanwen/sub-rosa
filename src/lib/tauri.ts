@@ -113,6 +113,8 @@ export type TranscriptDto = {
 };
 
 export const LIVE_TRANSCRIPT_EVENT = "live-transcript-event";
+export const RECORDING_TELEMETRY_EVENT = "recording-telemetry";
+export const NOTE_PROCESSING_PROGRESS_EVENT = "note-processing-progress";
 export const NOTE_CALENDAR_CONTEXT_UPDATED_EVENT = "june://note-calendar-context-updated";
 
 export type LiveTranscriptEventDto = {
@@ -256,6 +258,10 @@ export type ProviderModelSettingsDto = {
   imageSafeMode: boolean;
   /** Whether the user chose "don't ask again" on the safe-mode consent dialog. */
   imageSafeModePromptDismissed: boolean;
+  /** Live transcript preview while recording. On by default; billed as extra
+   * usage and disclosed in Settings, so previews from this build are sent as
+   * consented (JUN-375). Off stops the preview lanes entirely. */
+  liveTranscription: boolean;
 };
 
 export type ProfileModelOverridesDto = {
@@ -374,6 +380,7 @@ export type SourceStatusDto = {
   state: SourceState;
   elapsedMs: number;
   bytesWritten: number;
+  droppedSamples?: number;
   level: AudioLevelDto;
   silenceWarning: boolean;
   pathFinalized: boolean;
@@ -398,6 +405,19 @@ export type RecordingStatusDto = {
   livePreviewEnabled?: boolean;
   sources?: SourceStatusDto[];
   warnings?: SourceWarningDto[];
+};
+
+export type RecordingSourceTelemetryDto = Pick<
+  SourceStatusDto,
+  "source" | "state" | "elapsedMs" | "level" | "silenceWarning"
+>;
+
+export type RecordingTelemetryDto = Pick<
+  RecordingStatusDto,
+  "sessionId" | "state" | "elapsedMs" | "level" | "silenceWarning"
+> & {
+  sources: RecordingSourceTelemetryDto[];
+  warnings: SourceWarningDto[];
 };
 
 export type RecordingPresenceBoundsDto = {
@@ -454,6 +474,21 @@ export type NoteDto = NoteListItemDto & {
   /** Recordings queued behind the one currently processing (0 when none). */
   queuedRecordings?: number;
 };
+
+export type NoteProcessingProgressDto = {
+  noteId: string;
+  recordingSessionId: string;
+  stage: "transcribing" | "generating" | "done";
+  processingStatus: ProcessingStatus;
+  revision: string;
+};
+
+export type NotePatchDto = Pick<
+  NoteDto,
+  "id" | "title" | "preview" | "editedContent" | "activeTab" | "updatedAt"
+>;
+
+export type NoteEditablePatch = Partial<Pick<NoteDto, "title" | "editedContent" | "activeTab">>;
 
 export type NoteCalendarEventDto = {
   eventId: string;
@@ -609,6 +644,12 @@ export type ImportedHermesFile = {
   previewDataUrl?: string | null;
 };
 
+export type PreparedHermesImageAttachment = {
+  path: string;
+  mimeType: string;
+  size: number;
+};
+
 export type HermesSkillInfo = {
   name: string;
   description?: string;
@@ -744,6 +785,7 @@ export type BootstrapResponse = {
   folders: FolderDto[];
   notes: NoteListItemDto[];
   activeRecoveries: RecoverableRecordingDto[];
+  activeRecording?: RecordingStatusDto;
   providerConfigured: boolean;
 };
 
@@ -1044,6 +1086,21 @@ export async function agentOpenReady() {
   return invoke<string | null>("agent_open_ready");
 }
 
+export type PendingMeetingStartRequest = {
+  requestId: string;
+  noteId: string;
+  requestedAtMs: number;
+  expired: boolean;
+};
+
+export async function pendingMeetingStartRequest() {
+  return invoke<PendingMeetingStartRequest | null>("pending_meeting_start_request");
+}
+
+export async function acknowledgeMeetingStartRequest(requestId: string) {
+  return invoke<boolean>("acknowledge_meeting_start_request", { requestId });
+}
+
 export async function createAgentTask(input: {
   prompt: string;
   title?: string;
@@ -1107,10 +1164,6 @@ export type JuneHomeChatOptions = {
   profile?: string;
   /** Bounded excerpts from older turns outside the verbatim recent window. */
   historyContext?: string;
-  /** June's tagged per-run model id captured at the Send boundary. */
-  model?: string;
-  /** OpenAI-compatible reasoning effort captured at the Send boundary. */
-  reasoningEffort?: string;
   /** Receives upstream model text as it arrives. */
   onDelta?: (content: string) => void;
 };
@@ -1129,8 +1182,6 @@ export async function juneHomeChat(
     request: {
       profile: options.profile,
       ...(options.historyContext ? { historyContext: options.historyContext } : {}),
-      model: options.model,
-      reasoningEffort: options.reasoningEffort,
       messages,
     },
     onEvent,
@@ -1345,9 +1396,21 @@ export async function hermesBridgeImageDataUrl(path: string) {
   });
 }
 
+export async function prepareHermesBridgeImageAttachment(sessionId: string, path: string) {
+  return invoke<PreparedHermesImageAttachment>("prepare_hermes_bridge_image_attachment", {
+    request: { sessionId, path },
+  });
+}
+
 /** Reveals an absolute path in the OS file manager (Finder on macOS). */
 export async function revealPath(path: string) {
   return invoke<void>("reveal_path", { path });
+}
+
+/** Refreshes the bundled load-unpacked Browser use extension in app data and
+ * reveals the destination in the platform file manager. */
+export async function unpackBundledExtension() {
+  return invoke<string>("unpack_bundled_extension");
 }
 
 // Null when the file can't be shown as text (too large or binary) — the
@@ -1750,8 +1813,8 @@ export async function openHermesTuiDebug(input: { sessionId: string; unrestricte
   return invoke<void>("open_hermes_tui_debug", { request: input });
 }
 
-export async function listNotes(folderId?: string, limit?: number) {
-  return invoke<ListNotesResponse>("list_notes", { request: { folderId, limit } });
+export async function listNotes(folderId?: string, limit?: number, cursor?: string) {
+  return invoke<ListNotesResponse>("list_notes", { request: { folderId, limit, cursor } });
 }
 
 export async function getNote(noteId: string) {
@@ -1781,6 +1844,18 @@ export async function updateNote(input: {
   return invoke<NoteDto>("update_note", { request: input });
 }
 
+export async function patchNote(noteId: string, patch: NoteEditablePatch) {
+  return invoke<NotePatchDto>("update_note", {
+    request: { noteId, ...patch, patchOnly: true },
+  });
+}
+
+export const NOTE_SAVE_FLUSH_REQUESTED_EVENT = "june://flush-pending-note-saves";
+
+export async function completeNoteSaveFlush(requestId: string) {
+  return invoke<boolean>("complete_note_save_flush", { request: { requestId } });
+}
+
 export async function checkRecordingSourceReadiness(sourceMode: RecordingSourceMode) {
   return invoke<RecordingSourceReadinessDto>("check_recording_source_readiness", {
     request: { sourceMode },
@@ -1799,6 +1874,26 @@ export async function startRecording(
 ) {
   return invoke<RecordingSessionDto>("start_recording", {
     request: { noteId, sourceMode },
+  });
+}
+
+export type MeetingStartRecordingOutcome =
+  | {
+      status: "started";
+      note: NoteDto;
+      recording: RecordingSessionDto;
+    }
+  | {
+      status: "failed";
+      error: { code: string; message: string };
+    };
+
+export async function startMeetingRecording(
+  requestId: string,
+  sourceMode: RecordingSourceMode = "microphoneOnly",
+) {
+  return invoke<MeetingStartRecordingOutcome>("start_meeting_recording", {
+    request: { requestId, sourceMode },
   });
 }
 
@@ -2084,6 +2179,14 @@ export async function setImageSafeMode(enabled: boolean) {
   });
 }
 
+// Toggles the live transcript preview while recording. On by default; billed
+// as extra usage when on, no preview audio leaves the device when off.
+export async function setLiveTranscription(enabled: boolean) {
+  return invoke<ProviderModelSettingsDto>("set_live_transcription", {
+    request: { enabled },
+  });
+}
+
 export async function setImageSafeModePromptDismissed(dismissed: boolean) {
   return invoke<ProviderModelSettingsDto>("set_image_safe_mode_prompt_dismissed", {
     request: { dismissed },
@@ -2299,23 +2402,58 @@ export async function routineBrowserAccessSet(input: { jobId: string; enabled: b
 // Private connectors (local mode): Google and Linear
 // ---------------------------------------------------------------------------
 
-/** Feature bundle wire names the connect flow requests. Mirrors the Rust
- * `ScopeBundle::name()` registry in src-tauri/src/connectors/scopes.rs. */
-export type ConnectorScopeBundle =
-  | "gmail_read"
-  | "gmail_draft"
-  | "gmail_modify"
-  | "gmail_send"
-  | "calendar_read"
-  | "calendar_events"
-  | "linear_read"
-  | "linear_write"
-  | "github_read"
-  | "github_write";
+/** Stable feature-bundle id supplied by the native connector policy. */
+export type ConnectorScopeBundle = string;
 
 export type ConnectorAccountStatus = "connected" | "reconnect_required" | "unavailable";
 
 export type ConnectorProvider = "google" | "linear" | "notion" | "github";
+
+export type ConnectorPolicyCatalog = {
+  version: number;
+  providers: Array<{
+    id: ConnectorProvider;
+    connectFlow: "oauth" | "hosted_mcp";
+    enabled: boolean;
+    defaultBundles: ConnectorScopeBundle[];
+  }>;
+  scopeBundles: Array<{
+    id: ConnectorScopeBundle;
+    provider: ConnectorProvider;
+    scopeIds: string[];
+  }>;
+  scopeImplications: Array<{
+    held: string;
+    grants: string[];
+  }>;
+  servers: Array<{
+    id: string;
+    provider: ConnectorProvider;
+    kind: "read" | "action";
+  }>;
+  serverOwnerPrefixes: Array<{
+    prefix: string;
+    provider: ConnectorProvider;
+  }>;
+  actionTools: Array<{
+    id: string;
+    server: string;
+    provider: ConnectorProvider;
+    grantable: boolean;
+  }>;
+  triggers: Array<{
+    id: ConnectorTriggerKind;
+    provider: ConnectorProvider;
+    requiredBundles: ConnectorScopeBundle[];
+  }>;
+  routine: {
+    sandboxedBaseToolsets: string[];
+    readToolsets: string[];
+    actionToolsets: string[];
+    autonomousServerPrefixes: string[];
+  };
+  earnedAutonomyMinApprovalRuns: number;
+};
 
 /** One Linear team: the granularity June's Linear read/write access is
  * scoped to. Returned both by the live team list and on the account once
@@ -2739,9 +2877,10 @@ export async function computerUseRequestPermissions() {
 
 export async function setComputerUsePermissionDragBounds(
   bounds: RecordingPresenceBoundsDto | null,
+  target?: "helper" | "host",
 ) {
   return invoke<void>("set_computer_use_permission_drag_bounds", {
-    request: { bounds },
+    request: { bounds, target: bounds ? target : undefined },
   });
 }
 

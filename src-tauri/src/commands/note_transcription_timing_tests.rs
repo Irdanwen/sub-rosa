@@ -7,7 +7,7 @@ use super::{
 use crate::{
     audio::capture::{FinishedRecording, FinishedSource},
     domain::{
-        processing::ProcessingTiming,
+        processing::{NoteProcessingProgressReporter, ProcessingTiming},
         types::{
             AudioLevelDto, ProcessingStatus, RecordingSessionDto, RecordingSource,
             RecordingSourceMode, RecordingState,
@@ -69,6 +69,7 @@ fn timing_finished_recording(
             source: RecordingSource::Microphone,
             final_path: path,
             elapsed_ms: 1_000,
+            dropped_samples: 0,
             capture_issue: None,
             failure: None,
         }],
@@ -128,6 +129,7 @@ async fn assert_done_origin_checkpoints_are_monotonic_and_single_shot() {
         timing_finished_recording(&note.id, &recording_session_id, audio_path),
         Instant::now(),
         timing,
+        NoteProcessingProgressReporter::default(),
     )
     .await
     .expect("finish timing recording");

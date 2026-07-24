@@ -63,6 +63,19 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           persist-credentials: true
 
+      - name: Warn when building rc away from main
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: |
+          set -euo pipefail
+          echo "::warning title=RC BUILD FROM NON-MAIN REF::Building an RC from $GITHUB_REF at $GITHUB_SHA. This is allowed for firefights, but stable promotion will require the source commit on main or an emergency override."
+          {
+            echo "### ⚠️ RC built from a non-main ref"
+            echo
+            echo "- Dispatched ref: \`$GITHUB_REF\`"
+            echo "- Source commit: \`$GITHUB_SHA\`"
+            echo "- This is allowed for firefights. Stable promotion requires this commit on \`main\` unless \`allow-non-main\` is enabled."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Setup pnpm
         uses: ./.github/actions/setup-pnpm
 
@@ -705,9 +718,17 @@ jobs:
           WORKLOAD_IDENTITY_PROVIDER: ${{ vars.CHROME_WEB_STORE_WORKLOAD_IDENTITY_PROVIDER }}
           SERVICE_ACCOUNT: ${{ vars.CHROME_WEB_STORE_SERVICE_ACCOUNT }}
           PUBLISHER_ID: ${{ vars.CHROME_WEB_STORE_PUBLISHER_ID }}
+          PENDING_REVIEW_HOLD: ${{ vars.CHROME_WEB_STORE_PENDING_REVIEW }}
         run: |
           set -euo pipefail
           configured=true
+          # Manual hold: while the store bootstrap item is in Chrome review,
+          # CHROME_WEB_STORE_PENDING_REVIEW keeps RCs desktop-only without
+          # removing the identity variables. Delete the variable to lift it.
+          if [ -n "${PENDING_REVIEW_HOLD:-}" ]; then
+            echo "::notice::CHROME_WEB_STORE_PENDING_REVIEW is set; extension store submission is on hold: ${PENDING_REVIEW_HOLD}"
+            configured=false
+          fi
           for name in WORKLOAD_IDENTITY_PROVIDER SERVICE_ACCOUNT PUBLISHER_ID; do
             if [ -z "${!name:-}" ]; then
               echo "::notice::CHROME_WEB_STORE ${name} is not configured; skipping extension store submission for this RC."

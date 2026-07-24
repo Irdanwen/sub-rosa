@@ -28,6 +28,29 @@ to "reconnect" existing clients.
 with `launchctl bootout gui/$UID/ai.hermes.gateway`. June re-registers it on
 next launch.
 
+**The pinned chat gateway has no application ping.** Its JSON-RPC registry
+does not expose ping, pong, or tick, and WKWebView's browser `WebSocket` cannot
+send protocol-level ping frames. June therefore treats the existing
+`session.active_list` cycle as its liveness signal. Three consecutive request
+timeouts force-disconnect all clients for that runtime mode so the ordinary
+close/reconnect recovery path runs. Do not add a second always-on heartbeat
+request. When no working session owns that cycle, a new submit sends one
+read-only `session.active_list` preflight with a three-second liveness
+deadline. Its timeout force-disconnects the mode and retries only the safe
+preflight once. The real submit requests keep their normal deadlines and are
+never transport-retried; this is submit-scoped recovery, not a second composer
+submission or a change to the heartbeat counters.
+
+**App teardown is ordered and bounded.** Ordinary quit enters the idempotent
+shutdown coordinator from `RunEvent::ExitRequested`; update relaunch enters the
+same coordinator from its command. Cleanup runs off the main event loop and
+Hermes keeps this order: latch and quiesce starts, unload the launchd Gateway
+while the provider proxy is alive, reap interactive runtime process groups,
+then stop the provider proxy. `RunEvent::Exit` performs no cleanup because work
+started there can be dropped before it runs. Every leaf has its own deadline,
+and a five-second aggregate deadline schedules the final exit or restart even
+if a leaf remains stuck.
+
 ## Config
 
 **`config.yaml` has two writers — June must merge, never overwrite.** June
@@ -115,7 +138,7 @@ falls back to the config's `oauth` marker and OAuth-shaped probe errors.
 ## Events
 
 **MCP approvals are identity-addressed, not FIFO.** The pinned runtime carries
-June's checksum-gated `june-approval-memory-v14` patch. MCP elicitation preserves the
+June's checksum-gated `june-approval-memory-v16` patch. MCP elicitation preserves the
 SDK request id and emits an opaque stable `request_id` on `approval.request`.
 While unanswered, the same logical request retried after an MCP transport
 reconnect joins the existing entry; separate requests on one transport remain
@@ -146,11 +169,14 @@ appending so a post-delta replay cannot duplicate it.
 ## Upstream (via june-api)
 
 **Hermes owns agent-chat retries.** June pins `agent.api_max_retries: 3` in
-the per-spawn config. In the pinned runtime that means three total provider
-attempts, with the runtime's jittered waits between them. The desktop forwards
-each attempt once, and June API makes one upstream call for each request. Do not
-add another retry at either layer without moving ownership deliberately: shipped
-clients would multiply the new retry count by Hermes' attempts.
+the per-spawn config. In the pinned Hermes runtime the provider loop is
+`while retry_count < max_retries` and only increments after a failed attempt, so
+`3` is three total provider attempts (with the runtime's jittered waits between
+them). Do not trust generic Hermes docs that count this as four attempts; match
+the pinned runtime loop. The desktop forwards each attempt once, and June API
+makes one upstream call for each request. Do not add another retry at either
+layer without moving ownership deliberately: shipped clients would multiply the
+new retry count by Hermes' attempts.
 
 **One bad tool schema can brick every chat request.** The AI upstream rejects a
 tool parameter schema carrying both `type` and a sibling `allOf` (valid JSON

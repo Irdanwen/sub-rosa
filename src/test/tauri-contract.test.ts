@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   checkRecordingSourceReadiness,
+  completeNoteSaveFlush,
   downloadNoteAudio,
   ensureHermesBridgeGateway,
   finishRecording,
   getNote,
   juneHomeChat,
   juneOpenCommunityPage,
+  patchNote,
   recoverRecording,
   retryProcessing,
   startRecording,
@@ -49,6 +51,26 @@ describe("Tauri command contracts", () => {
         editedContent: "Manual notes",
         activeTab: "transcription",
       },
+    });
+  });
+
+  it("opts autosave into the additive patch response and acknowledges shutdown flushes", async () => {
+    await patchNote("note-1", {
+      title: "Updated",
+      editedContent: "Manual notes",
+    });
+    await completeNoteSaveFlush("flush-1");
+
+    expect(mocks.invoke).toHaveBeenNthCalledWith(1, "update_note", {
+      request: {
+        noteId: "note-1",
+        title: "Updated",
+        editedContent: "Manual notes",
+        patchOnly: true,
+      },
+    });
+    expect(mocks.invoke).toHaveBeenNthCalledWith(2, "complete_note_save_flush", {
+      request: { requestId: "flush-1" },
     });
   });
 
@@ -126,8 +148,6 @@ describe("Tauri command contracts", () => {
       juneHomeChat([{ role: "user", content: "Hi" }], {
         profile: "work",
         historyContext: "User: We call this Project Nebula.",
-        model: "example-model",
-        reasoningEffort: "none",
         onDelta: (content) => deltas.push(content),
       }),
     ).resolves.toEqual({ content: "Hello there" });
@@ -137,8 +157,6 @@ describe("Tauri command contracts", () => {
       request: {
         profile: "work",
         historyContext: "User: We call this Project Nebula.",
-        model: "example-model",
-        reasoningEffort: "none",
         messages: [{ role: "user", content: "Hi" }],
       },
       onEvent: expect.anything(),

@@ -8,6 +8,7 @@ use crate::{
     },
 };
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use futures_core::Stream;
 use rand::{distributions::Alphanumeric, Rng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -17,16 +18,18 @@ use std::{
     io::{self, Read, Seek, SeekFrom, Write},
     net::TcpListener,
     path::{Component, Path, PathBuf},
+    pin::Pin,
     process::{Child, Command, ExitStatus, Stdio},
     sync::{
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         Arc, Mutex,
     },
+    task::{Context, Poll},
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::{
-    io::{AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
     sync::{oneshot, Notify},
 };
 
@@ -58,7 +61,7 @@ const HERMES_AGENT_INSTALL_COMMIT: &str = "3ef6bbd201263d354fd83ec55b3c306ded2eb
 /// audited `hermes_cli/gateway.py` source hash pins its Label/domain behavior;
 /// the live smoke also corroborates the CLI's reported plist basename.
 const HERMES_GATEWAY_LAUNCHD_LABEL: &str = "ai.hermes.gateway";
-const HERMES_RUNTIME_PATCH_SET: &str = "june-approval-memory-v14";
+const HERMES_RUNTIME_PATCH_SET: &str = "june-approval-memory-v16";
 const HERMES_RUNTIME_PATCHED_SOURCE_HASHES: &[(&str, &str)] = &[
     (
         "agent/agent_init.py",
@@ -74,7 +77,7 @@ const HERMES_RUNTIME_PATCHED_SOURCE_HASHES: &[(&str, &str)] = &[
     ),
     (
         "tui_gateway/server.py",
-        "750a80a72e7310295f7b9a32624be56fa348c49412442853f26813fb848e7367",
+        "a0d57103021a758507299b95d816038aea3bfc5b7d013a4032bfd4273aa0c33b",
     ),
     (
         "cron/scheduler.py",
@@ -119,6 +122,8 @@ const HERMES_IMAGE_PREVIEW_MAX_BYTES: u64 = 5 * 1024 * 1024;
 const HERMES_TEXT_PREVIEW_MAX_BYTES: u64 = 2 * 1024 * 1024;
 const HERMES_SKILL_MAX_BYTES: usize = 512 * 1024;
 const JUNE_PROVIDER_PROXY_MAX_HEADER_BYTES: usize = 32 * 1024;
+const JUNE_PROVIDER_PROXY_BODY_CHUNK_BYTES: usize = 64 * 1024;
+const JUNE_WORKSPACE_SESSION_ATTACHMENTS_DIR_NAME: &str = "session-attachments";
 // Must sit ABOVE june-api's aggregate request-string cap
 // (`MAX_AGENT_TOTAL_STRING_CHARS`, 6M chars) counted in BYTES, or this proxy
 // rejects an in-window upload before june-api's larger cap can allow it (JUN-169
@@ -240,16 +245,17 @@ const LEGACY_JUNE_BROWSER_MCP_GATEWAY_CONTEXT_ENV: &str = "JUNE_BROWSER_GATEWAY_
 // They call the loopback provider proxy's /v1/gmail*, /v1/gcal*, /v1/linear*
 // routes, which resolve the account's access token from the keychain and call
 // the provider directly. The MCP processes never see a token.
-const JUNE_GMAIL_MCP_SERVER_NAME: &str = "june_gmail";
+const JUNE_GMAIL_MCP_SERVER_NAME: &str = crate::connectors::policy::JUNE_GMAIL_SERVER;
 const JUNE_GMAIL_MCP_SCRIPT_NAME: &str = "june_gmail_mcp.py";
 const JUNE_GMAIL_MCP_SCRIPT: &str = include_str!("hermes/june_gmail_mcp.py");
-const JUNE_GMAIL_ACTIONS_MCP_SERVER_NAME: &str = "june_gmail_actions";
+const JUNE_GMAIL_ACTIONS_MCP_SERVER_NAME: &str =
+    crate::connectors::policy::JUNE_GMAIL_ACTIONS_SERVER;
 const JUNE_GMAIL_ACTIONS_MCP_SCRIPT_NAME: &str = "june_gmail_actions_mcp.py";
 const JUNE_GMAIL_ACTIONS_MCP_SCRIPT: &str = include_str!("hermes/june_gmail_actions_mcp.py");
-const JUNE_GCAL_MCP_SERVER_NAME: &str = "june_gcal";
+const JUNE_GCAL_MCP_SERVER_NAME: &str = crate::connectors::policy::JUNE_GCAL_SERVER;
 const JUNE_GCAL_MCP_SCRIPT_NAME: &str = "june_gcal_mcp.py";
 const JUNE_GCAL_MCP_SCRIPT: &str = include_str!("hermes/june_gcal_mcp.py");
-const JUNE_GCAL_ACTIONS_MCP_SERVER_NAME: &str = "june_gcal_actions";
+const JUNE_GCAL_ACTIONS_MCP_SERVER_NAME: &str = crate::connectors::policy::JUNE_GCAL_ACTIONS_SERVER;
 const JUNE_GCAL_ACTIONS_MCP_SCRIPT_NAME: &str = "june_gcal_actions_mcp.py";
 const JUNE_GCAL_ACTIONS_MCP_SCRIPT: &str = include_str!("hermes/june_gcal_actions_mcp.py");
 // The Linear servers. Registered only when a Linear workspace is connected
@@ -257,10 +263,11 @@ const JUNE_GCAL_ACTIONS_MCP_SCRIPT: &str = include_str!("hermes/june_gcal_action
 // enforcement boundary, so a server with an empty grant would have nothing
 // it may read or write. The actions server has NO earned-autonomy variant
 // (Linear autonomy is deferred), so every write always parks for approval.
-const JUNE_LINEAR_MCP_SERVER_NAME: &str = "june_linear";
+const JUNE_LINEAR_MCP_SERVER_NAME: &str = crate::connectors::policy::JUNE_LINEAR_SERVER;
 const JUNE_LINEAR_MCP_SCRIPT_NAME: &str = "june_linear_mcp.py";
 const JUNE_LINEAR_MCP_SCRIPT: &str = include_str!("hermes/june_linear_mcp.py");
-const JUNE_LINEAR_ACTIONS_MCP_SERVER_NAME: &str = "june_linear_actions";
+const JUNE_LINEAR_ACTIONS_MCP_SERVER_NAME: &str =
+    crate::connectors::policy::JUNE_LINEAR_ACTIONS_SERVER;
 const JUNE_LINEAR_ACTIONS_MCP_SCRIPT_NAME: &str = "june_linear_actions_mcp.py";
 const JUNE_LINEAR_ACTIONS_MCP_SCRIPT: &str = include_str!("hermes/june_linear_actions_mcp.py");
 // The GitHub servers (ADR-0036). Registered only when a GitHub account is
@@ -269,17 +276,19 @@ const JUNE_LINEAR_ACTIONS_MCP_SCRIPT: &str = include_str!("hermes/june_linear_ac
 // write tools. GitHub has NO earned-autonomy variant (ADR-0036 defers it),
 // so every write always parks for approval. The proxy also enforces the
 // write-marker at the route level as defence in depth.
-const JUNE_GITHUB_MCP_SERVER_NAME: &str = "june_github";
+const JUNE_GITHUB_MCP_SERVER_NAME: &str = crate::connectors::policy::JUNE_GITHUB_SERVER;
 const JUNE_GITHUB_MCP_SCRIPT_NAME: &str = "june_github_mcp.py";
 const JUNE_GITHUB_MCP_SCRIPT: &str = include_str!("hermes/june_github_mcp.py");
-const JUNE_GITHUB_ACTIONS_MCP_SERVER_NAME: &str = "june_github_actions";
+const JUNE_GITHUB_ACTIONS_MCP_SERVER_NAME: &str =
+    crate::connectors::policy::JUNE_GITHUB_ACTIONS_SERVER;
 const JUNE_GITHUB_ACTIONS_MCP_SCRIPT_NAME: &str = "june_github_actions_mcp.py";
 const JUNE_GITHUB_ACTIONS_MCP_SCRIPT: &str = include_str!("hermes/june_github_actions_mcp.py");
 /// Loopback proxy token env var shared by all connector MCP servers; the
-const JUNE_NOTION_MCP_SERVER_NAME: &str = "june_notion";
+const JUNE_NOTION_MCP_SERVER_NAME: &str = crate::connectors::policy::JUNE_NOTION_SERVER;
 const JUNE_NOTION_MCP_SCRIPT_NAME: &str = "june_notion_mcp.py";
 const JUNE_NOTION_MCP_SCRIPT: &str = include_str!("hermes/june_notion_mcp.py");
-const JUNE_NOTION_ACTIONS_MCP_SERVER_NAME: &str = "june_notion_actions";
+const JUNE_NOTION_ACTIONS_MCP_SERVER_NAME: &str =
+    crate::connectors::policy::JUNE_NOTION_ACTIONS_SERVER;
 const JUNE_NOTION_ACTIONS_MCP_SCRIPT_NAME: &str = "june_notion_actions_mcp.py";
 const JUNE_NOTION_ACTIONS_MCP_SCRIPT: &str = include_str!("hermes/june_notion_actions_mcp.py");
 /// Loopback proxy token env var shared by the connector MCP servers; the
@@ -294,6 +303,23 @@ const JUNE_CONNECTOR_MCP_ACCOUNT_ENV: &str = "JUNE_CONNECTOR_ACCOUNT";
 /// its proxy calls skip the approval park. Only the auto servers carry it; the
 /// base action servers do not, so their calls always park (approval mode).
 const JUNE_CONNECTOR_MCP_GRANT_ENV: &str = "JUNE_CONNECTOR_GRANT";
+
+/// Writes an app-owned runtime asset only when its exact bytes changed.
+///
+/// Byte equality is intentional: these files are generated from compile-time
+/// assets, so there is no semantic merge to preserve. Keeping the comparison
+/// here makes every caller share the same missing/read-error behavior and lets
+/// tests assert that an unchanged startup performs zero writes.
+fn write_file_if_changed(path: &Path, contents: &[u8]) -> io::Result<bool> {
+    match fs::read(path) {
+        Ok(existing) if existing == contents => return Ok(false),
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    fs::write(path, contents)?;
+    Ok(true)
+}
 /// Hermes-side per-tool timeout for the connector action servers. Longer than
 /// the read servers because a mutating call can park on the user's approval
 /// (see connectors::approvals, 600s window).
@@ -1299,6 +1325,24 @@ pub struct ImportHermesFileRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PrepareHermesImageAttachmentRequest {
+    /// The live runtime session that will receive the image. Its digest scopes
+    /// the native snapshot directory without trusting the id as a path.
+    pub session_id: String,
+    /// A June workspace/generated-image reference, never an arbitrary host path.
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreparedHermesImageAttachment {
+    pub path: String,
+    pub mime_type: String,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ImportedHermesFile {
     pub name: String,
     pub path: String,
@@ -1474,6 +1518,15 @@ pub fn start_on_app_start(app: &tauri::App) {
                     "failed to start Hermes messaging gateway during app startup: {}",
                     error.message
                 );
+                // Bridge is up, but reconciliation failed. An inherited LaunchAgent
+                // may still be pointed at the previous process's dead proxy port.
+                // Disable it rather than leaving scheduled routines failing silently.
+                disable_inherited_gateway_after_failed_app_start(
+                    &app,
+                    &bridge,
+                    "gateway reconciliation failed",
+                )
+                .await;
             }
         }
     });
@@ -1686,106 +1739,144 @@ async fn start_hermes_bridge_inner(
         .unwrap_or(default_cwd);
     let cwd_display = Some(cwd.to_string_lossy().into_owned());
     let provider_proxy = ensure_provider_proxy(app, bridge, &hermes_home).await?;
-    let june_context_mcp = sync_june_context_mcp(app, &command)?;
-    let june_home_mcp = sync_june_home_mcp(app, &command)?;
-    let june_web_mcp = sync_june_web_mcp(app, &command)?;
-    let june_obsidian_mcp = sync_june_obsidian_mcp(app, &command)?;
-    let june_image_mcp = sync_june_image_mcp(app, &hermes_home, &command)?;
     let video_generation_enabled = crate::feature_flags::VIDEO_GENERATION_ENABLED;
-    let june_video_mcp = if video_generation_enabled {
-        Some(sync_june_video_mcp(app, &hermes_home, &command)?)
-    } else {
-        None
+    let static_mcps = {
+        let app = app.clone();
+        let hermes_home = hermes_home.clone();
+        let command = command.clone();
+        tokio::task::spawn_blocking(move || {
+            sync_june_static_mcps(&app, &hermes_home, &command, video_generation_enabled)
+        })
+        .await
+        .map_err(|error| AppError::new("hermes_bridge_start_failed", error.to_string()))??
     };
-    let june_recorder_mcp = sync_june_recorder_mcp(app, &command)?;
-    // Read the Browser access grant fresh for the rendered `june_browser`
-    // `enabled` leaf. Broker authorization does not use this spawn snapshot: it
-    // re-reads the persisted flag for every `/v1/browser/*` request.
+    let JuneStaticMcpConfigs {
+        context: june_context_mcp,
+        home: june_home_mcp,
+        web: june_web_mcp,
+        obsidian: june_obsidian_mcp,
+        image: june_image_mcp,
+        video: june_video_mcp,
+        recorder: june_recorder_mcp,
+    } = static_mcps;
+    // These readiness paths are independent and used to run serially on the
+    // first Hermes launch. Start them together so Browser setup and connector
+    // discovery overlap the Computer use permission probe and driver prewarm.
+    // Each still owns the same grant/config boundary it had before this join.
     let browser_access = browser_access_enabled(app);
-    let june_browser_mcp = sync_june_browser_mcp(app, &command, browser_access).await?;
+    let (june_browser_mcp, (supports_vision, computer_use_ready), june_connector_mcp) = tokio::join!(
+        sync_june_browser_mcp(app, &command, browser_access),
+        async {
+            // Resolved from the live catalog so Hermes' vision tools attach
+            // an image straight to a vision-capable model's context instead
+            // of falling back to the unconfigured auxiliary vision LLM.
+            let supports_vision = crate::providers::generation_model_supports_vision().await;
+            let computer_use_ready = crate::computer_use::runtime_ready(app, supports_vision).await;
+            (supports_vision, computer_use_ready)
+        },
+        sync_june_connector_mcps(app, &command),
+    );
+    let june_browser_mcp = june_browser_mcp?;
+    let june_connector_mcp = june_connector_mcp?;
     bridge
         .browser_broker
         .replace_routine_grants(june_browser_mcp.routine_grants.clone());
-    // Resolved from the live catalog so Hermes' vision tools attach an image
-    // straight to a vision-capable model's context instead of falling back to
-    // the (unconfigured) auxiliary vision LLM. `provider: custom` hides the
-    // capability from Hermes, so June has to declare it via config.
-    let supports_vision = crate::providers::generation_model_supports_vision().await;
-    let computer_use_ready = crate::computer_use::runtime_ready(app, supports_vision).await;
-    let june_computer_use_mcp = sync_june_computer_use_mcp(app, &command, computer_use_ready)?;
+    let june_computer_use_mcp = {
+        let app = app.clone();
+        let command = command.clone();
+        tokio::task::spawn_blocking(move || {
+            sync_june_computer_use_mcp(&app, &command, computer_use_ready)
+        })
+        .await
+        .map_err(|error| AppError::new("hermes_bridge_start_failed", error.to_string()))??
+    };
     // The private-connector MCP servers are registered only when there is
     // something for them to serve: Gmail and Calendar need a connected Google
     // account (v1: the first connected account); Linear reads need a connected
     // workspace with selected teams and actions also need write scope; Notion
     // reads and actions need a connected hosted MCP account.
-    let june_connector_mcp = sync_june_connector_mcps(app, &command).await?;
     // The soul describes connector toolsets only when an interactive server
     // is registered. Notion's servers are interactive even without a Google
     // or Linear base config.
     let connectors_registered = june_connector_mcp
         .as_ref()
         .is_some_and(ConnectorMcpConfigs::has_interactive_servers);
-    sync_hermes_config(
-        app,
-        &hermes_home,
-        provider_proxy.port,
-        &provider_proxy.token,
-        &provider_proxy.memory_token,
-        &provider_proxy.recorder_token,
-        &provider_proxy.routine_browser_token,
-        &provider_proxy.connector_token,
-        &provider_proxy.computer_use_token,
-        &provider_proxy.obsidian_token,
-        supports_vision,
-        &june_context_mcp,
-        &june_home_mcp,
-        &june_web_mcp,
-        &june_obsidian_mcp,
-        &june_image_mcp,
-        june_video_mcp.as_ref(),
-        &june_recorder_mcp,
-        &june_browser_mcp,
-        &june_computer_use_mcp,
-        june_connector_mcp.as_ref(),
-    )?;
+    let agent_cli_access = agent_cli_access_enabled(app);
+    let browser_use_enabled = crate::experimental_settings::browser_use_enabled(app);
+    let (sandbox_profile, sandbox_available) = {
+        let app = app.clone();
+        let hermes_home = hermes_home.clone();
+        let provider_proxy_port = provider_proxy.port;
+        let provider_proxy_token = provider_proxy.token.clone();
+        let memory_proxy_token = provider_proxy.memory_token.clone();
+        let recorder_proxy_token = provider_proxy.recorder_token.clone();
+        let routine_browser_proxy_token = provider_proxy.routine_browser_token.clone();
+        let connector_proxy_token = provider_proxy.connector_token.clone();
+        let computer_use_proxy_token = provider_proxy.computer_use_token.clone();
+        let obsidian_proxy_token = provider_proxy.obsidian_token.clone();
+        tokio::task::spawn_blocking(move || {
+            sync_hermes_config(
+                &app,
+                &hermes_home,
+                provider_proxy_port,
+                &provider_proxy_token,
+                &memory_proxy_token,
+                &recorder_proxy_token,
+                &routine_browser_proxy_token,
+                &connector_proxy_token,
+                &computer_use_proxy_token,
+                &obsidian_proxy_token,
+                supports_vision,
+                &june_context_mcp,
+                &june_home_mcp,
+                &june_web_mcp,
+                &june_obsidian_mcp,
+                &june_image_mcp,
+                june_video_mcp.as_ref(),
+                &june_recorder_mcp,
+                &june_browser_mcp,
+                &june_computer_use_mcp,
+                june_connector_mcp.as_ref(),
+            )?;
+
+            // Wrap the spawn in a macOS Seatbelt write-jail when possible. The
+            // model and every subprocess inherit it. Resolve it before SOUL so
+            // June's self-knowledge matches the protection actually available.
+            let sandbox_profile = if full_mode {
+                None
+            } else {
+                prepare_sandbox(&app, &hermes_home, agent_cli_access)
+            };
+            let sandboxed = sandbox_profile.is_some();
+            // SOUL.md is shared by both runtime modes, so it describes the
+            // per-session mode split rather than only the process being built.
+            let sandbox_available = if full_mode {
+                sandbox_would_engage(&app, &hermes_home)
+            } else {
+                sandboxed
+            };
+            sync_june_soul(
+                &hermes_home,
+                sandbox_available,
+                agent_cli_access,
+                // None (feature-flagged out) renders no Browser use section.
+                browser_use_enabled.then_some(browser_access),
+                june_memory_enabled(&june_context_mcp.memory_settings_path),
+                video_generation_enabled,
+                connectors_registered,
+            )?;
+            Ok::<_, AppError>((sandbox_profile, sandbox_available))
+        })
+        .await
+        .map_err(|error| AppError::new("hermes_bridge_start_failed", error.to_string()))??
+    };
     refresh_june_routed_session_model_routes(
         &hermes_home,
         provider_proxy.port,
         &provider_proxy.token,
     )
     .await?;
-
-    // Wrap the spawn in a macOS Seatbelt write-jail when possible. The model,
-    // its tool calls, and any subprocess it forks all inherit the profile, so
-    // destructive writes (rm -rf of user dirs, dotfile rewrites, TCC db edits)
-    // are denied by the kernel rather than by Hermes' own pattern checks.
-    // Resolved before the soul write so June's self-knowledge about the jail
-    // matches what sandboxed spawns actually enforce.
-    let agent_cli_access = agent_cli_access_enabled(app);
-    let sandbox_profile = if full_mode {
-        None
-    } else {
-        prepare_sandbox(app, &hermes_home, agent_cli_access)
-    };
     let sandboxed = sandbox_profile.is_some();
-    // SOUL.md is shared by both processes (single home), so its sandbox
-    // section describes the per-session mode split rather than this spawn.
-    let sandbox_available = if full_mode {
-        sandbox_would_engage(app, &hermes_home)
-    } else {
-        sandboxed
-    };
-    sync_june_soul(
-        &hermes_home,
-        sandbox_available,
-        agent_cli_access,
-        // None (feature-flagged out) renders no browser SOUL section at all;
-        // the grant only matters once the feature exists in this build.
-        crate::feature_flags::BROWSER_USE_ENABLED.then_some(browser_access),
-        june_memory_enabled(&june_context_mcp.memory_settings_path),
-        video_generation_enabled,
-        connectors_registered,
-    )?;
     if sandboxed {
         eprintln!("Spawning Hermes under the macOS Seatbelt write-jail.");
     } else if full_mode {
@@ -2306,6 +2397,16 @@ struct JuneVideoMcpConfig {
 struct JuneRecorderMcpConfig {
     command: String,
     script_path: PathBuf,
+}
+
+struct JuneStaticMcpConfigs {
+    context: JuneContextMcpConfig,
+    home: JuneHomeMcpConfig,
+    web: JuneWebMcpConfig,
+    obsidian: JuneObsidianMcpConfig,
+    image: JuneImageMcpConfig,
+    video: Option<JuneVideoMcpConfig>,
+    recorder: JuneRecorderMcpConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -3837,7 +3938,7 @@ pub async fn set_hermes_browser_access(
     bridge: State<'_, HermesBridge>,
     request: SetBrowserAccessRequest,
 ) -> Result<BrowserAccessStatus, AppError> {
-    if request.enabled && !crate::feature_flags::BROWSER_USE_ENABLED {
+    if request.enabled && !crate::experimental_settings::browser_use_enabled(&app) {
         return Err(AppError::new(
             "browser_use_disabled",
             "Browser use is not available in this build.",
@@ -3935,7 +4036,7 @@ pub async fn routine_browser_access_set(
     let repos = crate::commands::repositories(&app).await?;
     let previous = repos.routine_browser_grant(job_id).await?;
     if request.enabled {
-        if !crate::feature_flags::BROWSER_USE_ENABLED {
+        if !crate::experimental_settings::browser_use_enabled(&app) {
             return Err(AppError::new(
                 "browser_use_disabled",
                 "Browser use is not available in this build.",
@@ -4645,6 +4746,22 @@ pub async fn hermes_bridge_image_data_url(
     image_source_data_url(&requested)
 }
 
+/// Validates a June-owned image reference and snapshots it into a directory
+/// scoped to the live runtime session. The frontend passes only the returned
+/// native path to Hermes' `image.attach`; image bytes never enter Tauri IPC or
+/// the WebSocket. The legacy data-url command remains available for callers
+/// that genuinely need the remote-client `image.attach_bytes` contract.
+#[tauri::command]
+pub async fn prepare_hermes_bridge_image_attachment(
+    app: AppHandle,
+    request: PrepareHermesImageAttachmentRequest,
+) -> Result<PreparedHermesImageAttachment, AppError> {
+    let hermes_home = resolve_june_hermes_home(&app)?;
+    tokio::task::spawn_blocking(move || prepare_hermes_image_attachment(&hermes_home, &request))
+        .await
+        .map_err(|error| AppError::new("hermes_image_attach_failed", error.to_string()))?
+}
+
 #[tauri::command]
 pub async fn hermes_bridge_file_text(
     app: AppHandle,
@@ -4797,22 +4914,12 @@ fn validate_hermes_file_path(app: &AppHandle, path: &str) -> Result<PathBuf, App
             "This June file is hidden or sensitive.",
         ));
     }
-    let allowed_roots = filesystem_roots(&hermes_home)?
-        .into_iter()
-        .filter_map(|root| root.path.canonicalize().ok())
-        .collect::<Vec<_>>();
-    let mut extended_allowed_roots = allowed_roots.clone();
     // "image_cache" is where the Hermes runtime copies tool-result images;
     // assistant MEDIA: references point at those copies, so dropping it breaks
     // inline rendering and download of every tool-generated image. Add both
     // video dirs now; QA must confirm the exact runtime cache dir for inline
     // generated-video rendering once the frontend/MCP chunks land.
-    extended_allowed_roots.extend(
-        GENERATED_IMAGE_ROOTS
-            .into_iter()
-            .chain(GENERATED_VIDEO_ROOTS)
-            .filter_map(|relative| hermes_home.join(relative).canonicalize().ok()),
-    );
+    let extended_allowed_roots = hermes_file_allowed_roots(&hermes_home)?;
     let allowed = extended_allowed_roots
         .iter()
         .any(|root| requested.starts_with(root));
@@ -4830,6 +4937,174 @@ fn validate_hermes_file_path(app: &AppHandle, path: &str) -> Result<PathBuf, App
     }
     tracing::info!(requested_path = %path, resolved_path = %requested.display(), "validate_hermes_file_path accepted path");
     Ok(requested)
+}
+
+fn prepare_hermes_image_attachment(
+    hermes_home: &Path,
+    request: &PrepareHermesImageAttachmentRequest,
+) -> Result<PreparedHermesImageAttachment, AppError> {
+    let session_id = request.session_id.trim();
+    if session_id.is_empty() {
+        return Err(AppError::new(
+            "hermes_image_attach_failed",
+            "A runtime session id is required to attach an image.",
+        ));
+    }
+
+    let candidate = resolve_hermes_file_candidate(hermes_home, &request.path);
+    let link_metadata = fs::symlink_metadata(&candidate)
+        .map_err(|error| AppError::new("hermes_image_attach_failed", error.to_string()))?;
+    if link_metadata.file_type().is_symlink() {
+        return Err(AppError::new(
+            "hermes_image_attach_denied",
+            "Symbolic links cannot be attached as images.",
+        ));
+    }
+    let source_path = candidate
+        .canonicalize()
+        .map_err(|error| AppError::new("hermes_image_attach_failed", error.to_string()))?;
+    if is_hidden_secret_path(&source_path) {
+        return Err(AppError::new(
+            "hermes_image_attach_denied",
+            "Hidden or sensitive files cannot be attached.",
+        ));
+    }
+    let allowed = hermes_image_attachment_allowed_roots(hermes_home)
+        .iter()
+        .any(|root| source_path.starts_with(root));
+    if !allowed {
+        return Err(AppError::new(
+            "hermes_image_attach_denied",
+            "Only images in June's workspace or generated-image directories can be attached.",
+        ));
+    }
+    let mime_type = image_mime_type(&source_path).ok_or_else(|| {
+        AppError::new(
+            "hermes_image_attach_denied",
+            "This file type cannot be attached as an image.",
+        )
+    })?;
+    let mut source = open_image_attachment_source(&source_path)
+        .map_err(|error| AppError::new("hermes_image_attach_failed", error.to_string()))?;
+    let metadata = source
+        .metadata()
+        .map_err(|error| AppError::new("hermes_image_attach_failed", error.to_string()))?;
+    if !metadata.is_file() {
+        return Err(AppError::new(
+            "hermes_image_attach_denied",
+            "Only image files can be attached.",
+        ));
+    }
+    if metadata.len() > HERMES_IMPORT_MAX_BYTES {
+        return Err(AppError::new(
+            "hermes_image_attach_denied",
+            "Image files must be 50 MB or smaller.",
+        ));
+    }
+
+    // Never interpolate the runtime session id into a path. A stable digest
+    // provides the per-session namespace while treating the wire id as opaque.
+    let session_dir = hermes_home
+        .join("workspace")
+        .join(JUNE_WORKSPACE_SESSION_ATTACHMENTS_DIR_NAME)
+        .join(hex_encode(&sha256_bytes(session_id.as_bytes())));
+    fs::create_dir_all(&session_dir)
+        .map_err(|error| AppError::new("hermes_image_attach_failed", error.to_string()))?;
+    let destination = unique_upload_path(&session_dir, &source_path)
+        .map_err(|error| AppError::new("hermes_image_attach_failed", error.message))?;
+    snapshot_image_source(&mut source, &source_path, &destination)
+        .map_err(|error| AppError::new("hermes_image_attach_failed", error.to_string()))?;
+
+    Ok(PreparedHermesImageAttachment {
+        path: destination.to_string_lossy().into_owned(),
+        mime_type: mime_type.to_string(),
+        size: metadata.len(),
+    })
+}
+
+fn hermes_file_allowed_roots(hermes_home: &Path) -> Result<Vec<PathBuf>, AppError> {
+    let mut roots = filesystem_roots(hermes_home)?
+        .into_iter()
+        .filter_map(|root| root.path.canonicalize().ok())
+        .collect::<Vec<_>>();
+    roots.extend(
+        GENERATED_IMAGE_ROOTS
+            .into_iter()
+            .chain(GENERATED_VIDEO_ROOTS)
+            .filter_map(|relative| hermes_home.join(relative).canonicalize().ok()),
+    );
+    Ok(roots)
+}
+
+fn hermes_image_attachment_allowed_roots(hermes_home: &Path) -> Vec<PathBuf> {
+    std::iter::once(hermes_home.join("workspace"))
+        .chain(
+            GENERATED_IMAGE_ROOTS
+                .into_iter()
+                .map(|relative| hermes_home.join(relative)),
+        )
+        .filter_map(|root| root.canonicalize().ok())
+        .collect()
+}
+
+#[cfg(unix)]
+fn open_image_attachment_source(path: &Path) -> io::Result<fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn open_image_attachment_source(path: &Path) -> io::Result<fs::File> {
+    fs::File::open(path)
+}
+
+fn snapshot_image_source(
+    source: &mut fs::File,
+    source_path: &Path,
+    destination: &Path,
+) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        // June-owned attach sources are unique-named and effectively immutable; later mutation would also change the shared inode.
+        if fs::hard_link(source_path, destination).is_ok() {
+            let source_metadata = source.metadata()?;
+            let destination_metadata = fs::metadata(destination)?;
+            if source_metadata.dev() == destination_metadata.dev()
+                && source_metadata.ino() == destination_metadata.ino()
+            {
+                return Ok(());
+            }
+            // The source path changed between validation and link creation.
+            // Drop the wrong snapshot and copy from the retained validated
+            // handle, mirroring note_audio_export's validate-to-read discipline.
+            fs::remove_file(destination)?;
+        }
+    }
+
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    // Do not clean up an AlreadyExists failure: another writer owns that path.
+    let mut output = options.open(destination)?;
+    let write_result = (|| -> io::Result<()> {
+        io::copy(source, &mut output)?;
+        output.flush()?;
+        output.sync_all()
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(destination);
+    }
+    write_result
 }
 
 fn validate_dropped_file_path(path: &str) -> Result<PathBuf, AppError> {
@@ -5011,7 +5286,7 @@ fn hermes_file_mime_type(path: &Path) -> Option<&'static str> {
     image_mime_type(path).or_else(|| video_mime_type(path))
 }
 
-pub async fn shutdown(app: &tauri::AppHandle) {
+pub(crate) async fn shutdown(app: &tauri::AppHandle, deadline: crate::shutdown::ShutdownDeadline) {
     let bridge = app.state::<HermesBridge>();
     // Latch teardown *before* draining so an in-flight `start_hermes_bridge_inner`
     // cannot register a runtime after the drain and re-orphan the tree we are
@@ -5042,13 +5317,19 @@ pub async fn shutdown(app: &tauri::AppHandle) {
         ),
     }
 
-    bridge.browser_broker.terminate_sessions();
-    let _ = stop_hermes_bridge_inner(&bridge);
-    let proxy = bridge
-        .provider_proxy
-        .lock()
-        .ok()
-        .and_then(|mut guard| guard.take());
+    bridge.browser_broker.terminate_sessions(deadline);
+    stop_hermes_bridge_for_shutdown(&bridge);
+    let proxy = match crate::shutdown::try_lock_for(&bridge.provider_proxy, SHUTDOWN_MUTEX_TIMEOUT)
+    {
+        Some(mut guard) => guard.take(),
+        None => {
+            tracing::warn!(
+                timeout_ms = SHUTDOWN_MUTEX_TIMEOUT.as_millis(),
+                "timed out acquiring the provider proxy lock during app shutdown"
+            );
+            None
+        }
+    };
     if let Some(mut proxy) = proxy {
         if let Some(shutdown) = proxy.shutdown.take() {
             let _ = shutdown.send(());
@@ -5081,16 +5362,7 @@ async fn shutdown_hermes_gateway(
             None
         }
     };
-    let gateway_connection = bridge
-        .routine_gateway_connection
-        .lock()
-        .ok()
-        .and_then(|mut connection| connection.take())
-        .or_else(|| {
-            live_connections(bridge)
-                .ok()
-                .and_then(|connections| connections.into_iter().next())
-        });
+    let gateway_connection = shutdown_gateway_connection(bridge);
     // Remove persistence before the bounded async unload work. Even if the
     // aggregate shutdown deadline expires, a later login cannot reload the
     // stale service definition while June's provider proxy is absent.
@@ -5129,7 +5401,12 @@ async fn shutdown_hermes_gateway(
 /// How long `shutdown` waits for in-flight starts to register/reap their spawned
 /// child before draining. The window it guards (spawn -> register) is short, so
 /// this is only a safety bound; teardown proceeds regardless once it elapses.
-const SHUTDOWN_START_QUIESCE_TIMEOUT: Duration = Duration::from_secs(2);
+pub(crate) const SHUTDOWN_START_QUIESCE_TIMEOUT_MS: u64 = 2_000;
+const SHUTDOWN_START_QUIESCE_TIMEOUT: Duration =
+    Duration::from_millis(SHUTDOWN_START_QUIESCE_TIMEOUT_MS);
+const SHUTDOWN_MUTEX_TIMEOUT: Duration = Duration::from_millis(250);
+const SHUTDOWN_CHILD_REAP_TIMEOUT: Duration = Duration::from_millis(250);
+const HERMES_PROCESS_SHUTDOWN_GRACE: Duration = Duration::from_millis(500);
 /// Gateway lifecycle commands are serialized with shutdown, so every command
 /// needs a deadline: a stuck start/restart must not keep app teardown waiting
 /// on the lifecycle lock indefinitely. Fifteen seconds leaves room for the
@@ -5143,7 +5420,9 @@ const GATEWAY_LIFECYCLE_COMMAND_TIMEOUT: Duration = Duration::from_secs(15);
 const GATEWAY_SHUTDOWN_LOCK_TIMEOUT: Duration = Duration::from_secs(1);
 /// One aggregate deadline prevents individually bounded launchctl/CLI steps
 /// from stacking into an unacceptably long main-thread quit or update relaunch.
-const GATEWAY_SHUTDOWN_TOTAL_TIMEOUT: Duration = Duration::from_secs(6);
+pub(crate) const GATEWAY_SHUTDOWN_TOTAL_TIMEOUT_MS: u64 = 6_000;
+const GATEWAY_SHUTDOWN_TOTAL_TIMEOUT: Duration =
+    Duration::from_millis(GATEWAY_SHUTDOWN_TOTAL_TIMEOUT_MS);
 /// Leave the non-macOS CLI stop below the aggregate deadline so its own timeout
 /// path can terminate the whole lifecycle process group before the outer future
 /// is dropped.
@@ -5177,6 +5456,40 @@ fn await_starts_quiesced(bridge: &HermesBridge, timeout: Duration) {
         }
         std::thread::sleep(Duration::from_millis(5));
     }
+}
+
+fn shutdown_gateway_connection(bridge: &HermesBridge) -> Option<HermesBridgeConnection> {
+    if let Some(mut connection) =
+        crate::shutdown::try_lock_for(&bridge.routine_gateway_connection, SHUTDOWN_MUTEX_TIMEOUT)
+    {
+        if let Some(connection) = connection.take() {
+            return Some(connection);
+        }
+    } else {
+        tracing::warn!(
+            timeout_ms = SHUTDOWN_MUTEX_TIMEOUT.as_millis(),
+            "timed out acquiring the routine gateway connection lock during app shutdown"
+        );
+    }
+
+    let Some(mut processes) =
+        crate::shutdown::try_lock_for(&bridge.processes, SHUTDOWN_MUTEX_TIMEOUT)
+    else {
+        tracing::warn!(
+            timeout_ms = SHUTDOWN_MUTEX_TIMEOUT.as_millis(),
+            "timed out acquiring the Hermes process lock for gateway shutdown"
+        );
+        return None;
+    };
+    for full_mode in [false, true] {
+        let Some(process) = processes.get_mut(&full_mode) else {
+            continue;
+        };
+        if matches!(process.child.try_wait(), Ok(None)) {
+            return Some(process.connection.clone());
+        }
+    }
+    None
 }
 
 pub(crate) fn release_shared_browser_tab(app: &tauri::AppHandle, tab_id: i64) {
@@ -6797,8 +7110,11 @@ fn wait_with_timeout(mut child: Child, timeout: Duration) -> Result<BoundedOutpu
             }
             Ok(None) => {
                 if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    let _ = crate::shutdown::terminate_child_in_place(
+                        &mut child,
+                        Duration::ZERO,
+                        SHUTDOWN_CHILD_REAP_TIMEOUT,
+                    );
                     timed_out = true;
                     exit_success = false;
                     break;
@@ -8073,6 +8389,23 @@ fn stop_hermes_bridge_inner(bridge: &HermesBridge) -> Result<(), AppError> {
     Ok(())
 }
 
+fn stop_hermes_bridge_for_shutdown(bridge: &HermesBridge) {
+    let processes: Vec<HermesProcess> =
+        match crate::shutdown::try_lock_for(&bridge.processes, SHUTDOWN_MUTEX_TIMEOUT) {
+            Some(mut guard) => guard.drain().map(|(_, process)| process).collect(),
+            None => {
+                tracing::warn!(
+                    timeout_ms = SHUTDOWN_MUTEX_TIMEOUT.as_millis(),
+                    "timed out acquiring the Hermes process lock during app shutdown"
+                );
+                return;
+            }
+        };
+    for process in processes {
+        shutdown_hermes_process(Some(process));
+    }
+}
+
 /// Stops only the process spawned by the start attempt identified by
 /// `generation`, whichever mode slot it sits in. A stop (or stop+restart)
 /// that raced with that start leaves a different process in the slot, which
@@ -8093,31 +8426,55 @@ fn stop_hermes_bridge_generation(bridge: &HermesBridge, generation: u64) -> Resu
 }
 
 fn shutdown_hermes_process(process: Option<HermesProcess>) {
-    if let Some(mut process) = process {
-        // Sweep the runtime's process group first so any worker subprocess it
-        // forked dies with it rather than detaching and outliving the app (the
-        // child spawns into its own group; see the spawn site). Then kill and
-        // reap the tracked child itself.
+    if let Some(process) = process {
+        let pid = process.child.id();
+        let ownership_record = process.ownership_record;
+        // Ask the whole runtime process group to stop before escalating. This
+        // short grace gives SQLite WAL writes a chance to commit; if the hard
+        // deadline still requires SIGKILL, WAL mode limits loss to the
+        // uncommitted transaction while preserving committed state.
         #[cfg(unix)]
-        kill_process_group(process.child.id());
-        let _ = process.child.kill();
-        match process.child.wait() {
-            Ok(_) => {
-                if let Err(error) =
-                    remove_hermes_ownership_record(process.ownership_record.as_deref())
-                {
+        terminate_process_group(pid);
+        #[cfg(unix)]
+        let graceful_started = Instant::now();
+        let outcome = crate::shutdown::terminate_child_with(
+            process.child,
+            HERMES_PROCESS_SHUTDOWN_GRACE,
+            SHUTDOWN_CHILD_REAP_TIMEOUT,
+            move |child| {
+                #[cfg(unix)]
+                kill_process_group(pid);
+                let _ = child.kill();
+            },
+        );
+        #[cfg(unix)]
+        {
+            // The leader can exit before a worker that shared its process
+            // group. Give every worker the same grace, then sweep the group so
+            // an ignored SIGTERM cannot survive the relaunch.
+            if matches!(outcome, crate::shutdown::ChildTermination::Exited) {
+                std::thread::sleep(
+                    HERMES_PROCESS_SHUTDOWN_GRACE.saturating_sub(graceful_started.elapsed()),
+                );
+            }
+            kill_process_group(pid);
+        }
+        match outcome {
+            crate::shutdown::ChildTermination::Exited
+            | crate::shutdown::ChildTermination::Killed => {
+                if let Err(error) = remove_hermes_ownership_record(ownership_record.as_deref()) {
                     tracing::warn!(
                         %error,
                         "Hermes runtime was reaped but its ownership record could not be removed"
                     );
                 }
             }
-            Err(error) => {
+            outcome => {
                 // Retain the record when the leader was not confirmed reaped;
                 // the next startup must make the fail-closed recovery decision.
                 tracing::warn!(
-                    %error,
-                    pid = process.child.id(),
+                    ?outcome,
+                    pid,
                     "Hermes runtime leader could not be reaped; retaining ownership record"
                 );
             }
@@ -8133,8 +8490,14 @@ fn shutdown_hermes_process(process: Option<HermesProcess>) {
 fn reap_unregistered_child(child: &mut Child, ownership_record: Option<&Path>) {
     #[cfg(unix)]
     kill_process_group(child.id());
-    let _ = child.kill();
-    if child.wait().is_ok() {
+    if matches!(
+        crate::shutdown::terminate_child_in_place(
+            child,
+            Duration::ZERO,
+            SHUTDOWN_CHILD_REAP_TIMEOUT,
+        ),
+        crate::shutdown::ChildTermination::Exited | crate::shutdown::ChildTermination::Killed
+    ) {
         if let Err(error) = remove_hermes_ownership_record(ownership_record) {
             tracing::warn!(
                 %error,
@@ -8632,13 +8995,18 @@ fn wait_for_recorded_hermes_runtime_exit(
 /// group id.
 #[cfg(unix)]
 fn kill_process_group(pid: u32) {
-    let _ = Command::new("/bin/kill")
-        .arg("-KILL")
-        .arg(format!("-{pid}"))
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+    if let Ok(pid) = libc::pid_t::try_from(pid) {
+        let _ = unsafe { libc::kill(-pid, libc::SIGKILL) };
+    }
+}
+
+/// Best-effort cooperative stop for a runtime process group. Shutdown follows
+/// this with bounded polling and SIGKILL escalation.
+#[cfg(unix)]
+fn terminate_process_group(pid: u32) {
+    if let Ok(pid) = libc::pid_t::try_from(pid) {
+        let _ = unsafe { libc::kill(-pid, libc::SIGTERM) };
+    }
 }
 
 async fn resolve_hermes_command(
@@ -8752,10 +9120,8 @@ const HERMES_RUNTIME_PATCH_SCRIPT: &str = include_str!("hermes/apply_june_patche
 
 fn write_managed_hermes_patch_script(runtime_dir: &Path) -> Result<PathBuf, AppError> {
     let path = runtime_dir.join("apply-june-hermes-patches.py");
-    if fs::read_to_string(&path).ok().as_deref() != Some(HERMES_RUNTIME_PATCH_SCRIPT) {
-        fs::write(&path, HERMES_RUNTIME_PATCH_SCRIPT)
-            .map_err(|error| AppError::new("hermes_runtime_install_failed", error.to_string()))?;
-    }
+    write_file_if_changed(&path, HERMES_RUNTIME_PATCH_SCRIPT.as_bytes())
+        .map_err(|error| AppError::new("hermes_runtime_install_failed", error.to_string()))?;
     Ok(path)
 }
 
@@ -8797,10 +9163,7 @@ fn ensure_managed_hermes_sitecustomize(install_dir: &Path) -> Result<(), AppErro
         fs::create_dir_all(&site_packages)
             .map_err(|error| AppError::new("hermes_runtime_install_failed", error.to_string()))?;
         let sitecustomize = site_packages.join("sitecustomize.py");
-        if fs::read_to_string(&sitecustomize).ok().as_deref() == Some(HERMES_SITE_CUSTOMIZE) {
-            continue;
-        }
-        fs::write(&sitecustomize, HERMES_SITE_CUSTOMIZE)
+        write_file_if_changed(&sitecustomize, HERMES_SITE_CUSTOMIZE.as_bytes())
             .map_err(|error| AppError::new("hermes_runtime_install_failed", error.to_string()))?;
     }
     Ok(())
@@ -9456,7 +9819,7 @@ fn browser_access_flag_path(app: &AppHandle) -> Option<PathBuf> {
 /// disabled regardless of the flag file, so a grant persisted by an earlier
 /// build cannot resurface a hidden capability.
 pub(crate) fn browser_access_enabled(app: &AppHandle) -> bool {
-    crate::feature_flags::BROWSER_USE_ENABLED
+    crate::experimental_settings::browser_use_enabled(app)
         && browser_access_flag_path(app).is_some_and(|path| path.exists())
 }
 
@@ -9765,14 +10128,7 @@ pub(crate) fn resolve_june_hermes_home(app: &AppHandle) -> Result<PathBuf, AppEr
 /// src/lib/hermes-routines.ts), which takes precedence over this gate.
 /// The scheduler always strips `cronjob`, `messaging`, and `clarify` from
 /// cron agents on top of either list.
-const CRON_SANDBOXED_TOOLSETS: &[&str] = &[
-    "web",
-    "vision",
-    "todo",
-    "memory",
-    "session_search",
-    "context_engine",
-];
+const CRON_SANDBOXED_TOOLSETS: &[&str] = crate::connectors::policy::SANDBOXED_ROUTINE_BASE_TOOLSETS;
 
 /// Upstream toolsets June never exposes, in any session, under any grant.
 ///
@@ -9797,6 +10153,25 @@ const CRON_SANDBOXED_TOOLSETS: &[&str] = &[
 /// applies on top of either.
 const UPSTREAM_DISABLED_TOOLSETS: &[&str] = &["browser", "computer_use"];
 
+fn sync_june_static_mcps(
+    app: &AppHandle,
+    hermes_home: &Path,
+    hermes_command: &str,
+    video_generation_enabled: bool,
+) -> Result<JuneStaticMcpConfigs, AppError> {
+    Ok(JuneStaticMcpConfigs {
+        context: sync_june_context_mcp(app, hermes_command)?,
+        home: sync_june_home_mcp(app, hermes_command)?,
+        web: sync_june_web_mcp(app, hermes_command)?,
+        obsidian: sync_june_obsidian_mcp(app, hermes_command)?,
+        image: sync_june_image_mcp(app, hermes_home, hermes_command)?,
+        video: video_generation_enabled
+            .then(|| sync_june_video_mcp(app, hermes_home, hermes_command))
+            .transpose()?,
+        recorder: sync_june_recorder_mcp(app, hermes_command)?,
+    })
+}
+
 fn sync_june_context_mcp(
     app: &AppHandle,
     hermes_command: &str,
@@ -9807,7 +10182,7 @@ fn sync_june_context_mcp(
     fs::create_dir_all(&mcp_dir)
         .map_err(|error| AppError::new("june_context_mcp_failed", error.to_string()))?;
     let script_path = mcp_dir.join(JUNE_CONTEXT_MCP_SCRIPT_NAME);
-    fs::write(&script_path, JUNE_CONTEXT_MCP_SCRIPT)
+    write_file_if_changed(&script_path, JUNE_CONTEXT_MCP_SCRIPT.as_bytes())
         .map_err(|error| AppError::new("june_context_mcp_failed", error.to_string()))?;
 
     let paths = crate::app_paths::AppPaths::from_data_dir(data_dir)
@@ -9871,7 +10246,7 @@ fn sync_june_obsidian_mcp(
     fs::create_dir_all(&mcp_dir)
         .map_err(|error| AppError::new("june_obsidian_mcp_failed", error.to_string()))?;
     let script_path = mcp_dir.join(JUNE_OBSIDIAN_MCP_SCRIPT_NAME);
-    fs::write(&script_path, JUNE_OBSIDIAN_MCP_SCRIPT)
+    write_file_if_changed(&script_path, JUNE_OBSIDIAN_MCP_SCRIPT.as_bytes())
         .map_err(|error| AppError::new("june_obsidian_mcp_failed", error.to_string()))?;
     Ok(JuneObsidianMcpConfig {
         command: hermes_python_command(hermes_command),
@@ -9886,7 +10261,7 @@ fn sync_june_web_mcp(app: &AppHandle, hermes_command: &str) -> Result<JuneWebMcp
     fs::create_dir_all(&mcp_dir)
         .map_err(|error| AppError::new("june_web_mcp_failed", error.to_string()))?;
     let script_path = mcp_dir.join(JUNE_WEB_MCP_SCRIPT_NAME);
-    fs::write(&script_path, JUNE_WEB_MCP_SCRIPT)
+    write_file_if_changed(&script_path, JUNE_WEB_MCP_SCRIPT.as_bytes())
         .map_err(|error| AppError::new("june_web_mcp_failed", error.to_string()))?;
 
     Ok(JuneWebMcpConfig {
@@ -9906,7 +10281,7 @@ fn sync_june_image_mcp(
     fs::create_dir_all(&mcp_dir)
         .map_err(|error| AppError::new("june_image_mcp_failed", error.to_string()))?;
     let script_path = mcp_dir.join(JUNE_IMAGE_MCP_SCRIPT_NAME);
-    fs::write(&script_path, JUNE_IMAGE_MCP_SCRIPT)
+    write_file_if_changed(&script_path, JUNE_IMAGE_MCP_SCRIPT.as_bytes())
         .map_err(|error| AppError::new("june_image_mcp_failed", error.to_string()))?;
     // Keep generated/edited images in Hermes's image dir. The MCP writes the
     // proxy-returned storage filename here; Rust validates source refs later.
@@ -9938,7 +10313,7 @@ fn sync_june_video_mcp(
     fs::create_dir_all(&mcp_dir)
         .map_err(|error| AppError::new("june_video_mcp_failed", error.to_string()))?;
     let script_path = mcp_dir.join(JUNE_VIDEO_MCP_SCRIPT_NAME);
-    fs::write(&script_path, JUNE_VIDEO_MCP_SCRIPT)
+    write_file_if_changed(&script_path, JUNE_VIDEO_MCP_SCRIPT.as_bytes())
         .map_err(|error| AppError::new("june_video_mcp_failed", error.to_string()))?;
     let videos_dir = hermes_home.join(JUNE_VIDEO_MCP_VIDEOS_DIR_NAME);
     fs::create_dir_all(&videos_dir)
@@ -9961,7 +10336,7 @@ fn sync_june_recorder_mcp(
     fs::create_dir_all(&mcp_dir)
         .map_err(|error| AppError::new("june_recorder_mcp_failed", error.to_string()))?;
     let script_path = mcp_dir.join(JUNE_RECORDER_MCP_SCRIPT_NAME);
-    fs::write(&script_path, JUNE_RECORDER_MCP_SCRIPT)
+    write_file_if_changed(&script_path, JUNE_RECORDER_MCP_SCRIPT.as_bytes())
         .map_err(|error| AppError::new("june_recorder_mcp_failed", error.to_string()))?;
 
     Ok(JuneRecorderMcpConfig {
@@ -9983,16 +10358,21 @@ async fn sync_june_browser_mcp(
     let data_dir = crate::app_paths::app_data_dir(app)
         .map_err(|error| AppError::new("june_browser_mcp_failed", error.to_string()))?;
     let mcp_dir = data_dir.join(JUNE_CONTEXT_MCP_DIR_NAME);
-    fs::create_dir_all(&mcp_dir)
-        .map_err(|error| AppError::new("june_browser_mcp_failed", error.to_string()))?;
-    let script_path = mcp_dir.join(JUNE_BROWSER_MCP_SCRIPT_NAME);
-    fs::write(&script_path, JUNE_BROWSER_MCP_SCRIPT)
-        .map_err(|error| AppError::new("june_browser_mcp_failed", error.to_string()))?;
+    let script_path = tokio::task::spawn_blocking(move || {
+        fs::create_dir_all(&mcp_dir)
+            .map_err(|error| AppError::new("june_browser_mcp_failed", error.to_string()))?;
+        let script_path = mcp_dir.join(JUNE_BROWSER_MCP_SCRIPT_NAME);
+        write_file_if_changed(&script_path, JUNE_BROWSER_MCP_SCRIPT.as_bytes())
+            .map_err(|error| AppError::new("june_browser_mcp_failed", error.to_string()))?;
+        Ok::<_, AppError>(script_path)
+    })
+    .await
+    .map_err(|error| AppError::new("june_browser_mcp_failed", error.to_string()))??;
 
     // While the Browser use feature flag is off, persisted routine opt-ins
     // stay dormant: no per-routine server is rendered and the broker's grant
     // table is replaced with nothing, so a dev-build opt-in cannot resurface.
-    let routine_grants = if crate::feature_flags::BROWSER_USE_ENABLED {
+    let routine_grants = if crate::experimental_settings::browser_use_enabled(app) {
         crate::commands::repositories(app)
             .await?
             .list_routine_browser_grants()
@@ -10028,7 +10408,7 @@ fn sync_june_computer_use_mcp(
     fs::create_dir_all(&mcp_dir)
         .map_err(|error| AppError::new("june_computer_use_mcp_failed", error.to_string()))?;
     let script_path = mcp_dir.join(crate::computer_use::MCP_SCRIPT_NAME);
-    fs::write(&script_path, crate::computer_use::MCP_SCRIPT)
+    write_file_if_changed(&script_path, crate::computer_use::MCP_SCRIPT.as_bytes())
         .map_err(|error| AppError::new("june_computer_use_mcp_failed", error.to_string()))?;
 
     Ok(JuneComputerUseMcpConfig {
@@ -10060,7 +10440,7 @@ fn linear_actions_server_account(account: &crate::connectors::ConnectorAccount) 
         && account
             .scopes
             .iter()
-            .any(|scope| scope == crate::connectors::scopes::LINEAR_WRITE)
+            .any(|scope| scope == crate::connectors::policy::LINEAR_WRITE)
 }
 
 /// True when this connected account should back the `june_github` read server:
@@ -10080,7 +10460,7 @@ fn github_actions_server_account(account: &crate::connectors::ConnectorAccount) 
         && account
             .scopes
             .iter()
-            .any(|scope| scope == crate::connectors::scopes::GITHUB_WRITE)
+            .any(|scope| scope == crate::connectors::policy::GITHUB_WRITE)
 }
 
 /// Writes the connector MCP scripts and returns their configs. Google servers
@@ -10177,43 +10557,60 @@ async fn sync_june_connector_mcps(
     let data_dir = crate::app_paths::app_data_dir(app)
         .map_err(|error| AppError::new("june_connector_mcp_failed", error.to_string()))?;
     let mcp_dir = data_dir.join(JUNE_CONTEXT_MCP_DIR_NAME);
-    fs::create_dir_all(&mcp_dir)
-        .map_err(|error| AppError::new("june_connector_mcp_failed", error.to_string()))?;
     let command = hermes_python_command(hermes_command);
 
-    // Write all six scripts up front: the base servers and every auto server
-    // (which reuses the provider action script) point at these paths.
-    let write_script = |script_name: &str, script: &str| -> Result<PathBuf, AppError> {
-        let script_path = mcp_dir.join(script_name);
-        fs::write(&script_path, script)
+    // The base servers and every auto server reuse these paths. Keep their
+    // content comparisons and any first-run writes off the async runtime.
+    let (
+        gmail_read_path,
+        gmail_actions_path,
+        gcal_read_path,
+        gcal_actions_path,
+        linear_read_path,
+        linear_actions_path,
+        github_read_path,
+        github_actions_path,
+        notion_path,
+        notion_actions_path,
+    ) = tokio::task::spawn_blocking(move || {
+        fs::create_dir_all(&mcp_dir)
             .map_err(|error| AppError::new("june_connector_mcp_failed", error.to_string()))?;
-        Ok(script_path)
-    };
-    let gmail_read_path = write_script(JUNE_GMAIL_MCP_SCRIPT_NAME, JUNE_GMAIL_MCP_SCRIPT)?;
-    let gmail_actions_path = write_script(
-        JUNE_GMAIL_ACTIONS_MCP_SCRIPT_NAME,
-        JUNE_GMAIL_ACTIONS_MCP_SCRIPT,
-    )?;
-    let gcal_read_path = write_script(JUNE_GCAL_MCP_SCRIPT_NAME, JUNE_GCAL_MCP_SCRIPT)?;
-    let gcal_actions_path = write_script(
-        JUNE_GCAL_ACTIONS_MCP_SCRIPT_NAME,
-        JUNE_GCAL_ACTIONS_MCP_SCRIPT,
-    )?;
-    let linear_read_path = write_script(JUNE_LINEAR_MCP_SCRIPT_NAME, JUNE_LINEAR_MCP_SCRIPT)?;
-    let linear_actions_path = write_script(
-        JUNE_LINEAR_ACTIONS_MCP_SCRIPT_NAME,
-        JUNE_LINEAR_ACTIONS_MCP_SCRIPT,
-    )?;
-    let github_read_path = write_script(JUNE_GITHUB_MCP_SCRIPT_NAME, JUNE_GITHUB_MCP_SCRIPT)?;
-    let github_actions_path = write_script(
-        JUNE_GITHUB_ACTIONS_MCP_SCRIPT_NAME,
-        JUNE_GITHUB_ACTIONS_MCP_SCRIPT,
-    )?;
-    let notion_path = write_script(JUNE_NOTION_MCP_SCRIPT_NAME, JUNE_NOTION_MCP_SCRIPT)?;
-    let notion_actions_path = write_script(
-        JUNE_NOTION_ACTIONS_MCP_SCRIPT_NAME,
-        JUNE_NOTION_ACTIONS_MCP_SCRIPT,
-    )?;
+        let write_script = |script_name: &str, script: &str| -> Result<PathBuf, AppError> {
+            let script_path = mcp_dir.join(script_name);
+            write_file_if_changed(&script_path, script.as_bytes())
+                .map_err(|error| AppError::new("june_connector_mcp_failed", error.to_string()))?;
+            Ok(script_path)
+        };
+        Ok::<_, AppError>((
+            write_script(JUNE_GMAIL_MCP_SCRIPT_NAME, JUNE_GMAIL_MCP_SCRIPT)?,
+            write_script(
+                JUNE_GMAIL_ACTIONS_MCP_SCRIPT_NAME,
+                JUNE_GMAIL_ACTIONS_MCP_SCRIPT,
+            )?,
+            write_script(JUNE_GCAL_MCP_SCRIPT_NAME, JUNE_GCAL_MCP_SCRIPT)?,
+            write_script(
+                JUNE_GCAL_ACTIONS_MCP_SCRIPT_NAME,
+                JUNE_GCAL_ACTIONS_MCP_SCRIPT,
+            )?,
+            write_script(JUNE_LINEAR_MCP_SCRIPT_NAME, JUNE_LINEAR_MCP_SCRIPT)?,
+            write_script(
+                JUNE_LINEAR_ACTIONS_MCP_SCRIPT_NAME,
+                JUNE_LINEAR_ACTIONS_MCP_SCRIPT,
+            )?,
+            write_script(JUNE_GITHUB_MCP_SCRIPT_NAME, JUNE_GITHUB_MCP_SCRIPT)?,
+            write_script(
+                JUNE_GITHUB_ACTIONS_MCP_SCRIPT_NAME,
+                JUNE_GITHUB_ACTIONS_MCP_SCRIPT,
+            )?,
+            write_script(JUNE_NOTION_MCP_SCRIPT_NAME, JUNE_NOTION_MCP_SCRIPT)?,
+            write_script(
+                JUNE_NOTION_ACTIONS_MCP_SCRIPT_NAME,
+                JUNE_NOTION_ACTIONS_MCP_SCRIPT,
+            )?,
+        ))
+    })
+    .await
+    .map_err(|error| AppError::new("june_connector_mcp_failed", error.to_string()))??;
 
     let notion_config = notion_connected.then(|| JuneConnectorMcpConfig {
         command: command.clone(),
@@ -10559,8 +10956,8 @@ fn sync_hermes_config_with_external_dirs(
         serde_yaml::from_str::<serde_yaml::Value>(&merge_hermes_config(&config_path, &config))
             .map_err(|error| AppError::new("hermes_bridge_config_failed", error.to_string()))?;
     let repaired_memory_shape = apply_memory_toolset_policy(&mut merged, memory_enabled);
-    let repaired_obsidian_shape = apply_obsidian_skill_policy(&mut merged);
-    let repaired_invalid_shape = repaired_memory_shape || repaired_obsidian_shape;
+    let repaired_skill_shape = apply_bundled_skill_policy(&mut merged);
+    let repaired_invalid_shape = repaired_memory_shape || repaired_skill_shape;
     if repaired_invalid_shape && !source_backup_created {
         match fs::read(&config_path) {
             Ok(existing) => {
@@ -10665,10 +11062,13 @@ fn apply_memory_toolset_policy(config: &mut serde_yaml::Value, memory_enabled: b
     repaired_invalid_shape
 }
 
-/// The pinned upstream `obsidian` skill guesses an ambient vault path. June
-/// owns the replacement under a distinct name, so disable only that upstream
-/// identity while preserving every unrelated user skill preference.
-fn apply_obsidian_skill_policy(config: &mut serde_yaml::Value) -> bool {
+/// Disable bundled skills whose instructions conflict with June-owned
+/// boundaries while preserving every unrelated user skill preference.
+///
+/// `obsidian` guesses an ambient vault path instead of using June's broker.
+/// `macos-computer-use` documents the upstream driver and duplicates a large
+/// workflow that June now carries concisely in its one app-owned tool schema.
+fn apply_bundled_skill_policy(config: &mut serde_yaml::Value) -> bool {
     let serde_yaml::Value::Mapping(root) = config else {
         return false;
     };
@@ -10695,8 +11095,10 @@ fn apply_obsidian_skill_policy(config: &mut serde_yaml::Value) -> bool {
     let disabled = disabled
         .as_sequence_mut()
         .expect("skills.disabled was normalized to a sequence");
-    disabled.retain(|item| item.as_str() != Some("obsidian"));
-    disabled.push(serde_yaml::Value::String("obsidian".to_string()));
+    for forced_disabled in ["obsidian", "macos-computer-use"] {
+        disabled.retain(|item| item.as_str() != Some(forced_disabled));
+        disabled.push(serde_yaml::Value::String(forced_disabled.to_string()));
+    }
     repaired_invalid_shape
 }
 
@@ -10716,7 +11118,7 @@ fn memory_policy_has_invalid_shape(config: &serde_yaml::Value) -> bool {
         .is_some_and(|disabled| !disabled.is_sequence())
 }
 
-fn obsidian_skill_policy_has_invalid_shape(config: &serde_yaml::Value) -> bool {
+fn bundled_skill_policy_has_invalid_shape(config: &serde_yaml::Value) -> bool {
     let Some(skills) = config.get("skills") else {
         return false;
     };
@@ -10751,7 +11153,7 @@ fn preserve_replaced_hermes_config_if_needed(
         Ok(ref config) => {
             hermes_config_has_invalid_root(config)
                 || (!memory_enabled && memory_policy_has_invalid_shape(config))
-                || obsidian_skill_policy_has_invalid_shape(config)
+                || bundled_skill_policy_has_invalid_shape(config)
         }
         Err(_) => true,
     };
@@ -10850,6 +11252,17 @@ fn backup_corrupt_hermes_config(config_path: &Path, contents: &[u8]) -> Result<P
 fn write_hermes_config_atomic(config_path: &Path, contents: &str) -> Result<(), AppError> {
     let target_path = hermes_config_replacement_target(config_path)
         .map_err(|error| AppError::new("hermes_bridge_config_failed", error.to_string()))?;
+    match fs::read(&target_path) {
+        Ok(existing) if existing == contents.as_bytes() => return Ok(()),
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(AppError::new(
+                "hermes_bridge_config_failed",
+                error.to_string(),
+            ))
+        }
+    }
     let parent = target_path.parent().ok_or_else(|| {
         AppError::new(
             "hermes_bridge_config_failed",
@@ -11004,16 +11417,7 @@ fn is_routine_browser_server_name(name: &str) -> bool {
 /// cover the `_actions` servers (including `june_linear_actions` and
 /// `june_github_actions`) and the per-job `_auto_<jobid>` servers.
 fn is_june_connector_server_name(name: &str) -> bool {
-    name == JUNE_GMAIL_MCP_SERVER_NAME
-        || name == JUNE_GCAL_MCP_SERVER_NAME
-        || name == JUNE_LINEAR_MCP_SERVER_NAME
-        || name == JUNE_NOTION_MCP_SERVER_NAME
-        || name == JUNE_NOTION_ACTIONS_MCP_SERVER_NAME
-        || name == JUNE_GITHUB_MCP_SERVER_NAME
-        || name.starts_with("june_gmail_")
-        || name.starts_with("june_gcal_")
-        || name.starts_with("june_linear_")
-        || name.starts_with("june_github_")
+    crate::connectors::policy::is_connector_server_name(name)
 }
 
 /// Resolve the dashboard/TUI toolset pin from the merged Hermes config while
@@ -12132,7 +12536,7 @@ fn sync_june_soul(
     memory_enabled: bool,
     video_generation_enabled: bool,
     connectors_registered: bool,
-) -> Result<(), AppError> {
+) -> Result<bool, AppError> {
     ensure_june_character_file(hermes_home)?;
     let character = load_june_character(hermes_home)
         .unwrap_or_else(|| JUNE_SOUL_CHARACTER_DEFAULT_MD.to_string());
@@ -12173,7 +12577,11 @@ fn sync_june_soul(
     } else {
         format!("{base}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_HOME_MD}{memory_section}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_IMAGE_MD}{video_section}{JUNE_SOUL_RECORDER_MD}{connectors_section}{browser_section}")
     };
-    std::fs::write(hermes_home.join("SOUL.md"), soul)
+    // The identity boundary is never conditional on metadata or a cached
+    // fingerprint: only exact equality with the fully rendered current soul
+    // can skip the write. Any identity, character, grant, or feature change
+    // necessarily produces different bytes and rewrites the whole file.
+    write_file_if_changed(&hermes_home.join("SOUL.md"), soul.as_bytes())
         .map_err(|error| AppError::new("hermes_bridge_soul_failed", error.to_string()))
 }
 
@@ -12490,7 +12898,7 @@ async fn handle_june_provider_connection(
     mut stream: tokio::net::TcpStream,
     state: Arc<ProviderProxyState>,
 ) -> io::Result<()> {
-    let (mut request, content_length, leftover) = match read_http_head(&mut stream).await {
+    let (request, content_length, leftover) = match read_http_head(&mut stream).await {
         Ok(head) => head,
         Err(error) => {
             let _ = write_json_response(
@@ -12539,24 +12947,44 @@ async fn handle_june_provider_connection(
         .await?;
         return Ok(());
     }
-    if content_length > provider_proxy_max_body_bytes(&request.path) {
+    let body_mode = provider_proxy_body_mode(&request.method, &request.path);
+    let max_body_bytes = provider_proxy_max_body_bytes(&request.path);
+    if content_length > max_body_bytes {
         // Enforced here (was inside the old read_http_request) so it runs after
         // auth. Chat bodies keep the context-overflow wording the frontend
         // classifier keys on ("maximum context length" / `prompt_too_long`), so
         // an over-cap chat body degrades into the recoverable overflow notice;
         // image bodies use an image-specific message. Only authenticated callers
         // reach this — an unauthenticated over-cap request is already a 401.
-        write_json_response(
-            &mut stream,
-            400,
-            serde_json::json!({
-                "error": { "message": provider_proxy_body_too_large_message(&request.path) }
-            }),
-        )
-        .await?;
+        write_provider_proxy_body_too_large_response(&mut stream, &request.path).await?;
         return Ok(());
     }
-    request.body = read_http_body(&mut stream, leftover, content_length).await?;
+    if body_mode == ProviderProxyBodyMode::StreamedPassthrough {
+        let path = request.path;
+        let (read_half, mut write_half) = stream.into_split();
+        let overflowed = Arc::new(AtomicBool::new(false));
+        let body = CappedHttpBody::new(
+            read_half,
+            leftover,
+            content_length,
+            max_body_bytes,
+            overflowed.clone(),
+        );
+        return forward_streaming_web_tool(
+            &mut write_half,
+            &path,
+            reqwest::Body::wrap_stream(body),
+            content_length,
+            max_body_bytes,
+            overflowed,
+        )
+        .await;
+    }
+    let request_body = if body_mode == ProviderProxyBodyMode::Buffered {
+        collect_http_body(&mut stream, leftover, content_length, max_body_bytes).await?
+    } else {
+        Vec::new()
+    };
     match (request.method.as_str(), request.path.as_str()) {
         ("GET", "/v1/models") => {
             let selected_model = crate::providers::generation_model();
@@ -12581,7 +13009,7 @@ async fn handle_june_provider_connection(
             write_json_response(&mut stream, 200, body).await?;
         }
         ("POST", "/v1/chat/completions") => {
-            let body = serde_json::from_slice::<serde_json::Value>(&request.body)
+            let body = serde_json::from_slice::<serde_json::Value>(&request_body)
                 .unwrap_or_else(|_| serde_json::json!({}));
             match crate::june_api::proxy_agent_chat_completions(body).await {
                 Ok(response) if response.status >= 400 => {
@@ -12618,18 +13046,15 @@ async fn handle_june_provider_connection(
                 }
             }
         }
-        ("POST", "/v1/web/search") => {
-            forward_web_tool(&mut stream, "/v1/web/search", &request.body).await?;
-        }
-        ("POST", "/v1/web/fetch") => {
-            forward_web_tool(&mut stream, "/v1/web/fetch", &request.body).await?;
+        ("POST", "/v1/web/search") | ("POST", "/v1/web/fetch") => {
+            unreachable!("web pass-through routes return before buffered dispatch")
         }
         ("POST", "/v1/image/generate") => {
             // The image MCP sends no model, so the user's selected image model
             // is authoritative — inject it here (June API requires a model).
             // safe_mode likewise comes from the on-device setting. Venice video
             // has no safe-mode parameter, so this injection is image-only.
-            let mut body = serde_json::from_slice::<serde_json::Value>(&request.body)
+            let mut body = serde_json::from_slice::<serde_json::Value>(&request_body)
                 .unwrap_or_else(|_| serde_json::json!({}));
             let image_self_report = strip_image_explicit_self_report(&mut body);
             ensure_image_generation_model(&mut body);
@@ -12654,7 +13079,7 @@ async fn handle_june_provider_connection(
             // no model is injected here; safe_mode still comes from the setting.
             // The MCP sends only an opaque sourceFilename. Resolve and validate
             // it here, where the signing key is outside Hermes home.
-            let mut body = serde_json::from_slice::<serde_json::Value>(&request.body)
+            let mut body = serde_json::from_slice::<serde_json::Value>(&request_body)
                 .unwrap_or_else(|_| serde_json::json!({}));
             let image_self_report = strip_image_explicit_self_report(&mut body);
             if let Err(message) = prepare_image_edit_request(&mut body, &state.image_sources) {
@@ -12684,7 +13109,7 @@ async fn handle_june_provider_connection(
                 write_not_found_response(&mut stream).await?;
                 return Ok(());
             }
-            let mut body = serde_json::from_slice::<serde_json::Value>(&request.body)
+            let mut body = serde_json::from_slice::<serde_json::Value>(&request_body)
                 .unwrap_or_else(|_| serde_json::json!({}));
             ensure_video_generation_model(&mut body);
             ensure_video_defaults(&mut body);
@@ -12695,7 +13120,7 @@ async fn handle_june_provider_connection(
                 write_not_found_response(&mut stream).await?;
                 return Ok(());
             }
-            let mut body = serde_json::from_slice::<serde_json::Value>(&request.body)
+            let mut body = serde_json::from_slice::<serde_json::Value>(&request_body)
                 .unwrap_or_else(|_| serde_json::json!({}));
             if let Err(message) = prepare_image_edit_request(&mut body, &state.image_sources) {
                 write_json_response(
@@ -12721,7 +13146,7 @@ async fn handle_june_provider_connection(
             forward_video_status(&mut stream, path, &state.videos_dir).await?;
         }
         ("POST", "/v1/recorder/start") => {
-            let body = serde_json::from_slice::<serde_json::Value>(&request.body)
+            let body = serde_json::from_slice::<serde_json::Value>(&request_body)
                 .unwrap_or_else(|_| serde_json::json!({}));
             handle_recorder_action(&mut stream, state, AgentRecorderAction::Start, &body).await?;
         }
@@ -12741,10 +13166,10 @@ async fn handle_june_provider_connection(
             handle_browser_status(&mut stream, &state, browser_context).await?;
         }
         ("POST", "/v1/browser/execute") => {
-            handle_browser_execute(&mut stream, &state, browser_context, &request.body).await?;
+            handle_browser_execute(&mut stream, &state, browser_context, &request_body).await?;
         }
         ("POST", crate::computer_use::PROXY_PATH) => {
-            let body = serde_json::from_slice::<serde_json::Value>(&request.body)
+            let body = serde_json::from_slice::<serde_json::Value>(&request_body)
                 .unwrap_or_else(|_| serde_json::json!({}));
             let Some(app) = state.app.as_ref() else {
                 write_json_response(
@@ -12768,17 +13193,17 @@ async fn handle_june_provider_connection(
             write_json_response(&mut stream, status, body).await?;
         }
         ("POST", path) if matches!(path, "/v1/memory/save" | "/v1/memory/forget") => {
-            handle_memory_route(&mut stream, &state, path, &request.body).await?;
+            handle_memory_route(&mut stream, &state, path, &request_body).await?;
         }
         ("POST", path) if provider_proxy_is_notion_connector_route(path) => {
-            handle_notion_connector_route(&mut stream, &state, path, &request.body).await?;
+            handle_notion_connector_route(&mut stream, &state, path, &request_body).await?;
         }
         ("POST", path)
             if provider_proxy_is_google_connector_route(path)
                 || provider_proxy_is_linear_connector_route(path)
                 || provider_proxy_is_github_connector_route(path) =>
         {
-            handle_connector_route(&mut stream, &state, path, &request.body).await?;
+            handle_connector_route(&mut stream, &state, path, &request_body).await?;
         }
         _ => {
             write_not_found_response(&mut stream).await?;
@@ -13720,7 +14145,7 @@ async fn require_github_write_scope(app: &AppHandle, account_id: &str) -> Result
             account
                 .scopes
                 .iter()
-                .any(|scope| scope == crate::connectors::scopes::GITHUB_WRITE)
+                .any(|scope| scope == crate::connectors::policy::GITHUB_WRITE)
         })
         .unwrap_or(false);
     if has_write {
@@ -13917,7 +14342,7 @@ fn local_utc_offset_minutes() -> i32 {
 fn scopes_allow_send(scopes: &[String]) -> bool {
     scopes
         .iter()
-        .any(|scope| scope == crate::connectors::scopes::GMAIL_SEND)
+        .any(|scope| scope == crate::connectors::policy::GMAIL_SEND)
 }
 
 /// Sending mail requires the account to hold the explicit `gmail.send` scope.
@@ -15492,16 +15917,13 @@ struct HttpRequest {
     method: String,
     path: String,
     headers: Vec<(String, String)>,
-    body: Vec<u8>,
 }
 
 /// Read and parse the request line + headers only, WITHOUT consuming the body.
-/// Returns the request (with an empty `body`), its declared `Content-Length`,
-/// and any bytes already read past the header terminator. The caller must
-/// authorize on the returned headers before calling `read_http_body`, so an
-/// unauthenticated caller never makes the loopback proxy buffer a large body
-/// (JUN-336 review). The body-size cap is likewise enforced by the caller,
-/// after authentication.
+/// Returns the request, its declared `Content-Length`, and any bytes already
+/// read past the header terminator. The caller must authorize on the returned
+/// headers before consuming the body, so an unauthenticated caller never makes
+/// the loopback proxy read a large body (JUN-336 review).
 async fn read_http_head(
     stream: &mut tokio::net::TcpStream,
 ) -> io::Result<(HttpRequest, usize, Vec<u8>)> {
@@ -15562,30 +15984,165 @@ async fn read_http_head(
             method,
             path,
             headers,
-            body: Vec::new(),
         },
         content_length,
         leftover,
     ))
 }
 
-/// Read the request body. Call ONLY after `read_http_head` and a successful
-/// authorization + body-size check on the head — never for an unauthenticated
-/// or over-cap request (JUN-336).
-async fn read_http_body(
-    stream: &mut tokio::net::TcpStream,
-    mut body: Vec<u8>,
-    content_length: usize,
-) -> io::Result<Vec<u8>> {
-    let mut chunk = [0u8; 4096];
-    while body.len() < content_length {
-        let read = stream.read(&mut chunk).await?;
-        if read == 0 {
-            break;
-        }
-        body.extend_from_slice(&chunk[..read]);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProviderProxyBodyMode {
+    None,
+    Buffered,
+    StreamedPassthrough,
+}
+
+/// Chooses body ownership at the narrowest consumer.
+///
+/// Web search/fetch are byte-for-byte June API pass-throughs, so their socket
+/// bodies stream directly into reqwest. Every buffered route below either
+/// rewrites JSON before forwarding (chat/image/video) or dispatches parsed
+/// arguments inside June (recorder/browser/Computer use/memory/connectors).
+/// Routes with no body consumer never allocate one.
+fn provider_proxy_body_mode(method: &str, path: &str) -> ProviderProxyBodyMode {
+    if method != "POST" {
+        return ProviderProxyBodyMode::None;
     }
-    body.truncate(content_length);
+    match path {
+        "/v1/web/search" | "/v1/web/fetch" => ProviderProxyBodyMode::StreamedPassthrough,
+        "/v1/chat/completions"
+        | "/v1/image/generate"
+        | "/v1/image/edit"
+        | "/v1/video/generate"
+        | "/v1/video/animate"
+        | "/v1/recorder/start"
+        | "/v1/browser/execute"
+        | crate::computer_use::PROXY_PATH
+        | "/v1/memory/save"
+        | "/v1/memory/forget" => ProviderProxyBodyMode::Buffered,
+        path if provider_proxy_is_connector_route(path) => ProviderProxyBodyMode::Buffered,
+        _ => ProviderProxyBodyMode::None,
+    }
+}
+
+/// A content-length-bounded request body that retains the route cap as defense
+/// in depth if a caller reaches it without the declared-length precheck. The
+/// small `prefix` contains only bytes read alongside the HTTP headers; the
+/// remaining body stays in the socket.
+struct CappedHttpBody<R> {
+    reader: R,
+    prefix: Vec<u8>,
+    prefix_offset: usize,
+    remaining: usize,
+    transferred: usize,
+    max_bytes: usize,
+    overflowed: Arc<AtomicBool>,
+    finished: bool,
+}
+
+impl<R> CappedHttpBody<R> {
+    fn new(
+        reader: R,
+        prefix: Vec<u8>,
+        content_length: usize,
+        max_bytes: usize,
+        overflowed: Arc<AtomicBool>,
+    ) -> Self {
+        Self {
+            reader,
+            prefix,
+            prefix_offset: 0,
+            remaining: content_length,
+            transferred: 0,
+            max_bytes,
+            overflowed,
+            finished: false,
+        }
+    }
+
+    fn overflow_error(&mut self) -> Poll<Option<io::Result<Vec<u8>>>> {
+        self.finished = true;
+        self.overflowed.store(true, Ordering::Release);
+        Poll::Ready(Some(Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "HTTP request body exceeds its route limit",
+        ))))
+    }
+}
+
+impl<R> Stream for CappedHttpBody<R>
+where
+    R: AsyncRead + Unpin,
+{
+    type Item = io::Result<Vec<u8>>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        if this.finished {
+            return Poll::Ready(None);
+        }
+        if this.remaining == 0 {
+            this.finished = true;
+            return Poll::Ready(None);
+        }
+        let available_under_cap = this.max_bytes.saturating_sub(this.transferred);
+        if available_under_cap == 0 {
+            return this.overflow_error();
+        }
+        let chunk_len = this
+            .remaining
+            .min(available_under_cap)
+            .min(JUNE_PROVIDER_PROXY_BODY_CHUNK_BYTES);
+        if this.prefix_offset < this.prefix.len() {
+            let end = (this.prefix_offset + chunk_len).min(this.prefix.len());
+            let chunk = this.prefix[this.prefix_offset..end].to_vec();
+            this.prefix_offset = end;
+            this.remaining -= chunk.len();
+            this.transferred += chunk.len();
+            return Poll::Ready(Some(Ok(chunk)));
+        }
+
+        let mut chunk = vec![0; chunk_len];
+        let mut read_buf = ReadBuf::new(&mut chunk);
+        match Pin::new(&mut this.reader).poll_read(cx, &mut read_buf) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Err(error)) => {
+                this.finished = true;
+                Poll::Ready(Some(Err(error)))
+            }
+            Poll::Ready(Ok(())) => {
+                let read = read_buf.filled().len();
+                if read == 0 {
+                    this.finished = true;
+                    return Poll::Ready(None);
+                }
+                chunk.truncate(read);
+                this.remaining -= read;
+                this.transferred += read;
+                Poll::Ready(Some(Ok(chunk)))
+            }
+        }
+    }
+}
+
+/// Collects only for routes whose consumer must parse or rewrite the complete
+/// JSON document. The same streaming cap adapter is retained as a defense if a
+/// caller reaches this helper without the declared-length precheck.
+async fn collect_http_body<R>(
+    reader: R,
+    prefix: Vec<u8>,
+    content_length: usize,
+    max_bytes: usize,
+) -> io::Result<Vec<u8>>
+where
+    R: AsyncRead + Unpin,
+{
+    let overflowed = Arc::new(AtomicBool::new(false));
+    let mut stream = CappedHttpBody::new(reader, prefix, content_length, max_bytes, overflowed);
+    let mut body = Vec::with_capacity(content_length.min(max_bytes));
+    while let Some(chunk) = std::future::poll_fn(|cx| Pin::new(&mut stream).poll_next(cx)).await {
+        body.extend_from_slice(&chunk?);
+    }
     Ok(body)
 }
 
@@ -15620,6 +16177,20 @@ fn provider_proxy_body_too_large_message(path: &str) -> &'static str {
              context length. Reduce the length of the messages and retry."
         }
     }
+}
+
+async fn write_provider_proxy_body_too_large_response(
+    stream: &mut (impl AsyncWrite + Unpin),
+    path: &str,
+) -> io::Result<()> {
+    write_json_response(
+        stream,
+        400,
+        serde_json::json!({
+            "error": { "message": provider_proxy_body_too_large_message(path) }
+        }),
+    )
+    .await
 }
 
 /// Rewrites the backend's `prompt_too_long` rejection into wording the agent
@@ -15931,19 +16502,34 @@ async fn write_json_response(
     write_raw_response(stream, status, "application/json", &body).await
 }
 
-/// Forwards a web tool request to the June API and relays its `ApiResponse`
-/// envelope back to the loopback caller (the `june_web` MCP) verbatim. The
-/// access token is added inside `june_api`, so it never reaches the MCP. A
-/// 4xx/5xx envelope (e.g. a blocked site, or an out-of-credits 402) is passed
-/// through unchanged so the agent gets the backend's own usable message.
-async fn forward_web_tool(
-    stream: &mut tokio::net::TcpStream,
+/// Streams a web tool request into June API and relays its `ApiResponse`
+/// envelope back to the loopback caller. Declared over-cap lengths are rejected
+/// before this function; `CappedHttpBody` retains a defense-in-depth overflow
+/// signal and the same 400 envelope if a future caller bypasses that precheck.
+async fn forward_streaming_web_tool(
+    stream: &mut (impl AsyncWrite + Unpin),
     path: &str,
-    request_body: &[u8],
+    body: reqwest::Body,
+    content_length: usize,
+    max_body_bytes: usize,
+    overflowed: Arc<AtomicBool>,
 ) -> io::Result<()> {
-    let body = serde_json::from_slice::<serde_json::Value>(request_body)
-        .unwrap_or_else(|_| serde_json::json!({}));
-    match crate::june_api::forward_web_request(path, &body).await {
+    let response = crate::june_api::forward_streaming_web_request(path, body, content_length).await;
+    if content_length > max_body_bytes || overflowed.load(Ordering::Acquire) {
+        return write_provider_proxy_body_too_large_response(stream, path).await;
+    }
+    write_web_tool_response(stream, response).await
+}
+
+/// Keeps the web MCP's existing response boundary independent of whether the
+/// request reached June API through a buffered or streaming body. Upstream
+/// statuses and bytes pass through; local request failures retain the 502
+/// envelope the MCP already handles.
+async fn write_web_tool_response(
+    stream: &mut (impl AsyncWrite + Unpin),
+    response: Result<crate::june_api::WebProxyResponse, AppError>,
+) -> io::Result<()> {
+    match response {
         Ok(response) => {
             write_raw_response(
                 stream,
@@ -17178,6 +17764,129 @@ mod tests {
         assert_eq!(local["api_key"], "local-token");
     }
 
+    #[test]
+    fn content_aware_startup_assets_skip_exact_bytes_and_replace_changed_patch_script() {
+        let runtime_dir = tempfile::tempdir().expect("runtime dir");
+        let asset = runtime_dir.path().join("asset.py");
+        assert!(write_file_if_changed(&asset, b"current").expect("first write"));
+        assert!(!write_file_if_changed(&asset, b"current").expect("unchanged write"));
+
+        let patch_path = runtime_dir.path().join("apply-june-hermes-patches.py");
+        fs::write(
+            &patch_path,
+            b"PATCH_SET = \"june-approval-memory-previous\"\n",
+        )
+        .expect("stale patch script");
+        let written_path =
+            write_managed_hermes_patch_script(runtime_dir.path()).expect("refresh patch script");
+        assert_eq!(written_path, patch_path);
+        assert_eq!(
+            fs::read(&patch_path).expect("patched script bytes"),
+            HERMES_RUNTIME_PATCH_SCRIPT.as_bytes()
+        );
+        assert!(
+            !write_file_if_changed(&patch_path, HERMES_RUNTIME_PATCH_SCRIPT.as_bytes())
+                .expect("stable patch script"),
+            "the refreshed patch script must not be rewritten again"
+        );
+    }
+
+    #[test]
+    fn soul_hash_guard_skips_only_the_exact_current_identity() {
+        let home = tempfile::tempdir().expect("Hermes home");
+        assert!(
+            sync_june_soul(home.path(), false, false, Some(false), true, false, false)
+                .expect("initial soul")
+        );
+        assert!(
+            !sync_june_soul(home.path(), false, false, Some(false), true, false, false)
+                .expect("unchanged soul"),
+            "an exact current soul must perform zero writes"
+        );
+
+        fs::write(home.path().join("SOUL.md"), "You are Hermes.\n").expect("tamper soul");
+        assert!(
+            sync_june_soul(home.path(), false, false, Some(false), true, false, false)
+                .expect("repair soul"),
+            "identity drift must always rewrite the full soul"
+        );
+        let repaired = fs::read_to_string(home.path().join("SOUL.md")).expect("repaired soul");
+        assert!(repaired.starts_with("You are June"));
+        assert!(!repaired.starts_with("You are Hermes"));
+    }
+
+    #[test]
+    fn workspace_image_attach_snapshot_round_trips_without_base64() {
+        let home = tempfile::tempdir().expect("Hermes home");
+        let uploads = home.path().join("workspace").join("uploads");
+        fs::create_dir_all(&uploads).expect("uploads");
+        let source = uploads.join("diagram.png");
+        let bytes = b"\x89PNG\r\n\x1a\nnative-path-image";
+        fs::write(&source, bytes).expect("source image");
+
+        let prepared = prepare_hermes_image_attachment(
+            home.path(),
+            &PrepareHermesImageAttachmentRequest {
+                session_id: "runtime-session-1".to_string(),
+                path: source.to_string_lossy().into_owned(),
+            },
+        )
+        .expect("prepare image");
+
+        let prepared_path = PathBuf::from(&prepared.path);
+        assert!(prepared_path.starts_with(
+            home.path()
+                .join("workspace")
+                .join(JUNE_WORKSPACE_SESSION_ATTACHMENTS_DIR_NAME)
+        ));
+        assert_eq!(prepared.mime_type, "image/png");
+        assert_eq!(prepared.size, bytes.len() as u64);
+        assert_eq!(fs::read(prepared_path).expect("prepared bytes"), bytes);
+    }
+
+    #[test]
+    fn workspace_image_attach_rejects_paths_outside_allowed_roots() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let home = temp.path().join("hermes");
+        fs::create_dir_all(home.join("workspace")).expect("workspace");
+        let outside = temp.path().join("outside.png");
+        fs::write(&outside, b"\x89PNG\r\n\x1a\noutside").expect("outside image");
+
+        let error = prepare_hermes_image_attachment(
+            &home,
+            &PrepareHermesImageAttachmentRequest {
+                session_id: "runtime-session-1".to_string(),
+                path: outside.to_string_lossy().into_owned(),
+            },
+        )
+        .expect_err("outside path must fail");
+        assert_eq!(error.code, "hermes_image_attach_denied");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_image_attach_rejects_symbolic_links() {
+        use std::os::unix::fs::symlink;
+
+        let home = tempfile::tempdir().expect("Hermes home");
+        let uploads = home.path().join("workspace").join("uploads");
+        fs::create_dir_all(&uploads).expect("uploads");
+        let target = uploads.join("target.png");
+        fs::write(&target, b"\x89PNG\r\n\x1a\ntarget").expect("target");
+        let link = uploads.join("link.png");
+        symlink(&target, &link).expect("link");
+
+        let error = prepare_hermes_image_attachment(
+            home.path(),
+            &PrepareHermesImageAttachmentRequest {
+                session_id: "runtime-session-1".to_string(),
+                path: link.to_string_lossy().into_owned(),
+            },
+        )
+        .expect_err("symlink must fail");
+        assert_eq!(error.code, "hermes_image_attach_denied");
+    }
+
     // The bundled MCP scripts are written verbatim into the Hermes home and
     // evaluated at import time by the runtime venv. A NameError in module
     // scope (e.g. a tool schema referencing an undefined constant) silently
@@ -18102,6 +18811,23 @@ assert capped["has_more"] is True, capped
         body: &str,
         video_generation_enabled: bool,
     ) -> String {
+        provider_proxy_response_with_content_length(
+            path,
+            method,
+            body,
+            body.len(),
+            video_generation_enabled,
+        )
+        .await
+    }
+
+    async fn provider_proxy_response_with_content_length(
+        path: &str,
+        method: &str,
+        body: &str,
+        content_length: usize,
+        video_generation_enabled: bool,
+    ) -> String {
         let home = tempfile::tempdir().expect("tempdir");
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
@@ -18145,8 +18871,7 @@ assert capped["has_more"] is True, capped
             "proxy-token"
         };
         let request = format!(
-            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nContent-Length: {}\r\n\r\n{body}",
-            body.len()
+            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nContent-Length: {content_length}\r\n\r\n{body}"
         );
         stream
             .write_all(request.as_bytes())
@@ -18159,6 +18884,69 @@ assert capped["has_more"] is True, capped
             .expect("read response");
         server.await.expect("server task");
         response
+    }
+
+    struct ScopedEnvVar {
+        name: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl ScopedEnvVar {
+        fn set(name: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+            let previous = std::env::var_os(name);
+            std::env::set_var(name, value);
+            Self { name, previous }
+        }
+    }
+
+    impl Drop for ScopedEnvVar {
+        fn drop(&mut self) {
+            match self.previous.take() {
+                Some(value) => std::env::set_var(self.name, value),
+                None => std::env::remove_var(self.name),
+            }
+        }
+    }
+
+    async fn receive_streamed_request_body(listener: tokio::net::TcpListener) -> Vec<u8> {
+        let (mut socket, _) = listener.accept().await.expect("accept streamed request");
+        let mut request = Vec::new();
+        let mut chunk = [0_u8; 16 * 1024];
+        let header_end = loop {
+            let read = socket.read(&mut chunk).await.expect("read request head");
+            if read == 0 {
+                panic!("request closed before its headers completed");
+            }
+            request.extend_from_slice(&chunk[..read]);
+            if let Some(position) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+                break position + 4;
+            }
+        };
+        let headers = String::from_utf8_lossy(&request[..header_end]);
+        let content_length = headers
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .find_map(|(name, value)| {
+                name.eq_ignore_ascii_case("content-length")
+                    .then(|| value.trim().parse::<usize>().expect("content length"))
+            })
+            .expect("streamed request has content length");
+        let mut body = request.split_off(header_end);
+        while body.len() < content_length {
+            let read = socket.read(&mut chunk).await.expect("read request body");
+            if read == 0 {
+                break;
+            }
+            body.extend_from_slice(&chunk[..read]);
+        }
+        body.truncate(content_length);
+        if body.len() == content_length {
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+                .await
+                .expect("write mock response");
+        }
+        body
     }
 
     async fn test_memory_proxy_context(
@@ -18377,7 +19165,7 @@ assert capped["has_more"] is True, capped
 
     #[test]
     fn send_consent_requires_the_explicit_send_scope() {
-        use crate::connectors::scopes::{GMAIL_COMPOSE, GMAIL_MODIFY, GMAIL_SEND};
+        use crate::connectors::policy::{GMAIL_COMPOSE, GMAIL_MODIFY, GMAIL_SEND};
         // Compose/modify can technically send, but only the explicit send scope
         // counts as consent to dispatch mail.
         assert!(!scopes_allow_send(&[GMAIL_COMPOSE.to_string()]));
@@ -18660,7 +19448,6 @@ assert capped["has_more"] is True, capped
             method: "GET".to_string(),
             path: "/v1/models".to_string(),
             headers: vec![("Authorization".to_string(), value.to_string())],
-            body: Vec::new(),
         }
     }
 
@@ -19974,7 +20761,6 @@ assert capped["has_more"] is True, capped
             method: "GET".to_string(),
             path: "/v1/models".to_string(),
             headers: Vec::new(),
-            body: Vec::new(),
         };
         let basic = request_with_authorization("Basic proxy-secret");
         let extra = request_with_authorization("Bearer proxy-secret extra");
@@ -20151,6 +20937,228 @@ assert capped["has_more"] is True, capped
         assert!(
             provider_proxy_max_body_bytes(crate::computer_use::PROXY_PATH)
                 < provider_proxy_max_body_bytes("/v1/chat/completions")
+        );
+    }
+
+    #[test]
+    fn provider_proxy_buffers_only_routes_that_inspect_or_rewrite_bodies() {
+        assert_eq!(
+            provider_proxy_body_mode("POST", "/v1/web/search"),
+            ProviderProxyBodyMode::StreamedPassthrough
+        );
+        assert_eq!(
+            provider_proxy_body_mode("POST", "/v1/web/fetch"),
+            ProviderProxyBodyMode::StreamedPassthrough
+        );
+        for path in [
+            "/v1/chat/completions",
+            "/v1/image/generate",
+            "/v1/image/edit",
+            "/v1/video/generate",
+            "/v1/video/animate",
+            crate::computer_use::PROXY_PATH,
+            "/v1/browser/execute",
+            "/v1/memory/save",
+            "/v1/notion-actions/call",
+        ] {
+            assert_eq!(
+                provider_proxy_body_mode("POST", path),
+                ProviderProxyBodyMode::Buffered,
+                "{path} must keep its consumer-local JSON buffer"
+            );
+        }
+        assert_eq!(
+            provider_proxy_body_mode("GET", "/v1/models"),
+            ProviderProxyBodyMode::None
+        );
+        assert_eq!(
+            provider_proxy_body_mode("POST", "/v1/unknown"),
+            ProviderProxyBodyMode::None
+        );
+    }
+
+    #[tokio::test]
+    async fn provider_proxy_streamed_body_round_trips_large_bytes_exactly() {
+        let body_len = 3 * 1024 * 1024 + 731;
+        let body = (0..body_len)
+            .map(|index| ((index * 31) % 251) as u8)
+            .collect::<Vec<_>>();
+        let prefix_len = 3_173;
+        let overflowed = Arc::new(AtomicBool::new(false));
+        let body_stream = CappedHttpBody::new(
+            std::io::Cursor::new(body[prefix_len..].to_vec()),
+            body[..prefix_len].to_vec(),
+            body.len(),
+            body.len() + 1,
+            overflowed.clone(),
+        );
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind mock upstream");
+        let url = format!(
+            "http://{}/v1/web/search",
+            listener.local_addr().expect("mock upstream addr")
+        );
+        let server = tokio::spawn(receive_streamed_request_body(listener));
+
+        let response = reqwest::Client::builder()
+            .no_proxy()
+            .http1_only()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .expect("streaming test client")
+            .post(url)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .header(reqwest::header::CONTENT_LENGTH, body.len())
+            .body(reqwest::Body::wrap_stream(body_stream))
+            .send()
+            .await
+            .expect("streamed request succeeds");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let received = server.await.expect("mock upstream task");
+        assert_eq!(received, body);
+        assert!(!overflowed.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn provider_proxy_streamed_body_aborts_at_cap_mid_stream() {
+        let max_body_bytes = 2 * JUNE_PROVIDER_PROXY_BODY_CHUNK_BYTES;
+        let body_len = max_body_bytes + JUNE_PROVIDER_PROXY_BODY_CHUNK_BYTES;
+        let overflowed = Arc::new(AtomicBool::new(false));
+        let mut body_stream = CappedHttpBody::new(
+            std::io::Cursor::new(vec![b'x'; body_len]),
+            Vec::new(),
+            body_len,
+            max_body_bytes,
+            overflowed.clone(),
+        );
+        let mut received = Vec::new();
+        let error = loop {
+            match std::future::poll_fn(|cx| Pin::new(&mut body_stream).poll_next(cx)).await {
+                Some(Ok(chunk)) => received.extend_from_slice(&chunk),
+                Some(Err(error)) => break error,
+                None => panic!("over-cap body ended without an error"),
+            }
+        };
+        assert_eq!(received.len(), max_body_bytes);
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(overflowed.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn provider_proxy_declared_over_cap_stream_rejects_before_upstream_connection() {
+        let path = "/v1/web/search";
+        let upstream = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind mock upstream");
+        let upstream_url = format!(
+            "http://{}",
+            upstream.local_addr().expect("mock upstream address")
+        );
+        let _api_url = ScopedEnvVar::set("JUNE_API_URL", upstream_url);
+        let observed = tokio::spawn(async move {
+            match tokio::time::timeout(Duration::from_millis(250), upstream.accept()).await {
+                Ok(Ok((mut socket, _))) => {
+                    socket
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+                        )
+                        .await
+                        .expect("answer unexpected upstream request");
+                    1
+                }
+                Ok(Err(error)) => panic!("mock upstream accept failed: {error}"),
+                Err(_) => 0,
+            }
+        });
+
+        let response = provider_proxy_response_with_content_length(
+            path,
+            "POST",
+            "",
+            provider_proxy_max_body_bytes(path) + 1,
+            false,
+        )
+        .await;
+        assert_eq!(
+            observed.await.expect("mock upstream observer"),
+            0,
+            "declared over-cap requests must be rejected before opening an upstream connection"
+        );
+        let header_end = response.find("\r\n\r\n").expect("response headers") + 4;
+        assert!(
+            response.starts_with("HTTP/1.1 400 Bad Request\r\n"),
+            "body-limit status must remain 400"
+        );
+        let body: serde_json::Value =
+            serde_json::from_str(&response[header_end..]).expect("limit JSON envelope");
+        assert_eq!(
+            body,
+            serde_json::json!({
+                "error": {
+                    "message": provider_proxy_body_too_large_message(path),
+                }
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn provider_proxy_streaming_keeps_upstream_and_transport_error_mapping() {
+        let upstream_body = br#"{"success":false,"message":"Slow down"}"#.to_vec();
+        let (mut upstream_writer, mut upstream_reader) = tokio::io::duplex(4 * 1024);
+        let upstream_response = crate::june_api::WebProxyResponse {
+            status: 429,
+            content_type: "application/json; charset=utf-8".to_string(),
+            body: upstream_body.clone(),
+        };
+        let upstream = tokio::spawn(async move {
+            write_web_tool_response(&mut upstream_writer, Ok(upstream_response))
+                .await
+                .expect("write upstream error response");
+        });
+        let mut upstream_bytes = Vec::new();
+        upstream_reader
+            .read_to_end(&mut upstream_bytes)
+            .await
+            .expect("read upstream error response");
+        upstream.await.expect("upstream error response task");
+        assert!(upstream_bytes.starts_with(
+            b"HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json; charset=utf-8\r\n"
+        ));
+        assert!(upstream_bytes.ends_with(&upstream_body));
+
+        let (mut transport_writer, mut transport_reader) = tokio::io::duplex(4 * 1024);
+        let transport = tokio::spawn(async move {
+            write_web_tool_response(
+                &mut transport_writer,
+                Err(AppError::new(
+                    "june_request_failed",
+                    "upstream connection closed",
+                )),
+            )
+            .await
+            .expect("write transport error response");
+        });
+        let mut transport_bytes = Vec::new();
+        transport_reader
+            .read_to_end(&mut transport_bytes)
+            .await
+            .expect("read transport error response");
+        transport.await.expect("transport error response task");
+        assert!(transport_bytes.starts_with(b"HTTP/1.1 502 Bad Gateway\r\n"));
+        let header_end = transport_bytes
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .expect("transport response headers")
+            + 4;
+        let body: serde_json::Value =
+            serde_json::from_slice(&transport_bytes[header_end..]).expect("transport error JSON");
+        assert_eq!(
+            body,
+            serde_json::json!({
+                "success": false,
+                "message": "Web request failed: upstream connection closed",
+            })
         );
     }
 
@@ -21149,34 +22157,34 @@ mcp_servers:
     }
 
     #[test]
-    fn obsidian_skill_policy_disables_only_the_upstream_skill() {
+    fn bundled_skill_policy_disables_only_the_conflicting_upstream_skills() {
         let mut config: serde_yaml::Value = serde_yaml::from_str(
-            "skills:\n  disabled: [other, obsidian, obsidian]\n  config:\n    user-skill:\n      enabled: true\n",
+            "skills:\n  disabled: [other, obsidian, obsidian, macos-computer-use]\n  config:\n    user-skill:\n      enabled: true\n",
         )
         .expect("valid config");
 
-        apply_obsidian_skill_policy(&mut config);
+        apply_bundled_skill_policy(&mut config);
 
         assert_eq!(
             config["skills"]["disabled"],
-            serde_yaml::from_str::<serde_yaml::Value>("[other, obsidian]")
+            serde_yaml::from_str::<serde_yaml::Value>("[other, obsidian, macos-computer-use]",)
                 .expect("expected disabled skills")
         );
         assert_eq!(config["skills"]["config"]["user-skill"]["enabled"], true);
     }
 
     #[test]
-    fn obsidian_skill_policy_repairs_invalid_shapes_and_preserves_source() {
+    fn bundled_skill_policy_repairs_invalid_shapes_and_preserves_source() {
         for source in [
             "skills: false\n",
             "skills:\n  disabled: false\n  config:\n    user-skill:\n      enabled: true\n",
         ] {
             let mut config: serde_yaml::Value = serde_yaml::from_str(source).expect("valid yaml");
-            assert!(apply_obsidian_skill_policy(&mut config));
+            assert!(apply_bundled_skill_policy(&mut config));
             assert_eq!(
                 config["skills"]["disabled"],
-                serde_yaml::from_str::<serde_yaml::Value>("[obsidian]")
-                    .expect("expected disabled skill")
+                serde_yaml::from_str::<serde_yaml::Value>("[obsidian, macos-computer-use]",)
+                    .expect("expected disabled skills")
             );
             if source.contains("user-skill") {
                 assert_eq!(config["skills"]["config"]["user-skill"]["enabled"], true);
@@ -21313,6 +22321,28 @@ mcp_servers:
                 .mode()
                 & 0o777,
             0o600
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unchanged_atomic_config_performs_zero_replacement_writes() {
+        use std::os::unix::fs::MetadataExt;
+
+        let home = tempfile::tempdir().expect("tempdir");
+        let config = home.path().join("config.yaml");
+        let contents = "agent:\n  disabled_toolsets: [memory]\n";
+        write_hermes_config_atomic(&config, contents).expect("initial config write");
+        let before = std::fs::metadata(&config).expect("initial config metadata");
+
+        write_hermes_config_atomic(&config, contents).expect("unchanged config sync");
+        let after = std::fs::metadata(&config).expect("unchanged config metadata");
+
+        assert_eq!(after.dev(), before.dev());
+        assert_eq!(
+            after.ino(),
+            before.ino(),
+            "unchanged config bytes must not replace the file"
         );
     }
 
@@ -21810,10 +22840,12 @@ mcp_servers:
 
         assert!(config.contains("model:\n  default: \"glm\""));
         assert!(config.contains("  cron: [web, memory]"));
-        // The pinned runtime counts this as three total provider attempts,
-        // with its built-in jittered waits between attempts. June owns the
-        // schedule explicitly so a Hermes default change cannot multiply
-        // agent-chat calls behind shipped clients.
+        // Pinned Hermes conversation_loop uses `while retry_count < max_retries`
+        // and increments only after a failed attempt, so api_max_retries: 3 is
+        // three total provider attempts (not four). Upstream docs that say
+        // "default 3 = four attempts" do not match this runtime loop.
+        // June owns the schedule explicitly so a Hermes default change cannot
+        // multiply agent-chat calls behind shipped clients.
         assert!(config.contains("agent:\n  max_turns: 90\n  api_max_retries: 3\n"));
         assert!(config.contains("approvals:\n  mode: manual\n  cron_mode: deny\n"));
         assert!(config.contains(

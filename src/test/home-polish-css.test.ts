@@ -79,7 +79,9 @@ describe("Home polish styles", () => {
 
   it("lets the small Home character acknowledge hover with a wink", () => {
     const character = cssRuleFor(".agent-home-listening");
-    const wink = cssRuleFor(".agent-home-listening:hover .june-bloom-wink");
+    const wink = cssRuleFor(
+      ".agent-home-listening:hover .june-bloom-wink,\n.agent-home-greeting-mark:hover .june-bloom-wink",
+    );
 
     expect(character).toContain("pointer-events: auto;");
     expect(wink).toContain("opacity: 1;");

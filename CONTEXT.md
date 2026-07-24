@@ -143,7 +143,12 @@ _Avoid_: conversion, resampling (that is one step of it).
 **Live transcript preview**:
 Optional, ephemeral chunked transcription shown while recording. Revisable,
 never written to `transcripts`, never the note's source of truth (see
-[ADR-0002](docs/adr/0002-live-transcript-preview-strategy.md)).
+[ADR-0002](docs/adr/0002-live-transcript-preview-strategy.md)). The Settings
+control for it is labeled **Live transcription** (default on); its disclosure
+copy is the consent surface that makes previews billable extra usage, and
+turning it off stops the preview lanes (gated at capture start and re-checked
+per chunk, so it also takes effect mid-recording) (JUN-375, ADR-0002
+addendum).
 _Avoid_: realtime transcription, live captions, streaming.
 
 **Transcript coverage**:
@@ -175,17 +180,30 @@ _Avoid_: system driver, in-process capture.
 The platform-native helper (`mac-dictation-helper` on macOS,
 `june-dictation-helper.exe` on Windows) that owns push-to-talk **dictation**
 capture and text insertion into the **paste target**. It is the authoritative
-source for helper-owned microphone state and platform paste readiness. On
-macOS it is also authoritative for Accessibility permission state.
+source for helper-owned microphone state, destination selection, and platform
+paste readiness. On Windows, an exact Dictate-button request or a global
+shortcut started while June's composer owns focus may be delivered through
+acknowledged in-app insertion, but only when the helper verifies the initiating
+June window's exact handle and original process identity. The foreground window
+at stop is irrelevant to this logical in-app destination and may be the
+non-focusable dictation HUD.
+On macOS it is also authoritative for Accessibility permission state.
 _Avoid_: dictation app, keyboard helper.
 
 **Paste target**:
-The app the dictation helper types a finished transcript into, pinned at the
-instant the recording stops and never re-resolved afterwards (see
+The destination where a finished dictation transcript is delivered. For native
+paste, it is the exact app window pinned when recording stops and never
+re-resolved afterwards (see
 [ADR-0014](docs/adr/0014-pinned-dictation-paste-target.md)). Pinning matters
 because the dictation round trip (capture, then dictation transcription, then
 cleanup) can outlast the user's attention: the frontmost app at paste time is
 often no longer the one they dictated into.
+On Windows, the helper may select acknowledged in-app composer insertion for a
+correlated Dictate-button request or a global shortcut pre-registered while the
+composer owns focus. The helper requires the exact initiating window handle and
+original process identity. The request id and captured draft key pin the in-app
+destination; all other targets retain exact-window activation and synthetic
+paste.
 _Avoid_: foreground app, frontmost app (both name a live value, not the pin);
 focus target.
 
@@ -270,14 +288,23 @@ _Avoid_: routine browser permission, global routine browsing.
 
 **Computer use**:
 The consent-gated capability (JUN-278 phase 2) that lets the agent operate
-Mac apps in the background - no cursor, focus, or Space theft - via the
-pinned runtime's computer-use toolset and a June-bundled pinned cua-driver.
+Mac apps in the background without moving the user's real pointer, stealing
+keyboard focus, or changing the active Space. It uses the pinned runtime's
+computer-use toolset and a June-bundled pinned cua-driver.
 The first access to each verified target app requires one authorization for
 the current attended task; requires a vision-capable model. Bringing a parked
 window into June's current Stage Manager group is part of that authorized app
 use and does not ask again.
 _Avoid_: desktop automation (vague), computer_use toolset (that is the
 upstream mechanism, not the June capability).
+
+**Computer use cursor**:
+The small, semi-transparent, click-through pointer June shows at Computer use's
+virtual action position while an attended task is active. It follows clicks and
+drags reported by the signed helper but never moves or follows the user's real
+pointer.
+_Avoid_: mouse cursor (ambiguous with the user's real pointer), cursor movement
+(the real pointer does not move).
 
 **Stored session id** vs **runtime session id**:
 The persistent id June keys all UI and history on, versus the live process's
@@ -346,7 +373,9 @@ _Avoid_: trait (`traits` is a separate, non-authoritative Venice field).
 A file or image referenced by path. Agent-composer attachments and DOM-dropped
 report attachments are imported into the Hermes workspace; native-picker
 issue-report attachments keep their original local paths. Composer images
-additionally get a structured `image.attach_bytes`.
+are snapshotted by Rust into a session-scoped workspace directory and attached
+with `image.attach`; `image.attach_bytes` remains an additive fallback for
+callers without a gateway-local path.
 _Avoid_: upload (unqualified).
 
 **Note reference**:

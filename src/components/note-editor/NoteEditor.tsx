@@ -10,7 +10,7 @@ import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { IconChevronBottom } from "central-icons-filled/IconChevronBottom";
 import { IconMicrophone } from "central-icons-filled/IconMicrophone";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { FundingTier } from "../account/FundingNotice";
 import { Switch } from "../ui/Switch";
@@ -37,7 +37,9 @@ import { systemAudioAvailability } from "../../lib/source-readiness";
 import {
   coalesceLiveTranscriptEventsForDisplay,
   reconcileLiveTranscriptEvents,
+  transcriptFollowLatestKey,
 } from "../../lib/live-transcript-preview";
+import { useFollowLatestScroll } from "../../lib/use-follow-latest-scroll";
 import {
   isInvalidJuneResponseMessage,
   NoteFailureBanner,
@@ -47,6 +49,7 @@ import { NotePreview } from "./NotePreview";
 
 type NoteEditorProps = {
   note: NoteDto;
+  transcriptScrollRef?: RefObject<HTMLElement | null>;
   folders: FolderDto[];
   recordingStatus?: RecordingStatusDto;
   recordingDisabled?: boolean;
@@ -64,6 +67,7 @@ type NoteEditorProps = {
   recovery?: RecoverableRecordingDto;
   onTitleChange: (title: string) => void;
   onContentChange: (noteId: string, content: string) => void;
+  onFlushNote: (noteId: string) => void;
   onSourceModeChange: (mode: RecordingSourceMode) => void;
   onEnableSystemAudio: () => void;
   onEnableMicrophone: () => void;
@@ -151,6 +155,7 @@ function formatCalendarEventTime(startAt: string, endAt: string) {
 
 export function NoteEditor({
   note,
+  transcriptScrollRef,
   folders,
   recordingStatus,
   recordingDisabled = false,
@@ -165,6 +170,7 @@ export function NoteEditor({
   recovery,
   onTitleChange,
   onContentChange,
+  onFlushNote,
   onSourceModeChange,
   onEnableSystemAudio,
   onEnableMicrophone,
@@ -342,6 +348,26 @@ export function NoteEditor({
   const shellState = recordingForNote?.state ?? "idle";
   const processingText = processingMessage(note.processingStatus);
   const transcriptText = transcriptToText(note, liveTranscriptTurns);
+  const fallbackTranscriptScrollRef = useRef<HTMLElement>(null);
+  const transcriptDisplayContentKey = useMemo(
+    () =>
+      JSON.stringify([
+        sourceFilter,
+        transcriptFollowLatestKey(reconciledLiveTranscript, note.sourceTranscripts ?? []),
+        note.transcript?.id ?? null,
+        note.transcript?.text ?? null,
+        note.transcript?.status ?? null,
+        note.transcript?.lastError ?? null,
+      ]),
+    [note.sourceTranscripts, note.transcript, reconciledLiveTranscript, sourceFilter],
+  );
+  useFollowLatestScroll({
+    scrollRef: transcriptScrollRef ?? fallbackTranscriptScrollRef,
+    active: activeTab === "transcription",
+    contentKey: transcriptDisplayContentKey,
+    scopeKey: note.id,
+    followOnActivate: recordingActive,
+  });
   const transcriptCoverageNotice = transcriptCoverageNoticeText(note);
   const silentSourceNotice = silentSourceNoticeText(note);
   const showTranscriptProcessing = processingStatus !== null;
@@ -368,6 +394,7 @@ export function NoteEditor({
           placeholder={NOTE_TITLE_PLACEHOLDER}
           value={note.title}
           onChange={(event) => onTitleChange(event.currentTarget.value)}
+          onBlur={() => onFlushNote(note.id)}
         />
         <div className="note-title-print" aria-hidden="true">
           {note.title.trim() || NOTE_TITLE_PLACEHOLDER}
@@ -447,7 +474,11 @@ export function NoteEditor({
         {activeTab === "transcription" ? (
           <div className="transcript-view">
             {transcriptText ? (
-              <div className="transcript-toolbar">
+              <div
+                className={`transcript-toolbar${
+                  hasBothSources ? " transcript-toolbar-filtered" : ""
+                }`}
+              >
                 {hasBothSources ? (
                   <SegmentedControl
                     className="transcript-source-filter"
@@ -513,6 +544,7 @@ export function NoteEditor({
                 noteId={note.id}
                 markdown={content}
                 onChange={onContentChange}
+                onBlur={onFlushNote}
                 emptyPlaceholder={
                   processingLock
                     ? ""
@@ -592,7 +624,7 @@ export function NoteEditor({
                   transition={{ duration: 0.22, ease: "easeOut" }}
                 >
                   <InlineNotice
-                    className="record-consent-note-surface"
+                    className="record-consent-note-surface record-consent-note-surface-actions"
                     aria-label="Recording consent reminder"
                     body="Make sure everyone has agreed to be recorded."
                     actions={

@@ -37,7 +37,7 @@ if (process.platform === "darwin") {
   const pin = JSON.parse(
     readFileSync(resolve(ROOT_DIR, "src-tauri", "cua-driver-pin.json"), "utf8"),
   );
-  const bundleIdentifier = computerUseBundleIdentifier({
+  const helperBundleIdentifier = computerUseBundleIdentifier({
     baseIdentifier: pin.bundleIdentifier,
     profile: "debug",
     worktreeRoot: ROOT_DIR,
@@ -52,10 +52,18 @@ if (process.platform === "darwin") {
   });
   const reset = resetComputerUseDevGrants({
     bundlePath: resolve(ROOT_DIR, ".tauri-helper", pin.bundleName),
-    bundleIdentifier,
+    helperBundleIdentifier,
+    appBundleIdentifier: devAppIdentity.identifier,
   });
+  const tccSummary = reset
+    .map((r) =>
+      r.status === "reset"
+        ? `reset ${r.service} for ${r.bundleIdentifier}`
+        : `deferred ${r.service} for ${r.bundleIdentifier} (bundle not yet registered with LaunchServices)`,
+    )
+    .join("; ");
   console.error(
-    `Reset Computer use ${reset.join(" and ")} grants for this worktree (${bundleIdentifier}); removed ${removed.length} stale staged bundle${removed.length === 1 ? "" : "s"}.`,
+    `Computer use TCC: ${tccSummary}; removed ${removed.length} stale staged bundle${removed.length === 1 ? "" : "s"}.`,
   );
 }
 

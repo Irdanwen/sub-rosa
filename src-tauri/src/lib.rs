@@ -6,11 +6,13 @@ mod browser_broker;
 pub mod claude_projects;
 pub mod commands;
 pub mod computer_use;
+mod computer_use_cursor;
 mod computer_use_permission_drag;
 pub mod connectors;
 pub mod db;
 pub mod dictation;
 pub mod domain;
+pub mod experimental_settings;
 pub mod extension_host;
 pub mod feature_flags;
 pub mod hermes_bridge;
@@ -22,11 +24,13 @@ pub mod meeting_detection;
 pub mod meeting_hud;
 pub mod menu_bar;
 mod note_audio_export;
+mod note_save_flush;
 pub mod notifications;
 pub mod obsidian;
 pub mod os_accounts;
 pub mod p3a;
 pub mod providers;
+mod shutdown;
 pub mod theme_icon;
 pub mod updates;
 pub mod video_download_url;
@@ -161,11 +165,14 @@ pub fn run() {
             theme_icon::set_dock_icon,
             print_current_webview,
             commands::bootstrap_app,
+            commands::experimental_flags_get,
+            commands::experimental_flags_set,
             commands::create_note,
             commands::list_notes,
             commands::get_note,
             commands::download_note_audio,
             commands::update_note,
+            note_save_flush::complete_note_save_flush,
             commands::delete_note,
             commands::delete_notes,
             commands::create_folder,
@@ -246,6 +253,7 @@ pub fn run() {
             hermes_bridge::download_hermes_bridge_file,
             hermes_bridge::hermes_bridge_file_preview,
             hermes_bridge::hermes_bridge_image_data_url,
+            hermes_bridge::prepare_hermes_bridge_image_attachment,
             hermes_bridge::hermes_bridge_file_text,
             hermes_bridge::import_hermes_bridge_file,
             hermes_bridge::import_hermes_bridge_file_bytes,
@@ -279,9 +287,11 @@ pub fn run() {
             commands::check_recording_source_readiness,
             commands::open_privacy_settings,
             commands::reveal_path,
+            commands::unpack_bundled_extension,
             commands::june_open_verify_page,
             commands::june_open_community_page,
             commands::june_open_external_url,
+            commands::start_meeting_recording,
             commands::start_recording,
             commands::pause_recording,
             commands::resume_recording,
@@ -317,6 +327,9 @@ pub fn run() {
             agent_hud::agent_hud_open_agent,
             notifications::send_app_notification,
             notifications::agent_open_ready,
+            meeting_detection::queue_meeting_start_request,
+            meeting_detection::pending_meeting_start_request,
+            meeting_detection::acknowledge_meeting_start_request,
             meeting_hud::meeting_hud_latest_status,
             meeting_hud::meeting_hud_reopen,
             providers::provider_model_settings,
@@ -329,6 +342,7 @@ pub fn run() {
             providers::set_venice_api_key,
             providers::clear_venice_api_key,
             providers::set_image_safe_mode,
+            providers::set_live_transcription,
             providers::set_image_safe_mode_prompt_dismissed,
             image_safety::image_prompt_may_be_explicit,
             providers::generate_image,
@@ -356,6 +370,7 @@ pub fn run() {
             os_accounts::os_accounts_referral_summary,
             extension_host::extension_pairing_status,
             extension_host::register_browser_extension_host,
+            connectors::commands::connectors_policy,
             connectors::commands::connectors_list,
             connectors::commands::connectors_connect,
             connectors::commands::connectors_cancel_connect,
@@ -398,8 +413,10 @@ pub fn run() {
             updates::relaunch_for_update,
         ])
         .manage(RecordingPresenceBoundsState::default())
+        .manage(note_save_flush::NoteSaveFlushState::default())
         .manage(hermes_bridge::HermesBridge::default())
         .manage(computer_use::ComputerUseState::default())
+        .manage(shutdown::ShutdownCoordinator::default())
         .manage(os_accounts::LoginFlow::default())
         .manage(extension_host::ExtensionHost::default())
         .manage(connectors::ConnectFlow::default())
@@ -408,6 +425,7 @@ pub fn run() {
             browser::setup_on_app_start();
             setup_app_menu(app)?;
             menu_bar::setup(app)?;
+            experimental_settings::setup(app)?;
             providers::setup(app);
             setup_video_asset_scope(app);
             setup_computer_use_asset_scope(app);
@@ -433,11 +451,13 @@ pub fn run() {
         .build(context)
         .expect("failed to build June")
         .run(|app, event| match event {
-            tauri::RunEvent::Exit => {
-                dictation::stop_helper(app);
-                tauri::async_runtime::block_on(computer_use::shutdown(app));
-                tauri::async_runtime::block_on(hermes_bridge::shutdown(app));
+            tauri::RunEvent::ExitRequested { code, api, .. } => {
+                shutdown::handle_exit_requested(app, code, &api);
             }
+            // Tao emits only Exit for macOS logout/application termination.
+            // This is a bounded synchronous backstop when ExitRequested never
+            // had a chance to latch the coordinator.
+            tauri::RunEvent::Exit => shutdown::handle_exit(app),
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => show_main_window(app),
             _ => {}
@@ -725,11 +745,16 @@ fn setup_main_window_lifecycle(app: &mut tauri::App) {
 fn register_main_window_lifecycle(app: &tauri::AppHandle, window: &tauri::WebviewWindow) {
     install_main_window_first_mouse_bridge(app, window);
     let close_window = window.clone();
-    window.on_window_event(move |event| {
-        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+    let lifecycle_app = app.clone();
+    window.on_window_event(move |event| match event {
+        tauri::WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
             let _ = close_window.hide();
         }
+        tauri::WindowEvent::Focused(true) => {
+            computer_use::schedule_driver_prewarm(&lifecycle_app);
+        }
+        _ => {}
     });
 }
 

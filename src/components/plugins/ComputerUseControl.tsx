@@ -9,6 +9,7 @@ import { messageFromError } from "../../lib/errors";
 import {
   COMPUTER_USE_STATUS_CHANGED_EVENT,
   type ComputerUseStatusDto,
+  computerUseRequestPermissions,
   computerUseStatus,
   computerUseStop,
   openPrivacySettings,
@@ -44,6 +45,41 @@ function requirementState(ready: boolean, enabled: boolean) {
 
 type MacOSPermission = "accessibility" | "screenRecording";
 
+const STATUS_POLL_INTERVAL_MS = 2000;
+let pendingStatusRefresh: Promise<ComputerUseStatusDto> | undefined;
+const pendingPermissionRequests = new Map<MacOSPermission, Promise<ComputerUseStatusDto>>();
+let permissionRequestTail: Promise<unknown> = Promise.resolve();
+
+function readComputerUseStatus() {
+  if (pendingStatusRefresh) return pendingStatusRefresh;
+
+  const request = computerUseStatus();
+  pendingStatusRefresh = request;
+  const clear = () => {
+    if (pendingStatusRefresh === request) pendingStatusRefresh = undefined;
+  };
+  void request.then(clear, clear);
+  return request;
+}
+
+function requestComputerUsePermission(permission: MacOSPermission) {
+  const pending = pendingPermissionRequests.get(permission);
+  if (pending) return pending;
+
+  const request = permissionRequestTail
+    .catch(() => undefined)
+    .then(() => computerUseRequestPermissions());
+  permissionRequestTail = request;
+  pendingPermissionRequests.set(permission, request);
+  const clear = () => {
+    if (pendingPermissionRequests.get(permission) === request) {
+      pendingPermissionRequests.delete(permission);
+    }
+  };
+  void request.then(clear, clear);
+  return request;
+}
+
 function permissionLabel(permission: MacOSPermission) {
   return permission === "accessibility" ? "Accessibility" : "Screen recording";
 }
@@ -61,7 +97,7 @@ export function ComputerUseControl({ onOpenModels, onOpenBilling }: ComputerUseC
 
   const refresh = useCallback(async () => {
     try {
-      setStatus(await computerUseStatus());
+      setStatus(await readComputerUseStatus());
     } catch (error) {
       setMessage(messageFromError(error));
     }
@@ -71,7 +107,7 @@ export function ComputerUseControl({ onOpenModels, onOpenBilling }: ComputerUseC
     let active = true;
     const load = async () => {
       try {
-        const next = await computerUseStatus();
+        const next = await readComputerUseStatus();
         if (active) setStatus(next);
       } catch (error) {
         if (active) setMessage(messageFromError(error));
@@ -91,8 +127,34 @@ export function ComputerUseControl({ onOpenModels, onOpenBilling }: ComputerUseC
 
   useEffect(() => {
     if (!status?.grantEnabled || status.ready) return;
-    const timer = window.setInterval(() => void refresh(), 2000);
-    return () => window.clearInterval(timer);
+    let active = true;
+    let timer: number | undefined;
+    const clearTimer = () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      timer = undefined;
+    };
+    const schedule = () => {
+      clearTimer();
+      if (!active || document.visibilityState !== "visible") return;
+      timer = window.setTimeout(async () => {
+        await refresh();
+        schedule();
+      }, STATUS_POLL_INTERVAL_MS);
+    };
+    const onVisibilityChange = () => {
+      clearTimer();
+      if (document.visibilityState === "visible") {
+        void refresh().then(schedule);
+      }
+    };
+
+    schedule();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      active = false;
+      clearTimer();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [refresh, status?.grantEnabled, status?.ready]);
 
   const publish = useCallback((next: ComputerUseStatusDto) => {
@@ -136,13 +198,20 @@ export function ComputerUseControl({ onOpenModels, onOpenBilling }: ComputerUseC
     }
   }, [refresh]);
 
-  const openPermissionSettings = useCallback(async (pane: "accessibility" | "screenRecording") => {
-    try {
-      await openPrivacySettings(pane);
-    } catch (error) {
-      setMessage(messageFromError(error));
-    }
-  }, []);
+  const openPermissionSettings = useCallback(
+    async (pane: "accessibility" | "screenRecording") => {
+      try {
+        // Ask first so macOS creates the responsible app entry before the
+        // matching privacy pane appears. Coalesce repeated clicks because a
+        // cold signed-helper launch and TCC probe can take several seconds.
+        publish(await requestComputerUsePermission(pane));
+        await openPrivacySettings(pane);
+      } catch (error) {
+        setMessage(messageFromError(error));
+      }
+    },
+    [publish],
+  );
 
   const enabled = status?.grantEnabled === true;
   const supported = status?.platformSupported !== false;
@@ -167,12 +236,15 @@ export function ComputerUseControl({ onOpenModels, onOpenBilling }: ComputerUseC
 
     const publishBounds = () => {
       const bounds = element.getBoundingClientRect();
-      void setComputerUsePermissionDragBounds({
-        x: bounds.x,
-        y: bounds.y,
-        width: bounds.width,
-        height: bounds.height,
-      }).catch((error) => setMessage(messageFromError(error)));
+      void setComputerUsePermissionDragBounds(
+        {
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+        },
+        nextPermission === "accessibility" ? "helper" : "host",
+      ).catch((error) => setMessage(messageFromError(error)));
     };
     publishBounds();
 
@@ -187,7 +259,7 @@ export function ComputerUseControl({ onOpenModels, onOpenBilling }: ComputerUseC
       window.removeEventListener("scroll", publishBounds, true);
       void setComputerUsePermissionDragBounds(null);
     };
-  }, [permissionsMissing]);
+  }, [nextPermission, permissionsMissing]);
 
   return (
     <li className="connector-row computer-use-control" data-state={status?.state}>
@@ -290,10 +362,18 @@ export function ComputerUseControl({ onOpenModels, onOpenBilling }: ComputerUseC
                   <div className="computer-use-permission-assistant-copy">
                     <span className="computer-use-permission-step">Step {permissionStep} of 2</span>
                     <h4 id="add-june-macos">Allow {permissionLabel(nextPermission)}</h4>
-                    <p>
-                      Open System Settings, find <strong>June Computer Use Driver</strong>, and turn
-                      it on. Then return to June. This page updates automatically.
-                    </p>
+                    {nextPermission === "accessibility" ? (
+                      <p>
+                        Open System Settings, find <strong>June Computer Use Driver</strong>, and
+                        turn it on. Then return to June. This page updates automatically.
+                      </p>
+                    ) : (
+                      <p>
+                        Open System Settings, find <strong>June</strong>, and turn it on. macOS
+                        assigns Screen recording to June itself. Then return here. This page updates
+                        automatically.
+                      </p>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -306,23 +386,30 @@ export function ComputerUseControl({ onOpenModels, onOpenBilling }: ComputerUseC
 
                 <div className="computer-use-permission-helper">
                   <div className="computer-use-permission-helper-copy">
-                    <strong>June is not in the list?</strong>
+                    <strong>
+                      {nextPermission === "accessibility" ? "Driver" : "June"} is not in the list?
+                    </strong>
                     <p>
-                      Drag the helper below into the open System Settings list, then turn it on.
+                      Drag {nextPermission === "accessibility" ? "the helper" : "June"} below into
+                      the open System Settings list, then turn it on.
                     </p>
                   </div>
                   <button
                     ref={permissionDragRef}
                     type="button"
                     className="computer-use-permission-drag-card"
-                    aria-label="Drag June Computer Use Driver to the open System Settings list"
+                    aria-label={`Drag ${
+                      nextPermission === "accessibility" ? "June Computer Use Driver" : "June"
+                    } to the open System Settings list`}
                     onClick={() => void openPermissionSettings(nextPermission)}
                   >
                     <span className="computer-use-permission-drag-icon" aria-hidden>
                       <IconTelevision size={20} />
                     </span>
                     <span className="computer-use-permission-drag-copy">
-                      <strong>June Computer Use Driver</strong>
+                      <strong>
+                        {nextPermission === "accessibility" ? "June Computer Use Driver" : "June"}
+                      </strong>
                       <span>Drag into System Settings</span>
                     </span>
                   </button>

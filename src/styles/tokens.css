@@ -366,15 +366,15 @@
   --scrim: color-mix(in oklch, var(--foreground) 12%, transparent);
 
   /* Motion ----------------------------------------------------------- */
+  --ease-linear: linear;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-pop: cubic-bezier(0.34, 1.45, 0.64, 1);
-  --ease-linear: linear;
   --t-fast: 100ms;
   --t-med: 160ms;
   --t-slow: 240ms;
-  --stream-word-fade-dur: 480ms;
+  --stream-word-fade-dur: 1500ms;
   --home-typing-breath-dur: 1900ms;
   --home-typing-blur: 2.5px;
   --home-presence-float-dur: 7s;

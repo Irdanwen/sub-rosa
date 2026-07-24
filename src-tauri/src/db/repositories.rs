@@ -3,21 +3,34 @@ use crate::domain::types::{
     AgentTaskStatus, AgentToolEventDto, AgentToolEventStatus, AppError, AudioArtifactDto,
     AudioValidationDto, CompletedSessionDto, DictationHistoryItemDto, DictionaryEntryDto,
     FolderDto, ListDictationHistoryResponse, ListNotesResponse, MemoryDto, NoteCalendarEventDto,
-    NoteDto, NoteListItemDto, NoteTranscriptionJobKind, NoteTranscriptionJobPlan,
+    NoteDto, NoteListItemDto, NotePatchDto, NoteTranscriptionJobKind, NoteTranscriptionJobPlan,
     NoteTranscriptionJobRecord, NoteTranscriptionJobStatus, ProcessingStatus,
     ProfileDataSummaryDto, RecordingSourceMode, RecordingState, SessionFolderDto,
     SessionProfileDto, TranscriptCoverageDto, TranscriptDto,
 };
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::query::query;
+use sqlx::query_builder::QueryBuilder;
 use sqlx::row::Row;
-use sqlx_sqlite::SqlitePool;
+use sqlx_sqlite::{Sqlite, SqlitePool};
 use uuid::Uuid;
 
 use crate::note_audio_export::{NoteAudioExportSelection, NoteAudioExportSource};
 
 const DICTATION_HISTORY_RETENTION_DAYS: i64 = 7;
+const NOTE_PREVIEW_CHAR_LIMIT: usize = 140;
+const LIST_NOTES_CURSOR_VERSION: u8 = 1;
+const LIST_NOTES_CURSOR_MAX_ENCODED_LEN: usize = 1_024;
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct ListNotesCursor {
+    version: u8,
+    created_at: String,
+    rowid: i64,
+}
 
 #[derive(Clone)]
 pub struct Repositories {
@@ -872,44 +885,91 @@ impl Repositories {
         Ok(rows.into_iter().map(connector_trigger_from_row).collect())
     }
 
-    /// Set the trigger for a routine. A routine has exactly one trigger, so any
-    /// existing trigger for the job (whatever its kind or account) is removed
-    /// first: without this, editing a routine from `email_received` to
-    /// `event_upcoming` (or to another account) would leave the old row behind,
-    /// and the daemon would fire the routine from both.
-    pub async fn set_connector_trigger(
+    /// Replace the trigger for a routine and, when this creates an account's
+    /// first email subscription, reset its Gmail history cursor atomically.
+    ///
+    /// `BEGIN IMMEDIATE` serializes competing replacements before the
+    /// first-subscription check. Readers therefore observe either the complete
+    /// old trigger+cursor state or the complete new state, and a failed write
+    /// rolls both pieces back together.
+    pub async fn replace_connector_trigger(
         &self,
         job_id: &str,
         kind: &str,
         account_id: &str,
         config_json: &str,
     ) -> Result<ConnectorTriggerRecord, sqlx::error::Error> {
-        query("DELETE FROM connector_triggers WHERE job_id = ?")
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let replace_result = async {
+            // Check before deleting this job's old trigger. Editing an existing
+            // email subscription for the same account must retain its cursor;
+            // only the account's first active email subscription re-baselines.
+            let reset_email_cursor = kind == "email_received"
+                && query(
+                    "SELECT 1
+                     FROM connector_triggers
+                     WHERE kind = 'email_received' AND account_id = ?
+                     LIMIT 1",
+                )
+                .bind(account_id)
+                .fetch_optional(&mut *transaction)
+                .await?
+                .is_none();
+
+            query("DELETE FROM connector_triggers WHERE job_id = ?")
+                .bind(job_id)
+                .execute(&mut *transaction)
+                .await?;
+
+            let id = Uuid::new_v4().to_string();
+            let now = timestamp();
+            query(
+                "INSERT INTO connector_triggers (id, job_id, kind, account_id, config, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?)",
+            )
+            .bind(&id)
             .bind(job_id)
-            .execute(&self.pool)
+            .bind(kind)
+            .bind(account_id)
+            .bind(config_json)
+            .bind(&now)
+            .execute(&mut *transaction)
             .await?;
-        let id = Uuid::new_v4().to_string();
-        let now = timestamp();
-        query(
-            "INSERT INTO connector_triggers (id, job_id, kind, account_id, config, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)",
-        )
-        .bind(&id)
-        .bind(job_id)
-        .bind(kind)
-        .bind(account_id)
-        .bind(config_json)
-        .bind(&now)
-        .execute(&self.pool)
-        .await?;
-        let row = query(
-            "SELECT id, job_id, kind, account_id, config, created_at
-             FROM connector_triggers WHERE id = ?",
-        )
-        .bind(&id)
-        .fetch_one(&self.pool)
-        .await?;
-        Ok(connector_trigger_from_row(row))
+
+            if reset_email_cursor {
+                query(
+                    "DELETE FROM trigger_cursors
+                     WHERE account_id = ? AND kind = 'email_received'",
+                )
+                .bind(account_id)
+                .execute(&mut *transaction)
+                .await?;
+            }
+
+            let row = query(
+                "SELECT id, job_id, kind, account_id, config, created_at
+                 FROM connector_triggers WHERE id = ?",
+            )
+            .bind(&id)
+            .fetch_one(&mut *transaction)
+            .await?;
+            Ok(connector_trigger_from_row(row))
+        }
+        .await;
+
+        match replace_result {
+            Ok(record) => {
+                transaction.commit().await?;
+                Ok(record)
+            }
+            Err(error) => match transaction.rollback().await {
+                Ok(()) => Err(error),
+                Err(rollback_error) => Err(sqlx::Error::Protocol(format!(
+                    "connector trigger replacement failed ({error}); rollback also failed \
+                     ({rollback_error})"
+                ))),
+            },
+        }
     }
 
     pub async fn delete_connector_trigger(&self, id: &str) -> Result<bool, sqlx::error::Error> {
@@ -1621,15 +1681,24 @@ impl Repositories {
         profile: &str,
         folder_id: Option<String>,
     ) -> Result<NoteDto, sqlx::error::Error> {
-        let now = timestamp();
         let id = Uuid::new_v4().to_string();
+        self.create_note_with_id(profile, folder_id, &id).await
+    }
+
+    pub async fn create_note_with_id(
+        &self,
+        profile: &str,
+        folder_id: Option<String>,
+        id: &str,
+    ) -> Result<NoteDto, sqlx::error::Error> {
+        let now = timestamp();
 
         let mut tx = self.pool.begin().await?;
         query(
-            "INSERT INTO notes (id, title, processing_status, profile, created_at, updated_at)
+            "INSERT OR IGNORE INTO notes (id, title, processing_status, profile, created_at, updated_at)
              VALUES (?, '', 'draft', ?, ?, ?)",
         )
-        .bind(&id)
+        .bind(id)
         .bind(profile)
         .bind(&now)
         .bind(&now)
@@ -1647,7 +1716,7 @@ impl Repositories {
                  SELECT ?, id, ? FROM folders
                  WHERE id = ? AND profile = ? AND deleted_at IS NULL",
             )
-            .bind(&id)
+            .bind(id)
             .bind(&now)
             .bind(folder_id)
             .bind(profile)
@@ -1656,7 +1725,7 @@ impl Repositories {
         }
 
         tx.commit().await?;
-        self.get_note(&id).await
+        self.get_note(id).await
     }
 
     pub async fn get_note(&self, note_id: &str) -> Result<NoteDto, sqlx::error::Error> {
@@ -1754,65 +1823,143 @@ impl Repositories {
         profile: &str,
         folder_id: Option<String>,
         limit: i64,
-        _cursor: Option<String>,
+        cursor: Option<String>,
     ) -> Result<ListNotesResponse, sqlx::error::Error> {
-        let rows = if let Some(folder_id) = folder_id {
-            query(
-                "SELECT n.id, n.title, n.generated_content, n.edited_content, n.processing_status, n.created_at, n.updated_at
-                 FROM notes n
-                 INNER JOIN note_folders nf ON nf.note_id = n.id
-                 WHERE nf.folder_id = ? AND n.profile = ?
-                 ORDER BY n.created_at DESC, n.rowid DESC
-                 LIMIT ?",
-            )
-            .bind(folder_id)
-            .bind(profile)
-            .bind(limit)
-            .fetch_all(&self.pool)
-            .await?
-        } else {
-            query(
-                "SELECT id, title, generated_content, edited_content, processing_status, created_at, updated_at
-                 FROM notes
-                 WHERE profile = ?
-                 ORDER BY created_at DESC, rowid DESC
-                 LIMIT ?",
-            )
-            .bind(profile)
-            .bind(limit)
-            .fetch_all(&self.pool)
-            .await?
-        };
+        let cursor = cursor
+            .as_deref()
+            .map(decode_list_notes_cursor)
+            .transpose()?;
+        let page_size = usize::try_from(limit).ok();
+        let fetch_limit = page_size
+            .map(|_| limit.saturating_add(1))
+            // Preserve the existing SQLite `LIMIT -1` behavior for callers
+            // that explicitly request an unbounded list.
+            .unwrap_or(limit);
 
-        let mut items = Vec::with_capacity(rows.len());
+        // `char(...)` is the Unicode White_Space set used by Rust's
+        // `char::is_whitespace`. Keeping the blank-content check in SQL lets
+        // this projection match `preview_for` exactly without selecting either
+        // full note body.
+        let mut list_query = QueryBuilder::<Sqlite>::new(format!(
+            "WITH page AS (
+                 SELECT n.rowid AS note_rowid, n.id, n.title,
+                        substr(
+                            CASE
+                                WHEN trim(
+                                    COALESCE(n.edited_content, n.generated_content, ''),
+                                    char(9, 10, 11, 12, 13, 32, 133, 160, 5760,
+                                         8192, 8193, 8194, 8195, 8196, 8197,
+                                         8198, 8199, 8200, 8201, 8202, 8232,
+                                         8233, 8239, 8287, 12288)
+                                ) = ''
+                                THEN n.title
+                                ELSE COALESCE(n.edited_content, n.generated_content, '')
+                            END,
+                            1,
+                            {NOTE_PREVIEW_CHAR_LIMIT}
+                        ) AS preview,
+                        n.processing_status, n.created_at, n.updated_at
+                 FROM notes n"
+        ));
+        if folder_id.is_some() {
+            list_query.push(
+                "
+                 INNER JOIN note_folders nf_filter ON nf_filter.note_id = n.id",
+            );
+        }
+        list_query.push(
+            "
+                 WHERE n.profile = ",
+        );
+        list_query.push_bind(profile);
+        if let Some(folder_id) = folder_id {
+            list_query.push(" AND nf_filter.folder_id = ");
+            list_query.push_bind(folder_id);
+        }
+        if let Some(cursor) = &cursor {
+            list_query.push(" AND (n.created_at < ");
+            list_query.push_bind(&cursor.created_at);
+            list_query.push(" OR (n.created_at = ");
+            list_query.push_bind(&cursor.created_at);
+            list_query.push(" AND n.rowid < ");
+            list_query.push_bind(cursor.rowid);
+            list_query.push("))");
+        }
+        list_query.push(
+            "
+                 ORDER BY n.created_at DESC, n.rowid DESC
+                 LIMIT ",
+        );
+        list_query.push_bind(fetch_limit);
+        list_query.push(
+            "
+             )
+             SELECT page.note_rowid, page.id, page.title, page.preview,
+                    page.processing_status, page.created_at, page.updated_at,
+                    CASE WHEN f.id IS NOT NULL THEN nf.folder_id END AS folder_id
+             FROM page
+             LEFT JOIN note_folders nf ON nf.note_id = page.id
+             LEFT JOIN folders f
+               ON f.id = nf.folder_id AND f.deleted_at IS NULL
+             ORDER BY page.created_at DESC, page.note_rowid DESC, nf.assigned_at ASC",
+        );
+
+        let rows = list_query.build().fetch_all(&self.pool).await?;
+        let mut items_with_cursors: Vec<(NoteListItemDto, ListNotesCursor)> =
+            Vec::with_capacity(rows.len());
         for row in rows {
             let id: String = row.get("id");
-            let title: String = row.get("title");
-            let content = row
-                .try_get::<Option<String>, _>("edited_content")?
-                .or_else(|| {
-                    row.try_get::<Option<String>, _>("generated_content")
-                        .ok()
-                        .flatten()
-                })
-                .unwrap_or_default();
-            items.push(NoteListItemDto {
-                id: id.clone(),
-                title: title.clone(),
-                preview: preview_for(&title, &content),
-                processing_status: ProcessingStatus::from(
-                    row.get::<String, _>("processing_status").as_str(),
-                ),
-                folder_ids: self.folder_ids(&id).await?,
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
-                duration_ms: None,
-            });
+            let folder_id = row.try_get::<Option<String>, _>("folder_id")?;
+            if let Some((item, _)) = items_with_cursors.last_mut() {
+                if item.id == id {
+                    if let Some(folder_id) = folder_id {
+                        item.folder_ids.push(folder_id);
+                    }
+                    continue;
+                }
+            }
+
+            let created_at: String = row.get("created_at");
+            items_with_cursors.push((
+                NoteListItemDto {
+                    id,
+                    title: row.get("title"),
+                    preview: row.get("preview"),
+                    processing_status: ProcessingStatus::from(
+                        row.get::<String, _>("processing_status").as_str(),
+                    ),
+                    folder_ids: folder_id.into_iter().collect(),
+                    created_at: created_at.clone(),
+                    updated_at: row.get("updated_at"),
+                    duration_ms: None,
+                },
+                ListNotesCursor {
+                    version: LIST_NOTES_CURSOR_VERSION,
+                    created_at,
+                    rowid: row.get("note_rowid"),
+                },
+            ));
         }
 
+        let has_more = page_size.is_some_and(|page_size| items_with_cursors.len() > page_size);
+        if let Some(page_size) = page_size {
+            items_with_cursors.truncate(page_size);
+        }
+        let next_cursor = if has_more {
+            items_with_cursors
+                .last()
+                .map(|(_, cursor)| encode_list_notes_cursor(cursor))
+                .transpose()?
+        } else {
+            None
+        };
+
         Ok(ListNotesResponse {
-            items,
-            next_cursor: None,
+            items: items_with_cursors
+                .into_iter()
+                .map(|(item, _)| item)
+                .collect(),
+            next_cursor,
         })
     }
 
@@ -2729,26 +2876,43 @@ impl Repositories {
         title: Option<String>,
         edited_content: Option<String>,
         active_tab: Option<String>,
-    ) -> Result<NoteDto, sqlx::error::Error> {
-        let current = self.get_note(note_id).await?;
-        let next_title = title.unwrap_or(current.title);
-        let next_content = edited_content.or(current.edited_content);
-        let next_tab = active_tab
-            .or(current.active_tab)
-            .unwrap_or_else(|| "notes".to_string());
+    ) -> Result<NotePatchDto, sqlx::error::Error> {
+        let mut update = QueryBuilder::<Sqlite>::new("UPDATE notes SET ");
+        // An omitted title is a patch omission, not a request to rewrite the
+        // caller's snapshot. Leave the column out so a delayed content
+        // autosave cannot clobber a title committed by note generation.
+        if let Some(title) = title {
+            update.push("title = ").push_bind(title).push(", ");
+        }
+        update
+            .push("edited_content = COALESCE(")
+            .push_bind(edited_content)
+            .push(", edited_content), active_tab = COALESCE(")
+            .push_bind(active_tab)
+            .push(", active_tab, 'notes'), updated_at = ")
+            .push_bind(timestamp())
+            .push(" WHERE id = ")
+            .push_bind(note_id)
+            .push(
+                " RETURNING id, title, generated_content, edited_content, active_tab, updated_at",
+            );
+        let row = update.build().fetch_one(&self.pool).await?;
+        let title: String = row.get("title");
+        let edited_content = row.try_get::<Option<String>, _>("edited_content")?;
+        let generated_content = row.try_get::<Option<String>, _>("generated_content")?;
+        let content = edited_content
+            .as_deref()
+            .or(generated_content.as_deref())
+            .unwrap_or_default();
 
-        query(
-            "UPDATE notes SET title = ?, edited_content = ?, active_tab = ?, updated_at = ? WHERE id = ?",
-        )
-        .bind(next_title)
-        .bind(next_content)
-        .bind(next_tab)
-        .bind(timestamp())
-        .bind(note_id)
-        .execute(&self.pool)
-        .await?;
-
-        self.get_note(note_id).await
+        Ok(NotePatchDto {
+            id: row.get("id"),
+            preview: preview_for(&title, content),
+            title,
+            edited_content,
+            active_tab: row.get("active_tab"),
+            updated_at: row.get("updated_at"),
+        })
     }
 
     pub async fn audio_artifact_paths_for_note(
@@ -2862,6 +3026,42 @@ impl Repositories {
         tx.commit().await
     }
 
+    /// Deletes a deterministic meeting-start draft only while it is still the
+    /// untouched row created by native startup. The conditional update takes
+    /// SQLite's write lock before deletion so a concurrent user edit cannot
+    /// pass the check and then be removed.
+    pub async fn delete_untouched_draft(&self, note_id: &str) -> Result<bool, sqlx::error::Error> {
+        let mut tx = self.pool.begin().await?;
+        let claimed = query(
+            "UPDATE notes
+             SET processing_status = 'failed'
+             WHERE id = ?
+               AND processing_status = 'draft'
+               AND updated_at = created_at
+               AND title = ''
+               AND COALESCE(generated_content, '') = ''
+               AND COALESCE(edited_content, '') = ''
+               AND NOT EXISTS (SELECT 1 FROM note_folders WHERE note_id = ?)
+               AND NOT EXISTS (
+                 SELECT 1 FROM share_keys WHERE item_kind = 'note' AND item_id = ?
+               )",
+        )
+        .bind(note_id)
+        .bind(note_id)
+        .bind(note_id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected()
+            == 1;
+        if !claimed {
+            tx.rollback().await?;
+            return Ok(false);
+        }
+        delete_note_records(&mut tx, note_id).await?;
+        tx.commit().await?;
+        Ok(true)
+    }
+
     pub async fn delete_notes(&self, note_ids: &[String]) -> Result<(), sqlx::error::Error> {
         let mut tx = self.pool.begin().await?;
         for note_id in note_ids {
@@ -2970,17 +3170,20 @@ impl Repositories {
         note_id: &str,
         status: ProcessingStatus,
         last_error: Option<String>,
-    ) -> Result<(), sqlx::error::Error> {
-        query(
-            "UPDATE notes SET processing_status = ?, last_error = ?, updated_at = ? WHERE id = ?",
+    ) -> Result<String, sqlx::error::Error> {
+        let row = query(
+            "UPDATE notes
+             SET processing_status = ?, last_error = ?, updated_at = ?
+             WHERE id = ?
+             RETURNING updated_at",
         )
         .bind(status.as_db())
         .bind(last_error)
         .bind(timestamp())
         .bind(note_id)
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await?;
-        Ok(())
+        Ok(row.get("updated_at"))
     }
 
     pub async fn set_note_transcription_warning(
@@ -3074,6 +3277,7 @@ impl Repositories {
         } else {
             append_note_content(current.generated_content.clone(), content.clone())
         };
+        let expected_edited_content = current.edited_content.clone();
         let next_edited_content = current.edited_content.map(|edited_content| {
             if existing_session_block {
                 if edited_content.trim()
@@ -3093,11 +3297,32 @@ impl Repositories {
                 append_note_content(Some(edited_content), content)
             }
         });
+        // Title and edited content are user-owned. Apply generation's changes
+        // only while the exact snapshots it read are still current; a NULL
+        // edited-content snapshot never authorizes a write to that column.
         query(
-            "UPDATE notes SET title = ?, generated_content = ?, edited_content = ?, active_tab = 'notes', processing_status = 'ready', last_error = NULL, updated_at = ? WHERE id = ?",
+            "UPDATE notes
+             SET title = CASE
+                     WHEN title IS ? THEN ?
+                     ELSE title
+                 END,
+                 generated_content = ?,
+                 edited_content = CASE
+                     WHEN ? IS NULL THEN edited_content
+                     WHEN edited_content IS ? THEN ?
+                     ELSE edited_content
+                 END,
+                 active_tab = 'notes',
+                 processing_status = 'ready',
+                 last_error = NULL,
+                 updated_at = ?
+             WHERE id = ?",
         )
+        .bind(current.title.as_str())
         .bind(title)
         .bind(next_generated_content)
+        .bind(expected_edited_content.as_deref())
+        .bind(expected_edited_content.as_deref())
         .bind(next_edited_content)
         .bind(timestamp())
         .bind(note_id)
@@ -3289,6 +3514,73 @@ impl Repositories {
             );
         }
         Ok(())
+    }
+
+    /// Publishes every row required to recover a newly started capture in one
+    /// transaction. Capture itself is already live when this runs, so callers
+    /// must stop it if this transaction fails.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_recording_start(
+        &self,
+        note_id: &str,
+        session_id: &str,
+        source_mode: RecordingSourceMode,
+        partial_path: &str,
+        final_path: &str,
+        device_label: Option<String>,
+        sources: &[(String, String, String)],
+    ) -> Result<(), sqlx::error::Error> {
+        let now = timestamp();
+        let mut tx = self.pool.begin().await?;
+        query(
+            "INSERT INTO recording_sessions (id, note_id, source_mode, status, started_at, expected_elapsed_ms, device_label, permission_state, partial_path, final_path)
+             VALUES (?, ?, ?, 'recording', ?, 0, ?, 'granted', ?, ?)",
+        )
+        .bind(session_id)
+        .bind(note_id)
+        .bind(source_mode.as_db())
+        .bind(&now)
+        .bind(device_label)
+        .bind(partial_path)
+        .bind(final_path)
+        .execute(&mut *tx)
+        .await?;
+        query(
+            "UPDATE notes
+             SET processing_status = 'recording', last_error = NULL, updated_at = ?
+             WHERE id = ?
+               AND processing_status NOT IN ('transcribing', 'generating')",
+        )
+        .bind(&now)
+        .bind(note_id)
+        .execute(&mut *tx)
+        .await?;
+        query(
+            "INSERT INTO recording_checkpoints (id, recording_session_id, kind, created_at, details)
+             VALUES (?, ?, 'start', ?, NULL)",
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(session_id)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await?;
+        for (source, source_partial_path, source_final_path) in sources {
+            query(
+                "INSERT INTO audio_artifacts
+                 (id, note_id, recording_session_id, source, partial_path, path, format, duration_ms, size_bytes, checksum, status, expected_duration_ms, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, 'wav', 0, 0, '', 'recording', 0, ?)",
+            )
+            .bind(Uuid::new_v4().to_string())
+            .bind(note_id)
+            .bind(session_id)
+            .bind(source)
+            .bind(source_partial_path)
+            .bind(source_final_path)
+            .bind(&now)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await
     }
 
     pub async fn recording_session_source_mode(
@@ -5944,7 +6236,33 @@ fn preview_for(title: &str, content: &str) -> String {
     } else {
         content
     };
-    source.chars().take(140).collect()
+    source.chars().take(NOTE_PREVIEW_CHAR_LIMIT).collect()
+}
+
+fn encode_list_notes_cursor(cursor: &ListNotesCursor) -> Result<String, sqlx::Error> {
+    let bytes = serde_json::to_vec(cursor).map_err(|error| {
+        sqlx::Error::Protocol(format!("could not encode notes cursor: {error}"))
+    })?;
+    Ok(URL_SAFE_NO_PAD.encode(bytes))
+}
+
+fn decode_list_notes_cursor(cursor: &str) -> Result<ListNotesCursor, sqlx::Error> {
+    if cursor.len() > LIST_NOTES_CURSOR_MAX_ENCODED_LEN {
+        return Err(sqlx::Error::Protocol(
+            "notes cursor is too large".to_string(),
+        ));
+    }
+    let bytes = URL_SAFE_NO_PAD
+        .decode(cursor)
+        .map_err(|_| sqlx::Error::Protocol("notes cursor is not valid base64url".to_string()))?;
+    let cursor: ListNotesCursor = serde_json::from_slice(&bytes)
+        .map_err(|_| sqlx::Error::Protocol("notes cursor is not valid JSON".to_string()))?;
+    if cursor.version != LIST_NOTES_CURSOR_VERSION {
+        return Err(sqlx::Error::Protocol(
+            "notes cursor version is not supported".to_string(),
+        ));
+    }
+    Ok(cursor)
 }
 
 fn validation_summary_recorded_silence(summary: Option<&str>) -> bool {
@@ -5963,9 +6281,11 @@ mod tests {
     };
     use sqlx::query::query;
     use sqlx::row::Row;
+    use sqlx_sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+    use std::time::Duration as StdDuration;
 
     async fn test_repositories() -> Repositories {
-        let pool = sqlx_sqlite::SqlitePoolOptions::new()
+        let pool = SqlitePoolOptions::new()
             .max_connections(1)
             .connect("sqlite::memory:")
             .await
@@ -5976,8 +6296,88 @@ mod tests {
         Repositories::new(pool)
     }
 
+    async fn concurrent_test_repositories() -> (tempfile::TempDir, Repositories) {
+        let directory = tempfile::tempdir().expect("temporary database directory");
+        let options = SqliteConnectOptions::new()
+            .filename(directory.path().join("connector-concurrency.sqlite3"))
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .busy_timeout(StdDuration::from_secs(2));
+        let pool = SqlitePoolOptions::new()
+            .max_connections(2)
+            .connect_with(options)
+            .await
+            .expect("file-backed sqlite");
+        crate::db::migrations::run_migrations(&pool)
+            .await
+            .expect("migrations");
+        (directory, Repositories::new(pool))
+    }
+
     fn scopes(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[tokio::test]
+    async fn create_note_with_id_replays_the_same_note() {
+        let repos = test_repositories().await;
+
+        let first = repos
+            .create_note_with_id("default", None, "meeting-note-1")
+            .await
+            .expect("create deterministic note");
+        let replay = repos
+            .create_note_with_id("default", None, "meeting-note-1")
+            .await
+            .expect("replay deterministic note");
+        let count: i64 = query("SELECT COUNT(*) AS count FROM notes WHERE id = ?")
+            .bind("meeting-note-1")
+            .fetch_one(&repos.pool)
+            .await
+            .expect("count deterministic notes")
+            .get("count");
+
+        assert_eq!(replay.id, first.id);
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn meeting_start_cleanup_preserves_a_changed_draft() {
+        let repos = test_repositories().await;
+        let untouched = repos
+            .create_note_with_id("default", None, "untouched-meeting-draft")
+            .await
+            .expect("create untouched draft");
+        assert!(repos
+            .delete_untouched_draft(&untouched.id)
+            .await
+            .expect("delete untouched draft"));
+        assert!(repos.get_note(&untouched.id).await.is_err());
+
+        let changed = repos
+            .create_note_with_id("default", None, "changed-meeting-draft")
+            .await
+            .expect("create changed draft");
+        repos
+            .update_note(
+                &changed.id,
+                Some("Keep my meeting note".to_string()),
+                Some("User-authored notes".to_string()),
+                None,
+            )
+            .await
+            .expect("edit meeting draft");
+
+        assert!(!repos
+            .delete_untouched_draft(&changed.id)
+            .await
+            .expect("preserve changed draft"));
+        let preserved = repos.get_note(&changed.id).await.expect("preserved note");
+        assert_eq!(preserved.title, "Keep my meeting note");
+        assert_eq!(
+            preserved.edited_content.as_deref(),
+            Some("User-authored notes")
+        );
     }
 
     #[tokio::test]
@@ -6171,6 +6571,182 @@ mod tests {
             pipeline_version: "pipeline-v1".to_string(),
             configuration_fingerprint: "config-v1".to_string(),
         }
+    }
+
+    #[tokio::test]
+    async fn recording_start_atomically_creates_recovery_state() {
+        let repos = test_repositories().await;
+        let note = repos.create_note("default", None).await.expect("note");
+        let sources = vec![
+            (
+                "microphone".to_string(),
+                "/tmp/microphone.partial.wav".to_string(),
+                "/tmp/microphone.wav".to_string(),
+            ),
+            (
+                "system".to_string(),
+                "/tmp/system.partial.wav".to_string(),
+                "/tmp/system.wav".to_string(),
+            ),
+        ];
+
+        repos
+            .create_recording_start(
+                &note.id,
+                "atomic-session",
+                RecordingSourceMode::MicrophonePlusSystem,
+                "/tmp/combined.partial.wav",
+                "/tmp/combined.wav",
+                Some("Studio microphone".to_string()),
+                &sources,
+            )
+            .await
+            .expect("create recording recovery state");
+
+        let session = query(
+            "SELECT note_id, source_mode, status, device_label, partial_path, final_path
+             FROM recording_sessions WHERE id = ?",
+        )
+        .bind("atomic-session")
+        .fetch_one(&repos.pool)
+        .await
+        .expect("recording session");
+        assert_eq!(session.get::<String, _>("note_id"), note.id);
+        assert_eq!(
+            session.get::<String, _>("source_mode"),
+            "microphone_plus_system"
+        );
+        assert_eq!(session.get::<String, _>("status"), "recording");
+        assert_eq!(
+            session.get::<Option<String>, _>("device_label").as_deref(),
+            Some("Studio microphone")
+        );
+        assert_eq!(
+            session.get::<Option<String>, _>("partial_path").as_deref(),
+            Some("/tmp/combined.partial.wav")
+        );
+        assert_eq!(
+            session.get::<Option<String>, _>("final_path").as_deref(),
+            Some("/tmp/combined.wav")
+        );
+
+        let checkpoints = query(
+            "SELECT kind FROM recording_checkpoints
+             WHERE recording_session_id = ? ORDER BY created_at, id",
+        )
+        .bind("atomic-session")
+        .fetch_all(&repos.pool)
+        .await
+        .expect("recording checkpoints");
+        assert_eq!(checkpoints.len(), 1);
+        assert_eq!(checkpoints[0].get::<String, _>("kind"), "start");
+
+        let artifacts = query(
+            "SELECT source, partial_path, path, status FROM audio_artifacts
+             WHERE recording_session_id = ? ORDER BY source",
+        )
+        .bind("atomic-session")
+        .fetch_all(&repos.pool)
+        .await
+        .expect("source artifacts");
+        assert_eq!(artifacts.len(), 2);
+        assert_eq!(artifacts[0].get::<String, _>("source"), "microphone");
+        assert_eq!(
+            artifacts[0]
+                .get::<Option<String>, _>("partial_path")
+                .as_deref(),
+            Some("/tmp/microphone.partial.wav")
+        );
+        assert_eq!(artifacts[0].get::<String, _>("path"), "/tmp/microphone.wav");
+        assert_eq!(artifacts[0].get::<String, _>("status"), "recording");
+        assert_eq!(artifacts[1].get::<String, _>("source"), "system");
+        assert_eq!(
+            artifacts[1]
+                .get::<Option<String>, _>("partial_path")
+                .as_deref(),
+            Some("/tmp/system.partial.wav")
+        );
+        assert_eq!(artifacts[1].get::<String, _>("path"), "/tmp/system.wav");
+        assert_eq!(artifacts[1].get::<String, _>("status"), "recording");
+
+        let updated_note = repos.get_note(&note.id).await.expect("updated note");
+        assert_eq!(updated_note.processing_status, ProcessingStatus::Recording);
+        assert_eq!(updated_note.last_error, None);
+    }
+
+    #[tokio::test]
+    async fn recording_start_rolls_back_every_row_when_a_source_insert_fails() {
+        let repos = test_repositories().await;
+        let note = repos.create_note("default", None).await.expect("note");
+        let existing_error = "Keep this note state after rollback";
+        repos
+            .set_note_status(
+                &note.id,
+                ProcessingStatus::Failed,
+                Some(existing_error.to_string()),
+            )
+            .await
+            .expect("set initial note state");
+        query(
+            "CREATE TRIGGER reject_system_recording_start
+             BEFORE INSERT ON audio_artifacts
+             WHEN NEW.source = 'system'
+             BEGIN SELECT RAISE(ABORT, 'rejected system artifact for test'); END",
+        )
+        .execute(&repos.pool)
+        .await
+        .expect("create rejection trigger");
+        let sources = vec![
+            (
+                "microphone".to_string(),
+                "/tmp/microphone.partial.wav".to_string(),
+                "/tmp/microphone.wav".to_string(),
+            ),
+            (
+                "system".to_string(),
+                "/tmp/system.partial.wav".to_string(),
+                "/tmp/system.wav".to_string(),
+            ),
+        ];
+
+        let result = repos
+            .create_recording_start(
+                &note.id,
+                "rolled-back-session",
+                RecordingSourceMode::MicrophonePlusSystem,
+                "/tmp/combined.partial.wav",
+                "/tmp/combined.wav",
+                None,
+                &sources,
+            )
+            .await;
+
+        let error = result.expect_err("system artifact trigger should abort the transaction");
+        assert!(error
+            .to_string()
+            .contains("rejected system artifact for test"));
+        let session_count: i64 =
+            query("SELECT COUNT(*) AS count FROM recording_sessions WHERE id = ?")
+                .bind("rolled-back-session")
+                .fetch_one(&repos.pool)
+                .await
+                .expect("count rolled-back recording sessions")
+                .get("count");
+        assert_eq!(session_count, 0, "recording session should be rolled back");
+        for table in ["recording_checkpoints", "audio_artifacts"] {
+            let statement =
+                format!("SELECT COUNT(*) AS count FROM {table} WHERE recording_session_id = ?");
+            let count: i64 = query(&statement)
+                .bind("rolled-back-session")
+                .fetch_one(&repos.pool)
+                .await
+                .expect("count rolled-back rows")
+                .get("count");
+            assert_eq!(count, 0, "{table} rows should be rolled back");
+        }
+        let unchanged_note = repos.get_note(&note.id).await.expect("unchanged note");
+        assert_eq!(unchanged_note.processing_status, ProcessingStatus::Failed);
+        assert_eq!(unchanged_note.last_error.as_deref(), Some(existing_error));
     }
 
     #[tokio::test]
@@ -7549,7 +8125,7 @@ mod tests {
             .await
             .expect("insert account");
         repos
-            .set_connector_trigger("job-1", "email_received", "user@example.com", "{}")
+            .replace_connector_trigger("job-1", "email_received", "user@example.com", "{}")
             .await
             .expect("set trigger");
         repos
@@ -7961,7 +8537,7 @@ mod tests {
             .await
             .expect("account");
         repos
-            .set_connector_trigger("job-1", "event_upcoming", "user@example.com", "{}")
+            .replace_connector_trigger("job-1", "event_upcoming", "user@example.com", "{}")
             .await
             .expect("trigger");
         repos
@@ -8078,10 +8654,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn connector_trigger_set_keeps_one_trigger_per_job() {
+    async fn connector_trigger_replacement_keeps_one_trigger_per_job() {
         let repos = test_repositories().await;
         let first = repos
-            .set_connector_trigger(
+            .replace_connector_trigger(
                 "job-1",
                 "email_received",
                 "user@example.com",
@@ -8093,7 +8669,7 @@ mod tests {
         // Changing the kind (or account) replaces the routine's single trigger
         // rather than adding a second row the daemon would also fire.
         let replaced = repos
-            .set_connector_trigger("job-1", "event_upcoming", "other@example.com", "{}")
+            .replace_connector_trigger("job-1", "event_upcoming", "other@example.com", "{}")
             .await
             .expect("replace trigger");
         assert_ne!(first.id, replaced.id);
@@ -8120,6 +8696,238 @@ mod tests {
             .await
             .expect("list after delete")
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn connector_trigger_failure_after_delete_rolls_back_old_state() {
+        let repos = test_repositories().await;
+        repos
+            .replace_connector_trigger("job-1", "event_upcoming", "user@example.com", "{}")
+            .await
+            .expect("old trigger");
+        repos
+            .set_trigger_cursor("user@example.com", "email_received", "stale-50")
+            .await
+            .expect("stale cursor");
+        query(
+            "CREATE TRIGGER fail_connector_trigger_after_delete
+             AFTER DELETE ON connector_triggers
+             WHEN OLD.job_id = 'job-1'
+             BEGIN
+               SELECT RAISE(ABORT, 'injected failure after trigger delete');
+             END",
+        )
+        .execute(&repos.pool)
+        .await
+        .expect("fault trigger");
+
+        let error = repos
+            .replace_connector_trigger("job-1", "email_received", "user@example.com", "{}")
+            .await
+            .expect_err("replacement must fail");
+        assert!(error.to_string().contains("injected failure"));
+
+        let triggers = repos
+            .list_connector_triggers(Some("job-1"))
+            .await
+            .expect("old trigger after rollback");
+        assert_eq!(triggers.len(), 1);
+        assert_eq!(triggers[0].kind, "event_upcoming");
+        assert_eq!(
+            repos
+                .trigger_cursor("user@example.com", "email_received")
+                .await
+                .expect("old cursor after rollback")
+                .as_deref(),
+            Some("stale-50")
+        );
+    }
+
+    #[tokio::test]
+    async fn connector_trigger_failure_before_cursor_reset_rolls_back_new_trigger() {
+        let repos = test_repositories().await;
+        repos
+            .replace_connector_trigger("job-1", "event_upcoming", "user@example.com", "{}")
+            .await
+            .expect("old trigger");
+        repos
+            .set_trigger_cursor("user@example.com", "email_received", "stale-50")
+            .await
+            .expect("stale cursor");
+        query(
+            "CREATE TRIGGER fail_email_cursor_reset
+             BEFORE DELETE ON trigger_cursors
+             WHEN OLD.account_id = 'user@example.com' AND OLD.kind = 'email_received'
+             BEGIN
+               SELECT RAISE(ABORT, 'injected failure before cursor reset');
+             END",
+        )
+        .execute(&repos.pool)
+        .await
+        .expect("fault trigger");
+
+        let error = repos
+            .replace_connector_trigger("job-1", "email_received", "user@example.com", "{}")
+            .await
+            .expect_err("replacement must fail");
+        assert!(error.to_string().contains("injected failure"));
+
+        let triggers = repos
+            .list_connector_triggers(Some("job-1"))
+            .await
+            .expect("old trigger after rollback");
+        assert_eq!(triggers.len(), 1);
+        assert_eq!(triggers[0].kind, "event_upcoming");
+        assert_eq!(
+            repos
+                .trigger_cursor("user@example.com", "email_received")
+                .await
+                .expect("old cursor after rollback")
+                .as_deref(),
+            Some("stale-50")
+        );
+    }
+
+    async fn simulate_email_poll(
+        repos: &Repositories,
+        current_history_id: u64,
+        message_history_ids: &[u64],
+    ) -> usize {
+        let Some(cursor) = repos
+            .trigger_cursor("user@example.com", "email_received")
+            .await
+            .expect("read simulated poll cursor")
+        else {
+            repos
+                .set_trigger_cursor(
+                    "user@example.com",
+                    "email_received",
+                    &current_history_id.to_string(),
+                )
+                .await
+                .expect("seed simulated poll cursor");
+            return 0;
+        };
+        let cursor: u64 = cursor.parse().expect("numeric test cursor");
+        let fire_count = usize::from(
+            message_history_ids
+                .iter()
+                .any(|history_id| *history_id > cursor),
+        );
+        repos
+            .set_trigger_cursor(
+                "user@example.com",
+                "email_received",
+                &current_history_id.to_string(),
+            )
+            .await
+            .expect("advance simulated poll cursor");
+        fire_count
+    }
+
+    #[tokio::test]
+    async fn first_email_after_trigger_replacement_fires_exactly_once() {
+        let repos = test_repositories().await;
+        repos
+            .replace_connector_trigger("job-1", "event_upcoming", "user@example.com", "{}")
+            .await
+            .expect("old event trigger");
+        repos
+            .set_trigger_cursor("user@example.com", "email_received", "50")
+            .await
+            .expect("stale cursor");
+
+        repos
+            .replace_connector_trigger("job-1", "email_received", "user@example.com", "{}")
+            .await
+            .expect("first email subscription");
+        assert!(repos
+            .trigger_cursor("user@example.com", "email_received")
+            .await
+            .expect("cursor reset")
+            .is_none());
+
+        let mut fire_count = simulate_email_poll(&repos, 100, &[]).await;
+        fire_count += simulate_email_poll(&repos, 101, &[101]).await;
+        fire_count += simulate_email_poll(&repos, 101, &[101]).await;
+
+        // Editing an existing subscription is a replacement, not a reconnect:
+        // retaining cursor 101 prevents the already-fired mail from repeating.
+        repos
+            .replace_connector_trigger(
+                "job-1",
+                "email_received",
+                "user@example.com",
+                r#"{"query":"is:unread"}"#,
+            )
+            .await
+            .expect("edit email trigger");
+        assert_eq!(
+            repos
+                .trigger_cursor("user@example.com", "email_received")
+                .await
+                .expect("cursor retained")
+                .as_deref(),
+            Some("101")
+        );
+        fire_count += simulate_email_poll(&repos, 101, &[101]).await;
+        assert_eq!(fire_count, 1);
+    }
+
+    #[tokio::test]
+    async fn concurrent_poll_snapshot_sees_no_trigger_cursor_half_state() {
+        let (_directory, repos) = concurrent_test_repositories().await;
+        repos
+            .replace_connector_trigger("job-1", "event_upcoming", "user@example.com", "{}")
+            .await
+            .expect("old event trigger");
+        repos
+            .set_trigger_cursor("user@example.com", "email_received", "stale-50")
+            .await
+            .expect("stale cursor");
+
+        let mut poll_snapshot = repos.pool.begin().await.expect("poll snapshot");
+        let old_kind: String = query("SELECT kind FROM connector_triggers WHERE job_id = 'job-1'")
+            .fetch_one(&mut *poll_snapshot)
+            .await
+            .expect("old trigger in snapshot")
+            .get("kind");
+        assert_eq!(old_kind, "event_upcoming");
+
+        repos
+            .replace_connector_trigger("job-1", "email_received", "user@example.com", "{}")
+            .await
+            .expect("concurrent replacement");
+
+        let snapshot_kind: String =
+            query("SELECT kind FROM connector_triggers WHERE job_id = 'job-1'")
+                .fetch_one(&mut *poll_snapshot)
+                .await
+                .expect("stable trigger snapshot")
+                .get("kind");
+        let snapshot_cursor: String = query(
+            "SELECT cursor FROM trigger_cursors
+             WHERE account_id = 'user@example.com' AND kind = 'email_received'",
+        )
+        .fetch_one(&mut *poll_snapshot)
+        .await
+        .expect("stable cursor snapshot")
+        .get("cursor");
+        assert_eq!(snapshot_kind, "event_upcoming");
+        assert_eq!(snapshot_cursor, "stale-50");
+        poll_snapshot.commit().await.expect("finish poll snapshot");
+
+        let triggers = repos
+            .list_connector_triggers(Some("job-1"))
+            .await
+            .expect("new trigger");
+        assert_eq!(triggers.len(), 1);
+        assert_eq!(triggers[0].kind, "email_received");
+        assert!(repos
+            .trigger_cursor("user@example.com", "email_received")
+            .await
+            .expect("new cursor state")
+            .is_none());
     }
 
     #[tokio::test]

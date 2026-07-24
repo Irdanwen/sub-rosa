@@ -31,6 +31,8 @@ pub struct BootstrapResponse {
     pub folders: Vec<FolderDto>,
     pub notes: Vec<NoteListItemDto>,
     pub active_recoveries: Vec<RecoverableRecordingDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_recording: Option<RecordingStatusDto>,
     pub provider_configured: bool,
 }
 
@@ -147,6 +149,48 @@ pub struct NoteDto {
     pub retry_recording_session_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum NoteProcessingStage {
+    Transcribing,
+    Generating,
+    Done,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteProcessingProgressDto {
+    pub note_id: String,
+    pub recording_session_id: String,
+    pub stage: NoteProcessingStage,
+    pub processing_status: ProcessingStatus,
+    /// The note row's `updated_at` value after this transition.
+    pub revision: String,
+}
+
+/// The note-row fields returned by the single-statement `update_note` path.
+///
+/// Existing callers can keep requesting the fully hydrated [`NoteDto`].
+/// Renderer autosave opts into this smaller response so an ordinary edit does
+/// not re-read transcripts, folders, and audio after every persisted patch.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NotePatchDto {
+    pub id: String,
+    pub title: String,
+    pub preview: String,
+    pub edited_content: Option<String>,
+    pub active_tab: Option<String>,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum UpdateNoteResponse {
+    Note(Box<NoteDto>),
+    Patch(NotePatchDto),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct NoteCalendarEventDto {
@@ -218,6 +262,10 @@ pub struct UpdateNoteRequest {
     pub title: Option<String>,
     pub edited_content: Option<String>,
     pub active_tab: Option<String>,
+    /// Additive opt-in for the single-query patch response. Absent/false keeps
+    /// the original fully hydrated NoteDto response for existing callers.
+    #[serde(default)]
+    pub patch_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -384,6 +432,14 @@ pub struct StartRecordingRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct StartMeetingRecordingRequest {
+    pub request_id: String,
+    #[serde(default)]
+    pub source_mode: Option<RecordingSourceMode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionRequest {
     pub session_id: String,
 }
@@ -518,6 +574,55 @@ pub struct RecordingStatusDto {
     pub warnings: Vec<SourceWarningDto>,
 }
 
+/// High-frequency recording data shared by the main renderer and meeting HUD.
+/// Stable session metadata, byte counters, and artifact details stay on the
+/// command DTOs so this event remains cheap to serialize and deliver.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingTelemetryDto {
+    pub session_id: String,
+    pub state: RecordingState,
+    pub elapsed_ms: i64,
+    pub level: AudioLevelDto,
+    pub silence_warning: bool,
+    pub sources: Vec<RecordingSourceTelemetryDto>,
+    pub warnings: Vec<SourceWarningDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingSourceTelemetryDto {
+    pub source: RecordingSource,
+    pub state: SourceState,
+    pub elapsed_ms: i64,
+    pub level: AudioLevelDto,
+    pub silence_warning: bool,
+}
+
+impl From<&RecordingStatusDto> for RecordingTelemetryDto {
+    fn from(status: &RecordingStatusDto) -> Self {
+        Self {
+            session_id: status.session_id.clone(),
+            state: status.state,
+            elapsed_ms: status.elapsed_ms,
+            level: status.level.clone(),
+            silence_warning: status.silence_warning,
+            sources: status
+                .sources
+                .iter()
+                .map(|source| RecordingSourceTelemetryDto {
+                    source: source.source,
+                    state: source.state,
+                    elapsed_ms: source.elapsed_ms,
+                    level: source.level.clone(),
+                    silence_warning: source.silence_warning,
+                })
+                .collect(),
+            warnings: status.warnings.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioArtifactDto {
@@ -643,6 +748,8 @@ pub struct SourceStatusDto {
     pub state: SourceState,
     pub elapsed_ms: i64,
     pub bytes_written: i64,
+    #[serde(default)]
+    pub dropped_samples: u64,
     pub level: AudioLevelDto,
     pub silence_warning: bool,
     pub path_finalized: bool,
