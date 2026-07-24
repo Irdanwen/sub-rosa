@@ -1631,6 +1631,8 @@ const JUNE_HOME_MEMORY_MAX_TOTAL_CHARS: usize = 4_000;
 const JUNE_HOME_RECENT_MAX_MESSAGES: usize = 96;
 const JUNE_HOME_RECENT_MAX_TOTAL_CHARS: usize = 64_000;
 const JUNE_HOME_HISTORY_MAX_CHARS: usize = 12_000;
+const JUNE_HOME_MAX_OUTPUT_TOKENS: u64 = 2_048;
+const JUNE_HOME_TRUNCATION_NOTICE: &str = "This reply was cut short. Ask me to continue.";
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1681,6 +1683,7 @@ struct JuneHomeChatStream {
     pending: Vec<u8>,
     content: String,
     tool_calls: BTreeMap<usize, JuneHomeToolCall>,
+    truncated: bool,
 }
 
 impl JuneHomeChatStream {
@@ -1719,6 +1722,14 @@ impl JuneHomeChatStream {
         }
         let value: serde_json::Value = serde_json::from_str(&data)
             .map_err(|error| AppError::new("home_chat_invalid", error.to_string()))?;
+        if matches!(
+            value
+                .pointer("/choices/0/finish_reason")
+                .and_then(serde_json::Value::as_str),
+            Some("length" | "max_tokens")
+        ) {
+            self.truncated = true;
+        }
         let Some(delta) = value.pointer("/choices/0/delta") else {
             return Ok(None);
         };
@@ -1776,10 +1787,7 @@ impl JuneHomeChatStream {
             }).collect::<Vec<_>>()
         });
         let task = june_home_chat_task(&message);
-        let content = {
-            let content = self.content.trim();
-            (!content.is_empty()).then(|| content.to_string())
-        };
+        let content = completed_june_home_content(&self.content, self.truncated);
         if content.is_none() && task.is_none() {
             return Err(AppError::new(
                 "home_chat_empty",
@@ -1788,6 +1796,18 @@ impl JuneHomeChatStream {
         }
         Ok(JuneHomeChatResponse { content, task })
     }
+}
+
+fn completed_june_home_content(content: &str, truncated: bool) -> Option<String> {
+    let content = content.trim();
+    if content.is_empty() {
+        return None;
+    }
+    Some(if truncated {
+        format!("{content}\n\n{JUNE_HOME_TRUNCATION_NOTICE}")
+    } else {
+        content.to_string()
+    })
 }
 
 fn next_sse_frame(bytes: &[u8]) -> Option<(usize, usize)> {
@@ -1894,6 +1914,11 @@ fn june_home_requires_current_information(message: &str) -> bool {
         .collect::<Vec<_>>();
     let has_word = |candidate: &str| words.iter().any(|word| word == candidate);
     let has_any = |candidates: &[&str]| candidates.iter().any(|candidate| has_word(candidate));
+    let has_phrase = |phrase: &[&str]| {
+        words
+            .windows(phrase.len())
+            .any(|window| window.iter().map(String::as_str).eq(phrase.iter().copied()))
+    };
 
     let inherently_current = has_any(&[
         "news",
@@ -1943,9 +1968,22 @@ fn june_home_requires_current_information(message: &str) -> bool {
         && words
             .windows(2)
             .any(|pair| pair[0] == "going" && pair[1] == "on");
+    let asks_for_live_schedule = asks_for_facts
+        && has_any(&["event", "events", "game", "games", "match", "matches"])
+        && [
+            &["are", "on"][..],
+            &["is", "on"][..],
+            &["are", "playing"][..],
+            &["is", "playing"][..],
+        ]
+        .iter()
+        .any(|phrase| has_phrase(phrase));
+    let asks_for_live_results = asks_for_facts && has_any(&["score", "scores"]);
 
-    inherently_current
-        || (time_sensitive_topic && (recency || (asks_for_facts && !has_word("should"))))
+    (inherently_current && (asks_for_facts || recency))
+        || (time_sensitive_topic && recency && asks_for_facts)
+        || asks_for_live_schedule
+        || asks_for_live_results
         || happening_now
         || whats_going_on
 }
@@ -2009,9 +2047,14 @@ fn buffered_june_home_chat_response(body: &[u8]) -> Result<JuneHomeChatResponse,
         .pointer("/choices/0/message")
         .ok_or_else(|| AppError::new("home_chat_invalid", "Home chat returned no message."))?;
     let task = june_home_chat_task(message);
+    let truncated = matches!(
+        value
+            .pointer("/choices/0/finish_reason")
+            .and_then(serde_json::Value::as_str),
+        Some("length" | "max_tokens")
+    );
     let content = extract_chat_completion_text(&value)
-        .map(|text| text.trim().to_string())
-        .filter(|text| !text.is_empty());
+        .and_then(|text| completed_june_home_content(&text, truncated));
     if content.is_none() && task.is_none() {
         return Err(AppError::new(
             "home_chat_empty",
@@ -2133,7 +2176,7 @@ pub async fn june_home_chat(
         }],
         "tool_choice": tool_choice,
         "temperature": 0.4,
-        "max_tokens": 900,
+        "max_tokens": JUNE_HOME_MAX_OUTPUT_TOKENS,
         "stream": true,
         "stream_options": { "include_usage": true }
     }))
@@ -4446,6 +4489,9 @@ data: \"data\":{\"content\":\"Joined\",\"titleSuggestion\":null,\"provider\":\"v
             "I want to reflect on what happened today.",
             "I like sports.",
             "Which sport should I try?",
+            "How do I set up events in Google Calendar?",
+            "What's a good game for 4 players?",
+            "What's a reasonable price range for a laptop?",
         ] {
             assert!(
                 !june_home_requires_current_information(prompt),
@@ -4513,6 +4559,35 @@ data: \"data\":{\"content\":\"Joined\",\"titleSuggestion\":null,\"provider\":\"v
         let response = stream.into_response().expect("content should complete");
         assert_eq!(response.content.as_deref(), Some("Hello there"));
         assert!(response.task.is_none());
+    }
+
+    #[test]
+    fn home_chat_marks_streamed_and_buffered_length_limits() {
+        let mut stream = JuneHomeChatStream::default();
+        stream
+            .push(
+                b"data: {\"choices\":[{\"delta\":{\"content\":\"A partial answer.\"}}]}\n\n\
+                  data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n",
+            )
+            .expect("length-limited stream should parse");
+        let streamed = stream
+            .into_response()
+            .expect("partial content should remain visible");
+
+        assert_eq!(
+            streamed.content.as_deref(),
+            Some("A partial answer.\n\nThis reply was cut short. Ask me to continue.")
+        );
+
+        let buffered = buffered_june_home_chat_response(
+            br#"{"choices":[{"message":{"content":"Another partial answer."},"finish_reason":"length"}]}"#,
+        )
+        .expect("length-limited buffered response should parse");
+
+        assert_eq!(
+            buffered.content.as_deref(),
+            Some("Another partial answer.\n\nThis reply was cut short. Ask me to continue.")
+        );
     }
 
     #[test]

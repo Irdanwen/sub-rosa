@@ -19,19 +19,44 @@ export type HomeTaskHandoff = JuneHomeTaskRequest & {
 };
 
 export const HOME_DEMO_SEEDED_EVENT = "june:agent:home-demo-seeded";
-const HOME_TASK_HANDOFFS_STORAGE_KEY = "june.home.taskHandoffs.v1";
-const HOME_DIRECT_TURNS_STORAGE_KEY = "june.home.directTurns.v1";
-const HOME_DEMO_BACKUP_STORAGE_KEY = "june.home.demoBackup.v3";
+const HOME_TASK_HANDOFFS_STORAGE_KEY = "june:home:task-handoffs:v1";
+const HOME_DIRECT_TURNS_STORAGE_KEY = "june:home:direct-turns:v1";
+const HOME_DEMO_BACKUP_STORAGE_KEY = "june:home:demo-backup:v3";
+const LEGACY_HOME_TASK_HANDOFFS_STORAGE_KEY = "june.home.taskHandoffs.v1";
+const LEGACY_HOME_DIRECT_TURNS_STORAGE_KEY = "june.home.directTurns.v1";
+const LEGACY_HOME_DEMO_BACKUP_STORAGE_KEY = "june.home.demoBackup.v3";
 
-function readRecord(storageKey: string): Record<string, unknown> {
+const LEGACY_HOME_STORAGE_KEYS: Partial<Record<string, string>> = {
+  [HOME_TASK_HANDOFFS_STORAGE_KEY]: LEGACY_HOME_TASK_HANDOFFS_STORAGE_KEY,
+  [HOME_DIRECT_TURNS_STORAGE_KEY]: LEGACY_HOME_DIRECT_TURNS_STORAGE_KEY,
+  [HOME_DEMO_BACKUP_STORAGE_KEY]: LEGACY_HOME_DEMO_BACKUP_STORAGE_KEY,
+};
+
+function parseRecord(value: string | null): Record<string, unknown> {
   try {
-    const value = JSON.parse(window.localStorage.getItem(storageKey) ?? "{}") as unknown;
-    return value && typeof value === "object" && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
+    const parsed = JSON.parse(value ?? "{}") as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
       : {};
   } catch {
     return {};
   }
+}
+
+function readRecord(storageKey: string): Record<string, unknown> {
+  const current = parseRecord(window.localStorage.getItem(storageKey));
+  const legacyStorageKey = LEGACY_HOME_STORAGE_KEYS[storageKey];
+  if (!legacyStorageKey) return current;
+  const legacy = parseRecord(window.localStorage.getItem(legacyStorageKey));
+  if (Object.keys(legacy).length === 0) return current;
+  const migrated = { ...legacy, ...current };
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(migrated));
+    window.localStorage.removeItem(legacyStorageKey);
+  } catch {
+    // Keep reading the merged value for this launch if migration cannot persist.
+  }
+  return migrated;
 }
 
 function writeRecord(storageKey: string, value: Record<string, unknown>) {
@@ -196,9 +221,13 @@ type HomeDemoSnapshot = {
 function readDemoSnapshot(): HomeDemoSnapshot | undefined {
   if (!import.meta.env.DEV || typeof window === "undefined") return undefined;
   try {
-    const value = JSON.parse(
-      window.localStorage.getItem(HOME_DEMO_BACKUP_STORAGE_KEY) ?? "null",
-    ) as HomeDemoSnapshot | null;
+    const current = window.localStorage.getItem(HOME_DEMO_BACKUP_STORAGE_KEY);
+    const legacy = window.localStorage.getItem(LEGACY_HOME_DEMO_BACKUP_STORAGE_KEY);
+    const value = JSON.parse(current ?? legacy ?? "null") as HomeDemoSnapshot | null;
+    if (!current && legacy) {
+      window.localStorage.setItem(HOME_DEMO_BACKUP_STORAGE_KEY, legacy);
+      window.localStorage.removeItem(LEGACY_HOME_DEMO_BACKUP_STORAGE_KEY);
+    }
     return value && typeof value.profile === "string" && typeof value.demoSessionId === "string"
       ? value
       : undefined;
@@ -385,6 +414,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
         forgetJuneHomeStoredSessionId(snapshot.profile, snapshot.demoSessionId);
       }
       window.localStorage.removeItem(HOME_DEMO_BACKUP_STORAGE_KEY);
+      window.localStorage.removeItem(LEGACY_HOME_DEMO_BACKUP_STORAGE_KEY);
       homeDemoSnapshot = undefined;
       window.dispatchEvent(new CustomEvent(HOME_DEMO_SEEDED_EVENT));
       return "Home demo off; your previous Home thread is restored.";

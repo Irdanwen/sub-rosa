@@ -927,6 +927,8 @@ describe("AgentWorkspace", () => {
       false,
     );
     expect(options.historyContext).toContain("Project Nebula");
+    expect(window.localStorage.getItem("june:home:direct-turns:v1")).not.toBeNull();
+    expect(window.localStorage.getItem("june.home.directTurns.v1")).toBeNull();
   });
 
   it("hands current sports questions to a researched focused session with Home context", async () => {
@@ -968,7 +970,7 @@ describe("AgentWorkspace", () => {
     expect(promptSubmit?.text).toContain("June: Got it. Those are the teams you follow.");
     await waitFor(() =>
       expect(
-        JSON.parse(window.localStorage.getItem("june.home.taskHandoffs.v1") ?? "{}")[
+        JSON.parse(window.localStorage.getItem("june:home:task-handoffs:v1") ?? "{}")[
           existingSession.id
         ],
       ).toEqual([
@@ -990,7 +992,7 @@ describe("AgentWorkspace", () => {
     );
     const originalTurns = [{ marker: "original Home turns" }];
     window.localStorage.setItem(
-      "june.home.directTurns.v1",
+      "june:home:direct-turns:v1",
       JSON.stringify({ [existingSession.id]: originalTurns }),
     );
     const homeDemo = (
@@ -1027,11 +1029,11 @@ describe("AgentWorkspace", () => {
     }
 
     expect(
-      JSON.parse(window.localStorage.getItem("june.home.directTurns.v1") ?? "{}")[
+      JSON.parse(window.localStorage.getItem("june:home:direct-turns:v1") ?? "{}")[
         existingSession.id
       ],
     ).toEqual(originalTurns);
-    expect(window.localStorage.getItem("june.home.demoBackup.v3")).toBeNull();
+    expect(window.localStorage.getItem("june:home:demo-backup:v3")).toBeNull();
   });
 
   it("reuses activity projection set identities when membership is unchanged", () => {
