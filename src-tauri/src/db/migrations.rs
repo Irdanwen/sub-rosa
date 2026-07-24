@@ -1309,13 +1309,19 @@ async fn repair_prerelease_agent_runtime_stamp(
         return Ok(false);
     };
     let runtime = &migrations[runtime_index];
-    // PR #920 originally stamped its runtime as version 30, displacing the
-    // connector uniqueness migration. Main later appended the hydration
-    // indexes at version 31, so the released runtime belongs at version 32.
-    // Preserve that release order rather than renumbering main's migration.
-    let displaced_index = runtime_index.checked_sub(2).ok_or_else(|| {
-        sqlx::Error::Protocol("agent runtime prerelease repair has no displaced migration".into())
-    })?;
+    // PR #920 prerelease builds stamped the runtime at either version 30 or
+    // version 31 as main appended migrations underneath the branch. The
+    // released runtime belongs at version 32. Preserve main's release order
+    // and adopt the already-installed runtime without replaying its SQL.
+    let displaced_index = applied
+        .last()
+        .and_then(|last| usize::try_from(last.version).ok())
+        .and_then(|version| version.checked_sub(1))
+        .ok_or_else(|| {
+            sqlx::Error::Protocol(
+                "agent runtime prerelease repair has no displaced migration".into(),
+            )
+        })?;
     let displaced = &migrations[displaced_index];
     let intervening = &migrations[displaced_index + 1..runtime_index];
 
@@ -1362,19 +1368,30 @@ fn is_prerelease_agent_runtime_stamp(
     else {
         return false;
     };
-    let Some(displaced_index) = runtime_index.checked_sub(2) else {
+    let Some(runtime) = migrations.get(runtime_index) else {
         return false;
     };
-    if applied.len() != displaced_index + 1 {
+    let Some(last) = applied.last() else {
         return false;
-    }
-    let runtime = &migrations[runtime_index];
-    let displaced = &migrations[displaced_index];
-    applied.last().is_some_and(|last| {
-        displaced.name == "connector_trigger_uniqueness"
-            && last.version == displaced.version
-            && last.name == runtime.name
-    })
+    };
+    let known_displaced_version =
+        last.version == runtime.version - 2 || last.version == runtime.version - 1;
+    let Some(displaced) = last
+        .version
+        .checked_sub(1)
+        .and_then(|index| usize::try_from(index).ok())
+        .and_then(|index| migrations.get(index))
+    else {
+        return false;
+    };
+    known_displaced_version
+        && matches!(
+            displaced.name,
+            "connector_trigger_uniqueness" | "note_hydration_indexes"
+        )
+        && applied.len() == usize::try_from(last.version).unwrap_or_default()
+        && last.version == displaced.version
+        && last.name == runtime.name
 }
 
 /// The runtime branch was exercised before the version catalog reached those
@@ -1995,6 +2012,56 @@ mod tests {
             .expect("preserved newest trigger")
             .get("id");
         assert_eq!(trigger_id, "trigger-new");
+        assert_latest_stamp(&pool).await;
+    }
+
+    #[tokio::test]
+    async fn prerelease_version_31_runtime_stamp_repairs_hydration_indexes() {
+        let pool = test_pool().await;
+        run_migrations(&pool).await.expect("current schema");
+        install_runtime_non_replay_guard(&pool).await;
+        for index in [
+            "idx_audio_artifacts_note_status_created_at",
+            "idx_transcripts_note_created_at",
+            "idx_recording_checkpoints_session_kind_created_at",
+        ] {
+            query(&format!("DROP INDEX {index}"))
+                .execute(&pool)
+                .await
+                .expect("restore pre-hydration index state");
+        }
+        query("DELETE FROM schema_migrations WHERE version >= 32")
+            .execute(&pool)
+            .await
+            .expect("remove corrected runtime stamp");
+        query(
+            "UPDATE schema_migrations
+             SET name = 'agent_runtime'
+             WHERE version = 31",
+        )
+        .execute(&pool)
+        .await
+        .expect("restore later prerelease runtime stamp");
+
+        run_migrations(&pool)
+            .await
+            .expect("repair version 31 prerelease migration stamp");
+
+        for index in [
+            "idx_audio_artifacts_note_status_created_at",
+            "idx_transcripts_note_created_at",
+            "idx_recording_checkpoints_session_kind_created_at",
+        ] {
+            let present: i64 = query(
+                "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'index' AND name = ?",
+            )
+            .bind(index)
+            .fetch_one(&pool)
+            .await
+            .expect("hydration index lookup")
+            .get("count");
+            assert_eq!(present, 1, "{index} should be restored");
+        }
         assert_latest_stamp(&pool).await;
     }
 
