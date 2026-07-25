@@ -546,14 +546,7 @@ async fn agent_skill_catalog(
             let description = tokio::fs::read_to_string(&skill_file)
                 .await
                 .ok()
-                .and_then(|text| {
-                    text.lines()
-                        .map(str::trim)
-                        .find(|line| {
-                            !line.is_empty() && !line.starts_with('#') && !line.starts_with("---")
-                        })
-                        .map(str::to_string)
-                })
+                .and_then(|text| skill_description(&text))
                 .unwrap_or_else(|| "June agent skill".into());
             result.push(json!({ "id": id, "name": id, "description": description, "source": if managed { "managed" } else { "user_global" }, "enabled": overrides.get(&id).copied().unwrap_or(true), "editable": managed }));
         }
@@ -566,23 +559,54 @@ pub async fn set_agent_skill_enabled(
     app: AppHandle,
     request: SetSkillEnabledRequest,
 ) -> Result<Value, AppError> {
-    let managed = skill_roots(&app)
+    let managed_root = skill_roots(&app)
         .into_iter()
         .find(|(_, managed)| *managed)
-        .is_some_and(|(root, _)| root.join(&request.skill_id).join("SKILL.md").is_file());
-    if !managed {
+        .map(|(root, _)| root)
+        .filter(|root| root.join(&request.skill_id).join("SKILL.md").is_file());
+    let Some(managed_root) = managed_root else {
         return Err(AppError::new(
             "agent_skill_read_only",
             "User-global skills are read-only in June.",
         ));
-    }
+    };
     let skill = repository(&app)
         .await?
-        .set_skill_enabled(&request.skill_id, request.enabled, managed)
+        .set_skill_enabled(&request.skill_id, request.enabled, true)
         .await?;
+    let description =
+        tokio::fs::read_to_string(managed_root.join(&request.skill_id).join("SKILL.md"))
+            .await
+            .ok()
+            .and_then(|text| skill_description(&text))
+            .unwrap_or_else(|| "June agent skill".into());
     Ok(
-        json!({ "id": skill.id, "name": skill.id, "description": "June agent skill", "source": "managed", "enabled": skill.enabled, "editable": true }),
+        json!({ "id": skill.id, "name": skill.id, "description": description, "source": "managed", "enabled": skill.enabled, "editable": true }),
     )
+}
+
+fn skill_description(text: &str) -> Option<String> {
+    let mut lines = text.lines().map(str::trim);
+    if lines.next() == Some("---") {
+        for line in &mut lines {
+            if line == "---" {
+                break;
+            }
+            if let Some((key, value)) = line.split_once(':') {
+                if key.trim() == "description" {
+                    let value = value
+                        .trim()
+                        .trim_matches(|character| character == '"' || character == '\'');
+                    if !value.is_empty() {
+                        return Some(value.to_string());
+                    }
+                }
+            }
+        }
+    }
+    lines
+        .find(|line| !line.is_empty() && !line.starts_with('#') && *line != "---")
+        .map(str::to_string)
 }
 
 fn skill_roots(app: &AppHandle) -> Vec<(PathBuf, bool)> {
@@ -1037,6 +1061,17 @@ mod tests {
         assert_eq!(
             message_with_attachment_context("Hello", &[]),
             "Hello".to_string()
+        );
+    }
+
+    #[test]
+    fn skill_catalog_uses_frontmatter_description_instead_of_metadata_keys() {
+        assert_eq!(
+            skill_description(
+                "---\nname: pr920-proof\ndescription: \"Readable managed skill summary.\"\n---\n\n# Proof\nBody"
+            )
+            .as_deref(),
+            Some("Readable managed skill summary.")
         );
     }
 
