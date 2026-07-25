@@ -1203,7 +1203,10 @@ mod tests {
             router.catalog_base_url(),
             "https://carpe-diem.xyz/api/operator/v1"
         );
-        assert_eq!(router.operator_root(), "https://carpe-diem.xyz/api/operator");
+        assert_eq!(
+            router.operator_root(),
+            "https://carpe-diem.xyz/api/operator"
+        );
         // A `/v1` base (existing installs, upstream June) is unchanged.
         let v1 = with("https://carpe-diem.xyz/api/operator/v1");
         assert_eq!(
