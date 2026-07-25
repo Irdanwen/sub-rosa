@@ -232,9 +232,10 @@ Gatekeeper warnings. Also confirm microphone and Accessibility permissions are
 still granted after relaunch. During the relaunch, confirm the app remains
 responsive after the command is accepted: the main event loop must return in
 under one second while bounded child cleanup continues off-thread. For the
-forced-leaf check, stop one tracked Hermes child with `kill -STOP <pid>` before
-accepting the update and confirm June still relaunches after kill escalation or
-the five-second aggregate deadline instead of showing a permanent beachball.
+forced-child check, stop the tracked `june-agent-runtime` process with
+`kill -STOP <pid>` before accepting the update and confirm June still
+relaunches after kill escalation or the five-second aggregate deadline instead
+of showing a permanent beachball.
 
 If any signing, notarization, updater signature, Gatekeeper, or relaunch check
 fails, do not promote the release. Keep the fallback build path until the CI
