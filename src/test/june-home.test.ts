@@ -10,6 +10,7 @@ import {
   juneHomeNudgePrompts,
   juneHomeTaskRequestFromPayload,
   readJuneHomeStoredSessionId,
+  reconcileJuneHomeProfileRemoval,
   stripJuneHomeContext,
   stripJuneHomeContextFromPreview,
   withJuneHomeCurrentResearch,
@@ -31,6 +32,84 @@ describe("June Home", () => {
     expect(readJuneHomeStoredSessionId("work")).toBe("session-work");
     forgetJuneHomeStoredSessionId("work", "session-work");
     expect(readJuneHomeStoredSessionId("work")).toBeUndefined();
+  });
+
+  it("moves a removed profile's Home thread into the existing default thread", () => {
+    writeJuneHomeStoredSessionId("default", "home-default");
+    writeJuneHomeStoredSessionId("research", "home-research");
+    window.localStorage.setItem(
+      "june:home:direct-turns:v1",
+      JSON.stringify({
+        "home-default": [{ id: "default-turn", createdAt: "2026-07-24T09:00:00Z" }],
+        "home-research": [{ id: "research-turn", createdAt: "2026-07-24T10:00:00Z" }],
+      }),
+    );
+    window.localStorage.setItem(
+      "june:home:task-handoffs:v1",
+      JSON.stringify({
+        "home-default": [{ id: "default-task" }],
+        "home-research": [{ id: "research-task" }],
+      }),
+    );
+    window.localStorage.setItem(
+      "june:home:check-ins:v1",
+      JSON.stringify({
+        default: { date: "2026-07-24", createdAt: "2026-07-24T09:00:00Z" },
+        research: { date: "2026-07-24", createdAt: "2026-07-24T10:00:00Z" },
+      }),
+    );
+
+    reconcileJuneHomeProfileRemoval("research", "move");
+
+    expect(readJuneHomeStoredSessionId("research")).toBeUndefined();
+    expect(readJuneHomeStoredSessionId("default")).toBe("home-default");
+    const turns = JSON.parse(
+      window.localStorage.getItem("june:home:direct-turns:v1") ?? "{}",
+    ) as Record<string, Array<{ id: string }>>;
+    expect(turns["home-default"].map((turn) => turn.id)).toEqual(["default-turn", "research-turn"]);
+    expect(turns).not.toHaveProperty("home-research");
+    const handoffs = JSON.parse(
+      window.localStorage.getItem("june:home:task-handoffs:v1") ?? "{}",
+    ) as Record<string, Array<{ id: string }>>;
+    expect(handoffs["home-default"].map((handoff) => handoff.id)).toEqual([
+      "default-task",
+      "research-task",
+    ]);
+    expect(handoffs).not.toHaveProperty("home-research");
+    const checkIns = JSON.parse(
+      window.localStorage.getItem("june:home:check-ins:v1") ?? "{}",
+    ) as Record<string, unknown>;
+    expect(checkIns).toHaveProperty("default");
+    expect(checkIns).not.toHaveProperty("research");
+  });
+
+  it("purges current and legacy Home history when a profile is deleted permanently", () => {
+    writeJuneHomeStoredSessionId("research", "home-research");
+    for (const key of [
+      "june:home:direct-turns:v1",
+      "june:home:task-handoffs:v1",
+      "june.home.directTurns.v1",
+      "june.home.taskHandoffs.v1",
+    ]) {
+      window.localStorage.setItem(
+        key,
+        JSON.stringify({ "home-research": [{ id: `${key}:private` }] }),
+      );
+    }
+
+    reconcileJuneHomeProfileRemoval("research", "delete");
+
+    expect(readJuneHomeStoredSessionId("research")).toBeUndefined();
+    for (const key of [
+      "june:home:direct-turns:v1",
+      "june:home:task-handoffs:v1",
+      "june.home.directTurns.v1",
+      "june.home.taskHandoffs.v1",
+    ]) {
+      expect(JSON.parse(window.localStorage.getItem(key) ?? "{}")).not.toHaveProperty(
+        "home-research",
+      );
+    }
   });
 
   it("injects Home context without exposing it in the transcript or previews", () => {

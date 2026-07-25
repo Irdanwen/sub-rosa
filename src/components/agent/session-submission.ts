@@ -15,10 +15,7 @@ import { hasHermesActiveSessionSnapshotSubscribers } from "../../lib/hermes-acti
 import { isSessionBusyError } from "../../lib/hermes-gateway";
 import { pendingImageAttachments } from "../../lib/hermes-image-attach";
 import { submitHermesRun } from "../../lib/hermes-run-submission";
-import {
-  type HermesSessionDispatchReservation,
-  reserveHermesSessionDispatch,
-} from "../../lib/hermes-session-dispatch-mutex";
+import { reserveHermesSessionDispatch } from "../../lib/hermes-session-dispatch-mutex";
 import {
   hermesModelIdForSelection,
   markSessionModelSelectionApplied,
@@ -38,13 +35,8 @@ import {
 } from "../../lib/tauri";
 import { rememberSessionThinkingLevel, thinkingEffortForLevel } from "../../lib/thinking-level";
 import { AUTO_MODEL_ID } from "../settings/ModelPickerDialog";
-import type { PendingIssueReport } from "./agent-session-continuity";
-import type { AgentAttachment } from "./agent-workspace-models";
 import { unsupportedImageInputPrompt } from "./composer/composer-input-helpers";
-import {
-  type CapturedSessionModelTarget,
-  sameSessionModelSelection,
-} from "./composer/follow-up-queue";
+import { sameSessionModelSelection } from "./composer/follow-up-queue";
 import {
   markStoredVideoSlashContextsSent,
   promptSubmitContentWithFastPathImageContext,
@@ -54,7 +46,10 @@ import {
   withVideoFastPathContext,
 } from "./composer/media-slash-persistence";
 
-import type { SubmitHermesSessionDependencies } from "./session-submission-types";
+import type {
+  SubmitHermesSessionDependencies,
+  SubmitHermesSessionOptions,
+} from "./session-submission-types";
 
 export function createSubmitHermesSession(dependencies: SubmitHermesSessionDependencies) {
   const {
@@ -113,32 +108,7 @@ export function createSubmitHermesSession(dependencies: SubmitHermesSessionDepen
   async function submitHermesSession(
     content: string,
     explicitSession?: HermesSessionInfo,
-    options?: {
-      issueReport?: PendingIssueReport;
-      displayContent?: string;
-      titleContent?: string;
-      /** Imported attachments for this turn. Image attachments are sent to the
-       * session via the structured image attach flow (feature 19) once the
-       * session id is known and before prompt.submit; a failed attach throws to
-       * block the send so the user can retry. */
-      attachments?: AgentAttachment[];
-      /** Background follow-ups must not pull the user into their session. */
-      selectSession?: boolean;
-      /** Persist structured image attach state before prompt.submit so a retry
-       * does not attach the same image twice. */
-      onAttachmentsUpdated?: (attachments: AgentAttachment[]) => void;
-      /** Model choice captured synchronously when the user pressed Send. */
-      modelTarget?: CapturedSessionModelTarget;
-      /** FIFO slot captured at the same Send boundary as `modelTarget`. */
-      dispatchReservation?: HermesSessionDispatchReservation;
-      /** Create + select the session and add the user bubble, then stop BEFORE
-       * `prompt.submit` (the `/image` flow): the model is never invoked, and the
-       * caller renders the result itself. Returns the stored session id so the
-       * caller can attach its own turns. Forces the non-optimistic create path so
-       * the selected id is the canonical stored id (optimistic migration doesn't
-       * move the selection). */
-      skipPrompt?: boolean;
-    },
+    options?: SubmitHermesSessionOptions,
   ): Promise<string | undefined> {
     const modelTarget = options?.modelTarget ?? captureSessionModelTarget(explicitSession);
     const targetCatalogModel = generationModelsRef.current.find(
@@ -257,7 +227,10 @@ export function createSubmitHermesSession(dependencies: SubmitHermesSessionDepen
     // the suggestion patches it in the background once a stored id exists.
     // Issue reports and attachment-only sessions already have suitable titles.
     const initialTitleSuggestionPromise =
-      targetStoredSessionId || options?.issueReport || attachmentOnlyTitle
+      targetStoredSessionId ||
+      options?.issueReport ||
+      attachmentOnlyTitle ||
+      options?.suppressTitleSuggestion
         ? undefined
         : agentSessionTitleForPrompt(titleContent);
     const listedTargetSession = targetStoredSessionId
@@ -313,19 +286,25 @@ export function createSubmitHermesSession(dependencies: SubmitHermesSessionDepen
     // the mode its session was created with. Without this, one Unrestricted
     // session would leave the runtime unsandboxed under every other
     // session's follow-ups.
+    const capturedProfile = options?.profile?.trim();
     const [gateway] = await Promise.all([
       ensureHermesGateway(submitFullMode),
       // Re-read the sticky active profile for every brand-new session so an
       // out-of-band switch is honored without a workspace remount. Both
       // runtimes share one Hermes home, so the value is mode-independent.
-      targetStoredSessionId
+      targetStoredSessionId || capturedProfile
         ? Promise.resolve()
         : refreshActiveHermesProfile({
             mode: submitFullMode ? "unrestricted" : "sandboxed",
           }),
     ]).catch(rollbackOptimisticBeforePrompt);
-    const nextUnderProfileName = targetStoredSessionId ? undefined : getActiveHermesProfileName();
+    const nextUnderProfileName = targetStoredSessionId
+      ? undefined
+      : capturedProfile || getActiveHermesProfileName();
     const underProfile = nextUnderProfileName !== undefined && nextUnderProfileName !== "default";
+    const clientOwnsModelAndThinking =
+      !underProfile || options?.overrideProfileModelAndThinking === true;
+    const targetThinkingLevel = options?.thinkingLevel ?? thinkingLevelRef.current;
 
     try {
       const runResult = await submitHermesRun<string>({
@@ -344,10 +323,13 @@ export function createSubmitHermesSession(dependencies: SubmitHermesSessionDepen
                 params: {
                   title: sessionDisplayTitle,
                   cols: 96,
-                  // A named profile owns its text model and reasoning effort.
-                  ...(targetSessionModelId && !underProfile ? { model: targetSessionModelId } : {}),
-                  ...(!underProfile
-                    ? { reasoningEffort: thinkingEffortForLevel(thinkingLevelRef.current) }
+                  // Named profiles normally own these settings. Home can pin
+                  // its hidden session without changing the global selection.
+                  ...(targetSessionModelId && clientOwnsModelAndThinking
+                    ? { model: targetSessionModelId }
+                    : {}),
+                  ...(clientOwnsModelAndThinking
+                    ? { reasoningEffort: thinkingEffortForLevel(targetThinkingLevel) }
                     : {}),
                   ...(underProfile && nextUnderProfileName
                     ? { profile: nextUnderProfileName }
@@ -387,26 +369,28 @@ export function createSubmitHermesSession(dependencies: SubmitHermesSessionDepen
             createdUnderProfile || profileOwnedSessionIdsRef.current.has(storedSessionId)
               ? null
               : agentRunToolsets;
-          createdSessionModelId = createdUnderProfile ? undefined : targetSessionModelId;
+          createdSessionModelId = clientOwnsModelAndThinking ? targetSessionModelId : undefined;
           // The provisional new-session target becomes durable as soon as
           // session.create resolves, so later recovery stays on this session.
           if (!modelTarget.targetStoredSessionId) {
             modelTarget.targetStoredSessionId = storedSessionId;
           }
-          if (created && !createdUnderProfile) {
-            const createdLevel = thinkingLevelRef.current;
+          if (clientOwnsModelAndThinking && (created || options?.thinkingLevel)) {
+            const createdLevel = targetThinkingLevel;
             sessionThinkingEffortsRef.current = {
               ...sessionThinkingEfforts(),
               [storedSessionId]: createdLevel,
             };
             rememberSessionThinkingLevel(storedSessionId, createdLevel);
-            sessionThinkingAppliedRef.current = {
-              ...sessionThinkingAppliedRef.current,
-              [storedSessionId]: {
-                runtimeId: created.session_id ?? "",
-                effort: thinkingEffortForLevel(createdLevel),
-              },
-            };
+            if (created) {
+              sessionThinkingAppliedRef.current = {
+                ...sessionThinkingAppliedRef.current,
+                [storedSessionId]: {
+                  runtimeId: created.session_id ?? "",
+                  effort: thinkingEffortForLevel(createdLevel),
+                },
+              };
+            }
           }
           if (queuedIssueReport) {
             pendingIssueReportsRef.current.set(storedSessionId, queuedIssueReport);
@@ -423,7 +407,7 @@ export function createSubmitHermesSession(dependencies: SubmitHermesSessionDepen
           if (optimisticSession) {
             await ensureStoredHermesSession().catch(rollbackOptimisticBeforePrompt);
             migrateOptimisticHermesSession({
-              clearModel: Boolean(createdUnderProfile),
+              clearModel: Boolean(createdUnderProfile && !clientOwnsModelAndThinking),
               createdAt: optimisticSession.createdAt,
               displayContent,
               fromSessionId: optimisticSession.id,
@@ -435,7 +419,7 @@ export function createSubmitHermesSession(dependencies: SubmitHermesSessionDepen
           if (initialTitleSuggestionPromise) {
             void applyInitialSessionTitleSuggestion(storedSessionId, initialTitleSuggestionPromise);
           }
-          if (!targetStoredSessionId && !options?.skipPrompt && !createdUnderProfile) {
+          if (!targetStoredSessionId && !options?.skipPrompt && clientOwnsModelAndThinking) {
             const latestDefaultSelection: SessionModelSelection = {
               modelId: defaultGenerationModelIdRef.current,
               ...(defaultGenerationModelIdRef.current === AUTO_MODEL_ID &&
@@ -462,7 +446,10 @@ export function createSubmitHermesSession(dependencies: SubmitHermesSessionDepen
         },
         applyThinkingLevel: async ({ runtimeSessionId, storedSessionId, submitGateway }) => {
           // Re-assert a stored level only at this ordered run boundary.
-          const thinkingSessionLevel = sessionThinkingEfforts()[storedSessionId];
+          const thinkingSessionLevel =
+            options?.thinkingLevel && clientOwnsModelAndThinking
+              ? options.thinkingLevel
+              : sessionThinkingEfforts()[storedSessionId];
           if (thinkingSessionLevel) {
             await applyThinkingLevelToSession(
               storedSessionId,
@@ -538,21 +525,24 @@ export function createSubmitHermesSession(dependencies: SubmitHermesSessionDepen
           }));
           if (!optimisticSession) {
             if (!targetStoredSessionId && options?.skipPrompt) {
-              const latestDefaultSelection: SessionModelSelection = {
-                modelId: defaultGenerationModelIdRef.current,
-                ...(defaultGenerationModelIdRef.current === AUTO_MODEL_ID &&
-                generationCostQualityRef.current !== undefined
-                  ? { costQuality: generationCostQualityRef.current }
-                  : {}),
-              };
-              const defaultChangedAfterSend =
-                modelTarget.globalIntentRevision !== generationSelectionIntentRevisionRef.current &&
-                latestDefaultSelection.modelId &&
-                !sameSessionModelSelection(latestDefaultSelection, targetSessionModelSelection);
-              if (defaultChangedAfterSend) {
-                commitSessionModelSelections(
-                  stageSessionModelSelection(storedSessionId, latestDefaultSelection),
-                );
+              if (!options.overrideProfileModelAndThinking) {
+                const latestDefaultSelection: SessionModelSelection = {
+                  modelId: defaultGenerationModelIdRef.current,
+                  ...(defaultGenerationModelIdRef.current === AUTO_MODEL_ID &&
+                  generationCostQualityRef.current !== undefined
+                    ? { costQuality: generationCostQualityRef.current }
+                    : {}),
+                };
+                const defaultChangedAfterSend =
+                  modelTarget.globalIntentRevision !==
+                    generationSelectionIntentRevisionRef.current &&
+                  latestDefaultSelection.modelId &&
+                  !sameSessionModelSelection(latestDefaultSelection, targetSessionModelSelection);
+                if (defaultChangedAfterSend) {
+                  commitSessionModelSelections(
+                    stageSessionModelSelection(storedSessionId, latestDefaultSelection),
+                  );
+                }
               }
               commitSessionModelSelections(
                 rememberAppliedSessionModelSelection(storedSessionId, targetSessionModelSelection),

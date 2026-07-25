@@ -122,6 +122,7 @@ describe("profile manager - view helpers", () => {
 describe("profile manager - hook flows", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     mocks.profileDataSummary.mockResolvedValue(EMPTY_SUMMARY);
     mocks.moveProfileDataToDefault.mockResolvedValue(undefined);
     mocks.deleteProfileData.mockResolvedValue(undefined);
@@ -292,6 +293,14 @@ describe("profile manager - hook flows", () => {
     const controller = new ProfileManagerController(harness as ProfileManagerEngine);
     await controller.load();
     await controller.beginRemove("research");
+    window.localStorage.setItem(
+      "june:home:session-ids:v1",
+      JSON.stringify({ research: "home-research" }),
+    );
+    window.localStorage.setItem(
+      "june:home:direct-turns:v1",
+      JSON.stringify({ "home-research": [{ id: "private-turn" }] }),
+    );
     const dataChanged = vi.fn();
     const handleDataChanged = (event: Event) => {
       dataChanged((event as CustomEvent<ProfileDataChangedDetail>).detail);
@@ -311,6 +320,12 @@ describe("profile manager - hook flows", () => {
       ),
     ).toBe(true);
     expect(controller.getSnapshot().pendingRemoval).toBeNull();
+    expect(JSON.parse(window.localStorage.getItem("june:home:session-ids:v1") ?? "{}")).toEqual({
+      default: "home-research",
+    });
+    expect(
+      JSON.parse(window.localStorage.getItem("june:home:direct-turns:v1") ?? "{}"),
+    ).toHaveProperty("home-research");
     controller.dispose();
   });
 
@@ -376,6 +391,14 @@ describe("profile manager - hook flows", () => {
     const controller = new ProfileManagerController(harness as ProfileManagerEngine);
     await controller.load();
     await controller.beginRemove("research");
+    window.localStorage.setItem(
+      "june:home:session-ids:v1",
+      JSON.stringify({ research: "home-research" }),
+    );
+    window.localStorage.setItem(
+      "june:home:direct-turns:v1",
+      JSON.stringify({ "home-research": [{ id: "private-turn" }] }),
+    );
 
     const ok = await controller.confirmRemoval("delete");
 
@@ -391,6 +414,10 @@ describe("profile manager - hook flows", () => {
       ),
     ).toBe(true);
     expect(controller.getSnapshot().pendingRemoval).toBeNull();
+    expect(JSON.parse(window.localStorage.getItem("june:home:session-ids:v1") ?? "{}")).toEqual({});
+    expect(JSON.parse(window.localStorage.getItem("june:home:direct-turns:v1") ?? "{}")).toEqual(
+      {},
+    );
     controller.dispose();
   });
 

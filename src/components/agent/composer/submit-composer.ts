@@ -1,4 +1,4 @@
-import { type FormEvent } from "react";
+import type { FormEvent } from "react";
 import { toast } from "../../ui/Toaster";
 import { isSessionBusyError } from "../../../lib/hermes-gateway";
 import { messageFromError } from "../../../lib/errors";
@@ -10,7 +10,7 @@ import { IMAGE_GENERATION_ENABLED } from "../../../lib/feature-flags";
 import { modelSupportsImageInput } from "../../../lib/model-privacy";
 import type { PendingIssueReport } from "../agent-session-continuity";
 import { AttachBlockedError } from "./media-slash-persistence";
-import { type PendingSteer, type PreparedComposerSubmission } from "./follow-up-queue";
+import type { PendingSteer, PreparedComposerSubmission } from "./follow-up-queue";
 import { composerInputSignatureFor } from "./composer-input-helpers";
 import {
   appendIssueReportFollowUp,
@@ -76,6 +76,7 @@ export function createSubmitComposer(dependencies: SubmitComposerDependencies) {
     submitting,
     submittingIssueReportSessionIdsRef,
     textActionsDisabledReason,
+    transformRuntimeContent,
     workingSessionIdsRef,
   } = dependencies;
 
@@ -116,6 +117,8 @@ export function createSubmitComposer(dependencies: SubmitComposerDependencies) {
       ? reserveComposerDispatch(sentModelTarget.targetStoredSessionId)
       : undefined;
     const sentStartedNewSession = sentModelTarget.targetStoredSessionId === null;
+    const runtimeContentForSend = (content: string) =>
+      transformRuntimeContent ? transformRuntimeContent(content) : content;
     // prompt.submit prepends the injected `[June project context]` block for a
     // project-filed session (see prepareProjectPrompt at the dispatch site), so
     // the size guard must estimate that same larger text — otherwise a project
@@ -164,7 +167,11 @@ export function createSubmitComposer(dependencies: SubmitComposerDependencies) {
       );
       let prepared: PreparedComposerSubmission;
       try {
-        prepared = await prepareComposerSubmission(message, attachments);
+        const preparedSubmission = await prepareComposerSubmission(message, attachments);
+        prepared = {
+          ...preparedSubmission,
+          runtimeContent: runtimeContentForSend(preparedSubmission.runtimeContent),
+        };
       } catch (err) {
         if (attachmentPreparation.cancelled) {
           finishAttachmentPreparation(attachmentQueueSessionId, attachmentPreparation);
@@ -222,8 +229,9 @@ export function createSubmitComposer(dependencies: SubmitComposerDependencies) {
       selectedHermesSessionId &&
       workingSessionIdsRef.current.has(selectedHermesSessionId)
     ) {
+      const runtimeSteerText = runtimeContentForSend(message);
       const steerSizeWarning = oversizedComposerInputWarning({
-        content: message,
+        content: runtimeSteerText,
         inputSignature: submittedComposerInputSignature,
         attachments: [],
         model: generationModel,
@@ -249,7 +257,8 @@ export function createSubmitComposer(dependencies: SubmitComposerDependencies) {
       steerCardSeqRef.current += 1;
       const cardId = `steer-${steerCardSeqRef.current}`;
       const steerEntry: PendingSteer = {
-        text: message,
+        text: runtimeSteerText,
+        displayText: message,
         accepted: false,
         toolDrained: false,
         modelTarget: sentModelTarget,
@@ -271,7 +280,7 @@ export function createSubmitComposer(dependencies: SubmitComposerDependencies) {
         ...prev,
         [steerSessionId]: [...(prev[steerSessionId] ?? []), { id: cardId, text: message }],
       }));
-      void steerActiveSession(steerSessionId, message)
+      void steerActiveSession(steerSessionId, runtimeSteerText)
         .then(() => {
           steerEntry.accepted = true;
         })
@@ -326,9 +335,10 @@ export function createSubmitComposer(dependencies: SubmitComposerDependencies) {
       composerEditorRef.current?.focus();
       const prepared = await prepareComposerSubmission(message, attachments);
       if (composerDispatchWasInvalidated(sentDispatchReservation)) return;
-      const runtimeContent = reportCategory
+      const preparedRuntimeContent = reportCategory
         ? categoryPrompt(reportCategory, prepared.runtimeContent)
         : prepared.runtimeContent;
+      const runtimeContent = runtimeContentForSend(preparedRuntimeContent);
       preparedForRecovery = { ...prepared, runtimeContent };
       const sizeWarning = oversizedComposerInputWarning({
         content: sizeEstimateContent(runtimeContent, selectedHermesSessionId ?? undefined),

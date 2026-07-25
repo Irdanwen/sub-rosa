@@ -2,8 +2,13 @@ import type { AgentChatPart, AgentChatTurn } from "../../lib/agent-chat-runtime"
 import { getActiveHermesProfileName } from "../../lib/active-hermes-profile";
 import {
   buildJuneHomeConversationContext,
+  dispatchJuneHomeThreadChanged,
   forgetJuneHomeStoredSessionId,
   isJuneHomeStartTaskTool,
+  JUNE_HOME_DIRECT_TURNS_STORAGE_KEY,
+  JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY,
+  LEGACY_JUNE_HOME_DIRECT_TURNS_STORAGE_KEY,
+  LEGACY_JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY,
   readJuneHomeStoredSessionId,
   type JuneHomeConversationContext,
   type JuneHomeTaskRequest,
@@ -19,16 +24,12 @@ export type HomeTaskHandoff = JuneHomeTaskRequest & {
 };
 
 export const HOME_DEMO_SEEDED_EVENT = "june:agent:home-demo-seeded";
-const HOME_TASK_HANDOFFS_STORAGE_KEY = "june:home:task-handoffs:v1";
-const HOME_DIRECT_TURNS_STORAGE_KEY = "june:home:direct-turns:v1";
 const HOME_DEMO_BACKUP_STORAGE_KEY = "june:home:demo-backup:v3";
-const LEGACY_HOME_TASK_HANDOFFS_STORAGE_KEY = "june.home.taskHandoffs.v1";
-const LEGACY_HOME_DIRECT_TURNS_STORAGE_KEY = "june.home.directTurns.v1";
 const LEGACY_HOME_DEMO_BACKUP_STORAGE_KEY = "june.home.demoBackup.v3";
 
 const LEGACY_HOME_STORAGE_KEYS: Partial<Record<string, string>> = {
-  [HOME_TASK_HANDOFFS_STORAGE_KEY]: LEGACY_HOME_TASK_HANDOFFS_STORAGE_KEY,
-  [HOME_DIRECT_TURNS_STORAGE_KEY]: LEGACY_HOME_DIRECT_TURNS_STORAGE_KEY,
+  [JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY]: LEGACY_JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY,
+  [JUNE_HOME_DIRECT_TURNS_STORAGE_KEY]: LEGACY_JUNE_HOME_DIRECT_TURNS_STORAGE_KEY,
   [HOME_DEMO_BACKUP_STORAGE_KEY]: LEGACY_HOME_DEMO_BACKUP_STORAGE_KEY,
 };
 
@@ -80,12 +81,12 @@ function validHomeTurn(value: unknown): value is AgentChatTurn {
 
 export function readHomeDirectTurns(storedSessionId: string | undefined): AgentChatTurn[] {
   if (!storedSessionId) return [];
-  const turns = readRecord(HOME_DIRECT_TURNS_STORAGE_KEY)[storedSessionId];
+  const turns = readRecord(JUNE_HOME_DIRECT_TURNS_STORAGE_KEY)[storedSessionId];
   return Array.isArray(turns) ? turns.filter(validHomeTurn) : [];
 }
 
 export function persistHomeDirectTurns(storedSessionId: string, turns: AgentChatTurn[]) {
-  const records = readRecord(HOME_DIRECT_TURNS_STORAGE_KEY);
+  const records = readRecord(JUNE_HOME_DIRECT_TURNS_STORAGE_KEY);
   // The relationship thread is intentionally long-lived. Keep all turns while
   // storage permits it, then retain the deepest viable recent tail.
   const candidates = [turns, turns.slice(-2000), turns.slice(-1000), turns.slice(-400)];
@@ -95,9 +96,10 @@ export function persistHomeDirectTurns(storedSessionId: string, turns: AgentChat
     attemptedLengths.add(candidate.length);
     try {
       window.localStorage.setItem(
-        HOME_DIRECT_TURNS_STORAGE_KEY,
+        JUNE_HOME_DIRECT_TURNS_STORAGE_KEY,
         JSON.stringify({ ...records, [storedSessionId]: candidate }),
       );
+      dispatchJuneHomeThreadChanged(storedSessionId);
       return;
     } catch {
       // Try the next smaller durable tail.
@@ -122,7 +124,7 @@ export function insertHomeDirectReply(
 
 export function readHomeTaskHandoffs(storedSessionId: string | undefined): HomeTaskHandoff[] {
   if (!storedSessionId) return [];
-  const values = readRecord(HOME_TASK_HANDOFFS_STORAGE_KEY)[storedSessionId];
+  const values = readRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY)[storedSessionId];
   if (!Array.isArray(values)) return [];
   return values
     .map((value) => {
@@ -150,14 +152,13 @@ export function readHomeTaskHandoffs(storedSessionId: string | undefined): HomeT
 }
 
 export function persistHomeTaskHandoffs(storedSessionId: string, handoffs: HomeTaskHandoff[]) {
-  const records = readRecord(HOME_TASK_HANDOFFS_STORAGE_KEY);
-  const durable = handoffs
-    .filter((handoff) => handoff.status === "failed" || Boolean(handoff.storedSessionId))
-    .slice(-24);
-  writeRecord(HOME_TASK_HANDOFFS_STORAGE_KEY, {
+  const records = readRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY);
+  const durable = handoffs.slice(-24);
+  writeRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY, {
     ...records,
     [storedSessionId]: durable,
   });
+  dispatchJuneHomeThreadChanged(storedSessionId);
 }
 
 function textForTurn(turn: AgentChatTurn): string {
@@ -388,8 +389,8 @@ Anything after a table or code block keeps rendering in the same response.`,
       error: "The session could not be created. Please try again.",
     },
   ];
-  writeRecord(HOME_TASK_HANDOFFS_STORAGE_KEY, {
-    ...readRecord(HOME_TASK_HANDOFFS_STORAGE_KEY),
+  writeRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY, {
+    ...readRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY),
     [storedSessionId]: handoffs,
   });
   window.dispatchEvent(new CustomEvent(HOME_DEMO_SEEDED_EVENT));
@@ -400,14 +401,14 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
     if (mode === false) {
       const snapshot = homeDemoSnapshot ?? readDemoSnapshot();
       if (!snapshot) return "Home demo is already off.";
-      const direct = readRecord(HOME_DIRECT_TURNS_STORAGE_KEY);
-      const handoffs = readRecord(HOME_TASK_HANDOFFS_STORAGE_KEY);
+      const direct = readRecord(JUNE_HOME_DIRECT_TURNS_STORAGE_KEY);
+      const handoffs = readRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY);
       if (snapshot.directTurns === undefined) delete direct[snapshot.demoSessionId];
       else direct[snapshot.demoSessionId] = snapshot.directTurns;
       if (snapshot.handoffs === undefined) delete handoffs[snapshot.demoSessionId];
       else handoffs[snapshot.demoSessionId] = snapshot.handoffs;
-      writeRecord(HOME_DIRECT_TURNS_STORAGE_KEY, direct);
-      writeRecord(HOME_TASK_HANDOFFS_STORAGE_KEY, handoffs);
+      writeRecord(JUNE_HOME_DIRECT_TURNS_STORAGE_KEY, direct);
+      writeRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY, handoffs);
       if (snapshot.sessionId) {
         writeJuneHomeStoredSessionId(snapshot.profile, snapshot.sessionId);
       } else {
@@ -431,8 +432,8 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
         profile,
         sessionId,
         demoSessionId,
-        directTurns: readRecord(HOME_DIRECT_TURNS_STORAGE_KEY)[demoSessionId],
-        handoffs: readRecord(HOME_TASK_HANDOFFS_STORAGE_KEY)[demoSessionId],
+        directTurns: readRecord(JUNE_HOME_DIRECT_TURNS_STORAGE_KEY)[demoSessionId],
+        handoffs: readRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY)[demoSessionId],
       };
       window.localStorage.setItem(HOME_DEMO_BACKUP_STORAGE_KEY, JSON.stringify(homeDemoSnapshot));
     }

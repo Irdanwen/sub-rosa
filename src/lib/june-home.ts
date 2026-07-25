@@ -1,5 +1,10 @@
-const HOME_SESSION_IDS_STORAGE_KEY = "june:home:session-ids:v1";
-const HOME_CHECK_INS_STORAGE_KEY = "june:home:check-ins:v1";
+export const JUNE_HOME_SESSION_IDS_STORAGE_KEY = "june:home:session-ids:v1";
+export const JUNE_HOME_CHECK_INS_STORAGE_KEY = "june:home:check-ins:v1";
+export const JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY = "june:home:task-handoffs:v1";
+export const JUNE_HOME_DIRECT_TURNS_STORAGE_KEY = "june:home:direct-turns:v1";
+export const LEGACY_JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY = "june.home.taskHandoffs.v1";
+export const LEGACY_JUNE_HOME_DIRECT_TURNS_STORAGE_KEY = "june.home.directTurns.v1";
+export const JUNE_HOME_THREAD_CHANGED_EVENT = "june:agent:home-thread-changed";
 
 export const JUNE_HOME_CONTEXT_OPEN = "[June home context]";
 export const JUNE_HOME_CONTEXT_CLOSE = "[/June home context]";
@@ -213,19 +218,24 @@ function storageOrUndefined(): Storage | undefined {
   }
 }
 
-function readStringMap(key: string): Record<string, string> {
+function readUnknownMap(key: string): Record<string, unknown> {
   try {
     const raw = storageOrUndefined()?.getItem(key);
     const parsed: unknown = raw ? JSON.parse(raw) : null;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    return Object.fromEntries(
-      Object.entries(parsed).filter((entry): entry is [string, string] => {
-        return typeof entry[1] === "string";
-      }),
-    );
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
   } catch {
     return {};
   }
+}
+
+function readStringMap(key: string): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(readUnknownMap(key)).filter((entry): entry is [string, string] => {
+      return typeof entry[1] === "string";
+    }),
+  );
 }
 
 function writeJson(key: string, value: unknown): void {
@@ -237,7 +247,7 @@ function writeJson(key: string, value: unknown): void {
 }
 
 export function readJuneHomeStoredSessionId(profile: string): string | undefined {
-  const storedSessionId = readStringMap(HOME_SESSION_IDS_STORAGE_KEY)[profile]?.trim();
+  const storedSessionId = readStringMap(JUNE_HOME_SESSION_IDS_STORAGE_KEY)[profile]?.trim();
   return storedSessionId || undefined;
 }
 
@@ -245,8 +255,8 @@ export function writeJuneHomeStoredSessionId(profile: string, storedSessionId: s
   const normalizedProfile = profile.trim() || "default";
   const normalizedSessionId = storedSessionId.trim();
   if (!normalizedSessionId) return;
-  writeJson(HOME_SESSION_IDS_STORAGE_KEY, {
-    ...readStringMap(HOME_SESSION_IDS_STORAGE_KEY),
+  writeJson(JUNE_HOME_SESSION_IDS_STORAGE_KEY, {
+    ...readStringMap(JUNE_HOME_SESSION_IDS_STORAGE_KEY),
     [normalizedProfile]: normalizedSessionId,
   });
 }
@@ -255,11 +265,92 @@ export function forgetJuneHomeStoredSessionId(
   profile: string,
   expectedStoredSessionId?: string,
 ): void {
-  const records = readStringMap(HOME_SESSION_IDS_STORAGE_KEY);
+  const records = readStringMap(JUNE_HOME_SESSION_IDS_STORAGE_KEY);
   if (expectedStoredSessionId && records[profile] !== expectedStoredSessionId) return;
   if (!(profile in records)) return;
   delete records[profile];
-  writeJson(HOME_SESSION_IDS_STORAGE_KEY, records);
+  writeJson(JUNE_HOME_SESSION_IDS_STORAGE_KEY, records);
+}
+
+export function dispatchJuneHomeThreadChanged(storedSessionId: string): void {
+  window.dispatchEvent(
+    new CustomEvent<{ storedSessionId: string }>(JUNE_HOME_THREAD_CHANGED_EVENT, {
+      detail: { storedSessionId },
+    }),
+  );
+}
+
+function mergedHomeArray(left: unknown, right: unknown): unknown[] {
+  const values = [...(Array.isArray(left) ? left : []), ...(Array.isArray(right) ? right : [])];
+  const byId = new Map<string, unknown>();
+  const withoutId: unknown[] = [];
+  for (const value of values) {
+    const id =
+      value && typeof value === "object" && !Array.isArray(value) && "id" in value
+        ? (value as { id?: unknown }).id
+        : undefined;
+    if (typeof id === "string") byId.set(id, value);
+    else withoutId.push(value);
+  }
+  return [...withoutId, ...byId.values()].sort((leftValue, rightValue) => {
+    const createdAt = (value: unknown) =>
+      value && typeof value === "object" && !Array.isArray(value) && "createdAt" in value
+        ? String((value as { createdAt?: unknown }).createdAt ?? "")
+        : "";
+    const leftCreatedAt = createdAt(leftValue);
+    const rightCreatedAt = createdAt(rightValue);
+    return leftCreatedAt && rightCreatedAt ? leftCreatedAt.localeCompare(rightCreatedAt) : 0;
+  });
+}
+
+function reconcileHomeThreadStore(
+  storageKey: string,
+  sourceSessionId: string,
+  targetSessionId: string | undefined,
+): void {
+  const records = readUnknownMap(storageKey);
+  if (!(sourceSessionId in records)) return;
+  if (targetSessionId && targetSessionId !== sourceSessionId) {
+    records[targetSessionId] = mergedHomeArray(records[targetSessionId], records[sourceSessionId]);
+  }
+  if (targetSessionId !== sourceSessionId) delete records[sourceSessionId];
+  writeJson(storageKey, records);
+}
+
+export function reconcileJuneHomeProfileRemoval(
+  profile: string,
+  disposition: "move" | "delete",
+): void {
+  const normalizedProfile = profile.trim();
+  if (!normalizedProfile || normalizedProfile === "default") return;
+
+  const sessionIds = readStringMap(JUNE_HOME_SESSION_IDS_STORAGE_KEY);
+  const sourceSessionId = sessionIds[normalizedProfile]?.trim();
+  const targetSessionId =
+    disposition === "move" ? sessionIds.default?.trim() || sourceSessionId : undefined;
+
+  if (sourceSessionId) {
+    for (const storageKey of [
+      JUNE_HOME_DIRECT_TURNS_STORAGE_KEY,
+      JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY,
+      LEGACY_JUNE_HOME_DIRECT_TURNS_STORAGE_KEY,
+      LEGACY_JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY,
+    ]) {
+      reconcileHomeThreadStore(storageKey, sourceSessionId, targetSessionId);
+    }
+    if (targetSessionId) dispatchJuneHomeThreadChanged(targetSessionId);
+  }
+
+  delete sessionIds[normalizedProfile];
+  if (disposition === "move" && targetSessionId) sessionIds.default = targetSessionId;
+  writeJson(JUNE_HOME_SESSION_IDS_STORAGE_KEY, sessionIds);
+
+  const checkIns = readUnknownMap(JUNE_HOME_CHECK_INS_STORAGE_KEY);
+  if (disposition === "move" && !checkIns.default && checkIns[normalizedProfile]) {
+    checkIns.default = checkIns[normalizedProfile];
+  }
+  delete checkIns[normalizedProfile];
+  writeJson(JUNE_HOME_CHECK_INS_STORAGE_KEY, checkIns);
 }
 
 export function withJuneHomeContext(prompt: string): string {
@@ -510,7 +601,7 @@ function checkInText(now: Date): string {
 export function juneHomeDailyCheckIn(profile: string, now = new Date()): JuneHomeCheckIn {
   let records: Record<string, HomeCheckInRecord> = {};
   try {
-    const raw = storageOrUndefined()?.getItem(HOME_CHECK_INS_STORAGE_KEY);
+    const raw = storageOrUndefined()?.getItem(JUNE_HOME_CHECK_INS_STORAGE_KEY);
     const parsed: unknown = raw ? JSON.parse(raw) : null;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       records = parsed as Record<string, HomeCheckInRecord>;
@@ -525,7 +616,7 @@ export function juneHomeDailyCheckIn(profile: string, now = new Date()): JuneHom
       ? existing.createdAt
       : now.toISOString();
   if (existing?.date !== date || existing.createdAt !== createdAt) {
-    writeJson(HOME_CHECK_INS_STORAGE_KEY, {
+    writeJson(JUNE_HOME_CHECK_INS_STORAGE_KEY, {
       ...records,
       [profile]: { date, createdAt },
     });

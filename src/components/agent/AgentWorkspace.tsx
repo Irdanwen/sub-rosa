@@ -71,7 +71,9 @@ import {
   juneHomeDailyCheckIn,
   juneHomeGreetingParts,
   juneHomeNudgePrompts,
+  JUNE_HOME_THREAD_CHANGED_EVENT,
   readJuneHomeStoredSessionId,
+  withJuneHomeContext,
   withJuneHomeCurrentResearch,
   type JuneHomeConversationContext,
   type JuneHomeTaskRequest,
@@ -432,6 +434,22 @@ export function AgentWorkspace({
     setHomeTaskHandoffs(restoredHandoffs);
     onHomeSessionCreated?.(selectedHermesSessionId);
   }, [homeMode, onHomeSessionCreated, selectedHermesSessionId]);
+  useEffect(() => {
+    if (!homeMode) return;
+    const refreshHomeThread = (event: Event) => {
+      const storedSessionId = (event as CustomEvent<{ storedSessionId?: string }>).detail
+        ?.storedSessionId;
+      if (!storedSessionId || storedSessionId !== selectedHermesSessionId) return;
+      const turns = readHomeDirectTurns(storedSessionId);
+      const handoffs = readHomeTaskHandoffs(storedSessionId);
+      homeDirectTurnsRef.current = turns;
+      homeTaskHandoffsRef.current = handoffs;
+      setHomeDirectTurns(turns);
+      setHomeTaskHandoffs(handoffs);
+    };
+    window.addEventListener(JUNE_HOME_THREAD_CHANGED_EVENT, refreshHomeThread);
+    return () => window.removeEventListener(JUNE_HOME_THREAD_CHANGED_EVENT, refreshHomeThread);
+  }, [homeMode, selectedHermesSessionId]);
   const [heroGreeting, setHeroGreeting] = useState(advanceHeroGreeting);
   const heroGreetingConsumedRef = useRef(false);
   const [heroDeck, setHeroDeck] = useState(shuffleAgentShortcuts);
@@ -1524,6 +1542,37 @@ export function AgentWorkspace({
     setVeniceApiKeyConfigured,
     veniceApiKeyConfiguredRef,
   });
+  function captureHomeSessionModelTarget(
+    explicitSession?: Parameters<typeof captureSessionModelTarget>[0],
+  ): CapturedSessionModelTarget {
+    const captured = captureSessionModelTarget(explicitSession);
+    const selection: SessionModelSelection = { modelId: AUTO_MODEL_ID, costQuality: 0 };
+    const hermesModelId = hermesModelIdForSelection(selection);
+    return {
+      ...captured,
+      selection,
+      hermesModelId,
+      revision: undefined,
+      shouldApply:
+        captured.targetStoredSessionId !== null && captured.existingHermesModelId !== hermesModelId,
+    };
+  }
+  const captureSurfaceSessionModelTarget = homeMode
+    ? captureHomeSessionModelTarget
+    : captureSessionModelTarget;
+  const submitSurfaceHermesSession: SubmitHermesSession = (content, explicitSession, options) =>
+    submitHermesSession(
+      content,
+      explicitSession,
+      homeMode
+        ? {
+            ...options,
+            profile: activeHermesProfile.name,
+            thinkingLevel: "instant",
+            overrideProfileModelAndThinking: true,
+          }
+        : options,
+    );
 
   useEffect(() => {
     if (!bridge.running) return;
@@ -1655,7 +1704,7 @@ export function AgentWorkspace({
     setError,
     setLiveEvents,
     setQueuedAttachmentFollowUps,
-    submitHermesSession,
+    submitHermesSession: submitSurfaceHermesSession,
     watchCompletedAgentRunSettle,
     workingSessionIdsRef,
   });
@@ -1969,7 +2018,7 @@ export function AgentWorkspace({
     handleAgentImageSafeModeConsentEvent,
     runImageSlashCommand,
   } = createImageSlashActions({
-    captureSessionModelTarget,
+    captureSessionModelTarget: captureSurfaceSessionModelTarget,
     clearComposerCommandDraft,
     composerDispatchWasInvalidated,
     creditActionsDisabledReason,
@@ -1984,7 +2033,7 @@ export function AgentWorkspace({
     setImageSafeModeConsentRequest,
     setImageTurnsBySession,
     setImportingFiles,
-    submitHermesSession,
+    submitHermesSession: submitSurfaceHermesSession,
     updateImageSlashPart,
   });
 
@@ -2144,7 +2193,7 @@ export function AgentWorkspace({
     retryVideoSlashTurn,
     runVideoSlashCommand,
   } = createVideoSlashActions({
-    captureSessionModelTarget,
+    captureSessionModelTarget: captureSurfaceSessionModelTarget,
     clearComposerCommandDraft,
     composerDispatchWasInvalidated,
     creditActionsDisabledReason,
@@ -2156,7 +2205,7 @@ export function AgentWorkspace({
     setHeroLeaving,
     setImportingFiles,
     setVideoTurnsBySession,
-    submitHermesSession,
+    submitHermesSession: submitSurfaceHermesSession,
     updateVideoSlashPart,
     videoSlashBaseTurnId,
   });
@@ -2273,11 +2322,13 @@ export function AgentWorkspace({
     if (selected) return selected;
     if (homeSessionPromiseRef.current) return homeSessionPromiseRef.current;
 
-    const creation = submitHermesSession("Home", undefined, {
+    const creation = submitSurfaceHermesSession("Home", undefined, {
       skipPrompt: true,
       displayContent: "Home",
       titleContent: "Home",
       attachments: [],
+      modelTarget: captureHomeSessionModelTarget(),
+      suppressTitleSuggestion: true,
     }).then((storedSessionId) => {
       if (!storedSessionId) throw new Error("June could not create the Home conversation.");
       onHomeSessionCreated?.(storedSessionId);
@@ -2318,21 +2369,29 @@ export function AgentWorkspace({
     sentModelTarget: CapturedSessionModelTarget,
     conversation: JuneHomeConversationContext,
     homeStoredSessionId: string,
+    profile: string,
   ) {
     if (handledHomeTaskToolCallsRef.current.has(toolCallId)) return;
-    handledHomeTaskToolCallsRef.current.add(toolCallId);
     const handoffId = `home-task-${toolCallId}`;
+    const existingHandoff = readHomeTaskHandoffs(homeStoredSessionId).find(
+      (handoff) => handoff.id === handoffId,
+    );
+    if (existingHandoff && existingHandoff.status !== "failed") {
+      handledHomeTaskToolCallsRef.current.add(toolCallId);
+      return;
+    }
+    handledHomeTaskToolCallsRef.current.add(toolCallId);
     const starting: HomeTaskHandoff = { ...request, id: handoffId, status: "starting" };
-    const nextHandoffs = homeTaskHandoffsRef.current.some((handoff) => handoff.id === handoffId)
-      ? homeTaskHandoffsRef.current.map((handoff) =>
-          handoff.id === handoffId ? starting : handoff,
-        )
-      : [...homeTaskHandoffsRef.current, starting];
+    const storedHandoffs = readHomeTaskHandoffs(homeStoredSessionId);
+    const nextHandoffs = storedHandoffs.some((handoff) => handoff.id === handoffId)
+      ? storedHandoffs.map((handoff) => (handoff.id === handoffId ? starting : handoff))
+      : [...storedHandoffs, starting];
     homeTaskHandoffsRef.current = nextHandoffs;
     setHomeTaskHandoffs(nextHandoffs);
+    persistHomeTaskHandoffs(homeStoredSessionId, nextHandoffs);
 
     const updateHandoff = (patch: Partial<HomeTaskHandoff>) => {
-      const next = homeTaskHandoffsRef.current.map((handoff) =>
+      const next = readHomeTaskHandoffs(homeStoredSessionId).map((handoff) =>
         handoff.id === handoffId ? { ...handoff, ...patch } : handoff,
       );
       homeTaskHandoffsRef.current = next;
@@ -2349,6 +2408,7 @@ export function AgentWorkspace({
         titleContent: request.title,
         selectSession: false,
         modelTarget: sentModelTarget,
+        profile,
       });
       if (!storedSessionId) throw new Error("June could not create the focused session.");
       updateHandoff({ status: "running", storedSessionId });
@@ -2378,6 +2438,7 @@ export function AgentWorkspace({
       captureFocusedSessionDefaultModelTarget(),
       conversation,
       homeStoredSessionId,
+      activeHermesProfile.name,
     );
   }
 
@@ -2494,6 +2555,7 @@ export function AgentWorkspace({
             focusedModelTarget,
             conversation,
             storedSessionId as string,
+            profile,
           );
         }
       });
@@ -2790,7 +2852,7 @@ export function AgentWorkspace({
     approvalResponseKey,
     approvalResponsesInFlightRef,
     attachHermesSessionEventListener,
-    captureSessionModelTarget,
+    captureSessionModelTarget: captureSurfaceSessionModelTarget,
     ensureHermesGateway,
     gatewayRecoveringRef,
     hermesSessionItemsRef,
@@ -2805,7 +2867,7 @@ export function AgentWorkspace({
     setError,
     setLiveEvents,
     setRuntimeSessionIds,
-    submitHermesSession,
+    submitHermesSession: submitSurfaceHermesSession,
     waitingSessionIdsRef,
     workingSessionIdsRef,
   });
@@ -2865,7 +2927,7 @@ export function AgentWorkspace({
     approvalResponseKey,
     approvalResponsesInFlightRef,
     cancelComposerDispatch,
-    captureSessionModelTarget,
+    captureSessionModelTarget: captureSurfaceSessionModelTarget,
     classifyOptimisticLiveEvent,
     clearSessionActivity,
     composerDispatchWasInvalidated,
@@ -2889,7 +2951,7 @@ export function AgentWorkspace({
     setSecretSubmitting,
     setSudoSubmitting,
     setWorkingTaskIds,
-    submitHermesSession,
+    submitHermesSession: submitSurfaceHermesSession,
   });
 
   // Feature 07: fork the conversation into a NEW session that starts from the
@@ -3251,7 +3313,7 @@ export function AgentWorkspace({
     attachmentsRef,
     beginAttachmentPreparation,
     cancelComposerDispatch,
-    captureSessionModelTarget,
+    captureSessionModelTarget: captureSurfaceSessionModelTarget,
     categoryRef,
     clearComposerDraft,
     composerDispatchOrderRef,
@@ -3292,10 +3354,11 @@ export function AgentWorkspace({
     setSubmittingHermesSessionId,
     steerActiveSession,
     steerCardSeqRef,
-    submitHermesSession,
+    submitHermesSession: submitSurfaceHermesSession,
     submitting,
     submittingIssueReportSessionIdsRef,
     textActionsDisabledReason,
+    transformRuntimeContent: homeMode ? withJuneHomeContext : undefined,
     workingSessionIdsRef,
   });
 

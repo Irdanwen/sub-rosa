@@ -1,5 +1,5 @@
 import { dispatchAgentSessionStatus } from "../../lib/agent-events";
-import { type HermesGatewayEvent } from "../../lib/hermes-gateway";
+import type { HermesGatewayEvent } from "../../lib/hermes-gateway";
 import { classifyHermesEvent, type JuneHermesEvent } from "../../lib/hermes-control-plane";
 import {
   reserveHermesSessionDispatch,
@@ -9,10 +9,10 @@ import { messageFromError } from "../../lib/errors";
 import { appendHermesLiveEvent } from "../../lib/agent-chat-runtime";
 import type { AgentAttachment } from "./agent-workspace-models";
 import { AttachBlockedError } from "./composer/media-slash-persistence";
-import {
-  type CapturedSessionModelTarget,
-  type PreparedComposerSubmission,
-  type QueuedAttachmentFollowUp,
+import type {
+  CapturedSessionModelTarget,
+  PreparedComposerSubmission,
+  QueuedAttachmentFollowUp,
 } from "./composer/follow-up-queue";
 import { rememberComposerDraft, NEW_SESSION_RECOVERY_QUEUE_KEY } from "./agent-session-continuity";
 import type { createFollowUpQueueActionsDependencies } from "./follow-up-queue-actions-types";
@@ -324,13 +324,14 @@ export function createFollowUpQueueActions(dependencies: createFollowUpQueueActi
     // An unmount can then preserve their FIFO reservations in continuity.
     const steerFollowUps = unconsumedSteers.map((entry) => {
       queuedAttachmentFollowUpSeqRef.current += 1;
+      const displayText = entry.displayText ?? entry.text;
       return {
         id: `attachment-follow-up-${queuedAttachmentFollowUpSeqRef.current}`,
         prepared: {
-          displayContent: entry.text,
+          displayContent: displayText,
           runtimeContent: entry.text,
-          titleContent: entry.text,
-          typedMessage: entry.text,
+          titleContent: displayText,
+          typedMessage: displayText,
         },
         attachments: [],
         modelTarget: entry.modelTarget,

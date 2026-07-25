@@ -1,21 +1,22 @@
-import { type HermesSessionInfo, type VeniceModelDto } from "../../../lib/tauri";
-import { type HermesSessionDispatchReservation } from "../../../lib/hermes-session-dispatch-mutex";
-import { type ComposerEditorHandle } from "./ComposerEditor";
-import { type ReportCategory } from "./reportCategory";
-import {
-  type AgentProjectContext,
+import type { HermesSessionInfo, VeniceModelDto } from "../../../lib/tauri";
+import type { HermesSessionDispatchReservation } from "../../../lib/hermes-session-dispatch-mutex";
+import type { ComposerEditorHandle } from "./ComposerEditor";
+import type { ReportCategory } from "./reportCategory";
+import type {
+  AgentProjectContext,
   ProjectContextSignatureStore,
 } from "../../../lib/agent-project-context";
 import type { AgentAttachment } from "../agent-workspace-models";
 import type { PendingIssueReport } from "../agent-session-continuity";
-import { type AgentWorkspaceErrorOptions } from "../agent-workspace-errors";
-import {
-  type CapturedSessionModelTarget,
-  type PendingAttachmentPreparation,
-  type PendingSteer,
-  type PreparedComposerSubmission,
+import type { AgentWorkspaceErrorOptions } from "../agent-workspace-errors";
+import type { SubmitHermesSession } from "../session-submission-types";
+import type {
+  CapturedSessionModelTarget,
+  PendingAttachmentPreparation,
+  PendingSteer,
+  PreparedComposerSubmission,
 } from "./follow-up-queue";
-import { type ComposerInputSizeWarning } from "./composer-input-helpers";
+import type { ComposerInputSizeWarning } from "./composer-input-helpers";
 import type * as React from "react";
 
 export type SubmitComposerDependencies = {
@@ -100,23 +101,10 @@ export type SubmitComposerDependencies = {
   setSubmittingHermesSessionId: React.Dispatch<React.SetStateAction<string | null>>;
   steerActiveSession: (sessionId: string, text: string) => Promise<void>;
   steerCardSeqRef: React.MutableRefObject<number>;
-  submitHermesSession: (
-    content: string,
-    explicitSession?: HermesSessionInfo,
-    options?: {
-      issueReport?: PendingIssueReport;
-      displayContent?: string;
-      titleContent?: string;
-      attachments?: AgentAttachment[];
-      selectSession?: boolean;
-      onAttachmentsUpdated?: (attachments: AgentAttachment[]) => void;
-      modelTarget?: CapturedSessionModelTarget;
-      dispatchReservation?: HermesSessionDispatchReservation;
-      skipPrompt?: boolean;
-    },
-  ) => Promise<string | undefined>;
+  submitHermesSession: SubmitHermesSession;
   submitting: boolean;
   submittingIssueReportSessionIdsRef: React.MutableRefObject<Set<string>>;
   textActionsDisabledReason: string | undefined;
+  transformRuntimeContent?: (content: string) => string;
   workingSessionIdsRef: React.MutableRefObject<Set<string>>;
 };

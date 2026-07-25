@@ -18,6 +18,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { dispatchProfileDataChanged, setActiveHermesProfileName } from "../active-hermes-profile";
 import { messageFromError } from "../errors";
+import { reconcileJuneHomeProfileRemoval } from "../june-home";
 import { deleteHermesSession } from "../hermes-adapter";
 import {
   deleteProfileData,
@@ -262,7 +263,7 @@ export class ProfileManagerController {
       return false;
     }
 
-    return this.deleteHermesProfile(name);
+    return this.deleteHermesProfile(name, "delete");
   }
 
   async confirmRemoval(disposition: ProfileRemovalDisposition): Promise<boolean> {
@@ -310,7 +311,7 @@ export class ProfileManagerController {
       return false;
     }
 
-    return this.deleteHermesProfile(name);
+    return this.deleteHermesProfile(name, disposition);
   }
 
   cancelRemoval(): void {
@@ -319,9 +320,13 @@ export class ProfileManagerController {
     this.recompute();
   }
 
-  private async deleteHermesProfile(name: string): Promise<boolean> {
+  private async deleteHermesProfile(
+    name: string,
+    disposition: ProfileRemovalDisposition,
+  ): Promise<boolean> {
     try {
       await this.engine.client.profiles.remove(name);
+      reconcileJuneHomeProfileRemoval(name, disposition);
       if (this.disposed) return true;
       this.pendingAction = null;
       this.pendingRemoval = null;

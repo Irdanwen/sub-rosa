@@ -43,7 +43,10 @@ export type QueuedAttachmentFollowUp = {
 };
 
 export type PendingSteer = {
+  /** Runtime text, including any surface-only hidden context. */
   text: string;
+  /** User-visible text retained when an undrained steer becomes a follow-up. */
+  displayText?: string;
   accepted: boolean;
   toolDrained: boolean;
   modelTarget: CapturedSessionModelTarget;

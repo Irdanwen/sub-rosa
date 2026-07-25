@@ -1684,6 +1684,7 @@ struct JuneHomeChatStream {
     content: String,
     tool_calls: BTreeMap<usize, JuneHomeToolCall>,
     truncated: bool,
+    terminal: bool,
 }
 
 impl JuneHomeChatStream {
@@ -1717,17 +1718,22 @@ impl JuneHomeChatStream {
             .map(str::trim_start)
             .collect::<Vec<_>>()
             .join("\n");
-        if data.is_empty() || data == "[DONE]" {
+        if data.is_empty() {
+            return Ok(None);
+        }
+        if data == "[DONE]" {
+            self.terminal = true;
             return Ok(None);
         }
         let value: serde_json::Value = serde_json::from_str(&data)
             .map_err(|error| AppError::new("home_chat_invalid", error.to_string()))?;
-        if matches!(
-            value
-                .pointer("/choices/0/finish_reason")
-                .and_then(serde_json::Value::as_str),
-            Some("length" | "max_tokens")
-        ) {
+        let finish_reason = value
+            .pointer("/choices/0/finish_reason")
+            .and_then(serde_json::Value::as_str);
+        if finish_reason.is_some() {
+            self.terminal = true;
+        }
+        if matches!(finish_reason, Some("length" | "max_tokens")) {
             self.truncated = true;
         }
         let Some(delta) = value.pointer("/choices/0/delta") else {
@@ -1774,6 +1780,9 @@ impl JuneHomeChatStream {
     }
 
     fn into_response(self) -> Result<JuneHomeChatResponse, AppError> {
+        if !self.terminal {
+            return Err(api_stream_ended_unexpectedly());
+        }
         let message = serde_json::json!({
             "tool_calls": self.tool_calls.into_values().map(|call| {
                 serde_json::json!({
@@ -4566,6 +4575,24 @@ data: \"data\":{\"content\":\"Joined\",\"titleSuggestion\":null,\"provider\":\"v
         let response = stream.into_response().expect("content should complete");
         assert_eq!(response.content.as_deref(), Some("Hello there"));
         assert!(response.task.is_none());
+    }
+
+    #[test]
+    fn home_chat_stream_rejects_content_without_a_terminal_event() {
+        let mut stream = JuneHomeChatStream::default();
+        stream
+            .push(b"data: {\"choices\":[{\"delta\":{\"content\":\"Only a prefix\"}}]}\n\n")
+            .expect("a complete delta should parse");
+
+        let error = stream
+            .into_response()
+            .expect_err("an unterminated reply must not be persisted");
+
+        assert_eq!(error.code, "june_request_failed");
+        assert_eq!(
+            error.message,
+            "The processing service response stream ended unexpectedly."
+        );
     }
 
     #[test]

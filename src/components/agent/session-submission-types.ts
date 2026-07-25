@@ -1,35 +1,41 @@
+import type { AgentProjectContext } from "../../lib/agent-project-context";
+import type { ProjectContextSignatureStore } from "../../lib/agent-project-context";
+import type { HermesRequestLike } from "../../lib/hermes-control-plane";
+import type { HermesGatewayClient } from "../../lib/hermes-gateway";
+import type { HermesSessionDispatchReservation } from "../../lib/hermes-session-dispatch-mutex";
+import type { SessionModelSelectionMap } from "../../lib/hermes-session-model-selection";
+import type { HermesSessionInfo, HermesSessionMessage, VeniceModelDto } from "../../lib/tauri";
+import type { ThinkingLevel } from "../../lib/thinking-level";
+import type { PendingIssueReport } from "./agent-session-continuity";
+import type { AgentAttachment } from "./agent-workspace-models";
+import type { CapturedSessionModelTarget } from "./composer/follow-up-queue";
 import type * as React from "react";
+
+export type SubmitHermesSessionOptions = {
+  issueReport?: PendingIssueReport;
+  displayContent?: string;
+  titleContent?: string;
+  attachments?: AgentAttachment[];
+  selectSession?: boolean;
+  onAttachmentsUpdated?: (attachments: AgentAttachment[]) => void;
+  modelTarget?: CapturedSessionModelTarget;
+  dispatchReservation?: HermesSessionDispatchReservation;
+  skipPrompt?: boolean;
+  /** Sticky profile captured at the user's Send boundary for a new session. */
+  profile?: string;
+  /** Per-session reasoning level that does not mutate the normal Agent draft. */
+  thinkingLevel?: ThinkingLevel;
+  /** Home owns its hidden session's model and reasoning even under a named profile. */
+  overrideProfileModelAndThinking?: boolean;
+  /** Hidden placeholder sessions do not need a metered title suggestion. */
+  suppressTitleSuggestion?: boolean;
+};
 
 export type SubmitHermesSession = (
   content: string,
   explicitSession?: HermesSessionInfo,
-  options?: {
-    issueReport?: PendingIssueReport;
-    displayContent?: string;
-    titleContent?: string;
-    attachments?: AgentAttachment[];
-    selectSession?: boolean;
-    onAttachmentsUpdated?: (attachments: AgentAttachment[]) => void;
-    modelTarget?: CapturedSessionModelTarget;
-    dispatchReservation?: HermesSessionDispatchReservation;
-    skipPrompt?: boolean;
-  },
+  options?: SubmitHermesSessionOptions,
 ) => Promise<string | undefined>;
-import type { AgentProjectContext } from "../../lib/agent-project-context";
-import { ProjectContextSignatureStore } from "../../lib/agent-project-context";
-import type { HermesRequestLike } from "../../lib/hermes-control-plane";
-import type { HermesGatewayClient } from "../../lib/hermes-gateway";
-import type { HermesSessionDispatchReservation } from "../../lib/hermes-session-dispatch-mutex";
-import { type SessionModelSelectionMap } from "../../lib/hermes-session-model-selection";
-import {
-  type HermesSessionInfo,
-  type HermesSessionMessage,
-  type VeniceModelDto,
-} from "../../lib/tauri";
-import { type ThinkingLevel } from "../../lib/thinking-level";
-import type { PendingIssueReport } from "./agent-session-continuity";
-import type { AgentAttachment } from "./agent-workspace-models";
-import { type CapturedSessionModelTarget } from "./composer/follow-up-queue";
 
 export type SubmitHermesSessionDependencies = {
   AGENT_TITLE_MAX_CHARS: 48;

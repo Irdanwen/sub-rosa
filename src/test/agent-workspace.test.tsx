@@ -884,6 +884,106 @@ describe("AgentWorkspace", () => {
     expect(mocks.gatewayRequest).not.toHaveBeenCalledWith("prompt.submit", expect.anything());
   });
 
+  it("refreshes a remounted Home thread when an off-screen reply completes", async () => {
+    const user = userEvent.setup();
+    let resolveHomeChat: ((value: { content: string }) => void) | undefined;
+    mocks.juneHomeChat.mockImplementationOnce(
+      () =>
+        new Promise<{ content: string }>((resolve) => {
+          resolveHomeChat = resolve;
+        }),
+    );
+
+    const first = render(<AgentWorkspace homeMode initialSession={existingSession} />);
+    const composer = await screen.findByRole("textbox", { name: "Message June" });
+    await user.type(composer, "Keep this reply when I leave");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(mocks.juneHomeChat).toHaveBeenCalledOnce());
+    first.unmount();
+
+    render(<AgentWorkspace homeMode initialSession={existingSession} />);
+    expect(await screen.findByText("Keep this reply when I leave")).toBeInTheDocument();
+
+    await act(async () => {
+      resolveHomeChat?.({ content: "The off-screen reply is safely back in Home." });
+    });
+
+    expect(
+      await screen.findByText("The off-screen reply is safely back in Home."),
+    ).toBeInTheDocument();
+  });
+
+  it("creates the hidden Home session on Auto Economy and Low without a title request", async () => {
+    const user = userEvent.setup();
+    mocks.listHermesSessions.mockResolvedValue([]);
+    setActiveHermesProfileName("research");
+    mocks.invoke.mockResolvedValue({ active: "research", current: "research" });
+    const onHomeSessionCreated = vi.fn();
+
+    render(<AgentWorkspace homeMode onHomeSessionCreated={onHomeSessionCreated} />);
+    const composer = await screen.findByRole("textbox", { name: "Message June" });
+    await user.type(composer, "Hello June");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() =>
+      expect(mocks.gatewayRequest).toHaveBeenCalledWith("session.create", {
+        title: "Home",
+        cols: 96,
+        model: "__june_auto_generation__:0",
+        reasoning_effort: "minimal",
+        profile: "research",
+      }),
+    );
+    expect(mocks.suggestAgentSessionTitle).not.toHaveBeenCalled();
+    expect(mocks.assignSessionToProfile).toHaveBeenCalledWith("session-2", "research");
+    expect(onHomeSessionCreated).toHaveBeenCalledWith("session-2");
+  });
+
+  it("keeps full Home submissions hidden, lightweight, and visually unwrapped", async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkspace homeMode initialSession={existingSession} />);
+    const composer = await screen.findByRole("textbox", { name: "Message June" });
+    await user.type(composer, "Review this note");
+    const form = document.querySelector(".agent-composer");
+    expect(form).not.toBeNull();
+    fireEvent.drop(form as HTMLFormElement, {
+      dataTransfer: {
+        files: [new File(["details"], "details.txt", { type: "text/plain" })],
+      },
+    });
+    expect(await screen.findByText("details.txt")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() =>
+      expect(mocks.gatewayRequest).toHaveBeenCalledWith("config.set", {
+        session_id: "runtime-session-1",
+        key: "reasoning",
+        value: "minimal",
+      }),
+    );
+    expect(mocks.gatewayRequest).toHaveBeenCalledWith("config.set", {
+      session_id: "runtime-session-1",
+      key: "model",
+      value: "__june_auto_generation__:0 --session",
+      confirm_expensive_model: true,
+    });
+    await waitFor(() =>
+      expect(mocks.gatewayRequest).toHaveBeenCalledWith(
+        "prompt.submit",
+        expect.objectContaining({
+          session_id: "runtime-session-1",
+          text: expect.stringContaining("[June home context]"),
+        }),
+      ),
+    );
+    const prompt = mocks.gatewayRequest.mock.calls.find(
+      ([method]) => method === "prompt.submit",
+    )?.[1] as { text: string };
+    expect(prompt.text).toContain("Review this note");
+    expect(await screen.findByText("Review this note")).toBeInTheDocument();
+    expect(screen.queryByText("[June home context]")).toBeNull();
+  });
+
   it("sends up to 80 recent Home messages plus relevant older thread context", async () => {
     const user = userEvent.setup();
     const turns = Array.from({ length: 84 }, (_, index) => ({
@@ -983,6 +1083,102 @@ describe("AgentWorkspace", () => {
     );
     expect(screen.getByText("I created a session for “Sports today”.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open session" })).toBeInTheDocument();
+  });
+
+  it("keeps a streamed Home handoff in the profile where Send occurred", async () => {
+    const user = userEvent.setup();
+    let resolveHomeChat:
+      | ((value: {
+          task: {
+            title: string;
+            prompt: string;
+          };
+        }) => void)
+      | undefined;
+    setActiveHermesProfileName("research");
+    mocks.invoke.mockResolvedValue({ active: "research", current: "research" });
+    mocks.listSessionProfiles.mockResolvedValue([
+      { sessionId: existingSession.id, profile: "research" },
+    ]);
+    mocks.juneHomeChat.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveHomeChat = resolve;
+        }),
+    );
+
+    render(<AgentWorkspace homeMode initialSession={existingSession} />);
+    const composer = await screen.findByRole("textbox", { name: "Message June" });
+    await user.type(composer, "Create a focused launch plan");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(mocks.juneHomeChat).toHaveBeenCalledOnce());
+
+    setActiveHermesProfileName("other");
+    mocks.invoke.mockResolvedValue({ active: "other", current: "other" });
+    await act(async () => {
+      resolveHomeChat?.({
+        task: {
+          title: "Focused launch plan",
+          prompt: "Create a focused launch plan.",
+        },
+      });
+    });
+
+    await waitFor(() =>
+      expect(mocks.gatewayRequest).toHaveBeenCalledWith(
+        "session.create",
+        expect.objectContaining({ profile: "research" }),
+      ),
+    );
+    expect(mocks.assignSessionToProfile).toHaveBeenCalledWith("session-2", "research");
+  });
+
+  it("keeps a pending Home handoff actionable across a remount", async () => {
+    const user = userEvent.setup();
+    let resolveSessionCreate:
+      | ((value: { session_id: string; stored_session_id: string }) => void)
+      | undefined;
+    mocks.juneHomeChat.mockResolvedValueOnce({
+      task: {
+        title: "Draft launch brief",
+        prompt: "Draft the launch brief.",
+      },
+    });
+    mocks.gatewayRequest.mockImplementation((method: string) => {
+      if (method === "session.create") {
+        return new Promise((resolve) => {
+          resolveSessionCreate = resolve;
+        });
+      }
+      if (method === "session.resume") {
+        return Promise.resolve({ session_id: "runtime-session-1" });
+      }
+      return Promise.resolve({});
+    });
+
+    const first = render(<AgentWorkspace homeMode initialSession={existingSession} />);
+    const composer = await screen.findByRole("textbox", { name: "Message June" });
+    await user.type(composer, "Open a focused session for the launch brief");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(await screen.findByLabelText("Creating session")).toBeInTheDocument();
+    const storedStarting = JSON.parse(
+      window.localStorage.getItem("june:home:task-handoffs:v1") ?? "{}",
+    )[existingSession.id] as Array<{ status: string }>;
+    expect(storedStarting).toEqual([expect.objectContaining({ status: "starting" })]);
+    first.unmount();
+
+    render(<AgentWorkspace homeMode initialSession={existingSession} />);
+    expect(await screen.findByLabelText("Creating session")).toBeInTheDocument();
+
+    await act(async () => {
+      resolveSessionCreate?.({
+        session_id: "runtime-session-2",
+        stored_session_id: "session-2",
+      });
+    });
+
+    expect(await screen.findByRole("button", { name: "Open session" })).toBeInTheDocument();
+    expect(screen.getByText("I created a session for “Draft launch brief”.")).toBeInTheDocument();
   });
 
   it("populates the Home console demo with rich content and actionable handoffs", () => {
