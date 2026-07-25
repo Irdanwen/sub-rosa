@@ -130,7 +130,6 @@ Per-repo config the engineering skills read before acting (see the
 - [desktop-release-runner.md](desktop-release-runner.md) — Mac Studio self-hosted runner setup for signed desktop releases
 - [reproducible-builds.md](reproducible-builds.md) — June API source → TEE trust chain (Phase A shipped)
 - [github-security-readiness.md](github-security-readiness.md) — pre-public repo hardening checklist
-- [settings-focus-runbook.md](settings-focus-runbook.md) — transient: settings tabs hidden while admin surfaces stabilize
 - [computer-use-support.md](computer-use-support.md) - state guide, TCC recovery, signed helper self-test, and macOS release regression response
 
 ## QA

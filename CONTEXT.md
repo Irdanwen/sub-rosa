@@ -294,18 +294,17 @@ _Avoid_: "the session id" (always say which).
 
 **Completed session**:
 An agent session the user has marked done. Completion is **June-owned local
-state** (a `completed_sessions` row keyed by the stored session id), set only by
-June and independent of Hermes' own archive flag; completed sessions move out of
-the active sidebar list into a distinct Completed section. See
+state** keyed by the stored session id and set only by June; completed sessions
+move out of the active sidebar list into a distinct Completed section. See
 [ADR-0032](docs/adr/0032-session-completion-june-owned-local-state.md).
-_Avoid_: conflating "completed" with Hermes "archived" (orthogonal — archive is
-Hermes-side and read-only to June; completion is June-side).
+_Avoid_: archived (the product action is completion).
 
 **Agent run**:
-The user-initiated Hermes execution that starts with `prompt.submit` and ends
-only when the session is truly idle, including its tool loop and automatic goal
-continuations. One agent run keeps one captured model. A later picker choice is
-applied at the next agent-run boundary, never inside the active run.
+The user-initiated execution that starts with `run.start` and ends with a
+terminal runtime event or a persisted interruption, including its tool loop.
+One agent run keeps one captured model, safety mode, skill set, and MCP policy.
+A later picker choice is applied at the next agent-run boundary, never inside
+the active run.
 _Avoid_: response (only the visible text), turn (ambiguous with transcript and
 conversation turns).
 
@@ -350,12 +349,11 @@ inferred from marketing `traits` (see
 _Avoid_: trait (`traits` is a separate, non-authoritative Venice field).
 
 **Attachment**:
-A file or image referenced by path. Agent-composer attachments and DOM-dropped
-report attachments are imported into the Hermes workspace; native-picker
-issue-report attachments keep their original local paths. Composer images
-are snapshotted by Rust into a session-scoped workspace directory and attached
-with `image.attach`; `image.attach_bytes` remains an additive fallback for
-callers without a gateway-local path.
+A file or image referenced by path. Agent-composer attachments are copied by
+Rust into the June-owned session workspace before a run starts. Image
+attachments are included as vision input when the selected model supports
+vision; other files are exposed through the same safety-controlled file tools.
+Native-picker issue-report attachments keep their original local paths.
 _Avoid_: upload (unqualified).
 
 **Note reference**:
@@ -380,7 +378,7 @@ _Avoid_: using "tool" for all three.
 **Obsidian plugin**:
 The June-owned local capability for discovering the user-selected Obsidian vault
 at task time through the `june_obsidian` MCP server. The vault selection is
-stored in June-owned `obsidian.json`; it is not a Hermes environment variable.
+stored in June-owned `obsidian.json`; it is not a runtime environment variable.
 Discovery is current state, not write authorization. Disconnect removes future
 discovery but cannot revoke a path already disclosed to a live unrestricted
 runtime.
@@ -673,8 +671,8 @@ mic grant as covering the other.
   credits`). Never use it for upstream provider cost (which is dollars).
 - **"the session id"** is ambiguous — say **stored** (persistent, UI-facing) or
   **runtime** (live process) session id.
-- **"the model"** never means Hermes — Hermes is the runtime; the model is the
-  Venice-served LLM the runtime calls.
+- **"the model"** never means the agent harness; it is the LLM selected through
+  June's model gateway and called by the runtime.
 - **"channel"** is overloaded: a **Source** lane (mic/system), a **release
   channel** (stable/rc), or a WAV interleave channel. Qualify.
 

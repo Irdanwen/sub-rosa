@@ -296,7 +296,7 @@ const SETTINGS_SIDEBAR_GROUPS: {
  * skill directories (PR-new but verified working). These are hidden, not
  * removed: tabs, panels, and logic are all intact. Re-enable one by deleting its
  * id here; restore the full nav by deleting this set and the `.filter` in
- * SettingsSidebar that uses it. See docs/settings-focus-runbook.md.
+ * SettingsSidebar that uses it.
  */
 export const HIDDEN_SETTINGS_TABS: ReadonlySet<SettingsTab> = new Set();
 
