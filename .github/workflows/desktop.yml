@@ -167,8 +167,16 @@ jobs:
         with:
           components: rustfmt
 
+      # `-p os-june`, not `--all`: src-tauri is a standalone package, but it
+      # depends on june-api by path (june-embed, for the iOS in-process
+      # sidecar), so `--all` walked into june-api and formatted crates this
+      # workflow does not even watch — it triggers on src/** and src-tauri/**
+      # only. A violation introduced under june-api therefore turned this job
+      # red on later, unrelated desktop commits, which is how one stayed red
+      # for three days looking like pre-existing breakage. june-api.yml runs
+      # its own `cargo fmt --all` from june-api/ and is the authority there.
       - name: Cargo fmt
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml -p os-june -- --check
 
   rust:
     name: Tauri Rust clippy and tests
