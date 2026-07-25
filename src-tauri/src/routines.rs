@@ -623,6 +623,7 @@ pub async fn start_claim(
         .await
         .map_err(|error| AppError::new("routine_workspace_failed", error.to_string()))?;
     let timestamp = now();
+    let mut created_agent_run_id = None;
     let started = async {
         query("INSERT INTO agent_sessions (id, title, status, model, safety_mode, workspace_path, source, created_at, updated_at) VALUES (?, ?, 'idle', ?, ?, ?, 'routine', ?, ?)")
             .bind(&session_id).bind(&claim.routine_name).bind(&claim.model).bind(claim.safety_mode.as_db()).bind(workspace.to_string_lossy().as_ref()).bind(&timestamp).bind(&timestamp).execute(pool).await.map_err(app_error)?;
@@ -630,6 +631,7 @@ pub async fn start_claim(
             .create_run(&session_id, &claim.model, Some("medium"))
             .await
             .map_err(app_error)?;
+        created_agent_run_id = Some(run.id.clone());
         repository.append_item(&session_id, Some(&run.id), 0, &AgentItemPayload::UserMessage(MessagePayload { role: "user".into(), content: claim.prompt.clone(), attachments: vec![] }), Some(&format!("routine:{}", claim.routine_run_id))).await.map_err(app_error)?;
         attach_run_mapping(pool, &claim.routine_run_id, &claim.token, &session_id, &run.id, &timestamp).await?;
         host.ensure_started(app, repository.clone()).await?;
@@ -647,6 +649,20 @@ pub async fn start_claim(
         Ok::<_, AppError>(run.id)
     }.await;
     if let Err(error) = started {
+        if let Some(run_id) = created_agent_run_id.as_deref() {
+            if let Err(persist_error) = repository
+                .update_run_status(
+                    run_id,
+                    "failed",
+                    None,
+                    None,
+                    Some((&error.code, &error.message)),
+                )
+                .await
+            {
+                tracing::warn!(%persist_error, "failed to terminalize a routine agent run after dispatch failure");
+            }
+        }
         let next_run_at = next_run_after_dispatch_failure(&claim, Utc::now());
         let _ = query("UPDATE routine_runs SET status = 'failed', completed_at = ?, error_code = ?, error_message = ?, updated_at = ? WHERE id = ?")
             .bind(now()).bind(&error.code).bind(&error.message).bind(now()).bind(&claim.routine_run_id).execute(pool).await;

@@ -145,13 +145,19 @@ pub async fn compact_agent_session(
         .into_iter()
         .filter_map(history_item)
         .collect::<Vec<_>>();
+    let model = normalize_agent_model(&session.model);
+    let context_window = crate::providers::june_model_runtime_capabilities(&model)
+        .await
+        .context_tokens
+        .unwrap_or(128_000)
+        .max(1_024);
     host.ensure_started(&app, repository.clone()).await?;
     let response = host
         .request(
             "history.compact",
             &session_id,
             &run_id,
-            json!({ "history": history, "contextWindow": 128000 }),
+            json!({ "history": history, "contextWindow": context_window }),
         )
         .await?;
     let removed_item_ids = response
@@ -522,54 +528,65 @@ pub async fn start_agent_run(
     let run = repository
         .create_run(&session.id, &model, reasoning_effort)
         .await?;
-    repository
-        .set_run_enabled_skills(&run.id, &requested_skills)
-        .await?;
-    let params = run_params(
-        &app,
-        &repository,
-        RunParamsInput {
-            session_id: &session.id,
-            run_id: &run.id,
-            model: &model,
-            reasoning_effort,
-            safety_mode: request.safety_mode,
-            workspace: &workspace,
-            input: &request.prompt,
-            skills: &requested_skills,
-            attachments: &prepared_attachments,
-            excluded_history_run_id: None,
-        },
-    )
-    .await?;
-    let user_item = repository
-        .append_item(
-            &session.id,
-            Some(&run.id),
-            0,
-            &AgentItemPayload::UserMessage(super::MessagePayload {
-                role: "user".into(),
-                content: request.prompt.clone(),
-                attachments: prepared_attachments.clone(),
-            }),
-            Some(&format!("user:{}", run.id)),
+    let preparation = async {
+        repository
+            .set_run_enabled_skills(&run.id, &requested_skills)
+            .await?;
+        let params = run_params(
+            &app,
+            &repository,
+            RunParamsInput {
+                session_id: &session.id,
+                run_id: &run.id,
+                model: &model,
+                reasoning_effort,
+                safety_mode: request.safety_mode,
+                workspace: &workspace,
+                input: &request.prompt,
+                skills: &requested_skills,
+                attachments: &prepared_attachments,
+                excluded_history_run_id: None,
+            },
         )
-        .await?
-        .ok_or_else(|| {
-            AppError::new(
-                "agent_message_persist_failed",
-                "The user message could not be persisted.",
+        .await?;
+        let user_item = repository
+            .append_item(
+                &session.id,
+                Some(&run.id),
+                0,
+                &AgentItemPayload::UserMessage(super::MessagePayload {
+                    role: "user".into(),
+                    content: request.prompt.clone(),
+                    attachments: prepared_attachments.clone(),
+                }),
+                Some(&format!("user:{}", run.id)),
             )
-        })?;
-    persist_attachments(
-        &repository,
-        &session.id,
-        &run.id,
-        &user_item.id,
-        &prepared_attachments,
-        &request.attachments,
-    )
-    .await?;
+            .await?
+            .ok_or_else(|| {
+                AppError::new(
+                    "agent_message_persist_failed",
+                    "The user message could not be persisted.",
+                )
+            })?;
+        persist_attachments(
+            &repository,
+            &session.id,
+            &run.id,
+            &user_item.id,
+            &prepared_attachments,
+            &request.attachments,
+        )
+        .await?;
+        Ok::<_, AppError>(params)
+    }
+    .await;
+    let params = match preparation {
+        Ok(params) => params,
+        Err(error) => {
+            mark_dispatch_failed(&repository, &run.id, &error).await;
+            return Err(error);
+        }
+    };
     if let Err(error) = host.ensure_started(&app, repository.clone()).await {
         mark_dispatch_failed(&repository, &run.id, &error).await;
         return Err(error);
@@ -659,43 +676,60 @@ pub async fn retry_agent_run(
             .execute(&repository.pool)
             .await?;
     }
+    let enabled_skill_ids = repository.run_enabled_skills(&previous.id).await?;
     let run = repository
         .create_run(&session.id, &model, previous.reasoning_effort.as_deref())
         .await?;
-    let enabled_skill_ids = repository.run_enabled_skills(&previous.id).await?;
-    repository
-        .set_run_enabled_skills(&run.id, &enabled_skill_ids)
-        .await?;
-    let params = run_params(
-        &app,
-        &repository,
-        RunParamsInput {
-            session_id: &session.id,
-            run_id: &run.id,
-            model: &model,
-            reasoning_effort: previous.reasoning_effort.as_deref(),
-            safety_mode: session.safety_mode,
-            workspace: &workspace,
-            input: &prompt,
-            skills: &enabled_skill_ids,
-            attachments: &attachments,
-            excluded_history_run_id: Some(&previous.id),
-        },
-    )
-    .await?;
-    let _ = repository
-        .append_item(
-            &session.id,
-            Some(&run.id),
-            0,
-            &AgentItemPayload::UserMessage(super::MessagePayload {
-                role: "user".into(),
-                content: prompt.clone(),
-                attachments,
-            }),
-            Some(&format!("user:{}", run.id)),
+    let preparation = async {
+        repository
+            .set_run_enabled_skills(&run.id, &enabled_skill_ids)
+            .await?;
+        let params = run_params(
+            &app,
+            &repository,
+            RunParamsInput {
+                session_id: &session.id,
+                run_id: &run.id,
+                model: &model,
+                reasoning_effort: previous.reasoning_effort.as_deref(),
+                safety_mode: session.safety_mode,
+                workspace: &workspace,
+                input: &prompt,
+                skills: &enabled_skill_ids,
+                attachments: &attachments,
+                excluded_history_run_id: Some(&previous.id),
+            },
         )
         .await?;
+        repository
+            .append_item(
+                &session.id,
+                Some(&run.id),
+                0,
+                &AgentItemPayload::UserMessage(super::MessagePayload {
+                    role: "user".into(),
+                    content: prompt.clone(),
+                    attachments,
+                }),
+                Some(&format!("user:{}", run.id)),
+            )
+            .await?
+            .ok_or_else(|| {
+                AppError::new(
+                    "agent_message_persist_failed",
+                    "The user message could not be persisted.",
+                )
+            })?;
+        Ok::<_, AppError>(params)
+    }
+    .await;
+    let params = match preparation {
+        Ok(params) => params,
+        Err(error) => {
+            mark_dispatch_failed(&repository, &run.id, &error).await;
+            return Err(error);
+        }
+    };
     if let Err(error) = host.ensure_started(&app, repository.clone()).await {
         mark_dispatch_failed(&repository, &run.id, &error).await;
         return Err(error);

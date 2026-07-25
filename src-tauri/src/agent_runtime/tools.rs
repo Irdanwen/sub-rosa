@@ -7,13 +7,10 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Stdio,
+    sync::atomic::{AtomicU64, Ordering},
 };
 use tauri::{AppHandle, Manager};
-use tokio::{
-    io::AsyncReadExt,
-    process::Command,
-    sync::{oneshot, Mutex},
-};
+use tokio::{io::AsyncReadExt, process::Command, sync::oneshot};
 
 const MAX_TOOL_OUTPUT_BYTES: usize = 1_048_576;
 const MAX_SEARCH_FILE_BYTES: u64 = 1_048_576;
@@ -35,26 +32,74 @@ pub struct ToolContext {
 
 #[derive(Clone, Default)]
 pub struct ToolCancellationRegistry {
-    inner: std::sync::Arc<Mutex<std::collections::HashMap<String, Vec<oneshot::Sender<()>>>>>,
+    inner: std::sync::Arc<std::sync::Mutex<CancellationSenders>>,
+    next_id: std::sync::Arc<AtomicU64>,
+}
+
+type CancellationSenders = std::collections::HashMap<String, Vec<(u64, oneshot::Sender<()>)>>;
+
+struct ToolCancellationRegistration {
+    receiver: oneshot::Receiver<()>,
+    inner: std::sync::Arc<std::sync::Mutex<CancellationSenders>>,
+    run_id: String,
+    id: u64,
+}
+
+impl Drop for ToolCancellationRegistration {
+    fn drop(&mut self) {
+        let mut entries = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let remove_run = if let Some(senders) = entries.get_mut(&self.run_id) {
+            senders.retain(|(id, _)| *id != self.id);
+            senders.is_empty()
+        } else {
+            false
+        };
+        if remove_run {
+            entries.remove(&self.run_id);
+        }
+    }
 }
 
 impl ToolCancellationRegistry {
-    async fn register(&self, run_id: &str) -> oneshot::Receiver<()> {
+    async fn register(&self, run_id: &str) -> ToolCancellationRegistration {
         let (send, receive) = oneshot::channel();
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         self.inner
             .lock()
-            .await
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .entry(run_id.to_string())
             .or_default()
-            .push(send);
-        receive
+            .push((id, send));
+        ToolCancellationRegistration {
+            receiver: receive,
+            inner: self.inner.clone(),
+            run_id: run_id.to_string(),
+            id,
+        }
     }
     pub async fn cancel(&self, run_id: &str) {
-        if let Some(senders) = self.inner.lock().await.remove(run_id) {
-            for sender in senders {
+        let senders = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(run_id);
+        if let Some(senders) = senders {
+            for (_, sender) in senders {
                 let _ = sender.send(());
             }
         }
+    }
+
+    #[cfg(test)]
+    fn registration_count(&self, run_id: &str) -> usize {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(run_id)
+            .map_or(0, Vec::len)
     }
 }
 
@@ -303,7 +348,7 @@ async fn mcp_tool(context: &ToolContext, name: &str, arguments: Value) -> Result
             })),
             Err(error) => Err(agent_mcp_error(error)),
         },
-        _ = &mut cancelled => {
+        _ = &mut cancelled.receiver => {
             crate::agent_mcp::retire_server_sessions(&current_policy.server_id).await;
             Err(AppError::new("agent_tool_cancelled", "MCP tool call was cancelled."))
         }
@@ -530,7 +575,7 @@ async fn generate_video(context: &ToolContext, arguments: &Value) -> Result<Valu
         );
         let result = tokio::select! {
             result = status => result?,
-            _ = &mut cancelled => {
+            _ = &mut cancelled.receiver => {
                 return Err(AppError::new("agent_tool_cancelled", "Video generation was cancelled."));
             }
         };
@@ -538,7 +583,7 @@ async fn generate_video(context: &ToolContext, arguments: &Value) -> Result<Valu
             crate::june_api::VideoStatusDto::Processing { .. } => {
                 tokio::select! {
                     _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {}
-                    _ = &mut cancelled => {
+                    _ = &mut cancelled.receiver => {
                         return Err(AppError::new("agent_tool_cancelled", "Video generation was cancelled."));
                     }
                 }
@@ -1018,7 +1063,7 @@ async fn run_shell(context: &ToolContext, arguments: &Value) -> Result<Value, Ap
     let mut cancelled = context.cancellations.register(&context.run_id).await;
     let status = tokio::select! {
         status = child.wait() => status.map_err(io_error)?,
-        _ = &mut cancelled => { let _ = child.kill().await; return Err(AppError::new("agent_tool_cancelled", "Shell command was cancelled.")); }
+        _ = &mut cancelled.receiver => { let _ = child.kill().await; return Err(AppError::new("agent_tool_cancelled", "Shell command was cancelled.")); }
     };
     let stdout_text = stdout_task
         .await
@@ -1230,14 +1275,20 @@ pub(crate) fn sandbox_profile(workspace: &Path) -> String {
 async fn read_bounded(
     reader: &mut (impl tokio::io::AsyncRead + Unpin),
 ) -> Result<String, AppError> {
-    let mut bytes = Vec::new();
-    reader
-        .take((MAX_TOOL_OUTPUT_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
-        .await
-        .map_err(io_error)?;
-    if bytes.len() > MAX_TOOL_OUTPUT_BYTES {
-        bytes.truncate(MAX_TOOL_OUTPUT_BYTES);
+    let mut bytes = Vec::with_capacity(MAX_TOOL_OUTPUT_BYTES.min(8 * 1_024));
+    let mut buffer = [0_u8; 8 * 1_024];
+    let mut truncated = false;
+    loop {
+        let read = reader.read(&mut buffer).await.map_err(io_error)?;
+        if read == 0 {
+            break;
+        }
+        let remaining = MAX_TOOL_OUTPUT_BYTES.saturating_sub(bytes.len());
+        let retained = remaining.min(read);
+        bytes.extend_from_slice(&buffer[..retained]);
+        truncated |= retained < read;
+    }
+    if truncated {
         bytes.extend_from_slice(b"\n[output truncated]");
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
@@ -1270,6 +1321,42 @@ fn io_error(error: std::io::Error) -> AppError {
 mod tests {
     use super::*;
     use sqlx_sqlite::SqlitePoolOptions;
+
+    #[tokio::test]
+    async fn settled_cancellation_registration_is_removed() {
+        let registry = ToolCancellationRegistry::default();
+        let registration = registry.register("run-1").await;
+        assert_eq!(registry.registration_count("run-1"), 1);
+
+        drop(registration);
+
+        assert_eq!(registry.registration_count("run-1"), 0);
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_run_notifies_and_clears_every_registration() {
+        let registry = ToolCancellationRegistry::default();
+        let mut first = registry.register("run-1").await;
+        let mut second = registry.register("run-1").await;
+
+        registry.cancel("run-1").await;
+
+        assert_eq!(registry.registration_count("run-1"), 0);
+        assert!((&mut first.receiver).await.is_ok());
+        assert!((&mut second.receiver).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn bounded_reader_drains_after_retaining_its_prefix() {
+        let bytes = vec![b'x'; MAX_TOOL_OUTPUT_BYTES + 4_096];
+        let mut input = bytes.as_slice();
+
+        let output = read_bounded(&mut input).await.unwrap();
+
+        assert!(input.is_empty());
+        assert_eq!(output.matches('x').count(), MAX_TOOL_OUTPUT_BYTES);
+        assert!(output.ends_with("\n[output truncated]"));
+    }
 
     #[test]
     fn sandbox_profile_only_grants_workspace_and_tmp_writes() {
