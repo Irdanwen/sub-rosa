@@ -162,9 +162,7 @@ describe("AgentMcpServersSection", () => {
 
     await user.click(await screen.findByRole("button", { name: "Reconnect" }));
     const dialog = screen.getByRole("dialog");
-    expect(
-      within(dialog).getByText(/old tokens were not copied/i),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/old tokens were not copied/i)).toBeInTheDocument();
     fireEvent.change(within(dialog).getByLabelText("HTTP headers (JSON)"), {
       target: { value: '{"Authorization":"Bearer replacement"}' },
     });

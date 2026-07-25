@@ -87,7 +87,9 @@ export function AgentSessionBar({
     onRename?.(draft);
   }
 
-  const hasMenu = Boolean(onRename || onShare || onUsage || onCompact || onMoveToProject || onDelete);
+  const hasMenu = Boolean(
+    onRename || onShare || onUsage || onCompact || onMoveToProject || onDelete,
+  );
 
   return (
     <div className="detail-bar agent-session-bar" data-tauri-drag-region>

@@ -2488,6 +2488,193 @@ done
         retire_server_sessions(&server.id).await;
         server_task.abort();
     }
+
+    #[tokio::test]
+    async fn http_elicitation_answer_resumes_the_original_tool_call() {
+        use std::sync::Arc;
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+            sync::{Mutex as TokioMutex, Notify},
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let answer = Arc::new(TokioMutex::new(None::<Value>));
+        let answer_ready = Arc::new(Notify::new());
+        let server_task = tokio::spawn({
+            let answer = answer.clone();
+            let answer_ready = answer_ready.clone();
+            async move {
+                loop {
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    let answer = answer.clone();
+                    let answer_ready = answer_ready.clone();
+                    tokio::spawn(async move {
+                        let mut request = Vec::new();
+                        let mut buffer = [0_u8; 4096];
+                        loop {
+                            let read = stream.read(&mut buffer).await.unwrap();
+                            if read == 0 {
+                                break;
+                            }
+                            request.extend_from_slice(&buffer[..read]);
+                            let Some(headers_end) =
+                                request.windows(4).position(|window| window == b"\r\n\r\n")
+                            else {
+                                continue;
+                            };
+                            let headers = String::from_utf8_lossy(&request[..headers_end]);
+                            let content_length = headers
+                                .lines()
+                                .find_map(|line| {
+                                    let (name, value) = line.split_once(':')?;
+                                    name.eq_ignore_ascii_case("content-length")
+                                        .then(|| value.trim().parse::<usize>().ok())
+                                        .flatten()
+                                })
+                                .unwrap_or(0);
+                            if request.len() >= headers_end + 4 + content_length {
+                                break;
+                            }
+                        }
+                        let body_start = request
+                            .windows(4)
+                            .position(|window| window == b"\r\n\r\n")
+                            .unwrap()
+                            + 4;
+                        let frame: Value = serde_json::from_slice(&request[body_start..]).unwrap();
+                        match frame.get("method").and_then(Value::as_str) {
+                            Some("initialize") => {
+                                let body = json!({
+                                    "jsonrpc": "2.0",
+                                    "id": frame["id"],
+                                    "result": {
+                                        "protocolVersion": MCP_PROTOCOL_VERSION,
+                                        "capabilities": {"elicitation": {}},
+                                        "serverInfo": {"name": "eliciting-http", "version": "1"}
+                                    }
+                                })
+                                .to_string();
+                                let headers = format!(
+                                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nmcp-session-id: elicitation-session\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                                    body.len()
+                                );
+                                stream.write_all(headers.as_bytes()).await.unwrap();
+                                stream.write_all(body.as_bytes()).await.unwrap();
+                            }
+                            Some("notifications/initialized") => {
+                                stream
+                                    .write_all(
+                                        b"HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
+                                    )
+                                    .await
+                                    .unwrap();
+                            }
+                            Some("tools/call") => {
+                                stream
+                                    .write_all(
+                                        b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nmcp-session-id: elicitation-session\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n",
+                                    )
+                                    .await
+                                    .unwrap();
+                                let question = concat!(
+                                    "event: message\n",
+                                    "data: {\"jsonrpc\":\"2.0\",\"id\":\"question-1\",",
+                                    "\"method\":\"elicitation/create\",\"params\":{",
+                                    "\"message\":\"Choose a project\",\"requestedSchema\":{",
+                                    "\"type\":\"object\",\"properties\":{\"project\":{",
+                                    "\"type\":\"string\"}}}}}\n\n"
+                                );
+                                stream
+                                    .write_all(
+                                        format!("{:X}\r\n{question}\r\n", question.len())
+                                            .as_bytes(),
+                                    )
+                                    .await
+                                    .unwrap();
+                                stream.flush().await.unwrap();
+                                while answer.lock().await.is_none() {
+                                    answer_ready.notified().await;
+                                }
+                                let selected = answer
+                                    .lock()
+                                    .await
+                                    .as_ref()
+                                    .and_then(|value| value.get("project"))
+                                    .and_then(Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_string();
+                                let result = format!(
+                                    "event: message\ndata: {}\n\n",
+                                    json!({
+                                        "jsonrpc": "2.0",
+                                        "id": frame["id"],
+                                        "result": {
+                                            "content": [{"type": "text", "text": format!("{selected} selected")}]
+                                        }
+                                    })
+                                );
+                                stream
+                                    .write_all(
+                                        format!("{:X}\r\n{result}\r\n0\r\n\r\n", result.len())
+                                            .as_bytes(),
+                                    )
+                                    .await
+                                    .unwrap();
+                            }
+                            None if frame.get("result").is_some() => {
+                                *answer.lock().await = frame
+                                    .get("result")
+                                    .and_then(|result| result.get("content"))
+                                    .cloned();
+                                answer_ready.notify_waiters();
+                                stream
+                                    .write_all(
+                                        b"HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
+                                    )
+                                    .await
+                                    .unwrap();
+                            }
+                            _ => {
+                                stream
+                                    .write_all(
+                                        b"HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
+                                    )
+                                    .await
+                                    .unwrap();
+                            }
+                        }
+                    });
+                }
+            }
+        });
+
+        let mut server = McpServerDefinition::new(
+            format!("eliciting-http-{}", Uuid::new_v4()),
+            McpTransport::StreamableHttp,
+        );
+        server.url = Some(format!("http://{address}/mcp"));
+        let result = call_server(
+            &server,
+            &McpSecretBundle::default(),
+            "choose",
+            json!({}),
+            None,
+            Some("Alpha"),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result["content"][0]["text"], "Alpha selected");
+        assert_eq!(
+            answer.lock().await.as_ref().unwrap()["project"],
+            json!("Alpha")
+        );
+        retire_server_sessions(&server.id).await;
+        server_task.abort();
+    }
+
     #[tokio::test]
     async fn stdio_session_reconnects_once_after_server_exit_and_retires_cleanly() {
         #[cfg(unix)]
