@@ -21,11 +21,6 @@ const mocks = vi.hoisted(() => ({
   setDictationShortcut: vi.fn(),
   setDictationMicrophone: vi.fn(),
   setDictationLanguage: vi.fn(),
-  osAccountsLogin: vi.fn(),
-  osAccountsCancelLogin: vi.fn(),
-  osAccountsLogout: vi.fn(),
-  osAccountsOpenPortal: vi.fn(),
-  osAccountsUpgrade: vi.fn(),
   hermesBridgeSkills: vi.fn(),
   hermesBridgeToolsets: vi.fn(),
   hermesBridgeMessagingPlatforms: vi.fn(),
@@ -77,11 +72,6 @@ vi.mock("../lib/tauri", () => ({
   setDictationShortcut: mocks.setDictationShortcut,
   setDictationMicrophone: mocks.setDictationMicrophone,
   setDictationLanguage: mocks.setDictationLanguage,
-  osAccountsLogin: mocks.osAccountsLogin,
-  osAccountsCancelLogin: mocks.osAccountsCancelLogin,
-  osAccountsLogout: mocks.osAccountsLogout,
-  osAccountsOpenPortal: mocks.osAccountsOpenPortal,
-  osAccountsUpgrade: mocks.osAccountsUpgrade,
   hermesBridgeSkills: mocks.hermesBridgeSkills,
   hermesBridgeToolsets: mocks.hermesBridgeToolsets,
   hermesBridgeMessagingPlatforms: mocks.hermesBridgeMessagingPlatforms,
@@ -135,18 +125,6 @@ const baseSettings: DictationSettingsDto = {
   microphone: {},
   style: "standard",
   language: undefined,
-};
-
-const signedInAccount = {
-  signedIn: true,
-  configured: true,
-  user: {
-    id: "usr_123",
-    handle: "alex",
-    email: "alex@example.com",
-    displayName: "Alex",
-  },
-  balance: { usdMillis: 1200, usageRemainingPercent: 100 },
 };
 
 function stubNavigatorPlatform(platform: string, userAgent: string) {
@@ -350,11 +328,6 @@ describe("AppSettings", () => {
     });
     mocks.dictationHelperCommand.mockResolvedValue(undefined);
     mocks.openPrivacySettings.mockResolvedValue(undefined);
-    mocks.osAccountsLogin.mockResolvedValue(signedInAccount);
-    mocks.osAccountsCancelLogin.mockResolvedValue(undefined);
-    mocks.osAccountsLogout.mockResolvedValue(undefined);
-    mocks.osAccountsOpenPortal.mockResolvedValue(undefined);
-    mocks.osAccountsUpgrade.mockResolvedValue(undefined);
     mocks.agentHudShow.mockResolvedValue(undefined);
     mocks.agentHudHide.mockResolvedValue(undefined);
     mocks.hermesAgentCliAccess.mockResolvedValue({ enabled: false });
@@ -417,72 +390,13 @@ describe("AppSettings", () => {
     });
   });
 
-  it("opens checkout from Upgrade in billing settings", async () => {
-    const user = userEvent.setup();
-    render(
-      <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
-        sourceMode="microphoneOnly"
-        checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
-        onSourceModeChange={vi.fn()}
-        onEnableSystemAudio={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByRole("tab", { name: "Billing" }));
-    await user.click(screen.getByRole("button", { name: "Upgrade" }));
-    expect(mocks.osAccountsUpgrade).toHaveBeenCalledTimes(1);
-  });
-
-  it("shows usage remaining as a percentage instead of dollars", async () => {
-    const user = userEvent.setup();
-    render(
-      <AppSettings
-        account={{
-          ...signedInAccount,
-          balance: {
-            credits: 1200,
-            usdMillis: 1200,
-            usageRemainingPercent: 64,
-          },
-        }}
-        accountLoading={false}
-        sourceMode="microphoneOnly"
-        checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
-        onSourceModeChange={vi.fn()}
-        onEnableSystemAudio={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByRole("tab", { name: "Billing" }));
-
-    expect(screen.getByRole("heading", { name: "Billing" })).toBeInTheDocument();
-    expect(screen.getByText("64%")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Free plan" })).toBeInTheDocument();
-    expect(screen.getByText("Usage remaining")).toBeInTheDocument();
-    expect(screen.getByRole("progressbar", { name: "Usage remaining" })).toHaveAttribute(
-      "aria-valuenow",
-      "64",
-    );
-    expect(screen.queryByText("$1.20")).not.toBeInTheDocument();
-  });
-
   it("shows an accent reset button after choosing a non-default accent", () => {
     vi.useFakeTimers();
     try {
       render(
         <AppSettings
-          account={signedInAccount}
-          accountLoading={false}
           sourceMode="microphoneOnly"
           checkingSourceReadiness={false}
-          onAccountChanged={vi.fn()}
-          onAccountRefresh={vi.fn()}
           onSourceModeChange={vi.fn()}
           onEnableSystemAudio={vi.fn()}
         />,
@@ -531,274 +445,13 @@ describe("AppSettings", () => {
     }
   });
 
-  it("falls back to subscription plan credits when balance has no usage percentage", async () => {
-    const user = userEvent.setup();
-    render(
-      <AppSettings
-        account={{
-          ...signedInAccount,
-          balance: {
-            credits: 4676,
-            usdMillis: 4676,
-          },
-          subscription: {
-            subscribed: true,
-            status: "active",
-            planCredits: 20000,
-          },
-        }}
-        accountLoading={false}
-        sourceMode="microphoneOnly"
-        checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
-        onSourceModeChange={vi.fn()}
-        onEnableSystemAudio={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByRole("tab", { name: "Billing" }));
-
-    expect(screen.getByText("23%")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Pro plan" })).toBeInTheDocument();
-    expect(screen.getByRole("progressbar", { name: "Usage remaining" })).toHaveAttribute(
-      "aria-valuenow",
-      "23",
-    );
-  });
-
-  it("falls back to the free grant for unsubscribed accounts without usage percentage", async () => {
-    const user = userEvent.setup();
-    render(
-      <AppSettings
-        account={{
-          ...signedInAccount,
-          balance: {
-            credits: 4857,
-            usdMillis: 4857,
-          },
-          subscription: {
-            subscribed: false,
-            status: undefined,
-            planCredits: undefined,
-          },
-        }}
-        accountLoading={false}
-        sourceMode="microphoneOnly"
-        checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
-        onSourceModeChange={vi.fn()}
-        onEnableSystemAudio={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByRole("tab", { name: "Billing" }));
-
-    expect(screen.getByText("97%")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Free plan" })).toBeInTheDocument();
-    expect(screen.getByRole("progressbar", { name: "Usage remaining" })).toHaveAttribute(
-      "aria-valuenow",
-      "97",
-    );
-  });
-
-  it("runs sign-in, cancel, and sign-out actions from account settings", async () => {
-    const user = userEvent.setup();
-    const onAccountChanged = vi.fn();
-    render(
-      <AppSettings
-        account={{ signedIn: false, configured: true }}
-        accountLoading={false}
-        sourceMode="microphoneOnly"
-        checkingSourceReadiness={false}
-        onAccountChanged={onAccountChanged}
-        onAccountRefresh={vi.fn()}
-        onSourceModeChange={vi.fn()}
-        onEnableSystemAudio={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: "Sign in with OpenSoftware" }));
-    await waitFor(() => expect(mocks.osAccountsLogin).toHaveBeenCalledOnce());
-    expect(onAccountChanged).toHaveBeenCalledWith(signedInAccount);
-    expect(await screen.findByText("Signed in as Alex.")).toBeInTheDocument();
-
-    mocks.osAccountsLogin.mockReset();
-    let rejectLogin: (error: Error) => void = () => undefined;
-    mocks.osAccountsLogin.mockImplementation(
-      () =>
-        new Promise((_resolve, reject) => {
-          rejectLogin = reject;
-        }),
-    );
-    await user.click(screen.getByRole("button", { name: "Sign in with OpenSoftware" }));
-    expect(await screen.findByRole("button", { name: "Cancel" })).toBeEnabled();
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(mocks.osAccountsCancelLogin).toHaveBeenCalledOnce();
-    rejectLogin(new Error("Login canceled"));
-    expect(await screen.findByRole("button", { name: "Sign in with OpenSoftware" })).toBeEnabled();
-
-    const signedOut = vi.fn();
-    render(
-      <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
-        sourceMode="microphoneOnly"
-        checkingSourceReadiness={false}
-        onAccountChanged={signedOut}
-        onAccountRefresh={vi.fn()}
-        onSourceModeChange={vi.fn()}
-        onEnableSystemAudio={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: "Sign out" }));
-    expect(mocks.osAccountsLogout).toHaveBeenCalledWith({ clearBrowserSession: true });
-    expect(signedOut).toHaveBeenCalledWith({
-      signedIn: false,
-      configured: signedInAccount.configured,
-    });
-    expect(await screen.findByText("Signed out.")).toBeInTheDocument();
-  });
-
-  it("opens the account portal and refreshes billing from billing settings", async () => {
-    const user = userEvent.setup();
-    const onAccountRefresh = vi.fn().mockResolvedValue(signedInAccount);
-    render(
-      <AppSettings
-        account={{
-          ...signedInAccount,
-          subscription: {
-            subscribed: true,
-            status: "active",
-            currentPeriodEnd: "2027-02-03T00:00:00Z",
-          },
-        }}
-        accountLoading={false}
-        sourceMode="microphoneOnly"
-        checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={onAccountRefresh}
-        onSourceModeChange={vi.fn()}
-        onEnableSystemAudio={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByRole("tab", { name: "Billing" }));
-    await user.click(screen.getByRole("button", { name: "Manage billing" }));
-    expect(mocks.osAccountsOpenPortal).toHaveBeenCalledOnce();
-    expect(
-      await screen.findByText("Opened your account portal in the browser."),
-    ).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Refresh usage" }));
-    await waitFor(() => expect(onAccountRefresh).toHaveBeenCalledOnce());
-  });
-
-  it("shows billing recovery for past-due subscriptions with credits", async () => {
-    const user = userEvent.setup();
-    render(
-      <AppSettings
-        account={{
-          ...signedInAccount,
-          balance: {
-            credits: 1200,
-            usdMillis: 1200,
-            usageRemainingPercent: 100,
-          },
-          subscription: {
-            subscribed: true,
-            status: "past_due",
-          },
-        }}
-        accountLoading={false}
-        sourceMode="microphoneOnly"
-        checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
-        onSourceModeChange={vi.fn()}
-        onEnableSystemAudio={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByRole("tab", { name: "Billing" }));
-
-    expect(screen.getByRole("heading", { name: "Pro plan" })).toBeInTheDocument();
-    expect(screen.getByText("Update billing in your account portal.")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Manage billing" }));
-    expect(mocks.osAccountsOpenPortal).toHaveBeenCalledOnce();
-    expect(
-      await screen.findByText("Opened your account portal in the browser."),
-    ).toBeInTheDocument();
-  });
-
-  it("treats subscribed accounts as paid when status is absent", async () => {
-    const user = userEvent.setup();
-    render(
-      <AppSettings
-        account={{
-          ...signedInAccount,
-          balance: {
-            credits: 1200,
-            usdMillis: 1200,
-            usageRemainingPercent: 100,
-          },
-          subscription: { subscribed: true },
-        }}
-        accountLoading={false}
-        sourceMode="microphoneOnly"
-        checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
-        onSourceModeChange={vi.fn()}
-        onEnableSystemAudio={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByRole("tab", { name: "Billing" }));
-
-    expect(screen.getByRole("heading", { name: "Pro plan" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Manage billing" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Upgrade" })).not.toBeInTheDocument();
-  });
-
-  it("hides billing and sign-out controls in local mode", () => {
-    render(
-      <AppSettings
-        account={{
-          ...signedInAccount,
-          localDev: true,
-          subscription: { subscribed: true, status: "active" },
-        }}
-        accountLoading={false}
-        sourceMode="microphoneOnly"
-        checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
-        onSourceModeChange={vi.fn()}
-        onEnableSystemAudio={vi.fn()}
-      />,
-    );
-
-    expect(
-      screen.getByText("Requests use your local backend. No OpenSoftware account is used."),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Billing" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
-  });
-
   it("updates dictation microphone and note recording source", async () => {
     const user = userEvent.setup();
     const onSourceModeChange = vi.fn();
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={onSourceModeChange}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -837,12 +490,8 @@ describe("AppSettings", () => {
     const user = userEvent.setup();
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -908,12 +557,8 @@ describe("AppSettings", () => {
     const user = userEvent.setup();
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -946,12 +591,8 @@ describe("AppSettings", () => {
     const user = userEvent.setup();
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -996,12 +637,8 @@ describe("AppSettings", () => {
     const user = userEvent.setup();
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -1041,12 +678,8 @@ describe("AppSettings", () => {
     const user = userEvent.setup();
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -1075,8 +708,6 @@ describe("AppSettings", () => {
     const onEnableSystemAudio = vi.fn();
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         sourceReadiness={{
           sourceMode: "microphonePlusSystem",
@@ -1106,8 +737,6 @@ describe("AppSettings", () => {
         checkingSourceReadiness={false}
         microphonePermissionStatus="denied"
         accessibilityPermissionStatus="missing"
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableMicrophone={onEnableMicrophone}
         onEnableAccessibility={onEnableAccessibility}
@@ -1163,8 +792,6 @@ describe("AppSettings", () => {
   ])("does not label system audio allowed when it is $name", async ({ system, status }) => {
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         sourceReadiness={{
           sourceMode: "microphonePlusSystem",
@@ -1190,8 +817,6 @@ describe("AppSettings", () => {
         checkingSourceReadiness={false}
         microphonePermissionStatus="granted"
         accessibilityPermissionStatus="granted"
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableMicrophone={vi.fn()}
         onEnableAccessibility={vi.fn()}
@@ -1216,8 +841,6 @@ describe("AppSettings", () => {
     try {
       render(
         <AppSettings
-          account={signedInAccount}
-          accountLoading={false}
           sourceMode="microphoneOnly"
           sourceReadiness={{
             sourceMode: "microphonePlusSystem",
@@ -1246,8 +869,6 @@ describe("AppSettings", () => {
           checkingSourceReadiness={false}
           microphonePermissionStatus="granted"
           accessibilityPermissionStatus="granted"
-          onAccountChanged={vi.fn()}
-          onAccountRefresh={vi.fn()}
           onSourceModeChange={vi.fn()}
           onEnableMicrophone={vi.fn()}
           onEnableAccessibility={vi.fn()}
@@ -1284,8 +905,6 @@ describe("AppSettings", () => {
     try {
       render(
         <AppSettings
-          account={signedInAccount}
-          accountLoading={false}
           sourceMode="microphoneOnly"
           sourceReadiness={{
             sourceMode: "microphonePlusSystem",
@@ -1315,8 +934,6 @@ describe("AppSettings", () => {
           checkingSourceReadiness={false}
           microphonePermissionStatus="denied"
           accessibilityPermissionStatus="missing"
-          onAccountChanged={vi.fn()}
-          onAccountRefresh={vi.fn()}
           onSourceModeChange={vi.fn()}
           onEnableMicrophone={onEnableMicrophone}
           onEnableAccessibility={onEnableAccessibility}
@@ -1365,12 +982,8 @@ describe("AppSettings", () => {
     const user = userEvent.setup();
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -1518,12 +1131,8 @@ describe("AppSettings", () => {
     const user = userEvent.setup();
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -1591,12 +1200,8 @@ describe("AppSettings", () => {
 
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -1661,12 +1266,8 @@ describe("AppSettings", () => {
 
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -1696,12 +1297,8 @@ describe("AppSettings", () => {
     try {
       render(
         <AppSettings
-          account={signedInAccount}
-          accountLoading={false}
           sourceMode="microphoneOnly"
           checkingSourceReadiness={false}
-          onAccountChanged={vi.fn()}
-          onAccountRefresh={vi.fn()}
           onSourceModeChange={vi.fn()}
           onEnableSystemAudio={vi.fn()}
         />,
@@ -1772,12 +1369,8 @@ describe("AppSettings", () => {
     const user = userEvent.setup();
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -1807,12 +1400,8 @@ describe("AppSettings", () => {
     const user = userEvent.setup();
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -1848,12 +1437,8 @@ describe("AppSettings", () => {
     const user = userEvent.setup();
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -1873,12 +1458,8 @@ describe("AppSettings", () => {
     const user = userEvent.setup();
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -1906,12 +1487,8 @@ describe("AppSettings", () => {
   it("shows app build metadata", async () => {
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -1930,12 +1507,8 @@ describe("AppSettings", () => {
 
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
         onCheckForUpdates={onCheckForUpdates}
@@ -1954,12 +1527,8 @@ describe("AppSettings", () => {
   it("switches the release channel from About", async () => {
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
         onCheckForUpdates={vi.fn()}
@@ -1985,12 +1554,8 @@ describe("AppSettings", () => {
 
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
         onCheckForUpdates={vi.fn()}
@@ -2021,12 +1586,8 @@ describe("AppSettings", () => {
 
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
         onCheckForUpdates={vi.fn()}
@@ -2050,12 +1611,8 @@ describe("AppSettings", () => {
     // button must invoke the june_open_verify_page command instead.
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -2070,12 +1627,8 @@ describe("AppSettings", () => {
   it("opens the June community page from About through Rust", async () => {
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -2103,12 +1656,8 @@ describe("AppSettings", () => {
     try {
       render(
         <AppSettings
-          account={signedInAccount}
-          accountLoading={false}
           sourceMode="microphoneOnly"
           checkingSourceReadiness={false}
-          onAccountChanged={vi.fn()}
-          onAccountRefresh={vi.fn()}
           onSourceModeChange={vi.fn()}
           onEnableSystemAudio={vi.fn()}
         />,
@@ -2133,12 +1682,8 @@ describe("AppSettings", () => {
     const user = userEvent.setup();
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -2161,12 +1706,8 @@ describe("AppSettings", () => {
       mocks.hermesBridgeMessagingPlatforms.mockReturnValue(new Promise(() => {}));
       render(
         <AppSettings
-          account={signedInAccount}
-          accountLoading={false}
           sourceMode="microphoneOnly"
           checkingSourceReadiness={false}
-          onAccountChanged={vi.fn()}
-          onAccountRefresh={vi.fn()}
           onSourceModeChange={vi.fn()}
           onEnableSystemAudio={vi.fn()}
         />,
@@ -2192,12 +1733,8 @@ describe("AppSettings", () => {
     const user = userEvent.setup();
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,
@@ -2223,12 +1760,8 @@ describe("AppSettings", () => {
     const user = userEvent.setup();
     render(
       <AppSettings
-        account={signedInAccount}
-        accountLoading={false}
         sourceMode="microphoneOnly"
         checkingSourceReadiness={false}
-        onAccountChanged={vi.fn()}
-        onAccountRefresh={vi.fn()}
         onSourceModeChange={vi.fn()}
         onEnableSystemAudio={vi.fn()}
       />,

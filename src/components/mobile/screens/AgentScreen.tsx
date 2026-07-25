@@ -38,7 +38,7 @@ import {
   setAgentTaskModel,
   suggestAgentSessionTitle,
 } from "../../../lib/tauri";
-import { JuneGradientMark } from "../../account/AccountGate";
+import { BrandGradientMark } from "../../brand/Marks";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { EmptyState } from "../../ui/EmptyState";
 import { Spinner } from "../../ui/Spinner";
@@ -676,7 +676,7 @@ export function AgentSessionScreen({
         {!task?.messages.length && !running ? (
           <div className="mobile-chat-hero">
             <span className="mobile-chat-hero-mark" aria-hidden>
-              <JuneGradientMark />
+              <BrandGradientMark />
             </span>
             <h2 className="mobile-chat-hero-greeting">{greeting()}</h2>
             <p className="mobile-chat-hero-hint">Your notes, the web, and vision models.</p>

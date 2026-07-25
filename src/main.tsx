@@ -62,9 +62,6 @@ if (import.meta.env.DEV) {
   void import("./lib/empty-states-demo").then(({ registerEmptyStatesDemo }) =>
     registerEmptyStatesDemo(),
   );
-  // __billingDemo("pro") parks the Account → Billing card in any plan state;
-  // __billingDemo("all") stacks every variant; __billingDemo("off") resets.
-  void import("./lib/billing-demo").then(({ registerBillingDemo }) => registerBillingDemo());
 }
 
 // The mobile (iOS/Android) build renders its own shell: bottom tabs and push

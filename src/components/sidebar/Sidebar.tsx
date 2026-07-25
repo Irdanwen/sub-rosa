@@ -1,6 +1,3 @@
-import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
-import { IconClipboard } from "central-icons/IconClipboard";
-import { IconArrowBoxRight } from "central-icons/IconArrowBoxRight";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { IconZap } from "central-icons/IconZap";
 import { IconBubble3 } from "central-icons/IconBubble3";
@@ -16,7 +13,6 @@ import { IconCreditCard1 } from "central-icons/IconCreditCard1";
 import { IconDotGrid1x3Vertical } from "central-icons/IconDotGrid1x3Vertical";
 import { IconFolderAddRight } from "central-icons/IconFolderAddRight";
 import { IconFolderDelete } from "central-icons/IconFolderDelete";
-import { IconGift1 } from "central-icons/IconGift1";
 import { IconLayersThree } from "central-icons/IconLayersThree";
 import { IconMagicWand } from "central-icons/IconMagicWand";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
@@ -72,25 +68,20 @@ import {
   listHermesSessions,
   sessionTimestamp,
 } from "../../lib/hermes-adapter";
-import { errorCode, messageFromError } from "../../lib/errors";
+import { messageFromError } from "../../lib/errors";
 import { NOTE_DND_MIME } from "../../lib/dnd";
 import { useForcedEmptyStates } from "../../lib/empty-states-demo";
 import { useRecordingPresenceBounds } from "../../lib/recording-presence-bounds";
 import { isPrimaryShortcut, primaryShortcutLabel } from "../../lib/platform";
 import { useCarpeDiemCredits } from "../../lib/carpe-diem-credits";
 import type {
-  AccountStatus,
   CarpeDiemCreditsDto,
   HermesSessionInfo,
   NoteListItemDto,
   RecordingStatusDto,
-  ReferralSummary,
 } from "../../lib/tauri";
-import { osAccountsReferralSummary } from "../../lib/tauri";
-import { JuneMark } from "../account/AccountGate";
 import type { SettingsTab } from "../settings/AppSettings";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
-import { Dialog } from "../ui/Dialog";
 import { DotSpinner } from "../DotSpinner";
 import { combineSourceAudioLevels, Waveform } from "../recorder/Waveform";
 
@@ -113,14 +104,12 @@ type SidebarProps = {
   activeView: SidebarView;
   // Settings is its own page reached from the user's name; these default so
   // tests that mount the sidebar for non-settings views can skip the plumbing.
-  account?: AccountStatus;
   settingsTab?: SettingsTab;
   onSettingsTabChange?: (tab: SettingsTab) => void;
   onChangeView: (view: SidebarView) => void;
   // Returns to wherever the user was before opening settings (falls back to
   // Notes when not wired, e.g. unit tests).
   onExitSettings?: () => void;
-  onSignOut?: () => void;
   onReportIssue?: (category: ReportCategory) => void;
   onSelectNote: (noteId: string) => void;
   onDeleteNote: (noteId: string) => void;
@@ -219,11 +208,6 @@ const SETTINGS_SIDEBAR_GROUPS: {
         id: "film-studio",
         label: "Film studio",
         icon: <IconClapboard size={16} />,
-      },
-      {
-        id: "billing",
-        label: "Billing",
-        icon: <IconCreditCard1 size={16} />,
       },
       {
         id: "shortcuts",
@@ -354,12 +338,10 @@ export const HIDDEN_SETTINGS_TABS: ReadonlySet<SettingsTab> = new Set<SettingsTa
 export function Sidebar({
   notes,
   activeView,
-  account = { signedIn: false, configured: false },
   settingsTab = "general",
   onSettingsTabChange,
   onChangeView,
   onExitSettings,
-  onSignOut,
   onReportIssue,
   onSelectNote,
   onDeleteNote,
@@ -381,15 +363,7 @@ export function Sidebar({
   const [commandActiveIndex, setCommandActiveIndex] = useState(0);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [identityMenuOpen, setIdentityMenuOpen] = useState(false);
-  const [referralDialogOpen, setReferralDialogOpen] = useState(false);
-  const [referralSummary, setReferralSummary] = useState<ReferralSummary | null>(null);
-  const [referralLoading, setReferralLoading] = useState(false);
-  const [referralError, setReferralError] = useState<string | null>(null);
-  // The deployment can simply not offer referrals (a 404 from /referrals/me).
   // That's not a transient failure, so it gets a calm message with no retry.
-  const [referralUnavailable, setReferralUnavailable] = useState(false);
-  const [referralCopyError, setReferralCopyError] = useState<string | null>(null);
-  const [referralCopied, setReferralCopied] = useState(false);
   const searchShortcut = primaryShortcutLabel("K");
   const newSessionShortcut = primaryShortcutLabel("N");
   const inSettings = activeView === "settings";
@@ -489,51 +463,6 @@ export function Sidebar({
         .slice(0, AGENT_SIDEBAR_SESSION_LIMIT),
     [filteredAgentSessions, pinnedAgentSessionIds],
   );
-
-  async function loadReferralSummary() {
-    if (!account.signedIn || account.localDev) return;
-    setReferralLoading(true);
-    setReferralError(null);
-    setReferralUnavailable(false);
-    try {
-      setReferralSummary(await osAccountsReferralSummary());
-    } catch (error) {
-      setReferralUnavailable(errorCode(error) === "referrals_unavailable");
-      setReferralError(messageFromError(error));
-    } finally {
-      setReferralLoading(false);
-    }
-  }
-
-  function openReferralDialog() {
-    if (account.localDev) return;
-    setReferralDialogOpen(true);
-    setReferralCopied(false);
-    setReferralCopyError(null);
-    if (!referralLoading) {
-      void loadReferralSummary();
-    }
-  }
-
-  async function copyReferralLink() {
-    if (!referralSummary) return;
-    try {
-      await navigator.clipboard.writeText(referralSummary.url);
-      setReferralCopyError(null);
-      setReferralCopied(true);
-    } catch {
-      setReferralCopyError("Could not copy the link. Select it and copy manually.");
-    }
-  }
-
-  // Reset the "Copied" affordance the way every other copy button does
-  // (NoteEditor, dictation rows): a single effect with cleanup, so closing
-  // the dialog mid-flight can't fire a stray setState.
-  useEffect(() => {
-    if (!referralCopied) return;
-    const timer = window.setTimeout(() => setReferralCopied(false), 1600);
-    return () => window.clearTimeout(timer);
-  }, [referralCopied]);
 
   const commandPaletteGroups = useMemo<CommandPaletteGroup[]>(() => {
     const normalized = normalizeCommandQuery(commandQuery);
@@ -998,7 +927,6 @@ export function Sidebar({
       {inSettings ? (
         <SettingsSidebarNav
           activeTab={settingsTab}
-          localDev={account.localDev === true}
           onSelectTab={(tab) => onSettingsTabChange?.(tab)}
           onBack={() => (onExitSettings ? onExitSettings() : onChangeView("notes"))}
         />
@@ -1200,18 +1128,9 @@ export function Sidebar({
       <footer className="sidebar-footer">
         {footerAccessory}
         <SidebarIdentity
-          account={account}
           menuOpen={identityMenuOpen}
           onToggleMenu={() => setIdentityMenuOpen((open) => !open)}
           onCloseMenu={() => setIdentityMenuOpen(false)}
-          onInviteFriends={
-            account.signedIn && !account.localDev
-              ? () => {
-                  setIdentityMenuOpen(false);
-                  openReferralDialog();
-                }
-              : undefined
-          }
           onOpenSettings={() => {
             setIdentityMenuOpen(false);
             onChangeView("settings");
@@ -1224,29 +1143,8 @@ export function Sidebar({
                 }
               : undefined
           }
-          onSignOut={
-            onSignOut
-              ? () => {
-                  setIdentityMenuOpen(false);
-                  onSignOut();
-                }
-              : undefined
-          }
         />
       </footer>
-
-      <ReferralDialog
-        open={referralDialogOpen}
-        summary={referralSummary}
-        loading={referralLoading}
-        error={referralError}
-        unavailable={referralUnavailable}
-        copyError={referralCopyError}
-        copied={referralCopied}
-        onClose={() => setReferralDialogOpen(false)}
-        onRetry={() => void loadReferralSummary()}
-        onCopy={() => void copyReferralLink()}
-      />
 
       {menu?.kind === "note" ? (
         <NoteContextMenu
@@ -1502,23 +1400,18 @@ function buildSidebarDevStateSessions(): HermesSessionInfo[] {
 
 function SettingsSidebarNav({
   activeTab,
-  localDev,
   onSelectTab,
   onBack,
 }: {
   activeTab: SettingsTab;
-  localDev: boolean;
   onSelectTab: (tab: SettingsTab) => void;
   onBack: () => void;
 }) {
-  // Hide the admin-surfaces-PR tabs until stabilized, keeping the pre-PR billing
-  // rule (billing is hidden in local dev). Empty groups drop out so their
-  // headers don't render.
+  // Hide the admin-surfaces-PR tabs until stabilized. Empty groups drop out so
+  // their headers don't render.
   const groups = SETTINGS_SIDEBAR_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter(
-      (item) => !HIDDEN_SETTINGS_TABS.has(item.id) && !(localDev && item.id === "billing"),
-    ),
+    items: group.items.filter((item) => !HIDDEN_SETTINGS_TABS.has(item.id)),
   })).filter((group) => group.items.length > 0);
 
   return (
@@ -1693,108 +1586,6 @@ function isSearchShortcut(event: KeyboardEvent) {
   return event.key.toLowerCase() === "k" && isPrimaryShortcut(event);
 }
 
-function ReferralDialog({
-  open,
-  summary,
-  loading,
-  error,
-  unavailable,
-  copyError,
-  copied,
-  onClose,
-  onRetry,
-  onCopy,
-}: {
-  open: boolean;
-  summary: ReferralSummary | null;
-  loading: boolean;
-  error: string | null;
-  unavailable: boolean;
-  copyError: string | null;
-  copied: boolean;
-  onClose: () => void;
-  onRetry: () => void;
-  onCopy: () => void;
-}) {
-  const pendingFriends = summary?.pendingCount ?? 0;
-  return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      title="Give a month, get a month"
-      className="referral-dialog"
-      width={640}
-    >
-      <div className="referral-split">
-        <div className="referral-hero">
-          <span className="referral-hero-logo" aria-hidden>
-            <JuneMark />
-          </span>
-          <span className="referral-hero-eyebrow">
-            <IconGift1 size={13} />
-            Refer a friend
-          </span>
-          <p className="referral-hero-title">Give a month, get a month</p>
-          <p className="referral-hero-copy">
-            Share Sub Rosa with a friend. They get a free month, and when they subscribe, so do you.
-          </p>
-        </div>
-        <div className="referral-panel">
-          {loading ? (
-            <div className="referral-dialog-status" role="status">
-              <DotSpinner /> Loading referral link
-            </div>
-          ) : unavailable ? (
-            // Deployment doesn't offer referrals — retrying can't fix that, so
-            // there's no "Try again", just a calm note.
-            <div className="referral-dialog-status">
-              <p>Invite links aren't available yet. Check back soon.</p>
-            </div>
-          ) : error ? (
-            <div className="referral-error-card">
-              <span className="referral-error-title">Invite link unavailable</span>
-              <p>{error}</p>
-              <button type="button" className="btn btn-secondary" onClick={onRetry}>
-                Try again
-              </button>
-            </div>
-          ) : summary ? (
-            <>
-              <span className="referral-panel-title">Share your invite link</span>
-              <div className="referral-link-field">
-                <input
-                  className="referral-link-url"
-                  value={summary.url}
-                  readOnly
-                  aria-label="Invite link"
-                  onFocus={(event) => event.currentTarget.select()}
-                />
-                <button type="button" className="referral-copy-inset" onClick={onCopy}>
-                  {copied ? <IconCheckmark1Small size={14} /> : <IconClipboard size={14} />}
-                  {copied ? "Copied" : "Copy"}
-                </button>
-              </div>
-              {copyError ? <p className="referral-copy-error">{copyError}</p> : null}
-              <div className="referral-stats">
-                <div>
-                  <span className="referral-stat-value">{summary.qualifiedCount}</span>
-                  <span className="referral-stat-label">Friends referred</span>
-                </div>
-              </div>
-              {pendingFriends > 0 ? (
-                <p className="referral-progress-note">
-                  {pendingFriends} invited {pendingFriends === 1 ? "friend is" : "friends are"}{" "}
-                  waiting to subscribe.
-                </p>
-              ) : null}
-            </>
-          ) : null}
-        </div>
-      </div>
-    </Dialog>
-  );
-}
-
 // The user's name is the settings entry point: clicking it opens a small
 // popover whose actions open the settings page or sign out.
 // The report shortcuts in the account menu: the same set as the composer's
@@ -1806,30 +1597,24 @@ const REPORT_MENU_ITEMS: { category: ReportCategory; label: string }[] = [
 ];
 
 function SidebarIdentity({
-  account,
   menuOpen,
   onToggleMenu,
   onCloseMenu,
-  onInviteFriends,
   onOpenSettings,
   onReportIssue,
-  onSignOut,
 }: {
-  account: AccountStatus;
   menuOpen: boolean;
   onToggleMenu: () => void;
   onCloseMenu: () => void;
-  onInviteFriends?: () => void;
   onOpenSettings: () => void;
   onReportIssue?: (category: ReportCategory) => void;
-  onSignOut?: () => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
-  const name = accountDisplayName(account);
-  // Sub Rosa fork: once the Carpe Diem balance loads, the footer shows it
-  // (with the current price factor) instead of the account name.
+  // The footer shows the Carpe Diem balance with the current price factor.
+  // Until it loads (or when no key is stored) it falls back to a plain label:
+  // there is no account name to show, because there is no account.
   const credits = useCarpeDiemCredits();
-  const label = credits ? creditsLabel(credits) : name;
+  const label = credits ? creditsLabel(credits) : "Credits";
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -1854,7 +1639,7 @@ function SidebarIdentity({
         className="sidebar-nav-item sidebar-identity"
         aria-haspopup="menu"
         aria-expanded={menuOpen}
-        aria-label={`${label}, account menu`}
+        aria-label={`${label}, app menu`}
         onClick={onToggleMenu}
       >
         <span className="sidebar-nav-icon">
@@ -1864,17 +1649,6 @@ function SidebarIdentity({
       </button>
       {menuOpen ? (
         <div className="sidebar-identity-menu" role="menu">
-          {onInviteFriends ? (
-            <button
-              type="button"
-              role="menuitem"
-              className="sidebar-invite-item"
-              onClick={onInviteFriends}
-            >
-              <IconGift1 size={14} />
-              Invite friends
-            </button>
-          ) : null}
           <button type="button" role="menuitem" onClick={onOpenSettings}>
             <IconSettingsGear4 size={14} />
             Settings
@@ -1894,15 +1668,6 @@ function SidebarIdentity({
                 </button>
               ))
             : null}
-          {account.signedIn && !account.localDev && onSignOut ? (
-            <>
-              <div className="context-menu-separator" role="separator" />
-              <button type="button" role="menuitem" onClick={onSignOut}>
-                <IconArrowBoxRight size={14} />
-                Sign out
-              </button>
-            </>
-          ) : null}
         </div>
       ) : null}
     </div>
@@ -1919,15 +1684,6 @@ function creditsLabel(credits: CarpeDiemCreditsDto) {
   const railHint = credits.rail === "prepaid" ? " · prepaid" : "";
   const factor = credits.priceMultiplier != null ? ` · ×${credits.priceMultiplier.toFixed(2)}` : "";
   return `${amount} credits${railHint}${factor}`;
-}
-
-function accountDisplayName(account: AccountStatus) {
-  return (
-    account.user?.displayName?.trim() ||
-    account.user?.email?.trim() ||
-    account.user?.handle?.trim() ||
-    "Account"
-  );
 }
 
 function readPinnedAgentSessionIds() {

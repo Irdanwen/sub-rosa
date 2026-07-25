@@ -4,18 +4,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FoldersWorkspace } from "../components/folders/FoldersWorkspace";
 import { Sidebar } from "../components/sidebar/Sidebar";
 import { NOTE_DND_MIME } from "../lib/dnd";
-import type { AccountStatus, FolderDto, NoteListItemDto } from "../lib/tauri";
+import type { FolderDto, NoteListItemDto } from "../lib/tauri";
 
-const mocks = vi.hoisted(() => ({
-  osAccountsReferralSummary: vi.fn(),
-}));
+const mocks = vi.hoisted(() => ({}));
 
 vi.mock("../lib/tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/tauri")>();
 
   return {
     ...actual,
-    osAccountsReferralSummary: mocks.osAccountsReferralSummary,
   };
 });
 
@@ -105,16 +102,6 @@ function baseProps() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.osAccountsReferralSummary.mockResolvedValue({
-    code: "JUNE-ALEX",
-    url: "https://accounts.opensoftware.co/join?ref=JUNE-ALEX",
-    referredCount: 3,
-    pendingCount: 1,
-    qualifiedCount: 2,
-    earnedMonths: 2,
-    appliedMonths: 1,
-    availableMonths: 1,
-  });
 });
 
 describe("Sidebar primary navigation", () => {
@@ -285,73 +272,16 @@ describe("Sidebar primary navigation", () => {
       />,
     );
 
-    // The settings entry point is the user's name in the footer: click it to
-    // open the account popover, then choose Settings.
+    // The settings entry point is the footer credits button: click it to open
+    // the app popover, then choose Settings.
     const identityButton = screen.getByRole("button", {
-      name: /account menu/i,
+      name: /app menu/i,
     });
     expect(identityButton.closest(".sidebar-footer")).not.toBeNull();
 
     await user.click(identityButton);
     await user.click(screen.getByRole("menuitem", { name: "Settings" }));
     expect(onChangeView).toHaveBeenCalledWith("settings");
-  });
-
-  it("shows account name, then email, then handle in the sidebar footer", () => {
-    const renderSidebar = (account: AccountStatus) =>
-      render(
-        <Sidebar
-          notes={notes}
-          activeView="notes"
-          account={account}
-          onChangeView={vi.fn()}
-          onSelectNote={vi.fn()}
-          onDeleteNote={vi.fn()}
-          onOpenMoveDialog={vi.fn()}
-          onRemoveNoteFromFolder={vi.fn()}
-          onNewAgentSession={vi.fn()}
-          onSelectAgentSession={vi.fn()}
-        />,
-      );
-
-    const { unmount: unmountNamed } = renderSidebar({
-      signedIn: true,
-      configured: true,
-      user: {
-        id: "usr_123",
-        handle: "alex",
-        email: "alex@example.com",
-        displayName: "Alex",
-      },
-    });
-    expect(screen.getByRole("button", { name: "Alex, account menu" })).toBeInTheDocument();
-    unmountNamed();
-
-    const { unmount: unmountEmail } = renderSidebar({
-      signedIn: true,
-      configured: true,
-      user: {
-        id: "usr_123",
-        handle: "alex",
-        email: "alex@example.com",
-        displayName: " ",
-      },
-    });
-    expect(
-      screen.getByRole("button", { name: "alex@example.com, account menu" }),
-    ).toBeInTheDocument();
-    unmountEmail();
-
-    renderSidebar({
-      signedIn: true,
-      configured: true,
-      user: {
-        id: "usr_123",
-        handle: "alex",
-        email: " ",
-      },
-    });
-    expect(screen.getByRole("button", { name: "alex, account menu" })).toBeInTheDocument();
   });
 
   it("opens dictation history from the primary nav", async () => {
@@ -383,7 +313,7 @@ describe("Sidebar primary navigation", () => {
       <Sidebar
         notes={notes}
         activeView="settings"
-        settingsTab="billing"
+        settingsTab="carpe-diem"
         onSettingsTabChange={onSettingsTabChange}
         onExitSettings={onExitSettings}
         onChangeView={vi.fn()}
@@ -405,127 +335,15 @@ describe("Sidebar primary navigation", () => {
     expect(screen.getByRole("navigation", { name: "Audio settings" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "AI settings" })).toBeInTheDocument();
 
-    const billingButton = screen.getByRole("button", { name: "Billing" });
-    expect(billingButton).toHaveAttribute("data-active", "true");
+    const carpeDiemButton = screen.getByRole("button", { name: "Carpe Diem" });
+    expect(carpeDiemButton).toHaveAttribute("data-active", "true");
+    expect(screen.queryByRole("button", { name: "Billing" })).toBeNull();
     expect(screen.getByRole("button", { name: "Shortcuts" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Permissions" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Shortcuts" }));
     expect(onSettingsTabChange).toHaveBeenCalledWith("shortcuts");
 
-    expect(screen.getByRole("button", { name: /account menu/i })).not.toHaveAttribute(
-      "data-active",
-    );
-  });
-
-  it("hides billing and invite actions in local dev mode", async () => {
-    const user = userEvent.setup();
-    render(
-      <Sidebar
-        notes={notes}
-        activeView="settings"
-        account={{
-          signedIn: true,
-          configured: true,
-          localDev: true,
-          user: { id: "usr_local_dev", handle: "local-dev" },
-        }}
-        settingsTab="general"
-        onSettingsTabChange={vi.fn()}
-        onChangeView={vi.fn()}
-        onSelectNote={vi.fn()}
-        onDeleteNote={vi.fn()}
-        onOpenMoveDialog={vi.fn()}
-        onRemoveNoteFromFolder={vi.fn()}
-        onNewAgentSession={vi.fn()}
-        onSelectAgentSession={vi.fn()}
-      />,
-    );
-
-    expect(screen.queryByRole("button", { name: "Billing" })).toBeNull();
-    expect(screen.getByRole("button", { name: "General" })).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /account menu/i }));
-    expect(screen.queryByRole("menuitem", { name: "Invite friends" })).toBeNull();
-    expect(screen.queryByRole("menuitem", { name: "Sign out" })).toBeNull();
-  });
-
-  it("opens the referral dialog and copies the invite link", async () => {
-    const user = userEvent.setup();
-    const clipboardWrite = vi.spyOn(navigator.clipboard, "writeText");
-    render(
-      <Sidebar
-        notes={notes}
-        activeView="notes"
-        account={{
-          signedIn: true,
-          configured: true,
-          user: { id: "usr_123", handle: "alex", displayName: "Alex" },
-        }}
-        onChangeView={vi.fn()}
-        onSelectNote={vi.fn()}
-        onDeleteNote={vi.fn()}
-        onOpenMoveDialog={vi.fn()}
-        onRemoveNoteFromFolder={vi.fn()}
-        onNewAgentSession={vi.fn()}
-        onSelectAgentSession={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: /account menu/i }));
-    await user.click(screen.getByRole("menuitem", { name: "Invite friends" }));
-
-    expect(mocks.osAccountsReferralSummary).toHaveBeenCalledOnce();
-    const dialog = await screen.findByRole("dialog", {
-      name: "Give a month, get a month",
-    });
-    expect(dialog).toBeInTheDocument();
-    expect(screen.getByLabelText("Invite link")).toHaveValue(
-      "https://accounts.opensoftware.co/join?ref=JUNE-ALEX",
-    );
-    expect(screen.getByText("Friends referred")).toBeInTheDocument();
-    expect(screen.getByText("1 invited friend is waiting to subscribe.")).toBeInTheDocument();
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "Copy" }));
-    await waitFor(() =>
-      expect(clipboardWrite).toHaveBeenCalledWith(
-        "https://accounts.opensoftware.co/join?ref=JUNE-ALEX",
-      ),
-    );
-    expect(await screen.findByRole("button", { name: "Copied" })).toBeEnabled();
-  });
-
-  it("handles unavailable referral links without retry noise", async () => {
-    mocks.osAccountsReferralSummary.mockRejectedValue({
-      code: "referrals_unavailable",
-      message: "Referral links are not available on this deployment yet.",
-    });
-    const user = userEvent.setup();
-    render(
-      <Sidebar
-        notes={notes}
-        activeView="notes"
-        account={{
-          signedIn: true,
-          configured: true,
-          user: { id: "usr_123", handle: "alex", displayName: "Alex" },
-        }}
-        onChangeView={vi.fn()}
-        onSelectNote={vi.fn()}
-        onDeleteNote={vi.fn()}
-        onOpenMoveDialog={vi.fn()}
-        onRemoveNoteFromFolder={vi.fn()}
-        onNewAgentSession={vi.fn()}
-        onSelectAgentSession={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: /account menu/i }));
-    await user.click(screen.getByRole("menuitem", { name: "Invite friends" }));
-
-    expect(
-      await screen.findByText("Invite links aren't available yet. Check back soon."),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(screen.getByRole("button", { name: /app menu/i })).not.toHaveAttribute("data-active");
   });
 });
 

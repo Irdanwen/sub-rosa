@@ -7,7 +7,6 @@ import { MEETING_START_TRANSCRIPTION_EVENT } from "../lib/events";
 import { AGENT_NEW_SESSION_EVENT, AGENT_SESSIONS_CHANGED_EVENT } from "../lib/agent-events";
 import { CLOSE_TAB_EVENT, OPEN_SETTINGS_EVENT } from "../lib/menu-bar";
 import type {
-  AccountStatus,
   BootstrapResponse,
   NoteDto,
   RecordingSessionDto,
@@ -45,6 +44,7 @@ function stubNavigatorPlatform(platform: string, userAgent: string) {
 }
 
 const mocks = vi.hoisted(() => ({
+  carpeDiemSidecarStatus: vi.fn(async () => ({ status: "ready", hasApiKey: true })),
   listen: vi.fn(),
   listeners: new Map<string, (event: { payload?: unknown }) => void>(),
   getCurrentWindow: vi.fn(),
@@ -70,11 +70,6 @@ const mocks = vi.hoisted(() => ({
   recoverRecording: vi.fn(),
   dictationHelperCommand: vi.fn(),
   listDictationHistory: vi.fn(),
-  osAccountsStatus: vi.fn(),
-  osAccountsLogin: vi.fn(),
-  osAccountsCancelLogin: vi.fn(),
-  osAccountsLogout: vi.fn(),
-  osAccountsUpgrade: vi.fn(),
   agentHudShow: vi.fn(),
   agentHudHide: vi.fn(),
   ensureHermesBridgeSession: vi.fn(),
@@ -140,7 +135,7 @@ vi.mock("../app/update-decision", async () => {
 
 vi.mock("../lib/tauri", () => ({
   // Sub Rosa fork: App gates on the Carpe Diem sidecar; report it configured.
-  carpeDiemSidecarStatus: vi.fn(async () => ({ status: "ready", hasApiKey: true })),
+  carpeDiemSidecarStatus: mocks.carpeDiemSidecarStatus,
   LIVE_TRANSCRIPT_EVENT: "live-transcript-event",
   // The agent workspace mounts the pending skill-writes tray, whose loader
   // reaches the Rust bridge through this named `invoke`. A quiet stub keeps
@@ -171,11 +166,6 @@ vi.mock("../lib/tauri", () => ({
   recoverRecording: mocks.recoverRecording,
   dictationHelperCommand: mocks.dictationHelperCommand,
   listDictationHistory: mocks.listDictationHistory,
-  osAccountsStatus: mocks.osAccountsStatus,
-  osAccountsLogin: mocks.osAccountsLogin,
-  osAccountsCancelLogin: mocks.osAccountsCancelLogin,
-  osAccountsLogout: mocks.osAccountsLogout,
-  osAccountsUpgrade: mocks.osAccountsUpgrade,
   agentHudShow: mocks.agentHudShow,
   agentHudHide: mocks.agentHudHide,
   ensureHermesBridgeSession: mocks.ensureHermesBridgeSession,
@@ -308,23 +298,6 @@ describe("App shortcuts", () => {
       items: [],
       retentionDays: 7,
     });
-    mocks.osAccountsStatus.mockResolvedValue({
-      signedIn: true,
-      configured: true,
-      user: { id: "usr_123", handle: "alex", email: "alex@example.com" },
-      balance: { usdMillis: 1200 },
-      subscription: { subscribed: true, status: "active" },
-    });
-    mocks.osAccountsLogin.mockResolvedValue({
-      signedIn: true,
-      configured: true,
-      user: { id: "usr_123", handle: "alex", email: "alex@example.com" },
-      balance: { usdMillis: 1200 },
-      subscription: { subscribed: true, status: "active" },
-    });
-    mocks.osAccountsLogout.mockResolvedValue(undefined);
-    mocks.osAccountsCancelLogin.mockResolvedValue(undefined);
-    mocks.osAccountsUpgrade.mockResolvedValue(undefined);
     mocks.ensureHermesBridgeSession.mockResolvedValue({});
     mocks.hermesAgentCliAccess.mockResolvedValue({ enabled: false });
     mocks.hermesBridgeFilesystemSnapshot.mockResolvedValue({ roots: [] });
@@ -390,20 +363,6 @@ describe("App shortcuts", () => {
     }
   });
 
-  it("clears the OS Accounts browser session from sidebar sign-out", async () => {
-    const user = userEvent.setup();
-
-    render(<App />);
-
-    await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
-
-    await user.click(screen.getByRole("button", { name: "alex@example.com, account menu" }));
-    await user.click(screen.getByRole("menuitem", { name: "Sign out" }));
-
-    expect(mocks.osAccountsLogout).toHaveBeenCalledWith({ clearBrowserSession: true });
-    expect(await screen.findByRole("heading", { name: "Welcome to Sub Rosa" })).toBeInTheDocument();
-  });
-
   it("starts a new session with Command-N", async () => {
     const onNewSession = vi.fn();
     window.addEventListener(AGENT_NEW_SESSION_EVENT, onNewSession);
@@ -422,7 +381,7 @@ describe("App shortcuts", () => {
     }
   });
 
-  it("opens a report draft from the account menu while a session is active", async () => {
+  it("opens a report draft from the app menu while a session is active", async () => {
     const user = userEvent.setup();
     const activeSession = {
       id: "session-1",
@@ -456,7 +415,7 @@ describe("App shortcuts", () => {
       await user.click(await screen.findByRole("button", { name: "Existing session" }));
       expect(await screen.findByRole("button", { name: "Send message" })).toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: /account menu/i }));
+      await user.click(screen.getByRole("button", { name: /app menu/i }));
       await user.click(screen.getByRole("menuitem", { name: menuItem }));
 
       expect(await screen.findByText(chipLabel)).toBeInTheDocument();
@@ -1129,89 +1088,23 @@ describe("App shortcuts", () => {
     expect(await screen.findByDisplayValue("First note")).toBeInTheDocument();
   });
 
-  it("gates the app until the user signs in", async () => {
-    const user = userEvent.setup();
-    mocks.osAccountsStatus.mockResolvedValue({
-      signedIn: false,
-      configured: true,
-    });
-
-    render(<App />);
-
-    expect(await screen.findByRole("heading", { name: "Welcome to Sub Rosa" })).toBeInTheDocument();
-    expect(mocks.bootstrapApp).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "New note" })).toBeNull();
-
-    await user.click(screen.getByRole("button", { name: "Continue with OpenSoftware" }));
-
-    await waitFor(() => expect(mocks.bootstrapApp).toHaveBeenCalledOnce());
-    // Clearing the gate lands on a fresh agent session, not a new note.
-    expect(await screen.findByRole("heading", { name: HERO_GREETING })).toBeInTheDocument();
-    expect(mocks.createNote).not.toHaveBeenCalled();
-  });
-
-  it("uses Windows sign-in copy and opens meeting notes after sign-in", async () => {
-    const user = userEvent.setup();
-    const restoreNavigator = stubNavigatorPlatform(
-      "Win32",
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    );
-    mocks.osAccountsStatus.mockResolvedValue({
-      signedIn: false,
-      configured: true,
-    });
-
-    try {
-      render(<App />);
-
-      expect(
-        await screen.findByText(
-          "Record conversations and turn them into notes with your OpenSoftware account.",
-        ),
-      ).toBeInTheDocument();
-      expect(screen.queryByText(/dictate with/)).not.toBeInTheDocument();
-
-      await user.click(screen.getByRole("button", { name: "Continue with OpenSoftware" }));
-
-      expect(await screen.findByRole("button", { name: "New note" })).toBeInTheDocument();
-      expect(screen.queryByRole("heading", { name: HERO_GREETING })).not.toBeInTheDocument();
-    } finally {
-      restoreNavigator();
-    }
-  });
-
-  it("does not flash the sign-in gate while account status is loading", async () => {
-    let resolveStatus: ((status: AccountStatus) => void) | undefined;
-    mocks.osAccountsStatus.mockReturnValue(
-      new Promise<AccountStatus>((resolve) => {
+  it("does not flash a gate while the sidecar status is loading", async () => {
+    // First paint waits on the sidecar probe. Rendering the key gate before it
+    // answers would flash "add your API key" at users who already have one.
+    let resolveStatus: ((status: { status: string; hasApiKey: boolean }) => void) | undefined;
+    mocks.carpeDiemSidecarStatus.mockReturnValue(
+      new Promise<{ status: string; hasApiKey: boolean }>((resolve) => {
         resolveStatus = resolve;
       }),
     );
 
     render(<App />);
 
-    expect(screen.queryByRole("heading", { name: "Welcome to Sub Rosa" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Continue with OpenSoftware" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: HERO_GREETING })).toBeNull();
     expect(mocks.bootstrapApp).not.toHaveBeenCalled();
 
-    resolveStatus?.({
-      signedIn: true,
-      configured: true,
-      user: { id: "usr_123", handle: "alex", email: "alex@example.com" },
-      balance: { usdMillis: 1200 },
-      subscription: { subscribed: true, status: "active" },
-    });
+    resolveStatus?.({ status: "ready", hasApiKey: true });
 
     expect(await screen.findByRole("heading", { name: HERO_GREETING })).toBeInTheDocument();
-  });
-
-  it("bypasses account gates in dev when account status is unavailable", async () => {
-    mocks.osAccountsStatus.mockRejectedValue(new Error("accounts unavailable"));
-
-    render(<App />);
-
-    expect(await screen.findByRole("heading", { name: HERO_GREETING })).toBeInTheDocument();
-    expect(mocks.bootstrapApp).toHaveBeenCalledOnce();
-    expect(screen.queryByRole("button", { name: "Continue with OpenSoftware" })).toBeNull();
   });
 });

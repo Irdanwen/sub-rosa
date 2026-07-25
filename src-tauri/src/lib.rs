@@ -334,13 +334,6 @@ pub fn run() {
             providers::set_venice_api_key,
             providers::clear_venice_api_key,
             providers::generate_image,
-            os_accounts::os_accounts_status,
-            os_accounts::os_accounts_login,
-            os_accounts::os_accounts_cancel_login,
-            os_accounts::os_accounts_logout,
-            os_accounts::os_accounts_upgrade,
-            os_accounts::os_accounts_open_portal,
-            os_accounts::os_accounts_referral_summary,
             updates::get_release_channel,
             updates::set_release_channel,
             updates::fetch_update,
@@ -362,6 +355,7 @@ pub fn run() {
             carpe_diem::settings::carpe_diem_get_credits,
             carpe_diem::settings::carpe_diem_get_billing,
             carpe_diem::settings::carpe_diem_set_rail,
+            carpe_diem::settings::carpe_diem_open_dashboard,
             carpe_diem::sidecar::carpe_diem_sidecar_status,
             carpe_diem::sidecar::carpe_diem_restart_sidecar,
             carpe_diem::media::carpe_diem_media_request,
@@ -495,6 +489,7 @@ pub fn run() {
         carpe_diem::settings::carpe_diem_get_credits,
         carpe_diem::settings::carpe_diem_get_billing,
         carpe_diem::settings::carpe_diem_set_rail,
+        carpe_diem::settings::carpe_diem_open_dashboard,
         carpe_diem::sidecar::carpe_diem_sidecar_status,
         carpe_diem::sidecar::carpe_diem_restart_sidecar,
         carpe_diem::media::carpe_diem_media_request,
@@ -508,7 +503,6 @@ pub fn run() {
     ]);
 
     builder
-        .manage(os_accounts::LoginFlow::default())
         .setup(|app| {
             #[cfg(desktop)]
             {
@@ -566,7 +560,6 @@ pub fn run() {
                 hermes_bridge::start_on_app_start(app);
                 meeting_hud::setup(app);
             }
-            os_accounts::setup_deep_link(app);
             #[cfg(target_os = "macos")]
             setup_main_window_lifecycle(app);
             Ok(())

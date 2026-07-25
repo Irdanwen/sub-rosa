@@ -643,6 +643,17 @@ pub async fn carpe_diem_set_rail(request: SetRailRequest) -> Result<CarpeDiemBil
     fetch_billing(&client, &base, &key).await
 }
 
+/// Opens the Carpe Diem dashboard, where credits are actually bought. This is
+/// the "add credits" affordance behind every depleted-balance notice; upstream
+/// June opened an OS Accounts checkout instead.
+///
+/// Routes through Rust rather than an anchor: the webview installs no
+/// new-window handler, so `target="_blank"` links are silently dropped.
+#[tauri::command]
+pub fn carpe_diem_open_dashboard() -> Result<(), AppError> {
+    crate::os_accounts::open_in_browser(branding::CARPE_DIEM_DASHBOARD_URL)
+}
+
 /// Shared setup for the billing commands: the base URL, a `cdm_` key, and an
 /// HTTP client. Rejects Venice keys (no payment rails there).
 fn billing_ctx() -> Result<(String, String, reqwest::Client), AppError> {

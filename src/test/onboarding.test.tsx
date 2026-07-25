@@ -13,7 +13,7 @@ import {
   setOnboardingResumeStep,
   subscribeToOnboardingComplete,
 } from "../lib/onboarding";
-import type { AccountStatus, RecordingSourceReadinessDto } from "../lib/tauri";
+import type { RecordingSourceReadinessDto } from "../lib/tauri";
 
 const mocks = vi.hoisted(() => ({
   dictationSettings: vi.fn(),
@@ -22,11 +22,8 @@ const mocks = vi.hoisted(() => ({
   openPrivacySettings: vi.fn(),
   setDictationLanguage: vi.fn(),
   setDictationShortcut: vi.fn(),
-  osAccountsLogin: vi.fn(),
   juneOpenCommunityPage: vi.fn(),
   juneOpenVerifyPage: vi.fn(),
-  osAccountsCancelLogin: vi.fn(),
-  osAccountsOpenPortal: vi.fn(),
   listen: vi.fn(),
 }));
 
@@ -37,34 +34,13 @@ vi.mock("../lib/tauri", () => ({
   openPrivacySettings: mocks.openPrivacySettings,
   setDictationLanguage: mocks.setDictationLanguage,
   setDictationShortcut: mocks.setDictationShortcut,
-  osAccountsLogin: mocks.osAccountsLogin,
   juneOpenCommunityPage: mocks.juneOpenCommunityPage,
   juneOpenVerifyPage: mocks.juneOpenVerifyPage,
-  osAccountsCancelLogin: mocks.osAccountsCancelLogin,
-  osAccountsOpenPortal: mocks.osAccountsOpenPortal,
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: mocks.listen,
 }));
-
-const account: AccountStatus = {
-  signedIn: true,
-  configured: true,
-  user: { id: "u1", handle: "casey", displayName: "Casey Tester" },
-  balance: { credits: 5000, usdMillis: 5000 },
-  subscription: { subscribed: true, status: "trialing" },
-};
-
-const unsubscribedAccount: AccountStatus = {
-  ...account,
-  subscription: { subscribed: false },
-};
-
-const signedOutAccount: AccountStatus = {
-  signedIn: false,
-  configured: true,
-};
 
 type ListenHandler = (event: { payload: string }) => void;
 
@@ -139,9 +115,7 @@ describe("OnboardingFlow", () => {
     mocks.dictationHelperCommand.mockResolvedValue(undefined);
     mocks.checkRecordingSourceReadiness.mockResolvedValue(systemAudioReadiness(true));
     mocks.openPrivacySettings.mockResolvedValue(undefined);
-    mocks.osAccountsCancelLogin.mockResolvedValue(undefined);
     mocks.juneOpenCommunityPage.mockResolvedValue(undefined);
-    mocks.osAccountsOpenPortal.mockResolvedValue(undefined);
     mocks.setDictationLanguage.mockResolvedValue(undefined);
     mocks.setDictationShortcut.mockResolvedValue(undefined);
     mocks.dictationSettings.mockResolvedValue({
@@ -157,8 +131,6 @@ describe("OnboardingFlow", () => {
 
   function flowProps(overrides: Partial<Parameters<typeof OnboardingFlow>[0]> = {}) {
     return {
-      account,
-      onAccountChanged: vi.fn(),
       onComplete: vi.fn(),
       ...overrides,
     };
@@ -166,6 +138,10 @@ describe("OnboardingFlow", () => {
 
   async function renderFlow(onComplete = vi.fn()) {
     render(<OnboardingFlow {...flowProps({ onComplete })} />);
+    // Step 0 is the welcome card (upstream fused it with OS Accounts sign-in);
+    // these cases start from permissions.
+    await screen.findByRole("heading", { name: "Welcome to Sub Rosa" });
+    await userEvent.click(screen.getByRole("button", { name: "Get started" }));
     await screen.findByRole("heading", { name: "Let Sub Rosa listen and type" });
     return onComplete;
   }
@@ -388,22 +364,9 @@ describe("OnboardingFlow", () => {
     );
   });
 
-  it("signs the user in from the first step", async () => {
-    const user = userEvent.setup();
-    const onAccountChanged = vi.fn();
-    mocks.osAccountsLogin.mockResolvedValue(account);
-    render(<OnboardingFlow {...flowProps({ account: signedOutAccount, onAccountChanged })} />);
-
-    await screen.findByRole("heading", { name: "Welcome to Sub Rosa" });
-    await user.click(screen.getByRole("button", { name: "Continue with OpenSoftware" }));
-
-    expect(mocks.osAccountsLogin).toHaveBeenCalledOnce();
-    await waitFor(() => expect(onAccountChanged).toHaveBeenCalledWith(account));
-  });
-
   it("opens the Sub Rosa community from the welcome step", async () => {
     const user = userEvent.setup();
-    render(<OnboardingFlow {...flowProps({ account: signedOutAccount })} />);
+    render(<OnboardingFlow {...flowProps()} />);
 
     await screen.findByRole("heading", { name: "Welcome to Sub Rosa" });
     await user.click(
@@ -421,7 +384,7 @@ describe("OnboardingFlow", () => {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
     );
     try {
-      render(<OnboardingFlow {...flowProps({ account: signedOutAccount })} />);
+      render(<OnboardingFlow {...flowProps()} />);
 
       await screen.findByRole("heading", { name: "Welcome to Sub Rosa" });
       expect(screen.getByText("Desktop notes for your work")).toBeInTheDocument();
@@ -438,21 +401,6 @@ describe("OnboardingFlow", () => {
     } finally {
       restoreNavigator();
     }
-  });
-
-  it("does not ask unsubscribed users for a card during onboarding", async () => {
-    const user = userEvent.setup();
-    render(<OnboardingFlow {...flowProps({ account: unsubscribedAccount })} />);
-    await screen.findByRole("heading", { name: "Let Sub Rosa listen and type" });
-
-    grantPermissions();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled());
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-    await screen.findByPlaceholderText(/Tell Sub Rosa what to do/i);
-
-    expect(screen.queryByRole("heading", { name: /free trial/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Start free trial/i })).toBeNull();
-    expect(mocks.osAccountsOpenPortal).not.toHaveBeenCalled();
   });
 
   it("resumes a half-finished run at the saved step", async () => {

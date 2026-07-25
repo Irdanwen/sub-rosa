@@ -1,6 +1,6 @@
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { useEffect, useState } from "react";
-import { JuneMark } from "../../account/AccountGate";
+import { BrandMark } from "../../brand/Marks";
 import { KeycapShortcut } from "../../shortcuts/KeycapShortcut";
 import { useShortcutCapture } from "../../shortcuts/use-shortcut-capture";
 import { StepActions, StepCard } from "../StepChrome";
@@ -68,7 +68,7 @@ export function DictationPracticeStep({
         <div className="onboarding-practice-card">
           <div className="onboarding-practice-thread">
             <div className="onboarding-practice-avatar" aria-hidden>
-              <JuneMark />
+              <BrandMark />
             </div>
             <div className="onboarding-practice-message">
               <span className="onboarding-practice-sender">Sub Rosa</span>

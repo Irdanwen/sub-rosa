@@ -75,7 +75,7 @@ describe("NoteFailureBanner", () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole("heading")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /Upgrade/i }));
+    await userEvent.click(screen.getByRole("button", { name: /Add credits/i }));
     expect(onTopUp).toHaveBeenCalledOnce();
 
     await userEvent.click(screen.getByRole("button", { name: /Retry/i }));
@@ -95,7 +95,7 @@ describe("NoteFailureBanner", () => {
     );
 
     expect(screen.getByText(/so top up credits and retry/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Upgrade/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Add credits/i })).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "Top up credits" }));
     expect(onTopUp).toHaveBeenCalledOnce();
@@ -111,7 +111,7 @@ describe("NoteFailureBanner", () => {
       />,
     );
     expect(screen.getByText(/Network unreachable/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Upgrade/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Add credits/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Retry/i })).toBeEnabled();
     expect(screen.getByText(/Your recording is saved locally/i)).toBeInTheDocument();
   });

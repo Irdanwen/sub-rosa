@@ -7,8 +7,8 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { EASE_OUT } from "../lib/motion";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { AccountGate, AccountStatusFailure, JuneMark } from "../components/account/AccountGate";
-import { FundingGate } from "../components/account/FundingGate";
+import { BrandMark } from "../components/brand/Marks";
+import { StartupFailure } from "../components/brand/StartupFailure";
 import { CarpeDiemGate } from "../components/carpe-diem/CarpeDiemGate";
 import { RailSwitchBanner } from "../components/carpe-diem/RailSwitchBanner";
 import { SIDECAR_STATUS_EVENT } from "../components/settings/CarpeDiemSettings";
@@ -70,9 +70,7 @@ import {
   listNotes,
   listSessionFolders,
   openPrivacySettings,
-  osAccountsLogout,
-  osAccountsOpenPortal,
-  osAccountsUpgrade,
+  carpeDiemOpenDashboard,
   pauseRecording,
   removeNoteFromFolder,
   removeSessionFromFolder,
@@ -135,7 +133,6 @@ import type {
   FolderDto,
   NoteDto,
   RecordingStatusDto,
-  AccountStatus,
   HermesSessionInfo,
 } from "../lib/tauri";
 import type {
@@ -144,21 +141,14 @@ import type {
   RecordingSourceReadinessDto,
 } from "../lib/tauri";
 import { carpeDiemSidecarStatus, type CarpeDiemSidecarStatusDto } from "../lib/tauri";
-import { useAccountStatus } from "../lib/account-status";
+import { withTimeout } from "../lib/async-timeout";
 import { applyAutostartDefaultOnce, retryPendingAutostartDefault } from "../lib/autostart";
 import {
   applyOnboardingReplayFlag,
   hasCompletedAnyOnboardingVersion,
   isOnboardingComplete,
   markOnboardingComplete,
-  shouldReplayOnboarding,
 } from "../lib/onboarding";
-import {
-  depletedBalanceActionLabel,
-  shouldOpenPortalForDepletedBalance,
-  shouldBlockOnFunding,
-  shouldBlockOnSignIn,
-} from "../lib/account-gate";
 import { checkJuneUpdate, reconcileToStable, relaunchJune, type JuneUpdate } from "../lib/updater";
 import { PROCESSING_DEMO_NOTE_ID, shouldPollProcessingStatus } from "./processing-polling";
 import { attachScrollThumbFade } from "../lib/scroll-thumb-fade";
@@ -178,6 +168,9 @@ const SIDEBAR_MIN_WIDTH = 188;
 const SIDEBAR_MAX_WIDTH = 320;
 const SIDEBAR_COLLAPSE_WIDTH = 160;
 const CHECK_FOR_UPDATES_EVENT = "june://check-for-updates";
+/// How long first paint waits on the sidecar status probe before offering a
+/// retry. Same bound the OS Accounts lookup used upstream.
+const SIDECAR_STATUS_TIMEOUT_MS = 8_000;
 const AGENT_MENU_BAR_SESSION_FETCH_LIMIT = 100;
 const AGENT_MENU_BAR_SESSION_LIMIT = 6;
 const AGENT_MENU_BAR_SESSION_RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000, 8000];
@@ -295,7 +288,6 @@ function tabMeta(
 }
 
 export function App() {
-  const replayOnboarding = shouldReplayOnboarding();
   // framer-motion does not drop `y` movement by itself under reduced motion;
   // surfaces that slide (the global recorder dock) branch on this.
   const reduceMotion = useReducedMotion();
@@ -421,13 +413,6 @@ export function App() {
     recordingState === "validating";
   const sourceMode: RecordingSourceMode =
     userWantsSystemAudio && systemGranted ? "microphonePlusSystem" : "microphoneOnly";
-  const {
-    account,
-    error: accountError,
-    loading: accountLoading,
-    refresh: refreshAccount,
-    setAccount,
-  } = useAccountStatus({ forceLogoutOnMount: replayOnboarding });
   // The note the active recording session belongs to. recordingStatus carries
   // no noteId, so without this the finish flow could only guess from the
   // currently selected note — wrong whenever the user browsed away while
@@ -518,23 +503,12 @@ export function App() {
   }, []);
   // Sessions with a finishRecording call in flight; guards stop double-clicks.
   const finishingSessionsRef = useRef<Set<string>>(new Set());
-  // A dev build without the OS Accounts env vars (fresh workspace, no .env)
-  // can never complete sign-in, so the account gates would be dead
-  // ends — skip them and let account-dependent features surface their own
-  // errors. Release builds always gate; so do dev builds once configured.
-  const devAccountsUnconfigured =
-    import.meta.env.DEV &&
-    !account.signedIn &&
-    (accountLoading || !!accountError || !account.configured);
-  const signInRequired = !devAccountsUnconfigured && shouldBlockOnSignIn(account);
-  const fundingRequired =
-    !devAccountsUnconfigured && !signInRequired && shouldBlockOnFunding(account);
-  const topUpLabel = depletedBalanceActionLabel(account);
-  const topUpOpensPortal = shouldOpenPortalForDepletedBalance(account);
+  // Credits are bought on Carpe Diem, so every depleted-balance affordance
+  // opens their dashboard. Upstream June started an OS Accounts checkout here.
+  const topUpLabel = "Add credits";
   const handleTopUp = useCallback(() => {
-    const action = topUpOpensPortal ? osAccountsOpenPortal : osAccountsUpgrade;
-    void action().catch((err: unknown) => setError(messageFromError(err)));
-  }, [topUpOpensPortal]);
+    void carpeDiemOpenDashboard().catch((err: unknown) => setError(messageFromError(err)));
+  }, []);
   const [onboardingDone, setOnboardingDone] = useState(() => {
     applyOnboardingReplayFlag();
     return isOnboardingComplete();
@@ -542,42 +516,46 @@ export function App() {
   // Carpe Diem (Sub Rosa fork): the app can't do anything without an API key,
   // so gate the whole app on it. `null` = status not yet loaded.
   const [carpeDiem, setCarpeDiem] = useState<CarpeDiemSidecarStatusDto | null>(null);
+  const [carpeDiemError, setCarpeDiemError] = useState<string>();
+  // First paint waits on this probe, so an IPC call that never settles would
+  // leave an empty window (upstream #853, which guarded the account lookup the
+  // same way). Bound it and offer a retry instead.
+  const refreshCarpeDiem = useCallback(async () => {
+    try {
+      const status = await withTimeout(
+        carpeDiemSidecarStatus(),
+        SIDECAR_STATUS_TIMEOUT_MS,
+        "The local backend took too long to report its status.",
+      );
+      setCarpeDiem(status);
+      setCarpeDiemError(undefined);
+    } catch (err) {
+      setCarpeDiemError(messageFromError(err));
+    }
+  }, []);
   useEffect(() => {
-    let active = true;
-    void carpeDiemSidecarStatus()
-      .then((status) => {
-        if (active) setCarpeDiem(status);
-      })
-      .catch(() => {
-        if (active) setCarpeDiem({ status: "unconfigured", hasApiKey: false });
-      });
-    const unlisten = listen<CarpeDiemSidecarStatusDto>(SIDECAR_STATUS_EVENT, (event) =>
-      setCarpeDiem(event.payload),
-    );
+    void refreshCarpeDiem();
+    const unlisten = listen<CarpeDiemSidecarStatusDto>(SIDECAR_STATUS_EVENT, (event) => {
+      setCarpeDiem(event.payload);
+      setCarpeDiemError(undefined);
+    });
     return () => {
-      active = false;
       void unlisten.then((fn) => fn());
     };
-  }, []);
-  const carpeDiemLoading = carpeDiem === null;
+  }, [refreshCarpeDiem]);
+  const carpeDiemLoading = carpeDiem === null && !carpeDiemError;
   // Gate until a key is configured AND the backend isn't in a hard-failed state
   // — otherwise a failed sidecar would drop the user into a non-functional app.
   const carpeDiemRequired =
-    !carpeDiemLoading && (!carpeDiem.hasApiKey || carpeDiem.status === "failed");
-  // The wizard handles sign-in, permissions, and hands-on practice. Funding
-  // only blocks once the account snapshot positively reports no spendable
-  // credits.
-  const onboardingRequired = !accountLoading && !onboardingDone;
+    carpeDiem !== null && (!carpeDiem.hasApiKey || carpeDiem.status === "failed");
+  // The wizard handles permissions and hands-on practice; sign-in is gone
+  // with OS Accounts, and the key gate above covers what it used to.
+  const onboardingRequired = !onboardingDone;
   // Onboarding counts as blocked so bootstrap, update checks, and the eager
   // permission probes hold off until the wizard finishes — the wizard owns
   // the permission prompts while it's on screen.
   const appBlocked =
-    accountLoading ||
-    carpeDiemLoading ||
-    carpeDiemRequired ||
-    signInRequired ||
-    fundingRequired ||
-    onboardingRequired;
+    carpeDiemLoading || !!carpeDiemError || carpeDiemRequired || onboardingRequired;
   const publishAgentMenuBarState = useCallback(() => {
     void emitAgentMenuBarState(
       buildAgentMenuBarState({
@@ -991,30 +969,6 @@ export function App() {
     recordingStatusRef.current = undefined;
     setRecordingNote(undefined);
     dispatch({ type: "recordingStatusCleared" });
-  }
-
-  const handleAccountChanged = useCallback(
-    (nextAccount: AccountStatus) => {
-      if (signInRequired && !shouldBlockOnSignIn(nextAccount)) {
-        // The launch handshake armed at state init has likely expired (15s
-        // TTL) while the user sat on the sign-in gate — re-arm it so clearing
-        // the gate still opens onto a fresh session.
-        markAgentNewSessionPending();
-      }
-      setAccount(nextAccount);
-    },
-    [setAccount, signInRequired],
-  );
-
-  // Log out from the sidebar identity popover. Dropping the session flips
-  // shouldBlockOnSignIn back on, so the app falls through to the AccountGate.
-  async function handleSignOut() {
-    try {
-      await osAccountsLogout({ clearBrowserSession: true });
-      handleAccountChanged({ signedIn: false, configured: account.configured });
-    } catch (err) {
-      setError(messageFromError(err));
-    }
   }
 
   useEffect(() => {
@@ -2555,7 +2509,7 @@ export function App() {
     ? Math.max(0, Math.ceil((recordingInactivityPrompt.expiresAt - recordingInactivityNow) / 1000))
     : 0;
 
-  if (accountLoading || carpeDiemLoading) {
+  if (carpeDiemLoading) {
     return (
       <main className="account-gate-shell">
         <div
@@ -2572,9 +2526,9 @@ export function App() {
     );
   }
 
-  // Blank-window guard (#853): if the account lookup itself stalled or errored
-  // (bounded to 8s), surface a retryable card instead of an empty shell.
-  if (accountError && !account.signedIn && !devAccountsUnconfigured) {
+  // Blank-window guard (#853): if the sidecar probe stalled or errored,
+  // surface a retryable card instead of an empty shell.
+  if (carpeDiemError) {
     return (
       <main className="account-gate-shell">
         <div
@@ -2583,7 +2537,7 @@ export function App() {
           data-tauri-drag-region
           onPointerDown={handleTitlebarPointerDown}
         />
-        <AccountStatusFailure message={accountError} onRetry={refreshAccount} />
+        <StartupFailure message={carpeDiemError} onRetry={refreshCarpeDiem} />
       </main>
     );
   }
@@ -2612,8 +2566,6 @@ export function App() {
           onPointerDown={handleTitlebarPointerDown}
         />
         <OnboardingFlow
-          account={account}
-          onAccountChanged={handleAccountChanged}
           onComplete={() => {
             // Read before marking complete: marking writes the completion
             // key that distinguishes a fresh install from a wizard replay.
@@ -2626,42 +2578,6 @@ export function App() {
             void applyAutostartDefaultOnce({ firstOnboardingCompletion });
             setOnboardingDone(true);
           }}
-        />
-      </main>
-    );
-  }
-
-  if (signInRequired) {
-    return (
-      <main className="account-gate-shell">
-        <div
-          className="titlebar-drag"
-          aria-hidden
-          data-tauri-drag-region
-          onPointerDown={handleTitlebarPointerDown}
-        />
-        <AccountGate
-          account={account}
-          loading={accountLoading}
-          onAccountChanged={handleAccountChanged}
-        />
-      </main>
-    );
-  }
-
-  if (fundingRequired) {
-    return (
-      <main className="account-gate-shell">
-        <div
-          className="titlebar-drag"
-          aria-hidden
-          data-tauri-drag-region
-          onPointerDown={handleTitlebarPointerDown}
-        />
-        <FundingGate
-          account={account}
-          onRefresh={refreshAccount}
-          onSignOut={() => void handleSignOut()}
         />
       </main>
     );
@@ -2731,7 +2647,6 @@ export function App() {
       <Sidebar
         notes={state.notes}
         activeView={activeView}
-        account={account}
         settingsTab={settingsTab}
         onSettingsTabChange={setSettingsTab}
         onChangeView={(view) => {
@@ -2757,7 +2672,6 @@ export function App() {
           }
         }}
         onExitSettings={() => setActiveView(settingsReturnView)}
-        onSignOut={() => void handleSignOut()}
         onReportIssue={handleReportIssue}
         onSelectNote={(noteId) => {
           if (takeNewTabIntent()) {
@@ -2870,15 +2784,11 @@ export function App() {
             <div className="workspace">
               {activeView === "settings" ? (
                 <AppSettings
-                  account={account}
-                  accountLoading={accountLoading}
                   sourceMode={sourceMode}
                   sourceReadiness={sourceReadiness}
                   checkingSourceReadiness={checkingSourceReadiness}
                   microphonePermissionStatus={microphoneStatus}
                   accessibilityPermissionStatus={accessibilityStatus}
-                  onAccountChanged={handleAccountChanged}
-                  onAccountRefresh={refreshAccount}
                   onSourceModeChange={handleSourceModeChange}
                   onEnableMicrophone={handleEnableMicrophone}
                   onEnableAccessibility={handleEnableAccessibility}
@@ -3437,7 +3347,7 @@ function UpdateRelaunchCard({
         onClick={onRelaunch}
       >
         <span className="update-relaunch-mark" aria-hidden>
-          <JuneMark />
+          <BrandMark />
         </span>
         <span className="update-relaunch-copy">
           <span

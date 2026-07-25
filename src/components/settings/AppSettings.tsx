@@ -29,7 +29,6 @@ import { LANGUAGE_OPTIONS, languageLabel } from "../../lib/dictation-languages";
 import { autostartEnabled, autostartSupported, setAutostartEnabled } from "../../lib/autostart";
 import { replayOnboarding } from "../../lib/onboarding";
 import type {
-  AccountStatus,
   DictationHelperEvent,
   DictationMicrophoneDeviceDto,
   DictationShortcutKind,
@@ -42,7 +41,6 @@ import type {
   RecordingSourceReadinessDto,
   VeniceModelDto,
 } from "../../lib/tauri";
-import { AccountSettingsSection, BillingSettingsSection } from "../account/AccountSettings";
 import { KeycapShortcut } from "../shortcuts/KeycapShortcut";
 import {
   MODIFIER_REQUIRED_MESSAGE,
@@ -204,7 +202,6 @@ export type SettingsTab =
   | "general"
   | "carpe-diem"
   | "film-studio"
-  | "billing"
   | "shortcuts"
   | "dictation"
   | "audio"
@@ -231,7 +228,6 @@ export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "carpe-diem", label: "Carpe Diem" },
   { id: "film-studio", label: "Film studio" },
-  { id: "billing", label: "Billing" },
   { id: "shortcuts", label: "Shortcuts" },
   { id: "dictation", label: "Dictation" },
   { id: "audio", label: "Audio" },
@@ -256,15 +252,11 @@ export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
 ];
 
 type AppSettingsProps = {
-  account: AccountStatus;
-  accountLoading: boolean;
   sourceMode: RecordingSourceMode;
   sourceReadiness?: RecordingSourceReadinessDto;
   checkingSourceReadiness: boolean;
   microphonePermissionStatus?: string;
   accessibilityPermissionStatus?: string;
-  onAccountChanged: (next: AccountStatus) => void;
-  onAccountRefresh: () => Promise<AccountStatus | undefined>;
   onSourceModeChange: (mode: RecordingSourceMode) => void;
   onEnableMicrophone?: () => void;
   onEnableAccessibility?: () => void;
@@ -287,15 +279,11 @@ type AppSettingsProps = {
 };
 
 export function AppSettings({
-  account,
-  accountLoading,
   sourceMode,
   sourceReadiness,
   checkingSourceReadiness,
   microphonePermissionStatus,
   accessibilityPermissionStatus,
-  onAccountChanged,
-  onAccountRefresh,
   onSourceModeChange,
   onEnableMicrophone,
   onEnableAccessibility,
@@ -348,9 +336,7 @@ export function AppSettings({
   const [micTestPlaying, setMicTestPlaying] = useState(false);
   const controlled = controlledTab !== undefined && onTabChange !== undefined;
   const activeTab = controlled ? controlledTab : internalTab;
-  const settingsTabs = account.localDev
-    ? SETTINGS_TABS.filter((tab) => tab.id !== "billing")
-    : SETTINGS_TABS;
+  const settingsTabs = SETTINGS_TABS;
   const macLikePlatform = isMacLikePlatform();
   const setActiveTab = (tab: SettingsTab) => {
     if (controlled) {
@@ -443,17 +429,6 @@ export function AppSettings({
       void resetMicTestState(true);
     }
   }, [activeTab]);
-
-  useEffect(() => {
-    if (!account.localDev || activeTab !== "billing") {
-      return;
-    }
-    if (controlled) {
-      onTabChange?.("general");
-      return;
-    }
-    setInternalTab("general");
-  }, [account.localDev, activeTab, controlled, onTabChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -940,13 +915,6 @@ export function AppSettings({
         {activeTab === "film-studio" ? <VideomakerSettings /> : null}
         {activeTab === "general" ? (
           <>
-            <AccountSettingsSection
-              account={account}
-              loading={accountLoading}
-              onAccountChanged={onAccountChanged}
-              onRefresh={onAccountRefresh}
-            />
-
             <section className="settings-group" aria-labelledby="appearance-heading">
               <h2 id="appearance-heading" className="settings-group-heading">
                 Appearance
@@ -1018,10 +986,6 @@ export function AppSettings({
 
             <StartupSettingsSection />
           </>
-        ) : null}
-
-        {activeTab === "billing" && !account.localDev ? (
-          <BillingSettingsSection account={account} onRefresh={onAccountRefresh} />
         ) : null}
 
         {activeTab === "shortcuts" ? (

@@ -55,7 +55,7 @@ const mocks = vi.hoisted(() => ({
   openDialog: vi.fn(),
   validateAgentWorkingDir: vi.fn(),
   revealAgentWorkingDir: vi.fn(),
-  osAccountsUpgrade: vi.fn(),
+  carpeDiemOpenDashboard: vi.fn(),
   setVeniceModel: vi.fn(),
   providerModelSettings: vi.fn(),
   retryAgentTask: vi.fn(),
@@ -116,7 +116,7 @@ vi.mock("../lib/tauri", () => ({
   listAgentTasks: mocks.listAgentTasks,
   downloadHermesBridgeFile: mocks.downloadHermesBridgeFile,
   saveHermesBridgeFile: mocks.saveHermesBridgeFile,
-  osAccountsUpgrade: mocks.osAccountsUpgrade,
+  carpeDiemOpenDashboard: mocks.carpeDiemOpenDashboard,
   providerModelSettings: mocks.providerModelSettings,
   retryAgentTask: mocks.retryAgentTask,
   revealAgentWorkingDir: mocks.revealAgentWorkingDir,
@@ -7475,7 +7475,7 @@ describe("AgentWorkspace", () => {
 
   it("renders an out-of-credits notice with an upgrade action instead of the raw 402 error", async () => {
     const user = userEvent.setup();
-    mocks.osAccountsUpgrade.mockResolvedValue(undefined);
+    mocks.carpeDiemOpenDashboard.mockResolvedValue(undefined);
     mocks.listHermesSessionMessages.mockResolvedValue([
       {
         id: "m1",
@@ -7499,8 +7499,8 @@ describe("AgentWorkspace", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/Error code: 402/)).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Upgrade" }));
-    expect(mocks.osAccountsUpgrade).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Add credits" }));
+    expect(mocks.carpeDiemOpenDashboard).toHaveBeenCalledOnce();
   });
 
   it("renders an out-of-credits notice with a top-up action for subscribed users", async () => {
@@ -7531,7 +7531,7 @@ describe("AgentWorkspace", () => {
 
     await user.click(screen.getByRole("button", { name: "Top up credits" }));
     expect(onTopUp).toHaveBeenCalledOnce();
-    expect(mocks.osAccountsUpgrade).not.toHaveBeenCalled();
+    expect(mocks.carpeDiemOpenDashboard).not.toHaveBeenCalled();
   });
 
   it("shows every error surface via the __agentErrors() dev handle", async () => {
@@ -7546,7 +7546,7 @@ describe("AgentWorkspace", () => {
       expect(await screen.findByText("Agent error gallery")).toBeInTheDocument();
       // Turn-level samples from the catalog (section label + the card itself)…
       expect(screen.getAllByText("Out of credits").length).toBeGreaterThan(0);
-      expect(screen.getByRole("button", { name: "Upgrade" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Add credits" })).toBeInTheDocument();
       // …plus the forced chrome samples the turn gallery can't represent.
       expect(screen.getByText("Could not connect to Hermes gateway.")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();

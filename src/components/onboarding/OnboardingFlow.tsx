@@ -3,18 +3,18 @@ import { useEffect, useMemo, useState } from "react";
 import { onboardingResumeStep, setOnboardingResumeStep } from "../../lib/onboarding";
 import { isMacLikePlatform } from "../../lib/platform";
 import { dictationSettings, setDictationShortcut } from "../../lib/tauri";
-import type { AccountStatus, DictationShortcutSetting } from "../../lib/tauri";
+import type { DictationShortcutSetting } from "../../lib/tauri";
 import { PermissionsStep } from "./steps/PermissionSteps";
+import { WelcomeStep } from "./steps/WelcomeStep";
 import { DictationPracticeStep } from "./steps/PracticeStep";
-import { SignInStep } from "./steps/SignInStep";
 import { usePermissionStatuses, useSystemAudioStatus } from "./use-permission-status";
 
-type StepId = "sign-in" | "permissions" | "dictation-practice";
+type StepId = "welcome" | "permissions" | "dictation-practice";
 
 // Announced by the progress bar so screen readers hear where they are, not
 // just a bare step count.
 const STEP_LABELS: Record<StepId, string> = {
-  "sign-in": "Sign in",
+  welcome: "Welcome",
   permissions: "Permissions",
   "dictation-practice": "Try dictation",
 };
@@ -47,12 +47,10 @@ function isFactoryDefaultShortcut(shortcut: DictationShortcutSetting) {
   );
 }
 
-const MAC_STEPS: StepId[] = ["sign-in", "permissions", "dictation-practice"];
-const NON_MAC_STEPS: StepId[] = ["sign-in", "permissions"];
+const MAC_STEPS: StepId[] = ["welcome", "permissions", "dictation-practice"];
+const NON_MAC_STEPS: StepId[] = ["welcome", "permissions"];
 
 type Props = {
-  account: AccountStatus;
-  onAccountChanged: (next: AccountStatus) => void;
   onComplete: () => void;
 };
 
@@ -71,38 +69,23 @@ function initialStepIndex(steps: StepId[]): number {
 function browserOnboardingDemoStep(): StepId | null {
   if (!import.meta.env.DEV || typeof window === "undefined") return null;
   const step = new URLSearchParams(window.location.search).get("juneDemoStep");
-  return step === "sign-in" || step === "permissions" || step === "dictation-practice"
+  return step === "welcome" || step === "permissions" || step === "dictation-practice"
     ? step
     : null;
 }
 
-export function OnboardingFlow({ account, onAccountChanged, onComplete }: Props) {
+export function OnboardingFlow({ onComplete }: Props) {
   const steps = useMemo(() => (isMacLikePlatform() ? MAC_STEPS : NON_MAC_STEPS), []);
   const supportsDictationPractice = steps.includes("dictation-practice");
-  const [stepIndex, setStepIndex] = useState(() => {
-    const initial = initialStepIndex(steps);
-    return account.signedIn && steps[initial] === "sign-in" ? 1 : initial;
-  });
+  const [stepIndex, setStepIndex] = useState(() => initialStepIndex(steps));
   const [shortcutLabel, setShortcutLabel] = useState("fn");
 
   const stepId = steps[stepIndex];
 
-  // Everything past sign-in needs an account; a resume point past it with a
-  // signed-out account (keychain cleared, signed out elsewhere) would strand
-  // the user on steps that can't work.
-  useEffect(() => {
-    if (!account.signedIn && stepId !== "sign-in") {
-      setStepIndex(0);
-    }
-  }, [account.signedIn, stepId]);
-
-  useEffect(() => {
-    if (account.signedIn && stepId === "sign-in") {
-      setStepIndex(1);
-    }
-  }, [account.signedIn, stepId]);
-
-  const firstReachableStepIndex = account.signedIn ? 1 : 0;
+  // Every step is reachable: the wizard no longer opens on a sign-in gate that
+  // the later steps depended on. A stale "sign-in" resume value from a
+  // pre-rebrand install resolves to 0 (welcome) through initialStepIndex.
+  const firstReachableStepIndex = 0;
 
   useEffect(() => {
     setOnboardingResumeStep(stepId);
@@ -180,8 +163,8 @@ export function OnboardingFlow({ account, onAccountChanged, onComplete }: Props)
         </nav>
       </header>
       <div className="onboarding-body">
-        {stepId === "sign-in" ? (
-          <SignInStep account={account} onAccountChanged={onAccountChanged} onContinue={goNext} />
+        {stepId === "welcome" ? (
+          <WelcomeStep onContinue={goNext} />
         ) : stepId === "permissions" ? (
           <PermissionsStep
             statuses={permissionStatuses}

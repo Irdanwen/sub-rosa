@@ -64,7 +64,7 @@ export function NoteFailureBanner({
   audioPreserved,
   onRetry,
   onTopUp,
-  topUpLabel = "Upgrade",
+  topUpLabel = "Add credits",
 }: Props) {
   const kind = classifyFailure(errorMessage);
   const isBalanceIssue = kind === "balance_low";

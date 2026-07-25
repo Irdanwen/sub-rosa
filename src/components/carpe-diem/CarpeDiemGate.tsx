@@ -1,5 +1,5 @@
 import { CarpeDiemSettings } from "../settings/CarpeDiemSettings";
-import { JuneGradientMark } from "../account/AccountGate";
+import { BrandGradientMark } from "../brand/Marks";
 import { CARPE_DIEM_DASHBOARD_URL, PRODUCT_NAME } from "../../lib/branding";
 import { isMobilePlatform } from "../../lib/mobile";
 
@@ -15,7 +15,7 @@ export function CarpeDiemGate() {
     <div className="welcome-screen">
       <div className="welcome-card welcome-card-wide">
         <span className="welcome-mark welcome-mark-symbol" aria-hidden>
-          <JuneGradientMark />
+          <BrandGradientMark />
         </span>
         <h1 className="welcome-title">Welcome to {PRODUCT_NAME}</h1>
         <p className="welcome-subtitle">

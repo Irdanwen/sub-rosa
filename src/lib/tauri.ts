@@ -1681,97 +1681,6 @@ export async function shareText(text: string) {
   return invoke<void>("share_text", { request: { text } });
 }
 
-export type AccountUser = {
-  id: string;
-  handle: string;
-  email?: string;
-  displayName?: string;
-  avatarUrl?: string;
-};
-
-export type AccountBalance = {
-  /** Present whenever the backend snapshot succeeds; optional so older
-   * payload shapes (and test fixtures) without it don't lock the app. */
-  credits?: number;
-  /** Normalized usage remaining for the current plan or free allowance.
-   * Optional while the app can still receive older accounts API payloads. */
-  usageRemainingPercent?: number;
-  usdMillis: number;
-};
-
-export type AccountSubscription = {
-  subscribed: boolean;
-  status?: "trialing" | "active" | "past_due" | "canceled" | (string & {});
-  /** Monthly plan credits returned by OS Accounts. Used as a fallback for
-   * deployments whose balance endpoint does not expose usageRemainingPercent. */
-  planCredits?: number;
-  trialEnd?: string;
-  currentPeriodEnd?: string;
-  /** Trial length from the Stripe price config, available pre-subscription.
-   * Absent on accounts APIs that don't expose it yet. */
-  trialPeriodDays?: number;
-};
-
-export type AccountStatus = {
-  signedIn: boolean;
-  configured: boolean;
-  localDev?: boolean;
-  user?: AccountUser;
-  balance?: AccountBalance;
-  /** Absent when the subscription state couldn't be determined — distinct
-   * from `{ subscribed: false }`. */
-  subscription?: AccountSubscription;
-  /** The accounts portal origin, where funding and billing live. */
-  portalUrl?: string;
-};
-
-export type ReferralSummary = {
-  code: string;
-  url: string;
-  referredCount: number;
-  pendingCount: number;
-  qualifiedCount: number;
-  earnedMonths: number;
-  appliedMonths: number;
-  availableMonths: number;
-};
-
-export async function osAccountsStatus() {
-  return invoke<AccountStatus>("os_accounts_status");
-}
-
-export async function osAccountsLogin() {
-  return invoke<AccountStatus>("os_accounts_login");
-}
-
-export async function osAccountsCancelLogin() {
-  return invoke<void>("os_accounts_cancel_login");
-}
-
-export type AccountsLogoutOptions = {
-  clearBrowserSession?: boolean;
-};
-
-export async function osAccountsLogout(options: AccountsLogoutOptions = {}) {
-  return invoke<void>("os_accounts_logout", {
-    request: { clearBrowserSession: options.clearBrowserSession ?? false },
-  });
-}
-
-export async function osAccountsUpgrade() {
-  return invoke<void>("os_accounts_upgrade");
-}
-
-/** Opens the accounts portal in the default browser — the webview swallows
- * target="_blank" anchors, so portal navigation must go through Rust. */
-export async function osAccountsOpenPortal() {
-  return invoke<void>("os_accounts_open_portal");
-}
-
-export async function osAccountsReferralSummary() {
-  return invoke<ReferralSummary>("os_accounts_referral_summary");
-}
-
 export async function dictationSettings() {
   return invoke<DictationSettingsResponse>("dictation_settings");
 }
@@ -1907,6 +1816,12 @@ export async function carpeDiemGetBilling() {
 
 export async function carpeDiemSetRail(rail: CarpeDiemRail) {
   return invoke<CarpeDiemBillingDto>("carpe_diem_set_rail", { request: { rail } });
+}
+
+/** Opens the Carpe Diem dashboard, where credits are bought. Routed through
+ * Rust because the webview swallows target="_blank" anchors. */
+export async function carpeDiemOpenDashboard() {
+  return invoke<void>("carpe_diem_open_dashboard");
 }
 
 export async function carpeDiemSidecarStatus() {

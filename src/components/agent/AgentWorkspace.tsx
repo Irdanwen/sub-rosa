@@ -112,7 +112,7 @@ import {
   saveHermesBridgeFile,
   copyHermesBridgeFileToClipboard,
   openHermesTuiDebug,
-  osAccountsUpgrade,
+  carpeDiemOpenDashboard,
   providerModelSettings,
   retryAgentTask,
   revealAgentWorkingDir,
@@ -1321,7 +1321,7 @@ export function AgentWorkspace({
   origin,
   onSessionSelected,
   onTopUp,
-  topUpLabel = "Upgrade",
+  topUpLabel = "Add credits",
 }: AgentWorkspaceProps = {}) {
   const initialSessionId = initialSession?.id ?? initialSessionIdProp;
   // Read once per mount (lazy initializer): the continuity snapshot the
@@ -1470,7 +1470,7 @@ export function AgentWorkspace({
     [],
   );
   const handleTopUp = useCallback(() => {
-    const result = onTopUp ? onTopUp() : osAccountsUpgrade();
+    const result = onTopUp ? onTopUp() : carpeDiemOpenDashboard();
     void Promise.resolve(result).catch((err: unknown) => setError(messageFromError(err)));
   }, [onTopUp, setError]);
   const clearErrorForSession = useCallback((sessionId: string) => {
@@ -10281,7 +10281,7 @@ function visibleAgentWorkspaceError(
 // icon + one sentence + the action, Claude-style.
 function CreditsNoticePart({
   onTopUp,
-  topUpLabel = "Upgrade",
+  topUpLabel = "Add credits",
 }: {
   onTopUp?: () => void;
   topUpLabel?: string;
