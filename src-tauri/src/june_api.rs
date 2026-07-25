@@ -935,8 +935,8 @@ fn clean_agent_session_title(value: &str) -> Option<String> {
         "I need to ",
         "I'd like you to ",
         "I'd like to ",
-        "Ask June to ",
-        "Have June ",
+        "Ask Sub Rosa to ",
+        "Have Sub Rosa ",
     ];
     loop {
         let mut changed = false;
@@ -1059,7 +1059,7 @@ where
     if envelope.success {
         return envelope
             .data
-            .ok_or_else(|| AppError::new("empty_response", "June returned no data."));
+            .ok_or_else(|| AppError::new("empty_response", "The local backend returned no data."));
     }
     if envelope.error_code == Some(ERR_TOKEN_EXPIRED) || status == reqwest::StatusCode::UNAUTHORIZED
     {
@@ -1081,7 +1081,7 @@ where
         "june_request_failed",
         envelope
             .message
-            .unwrap_or_else(|| "Couldn't reach June.".to_string()),
+            .unwrap_or_else(|| "Couldn't reach the local backend.".to_string()),
     );
     if let Some(retry_after_ms) = retry_after_ms {
         error.details = Some(serde_json::json!({ "retryAfterMs": retry_after_ms }));

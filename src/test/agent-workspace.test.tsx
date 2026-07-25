@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PRODUCT_NAME } from "../lib/branding";
 import {
   AGENT_DELETE_SESSION_EVENT,
   AGENT_NEW_SESSION_EVENT,
@@ -792,7 +793,7 @@ describe("AgentWorkspace", () => {
       ([method]) => method === "prompt.submit",
     )?.[1] as { text: string };
     expect(submitted.text).toContain("The recorder crashes after long meetings");
-    expect(submitted.text).toContain("Attached files copied into the June workspace:");
+    expect(submitted.text).toContain(`Attached files copied into the ${PRODUCT_NAME} workspace:`);
     expect(submitted.text).toContain(
       "Use these file paths when inspecting or operating on the files.",
     );
@@ -5817,7 +5818,7 @@ describe("AgentWorkspace", () => {
     const submitted = mocks.gatewayRequest.mock.calls.find(
       ([method]) => method === "prompt.submit",
     )?.[1] as { text: string };
-    expect(submitted.text).toContain("Attached files copied into the June workspace:");
+    expect(submitted.text).toContain(`Attached files copied into the ${PRODUCT_NAME} workspace:`);
     expect(submitted.text).toContain(
       "Use these file paths when inspecting or operating on the files.",
     );
@@ -5881,9 +5882,9 @@ describe("AgentWorkspace", () => {
     const submitted = mocks.gatewayRequest.mock.calls.find(
       ([method]) => method === "prompt.submit",
     )?.[1] as { text: string };
-    expect(submitted.text).toContain("Attached files copied into the June workspace:");
+    expect(submitted.text).toContain(`Attached files copied into the ${PRODUCT_NAME} workspace:`);
     expect(submitted.text).toContain("--- Attached Context ---");
-    expect(submitted.text).toContain("GLM 5.2 does not support image input in June.");
+    expect(submitted.text).toContain(`GLM 5.2 does not support image input in ${PRODUCT_NAME}.`);
     expect(submitted.text).toContain("Do not call vision_analyze");
     expect(submitted.text).toContain(
       "ask the user to describe the image or paste the relevant text",

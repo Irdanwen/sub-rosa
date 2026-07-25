@@ -20,6 +20,7 @@ import { IconStopCircle } from "central-icons/IconStopCircle";
 import { IconToolbox } from "central-icons/IconToolbox";
 import { IconTrashCan } from "central-icons/IconTrashCan";
 import { open as openFileDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { PRODUCT_NAME } from "../../lib/branding";
 import { noteAssistantTurnCompleted } from "../../lib/memory";
 import { isMacDesktopPlatform } from "../../lib/platform";
 import { AnimatePresence, motion } from "framer-motion";
@@ -414,7 +415,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
 const SAMPLE_MARKDOWN = `# Quarterly review
 
 A sample document that exercises **bold**, *italic*, ~~strikethrough~~,
-\`inline code\`, and [links](https://opensoftware.co).
+\`inline code\`, and [links](https://carpe-diem.xyz).
 
 ## Highlights
 
@@ -12281,7 +12282,7 @@ function promptWithAttachments(message: string, attachments: AgentAttachment[]):
   return [
     message || "Use the attached file(s).",
     "",
-    "Attached files copied into the June workspace:",
+    `Attached files copied into the ${PRODUCT_NAME} workspace:`,
     ...attachments.map(
       (attachment) =>
         `- ${attachment.name} (${attachment.rootLabel}): ${attachmentPromptPath(attachment.path)}`,
@@ -12307,7 +12308,7 @@ function unsupportedImageInputPrompt({
     displayContent,
     "",
     "--- Attached Context ---",
-    `${modelLabel} does not support image input in June.`,
+    `${modelLabel} does not support image input in ${PRODUCT_NAME}.`,
     "The user attached image file(s), but this model cannot read their visual contents.",
     imageNames.length ? `Attached image file(s): ${imageNames.join(", ")}.` : undefined,
     "Do not call vision_analyze, image tools, shell, filesystem tools, or any other tool to inspect the image files.",

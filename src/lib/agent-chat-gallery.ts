@@ -127,7 +127,7 @@ export function buildAgentChatGallery(): AgentChatGallerySection[] {
       artifacts: [
         {
           name: "revenue-chart.png",
-          path: "~/Library/Application Support/co.opensoftware.june/hermes/workspace/revenue-chart.png",
+          path: "~/Library/Application Support/xyz.carpediem.subrosa/hermes/workspace/revenue-chart.png",
           rootLabel: "Workspace",
           size: 31_000,
         },

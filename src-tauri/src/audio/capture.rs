@@ -189,7 +189,7 @@ pub fn start_capture(
     if active.is_some() {
         return Err(AppError::new(
             "recording_already_active",
-            "A previous recording is still active. June attempted to save it locally; please try again.",
+            "A previous recording is still active. Sub Rosa attempted to save it locally; please try again.",
         ));
     }
 

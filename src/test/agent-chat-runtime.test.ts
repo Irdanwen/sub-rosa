@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PRODUCT_NAME } from "../lib/branding";
 import {
   appendLiveHermesEvent,
   buildAgentChatTurns,
@@ -387,6 +388,24 @@ describe("Agent chat runtime", () => {
           "wdyt?",
           "",
           "Attached files copied into the June workspace:",
+          "- CleanShot.png (Workspace): uploads/CleanShot.png",
+          "",
+          "Use these file paths when inspecting or operating on the files.",
+        ].join("\n"),
+      ),
+    ).toBe("wdyt?");
+  });
+
+  it("hides attachment scaffolding written under the current product name", () => {
+    // The block above is what pre-rebrand transcripts carry ("June
+    // workspace"); this is what the composer emits today. Both spellings must
+    // strip, so the matcher stays loose about the workspace name.
+    expect(
+      displayedComposerUserMessageText(
+        [
+          "wdyt?",
+          "",
+          `Attached files copied into the ${PRODUCT_NAME} workspace:`,
           "- CleanShot.png (Workspace): uploads/CleanShot.png",
           "",
           "Use these file paths when inspecting or operating on the files.",

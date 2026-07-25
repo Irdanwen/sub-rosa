@@ -169,7 +169,13 @@ where
 {
     let menu = Menu::new(manager)?;
 
-    let show_item = MenuItem::with_id(manager, MENU_SHOW_ID, "Open June", true, None::<&str>)?;
+    let show_item = MenuItem::with_id(
+        manager,
+        MENU_SHOW_ID,
+        format!("Open {}", crate::carpe_diem::branding::PRODUCT_NAME),
+        true,
+        None::<&str>,
+    )?;
     let settings_item =
         MenuItem::with_id(manager, MENU_SETTINGS_ID, "Settings...", true, None::<&str>)?;
     let new_session_item = MenuItem::with_id(
@@ -234,7 +240,13 @@ where
     menu.append(&settings_item)?;
     menu.append(&PredefinedMenuItem::separator(manager)?)?;
 
-    let quit_item = MenuItem::with_id(manager, MENU_QUIT_ID, "Quit June", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(
+        manager,
+        MENU_QUIT_ID,
+        format!("Quit {}", crate::carpe_diem::branding::PRODUCT_NAME),
+        true,
+        None::<&str>,
+    )?;
     menu.append(&quit_item)?;
 
     Ok(menu)
@@ -258,7 +270,7 @@ fn show_main_window(app: &AppHandle) {
 
 fn tray_tooltip(state: &AgentMenuBarState) -> String {
     let status = status_label(state);
-    format!("June - {status}")
+    format!("{} - {status}", crate::carpe_diem::branding::PRODUCT_NAME)
 }
 
 fn status_label(state: &AgentMenuBarState) -> String {

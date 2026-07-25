@@ -2689,7 +2689,7 @@ fn dictation_transcription_provider(provider: String) -> Result<String, AppError
     if provider != OPENAI_PROVIDER && provider != VENICE_PROVIDER {
         return Err(AppError::new(
             "dictation_provider_not_configured",
-            "Dictation requires an OpenAI or Venice transcription model through June API.",
+            "Dictation requires an OpenAI or Venice transcription model.",
         ));
     }
     Ok(provider)
@@ -3690,16 +3690,26 @@ fn agent_session_prompt_from_dictation(text: &str) -> Option<String> {
     if !first.eq_ignore_ascii_case("hey") {
         return None;
     }
-    let after_first = skip_word_separators(after_first);
-    let (second, after_second) = take_ascii_word(after_first)?;
-    if !is_agent_session_wake_name(second) {
-        return None;
-    }
-    Some(skip_word_separators(after_second).trim().to_string())
+    let after_wake = consume_agent_session_wake_name(skip_word_separators(after_first))?;
+    Some(skip_word_separators(after_wake).trim().to_string())
 }
 
+/// Consumes the wake name that follows "hey" and returns the rest of the
+/// utterance. The product name is two words, so both "hey Sub Rosa" and the
+/// shorter "hey Rosa" open a session.
+fn consume_agent_session_wake_name(value: &str) -> Option<&str> {
+    let (word, rest) = take_ascii_word(value)?;
+    if word.eq_ignore_ascii_case("sub") {
+        let (second, after_second) = take_ascii_word(skip_word_separators(rest))?;
+        return is_agent_session_wake_name(second).then_some(after_second);
+    }
+    is_agent_session_wake_name(word).then_some(rest)
+}
+
+/// The variants absorb what the transcriber commonly hears instead of "Rosa";
+/// matching is case-insensitive.
 fn is_agent_session_wake_name(word: &str) -> bool {
-    ["june", "jun", "joon"]
+    ["rosa", "roza", "rossa"]
         .iter()
         .any(|variant| word.eq_ignore_ascii_case(variant))
 }
@@ -5256,10 +5266,10 @@ mod tests {
     }
 
     #[test]
-    fn hey_june_transcription_maps_to_agent_session_event() {
+    fn wake_name_transcription_maps_to_agent_session_event() {
         let outcome = outcome_from_transcription_result(
             Ok(TranscriptionProviderResult {
-                text: "Hey, June, summarize the open document.".to_string(),
+                text: "Hey, Rosa, summarize the open document.".to_string(),
                 language: Some("en".to_string()),
                 provider: crate::providers::VENICE_PROVIDER.to_string(),
             }),
@@ -5280,7 +5290,7 @@ mod tests {
         );
         assert_eq!(
             outcome.transcript.as_ref().map(|item| item.text.as_str()),
-            Some("Hey, June, summarize the open document.")
+            Some("Hey, Rosa, summarize the open document.")
         );
     }
 
@@ -5293,25 +5303,50 @@ mod tests {
     }
 
     #[test]
-    fn hey_june_detection_requires_first_two_words() {
+    fn wake_name_detection_accepts_both_short_and_full_product_name() {
         assert_eq!(
-            agent_session_prompt_from_dictation("Hey June open settings").as_deref(),
+            agent_session_prompt_from_dictation("Hey Rosa open settings").as_deref(),
+            Some("open settings")
+        );
+        // The full product name is two words, so the parser has to consume both.
+        assert_eq!(
+            agent_session_prompt_from_dictation("Hey Sub Rosa open settings").as_deref(),
             Some("open settings")
         );
         assert_eq!(
-            agent_session_prompt_from_dictation("Hey Jun open settings").as_deref(),
+            agent_session_prompt_from_dictation("Hey, Sub Rosa, open settings").as_deref(),
+            Some("open settings")
+        );
+        // Transcriber mishearings still open a session.
+        assert_eq!(
+            agent_session_prompt_from_dictation("Hey Roza open settings").as_deref(),
             Some("open settings")
         );
         assert_eq!(
-            agent_session_prompt_from_dictation("Hey Joon open settings").as_deref(),
+            agent_session_prompt_from_dictation("Hey Rossa open settings").as_deref(),
             Some("open settings")
         );
+        // The wake name must be the first two (or three) words, whole words only.
         assert_eq!(
-            agent_session_prompt_from_dictation("well hey june open"),
+            agent_session_prompt_from_dictation("well hey rosa open"),
             None
         );
         assert_eq!(
-            agent_session_prompt_from_dictation("hey juniper open"),
+            agent_session_prompt_from_dictation("hey rosalind open"),
+            None
+        );
+        // "sub" only opens a session when "rosa" actually follows it.
+        assert_eq!(
+            agent_session_prompt_from_dictation("hey submarine crews are quiet"),
+            None
+        );
+        assert_eq!(
+            agent_session_prompt_from_dictation("hey sub sandwich"),
+            None
+        );
+        // The name Sub Rosa replaced must no longer trigger anything.
+        assert_eq!(
+            agent_session_prompt_from_dictation("Hey June open settings"),
             None
         );
     }

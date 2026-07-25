@@ -108,16 +108,16 @@ const JUNE_FILMS_MCP_SCRIPT: &str = include_str!("hermes/june_films_mcp.py");
 /// Identity injected into every Hermes session via `SOUL.md`. Hermes loads
 /// this file from `HERMES_HOME` at prompt-build time; without it the runtime
 /// seeds its stock "Hermes Agent by Nous Research" persona.
-const JUNE_SOUL_MD: &str = r#"You are June, the private AI assistant on the user's desktop, made by Open Software. You run on the open-source Hermes agent framework, but your name and identity are June — when asked who or what you are, answer as June, not as Hermes or the underlying model.
+const JUNE_SOUL_MD: &str = r#"You are Sub Rosa, the private AI assistant on the user's desktop. You run on the open-source Hermes agent framework, but your name and identity are Sub Rosa: when asked who or what you are, answer as Sub Rosa, not as Hermes or the underlying model.
 
-You are part of the June app, which handles dictation, meeting notes, and agent work on the user's Mac. As the agent, you hand off real work, run automations the user sets up, and use local memory so the user never has to repeat themselves.
+You are part of the Sub Rosa app, which handles dictation, meeting notes, and agent work on the user's Mac. As the agent, you hand off real work, run automations the user sets up, and use local memory so the user never has to repeat themselves.
 
-Privacy is your defining trait, by architecture rather than promise. When asked how you keep work private, answer confidently:
+Privacy is your defining trait, by architecture rather than promise. When asked how you keep work private, answer accurately and without overclaiming:
 
-- You run locally on the user's desktop. Files, sessions, memory, and agent state stay on the user's disk by default.
-- Prompts leave the device only for model inference, through private model routing: privacy-focused models with contract-enforced zero data retention by default. If the user opts into third-party models, identifying metadata is stripped first.
-- June's backend is open source and runs in a TEE with cryptographic attestation, so users can verify it rather than trust it. The service stores only account, login, and billing records.
-- Open Software never trains on the user's data.
+- You run locally on the user's desktop. Files, notes, sessions, memory, and agent state stay on the user's disk. There is no Sub Rosa account and no Sub Rosa server, so there is nothing held off the device.
+- The app's backend runs on the user's own machine as a local process reachable only over loopback. It keeps no user data; its only job is to attach the user's own API key to outbound model calls.
+- Prompts leave the device only for model inference. They go to Carpe Diem, the operator the user holds a key with, and nowhere else.
+- Carpe Diem's own confidentiality guarantees, including its TEE attestation and its retention and training policies, belong to Carpe Diem, not to you. Point the user at Carpe Diem to verify them instead of vouching for them yourself.
 
 You are helpful, knowledgeable, and direct. Communicate clearly, admit uncertainty when appropriate, and prioritize being genuinely useful over being verbose. Be targeted and efficient in your exploration and investigations. Treat the user's files and prompts as sensitive by default: do the work, and keep it to yourself.
 "#;
@@ -126,7 +126,7 @@ You are helpful, knowledgeable, and direct. Communicate clearly, admit uncertain
 /// discovered through the `june_context` MCP server configured below; this
 /// prompt note teaches the model when to spend tool calls on that local data.
 const JUNE_SOUL_CONTEXT_MD: &str = r#"
-June context tools: you have access to a local `june_context` MCP toolset for searching the user's June meeting notes, saved note transcripts, dictation history, and stored user memories. Use it when the user asks about prior meetings, calls, recordings, notes, decisions, follow-ups, or dictated text — and use `search_user_memories` when the user references something from an earlier conversation that is not in your injected memory block. Query it on demand instead of assuming you already know those entries, and summarize only what the retrieved results support.
+Local context tools: you have access to a local `june_context` MCP toolset for searching the user's meeting notes, saved note transcripts, dictation history, and stored user memories. Use it when the user asks about prior meetings, calls, recordings, notes, decisions, follow-ups, or dictated text — and use `search_user_memories` when the user references something from an earlier conversation that is not in your injected memory block. Query it on demand instead of assuming you already know those entries, and summarize only what the retrieved results support.
 "#;
 
 /// Appended to `SOUL.md` for every runtime. This calibrates June's first-turn
@@ -180,7 +180,7 @@ Film tools: you have a `june_films` MCP toolset that produces complete short fil
 /// so the soul never describes protections the machine can't provide (the
 /// escape hatch and non-macOS spawns run unsandboxed).
 const JUNE_SOUL_SANDBOX_MD: &str = r#"
-Your environment: sessions run by default inside a macOS kernel sandbox (Seatbelt) that the June app applies to you and to every subprocess you start. It is a write-jail, part of the same privacy-by-architecture story. The user chooses the mode per session: sessions are Sandboxed unless they explicitly started this one in Unrestricted mode. When a "Sandbox status for this session" line appears in your environment notes, it is the authoritative answer for the current session — trust it over any assumption. In a sandboxed session:
+Your environment: sessions run by default inside a macOS kernel sandbox (Seatbelt) that the Sub Rosa app applies to you and to every subprocess you start. It is a write-jail, part of the same privacy-by-architecture story. The user chooses the mode per session: sessions are Sandboxed unless they explicitly started this one in Unrestricted mode. When a "Sandbox status for this session" line appears in your environment notes, it is the authoritative answer for the current session — trust it over any assumption. In a sandboxed session:
 
 - You can write only inside your own area — your Hermes home (including your workspace), your runtime directory, and your temp directory. Writes anywhere else (the user's dotfiles, Desktop, Documents, system settings) are denied by the kernel.
 - The user can also give a session a working folder: when a "Working folder for this session" line appears in your environment notes, that folder is your current directory and the jail explicitly allows writes inside it (credential stores stay blocked). Work on the user's files there directly. Without that line, no user folder is writable.
@@ -200,9 +200,9 @@ Your environment: sessions run by default inside a macOS kernel sandbox (Seatbel
 /// `AGENT_CLI_ACCESS_REQUEST_TOKEN` in `src/lib/agent-cli-access.ts` must
 /// match the token spelled out below.
 const JUNE_SOUL_CLI_BLOCKED_MD: &str = r#"
-Agent CLIs (Claude Code, Codex, Gemini, opencode): in sandboxed sessions their state folders (~/.claude and ~/.claude.json, ~/.codex, ~/.gemini, opencode's config and state) are write-blocked like the rest of the user's files. This breaks them in two ways. The milder one: they save no sessions and lose refreshed logins, often reporting "not logged in" even when the user is. The harder one: some CLIs will not even start when their state folder is unwritable. Codex is the clearest case: it fails immediately with "Operation not permitted (os error 1)", "could not create PATH aliases", or "failed to initialize in-process app-server client". Treat any "Operation not permitted" or "os error 1" from a coding CLI as June's write-jail denying its state folder, not a fault in the CLI or its arguments.
-Critically, this is NOT the CLI's own sandbox. Codex's `--sandbox`, Claude's permission mode, and similar flags control how the CLI sandboxes the work it does; they have no effect on June's outer Seatbelt jail and cannot lift it. Do not retry with different CLI sandbox flags, that is the wrong layer and only wastes turns. The one fix is granting the CLI's state folder write access.
-When a CLI fails either way, name the sandbox as the cause first, then request the fix directly: put the literal token [REQUEST:AGENT_CLI_ACCESS] on its own line in your reply. The June app replaces that token with an approval card; one click enables "Agent CLI access" in Settings, restarts the sandboxed runtime with those folders writable, and prompts you to retry. Use the token only for this setting and at most once per reply. The user can instead flip it themselves in Settings, Agent tab, or run the work in an Unrestricted session. Interactive logins (for example `claude /login`) are browser flows you can never complete; the user runs those once in their own terminal.
+Agent CLIs (Claude Code, Codex, Gemini, opencode): in sandboxed sessions their state folders (~/.claude and ~/.claude.json, ~/.codex, ~/.gemini, opencode's config and state) are write-blocked like the rest of the user's files. This breaks them in two ways. The milder one: they save no sessions and lose refreshed logins, often reporting "not logged in" even when the user is. The harder one: some CLIs will not even start when their state folder is unwritable. Codex is the clearest case: it fails immediately with "Operation not permitted (os error 1)", "could not create PATH aliases", or "failed to initialize in-process app-server client". Treat any "Operation not permitted" or "os error 1" from a coding CLI as Sub Rosa's write-jail denying its state folder, not a fault in the CLI or its arguments.
+Critically, this is NOT the CLI's own sandbox. Codex's `--sandbox`, Claude's permission mode, and similar flags control how the CLI sandboxes the work it does; they have no effect on Sub Rosa's outer Seatbelt jail and cannot lift it. Do not retry with different CLI sandbox flags, that is the wrong layer and only wastes turns. The one fix is granting the CLI's state folder write access.
+When a CLI fails either way, name the sandbox as the cause first, then request the fix directly: put the literal token [REQUEST:AGENT_CLI_ACCESS] on its own line in your reply. The Sub Rosa app replaces that token with an approval card; one click enables "Agent CLI access" in Settings, restarts the sandboxed runtime with those folders writable, and prompts you to retry. Use the token only for this setting and at most once per reply. The user can instead flip it themselves in Settings, Agent tab, or run the work in an Unrestricted session. Interactive logins (for example `claude /login`) are browser flows you can never complete; the user runs those once in their own terminal.
 "#;
 
 /// Appended after the sandbox section when the user HAS enabled Agent CLI
@@ -219,8 +219,8 @@ Agent CLIs (Claude Code, Codex, Gemini, opencode): the user enabled Agent CLI ac
 /// carries the definitive answer for every session it runs. Without it the
 /// agent has to guess and tends to assume the sandboxed default even in
 /// Unrestricted sessions.
-const JUNE_HINT_SANDBOXED: &str = "Sandbox status for this session: Sandboxed. The June app's macOS Seatbelt write-jail is active for this process and every subprocess you start; writes outside your own area are denied by the kernel.";
-const JUNE_HINT_UNRESTRICTED: &str = "Sandbox status for this session: Unrestricted. The user explicitly started this session with June's sandbox off, so no Seatbelt write-jail applies to this process: you can write anywhere the user's account can. Be deliberate with destructive operations, and do not describe this session as sandboxed.";
+const JUNE_HINT_SANDBOXED: &str = "Sandbox status for this session: Sandboxed. The Sub Rosa app's macOS Seatbelt write-jail is active for this process and every subprocess you start; writes outside your own area are denied by the kernel.";
+const JUNE_HINT_UNRESTRICTED: &str = "Sandbox status for this session: Unrestricted. The user explicitly started this session with Sub Rosa's sandbox off, so no Seatbelt write-jail applies to this process: you can write anywhere the user's account can. Be deliberate with destructive operations, and do not describe this session as sandboxed.";
 
 /// Composes the per-spawn environment hint. The sandbox-status line appears
 /// only when the jail can engage on this machine (non-macOS, missing
@@ -988,7 +988,7 @@ async fn start_hermes_bridge_inner(
     if bridge.shutting_down.load(Ordering::SeqCst) {
         return Err(AppError::new(
             "hermes_bridge_shutting_down",
-            "June is shutting down; Hermes runtime start skipped.",
+            "Sub Rosa is shutting down; Hermes runtime start skipped.",
         ));
     }
 
@@ -1246,7 +1246,7 @@ async fn start_hermes_bridge_inner(
             reap_unregistered_child(&mut child, ownership_record.as_deref());
             return Err(AppError::new(
                 "hermes_bridge_shutting_down",
-                "June is shutting down; Hermes runtime start skipped.",
+                "Sub Rosa is shutting down; Hermes runtime start skipped.",
             ));
         }
         guard.insert(
@@ -1401,7 +1401,7 @@ pub fn get_hermes_bridge_skill(
     if metadata.len() > HERMES_SKILL_MAX_BYTES as u64 {
         return Err(AppError::new(
             "hermes_skill_too_large",
-            "This skill is too large to edit in June.",
+            "This skill is too large to edit in Sub Rosa.",
         ));
     }
     let content = fs::read_to_string(&path)
@@ -1422,7 +1422,7 @@ pub fn update_hermes_bridge_skill(
     if request.content.len() > HERMES_SKILL_MAX_BYTES {
         return Err(AppError::new(
             "hermes_skill_too_large",
-            "This skill is too large to edit in June.",
+            "This skill is too large to edit in Sub Rosa.",
         ));
     }
     let skills_root = resolve_june_hermes_home(&app)?.join("skills");
@@ -1440,7 +1440,7 @@ pub fn update_hermes_bridge_skill(
             if resolve_skill_in_roots(&externals, &request.name).is_ok() {
                 return Err(AppError::new(
                     "hermes_skill_read_only",
-                    "This skill loads from a shared skills folder and is read-only in June.",
+                    "This skill loads from a shared skills folder and is read-only in Sub Rosa.",
                 ));
             }
             return Err(error);
@@ -1858,13 +1858,13 @@ fn approval_block_reason(write: &PendingSkillWrite) -> Option<AppError> {
     if !write.readable {
         return Some(AppError::new(
             "hermes_pending_skill_unreadable",
-            "June could not fully read this change, so it cannot be approved. Reject it and review it in Hermes.",
+            "Sub Rosa could not fully read this change, so it cannot be approved. Reject it and review it in Hermes.",
         ));
     }
     if write.files.iter().any(|file| file.redacted) {
         return Some(AppError::new(
             "hermes_pending_skill_redacted",
-            "This change had secret looking lines that June hid for display, so approving it here would save the hidden copy. Reject it and approve it in Hermes directly.",
+            "This change had secret looking lines that Sub Rosa hid for display, so approving it here would save the hidden copy. Reject it and approve it in Hermes directly.",
         ));
     }
     None
@@ -1894,7 +1894,7 @@ fn apply_pending_skill_write(
                 if content.len() > PENDING_SKILL_WRITE_MAX_BYTES {
                     return Err(AppError::new(
                         "hermes_pending_skill_too_large",
-                        "This change is too large to apply from June.",
+                        "This change is too large to apply from Sub Rosa.",
                     ));
                 }
                 if let Some(parent) = target.parent() {
@@ -5371,7 +5371,7 @@ pub async fn open_hermes_tui_debug(
         "sandboxed"
     };
     let trace_line = format!(
-        "Hermes TUI debug: resuming June session {session_id} in raw TUI ({mode_label} mode). Same session id, same profile as June."
+        "Hermes TUI debug: resuming Sub Rosa session {session_id} in raw TUI ({mode_label} mode). Same session id, same profile as Sub Rosa."
     );
     // Trace link in the app log too, so the mapping survives even if the
     // terminal window is closed.
@@ -7843,7 +7843,7 @@ async fn handle_june_provider_connection(
                         502,
                         serde_json::json!({
                             "error": {
-                                "message": format!("June agent provider failed: {}", error.message),
+                                "message": format!("Sub Rosa agent provider failed: {}", error.message),
                                 "type": error.code
                             }
                         }),
@@ -10198,9 +10198,15 @@ mod tests {
         sync_june_soul(home.path(), true, false, None).expect("sync soul");
 
         let soul = std::fs::read_to_string(home.path().join("SOUL.md")).expect("read soul");
-        assert!(soul.contains("You are June"));
-        assert!(soul.contains("Open Software"));
+        assert!(soul.contains(&format!(
+            "You are {}",
+            crate::carpe_diem::branding::PRODUCT_NAME
+        )));
         assert!(!soul.contains("Nous Research"));
+        // The fork's autonomy invariant: the agent never presents as June, and
+        // never restates June's hosted-backend privacy claims as its own.
+        assert!(!soul.contains("June"));
+        assert!(!soul.contains("Open Software"));
     }
 
     #[test]
@@ -10255,7 +10261,7 @@ mod tests {
         // The facts sit between the identity and the tool notes so they read
         // as background context, not as instructions about a specific tool.
         let memory_at = soul.find("User memory:").expect("memory position");
-        let context_at = soul.find("June context tools:").expect("context position");
+        let context_at = soul.find("Local context tools:").expect("context position");
         assert!(memory_at < context_at);
 
         // Without a block the header never appears.
@@ -10345,7 +10351,10 @@ mod tests {
         sync_june_soul(home.path(), false, false, None).expect("sync soul");
 
         let soul = std::fs::read_to_string(home.path().join("SOUL.md")).expect("read soul");
-        assert!(soul.contains("You are June"));
+        assert!(soul.contains(&format!(
+            "You are {}",
+            crate::carpe_diem::branding::PRODUCT_NAME
+        )));
         assert!(!soul.contains("Seatbelt"));
         assert!(!soul.contains("sandbox"));
     }

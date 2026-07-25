@@ -23,6 +23,7 @@
  * the same session always resumes under the same jail it ran under in June.
  */
 
+import { PRODUCT_NAME } from "./branding";
 import { type HermesMode, hermesModeFor, hermesModeFromUnrestricted } from "./hermes-control-plane";
 
 /** Which interactive shell to open. `tui` is the modern Hermes TUI; `repl` is
@@ -60,7 +61,7 @@ export function buildHermesTuiResumeArgs(input: BuildHermesTuiResumeArgsInput): 
  * resume the same id, so this line is the proof they are the same session.
  */
 export function hermesTuiDebugTraceLine(input: { sessionId: string; mode: HermesMode }): string {
-  return `Hermes TUI debug: resuming June session ${input.sessionId} in raw TUI (${input.mode} mode). Same session id, same profile as June.`;
+  return `Hermes TUI debug: resuming ${PRODUCT_NAME} session ${input.sessionId} in raw TUI (${input.mode} mode). Same session id, same profile as ${PRODUCT_NAME}.`;
 }
 
 export type ResolveHermesTuiDebugLaunchInput = {

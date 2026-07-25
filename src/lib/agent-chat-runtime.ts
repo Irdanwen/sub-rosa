@@ -1413,10 +1413,14 @@ function stripImageAnalysisFailureNotice(content: string): string {
   );
 }
 
+// The workspace name is matched loosely, not pinned to the current product
+// name: transcripts persisted before the rebrand say "June workspace", and
+// pinning either spelling would leave the other's scaffolding visible in the
+// user bubble.
 function stripAttachmentPromptBlock(content: string): string {
   return content
     .replace(
-      /\n+Attached files copied into the June workspace:\n[\s\S]*?\n+Use these file paths when inspecting or operating on the files\.\s*$/i,
+      /\n+Attached files copied into the .+ workspace:\n[\s\S]*?\n+Use these file paths when inspecting or operating on the files\.\s*$/i,
       "",
     )
     .trim();
