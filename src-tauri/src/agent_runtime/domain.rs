@@ -67,6 +67,7 @@ pub enum AgentItemPayload {
     AssistantMessage(MessagePayload),
     SystemMessage(MessagePayload),
     Reasoning(TextPayload),
+    Steering(TextPayload),
     ContextSummary(TextPayload),
     ToolCall(ToolPayload),
     ToolResult(ToolPayload),
@@ -81,6 +82,7 @@ impl AgentItemPayload {
             Self::AssistantMessage(_) => "assistant_message",
             Self::SystemMessage(_) => "system_message",
             Self::Reasoning(_) => "reasoning",
+            Self::Steering(_) => "steering",
             Self::ContextSummary(_) => "context_summary",
             Self::ToolCall(_) => "tool_call",
             Self::ToolResult(_) => "tool_result",
@@ -94,7 +96,9 @@ impl AgentItemPayload {
             Self::UserMessage(value)
             | Self::AssistantMessage(value)
             | Self::SystemMessage(value) => serde_json::to_value(value),
-            Self::Reasoning(value) | Self::ContextSummary(value) => serde_json::to_value(value),
+            Self::Reasoning(value) | Self::Steering(value) | Self::ContextSummary(value) => {
+                serde_json::to_value(value)
+            }
             Self::ToolCall(value) | Self::ToolResult(value) => serde_json::to_value(value),
             Self::Interruption(value) | Self::Error(value) => Ok(value.clone()),
         }

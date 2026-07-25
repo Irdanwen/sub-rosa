@@ -173,6 +173,31 @@ describe("agent runtime adapter", () => {
     });
   });
 
+  it("renders a consumed live instruction as a durable steering notice", () => {
+    const event: AgentRuntimeEvent = {
+      ...frame,
+      eventId: "event-steering",
+      sequence: 2,
+      method: "steering.consumed",
+      data: {
+        itemId: "steering-1",
+        messageId: "message-1",
+        text: "Use the launch plan",
+        createdAt: "2026-07-22T12:00:01Z",
+      },
+    };
+
+    const projection = applyAgentRuntimeEvent(createAgentRuntimeProjection(), event);
+
+    expect(projection.items).toMatchObject([{ kind: "steering", text: "Use the launch plan" }]);
+    expect(agentItemsToChatTurns(projection.items)).toMatchObject([
+      {
+        role: "system",
+        parts: [{ type: "steering", text: "Steering: Use the launch plan" }],
+      },
+    ]);
+  });
+
   it("maps approval, clarification, and secret interruptions to action cards", () => {
     const approval: AgentRuntimeEvent = {
       ...frame,

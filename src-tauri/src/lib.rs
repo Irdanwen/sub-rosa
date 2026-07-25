@@ -181,6 +181,7 @@ pub fn run() {
             agent_runtime::api::delete_agent_session,
             agent_runtime::api::list_agent_items,
             agent_runtime::api::start_agent_run,
+            agent_runtime::api::steer_agent_run,
             agent_runtime::api::cancel_agent_run,
             agent_runtime::api::retry_agent_run,
             agent_runtime::api::resolve_agent_interruption,

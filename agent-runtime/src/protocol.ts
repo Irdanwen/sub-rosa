@@ -5,6 +5,7 @@ export const PROTOCOL_VERSION = 1 as const;
 export const HOST_REQUEST_METHODS = [
   "runtime.initialize",
   "run.start",
+  "run.steer",
   "run.cancel",
   "run.resume",
   "history.compact",
@@ -18,6 +19,7 @@ export const RUNTIME_EVENT_METHODS = [
   "message.delta",
   "message.completed",
   "reasoning.delta",
+  "steering.consumed",
   "tool.started",
   "tool.completed",
   "tool.failed",

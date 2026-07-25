@@ -79,6 +79,11 @@ export type AgentContextSummaryItemDto = AgentItemBase & {
   text: string;
 };
 
+export type AgentSteeringItemDto = AgentItemBase & {
+  kind: "steering";
+  text: string;
+};
+
 export type AgentToolCallItemDto = AgentItemBase & {
   kind: "tool_call";
   callId: string;
@@ -109,6 +114,7 @@ export type AgentErrorItemDto = AgentItemBase & {
 export type AgentItemDto =
   | AgentMessageItemDto
   | AgentReasoningItemDto
+  | AgentSteeringItemDto
   | AgentContextSummaryItemDto
   | AgentToolCallItemDto
   | AgentToolResultItemDto
@@ -215,6 +221,11 @@ export type AgentRuntimeEvent = RuntimeFrameBase &
       }
     | {
         eventId: string;
+        method: "steering.consumed";
+        data: { itemId: string; messageId: string; text: string; createdAt: string };
+      }
+    | {
+        eventId: string;
         method: "tool.started";
         data: {
           itemId: string;
@@ -290,6 +301,7 @@ export type AgentRuntimeBindings = {
   deleteSession(sessionId: string): Promise<void>;
   listItems(sessionId: string): Promise<AgentItemDto[]>;
   startRun(input: StartAgentRunRequest): Promise<AgentRunDto>;
+  steerRun(runId: string, messageId: string, text: string): Promise<{ accepted: boolean }>;
   cancelRun(runId: string): Promise<void>;
   retryRun(runId: string): Promise<AgentRunDto>;
   resolveInterruption(input: ResolveAgentInterruptionRequest): Promise<AgentRunDto>;

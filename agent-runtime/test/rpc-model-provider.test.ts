@@ -77,6 +77,28 @@ test("emits each polled model chunk before the stream completes", async () => {
   assert.ok(events.some((event) => event.type === "response_done"));
 });
 
+test("injects queued steering at the next model boundary and acknowledges consumption", async () => {
+  const requests: JsonObject[] = [];
+  const consumed: string[] = [];
+  const steering = [{ messageId: "steer-1", text: "Prefer the launch plan" }];
+  const provider = new RpcChatCompletionsModelProvider(
+    async (input) => {
+      if ("request" in input.arguments) requests.push(input.arguments.request);
+      return { streamId: "stream-steer", chunks: [finalChunk], done: true };
+    },
+    {
+      takeSteering: () => steering.splice(0),
+      onSteeringConsumed: (message) => consumed.push(message.messageId),
+    },
+  );
+  for await (const _event of provider.getModel("private-auto").getStreamedResponse(modelRequest())) {
+    // Drain the model response.
+  }
+  const messages = requests[0]?.messages as Array<{ role: string; content: string }>;
+  assert.deepEqual(messages.at(-1), { role: "user", content: "Prefer the launch plan" });
+  assert.deepEqual(consumed, ["steer-1"]);
+});
+
 test("preserves function tool calls when synthesizing a stream", async () => {
   const provider = new RpcChatCompletionsModelProvider(async () => ({
     streamId: "stream-tools",

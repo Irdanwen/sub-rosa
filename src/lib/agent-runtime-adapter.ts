@@ -85,6 +85,17 @@ export function applyAgentRuntimeEvent(
     case "reasoning.delta":
       next.items = appendTextDelta(next.items, event, "reasoning");
       break;
+    case "steering.consumed":
+      next.items = upsertItem(next.items, {
+        id: event.data.itemId,
+        sessionId: event.sessionId,
+        runId: event.runId,
+        sequence: event.sequence,
+        createdAt: event.data.createdAt,
+        kind: "steering",
+        text: event.data.text,
+      });
+      break;
     case "tool.started":
       next.items = upsertItem(next.items, {
         id: event.data.itemId,
@@ -222,6 +233,12 @@ export function agentItemsToChatTurns(items: AgentItemDto[]): AgentChatTurn[] {
             ...base,
             role: "assistant",
             parts: [{ type: "reasoning", text: item.text, status: base.status }],
+          };
+        case "steering":
+          return {
+            ...base,
+            role: "system",
+            parts: [{ type: "steering", text: `Steering: ${item.text}` }],
           };
         case "context_summary":
           return {

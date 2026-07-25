@@ -581,6 +581,35 @@ pub async fn cancel_agent_run(
 }
 
 #[tauri::command]
+pub async fn steer_agent_run(
+    host: State<'_, AgentRuntimeHost>,
+    app: AppHandle,
+    run_id: String,
+    message_id: String,
+    text: String,
+) -> Result<Value, AppError> {
+    let text = text.trim();
+    if text.is_empty() || message_id.trim().is_empty() {
+        return Err(AppError::new(
+            "agent_steer_invalid",
+            "A live instruction is required.",
+        ));
+    }
+    let repository = repository(&app).await?;
+    let run = repository.get_run(&run_id).await?;
+    if run.status != "running" && run.status != "queued" {
+        return Ok(json!({ "accepted": false, "reason": "not_active" }));
+    }
+    host.request(
+        "run.steer",
+        &run.session_id,
+        &run.id,
+        json!({ "messageId": message_id, "text": text }),
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn retry_agent_run(
     app: AppHandle,
     host: State<'_, AgentRuntimeHost>,
@@ -1311,6 +1340,9 @@ fn history_item(item: AgentItemDto) -> Option<Value> {
         AgentItemPayload::ContextSummary(text) => Some(
             json!({ "id": item.id, "kind": "context_summary", "role": "system", "text": text.text }),
         ),
+        AgentItemPayload::Steering(text) => {
+            Some(json!({ "id": item.id, "kind": "message", "role": "user", "text": text.text }))
+        }
         AgentItemPayload::ToolCall(tool) => {
             let name = tool.tool_name?;
             let call_id = tool.tool_call_id?;
@@ -1392,6 +1424,7 @@ fn item_json(item: AgentItemDto) -> Result<Value, AppError> {
         AgentItemPayload::Reasoning(v) => {
             json!({ "kind": "reasoning", "text": v.text, "status": "complete" })
         }
+        AgentItemPayload::Steering(v) => json!({ "kind": "steering", "text": v.text }),
         AgentItemPayload::ContextSummary(v) => json!({ "kind": "context_summary", "text": v.text }),
         AgentItemPayload::ToolCall(v) => {
             json!({ "kind": "tool_call", "callId": v.tool_call_id.unwrap_or_default(), "name": v.tool_name.unwrap_or_default(), "arguments": v.arguments, "status": v.status.unwrap_or_else(|| "complete".into()) })
@@ -1703,5 +1736,29 @@ mod tests {
             tool_result["payload"]["output"],
             r#"{"files":["brief.md"]}"#
         );
+    }
+
+    #[test]
+    fn consumed_steering_is_visible_and_replayed_as_user_context() {
+        let item = AgentItemDto {
+            id: "steering-1".into(),
+            session_id: "session-1".into(),
+            run_id: Some("run-1".into()),
+            sequence: 3,
+            payload: AgentItemPayload::Steering(super::super::TextPayload {
+                text: "Use the launch plan".into(),
+            }),
+            external_id: Some("steering-event-1".into()),
+            created_at: "2026-07-24T12:00:02Z".into(),
+        };
+
+        let history = history_item(item.clone()).expect("runtime history");
+        let value = item_json(item).expect("public item");
+
+        assert_eq!(history["kind"], "message");
+        assert_eq!(history["role"], "user");
+        assert_eq!(history["text"], "Use the launch plan");
+        assert_eq!(value["kind"], "steering");
+        assert_eq!(value["text"], "Use the launch plan");
     }
 }

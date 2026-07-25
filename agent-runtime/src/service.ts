@@ -14,7 +14,11 @@ import type {
   RuntimeUsage,
 } from "./types.js";
 
-type ActiveRun = { controller: AbortController };
+type ActiveRun = {
+  controller: AbortController;
+  steering: { messageId: string; text: string }[];
+  steeringIds: Set<string>;
+};
 
 export class RuntimeService {
   readonly engine: AgentEngine;
@@ -47,6 +51,9 @@ export class RuntimeService {
       case "run.resume":
         this.requireInitialized();
         return this.resume(request.sessionId, request.runId, request.params);
+      case "run.steer":
+        this.requireInitialized();
+        return this.steer(request.sessionId, request.runId, request.params);
       case "run.cancel":
         this.requireInitialized();
         return this.cancel(request.sessionId, request.runId);
@@ -84,7 +91,8 @@ export class RuntimeService {
       ...(parsed.maxOutputTokens === undefined ? {} : { maxOutputTokens: parsed.maxOutputTokens }),
     });
     const controller = new AbortController();
-    this.activeRuns.set(runKey(sessionId, runId), { controller });
+    const active: ActiveRun = { controller, steering: [], steeringIds: new Set() };
+    this.activeRuns.set(runKey(sessionId, runId), active);
     this.emit("run.started", {
       model: parsed.model,
       compacted: compaction.compacted,
@@ -104,6 +112,7 @@ export class RuntimeService {
         params: runParams,
         signal: controller.signal,
         emit: (event) => this.forwardEngineEvent(event, sessionId, runId),
+        takeSteering: () => active.steering.splice(0),
       }),
     );
     return { accepted: true, compacted: compaction.compacted };
@@ -116,7 +125,8 @@ export class RuntimeService {
       throw new ProtocolError(-32602, "run.resume requires serializedState and resolutions");
     }
     const controller = new AbortController();
-    this.activeRuns.set(runKey(sessionId, runId), { controller });
+    const active: ActiveRun = { controller, steering: [], steeringIds: new Set() };
+    this.activeRuns.set(runKey(sessionId, runId), active);
     this.emit("run.started", { resumed: true, model: parsed.model }, sessionId, runId);
     void this.settle(
       sessionId,
@@ -127,8 +137,25 @@ export class RuntimeService {
         params: parsed,
         signal: controller.signal,
         emit: (event) => this.forwardEngineEvent(event, sessionId, runId),
+        takeSteering: () => active.steering.splice(0),
       }),
     );
+    return { accepted: true };
+  }
+
+  private steer(sessionId: string, runId: string, params: JsonObject): JsonValue {
+    const active = this.activeRuns.get(runKey(sessionId, runId));
+    if (!active) return { accepted: false, reason: "not_active" };
+    const text = typeof params.text === "string" ? params.text.trim() : "";
+    const messageId = typeof params.messageId === "string" ? params.messageId.trim() : "";
+    if (!text || !messageId) {
+      throw new ProtocolError(-32602, "run.steer requires text and messageId");
+    }
+    if (active.steeringIds.has(messageId)) {
+      return { accepted: true, duplicate: true };
+    }
+    active.steeringIds.add(messageId);
+    active.steering.push({ messageId, text });
     return { accepted: true };
   }
 

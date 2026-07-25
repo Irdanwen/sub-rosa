@@ -57,7 +57,12 @@ export class OpenAIAgentsEngine implements AgentEngine {
       ...(await historyToSdkInput(input.params.history)),
       await userMessage(input.params.input, input.params.attachments ?? []),
     ];
-    const stream = (await this.createRunner(input.sessionId, input.runId).run(agent, sdkInput as never, {
+    const stream = (await this.createRunner(
+      input.sessionId,
+      input.runId,
+      input.takeSteering,
+      input.emit,
+    ).run(agent, sdkInput as never, {
       stream: true,
       signal: input.signal,
       maxTurns: 40,
@@ -83,7 +88,12 @@ export class OpenAIAgentsEngine implements AgentEngine {
         state.reject(interruption, message ? { message } : undefined);
       }
     }
-    const stream = (await this.createRunner(input.sessionId, input.runId).run(agent, state, {
+    const stream = (await this.createRunner(
+      input.sessionId,
+      input.runId,
+      input.takeSteering,
+      input.emit,
+    ).run(agent, state, {
       stream: true,
       signal: input.signal,
       maxTurns: 40,
@@ -197,17 +207,28 @@ export class OpenAIAgentsEngine implements AgentEngine {
     }
   }
 
-  private createRunner(sessionId: string, runId: string): Runner {
+  private createRunner(
+    sessionId: string,
+    runId: string,
+    takeSteering: EngineRunInput["takeSteering"],
+    emit: (event: EngineEvent) => void,
+  ): Runner {
     if (!this.initialized) throw new Error("OpenAI Agents engine is not initialized");
-    const modelProvider = new RpcChatCompletionsModelProvider(async (request) =>
-      this.invokeHostTool({
-        sessionId,
-        runId,
-        name: request.name,
-        arguments: request.arguments,
-        callId: request.callId,
-        ...(request.signal === undefined ? {} : { signal: request.signal }),
-      }),
+    const modelProvider = new RpcChatCompletionsModelProvider(
+      async (request) =>
+        this.invokeHostTool({
+          sessionId,
+          runId,
+          name: request.name,
+          arguments: request.arguments,
+          callId: request.callId,
+          ...(request.signal === undefined ? {} : { signal: request.signal }),
+        }),
+      {
+        takeSteering,
+        onSteeringConsumed: (message) =>
+          emit({ type: "steering.consumed", messageId: message.messageId, text: message.text }),
+      },
     );
     return new Runner({
       modelProvider,

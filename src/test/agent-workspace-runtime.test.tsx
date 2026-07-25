@@ -174,6 +174,90 @@ describe("AgentWorkspace runtime wiring", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Model: Fast" })).toBeEnabled());
   });
 
+  it("steers an active run at the next model boundary and retires the fallback queue", async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkspace initialSession={session} />);
+    await screen.findByText("Earlier answer");
+
+    const composer = screen.getByRole("textbox", { name: "Message June" });
+    await user.type(composer, "Start the analysis");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Stop June" })).toBeVisible());
+
+    const activeComposer = screen.getByRole("textbox", { name: "Message June" });
+    activeComposer.textContent = "Use the launch plan";
+    fireEvent.input(activeComposer);
+    await user.click(await screen.findByRole("button", { name: "Queue follow-up" }));
+
+    const steerCall = mocks.invoke.mock.calls.find(([command]) => command === "steer_agent_run");
+    expect(steerCall?.[1]).toMatchObject({
+      runId: "run-1",
+      text: "Use the launch plan",
+      messageId: expect.any(String),
+    });
+    expect(screen.getByText("Queued follow-up")).toBeVisible();
+
+    act(() => {
+      mocks.runtimeListener?.({
+        payload: {
+          protocolVersion: 1,
+          eventId: "event-steering",
+          sessionId: session.id,
+          runId: "run-1",
+          sequence: 3,
+          method: "steering.consumed",
+          data: {
+            itemId: "steering-1",
+            messageId: String((steerCall?.[1] as { messageId?: string })?.messageId),
+            text: "Use the launch plan",
+            createdAt: "2026-07-22T12:01:00Z",
+          },
+        },
+      });
+    });
+
+    expect(await screen.findByText("Steering: Use the launch plan")).toBeVisible();
+    expect(screen.queryByText("Queued follow-up")).not.toBeInTheDocument();
+  });
+
+  it("submits an unconsumed live instruction as the next run after settlement", async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkspace initialSession={session} />);
+    await screen.findByText("Earlier answer");
+
+    let composer = screen.getByRole("textbox", { name: "Message June" });
+    await user.type(composer, "Start the analysis");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Stop June" })).toBeVisible());
+
+    composer = screen.getByRole("textbox", { name: "Message June" });
+    composer.textContent = "Send this next";
+    fireEvent.input(composer);
+    await user.click(await screen.findByRole("button", { name: "Queue follow-up" }));
+
+    act(() => {
+      mocks.runtimeListener?.({
+        payload: {
+          protocolVersion: 1,
+          eventId: "event-completed",
+          sessionId: session.id,
+          runId: "run-1",
+          sequence: 3,
+          method: "run.completed",
+          data: { completedAt: "2026-07-22T12:01:00Z" },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      const starts = mocks.invoke.mock.calls.filter(([command]) => command === "start_agent_run");
+      expect(starts).toHaveLength(2);
+      expect(starts[1]?.[1]).toMatchObject({
+        request: expect.objectContaining({ prompt: "Send this next" }),
+      });
+    });
+  });
+
   it("resolves clarification interruptions through the typed host command", async () => {
     render(<AgentWorkspace initialSession={session} />);
     await screen.findByText("Earlier answer");

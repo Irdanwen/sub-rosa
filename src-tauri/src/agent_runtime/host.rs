@@ -484,6 +484,21 @@ async fn persist_and_emit_event(
                     .into(),
             }))
         }
+        "steering.consumed" => {
+            let message_id = params
+                .get("messageId")
+                .and_then(Value::as_str)
+                .unwrap_or(&event_id);
+            data["itemId"] = json!(format!("steering:{message_id}"));
+            data["createdAt"] = json!(created_at);
+            Some(AgentItemPayload::Steering(TextPayload {
+                text: params
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .into(),
+            }))
+        }
         "tool.started" => {
             data["itemId"] = json!(format!("tool-call:{event_id}"));
             data["createdAt"] = json!(created_at);

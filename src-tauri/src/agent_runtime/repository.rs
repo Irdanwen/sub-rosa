@@ -493,6 +493,9 @@ fn item_from_row(row: SqliteRow) -> Result<AgentItemDto, sqlx::Error> {
         "reasoning" => {
             AgentItemPayload::Reasoning(serde_json::from_value(value).map_err(decode_error)?)
         }
+        "steering" => {
+            AgentItemPayload::Steering(serde_json::from_value(value).map_err(decode_error)?)
+        }
         "context_summary" => {
             AgentItemPayload::ContextSummary(serde_json::from_value(value).map_err(decode_error)?)
         }

@@ -57,11 +57,14 @@ product boundary and are reimplemented against the June-owned runtime.
   single-executable service for each desktop target.
 - The stdio protocol and persisted item schema become load-bearing June-owned
   contracts. Both are versioned and covered by fixture tests.
-- The first cutover deliberately removes routines, messaging channels,
-  background delegation, branching, steering, manual compaction, usage UI, and
-  raw runtime debugging. Browser use, Computer use, private connectors, project
-  memory, profiles, attachments, and generated media remain June capabilities
-  and continue through Rust-owned tools.
+- The cutover restores June-owned routines, branching, live steering, manual
+  compaction, and run usage. A live instruction is injected at the next model
+  boundary and persisted as visible history; if the active run settles before
+  consuming it, June submits it as the next turn instead. Messaging channels,
+  background delegation, and raw Hermes runtime debugging remain intentionally
+  retired. Browser use, Computer use, private connectors, project memory,
+  profiles, attachments, and generated media remain June capabilities and
+  continue through Rust-owned tools.
 - Performance is an acceptance criterion rather than an assumption. The PR
   records before-and-after installer size, runtime-ready latency, idle memory,
   send acknowledgement, first visible stream event, cancellation latency, and

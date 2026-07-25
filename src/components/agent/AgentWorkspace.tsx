@@ -205,6 +205,7 @@ export function AgentWorkspace({
   const [draft, setDraft] = useState(pendingRequestRef.current?.prompt ?? "");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [queuedFollowUp, setQueuedFollowUp] = useState<{
+    messageId: string;
     prompt: string;
     attachments: string[];
   }>();
@@ -342,6 +343,11 @@ export function AgentWorkspace({
         return;
       }
       setProjection((current) => applyAgentRuntimeEvent(current, payload));
+      if (payload.method === "steering.consumed") {
+        setQueuedFollowUp((current) =>
+          current?.messageId === payload.data.messageId ? undefined : current,
+        );
+      }
       dispatchAgentSessionStatus({
         sessionId: payload.sessionId,
         status:
@@ -386,8 +392,7 @@ export function AgentWorkspace({
     setQueuedFollowUp(undefined);
     setDraft(queued.prompt);
     setAttachments(queued.attachments);
-    const frame = requestAnimationFrame(() => composerRef.current?.requestSubmit());
-    return () => cancelAnimationFrame(frame);
+    requestAnimationFrame(() => composerRef.current?.requestSubmit());
   }, [queuedFollowUp, running, submitting, waiting]);
 
   useLayoutEffect(() => {
@@ -437,9 +442,15 @@ export function AgentWorkspace({
     const prompt = draft.trim();
     if (!prompt || waiting || submitting || creditActionsDisabledReason) return;
     if (running) {
-      setQueuedFollowUp({ prompt, attachments });
+      const messageId = crypto.randomUUID();
+      setQueuedFollowUp({ messageId, prompt, attachments });
       setDraft("");
       setAttachments([]);
+      if (attachments.length === 0 && projection.run) {
+        void agentRuntimeBindings
+          .steerRun(projection.run.id, messageId, prompt)
+          .catch(() => undefined);
+      }
       return;
     }
     setSubmitting(true);
@@ -512,6 +523,7 @@ export function AgentWorkspace({
       projectContextSignaturesBySessionId.set(activeSession.id, preparedPrompt.contextSignature);
       rememberSessionThinkingLevel(activeSession.id, thinkingLevel);
       setProjection((current) => ({ ...current, run }));
+      setSubmitting(false);
       dispatchAgentSessionStatus({
         sessionId: activeSession.id,
         title: activeSession.title,

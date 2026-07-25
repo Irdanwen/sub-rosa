@@ -141,6 +141,7 @@ export const REQUEST_SECRET_TOOL: RuntimeToolDescriptor = {
 export type EngineEvent =
   | { type: "message.delta"; delta: string }
   | { type: "reasoning.delta"; delta: string }
+  | { type: "steering.consumed"; messageId: string; text: string }
   | { type: "tool.started"; callId: string; name: string; arguments: JsonValue }
   | { type: "tool.completed"; callId: string; name: string; output: JsonValue }
   | { type: "tool.failed"; callId: string; name: string; error: string };
@@ -151,6 +152,7 @@ export type EngineRunInput = {
   params: RunStartParams;
   signal: AbortSignal;
   emit: (event: EngineEvent) => void;
+  takeSteering: () => SteeringMessage[];
 };
 
 export type EngineResumeInput = {
@@ -159,6 +161,12 @@ export type EngineResumeInput = {
   params: RunResumeParams;
   signal: AbortSignal;
   emit: (event: EngineEvent) => void;
+  takeSteering: () => SteeringMessage[];
+};
+
+export type SteeringMessage = {
+  messageId: string;
+  text: string;
 };
 
 export type EngineResult = {

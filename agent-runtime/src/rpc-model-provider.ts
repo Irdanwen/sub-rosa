@@ -4,6 +4,7 @@ import {
   type ModelProvider,
 } from "@openai/agents";
 import type { JsonObject, JsonValue } from "./types.js";
+import type { SteeringMessage } from "./types.js";
 
 export const MODEL_CHAT_COMPLETIONS_TOOL = "__june_model_chat_completions";
 
@@ -16,9 +17,19 @@ export type ModelRpcInvoker = (input: {
 
 export class RpcChatCompletionsModelProvider implements ModelProvider {
   readonly invoke: ModelRpcInvoker;
+  readonly takeSteering: (() => SteeringMessage[]) | undefined;
+  readonly onSteeringConsumed: ((message: SteeringMessage) => void) | undefined;
 
-  constructor(invoke: ModelRpcInvoker) {
+  constructor(
+    invoke: ModelRpcInvoker,
+    steering?: {
+      takeSteering: () => SteeringMessage[];
+      onSteeringConsumed: (message: SteeringMessage) => void;
+    },
+  ) {
     this.invoke = invoke;
+    this.takeSteering = steering?.takeSteering;
+    this.onSteeringConsumed = steering?.onSteeringConsumed;
   }
 
   getModel(modelName?: string): Model {
@@ -49,6 +60,15 @@ export class RpcChatCompletionsModelProvider implements ModelProvider {
   }
 
   private async *streamChunks(request: JsonObject, signal?: AbortSignal): AsyncIterable<JsonObject> {
+    const steering = this.takeSteering?.() ?? [];
+    if (steering.length > 0) {
+      const messages = Array.isArray(request.messages) ? request.messages : [];
+      request.messages = [
+        ...messages,
+        ...steering.map((message) => ({ role: "user", content: message.text })),
+      ];
+      for (const message of steering) this.onSteeringConsumed?.(message);
+    }
     let page = requireStreamPage(
       await this.invoke({
         name: MODEL_CHAT_COMPLETIONS_TOOL,

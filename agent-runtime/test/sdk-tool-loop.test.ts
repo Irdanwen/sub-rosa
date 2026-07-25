@@ -67,6 +67,7 @@ test("continues model inference after a host tool result", async () => {
     runId: "run-1",
     signal: new AbortController().signal,
     emit: (event) => events.push(event),
+    takeSteering: () => [],
     params: {
       model: "private-auto",
       reasoningEffort: "high",
@@ -139,6 +140,7 @@ test("replays a persisted tool group into the next model turn", async () => {
     runId: "run-2",
     signal: new AbortController().signal,
     emit: () => {},
+    takeSteering: () => [],
     params: {
       model: "private-auto",
       instructions: "Answer from the complete conversation history.",
@@ -240,6 +242,7 @@ test("sends current and persisted image attachments as vision input", async () =
     runId: "run-vision",
     signal: new AbortController().signal,
     emit: () => {},
+    takeSteering: () => [],
     params: {
       model: "private-auto",
       instructions: "Inspect the attached images.",
@@ -324,6 +327,7 @@ test("serializes an approval interruption after assistant history", async () => 
     runId: "run-approval",
     signal: new AbortController().signal,
     emit: () => {},
+    takeSteering: () => [],
     params: {
       model: "private-auto",
       instructions: "Use the requested file tool.",
@@ -457,6 +461,7 @@ test("resumes a serialized approval and continues after the host tool result", a
     runId: "run-resume",
     signal: new AbortController().signal,
     emit: () => {},
+    takeSteering: () => [],
     params: {
       ...commonParams,
       input: "Create the file.",
@@ -471,6 +476,7 @@ test("resumes a serialized approval and continues after the host tool result", a
     runId: "run-resume",
     signal: new AbortController().signal,
     emit: () => {},
+    takeSteering: () => [],
     params: {
       ...commonParams,
       serializedState: paused.serializedState,

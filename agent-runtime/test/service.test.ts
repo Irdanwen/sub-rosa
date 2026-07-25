@@ -94,6 +94,37 @@ test("cancels an active run with its abort signal", async () => {
   assert.ok(frames().some((frame) => frame.method === "run.cancelled"));
 });
 
+test("queues a live steer for the active model boundary and rejects it after settlement", async () => {
+  const engine = new SteeringEngine();
+  const { service } = harness(engine);
+  await initialize(service);
+  await service.handle(request("run.start", runParams));
+  assert.deepEqual(
+    await service.handle(
+      request("run.steer", { messageId: "steer-1", text: "Use the launch plan instead" }),
+    ),
+    { accepted: true },
+  );
+  assert.deepEqual(engine.take(), [
+    { messageId: "steer-1", text: "Use the launch plan instead" },
+  ]);
+  assert.deepEqual(
+    await service.handle(
+      request("run.steer", { messageId: "steer-1", text: "Use the launch plan instead" }),
+    ),
+    { accepted: true, duplicate: true },
+  );
+  assert.deepEqual(engine.take(), []);
+  engine.finish();
+  await nextTurn();
+  assert.deepEqual(
+    await service.handle(
+      request("run.steer", { messageId: "steer-2", text: "Too late" }),
+    ),
+    { accepted: false, reason: "not_active" },
+  );
+});
+
 test("dispatches durable approval resolutions through run.resume", async () => {
   const engine = new ResumeRecordingEngine();
   const { service, frames } = harness(engine);
@@ -227,6 +258,26 @@ class WaitingEngine extends FakeEngine {
   }
 }
 
+class SteeringEngine extends FakeEngine {
+  private input?: EngineRunInput;
+  private resolve?: (value: EngineResult) => void;
+
+  override async start(input: EngineRunInput): Promise<EngineResult> {
+    this.input = input;
+    return new Promise((resolve) => {
+      this.resolve = resolve;
+    });
+  }
+
+  take() {
+    return this.input?.takeSteering() ?? [];
+  }
+
+  finish() {
+    this.resolve?.(this.result);
+  }
+}
+
 class ResumeRecordingEngine extends FakeEngine {
   serializedState = "";
   resolutions: unknown[] = [];
@@ -267,7 +318,10 @@ async function initialize(service: RuntimeService): Promise<void> {
   );
 }
 
-function request(method: "runtime.initialize" | "run.start" | "run.cancel" | "run.resume", params: JsonObject) {
+function request(
+  method: "runtime.initialize" | "run.start" | "run.steer" | "run.cancel" | "run.resume",
+  params: JsonObject,
+) {
   return {
     jsonrpc: "2.0" as const,
     protocolVersion: 1 as const,
