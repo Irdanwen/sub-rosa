@@ -1,12 +1,19 @@
 name: build-june-api
 
+# FORK (Sub Rosa): manual only — the automatic push trigger is deliberately
+# removed. This is upstream June's SERVER pipeline: it builds a june-api Docker
+# image, pushes it to GHCR, and deploys it to a Phala CVM. Sub Rosa has no
+# hosted june-api (an explicit non-goal): the desktop spawns june-api as a local
+# sidecar on loopback, and iOS runs it in-process via june-embed. Nothing pulls
+# the image and no Phala CVM exists to deploy to.
+#
+# It also could not work here even if we wanted it: the image name is
+# `ghcr.io/${{ github.repository_owner }}/june-api`, and this fork's owner is
+# `Irdanwen` — GHCR rejects uppercase repository names, so the push has failed
+# on every run since the fork was created. Keeping `workflow_dispatch` leaves
+# the file intact for upstream re-merges and runnable if this fork ever hosts
+# june-api; that day, lowercase the owner first.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "june-api/**"
-      - ".github/actions/phala-deploy/**"
-      - ".github/workflows/build-june-api.yml"
   workflow_dispatch:
 
 permissions:

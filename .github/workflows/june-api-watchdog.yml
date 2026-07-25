@@ -15,11 +15,17 @@ name: june-api-watchdog
 # `june-api-watchdog`; recovery closes it. The job itself also fails so
 # the run shows red in the Actions list.
 
+# FORK (Sub Rosa): manual only — the 30-minute schedule is deliberately
+# removed. This watchdog probes `https://june-api.opensoftware.co/healthz`,
+# which is upstream JUNE's production server, not ours: Sub Rosa runs june-api
+# as a local sidecar and hosts nothing. So on this fork it woke up 48 times a
+# day to monitor somebody else's infrastructure — and, worse, it opens an issue
+# on THIS repo when that probe fails, which would have filed outage reports for
+# an outage that is not ours to act on.
+#
+# Kept dispatchable so the file stays intact for upstream re-merges. If this
+# fork ever hosts june-api, point PROD_BASE_URL at it and restore the cron.
 on:
-  schedule:
-    # Every 30 minutes. The watchdog is read-only and cheap; the issue
-    # dedup below keeps repeated failures from spamming.
-    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 permissions:
