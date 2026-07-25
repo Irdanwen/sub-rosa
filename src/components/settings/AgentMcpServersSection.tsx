@@ -13,6 +13,7 @@ import {
   type AgentMcpServerDto,
   type AgentMcpTransport,
 } from "../../lib/agent-mcp";
+import { messageFromError } from "../../lib/errors";
 import { Dialog } from "../ui/Dialog";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { InlineNotice } from "../ui/InlineNotice";
@@ -48,10 +49,6 @@ const EMPTY_DRAFT: Draft = {
   allowSandboxed: true,
 };
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function parseSecretMap(raw: string, label: string): Record<string, string> {
   if (!raw.trim()) return {};
   const value: unknown = JSON.parse(raw);
@@ -84,7 +81,7 @@ export function AgentMcpServersSection() {
     try {
       setServers(await listAgentMcpServers());
     } catch (loadError) {
-      setError(errorMessage(loadError));
+      setError(messageFromError(loadError));
     } finally {
       setLoading(false);
     }
@@ -104,7 +101,7 @@ export function AgentMcpServersSection() {
       });
       setServers((current) => current.map((item) => (item.id === server.id ? updated : item)));
     } catch (updateError) {
-      setError(errorMessage(updateError));
+      setError(messageFromError(updateError));
     } finally {
       setBusyId(undefined);
     }
@@ -117,7 +114,7 @@ export function AgentMcpServersSection() {
       await deleteAgentMcpServer(server.id);
       setServers((current) => current.filter((item) => item.id !== server.id));
     } catch (deleteError) {
-      setError(errorMessage(deleteError));
+      setError(messageFromError(deleteError));
     } finally {
       setBusyId(undefined);
     }
@@ -135,7 +132,7 @@ export function AgentMcpServersSection() {
     } catch (testError) {
       setTestResults((current) => ({
         ...current,
-        [server.id]: errorMessage(testError),
+        [server.id]: messageFromError(testError),
       }));
     } finally {
       setBusyId(undefined);
@@ -220,7 +217,7 @@ export function AgentMcpServersSection() {
       setEditing(undefined);
       setAddOpen(false);
     } catch (createError) {
-      setSaveError(errorMessage(createError));
+      setSaveError(messageFromError(createError));
     }
   }
 

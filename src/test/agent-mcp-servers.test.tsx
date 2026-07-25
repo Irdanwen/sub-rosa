@@ -101,6 +101,27 @@ describe("AgentMcpServersSection", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("renders structured Tauri errors instead of object coercion", async () => {
+    mocks.list.mockResolvedValue([]);
+    mocks.create.mockRejectedValue({
+      code: "agent_mcp_failed",
+      message: "Server configuration could not be saved.",
+    });
+    const user = userEvent.setup();
+    render(<AgentMcpServersSection />);
+
+    await screen.findByText("No custom servers");
+    await user.click(screen.getByRole("button", { name: "Add server" }));
+    const dialog = screen.getByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Name"), "Private tools");
+    await user.type(within(dialog).getByLabelText("Command"), "node");
+    await user.click(within(dialog).getByRole("button", { name: "Add server" }));
+
+    expect(await within(dialog).findByText("Server configuration could not be saved."))
+      .toBeInTheDocument();
+    expect(within(dialog).queryByText("[object Object]")).not.toBeInTheDocument();
+  });
+
   it("edits tool visibility without replacing existing keychain credentials", async () => {
     const user = userEvent.setup();
     render(<AgentMcpServersSection />);

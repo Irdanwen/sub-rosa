@@ -549,8 +549,19 @@ async fn load_skill(context: &ToolContext, arguments: &Value) -> Result<Value, A
 }
 
 async fn consume_clarification_answer(context: &ToolContext) -> Result<Value, AppError> {
-    let row = query("SELECT id, payload_json FROM agent_items WHERE run_id = ? AND kind = 'interruption' AND json_extract(payload_json, '$.kind') = 'clarification' AND (? IS NULL OR json_extract(payload_json, '$.id') = ?) AND json_extract(payload_json, '$.answer') IS NOT NULL AND COALESCE(json_extract(payload_json, '$.answerConsumed'), 0) = 0 ORDER BY created_at DESC LIMIT 1")
-        .bind(&context.run_id).bind(context.call_id.as_deref()).bind(context.call_id.as_deref()).fetch_one(&context.repository.pool).await?;
+    consume_clarification_answer_from_pool(&context.repository.pool, &context.run_id).await
+}
+
+async fn consume_clarification_answer_from_pool(
+    pool: &sqlx_sqlite::SqlitePool,
+    run_id: &str,
+) -> Result<Value, AppError> {
+    // The Agents SDK assigns a fresh execution call id after an approval resumes.
+    // That id is not guaranteed to match the provider tool-call id persisted on
+    // the interruption. The run can only resume one answered clarification at a
+    // time, so select the newest answered, unconsumed clarification for the run.
+    let row = query("SELECT id, payload_json FROM agent_items WHERE run_id = ? AND kind = 'interruption' AND json_extract(payload_json, '$.kind') = 'clarification' AND json_extract(payload_json, '$.answer') IS NOT NULL AND COALESCE(json_extract(payload_json, '$.answerConsumed'), 0) = 0 ORDER BY created_at DESC LIMIT 1")
+        .bind(run_id).fetch_one(pool).await?;
     let id: String = row.get("id");
     let mut payload: Value = serde_json::from_str(&row.get::<String, _>("payload_json"))
         .map_err(|error| AppError::new("agent_interruption_invalid", error.to_string()))?;
@@ -568,7 +579,7 @@ async fn consume_clarification_answer(context: &ToolContext) -> Result<Value, Ap
     query("UPDATE agent_items SET payload_json = ? WHERE id = ?")
         .bind(payload.to_string())
         .bind(id)
-        .execute(&context.repository.pool)
+        .execute(pool)
         .await?;
     Ok(json!({ "answer": answer }))
 }
@@ -670,6 +681,7 @@ fn io_error(error: std::io::Error) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx_sqlite::SqlitePoolOptions;
 
     #[test]
     fn sandbox_profile_only_grants_workspace_and_tmp_writes() {
@@ -685,5 +697,51 @@ mod tests {
 
         assert_eq!(request["query"], "OpenAI Agents SDK");
         assert_eq!(request["requestId"], "call-42");
+    }
+
+    #[tokio::test]
+    async fn clarification_resume_consumes_answer_when_sdk_changes_call_id() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        query(
+            "CREATE TABLE agent_items (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        query("INSERT INTO agent_items (id, run_id, kind, payload_json, created_at) VALUES (?, ?, 'interruption', ?, ?)")
+            .bind("item-1")
+            .bind("run-1")
+            .bind(json!({
+                "id": "provider-call-id",
+                "kind": "clarification",
+                "answer": "Bullets"
+            }).to_string())
+            .bind("2026-07-25T00:00:00Z")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let result = consume_clarification_answer_from_pool(&pool, "run-1")
+            .await
+            .unwrap();
+
+        assert_eq!(result, json!({ "answer": "Bullets" }));
+        let payload: String = query("SELECT payload_json FROM agent_items WHERE id = 'item-1'")
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+            .get("payload_json");
+        let payload: Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(payload["answerConsumed"], true);
     }
 }

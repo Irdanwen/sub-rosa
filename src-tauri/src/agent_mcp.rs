@@ -237,10 +237,11 @@ impl McpServerDefinition {
             || name.len() > 64
             || !name
                 .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '.' | '_' | '-'))
         {
             return Err(AgentMcpError::InvalidDefinition(
-                "server name must be an ASCII slug".into(),
+                "server name may use ASCII letters, numbers, spaces, periods, underscores, and hyphens"
+                    .into(),
             ));
         }
         if self.id.trim().is_empty() {
@@ -1934,6 +1935,20 @@ mod tests {
             .unwrap()
             .get("raw");
         assert!(!raw.contains("Bearer ") && !raw.contains("top-secret"));
+    }
+    #[tokio::test]
+    async fn human_readable_server_names_match_the_settings_ui_contract() {
+        let repo = repository().await;
+        let mut definition = McpServerDefinition::new("Private tools", McpTransport::Stdio);
+        definition.command = Some("node".into());
+
+        repo.create(&definition).await.unwrap();
+
+        assert_eq!(repo.list().await.unwrap()[0].name, "Private tools");
+        assert_eq!(
+            runtime_tool_name("Private tools", "list_tasks").unwrap(),
+            "mcp_private_tools_list_tasks"
+        );
     }
     #[tokio::test]
     async fn duplicate_names_are_rejected_across_repository_restart() {

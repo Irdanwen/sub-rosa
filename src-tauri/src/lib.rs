@@ -378,6 +378,7 @@ pub fn run() {
             updates::relaunch_for_update,
         ])
         .manage(RecordingPresenceBoundsState::default())
+        .manage(note_save_flush::NoteSaveFlushState::default())
         .manage(agent_runtime::AgentRuntimeHost::default())
         .manage(Arc::new(browser_broker::BrowserBroker::default()))
         .manage(computer_use::ComputerUseState::default())
