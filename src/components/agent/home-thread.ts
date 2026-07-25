@@ -10,6 +10,7 @@ import {
   LEGACY_JUNE_HOME_DIRECT_TURNS_STORAGE_KEY,
   LEGACY_JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY,
   readJuneHomeStoredSessionId,
+  stripJuneHomeContext,
   type JuneHomeConversationContext,
   type JuneHomeTaskRequest,
   writeJuneHomeStoredSessionId,
@@ -21,6 +22,7 @@ export type HomeTaskHandoff = JuneHomeTaskRequest & {
   status: "starting" | "running" | "failed";
   storedSessionId?: string;
   error?: string;
+  profile?: string;
 };
 
 export const HOME_DEMO_SEEDED_EVENT = "june:agent:home-demo-seeded";
@@ -146,6 +148,7 @@ export function readHomeTaskHandoffs(storedSessionId: string | undefined): HomeT
         (handoff.status === "starting" ||
           handoff.status === "running" ||
           handoff.status === "failed") &&
+        (handoff.profile === undefined || typeof handoff.profile === "string") &&
         (handoff.status !== "running" || typeof handoff.storedSessionId === "string")
       );
     });
@@ -182,7 +185,8 @@ export function homeConversationContextFromTurns(
         turn.role === "user" || turn.role === "assistant",
     )
     .map((turn) => {
-      const text = textForTurn(turn);
+      const rawText = textForTurn(turn);
+      const text = turn.role === "user" ? stripJuneHomeContext(rawText) : rawText;
       const delegated = turn.parts.some(
         (part) => part.type === "tool" && isJuneHomeStartTaskTool(part.name),
       );

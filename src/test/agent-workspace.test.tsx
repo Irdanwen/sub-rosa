@@ -44,6 +44,7 @@ import { unsupportedEventStore } from "../lib/hermes-unsupported-events";
 import { readSessionModelSelections } from "../lib/hermes-session-model-selection";
 import { reserveHermesSessionDispatch } from "../lib/hermes-session-dispatch-mutex";
 import { resetHermesActiveSessionSnapshotsForTests } from "../lib/hermes-active-session-snapshots";
+import { withJuneHomeContext } from "../lib/june-home";
 import {
   HERMES_IDLE_SUBMIT_PROBE_TIMEOUT_MS,
   resetHermesIdleSubmitRecoveryForTests,
@@ -1131,6 +1132,72 @@ describe("AgentWorkspace", () => {
       ),
     );
     expect(mocks.assignSessionToProfile).toHaveBeenCalledWith("session-2", "research");
+    expect(
+      JSON.parse(window.localStorage.getItem("june:home:task-handoffs:v1") ?? "{}")[
+        existingSession.id
+      ],
+    ).toEqual([expect.objectContaining({ profile: "research", status: "running" })]);
+  });
+
+  it("retries a remounted Home handoff in the profile where Send occurred", async () => {
+    const user = userEvent.setup();
+    let sessionCreateAttempt = 0;
+    setActiveHermesProfileName("research");
+    mocks.invoke.mockResolvedValue({ active: "research", current: "research" });
+    mocks.listSessionProfiles.mockResolvedValue([
+      { sessionId: existingSession.id, profile: "research" },
+    ]);
+    mocks.juneHomeChat.mockResolvedValueOnce({
+      task: {
+        title: "Focused launch plan",
+        prompt: "Create a focused launch plan.",
+      },
+    });
+    mocks.gatewayRequest.mockImplementation((method: string) => {
+      if (method === "session.create") {
+        sessionCreateAttempt += 1;
+        if (sessionCreateAttempt === 1) return Promise.reject(new Error("Session create failed"));
+        return Promise.resolve({
+          session_id: "runtime-session-2",
+          stored_session_id: "session-2",
+        });
+      }
+      if (method === "session.resume") {
+        return Promise.resolve({ session_id: "runtime-session-1" });
+      }
+      return Promise.resolve({});
+    });
+
+    const first = render(<AgentWorkspace homeMode initialSession={existingSession} />);
+    const composer = await screen.findByRole("textbox", { name: "Message June" });
+    await user.type(composer, "Create a focused launch plan");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(await screen.findByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(
+      JSON.parse(window.localStorage.getItem("june:home:task-handoffs:v1") ?? "{}")[
+        existingSession.id
+      ],
+    ).toEqual([expect.objectContaining({ profile: "research", status: "failed" })]);
+    first.unmount();
+
+    setActiveHermesProfileName("other");
+    mocks.invoke.mockResolvedValue({ active: "other", current: "other" });
+    mocks.listSessionProfiles.mockResolvedValue([
+      { sessionId: existingSession.id, profile: "other" },
+    ]);
+    render(<AgentWorkspace homeMode initialSession={existingSession} />);
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
+
+    await waitFor(() =>
+      expect(
+        mocks.gatewayRequest.mock.calls.filter(([method]) => method === "session.create"),
+      ).toHaveLength(2),
+    );
+    const sessionCreateCalls = mocks.gatewayRequest.mock.calls.filter(
+      ([method]) => method === "session.create",
+    );
+    expect(sessionCreateCalls[1]?.[1]).toEqual(expect.objectContaining({ profile: "research" }));
+    expect(mocks.assignSessionToProfile).toHaveBeenCalledWith("session-2", "research");
   });
 
   it("keeps a pending Home handoff actionable across a remount", async () => {
@@ -1179,6 +1246,45 @@ describe("AgentWorkspace", () => {
 
     expect(await screen.findByRole("button", { name: "Open session" })).toBeInTheDocument();
     expect(screen.getByText("I created a session for “Draft launch brief”.")).toBeInTheDocument();
+  });
+
+  it("strips Home's hidden routing block from lightweight conversation history", async () => {
+    const hiddenPrompt = withJuneHomeContext("Review the Q3 launch plan");
+    mocks.listHermesSessionMessages.mockResolvedValue([
+      {
+        id: "home-full-user",
+        role: "user",
+        content: hiddenPrompt,
+        timestamp: "2026-07-24T10:00:00Z",
+      },
+      {
+        id: "home-full-assistant",
+        role: "assistant",
+        content: "The launch plan needs a clearer owner.",
+        timestamp: "2026-07-24T10:01:00Z",
+      },
+    ]);
+    mocks.juneHomeChat.mockResolvedValueOnce({ content: "The owner is still the open question." });
+
+    const user = userEvent.setup();
+    render(<AgentWorkspace homeMode initialSession={existingSession} />);
+    expect(await screen.findByText("Review the Q3 launch plan")).toBeInTheDocument();
+    const composer = await screen.findByRole("textbox", { name: "Message June" });
+    await user.type(composer, "What was the open question?");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(mocks.juneHomeChat).toHaveBeenCalledOnce());
+    const [messages] = mocks.juneHomeChat.mock.calls[0] as [
+      Array<{ role: string; content: string }>,
+    ];
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        { role: "user", content: "Review the Q3 launch plan" },
+        { role: "assistant", content: "The launch plan needs a clearer owner." },
+        { role: "user", content: "What was the open question?" },
+      ]),
+    );
+    expect(JSON.stringify(messages)).not.toContain("[June home context]");
   });
 
   it("populates the Home console demo with rich content and actionable handoffs", () => {

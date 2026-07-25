@@ -2381,7 +2381,12 @@ export function AgentWorkspace({
       return;
     }
     handledHomeTaskToolCallsRef.current.add(toolCallId);
-    const starting: HomeTaskHandoff = { ...request, id: handoffId, status: "starting" };
+    const starting: HomeTaskHandoff = {
+      ...request,
+      id: handoffId,
+      status: "starting",
+      profile,
+    };
     const storedHandoffs = readHomeTaskHandoffs(homeStoredSessionId);
     const nextHandoffs = storedHandoffs.some((handoff) => handoff.id === handoffId)
       ? storedHandoffs.map((handoff) => (handoff.id === handoffId ? starting : handoff))
@@ -2438,7 +2443,7 @@ export function AgentWorkspace({
       captureFocusedSessionDefaultModelTarget(),
       conversation,
       homeStoredSessionId,
-      activeHermesProfile.name,
+      handoff.profile ?? activeHermesProfile.name,
     );
   }
 
