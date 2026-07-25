@@ -1026,7 +1026,9 @@ export function AgentWorkspace({
                 {projection.run.usage.inputTokens === undefined &&
                 projection.run.usage.outputTokens === undefined &&
                 projection.run.usage.totalTokens === undefined ? (
-                  <p className="agent-usage-empty">Token counts were not reported for this request.</p>
+                  <p className="agent-usage-empty">
+                    Token counts were not reported for this request.
+                  </p>
                 ) : null}
                 {contextPercent !== undefined && contextUsed !== undefined && contextLimit ? (
                   <div className="agent-usage-context">
