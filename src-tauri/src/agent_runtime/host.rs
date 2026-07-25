@@ -919,7 +919,10 @@ mod tests {
             .expect("short-lived child should start");
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        assert!(child.id().is_some(), "the exited child has not been reaped yet");
+        assert!(
+            child.id().is_some(),
+            "the exited child has not been reaped yet"
+        );
         assert!(!runtime_process_running(&mut child));
     }
 }
