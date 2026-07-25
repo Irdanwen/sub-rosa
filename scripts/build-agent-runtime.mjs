@@ -183,10 +183,14 @@ async function smoke(executable, architecture) {
     const child = spawn(command, commandArgs, { stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
+    // The first launch of a freshly signed universal binary can spend more
+    // than ten seconds in macOS signature and architecture validation on a
+    // cold release runner. Keep the smoke bounded, but leave enough headroom
+    // for that one-time platform work before treating the runtime as hung.
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error(`Runtime smoke timed out: ${stderr}`));
-    }, 10_000);
+    }, 30_000);
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
