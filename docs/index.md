@@ -25,6 +25,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0013](adr/0013-mid-conversation-model-switching.md) — mid-conversation model switching: the model is a per-turn property; continuity via in-place switch + retry + fork-onto-another-model, not a live Hermes `/model` rebind
 - [adr/0014](adr/0014-per-session-working-folder.md) — per-session working folder: a validated Seatbelt write grant + restart-on-mismatch routing, not process-per-folder or an unvalidated cwd grant
 - [adr/0015](adr/0015-normalize-carpe-diem-router-responses.md) — june-api normalizes the Carpe Diem `/router` rail (null content + non-streamed JSON) into the Venice/OpenAI SSE contract instead of collapsing a 200 into a 502; a successful upstream never becomes a client-facing error
+- [adr/0016](adr/0016-session-activity-comes-from-the-runtime.md) — only the runtime (`session.active_list`) or a terminal gateway event ends a run; the persisted transcript is a one-directional fallback, because an agent loop persists an assistant row at every step
 
 ## Enforceable rules (spec/)
 

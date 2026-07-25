@@ -193,6 +193,11 @@ import { unsupportedEventStore } from "../../lib/hermes-unsupported-events";
 import { pendingActionStore } from "../../lib/hermes-pending-actions";
 import { hermesActivityStore } from "../../lib/hermes-activity-store";
 import {
+  type BackgroundProcess,
+  hasRunningBackgroundWork,
+  hermesBackgroundProcessStore,
+} from "../../lib/hermes-background-processes";
+import {
   hermesArtifactStore,
   // The store's record shape collides by name with this file's local
   // `AgentArtifact` (the file-viewer card), so alias it.
@@ -284,6 +289,8 @@ import {
   buildHermesSessionChatTurns,
   displayedComposerUserMessageText,
   hermesMessagesEndInterrupted,
+  hermesMessagesHaveAssistantReply,
+  hermesMessagesShowCompletedTurn,
   repairContractionSpacing,
   textFromHermesContent,
   appendLiveHermesEvent,
@@ -334,6 +341,13 @@ const GATEWAY_CONNECTION_ERROR = /hermes (gateway|bridge)/i;
 // terminal: it retires the dead-end card and shows SESSION_GONE_MESSAGE rather
 // than leaking the raw "Hermes API returned 404 ... Session not found" error.
 const SESSION_GONE_MESSAGE = "This session has ended, so the request can no longer be answered.";
+
+// A send whose session cannot be resumed on either runtime. Distinct from
+// SESSION_GONE_MESSAGE (an unanswerable pending request): here the conversation
+// itself has no live runtime left, and the raw wire text ("Hermes API returned
+// 404 … Session not found") told the user nothing about what to do next.
+const SESSION_RUNTIME_GONE_MESSAGE =
+  "Sub Rosa could not reopen this conversation, so the message was not sent. Start a new session to continue.";
 
 function isSessionGoneError(message: string): boolean {
   return message.toLowerCase().includes("session not found");
@@ -1474,6 +1488,10 @@ export function AgentWorkspace({
   const [hermesSessionMessages, setHermesSessionMessages] = useState<
     Record<string, HermesSessionMessage[]>
   >({});
+  // Read by the runtime reconciler (ADR-0016), which runs off a timer and needs
+  // the latest persisted transcript without re-creating the interval.
+  const hermesSessionMessagesRef =
+    useRef<Record<string, HermesSessionMessage[]>>(hermesSessionMessages);
   const [pendingHermesMessages, setPendingHermesMessages] = useState<
     Record<string, HermesSessionMessage[]>
   >(() => continuity?.pendingMessages ?? {});
@@ -1839,8 +1857,10 @@ export function AgentWorkspace({
     waitingSessionIdsRef.current = waitingSessionIds;
     pendingHermesMessagesRef.current = pendingHermesMessages;
     hermesSessionItemsRef.current = hermesSessionItems;
+    hermesSessionMessagesRef.current = hermesSessionMessages;
   }, [
     hermesSessionItems,
+    hermesSessionMessages,
     pendingHermesMessages,
     selectedHermesSessionId,
     toolCallSessionIds,
@@ -1970,6 +1990,9 @@ export function AgentWorkspace({
       hermesActivityStore.clearSession(sessionId);
       // Feature 14: likewise drop its artifact timeline.
       hermesArtifactStore.clearSession(sessionId);
+      // And its background processes: the session is gone, so a banner about
+      // its jobs has nothing left to point at.
+      hermesBackgroundProcessStore.clearSession(sessionId);
       sessionGatewayUnlistenRef.current.get(sessionId)?.();
       liveEventsRef.current = omitRecordKey(liveEventsRef.current, sessionId);
       setLiveEvents(liveEventsRef.current);
@@ -2244,6 +2267,23 @@ export function AgentWorkspace({
         : [],
     // `artifactStoreVersion` is the change signal; the read returns live rows.
     [selectedHermesSessionId, artifactStoreVersion],
+  );
+
+  // Background processes the selected session has running. Same singleton
+  // wiring as the artifact store above. This is what keeps a long job visible
+  // after the turn that launched it ended: since v1.27.0 the agent is told to
+  // park long work in a background process and end its turn, so a settled
+  // session is NOT the same as an idle one, and the app used to show nothing
+  // at all in that gap.
+  const backgroundProcessVersion = useSyncExternalStore(
+    hermesBackgroundProcessStore.subscribe,
+    hermesBackgroundProcessStore.getVersion,
+    hermesBackgroundProcessStore.getVersion,
+  );
+  const sessionBackgroundProcesses = useMemo(
+    () => hermesBackgroundProcessStore.forSession(selectedHermesSessionId),
+    // `backgroundProcessVersion` is the change signal; the read returns live rows.
+    [selectedHermesSessionId, backgroundProcessVersion],
   );
 
   // Feature 15: the dev/debug raw-trace panel. Holds the session it was opened
@@ -2797,6 +2837,16 @@ export function AgentWorkspace({
       waitingSessionIds: Array.from(waitingSessionIds).filter(
         (sessionId) => !isProvisionalHermesSessionId(sessionId),
       ),
+      // Sessions whose turn ended but whose background job is still going. The
+      // chat banner only covers the conversation in front of the user; without
+      // this, a parked task on any other session is invisible from the sidebar.
+      backgroundSessionIds: hermesSessionItems
+        .map((session) => session.id)
+        .filter(
+          (sessionId) =>
+            !isProvisionalHermesSessionId(sessionId) &&
+            hasRunningBackgroundWork(hermesBackgroundProcessStore.forSession(sessionId)),
+        ),
     });
   }, [
     hermesSessionsHydrated,
@@ -2804,6 +2854,8 @@ export function AgentWorkspace({
     selectedHermesSessionId,
     waitingSessionIds,
     workingSessionIds,
+    // The store is the change signal for the background set.
+    backgroundProcessVersion,
   ]);
 
   // Latest-instance handlers for the mount-scoped window listeners below. The
@@ -2891,28 +2943,18 @@ export function AgentWorkspace({
           // reconciles it from persisted messages.
           setSessionWorking(selectedHermesSessionId, true);
         }
-        if (sessionHasAssistantAfterLatestUser(combined)) {
+        // The model has spoken since the user did, so the persisted transcript
+        // has caught up with whatever the live stream was buffering: promote a
+        // queued issue report and drop the live buffer so the turn is not
+        // rendered twice. ADR-0016: this does NOT end the session's activity —
+        // an assistant row appears from the agent loop's first step onward, so
+        // ending a run here declared a still-running turn finished. Only a
+        // terminal gateway event or the runtime's own session.active_list ends
+        // one now (see reconcileWorkingSessionsAgainstRuntime).
+        if (hermesMessagesHaveAssistantReply(combined)) {
           promotePendingIssueReportToReview(selectedHermesSessionId, {
             queueDiagnosisRefresh: false,
           });
-          const wasActive = sessionHasActiveWork(
-            selectedHermesSessionId,
-            workingSessionIdsRef.current,
-            waitingSessionIdsRef.current,
-            liveEventsRef.current,
-          );
-          const activityCounts = clearSessionActivity(selectedHermesSessionId);
-          if (wasActive) {
-            dispatchAgentSessionStatus({
-              sessionId: selectedHermesSessionId,
-              title:
-                hermesSessionItems.find((session) => session.id === selectedHermesSessionId)
-                  ?.title ?? "Agent session",
-              status: "completed",
-              summary: "Sub Rosa finished.",
-              ...activityCounts,
-            });
-          }
           liveEventsRef.current = {
             ...liveEventsRef.current,
             [selectedHermesSessionId]: [],
@@ -2978,6 +3020,16 @@ export function AgentWorkspace({
         const status = await hermesBridgeStatus();
         if (cancelled) return;
         setBridge(status);
+        // ADR-0016 leaves ending a run to the runtime, and the working-gated
+        // poll that asks it only runs while the bridge does. A session carried
+        // in as working by the continuity snapshot (remount after the bridge
+        // died) would otherwise sit on "Working…" with nothing left to correct
+        // it — the runtime that owned its turn is gone, so settle it here.
+        if (!status.running) {
+          for (const sessionId of Array.from(workingSessionIdsRef.current)) {
+            settleSessionRun(sessionId, "Sub Rosa stopped.", "bridge-not-running");
+          }
+        }
       } catch (err) {
         if (!cancelled) setError(messageFromError(err));
       }
@@ -3465,23 +3517,24 @@ export function AgentWorkspace({
    * the runtime session id first (resuming the stored session when this is
    * its first touch since app start). */
   async function dispatchGoalToSession(storedSessionId: string, arg: string) {
-    const gateway = await ensureHermesGateway(sessionUnrestricted(storedSessionId));
-    let runtimeSessionId = runtimeSessionIds[storedSessionId];
-    if (!runtimeSessionId) {
-      const resumed = (
-        await gateway.request<HermesRuntimeSessionResponse>("session.resume", {
-          session_id: storedSessionId,
-          cols: 96,
-        })
-      ).session_id;
-      if (!resumed) throw new Error("Hermes could not resume the session.");
-      runtimeSessionId = resumed;
-      setRuntimeSessionIds((current) => ({ ...current, [storedSessionId]: resumed }));
+    const initialGateway = await ensureHermesGateway(sessionUnrestricted(storedSessionId));
+    const dispatchOn = async (target: HermesGatewayClient, runtimeSessionId: string) =>
+      (await createHermesMethods(target).dispatchGoalCommand({
+        sessionId: runtimeSessionId,
+        arg,
+      })) as HermesGoalDispatchResponse;
+    const resolved = await resolveRuntimeSession(storedSessionId, initialGateway);
+    try {
+      return await dispatchOn(resolved.gateway, resolved.runtimeSessionId);
+    } catch (err) {
+      // Same dead-memo recovery as a send: a goal set against a runtime that
+      // died between turns must not strand the session.
+      if (!isSessionGoneError(messageFromError(err))) throw err;
     }
-    return (await createHermesMethods(gateway).dispatchGoalCommand({
-      sessionId: runtimeSessionId,
-      arg,
-    })) as HermesGoalDispatchResponse;
+    const retried = await resolveRuntimeSession(storedSessionId, initialGateway, {
+      forceRefresh: true,
+    });
+    return dispatchOn(retried.gateway, retried.runtimeSessionId);
   }
 
   function clearComposerCommandDraft(commandText: string) {
@@ -4311,6 +4364,19 @@ export function AgentWorkspace({
       // unconditional call is safe for every kind. Mode rides along so each
       // artifact can show its blast radius (sandboxed copy vs unrestricted path).
       hermesArtifactStore.record(classified, hermesModeFor(storedSessionId));
+      // Track background processes (the `background=true` shell launches the
+      // agent parks long work in) so the chat can say a job is still running
+      // once the turn that started it has ended. Total and conservative: a
+      // frame that does not identify a background process is ignored.
+      hermesBackgroundProcessStore.record(classified, {
+        sessionId: storedSessionId,
+        receivedAt: liveEvent.receivedAt,
+      });
+      // A new assistant message means the chained turn the completion triggered
+      // has begun, so "finished, being picked back up" has served its purpose.
+      if (event.type === "message.start") {
+        hermesBackgroundProcessStore.clearFinished(storedSessionId);
+      }
       const nextSessionEvents = appendLiveHermesEvent(
         liveEventsRef.current[storedSessionId] ?? [],
         liveEvent,
@@ -4352,6 +4418,13 @@ export function AgentWorkspace({
           ? clearSessionActivity(storedSessionId)
           : undefined;
       if (activityCounts) {
+        // The fast path of ADR-0016's settlement rule, traced like the poll's
+        // so a session's whole activity history reads in one place.
+        hermesTraceBuffer.recordLocal({
+          sessionId: storedSessionId,
+          event: "activity.settled",
+          reason: `terminal-event:${event.type}`,
+        });
         // Feature 04: the session reached a terminal state (completed, a
         // terminal error, or an interrupt) — the agent is no longer blocked, so
         // any of its outstanding "Needs you" rows are moot. Clear them so the
@@ -4369,7 +4442,14 @@ export function AgentWorkspace({
         });
       }
       if (isTerminalHermesEvent(event.type)) {
-        unlisten();
+        // The subscription deliberately OUTLIVES the turn (it is replaced by the
+        // next submit, and torn down on unmount / session delete). June is no
+        // longer the only thing that starts a turn: the notification poller
+        // chains one when a background process finishes, the goal loop continues
+        // one after its post-turn judge, and a routine can run one on a
+        // schedule. Detaching here meant every gateway-initiated turn ran
+        // invisibly — the session had no live listener and, once settled, no
+        // poll either, so the conversation froze until the user typed something.
         if (!activityCounts) {
           clearSessionActivity(storedSessionId);
         }
@@ -4645,16 +4725,20 @@ export function AgentWorkspace({
       await withTimeout(ensureStoredHermesSession(), 2500).catch(() => undefined);
     }
     let runtimeSessionId: string | undefined;
+    // The gateway that actually owns the runtime — normally the one resolved
+    // above, but a mode correction inside resolveRuntimeSession can hand back
+    // the other one, and every later RPC of this send must follow it.
+    let turnGateway = gateway;
     try {
-      runtimeSessionId =
-        created?.session_id ??
-        runtimeSessionIds[storedSessionId] ??
-        (
-          await gateway.request<HermesRuntimeSessionResponse>("session.resume", {
-            session_id: storedSessionId,
-            cols: 96,
-          })
-        ).session_id;
+      if (created?.session_id) {
+        runtimeSessionId = rememberRuntimeSessionId(storedSessionId, created.session_id);
+      } else {
+        const resolved = await resolveRuntimeSession(storedSessionId, gateway, {
+          acquireGateway: ensureGatewayForSend,
+        });
+        turnGateway = resolved.gateway;
+        runtimeSessionId = resolved.runtimeSessionId;
+      }
     } catch (err) {
       clearQueuedIssueReport();
       if (optimisticSession) {
@@ -4674,17 +4758,13 @@ export function AgentWorkspace({
       // which the submit() catch turns into a restored composer the user can
       // retry — the prompt is NOT sent with a silently-missing image.
       try {
-        await attachPendingImages(gateway, runtimeSessionId, storedSessionId, turnAttachments);
+        await attachPendingImages(turnGateway, runtimeSessionId, storedSessionId, turnAttachments);
       } catch (err) {
         clearQueuedIssueReport();
         rollbackOptimisticBeforePrompt(err);
       }
     }
     const createdAt = optimisticSession?.createdAt ?? new Date().toISOString();
-    setRuntimeSessionIds((current) => ({
-      ...current,
-      [storedSessionId]: runtimeSessionId,
-    }));
     if (!optimisticSession) {
       newSessionModeRef.current = false;
       setNewSessionMode(false);
@@ -4755,19 +4835,27 @@ export function AgentWorkspace({
       status: "running",
       summary: "Sub Rosa is working.",
     });
-    attachHermesSessionEventListener({
-      gateway,
-      runtimeSessionId,
-      sessionDisplayTitle,
-      storedSessionId,
-    });
-    try {
+    // Runs the turn against one runtime: the pre-turn state hook, then the
+    // prompt itself. Factored out so it can be replayed once against a fresh
+    // runtime — `beforePrompt` state lives IN the runtime process, so a replay
+    // must re-apply it or the turn runs without what it was armed with.
+    const runTurnOn = async (target: HermesGatewayClient, targetRuntimeSessionId: string) => {
+      attachHermesSessionEventListener({
+        gateway: target,
+        runtimeSessionId: targetRuntimeSessionId,
+        sessionDisplayTitle,
+        storedSessionId,
+      });
       // Session-scoped pre-turn state (the `/goal` flow) applies here, inside
       // the same try as the submit: a failed hook aborts the send through the
       // shared cleanup below instead of launching a turn missing the state it
       // was supposed to run under.
       if (options?.beforePrompt) {
-        await options.beforePrompt({ gateway, runtimeSessionId, storedSessionId });
+        await options.beforePrompt({
+          gateway: target,
+          runtimeSessionId: targetRuntimeSessionId,
+          storedSessionId,
+        });
       }
       // Feature 15: record the outbound prompt.submit in the trace buffer. Its
       // params are sanitized before storage (the text is the user's own prompt,
@@ -4777,12 +4865,48 @@ export function AgentWorkspace({
       hermesTraceBuffer.recordOutbound({
         sessionId: storedSessionId,
         method: "prompt.submit",
-        params: { session_id: runtimeSessionId, text: promptSubmitContent },
+        params: { session_id: targetRuntimeSessionId, text: promptSubmitContent },
       });
-      await gateway.request("prompt.submit", {
-        session_id: runtimeSessionId,
+      await target.request("prompt.submit", {
+        session_id: targetRuntimeSessionId,
         text: promptSubmitContent,
       });
+    };
+    try {
+      try {
+        await runTurnOn(turnGateway, runtimeSessionId);
+      } catch (err) {
+        // The runtime this send was keyed to is gone (reaped between turns,
+        // Hermes restarted). Nothing was queued, so resolve a live one and
+        // replay the turn once — without this the memoized dead id was replayed
+        // on every retry and the conversation could not be used again until the
+        // app restarted.
+        if (!isSessionGoneError(messageFromError(err))) throw err;
+        hermesTraceBuffer.recordLocal({
+          sessionId: storedSessionId,
+          event: "runtime.recovered",
+          reason: "prompt-submit-session-not-found",
+        });
+        const recovered = await resolveRuntimeSession(storedSessionId, turnGateway, {
+          forceRefresh: true,
+          acquireGateway: ensureGatewayForSend,
+        });
+        turnGateway = recovered.gateway;
+        runtimeSessionId = recovered.runtimeSessionId;
+        if (!imageInputFallbackContent) {
+          // The images went to the dead process and died with it; the fresh
+          // runtime must see them or the turn runs blind. Re-attaching can add
+          // a second row to the artifact timeline — the honest trade against a
+          // prompt that references an image the model cannot see.
+          await attachPendingImages(
+            turnGateway,
+            runtimeSessionId,
+            storedSessionId,
+            turnAttachments,
+          );
+        }
+        await runTurnOn(turnGateway, runtimeSessionId);
+      }
       await loadHermesSessions({
         suppressStartupRequestError: !hermesSessionsHydratedRef.current,
       });
@@ -4819,13 +4943,26 @@ export function AgentWorkspace({
       sessionGatewayUnlistenRef.current.get(storedSessionId)?.();
       setSessionWorking(storedSessionId, false);
       setSessionWaiting(storedSessionId, false);
+      // A session-gone failure that survived the recovery replay above means no
+      // runtime can host this conversation. Say that, rather than leaking the
+      // wire text ("Hermes API returned 404 … Session not found"), which told
+      // the user nothing about what to do next.
+      const failure = isSessionGoneError(messageFromError(err))
+        ? new Error(SESSION_RUNTIME_GONE_MESSAGE)
+        : err;
       dispatchAgentSessionStatus({
         sessionId: storedSessionId,
         title: sessionDisplayTitle,
         status: "failed",
-        summary: messageFromError(err),
+        summary: messageFromError(failure),
+        // The send never left the app: the user is looking at the composer,
+        // which restores their text and shows the reason inline. A desktop
+        // notification on top of that is noise about something they just
+        // watched fail — the status still flows so the menu bar leaves its
+        // running state.
+        silent: true,
       });
-      throw err;
+      throw failure;
     }
   }
 
@@ -4871,6 +5008,102 @@ export function AgentWorkspace({
     return gateway;
   }
 
+  /** Drops a stored session's memo of its live runtime id, so the next resolve
+   * asks the gateway for a fresh one instead of reusing a dead process. */
+  function forgetRuntimeSessionId(storedSessionId: string) {
+    if (!(storedSessionId in runtimeSessionIdsRef.current)) return;
+    const next = { ...runtimeSessionIdsRef.current };
+    delete next[storedSessionId];
+    runtimeSessionIdsRef.current = next;
+    setRuntimeSessionIds(next);
+  }
+
+  function rememberRuntimeSessionId(storedSessionId: string, runtimeSessionId: string) {
+    const next = { ...runtimeSessionIdsRef.current, [storedSessionId]: runtimeSessionId };
+    // Written to the ref as well as state: a retry inside the same send must see
+    // the new id before React re-renders.
+    runtimeSessionIdsRef.current = next;
+    setRuntimeSessionIds(next);
+    return runtimeSessionId;
+  }
+
+  /**
+   * Resolves the LIVE runtime session id a stored session's RPCs must be keyed
+   * by, and the gateway that owns it.
+   *
+   * Every call site used to inline `cached ?? session.resume`, and none of them
+   * evicted the memo when it went stale. A runtime dies between turns all the
+   * time (Hermes restarted, the process reaped, the machine slept), and the
+   * gateway then answers `Session not found` — so the cached id kept being
+   * replayed and EVERY later send in that session failed identically until the
+   * app was restarted. That is the reported "session not found" when picking a
+   * conversation back up.
+   *
+   * `forceRefresh` skips the memo (used by a caller retrying after exactly that
+   * failure). A resume that 404s is retried once on the sandboxed runtime when
+   * the session is recorded as Unrestricted: each mode runs its own Hermes
+   * process with its own session store, so a mis-recorded mode is otherwise
+   * permanently unreachable. That fallback is deliberately one-directional —
+   * resuming a sandboxed session on the Unrestricted runtime would silently
+   * widen its write access, and this map's whole design is that absence means
+   * sandboxed.
+   */
+  async function resolveRuntimeSession(
+    storedSessionId: string,
+    gateway: HermesGatewayClient,
+    options: {
+      forceRefresh?: boolean;
+      acquireGateway?: (unrestricted: boolean) => Promise<HermesGatewayClient>;
+    } = {},
+  ): Promise<{ gateway: HermesGatewayClient; runtimeSessionId: string }> {
+    if (!options.forceRefresh) {
+      const cached = runtimeSessionIdsRef.current[storedSessionId];
+      if (cached) return { gateway, runtimeSessionId: cached };
+    }
+    const resume = async (target: HermesGatewayClient) =>
+      (
+        await target.request<HermesRuntimeSessionResponse>("session.resume", {
+          session_id: storedSessionId,
+          cols: 96,
+        })
+      ).session_id;
+
+    let sessionGone = false;
+    try {
+      const resumed = await resume(gateway);
+      if (resumed)
+        return { gateway, runtimeSessionId: rememberRuntimeSessionId(storedSessionId, resumed) };
+    } catch (err) {
+      if (!isSessionGoneError(messageFromError(err))) throw err;
+      sessionGone = true;
+    }
+
+    if (sessionUnrestricted(storedSessionId)) {
+      try {
+        const acquire = options.acquireGateway ?? ((mode: boolean) => ensureHermesGateway(mode));
+        const sandboxedGateway = await acquire(false);
+        const resumed = await resume(sandboxedGateway);
+        if (resumed) {
+          // The sandboxed runtime owns it: correct the record so follow-ups
+          // route straight there (and the session bar stops claiming a write
+          // access it does not have).
+          rememberSessionMode(storedSessionId, false);
+          return {
+            gateway: sandboxedGateway,
+            runtimeSessionId: rememberRuntimeSessionId(storedSessionId, resumed),
+          };
+        }
+      } catch {
+        // Neither runtime knows it; fall through to the terminal message.
+      }
+    }
+
+    forgetRuntimeSessionId(storedSessionId);
+    throw new Error(
+      sessionGone ? SESSION_RUNTIME_GONE_MESSAGE : "Hermes did not resume the session.",
+    );
+  }
+
   // Fetches normalized usage/cost for one session (feature 09). Routes through
   // the gateway matching the session's recorded write-access mode, calls the
   // typed session.usage wrapper, and parses the raw result defensively. The
@@ -4878,36 +5111,26 @@ export function AgentWorkspace({
   // feature 11's activity drawer.
   const fetchSessionUsage = useCallback(
     async (storedSessionId: string): Promise<SessionUsage> => {
-      const gateway = await ensureHermesGateway(sessionUnrestricted(storedSessionId));
-      const methods = createHermesMethods(gateway);
-      const usageFor = async (runtimeId: string) =>
-        parseSessionUsage(storedSessionId, await methods.getSessionUsage({ sessionId: runtimeId }));
+      const initialGateway = await ensureHermesGateway(sessionUnrestricted(storedSessionId));
+      const usageFor = async (target: HermesGatewayClient, runtimeId: string) =>
+        parseSessionUsage(
+          storedSessionId,
+          await createHermesMethods(target).getSessionUsage({ sessionId: runtimeId }),
+        );
       // session.usage reads the LIVE runtime, keyed by the runtime id — not the
-      // stored id the panel passes. Use the cached runtime if it is still alive;
-      // if it has been torn down between turns ("session not found"), resume the
-      // session to spin up a fresh runtime and retry once. Mirrors the send
-      // flow's cached-or-resume resolution (see submit()).
-      const cached = runtimeSessionIdsRef.current[storedSessionId];
-      if (cached) {
-        try {
-          return await usageFor(cached);
-        } catch (err) {
-          if (!isSessionGoneError(messageFromError(err))) throw err;
-        }
+      // stored id the panel passes. Use the memoized runtime if it is still
+      // alive; if it was torn down between turns ("session not found"), resolve
+      // a fresh one and retry once.
+      const resolved = await resolveRuntimeSession(storedSessionId, initialGateway);
+      try {
+        return await usageFor(resolved.gateway, resolved.runtimeSessionId);
+      } catch (err) {
+        if (!isSessionGoneError(messageFromError(err))) throw err;
       }
-      const resumed = await gateway.request<HermesRuntimeSessionResponse>("session.resume", {
-        session_id: storedSessionId,
-        cols: 96,
+      const retried = await resolveRuntimeSession(storedSessionId, initialGateway, {
+        forceRefresh: true,
       });
-      const runtimeSessionId = resumed.session_id;
-      if (!runtimeSessionId) {
-        throw new Error("Hermes did not resume the session.");
-      }
-      setRuntimeSessionIds((current) => ({
-        ...current,
-        [storedSessionId]: runtimeSessionId,
-      }));
-      return usageFor(runtimeSessionId);
+      return usageFor(retried.gateway, retried.runtimeSessionId);
     },
     // Stable closure over refs and imported helpers; deps intentionally omitted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4953,29 +5176,41 @@ export function AgentWorkspace({
   // gateway is rebuilt — sessions of that mode are the ones it served.
   async function recoverFromGatewayClose(fullMode: boolean) {
     if (gatewayRecoveringRef.current.has(fullMode)) return;
-    const activeSessionIds = new Set(
-      [...workingSessionIdsRef.current, ...waitingSessionIdsRef.current].filter(
-        (sessionId) => sessionUnrestricted(sessionId) === fullMode,
-      ),
+    // Every session this app instance holds a runtime for, not only the ones
+    // visibly working: since the live subscription now outlives a turn, an IDLE
+    // session can still receive a gateway-initiated one (a background process
+    // completing, the goal loop continuing, a routine firing) — and that only
+    // reaches it if the socket comes back with its subscription attached.
+    const recoverableSessionIds = new Set(
+      [
+        ...workingSessionIdsRef.current,
+        ...waitingSessionIdsRef.current,
+        ...Object.keys(runtimeSessionIdsRef.current),
+      ].filter((sessionId) => sessionUnrestricted(sessionId) === fullMode),
     );
-    if (!activeSessionIds.size) return;
+    if (!recoverableSessionIds.size) return;
     gatewayRecoveringRef.current.add(fullMode);
     try {
       const gateway = await ensureHermesGateway(fullMode);
       await Promise.all(
-        Array.from(activeSessionIds).map(async (sessionId) => {
+        Array.from(recoverableSessionIds).map(async (sessionId) => {
           try {
-            const resumed = await gateway.request<HermesRuntimeSessionResponse>("session.resume", {
-              session_id: sessionId,
-              cols: 96,
+            // forceRefresh: the drop may have taken the runtime with it, so the
+            // memoized id is exactly what must not be trusted here.
+            const resolved = await resolveRuntimeSession(sessionId, gateway, {
+              forceRefresh: true,
             });
-            const runtimeSessionId = resumed.session_id;
-            if (runtimeSessionId) {
-              setRuntimeSessionIds((current) => ({
-                ...current,
-                [sessionId]: runtimeSessionId,
-              }));
-            }
+            // Re-point the subscription at the runtime the resume just minted:
+            // the surviving handler filters on the id captured when it was
+            // attached, so a new one would silently drop every frame.
+            attachHermesSessionEventListener({
+              gateway: resolved.gateway,
+              runtimeSessionId: resolved.runtimeSessionId,
+              sessionDisplayTitle:
+                hermesSessionItemsRef.current.find((session) => session.id === sessionId)?.title ??
+                "Agent session",
+              storedSessionId: sessionId,
+            });
           } catch {
             // The runtime session may be gone; the poll reconciles it.
           }
@@ -4991,7 +5226,7 @@ export function AgentWorkspace({
     // visible but visually distinct — rather than silently dropping a possible
     // blocker. A re-announced request flips its row back to open in the feed.
     pendingActionStore.reconcileAfterReconnect();
-    for (const sessionId of activeSessionIds) {
+    for (const sessionId of recoverableSessionIds) {
       void refreshHermesSession(sessionId);
     }
   }
@@ -5059,6 +5294,47 @@ export function AgentWorkspace({
     );
   }
 
+  /** Ends one session's run and announces it. `summary` differs per caller —
+   * the runtime reconciler knows only that the run is gone ("stopped"), while a
+   * transcript-shape fallback knows the turn produced an answer ("finished").
+   * A live `error` frame still outranks both: the fork surfaces a turn that died
+   * mid-tool-loop as failed rather than letting it settle silently. */
+  function settleSessionRun(sessionId: string, summary: string, reason: string) {
+    const activityCounts = clearSessionActivity(sessionId);
+    const turnFailed = (liveEventsRef.current[sessionId] ?? []).some(
+      (event) => event.type === "error",
+    );
+    // Which authority ended this run is the first question to ask when a chat
+    // looks stuck (or looks finished while it is not), and the answer used to
+    // exist nowhere. Recorded next to the gateway frames it sits between.
+    hermesTraceBuffer.recordLocal({
+      sessionId,
+      event: "activity.settled",
+      reason,
+      detail: { turnFailed },
+    });
+    dispatchAgentSessionStatus({
+      sessionId,
+      title:
+        hermesSessionItemsRef.current.find((session) => session.id === sessionId)?.title ??
+        "Agent session",
+      // "completed" (not "failed") keeps a clean end quiet: the status title
+      // falls back to lastStatus when nothing is active, and a stale "running"
+      // there would still render "Working…".
+      status: turnFailed ? "failed" : "completed",
+      summary: turnFailed ? "Sub Rosa hit a problem." : summary,
+      ...activityCounts,
+    });
+  }
+
+  // ADR-0016: the runtime is the authority on whether a session is still
+  // running. Message-shape reconciliation cannot be: an agent loop persists an
+  // assistant row (mid-turn commentary, a tool-calling step) from its first
+  // step onward, so "the model has answered" is true seconds into a turn that
+  // has minutes of work left — settling on it ended live runs. `session.active_list`
+  // is ground truth, so any locally-working session absent from it (or sitting
+  // idle) for two consecutive polls gets its activity cleared. Two misses, not
+  // one: a just-submitted prompt can race the runtime session registering.
   async function reconcileWorkingSessionsAgainstRuntime() {
     const working = Array.from(workingSessionIdsRef.current);
     const misses = workingReconcileMissesRef.current;
@@ -5067,16 +5343,33 @@ export function AgentWorkspace({
     }
     if (working.length === 0) return;
     // Working sessions may span both runtime processes; ask each mode that
-    // has one and union the answers. A mode we can't reach keeps its
-    // sessions' current state rather than guessing — so a one-gateway
-    // failure must not mark the other mode's sessions dead either.
+    // has one and union the answers. A mode we can't reach falls back to the
+    // transcript below rather than being marked dead on a guess — so a
+    // one-gateway failure must not end the other mode's sessions either.
     const modes = Array.from(new Set(working.map((sessionId) => sessionUnrestricted(sessionId))));
     const snapshot = await liveRuntimeSessionsForModes(modes);
-    if (snapshot.reachableModes.size === 0) return;
     for (const sessionId of working) {
-      // Sessions of an unreachable mode were not in any answer we got;
-      // counting them as misses would mark live work dead.
-      if (!snapshot.reachableModes.has(sessionUnrestricted(sessionId))) continue;
+      if (!snapshot.reachableModes.has(sessionUnrestricted(sessionId))) {
+        // The runtime that owns this session did not answer, so there is no
+        // ground truth this tick. Fall back to the persisted transcript, which
+        // may only settle a turn it can prove is closed — a dangling tool call
+        // keeps the session running until the runtime can be asked again. A
+        // gateway that stays unreachable means the runtime is gone anyway, so a
+        // turn it left mid-loop is settled by the interrupted notice, not here.
+        const messages = [
+          ...(hermesSessionMessagesRef.current[sessionId] ?? []),
+          ...(pendingHermesMessagesRef.current[sessionId] ?? []),
+        ];
+        if (hermesMessagesShowCompletedTurn(messages)) {
+          misses.delete(sessionId);
+          settleSessionRun(
+            sessionId,
+            "Sub Rosa finished.",
+            "transcript-fallback-runtime-unreachable",
+          );
+        }
+        continue;
+      }
       if (runtimeSnapshotHasSession(snapshot, sessionId)) {
         misses.delete(sessionId);
         continue;
@@ -5087,18 +5380,7 @@ export function AgentWorkspace({
         continue;
       }
       misses.delete(sessionId);
-      const activityCounts = clearSessionActivity(sessionId);
-      // "completed" (not "failed") keeps the status quiet: its title falls back
-      // to lastStatus when nothing is active, and a stale "running" there
-      // would still render "Working…".
-      dispatchAgentSessionStatus({
-        sessionId,
-        title:
-          hermesSessionItems.find((session) => session.id === sessionId)?.title ?? "Agent session",
-        status: "completed",
-        summary: "Sub Rosa stopped.",
-        ...activityCounts,
-      });
+      settleSessionRun(sessionId, "Sub Rosa stopped.", "runtime-idle-two-polls");
     }
   }
 
@@ -5143,17 +5425,15 @@ export function AgentWorkspace({
         return next;
       });
       void suggestTitleForUntitledSession(sessionId, messages);
-      if (sessionHasAssistantAfterLatestUser([...messages, ...retainedPending])) {
+      // The persisted transcript has caught up with the live stream (the model
+      // has spoken since the user did). ADR-0016: this does NOT end the run —
+      // the agent loop persists an assistant row at every step, so ending it
+      // here settled turns that were still going. Activity now ends only on a
+      // terminal gateway event or on the runtime's session.active_list.
+      if (hermesMessagesHaveAssistantReply([...messages, ...retainedPending])) {
         promotePendingIssueReportToReview(sessionId, {
           queueDiagnosisRefresh: false,
         });
-        const wasActive = sessionHasActiveWork(
-          sessionId,
-          workingSessionIdsRef.current,
-          waitingSessionIdsRef.current,
-          liveEventsRef.current,
-        );
-        const activityCounts = clearSessionActivity(sessionId);
         // A live `error` frame is the only record of a mid-loop model failure:
         // Hermes logs it but never persists it as an assistant message, so once
         // a tool-call assistant message exists the persisted rebuild has no
@@ -5164,18 +5444,6 @@ export function AgentWorkspace({
         const preservedErrors = (liveEventsRef.current[sessionId] ?? []).filter(
           (event) => event.type === "error",
         );
-        const turnFailed = preservedErrors.length > 0;
-        if (wasActive) {
-          dispatchAgentSessionStatus({
-            sessionId,
-            title:
-              hermesSessionItems.find((session) => session.id === sessionId)?.title ??
-              "Agent session",
-            status: turnFailed ? "failed" : "completed",
-            summary: turnFailed ? "Sub Rosa hit a problem." : "Sub Rosa finished.",
-            ...activityCounts,
-          });
-        }
         liveEventsRef.current = { ...liveEventsRef.current, [sessionId]: preservedErrors };
         setLiveEvents(liveEventsRef.current);
       }
@@ -6137,6 +6405,11 @@ export function AgentWorkspace({
           interrupted:
             !workingSessionIds.has(selectedHermesSessionId) &&
             !waitingSessionIds.has(selectedHermesSessionId) &&
+            // A turn that parked a long job and ended is not interrupted — it
+            // is waiting, and the gateway will chain the next turn when the job
+            // finishes. The background notice already says so; claiming the
+            // turn died would invite a retry that duplicates the work.
+            !hasRunningBackgroundWork(sessionBackgroundProcesses) &&
             hermesMessagesEndInterrupted(selectedHermesMessages),
         },
       )
@@ -6587,6 +6860,22 @@ export function AgentWorkspace({
             >
               {visibleGoalNotice}
             </motion.p>
+          ) : sessionBackgroundProcesses.length ? (
+            // Last in the chain: every notice above is about the message being
+            // typed, this one is about work already running. It is the only one
+            // that stays up while the composer is idle — which is exactly the
+            // state a parked long task leaves behind.
+            <motion.div
+              key="background-work"
+              className="agent-composer-notice agent-composer-notice-background"
+              role="status"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.22, ease: EASE_OUT }}
+            >
+              <BackgroundWorkNotice processes={sessionBackgroundProcesses} />
+            </motion.div>
           ) : null}
         </AnimatePresence>
         <div ref={composerBoxRef} className="agent-composer-box">
@@ -12196,21 +12485,6 @@ function hermesMessageTimestampMs(message: HermesSessionMessage) {
   return Number.isNaN(parsed) ? undefined : parsed;
 }
 
-function sessionHasAssistantAfterLatestUser(messages: HermesSessionMessage[]) {
-  let latestUserIndex = -1;
-  let latestAssistantIndex = -1;
-  messages.forEach((message, index) => {
-    if (message.role === "user") {
-      latestUserIndex = index;
-    } else if (message.role === "assistant") {
-      latestAssistantIndex = index;
-    }
-  });
-  if (latestAssistantIndex < 0) return false;
-  if (latestUserIndex < 0) return true;
-  return latestAssistantIndex > latestUserIndex;
-}
-
 // A session whose latest message is a recent user prompt with no assistant
 // reply yet is treated as an in-flight run — e.g. the workspace was unmounted
 // mid-run (navigation) or the gateway dropped — so working state and the poll
@@ -12219,26 +12493,19 @@ function sessionHasAssistantAfterLatestUser(messages: HermesSessionMessage[]) {
 const RESUME_ACTIVITY_WINDOW_MS = 15 * 60 * 1000;
 
 function shouldResumeSessionActivity(messages: HermesSessionMessage[]) {
-  if (sessionHasAssistantAfterLatestUser(messages)) return false;
+  if (hermesMessagesHaveAssistantReply(messages)) return false;
   const latestUser = [...messages].reverse().find((message) => message.role === "user");
   if (!latestUser) return false;
   const sentAt = hermesMessageTimestampMs(latestUser);
   return sentAt !== undefined && Date.now() - sentAt < RESUME_ACTIVITY_WINDOW_MS;
 }
 
-function sessionHasActiveWork(
-  sessionId: string,
-  workingSessionIds: Set<string>,
-  waitingSessionIds: Set<string>,
-  liveEvents: Record<string, LiveHermesEvent[]>,
-) {
-  return (
-    workingSessionIds.has(sessionId) ||
-    waitingSessionIds.has(sessionId) ||
-    (liveEvents[sessionId]?.length ?? 0) > 0
-  );
-}
-
+// Frames that end the session's TURN. Deliberately excludes `background.*`: a
+// background process finishing is the opposite of an ending — the gateway's
+// notification poller chains a fresh agent turn with that process's output, so
+// treating it as terminal ended the run and dropped the live subscription at
+// the exact moment the agent was about to pick the work back up, and the
+// chained turn then streamed to nobody (see ADR-0016 addendum).
 function isTerminalHermesEvent(type: string) {
   const normalized = type.toLowerCase();
   return (
@@ -12248,9 +12515,7 @@ function isTerminalHermesEvent(type: string) {
     normalized === "turn.complete" ||
     normalized === "turn.completed" ||
     normalized === "session.complete" ||
-    normalized === "session.completed" ||
-    normalized === "background.complete" ||
-    normalized === "background.completed"
+    normalized === "session.completed"
   );
 }
 
@@ -12534,6 +12799,70 @@ function AgentThinking() {
     <div className="agent-thinking" role="status" aria-live="polite">
       <span className="text-shimmer agent-thinking-label">Thinking…</span>
     </div>
+  );
+}
+
+/** Rounded, single-unit elapsed time — "12 min", "2 h 40". Long jobs are the
+ * point here, so seconds only matter for the first minute. */
+export function backgroundElapsedLabel(startedAt: string, now: number): string {
+  const started = Date.parse(startedAt);
+  if (!Number.isFinite(started)) return "";
+  const seconds = Math.max(0, Math.round((now - started) / 1000));
+  if (seconds < 60) return `${seconds} s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours} h ${String(minutes % 60).padStart(2, "0")}`;
+}
+
+/**
+ * Says that work is still running outside the turn. Since v1.27.0 the agent
+ * parks long tasks in a background process and ENDS ITS TURN — the gateway
+ * wakes it when the process finishes — so a finished turn and an idle composer
+ * are the normal look of a job with hours left. Without this the app simply
+ * looked dead, and the user re-prompted to find out whether anything was
+ * happening.
+ */
+function BackgroundWorkNotice({ processes }: { processes: BackgroundProcess[] }) {
+  const [now, setNow] = useState(() => Date.now());
+  const running = processes.filter((process) => process.status === "running");
+  useEffect(() => {
+    if (!running.length) return;
+    // A minute's resolution is all the label shows; ticking every 15s keeps it
+    // honest without a per-second re-render behind the composer.
+    const interval = window.setInterval(() => setNow(Date.now()), 15_000);
+    return () => window.clearInterval(interval);
+  }, [running.length]);
+
+  if (!running.length) {
+    // The process ended and the chained turn has not announced itself yet.
+    // Saying so beats going silent in the one gap where the user is most likely
+    // to think the agent gave up.
+    return (
+      <>
+        <IconConsole size={14} aria-hidden />
+        <span>Background task finished. Sub Rosa is picking it back up.</span>
+      </>
+    );
+  }
+
+  const oldest = running.reduce((earliest, process) =>
+    Date.parse(process.startedAt) < Date.parse(earliest.startedAt) ? process : earliest,
+  );
+  const elapsed = backgroundElapsedLabel(oldest.startedAt, now);
+  return (
+    <>
+      <DotSpinner />
+      <span>
+        {running.length === 1
+          ? "Running in the background"
+          : `${running.length} tasks running in the background`}
+      </span>
+      {running.length === 1 && oldest.label ? (
+        <code className="agent-composer-notice-command">{oldest.label}</code>
+      ) : null}
+      {elapsed ? <span className="agent-composer-notice-elapsed">{elapsed}</span> : null}
+    </>
   );
 }
 

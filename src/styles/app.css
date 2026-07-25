@@ -3901,7 +3901,11 @@ input:focus-visible,
   align-items: center;
   gap: var(--sp-3);
   width: fit-content;
-  max-width: min(var(--chat-max), var(--content-max));
+  /* `100%` in the min() so a notice can never be wider than the composer
+   * column it sits in: on a narrow window --chat-max exceeds the available
+   * width, and without this an unbreakable child (a long command) pushed the
+   * pill past the edge instead of ellipsizing inside it. */
+  max-width: min(var(--chat-max), var(--content-max), 100%);
   margin: 0 auto var(--sp-3);
   padding: var(--sp-2) var(--sp-3);
   border-radius: var(--r-md);
@@ -4008,6 +4012,40 @@ input:focus-visible,
 .agent-composer-notice-action {
   flex-wrap: wrap;
   justify-content: center;
+}
+
+/* Background work still running after its turn ended. Quieter than the busy
+ * notice (it reports, it doesn't block) and allowed to wrap: the command it
+ * names can be long. */
+.agent-composer-notice-background {
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2);
+}
+
+.agent-composer-notice-command {
+  /* Shrinkable to nothing so the ellipsis actually engages: a flex item's
+   * min-content width would otherwise keep an unbreakable command at full
+   * length and push it out of the pill. */
+  flex: 0 1 auto;
+  min-width: 4rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-sm);
+  background: color-mix(in oklch, var(--card) 70%, transparent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.agent-composer-notice-elapsed {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklch, var(--muted-foreground) 78%, transparent);
 }
 
 .agent-composer-notice-button {
@@ -6867,6 +6905,14 @@ input:focus-visible,
 .agent-sidebar-working[data-status="waitingForUser"],
 .agent-sidebar-working[data-status="unread"] {
   background: var(--warm-strong);
+}
+
+/* Background work: a hollow dot. Nothing is being generated right now, so it
+ * must not compete with the filled needs-you / new-reply dots — it says "still
+ * going", not "look at me". */
+.agent-sidebar-working[data-status="background"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--muted-foreground) 70%, transparent);
 }
 
 /* A session awaiting your input reads a touch heavier so it stands out in the

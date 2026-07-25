@@ -7,6 +7,8 @@ import {
   displayedComposerUserMessageText,
   HERMES_LIVE_EVENT_LIMIT,
   hermesMessagesEndInterrupted,
+  hermesMessagesHaveAssistantReply,
+  hermesMessagesShowCompletedTurn,
   type LiveHermesEvent,
   repairContractionSpacing,
   toolEventKey,
@@ -1878,6 +1880,97 @@ describe("interrupted-turn detection", () => {
     const notices = turns.flatMap((turn) => turn.parts).filter((part) => part.type === "notice");
     expect(notices).toHaveLength(1);
     expect(notices[0]).toMatchObject({ kind: "upstream-busy" });
+  });
+});
+
+describe("turn settlement (ADR-0016)", () => {
+  const user = (): HermesSessionMessage =>
+    ({
+      id: "u1",
+      role: "user",
+      content: "run the benchmark",
+      timestamp: "2026-07-24T10:00:00.000Z",
+    }) as unknown as HermesSessionMessage;
+
+  // Hermes 0.19 seals mid-turn commentary as its own persisted assistant row,
+  // and every tool-calling step persists one too. Both land in the transcript
+  // while the loop is still running.
+  const commentary = (): HermesSessionMessage =>
+    ({
+      id: "a1",
+      role: "assistant",
+      content: "Le run est toujours en cours, mais il y a déjà un point important :",
+      timestamp: "2026-07-24T10:00:20.000Z",
+    }) as unknown as HermesSessionMessage;
+
+  const toolCall = (): HermesSessionMessage =>
+    ({
+      id: "a2",
+      role: "assistant",
+      content: "",
+      tool_calls: [{ id: "t1", type: "function", function: { name: "terminal", arguments: "{}" } }],
+      timestamp: "2026-07-24T10:00:21.000Z",
+    }) as unknown as HermesSessionMessage;
+
+  const toolResult = (): HermesSessionMessage =>
+    ({
+      id: "t1",
+      role: "tool",
+      tool_call_id: "t1",
+      content: "40/117 appels lancés",
+      timestamp: "2026-07-24T10:00:32.000Z",
+    }) as unknown as HermesSessionMessage;
+
+  const answer = (): HermesSessionMessage =>
+    ({
+      id: "a3",
+      role: "assistant",
+      content: "Le benchmark est terminé.",
+      timestamp: "2026-07-24T10:40:00.000Z",
+    }) as unknown as HermesSessionMessage;
+
+  it("does not settle a turn with work still dangling", () => {
+    // The regression this rule exists for: settling on "an assistant row exists"
+    // declared a running turn finished a couple of seconds in — the stop button
+    // reverted to send, the live buffer was dropped, and the interrupted notice
+    // rendered over a turn that then carried on.
+    expect(hermesMessagesShowCompletedTurn([user(), commentary(), toolCall()])).toBe(false);
+    expect(hermesMessagesShowCompletedTurn([user(), commentary(), toolCall(), toolResult()])).toBe(
+      false,
+    );
+  });
+
+  it("cannot tell mid-turn commentary apart from a final answer", () => {
+    // The limit that makes this test a FALLBACK and not the authority: Hermes
+    // persists sealed mid-turn commentary as a plain assistant row, so a loop
+    // pausing between steps is shape-identical to a finished turn. Only the
+    // runtime's session.active_list separates them, which is why the poll asks
+    // it first and reaches for this shape only when the runtime cannot answer.
+    expect(hermesMessagesShowCompletedTurn([user(), commentary()])).toBe(true);
+  });
+
+  it("settles a turn that ended on a plain assistant answer", () => {
+    expect(hermesMessagesShowCompletedTurn([user(), answer()])).toBe(true);
+    expect(
+      hermesMessagesShowCompletedTurn([user(), commentary(), toolCall(), toolResult(), answer()]),
+    ).toBe(true);
+  });
+
+  it("does not settle a prompt that has no reply yet", () => {
+    expect(hermesMessagesShowCompletedTurn([user()])).toBe(false);
+    expect(hermesMessagesShowCompletedTurn([])).toBe(false);
+    // A follow-up sent after a finished turn re-opens the session.
+    expect(hermesMessagesShowCompletedTurn([user(), answer(), user()])).toBe(false);
+  });
+
+  it("keeps the weaker assistant-reply test available and honest about its meaning", () => {
+    // shouldResumeSessionActivity still needs "has the model said anything yet";
+    // the point of the split is that this is true mid-loop, which is exactly why
+    // it must not decide whether a turn is over.
+    expect(hermesMessagesHaveAssistantReply([user(), commentary(), toolResult()])).toBe(true);
+    expect(hermesMessagesShowCompletedTurn([user(), commentary(), toolResult()])).toBe(false);
+    expect(hermesMessagesHaveAssistantReply([user()])).toBe(false);
+    expect(hermesMessagesHaveAssistantReply([answer()])).toBe(true);
   });
 });
 

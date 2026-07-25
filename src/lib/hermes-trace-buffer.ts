@@ -43,8 +43,11 @@ const NO_SESSION_KEY = "__no_session__";
 /** Cap on a sanitized preview string so a single entry stays small in an export. */
 const PREVIEW_MAX_LENGTH = 2000;
 
-/** Which way a trace entry crossed the gateway. */
-export type HermesTraceDirection = "inbound" | "outbound" | "error";
+/** Which way a trace entry crossed the gateway. `local` never crossed it: it is
+ * a decision June made about the session on its own (ADR-0016's activity
+ * settlement), recorded so the reason a run started or ended is legible next to
+ * the frames that surround it. */
+export type HermesTraceDirection = "inbound" | "outbound" | "error" | "local";
 
 /**
  * One chronological trace entry. Production-safe by construction: `payloadKeys`
@@ -95,6 +98,17 @@ export type ErrorTraceInput = {
   message: string;
 };
 
+/** Local recording: a client-side decision about a session, with the authority
+ * it came from. `detail` is sanitized like any other payload. */
+export type LocalTraceInput = {
+  sessionId?: string;
+  /** What was decided, e.g. `activity.settled` / `activity.started`. */
+  event: string;
+  /** Why — the authority that decided it (`terminal-event`, `runtime-idle`, …). */
+  reason: string;
+  detail?: unknown;
+};
+
 export type HermesTraceBuffer = {
   /** Record one inbound raw frame, classifying it for the normalized column. */
   recordInbound(frame: InboundTraceInput): void;
@@ -102,6 +116,8 @@ export type HermesTraceBuffer = {
   recordOutbound(call: OutboundTraceInput): void;
   /** Record one error/rejection. */
   recordError(error: ErrorTraceInput): void;
+  /** Record one local decision about a session (no gateway traffic involved). */
+  recordLocal(decision: LocalTraceInput): void;
   /** Chronological entries for one session, oldest-first. */
   entriesFor(sessionId: string | undefined): HermesTraceEntry[];
   /** Session ids that currently have entries (real ids only, oldest-first). */
@@ -192,6 +208,21 @@ export function createHermesTraceBuffer(): HermesTraceBuffer {
     });
   }
 
+  function recordLocal(decision: LocalTraceInput): void {
+    const sessionId = nonEmpty(decision.sessionId);
+    const { payloadKeys, payloadPreview } = describePayload(decision.detail);
+    push(sessionId, {
+      id: nextId++,
+      direction: "local",
+      observedAt: new Date().toISOString(),
+      sessionId,
+      method: decision.event,
+      message: decision.reason,
+      payloadKeys,
+      payloadPreview,
+    });
+  }
+
   function entriesFor(sessionId: string | undefined): HermesTraceEntry[] {
     const key = sessionId ?? NO_SESSION_KEY;
     return (bySession.get(key) ?? []).map(cloneEntry);
@@ -226,6 +257,7 @@ export function createHermesTraceBuffer(): HermesTraceBuffer {
     recordInbound,
     recordOutbound,
     recordError,
+    recordLocal,
     entriesFor,
     sessionIds,
     exportSanitizedTrace,

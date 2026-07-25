@@ -290,6 +290,25 @@ describe("classifyHermesEvent — clarify/approval responses are lifecycle, not 
   });
 });
 
+describe("classifyHermesEvent — background processes", () => {
+  it("maps background.* to lifecycle, not to an unsupported-event notice", () => {
+    // June acts on these (they bracket work that outlives a turn, and the
+    // gateway chains a new turn when one completes), so surfacing them as
+    // "unknown event" would contradict the app's own behaviour.
+    const complete = classifyHermesEvent(
+      event("background.complete", { handle: "bg-1", status: "exited" }),
+    );
+    expect(complete.kind).toBe("lifecycle");
+    if (complete.kind === "lifecycle") {
+      expect(complete.status).toBe("exited");
+      expect(complete.payload).toMatchObject({ handle: "bg-1" });
+    }
+    expect(classifyHermesEvent(event("background.start", { handle: "bg-1" })).kind).toBe(
+      "lifecycle",
+    );
+  });
+});
+
 describe("classifyHermesEvent — background activity", () => {
   it("maps subagent.* to background_activity with phase + identity", () => {
     const start = classifyHermesEvent(

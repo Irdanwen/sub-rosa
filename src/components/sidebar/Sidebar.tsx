@@ -415,6 +415,11 @@ export function Sidebar({
   // Sessions that finished a turn while the user wasn't looking — shown as a
   // terracotta dot in place of the timestamp until the session is opened.
   const [unreadAgentSessionIds, setUnreadAgentSessionIds] = useState<Set<string>>(() => new Set());
+  // Sessions whose turn ended while a background process keeps running — the
+  // normal shape of long work since the agent parks it and ends its turn.
+  const [backgroundAgentSessionIds, setBackgroundAgentSessionIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   // Refs for the mount-once sessions-changed listener: the previous working
   // set (to spot sessions that just finished) and which session is open in
   // front of the user (those never go unread).
@@ -846,6 +851,7 @@ export function Sidebar({
       setSelectedAgentSessionId(detail.selectedSessionId);
       const nextWorking = new Set(detail.workingSessionIds);
       const nextWaiting = new Set(detail.waitingSessionIds ?? []);
+      setBackgroundAgentSessionIds(new Set(detail.backgroundSessionIds ?? []));
       // A session that left the working set without pausing for input just
       // finished a turn — mark it unread unless it's open in front of the
       // user.
@@ -1117,6 +1123,7 @@ export function Sidebar({
                     selected={activeView === "agent" && selectedAgentSessionId === session.id}
                     working={workingAgentSessionIds.has(session.id)}
                     waiting={waitingAgentSessionIds.has(session.id)}
+                    background={backgroundAgentSessionIds.has(session.id)}
                     unread={unreadAgentSessionIds.has(session.id)}
                     deleting={deletingAgentSessionIds.has(session.id)}
                     menuOpen={menu?.kind === "agent-session" && menu.sessionId === session.id}
@@ -1164,6 +1171,7 @@ export function Sidebar({
                       selected={activeView === "agent" && selectedAgentSessionId === session.id}
                       working={workingAgentSessionIds.has(session.id)}
                       waiting={waitingAgentSessionIds.has(session.id)}
+                      background={backgroundAgentSessionIds.has(session.id)}
                       unread={unreadAgentSessionIds.has(session.id)}
                       deleting={deletingAgentSessionIds.has(session.id)}
                       menuOpen={menu?.kind === "agent-session" && menu.sessionId === session.id}
@@ -1965,6 +1973,7 @@ function AgentSessionRow({
   selected,
   working,
   waiting,
+  background,
   unread,
   deleting,
   menuOpen,
@@ -1975,6 +1984,8 @@ function AgentSessionRow({
   selected: boolean;
   working: boolean;
   waiting: boolean;
+  /** A background process is still running even though the turn ended. */
+  background: boolean;
   unread: boolean;
   deleting: boolean;
   menuOpen: boolean;
@@ -2029,6 +2040,21 @@ function AgentSessionRow({
           aria-label="Working"
         >
           <DotSpinner className="agent-sidebar-spinner" />
+        </span>
+      ) : background ? (
+        // The turn is over but a job it parked is not. Quieter than the working
+        // spinner (nothing is being generated right now) and ahead of unread,
+        // which would otherwise read as "finished, go look".
+        <span
+          className="agent-session-meta agent-session-status"
+          role="status"
+          aria-label="Running in the background"
+        >
+          <span
+            className="agent-sidebar-working"
+            data-status="background"
+            title="Running in the background"
+          />
         </span>
       ) : unread ? (
         <span

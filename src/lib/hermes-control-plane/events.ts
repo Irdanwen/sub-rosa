@@ -138,7 +138,18 @@ export type JuneHermesEvent =
       sessionId: string;
       activity: BackgroundHermesActivity;
     }
-  | { kind: "lifecycle"; sessionId?: string; status: string; payload?: unknown }
+  | {
+      kind: "lifecycle";
+      sessionId?: string;
+      /** The frame's own `status` field when it has one, else the raw type. */
+      status: string;
+      /** The raw wire type, kept because `status` shadows it whenever the frame
+       * carries a status field — a consumer that must know WHICH lifecycle this
+       * is (background process vs session vs gateway) cannot recover it from
+       * `status` alone. */
+      rawType?: string;
+      payload?: unknown;
+    }
   | {
       kind: "error";
       sessionId?: string;

@@ -36,6 +36,9 @@ function recentNotificationTimes(now: number) {
 
 export async function notifyAgentSessionStatus(detail: AgentSessionStatusDetail) {
   if (!NOTIFICATION_STATUSES.has(detail.status)) return false;
+  // The dispatcher already told the user in the foreground; notifying again
+  // would repeat it out of context.
+  if (detail.silent) return false;
 
   const copy = agentNotificationCopy(detail);
   const group = agentNotificationGroup(detail);

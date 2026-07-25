@@ -29,6 +29,11 @@ export type AgentSessionStatusDetail = {
   summary?: string;
   activeCount?: number;
   needsUserCount?: number;
+  /** Suppresses the desktop notification for this status while still updating
+   * every in-app surface (menu bar, HUD, sidebar). Set by failures the user is
+   * already watching happen in the foreground — a send that never left the app
+   * — where a notification only repeats what the composer just said. */
+  silent?: boolean;
 };
 
 export type AgentSessionsChangedDetail = {
@@ -36,6 +41,10 @@ export type AgentSessionsChangedDetail = {
   selectedSessionId?: string;
   workingSessionIds: string[];
   waitingSessionIds?: string[];
+  /** Sessions with a background process still running after their turn ended.
+   * Optional so an older listener is unaffected; the sidebar marks these so a
+   * parked long task is visible without opening the conversation. */
+  backgroundSessionIds?: string[];
 };
 
 export function dispatchAgentSessionStatus(detail: AgentSessionStatusDetail) {

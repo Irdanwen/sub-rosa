@@ -320,6 +320,49 @@ export function hermesMessagesEndInterrupted(messages: HermesSessionMessage[]): 
   return false;
 }
 
+/** True when an assistant message exists after the latest user message — i.e.
+ * the model has spoken since the user last did. This alone does NOT mean the
+ * turn is over: an agent loop persists its mid-turn commentary and its
+ * tool-calling assistant rows as it goes, so it is true from the loop's first
+ * step onward. Use it only to tell "the model has started answering" apart from
+ * "nothing came back yet"; use {@link hermesMessagesShowCompletedTurn} to decide
+ * whether the turn has actually ended. */
+export function hermesMessagesHaveAssistantReply(messages: HermesSessionMessage[]): boolean {
+  let latestUserIndex = -1;
+  let latestAssistantIndex = -1;
+  messages.forEach((message, index) => {
+    if (message.role === "user") {
+      latestUserIndex = index;
+    } else if (message.role === "assistant") {
+      latestAssistantIndex = index;
+    }
+  });
+  if (latestAssistantIndex < 0) return false;
+  if (latestUserIndex < 0) return true;
+  return latestAssistantIndex > latestUserIndex;
+}
+
+/**
+ * True when the persisted transcript shows a turn that actually ENDED: the model
+ * has answered since the user's last message *and* the transcript is not sitting
+ * mid agent-loop (see {@link hermesMessagesEndInterrupted}).
+ *
+ * This is the message-shape half of ADR-0016's two-authority rule. It is
+ * deliberately one-directional: it can only ever settle a turn it can prove is
+ * closed, never one it merely fails to see progress on. "An assistant row exists
+ * after the user's" is NOT that proof — Hermes persists mid-turn commentary
+ * (`message.interim`) and every tool-calling assistant row as the loop runs, so
+ * that weaker test goes true a couple of seconds into any tool-using turn and
+ * settling on it made the app declare a running turn finished (stop button back
+ * to send, live buffer dropped, "This turn stopped before it finished" notice on
+ * a turn that then carried on). A turn that dies mid-loop leaves the transcript
+ * open forever, so it is never settled here — the runtime's own
+ * `session.active_list` is the other authority and clears those.
+ */
+export function hermesMessagesShowCompletedTurn(messages: HermesSessionMessage[]): boolean {
+  return hermesMessagesHaveAssistantReply(messages) && !hermesMessagesEndInterrupted(messages);
+}
+
 // Append an `interrupted` notice to the final turn when the session ended mid
 // agent-loop (see {@link hermesMessagesEndInterrupted}) and the caller has
 // confirmed it is idle. Returns the input unchanged when it did not, when there

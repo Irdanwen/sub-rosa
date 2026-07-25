@@ -18,6 +18,7 @@ import {
   E2EE_MODEL_DESCRIPTION,
   PROVIDER_MODEL_SETTINGS_CHANGED_EVENT,
 } from "../lib/model-privacy";
+import { AGENT_SESSION_STATUS_EVENT, type AgentSessionStatusDetail } from "../lib/agent-events";
 import { HermesGatewayError } from "../lib/hermes-gateway";
 import { classifyHermesEvent } from "../lib/hermes-control-plane";
 import { hermesArtifactStore } from "../lib/hermes-artifact-store";
@@ -74,6 +75,9 @@ const mocks = vi.hoisted(() => ({
   listHermesSessions: vi.fn(),
   gatewayRequest: vi.fn(),
   gatewayEventHandlers: new Set<(event: Record<string, unknown>) => void>(),
+  // Captured so a test can simulate an unexpected socket drop and assert the
+  // recovery it triggers.
+  gatewayCloseHandlers: new Set<() => void>(),
   gatewayInstances: [] as Array<{
     connect: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
@@ -168,7 +172,10 @@ vi.mock("../lib/hermes-gateway", async (importOriginal) => ({
       mocks.gatewayEventHandlers.add(handler);
       return () => mocks.gatewayEventHandlers.delete(handler);
     });
-    onClose = vi.fn(() => vi.fn());
+    onClose = vi.fn((handler: () => void) => {
+      mocks.gatewayCloseHandlers.add(handler);
+      return () => mocks.gatewayCloseHandlers.delete(handler);
+    });
     request = mocks.gatewayRequest;
   },
 }));
@@ -224,6 +231,7 @@ describe("AgentWorkspace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.gatewayEventHandlers.clear();
+    mocks.gatewayCloseHandlers.clear();
     mocks.gatewayInstances.length = 0;
     // Auto-cleanup unmounts the workspace after each test, which snapshots
     // any still-working session for the next mount — across tests that would
@@ -4386,6 +4394,526 @@ describe("AgentWorkspace", () => {
       expect(screen.getByText("Thinking…")).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  // ADR-0016. An agent loop persists an assistant row at every step (Hermes
+  // seals mid-turn commentary as its own message, and each tool-calling step
+  // writes one), so the app used to read "the model has answered" as "the turn
+  // is over" a couple of seconds into any tool-using turn: the stop button
+  // reverted to send, the menu-bar status announced "finished", and the
+  // interrupted notice rendered over a turn that then carried on. The runtime's
+  // session.active_list is the authority now.
+  const midTurnLoopMessages = () => [
+    {
+      id: "m1",
+      role: "user",
+      content: "run the benchmark",
+      timestamp: new Date().toISOString(),
+    },
+    {
+      id: "m2",
+      role: "assistant",
+      content: "Le run est toujours en cours.",
+      timestamp: new Date().toISOString(),
+    },
+    {
+      id: "m3",
+      role: "assistant",
+      content: "",
+      tool_calls: [{ id: "t1", type: "function", function: { name: "terminal", arguments: "{}" } }],
+      timestamp: new Date().toISOString(),
+    },
+    {
+      id: "t1",
+      role: "tool",
+      tool_call_id: "t1",
+      content: "40/117 appels lancés",
+      timestamp: new Date().toISOString(),
+    },
+  ];
+
+  const INTERRUPTED_NOTICE = /This turn stopped before it finished/;
+
+  it("keeps a turn running while its loop persists mid-turn rows", async () => {
+    // First load arms the run (recent trailing user prompt); every later poll
+    // returns the loop mid-flight.
+    mocks.listHermesSessionMessages.mockResolvedValueOnce([midTurnLoopMessages()[0]]);
+    mocks.listHermesSessionMessages.mockResolvedValue(midTurnLoopMessages());
+    mocks.gatewayRequest.mockImplementation((method: string) => {
+      if (method === "session.active_list") {
+        return Promise.resolve({
+          sessions: [{ id: "runtime-session-1", session_key: "session-1", status: "working" }],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    vi.useFakeTimers();
+    try {
+      render(<AgentWorkspace />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      expect(screen.getByLabelText("Stop Sub Rosa")).toBeInTheDocument();
+
+      // Three polls: well past the two-miss budget that would have settled it.
+      for (let poll = 0; poll < 3; poll += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2500);
+        });
+      }
+
+      expect(screen.getByText("Le run est toujours en cours.")).toBeInTheDocument();
+      // Still running: stop still owns the send slot, and no notice claims the
+      // turn died.
+      expect(screen.getByLabelText("Stop Sub Rosa")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Send message")).toBeNull();
+      expect(screen.queryByText(INTERRUPTED_NOTICE)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("settles a mid-loop turn the runtime is no longer running, and flags it", async () => {
+    // The other half of the rule: the same transcript, but the runtime says the
+    // session is gone — a genuinely dead turn (ADR-0012) must still surface.
+    mocks.listHermesSessionMessages.mockResolvedValueOnce([midTurnLoopMessages()[0]]);
+    mocks.listHermesSessionMessages.mockResolvedValue(midTurnLoopMessages());
+    mocks.gatewayRequest.mockImplementation((method: string) => {
+      if (method === "session.active_list") return Promise.resolve({ sessions: [] });
+      return Promise.resolve({});
+    });
+
+    vi.useFakeTimers();
+    try {
+      render(<AgentWorkspace />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      expect(screen.getByLabelText("Stop Sub Rosa")).toBeInTheDocument();
+
+      for (let poll = 0; poll < 3; poll += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2500);
+        });
+      }
+
+      expect(screen.queryByLabelText("Stop Sub Rosa")).toBeNull();
+      expect(screen.getByText(INTERRUPTED_NOTICE)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("settles a finished turn from the transcript when the runtime cannot be reached", async () => {
+    // Degraded path: no ground truth this tick, so the transcript decides — but
+    // only for a shape it can prove is closed (a plain assistant answer).
+    mocks.listHermesSessionMessages.mockResolvedValueOnce([midTurnLoopMessages()[0]]);
+    mocks.listHermesSessionMessages.mockResolvedValue([
+      ...midTurnLoopMessages(),
+      {
+        id: "m4",
+        role: "assistant",
+        content: "Le benchmark est terminé.",
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+    mocks.gatewayRequest.mockImplementation((method: string) => {
+      if (method === "session.active_list") return Promise.reject(new Error("gateway down"));
+      return Promise.resolve({});
+    });
+
+    vi.useFakeTimers();
+    try {
+      render(<AgentWorkspace />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      expect(screen.getByLabelText("Stop Sub Rosa")).toBeInTheDocument();
+
+      // The fallback reads the transcript the previous poll applied, so it
+      // settles a tick after the answer lands rather than within the same one.
+      for (let poll = 0; poll < 3; poll += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2500);
+        });
+      }
+
+      expect(screen.queryByLabelText("Stop Sub Rosa")).toBeNull();
+      expect(screen.queryByText(INTERRUPTED_NOTICE)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a dangling tool call running when the runtime cannot be reached", async () => {
+    // Same degraded path, mid-loop shape: unprovable, so the run is left alone
+    // until the runtime can be asked again.
+    mocks.listHermesSessionMessages.mockResolvedValueOnce([midTurnLoopMessages()[0]]);
+    mocks.listHermesSessionMessages.mockResolvedValue(midTurnLoopMessages());
+    mocks.gatewayRequest.mockImplementation((method: string) => {
+      if (method === "session.active_list") return Promise.reject(new Error("gateway down"));
+      return Promise.resolve({});
+    });
+
+    vi.useFakeTimers();
+    try {
+      render(<AgentWorkspace />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+
+      for (let poll = 0; poll < 3; poll += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2500);
+        });
+      }
+
+      expect(screen.getByLabelText("Stop Sub Rosa")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // ADR-0016 addendum. June is no longer the only thing that starts a turn: the
+  // gateway's notification poller chains one when a background process
+  // finishes, the goal loop continues one after its post-turn judge, and a
+  // routine runs one on a schedule. The live subscription used to be dropped on
+  // the first terminal frame, so every gateway-initiated turn ran invisibly.
+  const emitGatewayEvent = (event: Record<string, unknown>) => {
+    act(() => {
+      for (const handler of mocks.gatewayEventHandlers) handler(event);
+    });
+  };
+
+  /** A terminal frame schedules a session refresh 300ms later, and gateway
+   * recovery ends with a fire-and-forget one. Let them land inside the test
+   * that caused them instead of in the next test's mock counters. */
+  const flushDeferredSessionWork = () =>
+    act(() => new Promise((resolve) => setTimeout(resolve, 350)));
+
+  const sendFirstTurn = async (user: ReturnType<typeof userEvent.setup>, text: string) => {
+    await user.type(await screen.findByRole("textbox"), text);
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() =>
+      expect(mocks.gatewayRequest).toHaveBeenCalledWith("prompt.submit", {
+        session_id: "runtime-session-1",
+        text,
+      }),
+    );
+  };
+
+  it("does not end a turn when a background process finishes", async () => {
+    const user = userEvent.setup();
+    mocks.listHermesSessionMessages.mockResolvedValue([]);
+
+    render(<AgentWorkspace initialSession={existingSession} />);
+    await sendFirstTurn(user, "run the benchmark");
+    expect(screen.getByLabelText("Stop Sub Rosa")).toBeInTheDocument();
+
+    // A background process completing is the opposite of an ending — it is what
+    // wakes the agent back up.
+    emitGatewayEvent({
+      type: "background.complete",
+      session_id: "runtime-session-1",
+      payload: { handle: "bg-1" },
+    });
+
+    expect(screen.getByLabelText("Stop Sub Rosa")).toBeInTheDocument();
+    expect(screen.queryByText(/June received/)).toBeNull();
+    await flushDeferredSessionWork();
+  });
+
+  it("streams a turn the gateway starts on its own after the previous one ended", async () => {
+    const user = userEvent.setup();
+    mocks.listHermesSessionMessages.mockResolvedValue([]);
+
+    render(<AgentWorkspace initialSession={existingSession} />);
+    await sendFirstTurn(user, "run the benchmark");
+
+    // June parked the batch in a background process and ended its turn.
+    emitGatewayEvent({ type: "turn.completed", session_id: "runtime-session-1" });
+    await waitFor(() => expect(screen.queryByLabelText("Stop Sub Rosa")).toBeNull());
+
+    // The process finishes; the gateway chains a fresh turn with its output.
+    // Nothing in the app asked for it, and nothing re-attached a listener.
+    emitGatewayEvent({
+      type: "background.complete",
+      session_id: "runtime-session-1",
+      payload: { handle: "bg-1" },
+    });
+    emitGatewayEvent({
+      type: "message.start",
+      session_id: "runtime-session-1",
+      payload: { message_id: "chained-1" },
+    });
+    emitGatewayEvent({
+      type: "message.delta",
+      session_id: "runtime-session-1",
+      payload: { message_id: "chained-1", delta: "Le benchmark est terminé." },
+    });
+
+    expect(await screen.findByText("Le benchmark est terminé.")).toBeInTheDocument();
+    // And the session reads as working again, so stop is available and the poll
+    // is armed for the rest of the chained turn.
+    expect(screen.getByLabelText("Stop Sub Rosa")).toBeInTheDocument();
+    await flushDeferredSessionWork();
+  });
+
+  it("reconnects an idle session's subscription after a socket drop", async () => {
+    // A dropped socket used to be recovered only for visibly-working sessions.
+    // Now that an idle session can still be handed a turn by the gateway, one
+    // that is merely waiting on a background process must get its subscription
+    // back too — otherwise the chained turn arrives at a closed socket.
+    const user = userEvent.setup();
+    mocks.listHermesSessionMessages.mockResolvedValue([]);
+    mocks.gatewayRequest.mockImplementation((method: string) => {
+      if (method === "session.resume") {
+        return Promise.resolve({ session_id: "runtime-session-1" });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgentWorkspace initialSession={existingSession} />);
+    await sendFirstTurn(user, "run the benchmark");
+    emitGatewayEvent({ type: "turn.completed", session_id: "runtime-session-1" });
+    await waitFor(() => expect(screen.queryByLabelText("Stop Sub Rosa")).toBeNull());
+
+    mocks.gatewayRequest.mockClear();
+    await act(async () => {
+      for (const handler of mocks.gatewayCloseHandlers) handler();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    await waitFor(() =>
+      expect(mocks.gatewayRequest).toHaveBeenCalledWith("session.resume", {
+        session_id: "session-1",
+        cols: 96,
+      }),
+    );
+
+    // And the re-attached subscription carries the chained turn.
+    emitGatewayEvent({
+      type: "message.delta",
+      session_id: "runtime-session-1",
+      payload: { message_id: "chained-1", delta: "Reprise après la coupure." },
+    });
+    expect(await screen.findByText("Reprise après la coupure.")).toBeInTheDocument();
+    await flushDeferredSessionWork();
+  });
+
+  // The memoized runtime session id outlives its runtime whenever Hermes
+  // restarts between turns. Nothing evicted it, so the gateway kept answering
+  // "Session not found" and the conversation was unusable until the app was
+  // restarted — the reported failure when picking a session back up.
+  it("recovers a send whose memoized runtime died between turns", async () => {
+    const user = userEvent.setup();
+    mocks.listHermesSessionMessages.mockResolvedValue([]);
+    let resumeCount = 0;
+    let submitCount = 0;
+    mocks.gatewayRequest.mockImplementation((method: string, params: Record<string, unknown>) => {
+      if (method === "session.resume") {
+        resumeCount += 1;
+        return Promise.resolve({ session_id: `runtime-session-${resumeCount}` });
+      }
+      if (method === "prompt.submit") {
+        submitCount += 1;
+        // The first send lands on the memoized (now dead) runtime.
+        if (params.session_id === "runtime-session-1" && submitCount === 1) {
+          return Promise.reject(
+            new Error('Hermes API returned 404 Not Found: {"detail":"Session not found"}'),
+          );
+        }
+        return Promise.resolve({});
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgentWorkspace initialSession={existingSession} />);
+    await user.type(await screen.findByRole("textbox"), "s'en est où ?");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+
+    // Resolved onto a fresh runtime and replayed — one send, not a dead end.
+    await waitFor(() =>
+      expect(mocks.gatewayRequest).toHaveBeenCalledWith("prompt.submit", {
+        session_id: "runtime-session-2",
+        text: "s'en est où ?",
+      }),
+    );
+    expect(screen.getByText("s'en est où ?")).toBeInTheDocument();
+    // No error banner and no lost text: the user never sees the wire 404.
+    expect(screen.queryByText(/Session not found/)).toBeNull();
+    expect(screen.queryByText(/could not reopen this conversation/i)).toBeNull();
+  });
+
+  it("explains a send whose session no runtime can reopen, without notifying", async () => {
+    const user = userEvent.setup();
+    const statuses: AgentSessionStatusDetail[] = [];
+    const onStatus = (event: Event) => {
+      statuses.push((event as CustomEvent<AgentSessionStatusDetail>).detail);
+    };
+    window.addEventListener(AGENT_SESSION_STATUS_EVENT, onStatus);
+    mocks.listHermesSessionMessages.mockResolvedValue([]);
+    // The runtime resumes, but every prompt bounces off a session it no longer
+    // has — so the recovery replay runs and still fails.
+    mocks.gatewayRequest.mockImplementation((method: string) => {
+      if (method === "session.resume") return Promise.resolve({ session_id: "runtime-session-9" });
+      if (method === "prompt.submit") {
+        return Promise.reject(
+          new Error('Hermes API returned 404 Not Found: {"detail":"Session not found"}'),
+        );
+      }
+      return Promise.resolve({});
+    });
+
+    try {
+      render(<AgentWorkspace initialSession={existingSession} />);
+      await user.type(await screen.findByRole("textbox"), "s'en est où ?");
+      await user.click(screen.getByRole("button", { name: "Send message" }));
+
+      expect(await screen.findByText(/could not reopen this conversation/i)).toBeInTheDocument();
+      // The raw wire error never reaches the user.
+      expect(screen.queryByText(/404 Not Found/)).toBeNull();
+      // The status still flows (the menu bar has to leave "working"), but it is
+      // marked silent so no desktop notification repeats what the composer just
+      // said about a send the user watched fail.
+      const failure = statuses.find((detail) => detail.status === "failed");
+      expect(failure?.silent).toBe(true);
+    } finally {
+      window.removeEventListener(AGENT_SESSION_STATUS_EVENT, onStatus);
+    }
+  });
+
+  it("explains a send whose session cannot even be resumed", async () => {
+    // The other shape of the same failure: the resume itself 404s, so the send
+    // never reaches a runtime. The user gets the same actionable sentence, and
+    // the session was never announced as running so nothing has to walk that
+    // back.
+    const user = userEvent.setup();
+    const statuses: AgentSessionStatusDetail[] = [];
+    const onStatus = (event: Event) => {
+      statuses.push((event as CustomEvent<AgentSessionStatusDetail>).detail);
+    };
+    window.addEventListener(AGENT_SESSION_STATUS_EVENT, onStatus);
+    mocks.listHermesSessionMessages.mockResolvedValue([]);
+    mocks.gatewayRequest.mockImplementation((method: string) => {
+      if (method === "session.resume") {
+        return Promise.reject(
+          new Error('Hermes API returned 404 Not Found: {"detail":"Session not found"}'),
+        );
+      }
+      return Promise.resolve({});
+    });
+
+    try {
+      render(<AgentWorkspace initialSession={existingSession} />);
+      await user.type(await screen.findByRole("textbox"), "s'en est où ?");
+      await user.click(screen.getByRole("button", { name: "Send message" }));
+
+      expect(await screen.findByText(/could not reopen this conversation/i)).toBeInTheDocument();
+      expect(screen.queryByText(/404 Not Found/)).toBeNull();
+      expect(statuses.some((detail) => detail.status === "running")).toBe(false);
+      expect(statuses.filter((detail) => detail.status === "failed" && !detail.silent)).toEqual([]);
+    } finally {
+      window.removeEventListener(AGENT_SESSION_STATUS_EVENT, onStatus);
+    }
+  });
+
+  // The v1.27.0 shape of long work: park it in a background process, report it,
+  // end the turn, and let the gateway chain the next turn when it finishes. The
+  // app showed nothing at all in between — a settled turn and an idle composer,
+  // which is what "the chat looks dead" was.
+  const backgroundLaunchEvent = (command: string, toolCallId = "bg-call-1") => ({
+    type: "tool.start",
+    session_id: "runtime-session-1",
+    payload: {
+      tool_call_id: toolCallId,
+      name: "terminal",
+      arguments: { command, background: true },
+    },
+  });
+
+  it("keeps saying a background task is running after its turn ended", async () => {
+    const user = userEvent.setup();
+    mocks.listHermesSessionMessages.mockResolvedValue([]);
+
+    render(<AgentWorkspace initialSession={existingSession} />);
+    await sendFirstTurn(user, "run the benchmark");
+    emitGatewayEvent(backgroundLaunchEvent("python run_benchmark.py --all"));
+    emitGatewayEvent({ type: "turn.completed", session_id: "runtime-session-1" });
+
+    // The turn is over — and the session still visibly has work in flight.
+    await waitFor(() => expect(screen.queryByLabelText("Stop Sub Rosa")).toBeNull());
+    expect(screen.getByText("Running in the background")).toBeInTheDocument();
+    expect(screen.getByText("python run_benchmark.py --all")).toBeInTheDocument();
+
+    // And the app does not claim the turn died: it is waiting, not interrupted.
+    expect(screen.queryByText(INTERRUPTED_NOTICE)).toBeNull();
+    await flushDeferredSessionWork();
+  });
+
+  it("hands over from the finished process to the turn it chains", async () => {
+    const user = userEvent.setup();
+    mocks.listHermesSessionMessages.mockResolvedValue([]);
+
+    render(<AgentWorkspace initialSession={existingSession} />);
+    await sendFirstTurn(user, "run the benchmark");
+    emitGatewayEvent(backgroundLaunchEvent("python run_benchmark.py --all"));
+    emitGatewayEvent({ type: "turn.completed", session_id: "runtime-session-1" });
+    expect(screen.getByText("Running in the background")).toBeInTheDocument();
+
+    emitGatewayEvent({
+      type: "background.complete",
+      session_id: "runtime-session-1",
+      payload: { handle: "bg-call-1" },
+    });
+    // The gap between the process ending and the chained turn speaking is where
+    // the user is most likely to think the agent gave up.
+    expect(
+      screen.getByText("Background task finished. Sub Rosa is picking it back up."),
+    ).toBeInTheDocument();
+
+    emitGatewayEvent({
+      type: "message.start",
+      session_id: "runtime-session-1",
+      payload: { message_id: "chained-1" },
+    });
+    await waitFor(() => expect(screen.queryByText(/picking it back up/)).toBeNull());
+    await flushDeferredSessionWork();
+  });
+
+  it("tells the sidebar which sessions have a job running in the background", async () => {
+    // The chat banner only covers the conversation in front of the user; a
+    // parked task on any other session would otherwise be invisible.
+    const user = userEvent.setup();
+    const broadcasts: AgentSessionsChangedDetail[] = [];
+    const onSessions = (event: Event) => {
+      broadcasts.push((event as CustomEvent<AgentSessionsChangedDetail>).detail);
+    };
+    window.addEventListener(AGENT_SESSIONS_CHANGED_EVENT, onSessions);
+    mocks.listHermesSessionMessages.mockResolvedValue([]);
+
+    try {
+      render(<AgentWorkspace initialSession={existingSession} />);
+      await sendFirstTurn(user, "run the benchmark");
+      emitGatewayEvent(backgroundLaunchEvent("python run_benchmark.py --all"));
+      emitGatewayEvent({ type: "turn.completed", session_id: "runtime-session-1" });
+
+      await waitFor(() => expect(broadcasts.at(-1)?.backgroundSessionIds).toContain("session-1"));
+      // It is not "working" — the turn is over. Two different states, and the
+      // sidebar shows them differently.
+      expect(broadcasts.at(-1)?.workingSessionIds).not.toContain("session-1");
+
+      emitGatewayEvent({
+        type: "background.complete",
+        session_id: "runtime-session-1",
+        payload: { handle: "bg-call-1" },
+      });
+      await waitFor(() => expect(broadcasts.at(-1)?.backgroundSessionIds).toEqual([]));
+      await flushDeferredSessionWork();
+    } finally {
+      window.removeEventListener(AGENT_SESSIONS_CHANGED_EVENT, onSessions);
     }
   });
 

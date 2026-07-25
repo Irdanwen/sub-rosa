@@ -83,6 +83,7 @@ export function classifyHermesEvent(raw: HermesGatewayEvent): JuneHermesEvent {
       kind: "lifecycle",
       sessionId,
       status: lifecycleStatus(type, payload),
+      rawType: type || undefined,
       payload: payload ? sanitizePayload(payload) : undefined,
     };
   }
@@ -279,7 +280,17 @@ const LIFECYCLE_TYPES = new Set([
 ]);
 
 function isLifecycleType(type: string): boolean {
-  return LIFECYCLE_TYPES.has(type) || type.startsWith("lifecycle.");
+  return (
+    LIFECYCLE_TYPES.has(type) ||
+    type.startsWith("lifecycle.") ||
+    // Background process/delegation brackets: work that outlives the turn that
+    // started it. Not a turn boundary (June explicitly stopped treating them as
+    // one — see isTerminalHermesEvent) and not a subagent (no subagent
+    // identity), so they belong here rather than falling through to
+    // `unsupported`, which would raise a "June received an unknown event"
+    // notice for a frame June acts on.
+    type.startsWith("background.")
+  );
 }
 
 function lifecycleStatus(type: string, payload: RawHermesPayload | undefined): string {

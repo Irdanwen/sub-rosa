@@ -108,6 +108,31 @@ describe("createHermesTraceBuffer", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  it("records a local activity decision with the authority that made it", () => {
+    // ADR-0016: "why did this run end?" is the first question when a chat looks
+    // stuck, and it used to be answerable only by reading the source.
+    const buffer = createHermesTraceBuffer();
+    buffer.recordInbound(rawFrame("tool.start", "s1"));
+    buffer.recordLocal({
+      sessionId: "s1",
+      event: "activity.settled",
+      reason: "runtime-idle-two-polls",
+      detail: { turnFailed: false },
+    });
+
+    const entries = buffer.entriesFor("s1");
+    expect(entries).toHaveLength(2);
+    // It sits in order among the gateway frames it explains, and is marked as
+    // never having crossed the wire.
+    expect(entries[1]).toMatchObject({
+      direction: "local",
+      method: "activity.settled",
+      message: "runtime-idle-two-polls",
+    });
+    expect(entries[1]?.payloadKeys).toEqual(["turnFailed"]);
+    expect(buffer.exportSanitizedTrace("s1").entries).toHaveLength(2);
+  });
+
   it("lists session ids that have entries, for the panel's session filter", () => {
     const buffer = createHermesTraceBuffer();
     buffer.recordInbound(rawFrame("message.delta", "s1"));
