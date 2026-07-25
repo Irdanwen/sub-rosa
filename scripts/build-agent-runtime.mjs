@@ -13,6 +13,7 @@ const runtimeRoot = join(repoRoot, "agent-runtime");
 const bundleRoot = join(repoRoot, ".tauri-agent-runtime");
 const workRoot = join(bundleRoot, "work");
 const postjectCli = join(runtimeRoot, "node_modules", "postject", "dist", "cli.js");
+const macRuntimeEntitlements = join(repoRoot, "src-tauri", "AgentRuntimeEntitlements.plist");
 
 const args = parseArgs(process.argv.slice(2));
 
@@ -141,11 +142,39 @@ async function inject(nodeBinary, destination, blobPath, macos) {
 
 function signMac(executable) {
   const identity = process.env.APPLE_SIGNING_IDENTITY?.trim() || "-";
-  const signArgs = ["--force", "--sign", identity];
-  if (identity !== "-") signArgs.push("--timestamp", "--options", "runtime");
+  const signArgs = [
+    "--force",
+    "--sign",
+    identity,
+    "--options",
+    "runtime",
+    "--entitlements",
+    macRuntimeEntitlements,
+  ];
+  if (identity !== "-") signArgs.push("--timestamp");
   signArgs.push(executable);
   run("codesign", signArgs);
   run("codesign", ["--verify", "--strict", "--verbose=2", executable]);
+  verifyMacRuntimeEntitlements(executable);
+}
+
+function verifyMacRuntimeEntitlements(executable) {
+  const result = spawnSync("codesign", ["-d", "--entitlements", "-", executable], {
+    encoding: "utf8",
+  });
+  if (result.error) throw result.error;
+  const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+  if (result.status !== 0) {
+    fail(`Could not read agent runtime entitlements: ${output.trim()}`);
+  }
+  for (const entitlement of [
+    "com.apple.security.cs.allow-jit",
+    "com.apple.security.cs.allow-unsigned-executable-memory",
+  ]) {
+    if (!output.includes(entitlement)) {
+      fail(`Signed agent runtime is missing ${entitlement}`);
+    }
+  }
 }
 
 async function writeChecksum(executable) {

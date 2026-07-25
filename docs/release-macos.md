@@ -225,6 +225,14 @@ and both architecture commands must execute successfully. On an
 Apple Silicon validation host, the x86_64 command is a real Rosetta execution,
 not an architecture inferred from file metadata.
 
+The Node sidecar is a separate hardened executable and must retain both
+`com.apple.security.cs.allow-jit` and
+`com.apple.security.cs.allow-unsigned-executable-memory` after the outer app is
+signed. These are the narrow V8 executable-memory exceptions. Do not replace
+them with `disable-executable-page-protection` or disable library validation.
+The release workflow reads the packaged sidecar entitlements and runs both
+architecture slices before notarization.
+
 For the first updater-to-updater validation, install an older updater-capable
 build, run **June -> Check for updates…**, confirm the prompt shows the
 new version and release notes, install, and verify the app relaunches without

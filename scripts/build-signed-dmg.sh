@@ -241,6 +241,9 @@ runtime_checksum="$runtime.sha256"
 [[ "$(shasum -a 256 "$runtime" | awk '{print $1}')" == "$(tr -d '[:space:]' < "$runtime_checksum")" ]]
 [[ "$(lipo -archs "$runtime" | tr ' ' '\n' | sort | tr '\n' ' ')" == "arm64 x86_64 " ]]
 codesign --verify --strict --verbose=2 "$runtime"
+runtime_entitlements="$(codesign -d --entitlements - "$runtime" 2>&1)"
+grep -q 'com.apple.security.cs.allow-jit' <<< "$runtime_entitlements"
+grep -q 'com.apple.security.cs.allow-unsigned-executable-memory' <<< "$runtime_entitlements"
 if find "$app/Contents/Resources" \( -iname '*hermes*' -o -iname 'python.exe' -o -iname 'python3' \) -print -quit | grep -q .; then
   echo "The signed app still contains a Hermes or Python payload." >&2
   exit 1
