@@ -49,3 +49,46 @@ jobs:
             echo "Tracked env files or private key material are not allowed." >&2
             exit 1
           fi
+
+      # This fork tracks upstream June and cherry-picks its fixes, so a merge
+      # can quietly reintroduce a coordinate or an identity string the fork
+      # deliberately removed (ADR 0017). A green test suite would not notice:
+      # the app works fine while pointing at somebody else's server. This does.
+      #
+      # Scope: things that name upstream's *infrastructure or product identity*.
+      # Shared technical identifiers (`os-june`, `JUNE_*`, `june://`,
+      # `os-june:*`) are kept on purpose and are NOT matched here.
+      #
+      # The allowlist is prose about the fork's history, not code:
+      #   docs/, FORK_NOTES.md, AGENTS.md + its CLAUDE.md symlink, CONTEXT.md,
+      #   LICENSE, vendored agent skills, this file, and the two workflows that
+      #   deliberately still reference upstream (the dispatch-only watchdog and
+      #   the sync that fetches upstream's git remote).
+      - name: Reject reintroduced June coordinates
+        run: |
+          set -euo pipefail
+          matches="$(
+            git grep -I -n -E -- 'opensoftware\.co|os-june-releases|You are June|made by Open Software' -- . \
+              ':(exclude)docs/**' \
+              ':(exclude).agents/**' \
+              ':(exclude).claude/**' \
+              ':(exclude)FORK_NOTES.md' \
+              ':(exclude)AGENTS.md' \
+              ':(exclude)CLAUDE.md' \
+              ':(exclude)CONTEXT.md' \
+              ':(exclude)LICENSE*' \
+              ':(exclude).github/workflows/repository-hygiene.yml' \
+              ':(exclude).github/workflows/upstream-sync.yml' \
+              ':(exclude).github/workflows/june-api-watchdog.yml' \
+              ':(exclude)june-api/deploy/**' \
+              || true
+          )"
+          if [[ -n "$matches" ]]; then
+            echo "$matches" >&2
+            echo >&2
+            echo "Upstream June coordinates or identity strings reappeared." >&2
+            echo "Sub Rosa contacts none of upstream's infrastructure and does not" >&2
+            echo "present as June; see docs/adr/0017-product-autonomy-from-june.md." >&2
+            echo "If a re-merge brought this in, drop it rather than adopting it." >&2
+            exit 1
+          fi

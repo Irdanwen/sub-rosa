@@ -41,6 +41,16 @@ accurately — read them, but apply these fork overrides:
   `.github/workflows/upstream-sync.yml` opens PRs to track upstream June.
 - **Non-goals (unchanged from June):** OS Accounts, billing, hosted June API, TEE attestation
   of the local backend. Local mode only; confidentiality comes from Carpe Diem's own backend.
+- **Product autonomy is enforced, not just intended
+  ([ADR-0017](docs/adr/0017-product-autonomy-from-june.md)).** Nothing the user sees names
+  June or Open Software, and the binary contacts none of their infrastructure: OS Accounts
+  is deleted (`os_accounts.rs` is a local-session shim kept at that path on purpose), the
+  Hermes SOUL identifies as Sub Rosa and attributes TEE guarantees to Carpe Diem rather
+  than restating them, `june_api_url()` has no remote fallback and fails closed, and
+  `/verify` describes the loopback sidecar. `repository-hygiene.yml` fails any PR that
+  reintroduces `opensoftware.co`, `os-june-releases`, `You are June` or `made by Open
+  Software` outside its allowlist — when an upstream sync trips it, drop the change rather
+  than adopting it or widening the allowlist.
 
 ## iOS app (fork addition, 2026-07-05)
 

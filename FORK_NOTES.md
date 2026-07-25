@@ -70,14 +70,14 @@ Clé `cdm_` de test fournie par l'utilisateur (jamais commitée ; utilisée en e
 | `src-tauri/build.rs` | Helper Swift : `CFBundleIdentifier`/`DisplayName`/`Name` + usage descriptions rebrandés (`co.opensoftware.june.*`→`xyz.carpediem.subrosa.*`) | Garder les IDs fork |
 | `src-tauri/native/mac-dictation-helper/main.swift` | `ignoredBundleIdentifiers` aligné sur le nouveau bundle id du helper | 1 ligne |
 | `src-tauri/Info.plist`, `index.html` | Chaînes visibles « June »→« Sub Rosa » | Trivial |
-| `src-tauri/src/os_accounts.rs` | `KEYCHAIN_SERVICE`/`DEV_KEYCHAIN_SERVICE` rebrandés (le scheme OAuth `osjune://` interne est laissé — mort en mode local ; voir note) | 2 constantes |
+| `src-tauri/src/os_accounts.rs` | **Vidé** (1556 → ~170 lignes) : PKCE, store keychain de tokens, refresh, snapshot, `setup_deep_link` et les 7 commandes supprimés. Ne reste qu'un shim de session locale — `access_token`/`refresh_access_token` (bearer du sidecar), `cached_signed_in` (« le backend répond »), `load_local_env`, `open_in_browser`. Chemin et noms publics **gardés exprès** pour que les 7 fichiers appelants ne bougent pas (ADR 0017) | Conflit de contenu, pas d'add/delete. Tout apport upstream sur OAuth/keychain/billing est à **jeter**, pas à porter |
 | `src-tauri/src/lib.rs` | `pub mod carpe_diem;` + `settings::setup`/`sidecar::setup` dans `.setup()` + commandes IPC dans `invoke_handler` + `sidecar::shutdown` dans `RunEvent::Exit` | Réappliquer les 4 hooks |
 | `src-tauri/icons/*`, `src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/*` | Icônes définitives Sub Rosa (rose sur fond prune, source `AppIcon.icns` 1024px sur le ProtonDrive `Projets Crypto/Sub-Rosa/`). ⚠️ `tauri icon` écrit les icônes iOS **directement dans l'appiconset de `gen/apple`** (jamais dans `icons/ios/`, qui n'est qu'une copie de courtoisie) ; ensuite retirer le canal alpha de tous les PNG iOS (App Store le refuse), p.ex. via un round-trip CoreGraphics `noneSkipLast`. ⚠️ Ne pas oublier les **icônes de dock thémées** `icons/themed/icon-<accent>.png` (embarquées dans le binaire par `theme_icon.rs` et appliquées au lancement via `set_dock_icon` — si elles restent sur l'ancien visuel, le dock affiche l'ancienne icône quelques instants après le launch, cf. v1.5.0-v1.6.2) : les régénérer avec `icons/themed/_src/generate.py` (rose recolorée par accent depuis `icon.icns` ; l'accent par défaut « rose » reste identique à l'icône du bundle) | Regénérer via `tauri icon`, resynchroniser `icons/ios/` depuis l'appiconset, aplatir l'alpha des PNG iOS, puis relancer `icons/themed/_src/generate.py` |
 | `src/components/brand/roseMark.ts` (nouveau), `src/components/brand/JuneWordmark.tsx`, `src/components/account/AccountGate.tsx`, `src/styles/{hud,agent-hud,meeting-hud}.css`, `src/styles/app.css`, `src/assets/june-mark.svg`, `src-tauri/icons/tray-icon-template.png` | **Glyphe rose partout dans l'UI** : le zigzag June est remplacé par la rose Sub Rosa (path unique `ROSE_MARK_PATH`, viewBox `0 0 24 24` plein cadre, tracé potrace depuis `icon.icns`). Consommateurs : wordmark sidebar (`JuneWordmark`), `JuneMark`/`JuneGradientMark` (gates, onboarding, popover d'update, referral, hero chat mobile — noms de composants gardés), `--mark` en data-URI dans les 3 CSS de HUD (tailles de masque passées carrées), `.welcome-mark-symbol` 30×35→32×32, icône de menu bar (template alpha 44×44, testée par `menu_bar::tests`). Supprimés car morts : `public/os-june-{light,dark}.svg`, `src-tauri/icons/june-app-icon.svg` | Réappliquer le swap de glyphe ; garder le path des CSS HUD et de `roseMark.ts` en sync |
-| `src/app/App.tsx` | Gate Carpe Diem (état + effet + `carpeDiemRequired` dans `appBlocked` + rendu du gate avant l'onboarding) | Réappliquer le bloc gate |
+| `src/app/App.tsx` | Gate Carpe Diem (état + effet + `carpeDiemRequired` dans `appBlocked` + rendu du gate avant l'onboarding). Les gates compte (`signInRequired`, `fundingRequired`, `devAccountsUnconfigured`, `handleAccountChanged`, `handleSignOut`) sont **supprimés** ; le probe sidecar est borné (8 s) et rend `StartupFailure` en cas d'échec — c'est le garde anti-fenêtre-blanche upstream #853, déplacé du lookup compte vers le sidecar | Réappliquer le bloc gate ; **ne pas** réintroduire les gates compte |
 | `src/components/settings/AppSettings.tsx` | Onglet « Carpe Diem » (union `SettingsTab` + `SETTINGS_TABS` + rendu de `<CarpeDiemSettings/>`) ; Models › More options : `VeniceApiKeyRow` (BYOK Venice) remplacée par `CarpeDiemKeyRow` (lien vers l'onglet Carpe Diem + purge d'une clé Venice legacy, qui écraserait la clé `cdm_` par requête) | 3 points + 1 rangée |
 | `src/components/sidebar/Sidebar.tsx` | Entrée « Carpe Diem » ajoutée au groupe Personal de `SETTINGS_SIDEBAR_GROUPS` (sinon l'onglet est inatteignable) ; footer `SidebarIdentity` : une fois le solde chargé (`useCarpeDiemCredits`), le libellé « You » est remplacé par « N credits · ×0.42 » (solde disponible + facteur de prix du jour) avec icône carte | 1 item + bloc footer |
-| `src/lib/tauri.ts` | Wrappers IPC `carpeDiem*` + types (ajout en fin de section provider) ; valeur `JUNE_COMMUNITY_URL`→`https://t.me/CarpeDiemCommu` (miroir d'affichage de la constante dans `commands.rs`, qui ouvre réellement le lien) | Additif |
+| `src/lib/tauri.ts` | Wrappers IPC `carpeDiem*` + types (ajout en fin de section provider) ; valeur `JUNE_COMMUNITY_URL`→`https://t.me/CarpeDiemCommu` (miroir d'affichage de la constante dans `commands.rs`, qui ouvre réellement le lien). Bloc `osAccounts*` + types `Account*`/`ReferralSummary` **supprimés** | Additif ; jeter tout apport upstream sur `osAccounts*` |
 | `src-tauri/src/hermes_bridge.rs` + `src-tauri/src/hermes/june_web_mcp.py` | **Bugfix (candidat upstream, 2026-07-04)** : le MCP `june_web` relit les coordonnées du proxy (port éphémère + token) depuis `hermes-mcp/june_web_proxy.json` **à chaque appel d'outil**, au lieu d'argv/env figés au spawn. Sans ça, la gateway Hermes (launchd, survit à l'app) garde le port d'un ancien lancement après relance de l'app → toutes les routines cron échouent en `web_search`/`web_fetch` avec `[Errno 61] Connection refused`. Le script garde un mode legacy (argv = URL http, token en env) pour les process spawnés depuis une vieille config. | Proposer upstream ; sinon réappliquer fichier-coordonnées + entrée YAML `june_web` |
 | `src-tauri/src/hermes_bridge.rs`, `scripts/bundle-hermes-runtime-windows.ps1`, `.github/workflows/{release,desktop}.yml` (Windows runtime, 2026-07-04) | **Fix runtime Hermes Windows** : (1) bug PowerShell dans le bundling CI — la restauration d'une env var absente écrivait `""` au lieu de la supprimer (coercion `$null`→`""` de PowerShell), tous les appels `uv` suivants échouaient (`UV_PYTHON_INSTALL_BIN … expected a boolish value`), et `continue-on-error` avalait l'échec → le NSIS v1.0.3 est sorti **sans** runtime embarqué ; (2) bundling Windows désormais bloquant dans `release.yml` + vérification explicite des fichiers du bundle ; (3) `WINDOWS_MANAGED_HERMES_INSTALL_SCRIPT` réécrit : bootstrap d'un `uv.exe` standalone épinglé (URL+SHA256 constantes dans `hermes_bridge.rs`, à garder en sync avec le .ps1) qui installe son propre CPython 3.11 — plus aucun besoin d'un Python système chez l'utilisateur ; (4) copy d'erreur visible neutralisée (« built-in agent runtime », plus de « June »/« Hermes ») ; (5) `desktop.yml` (job windows-rust) parse la syntaxe de tous les `.ps1` **et** du script embarqué | Réappliquer les 5 blocs ; garder l'URL/SHA uv en sync entre `hermes_bridge.rs` et le .ps1 |
 | `scripts/patch-hermes-cron-shadow.sh` (nouveau), `scripts/bundle-hermes-runtime.sh`, `scripts/bundle-hermes-runtime-windows.ps1`, `src-tauri/src/hermes_bridge.rs` (MANAGED + WINDOWS_MANAGED install scripts) (**Fix 500 Routines**, 2026-07-06) | **Fix collision `sys.path` du plugin `cron`** : `plugins/platforms/{raft,discord}/adapter.py` font `sys.path.insert(0, parents[2])` — pour un adaptateur à `plugins/platforms/<name>/adapter.py`, `parents[2]` = `hermes-agent/plugins`. Inséré en tête de `sys.path`, ça fait résoudre le nom top-level `cron` vers le plugin `plugins/cron/` (provider de scheduler, sans sous-module `jobs`) au lieu du core `cron/`. Tout endpoint cron du dashboard fait alors `from cron import jobs` → `ImportError: cannot import name 'jobs' from 'cron'` → **HTTP 500** → bannière « Hermes API returned 500 » sur la page Routines. Intermittent : ne mord qu'une fois qu'un adaptateur de plateforme se charge et que son insert gagne le slot `sys.path[0]` après celui de `web_server` (PROJECT_ROOT). Reproduit et corrigé end-to-end (500→200) le 2026-07-06. **Fix** : pointer les deux inserts vers `parents[3]` (racine hermes-agent), comme le font déjà les `gateway/platforms/*.py` (un niveau moins profonds, donc leur `parents[2]` est déjà la racine — **ne pas y toucher**). Patch scopé aux 2 fichiers, idempotent, appliqué dans les 4 chemins qui déposent la source hermes-agent (2 bundles + 2 installeurs managés). | Réappliquer le patch dans les 4 chemins ; si upstream corrige (ou renomme le plugin `cron`), le patch devient no-op / à retirer |
@@ -183,6 +183,45 @@ Clé `cdm_` de test fournie par l'utilisateur (jamais commitée ; utilisée en e
   endpoint June ne les consomme). Un modèle sans ligne de pricing est écarté (même règle que le parseur Venice).
   Échec du fetch/parse → dégradation gracieuse inchangée vers les 6 modèles curatés de `config.toml`.
   C'est **le** point chaud du merge upstream dans `venice.rs` (voir tableau des fichiers modifiés).
+
+## Autonomie vis-à-vis de June (2026-07-25)
+
+Le fork ne contacte plus **aucune** infra upstream et ne se présente plus comme June.
+Décision + alternatives rejetées : [`docs/adr/0017-product-autonomy-from-june.md`](docs/adr/0017-product-autonomy-from-june.md).
+
+- **Identifiants techniques gardés volontairement** : crate `os-june`, crates `june-*`,
+  env `JUNE_*`/`OS_JUNE_LOCAL_DEV*`/`JUNE__*`, événements `june://`, clés `os-june:*`,
+  outils MCP `june_*`. Renommer aurait cassé le cherry-pick des correctifs upstream
+  (~2000 occurrences, 233 fichiers) pour un gain invisible côté utilisateur.
+- **Identité** : `JUNE_SOUL_MD` (`hermes_bridge.rs`) disait « You are June … made by Open
+  Software » et récitait les garanties du backend hébergé de June. Réécrit : identité
+  Sub Rosa, et les garanties TEE sont attribuées à **Carpe Diem**, pas reprises à notre
+  compte. Les fragments `JUNE_SOUL_*` et `JUNE_HINT_*` sont purgés du nom produit ;
+  les noms d'outils MCP restent. Épinglé par `sync_june_soul_replaces_default_hermes_identity`.
+- **Mot d'éveil dictée** : « hey June » → « hey Rosa » / « hey Sub Rosa »
+  (`agent_session_prompt_from_dictation`, le parseur consomme désormais deux mots).
+- **OS Accounts supprimé** (voir tableau). Les marques `JuneMark`/`JuneGradientMark`
+  vivaient dans `AccountGate.tsx` et sont utilisées par 7 fichiers dont le shell mobile :
+  elles ont migré vers `src/components/brand/Marks.tsx` (`BrandMark`/`BrandGradientMark`)
+  **avant** la suppression. `SignInStep` portait aussi l'écran de bienvenue → conservé en
+  `WelcomeStep` sans les parties compte.
+- **Fail-closed** : `june_api_url()` renvoie `Option<String>` et **n'a plus de défaut
+  distant** (c'était `june-api.opensoftware.co`, actif à chaque boot avant le spawn du
+  sidecar et en permanence si le spawn échouait). Les appelants remontent
+  `backend_not_ready` ; `ensure_sidecar_ready()` attend désormais aussi côté desktop.
+- **`/verify`** décrit le sidecar local (ce qu'il garde, ce qui sort, ce qu'il ne peut pas
+  prouver) au lieu de l'enclave Phala de June. `[attestation]`, `[issue_reports]` et
+  `os_accounts.iss` de `config.toml` sont neutralisés — inertes déjà, mais `config.toml`
+  est embarqué dans le binaire iOS via `include_str!`.
+- **CI** : `rc-desktop-dmg.yml`, `promote-desktop.yml` et `production-desktop-windows.yml`
+  supprimés (ils publiaient sur `os-june-releases` avec un token GitHub App scopé sur les
+  repos upstream). Addendum daté sur l'ADR 0003. `upstream-sync.yml` gardé.
+- **⚠️ Garde CI** : l'étape « Reject reintroduced June coordinates » de
+  `repository-hygiene.yml` fait **échouer la PR** si `opensoftware.co`, `os-june-releases`,
+  `You are June` ou `made by Open Software` réapparaît hors allowlist. C'est le point le
+  plus important de ce lot : sans elle, un cherry-pick réintroduit ces chaînes sans qu'aucun
+  test ne bronche. Si une PR de sync échoue là-dessus, **retirer l'apport**, ne pas
+  l'adopter ni élargir l'allowlist.
 
 ## Portage iOS (2026-07-05)
 

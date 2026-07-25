@@ -1,10 +1,15 @@
-# June
+# Sub Rosa
 
-June is a Tauri desktop app that records meetings/dictation, transcribes
-the audio, turns the transcript into structured notes, and hosts an AI agent
-you can chat with over those notes. It depends on the **OS Accounts**
-identity-and-credits platform for sign-in and for billing metered AI usage,
-and embeds the **Hermes** runtime as its agent brain.
+Sub Rosa is a Tauri desktop and iOS app that records meetings/dictation,
+transcribes the audio, turns the transcript into structured notes, and hosts an
+AI agent you can chat with over those notes. It has **no account and no hosted
+service**: the user supplies a **Carpe Diem** key, the app runs **June API** as
+a local sidecar pointed at it, and the **Hermes** runtime is the agent brain.
+
+Sub Rosa is a fork of June (`open-software-network/os-june`, MIT). Where an
+entry below describes upstream's hosted shape, it is marked; the fork keeps
+upstream's technical identifiers deliberately
+(see [ADR-0017](docs/adr/0017-product-autonomy-from-june.md)).
 
 This document is a glossary, not a spec. Terms are canonical; the `_Avoid_`
 lines are binding. Implementation, endpoints, and code shape live under
@@ -14,27 +19,31 @@ lines are binding. Implementation, endpoints, and code shape live under
 
 ### Platform
 
-**June (the app)**:
-The user-facing Tauri desktop product — the macOS `.app` users install. The
-binary on disk is named `os-june`, the Cargo package is `os-june`, the
-bundle identifier is `co.opensoftware.june`.
-_Avoid_: notetaker, OS Notetaker (legacy names — fully removed from code as of
-the bundle rename; don't reintroduce).
+**Sub Rosa (the app)**:
+The user-facing Tauri desktop product — the macOS `.app` users install, and
+the iPhone app. The bundle identifier is `xyz.carpediem.subrosa`. Technical
+identifiers stay upstream's: the binary on disk and the Cargo package are both
+`os-june` (see [ADR-0017](docs/adr/0017-product-autonomy-from-june.md)).
+_Avoid_: June (the upstream product this forks), notetaker, OS Notetaker.
 
 **June API**:
-The confidential backend service that holds the App API key and the upstream
-AI provider keys, runs `authorize`→`charge` against OS Accounts on behalf of
-the June app, and proxies the metered AI calls (transcription, generation,
-agent chat, web). Lives in the same repo as June under its own Cargo
-workspace; ships as a separate container image to GHCR and runs in a TEE.
-Cargo crates use the `june-*` prefix; the binary is `june`.
+The backend service that holds the upstream AI provider key and proxies the
+metered AI calls (transcription, generation, agent chat, web). Lives in the
+same repo under its own Cargo workspace; Cargo crates use the `june-*` prefix
+and the binary is `june`. Upstream ships it as a container in a TEE; **this
+fork runs it as a local sidecar** on loopback, spawned by the app and pointed
+at Carpe Diem with the user's own key, so there is no hosted instance and no
+metering (see [ADR-0017](docs/adr/0017-product-autonomy-from-june.md)).
+_Avoid_: "the server", "the cloud" — it runs on the user's machine.
 _Avoid_: backend, proxy, AI proxy (use **June API**).
 
-**OS Accounts**:
-The Open Software identity-and-credits platform. Source of truth for *who the
-user is* and *how many credits they have*. June and June API both depend on
-it; it never depends on them.
-_Avoid_: accounts, the identity service, the auth service.
+**OS Accounts** (upstream only, removed here):
+Upstream June's identity-and-credits platform. **Sub Rosa does not use it**:
+there is no sign-in, no account, and no credits ledger of its own. The Rust
+module keeps the name `os_accounts` but holds only local session state (the
+sidecar bearer). Do not reintroduce the concept; spendable balance means
+**Carpe Diem credits**, read from Carpe Diem.
+_Avoid_: using it in new UI copy or new domain names.
 
 **Upstream provider**:
 A third-party AI service June API calls on the user's behalf — currently
@@ -321,10 +330,11 @@ their Ed25519 signatures; the RC variant is `latest-rc.json`.
 _Avoid_: appcast.
 
 **Releases repo**:
-The separate public repo `open-software-network/os-june-releases` that hosts
-signed artifacts + the update manifest (the source repo is private; the
-updater's unauthenticated GET would 404 against it — see
-[ADR-0001](docs/adr/0001-auto-updates-via-tauri-updater.md)).
+The separate public repo `Irdanwen/sub-rosa-releases` that hosts signed
+artifacts + the update manifest, and is the only endpoint the updater reads
+(see [ADR-0001](docs/adr/0001-auto-updates-via-tauri-updater.md)). Upstream
+used its own; this fork publishes to its own in one stage, see the addendum on
+[ADR-0003](docs/adr/0003-release-candidate-channel-and-promotion.md).
 _Avoid_: "GitHub release" (unqualified).
 
 **Provider settings / Model mode**:
@@ -333,14 +343,16 @@ The persisted choice of which model handles each `ModelMode`
 Venice is the default; OpenAI is used only for specific ASR models.
 _Avoid_: model config (unqualified).
 
-**Account snapshot** (`AccountStatus`):
-The user + credit balance + subscription state fetched from OS Accounts and
-surfaced to the UI.
-_Avoid_: profile, balance (unqualified).
+**Carpe Diem credits** (`CarpeDiemCreditsDto`):
+The spendable balance read from Carpe Diem and shown in the sidebar footer,
+with the current price factor. This is the only balance the app knows about;
+the upstream `AccountStatus` snapshot is gone.
+_Avoid_: account balance, profile.
 
-**AccountGate** / **FundingGate**:
-The sign-in wall (`AccountGate`) versus the credits-exhausted / upgrade wall
-(`FundingGate`, keyed off `subscription.subscribed`).
+**Key gate** (`CarpeDiemGate`):
+The wall shown until a `cdm_` key is stored, or when the sidecar has hard
+failed. It replaces upstream's sign-in and funding walls, both removed.
+_Avoid_: sign-in gate, AccountGate, FundingGate (all deleted).
 _Avoid_: paywall (unqualified — say which gate).
 
 **Permission**:

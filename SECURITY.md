@@ -2,16 +2,19 @@
 
 ## Supported versions
 
-Security fixes target `main` and the latest shipped June desktop and June API
-release. Older releases may receive fixes when the impact warrants it.
+Security fixes target `main` and the latest shipped Sub Rosa release. Older
+releases may receive fixes when the impact warrants it.
 
 ## Reporting a vulnerability
 
 Please do not file public issues for suspected vulnerabilities.
 
-Use GitHub private vulnerability reporting when it is enabled for this
-repository. If it is not available, email `security@opensoftware.co` or contact
-a repository maintainer privately.
+Use GitHub private vulnerability reporting on `Irdanwen/sub-rosa`. If it is not
+available, contact a repository maintainer privately.
+
+Sub Rosa is a fork; it is not maintained by, and reports to it do not reach,
+the upstream project. A vulnerability in upstream June itself belongs on
+upstream's tracker.
 
 Include the affected component, reproduction steps, impact, and any relevant
 logs or proof of concept. We will acknowledge the report, keep the discussion
