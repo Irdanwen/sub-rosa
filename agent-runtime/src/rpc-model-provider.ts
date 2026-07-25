@@ -70,6 +70,7 @@ export class RpcChatCompletionsModelProvider implements ModelProvider {
       ];
       for (const message of steering) this.onSteeringConsumed?.(message);
     }
+    const toolArgumentState = new Map<string, boolean>();
     let page = requireStreamPage(
       await this.invoke({
         name: MODEL_CHAT_COMPLETIONS_TOOL,
@@ -80,7 +81,9 @@ export class RpcChatCompletionsModelProvider implements ModelProvider {
     );
     while (true) {
       if (page.route) this.latestRoute = page.route;
-      for (const chunk of page.chunks) yield chunk;
+      for (const chunk of page.chunks) {
+        yield normalizeEmptyToolArguments(chunk, toolArgumentState);
+      }
       if (page.done) return;
       page = requireStreamPage(
         await this.invoke({
@@ -92,6 +95,61 @@ export class RpcChatCompletionsModelProvider implements ModelProvider {
       );
     }
   }
+}
+
+function normalizeEmptyToolArguments(
+  chunk: JsonObject,
+  state: Map<string, boolean>,
+): JsonObject {
+  if (!Array.isArray(chunk.choices)) return chunk;
+  let changed = false;
+  const choices = chunk.choices.map((choiceValue) => {
+    if (!isRecord(choiceValue)) return choiceValue;
+    const choiceIndex = numberValue(choiceValue.index) ?? 0;
+    const delta = asRecord(choiceValue.delta);
+    const toolCalls = Array.isArray(delta.tool_calls) ? delta.tool_calls : [];
+    for (const toolValue of toolCalls) {
+      const toolCall = asRecord(toolValue);
+      const toolIndex = numberValue(toolCall.index) ?? 0;
+      const key = `${choiceIndex}:${toolIndex}`;
+      if (!state.has(key)) state.set(key, false);
+      const argumentsChunk = asRecord(toolCall.function).arguments;
+      if (typeof argumentsChunk === "string" && argumentsChunk.trim() !== "") {
+        state.set(key, true);
+      }
+    }
+    if (choiceValue.finish_reason !== "tool_calls") return choiceValue;
+
+    const missing = [...state.entries()]
+      .filter(([key, hasArguments]) => key.startsWith(`${choiceIndex}:`) && !hasArguments)
+      .map(([key]) => Number(key.slice(key.indexOf(":") + 1)));
+    if (missing.length === 0) return choiceValue;
+
+    changed = true;
+    const missingSet = new Set(missing);
+    const patched = new Set<number>();
+    const normalizedToolCalls = toolCalls.map((toolValue) => {
+      if (!isRecord(toolValue)) return toolValue;
+      const toolIndex = numberValue(toolValue.index) ?? 0;
+      if (!missingSet.has(toolIndex)) return toolValue;
+      patched.add(toolIndex);
+      return {
+        ...toolValue,
+        function: { ...asRecord(toolValue.function), arguments: "{}" },
+      };
+    });
+    for (const toolIndex of missing) {
+      if (!patched.has(toolIndex)) {
+        normalizedToolCalls.push({ index: toolIndex, function: { arguments: "{}" } });
+      }
+      state.set(`${choiceIndex}:${toolIndex}`, true);
+    }
+    return {
+      ...choiceValue,
+      delta: { ...delta, tool_calls: normalizedToolCalls },
+    };
+  });
+  return changed ? { ...chunk, choices } : chunk;
 }
 
 export type ModelRoute = {
