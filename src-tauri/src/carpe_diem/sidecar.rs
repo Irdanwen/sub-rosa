@@ -49,9 +49,8 @@ fn restart_lock() -> &'static Mutex<()> {
 
 /// Local-dev user id handed to `june-api` (must start with `usr_`).
 const LOCAL_USER_ID: &str = "usr_local";
-/// App handle for the request-side heal (`ensure_ready_for_request`), set at
+/// App handle for the request-side guard (`ensure_ready_for_request`), set at
 /// `setup`. Same global-handle pattern as `agent_hud`.
-#[cfg(mobile)]
 static APP: OnceLock<AppHandle> = OnceLock::new();
 /// How long a request-side heal waits for the restarted backend to report
 /// Ready before letting the request proceed (and fail) as before. The
@@ -59,6 +58,11 @@ static APP: OnceLock<AppHandle> = OnceLock::new();
 /// health-check poll cadence.
 #[cfg(mobile)]
 const REQUEST_HEAL_TIMEOUT: Duration = Duration::from_secs(15);
+/// How long a desktop request waits for a sidecar that is still starting.
+/// Bounded well under the health-check timeout: this only covers the boot
+/// window, and a request that waits longer than this is better off failing.
+#[cfg(desktop)]
+const REQUEST_START_TIMEOUT: Duration = Duration::from_secs(20);
 /// Emitted to the frontend whenever the sidecar status changes.
 pub const SIDECAR_STATUS_EVENT: &str = "carpe-diem://sidecar-status";
 /// How long to wait for `/livez` before declaring the sidecar failed. Generous
@@ -120,7 +124,6 @@ pub struct SidecarStatusDto {
 /// Registers state and starts the sidecar (if a key is configured) at app boot.
 pub fn setup(app: &mut tauri::App) {
     app.manage(SidecarState(Mutex::new(Process::default())));
-    #[cfg(mobile)]
     let _ = APP.set(app.handle().clone());
     let handle = app.handle().clone();
     // Spawn off the setup thread: starting the backend must not block the UI.
@@ -200,7 +203,40 @@ pub async fn ensure_ready_for_request() {
     }
 }
 
-#[cfg(mobile)]
+/// Request-side guard (desktop): the sidecar is spawned off the setup thread,
+/// so the first request of a session can run before `JUNE_API_URL` is
+/// published and fail with `backend_not_ready` on a perfectly healthy app.
+/// Wait, bounded, for the URL to appear.
+///
+/// Nothing is healed here, unlike the mobile twin: a desktop child process
+/// keeps its listener for the life of the app, so the only gap to close is
+/// the boot window. Returns immediately when there is nothing to wait for -
+/// no key stored, or a sidecar that already failed.
+#[cfg(desktop)]
+pub async fn ensure_ready_for_request() {
+    fn url_published() -> bool {
+        std::env::var("JUNE_API_URL").is_ok_and(|value| !value.trim().is_empty())
+    }
+
+    if url_published() || !settings::is_configured() {
+        return;
+    }
+    let started = Instant::now();
+    while started.elapsed() < REQUEST_START_TIMEOUT {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        if url_published() {
+            return;
+        }
+        // A failed spawn will never publish a URL; let the request fail now
+        // instead of holding it for the full timeout.
+        if let Some(app) = APP.get() {
+            if matches!(sidecar_snapshot(app), Some((SidecarStatus::Failed, _))) {
+                return;
+            }
+        }
+    }
+}
+
 fn sidecar_snapshot(app: &AppHandle) -> Option<(SidecarStatus, u16)> {
     app.try_state::<SidecarState>().and_then(|state| {
         state

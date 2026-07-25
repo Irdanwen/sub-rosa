@@ -10,10 +10,6 @@ use std::{
     time::Duration,
 };
 
-// The deployed production API (Phala dstack; see june-api/deploy/
-// docker-compose.production.yml). NOT .network — that hostname has no DNS
-// record, and the v0.0.3 DMG shipped pointing at it.
-const DEFAULT_JUNE_API_URL: &str = "https://june-api.opensoftware.co";
 const DEFAULT_DICTATION_CLEANUP_MODEL: &str = "nvidia-nemotron-3-nano-30b-a3b";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(600);
 const AGENT_HTTP_TIMEOUT: Duration = Duration::from_secs(600);
@@ -349,7 +345,7 @@ pub async fn cleanup_text(params: DictateCleanupRequestParams) -> Result<String,
 
 pub async fn list_models(model_type: &str) -> Result<Vec<ModelDto>, AppError> {
     ensure_sidecar_ready().await;
-    let url = format!("{}/v1/models", june_api_url());
+    let url = format!("{}/v1/models", require_june_api_url()?);
     let response = http_client()
         .get(url)
         .query(&[("type", model_type)])
@@ -396,7 +392,7 @@ pub async fn proxy_agent_chat_completions(
     normalize_agent_chat_request_for_proxy(&mut body);
     let send_venice_api_key = body_model_accepts_venice_api_key(&body);
     ensure_sidecar_ready().await;
-    let url = format!("{}/v1/chat/completions", june_api_url());
+    let url = format!("{}/v1/chat/completions", require_june_api_url()?);
     let mut token = crate::os_accounts::access_token().await?;
     for attempt in 0..2 {
         let request = agent_http_client()
@@ -855,13 +851,15 @@ pub fn dictation_provider_for_model(model_id: &str) -> &'static str {
 }
 
 pub fn configured() -> bool {
-    !june_api_url().is_empty()
+    june_api_url().is_some()
 }
 
-/// Public URL of the attestation walkthrough the backend serves from inside
-/// its confidential VM — same origin every metered request already goes to.
-pub fn verify_url() -> String {
-    format!("{}/verify", june_api_url())
+/// URL of the walkthrough the local backend serves explaining what it does
+/// with the user's data. Same origin every request already goes to, so it is
+/// a loopback address; `None` while the sidecar is down, because there is no
+/// remote origin to fall back to.
+pub fn verify_url() -> Option<String> {
+    june_api_url().map(|base| format!("{base}/verify"))
 }
 
 /// Final assistant text from a chat completion, normalized for reasoning
@@ -990,7 +988,7 @@ where
     // possible here anyway — which is also why the sidecar heal below runs
     // before the send instead of retrying after a connection error.
     ensure_sidecar_ready().await;
-    let url = format!("{}{}", june_api_url(), path);
+    let url = format!("{}{}", require_june_api_url()?, path);
     let token = crate::os_accounts::access_token().await?;
     let request = http_client().post(&url).bearer_auth(token).multipart(form);
     let response = with_venice_api_key(path, request, send_venice_api_key)
@@ -1010,7 +1008,7 @@ where
 {
     ensure_sidecar_ready().await;
     let client = http_client();
-    let url = format!("{}{}", june_api_url(), path);
+    let url = format!("{}{}", require_june_api_url()?, path);
     let mut token = crate::os_accounts::access_token().await?;
     for attempt in 0..2 {
         let request = build(client, url.clone(), token.clone());
@@ -1193,12 +1191,21 @@ async fn ensure_sidecar_ready() {
     crate::carpe_diem::sidecar::ensure_ready_for_request().await;
 }
 
-/// Desktop: no-op — the sidecar is a child process whose listener survives
-/// the app losing focus, and desktop has its own lifecycle management.
+/// Desktop: the child process keeps its listener once up, so this only waits
+/// out the boot window before the sidecar publishes `JUNE_API_URL`.
 #[cfg(desktop)]
-async fn ensure_sidecar_ready() {}
+async fn ensure_sidecar_ready() {
+    crate::carpe_diem::sidecar::ensure_ready_for_request().await;
+}
 
-fn june_api_url() -> String {
+/// Base URL of the backend, or `None` when the sidecar has not published one
+/// yet. There is deliberately **no remote default**: the only writer is
+/// `carpe_diem::sidecar`, which sets `JUNE_API_URL` to a loopback address once
+/// its child is up. A fallback host here would mean that any window in which
+/// the sidecar is down (still starting, failed to spawn, no API key) silently
+/// redirects the user's prompts and audio to a third party's server, which is
+/// exactly the failure this fork exists to avoid. Fail closed instead.
+fn june_api_url() -> Option<String> {
     crate::os_accounts::load_local_env();
     std::env::var("JUNE_API_URL")
         .ok()
@@ -1209,7 +1216,18 @@ fn june_api_url() -> String {
                 .map(|value| value.trim().trim_end_matches('/').to_string())
                 .filter(|value| !value.is_empty())
         })
-        .unwrap_or_else(|| DEFAULT_JUNE_API_URL.to_string())
+}
+
+/// `june_api_url()` as the error every request path surfaces when the backend
+/// is not reachable yet. Callers reach this only after `ensure_sidecar_ready`,
+/// so a `None` here means the sidecar genuinely never came up.
+fn require_june_api_url() -> Result<String, AppError> {
+    june_api_url().ok_or_else(|| {
+        AppError::new(
+            "backend_not_ready",
+            "The local backend is not running yet. Try again in a moment.",
+        )
+    })
 }
 
 async fn read_audio(path: &Path) -> Result<Vec<u8>, AppError> {

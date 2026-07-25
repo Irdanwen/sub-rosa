@@ -593,13 +593,23 @@ pub async fn check_recording_source_readiness(
         .map_err(|error| AppError::new("readiness_check_failed", error.to_string()))
 }
 
-/// Opens the june-api `/verify` page (enclave attestation, routing,
-/// retention) in the default browser. Must route through Rust: the webview
-/// installs no new-window handler, so `target="_blank"` anchors are silently
-/// dropped — same reason the accounts portal links go through a command.
+/// Opens the local backend's `/verify` page (what the backend does with the
+/// user's data, and where prompts go) in the default browser. Must route
+/// through Rust: the webview installs no new-window handler, so
+/// `target="_blank"` anchors are silently dropped.
+///
+/// Errors rather than guessing an origin when the sidecar is down. Guessing
+/// would mean opening somebody else's `/verify` page in the user's browser
+/// and presenting it as this app's.
 #[tauri::command]
 pub fn june_open_verify_page() -> Result<(), AppError> {
-    crate::os_accounts::open_in_browser(&crate::june_api::verify_url())
+    let url = crate::june_api::verify_url().ok_or_else(|| {
+        AppError::new(
+            "backend_not_ready",
+            "The local backend is not running yet, so there is nothing to verify.",
+        )
+    })?;
+    crate::os_accounts::open_in_browser(&url)
 }
 
 const JUNE_COMMUNITY_URL: &str = "https://t.me/CarpeDiemCommu";
