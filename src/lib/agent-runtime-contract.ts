@@ -35,9 +35,9 @@ export type AgentRunStatus =
   | "failed";
 
 export type AgentUsageDto = {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
   provider?: string;
   privacyLevel?: string;
   endpoint?: string;

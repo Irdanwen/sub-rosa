@@ -240,6 +240,54 @@ describe("AgentWorkspace runtime wiring", () => {
     expect(usagePanel).toHaveTextContent("phala-glm-5.2");
   });
 
+  it("shows route-only persisted usage without crashing", async () => {
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_agent_sessions") return [session];
+      if (command === "get_agent_session") return session;
+      if (command === "list_agent_items") {
+        return [
+          {
+            id: "message-route-only",
+            sessionId: session.id,
+            sequence: 1,
+            createdAt: session.createdAt,
+            kind: "message",
+            role: "assistant",
+            text: "Earlier answer",
+            status: "complete",
+          },
+        ];
+      }
+      if (command === "list_agent_artifacts") return [];
+      if (command === "get_latest_agent_run") {
+        return {
+          id: "run-route-only",
+          sessionId: session.id,
+          status: "completed",
+          model: "zai-org-glm-5-2",
+          usage: {
+            provider: "qa-fixture",
+            privacyLevel: "isolated",
+            endpoint: "localhost",
+          },
+        };
+      }
+      return undefined;
+    });
+    const user = userEvent.setup();
+    render(<AgentWorkspace initialSession={session} />);
+    await screen.findByText("Earlier answer");
+
+    await user.click(screen.getByRole("button", { name: "Session actions" }));
+    await user.click(screen.getByRole("menuitem", { name: "Usage" }));
+
+    const usagePanel = screen.getByLabelText("Session usage");
+    expect(usagePanel).toHaveTextContent("qa-fixture");
+    expect(usagePanel).toHaveTextContent("isolated");
+    expect(usagePanel).toHaveTextContent("localhost");
+    expect(usagePanel).toHaveTextContent("Token counts were not reported for this request.");
+  });
+
   it("steers an active run at the next model boundary and retires the fallback queue", async () => {
     const user = userEvent.setup();
     render(<AgentWorkspace initialSession={session} />);

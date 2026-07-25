@@ -736,7 +736,8 @@ export function AgentWorkspace({
       ? Math.min(100, (contextUsed / contextLimit) * 100)
       : undefined;
   const estimatedCredits =
-    runUsage &&
+    runUsage?.inputTokens !== undefined &&
+    runUsage.outputTokens !== undefined &&
     usageModel?.inputCreditsPerMillionTokens !== undefined &&
     usageModel.outputCreditsPerMillionTokens !== undefined
       ? (runUsage.inputTokens * usageModel.inputCreditsPerMillionTokens +
@@ -998,24 +999,35 @@ export function AgentWorkspace({
             ) : null}
             {projection.run?.usage ? (
               <>
-                <div className="agent-usage-row">
-                  <span className="agent-usage-primary">Input</span>
-                  <span className="agent-usage-value">
-                    {projection.run.usage.inputTokens.toLocaleString()}
-                  </span>
-                </div>
-                <div className="agent-usage-row">
-                  <span className="agent-usage-primary">Output</span>
-                  <span className="agent-usage-value">
-                    {projection.run.usage.outputTokens.toLocaleString()}
-                  </span>
-                </div>
-                <div className="agent-usage-row">
-                  <span className="agent-usage-primary">Total</span>
-                  <span className="agent-usage-value">
-                    {projection.run.usage.totalTokens.toLocaleString()}
-                  </span>
-                </div>
+                {projection.run.usage.inputTokens !== undefined ? (
+                  <div className="agent-usage-row">
+                    <span className="agent-usage-primary">Input</span>
+                    <span className="agent-usage-value">
+                      {projection.run.usage.inputTokens.toLocaleString()}
+                    </span>
+                  </div>
+                ) : null}
+                {projection.run.usage.outputTokens !== undefined ? (
+                  <div className="agent-usage-row">
+                    <span className="agent-usage-primary">Output</span>
+                    <span className="agent-usage-value">
+                      {projection.run.usage.outputTokens.toLocaleString()}
+                    </span>
+                  </div>
+                ) : null}
+                {projection.run.usage.totalTokens !== undefined ? (
+                  <div className="agent-usage-row">
+                    <span className="agent-usage-primary">Total</span>
+                    <span className="agent-usage-value">
+                      {projection.run.usage.totalTokens.toLocaleString()}
+                    </span>
+                  </div>
+                ) : null}
+                {projection.run.usage.inputTokens === undefined &&
+                projection.run.usage.outputTokens === undefined &&
+                projection.run.usage.totalTokens === undefined ? (
+                  <p className="agent-usage-empty">Token counts were not reported for this request.</p>
+                ) : null}
                 {contextPercent !== undefined && contextUsed !== undefined && contextLimit ? (
                   <div className="agent-usage-context">
                     <div className="agent-usage-row">
