@@ -215,6 +215,62 @@ describe("AgentWorkspace runtime wiring", () => {
     );
   });
 
+  it("presents retryable runtime failures as a retry action and resumes through the typed host command", async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_agent_sessions") return Promise.resolve([session]);
+      if (command === "get_agent_session") return Promise.resolve(session);
+      if (command === "list_agent_items") {
+        return Promise.resolve([
+          {
+            id: "message-1",
+            sessionId: session.id,
+            runId: "run-failed",
+            sequence: 1,
+            createdAt: session.createdAt,
+            kind: "message",
+            role: "user",
+            text: "Retry this",
+            status: "complete",
+          },
+          {
+            id: "error-1",
+            sessionId: session.id,
+            runId: "run-failed",
+            sequence: 2,
+            createdAt: session.updatedAt,
+            kind: "error",
+            message: "upstream_provider_failed",
+            retryable: true,
+          },
+        ]);
+      }
+      if (command === "list_agent_artifacts") return Promise.resolve([]);
+      if (command === "list_agent_skills") return Promise.resolve([]);
+      if (command === "list_venice_models") {
+        return Promise.resolve({ mode: "generation", models: [] });
+      }
+      if (command === "retry_agent_run") {
+        return Promise.resolve({
+          id: "run-retry",
+          sessionId: session.id,
+          status: "running",
+          model: "fast",
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    render(<AgentWorkspace initialSession={session} />);
+
+    expect(await screen.findByText("June could not complete this request.")).toBeVisible();
+    expect(screen.queryByText("upstream_provider_failed")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("retry_agent_run", { runId: "run-failed" }),
+    );
+  });
+
   it("resets an open conversation when a new session is requested", async () => {
     const user = userEvent.setup();
     const onSessionSelected = vi.fn();

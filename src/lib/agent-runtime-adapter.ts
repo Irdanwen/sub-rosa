@@ -1,4 +1,8 @@
-import type { AgentChatPart, AgentChatTurn } from "./agent-chat-runtime";
+import {
+  type AgentChatPart,
+  type AgentChatTurn,
+  UPSTREAM_PROVIDER_FAILURE_NOTICE_BODY,
+} from "./agent-chat-runtime";
 import {
   AGENT_RUNTIME_PROTOCOL_VERSION,
   type AgentItemDto,
@@ -265,7 +269,15 @@ export function agentItemsToChatTurns(items: AgentItemDto[]): AgentChatTurn[] {
           return {
             ...base,
             role: "system",
-            parts: [{ type: "text", text: item.message, status: "complete" }],
+            parts: [
+              item.retryable
+                ? {
+                    type: "notice",
+                    kind: "upstream-provider",
+                    text: UPSTREAM_PROVIDER_FAILURE_NOTICE_BODY,
+                  }
+                : { type: "text", text: item.message, status: "complete" },
+            ],
           };
         default:
           return assertNever(item);

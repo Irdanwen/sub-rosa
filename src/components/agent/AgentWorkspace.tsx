@@ -174,6 +174,7 @@ export function AgentWorkspace({
     Partial<Record<string, "once" | "session" | "always" | "deny">>
   >({});
   const [clarifySubmitting, setClarifySubmitting] = useState<Record<string, string>>({});
+  const [retryingFailureIds, setRetryingFailureIds] = useState<Record<string, true>>({});
   const [thinkingOpen, setThinkingOpen] = useState<Record<string, boolean>>({});
   const [heroGreeting] = useState(advanceHeroGreeting);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -441,6 +442,31 @@ export function AgentWorkspace({
     }
   }
 
+  async function retryFailure(itemId: string) {
+    const failedItem = projection.items.find((item) => item.id === itemId && item.kind === "error");
+    if (!failedItem?.runId || running || waiting || submitting || retryingFailureIds[itemId])
+      return;
+    setRetryingFailureIds((current) => ({ ...current, [itemId]: true }));
+    setError(undefined);
+    try {
+      const run = await agentRuntimeBindings.retryRun(failedItem.runId);
+      setProjection((current) => ({ ...current, run }));
+      dispatchAgentSessionStatus({
+        sessionId: failedItem.sessionId,
+        title: selectedSession?.title,
+        status: "starting",
+      });
+      await refreshSessions();
+    } catch (cause) {
+      setRetryingFailureIds((current) => {
+        const next = { ...current };
+        delete next[itemId];
+        return next;
+      });
+      setError(messageFromError(cause));
+    }
+  }
+
   async function respondToApproval(
     interruptionId: string,
     choice: "once" | "session" | "always" | "deny",
@@ -637,6 +663,9 @@ export function AgentWorkspace({
                   onClarify={(part, answer) => void respondToClarification(part.id, answer)}
                   onSudo={() => undefined}
                   onSecret={() => undefined}
+                  onRetryUpstreamFailure={(turnId) => void retryFailure(turnId)}
+                  upstreamFailureRetryAttempted={Boolean(retryingFailureIds[turn.id])}
+                  upstreamFailureRetryDisabled={running || waiting || submitting}
                 />
               ))}
               <AgentArtifactList artifacts={renderedArtifacts} />
