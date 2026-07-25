@@ -501,6 +501,10 @@ fn advance_repeat(repeat: &str, metadata: &mut Value) -> bool {
 /// single-flight lease forever. This is deliberately separate from `reconcile`
 /// because calling it during normal scheduler ticks would interrupt live work.
 pub async fn reconcile_after_restart(pool: &SqlitePool) -> Result<(), AppError> {
+    crate::agent_runtime::AgentRepository::new(pool.clone())
+        .reconcile_non_routine_runs_after_restart()
+        .await
+        .map_err(app_error)?;
     let timestamp = now();
     // The agent run is the source of truth at a process boundary. Mirroring
     // the active state first closes either crash window between the two normal
@@ -1342,8 +1346,8 @@ mod tests {
         // Running the full runtime migration in memory would also require the
         // retired Hermes tables it deliberately imports from.
         for statement in [
-            "CREATE TABLE agent_sessions (id TEXT PRIMARY KEY)",
-            "CREATE TABLE agent_runs (id TEXT PRIMARY KEY, status TEXT, updated_at TEXT, completed_at TEXT, interrupted_state_json TEXT, error_code TEXT, error_message TEXT)",
+            "CREATE TABLE agent_sessions (id TEXT PRIMARY KEY, status TEXT, updated_at TEXT, last_error TEXT)",
+            "CREATE TABLE agent_runs (id TEXT PRIMARY KEY, session_id TEXT, status TEXT, updated_at TEXT, completed_at TEXT, interrupted_state_json TEXT, error_code TEXT, error_message TEXT)",
             "CREATE TABLE connector_triggers (id TEXT PRIMARY KEY, job_id TEXT, kind TEXT, account_id TEXT)",
         ] {
             query(statement).execute(&pool).await.unwrap();

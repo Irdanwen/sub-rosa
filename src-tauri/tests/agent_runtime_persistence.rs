@@ -152,6 +152,155 @@ async fn run_skills_are_deduplicated_and_persisted_for_retry_and_resume() {
 }
 
 #[tokio::test]
+async fn resumed_run_rebases_process_local_event_sequence() {
+    let pool = memory_database().await;
+    let repository = AgentRepository::new(pool);
+    let session = repository
+        .create_session(
+            "Resume",
+            "private-auto",
+            os_june_lib::agent_runtime::AgentSafetyMode::Sandboxed,
+            None,
+        )
+        .await
+        .unwrap();
+    let run = repository
+        .create_run(&session.id, "private-auto", None)
+        .await
+        .unwrap();
+    repository
+        .append_item(
+            &session.id,
+            Some(&run.id),
+            42,
+            &AgentItemPayload::AssistantMessage(MessagePayload {
+                role: "assistant".into(),
+                content: "Before pause".into(),
+                attachments: vec![],
+            }),
+            Some("old-process-event"),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+    repository
+        .reset_run_sequence_for_resume(&run.id)
+        .await
+        .unwrap();
+    let resumed = repository
+        .append_item(
+            &session.id,
+            Some(&run.id),
+            1,
+            &AgentItemPayload::AssistantMessage(MessagePayload {
+                role: "assistant".into(),
+                content: "After resume".into(),
+                attachments: vec![],
+            }),
+            Some("new-process-event"),
+        )
+        .await
+        .unwrap();
+
+    assert!(resumed.is_some());
+    assert_eq!(repository.get_run(&run.id).await.unwrap().last_sequence, 1);
+}
+
+#[tokio::test]
+async fn restart_interrupts_ordinary_active_runs_but_preserves_waiting_state() {
+    let pool = memory_database().await;
+    let repository = AgentRepository::new(pool);
+    let running_session = repository
+        .create_session(
+            "Running",
+            "private-auto",
+            os_june_lib::agent_runtime::AgentSafetyMode::Sandboxed,
+            None,
+        )
+        .await
+        .unwrap();
+    let running = repository
+        .create_run(&running_session.id, "private-auto", None)
+        .await
+        .unwrap();
+    let waiting_session = repository
+        .create_session(
+            "Waiting",
+            "private-auto",
+            os_june_lib::agent_runtime::AgentSafetyMode::Sandboxed,
+            None,
+        )
+        .await
+        .unwrap();
+    let waiting = repository
+        .create_run(&waiting_session.id, "private-auto", None)
+        .await
+        .unwrap();
+    repository
+        .update_run_status(
+            &waiting.id,
+            "waiting_for_user",
+            None,
+            Some(&serde_json::json!("serialized")),
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        repository
+            .reconcile_non_routine_runs_after_restart()
+            .await
+            .unwrap(),
+        1
+    );
+
+    assert_eq!(
+        repository.get_run(&running.id).await.unwrap().status,
+        "interrupted"
+    );
+    assert_eq!(
+        repository
+            .get_session(&running_session.id)
+            .await
+            .unwrap()
+            .status,
+        "interrupted"
+    );
+    let waiting = repository.get_run(&waiting.id).await.unwrap();
+    assert_eq!(waiting.status, "waiting_for_user");
+    assert_eq!(
+        waiting.interrupted_state,
+        Some(serde_json::json!("serialized"))
+    );
+    assert_eq!(
+        repository
+            .get_session(&waiting_session.id)
+            .await
+            .unwrap()
+            .status,
+        "waiting_for_user"
+    );
+    let reconciled_session = repository.get_session(&running_session.id).await.unwrap();
+    assert_eq!(
+        repository
+            .reconcile_non_routine_runs_after_restart()
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        repository
+            .get_session(&running_session.id)
+            .await
+            .unwrap()
+            .updated_at,
+        reconciled_session.updated_at
+    );
+}
+
+#[tokio::test]
 async fn runtime_schema_replaces_legacy_tables_and_keeps_folder_assignments() {
     let pool = SqlitePoolOptions::new()
         .max_connections(1)

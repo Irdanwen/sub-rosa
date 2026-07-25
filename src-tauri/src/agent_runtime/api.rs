@@ -445,7 +445,15 @@ mod branch_tests {
 
 #[tauri::command]
 pub async fn delete_agent_session(app: AppHandle, session_id: String) -> Result<(), AppError> {
-    repository(&app).await?.delete_session(&session_id).await?;
+    let repository = repository(&app).await?;
+    let session = repository.get_session(&session_id).await?;
+    if matches!(session.status.as_str(), "running" | "waiting_for_user") {
+        return Err(AppError::new(
+            "agent_run_active",
+            "Stop or resolve the current turn before deleting this session.",
+        ));
+    }
+    repository.delete_session(&session_id).await?;
     Ok(())
 }
 
@@ -562,9 +570,17 @@ pub async fn start_agent_run(
         &request.attachments,
     )
     .await?;
-    host.ensure_started(&app, repository.clone()).await?;
-    host.request("run.start", &session.id, &run.id, params)
-        .await?;
+    if let Err(error) = host.ensure_started(&app, repository.clone()).await {
+        mark_dispatch_failed(&repository, &run.id, &error).await;
+        return Err(error);
+    }
+    if let Err(error) = host
+        .request("run.start", &session.id, &run.id, params)
+        .await
+    {
+        mark_dispatch_failed(&repository, &run.id, &error).await;
+        return Err(error);
+    }
     Ok(run_json(repository.get_run(&run.id).await?))
 }
 
@@ -688,9 +704,17 @@ pub async fn retry_agent_run(
             Some(&format!("user:{}", run.id)),
         )
         .await?;
-    host.ensure_started(&app, repository.clone()).await?;
-    host.request("run.start", &session.id, &run.id, params)
-        .await?;
+    if let Err(error) = host.ensure_started(&app, repository.clone()).await {
+        mark_dispatch_failed(&repository, &run.id, &error).await;
+        return Err(error);
+    }
+    if let Err(error) = host
+        .request("run.start", &session.id, &run.id, params)
+        .await
+    {
+        mark_dispatch_failed(&repository, &run.id, &error).await;
+        return Err(error);
+    }
     Ok(run_json(repository.get_run(&run.id).await?))
 }
 
@@ -817,6 +841,11 @@ pub async fn resolve_agent_interruption(
     } else {
         json!([{ "interruptionId": request.interruption_id, "kind": "approval", "decision": if approved { "approve" } else { "reject" } }])
     };
+    // A replacement sidecar starts event sequencing from the beginning. The
+    // persisted sequence belongs to the old process, so rebase the run before
+    // accepting resume events while retaining item-level external ids for
+    // duplicate protection.
+    repository.reset_run_sequence_for_resume(&run.id).await?;
     host.request("run.resume", &session.id, &run.id, params)
         .await?;
     Ok(run_json(
@@ -824,6 +853,25 @@ pub async fn resolve_agent_interruption(
             .update_run_status(&run.id, "running", None, None, None)
             .await?,
     ))
+}
+
+async fn mark_dispatch_failed(repository: &AgentRepository, run_id: &str, error: &AppError) {
+    if let Err(persist_error) = repository
+        .update_run_status(
+            run_id,
+            "failed",
+            None,
+            None,
+            Some((&error.code, &error.message)),
+        )
+        .await
+    {
+        tracing::warn!(
+            error = %persist_error,
+            run_id,
+            "failed to persist agent dispatch failure"
+        );
+    }
 }
 
 #[tauri::command]

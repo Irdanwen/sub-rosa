@@ -71,17 +71,33 @@ struct McpSessionSlot {
 
 enum PersistentMcpTransport {
     Stdio(Box<StdioMcpSession>),
-    Http(HttpMcpSession),
+    Http(Box<HttpMcpSession>),
 }
 
 struct StdioMcpSession {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
+    pending: Option<PendingStdioRequest>,
 }
 
 struct HttpMcpSession {
     client: reqwest::Client,
+    session_id: Option<String>,
+    pending: Option<PendingHttpRequest>,
+}
+
+struct PendingStdioRequest {
+    request_id: u64,
+    elicitation: Value,
+    consumed: usize,
+}
+
+struct PendingHttpRequest {
+    request_id: u64,
+    elicitation: Value,
+    response: reqwest::Response,
+    bytes: Vec<u8>,
     session_id: Option<String>,
 }
 
@@ -1661,10 +1677,9 @@ async fn session_request(
     })
     .await;
     match result {
-        Ok(Err(AgentMcpError::ElicitationRequired(message))) => {
-            retire_server_sessions(&server.id).await;
-            Err(AgentMcpError::ElicitationRequired(message))
-        }
+        // Elicitation deliberately leaves the transport and original request
+        // parked in the persistent session. The next invocation supplies the
+        // answer and resumes that request without replaying `tools/call`.
         Ok(result) => result,
         Err(_) => {
             retire_server_sessions(&server.id).await;
@@ -1748,6 +1763,7 @@ async fn start_transport(
             .map(PersistentMcpTransport::Stdio),
         McpTransport::StreamableHttp => start_http_session(server, secrets)
             .await
+            .map(Box::new)
             .map(PersistentMcpTransport::Http),
     }
 }
@@ -1805,6 +1821,7 @@ async fn start_stdio_session(
         child,
         stdin,
         stdout,
+        pending: None,
     })
 }
 
@@ -1820,15 +1837,52 @@ impl StdioMcpSession {
         if self.child.id().is_none() {
             return Err(AgentMcpError::Transport);
         }
+        if let Some(pending) = self.pending.take() {
+            let Some(answer) = elicitation_answer else {
+                let message = elicitation_message(&pending.elicitation);
+                self.pending = Some(pending);
+                return Err(AgentMcpError::ElicitationRequired(message));
+            };
+            write_stdio_elicitation_response(&mut self.stdin, &pending.elicitation, answer).await?;
+            return self
+                .read_request(pending.request_id, max_output_bytes, pending.consumed, None)
+                .await;
+        }
         write_stdio_frame(&mut self.stdin, id, method, params).await?;
-        read_stdio_response_with_elicitation(
-            &mut self.stdout,
-            Some(&mut self.stdin),
-            max_output_bytes,
-            id,
-            elicitation_answer,
-        )
-        .await
+        self.read_request(id, max_output_bytes, 0, elicitation_answer)
+            .await
+    }
+
+    async fn read_request(
+        &mut self,
+        request_id: u64,
+        max_output_bytes: usize,
+        consumed: usize,
+        mut elicitation_answer: Option<&str>,
+    ) -> Result<Value, AgentMcpError> {
+        let mut consumed = consumed;
+        loop {
+            let (event, next_consumed) =
+                read_stdio_response_event(&mut self.stdout, max_output_bytes, request_id, consumed)
+                    .await?;
+            consumed = next_consumed;
+            match event {
+                StdioResponseEvent::Response(value) => return Ok(value),
+                StdioResponseEvent::Elicitation(request) => {
+                    if let Some(answer) = elicitation_answer.take() {
+                        write_stdio_elicitation_response(&mut self.stdin, &request, answer).await?;
+                    } else {
+                        let message = elicitation_message(&request);
+                        self.pending = Some(PendingStdioRequest {
+                            request_id,
+                            elicitation: request,
+                            consumed,
+                        });
+                        return Err(AgentMcpError::ElicitationRequired(message));
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1892,6 +1946,38 @@ async fn read_stdio_response_with_elicitation<R: tokio::io::AsyncRead + Unpin>(
     elicitation_answer: Option<&str>,
 ) -> Result<Value, AgentMcpError> {
     let mut consumed = 0_usize;
+    let mut elicitation_answer = elicitation_answer;
+    loop {
+        let (event, next_consumed) = read_stdio_response_event(reader, limit, id, consumed).await?;
+        consumed = next_consumed;
+        match event {
+            StdioResponseEvent::Response(value) => return Ok(value),
+            StdioResponseEvent::Elicitation(candidate) => {
+                let Some(answer) = elicitation_answer.take() else {
+                    return Err(AgentMcpError::ElicitationRequired(elicitation_message(
+                        &candidate,
+                    )));
+                };
+                let stdin = stdin.as_deref_mut().ok_or_else(|| {
+                    AgentMcpError::ElicitationRequired(elicitation_message(&candidate))
+                })?;
+                write_stdio_elicitation_response(stdin, &candidate, answer).await?;
+            }
+        }
+    }
+}
+
+enum StdioResponseEvent {
+    Response(Value),
+    Elicitation(Value),
+}
+
+async fn read_stdio_response_event<R: tokio::io::AsyncRead + Unpin>(
+    reader: &mut BufReader<R>,
+    limit: usize,
+    id: u64,
+    mut consumed: usize,
+) -> Result<(StdioResponseEvent, usize), AgentMcpError> {
     for _ in 0..64 {
         let raw = read_bounded_line(reader, limit.saturating_sub(consumed)).await?;
         consumed = consumed.saturating_add(raw.len());
@@ -1899,16 +1985,7 @@ async fn read_stdio_response_with_elicitation<R: tokio::io::AsyncRead + Unpin>(
             return Err(AgentMcpError::Protocol);
         };
         if is_elicitation(&candidate) {
-            let Some(answer) = elicitation_answer else {
-                return Err(AgentMcpError::ElicitationRequired(elicitation_message(
-                    &candidate,
-                )));
-            };
-            let stdin = stdin.as_deref_mut().ok_or_else(|| {
-                AgentMcpError::ElicitationRequired(elicitation_message(&candidate))
-            })?;
-            write_stdio_elicitation_response(stdin, &candidate, answer).await?;
-            continue;
+            return Ok((StdioResponseEvent::Elicitation(candidate), consumed));
         }
         if candidate.get("id").and_then(Value::as_u64) != Some(id) {
             continue;
@@ -1916,7 +1993,7 @@ async fn read_stdio_response_with_elicitation<R: tokio::io::AsyncRead + Unpin>(
         if candidate.get("error").is_some() {
             return Err(AgentMcpError::Protocol);
         }
-        return Ok(candidate);
+        return Ok((StdioResponseEvent::Response(candidate), consumed));
     }
     Err(AgentMcpError::Protocol)
 }
@@ -1997,7 +2074,11 @@ async fn start_http_session(
         json!({}),
     )
     .await?;
-    Ok(HttpMcpSession { client, session_id })
+    Ok(HttpMcpSession {
+        client,
+        session_id,
+        pending: None,
+    })
 }
 
 impl HttpMcpSession {
@@ -2010,7 +2091,44 @@ impl HttpMcpSession {
         params: Value,
         elicitation_answer: Option<&str>,
     ) -> Result<Value, AgentMcpError> {
-        let (value, session_id) = http_post(
+        if let Some(pending) = self.pending.take() {
+            let Some(answer) = elicitation_answer else {
+                let message = elicitation_message(&pending.elicitation);
+                self.pending = Some(pending);
+                return Err(AgentMcpError::ElicitationRequired(message));
+            };
+            http_respond_elicitation(
+                &self.client,
+                server,
+                secrets,
+                pending.session_id.as_deref(),
+                &pending.elicitation,
+                answer,
+            )
+            .await?;
+            let answered_id = pending.elicitation.get("id").map(Value::to_string);
+            return match consume_http_response(
+                &self.client,
+                server,
+                secrets,
+                pending.request_id,
+                pending.response,
+                pending.bytes,
+                pending.session_id,
+                None,
+                answered_id,
+            )
+            .await?
+            {
+                HttpResponseOutcome::Complete(value) => Ok(value),
+                HttpResponseOutcome::Elicitation(pending) => {
+                    let message = elicitation_message(&pending.elicitation);
+                    self.pending = Some(pending);
+                    Err(AgentMcpError::ElicitationRequired(message))
+                }
+            };
+        }
+        let (response, session_id) = begin_http_request(
             &self.client,
             server,
             secrets,
@@ -2018,13 +2136,31 @@ impl HttpMcpSession {
             id,
             method,
             params,
-            elicitation_answer,
         )
         .await?;
-        if session_id.is_some() {
-            self.session_id = session_id;
+        if let Some(session_id) = session_id.as_ref() {
+            self.session_id = Some(session_id.clone());
         }
-        Ok(value)
+        match consume_http_response(
+            &self.client,
+            server,
+            secrets,
+            id,
+            response,
+            Vec::new(),
+            session_id,
+            elicitation_answer,
+            None,
+        )
+        .await?
+        {
+            HttpResponseOutcome::Complete(value) => Ok(value),
+            HttpResponseOutcome::Elicitation(pending) => {
+                let message = elicitation_message(&pending.elicitation);
+                self.pending = Some(pending);
+                Err(AgentMcpError::ElicitationRequired(message))
+            }
+        }
     }
 }
 
@@ -2149,6 +2285,37 @@ async fn http_post(
     params: Value,
     elicitation_answer: Option<&str>,
 ) -> Result<(Value, Option<String>), AgentMcpError> {
+    let (response, session_id) =
+        begin_http_request(client, server, secrets, session_id, id, method, params).await?;
+    match consume_http_response(
+        client,
+        server,
+        secrets,
+        id,
+        response,
+        Vec::new(),
+        session_id.clone(),
+        elicitation_answer,
+        None,
+    )
+    .await?
+    {
+        HttpResponseOutcome::Complete(value) => Ok((value, session_id)),
+        HttpResponseOutcome::Elicitation(pending) => Err(AgentMcpError::ElicitationRequired(
+            elicitation_message(&pending.elicitation),
+        )),
+    }
+}
+
+async fn begin_http_request(
+    client: &reqwest::Client,
+    server: &McpServerDefinition,
+    secrets: &McpSecretBundle,
+    session_id: Option<&str>,
+    id: u64,
+    method: &str,
+    params: Value,
+) -> Result<(reqwest::Response, Option<String>), AgentMcpError> {
     let url = server.url.as_deref().ok_or(AgentMcpError::Transport)?;
     let mut request = apply_http_credentials(
         client
@@ -2177,9 +2344,26 @@ async fn http_post(
         .get("mcp-session-id")
         .and_then(|value| value.to_str().ok())
         .map(str::to_string);
-    let mut response = response;
-    let mut bytes = Vec::new();
-    let mut answered_elicitation = None;
+    Ok((response, session_id))
+}
+
+enum HttpResponseOutcome {
+    Complete(Value),
+    Elicitation(PendingHttpRequest),
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn consume_http_response(
+    client: &reqwest::Client,
+    server: &McpServerDefinition,
+    secrets: &McpSecretBundle,
+    request_id: u64,
+    mut response: reqwest::Response,
+    mut bytes: Vec<u8>,
+    session_id: Option<String>,
+    mut elicitation_answer: Option<&str>,
+    mut answered_elicitation: Option<String>,
+) -> Result<HttpResponseOutcome, AgentMcpError> {
     while let Some(chunk) = response
         .chunk()
         .await
@@ -2189,16 +2373,22 @@ async fn http_post(
             return Err(AgentMcpError::OutputTooLarge);
         }
         bytes.extend_from_slice(&chunk);
-        if let Some(elicitation) = find_elicitation_request(&bytes) {
+        if let Some(elicitation) =
+            find_unanswered_elicitation_request(&bytes, answered_elicitation.as_deref())
+        {
             let elicitation_id = elicitation
                 .get("id")
                 .map(Value::to_string)
                 .ok_or(AgentMcpError::Protocol)?;
             if answered_elicitation.as_deref() != Some(elicitation_id.as_str()) {
-                let Some(answer) = elicitation_answer else {
-                    return Err(AgentMcpError::ElicitationRequired(elicitation_message(
-                        &elicitation,
-                    )));
+                let Some(answer) = elicitation_answer.take() else {
+                    return Ok(HttpResponseOutcome::Elicitation(PendingHttpRequest {
+                        request_id,
+                        elicitation,
+                        response,
+                        bytes,
+                        session_id,
+                    }));
                 };
                 http_respond_elicitation(
                     client,
@@ -2213,7 +2403,9 @@ async fn http_post(
             }
         }
     }
-    Ok((parse_mcp_response(&bytes, id)?, session_id))
+    Ok(HttpResponseOutcome::Complete(parse_mcp_response(
+        &bytes, request_id,
+    )?))
 }
 
 async fn http_respond_elicitation(
@@ -2262,7 +2454,12 @@ fn contains_elicitation_request(bytes: &[u8]) -> bool {
     find_elicitation_request(bytes).is_some()
 }
 
+#[cfg(test)]
 fn find_elicitation_request(bytes: &[u8]) -> Option<Value> {
+    find_unanswered_elicitation_request(bytes, None)
+}
+
+fn find_unanswered_elicitation_request(bytes: &[u8], answered_id: Option<&str>) -> Option<Value> {
     let Ok(raw) = std::str::from_utf8(bytes) else {
         return None;
     };
@@ -2275,7 +2472,10 @@ fn find_elicitation_request(bytes: &[u8]) -> Option<Value> {
                 .map(str::trim)
                 .filter_map(|data| serde_json::from_str(data).ok()),
         )
-        .find(is_elicitation)
+        .find(|candidate| {
+            is_elicitation(candidate)
+                && candidate.get("id").map(Value::to_string).as_deref() != answered_id
+        })
 }
 
 fn is_elicitation(candidate: &Value) -> bool {
@@ -3367,7 +3567,10 @@ done
 
     #[tokio::test]
     async fn http_elicitation_answer_resumes_the_original_tool_call() {
-        use std::sync::Arc;
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
             net::TcpListener,
@@ -3378,14 +3581,17 @@ done
         let address = listener.local_addr().unwrap();
         let answer = Arc::new(TokioMutex::new(None::<Value>));
         let answer_ready = Arc::new(Notify::new());
+        let tool_calls = Arc::new(AtomicUsize::new(0));
         let server_task = tokio::spawn({
             let answer = answer.clone();
             let answer_ready = answer_ready.clone();
+            let tool_calls = tool_calls.clone();
             async move {
                 loop {
                     let (mut stream, _) = listener.accept().await.unwrap();
                     let answer = answer.clone();
                     let answer_ready = answer_ready.clone();
+                    let tool_calls = tool_calls.clone();
                     tokio::spawn(async move {
                         let mut request = Vec::new();
                         let mut buffer = [0_u8; 4096];
@@ -3448,6 +3654,7 @@ done
                                     .unwrap();
                             }
                             Some("tools/call") => {
+                                tool_calls.fetch_add(1, Ordering::SeqCst);
                                 stream
                                     .write_all(
                                         b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nmcp-session-id: elicitation-session\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n",
@@ -3531,6 +3738,16 @@ done
             McpTransport::StreamableHttp,
         );
         server.url = Some(format!("http://{address}/mcp"));
+        let first = call_server(
+            &server,
+            &McpSecretBundle::default(),
+            "choose",
+            json!({}),
+            None,
+            None,
+        )
+        .await;
+        assert!(matches!(first, Err(AgentMcpError::ElicitationRequired(_))));
         let result = call_server(
             &server,
             &McpSecretBundle::default(),
@@ -3543,6 +3760,7 @@ done
         .unwrap();
 
         assert_eq!(result["content"][0]["text"], "Alpha selected");
+        assert_eq!(tool_calls.load(Ordering::SeqCst), 1);
         assert_eq!(
             answer.lock().await.as_ref().unwrap()["project"],
             json!("Alpha")
@@ -3690,9 +3908,11 @@ done
 
             let directory = tempfile::tempdir().unwrap();
             let script = directory.path().join("eliciting-mcp.sh");
+            let calls = directory.path().join("tool-calls");
             std::fs::write(
                 &script,
                 r#"#!/bin/sh
+calls="$1"
 while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
   case "$line" in
@@ -3700,6 +3920,10 @@ while IFS= read -r line; do
       printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-06-18","capabilities":{},"serverInfo":{"name":"eliciting","version":"1"}}}\n' "$id"
       ;;
     *'"method":"tools/call"'*)
+      count=0
+      if [ -f "$calls" ]; then count=$(cat "$calls"); fi
+      count=$((count + 1))
+      printf '%s' "$count" > "$calls"
       printf '{"jsonrpc":"2.0","id":"question-1","method":"elicitation/create","params":{"message":"Choose a project","requestedSchema":{"type":"object","properties":{"project":{"type":"string"}}}}}\n'
       IFS= read -r answer
       case "$answer" in
@@ -3725,6 +3949,17 @@ done
                 McpTransport::Stdio,
             );
             server.command = Some(script.to_string_lossy().into_owned());
+            server.args = vec![calls.to_string_lossy().into_owned()];
+            let first = call_server(
+                &server,
+                &McpSecretBundle::default(),
+                "choose",
+                json!({}),
+                None,
+                None,
+            )
+            .await;
+            assert!(matches!(first, Err(AgentMcpError::ElicitationRequired(_))));
             let result = call_server(
                 &server,
                 &McpSecretBundle::default(),
@@ -3737,6 +3972,7 @@ done
             .unwrap();
 
             assert_eq!(result["content"][0]["text"], "Alpha selected");
+            assert_eq!(std::fs::read_to_string(calls).unwrap(), "1");
             retire_server_sessions(&server.id).await;
         }
     }

@@ -597,7 +597,12 @@ async fn persist_and_emit_event(
                     json!({ "id": params.get("id").cloned().unwrap_or_else(|| json!(event_id)), "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "secret", "reason": params.get("reason").cloned().unwrap_or_else(|| json!("June needs a secret before it can continue.")) })
                 }
                 _ => {
-                    json!({ "id": params.get("id").cloned().unwrap_or_else(|| json!(event_id)), "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "approval", "toolName": params.get("toolName").cloned().unwrap_or_else(|| json!("unknown_tool")), "title": "Approval required", "description": "June needs permission to use this tool.", "allowAlways": false })
+                    let tool_name = params
+                        .get("toolName")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown_tool");
+                    let command = approval_command(tool_name, params.get("arguments"));
+                    json!({ "id": params.get("id").cloned().unwrap_or_else(|| json!(event_id)), "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "approval", "toolName": tool_name, "title": "Approval required", "description": format!("June wants to run {tool_name}. Review the requested operation before approving."), "command": command, "allowAlways": false })
                 }
             };
             data = json!({ "itemId": format!("interruption:{event_id}"), "interruption": interruption });
@@ -791,6 +796,22 @@ async fn write_frame(stdin: &Arc<Mutex<ChildStdin>>, frame: &RpcFrame) -> Result
 fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
+
+fn approval_command(tool_name: &str, arguments: Option<&Value>) -> String {
+    let details = match arguments {
+        Some(Value::Object(arguments)) => arguments
+            .get("command")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                serde_json::to_string_pretty(arguments).unwrap_or_else(|_| "{}".into())
+            }),
+        Some(arguments) => arguments.to_string(),
+        None => "{}".into(),
+    };
+    sanitize_log(&format!("{tool_name} {details}"))
+}
+
 fn sanitize_log(value: &str) -> String {
     let value = redact_bearer_tokens(value);
     let value = redact_key_tokens(&value);
@@ -908,6 +929,23 @@ mod tests {
         assert!(!sanitized.contains("sk_abcdefghijklmnop"));
         assert!(sanitized.contains("Bearer [redacted]"));
         assert!(sanitized.chars().count() <= 2_000);
+    }
+
+    #[test]
+    fn approval_cards_preserve_sanitized_operation_details() {
+        let command = approval_command(
+            "write_file",
+            Some(&json!({
+                "path": "/workspace/report.md",
+                "content": "safe content",
+                "token": "[redacted]"
+            })),
+        );
+
+        assert!(command.contains("write_file"));
+        assert!(command.contains("/workspace/report.md"));
+        assert!(command.contains("safe content"));
+        assert!(command.contains("[redacted]"));
     }
 
     #[cfg(unix)]

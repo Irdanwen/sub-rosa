@@ -354,26 +354,37 @@ fn agent_mcp_error(error: crate::agent_mcp::AgentMcpError) -> AppError {
 
 async fn search_june(context: &ToolContext, arguments: &Value) -> Result<Value, AppError> {
     let query_text = required_string(arguments, "query")?;
+    let profile = crate::commands::active_profile(&context.app);
+    search_june_for_profile(&context.repository.pool, &profile, query_text).await
+}
+
+async fn search_june_for_profile(
+    pool: &sqlx_sqlite::SqlitePool,
+    profile: &str,
+    query_text: &str,
+) -> Result<Value, AppError> {
     let pattern = format!("%{}%", query_text.replace('%', "\\%").replace('_', "\\_"));
     let rows = query(
         "SELECT n.id, n.title, COALESCE(n.edited_content, n.generated_content, '') AS note,
                 COALESCE((SELECT text FROM transcripts t WHERE t.note_id = n.id ORDER BY t.created_at DESC LIMIT 1), '') AS transcript,
                 n.updated_at
          FROM notes n
-         WHERE n.title LIKE ? ESCAPE '\\' OR n.generated_content LIKE ? ESCAPE '\\'
+         WHERE n.profile = ? AND (
+            n.title LIKE ? ESCAPE '\\' OR n.generated_content LIKE ? ESCAPE '\\'
             OR n.edited_content LIKE ? ESCAPE '\\'
             OR EXISTS (SELECT 1 FROM transcripts t WHERE t.note_id = n.id AND t.text LIKE ? ESCAPE '\\')
+         )
          ORDER BY n.updated_at DESC LIMIT 20",
     )
-    .bind(&pattern).bind(&pattern).bind(&pattern).bind(&pattern)
-    .fetch_all(&context.repository.pool).await?;
+    .bind(profile).bind(&pattern).bind(&pattern).bind(&pattern).bind(&pattern)
+    .fetch_all(pool).await?;
     let notes: Vec<Value> = rows.into_iter().map(|row| json!({
         "id": row.get::<String, _>("id"), "title": row.get::<String, _>("title"),
         "note": truncate(row.get::<String, _>("note")), "transcript": truncate(row.get::<String, _>("transcript")),
         "updatedAt": row.get::<String, _>("updated_at")
     })).collect();
-    let dictations = query("SELECT id, text, language, created_at FROM dictation_history WHERE text LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT 20")
-        .bind(&pattern).fetch_all(&context.repository.pool).await?;
+    let dictations = query("SELECT id, text, language, created_at FROM dictation_history WHERE profile = ? AND text LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT 20")
+        .bind(profile).bind(&pattern).fetch_all(pool).await?;
     let dictations: Vec<Value> = dictations.into_iter().map(|row| json!({
         "id": row.get::<String, _>("id"), "text": truncate(row.get::<String, _>("text")),
         "language": row.get::<Option<String>, _>("language"), "createdAt": row.get::<String, _>("created_at")
@@ -1320,6 +1331,35 @@ mod tests {
             .get("payload_json");
         let payload: Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(payload["answerConsumed"], true);
+    }
+
+    #[tokio::test]
+    async fn june_search_is_scoped_to_the_active_profile() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        for statement in [
+            "CREATE TABLE notes (id TEXT PRIMARY KEY, title TEXT NOT NULL, generated_content TEXT, edited_content TEXT, profile TEXT NOT NULL, updated_at TEXT NOT NULL)",
+            "CREATE TABLE transcripts (id TEXT PRIMARY KEY, note_id TEXT NOT NULL, text TEXT NOT NULL, created_at TEXT NOT NULL)",
+            "CREATE TABLE dictation_history (id TEXT PRIMARY KEY, text TEXT NOT NULL, language TEXT, profile TEXT NOT NULL, created_at TEXT NOT NULL)",
+        ] {
+            query(statement).execute(&pool).await.unwrap();
+        }
+        query("INSERT INTO notes (id, title, generated_content, profile, updated_at) VALUES ('mine', 'Shared needle', 'mine', 'profile-a', '2026-01-01'), ('theirs', 'Shared needle', 'theirs', 'profile-b', '2026-01-02')")
+            .execute(&pool).await.unwrap();
+        query("INSERT INTO dictation_history (id, text, profile, created_at) VALUES ('dictation-a', 'needle mine', 'profile-a', '2026-01-01'), ('dictation-b', 'needle theirs', 'profile-b', '2026-01-02')")
+            .execute(&pool).await.unwrap();
+
+        let result = search_june_for_profile(&pool, "profile-a", "needle")
+            .await
+            .unwrap();
+
+        assert_eq!(result["notes"].as_array().unwrap().len(), 1);
+        assert_eq!(result["notes"][0]["id"], "mine");
+        assert_eq!(result["dictations"].as_array().unwrap().len(), 1);
+        assert_eq!(result["dictations"][0]["id"], "dictation-a");
     }
 
     #[test]

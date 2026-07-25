@@ -26,11 +26,24 @@ export async function compactHistory(input: {
     return { history: input.history, compacted: false, removedItemIds: [], estimatedTokens };
   }
 
-  const system = input.history.filter((item) => item.role === "system");
-  const nonSystem = input.history.filter((item) => item.role !== "system");
-  const groups = groupHistory(nonSystem);
+  // A context summary is represented as a system message for inference, but it
+  // is replaceable conversation state rather than an immutable instruction.
+  // Keeping every prior summary in `system` made repeated compactions grow the
+  // prompt forever. Preserve only real system instructions and fold any prior
+  // summary back into the next summary.
+  const system = input.history.filter(
+    (item) => item.role === "system" && item.kind !== "context_summary",
+  );
+  const priorSummaries = input.history.filter((item) => item.kind === "context_summary");
+  const conversation = input.history.filter(
+    (item) => item.role !== "system" && item.kind !== "context_summary",
+  );
+  const groups = groupHistory(conversation);
   const recent = groups.slice(-MIN_RECENT_GROUPS);
-  const candidates = groups.slice(0, Math.max(0, groups.length - MIN_RECENT_GROUPS));
+  const candidates = [
+    ...(priorSummaries.length > 0 ? [priorSummaries] : []),
+    ...groups.slice(0, Math.max(0, groups.length - MIN_RECENT_GROUPS)),
+  ];
   if (candidates.length === 0) {
     return { history: input.history, compacted: false, removedItemIds: [], estimatedTokens };
   }

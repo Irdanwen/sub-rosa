@@ -147,6 +147,15 @@ impl AgentRepository {
         Ok(run_from_row(row))
     }
 
+    pub async fn reset_run_sequence_for_resume(&self, run_id: &str) -> Result<(), sqlx::Error> {
+        query("UPDATE agent_runs SET last_sequence = 0, updated_at = ? WHERE id = ?")
+            .bind(now())
+            .bind(run_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     pub async fn set_run_enabled_skills(
         &self,
         run_id: &str,
@@ -377,10 +386,57 @@ impl AgentRepository {
 
     pub async fn mark_active_runs_interrupted(&self, message: &str) -> Result<u64, sqlx::Error> {
         let now = now();
-        let result = query("UPDATE agent_runs SET status = 'interrupted', updated_at = ?, completed_at = ?, error_code = 'runtime_crashed', error_message = ? WHERE status IN ('running', 'waiting_for_user')")
+        let result = query("UPDATE agent_runs SET status = 'interrupted', updated_at = ?, completed_at = ?, error_code = 'runtime_crashed', error_message = ? WHERE status IN ('queued', 'running')")
             .bind(&now).bind(&now).bind(message).execute(&self.pool).await?;
-        query("UPDATE agent_sessions SET status = 'interrupted', updated_at = ?, last_error = ? WHERE status IN ('running', 'waiting_for_user')")
+        query("UPDATE agent_sessions SET status = 'interrupted', updated_at = ?, last_error = ? WHERE status = 'running'")
             .bind(&now).bind(message).execute(&self.pool).await?;
+        Ok(result.rows_affected())
+    }
+
+    /// Repairs non-routine work left active by a previous app process. Waiting
+    /// runs keep their serialized interruption state and routine runs are
+    /// reconciled by the scheduler's lease-aware recovery path.
+    pub async fn reconcile_non_routine_runs_after_restart(&self) -> Result<u64, sqlx::Error> {
+        let timestamp = now();
+        let message = "June restarted before this run completed.";
+        let mut transaction = self.pool.begin().await?;
+        let result = query(
+            "UPDATE agent_runs
+             SET status = 'interrupted', updated_at = ?, completed_at = COALESCE(completed_at, ?),
+                 error_code = COALESCE(error_code, 'runtime_restarted'),
+                 error_message = COALESCE(error_message, ?)
+             WHERE status IN ('queued', 'running')
+               AND NOT EXISTS (
+                 SELECT 1 FROM routine_runs WHERE routine_runs.agent_run_id = agent_runs.id
+               )",
+        )
+        .bind(&timestamp)
+        .bind(&timestamp)
+        .bind(message)
+        .execute(&mut *transaction)
+        .await?;
+        query(
+            "UPDATE agent_sessions
+             SET status = 'interrupted', updated_at = ?, last_error = ?
+             WHERE EXISTS (
+               SELECT 1 FROM agent_runs
+               WHERE agent_runs.session_id = agent_sessions.id
+                 AND agent_runs.status = 'interrupted'
+                 AND agent_runs.error_code = 'runtime_restarted'
+                 AND agent_runs.updated_at = ?
+             )
+               AND NOT EXISTS (
+                 SELECT 1 FROM agent_runs
+                 WHERE agent_runs.session_id = agent_sessions.id
+                   AND agent_runs.status IN ('queued', 'running', 'waiting_for_user')
+             )",
+        )
+        .bind(&timestamp)
+        .bind(message)
+        .bind(&timestamp)
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
         Ok(result.rows_affected())
     }
 

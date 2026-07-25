@@ -76,3 +76,35 @@ test("manual compaction can force eligible older groups below the automatic thre
   assert.deepEqual(result.removedItemIds, ["message-0", "message-1"]);
   assert.equal(result.summary?.kind, "context_summary");
 });
+
+test("replaces prior context summaries instead of accumulating system messages", async () => {
+  const history: RuntimeHistoryItem[] = [
+    { id: "system", kind: "message", role: "system", text: "June instructions" },
+    {
+      id: "old-summary",
+      kind: "context_summary",
+      role: "system",
+      text: "Earlier summary",
+    },
+    ...Array.from({ length: 6 }, (_, index) => ({
+      id: `recent-${index}`,
+      kind: "message" as const,
+      role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+      text: `Recent message ${index}`,
+    })),
+  ];
+
+  const result = await compactHistory({
+    history,
+    contextWindow: 128_000,
+    force: true,
+    summarize: async (items) => `Replacement for ${items.map((item) => item.id).join(",")}`,
+  });
+
+  assert.equal(result.compacted, true);
+  assert.deepEqual(result.removedItemIds, ["old-summary"]);
+  assert.equal(result.history.filter((item) => item.kind === "context_summary").length, 1);
+  assert.ok(result.summary?.text?.includes("old-summary"));
+  assert.ok(result.history.some((item) => item.id === "system"));
+  assert.ok(!result.history.some((item) => item.id === "old-summary"));
+});
