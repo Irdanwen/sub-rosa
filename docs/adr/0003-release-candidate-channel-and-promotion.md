@@ -155,3 +155,24 @@ version-bump PR being merged first.
 - **The escape rule must stay a tested pure function.** Its correctness is not
   observable from the updater builder, so `should_update` is unit-tested for the
   stable-escape, rc-forward-only, and clean-stable-forward-only cases.
+
+## Addendum (2026-07-25, Sub Rosa fork)
+
+Not superseded upstream; **not in use on this fork.**
+
+Sub Rosa never adopted the two-stage rc -> promote channel this ADR describes.
+It publishes straight to `Irdanwen/sub-rosa-releases` from `release.yml`, on a
+`vX.Y.Z` tag, which is also the only endpoint `tauri.conf.json` points the
+updater at. The three workflows that implemented the channel here
+(`rc-desktop-dmg.yml`, `promote-desktop.yml`, `production-desktop-windows.yml`)
+were removed with the June-autonomy work: every one of them hardcoded
+`open-software-network/os-june-releases` as its publish target, including
+`gh release upload`, and minted a GitHub App token scoped to upstream's
+repositories. They could not have run here, and a dispatch would have pushed
+this fork's artifacts at somebody else's release repo.
+
+The reasoning in this ADR still holds for a fork that wants a soak channel;
+restoring it means restoring those workflows with the release repo and the app
+token repointed, plus an `rc` channel in the updater config. Until then,
+`docs/release-macos.md` and `docs/release-windows.md` describe the single-stage
+path that is actually shipped. See ADR 0017 for the autonomy decision.

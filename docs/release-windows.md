@@ -1,5 +1,15 @@
 # Releasing June for Windows
 
+> **Not the process this fork uses.** Sub Rosa publishes to
+> `Irdanwen/sub-rosa-releases` in one stage: tag `vX.Y.Z` and
+> `.github/workflows/release.yml` builds, signs, notarizes, and publishes,
+> which is also the only endpoint the updater reads. The rc -> promote channel
+> below, and the workflows that ran it, were upstream June's; they hardcoded
+> upstream's release repo and were removed. See the addendum on
+> [ADR 0003](adr/0003-release-candidate-channel-and-promotion.md) and
+> [FORK_NOTES.md](../FORK_NOTES.md). Kept as the reference for restoring a soak
+> channel, and to keep upstream re-merges applying cleanly.
+
 June ships Windows builds as an NSIS installer. The production Windows release
 workflow builds from `main`, signs the app executable and installer with
 Authenticode, signs updater artifacts with the Tauri updater key, and attaches
