@@ -10,14 +10,16 @@ import {
   type FilmBoard,
   type FilmBriefRef,
   type FilmChatMessage,
+  type FilmCrewEvent,
   type FilmGate,
   type FilmProject,
+  type FilmStatus,
   type FilmTake,
   filmRefLine,
   listenFilmChatEvents,
   parseBoard,
+  parseCrewEvent,
   parseGates,
-  parseProduceOutcome,
   parseTakes,
   parseTranscript,
   parseUploadedRef,
@@ -30,7 +32,6 @@ import {
   videomakerGateReject,
   videomakerGates,
   videomakerImproveBrief,
-  videomakerProduce,
   videomakerShotRequeue,
   videomakerShotRetake,
   videomakerShotSkip,
@@ -41,6 +42,10 @@ import {
 } from "../../lib/tauri";
 import { Spinner } from "../ui/Spinner";
 import { PillGroup } from "./controls";
+import { FilmProduceControl } from "./FilmProduceControl";
+
+/// One department the studio delegated to during the current turn.
+type CrewStep = FilmCrewEvent & { key: string };
 
 type ErrorLike = { message?: string };
 
@@ -57,9 +62,12 @@ function gateBadge(gate: FilmGate): string {
 
 export function FilmDirectorPanel({
   project,
+  status,
   initialDraft,
 }: {
   project: FilmProject;
+  /** The project's `/status` rollup (owned by the studio surface above). */
+  status?: FilmStatus;
   /** Seeds the chat composer (e.g. the refs manifest handed off at creation). */
   initialDraft?: string;
 }) {
@@ -74,6 +82,10 @@ export function FilmDirectorPanel({
   const [draft, setDraft] = useState(initialDraft ?? "");
   const [turnBusy, setTurnBusy] = useState(false);
   const [turnActivity, setTurnActivity] = useState<string | null>(null);
+  // Which departments the studio put on the job this turn. Most of a turn's
+  // work is delegated now, so without these the panel would spin on
+  // "Thinking..." while a whole crew is running.
+  const [crew, setCrew] = useState<CrewStep[]>([]);
   // Attach flow: pick → set role/name → upload on confirm.
   const [pendingAttach, setPendingAttach] = useState<FilmBriefRef | null>(null);
   const [attachBusy, setAttachBusy] = useState(false);
@@ -86,10 +98,6 @@ export function FilmDirectorPanel({
   const [rejectingPhase, setRejectingPhase] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [gateBusy, setGateBusy] = useState<string | null>(null);
-
-  // Produce handshake state.
-  const [quoteDiem, setQuoteDiem] = useState<number | null>(null);
-  const [produceBusy, setProduceBusy] = useState(false);
 
   // Shot actions.
   const [openShot, setOpenShot] = useState<string | null>(null);
@@ -126,7 +134,7 @@ export function FilmDirectorPanel({
     };
   }, [refresh]);
 
-  // Tool progress while a chat turn runs.
+  // Tool + crew progress while a chat turn runs.
   useEffect(() => {
     return listenFilmChatEvents((event) => {
       if (event.slug !== slug) return;
@@ -135,7 +143,35 @@ export function FilmDirectorPanel({
         if (data?.phase === "start") {
           setTurnActivity(data.label ?? data.tool ?? "Working");
         }
+        return;
       }
+      if (event.kind !== "agent") return;
+      const delegation = parseCrewEvent(event.data);
+      if (!delegation) return;
+      if (!delegation.done) {
+        setTurnActivity(
+          delegation.goal ? `${delegation.label}: ${delegation.goal}` : delegation.label,
+        );
+        setCrew((current) => [
+          ...current,
+          { ...delegation, key: `${delegation.role}:${delegation.taskId ?? current.length}` },
+        ]);
+        return;
+      }
+      // Resolve the matching start (same task when the studio gave an id, else
+      // the department's oldest unfinished job).
+      setCrew((current) => {
+        const index = current.findIndex(
+          (step) =>
+            !step.done &&
+            step.role === delegation.role &&
+            (delegation.taskId === undefined || step.taskId === delegation.taskId),
+        );
+        if (index < 0) return current;
+        const next = [...current];
+        next[index] = { ...next[index], ...delegation, key: next[index].key };
+        return next;
+      });
     });
   }, [slug]);
 
@@ -151,6 +187,7 @@ export function FilmDirectorPanel({
     setImprovedDraft(null);
     setTurnBusy(true);
     setTurnActivity(null);
+    setCrew([]);
     setError(null);
     setMessages((current) => [...current, { role: "user", content: message }]);
     try {
@@ -261,24 +298,6 @@ export function FilmDirectorPanel({
     },
     [slug, refresh],
   );
-
-  const produce = useCallback(async () => {
-    setProduceBusy(true);
-    setError(null);
-    try {
-      const outcome = parseProduceOutcome(await videomakerProduce(slug, quoteDiem ?? undefined));
-      if (outcome.needsConfirmation) {
-        setQuoteDiem(outcome.projectedCostDiem ?? null);
-      } else {
-        setQuoteDiem(null);
-        await refresh();
-      }
-    } catch (cause) {
-      setError(errorMessage(cause));
-    } finally {
-      setProduceBusy(false);
-    }
-  }, [slug, quoteDiem, refresh]);
 
   const toggleShot = useCallback(
     async (shotId: string) => {
@@ -409,6 +428,22 @@ export function FilmDirectorPanel({
             <div className="film-chat-message" data-role="assistant">
               <Spinner aria-label="The studio is working" />
               <span className="film-chat-activity">{turnActivity ?? "Thinking..."}</span>
+              {crew.length > 0 ? (
+                <ul className="film-crew" aria-label="Departments on the job">
+                  {crew.map((step) => (
+                    <li
+                      key={step.key}
+                      className="film-crew-chip"
+                      data-state={step.done ? (step.failed ? "failed" : "done") : "working"}
+                    >
+                      {step.label}
+                      {step.done && !step.failed && typeof step.costDiem === "number"
+                        ? ` (${step.costDiem.toFixed(2)} DIEM)`
+                        : ""}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
           ) : null}
           <div ref={chatEndRef} />
@@ -543,24 +578,53 @@ export function FilmDirectorPanel({
       </section>
 
       <section className="film-produce" aria-label="Production">
-        {quoteDiem !== null ? (
-          <p className="studio-quote">
-            Projected production cost: {quoteDiem.toLocaleString()} DIEM.
-          </p>
-        ) : null}
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={produceBusy}
-          onClick={() => void produce()}
-        >
-          {produceBusy
-            ? "Working..."
-            : quoteDiem !== null
-              ? `Confirm and produce (${quoteDiem.toLocaleString()} DIEM)`
-              : "Get a production quote"}
-        </button>
+        <FilmProduceControl
+          slug={slug}
+          onStarted={() => void refresh()}
+          onError={(message) => setError(message)}
+        />
       </section>
+
+      {status?.review ? (
+        <section className="film-review" aria-label="Film review">
+          <h4 className="film-review-title">The studio's review of the cut</h4>
+          <p className="film-review-scores">
+            {[
+              ["Story", status.review.narrativeClarity],
+              ["Pacing", status.review.pacing],
+              ["Look", status.review.visualIdentity],
+              ["Payoff", status.review.emotionalPayoff],
+            ]
+              .filter(([, value]) => typeof value === "number")
+              .map(([label, value]) => `${label} ${value}/10`)
+              .join(" - ")}
+            {typeof status.review.aiTellScore === "number"
+              ? ` - reads as AI ${status.review.aiTellScore}/10 (lower is better)`
+              : ""}
+          </p>
+          {status.review.notes ? <p className="film-review-notes">{status.review.notes}</p> : null}
+          {status.review.weakestShots.length > 0 ? (
+            <div className="film-review-weakest">
+              <p className="film-review-weakest-title">Rework these first:</p>
+              <div className="studio-card-actions">
+                {status.review.weakestShots.map((shotId) => (
+                  <button
+                    key={shotId}
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={shotBusy === shotId}
+                    onClick={() =>
+                      void shotAction(shotId, () => videomakerShotRetake(slug, shotId))
+                    }
+                  >
+                    {shotBusy === shotId ? `Retaking ${shotId}...` : `Retake ${shotId}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       {board && board.scenes.length > 0 ? (
         <section className="film-board" aria-label="Shot board">

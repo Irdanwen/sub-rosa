@@ -778,6 +778,42 @@
   flex-direction: column;
 }
 
+/* Run banner: what the studio's driver is doing, or waiting for. */
+
+.film-run {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--background);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+
+/* The two states that need the user: make the card read as "your move". */
+.film-run[data-status="paused_gate"],
+.film-run[data-status="awaiting_confirmation"] {
+  border-left-color: var(--foreground);
+}
+
+.film-run[data-status="failed"],
+.film-run[data-status="interrupted"] {
+  border-left-color: var(--destructive);
+}
+
+.film-run-headline {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.film-run-hint {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
 /* Director mode */
 
 .film-director {
@@ -881,6 +917,65 @@
 .film-chat-activity {
   margin-left: var(--sp-2);
   color: var(--muted-foreground);
+}
+
+/* The departments the studio delegated the current turn to. */
+
+.film-crew {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+
+.film-crew-chip {
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+
+.film-crew-chip[data-state="done"] {
+  color: var(--success);
+}
+
+.film-crew-chip[data-state="failed"] {
+  color: var(--destructive);
+}
+
+/* The studio's holistic review of the delivered cut. */
+
+.film-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+
+.film-review-title {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.film-review-scores,
+.film-review-notes,
+.film-review-weakest-title {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.film-review-weakest {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
 }
 
 .film-chat-composer {

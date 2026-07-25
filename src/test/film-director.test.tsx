@@ -28,7 +28,15 @@ const refsMocks = vi.hoisted(() => ({ readFilmRef: vi.fn() }));
 vi.mock("../lib/films/refs", () => ({ readFilmRef: refsMocks.readFilmRef }));
 
 import { FilmDirectorPanel } from "../components/studio/FilmDirectorPanel";
-import { parseBoard, parseGates, parseTakes, parseTranscript } from "../lib/films";
+import {
+  filmCrewLabel,
+  parseBoard,
+  parseCrewEvent,
+  parseGates,
+  parseStatus,
+  parseTakes,
+  parseTranscript,
+} from "../lib/films";
 
 const project = {
   slug: "slug-a",
@@ -175,6 +183,29 @@ describe("FilmDirectorPanel", () => {
     fireEvent.click(confirm);
     await waitFor(() => expect(mocks.videomakerProduce).toHaveBeenCalledWith("slug-a", 412.5));
   });
+
+  it("turns the studio's review of the cut into retakes", async () => {
+    mocks.videomakerShotRetake.mockResolvedValue({ ok: true });
+    mocks.videomakerShotTakes.mockResolvedValue({ takes: [] });
+    const status = parseStatus({
+      film_qa: {
+        ok: true,
+        narrative_clarity: 7,
+        pacing: 4,
+        ai_tell_score: 6,
+        weakest_shots: ["s01_sh03"],
+        notes: "Scene 1 holds too long.",
+      },
+    });
+    render(<FilmDirectorPanel project={project} status={status} />);
+    expect(await screen.findByText(/Story 7\/10/)).toBeInTheDocument();
+    expect(screen.getByText(/reads as AI 6\/10 \(lower is better\)/)).toBeInTheDocument();
+    expect(screen.getByText("Scene 1 holds too long.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retake s01_sh03" }));
+    await waitFor(() =>
+      expect(mocks.videomakerShotRetake).toHaveBeenCalledWith("slug-a", "s01_sh03"),
+    );
+  });
 });
 
 describe("director payload parsing", () => {
@@ -221,6 +252,39 @@ describe("director payload parsing", () => {
     expect(board.scenes[0].shots).toHaveLength(1);
     expect(board.scenes[0].shots[0]).toMatchObject({ shotId: "s01_sh01", takes: 2 });
     expect(board.totals).toMatchObject({ shotsDone: 1, shotsTotal: 4, etaSeconds: 120 });
+  });
+
+  it("reads the crew delegations of a streamed turn", () => {
+    const started = parseCrewEvent({
+      type: "agent",
+      phase: "start",
+      role: "asset_builder",
+      task_id: 12,
+      goal: "Build the character boards",
+    });
+    expect(started).toMatchObject({
+      role: "asset_builder",
+      label: "Art department",
+      taskId: 12,
+      done: false,
+      failed: false,
+    });
+    const ended = parseCrewEvent({
+      type: "agent",
+      phase: "end",
+      role: "asset_builder",
+      task_id: 12,
+      status: "ok",
+      cost_diem: 1.25,
+    });
+    expect(ended).toMatchObject({ done: true, failed: false, costDiem: 1.25 });
+    expect(
+      parseCrewEvent({ type: "agent", phase: "end", role: "editor", status: "failed" }),
+    ).toMatchObject({ failed: true });
+    // Tool boundaries and ad-hoc departments.
+    expect(parseCrewEvent({ type: "tool", tool: "save_bible", phase: "start" })).toBeNull();
+    expect(filmCrewLabel("adhoc:matte_painter")).toBe("matte painter");
+    expect(filmCrewLabel("some_new_role")).toBe("some new role");
   });
 
   it("parses takes and flags the current one", () => {

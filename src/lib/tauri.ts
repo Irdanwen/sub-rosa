@@ -1895,6 +1895,8 @@ export async function videomakerCreateProject(request: {
   targetDurationSeconds?: number;
   autonomous: boolean;
   budgetCeilingDiem?: number;
+  /** Curated model set, frozen at creation: "full_quality" or "uncensored". */
+  modelSet?: string;
 }) {
   return invoke<Record<string, unknown>>("videomaker_create_project", { request });
 }
@@ -1913,8 +1915,11 @@ export async function videomakerProjectStatus(slug: string) {
 
 export async function videomakerStartRun(request: {
   slug: string;
+  /** Empty resumes an existing project from its last saved phase. */
   brief: string;
   maxCostDiem?: number;
+  /** Hard DIEM envelope for the run's creative phases. */
+  budgetDiem?: number;
   produce: boolean;
 }) {
   return invoke<Record<string, unknown>>("videomaker_start_run", { request });

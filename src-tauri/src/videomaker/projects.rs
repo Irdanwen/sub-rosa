@@ -25,6 +25,37 @@ pub struct CreateProjectRequest {
     pub target_duration_seconds: Option<u32>,
     pub autonomous: bool,
     pub budget_ceiling_diem: Option<f64>,
+    /// Which curated model set the film is produced with. Frozen at creation
+    /// server-side — there is no way to change it afterwards, so an unknown
+    /// value must never reach the studio: it ignores it silently and the film
+    /// is born on the default set. See [`validated_model_set`].
+    pub model_set: Option<String>,
+}
+
+/// The model sets the studio curates. The fork never picks individual models
+/// (the studio owns that), it only picks WHICH locked set a film uses:
+/// - `full_quality`: the default (a Claude writer, gpt-image frames);
+/// - `uncensored`: swaps the writer and the explicit-scene frames for models
+///   that don't refuse adult material. Video and audio are the same on both.
+const MODEL_SETS: [&str; 2] = ["full_quality", "uncensored"];
+
+/// Fail closed on an unknown set. The studio validates with `in MODEL_SETS`
+/// and simply DROPS anything else — a typo would silently produce (and bill) a
+/// film on the wrong set, with no way to change it after the fact.
+fn validated_model_set(raw: Option<&str>) -> Result<Option<String>, AppError> {
+    let Some(value) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if MODEL_SETS.contains(&value) {
+        return Ok(Some(value.to_string()));
+    }
+    Err(AppError::new(
+        "videomaker_invalid",
+        format!(
+            "Unknown model set \"{value}\". Pick {}.",
+            MODEL_SETS.join(" or ")
+        ),
+    ))
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -35,6 +66,14 @@ pub struct StartRunRequest {
     /// `None` stops the run at the production quote (`awaiting_confirmation`);
     /// the user then confirms through [`videomaker_produce`].
     pub max_cost_diem: Option<f64>,
+    /// Hard DIEM envelope for the run itself (creative phases: the crew's
+    /// reasoners, the asset and storyboard renders). The studio measures the
+    /// project's ledger delta since the run started and parks the run at
+    /// `awaiting_confirmation` (`reason: run_budget_exhausted`) once it is
+    /// spent, instead of walking on. The project ceiling only guards the
+    /// production enqueue, so without this a long creative phase can spend
+    /// past what the user agreed to. `None` = unbounded run.
+    pub budget_diem: Option<f64>,
     pub produce: bool,
 }
 
@@ -73,7 +112,11 @@ pub async fn videomaker_create_project(
             "Autonomous production needs a positive DIEM budget ceiling.",
         ));
     }
+    let model_set = validated_model_set(request.model_set.as_deref())?;
     let mut body = json!({ "title": title, "autonomous": request.autonomous });
+    if let Some(set) = model_set {
+        body["model_set"] = json!(set);
+    }
     if let Some(ratio) = &request.aspect_ratio {
         body["aspect_ratio"] = json!(ratio);
     }
@@ -118,12 +161,22 @@ pub async fn videomaker_update_budget(
             "The budget ceiling must be greater than zero.",
         ));
     }
-    let body = json!({ "settings": { "budget_ceiling_diem": request.ceiling_diem } });
     send(
         &app,
-        Request::post(format!("/projects/{}/model-prefs", request.slug), body),
+        Request::post(
+            format!("/projects/{}/model-prefs", request.slug),
+            settings_body(json!({ "budget_ceiling_diem": request.ceiling_diem })),
+        ),
     )
     .await
+}
+
+/// The studio's settings endpoint is the model picker's: `prefs` is REQUIRED
+/// (a missing one is a 422, not a no-op), and an empty map means "change no
+/// model, only these production settings" — the fork never picks models, the
+/// studio's curated set does.
+fn settings_body(settings: Value) -> Value {
+    json!({ "prefs": {}, "settings": settings })
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -159,10 +212,12 @@ pub async fn videomaker_set_autonomous(
             settings["budget_ceiling_diem"] = json!(ceiling);
         }
     }
-    let body = json!({ "settings": settings });
     send(
         &app,
-        Request::post(format!("/projects/{}/model-prefs", request.slug), body),
+        Request::post(
+            format!("/projects/{}/model-prefs", request.slug),
+            settings_body(settings),
+        ),
     )
     .await
 }
@@ -201,17 +256,24 @@ pub async fn videomaker_project_status(app: AppHandle, slug: String) -> Result<V
 }
 
 /// Launch (or resume — re-POSTing a paused/interrupted run resumes it) the
-/// hands-off "brief → film" driver.
+/// hands-off "brief → film" driver. A resume passes an empty brief: the driver
+/// is state-based and picks the project up at its last saved phase without
+/// re-paying for the phases already banked.
 #[tauri::command]
 pub async fn videomaker_start_run(
     app: AppHandle,
     request: StartRunRequest,
 ) -> Result<Value, AppError> {
-    let body = json!({
+    let mut body = json!({
         "brief": request.brief,
         "max_cost_diem": request.max_cost_diem,
         "produce": request.produce,
     });
+    if let Some(envelope) = request.budget_diem {
+        if envelope > 0.0 {
+            body["budget_diem"] = json!(envelope);
+        }
+    }
     let slug = &request.slug;
     let started = send(
         &app,
@@ -263,11 +325,30 @@ pub async fn videomaker_produce(
     .await
     {
         Ok(started) => Ok(started),
-        Err(error) if error.code == "videomaker_confirm" => Ok(error
-            .details
-            .unwrap_or_else(|| json!({ "needs_confirmation": true }))),
+        Err(error) if error.code == "videomaker_confirm" => Ok(flatten_quote(error.details)),
         Err(error) => Err(error),
     }
+}
+
+/// A studio 409 is `{"detail": {needs_confirmation, projected_cost_diem, ...}}`
+/// (FastAPI wraps every `HTTPException` payload under `detail`). Callers — the
+/// Films surface and the `june_films` MCP tool — read the quote fields at the
+/// top level, so unwrap that envelope here: the wrapper is transport, not
+/// domain. Always carries `needs_confirmation` so a caller can branch on the
+/// flow without inspecting the status code it never sees.
+fn flatten_quote(details: Option<Value>) -> Value {
+    let mut quote = match details {
+        Some(Value::Object(body)) => match body.get("detail") {
+            Some(Value::Object(detail)) => Value::Object(detail.clone()),
+            Some(Value::String(message)) => json!({ "message": message }),
+            _ => Value::Object(body),
+        },
+        _ => json!({}),
+    };
+    if quote.get("needs_confirmation").is_none() {
+        quote["needs_confirmation"] = json!(true);
+    }
+    quote
 }
 
 /// Download the finished film into the artifacts gallery (manual trigger —
@@ -481,6 +562,51 @@ mod tests {
             resolve_url(base, "https://cdn.example/x.mp4"),
             "https://cdn.example/x.mp4"
         );
+    }
+
+    #[test]
+    fn model_sets_are_validated_before_they_can_be_frozen_in() {
+        assert_eq!(validated_model_set(None).unwrap(), None);
+        assert_eq!(validated_model_set(Some("  ")).unwrap(), None);
+        assert_eq!(
+            validated_model_set(Some(" uncensored ")).unwrap(),
+            Some("uncensored".to_string())
+        );
+        // A typo would be dropped server-side and silently produce a film on
+        // the default set, with no way to change it afterwards.
+        let error = validated_model_set(Some("uncensored-xl")).unwrap_err();
+        assert_eq!(error.code, "videomaker_invalid");
+        assert!(error.message.contains("full_quality or uncensored"));
+    }
+
+    #[test]
+    fn settings_always_carry_the_prefs_the_studio_requires() {
+        let body = settings_body(json!({ "autonomous": true }));
+        assert_eq!(body["prefs"], json!({}));
+        assert_eq!(body["settings"]["autonomous"], json!(true));
+    }
+
+    #[test]
+    fn flattens_the_studios_wrapped_quote() {
+        let quote = flatten_quote(Some(json!({
+            "detail": { "needs_confirmation": true, "projected_cost_diem": 412.5 }
+        })));
+        assert_eq!(quote["needs_confirmation"], json!(true));
+        assert_eq!(quote["projected_cost_diem"], json!(412.5));
+    }
+
+    #[test]
+    fn quote_flattening_tolerates_other_shapes() {
+        // Already flat (a future studio, or a replayed idempotent response).
+        let flat = flatten_quote(Some(json!({ "projected_cost_diem": 12.0 })));
+        assert_eq!(flat["projected_cost_diem"], json!(12.0));
+        assert_eq!(flat["needs_confirmation"], json!(true));
+        // A plain-string detail keeps its message instead of vanishing.
+        let text = flatten_quote(Some(json!({ "detail": "confirm to start" })));
+        assert_eq!(text["message"], json!("confirm to start"));
+        assert_eq!(text["needs_confirmation"], json!(true));
+        // No body at all: still a confirmation, never an empty success.
+        assert_eq!(flatten_quote(None), json!({ "needs_confirmation": true }));
     }
 
     #[test]

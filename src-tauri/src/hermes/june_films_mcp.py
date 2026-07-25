@@ -48,6 +48,10 @@ GATE_PHASES = (
     "final",
 )
 
+# Curated model sets, frozen at project creation (mirrors MODEL_SETS in
+# videomaker/projects.rs, which validates before anything reaches the studio).
+MODEL_SETS = ("full_quality", "uncensored")
+
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "film_studio_status",
@@ -97,6 +101,18 @@ TOOLS: list[dict[str, Any]] = [
                     "type": "number",
                     "description": "Hard spend cap in DIEM for the whole project.",
                 },
+                "model_set": {
+                    "type": "string",
+                    "enum": list(MODEL_SETS),
+                    "description": (
+                        'Curated model set. "full_quality" (default) writes '
+                        'with a model that refuses adult material; '
+                        '"uncensored" swaps the writer and the explicit-scene '
+                        "frames for models that do not. Frozen at creation - "
+                        "a film cannot change set later, so ask the user when "
+                        "the subject calls for it."
+                    ),
+                },
             },
             "required": ["title"],
         },
@@ -108,7 +124,10 @@ TOOLS: list[dict[str, Any]] = [
             "to storyboard, then production) from the project's current "
             "state. This is the recommended way to produce a film end to end. "
             "max_cost_diem caps the production launch: the run stops at the "
-            "quote if it exceeds the cap. Re-POSTing after a pause resumes. "
+            "quote if it exceeds the cap. Also the way to RESUME a run that "
+            "stopped (paused, interrupted, failed, budget spent): call it "
+            "again with an empty brief and the studio picks up at the last "
+            "saved phase without re-paying for the phases already done. "
             "Production continues server-side; the app downloads the finished "
             "film automatically."
         ),
@@ -120,7 +139,8 @@ TOOLS: list[dict[str, Any]] = [
                     "type": "string",
                     "description": (
                         "The full brief: story, tone, characters, locations, "
-                        "style references. Give intent, not raw video prompts."
+                        "style references. Give intent, not raw video prompts. "
+                        "Leave empty to resume a project that already has one."
                     ),
                 },
                 "max_cost_diem": {
@@ -130,16 +150,28 @@ TOOLS: list[dict[str, Any]] = [
                         "Required - agree it with the user first."
                     ),
                 },
+                "budget_diem": {
+                    "type": "number",
+                    "description": (
+                        "Hard DIEM envelope for the run's own work (the crew's "
+                        "writing, asset and storyboard renders). The run stops "
+                        "and asks instead of spending past it. Defaults to "
+                        "max_cost_diem when omitted."
+                    ),
+                },
             },
-            "required": ["slug", "brief", "max_cost_diem"],
+            "required": ["slug", "max_cost_diem"],
         },
     },
     {
         "name": "film_status",
         "description": (
             "Live production status of a film project: daemon state, task "
-            "queue, DIEM spend vs ceiling, shots to review, and whether the "
-            "user's Carpe Diem balance ran out."
+            "queue, DIEM spend vs ceiling, shots to review, the studio's "
+            "review of the finished cut, and whether the user's Carpe Diem "
+            "balance ran out. Also reports the latest run: a film can look "
+            "idle simply because its run stopped and is waiting on a "
+            "decision or a resume."
         ),
         "inputSchema": {
             "type": "object",
@@ -459,20 +491,37 @@ def create_film_project(base_url: str, token: str, arguments: dict[str, Any]) ->
     budget = arguments.get("budget_ceiling_diem")
     if isinstance(budget, (int, float)) and budget > 0:
         params["budgetCeilingDiem"] = budget
+    model_set = arguments.get("model_set")
+    if isinstance(model_set, str) and model_set.strip():
+        if model_set.strip() not in MODEL_SETS:
+            raise ValueError(f"model_set must be one of {', '.join(MODEL_SETS)}")
+        params["modelSet"] = model_set.strip()
     return films_action(base_url, token, "create_project", params)
 
 
 def start_film_run(base_url: str, token: str, arguments: dict[str, Any]) -> dict[str, Any]:
     slug = required_str(arguments, "slug")
-    brief = required_str(arguments, "brief")
+    # An empty brief is the RESUME call: the studio's driver is state-based and
+    # continues from the project's last saved phase. Only a project still at
+    # discovery needs the brief, and the studio refuses that case itself.
+    brief = str(arguments.get("brief") or "").strip()
     cap = arguments.get("max_cost_diem")
     if not isinstance(cap, (int, float)) or cap <= 0:
         raise ValueError("max_cost_diem is required (agree a DIEM budget with the user)")
+    envelope = arguments.get("budget_diem")
+    if not isinstance(envelope, (int, float)) or envelope <= 0:
+        envelope = cap
     result = films_action(
         base_url,
         token,
         "start_run",
-        {"slug": slug, "brief": brief, "maxCostDiem": cap, "produce": True},
+        {
+            "slug": slug,
+            "brief": brief,
+            "maxCostDiem": cap,
+            "budgetDiem": envelope,
+            "produce": True,
+        },
     )
     result["note"] = (
         "Run started. It drives every phase and launches production if the "
@@ -484,7 +533,18 @@ def start_film_run(base_url: str, token: str, arguments: dict[str, Any]) -> dict
 
 def film_status(base_url: str, token: str, arguments: dict[str, Any]) -> dict[str, Any]:
     slug = required_str(arguments, "slug")
-    return films_action(base_url, token, "status", {"slug": slug})
+    status = films_action(base_url, token, "status", {"slug": slug})
+    # The queue counts say nothing about the driver: a stopped run leaves an
+    # idle-looking project that only a decision (or a resume) restarts. Fold
+    # the latest run in so one call tells the whole story. Best-effort: a
+    # status without it is still useful.
+    try:
+        runs = films_action(base_url, token, "runs", {"slug": slug}).get("runs")
+        if isinstance(runs, list) and runs:
+            status["latest_run"] = runs[0]
+    except Exception:  # noqa: BLE001 - additive context, never fail the status
+        pass
+    return status
 
 
 def film_gates(base_url: str, token: str, arguments: dict[str, Any]) -> dict[str, Any]:

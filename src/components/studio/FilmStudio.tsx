@@ -6,27 +6,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildRefsManifest,
+  FILM_MODEL_SET_LABELS,
+  FILM_MODEL_SETS,
   FILM_REF_ROLE_LABELS,
   FILM_REF_ROLES,
   type FilmBriefRef,
+  type FilmModelSet,
   type FilmEvent,
   type FilmProject,
   type FilmRefRole,
+  type FilmRun,
   type FilmStatus,
+  filmRunSummary,
+  isRunStalled,
   listenFilmEvents,
   parseProjectList,
+  parseRuns,
   parseStatus,
   parseUploadedRef,
 } from "../../lib/films";
 import { readFilmRef } from "../../lib/films/refs";
 import { registerDownloadedArtifact } from "../../lib/studio/artifacts";
 import {
+  videomakerCancelRun,
   videomakerCreateProject,
   videomakerDeleteProject,
   videomakerExportFilm,
   videomakerGetSettings,
   videomakerImproveBrief,
   videomakerListProjects,
+  videomakerListRuns,
   videomakerProjectStatus,
   videomakerSetAutonomous,
   videomakerStartRun,
@@ -37,6 +46,7 @@ import { EmptyState } from "../ui/EmptyState";
 import { Spinner } from "../ui/Spinner";
 import { Switch } from "../ui/Switch";
 import { FilmDirectorPanel } from "./FilmDirectorPanel";
+import { FilmProduceControl } from "./FilmProduceControl";
 import { GalleryStrip } from "./GalleryStrip";
 import { PillGroup, StudioField } from "./controls";
 
@@ -77,6 +87,11 @@ export function FilmStudio() {
   const [activated, setActivated] = useState<boolean | null>(null);
   const [projects, setProjects] = useState<FilmProject[]>([]);
   const [statusBySlug, setStatusBySlug] = useState<Record<string, FilmStatus>>({});
+  // Latest run per project: a stopped run is the difference between "the
+  // studio is working" and "the studio is waiting for you", and nothing in
+  // the queue counts tells them apart.
+  const [runBySlug, setRunBySlug] = useState<Record<string, FilmRun | null>>({});
+  const [runBusy, setRunBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -87,6 +102,9 @@ export function FilmStudio() {
   const [aspectRatio, setAspectRatio] = useState("16:9");
   const [durationSeconds, setDurationSeconds] = useState(60);
   const [budgetDiem, setBudgetDiem] = useState(300);
+  // Frozen at creation server-side, so it is a create-form choice and never a
+  // per-project setting.
+  const [modelSet, setModelSet] = useState<FilmModelSet>("full_quality");
   const [directed, setDirected] = useState(false);
   const [creating, setCreating] = useState(false);
   // Reference images picked for the next film (uploaded at produce time —
@@ -132,6 +150,15 @@ export function FilmStudio() {
     }
   }, []);
 
+  const refreshRun = useCallback(async (slug: string) => {
+    try {
+      const runs = parseRuns(await videomakerListRuns(slug));
+      setRunBySlug((current) => ({ ...current, [slug]: runs[0] ?? null }));
+    } catch {
+      // Transient: the next event or resync covers it.
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -143,8 +170,13 @@ export function FilmStudio() {
           const list = await refreshProjects();
           // Load each project's status up front so spent/ceiling and the
           // raise-ceiling control show immediately — idle/done projects emit
-          // no SSE events, so they'd otherwise never populate a status.
-          if (!cancelled) for (const p of list) void refreshStatus(p.slug);
+          // no SSE events, so they'd otherwise never populate a status. Same
+          // for the run: a run that stopped emits nothing at all.
+          if (!cancelled)
+            for (const p of list) {
+              void refreshStatus(p.slug);
+              void refreshRun(p.slug);
+            }
         }
       } catch (cause) {
         if (!cancelled) setError(errorMessage(cause));
@@ -155,7 +187,7 @@ export function FilmStudio() {
     return () => {
       cancelled = true;
     };
-  }, [refreshProjects, refreshStatus]);
+  }, [refreshProjects, refreshStatus, refreshRun]);
 
   // Live progress from the Rust SSE watcher.
   useEffect(() => {
@@ -186,7 +218,12 @@ export function FilmStudio() {
         void refreshProjects();
         return;
       }
-      // Any other kind (scene, ledger, run, phase_gate...) means the project
+      // A run transition is rare and always meaningful (a pause, a quote, a
+      // failure): never debounce it away.
+      if (event.kind === "run") {
+        void refreshRun(event.slug);
+      }
+      // Any other kind (scene, ledger, phase_gate...) means the project
       // moved: refresh its status, debounced per slug — production emits a
       // lot of events.
       const now = Date.now();
@@ -198,7 +235,7 @@ export function FilmStudio() {
       }
     });
     return unlisten;
-  }, [refreshProjects, refreshStatus]);
+  }, [refreshProjects, refreshStatus, refreshRun]);
 
   // Directed films start from the chat (the brief goes there), so only the
   // autonomous path needs the brief upfront. A budget is always required for
@@ -292,6 +329,7 @@ export function FilmStudio() {
         targetDurationSeconds: durationSeconds,
         autonomous: !directed,
         budgetCeilingDiem: budgetDiem > 0 ? budgetDiem : undefined,
+        modelSet,
       });
       const slug = (created as { project?: { slug?: string } }).project?.slug;
       if (!slug) throw new Error("Videomaker did not return a project.");
@@ -305,11 +343,17 @@ export function FilmStudio() {
           `The project was created, but a reference image failed to upload (${errorMessage(cause)}). Production was not started: remove the image or produce again.`,
         );
       }
+      // The set is frozen server-side and never shown again, so the one
+      // confirmation the user gets is here.
+      const setNote =
+        modelSet === "full_quality"
+          ? ""
+          : ` Model set: ${FILM_MODEL_SET_LABELS[modelSet].toLowerCase()}.`;
       if (directed) {
         if (manifest) {
           setDirectorSeeds((current) => ({ ...current, [slug]: `${manifest}\n\n` }));
         }
-        setNotice("Project created. Open it below and give the crew your brief.");
+        setNotice(`Project created. Open it below and give the crew your brief.${setNote}`);
         setExpandedSlug(slug);
       } else {
         const fullBrief = manifest ? `${brief.trim()}\n\n${manifest}` : brief.trim();
@@ -317,9 +361,16 @@ export function FilmStudio() {
           slug,
           brief: fullBrief,
           maxCostDiem: budgetDiem,
+          // The same figure bounds the run itself: the crew's own work (writing,
+          // asset and storyboard renders) is billed too, and only the render
+          // queue is covered by the project ceiling.
+          budgetDiem,
           produce: true,
         });
-        setNotice("Production started. The film downloads to the gallery when it's done.");
+        void refreshRun(slug);
+        setNotice(
+          `Production started. The film downloads to the gallery when it's done.${setNote}`,
+        );
       }
       setTitle("");
       setBrief("");
@@ -338,12 +389,67 @@ export function FilmStudio() {
     aspectRatio,
     durationSeconds,
     budgetDiem,
+    modelSet,
     directed,
     brief,
     uploadRefs,
     refreshProjects,
     refreshStatus,
+    refreshRun,
   ]);
+
+  /// Re-POST a run on a project whose last one stopped (a gate pause, a spent
+  /// envelope, a transient studio fault). The driver is state-based: an empty
+  /// brief resumes at the last saved phase and never re-pays for the phases
+  /// already banked. The project ceiling is reused as the run envelope so a
+  /// resume is bounded exactly like the first run.
+  const resumeRun = useCallback(
+    async (slug: string, ceilingDiem?: number) => {
+      // Both bounds come from the ceiling the user agreed (ADR-0011): no film
+      // run starts unbounded, not even a resume.
+      if (!(ceilingDiem && ceilingDiem > 0)) {
+        setError("Set a budget ceiling on this film before resuming it.");
+        return;
+      }
+      setRunBusy(slug);
+      setError(null);
+      setNotice(null);
+      try {
+        await videomakerStartRun({
+          slug,
+          brief: "",
+          maxCostDiem: ceilingDiem,
+          budgetDiem: ceilingDiem,
+          produce: true,
+        });
+        setNotice("The studio picked the film back up where it stopped.");
+        await refreshRun(slug);
+        void refreshStatus(slug);
+      } catch (cause) {
+        setError(errorMessage(cause));
+      } finally {
+        setRunBusy(null);
+      }
+    },
+    [refreshRun, refreshStatus],
+  );
+
+  const stopRun = useCallback(
+    async (slug: string, runId: string) => {
+      setRunBusy(slug);
+      setError(null);
+      try {
+        await videomakerCancelRun(slug, runId);
+        setNotice("The run stops after the step in flight (work already paid for is finished).");
+        await refreshRun(slug);
+      } catch (cause) {
+        setError(errorMessage(cause));
+      } finally {
+        setRunBusy(null);
+      }
+    },
+    [refreshRun],
+  );
 
   const raiseBudget = useCallback(
     async (slug: string) => {
@@ -430,6 +536,10 @@ export function FilmStudio() {
       try {
         await videomakerDeleteProject(project.slug);
         setStatusBySlug((current) => {
+          const { [project.slug]: _dropped, ...rest } = current;
+          return rest;
+        });
+        setRunBySlug((current) => {
           const { [project.slug]: _dropped, ...rest } = current;
           return rest;
         });
@@ -603,6 +713,24 @@ export function FilmStudio() {
               />
             </div>
           </StudioField>
+          <StudioField
+            label="Model set"
+            hint={
+              modelSet === "uncensored"
+                ? "Writing and explicit-scene frames go to models that will not refuse adult material. Same video and audio models as the default set. A film keeps the set it was created with."
+                : "The studio's default crew. Switch to uncensored for adult material, which the default writing model refuses. A film keeps the set it was created with."
+            }
+          >
+            <PillGroup
+              options={FILM_MODEL_SETS.map((set) => ({
+                value: set,
+                label: FILM_MODEL_SET_LABELS[set],
+              }))}
+              value={modelSet}
+              onChange={setModelSet}
+              ariaLabel="Model set"
+            />
+          </StudioField>
           <StudioField label="Aspect ratio">
             <PillGroup
               options={ASPECT_RATIOS.map((ratio) => ({ value: ratio }))}
@@ -667,6 +795,15 @@ export function FilmStudio() {
             {sortedProjects.map((project) => {
               const status = statusBySlug[project.slug];
               const busy = busySlug === project.slug;
+              // A delivered film has nothing left to resume; its last run
+              // status is stale noise at that point.
+              const run = project.finalMp4 ? null : runBySlug[project.slug];
+              const runSummary = run ? filmRunSummary(run) : null;
+              // The studio stopped on the production quote, not on its own
+              // envelope: the answer is a cost decision, not a resume.
+              const awaitingCost =
+                run?.status === "awaiting_confirmation" &&
+                run.outcome.reason !== "run_budget_exhausted";
               return (
                 <li key={project.slug} className="film-project-card">
                   <div className="film-project-head">
@@ -724,6 +861,45 @@ export function FilmStudio() {
                       </span>
                     </div>
                   ) : null}
+                  {run && runSummary ? (
+                    <div className="film-run" data-status={run.status}>
+                      <p className="film-run-headline">{runSummary.headline}</p>
+                      {runSummary.hint ? <p className="film-run-hint">{runSummary.hint}</p> : null}
+                      <div className="studio-card-actions">
+                        {isRunStalled(run) && !awaitingCost ? (
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            disabled={runBusy === project.slug}
+                            onClick={() => void resumeRun(project.slug, status?.cost.ceilingDiem)}
+                          >
+                            {runBusy === project.slug ? "Resuming..." : "Resume production"}
+                          </button>
+                        ) : null}
+                        {awaitingCost ? (
+                          <FilmProduceControl
+                            slug={project.slug}
+                            idleLabel="Review the production cost"
+                            onStarted={() => {
+                              void refreshRun(project.slug);
+                              void refreshStatus(project.slug);
+                            }}
+                            onError={setError}
+                          />
+                        ) : null}
+                        {run.status === "running" ? (
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            disabled={runBusy === project.slug}
+                            onClick={() => void stopRun(project.slug, run.id)}
+                          >
+                            Stop the run
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
                   {status ? (
                     <div className="film-autonomy">
                       <StudioField
@@ -745,20 +921,33 @@ export function FilmStudio() {
                       </StudioField>
                     </div>
                   ) : null}
-                  {status?.cost.ceilingDiem ? (
+                  {/* Always offered, ceiling or not: a film with no cap is the
+                      one case where a run, a resume and every reshoot are
+                      unbounded, and there was no other way to give it one. */}
+                  {status ? (
                     <div className="film-budget">
-                      {status.cost.spentDiem >= status.cost.ceilingDiem ? (
+                      {status.cost.ceilingDiem ? (
+                        status.cost.spentDiem >= status.cost.ceilingDiem ? (
+                          <p className="film-budget-over">
+                            Over the {formatDiem(status.cost.ceilingDiem)} budget ceiling. Raise it
+                            to reshoot or keep producing.
+                          </p>
+                        ) : null
+                      ) : (
                         <p className="film-budget-over">
-                          Over the {formatDiem(status.cost.ceilingDiem)} budget ceiling. Raise it to
-                          reshoot or keep producing.
+                          No budget ceiling on this film. Set one to bound what it can spend.
                         </p>
-                      ) : null}
+                      )}
                       <div className="film-budget-raise">
                         <input
                           className="studio-input"
                           type="number"
-                          min={Math.ceil(status.cost.ceilingDiem) + 1}
-                          placeholder={`New ceiling (now ${formatDiem(status.cost.ceilingDiem)})`}
+                          min={status.cost.ceilingDiem ? Math.ceil(status.cost.ceilingDiem) + 1 : 1}
+                          placeholder={
+                            status.cost.ceilingDiem
+                              ? `New ceiling (now ${formatDiem(status.cost.ceilingDiem)})`
+                              : "Budget ceiling in DIEM"
+                          }
                           value={budgetDraft[project.slug] ?? ""}
                           onChange={(event) =>
                             setBudgetDraft((current) => ({
@@ -774,7 +963,11 @@ export function FilmStudio() {
                           disabled={budgetBusy === project.slug || !budgetDraft[project.slug]}
                           onClick={() => void raiseBudget(project.slug)}
                         >
-                          {budgetBusy === project.slug ? "Raising..." : "Raise ceiling"}
+                          {budgetBusy === project.slug
+                            ? "Saving..."
+                            : status.cost.ceilingDiem
+                              ? "Raise ceiling"
+                              : "Set a ceiling"}
                         </button>
                       </div>
                     </div>
@@ -782,6 +975,7 @@ export function FilmStudio() {
                   {expandedSlug === project.slug ? (
                     <FilmDirectorPanel
                       project={project}
+                      status={status}
                       initialDraft={directorSeeds[project.slug]}
                     />
                   ) : null}

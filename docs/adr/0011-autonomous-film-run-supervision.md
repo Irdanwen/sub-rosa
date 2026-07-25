@@ -35,6 +35,34 @@ dev-time artifact (concurrent VPS deploys) plus rarer transient 503s. Revisit �
 build the watchdog-resume next — only if films start failing in steady-state
 operation. The money-safety invariants below remain binding for any such work.
 
+## Addendum — 2026-07-25 (the app-side view shipped; the supervisor stays deferred)
+
+Videomaker replaced its single mega-agent with a **multi-agent crew** and moved
+the run driver into `agents/orchestrator.py`. Two consequences land on this ADR:
+
+1. **A run now has more ways to stop than to fail**, and every one of them
+   leaves a project that *looks* idle: paused on a gate, parked on a production
+   quote above the cap, or stopped because it spent the run's own budget
+   envelope (`awaiting_confirmation` with `reason: run_budget_exhausted`). Sub
+   Rosa showed none of this — the Films surface read `/status` (queue + spend),
+   which says nothing about the driver. It now reads `GET /runs` too and states
+   what the studio is waiting for, with the matching action next to it: resume
+   (a re-`POST` with an empty brief, which the state-based driver picks up at
+   the last saved phase), the cost handshake, or stop.
+   **This does not move the supervisor into the app.** The resume is
+   *user-initiated* and bounded by the budget already agreed; automatic
+   recovery from a gateway restart remains the deferred server-side watchdog.
+   The app is the view this ADR always described, now actually built.
+2. **The crew's own work is billed**, so a run can spend without ever reaching
+   the render queue — and `budget_ceiling_diem`, the project-level cap, is only
+   enforced at enqueue. Videomaker's answer is `budget_diem` on `POST /runs`: a
+   hard envelope measured against the project's ledger delta since the run
+   started, which parks the run instead of walking on. Sub Rosa passes the
+   ceiling the user agreed as that envelope, on the first run and on every
+   resume. **Invariant: no film run is started without both bounds** — the
+   envelope for the crew, the cap for production — and neither is ever raised
+   without the user saying so.
+
 An autonomous film run (`POST /api/projects/{slug}/runs`) can stall on transient
 infrastructure faults that have nothing to do with the film, the app, the model,
 or the user's balance. When it does, the run **dies and does not self-recover** —

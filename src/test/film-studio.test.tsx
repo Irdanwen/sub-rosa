@@ -12,20 +12,13 @@ const mocks = vi.hoisted(() => ({
   videomakerUploadRef: vi.fn(),
   videomakerImproveBrief: vi.fn(),
   videomakerUpdateBudget: vi.fn(),
+  videomakerSetAutonomous: vi.fn(),
+  videomakerListRuns: vi.fn(),
+  videomakerCancelRun: vi.fn(),
+  videomakerProduce: vi.fn(),
 }));
 
-vi.mock("../lib/tauri", () => ({
-  videomakerGetSettings: mocks.videomakerGetSettings,
-  videomakerListProjects: mocks.videomakerListProjects,
-  videomakerProjectStatus: mocks.videomakerProjectStatus,
-  videomakerCreateProject: mocks.videomakerCreateProject,
-  videomakerStartRun: mocks.videomakerStartRun,
-  videomakerExportFilm: mocks.videomakerExportFilm,
-  videomakerDeleteProject: mocks.videomakerDeleteProject,
-  videomakerUploadRef: mocks.videomakerUploadRef,
-  videomakerImproveBrief: mocks.videomakerImproveBrief,
-  videomakerUpdateBudget: mocks.videomakerUpdateBudget,
-}));
+vi.mock("../lib/tauri", () => ({ ...mocks }));
 
 // GalleryStrip talks to the artifact commands; keep the suite focused on the
 // film flow.
@@ -36,8 +29,11 @@ vi.mock("../components/studio/GalleryStrip", () => ({
 import { FilmStudio } from "../components/studio/FilmStudio";
 import {
   buildRefsManifest,
+  filmRunSummary,
+  isRunStalled,
   parseProduceOutcome,
   parseProjectList,
+  parseRuns,
   parseStatus,
   parseUploadedRef,
 } from "../lib/films";
@@ -62,6 +58,7 @@ beforeEach(() => {
   });
   mocks.videomakerListProjects.mockResolvedValue({ projects: [] });
   mocks.videomakerProjectStatus.mockResolvedValue({});
+  mocks.videomakerListRuns.mockResolvedValue({ runs: [] });
 });
 
 describe("FilmStudio", () => {
@@ -99,9 +96,86 @@ describe("FilmStudio", () => {
         slug: "ab12cd34ef56-neon-alley-duel",
         brief: "Two rivals in the rain.",
         maxCostDiem: 300,
+        // The same figure bounds the run's own work, not just the render queue.
+        budgetDiem: 300,
         produce: true,
       }),
     );
+  });
+
+  it("produces on the uncensored model set when the user picks it", async () => {
+    mocks.videomakerCreateProject.mockResolvedValue({ project: project({ state: "new" }) });
+    mocks.videomakerStartRun.mockResolvedValue({ run: { id: "r1", status: "running" } });
+    render(<FilmStudio />);
+    fireEvent.change(await screen.findByLabelText("Film title"), {
+      target: { value: "Neon alley duel" },
+    });
+    fireEvent.change(screen.getByLabelText("Film brief"), {
+      target: { value: "Two rivals in the rain." },
+    });
+    // The default set travels with every creation; the pill switches it.
+    fireEvent.click(screen.getByRole("radio", { name: "Uncensored" }));
+    fireEvent.click(screen.getByRole("button", { name: "Produce the film" }));
+    await waitFor(() =>
+      expect(mocks.videomakerCreateProject).toHaveBeenCalledWith(
+        expect.objectContaining({ modelSet: "uncensored" }),
+      ),
+    );
+  });
+
+  it("surfaces a run that stopped and resumes it from the last saved phase", async () => {
+    mocks.videomakerListProjects.mockResolvedValue({ projects: [project({ slug: "paused" })] });
+    mocks.videomakerProjectStatus.mockResolvedValue({
+      daemon: "idle",
+      queue: { queued: 0, running: 0, blocked_quota: 0, done: 4, failed: 0 },
+      cost: { spent_diem: 18, pending_diem: 0, projected_diem: 18, ceiling_diem: 300 },
+    });
+    mocks.videomakerListRuns.mockResolvedValue({
+      runs: [{ id: "run-9", status: "paused_gate", detail: "gate en attente: storyboard" }],
+    });
+    mocks.videomakerStartRun.mockResolvedValue({ run: { id: "run-10", status: "running" } });
+    render(<FilmStudio />);
+    expect(await screen.findByText("Paused for your approval")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Resume production" }));
+    await waitFor(() =>
+      expect(mocks.videomakerStartRun).toHaveBeenCalledWith({
+        slug: "paused",
+        brief: "",
+        maxCostDiem: 300,
+        budgetDiem: 300,
+        produce: true,
+      }),
+    );
+  });
+
+  it("asks for a cost decision when the run stopped on the production quote", async () => {
+    mocks.videomakerListProjects.mockResolvedValue({ projects: [project({ slug: "quoted" })] });
+    mocks.videomakerListRuns.mockResolvedValue({
+      runs: [
+        {
+          id: "run-3",
+          status: "awaiting_confirmation",
+          detail: JSON.stringify({
+            projected_cost_diem: 512,
+            max_cost_diem: 300,
+            message: "devis production au-dessus du plafond",
+          }),
+        },
+      ],
+    });
+    mocks.videomakerProduce.mockResolvedValue({
+      needs_confirmation: true,
+      projected_cost_diem: 512,
+    });
+    render(<FilmStudio />);
+    expect(await screen.findByText("Waiting for your go-ahead on the cost")).toBeInTheDocument();
+    // A cost stop is a decision, not a resume.
+    expect(screen.queryByRole("button", { name: "Resume production" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Review the production cost" }));
+    await waitFor(() => expect(mocks.videomakerProduce).toHaveBeenCalledWith("quoted", undefined));
+    expect(
+      await screen.findByRole("button", { name: "Confirm and produce (512 DIEM)" }),
+    ).toBeInTheDocument();
   });
 
   it("develops the brief with AI and only applies it on accept", async () => {
@@ -190,6 +264,73 @@ describe("films payload parsing", () => {
       needsConfirmation: false,
       projectedCostDiem: undefined,
     });
+    // The studio wraps its refusals in `detail`; a payload that still carries
+    // that envelope must not read as "nothing to confirm".
+    expect(
+      parseProduceOutcome({ detail: { needs_confirmation: true, projected_cost_diem: 88 } }),
+    ).toEqual({ started: false, needsConfirmation: true, projectedCostDiem: 88 });
+  });
+
+  it("parses runs and says what each stopped state means", () => {
+    const runs = parseRuns({
+      runs: [{ id: "r2", status: "running", detail: "phase: storyboard" }, { not: "a run" }],
+    });
+    expect(runs).toHaveLength(1);
+    expect(filmRunSummary(runs[0]).headline).toBe("The crew is working");
+    expect(filmRunSummary(runs[0]).hint).toBe("Phase: storyboard");
+    expect(isRunStalled(runs[0])).toBe(false);
+
+    const [exhausted] = parseRuns({
+      runs: [
+        {
+          id: "r3",
+          status: "awaiting_confirmation",
+          detail: JSON.stringify({
+            reason: "run_budget_exhausted",
+            budget_diem: 120,
+            spent_diem: 120.4,
+          }),
+        },
+      ],
+    });
+    expect(exhausted.outcome.reason).toBe("run_budget_exhausted");
+    const summary = filmRunSummary(exhausted);
+    expect(summary.headline).toBe("Run budget spent");
+    expect(summary.hint).toContain("120 DIEM");
+    expect(isRunStalled(exhausted)).toBe(true);
+
+    const [failed] = parseRuns({
+      runs: [{ id: "r4", status: "failed", detail: "aucun progres apres 5 etapes" }],
+    });
+    expect(filmRunSummary(failed)).toEqual({
+      headline: "The run stopped early",
+      hint: "aucun progres apres 5 etapes",
+    });
+  });
+
+  it("parses the studio's review of the finished cut", () => {
+    const status = parseStatus({
+      film_qa: {
+        ok: true,
+        narrative_clarity: 7,
+        pacing: 5,
+        visual_identity: 8,
+        emotional_payoff: 6,
+        ai_tell_score: 4,
+        weakest_shots: ["s01_sh03", ""],
+        notes: "The middle act drags.",
+      },
+      shots_to_review: [{ shot_id: "s02_sh01" }],
+    });
+    expect(status.review).toMatchObject({
+      pacing: 5,
+      aiTellScore: 4,
+      weakestShots: ["s01_sh03"],
+      notes: "The middle act drags.",
+    });
+    expect(status.shotsToReview).toEqual(["s02_sh01"]);
+    // A judge that could not see the film reports no scores, never fake ones.
+    expect(parseStatus({ film_qa: { ok: false, skipped: true } }).review).toBeUndefined();
   });
 
   it("parses an uploaded reference and rejects incomplete payloads", () => {

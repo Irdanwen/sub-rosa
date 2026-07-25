@@ -217,9 +217,9 @@ async fn finish(response: reqwest::Response) -> Result<Value, AppError> {
 pub fn error_for_status(status: u16, body: Value) -> AppError {
     let detail = body
         .get("error")
-        .or_else(|| body.get("detail"))
         .and_then(Value::as_str)
-        .map(str::to_string);
+        .map(str::to_string)
+        .or_else(|| body.get("detail").and_then(detail_message));
     let (code, fallback) = match status {
         400 | 422 => (
             "videomaker_invalid",
@@ -269,6 +269,51 @@ pub fn error_for_status(status: u16, body: Value) -> AppError {
     error
 }
 
+/// A readable sentence out of FastAPI's `detail`, which is a string for plain
+/// refusals, an object for the structured flows (the produce quote, the model
+/// validation errors) and an array for schema validation. Without this, every
+/// structured refusal degraded to the generic per-status fallback and the
+/// studio's actual reason ("autonomous mode requires a positive
+/// budget_ceiling_diem") never reached the user.
+fn detail_message(detail: &Value) -> Option<String> {
+    match detail {
+        Value::String(message) => Some(message.clone()),
+        Value::Object(fields) => fields
+            .get("message")
+            .or_else(|| fields.get("error"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or_else(|| {
+                fields
+                    .get("errors")
+                    .and_then(Value::as_array)
+                    .map(|errors| join_messages(errors))
+                    .filter(|joined| !joined.is_empty())
+            }),
+        Value::Array(entries) => {
+            let joined = join_messages(entries);
+            (!joined.is_empty()).then_some(joined)
+        }
+        _ => None,
+    }
+}
+
+fn join_messages(entries: &[Value]) -> String {
+    entries
+        .iter()
+        .filter_map(|entry| match entry {
+            Value::String(message) => Some(message.clone()),
+            // Pydantic validation entries: `{"loc": [...], "msg": "..."}`.
+            Value::Object(fields) => fields
+                .get("msg")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,6 +354,31 @@ mod tests {
         let error = error_for_status(409, body.clone());
         assert_eq!(error.message, "budget ceiling exceeded");
         assert_eq!(error.details, Some(body));
+    }
+
+    #[test]
+    fn reads_the_studios_structured_refusals() {
+        // Plain-string detail (the common refusal).
+        let error = error_for_status(400, json!({ "detail": "set your CarpeDIEM key first" }));
+        assert_eq!(error.message, "set your CarpeDIEM key first");
+        // Structured flow payload (the produce quote).
+        let error = error_for_status(
+            409,
+            json!({ "detail": { "needs_confirmation": true, "message": "Confirm to start." } }),
+        );
+        assert_eq!(error.message, "Confirm to start.");
+        // Model validation (`{"detail": {"errors": [...]}}`).
+        let error = error_for_status(
+            400,
+            json!({ "detail": { "errors": ["bad llm", "bad tts"] } }),
+        );
+        assert_eq!(error.message, "bad llm; bad tts");
+        // Schema validation array.
+        let error = error_for_status(
+            422,
+            json!({ "detail": [{ "loc": ["body", "prefs"], "msg": "Field required" }] }),
+        );
+        assert_eq!(error.message, "Field required");
     }
 
     #[test]
