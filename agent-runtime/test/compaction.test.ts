@@ -48,7 +48,7 @@ test("keeps system instructions, recent turns, and complete tool groups", async 
   });
   assert.equal(result.compacted, true);
   assert.ok(result.history.some((item) => item.id === "system"));
-  assert.equal(result.summary?.text, "Summary of 12 items");
+  assert.equal(result.summary?.text, "Summary of 18 items");
   assert.ok(result.history.some((item) => item.id === "tool-call-9"));
   assert.ok(result.history.some((item) => item.id === "tool-result-9"));
   for (let index = 0; index < 10; index += 1) {
@@ -107,4 +107,29 @@ test("replaces prior context summaries instead of accumulating system messages",
   assert.ok(result.summary?.text?.includes("old-summary"));
   assert.ok(result.history.some((item) => item.id === "system"));
   assert.ok(!result.history.some((item) => item.id === "old-summary"));
+});
+
+test("compacts an oversized recent group instead of exempting it", async () => {
+  const history: RuntimeHistoryItem[] = [
+    { id: "system", kind: "message", role: "system", text: "June instructions" },
+    {
+      id: "huge-tool-result",
+      kind: "tool_result",
+      callId: "call-1",
+      groupId: "turn-1",
+      text: "x".repeat(200_000),
+      estimatedTokens: 50_000,
+    },
+  ];
+
+  const result = await compactHistory({
+    history,
+    contextWindow: 16_000,
+    maxOutputTokens: 2_000,
+    summarize: async () => "The large tool result was summarized.",
+  });
+
+  assert.equal(result.compacted, true);
+  assert.deepEqual(result.removedItemIds, ["huge-tool-result"]);
+  assert.ok(result.estimatedTokens < 14_000);
 });

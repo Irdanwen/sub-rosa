@@ -94,3 +94,36 @@ pub async fn take(secret_ref: &str) -> Result<Option<String>, AppError> {
 pub async fn take(_secret_ref: &str) -> Result<Option<String>, AppError> {
     Ok(None)
 }
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub async fn delete(secret_ref: &str) -> Result<(), AppError> {
+    let service = service().to_string();
+    let secret_ref = secret_ref.to_string();
+    tokio::task::spawn_blocking(move || {
+        let entry = keyring::Entry::new(&service, &secret_ref).map_err(|_| {
+            AppError::new(
+                "agent_secret_delete_failed",
+                "June could not remove the saved secret.",
+            )
+        })?;
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(_) => Err(AppError::new(
+                "agent_secret_delete_failed",
+                "June could not remove the saved secret.",
+            )),
+        }
+    })
+    .await
+    .map_err(|_| {
+        AppError::new(
+            "agent_secret_delete_failed",
+            "June could not remove the saved secret.",
+        )
+    })?
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub async fn delete(_secret_ref: &str) -> Result<(), AppError> {
+    Ok(())
+}

@@ -44,14 +44,30 @@ export async function compactHistory(input: {
     ...(priorSummaries.length > 0 ? [priorSummaries] : []),
     ...groups.slice(0, Math.max(0, groups.length - MIN_RECENT_GROUPS)),
   ];
+  // Six groups is a preference, not a hard exemption. A single bounded tool
+  // result can still exceed a small model's context window, so progressively
+  // fold the oldest recent groups into the summary until the retained prompt
+  // leaves room for both the summary and model output.
+  while (
+    recent.length > 0 &&
+    estimateHistoryTokens([...system, ...recent.flat()]) > budget * 0.75
+  ) {
+    const oldest = recent.shift();
+    if (oldest) candidates.push(oldest);
+  }
   if (candidates.length === 0) {
     return { history: input.history, compacted: false, removedItemIds: [], estimatedTokens };
   }
 
   const removed = candidates.flat();
-  const summaryText = input.summarize
+  const unboundedSummary = input.summarize
     ? await input.summarize(removed)
     : deterministicSummary(removed);
+  const maxSummaryChars = Math.max(1_000, Math.floor(budget * 4 * 0.25));
+  const summaryText =
+    unboundedSummary.length > maxSummaryChars
+      ? `${unboundedSummary.slice(0, maxSummaryChars)}\n[summary truncated]`
+      : unboundedSummary;
   const summary: RuntimeHistoryItem = {
     id: `context-summary-${Date.now()}`,
     kind: "context_summary",

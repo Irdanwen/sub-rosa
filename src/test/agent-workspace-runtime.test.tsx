@@ -531,4 +531,55 @@ describe("AgentWorkspace runtime wiring", () => {
       }),
     );
   });
+
+  it("keeps explicit Venice BYOK text available when June credits are unavailable", async () => {
+    const user = userEvent.setup();
+    const veniceSession = { ...session, model: "venice-text" };
+    const defaultInvoke = mocks.invoke.getMockImplementation();
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "list_agent_sessions") return Promise.resolve([veniceSession]);
+      if (command === "get_agent_session") return Promise.resolve(veniceSession);
+      if (command === "list_venice_models") {
+        return Promise.resolve({
+          mode: "generation",
+          selectedModel: "venice-text",
+          modelType: "text",
+          models: [
+            {
+              provider: "venice",
+              id: "venice-text",
+              name: "Venice text",
+              modelType: "text",
+              traits: [],
+              capabilities: ["tool-calling"],
+              privacy: "private",
+              contextTokens: 128_000,
+            },
+          ],
+        });
+      }
+      if (command === "provider_model_settings") {
+        return Promise.resolve({ effectiveSettings: { veniceApiKeyConfigured: true } });
+      }
+      return defaultInvoke?.(command, args);
+    });
+
+    render(
+      <AgentWorkspace
+        initialSession={veniceSession}
+        creditActionsDisabledReason="Add credits to continue"
+      />,
+    );
+    await screen.findByText("Earlier answer");
+    const composer = screen.getByRole("textbox", { name: "Message June" });
+    await waitFor(() => expect(composer).toBeEnabled());
+    await user.type(composer, "Use my Venice key");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("start_agent_run", {
+        request: expect.objectContaining({ model: "venice-text" }),
+      }),
+    );
+  });
 });

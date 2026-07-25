@@ -41,8 +41,10 @@ import {
   downloadAgentArtifact,
   dictationHelperCommand,
   listVeniceModels,
+  providerModelSettings,
   type VeniceModelDto,
 } from "../../lib/tauri";
+import { shouldBlockTextOnFunding } from "../../lib/account-gate";
 import { dispatchAgentSessionStatus, dispatchAgentSessionsChanged } from "../../lib/agent-events";
 import { messageFromError } from "../../lib/errors";
 import {
@@ -192,6 +194,7 @@ export function AgentWorkspace({
   const [compacting, setCompacting] = useState(false);
   const [compactResult, setCompactResult] = useState<string>();
   const [models, setModels] = useState<VeniceModelDto[]>([]);
+  const [veniceApiKeyConfigured, setVeniceApiKeyConfigured] = useState(false);
   const [model, setModel] = useState(initialAgentSession?.model || DEFAULT_MODEL);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() => {
     const sessionLevel = initialAgentSession?.id
@@ -251,6 +254,14 @@ export function AgentWorkspace({
   const running = projection.run?.status === "running" || projection.run?.status === "queued";
   const waiting = projection.run?.status === "waiting_for_user";
   const turns = useMemo(() => agentItemsToChatTurns(projection.items), [projection.items]);
+  const activeModel = selectedModel(models, model);
+  const textActionsDisabledReason = shouldBlockTextOnFunding(Boolean(creditActionsDisabledReason), {
+    activeModelId: model || undefined,
+    activeModel,
+    veniceApiKeyConfigured,
+  })
+    ? creditActionsDisabledReason
+    : undefined;
 
   const publishSessions = useCallback((next: AgentSessionDto[]) => {
     setSessions(next);
@@ -304,6 +315,11 @@ export function AgentWorkspace({
         if (!initialAgentSession?.model && response.selectedModel) setModel(response.selectedModel);
       })
       .catch(() => undefined);
+    void providerModelSettings()
+      .then((response) =>
+        setVeniceApiKeyConfigured(response.effectiveSettings.veniceApiKeyConfigured),
+      )
+      .catch(() => setVeniceApiKeyConfigured(false));
   }, [initialAgentSession?.model, refreshSessions]);
 
   useEffect(() => {
@@ -440,7 +456,7 @@ export function AgentWorkspace({
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     const prompt = draft.trim();
-    if (!prompt || waiting || submitting || creditActionsDisabledReason) return;
+    if (!prompt || waiting || submitting || textActionsDisabledReason) return;
     if (running) {
       const messageId = crypto.randomUUID();
       setQueuedFollowUp({ messageId, prompt, attachments });
@@ -721,7 +737,6 @@ export function AgentWorkspace({
       setError(messageFromError(cause));
     }
   };
-  const activeModel = selectedModel(models, model);
   const usageModel = selectedModel(
     models,
     models.some((candidate) => candidate.id === projection.run?.model)
@@ -783,7 +798,7 @@ export function AgentWorkspace({
       onStop={stop}
       running={running}
       submitting={submitting}
-      disabledReason={creditActionsDisabledReason}
+      disabledReason={textActionsDisabledReason}
       hero={heroMode}
     />
   );

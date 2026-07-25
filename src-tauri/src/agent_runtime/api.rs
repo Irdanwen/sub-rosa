@@ -636,16 +636,8 @@ pub async fn retry_agent_run(
     let repository = repository(&app).await?;
     let previous = repository.get_run(&run_id).await?;
     let session = repository.get_session(&previous.session_id).await?;
-    let message = repository
-        .items(&session.id)
-        .await?
-        .into_iter()
-        .rev()
-        .find_map(|item| match item.payload {
-            AgentItemPayload::UserMessage(message) => Some(message),
-            _ => None,
-        })
-        .ok_or_else(|| {
+    let message =
+        retry_message(repository.items(&session.id).await?, &previous.id).ok_or_else(|| {
             AppError::new(
                 "agent_retry_unavailable",
                 "No user message is available to retry.",
@@ -718,6 +710,15 @@ pub async fn retry_agent_run(
     Ok(run_json(repository.get_run(&run.id).await?))
 }
 
+fn retry_message(items: Vec<AgentItemDto>, run_id: &str) -> Option<super::MessagePayload> {
+    items.into_iter().rev().find_map(|item| match item.payload {
+        AgentItemPayload::UserMessage(message) if item.run_id.as_deref() == Some(run_id) => {
+            Some(message)
+        }
+        _ => None,
+    })
+}
+
 #[tauri::command]
 pub async fn resolve_agent_interruption(
     app: AppHandle,
@@ -731,7 +732,8 @@ pub async fn resolve_agent_interruption(
     let run_id: String = row.get("run_id");
     let session_id: String = row.get("session_id");
     let item_id: String = row.get("id");
-    let mut interruption: Value = serde_json::from_str(&row.get::<String, _>("payload_json"))
+    let original_interruption_json: String = row.get("payload_json");
+    let mut interruption: Value = serde_json::from_str(&original_interruption_json)
         .map_err(|error| AppError::new("agent_interruption_invalid", error.to_string()))?;
     let run = repository.get_run(&run_id).await?;
     if run.status != "waiting_for_user" {
@@ -774,31 +776,6 @@ pub async fn resolve_agent_interruption(
             .get("choice")
             .and_then(Value::as_str)
             .is_some_and(|choice| choice != "deny");
-    let secret_ref = if interruption_kind == "secret" {
-        match secret_value {
-            Some(value) => {
-                let secret_ref = format!("agent-secret-{}", uuid::Uuid::new_v4());
-                super::secrets::put(&secret_ref, value).await?;
-                Some(secret_ref)
-            }
-            None => None,
-        }
-    } else {
-        None
-    };
-    interruption["status"] = json!("resolved");
-    interruption["resolvedAt"] = json!(chrono::Utc::now().to_rfc3339());
-    if let Some(answer) = clarification_answer.as_deref() {
-        interruption["answer"] = json!(answer);
-    }
-    if let Some(secret_ref) = secret_ref.as_deref() {
-        interruption["secretRef"] = json!(secret_ref);
-    }
-    sqlx::query::query("UPDATE agent_items SET payload_json = ? WHERE id = ?")
-        .bind(interruption.to_string())
-        .bind(item_id)
-        .execute(&repository.pool)
-        .await?;
     let workspace = session.workspace_path.clone().ok_or_else(|| {
         AppError::new(
             "agent_workspace_missing",
@@ -834,20 +811,91 @@ pub async fn resolve_agent_interruption(
         .expect("run params object")
         .remove("history");
     params["serializedState"] = json!(serialized_state);
-    params["resolutions"] = if let Some(answer) = clarification_answer {
+    params["resolutions"] = if let Some(answer) = clarification_answer.as_deref() {
         json!([{ "interruptionId": request.interruption_id, "kind": "clarification", "answer": answer }])
     } else if interruption_kind == "secret" {
         json!([{ "interruptionId": request.interruption_id, "kind": "secret", "decision": if approved { "approve" } else { "reject" } }])
     } else {
         json!([{ "interruptionId": request.interruption_id, "kind": "approval", "decision": if approved { "approve" } else { "reject" } }])
     };
-    // A replacement sidecar starts event sequencing from the beginning. The
-    // persisted sequence belongs to the old process, so rebase the run before
-    // accepting resume events while retaining item-level external ids for
-    // duplicate protection.
-    repository.reset_run_sequence_for_resume(&run.id).await?;
-    host.request("run.resume", &session.id, &run.id, params)
-        .await?;
+    let secret_ref = if interruption_kind == "secret" {
+        match secret_value {
+            Some(value) => {
+                let secret_ref = format!("agent-secret-{}", uuid::Uuid::new_v4());
+                super::secrets::put(&secret_ref, value).await?;
+                Some(secret_ref)
+            }
+            None => None,
+        }
+    } else {
+        None
+    };
+    interruption["status"] = json!("resolved");
+    interruption["resolvedAt"] = json!(chrono::Utc::now().to_rfc3339());
+    if let Some(answer) = clarification_answer.as_deref() {
+        interruption["answer"] = json!(answer);
+    }
+    if let Some(secret_ref) = secret_ref.as_deref() {
+        interruption["secretRef"] = json!(secret_ref);
+    }
+    // Persist the visible resolution and reset sequencing as one unit. The
+    // sidecar can emit resumed events immediately after accepting the request,
+    // so both must be in place before dispatch, but neither may be left behind
+    // when preparation or persistence fails.
+    let persist_result: Result<(), sqlx::Error> = async {
+        let mut transaction = repository.pool.begin().await?;
+        sqlx::query::query("UPDATE agent_items SET payload_json = ? WHERE id = ?")
+            .bind(interruption.to_string())
+            .bind(&item_id)
+            .execute(&mut *transaction)
+            .await?;
+        sqlx::query::query("UPDATE agent_runs SET last_sequence = 0, updated_at = ? WHERE id = ?")
+            .bind(chrono::Utc::now().to_rfc3339())
+            .bind(&run.id)
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await
+    }
+    .await;
+    if let Err(error) = persist_result {
+        if let Some(secret_ref) = secret_ref.as_deref() {
+            let _ = super::secrets::delete(secret_ref).await;
+        }
+        return Err(error.into());
+    }
+    if let Err(error) = host
+        .request("run.resume", &session.id, &run.id, params)
+        .await
+    {
+        let restore_result = async {
+            let mut transaction = repository.pool.begin().await?;
+            sqlx::query::query("UPDATE agent_items SET payload_json = ? WHERE id = ?")
+                .bind(&original_interruption_json)
+                .bind(&item_id)
+                .execute(&mut *transaction)
+                .await?;
+            sqlx::query::query(
+                "UPDATE agent_runs SET last_sequence = ?, updated_at = ? WHERE id = ?",
+            )
+            .bind(run.last_sequence)
+            .bind(chrono::Utc::now().to_rfc3339())
+            .bind(&run.id)
+            .execute(&mut *transaction)
+            .await?;
+            transaction.commit().await
+        }
+        .await;
+        if let Some(secret_ref) = secret_ref.as_deref() {
+            if let Err(cleanup_error) = super::secrets::delete(secret_ref).await {
+                tracing::warn!(
+                    error_code = %cleanup_error.code,
+                    "failed to remove a secret after resume dispatch failed"
+                );
+            }
+        }
+        restore_result?;
+        return Err(error);
+    }
     Ok(run_json(
         repository
             .update_run_status(&run.id, "running", None, None, None)
@@ -1698,6 +1746,32 @@ fn attachment_mime_type(path: &std::path::Path) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retry_uses_the_prompt_owned_by_the_selected_run() {
+        let item = |id: &str, run_id: &str, content: &str, sequence: i64| AgentItemDto {
+            id: id.into(),
+            session_id: "session-1".into(),
+            run_id: Some(run_id.into()),
+            sequence,
+            payload: AgentItemPayload::UserMessage(super::super::MessagePayload {
+                role: "user".into(),
+                content: content.into(),
+                attachments: vec![],
+            }),
+            external_id: None,
+            created_at: "2026-07-25T00:00:00Z".into(),
+        };
+        let items = vec![
+            item("older", "run-failed", "Retry this", 0),
+            item("newer", "run-later", "Do not retry this", 1),
+        ];
+
+        assert_eq!(
+            retry_message(items, "run-failed").unwrap().content,
+            "Retry this"
+        );
+    }
 
     #[tokio::test]
     async fn attachments_are_copied_into_the_session_workspace_and_added_to_context() {

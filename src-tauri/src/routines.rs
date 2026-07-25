@@ -360,7 +360,7 @@ async fn claim_with_connector_guard(
     let trigger_id = connector.as_ref().map(|guard| guard.trigger_id);
     let trigger_guard_kind = connector.as_ref().map(|guard| guard.kind);
     let trigger_account_id = connector.as_ref().map(|guard| guard.account_id);
-    let routine = query("SELECT id, name, prompt, schedule, model, safety_mode, next_run_at, metadata_json, tool_catalog_version FROM routines WHERE id = ? AND state = 'scheduled' AND enabled = 1 AND claim_token IS NULL AND NOT EXISTS (SELECT 1 FROM routine_runs active WHERE active.routine_id = routines.id AND active.status IN ('queued', 'running', 'waiting_for_user')) AND (? IS NULL OR EXISTS (SELECT 1 FROM connector_triggers trigger WHERE trigger.id = ? AND trigger.job_id = routines.id AND trigger.kind = ? AND trigger.account_id = ?))")
+    let routine = query("SELECT id, name, prompt, schedule, timezone, model, safety_mode, next_run_at, metadata_json, tool_catalog_version FROM routines WHERE id = ? AND state = 'scheduled' AND enabled = 1 AND claim_token IS NULL AND NOT EXISTS (SELECT 1 FROM routine_runs active WHERE active.routine_id = routines.id AND active.status IN ('queued', 'running', 'waiting_for_user')) AND (? IS NULL OR EXISTS (SELECT 1 FROM connector_triggers trigger WHERE trigger.id = ? AND trigger.job_id = routines.id AND trigger.kind = ? AND trigger.account_id = ?))")
         .bind(routine_id).bind(trigger_id).bind(trigger_id).bind(trigger_guard_kind).bind(trigger_account_id)
         .fetch_optional(&mut *transaction).await.map_err(app_error)?;
     let Some(routine) = routine else {
@@ -402,6 +402,9 @@ async fn claim_with_connector_guard(
         routine_id: routine.get("id"),
         routine_name: routine.get("name"),
         prompt: routine.get("prompt"),
+        schedule: routine.get("schedule"),
+        timezone: routine.get("timezone"),
+        trigger_kind: trigger_kind.to_string(),
         model,
         safety_mode,
         enabled_toolsets,
@@ -644,10 +647,11 @@ pub async fn start_claim(
         Ok::<_, AppError>(run.id)
     }.await;
     if let Err(error) = started {
+        let next_run_at = next_run_after_dispatch_failure(&claim, Utc::now());
         let _ = query("UPDATE routine_runs SET status = 'failed', completed_at = ?, error_code = ?, error_message = ?, updated_at = ? WHERE id = ?")
             .bind(now()).bind(&error.code).bind(&error.message).bind(now()).bind(&claim.routine_run_id).execute(pool).await;
-        let _ = query("UPDATE routines SET claim_token = NULL, claimed_at = NULL, last_run_at = ?, last_status = 'error', last_error = ?, updated_at = ? WHERE id = ? AND claim_token = ?")
-            .bind(now()).bind(&error.message).bind(now()).bind(&claim.routine_id).bind(&claim.token).execute(pool).await;
+        let _ = query("UPDATE routines SET claim_token = NULL, claimed_at = NULL, next_run_at = COALESCE(?, next_run_at), last_run_at = ?, last_status = 'error', last_error = ?, updated_at = ? WHERE id = ? AND claim_token = ?")
+            .bind(next_run_at).bind(now()).bind(&error.message).bind(now()).bind(&claim.routine_id).bind(&claim.token).execute(pool).await;
         return Err(error);
     }
     list_runs(pool, Some(&claim.routine_id))
@@ -655,6 +659,17 @@ pub async fn start_claim(
         .into_iter()
         .find(|run| run.id == claim.routine_run_id)
         .ok_or_else(|| AppError::new("routine_run_missing", "Routine run was not persisted."))
+}
+
+fn next_run_after_dispatch_failure(claim: &Claim, after: DateTime<Utc>) -> Option<String> {
+    (claim.trigger_kind == "schedule")
+        .then(|| {
+            next_run_after(&claim.schedule, &claim.timezone, after)
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| after + Duration::minutes(5))
+        })
+        .map(format_time)
 }
 
 pub async fn trigger_and_start(
@@ -874,6 +889,9 @@ pub struct Claim {
     pub routine_id: String,
     pub routine_name: String,
     pub prompt: String,
+    pub schedule: String,
+    pub timezone: String,
+    pub trigger_kind: String,
     pub model: String,
     pub safety_mode: AgentSafetyMode,
     pub enabled_toolsets: Vec<String>,
@@ -1405,6 +1423,48 @@ mod tests {
         assert!(advance_repeat("3", &mut metadata));
         assert_eq!(metadata["repeatState"]["completed"], 3);
         assert!(!advance_repeat("forever", &mut metadata));
+    }
+
+    #[test]
+    fn scheduled_dispatch_failure_advances_instead_of_reclaiming_the_due_time() {
+        let now = Utc.with_ymd_and_hms(2026, 7, 25, 12, 0, 0).unwrap();
+        let claim = Claim {
+            routine_id: "routine-1".into(),
+            routine_name: "Brief".into(),
+            prompt: "Summarize".into(),
+            schedule: "every 1h".into(),
+            timezone: "UTC".into(),
+            trigger_kind: "schedule".into(),
+            model: "private-auto".into(),
+            safety_mode: AgentSafetyMode::Sandboxed,
+            enabled_toolsets: vec![],
+            token: "token".into(),
+            routine_run_id: "run-1".into(),
+        };
+
+        let next = parse_time(&next_run_after_dispatch_failure(&claim, now).unwrap()).unwrap();
+        assert!(next > now);
+    }
+
+    #[test]
+    fn invalid_schedule_dispatch_failure_uses_a_bounded_backoff() {
+        let now = Utc.with_ymd_and_hms(2026, 7, 25, 12, 0, 0).unwrap();
+        let claim = Claim {
+            routine_id: "routine-1".into(),
+            routine_name: "Brief".into(),
+            prompt: "Summarize".into(),
+            schedule: "not a schedule".into(),
+            timezone: "UTC".into(),
+            trigger_kind: "schedule".into(),
+            model: "private-auto".into(),
+            safety_mode: AgentSafetyMode::Sandboxed,
+            enabled_toolsets: vec![],
+            token: "token".into(),
+            routine_run_id: "run-1".into(),
+        };
+
+        let next = parse_time(&next_run_after_dispatch_failure(&claim, now).unwrap()).unwrap();
+        assert_eq!(next, now + Duration::minutes(5));
     }
 
     #[tokio::test]

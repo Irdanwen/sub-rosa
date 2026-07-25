@@ -11,8 +11,10 @@ import {
 const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
   getSession: vi.fn(),
+  getLatestRun: vi.fn(),
   listItems: vi.fn(),
   startRun: vi.fn(),
+  retryRun: vi.fn(),
   cancelRun: vi.fn(),
   listen: vi.fn(),
 }));
@@ -25,8 +27,10 @@ vi.mock("../lib/tauri", () => ({
   agentRuntimeBindings: {
     createSession: mocks.createSession,
     getSession: mocks.getSession,
+    getLatestRun: mocks.getLatestRun,
     listItems: mocks.listItems,
     startRun: mocks.startRun,
+    retryRun: mocks.retryRun,
     cancelRun: mocks.cancelRun,
   },
 }));
@@ -63,8 +67,11 @@ describe("note chat sessions", () => {
     window.localStorage.clear();
     mocks.createSession.mockReset();
     mocks.getSession.mockReset();
+    mocks.getLatestRun.mockReset();
+    mocks.getLatestRun.mockResolvedValue(null);
     mocks.listItems.mockReset();
     mocks.startRun.mockReset();
+    mocks.retryRun.mockReset();
     mocks.cancelRun.mockReset();
     mocks.cancelRun.mockResolvedValue(undefined);
     mocks.listen.mockReset();
@@ -151,5 +158,22 @@ describe("note chat sessions", () => {
     act(() => result.current.stop());
 
     await waitFor(() => expect(mocks.cancelRun).toHaveBeenCalledWith("run-1"));
+  });
+
+  it("retries the persisted failed run for a reopened note chat", async () => {
+    rememberNoteChatSession("note-1", "note-session");
+    mocks.getSession.mockResolvedValue(session({ status: "failed" }));
+    mocks.listItems.mockResolvedValue([]);
+    mocks.getLatestRun.mockResolvedValue(run({ status: "failed" }));
+    mocks.retryRun.mockResolvedValue(run({ id: "run-2", status: "running" }));
+    const { result } = renderHook(() => useNoteChat({ id: "note-1", title: "Planning" }));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      expect(await result.current.retry()).toBe(true);
+    });
+
+    expect(mocks.retryRun).toHaveBeenCalledWith("run-1");
+    expect(result.current.working).toBe(true);
   });
 });

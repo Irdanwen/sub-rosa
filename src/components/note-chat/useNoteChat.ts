@@ -47,6 +47,7 @@ export type NoteChat = {
   model: string;
   setModel: (model: string) => void;
   submit: (text: string, attachments?: NoteChatAttachment[]) => Promise<NoteChatSubmitResult>;
+  retry: (failedItemId?: string) => Promise<boolean>;
   stop: () => void;
 };
 
@@ -78,12 +79,16 @@ export function useNoteChat(note: NoteReferenceInput | null): NoteChat {
   const turns = useMemo(() => agentItemsToChatTurns(projection.items), [projection.items]);
 
   const hydrate = useCallback(async (sessionId: string) => {
-    const [session, items] = await Promise.all([
+    const [session, items, latestRun] = await Promise.all([
       agentRuntimeBindings.getSession(sessionId),
       agentRuntimeBindings.listItems(sessionId),
+      agentRuntimeBindings.getLatestRun?.(sessionId) ?? Promise.resolve(null),
     ]);
     if (sessionIdRef.current !== sessionId) return;
-    setProjection(createAgentRuntimeProjection({ session, items }));
+    setProjection({
+      ...createAgentRuntimeProjection({ session, items }),
+      run: latestRun ?? undefined,
+    });
     setModel(session.model || DEFAULT_MODEL);
   }, []);
 
@@ -255,6 +260,50 @@ export function useNoteChat(note: NoteReferenceInput | null): NoteChat {
       .catch((cause) => setError(messageFromError(cause)));
   }, [projection.run]);
 
+  const retry = useCallback(
+    async (failedItemId?: string) => {
+      const failedItem = failedItemId
+        ? projection.items.find(
+            (item) => item.id === failedItemId && item.kind === "error" && item.retryable,
+          )
+        : undefined;
+      const runId =
+        failedItem?.runId ?? (projection.run?.status === "failed" ? projection.run.id : undefined);
+      const session = projection.session;
+      if (!runId || !session || loading || activeSubmitRef.current) {
+        return false;
+      }
+      const token = Symbol("note-chat-retry");
+      const generation = generationRef.current;
+      const current = () =>
+        generation === generationRef.current && activeSubmitRef.current === token;
+      activeSubmitRef.current = token;
+      setSubmissionPending(true);
+      setError(null);
+      try {
+        const nextRun = await agentRuntimeBindings.retryRun(runId);
+        if (current()) {
+          setProjection((existing) => ({ ...existing, run: nextRun }));
+          dispatchAgentSessionStatus({
+            sessionId: session.id,
+            title: session.title,
+            status: "starting",
+          });
+        }
+        return true;
+      } catch (cause) {
+        if (current()) setError(messageFromError(cause));
+        return false;
+      } finally {
+        if (activeSubmitRef.current === token) {
+          activeSubmitRef.current = undefined;
+          setSubmissionPending(false);
+        }
+      }
+    },
+    [loading, projection.items, projection.run, projection.session],
+  );
+
   return {
     turns,
     working,
@@ -265,6 +314,7 @@ export function useNoteChat(note: NoteReferenceInput | null): NoteChat {
     model,
     setModel,
     submit,
+    retry,
     stop,
   };
 }

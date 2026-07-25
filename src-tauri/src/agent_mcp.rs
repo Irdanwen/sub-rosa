@@ -1667,8 +1667,15 @@ async fn session_request(
             };
             match result {
                 Ok(value) => return Ok(value),
-                Err(AgentMcpError::Transport) if attempt == 0 => {
+                // Discovery/listing is read-only and can be retried after a
+                // reconnect. A tool call may already have mutated remote
+                // state before its response was lost, so never replay it.
+                Err(AgentMcpError::Transport) if attempt == 0 && method != "tools/call" => {
                     slot.close().await;
+                }
+                Err(AgentMcpError::Transport) => {
+                    slot.close().await;
+                    return Err(AgentMcpError::Transport);
                 }
                 Err(error) => return Err(error),
             }
@@ -3820,12 +3827,14 @@ done
             let first = call_server(&server, &secrets, "instance", json!({}), None, None)
                 .await
                 .unwrap();
-            let second = call_server(&server, &secrets, "instance", json!({}), None, None)
+            let second = call_server(&server, &secrets, "instance", json!({}), None, None).await;
+            let third = call_server(&server, &secrets, "instance", json!({}), None, None)
                 .await
                 .unwrap();
 
             assert_eq!(first["generation"], 1);
-            assert_eq!(second["generation"], 2);
+            assert!(matches!(second, Err(AgentMcpError::Transport)));
+            assert_eq!(third["generation"], 2);
             retire_server_sessions(&server.id).await;
             assert_eq!(std::fs::read_to_string(generations).unwrap(), "2");
         }

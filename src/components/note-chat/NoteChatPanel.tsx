@@ -21,10 +21,16 @@ import {
 import { shouldBlockTextOnFunding, type TextFundingModelContext } from "../../lib/account-gate";
 import { messageFromError } from "../../lib/errors";
 import { useScrollFade } from "../../lib/use-scroll-fade";
-import { dictationHelperCommand, listVeniceModels, type VeniceModelDto } from "../../lib/tauri";
+import {
+  dictationHelperCommand,
+  listVeniceModels,
+  providerModelSettings,
+  type VeniceModelDto,
+} from "../../lib/tauri";
 import { FileTypeIcon } from "../agent/FileTypeIcon";
 import { MarkdownContent } from "../agent/MarkdownContent";
 import { ComposerEditor, type ComposerEditorHandle } from "../agent/composer/ComposerEditor";
+import { UpstreamProviderFailureNoticePart } from "../agent/chat-turns/RunNotices";
 import {
   ComposerModelPicker,
   ComposerModelPopover,
@@ -97,11 +103,14 @@ function userTurnText(turn: AgentChatTurn) {
     .join("\n");
 }
 
-function assistantPartNode(part: AgentChatPart, index: number) {
+function assistantPartNode(part: AgentChatPart, index: number, onRetry?: () => void) {
   switch (part.type) {
     case "text":
       return <MarkdownContent key={index} markdown={part.text} repairProse />;
     case "notice":
+      if (part.kind === "upstream-provider") {
+        return <UpstreamProviderFailureNoticePart key={index} onRetry={onRetry} />;
+      }
       return <MarkdownContent key={index} markdown={part.text} />;
     case "tool":
       return (
@@ -159,6 +168,7 @@ export function NoteChatPanel({
     model: activeModelId,
     setModel,
     submit,
+    retry,
     stop,
   } = chat;
   // Block escalation only during the pure first-send race — the session is
@@ -220,6 +230,7 @@ export function NoteChatPanel({
   // selected model with each run, so the panel can change it without a legacy
   // transport-side configuration step.
   const [models, setModels] = useState<VeniceModelDto[]>([]);
+  const [veniceApiKeyConfigured, setVeniceApiKeyConfigured] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const [modelFlyout, setModelFlyout] = useState<ComposerModelFlyout>(null);
   const [modelSearch, setModelSearch] = useState("");
@@ -235,6 +246,11 @@ export function NoteChatPanel({
         if (activeModelId === "auto" && catalog.selectedModel) setModel(catalog.selectedModel);
       })
       .catch(() => undefined);
+    void providerModelSettings()
+      .then((response) =>
+        setVeniceApiKeyConfigured(response.effectiveSettings.veniceApiKeyConfigured),
+      )
+      .catch(() => setVeniceApiKeyConfigured(false));
     return () => {
       stale = true;
     };
@@ -243,7 +259,7 @@ export function NoteChatPanel({
   const textFundingContext: TextFundingModelContext = {
     activeModelId: activeModelId || undefined,
     activeModel: model,
-    veniceApiKeyConfigured: false,
+    veniceApiKeyConfigured,
   };
   const textActionsDisabledReason = shouldBlockTextOnFunding(
     Boolean(creditActionsDisabledReason),
@@ -456,7 +472,15 @@ export function NoteChatPanel({
                   </div>
                 ) : (
                   <div key={turn.id} className="note-chat-turn-assistant">
-                    {turn.parts.map((part, index) => assistantPartNode(part, index))}
+                    {turn.parts.map((part, index) =>
+                      assistantPartNode(
+                        part,
+                        index,
+                        working || chat.submissionPending || textActionsDisabledReason
+                          ? undefined
+                          : () => void retry(turn.id),
+                      ),
+                    )}
                   </div>
                 ),
               )}
