@@ -1262,15 +1262,32 @@ mod os_platform_tests {
     }
 
     #[test]
-    fn os_platform_sink_uses_default_june_bug_reports_destination_with_api_key() {
+    fn os_platform_sink_stays_absent_on_defaults_even_with_an_api_key() {
+        // This fork ships no issue-report destination, so the defaults are
+        // blank and a key alone must not be enough to build a sink and start
+        // filing reports somewhere.
         let config = IssueReportsConfig {
             os_platform_api_key: "osk_test".to_string(),
             ..Default::default()
         };
-        let sink = OsPlatformIssueReportSink::from_config(reqwest::Client::new(), &config)
-            .expect("default June issue report destination plus API key is configured");
 
-        assert_eq!(sink.api_url, "https://app.opensoftware.co/api");
+        assert!(OsPlatformIssueReportSink::from_config(reqwest::Client::new(), &config).is_none());
+    }
+
+    #[test]
+    fn os_platform_sink_builds_when_a_destination_is_configured() {
+        let config = IssueReportsConfig {
+            os_platform_api_url: "https://tracker.example/api".to_string(),
+            os_platform_api_key: "osk_test".to_string(),
+            os_platform_org: "june".to_string(),
+            os_platform_project: "bug-reports".to_string(),
+            os_platform_label: "bug".to_string(),
+            os_platform_reward_asset: "POINTS".to_string(),
+        };
+        let sink = OsPlatformIssueReportSink::from_config(reqwest::Client::new(), &config)
+            .expect("an explicit destination plus API key is configured");
+
+        assert_eq!(sink.api_url, "https://tracker.example/api");
         assert_eq!(sink.org, "june");
         assert_eq!(sink.project, "bug-reports");
         assert_eq!(sink.label, "bug");
@@ -1285,6 +1302,7 @@ mod os_platform_tests {
             ("june", "open-software/june"),
         ] {
             let config = IssueReportsConfig {
+                os_platform_api_url: "https://tracker.example/api".to_string(),
                 os_platform_api_key: "osk_test".to_string(),
                 os_platform_org: org.to_string(),
                 os_platform_project: project.to_string(),
@@ -1301,6 +1319,7 @@ mod os_platform_tests {
     #[test]
     fn os_platform_sink_keeps_configured_org_for_matching_legacy_destination() {
         let config = IssueReportsConfig {
+            os_platform_api_url: "https://tracker.example/api".to_string(),
             os_platform_api_key: "osk_test".to_string(),
             os_platform_org: "june-team".to_string(),
             os_platform_project: "june-team/june".to_string(),

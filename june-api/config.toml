@@ -5,36 +5,37 @@ request_timeout_secs = 600
 max_audio_bytes = 26214400
 max_json_bytes = 524288
 
-# Public facts shown on the /verify attestation page. source_commit is not
-# set here — the Docker build stamps it via JUNE__ATTESTATION__SOURCE_COMMIT.
+# Public facts shown on the /verify page. source_commit is not set here — the
+# build stamps it via JUNE__ATTESTATION__SOURCE_COMMIT.
 [attestation]
-source_repo_url = "https://github.com/open-software-network/os-june"
-image_repo = "ghcr.io/open-software-network/june-api"
-trust_center_url = "https://trust.phala.com/app/6514acb0e08dc4825e2b6e22a46f0ed0ff455b54"
+source_repo_url = "https://github.com/Irdanwen/sub-rosa"
+# Empty: this backend is not a published container, it runs on loopback inside
+# the app. The /verify page omits the image row when this is blank.
+image_repo = ""
+# The TEE attestation belongs to Carpe Diem, the operator that runs the models.
+trust_center_url = "https://carpe-diem.xyz"
 
 [issue_reports]
-# User-submitted issue reports are filed as os-platform Issues in the June
-# project. The only per-environment value is the bot user's fellow API key
-# (osk_...), set via JUNE__ISSUE_REPORTS__OS_PLATFORM_API_KEY. Without it,
-# reports are accepted but land in structured logs only.
-os_platform_api_url = "https://app.opensoftware.co/api"
+# Upstream files user-submitted reports as issues on its own tracker. This
+# fork has no such sink, so every field is blank: OsPlatformIssueReportSink
+# only builds with a key, and without one reports land in structured logs.
+# Left in place (rather than deleted) so upstream re-merges still apply here.
+os_platform_api_url = ""
 os_platform_api_key = ""
-os_platform_org = "open-software"
-os_platform_project = "june"
-os_platform_label = "bug"
-# Reward asset for the zero-reward Issue (required when the target Org has
-# no default reward asset configured).
-os_platform_reward_asset = "POINTS"
+os_platform_org = ""
+os_platform_project = ""
+os_platform_label = ""
+os_platform_reward_asset = ""
 
 [os_accounts]
 # api_url has no default — must come from JUNE__OS_ACCOUNTS__API_URL
 # per environment so a missing override fails loud against the dev
 # fallback in AppConfig::default rather than silently hitting staging.
-# iss is the canonical OS Accounts site URL used in the JWT's `iss` claim
-# — the same value on staging and prod. JWKS lives on the API origin, but
-# the issuer claim points at the canonical site. Confirmed by decoding a
-# real staging token 2026-05-28.
-iss = "https://accounts.opensoftware.co"
+# iss/aud are only read by JwksTokenVerifier, which this fork never builds:
+# the sidecar always runs with local_dev.enabled, so LocalDevTokenVerifier
+# checks the bearer the app generated. Blank so no third-party issuer ships
+# inside the binary (config.toml is baked in via include_str! on iOS).
+iss = ""
 # aud is the canonical audience for tokens minted by OS Accounts for ANY
 # consumer app, not a per-app value. Strict-string match.
 aud = "open-software-apps"

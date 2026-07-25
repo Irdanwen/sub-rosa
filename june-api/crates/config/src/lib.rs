@@ -83,7 +83,9 @@ pub struct IssueReportsConfig {
 }
 
 fn default_issue_report_api_url() -> String {
-    "https://app.opensoftware.co/api".to_string()
+    // No sink on this fork; the sink only builds when an API key is set, so a
+    // blank URL is inert rather than a broken default.
+    String::new()
 }
 
 fn default_issue_report_org() -> String {
@@ -623,11 +625,13 @@ impl Default for AppConfig {
             },
             attestation: AttestationConfig {
                 source_commit: String::new(),
-                source_repo_url: "https://github.com/open-software-network/os-june".to_string(),
-                image_repo: "ghcr.io/open-software-network/june-api".to_string(),
-                trust_center_url:
-                    "https://trust.phala.com/app/6514acb0e08dc4825e2b6e22a46f0ed0ff455b54"
-                        .to_string(),
+                source_repo_url: "https://github.com/Irdanwen/sub-rosa".to_string(),
+                // No published image: this backend ships inside the app and
+                // runs on loopback, so there is nothing to pull or attest.
+                image_repo: String::new(),
+                // The TEE attestation belongs to the operator that runs the
+                // models, not to this process.
+                trust_center_url: "https://carpe-diem.xyz".to_string(),
             },
             issue_reports: IssueReportsConfig::default(),
             pricing: default_pricing(),
@@ -1100,7 +1104,7 @@ mod tests {
     #[test]
     fn validate_rejects_schemeless_os_accounts_api_url() {
         let mut config = valid_config();
-        config.os_accounts.api_url = "accounts.opensoftware.co/api".to_string();
+        config.os_accounts.api_url = "accounts.example.com/api".to_string();
 
         let result = validate(&config);
 

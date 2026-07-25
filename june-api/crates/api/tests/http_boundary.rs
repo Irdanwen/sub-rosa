@@ -547,19 +547,20 @@ async fn integration_verify_page_is_public_html() -> Result<(), Box<dyn Error>> 
         "unexpected content type: {content_type}"
     );
     let body = response_text(response).await?;
-    assert!(body.contains("Verify this server"));
-    assert!(body.contains("<title>Verify this server</title>"));
-    assert!(body.contains("This server runs inside an Intel TDX confidential VM."));
+    assert!(body.contains("<title>Where your data goes</title>"));
     assert!(body.contains("<dt>Version</dt>"));
-    assert!(!body.contains("Verify this server ·"));
+    assert!(body.contains("loopback"));
     assert!(!body.contains("<dt>Service</dt>"));
     assert!(!body.to_ascii_lowercase().contains("scribe-api"));
     assert!(!body.to_ascii_lowercase().contains("scribe api"));
-    assert!(body.contains("ghcr.io/open-software-network/june-api:0123abc"));
+    // The page speaks for this process only; it must not restate the model
+    // operator's confidential-computing claims as its own.
+    assert!(!body.contains("Intel TDX"));
+    assert!(!body.contains("confidential VM"));
     assert!(body.contains(&format!(
-        "https://github.com/open-software-network/os-june/commit/{TEST_COMMIT}"
+        "https://github.com/example-org/example-app/commit/{TEST_COMMIT}"
     )));
-    assert!(body.contains("https://trust.phala.com/app/test-app-id"));
+    assert!(body.contains("https://operator.example/trust"));
     Ok(())
 }
 
@@ -593,9 +594,11 @@ const TEST_COMMIT: &str = "0123abc4567890def0123abc4567890def012345";
 fn test_attestation() -> AttestationInfo {
     AttestationInfo {
         source_commit: TEST_COMMIT.to_string(),
-        source_repo_url: "https://github.com/open-software-network/os-june".to_string(),
-        image_repo: "ghcr.io/open-software-network/june-api".to_string(),
-        trust_center_url: "https://trust.phala.com/app/test-app-id".to_string(),
+        source_repo_url: "https://github.com/example-org/example-app".to_string(),
+        // Blank, as it ships: the backend runs inside the app rather than as
+        // a published container.
+        image_repo: String::new(),
+        trust_center_url: "https://operator.example/trust".to_string(),
     }
 }
 

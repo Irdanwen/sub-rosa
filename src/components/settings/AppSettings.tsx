@@ -1,4 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
+import { PRODUCT_NAME } from "../../lib/branding";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconChevronDownSmall } from "central-icons/IconChevronDownSmall";
 import { IconCircleCheck } from "central-icons/IconCircleCheck";
@@ -1453,19 +1454,23 @@ export function AppSettings({
 
                 <div className="settings-row">
                   <div className="settings-row-info">
-                    <h3 className="settings-row-title">Server verification</h3>
+                    <h3 className="settings-row-title">Where your data goes</h3>
                     <p className="settings-row-description">
-                      Sub Rosa&apos;s server runs in a confidential VM. See exactly what code is
-                      running and how to verify it yourself.
+                      {PRODUCT_NAME}&apos;s backend runs on this machine, on loopback. See what it
+                      keeps, what leaves the device, and how to check both yourself.
                     </p>
                   </div>
                   <div className="settings-row-control">
                     <button
                       type="button"
                       className="btn btn-secondary"
-                      onClick={() => void juneOpenVerifyPage().catch(() => undefined)}
+                      onClick={() =>
+                        void juneOpenVerifyPage().catch((err: unknown) =>
+                          setStatus(messageFromError(err)),
+                        )
+                      }
                     >
-                      Verify server
+                      Open
                     </button>
                   </div>
                 </div>

@@ -1606,7 +1606,7 @@ describe("AppSettings", () => {
     expect(onReconcileToStable).not.toHaveBeenCalled();
   });
 
-  it("opens the server attestation page from About through Rust", async () => {
+  it("opens the data-flow page from About through Rust", async () => {
     // Not an anchor: the webview drops target="_blank" navigations, so the
     // button must invoke the june_open_verify_page command instead.
     render(
@@ -1620,7 +1620,9 @@ describe("AppSettings", () => {
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("tab", { name: "About" }));
-    await user.click(await screen.findByRole("button", { name: "Verify server" }));
+    const row = (await screen.findByText("Where your data goes")).closest(".settings-row");
+    if (!row) throw new Error("settings row not found");
+    await user.click(within(row as HTMLElement).getByRole("button", { name: "Open" }));
     expect(mocks.juneOpenVerifyPage).toHaveBeenCalledOnce();
   });
 

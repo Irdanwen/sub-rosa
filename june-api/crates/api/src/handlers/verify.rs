@@ -2,10 +2,11 @@ use axum::{extract::State, response::Html};
 
 use crate::state::{ApiState, AttestationInfo};
 
-/// Human-facing attestation walkthrough. Served from inside the TEE so the
-/// page itself is covered by the same attestation it explains. Public and
-/// unauthenticated like the health probes, and deliberately HTML rather than
-/// the `ApiResponse` envelope — the audience is a person, not a client.
+/// Human-facing explanation of what this backend does with the user's data.
+/// Served by the backend itself, so it describes the process answering the
+/// request. Public and unauthenticated like the health probes, and
+/// deliberately HTML rather than the `ApiResponse` envelope: the audience is a
+/// person, not a client.
 pub(crate) async fn verify(State(state): State<ApiState>) -> Html<String> {
     Html(render_page(state.attestation()))
 }
@@ -35,7 +36,6 @@ fn escape_html(value: &str) -> String {
 
 fn render_page(info: &AttestationInfo) -> String {
     let repo_url = escape_html(&info.source_repo_url);
-    let image_repo = escape_html(&info.image_repo);
     let trust_center_url = escape_html(&info.trust_center_url);
 
     let (commit_value, short_sha) = match short_commit(&info.source_commit) {
@@ -56,12 +56,24 @@ fn render_page(info: &AttestationInfo) -> String {
         ),
     };
 
+    // This fork ships the backend inside the app instead of publishing a
+    // container, so `image_repo` is normally blank and its row is dropped
+    // rather than rendered empty. A deployment that does publish an image
+    // still gets the row.
+    let image_row = if info.image_repo.trim().is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n  <div><dt>Image</dt><dd><code>{}:{short_sha}</code></dd></div>",
+            escape_html(&info.image_repo)
+        )
+    };
+
     PAGE_TEMPLATE
         .replace("@VERSION@", env!("CARGO_PKG_VERSION"))
         .replace("@COMMIT_VALUE@", &commit_value)
-        .replace("@SHORT_SHA@", &short_sha)
+        .replace("@IMAGE_ROW@", &image_row)
         .replace("@REPO_URL@", &repo_url)
-        .replace("@IMAGE_REPO@", &image_repo)
         .replace("@TRUST_CENTER_URL@", &trust_center_url)
 }
 
@@ -70,7 +82,7 @@ const PAGE_TEMPLATE: &str = r#"<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Verify this server</title>
+<title>Where your data goes</title>
 <style>
   :root {
     color-scheme: light dark;
@@ -164,76 +176,70 @@ const PAGE_TEMPLATE: &str = r#"<!doctype html>
 </head>
 <body>
 <header>
-  <span class="badge">Intel TDX · Phala Cloud</span>
-  <h1>Verify this server</h1>
-  <p class="lede">This server runs inside an Intel TDX confidential VM. This page is
-  served from inside that VM and explains how to check, without trusting us,
-  that the code running here is exactly the public source code.</p>
+  <span class="badge">Local backend</span>
+  <h1>Where your data goes</h1>
+  <p class="lede">You are reading this from a process running on your own
+  computer. This page explains what that process does with your work, what
+  leaves the device, and how to check both.</p>
 </header>
 
-<h2>This deployment</h2>
+<h2>This build</h2>
 <dl class="facts">
   <div><dt>Version</dt><dd><code>v@VERSION@</code></dd></div>
   <div><dt>Source commit</dt><dd>@COMMIT_VALUE@</dd></div>
-  <div><dt>Source code</dt><dd><a href="@REPO_URL@">@REPO_URL@</a></dd></div>
-  <div><dt>Image</dt><dd><code>@IMAGE_REPO@:@SHORT_SHA@</code></dd></div>
-  <div><dt>Attestation</dt><dd><a href="@TRUST_CENTER_URL@">Phala Trust Center report</a></dd></div>
+  <div><dt>Source code</dt><dd><a href="@REPO_URL@">@REPO_URL@</a></dd></div>@IMAGE_ROW@
+  <div><dt>Address</dt><dd><code>127.0.0.1</code> (loopback only)</dd></div>
 </dl>
 
-<h2>Why this matters</h2>
-<p>Audio, transcripts, and notes pass through this server. Because the running
-image is remotely attested, neither Phala (the platform) nor Open Software (us)
-can quietly swap it for one that reads your data. Any change to the running
-code is visible in the chain below.</p>
-<p>The chain has three links: <strong>source</strong> (a public git commit),
-<strong>image</strong> (a container image our CI builds from that commit, published
-with a content digest), and <strong>attestation</strong> (third-party-verifiable
-proof that the image with that digest is what is actually executing inside a
-genuine Intel TDX VM).</p>
+<h2>What this process is</h2>
+<p>It is the app's backend, started by the app when it launches and stopped
+when you quit. It listens on a random loopback port with a bearer token
+generated for this run, so nothing outside your machine can reach it.</p>
+<p>It keeps no user data. Notes, transcripts, sessions, memory, and agent
+state are files on your disk, written by the app, not by this process. There
+is no account here and no server-side copy of anything, because there is no
+server: nobody operates this but you.</p>
 
-<h2>Check it yourself</h2>
+<h2>What leaves your device</h2>
+<p>One thing: the content of a request that needs a model. Audio to be
+transcribed, the text to turn into a note, the prompts and context of an agent
+turn. This process attaches your own API key and forwards the request to
+Carpe Diem, which runs the model. Nothing else is sent anywhere.</p>
+<p>Everything else in the app, including retrieval over your own notes, runs
+locally and never crosses this boundary.</p>
+
+<h2>What this page does not prove</h2>
+<p>Once a request reaches Carpe Diem, what happens to it is governed by
+<strong>their</strong> guarantees, not ours: their confidential-computing
+setup, their retention policy, and the policies of any upstream model provider
+they route to. Those are theirs to state and theirs to prove.</p>
+<p>Check them at <a href="@TRUST_CENTER_URL@">@TRUST_CENTER_URL@</a>. Treat any
+claim on this page about their infrastructure as hearsay: this page can only
+speak for the process serving it.</p>
+
+<h2>Check this side yourself</h2>
 <ol class="steps">
   <li>
-    <p>Open the <a href="@TRUST_CENTER_URL@">Trust Center report</a>. Confirm the
-    attestation verifies, then find the image reference pinned in the attested
-    compose file. It should be:</p>
-    <pre><code>@IMAGE_REPO@:@SHORT_SHA@</code></pre>
+    <p>Confirm nothing but your machine can reach this backend. It binds
+    loopback, so from another device on your network this address answers
+    nothing:</p>
+    <pre><code>curl --max-time 5 http://&lt;this-machine-ip&gt;:&lt;port&gt;/livez</code></pre>
   </li>
   <li>
-    <p>Resolve that tag to its content digest in the public registry:</p>
-    <pre><code>docker buildx imagetools inspect @IMAGE_REPO@:@SHORT_SHA@ \
-  --format '{{.Manifest.Digest}}'</code></pre>
+    <p>Watch what actually leaves. Point a proxy (Charles, mitmproxy) at the
+    app, or list its open sockets while you work:</p>
+    <pre><code>lsof -i -nP | grep -i subrosa</code></pre>
+    <p>You should see connections to Carpe Diem and nothing else carrying your
+    content.</p>
   </li>
   <li>
-    <p>Compare against the digest our CI recorded in the repository at deploy
-    time, as an immutable <code>deploy/&lt;env&gt;/&lt;sha&gt;</code> git tag:</p>
-    <pre><code>git clone @REPO_URL@ &amp;&amp; cd os-june
-git tag -l 'deploy/*/@SHORT_SHA@' -n3</code></pre>
-    <p>The tag message states which image digest commit <code>@SHORT_SHA@</code>
-    deployed. It must match the digest from step 2.</p>
-  </li>
-  <li>
-    <p>Read the source at that commit. The commit linked above is the exact tree
-    the image was built from. The build stamps it into the image itself.</p>
+    <p>Read the source at the commit above. The whole app, this backend
+    included, is public.</p>
   </li>
 </ol>
-<p class="muted">This proves the running digest is the one our public CI built
-and recorded for that commit. Bit-for-bit reproducible rebuilds (regenerating
-the digest yourself instead of trusting our CI) are in progress; see
-<a href="@REPO_URL@/blob/main/docs/reproducible-builds.md">docs/reproducible-builds.md</a>.</p>
-
-<h2>What this does not cover</h2>
-<p>The chain verifies the <strong>code</strong> running in the confidential VM,
-not what upstream providers do. Everything leaving the TEE for model inference
-(audio for transcription, prompts and context for note generation and the
-agent) goes through Venice. By default it runs on Venice private models: zero
-data retention, no training. If you select an anonymized model not run by
-Venice, the request is still routed and anonymized by Venice, but the
-underlying model provider may retain data under its own privacy policy.
-End-to-end private inference is a separate workstream.</p>
 
 <footer>
-  <p>Open Software · <a href="@REPO_URL@">source</a> · <a href="@TRUST_CENTER_URL@">attestation</a></p>
+  <p><a href="@REPO_URL@">source</a> · <a href="@TRUST_CENTER_URL@">Carpe Diem</a></p>
 </footer>
 </body>
 </html>
@@ -247,9 +253,11 @@ mod tests {
     fn info() -> AttestationInfo {
         AttestationInfo {
             source_commit: "0123abc4567890def0123abc4567890def012345".to_string(),
-            source_repo_url: "https://github.com/open-software-network/os-june".to_string(),
-            image_repo: "ghcr.io/open-software-network/june-api".to_string(),
-            trust_center_url: "https://trust.phala.com/app/15f8d2fd".to_string(),
+            source_repo_url: "https://github.com/example-org/example-app".to_string(),
+            // Blank on this fork; a deployment that publishes an image is
+            // covered by `render_includes_the_image_row_when_one_is_configured`.
+            image_repo: String::new(),
+            trust_center_url: "https://operator.example/trust".to_string(),
         }
     }
 
@@ -277,38 +285,50 @@ mod tests {
     }
 
     #[test]
-    fn render_links_commit_and_attestation() {
+    fn render_links_commit_and_operator() {
         let html = render_page(&info());
         assert!(html.contains(
-            "https://github.com/open-software-network/os-june/commit/0123abc4567890def0123abc4567890def012345"
+            "https://github.com/example-org/example-app/commit/0123abc4567890def0123abc4567890def012345"
         ));
-        assert!(html.contains(
-            "git clone https://github.com/open-software-network/os-june &amp;&amp; cd os-june"
-        ));
-        assert!(html.contains("ghcr.io/open-software-network/june-api:0123abc"));
-        assert!(html.contains("https://trust.phala.com/app/15f8d2fd"));
-        assert!(!html.contains("@SHORT_SHA@"));
+        assert!(html.contains("https://operator.example/trust"));
+        assert!(!html.contains("@IMAGE_ROW@"));
+        assert!(!html.contains("@TRUST_CENTER_URL@"));
     }
 
     #[test]
-    fn render_uses_product_neutral_verify_copy() {
+    fn render_omits_the_image_row_when_no_image_is_published() {
+        // The fork's backend ships inside the app, so there is no image to
+        // name. An empty row would read as a missing fact rather than an
+        // absent one.
+        let html = render_page(&info());
+        assert!(!html.contains("<dt>Image</dt>"));
+    }
+
+    #[test]
+    fn render_includes_the_image_row_when_one_is_configured() {
+        let mut info = info();
+        info.image_repo = "ghcr.io/example-org/example-api".to_string();
+        let html = render_page(&info);
+        assert!(html.contains("<dt>Image</dt>"));
+        assert!(html.contains("ghcr.io/example-org/example-api:0123abc"));
+    }
+
+    #[test]
+    fn render_describes_a_local_backend_not_a_hosted_one() {
         let html = render_page(&info());
 
-        assert!(html.contains("<title>Verify this server</title>"));
-        assert!(html.contains("This server runs inside an Intel TDX confidential VM."));
+        assert!(html.contains("<title>Where your data goes</title>"));
         assert!(html.contains(&format!(
             "<div><dt>Version</dt><dd><code>v{}</code></dd></div>",
             env!("CARGO_PKG_VERSION")
         )));
-        assert!(!html.contains(&format!("Verify this server · {}", env!("CARGO_PKG_NAME"))));
-        assert!(!html.contains(&format!(
-            "{} runs inside an Intel TDX confidential VM",
-            env!("CARGO_PKG_NAME")
-        )));
-        assert!(!html.contains(&format!(
-            "<dt>Service</dt><dd><code>{}</code>",
-            env!("CARGO_PKG_NAME")
-        )));
+        // The page must not restate the operator's confidential-computing
+        // claims as its own: this process runs on the user's machine.
+        assert!(html.contains("loopback"));
+        assert!(!html.contains("Intel TDX"));
+        assert!(!html.contains("confidential VM"));
+        assert!(!html.contains("Phala"));
+        assert!(!html.contains("Open Software"));
         assert!(!html.contains("@SERVICE@"));
     }
 
@@ -318,7 +338,15 @@ mod tests {
         info.source_commit = String::new();
         let html = render_page(&info);
         assert!(html.contains("not stamped"));
-        assert!(html.contains("&lt;short-sha&gt;"));
+    }
+
+    #[test]
+    fn render_without_commit_still_labels_a_configured_image() {
+        let mut info = info();
+        info.source_commit = String::new();
+        info.image_repo = "ghcr.io/example-org/example-api".to_string();
+        let html = render_page(&info);
+        assert!(html.contains("ghcr.io/example-org/example-api:&lt;short-sha&gt;"));
     }
 
     #[test]
