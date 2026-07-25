@@ -21,6 +21,12 @@ pub struct CreateSessionRequest {
     pub title: Option<String>,
     pub model: String,
     pub safety_mode: AgentSafetyMode,
+    #[serde(default = "default_data_partition")]
+    pub profile: String,
+}
+
+fn default_data_partition() -> String {
+    "default".to_string()
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -204,11 +210,12 @@ pub async fn create_agent_session(
         .await
         .map_err(io_error)?;
     let session = repository
-        .create_session(
+        .create_session_in_profile(
             request.title.as_deref().unwrap_or("New session"),
             &model,
             request.safety_mode,
             workspace.to_str(),
+            &request.profile,
         )
         .await?;
     let final_workspace = session_workspace(&app, Some(&session.id))?;
@@ -282,6 +289,13 @@ pub async fn branch_agent_session(
         .bind(&branch.id)
         .execute(&mut *transaction)
         .await?;
+    inherit_session_profile(
+        &mut transaction,
+        &session_id,
+        &branch.id,
+        &chrono::Utc::now().to_rfc3339(),
+    )
+    .await?;
     let items = sqlx::query::query(
         "SELECT id, sequence, kind, payload_json, created_at
          FROM agent_items WHERE session_id = ? AND sequence <= ? ORDER BY sequence ASC",
@@ -549,6 +563,9 @@ pub async fn start_agent_run(
             },
         )
         .await?;
+        repository
+            .set_run_config(&run.id, &resumable_run_config(&params))
+            .await?;
         let user_item = repository
             .append_item(
                 &session.id,
@@ -702,6 +719,9 @@ pub async fn retry_agent_run(
         )
         .await?;
         repository
+            .set_run_config(&run.id, &resumable_run_config(&params))
+            .await?;
+        repository
             .append_item(
                 &session.id,
                 Some(&run.id),
@@ -819,23 +839,41 @@ pub async fn resolve_agent_interruption(
     let model = normalize_agent_model(&session.model);
     let enabled_skill_ids = repository.run_enabled_skills(&run.id).await?;
     host.ensure_started(&app, repository.clone()).await?;
-    let mut params = run_params(
-        &app,
-        &repository,
-        RunParamsInput {
-            session_id: &session.id,
-            run_id: &run.id,
-            model: &model,
-            reasoning_effort: run.reasoning_effort.as_deref(),
-            safety_mode: session.safety_mode,
-            workspace: &workspace,
-            input: "",
-            skills: &enabled_skill_ids,
-            attachments: &[],
-            excluded_history_run_id: None,
+    let mut params = match repository.run_config(&run.id).await? {
+        Some(config) => config,
+        None => match crate::routines::reconstruct_unattended_resume_params(
+            &app,
+            &repository,
+            &run.id,
+            &session.id,
+            &model,
+            session.safety_mode,
+            &workspace,
+        )
+        .await?
+        {
+            Some(config) => config,
+            None => resumable_run_config(
+                &run_params(
+                    &app,
+                    &repository,
+                    RunParamsInput {
+                        session_id: &session.id,
+                        run_id: &run.id,
+                        model: &model,
+                        reasoning_effort: run.reasoning_effort.as_deref(),
+                        safety_mode: session.safety_mode,
+                        workspace: &workspace,
+                        input: "",
+                        skills: &enabled_skill_ids,
+                        attachments: &[],
+                        excluded_history_run_id: None,
+                    },
+                )
+                .await?,
+            ),
         },
-    )
-    .await?;
+    };
     params
         .as_object_mut()
         .expect("run params object")
@@ -1385,6 +1423,15 @@ async fn run_params(
     )
 }
 
+pub(crate) fn resumable_run_config(params: &Value) -> Value {
+    let mut config = params.clone();
+    if let Some(object) = config.as_object_mut() {
+        object.remove("input");
+        object.remove("history");
+    }
+    config
+}
+
 async fn tool_descriptors(
     app: &AppHandle,
     repository: &AgentRepository,
@@ -1615,6 +1662,24 @@ fn io_error(error: std::io::Error) -> AppError {
     AppError::new("agent_workspace_failed", error.to_string())
 }
 
+async fn inherit_session_profile(
+    transaction: &mut sqlx::transaction::Transaction<'_, sqlx_sqlite::Sqlite>,
+    source_session_id: &str,
+    branch_session_id: &str,
+    assigned_at: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query::query(
+        "INSERT INTO session_profiles (session_id, profile, assigned_at)
+         VALUES (?, COALESCE((SELECT profile FROM session_profiles WHERE session_id = ?), 'default'), ?)",
+    )
+    .bind(branch_session_id)
+    .bind(source_session_id)
+    .bind(assigned_at)
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
+}
+
 async fn prepare_attachments(
     source_paths: &[String],
     workspace: &std::path::Path,
@@ -1805,6 +1870,63 @@ mod tests {
             retry_message(items, "run-failed").unwrap().content,
             "Retry this"
         );
+    }
+
+    #[tokio::test]
+    async fn branches_inherit_the_source_data_partition() {
+        use sqlx::{query::query, row::Row};
+        use sqlx_sqlite::SqlitePoolOptions;
+
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("memory database");
+        crate::db::migrations::run_migrations(&pool)
+            .await
+            .expect("migrations");
+        let repository = AgentRepository::new(pool.clone());
+        let source = repository
+            .create_session_in_profile(
+                "Source",
+                "auto",
+                AgentSafetyMode::Sandboxed,
+                None,
+                "private",
+            )
+            .await
+            .expect("source");
+        let branch = repository
+            .create_session("Branch", "auto", AgentSafetyMode::Sandboxed, None)
+            .await
+            .expect("branch");
+        let mut transaction = pool.begin().await.expect("transaction");
+        inherit_session_profile(&mut transaction, &source.id, &branch.id, "now")
+            .await
+            .expect("inherit profile");
+        transaction.commit().await.expect("commit");
+
+        let profile: String = query("SELECT profile FROM session_profiles WHERE session_id = ?")
+            .bind(&branch.id)
+            .fetch_one(&pool)
+            .await
+            .expect("branch profile")
+            .get("profile");
+        assert_eq!(profile, "private");
+    }
+
+    #[test]
+    fn resumable_configuration_excludes_replayed_input_but_keeps_policy() {
+        let config = resumable_run_config(&json!({
+            "input": "user prompt",
+            "history": [{ "role": "user", "text": "old" }],
+            "instructions": "Routine policy",
+            "tools": [{ "name": "read_file" }]
+        }));
+        assert!(config.get("input").is_none());
+        assert!(config.get("history").is_none());
+        assert_eq!(config["instructions"], "Routine policy");
+        assert_eq!(config["tools"][0]["name"], "read_file");
     }
 
     #[tokio::test]

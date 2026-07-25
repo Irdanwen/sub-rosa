@@ -18,6 +18,86 @@ async fn memory_database() -> SqlitePool {
 }
 
 #[tokio::test]
+async fn user_sessions_are_created_in_the_active_data_partition_atomically() {
+    let pool = memory_database().await;
+    let repository = AgentRepository::new(pool.clone());
+    let session = repository
+        .create_session_in_profile(
+            "Private chat",
+            "private-auto",
+            os_june_lib::agent_runtime::AgentSafetyMode::Sandboxed,
+            None,
+            "private",
+        )
+        .await
+        .expect("session and partition mapping");
+
+    let profile: String = query("SELECT profile FROM session_profiles WHERE session_id = ?")
+        .bind(&session.id)
+        .fetch_one(&pool)
+        .await
+        .expect("partition mapping")
+        .get("profile");
+    assert_eq!(profile, "private");
+}
+
+#[tokio::test]
+async fn run_configuration_and_streamed_reasoning_survive_resume_and_hydration() {
+    let pool = memory_database().await;
+    let repository = AgentRepository::new(pool);
+    let session = repository
+        .create_session(
+            "Durable run",
+            "private-auto",
+            os_june_lib::agent_runtime::AgentSafetyMode::Sandboxed,
+            None,
+        )
+        .await
+        .expect("session");
+    let run = repository
+        .create_run(&session.id, "private-auto", Some("medium"))
+        .await
+        .expect("run");
+    let config = serde_json::json!({
+        "model": "private-auto",
+        "instructions": "Unattended routine instructions",
+        "tools": [{ "name": "read_file" }],
+        "skills": []
+    });
+    repository
+        .set_run_config(&run.id, &config)
+        .await
+        .expect("persist run config");
+    repository
+        .set_run_config(
+            &run.id,
+            &serde_json::json!({ "instructions": "Changed after interruption" }),
+        )
+        .await
+        .expect("ignore later run config mutation");
+    repository
+        .append_reasoning_delta(&session.id, &run.id, 1, "First ", "reasoning:run")
+        .await
+        .expect("first reasoning delta");
+    repository
+        .append_reasoning_delta(&session.id, &run.id, 2, "second", "reasoning:run")
+        .await
+        .expect("second reasoning delta");
+
+    assert_eq!(
+        repository.run_config(&run.id).await.expect("run config"),
+        Some(config)
+    );
+    let reasoning = repository.items(&session.id).await.expect("items");
+    assert_eq!(reasoning.len(), 1);
+    assert!(matches!(
+        &reasoning[0].payload,
+        AgentItemPayload::Reasoning(text) if text.text == "First second"
+    ));
+    assert_eq!(repository.get_run(&run.id).await.unwrap().last_sequence, 2);
+}
+
+#[tokio::test]
 async fn compaction_replaces_old_items_with_one_ordered_visible_summary() {
     let pool = memory_database().await;
     let repository = AgentRepository::new(pool.clone());

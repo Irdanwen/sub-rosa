@@ -87,6 +87,7 @@ import {
   type ComposerModelFlyout,
 } from "./composer/ModelPicker";
 import { modelPrivacyBadge } from "../../lib/model-privacy";
+import { getCurrentDataPartitionName } from "../../lib/data-partition";
 import { AUTO_MODEL_ID, modelOptions, selectedModel } from "../settings/ModelPickerDialog";
 import { Dialog } from "../ui/Dialog";
 import { Spinner } from "../ui/Spinner";
@@ -478,6 +479,7 @@ export function AgentWorkspace({
           title: titleFromPrompt(prompt),
           model,
           safetyMode,
+          profile: getCurrentDataPartitionName(),
         });
         session = createdSession;
         setSelectedId(createdSession.id);
@@ -1493,7 +1495,7 @@ function AgentComposer({
       <Dialog
         open={confirmUnrestricted}
         onClose={() => setConfirmUnrestricted(false)}
-        title="Turn on Unrestricted?"
+        title="Turn on unrestricted?"
         description="June will be able to change any file your account can, not just its own workspace. This comes with risks like data loss if something goes wrong."
         footer={
           <>
@@ -1513,7 +1515,7 @@ function AgentComposer({
                 setConfirmUnrestricted(false);
               }}
             >
-              Turn on Unrestricted
+              Turn on unrestricted
             </button>
           </>
         }

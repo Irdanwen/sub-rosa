@@ -200,8 +200,8 @@ export async function routineCreationPrompt(
     "Create a new June routine for me.",
     `Here is what it should do: ${description.trim()}`,
     options?.unrestricted
-      ? "I chose Unrestricted mode for this routine."
-      : "I chose the Sandboxed default for this routine.",
+      ? "I chose unrestricted mode for this routine."
+      : "I chose the sandboxed default for this routine.",
     "Ask me for any timing details that are unclear, then create it and confirm when it will first run.",
   ].join("\n\n");
 }

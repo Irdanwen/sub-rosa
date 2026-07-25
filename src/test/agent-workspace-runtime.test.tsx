@@ -29,6 +29,10 @@ import { AgentWorkspace } from "../components/agent/AgentWorkspace";
 import { markAgentNewSessionPending } from "../components/agent/session-persistence";
 import { agentComposerClearance } from "../components/agent/composer/layout";
 import { AGENT_NEW_SESSION_EVENT } from "../lib/agent-events";
+import {
+  resetCurrentDataPartitionForTests,
+  setCurrentDataPartitionName,
+} from "../lib/data-partition";
 
 const session: AgentSessionDto = {
   id: "session-1",
@@ -51,6 +55,7 @@ const newSession: AgentSessionDto = {
 
 describe("AgentWorkspace runtime wiring", () => {
   beforeEach(() => {
+    resetCurrentDataPartitionForTests();
     mocks.runtimeListener = undefined;
     mocks.invoke.mockReset();
     mocks.invoke.mockImplementation((command: string) => {
@@ -497,7 +502,7 @@ describe("AgentWorkspace runtime wiring", () => {
 
     await user.click(screen.getByRole("button", { name: "Sandboxed" }));
     await user.click(screen.getByRole("menuitemradio", { name: /Unrestricted/ }));
-    expect(screen.getByRole("dialog", { name: "Turn on Unrestricted?" })).toBeVisible();
+    expect(screen.getByRole("dialog", { name: "Turn on unrestricted?" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     const composer = screen.getByRole("textbox", { name: "Message June" });
@@ -514,6 +519,7 @@ describe("AgentWorkspace runtime wiring", () => {
   });
 
   it("uses the priced June Auto model id for a fresh workspace", async () => {
+    setCurrentDataPartitionName("private");
     const user = userEvent.setup();
     render(<AgentWorkspace />);
 
@@ -527,6 +533,7 @@ describe("AgentWorkspace runtime wiring", () => {
         request: expect.objectContaining({
           model: "open-software/auto",
           title: "Fresh request",
+          profile: "private",
         }),
       }),
     );

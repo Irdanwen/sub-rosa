@@ -503,6 +503,7 @@ async fn persist_and_emit_event(
     let created_at = now();
     let assistant_id = format!("assistant:{}", frame.run_id);
     let reasoning_id = format!("reasoning:{}", frame.run_id);
+    let mut persistence_external_id = event_id.clone();
     let mut data = params.clone();
     let payload = match method {
         "message.delta" => {
@@ -528,13 +529,19 @@ async fn persist_and_emit_event(
         "reasoning.delta" => {
             data["itemId"] = json!(reasoning_id);
             data["createdAt"] = json!(created_at);
-            Some(AgentItemPayload::Reasoning(TextPayload {
-                text: params
-                    .get("delta")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .into(),
-            }))
+            repository
+                .append_reasoning_delta(
+                    &frame.session_id,
+                    &frame.run_id,
+                    frame.sequence,
+                    params
+                        .get("delta")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                    &reasoning_id,
+                )
+                .await?;
+            None
         }
         "steering.consumed" => {
             let message_id = params
@@ -589,12 +596,14 @@ async fn persist_and_emit_event(
                 .get("kind")
                 .and_then(Value::as_str)
                 .unwrap_or("approval");
+            let interruption_id = interruption_stable_id(&params, &event_id);
+            persistence_external_id = format!("interruption:{interruption_id}");
             let interruption = match kind {
                 "clarification" => {
-                    json!({ "id": params.get("id").cloned().unwrap_or_else(|| json!(event_id)), "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "clarification", "question": params.get("question").cloned().unwrap_or_else(|| json!("What would you like June to do?")), "choices": params.get("choices").cloned().unwrap_or_else(|| json!([])) })
+                    json!({ "id": interruption_id, "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "clarification", "question": params.get("question").cloned().unwrap_or_else(|| json!("What would you like June to do?")), "choices": params.get("choices").cloned().unwrap_or_else(|| json!([])) })
                 }
                 "secret" => {
-                    json!({ "id": params.get("id").cloned().unwrap_or_else(|| json!(event_id)), "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "secret", "reason": params.get("reason").cloned().unwrap_or_else(|| json!("June needs a secret before it can continue.")) })
+                    json!({ "id": interruption_id, "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "secret", "reason": params.get("reason").cloned().unwrap_or_else(|| json!("June needs a secret before it can continue.")) })
                 }
                 _ => {
                     let tool_name = params
@@ -602,10 +611,10 @@ async fn persist_and_emit_event(
                         .and_then(Value::as_str)
                         .unwrap_or("unknown_tool");
                     let command = approval_command(tool_name, params.get("arguments"));
-                    json!({ "id": params.get("id").cloned().unwrap_or_else(|| json!(event_id)), "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "approval", "toolName": tool_name, "title": "Approval required", "description": format!("June wants to run {tool_name}. Review the requested operation before approving."), "command": command, "allowAlways": false })
+                    json!({ "id": interruption_id, "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "approval", "toolName": tool_name, "title": "Approval required", "description": format!("June wants to run {tool_name}. Review the requested operation before approving."), "command": command, "allowAlways": false })
                 }
             };
-            data = json!({ "itemId": format!("interruption:{event_id}"), "interruption": interruption });
+            data = json!({ "itemId": persistence_external_id, "interruption": interruption });
             Some(AgentItemPayload::Interruption(data["interruption"].clone()))
         }
         "usage.updated" => {
@@ -705,7 +714,7 @@ async fn persist_and_emit_event(
                 Some(&frame.run_id),
                 frame.sequence,
                 &payload,
-                Some(&event_id),
+                Some(&persistence_external_id),
             )
             .await?;
     }
@@ -810,6 +819,14 @@ fn approval_command(tool_name: &str, arguments: Option<&Value>) -> String {
         None => "{}".into(),
     };
     sanitize_log(&format!("{tool_name} {details}"))
+}
+
+fn interruption_stable_id(params: &Value, event_id: &str) -> String {
+    params
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or(event_id)
+        .to_string()
 }
 
 fn sanitize_log(value: &str) -> String {
@@ -946,6 +963,19 @@ mod tests {
         assert!(command.contains("/workspace/report.md"));
         assert!(command.contains("safe content"));
         assert!(command.contains("[redacted]"));
+    }
+
+    #[test]
+    fn interruption_persistence_uses_the_stable_sdk_id_across_transport_replays() {
+        let params = json!({ "id": "sdk-interruption-1" });
+        assert_eq!(
+            interruption_stable_id(&params, "transport-event-a"),
+            interruption_stable_id(&params, "transport-event-b")
+        );
+        assert_eq!(
+            interruption_stable_id(&json!({}), "transport-event-c"),
+            "transport-event-c"
+        );
     }
 
     #[cfg(unix)]

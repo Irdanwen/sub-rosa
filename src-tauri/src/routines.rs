@@ -645,7 +645,15 @@ pub async fn start_claim(
             prompt: &claim.prompt,
             enabled_toolsets: &claim.enabled_toolsets,
         };
-        host.request("run.start", &session_id, &run.id, unattended_run_params(app, &repository, &request).await?).await?;
+        let params = unattended_run_params(app, &repository, &request).await?;
+        repository
+            .set_run_config(
+                &run.id,
+                &crate::agent_runtime::api::resumable_run_config(&params),
+            )
+            .await
+            .map_err(app_error)?;
+        host.request("run.start", &session_id, &run.id, params).await?;
         Ok::<_, AppError>(run.id)
     }.await;
     if let Err(error) = started {
@@ -1057,6 +1065,53 @@ async fn unattended_run_params(
     Ok(
         json!({ "model": request.model, "reasoningEffort": "medium", "instructions": "You are June executing an unattended routine. Complete the requested work without asking questions. Never claim a tool succeeded unless its result confirms success. If a tool needs approval, pause and wait for the user instead of choosing for them.", "workspace": request.workspace, "safetyMode": request.safety_mode.as_db(), "input": request.prompt, "history": [], "tools": tools, "skills": [], "contextWindow": 128000, "maxOutputTokens": 8192 }),
     )
+}
+
+/// Reconstructs the unattended contract only for prerelease interrupted runs
+/// that predate persisted run configuration. New runs always resume from their
+/// exact immutable `run_config_json` snapshot.
+pub async fn reconstruct_unattended_resume_params(
+    app: &AppHandle,
+    repository: &AgentRepository,
+    run_id: &str,
+    session_id: &str,
+    model: &str,
+    safety_mode: AgentSafetyMode,
+    workspace: &str,
+) -> Result<Option<Value>, AppError> {
+    let row = query(
+        "SELECT routines.id, routines.prompt, routines.metadata_json,
+                routines.tool_catalog_version
+         FROM routine_runs
+         JOIN routines ON routines.id = routine_runs.routine_id
+         WHERE routine_runs.agent_session_id = ? AND routine_runs.agent_run_id = ?",
+    )
+    .bind(session_id)
+    .bind(run_id)
+    .fetch_optional(&repository.pool)
+    .await
+    .map_err(app_error)?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let metadata = serde_json::from_str::<Value>(&row.get::<String, _>("metadata_json"))
+        .unwrap_or_else(|_| json!({}));
+    let enabled_toolsets =
+        enabled_toolsets_from_metadata(&metadata, row.get::<i64, _>("tool_catalog_version") == 0);
+    let routine_id: String = row.get("id");
+    let prompt: String = row.get("prompt");
+    let request = UnattendedRunRequest {
+        run_id,
+        routine_id: &routine_id,
+        model,
+        safety_mode,
+        workspace,
+        prompt: &prompt,
+        enabled_toolsets: &enabled_toolsets,
+    };
+    Ok(Some(crate::agent_runtime::api::resumable_run_config(
+        &unattended_run_params(app, repository, &request).await?,
+    )))
 }
 async fn unattended_tools(
     app: &AppHandle,

@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentRunDto, AgentSessionDto } from "../lib/agent-runtime-contract";
 import {
+  resetCurrentDataPartitionForTests,
+  setCurrentDataPartitionName,
+} from "../lib/data-partition";
+import {
   forgetNoteChatSession,
   noteChatSessionIdFor,
   rememberNoteChatSession,
@@ -65,6 +69,7 @@ function run(overrides: Partial<AgentRunDto> = {}): AgentRunDto {
 describe("note chat sessions", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    resetCurrentDataPartitionForTests();
     mocks.createSession.mockReset();
     mocks.getSession.mockReset();
     mocks.getLatestRun.mockReset();
@@ -91,6 +96,7 @@ describe("note chat sessions", () => {
   });
 
   it("creates a sandboxed session and starts a run with the note reference", async () => {
+    setCurrentDataPartitionName("private");
     mocks.createSession.mockResolvedValue(session());
     mocks.startRun.mockResolvedValue(run());
     const { result } = renderHook(() => useNoteChat({ id: "note-1", title: "Planning" }));
@@ -107,6 +113,7 @@ describe("note chat sessions", () => {
       title: "Planning",
       model: "auto",
       safetyMode: "sandboxed",
+      profile: "private",
     });
     expect(mocks.startRun).toHaveBeenCalledWith(
       expect.objectContaining({

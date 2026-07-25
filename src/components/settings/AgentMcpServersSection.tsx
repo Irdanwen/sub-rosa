@@ -546,12 +546,12 @@ export function AgentMcpServersSection() {
               </div>
               <div className="settings-row">
                 <span className="settings-row-title">
-                  Allow in Sandboxed sessions
+                  Allow in sandboxed sessions
                   {draft.transport === "stdio" ? " on macOS" : ""}
                 </span>
                 <Switch
                   checked={draft.allowSandboxed}
-                  aria-label="Allow in Sandboxed sessions"
+                  aria-label="Allow in sandboxed sessions"
                   onCheckedChange={(value) =>
                     setDraft((current) => ({ ...current, allowSandboxed: value }))
                   }

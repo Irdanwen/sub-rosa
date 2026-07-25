@@ -164,6 +164,10 @@ const AGENT_RUN_REASONING_EFFORT_COLUMN: &[ColumnDefinition] = &[ColumnDefinitio
     name: "reasoning_effort",
     definition: "TEXT",
 }];
+const AGENT_RUN_CONFIG_COLUMN: &[ColumnDefinition] = &[ColumnDefinition {
+    name: "run_config_json",
+    definition: "TEXT",
+}];
 const FOLDER_MEMORY_COLUMNS: &[ColumnDefinition] = &[
     ColumnDefinition {
         name: "instructions",
@@ -1144,6 +1148,18 @@ const MIGRATIONS: &[Migration] = &[
         steps: &[MigrationStep::EnsureColumns {
             table: "agent_runs",
             columns: AGENT_RUN_REASONING_EFFORT_COLUMN,
+        }],
+    },
+    Migration {
+        version: 40,
+        name: "agent_run_config",
+        requirements: &[SchemaRequirement::Column {
+            table: "agent_runs",
+            column: "run_config_json",
+        }],
+        steps: &[MigrationStep::EnsureColumns {
+            table: "agent_runs",
+            columns: AGENT_RUN_CONFIG_COLUMN,
         }],
     },
 ];
@@ -2243,6 +2259,51 @@ mod tests {
         .expect("preserved run")
         .get("mcp_policy_snapshotted");
         assert_eq!(snapshotted, 1);
+        assert_latest_stamp(&pool).await;
+    }
+
+    #[tokio::test]
+    async fn interrupted_prerelease_runs_gain_nullable_durable_run_configuration() {
+        let pool = test_pool().await;
+        run_migration_catalog(&pool, &MIGRATIONS[..39])
+            .await
+            .expect("migration 39 schema");
+        query(
+            "INSERT INTO agent_sessions (
+                id, title, status, model, safety_mode, source, created_at, updated_at
+             ) VALUES (
+                'session-config', 'Waiting session', 'waiting_for_user', 'auto',
+                'sandboxed', 'routine', 'now', 'now'
+             )",
+        )
+        .execute(&pool)
+        .await
+        .expect("prerelease session");
+        query(
+            "INSERT INTO agent_runs (
+                id, session_id, status, model, started_at, updated_at
+             ) VALUES (
+                'run-config', 'session-config', 'waiting_for_user', 'auto',
+                'now', 'now'
+             )",
+        )
+        .execute(&pool)
+        .await
+        .expect("prerelease run");
+
+        run_migrations(&pool)
+            .await
+            .expect("add durable run configuration");
+        run_migrations(&pool)
+            .await
+            .expect("idempotent durable run configuration migration");
+
+        let row = query("SELECT status, run_config_json FROM agent_runs WHERE id = 'run-config'")
+            .fetch_one(&pool)
+            .await
+            .expect("preserved run");
+        assert_eq!(row.get::<String, _>("status"), "waiting_for_user");
+        assert_eq!(row.get::<Option<String>, _>("run_config_json"), None);
         assert_latest_stamp(&pool).await;
     }
 

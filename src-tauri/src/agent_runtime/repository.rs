@@ -44,6 +44,50 @@ impl AgentRepository {
         self.get_session(&id).await
     }
 
+    pub async fn create_session_in_profile(
+        &self,
+        title: &str,
+        model: &str,
+        safety_mode: AgentSafetyMode,
+        workspace_path: Option<&str>,
+        profile: &str,
+    ) -> Result<AgentSessionDto, sqlx::Error> {
+        let id = Uuid::new_v4().to_string();
+        let now = now();
+        let profile = profile.trim();
+        let profile = if profile.is_empty() {
+            "default"
+        } else {
+            profile
+        };
+        let mut transaction = self.pool.begin().await?;
+        query(
+            "INSERT INTO agent_sessions
+             (id, title, status, model, safety_mode, workspace_path, source, created_at, updated_at)
+             VALUES (?, ?, 'idle', ?, ?, ?, 'user', ?, ?)",
+        )
+        .bind(&id)
+        .bind(title.trim())
+        .bind(model)
+        .bind(safety_mode.as_db())
+        .bind(workspace_path)
+        .bind(&now)
+        .bind(&now)
+        .execute(&mut *transaction)
+        .await?;
+        query(
+            "INSERT INTO session_profiles (session_id, profile, assigned_at)
+             VALUES (?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(profile)
+        .bind(&now)
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        self.get_session(&id).await
+    }
+
     pub async fn get_session(&self, id: &str) -> Result<AgentSessionDto, sqlx::Error> {
         query(
             "SELECT id, title, status, model, safety_mode, workspace_path, source,
@@ -180,6 +224,150 @@ impl AgentRepository {
             .await?;
         serde_json::from_str(&row.get::<String, _>("enabled_skills_json"))
             .map_err(|error| sqlx::Error::Decode(Box::new(error)))
+    }
+
+    pub async fn set_run_config(
+        &self,
+        run_id: &str,
+        config: &serde_json::Value,
+    ) -> Result<(), sqlx::Error> {
+        query(
+            "UPDATE agent_runs SET run_config_json = ?, updated_at = ?
+             WHERE id = ? AND run_config_json IS NULL",
+        )
+        .bind(config.to_string())
+        .bind(now())
+        .bind(run_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn run_config(&self, run_id: &str) -> Result<Option<serde_json::Value>, sqlx::Error> {
+        let value = query("SELECT run_config_json FROM agent_runs WHERE id = ?")
+            .bind(run_id)
+            .fetch_one(&self.pool)
+            .await?
+            .get::<Option<String>, _>("run_config_json");
+        value
+            .map(|value| {
+                serde_json::from_str(&value).map_err(|error| sqlx::Error::Decode(Box::new(error)))
+            })
+            .transpose()
+    }
+
+    /// Coalesces streamed reasoning into one durable row while preserving the
+    /// runtime's monotonic sequence guard.
+    pub async fn append_reasoning_delta(
+        &self,
+        session_id: &str,
+        run_id: &str,
+        sequence: i64,
+        delta: &str,
+        external_id: &str,
+    ) -> Result<Option<AgentItemDto>, sqlx::Error> {
+        let now = now();
+        let mut transaction = self.pool.begin().await?;
+        let updated = query(
+            "UPDATE agent_runs SET last_sequence = ?, updated_at = ?
+             WHERE id = ? AND last_sequence < ?",
+        )
+        .bind(sequence)
+        .bind(&now)
+        .bind(run_id)
+        .bind(sequence)
+        .execute(&mut *transaction)
+        .await?
+        .rows_affected();
+        if updated == 0 {
+            transaction.rollback().await?;
+            return Ok(None);
+        }
+
+        if let Some(row) = query(
+            "SELECT id, sequence, payload_json, created_at
+             FROM agent_items WHERE external_id = ?",
+        )
+        .bind(external_id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        {
+            let id: String = row.get("id");
+            let display_sequence: i64 = row.get("sequence");
+            let created_at: String = row.get("created_at");
+            let mut payload: super::domain::TextPayload =
+                serde_json::from_str(&row.get::<String, _>("payload_json"))
+                    .map_err(|error| sqlx::Error::Decode(Box::new(error)))?;
+            payload.text.push_str(delta);
+            query("UPDATE agent_items SET payload_json = ? WHERE id = ?")
+                .bind(
+                    serde_json::to_string(&payload)
+                        .map_err(|error| sqlx::Error::Encode(Box::new(error)))?,
+                )
+                .bind(&id)
+                .execute(&mut *transaction)
+                .await?;
+            query("UPDATE agent_sessions SET updated_at = ? WHERE id = ?")
+                .bind(&now)
+                .bind(session_id)
+                .execute(&mut *transaction)
+                .await?;
+            transaction.commit().await?;
+            return Ok(Some(AgentItemDto {
+                id,
+                session_id: session_id.to_string(),
+                run_id: Some(run_id.to_string()),
+                sequence: display_sequence,
+                payload: AgentItemPayload::Reasoning(payload),
+                external_id: Some(external_id.to_string()),
+                created_at,
+            }));
+        }
+
+        let id = Uuid::new_v4().to_string();
+        let display_sequence: i64 = query(
+            "SELECT COALESCE(MAX(sequence), -1) + 1 AS next_sequence
+             FROM agent_items WHERE session_id = ?",
+        )
+        .bind(session_id)
+        .fetch_one(&mut *transaction)
+        .await?
+        .get("next_sequence");
+        let payload = super::domain::TextPayload {
+            text: delta.to_string(),
+        };
+        query(
+            "INSERT INTO agent_items
+             (id, session_id, run_id, sequence, kind, payload_json, external_id, created_at)
+             VALUES (?, ?, ?, ?, 'reasoning', ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(session_id)
+        .bind(run_id)
+        .bind(display_sequence)
+        .bind(
+            serde_json::to_string(&payload)
+                .map_err(|error| sqlx::Error::Encode(Box::new(error)))?,
+        )
+        .bind(external_id)
+        .bind(&now)
+        .execute(&mut *transaction)
+        .await?;
+        query("UPDATE agent_sessions SET updated_at = ? WHERE id = ?")
+            .bind(&now)
+            .bind(session_id)
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
+        Ok(Some(AgentItemDto {
+            id,
+            session_id: session_id.to_string(),
+            run_id: Some(run_id.to_string()),
+            sequence: display_sequence,
+            payload: AgentItemPayload::Reasoning(payload),
+            external_id: Some(external_id.to_string()),
+            created_at: now,
+        }))
     }
 
     /// Persists one runtime event. Duplicate or out-of-order sequence numbers

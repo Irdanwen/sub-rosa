@@ -11,6 +11,7 @@ import type { AgentItemDto, AgentRuntimeEvent } from "../../lib/agent-runtime-co
 import { dispatchAgentSessionStatus } from "../../lib/agent-events";
 import { messageFromError } from "../../lib/errors";
 import { agentRuntimeBindings } from "../../lib/tauri";
+import { getCurrentDataPartitionName } from "../../lib/data-partition";
 import { noteReferenceToken, type NoteReferenceInput } from "../agent/composer/noteReference";
 import {
   forgetNoteChatSession,
@@ -184,6 +185,7 @@ export function useNoteChat(note: NoteReferenceInput | null): NoteChat {
             title: titleFromNote(note),
             model,
             safetyMode: "sandboxed",
+            profile: getCurrentDataPartitionName(),
           });
           rememberNoteChatSession(note.id, session.id);
           if (current()) {

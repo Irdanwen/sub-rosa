@@ -133,3 +133,37 @@ test("compacts an oversized recent group instead of exempting it", async () => {
   assert.deepEqual(result.removedItemIds, ["huge-tool-result"]);
   assert.ok(result.estimatedTokens < 14_000);
 });
+
+test("deterministic summaries retain bounded tool calls and results", async () => {
+  const history: RuntimeHistoryItem[] = [
+    {
+      id: "tool-call-old",
+      kind: "tool_call",
+      name: "search_files",
+      callId: "call-old",
+      groupId: "turn-old",
+      payload: { query: "quarterly plan" },
+    },
+    {
+      id: "tool-result-old",
+      kind: "tool_result",
+      name: "search_files",
+      callId: "call-old",
+      groupId: "turn-old",
+      payload: { matches: ["roadmap.md: quarterly plan"] },
+    },
+    ...Array.from({ length: 6 }, (_, index) => ({
+      id: `recent-${index}`,
+      kind: "message" as const,
+      role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+      text: `Recent message ${index}`,
+    })),
+  ];
+
+  const result = await compactHistory({ history, contextWindow: 128_000, force: true });
+
+  assert.equal(result.compacted, true);
+  assert.ok(result.summary?.text?.includes("search_files call-old"));
+  assert.ok(result.summary?.text?.includes("quarterly plan"));
+  assert.ok(result.summary?.text?.includes("roadmap.md"));
+});

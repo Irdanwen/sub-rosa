@@ -453,8 +453,8 @@ describe("RoutinesView templates and creation", () => {
     const prompt = onCreateRoutine.mock.calls[0][0] as string;
     expect(prompt).toContain("watch the weather and message me");
     expect(prompt).toContain("Create a new June routine");
-    expect(prompt).toContain("Sandboxed default");
-    expect(prompt).not.toContain("Unrestricted mode");
+    expect(prompt).toContain("sandboxed default");
+    expect(prompt).not.toContain("unrestricted mode");
   });
 
   it("expands the describe composer for overflowing text", async () => {
@@ -521,7 +521,7 @@ describe("RoutinesView templates and creation", () => {
     await userEvent.click(within(composer).getByRole("button", { name: "Ask June to set it up" }));
 
     const prompt = onCreateRoutine.mock.calls[0][0] as string;
-    expect(prompt).toContain("Unrestricted mode");
+    expect(prompt).toContain("unrestricted mode");
   });
 
   it("dismisses the describe mode menu with Escape", async () => {

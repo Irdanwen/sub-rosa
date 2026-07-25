@@ -114,9 +114,25 @@ function groupHistory(history: RuntimeHistoryItem[]): RuntimeHistoryItem[][] {
 
 function deterministicSummary(items: RuntimeHistoryItem[]): string {
   const lines = items
-    .filter((item) => item.text)
-    .map((item) => `${item.role ?? item.kind}: ${item.text}`)
+    .map((item) => summaryLine(item))
+    .filter((line): line is string => Boolean(line))
     .join("\n");
   const bounded = lines.slice(0, 12_000);
   return `Earlier conversation context:\n${bounded}${lines.length > bounded.length ? "\n[older context truncated]" : ""}`;
+}
+
+function summaryLine(item: RuntimeHistoryItem): string | undefined {
+  if (item.text) return `${item.role ?? item.kind}: ${item.text}`;
+  if (item.kind !== "tool_call" && item.kind !== "tool_result") return undefined;
+  const identity = [item.name, item.callId].filter(Boolean).join(" ");
+  const payload = boundedJson(item.payload, 4_000);
+  return `${item.kind}${identity ? ` ${identity}` : ""}: ${payload}`;
+}
+
+function boundedJson(value: RuntimeHistoryItem["payload"], maxChars: number): string {
+  if (value === undefined) return "[no payload]";
+  const serialized = JSON.stringify(value);
+  return serialized.length > maxChars
+    ? `${serialized.slice(0, maxChars)}[payload truncated]`
+    : serialized;
 }

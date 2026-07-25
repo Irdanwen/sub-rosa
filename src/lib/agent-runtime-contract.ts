@@ -298,6 +298,7 @@ export type AgentRuntimeBindings = {
     title?: string;
     model: string;
     safetyMode: AgentSafetyMode;
+    profile?: string;
   }): Promise<AgentSessionDto>;
   renameSession(sessionId: string, title: string): Promise<AgentSessionDto>;
   branchSession?(sessionId: string, itemId: string): Promise<AgentSessionDto>;
