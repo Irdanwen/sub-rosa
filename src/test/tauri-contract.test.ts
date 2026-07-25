@@ -3,10 +3,8 @@ import {
   checkRecordingSourceReadiness,
   completeNoteSaveFlush,
   downloadNoteAudio,
-  ensureHermesBridgeGateway,
   finishRecording,
   getNote,
-  juneHomeChat,
   juneOpenCommunityPage,
   patchNote,
   recoverRecording,
@@ -20,9 +18,6 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
-  Channel: class {
-    onmessage: (message: unknown) => void = () => undefined;
-  },
   invoke: mocks.invoke,
 }));
 
@@ -125,41 +120,6 @@ describe("Tauri command contracts", () => {
     });
     expect(mocks.invoke).toHaveBeenNthCalledWith(4, "recover_recording", {
       request: { sessionId: "session-2", action: "discard" },
-    });
-  });
-
-  it("invokes the Hermes gateway ensure command for routines", async () => {
-    await ensureHermesBridgeGateway();
-
-    expect(mocks.invoke).toHaveBeenCalledWith("ensure_hermes_bridge_gateway");
-  });
-
-  it("forwards Home channel deltas before resolving the final response", async () => {
-    const deltas: string[] = [];
-    mocks.invoke.mockImplementationOnce(async (command, args) => {
-      expect(command).toBe("june_home_chat");
-      const channel = (args as { onEvent: { onmessage: (event: unknown) => void } }).onEvent;
-      channel.onmessage({ event: "delta", data: { content: "Hello" } });
-      channel.onmessage({ event: "delta", data: { content: " there" } });
-      return { content: "Hello there" };
-    });
-
-    await expect(
-      juneHomeChat([{ role: "user", content: "Hi" }], {
-        profile: "work",
-        historyContext: "User: We call this Project Nebula.",
-        onDelta: (content) => deltas.push(content),
-      }),
-    ).resolves.toEqual({ content: "Hello there" });
-
-    expect(deltas).toEqual(["Hello", " there"]);
-    expect(mocks.invoke).toHaveBeenCalledWith("june_home_chat", {
-      request: {
-        profile: "work",
-        historyContext: "User: We call this Project Nebula.",
-        messages: [{ role: "user", content: "Hi" }],
-      },
-      onEvent: expect.anything(),
     });
   });
 

@@ -1,5 +1,5 @@
 import type { AgentChatPart, AgentChatTurn } from "../../lib/agent-chat-runtime";
-import { getActiveHermesProfileName } from "../../lib/active-hermes-profile";
+import { getCurrentDataPartitionName } from "../../lib/data-partition";
 import {
   buildJuneHomeConversationContext,
   dispatchJuneHomeThreadChanged,
@@ -425,7 +425,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
       return "Home demo off; your previous Home thread is restored.";
     }
 
-    const profile = getActiveHermesProfileName();
+    const profile = getCurrentDataPartitionName();
     if (homeDemoSnapshot && homeDemoSnapshot.profile !== profile) {
       return `Home demo is active for ${homeDemoSnapshot.profile}. Run __homeDemo(false) first.`;
     }

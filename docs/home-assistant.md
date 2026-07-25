@@ -11,14 +11,14 @@ contract or an ADR.
 
 ## Product contract
 
-- Each Hermes profile has at most one stored Home session id on this device.
+- Each data partition has at most one stored Home session id on this device.
 - Home uses Auto at the Economy preference with Low reasoning so ordinary
   conversation favors the fastest eligible private model. Home does not expose
   the model picker or `/model`; a one-time migration moves older Home threads
   onto this route.
 - Home never appears as a duplicate item in the Sessions list.
-- Home is currently macOS-only because the Windows build does not bundle the
-  Hermes runtime needed to create and resume its backing session.
+- Home navigation is currently enabled on macOS. Its backing session and task
+  handoffs use the same June-owned runtime and persistence as focused sessions.
 - A concrete task may become a focused agent session without navigating away
   from Home. The focused session uses the normal new-session model, reasoning,
   and Runtime mode defaults, starts in the background, and appears in the
@@ -37,10 +37,9 @@ contract or an ADR.
 
 Ordinary text-only Home turns use the lightweight native `june_home_chat` path.
 It sends a compact relationship prompt and one structured `start_task` tool,
-which avoids loading the full Hermes agent prompt and tool catalog for a short
-conversation. Auto Economy and Low (`minimal`) are internal Home defaults, not
-visible composer choices or client-provided overrides. They do not read or
-mutate the normal Agent model selection.
+which avoids loading the full agent prompt and tool catalog for a short
+conversation. Its speed-first route is internal and does not read or mutate
+the normal focused-session model selection.
 
 The lightweight path has no live external sources. Clear requests for news,
 weather, prices, scores, schedules, current events, or what is happening today
@@ -56,19 +55,18 @@ verified. If sources cannot be retrieved, it must say so rather than answer
 from model memory.
 
 When memory is enabled, the native command also loads a bounded snapshot of the
-Send-time profile's most recent global on-device memories: at most 12 items,
-400 characters each, and 4,000 characters total. Capturing that profile with
+Send-time data partition's most recent global on-device memories: at most 12 items,
+400 characters each, and 4,000 characters total. Capturing that partition with
 the message prevents a queued request from crossing memory boundaries if the
-user changes profiles while an earlier reply is streaming. The model receives
+user changes data partitions while an earlier reply is streaming. The model receives
 memories as background facts rather than instructions and is told to use only
 relevant ones. Project-scoped memories are excluded because Home has no active
 project boundary.
 
-Turns that need Hermes — attachments, slash commands, and other agent features
-— are prefixed at runtime with a hidden `[June home context]` block. It tells
-June that this is the persistent personal-assistant thread and that focused
-work should be handed to the `june_home` MCP server rather than performed
-inline. The block is not rendered in the transcript.
+Turns with attachments, slash commands, or other agent-only features run in
+Home's June-owned backing session. Ordinary text-only conversation continues
+to use the lightweight path, while concrete work returned by that path starts
+a separate focused session through the standard runtime.
 
 Both paths emit the same structured task request and render the same inline
 handoff card. A process-wide queue keyed by the stored Home session id
@@ -91,7 +89,7 @@ characters and 12,000 characters of older excerpts.
 
 This separation makes Home feel like one continual thread without pretending a
 model has an infinite context window. The recent-message window and older
-excerpts provide conversational continuity; the profile-scoped memory snapshot
+excerpts provide conversational continuity; the partition-scoped memory snapshot
 above remains the durable place for preferences the user explicitly asks June
 to remember.
 
@@ -103,21 +101,21 @@ input. Transport diagnostics stay in error details and logs; the primary Home
 error is a short retryable message.
 
 The merged transcript is currently a UI contract rather than one shared model
-context for every capability. A Hermes turn that needs an attachment or slash
-command does not yet receive the lightweight path's full local history. Do not
+context for every capability. A backing-session turn that needs an attachment
+or slash command does not yet receive the lightweight path's full local history. Do not
 describe the entire visible Home transcript as shared semantic context until
 this boundary has a retrieval or summary contract.
 
-## `june_home` MCP server
+## Structured task handoff
 
 | Tool | Input | Result | Meaning |
 | --- | --- | --- | --- |
 | `start_task` | `title` (string), `prompt` (string), optional `summary` (string) | The normalized task request | Ask the June desktop client to create and start a focused agent session. |
 
-`start_task` is a signal, not a session store. The MCP server validates and
-echoes the request. The Home client observes the completed tool call, creates
-the Hermes session through the existing gateway, starts its first agent run,
-and records the returned stored session id on the inline handoff card.
+`start_task` is a signal, not a session store. The lightweight Home response
+returns the validated request. The Home client creates a June-owned focused
+session, starts its first agent run, and records the returned session id on the
+inline handoff card.
 
 The model must call `start_task` only while the hidden Home context is present,
 or while the compact Home system prompt is active, only for requests that
@@ -130,8 +128,8 @@ must not promise recall until the focused session has actually saved it.
 
 ## Amendments
 
-- The initial experiment routed every Home message through Hermes and the
-  `june_home` MCP server. Latency testing showed that the full agent prefill was
+- The initial experiment routed every Home message through the former agent
+  runtime and its task tool. Latency testing showed that the full agent prefill was
   a poor default for ordinary conversation, so text-only turns now use the
   equivalent lightweight structured-tool path described above.
 - The initial handoff draft inherited the model shown in Home. Focused work now

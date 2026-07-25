@@ -6,7 +6,7 @@ import { ShareLinkCopyAction } from "../components/share/ShareLinkCopyAction";
 import { NotesList } from "../components/notes-list/NotesList";
 import { BreadcrumbBar } from "../components/ui/BreadcrumbBar";
 import { IconProjects } from "central-icons/IconProjects";
-import { retryProcessing } from "../lib/tauri";
+import { agentRuntimeBindings, retryProcessing } from "../lib/tauri";
 import { selectSessionProjectContext } from "../lib/agent-project-context";
 import { messageFromError } from "../lib/errors";
 import {
@@ -30,7 +30,7 @@ export function renderAppWorkspace(dependencies: RenderAppWorkspaceDependencies)
     accessibilityStatus,
     account,
     accountLoading,
-    activeHermesProfileName,
+    currentDataPartitionName,
     activeAgentSessionFolder,
     activeAgentSessionId,
     activeAgentSessionSeed,
@@ -186,9 +186,6 @@ export function renderAppWorkspace(dependencies: RenderAppWorkspaceDependencies)
     <RoutinesViewRoute
       creditActionsDisabledReason={fundingRequired ? ROUTINE_FUNDING_DISABLED_REASON : undefined}
       onCreateRoutine={(prompt) => {
-        // The agent workspace is unmounted while Routines is shown,
-        // so the pending marker alone is consumed on mount — no
-        // window event needed (it could double-submit the session).
         markAgentNewSessionPending(prompt);
         setActiveAgentSession(undefined);
         setActiveView("agent");
@@ -209,19 +206,24 @@ export function renderAppWorkspace(dependencies: RenderAppWorkspaceDependencies)
     />
   ) : activeView === "home" ? (
     <AgentWorkspaceRoute
-      key={`home:${activeHermesProfileName}`}
+      key={`home:${currentDataPartitionName}`}
       homeMode
       homeUserDisplayName={account.user?.displayName}
       initialSessionId={homeStoredSessionId}
       onHomeSessionCreated={rememberHomeSession}
       onOpenHomeTaskSession={(sessionId, title) => {
-        const session = agentSessions.find((item) => item.id === sessionId) ?? {
-          id: sessionId,
-          title,
-        };
-        setAgentOrigin(undefined);
-        setActiveAgentSession(session);
-        setActiveView("agent");
+        void (async () => {
+          try {
+            const session =
+              agentSessions.find((item) => item.id === sessionId) ??
+              (await agentRuntimeBindings.getSession(sessionId));
+            setAgentOrigin(undefined);
+            setActiveAgentSession(session);
+            setActiveView("agent");
+          } catch (cause) {
+            setError(messageFromError(cause) || `Could not open ${title}.`);
+          }
+        })();
       }}
       creditActionsDisabledReason={fundingRequired ? COMPOSER_FUNDING_DISABLED_REASON : undefined}
       renderFundingNotice={
