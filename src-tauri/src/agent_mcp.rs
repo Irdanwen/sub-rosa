@@ -106,8 +106,8 @@ pub enum AgentMcpError {
     Storage,
     #[error("MCP transport operation failed")]
     Transport,
-    #[error("MCP server requested user input that June could not safely resume")]
-    ElicitationUnsupported,
+    #[error("MCP server requested user input: {0}")]
+    ElicitationRequired(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -713,6 +713,24 @@ impl<S: McpSecretStore> AgentMcpSubsystem<S> {
         sandboxed: bool,
         workspace: Option<&std::path::Path>,
     ) -> Result<Value, AgentMcpError> {
+        self.invoke_in_workspace_with_elicitation(
+            runtime_name,
+            arguments,
+            sandboxed,
+            workspace,
+            None,
+        )
+        .await
+    }
+
+    pub async fn invoke_in_workspace_with_elicitation(
+        &self,
+        runtime_name: &str,
+        arguments: Value,
+        sandboxed: bool,
+        workspace: Option<&std::path::Path>,
+        elicitation_answer: Option<&str>,
+    ) -> Result<Value, AgentMcpError> {
         let registered = self
             .registry
             .lock()
@@ -735,6 +753,7 @@ impl<S: McpSecretStore> AgentMcpSubsystem<S> {
             &registered.remote_name,
             arguments,
             sandboxed.then_some(workspace).flatten(),
+            elicitation_answer,
         )
         .await
     }
@@ -883,8 +902,15 @@ async fn discover_server(
     secrets: &McpSecretBundle,
     sandbox_workspace: Option<&std::path::Path>,
 ) -> Result<Vec<McpDiscoveredTool>, AgentMcpError> {
-    let value =
-        session_request(server, secrets, "tools/list", json!({}), sandbox_workspace).await?;
+    let value = session_request(
+        server,
+        secrets,
+        "tools/list",
+        json!({}),
+        sandbox_workspace,
+        None,
+    )
+    .await?;
     let tools = value
         .get("result")
         .and_then(|result| result.get("tools"))
@@ -916,6 +942,7 @@ async fn call_server(
     tool_name: &str,
     arguments: Value,
     sandbox_workspace: Option<&std::path::Path>,
+    elicitation_answer: Option<&str>,
 ) -> Result<Value, AgentMcpError> {
     let value = session_request(
         server,
@@ -923,6 +950,7 @@ async fn call_server(
         "tools/call",
         json!({"name":tool_name,"arguments":arguments}),
         sandbox_workspace,
+        elicitation_answer,
     )
     .await?;
     value.get("result").cloned().ok_or(AgentMcpError::Protocol)
@@ -933,6 +961,7 @@ async fn session_request(
     method: &str,
     params: Value,
     sandbox_workspace: Option<&std::path::Path>,
+    elicitation_answer: Option<&str>,
 ) -> Result<Value, AgentMcpError> {
     let deadline = Duration::from_millis(server.safety.timeout_ms);
     let result = timeout(deadline, async move {
@@ -953,12 +982,25 @@ async fn session_request(
             let result = match slot.transport.as_mut().expect("transport initialized") {
                 PersistentMcpTransport::Stdio(session) => {
                     session
-                        .request(id, method, params.clone(), server.safety.max_output_bytes)
+                        .request(
+                            id,
+                            method,
+                            params.clone(),
+                            server.safety.max_output_bytes,
+                            elicitation_answer,
+                        )
                         .await
                 }
                 PersistentMcpTransport::Http(session) => {
                     session
-                        .request(server, secrets, id, method, params.clone())
+                        .request(
+                            server,
+                            secrets,
+                            id,
+                            method,
+                            params.clone(),
+                            elicitation_answer,
+                        )
                         .await
                 }
             };
@@ -974,9 +1016,9 @@ async fn session_request(
     })
     .await;
     match result {
-        Ok(Err(AgentMcpError::ElicitationUnsupported)) => {
+        Ok(Err(AgentMcpError::ElicitationRequired(message))) => {
             retire_server_sessions(&server.id).await;
-            Err(AgentMcpError::ElicitationUnsupported)
+            Err(AgentMcpError::ElicitationRequired(message))
         }
         Ok(result) => result,
         Err(_) => {
@@ -1099,7 +1141,14 @@ async fn start_stdio_session(
     let stdout = child.stdout.take().ok_or(AgentMcpError::Transport)?;
     let mut stdout = BufReader::new(stdout);
     write_stdio_frame(&mut stdin, 1, "initialize", initialize_params()).await?;
-    read_stdio_response(&mut stdout, server.safety.max_output_bytes, 1).await?;
+    read_stdio_response_with_elicitation(
+        &mut stdout,
+        Some(&mut stdin),
+        server.safety.max_output_bytes,
+        1,
+        None,
+    )
+    .await?;
     write_stdio_notification(&mut stdin, "notifications/initialized", json!({})).await?;
     Ok(StdioMcpSession {
         child,
@@ -1115,12 +1164,20 @@ impl StdioMcpSession {
         method: &str,
         params: Value,
         max_output_bytes: usize,
+        elicitation_answer: Option<&str>,
     ) -> Result<Value, AgentMcpError> {
         if self.child.id().is_none() {
             return Err(AgentMcpError::Transport);
         }
         write_stdio_frame(&mut self.stdin, id, method, params).await?;
-        read_stdio_response(&mut self.stdout, max_output_bytes, id).await
+        read_stdio_response_with_elicitation(
+            &mut self.stdout,
+            Some(&mut self.stdin),
+            max_output_bytes,
+            id,
+            elicitation_answer,
+        )
+        .await
     }
 }
 
@@ -1167,10 +1224,21 @@ async fn write_stdio_notification(
     stdin.flush().await.map_err(|_| AgentMcpError::Transport)
 }
 
+#[cfg(test)]
 async fn read_stdio_response<R: tokio::io::AsyncRead + Unpin>(
     reader: &mut BufReader<R>,
     limit: usize,
     id: u64,
+) -> Result<Value, AgentMcpError> {
+    read_stdio_response_with_elicitation(reader, None, limit, id, None).await
+}
+
+async fn read_stdio_response_with_elicitation<R: tokio::io::AsyncRead + Unpin>(
+    reader: &mut BufReader<R>,
+    mut stdin: Option<&mut tokio::process::ChildStdin>,
+    limit: usize,
+    id: u64,
+    elicitation_answer: Option<&str>,
 ) -> Result<Value, AgentMcpError> {
     let mut consumed = 0_usize;
     for _ in 0..64 {
@@ -1179,10 +1247,17 @@ async fn read_stdio_response<R: tokio::io::AsyncRead + Unpin>(
         let Ok(candidate) = serde_json::from_slice::<Value>(&raw) else {
             return Err(AgentMcpError::Protocol);
         };
-        if candidate.get("method").and_then(Value::as_str) == Some("elicitation/create")
-            && candidate.get("id").is_some()
-        {
-            return Err(AgentMcpError::ElicitationUnsupported);
+        if is_elicitation(&candidate) {
+            let Some(answer) = elicitation_answer else {
+                return Err(AgentMcpError::ElicitationRequired(elicitation_message(
+                    &candidate,
+                )));
+            };
+            let stdin = stdin.as_deref_mut().ok_or_else(|| {
+                AgentMcpError::ElicitationRequired(elicitation_message(&candidate))
+            })?;
+            write_stdio_elicitation_response(stdin, &candidate, answer).await?;
+            continue;
         }
         if candidate.get("id").and_then(Value::as_u64) != Some(id) {
             continue;
@@ -1193,6 +1268,34 @@ async fn read_stdio_response<R: tokio::io::AsyncRead + Unpin>(
         return Ok(candidate);
     }
     Err(AgentMcpError::Protocol)
+}
+
+async fn write_stdio_elicitation_response(
+    stdin: &mut tokio::process::ChildStdin,
+    request: &Value,
+    answer: &str,
+) -> Result<(), AgentMcpError> {
+    let frame = json!({
+        "jsonrpc": "2.0",
+        "id": request.get("id").cloned().ok_or(AgentMcpError::Protocol)?,
+        "result": {
+            "action": "accept",
+            "content": elicitation_content(request, answer)
+        }
+    });
+    stdin
+        .write_all(
+            serde_json::to_string(&frame)
+                .map_err(|_| AgentMcpError::Protocol)?
+                .as_bytes(),
+        )
+        .await
+        .map_err(|_| AgentMcpError::Transport)?;
+    stdin
+        .write_all(b"\n")
+        .await
+        .map_err(|_| AgentMcpError::Transport)?;
+    stdin.flush().await.map_err(|_| AgentMcpError::Transport)
 }
 
 async fn read_bounded_line<R: tokio::io::AsyncRead + Unpin>(
@@ -1231,6 +1334,7 @@ async fn start_http_session(
         1,
         "initialize",
         initialize_params(),
+        None,
     )
     .await?;
     http_notify(
@@ -1253,6 +1357,7 @@ impl HttpMcpSession {
         id: u64,
         method: &str,
         params: Value,
+        elicitation_answer: Option<&str>,
     ) -> Result<Value, AgentMcpError> {
         let (value, session_id) = http_post(
             &self.client,
@@ -1262,6 +1367,7 @@ impl HttpMcpSession {
             id,
             method,
             params,
+            elicitation_answer,
         )
         .await?;
         if session_id.is_some() {
@@ -1365,6 +1471,7 @@ async fn http_post(
     id: u64,
     method: &str,
     params: Value,
+    elicitation_answer: Option<&str>,
 ) -> Result<(Value, Option<String>), AgentMcpError> {
     let url = server.url.as_deref().ok_or(AgentMcpError::Transport)?;
     let mut request = client
@@ -1393,6 +1500,7 @@ async fn http_post(
         .map(str::to_string);
     let mut response = response;
     let mut bytes = Vec::new();
+    let mut answered_elicitation = None;
     while let Some(chunk) = response
         .chunk()
         .await
@@ -1402,16 +1510,80 @@ async fn http_post(
             return Err(AgentMcpError::OutputTooLarge);
         }
         bytes.extend_from_slice(&chunk);
-        if contains_elicitation_request(&bytes) {
-            return Err(AgentMcpError::ElicitationUnsupported);
+        if let Some(elicitation) = find_elicitation_request(&bytes) {
+            let elicitation_id = elicitation
+                .get("id")
+                .map(Value::to_string)
+                .ok_or(AgentMcpError::Protocol)?;
+            if answered_elicitation.as_deref() != Some(elicitation_id.as_str()) {
+                let Some(answer) = elicitation_answer else {
+                    return Err(AgentMcpError::ElicitationRequired(elicitation_message(
+                        &elicitation,
+                    )));
+                };
+                http_respond_elicitation(
+                    client,
+                    server,
+                    secrets,
+                    session_id.as_deref(),
+                    &elicitation,
+                    answer,
+                )
+                .await?;
+                answered_elicitation = Some(elicitation_id);
+            }
         }
     }
     Ok((parse_mcp_response(&bytes, id)?, session_id))
 }
 
+async fn http_respond_elicitation(
+    client: &reqwest::Client,
+    server: &McpServerDefinition,
+    secrets: &McpSecretBundle,
+    session_id: Option<&str>,
+    elicitation: &Value,
+    answer: &str,
+) -> Result<(), AgentMcpError> {
+    let url = server.url.as_deref().ok_or(AgentMcpError::Transport)?;
+    let mut request = client
+        .post(url)
+        .header("accept", "application/json, text/event-stream")
+        .header("content-type", "application/json")
+        .header("mcp-protocol-version", MCP_PROTOCOL_VERSION);
+    for (key, value) in &secrets.headers {
+        request = request.header(key, value);
+    }
+    if let Some(session_id) = session_id {
+        request = request.header("mcp-session-id", session_id);
+    }
+    let response = request
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "id": elicitation.get("id").cloned().ok_or(AgentMcpError::Protocol)?,
+            "result": {
+                "action": "accept",
+                "content": elicitation_content(elicitation, answer)
+            }
+        }))
+        .send()
+        .await
+        .map_err(|_| AgentMcpError::Transport)?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(AgentMcpError::Transport)
+    }
+}
+
+#[cfg(test)]
 fn contains_elicitation_request(bytes: &[u8]) -> bool {
+    find_elicitation_request(bytes).is_some()
+}
+
+fn find_elicitation_request(bytes: &[u8]) -> Option<Value> {
     let Ok(raw) = std::str::from_utf8(bytes) else {
-        return false;
+        return None;
     };
     serde_json::from_str(raw)
         .ok()
@@ -1422,10 +1594,47 @@ fn contains_elicitation_request(bytes: &[u8]) -> bool {
                 .map(str::trim)
                 .filter_map(|data| serde_json::from_str(data).ok()),
         )
-        .any(|candidate: Value| {
-            candidate.get("method").and_then(Value::as_str) == Some("elicitation/create")
-                && candidate.get("id").is_some()
+        .find(is_elicitation)
+}
+
+fn is_elicitation(candidate: &Value) -> bool {
+    candidate.get("method").and_then(Value::as_str) == Some("elicitation/create")
+        && candidate.get("id").is_some()
+}
+
+fn elicitation_message(request: &Value) -> String {
+    request
+        .get("params")
+        .and_then(|params| params.get("message"))
+        .and_then(Value::as_str)
+        .filter(|message| !message.trim().is_empty())
+        .unwrap_or("Please provide the information requested by the MCP server.")
+        .chars()
+        .take(500)
+        .collect()
+}
+
+fn elicitation_content(request: &Value, answer: &str) -> Value {
+    if let Ok(value) = serde_json::from_str::<Value>(answer) {
+        if value.is_object() {
+            return value;
+        }
+    }
+    let schema = request
+        .get("params")
+        .and_then(|params| {
+            params
+                .get("requestedSchema")
+                .or_else(|| params.get("requested_schema"))
         })
+        .and_then(Value::as_object);
+    let field = schema
+        .and_then(|schema| schema.get("properties"))
+        .and_then(Value::as_object)
+        .and_then(|properties| properties.keys().next())
+        .cloned()
+        .unwrap_or_else(|| "answer".into());
+    json!({ field: answer })
 }
 
 fn parse_mcp_response(bytes: &[u8], id: u64) -> Result<Value, AgentMcpError> {
@@ -1440,9 +1649,6 @@ fn parse_mcp_response(bytes: &[u8], id: u64) -> Result<Value, AgentMcpError> {
                 .filter_map(|data| serde_json::from_str(data).ok()),
         )
         .collect::<Vec<Value>>();
-    if contains_elicitation_request(bytes) {
-        return Err(AgentMcpError::ElicitationUnsupported);
-    }
     candidates
         .into_iter()
         .find(|candidate| candidate.get("id").and_then(Value::as_u64) == Some(id))
@@ -2162,10 +2368,10 @@ done
 
             let tools = discover_server(&server, &secrets, None).await.unwrap();
             assert_eq!(tools[0].name, "increment");
-            let first = call_server(&server, &secrets, "increment", json!({}), None)
+            let first = call_server(&server, &secrets, "increment", json!({}), None, None)
                 .await
                 .unwrap();
-            let second = call_server(&server, &secrets, "increment", json!({}), None)
+            let second = call_server(&server, &secrets, "increment", json!({}), None, None)
                 .await
                 .unwrap();
 
@@ -2269,10 +2475,10 @@ done
         server.url = Some(format!("http://{address}/mcp"));
         let secrets = McpSecretBundle::default();
         discover_server(&server, &secrets, None).await.unwrap();
-        let first = call_server(&server, &secrets, "increment", json!({}), None)
+        let first = call_server(&server, &secrets, "increment", json!({}), None, None)
             .await
             .unwrap();
-        let second = call_server(&server, &secrets, "increment", json!({}), None)
+        let second = call_server(&server, &secrets, "increment", json!({}), None, None)
             .await
             .unwrap();
 
@@ -2330,10 +2536,10 @@ done
             let secrets = McpSecretBundle::default();
 
             discover_server(&server, &secrets, None).await.unwrap();
-            let first = call_server(&server, &secrets, "instance", json!({}), None)
+            let first = call_server(&server, &secrets, "instance", json!({}), None, None)
                 .await
                 .unwrap();
-            let second = call_server(&server, &secrets, "instance", json!({}), None)
+            let second = call_server(&server, &secrets, "instance", json!({}), None, None)
                 .await
                 .unwrap();
 
@@ -2383,6 +2589,7 @@ done
                     &McpSecretBundle::default(),
                     "tools/call",
                     json!({"name":"hang","arguments":{}}),
+                    None,
                     None
                 )
                 .await,
@@ -2405,11 +2612,70 @@ done
         let mut reader = BufReader::new(reader);
         assert!(matches!(
             read_stdio_response(&mut reader, 1024, 3).await,
-            Err(AgentMcpError::ElicitationUnsupported)
+            Err(AgentMcpError::ElicitationRequired(_))
         ));
         assert!(contains_elicitation_request(
             b"event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"question-2\",\"method\":\"elicitation/create\",\"params\":{\"message\":\"Choose\"}}\n\n"
         ));
+    }
+
+    #[tokio::test]
+    async fn stdio_elicitation_answer_resumes_the_original_tool_call() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let directory = tempfile::tempdir().unwrap();
+            let script = directory.path().join("eliciting-mcp.sh");
+            std::fs::write(
+                &script,
+                r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-06-18","capabilities":{},"serverInfo":{"name":"eliciting","version":"1"}}}\n' "$id"
+      ;;
+    *'"method":"tools/call"'*)
+      printf '{"jsonrpc":"2.0","id":"question-1","method":"elicitation/create","params":{"message":"Choose a project","requestedSchema":{"type":"object","properties":{"project":{"type":"string"}}}}}\n'
+      IFS= read -r answer
+      case "$answer" in
+        *'"project":"Alpha"'*)
+          printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"Alpha selected"}]}}\n' "$id"
+          ;;
+        *)
+          printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":"bad answer"}}\n' "$id"
+          ;;
+      esac
+      ;;
+  esac
+done
+"#,
+            )
+            .unwrap();
+            let mut permissions = std::fs::metadata(&script).unwrap().permissions();
+            permissions.set_mode(0o700);
+            std::fs::set_permissions(&script, permissions).unwrap();
+
+            let mut server = McpServerDefinition::new(
+                format!("eliciting-{}", Uuid::new_v4()),
+                McpTransport::Stdio,
+            );
+            server.command = Some(script.to_string_lossy().into_owned());
+            let result = call_server(
+                &server,
+                &McpSecretBundle::default(),
+                "choose",
+                json!({}),
+                None,
+                Some("Alpha"),
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(result["content"][0]["text"], "Alpha selected");
+            retire_server_sessions(&server.id).await;
+        }
     }
     #[test]
     fn mapping_is_stable_visibility_aware_and_duplicate_free() {

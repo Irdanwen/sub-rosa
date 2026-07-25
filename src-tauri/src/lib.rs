@@ -1,5 +1,8 @@
+#![recursion_limit = "256"]
+
 pub mod agent_hud;
 pub mod agent_mcp;
+pub mod agent_recorder;
 pub mod agent_runtime;
 pub mod app_paths;
 pub mod audio;
@@ -170,8 +173,11 @@ pub fn run() {
             commands::bootstrap_app,
             agent_runtime::api::list_agent_sessions,
             agent_runtime::api::get_agent_session,
+            agent_runtime::api::get_latest_agent_run,
+            agent_runtime::api::compact_agent_session,
             agent_runtime::api::create_agent_session,
             agent_runtime::api::rename_agent_session,
+            agent_runtime::api::branch_agent_session,
             agent_runtime::api::delete_agent_session,
             agent_runtime::api::list_agent_items,
             agent_runtime::api::start_agent_run,
@@ -181,8 +187,14 @@ pub fn run() {
             agent_runtime::api::list_agent_artifacts,
             agent_runtime::api::read_agent_artifact_preview,
             agent_runtime::api::read_agent_artifact_text,
+            agent_runtime::api::download_agent_artifact,
             agent_runtime::api::list_agent_skills,
+            agent_runtime::api::read_agent_skill,
+            agent_runtime::api::update_agent_skill,
             agent_runtime::api::set_agent_skill_enabled,
+            agent_recorder::resolve_agent_recorder_request,
+            browser_broker::browser_approvals_pending,
+            browser_broker::browser_approval_respond,
             agent_mcp::list_agent_mcp_servers,
             agent_mcp::create_agent_mcp_server,
             agent_mcp::update_agent_mcp_server,
@@ -380,6 +392,7 @@ pub fn run() {
         .manage(RecordingPresenceBoundsState::default())
         .manage(note_save_flush::NoteSaveFlushState::default())
         .manage(agent_runtime::AgentRuntimeHost::default())
+        .manage(agent_recorder::AgentRecorderBroker::default())
         .manage(Arc::new(browser_broker::BrowserBroker::default()))
         .manage(computer_use::ComputerUseState::default())
         .manage(shutdown::ShutdownCoordinator::default())

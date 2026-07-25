@@ -522,10 +522,16 @@ async fn persist_and_emit_event(
                 .get("kind")
                 .and_then(Value::as_str)
                 .unwrap_or("approval");
-            let interruption = if kind == "clarification" {
-                json!({ "id": params.get("id").cloned().unwrap_or_else(|| json!(event_id)), "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "clarification", "question": params.get("question").cloned().unwrap_or_else(|| json!("What would you like June to do?")), "choices": params.get("choices").cloned().unwrap_or_else(|| json!([])) })
-            } else {
-                json!({ "id": params.get("id").cloned().unwrap_or_else(|| json!(event_id)), "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "approval", "toolName": params.get("toolName").cloned().unwrap_or_else(|| json!("unknown_tool")), "title": "Approval required", "description": "June needs permission to use this tool.", "allowAlways": false })
+            let interruption = match kind {
+                "clarification" => {
+                    json!({ "id": params.get("id").cloned().unwrap_or_else(|| json!(event_id)), "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "clarification", "question": params.get("question").cloned().unwrap_or_else(|| json!("What would you like June to do?")), "choices": params.get("choices").cloned().unwrap_or_else(|| json!([])) })
+                }
+                "secret" => {
+                    json!({ "id": params.get("id").cloned().unwrap_or_else(|| json!(event_id)), "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "secret", "reason": params.get("reason").cloned().unwrap_or_else(|| json!("June needs a secret before it can continue.")) })
+                }
+                _ => {
+                    json!({ "id": params.get("id").cloned().unwrap_or_else(|| json!(event_id)), "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "approval", "toolName": params.get("toolName").cloned().unwrap_or_else(|| json!("unknown_tool")), "title": "Approval required", "description": "June needs permission to use this tool.", "allowAlways": false })
+                }
             };
             data = json!({ "itemId": format!("interruption:{event_id}"), "interruption": interruption });
             Some(AgentItemPayload::Interruption(data["interruption"].clone()))

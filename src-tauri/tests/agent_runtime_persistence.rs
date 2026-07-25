@@ -31,7 +31,7 @@ async fn compaction_replaces_old_items_with_one_ordered_visible_summary() {
         .await
         .expect("session");
     let run = repository
-        .create_run(&session.id, "private-auto")
+        .create_run(&session.id, "private-auto", Some("medium"))
         .await
         .expect("run");
     let first = repository
@@ -126,7 +126,7 @@ async fn run_skills_are_deduplicated_and_persisted_for_retry_and_resume() {
         .await
         .expect("session");
     let run = repository
-        .create_run(&session.id, "private-auto")
+        .create_run(&session.id, "private-auto", Some("medium"))
         .await
         .expect("run");
 
@@ -171,7 +171,7 @@ async fn runtime_schema_replaces_legacy_tables_and_keeps_folder_assignments() {
         "DROP TABLE agent_skill_settings",
         "DROP TABLE agent_migration_manifests",
         "DROP TABLE agent_sessions",
-        "DELETE FROM schema_migrations WHERE version BETWEEN 32 AND 38",
+        "DELETE FROM schema_migrations WHERE version >= 32",
     ] {
         query(statement)
             .execute(&pool)

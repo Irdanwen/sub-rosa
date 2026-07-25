@@ -7,6 +7,7 @@ pub mod migration;
 pub mod native_connectors;
 pub mod protocol;
 pub mod repository;
+pub mod secrets;
 pub mod tools;
 
 pub use domain::*;

@@ -142,8 +142,57 @@ test("dispatches clarification answers through run.resume", async () => {
   ]);
 });
 
+test("dispatches opaque secret approval through run.resume without a value", async () => {
+  const engine = new ResumeRecordingEngine();
+  const { service } = harness(engine);
+  await initialize(service);
+  await service.handle(
+    request("run.resume", {
+      model: "private-auto",
+      instructions: "You are June.",
+      workspace: "/tmp/june-workspace",
+      safetyMode: "sandboxed",
+      tools: [],
+      skills: [],
+      contextWindow: 16_000,
+      serializedState: "{\"state\":true}",
+      resolutions: [
+        { interruptionId: "secret-1", kind: "secret", decision: "approve" },
+      ],
+    }),
+  );
+  await nextTurn();
+  assert.deepEqual(engine.resolutions, [
+    { interruptionId: "secret-1", kind: "secret", decision: "approve" },
+  ]);
+  assert.equal(JSON.stringify(engine.resolutions).includes("secretValue"), false);
+});
+
+test("forces manual history compaction without starting a model run", async () => {
+  const engine = new FakeEngine();
+  const { service } = harness(engine);
+  await initialize(service);
+  const history = Array.from({ length: 8 }, (_, index) => ({
+    id: `item-${index}`,
+    kind: "message",
+    role: index % 2 === 0 ? "user" : "assistant",
+    text: `Message ${index}`,
+  }));
+
+  const result = await service.handle(
+    request("history.compact", {
+      history,
+      contextWindow: 128_000,
+    }),
+  );
+
+  assert.equal((result as { compacted?: boolean }).compacted, true);
+  assert.equal(engine.starts, 0);
+});
+
 class FakeEngine implements AgentEngine {
   readonly result: EngineResult;
+  starts = 0;
 
   constructor(result?: EngineResult) {
     this.result = result ?? {
@@ -156,6 +205,7 @@ class FakeEngine implements AgentEngine {
 
   async initialize(_params: RuntimeInitializeParams): Promise<void> {}
   async start(input: EngineRunInput): Promise<EngineResult> {
+    this.starts += 1;
     input.emit({ type: "message.delta", delta: "Hi" });
     return this.result;
   }

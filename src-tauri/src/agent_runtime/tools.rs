@@ -1,12 +1,13 @@
 use super::{AgentRepository, AgentSafetyMode};
 use crate::domain::types::AppError;
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde_json::{json, Value};
 use sqlx::{query::query, row::Row};
 use std::{
     path::{Path, PathBuf},
     process::Stdio,
 };
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::{
     io::AsyncReadExt,
     process::Command,
@@ -79,6 +80,46 @@ pub async fn dispatch_tool(
     }
     match name {
         "search_june" => search_june(context, &arguments).await,
+        "list_memories" => list_memories(context, &arguments).await,
+        "save_memory" => save_memory(context, &arguments).await,
+        "forget_memory" => forget_memory(context, &arguments).await,
+        "generate_image" => generate_image(context, &arguments).await,
+        "edit_image" => edit_image(context, &arguments).await,
+        "generate_video" => generate_video(context, &arguments).await,
+        "get_obsidian_vault" => Ok(serde_json::to_value(crate::obsidian::discovery_for_app(
+            &context.app,
+        )?)
+        .map_err(|error| AppError::new("agent_tool_response_invalid", error.to_string()))?),
+        "start_recording" => {
+            let source_mode = match arguments.get("sourceMode").and_then(Value::as_str) {
+                Some("microphonePlusSystem") => {
+                    crate::domain::types::RecordingSourceMode::MicrophonePlusSystem
+                }
+                _ => crate::domain::types::RecordingSourceMode::MicrophoneOnly,
+            };
+            context
+                .app
+                .state::<crate::agent_recorder::AgentRecorderBroker>()
+                .request(
+                    &context.app,
+                    crate::agent_recorder::AgentRecorderAction::Start,
+                    Some(source_mode),
+                )
+                .await
+        }
+        "stop_recording" => {
+            context
+                .app
+                .state::<crate::agent_recorder::AgentRecorderBroker>()
+                .request(
+                    &context.app,
+                    crate::agent_recorder::AgentRecorderAction::Stop,
+                    None,
+                )
+                .await
+        }
+        "recording_status" => serde_json::to_value(crate::audio::capture::current_status())
+            .map_err(|error| AppError::new("agent_tool_response_invalid", error.to_string())),
         "web_search" => web(context, "/v1/web/search", &arguments).await,
         "web_fetch" => web(context, "/v1/web/fetch", &arguments).await,
         "list_files" => list_files(context, &arguments).await,
@@ -105,10 +146,40 @@ pub async fn dispatch_tool(
             Ok(json!({ "deleted": true, "routineId": routine_id }))
         }
         "request_clarification" => consume_clarification_answer(context).await,
+        "request_secret" => consume_secret_reference(context).await,
         "computer_use" => {
             Ok(crate::computer_use::handle_proxy_action(&context.app, arguments).await)
         }
         "notion_call" | "notion_action" => notion_tool(context, name, &arguments).await,
+        name if matches!(
+            name,
+            "start_session"
+                | "close_session"
+                | "navigate"
+                | "snapshot"
+                | "screenshot"
+                | "click"
+                | "fill"
+                | "press"
+                | "back"
+                | "list_tabs"
+                | "open_tab"
+                | "switch_tab"
+                | "close_tab"
+                | "accept_shared_tab"
+        ) =>
+        {
+            let broker = context
+                .app
+                .state::<std::sync::Arc<crate::browser_broker::BrowserBroker>>();
+            broker
+                .execute_for(
+                    crate::browser_broker::BrowserBrokerContext::Attended,
+                    name,
+                    arguments,
+                )
+                .await
+        }
         name if name.starts_with("mcp_") => mcp_tool(context, name, arguments).await,
         // These capabilities stay behind Rust-owned seams. Their existing brokers
         // can be connected without granting the runtime direct credentials or UI access.
@@ -201,20 +272,75 @@ async fn mcp_tool(context: &ToolContext, name: &str, arguments: Value) -> Result
             "This MCP server changed after the run started. Retry the turn to use its current approval policy.",
         ));
     }
-    let invocation = subsystem.invoke_in_workspace(
+    let elicitation_answer = latest_mcp_elicitation_answer(context).await?;
+    let invocation = subsystem.invoke_in_workspace_with_elicitation(
         name,
         arguments,
         context.safety_mode == AgentSafetyMode::Sandboxed,
         Some(&context.workspace),
+        elicitation_answer
+            .as_ref()
+            .map(|(_, answer)| answer.as_str()),
     );
     let mut cancelled = context.cancellations.register(&context.run_id).await;
     tokio::select! {
-        result = invocation => result.map_err(agent_mcp_error),
+        result = invocation => match result {
+            Ok(value) => {
+                if let Some((item_id, _)) = elicitation_answer {
+                    mark_mcp_elicitation_answer_consumed(context, &item_id).await?;
+                }
+                Ok(value)
+            }
+            Err(crate::agent_mcp::AgentMcpError::ElicitationRequired(message)) => Ok(json!({
+                "elicitationRequired": true,
+                "clarificationQuestion": format!("MCP server {server_name} asks: {message}"),
+                "instruction": "Call request_clarification with clarificationQuestion exactly, then retry this MCP tool with the same arguments."
+            })),
+            Err(error) => Err(agent_mcp_error(error)),
+        },
         _ = &mut cancelled => {
             crate::agent_mcp::retire_server_sessions(&current_policy.server_id).await;
             Err(AppError::new("agent_tool_cancelled", "MCP tool call was cancelled."))
         }
     }
+}
+
+async fn latest_mcp_elicitation_answer(
+    context: &ToolContext,
+) -> Result<Option<(String, String)>, AppError> {
+    let row = query("SELECT id, payload_json FROM agent_items WHERE run_id = ? AND kind = 'interruption' AND json_extract(payload_json, '$.kind') = 'clarification' AND json_extract(payload_json, '$.question') LIKE 'MCP server % asks: %' AND json_extract(payload_json, '$.answer') IS NOT NULL AND COALESCE(json_extract(payload_json, '$.mcpAnswerConsumed'), 0) = 0 ORDER BY created_at DESC LIMIT 1")
+        .bind(&context.run_id)
+        .fetch_optional(&context.repository.pool)
+        .await?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let payload: Value = serde_json::from_str(&row.get::<String, _>("payload_json"))
+        .map_err(|error| AppError::new("agent_interruption_invalid", error.to_string()))?;
+    Ok(payload
+        .get("answer")
+        .and_then(Value::as_str)
+        .map(|answer| (row.get("id"), answer.to_string())))
+}
+
+async fn mark_mcp_elicitation_answer_consumed(
+    context: &ToolContext,
+    item_id: &str,
+) -> Result<(), AppError> {
+    let row = query("SELECT payload_json FROM agent_items WHERE id = ? AND run_id = ?")
+        .bind(item_id)
+        .bind(&context.run_id)
+        .fetch_one(&context.repository.pool)
+        .await?;
+    let mut payload: Value = serde_json::from_str(&row.get::<String, _>("payload_json"))
+        .map_err(|error| AppError::new("agent_interruption_invalid", error.to_string()))?;
+    payload["mcpAnswerConsumed"] = Value::Bool(true);
+    query("UPDATE agent_items SET payload_json = ? WHERE id = ?")
+        .bind(payload.to_string())
+        .bind(item_id)
+        .execute(&context.repository.pool)
+        .await?;
+    Ok(())
 }
 
 fn agent_mcp_error(error: crate::agent_mcp::AgentMcpError) -> AppError {
@@ -248,6 +374,302 @@ async fn search_june(context: &ToolContext, arguments: &Value) -> Result<Value, 
         "language": row.get::<Option<String>, _>("language"), "createdAt": row.get::<String, _>("created_at")
     })).collect();
     Ok(json!({ "notes": notes, "dictations": dictations }))
+}
+
+async fn list_memories(context: &ToolContext, arguments: &Value) -> Result<Value, AppError> {
+    let settings_path = crate::commands::memory_settings_path(&context.app)?;
+    if !crate::commands::load_memory_settings(&settings_path).enabled {
+        return Err(AppError::new(
+            "memory_disabled",
+            "Memory is disabled for this scope.",
+        ));
+    }
+    let project_id = optional_nonempty_string(arguments, "projectId")?;
+    ensure_memory_scope_enabled(context, project_id.as_deref()).await?;
+    let include_global = arguments
+        .get("includeGlobal")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let limit = arguments
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or(8)
+        .clamp(1, 20) as usize;
+    let offset = arguments.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
+    let profile = crate::commands::active_profile(&context.app);
+    let repositories = crate::commands::repositories(&context.app).await?;
+    let memories = repositories
+        .list_memories(&profile, project_id.as_deref(), include_global)
+        .await?;
+    let has_more = memories.len() > offset.saturating_add(limit);
+    let items = memories
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .map(|memory| {
+            json!({
+                "id": memory.id,
+                "content": memory.content,
+                "createdAt": memory.created_at,
+                "scope": if memory.folder_id.is_some() { "project" } else { "global" }
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "count": items.len(),
+        "items": items,
+        "offset": offset,
+        "hasMore": has_more,
+        "nextOffset": has_more.then_some(offset + items.len())
+    }))
+}
+
+async fn save_memory(context: &ToolContext, arguments: &Value) -> Result<Value, AppError> {
+    let content = required_string(arguments, "content")?;
+    let project_id = optional_nonempty_string(arguments, "projectId")?;
+    let profile = crate::commands::active_profile(&context.app);
+    let repositories = crate::commands::repositories(&context.app).await?;
+    let settings_path = crate::commands::memory_settings_path(&context.app)?;
+    let memory = crate::commands::create_memory_with_settings(
+        &repositories,
+        &settings_path,
+        &profile,
+        project_id.as_deref(),
+        content,
+        "agent",
+    )
+    .await?;
+    serde_json::to_value(memory)
+        .map_err(|error| AppError::new("agent_tool_response_invalid", error.to_string()))
+}
+
+async fn forget_memory(context: &ToolContext, arguments: &Value) -> Result<Value, AppError> {
+    let id = required_string(arguments, "id")?;
+    let profile = crate::commands::active_profile(&context.app);
+    crate::commands::repositories(&context.app)
+        .await?
+        .delete_memory(&profile, id)
+        .await?;
+    Ok(json!({ "forgotten": true, "id": id }))
+}
+
+async fn generate_image(context: &ToolContext, arguments: &Value) -> Result<Value, AppError> {
+    let prompt = required_string(arguments, "prompt")?.trim();
+    let generated = crate::providers::generate_image(crate::providers::GenerateImageRequest {
+        prompt: prompt.to_string(),
+        model: None,
+        request_id: context.call_id.clone(),
+        safe_mode: None,
+    })
+    .await?;
+    persist_generated_image(context, prompt, generated).await
+}
+
+async fn edit_image(context: &ToolContext, arguments: &Value) -> Result<Value, AppError> {
+    let source = resolve_path(context, required_string(arguments, "sourcePath")?, true)?;
+    let instruction = required_string(arguments, "instruction")?.trim();
+    let bytes = tokio::fs::read(&source).await.map_err(io_error)?;
+    if bytes.len() > 20 * 1024 * 1024 {
+        return Err(AppError::new(
+            "image_source_too_large",
+            "The source image exceeds the 20 MB edit limit.",
+        ));
+    }
+    let mime_type = image_mime_type(&source).ok_or_else(|| {
+        AppError::new(
+            "image_source_invalid",
+            "The source must be a PNG, JPEG, WebP, or GIF image.",
+        )
+    })?;
+    let generated = crate::providers::edit_image(crate::providers::EditImageRequest {
+        image: BASE64.encode(bytes),
+        prompt: instruction.to_string(),
+        request_id: context.call_id.clone(),
+        mime_type: Some(mime_type.to_string()),
+        model: None,
+    })
+    .await?;
+    persist_generated_image(context, instruction, generated).await
+}
+
+async fn generate_video(context: &ToolContext, arguments: &Value) -> Result<Value, AppError> {
+    let prompt = required_string(arguments, "prompt")?.trim();
+    let job = crate::providers::video_generate(crate::providers::GenerateVideoRequest {
+        prompt: prompt.to_string(),
+        model: None,
+        request_id: context.call_id.clone(),
+        duration: optional_nonempty_string(arguments, "duration")?,
+        resolution: None,
+        aspect_ratio: optional_nonempty_string(arguments, "aspectRatio")?,
+        audio: arguments.get("audio").and_then(Value::as_bool),
+    })
+    .await?;
+    let mut cancelled = context.cancellations.register(&context.run_id).await;
+    loop {
+        let status = crate::providers::video_status(
+            context.app.clone(),
+            crate::providers::VideoStatusRequest {
+                job_id: job.job_id.clone(),
+            },
+        );
+        let result = tokio::select! {
+            result = status => result?,
+            _ = &mut cancelled => {
+                return Err(AppError::new("agent_tool_cancelled", "Video generation was cancelled."));
+            }
+        };
+        match result {
+            crate::june_api::VideoStatusDto::Processing { .. } => {
+                tokio::select! {
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {}
+                    _ = &mut cancelled => {
+                        return Err(AppError::new("agent_tool_cancelled", "Video generation was cancelled."));
+                    }
+                }
+            }
+            crate::june_api::VideoStatusDto::Failed { reason } => {
+                return Err(AppError::new("video_generation_failed", reason));
+            }
+            crate::june_api::VideoStatusDto::Completed {
+                path,
+                mime_type,
+                model,
+                ..
+            } => {
+                let source = PathBuf::from(path);
+                let destination = resolve_path(
+                    context,
+                    &format!(
+                        "artifacts/generated-video-{}.mp4",
+                        uuid::Uuid::new_v4().simple()
+                    ),
+                    false,
+                )?;
+                if let Some(parent) = destination.parent() {
+                    tokio::fs::create_dir_all(parent).await.map_err(io_error)?;
+                }
+                tokio::fs::copy(&source, &destination)
+                    .await
+                    .map_err(io_error)?;
+                record_artifact_with_mime(context, &destination, "created", None, &mime_type)
+                    .await?;
+                return Ok(json!({
+                    "mediaType": "video",
+                    "path": destination,
+                    "mimeType": mime_type,
+                    "model": model,
+                    "prompt": prompt,
+                    "requestId": context.call_id,
+                    "name": destination.file_name().map(|name| name.to_string_lossy().into_owned())
+                }));
+            }
+        }
+    }
+}
+
+async fn persist_generated_image(
+    context: &ToolContext,
+    prompt: &str,
+    generated: crate::june_api::GeneratedImageDto,
+) -> Result<Value, AppError> {
+    let bytes = BASE64
+        .decode(&generated.image_base64)
+        .map_err(|error| AppError::new("image_response_invalid", error.to_string()))?;
+    let extension = match generated.mime_type.as_str() {
+        "image/jpeg" => "jpg",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        _ => "png",
+    };
+    let path = resolve_path(
+        context,
+        &format!(
+            "artifacts/generated-image-{}.{}",
+            uuid::Uuid::new_v4().simple(),
+            extension
+        ),
+        false,
+    )?;
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await.map_err(io_error)?;
+    }
+    tokio::fs::write(&path, &bytes).await.map_err(io_error)?;
+    record_artifact_with_mime(context, &path, "created", None, &generated.mime_type).await?;
+    Ok(json!({
+        "mediaType": "image",
+        "dataUrl": format!("data:{};base64,{}", generated.mime_type, generated.image_base64),
+        "path": path,
+        "mimeType": generated.mime_type,
+        "model": generated.model,
+        "prompt": prompt,
+        "name": path.file_name().map(|name| name.to_string_lossy().into_owned())
+    }))
+}
+
+fn image_mime_type(path: &Path) -> Option<&'static str> {
+    match path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("png") => Some("image/png"),
+        Some("jpg" | "jpeg") => Some("image/jpeg"),
+        Some("webp") => Some("image/webp"),
+        Some("gif") => Some("image/gif"),
+        _ => None,
+    }
+}
+
+async fn ensure_memory_scope_enabled(
+    context: &ToolContext,
+    project_id: Option<&str>,
+) -> Result<(), AppError> {
+    let Some(project_id) = project_id else {
+        return Ok(());
+    };
+    let profile = crate::commands::active_profile(&context.app);
+    let row = sqlx::query::query(
+        "SELECT memory_disabled FROM folders
+         WHERE id = ? AND profile = ? AND deleted_at IS NULL",
+    )
+    .bind(project_id)
+    .bind(profile)
+    .fetch_optional(&context.repository.pool)
+    .await?
+    .ok_or_else(|| {
+        AppError::new(
+            "folder_not_found",
+            "Project was not found or has already been deleted.",
+        )
+    })?;
+    if row.get::<i64, _>("memory_disabled") != 0 {
+        return Err(AppError::new(
+            "memory_disabled",
+            "Memory is disabled for this scope.",
+        ));
+    }
+    Ok(())
+}
+
+fn optional_nonempty_string(arguments: &Value, key: &str) -> Result<Option<String>, AppError> {
+    let Some(value) = arguments.get(key) else {
+        return Ok(None);
+    };
+    let value = value.as_str().ok_or_else(|| {
+        AppError::new(
+            "invalid_arguments",
+            format!("{key} must be a non-empty string."),
+        )
+    })?;
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(AppError::new(
+            "invalid_arguments",
+            format!("{key} must be a non-empty string."),
+        ));
+    }
+    Ok(Some(value.to_string()))
 }
 
 async fn web(context: &ToolContext, path: &str, arguments: &Value) -> Result<Value, AppError> {
@@ -388,6 +810,21 @@ async fn record_artifact(
     Ok(())
 }
 
+async fn record_artifact_with_mime(
+    context: &ToolContext,
+    path: &Path,
+    action: &str,
+    original: Option<&Path>,
+    mime_type: &str,
+) -> Result<(), AppError> {
+    let metadata = tokio::fs::metadata(path).await.map_err(io_error)?;
+    sqlx::query::query("INSERT INTO agent_artifacts(id, session_id, run_id, provenance, action, path, original_path, mime_type, size_bytes, available, created_at) VALUES (?, ?, ?, 'tool', ?, ?, ?, ?, ?, 1, ?)")
+        .bind(uuid::Uuid::new_v4().to_string()).bind(&context.session_id).bind(&context.run_id)
+        .bind(action).bind(path.to_string_lossy().as_ref()).bind(original.map(|value| value.to_string_lossy().into_owned()))
+        .bind(mime_type).bind(metadata.len() as i64).bind(chrono::Utc::now().to_rfc3339()).execute(&context.repository.pool).await?;
+    Ok(())
+}
+
 async fn search_files(context: &ToolContext, arguments: &Value) -> Result<Value, AppError> {
     let needle = required_string(arguments, "query")?;
     let root = resolve_path(
@@ -443,6 +880,37 @@ async fn run_shell(context: &ToolContext, arguments: &Value) -> Result<Value, Ap
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    if let Some(secret_env) = arguments.get("secretEnv").and_then(Value::as_object) {
+        for (name, secret_ref) in secret_env {
+            if name.is_empty()
+                || !name
+                    .chars()
+                    .all(|character| character == '_' || character.is_ascii_alphanumeric())
+                || !name
+                    .chars()
+                    .next()
+                    .is_some_and(|character| character == '_' || character.is_ascii_alphabetic())
+            {
+                return Err(AppError::new(
+                    "agent_secret_environment_invalid",
+                    "A secret environment variable name is invalid.",
+                ));
+            }
+            let secret_ref = secret_ref.as_str().ok_or_else(|| {
+                AppError::new(
+                    "agent_secret_reference_invalid",
+                    "A secret reference is invalid.",
+                )
+            })?;
+            let value = super::secrets::take(secret_ref).await?.ok_or_else(|| {
+                AppError::new(
+                    "agent_secret_reference_expired",
+                    "The requested secret is no longer available.",
+                )
+            })?;
+            command.env(name, value);
+        }
+    }
     let mut child = command.spawn().map_err(io_error)?;
     let mut stdout = child
         .stdout
@@ -550,6 +1018,33 @@ async fn load_skill(context: &ToolContext, arguments: &Value) -> Result<Value, A
 
 async fn consume_clarification_answer(context: &ToolContext) -> Result<Value, AppError> {
     consume_clarification_answer_from_pool(&context.repository.pool, &context.run_id).await
+}
+
+async fn consume_secret_reference(context: &ToolContext) -> Result<Value, AppError> {
+    let row = query("SELECT id, payload_json FROM agent_items WHERE run_id = ? AND kind = 'interruption' AND json_extract(payload_json, '$.kind') = 'secret' AND json_extract(payload_json, '$.secretRef') IS NOT NULL AND COALESCE(json_extract(payload_json, '$.secretReferenceConsumed'), 0) = 0 ORDER BY created_at DESC LIMIT 1")
+        .bind(&context.run_id)
+        .fetch_one(&context.repository.pool)
+        .await?;
+    let id: String = row.get("id");
+    let mut payload: Value = serde_json::from_str(&row.get::<String, _>("payload_json"))
+        .map_err(|error| AppError::new("agent_interruption_invalid", error.to_string()))?;
+    let secret_ref = payload
+        .get("secretRef")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            AppError::new(
+                "agent_secret_unanswered",
+                "The secret request has not been answered.",
+            )
+        })?
+        .to_string();
+    payload["secretReferenceConsumed"] = Value::Bool(true);
+    query("UPDATE agent_items SET payload_json = ? WHERE id = ?")
+        .bind(payload.to_string())
+        .bind(id)
+        .execute(&context.repository.pool)
+        .await?;
+    Ok(json!({ "secretRef": secret_ref, "available": true }))
 }
 
 async fn consume_clarification_answer_from_pool(

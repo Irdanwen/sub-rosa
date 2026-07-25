@@ -282,6 +282,16 @@ export function AgentMcpServersSection() {
                   </p>
                 </div>
                 <div className="settings-row-control">
+                  {server.metadata.legacyAuth === "oauth" ? (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={busyId === server.id}
+                      onClick={() => openEdit(server)}
+                    >
+                      Reconnect
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="icon-button"
@@ -359,6 +369,12 @@ export function AgentMcpServersSection() {
       >
         <div className="dialog-body">
           {saveError ? <InlineNotice tone="warning" body={saveError} /> : null}
+          {editing?.metadata.legacyAuth === "oauth" ? (
+            <InlineNotice
+              tone="warning"
+              body="This server used Hermes OAuth. Its old tokens were not copied. Enter a new Authorization header below to reconnect it securely, then save and enable the server."
+            />
+          ) : null}
           <label className="dialog-field">
             Name
             <input

@@ -22,7 +22,7 @@ use crate::{
     extension_host::{ExtensionHost, ExtensionResponse},
 };
 
-pub(crate) const BROWSER_APPROVALS_CHANGED_EVENT: &str = "june://browser-approvals-changed";
+pub const BROWSER_APPROVALS_CHANGED_EVENT: &str = "june://browser-approvals-changed";
 const BROWSER_APPROVAL_TIMEOUT_MS: u64 = 600_000;
 
 fn constant_time_eq(left: &str, right: &str) -> bool {
@@ -813,7 +813,7 @@ impl BrowserBroker {
         Ok(released)
     }
 
-    pub(crate) async fn pending_approvals(&self) -> Result<Vec<PendingBrowserApproval>, AppError> {
+    pub async fn pending_approvals(&self) -> Result<Vec<PendingBrowserApproval>, AppError> {
         let _action = self.action_lock.lock().await;
         self.prune_expired_approvals().await?;
         let mut pending = self
@@ -1646,7 +1646,7 @@ impl BrowserBroker {
         Ok(parked_action_result(&approval_id))
     }
 
-    pub(crate) async fn respond_to_approval(
+    pub async fn respond_to_approval(
         &self,
         approval_id: &str,
         approve: bool,
@@ -1904,6 +1904,25 @@ impl BrowserBroker {
             },
         );
     }
+}
+
+#[tauri::command]
+pub async fn browser_approvals_pending(
+    broker: tauri::State<'_, std::sync::Arc<BrowserBroker>>,
+) -> Result<Vec<PendingBrowserApproval>, AppError> {
+    broker.pending_approvals().await
+}
+
+#[tauri::command]
+pub async fn browser_approval_respond(
+    broker: tauri::State<'_, std::sync::Arc<BrowserBroker>>,
+    approval_id: String,
+    approve: bool,
+    allow_site: bool,
+) -> Result<(), AppError> {
+    broker
+        .respond_to_approval(&approval_id, approve, allow_site)
+        .await
 }
 
 pub(crate) fn release_shared_tab(app: &tauri::AppHandle, tab_id: i64) {

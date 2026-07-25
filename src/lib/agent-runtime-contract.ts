@@ -45,6 +45,7 @@ export type AgentRunDto = {
   sessionId: string;
   status: AgentRunStatus;
   model: string;
+  reasoningEffort?: "minimal" | "medium" | "high";
   startedAt?: string;
   completedAt?: string;
   usage?: AgentUsageDto;
@@ -140,7 +141,15 @@ export type AgentClarificationInterruptionDto = AgentInterruptionBase & {
   answer?: string;
 };
 
-export type AgentInterruptionDto = AgentApprovalInterruptionDto | AgentClarificationInterruptionDto;
+export type AgentSecretInterruptionDto = AgentInterruptionBase & {
+  kind: "secret";
+  reason: string;
+};
+
+export type AgentInterruptionDto =
+  | AgentApprovalInterruptionDto
+  | AgentClarificationInterruptionDto
+  | AgentSecretInterruptionDto;
 
 export type AgentArtifactDto = {
   id: string;
@@ -244,6 +253,7 @@ export type StartAgentRunRequest = {
   sessionId: string;
   prompt: string;
   model: string;
+  reasoningEffort?: "minimal" | "medium" | "high";
   safetyMode: AgentSafetyMode;
   workspacePath: string;
   enabledSkillIds: string[];
@@ -254,7 +264,8 @@ export type ResolveAgentInterruptionRequest = {
   interruptionId: string;
   resolution:
     | { kind: "approval"; choice: "once" | "session" | "always" | "deny" }
-    | { kind: "clarification"; answer: string };
+    | { kind: "clarification"; answer: string }
+    | { kind: "secret"; secret?: string; choice?: "once" | "deny" };
 };
 
 /** Dependency-injected boundary implemented by the Tauri bindings. Keeping the
@@ -263,12 +274,19 @@ export type ResolveAgentInterruptionRequest = {
 export type AgentRuntimeBindings = {
   listSessions(): Promise<AgentSessionDto[]>;
   getSession(sessionId: string): Promise<AgentSessionDto>;
+  getLatestRun?(sessionId: string): Promise<AgentRunDto | null>;
+  compactSession?(sessionId: string): Promise<{
+    compacted: boolean;
+    removedItems: number;
+    estimatedTokens?: number;
+  }>;
   createSession(input: {
     title?: string;
     model: string;
     safetyMode: AgentSafetyMode;
   }): Promise<AgentSessionDto>;
   renameSession(sessionId: string, title: string): Promise<AgentSessionDto>;
+  branchSession?(sessionId: string, itemId: string): Promise<AgentSessionDto>;
   deleteSession(sessionId: string): Promise<void>;
   listItems(sessionId: string): Promise<AgentItemDto[]>;
   startRun(input: StartAgentRunRequest): Promise<AgentRunDto>;

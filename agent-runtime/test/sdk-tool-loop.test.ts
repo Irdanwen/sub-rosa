@@ -69,6 +69,7 @@ test("continues model inference after a host tool result", async () => {
     emit: (event) => events.push(event),
     params: {
       model: "private-auto",
+      reasoningEffort: "high",
       instructions: "Use list_skills, then answer.",
       workspace: "/tmp/june-workspace",
       safetyMode: "sandboxed",
@@ -97,6 +98,7 @@ test("continues model inference after a host tool result", async () => {
   assert.equal(toolCalls[0]?.name, "list_skills");
   assert.ok(toolCalls[0]?.callId);
   assert.equal(modelRequests.length, 2);
+  assert.equal(modelRequests[0]?.reasoning_effort, "high");
   const secondMessages = modelRequests[1]?.messages;
   assert.ok(Array.isArray(secondMessages));
   assert.ok(

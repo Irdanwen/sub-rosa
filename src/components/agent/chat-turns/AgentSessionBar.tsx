@@ -5,6 +5,8 @@ import { IconMoveFolder } from "central-icons/IconMoveFolder";
 import { IconPencil } from "central-icons/IconPencil";
 import { IconShareOs } from "central-icons/IconShareOs";
 import { IconTrashCan } from "central-icons/IconTrashCan";
+import { IconAnalytics } from "central-icons/IconAnalytics";
+import { IconConcise } from "central-icons/IconConcise";
 import { useEffect, useRef, useState } from "react";
 import { ShareLinkCopyAction } from "../../share/ShareLinkCopyAction";
 import { BackButton } from "../../ui/BackButton";
@@ -32,6 +34,8 @@ export function AgentSessionBar({
   onToggleArtifacts,
   onRename,
   onShare,
+  onUsage,
+  onCompact,
   onMoveToProject,
   onDelete,
 }: {
@@ -48,6 +52,8 @@ export function AgentSessionBar({
   onRename?: (title: string) => void;
   /** Opens the private-sharing dialog for this session (JUN-308). */
   onShare?: () => void;
+  onUsage?: () => void;
+  onCompact?: () => void;
   /** Opens the change-project dialog (which also owns removal). */
   onMoveToProject?: () => void;
   onDelete?: () => void;
@@ -81,7 +87,7 @@ export function AgentSessionBar({
     onRename?.(draft);
   }
 
-  const hasMenu = Boolean(onRename || onShare || onMoveToProject || onDelete);
+  const hasMenu = Boolean(onRename || onShare || onUsage || onCompact || onMoveToProject || onDelete);
 
   return (
     <div className="detail-bar agent-session-bar" data-tauri-drag-region>
@@ -216,6 +222,32 @@ export function AgentSessionBar({
                   >
                     <IconShareOs size={14} />
                     Share
+                  </button>
+                ) : null}
+                {onUsage ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onUsage();
+                    }}
+                  >
+                    <IconAnalytics size={14} />
+                    Usage
+                  </button>
+                ) : null}
+                {onCompact ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onCompact();
+                    }}
+                  >
+                    <IconConcise size={14} />
+                    Compact context
                   </button>
                 ) : null}
                 {onMoveToProject ? (

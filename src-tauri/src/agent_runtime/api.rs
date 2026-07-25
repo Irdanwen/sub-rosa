@@ -6,10 +6,13 @@ use crate::domain::types::AppError;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{collections::HashMap, path::PathBuf};
-use tauri::{AppHandle, State};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
+use tauri::{AppHandle, Manager, State};
 
-const INSTRUCTIONS: &str = "You are June, a private personal AI assistant. Use the tools provided by the June app when they help answer the user's request. Never claim a tool succeeded unless its result confirms success.";
+const INSTRUCTIONS: &str = "You are June, a private personal AI assistant. Use the tools provided by the June app when they help answer the user's request. Never claim a tool succeeded unless its result confirms success. If an MCP tool returns elicitationRequired, call request_clarification with its clarificationQuestion exactly, then retry the same MCP tool after the user answers.";
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +33,7 @@ pub struct StartRunRequest {
     pub session_id: String,
     pub prompt: String,
     pub model: String,
+    pub reasoning_effort: Option<String>,
     pub safety_mode: AgentSafetyMode,
     pub workspace_path: String,
     #[serde(default)]
@@ -48,6 +52,12 @@ pub struct ResolveInterruptionRequest {
 pub struct SetSkillEnabledRequest {
     pub skill_id: String,
     pub enabled: bool,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSkillRequest {
+    pub skill_id: String,
+    pub content: String,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -77,6 +87,102 @@ pub async fn get_agent_session(app: AppHandle, session_id: String) -> Result<Val
     Ok(session_json(
         repository(&app).await?.get_session(&session_id).await?,
     ))
+}
+
+#[tauri::command]
+pub async fn get_latest_agent_run(
+    app: AppHandle,
+    session_id: String,
+) -> Result<Option<Value>, AppError> {
+    let repository = repository(&app).await?;
+    let row = sqlx::query::query(
+        "SELECT id FROM agent_runs WHERE session_id = ? ORDER BY started_at DESC LIMIT 1",
+    )
+    .bind(session_id)
+    .fetch_optional(&repository.pool)
+    .await?;
+    use sqlx::row::Row;
+    match row {
+        Some(row) => Ok(Some(run_json(
+            repository.get_run(&row.get::<String, _>("id")).await?,
+        ))),
+        None => Ok(None),
+    }
+}
+
+#[tauri::command]
+pub async fn compact_agent_session(
+    app: AppHandle,
+    host: State<'_, AgentRuntimeHost>,
+    session_id: String,
+) -> Result<Value, AppError> {
+    let repository = repository(&app).await?;
+    let session = repository.get_session(&session_id).await?;
+    if matches!(session.status.as_str(), "running" | "waiting_for_user") {
+        return Err(AppError::new(
+            "agent_run_active",
+            "Wait for the current turn to finish before compacting context.",
+        ));
+    }
+    use sqlx::row::Row;
+    let row = sqlx::query::query(
+        "SELECT id FROM agent_runs WHERE session_id = ? ORDER BY started_at DESC LIMIT 1",
+    )
+    .bind(&session_id)
+    .fetch_optional(&repository.pool)
+    .await?
+    .ok_or_else(|| {
+        AppError::new(
+            "agent_compaction_unavailable",
+            "There is not enough session history to compact yet.",
+        )
+    })?;
+    let run_id: String = row.get("id");
+    let history = repository
+        .items(&session_id)
+        .await?
+        .into_iter()
+        .filter_map(history_item)
+        .collect::<Vec<_>>();
+    host.ensure_started(&app, repository.clone()).await?;
+    let response = host
+        .request(
+            "history.compact",
+            &session_id,
+            &run_id,
+            json!({ "history": history, "contextWindow": 128000 }),
+        )
+        .await?;
+    let removed_item_ids = response
+        .get("removedItemIds")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let summary_text = response
+        .get("summary")
+        .and_then(|summary| summary.get("text"))
+        .and_then(Value::as_str);
+    if let Some(summary_text) = summary_text {
+        repository
+            .replace_items_with_context_summary(
+                &session_id,
+                &run_id,
+                summary_text,
+                &removed_item_ids,
+            )
+            .await?;
+    }
+    Ok(json!({
+        "compacted": summary_text.is_some(),
+        "removedItems": removed_item_ids.len(),
+        "estimatedTokens": response.get("estimatedTokens").cloned()
+    }))
 }
 
 #[tauri::command]
@@ -121,6 +227,219 @@ pub async fn rename_agent_session(
             .rename_session(&request.session_id, &request.title)
             .await?,
     ))
+}
+
+#[tauri::command]
+pub async fn branch_agent_session(
+    app: AppHandle,
+    session_id: String,
+    item_id: String,
+) -> Result<Value, AppError> {
+    let repository = repository(&app).await?;
+    let source = repository.get_session(&session_id).await?;
+    let row = sqlx::query::query(
+        "SELECT sequence, created_at FROM agent_items WHERE id = ? AND session_id = ?",
+    )
+    .bind(&item_id)
+    .bind(&session_id)
+    .fetch_optional(&repository.pool)
+    .await?
+    .ok_or_else(|| {
+        AppError::new(
+            "agent_branch_point_missing",
+            "The selected message is not available to branch from.",
+        )
+    })?;
+    use sqlx::row::Row;
+    let sequence: i64 = row.get("sequence");
+    let cutoff_created_at: String = row.get("created_at");
+    let workspace = session_workspace(&app, None)?;
+    tokio::fs::create_dir_all(&workspace)
+        .await
+        .map_err(io_error)?;
+    let branch = repository
+        .create_session(
+            &format!("{} branch", source.title),
+            &source.model,
+            source.safety_mode,
+            workspace.to_str(),
+        )
+        .await?;
+    let final_workspace = session_workspace(&app, Some(&branch.id))?;
+    tokio::fs::create_dir_all(&final_workspace)
+        .await
+        .map_err(io_error)?;
+    let mut transaction = repository.pool.begin().await?;
+    sqlx::query::query("UPDATE agent_sessions SET workspace_path = ? WHERE id = ?")
+        .bind(final_workspace.to_string_lossy().as_ref())
+        .bind(&branch.id)
+        .execute(&mut *transaction)
+        .await?;
+    let items = sqlx::query::query(
+        "SELECT id, sequence, kind, payload_json, created_at
+         FROM agent_items WHERE session_id = ? AND sequence <= ? ORDER BY sequence ASC",
+    )
+    .bind(&session_id)
+    .bind(sequence)
+    .fetch_all(&mut *transaction)
+    .await?;
+    let mut item_ids = HashMap::new();
+    for item in items {
+        let source_item_id: String = item.get("id");
+        let branch_item_id = uuid::Uuid::new_v4().to_string();
+        sqlx::query::query(
+            "INSERT INTO agent_items
+             (id, session_id, sequence, kind, payload_json, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&branch_item_id)
+        .bind(&branch.id)
+        .bind(item.get::<i64, _>("sequence"))
+        .bind(item.get::<String, _>("kind"))
+        .bind(item.get::<String, _>("payload_json"))
+        .bind(item.get::<String, _>("created_at"))
+        .execute(&mut *transaction)
+        .await?;
+        item_ids.insert(source_item_id, branch_item_id);
+    }
+    let artifacts = sqlx::query::query(
+        "SELECT id, item_id, provenance, action, path, original_path, mime_type, size_bytes, available, created_at
+         FROM agent_artifacts WHERE session_id = ? AND created_at <= ? ORDER BY created_at ASC",
+    )
+    .bind(&session_id)
+    .bind(&cutoff_created_at)
+    .fetch_all(&mut *transaction)
+    .await?;
+    let artifact_root = final_workspace.join("artifacts");
+    tokio::fs::create_dir_all(&artifact_root)
+        .await
+        .map_err(io_error)?;
+    let mut path_replacements = Vec::new();
+    for artifact in artifacts {
+        let source_path = PathBuf::from(artifact.get::<String, _>("path"));
+        let available = artifact.get::<i64, _>("available") != 0 && source_path.is_file();
+        let destination = if available {
+            let name = source_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("artifact");
+            let destination = artifact_root.join(format!("{}-{name}", uuid::Uuid::new_v4()));
+            tokio::fs::copy(&source_path, &destination)
+                .await
+                .map_err(io_error)?;
+            path_replacements.push((
+                source_path.to_string_lossy().into_owned(),
+                destination.to_string_lossy().into_owned(),
+            ));
+            destination
+        } else {
+            artifact_root.join(
+                source_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("missing-artifact"),
+            )
+        };
+        let source_item_id: Option<String> = artifact.get("item_id");
+        sqlx::query::query(
+            "INSERT INTO agent_artifacts
+             (id, session_id, item_id, provenance, action, path, original_path, mime_type, size_bytes, available, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(uuid::Uuid::new_v4().to_string())
+        .bind(&branch.id)
+        .bind(source_item_id.and_then(|id| item_ids.get(&id).cloned()))
+        .bind(artifact.get::<String, _>("provenance"))
+        .bind(artifact.get::<String, _>("action"))
+        .bind(destination.to_string_lossy().as_ref())
+        .bind(artifact.get::<Option<String>, _>("original_path"))
+        .bind(artifact.get::<Option<String>, _>("mime_type"))
+        .bind(artifact.get::<Option<i64>, _>("size_bytes"))
+        .bind(i64::from(available))
+        .bind(artifact.get::<String, _>("created_at"))
+        .execute(&mut *transaction)
+        .await?;
+    }
+    if !path_replacements.is_empty() {
+        let branch_items = sqlx::query::query(
+            "SELECT id, payload_json FROM agent_items WHERE session_id = ? ORDER BY sequence ASC",
+        )
+        .bind(&branch.id)
+        .fetch_all(&mut *transaction)
+        .await?;
+        for item in branch_items {
+            let item_id: String = item.get("id");
+            let mut payload: Value = serde_json::from_str(&item.get::<String, _>("payload_json"))
+                .map_err(|error| {
+                AppError::new("agent_branch_payload_invalid", error.to_string())
+            })?;
+            replace_json_paths(&mut payload, &path_replacements);
+            sqlx::query::query("UPDATE agent_items SET payload_json = ? WHERE id = ?")
+                .bind(payload.to_string())
+                .bind(item_id)
+                .execute(&mut *transaction)
+                .await?;
+        }
+    }
+    transaction.commit().await?;
+    Ok(session_json(repository.get_session(&branch.id).await?))
+}
+
+fn replace_json_paths(value: &mut Value, replacements: &[(String, String)]) {
+    match value {
+        Value::String(text) => {
+            if let Some((_, replacement)) = replacements.iter().find(|(source, _)| source == text) {
+                *text = replacement.clone();
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                replace_json_paths(value, replacements);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values_mut() {
+                replace_json_paths(value, replacements);
+            }
+        }
+        _ => {}
+    }
+}
+
+#[cfg(test)]
+mod branch_tests {
+    use super::*;
+
+    #[test]
+    fn branch_payload_paths_follow_copied_artifacts_without_changing_other_text() {
+        let mut payload = json!({
+            "output": {
+                "path": "/source/session/image.png",
+                "caption": "Keep /source/session/image.png in prose unchanged"
+            },
+            "attachments": [{ "path": "/source/session/image.png" }]
+        });
+        replace_json_paths(
+            &mut payload,
+            &[(
+                "/source/session/image.png".into(),
+                "/branch/session/artifacts/image.png".into(),
+            )],
+        );
+
+        assert_eq!(
+            payload["output"]["path"],
+            "/branch/session/artifacts/image.png"
+        );
+        assert_eq!(
+            payload["attachments"][0]["path"],
+            "/branch/session/artifacts/image.png"
+        );
+        assert_eq!(
+            payload["output"]["caption"],
+            "Keep /source/session/image.png in prose unchanged"
+        );
+    }
 }
 
 #[tauri::command]
@@ -190,7 +509,10 @@ pub async fn start_agent_run(
         })
         .cloned()
         .collect::<Vec<_>>();
-    let run = repository.create_run(&session.id, &model).await?;
+    let reasoning_effort = normalize_reasoning_effort(request.reasoning_effort.as_deref())?;
+    let run = repository
+        .create_run(&session.id, &model, reasoning_effort)
+        .await?;
     repository
         .set_run_enabled_skills(&run.id, &requested_skills)
         .await?;
@@ -201,6 +523,7 @@ pub async fn start_agent_run(
             session_id: &session.id,
             run_id: &run.id,
             model: &model,
+            reasoning_effort,
             safety_mode: request.safety_mode,
             workspace: &workspace,
             input: &request.prompt,
@@ -297,7 +620,9 @@ pub async fn retry_agent_run(
             .execute(&repository.pool)
             .await?;
     }
-    let run = repository.create_run(&session.id, &model).await?;
+    let run = repository
+        .create_run(&session.id, &model, previous.reasoning_effort.as_deref())
+        .await?;
     let enabled_skill_ids = repository.run_enabled_skills(&previous.id).await?;
     repository
         .set_run_enabled_skills(&run.id, &enabled_skill_ids)
@@ -309,6 +634,7 @@ pub async fn retry_agent_run(
             session_id: &session.id,
             run_id: &run.id,
             model: &model,
+            reasoning_effort: previous.reasoning_effort.as_deref(),
             safety_mode: session.safety_mode,
             workspace: &workspace,
             input: &prompt,
@@ -369,21 +695,48 @@ pub async fn resolve_agent_interruption(
                 "This interruption can no longer be resumed.",
             )
         })?;
+    let interruption_kind = interruption
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("approval")
+        .to_string();
     let clarification_answer = request
         .resolution
         .get("answer")
         .and_then(Value::as_str)
         .map(str::to_string);
+    let secret_value = request
+        .resolution
+        .get("secret")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
     let approved = clarification_answer.is_some()
+        || secret_value.is_some()
         || request
             .resolution
             .get("choice")
             .and_then(Value::as_str)
             .is_some_and(|choice| choice != "deny");
+    let secret_ref = if interruption_kind == "secret" {
+        match secret_value {
+            Some(value) => {
+                let secret_ref = format!("agent-secret-{}", uuid::Uuid::new_v4());
+                super::secrets::put(&secret_ref, value).await?;
+                Some(secret_ref)
+            }
+            None => None,
+        }
+    } else {
+        None
+    };
     interruption["status"] = json!("resolved");
     interruption["resolvedAt"] = json!(chrono::Utc::now().to_rfc3339());
     if let Some(answer) = clarification_answer.as_deref() {
         interruption["answer"] = json!(answer);
+    }
+    if let Some(secret_ref) = secret_ref.as_deref() {
+        interruption["secretRef"] = json!(secret_ref);
     }
     sqlx::query::query("UPDATE agent_items SET payload_json = ? WHERE id = ?")
         .bind(interruption.to_string())
@@ -406,6 +759,7 @@ pub async fn resolve_agent_interruption(
             session_id: &session.id,
             run_id: &run.id,
             model: &model,
+            reasoning_effort: run.reasoning_effort.as_deref(),
             safety_mode: session.safety_mode,
             workspace: &workspace,
             input: "",
@@ -425,8 +779,10 @@ pub async fn resolve_agent_interruption(
     params["serializedState"] = json!(serialized_state);
     params["resolutions"] = if let Some(answer) = clarification_answer {
         json!([{ "interruptionId": request.interruption_id, "kind": "clarification", "answer": answer }])
+    } else if interruption_kind == "secret" {
+        json!([{ "interruptionId": request.interruption_id, "kind": "secret", "decision": if approved { "approve" } else { "reject" } }])
     } else {
-        json!([{ "interruptionId": request.interruption_id, "decision": if approved { "approve" } else { "reject" } }])
+        json!([{ "interruptionId": request.interruption_id, "kind": "approval", "decision": if approved { "approve" } else { "reject" } }])
     };
     host.request("run.resume", &session.id, &run.id, params)
         .await?;
@@ -481,6 +837,61 @@ pub async fn read_agent_artifact_text(
     }
 }
 
+#[tauri::command]
+pub async fn download_agent_artifact(
+    app: AppHandle,
+    request: ReadArtifactRequest,
+) -> Result<String, AppError> {
+    let source = authorized_artifact_path(&app, &request.path).await?;
+    let downloads = app
+        .path()
+        .download_dir()
+        .map_err(|error| AppError::new("agent_artifact_download_failed", error.to_string()))?;
+    tokio::fs::create_dir_all(&downloads)
+        .await
+        .map_err(|error| AppError::new("agent_artifact_download_failed", error.to_string()))?;
+    let destination = unique_download_path(&downloads, &source)?;
+    tokio::fs::copy(&source, &destination)
+        .await
+        .map_err(|error| AppError::new("agent_artifact_download_failed", error.to_string()))?;
+    Ok(destination.to_string_lossy().into_owned())
+}
+
+fn unique_download_path(downloads: &Path, source: &Path) -> Result<PathBuf, AppError> {
+    let file_name = source
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            AppError::new(
+                "agent_artifact_download_failed",
+                "The June file does not have a downloadable filename.",
+            )
+        })?;
+    let candidate = downloads.join(file_name);
+    if !candidate.exists() {
+        return Ok(candidate);
+    }
+    let stem = source
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("download");
+    let extension = source.extension().and_then(|name| name.to_str());
+    for index in 1..1000 {
+        let file_name = match extension {
+            Some(extension) if !extension.is_empty() => format!("{stem} ({index}).{extension}"),
+            _ => format!("{stem} ({index})"),
+        };
+        let candidate = downloads.join(file_name);
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(AppError::new(
+        "agent_artifact_download_failed",
+        "Could not find an available Downloads filename.",
+    ))
+}
+
 async fn authorized_artifact_path(app: &AppHandle, requested: &str) -> Result<PathBuf, AppError> {
     use sqlx::row::Row;
     let repository = repository(app).await?;
@@ -514,6 +925,92 @@ fn image_mime_type(path: &std::path::Path) -> Option<&'static str> {
 pub async fn list_agent_skills(app: AppHandle) -> Result<Vec<Value>, AppError> {
     let repository = repository(&app).await?;
     agent_skill_catalog(&app, &repository).await
+}
+
+#[tauri::command]
+pub async fn read_agent_skill(app: AppHandle, skill_id: String) -> Result<Value, AppError> {
+    validate_skill_id(&skill_id)?;
+    for (root, managed) in skill_roots(&app) {
+        let path = root.join(&skill_id).join("SKILL.md");
+        if path.is_file() {
+            let content = tokio::fs::read_to_string(path)
+                .await
+                .map_err(|error| AppError::new("agent_skill_read_failed", error.to_string()))?;
+            return Ok(json!({ "content": content, "readOnly": !managed }));
+        }
+    }
+    Err(AppError::new(
+        "agent_skill_not_found",
+        "The requested skill was not found.",
+    ))
+}
+
+#[tauri::command]
+pub async fn update_agent_skill(
+    app: AppHandle,
+    request: UpdateSkillRequest,
+) -> Result<Value, AppError> {
+    validate_skill_id(&request.skill_id)?;
+    if request.content.len() > 512 * 1024 {
+        return Err(AppError::new(
+            "agent_skill_too_large",
+            "Skill instructions must be smaller than 512 KB.",
+        ));
+    }
+    let root = skill_roots(&app)
+        .into_iter()
+        .find_map(|(root, managed)| managed.then_some(root))
+        .ok_or_else(|| {
+            AppError::new(
+                "agent_skill_write_failed",
+                "Managed skill storage is unavailable.",
+            )
+        })?;
+    let path = root.join(&request.skill_id).join("SKILL.md");
+    if !path.is_file() {
+        return Err(AppError::new(
+            "agent_skill_read_only",
+            "User-global skills are read-only in June.",
+        ));
+    }
+    let temporary = path.with_extension("md.tmp");
+    tokio::fs::write(&temporary, request.content)
+        .await
+        .map_err(|error| AppError::new("agent_skill_write_failed", error.to_string()))?;
+    tokio::fs::rename(&temporary, &path)
+        .await
+        .map_err(|error| AppError::new("agent_skill_write_failed", error.to_string()))?;
+    let skill = repository(&app)
+        .await?
+        .skills()
+        .await?
+        .into_iter()
+        .find(|skill| skill.id == request.skill_id)
+        .map(|skill| skill.enabled)
+        .unwrap_or(true);
+    let description = tokio::fs::read_to_string(&path)
+        .await
+        .ok()
+        .and_then(|text| skill_description(&text))
+        .unwrap_or_else(|| "June agent skill".into());
+    Ok(
+        json!({ "id": request.skill_id, "name": request.skill_id, "description": description, "source": "managed", "enabled": skill, "editable": true }),
+    )
+}
+
+fn validate_skill_id(skill_id: &str) -> Result<(), AppError> {
+    if skill_id.is_empty()
+        || skill_id.len() > 128
+        || !skill_id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Err(AppError::new(
+            "agent_skill_invalid",
+            "Skill ids may contain letters, numbers, hyphens, and underscores.",
+        ));
+    }
+    Ok(())
 }
 
 async fn agent_skill_catalog(
@@ -630,10 +1127,22 @@ fn normalize_agent_model(model: &str) -> String {
     }
 }
 
+fn normalize_reasoning_effort(effort: Option<&str>) -> Result<Option<&str>, AppError> {
+    match effort.map(str::trim).filter(|effort| !effort.is_empty()) {
+        None => Ok(None),
+        Some(effort @ ("minimal" | "medium" | "high")) => Ok(Some(effort)),
+        Some(_) => Err(AppError::new(
+            "agent_reasoning_effort_invalid",
+            "Reasoning effort must be minimal, medium, or high.",
+        )),
+    }
+}
+
 struct RunParamsInput<'a> {
     session_id: &'a str,
     run_id: &'a str,
     model: &'a str,
+    reasoning_effort: Option<&'a str>,
     safety_mode: AgentSafetyMode,
     workspace: &'a str,
     input: &'a str,
@@ -690,7 +1199,7 @@ async fn run_params(
         .await
         .map_err(|error| AppError::new("agent_mcp_policy_snapshot_failed", error.to_string()))?;
     Ok(
-        json!({ "model": request.model, "instructions": INSTRUCTIONS, "workspace": request.workspace, "safetyMode": request.safety_mode.as_db(), "input": message_with_attachment_context(request.input, request.attachments), "attachments": vision_attachments, "history": history, "tools": tools, "skills": request.skills.iter().map(|name| json!({ "name": name, "description": "Enabled June skill", "source": "managed" })).collect::<Vec<_>>(), "contextWindow": model_capabilities.context_tokens.unwrap_or(128000), "maxOutputTokens": 8192 }),
+        json!({ "model": request.model, "reasoningEffort": request.reasoning_effort, "instructions": INSTRUCTIONS, "workspace": request.workspace, "safetyMode": request.safety_mode.as_db(), "input": message_with_attachment_context(request.input, request.attachments), "attachments": vision_attachments, "history": history, "tools": tools, "skills": request.skills.iter().map(|name| json!({ "name": name, "description": "Enabled June skill", "source": "managed" })).collect::<Vec<_>>(), "contextWindow": model_capabilities.context_tokens.unwrap_or(128000), "maxOutputTokens": 8192 }),
     )
 }
 
@@ -702,6 +1211,30 @@ async fn tool_descriptors(
 ) -> Result<Value, AppError> {
     let mut tools = json!([
         { "name": "search_june", "description": "Search June notes, transcripts, and dictations.", "parameters": { "type": "object", "properties": { "query": { "type": "string" } }, "required": ["query"], "additionalProperties": false } },
+        { "name": "list_memories", "description": "Recall durable facts, preferences, and decisions from June's memory store. Pass projectId to include that project's memories.", "parameters": { "type": "object", "properties": { "projectId": { "type": "string" }, "includeGlobal": { "type": "boolean", "default": true }, "limit": { "type": "integer", "minimum": 1, "maximum": 20, "default": 8 }, "offset": { "type": "integer", "minimum": 0, "default": 0 } }, "required": [], "additionalProperties": false } },
+        { "name": "save_memory", "description": "Save a durable fact, preference, or decision in June's memory store. Pass projectId when it belongs to the current project.", "parameters": { "type": "object", "properties": { "content": { "type": "string", "maxLength": 4000 }, "projectId": { "type": "string" } }, "required": ["content"], "additionalProperties": false }, "requiresApproval": true },
+        { "name": "forget_memory", "description": "Permanently forget one June memory by id when the user asks June to forget it.", "parameters": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"], "additionalProperties": false }, "requiresApproval": true },
+        { "name": "generate_image", "description": "Generate an image from a text description and show it in the conversation.", "parameters": { "type": "object", "properties": { "prompt": { "type": "string" } }, "required": ["prompt"], "additionalProperties": false } },
+        { "name": "edit_image", "description": "Edit an image file in the June session workspace and show the result in the conversation.", "parameters": { "type": "object", "properties": { "sourcePath": { "type": "string" }, "instruction": { "type": "string" } }, "required": ["sourcePath", "instruction"], "additionalProperties": false } },
+        { "name": "generate_video", "description": "Generate a short video from a text description and show it in the conversation.", "parameters": { "type": "object", "properties": { "prompt": { "type": "string" }, "duration": { "type": "string" }, "aspectRatio": { "type": "string" }, "audio": { "type": "boolean" } }, "required": ["prompt"], "additionalProperties": false } },
+        { "name": "get_obsidian_vault", "description": "Discover the current Obsidian vault selected in June. Re-query for each distinct task.", "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false } },
+        { "name": "start_recording", "description": "Start a visible June recording only when the user explicitly asks to begin recording now.", "parameters": { "type": "object", "properties": { "sourceMode": { "type": "string", "enum": ["microphoneOnly", "microphonePlusSystem"] } }, "required": [], "additionalProperties": false }, "requiresApproval": true },
+        { "name": "stop_recording", "description": "Stop the recording currently visible in June.", "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false }, "requiresApproval": true },
+        { "name": "recording_status", "description": "Check whether June is currently recording and return the active recording metadata.", "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false } },
+        { "name": "start_session", "description": "Start an attended June Browser use session.", "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false } },
+        { "name": "close_session", "description": "Close an attended June Browser use session.", "parameters": { "type": "object", "properties": { "session_id": { "type": "string" } }, "required": ["session_id"], "additionalProperties": false } },
+        { "name": "navigate", "description": "Navigate a June Browser use session to a URL.", "parameters": { "type": "object", "properties": { "session_id": { "type": "string" }, "url": { "type": "string" } }, "required": ["session_id", "url"], "additionalProperties": true } },
+        { "name": "snapshot", "description": "Read the visible page and interactive references from a June Browser use session.", "parameters": { "type": "object", "properties": { "session_id": { "type": "string" } }, "required": ["session_id"], "additionalProperties": true } },
+        { "name": "screenshot", "description": "Capture a screenshot from a June Browser use session.", "parameters": { "type": "object", "properties": { "session_id": { "type": "string" } }, "required": ["session_id"], "additionalProperties": true } },
+        { "name": "click", "description": "Click an interactive reference in a June Browser use session.", "parameters": { "type": "object", "properties": { "session_id": { "type": "string" }, "ref": { "type": "string" } }, "required": ["session_id", "ref"], "additionalProperties": true } },
+        { "name": "fill", "description": "Fill an interactive reference in a June Browser use session.", "parameters": { "type": "object", "properties": { "session_id": { "type": "string" }, "ref": { "type": "string" }, "value": { "type": "string" } }, "required": ["session_id", "ref", "value"], "additionalProperties": true } },
+        { "name": "press", "description": "Press a key in a June Browser use session.", "parameters": { "type": "object", "properties": { "session_id": { "type": "string" }, "key": { "type": "string" } }, "required": ["session_id", "key"], "additionalProperties": true } },
+        { "name": "back", "description": "Navigate back in a June Browser use session.", "parameters": { "type": "object", "properties": { "session_id": { "type": "string" } }, "required": ["session_id"], "additionalProperties": true } },
+        { "name": "list_tabs", "description": "List tabs owned by a June Browser use session.", "parameters": { "type": "object", "properties": { "session_id": { "type": "string" } }, "required": ["session_id"], "additionalProperties": true } },
+        { "name": "open_tab", "description": "Open a task-owned tab in a June Browser use session.", "parameters": { "type": "object", "properties": { "session_id": { "type": "string" }, "url": { "type": "string" } }, "required": ["session_id"], "additionalProperties": true } },
+        { "name": "switch_tab", "description": "Switch the active task-owned tab in a June Browser use session.", "parameters": { "type": "object", "properties": { "session_id": { "type": "string" }, "tab_id": {} }, "required": ["session_id", "tab_id"], "additionalProperties": true } },
+        { "name": "close_tab", "description": "Close a task-owned tab in a June Browser use session.", "parameters": { "type": "object", "properties": { "session_id": { "type": "string" }, "tab_id": {} }, "required": ["session_id", "tab_id"], "additionalProperties": true } },
+        { "name": "accept_shared_tab", "description": "Accept a one-use browser tab share code supplied by the user.", "parameters": { "type": "object", "properties": { "session_id": { "type": "string" }, "share_code": { "type": "string" } }, "required": ["session_id", "share_code"], "additionalProperties": true } },
         { "name": "web_search", "description": "Search the public web.", "parameters": { "type": "object", "properties": { "query": { "type": "string" } }, "required": ["query"], "additionalProperties": false } },
         { "name": "web_fetch", "description": "Fetch a public web page.", "parameters": { "type": "object", "properties": { "url": { "type": "string" } }, "required": ["url"], "additionalProperties": false } },
         { "name": "list_files", "description": "List files in a directory.", "parameters": { "type": "object", "properties": { "path": { "type": "string" } }, "required": [], "additionalProperties": false } },
@@ -711,7 +1244,7 @@ async fn tool_descriptors(
         { "name": "import_file", "description": "Copy a user file into this session workspace.", "parameters": { "type": "object", "properties": { "sourcePath": { "type": "string" } }, "required": ["sourcePath"], "additionalProperties": false }, "requiresApproval": true },
         { "name": "preview_file", "description": "Read file metadata and a bounded text preview.", "parameters": { "type": "object", "properties": { "path": { "type": "string" } }, "required": ["path"], "additionalProperties": false } },
         { "name": "search_files", "description": "Search text files.", "parameters": { "type": "object", "properties": { "query": { "type": "string" }, "path": { "type": "string" } }, "required": ["query"], "additionalProperties": false } },
-        { "name": "run_shell", "description": "Run a shell command in the session workspace.", "parameters": { "type": "object", "properties": { "command": { "type": "string" } }, "required": ["command"], "additionalProperties": false }, "requiresApproval": true },
+        { "name": "run_shell", "description": "Run a shell command in the session workspace. Values in secretEnv must be opaque references returned by request_secret.", "parameters": { "type": "object", "properties": { "command": { "type": "string" }, "secretEnv": { "type": "object", "additionalProperties": { "type": "string" } } }, "required": ["command"], "additionalProperties": false }, "requiresApproval": true },
         { "name": "list_skills", "description": "List available June skills.", "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false } },
         { "name": "load_skill", "description": "Load instructions for one June skill.", "parameters": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"], "additionalProperties": false } }
         ,{ "name": "list_routines", "description": "List June routines and their schedules.", "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false } }
@@ -721,6 +1254,7 @@ async fn tool_descriptors(
         ,{ "name": "resume_routine", "description": "Resume a paused June routine.", "parameters": { "type": "object", "properties": { "routineId": { "type": "string" } }, "required": ["routineId"], "additionalProperties": false }, "requiresApproval": true }
         ,{ "name": "delete_routine", "description": "Delete a June routine.", "parameters": { "type": "object", "properties": { "routineId": { "type": "string" } }, "required": ["routineId"], "additionalProperties": false }, "requiresApproval": true }
         ,{ "name": "request_clarification", "description": "Pause and ask the user a question when their answer is required to continue.", "parameters": { "type": "object", "properties": { "question": { "type": "string" }, "choices": { "type": "array", "items": { "type": "string" } } }, "required": ["question", "choices"], "additionalProperties": false }, "requiresApproval": true }
+        ,{ "name": "request_secret", "description": "Securely request a secret from the user. The result is an opaque one-use reference for a safety-controlled tool, never the secret value.", "parameters": { "type": "object", "properties": { "reason": { "type": "string" } }, "required": ["reason"], "additionalProperties": false }, "requiresApproval": true }
         ,{ "name": "computer_use", "description": "Operate the attended computer-use session through June's permission and approval broker.", "parameters": { "type": "object", "properties": { "action": { "type": "string" }, "arguments": {} }, "required": ["action"], "additionalProperties": true }, "requiresApproval": true }
         ,{ "name": "notion_call", "description": "Call an enabled read-only Notion tool through June's connected account.", "parameters": { "type": "object", "properties": { "toolName": { "type": "string" }, "arguments": { "type": "object" } }, "required": ["toolName", "arguments"], "additionalProperties": false } }
         ,{ "name": "notion_action", "description": "Call an enabled Notion action through June's approval broker.", "parameters": { "type": "object", "properties": { "toolName": { "type": "string" }, "arguments": { "type": "object" } }, "required": ["toolName", "arguments"], "additionalProperties": false }, "requiresApproval": true }
@@ -824,7 +1358,7 @@ fn session_json(session: super::AgentSessionDto) -> Value {
     json!({ "id": session.id, "title": session.title, "status": session.status, "model": session.model, "safetyMode": session.safety_mode, "workspacePath": session.workspace_path.unwrap_or_default(), "source": match session.source.as_str() { "legacy_routine" => "legacy_routine", "routine" => "routine", "user" => "user", _ => "legacy_task" }, "createdAt": session.created_at, "updatedAt": session.updated_at, "error": session.last_error })
 }
 fn run_json(run: super::AgentRunDto) -> Value {
-    json!({ "id": run.id, "sessionId": run.session_id, "status": run.status, "model": run.model, "startedAt": run.started_at, "completedAt": run.completed_at, "usage": run.usage, "error": run.error_message })
+    json!({ "id": run.id, "sessionId": run.session_id, "status": run.status, "model": run.model, "reasoningEffort": run.reasoning_effort, "startedAt": run.started_at, "completedAt": run.completed_at, "usage": run.usage, "error": run.error_message })
 }
 
 fn item_json(item: AgentItemDto) -> Result<Value, AppError> {

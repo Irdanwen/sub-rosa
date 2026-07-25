@@ -18,10 +18,11 @@ export async function compactHistory(input: {
   contextWindow: number;
   maxOutputTokens?: number;
   summarize?: HistorySummarizer;
+  force?: boolean;
 }): Promise<CompactionResult> {
   const budget = Math.max(1_024, input.contextWindow - (input.maxOutputTokens ?? DEFAULT_OUTPUT_RESERVE));
   const estimatedTokens = estimateHistoryTokens(input.history);
-  if (estimatedTokens <= budget * 0.85) {
+  if (!input.force && estimatedTokens <= budget * 0.85) {
     return { history: input.history, compacted: false, removedItemIds: [], estimatedTokens };
   }
 

@@ -57,3 +57,22 @@ test("keeps system instructions, recent turns, and complete tool groups", async 
     assert.equal(hasCall, hasResult, `tool group ${index} was split`);
   }
 });
+
+test("manual compaction can force eligible older groups below the automatic threshold", async () => {
+  const history = Array.from({ length: 8 }, (_, index) => ({
+    id: `message-${index}`,
+    kind: "message" as const,
+    role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+    text: `Short message ${index}`,
+  }));
+
+  const result = await compactHistory({
+    history,
+    contextWindow: 128_000,
+    force: true,
+  });
+
+  assert.equal(result.compacted, true);
+  assert.deepEqual(result.removedItemIds, ["message-0", "message-1"]);
+  assert.equal(result.summary?.kind, "context_summary");
+});

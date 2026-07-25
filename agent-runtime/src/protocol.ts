@@ -7,6 +7,7 @@ export const HOST_REQUEST_METHODS = [
   "run.start",
   "run.cancel",
   "run.resume",
+  "history.compact",
   "runtime.shutdown",
 ] as const;
 

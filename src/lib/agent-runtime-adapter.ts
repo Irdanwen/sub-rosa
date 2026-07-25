@@ -10,6 +10,7 @@ import {
   type AgentRuntimeEvent,
   type AgentSessionDto,
 } from "./agent-runtime-contract";
+import { stripProjectContext } from "./agent-project-context";
 
 export type AgentRuntimeProjection = {
   session?: AgentSessionDto;
@@ -209,7 +210,11 @@ export function agentItemsToChatTurns(items: AgentItemDto[]): AgentChatTurn[] {
                   kind: artifact.mimeType?.startsWith("image/") ? "image" : "file",
                 }),
               ) ?? []),
-              { type: "text", text: item.text, status: base.status },
+              {
+                type: "text",
+                text: item.role === "user" ? stripProjectContext(item.text) : item.text,
+                status: base.status,
+              },
             ],
           };
         case "reasoning":
@@ -246,6 +251,38 @@ export function agentItemsToChatTurns(items: AgentItemDto[]): AgentChatTurn[] {
             ],
           };
         case "tool_result":
+          if (!item.isError && generatedImagePart(item.output)) {
+            return {
+              ...base,
+              role: "assistant",
+              parts: [
+                {
+                  type: "tool",
+                  id: item.callId,
+                  name: item.name,
+                  text: readableValue(item.output),
+                  status: "complete",
+                },
+                generatedImagePart(item.output)!,
+              ],
+            };
+          }
+          if (!item.isError && generatedVideoPart(item.output)) {
+            return {
+              ...base,
+              role: "assistant",
+              parts: [
+                {
+                  type: "tool",
+                  id: item.callId,
+                  name: item.name,
+                  text: readableValue(item.output),
+                  status: "complete",
+                },
+                generatedVideoPart(item.output)!,
+              ],
+            };
+          }
           return {
             ...base,
             role: "assistant",
@@ -285,6 +322,36 @@ export function agentItemsToChatTurns(items: AgentItemDto[]): AgentChatTurn[] {
     });
 }
 
+function generatedImagePart(output: unknown): AgentChatPart | undefined {
+  if (!output || typeof output !== "object") return undefined;
+  const value = output as Record<string, unknown>;
+  if (value.mediaType !== "image" || typeof value.dataUrl !== "string") return undefined;
+  return {
+    type: "image",
+    status: "complete",
+    prompt: typeof value.prompt === "string" ? value.prompt : "",
+    model: typeof value.model === "string" ? value.model : undefined,
+    path: typeof value.path === "string" ? value.path : undefined,
+    dataUrl: value.dataUrl,
+    name: typeof value.name === "string" ? value.name : undefined,
+  };
+}
+
+function generatedVideoPart(output: unknown): AgentChatPart | undefined {
+  if (!output || typeof output !== "object") return undefined;
+  const value = output as Record<string, unknown>;
+  if (value.mediaType !== "video" || typeof value.path !== "string") return undefined;
+  return {
+    type: "video",
+    status: "complete",
+    prompt: typeof value.prompt === "string" ? value.prompt : "",
+    model: typeof value.model === "string" ? value.model : undefined,
+    path: value.path,
+    requestId: typeof value.requestId === "string" ? value.requestId : undefined,
+    name: typeof value.name === "string" ? value.name : undefined,
+  };
+}
+
 function toolCallKey(runId: string | undefined, callId: string) {
   return `${runId ?? ""}:${callId}`;
 }
@@ -300,6 +367,14 @@ function interruptionToPart(
       question: interruption.question,
       choices: interruption.choices,
       answer: interruption.answer,
+      status: interruption.status === "pending" ? "pending" : "resolved",
+    };
+  }
+  if (interruption.kind === "secret") {
+    return {
+      type: "secret",
+      id: interruption.id,
+      reason: interruption.reason,
       status: interruption.status === "pending" ? "pending" : "resolved",
     };
   }

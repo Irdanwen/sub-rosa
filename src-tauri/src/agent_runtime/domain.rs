@@ -49,6 +49,7 @@ pub struct AgentRunDto {
     pub session_id: String,
     pub status: String,
     pub model: String,
+    pub reasoning_effort: Option<String>,
     pub started_at: String,
     pub updated_at: String,
     pub completed_at: Option<String>,

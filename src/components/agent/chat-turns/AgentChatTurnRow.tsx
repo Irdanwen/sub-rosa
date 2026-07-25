@@ -1,4 +1,5 @@
 import { IconArrowsRepeat } from "central-icons/IconArrowsRepeat";
+import { IconBranch } from "central-icons/IconBranch";
 import { IconConcise } from "central-icons/IconConcise";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -75,6 +76,8 @@ export function AgentChatTurnRow({
   topUpLabel,
   fundingTier,
   onVisibleMarkdownChange,
+  onBranch,
+  branching,
   turn,
 }: {
   activeThinkingKey?: string;
@@ -115,6 +118,8 @@ export function AgentChatTurnRow({
   topUpLabel?: string;
   fundingTier?: FundingTier;
   onVisibleMarkdownChange?: (visibleMarkdown: string) => void;
+  onBranch?: (itemId: string) => void;
+  branching?: boolean;
   turn: AgentChatTurn;
 }) {
   const textParts = turn.parts.filter(
@@ -274,6 +279,26 @@ export function AgentChatTurnRow({
       </button>
     </HoverTip>
   ) : null;
+  const branchAction =
+    concreteResponse && onBranch ? (
+      <HoverTip
+        compact
+        width={136}
+        delay={TURN_ACTION_TIP_DELAY_MS}
+        tip="Branch from here"
+        className="agent-turn-action-tip"
+      >
+        <button
+          type="button"
+          className="agent-turn-action"
+          aria-label={branching ? "Creating branch" : "Branch from here"}
+          disabled={branching}
+          onClick={() => onBranch(turn.id)}
+        >
+          <IconBranch size={14} aria-hidden />
+        </button>
+      </HoverTip>
+    ) : null;
   // Timestamp for the row. relativeDate returns "" for an unparseable value, so
   // we only render the <time> when there's a real date to show.
   const timestampLabel = relativeDate(turn.createdAt);
@@ -291,7 +316,7 @@ export function AgentChatTurnRow({
     </HoverTip>
   ) : null;
   const turnActions =
-    concreteResponse && (copyAction || timestampAction) ? (
+    concreteResponse && (copyAction || branchAction || timestampAction) ? (
       <div className="agent-turn-actions">
         <div className="agent-turn-actions-inner">
           {/* The timestamp sits on the outer/far side of the row: before the
@@ -299,6 +324,7 @@ export function AgentChatTurnRow({
            * assistant turns, so the icons always stay nearest the message. */}
           {turn.role === "user" ? timestampAction : null}
           {copyAction}
+          {branchAction}
           {turn.role === "user" ? null : timestampAction}
         </div>
       </div>

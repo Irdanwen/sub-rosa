@@ -4,7 +4,9 @@ import {
   agentHudHide,
   agentHudShow,
   listAgentSkills,
+  readAgentSkill,
   setAgentSkillEnabled,
+  updateAgentSkill,
   type FolderDto,
 } from "../../lib/tauri";
 import {
@@ -20,6 +22,7 @@ import {
   type AgentSoundsChangedDetail,
 } from "../../lib/agent-sound-settings";
 import { Switch } from "../ui/Switch";
+import { Dialog } from "../ui/Dialog";
 import { SettingsPageHeader } from "./AppSettings";
 
 /** Settings owned by June's local agent harness. Messaging compatibility,
@@ -39,6 +42,9 @@ export function AgentSettingsSection({
   const [soundsEnabled, setSoundsEnabledState] = useState(getAgentSoundsEnabled);
   const [skills, setSkills] = useState<AgentSkillDto[]>();
   const [savingSkillId, setSavingSkillId] = useState<string>();
+  const [editingSkill, setEditingSkill] = useState<AgentSkillDto>();
+  const [skillDraft, setSkillDraft] = useState("");
+  const [skillSaving, setSkillSaving] = useState(false);
   const [error, setError] = useState<string>();
 
   useEffect(() => {
@@ -86,6 +92,30 @@ export function AgentSettingsSection({
       setError(messageFromError(cause));
     } finally {
       setSavingSkillId(undefined);
+    }
+  }
+
+  async function editSkill(skill: AgentSkillDto) {
+    try {
+      const document = await readAgentSkill(skill.id);
+      setSkillDraft(document.content);
+      setEditingSkill(skill);
+    } catch (cause) {
+      setError(messageFromError(cause));
+    }
+  }
+
+  async function saveSkill() {
+    if (!editingSkill) return;
+    setSkillSaving(true);
+    try {
+      const updated = await updateAgentSkill(editingSkill.id, skillDraft);
+      setSkills((current) => current?.map((item) => (item.id === updated.id ? updated : item)));
+      setEditingSkill(undefined);
+    } catch (cause) {
+      setError(messageFromError(cause));
+    } finally {
+      setSkillSaving(false);
     }
   }
 
@@ -152,6 +182,15 @@ export function AgentSettingsSection({
                   <p className="settings-row-description">{skill.description}</p>
                 </div>
                 <div className="settings-row-control">
+                  {skill.editable ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => void editSkill(skill)}
+                    >
+                      Edit
+                    </button>
+                  ) : null}
                   <Switch
                     checked={skill.enabled}
                     disabled={savingSkillId === skill.id}
@@ -170,6 +209,40 @@ export function AgentSettingsSection({
           </p>
         ) : null}
       </section>
+      <Dialog
+        open={Boolean(editingSkill)}
+        onClose={() => setEditingSkill(undefined)}
+        title={editingSkill ? `Edit ${editingSkill.name}` : "Edit skill"}
+        description="Update the managed instructions June loads for this skill."
+        footer={
+          <>
+            <button
+              type="button"
+              className="primary-action"
+              onClick={() => setEditingSkill(undefined)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="primary-action primary-solid"
+              disabled={skillSaving}
+              onClick={() => void saveSkill()}
+            >
+              {skillSaving ? "Saving..." : "Save skill"}
+            </button>
+          </>
+        }
+      >
+        <textarea
+          className="settings-skill-editor"
+          aria-label="Skill instructions"
+          value={skillDraft}
+          onChange={(event) => setSkillDraft(event.currentTarget.value)}
+          rows={18}
+          spellCheck={false}
+        />
+      </Dialog>
     </>
   );
 }

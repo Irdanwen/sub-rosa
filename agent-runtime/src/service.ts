@@ -50,6 +50,9 @@ export class RuntimeService {
       case "run.cancel":
         this.requireInitialized();
         return this.cancel(request.sessionId, request.runId);
+      case "history.compact":
+        this.requireInitialized();
+        return this.compact(request.params);
       case "runtime.shutdown":
         return this.shutdown();
       default:
@@ -134,6 +137,20 @@ export class RuntimeService {
     if (!active) return { cancelled: false, reason: "not_active" };
     active.controller.abort();
     return { cancelled: true };
+  }
+
+  private async compact(params: JsonObject): Promise<JsonValue> {
+    const history = params.history;
+    if (!Array.isArray(history)) {
+      throw new ProtocolError(-32602, "history.compact requires history");
+    }
+    const result = await compactHistory({
+      history: history as RunStartParams["history"],
+      contextWindow:
+        typeof params.contextWindow === "number" ? params.contextWindow : 128_000,
+      force: true,
+    });
+    return result as unknown as JsonValue;
   }
 
   private async shutdown(): Promise<JsonValue> {

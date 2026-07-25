@@ -22,9 +22,17 @@ export { invoke };
 export const agentRuntimeBindings: AgentRuntimeBindings = {
   listSessions: () => invoke<AgentSessionDto[]>("list_agent_sessions"),
   getSession: (sessionId) => invoke<AgentSessionDto>("get_agent_session", { sessionId }),
+  getLatestRun: (sessionId) => invoke<AgentRunDto | null>("get_latest_agent_run", { sessionId }),
+  compactSession: (sessionId) =>
+    invoke<{ compacted: boolean; removedItems: number; estimatedTokens?: number }>(
+      "compact_agent_session",
+      { sessionId },
+    ),
   createSession: (input) => invoke<AgentSessionDto>("create_agent_session", { request: input }),
   renameSession: (sessionId, title) =>
     invoke<AgentSessionDto>("rename_agent_session", { request: { sessionId, title } }),
+  branchSession: (sessionId, itemId) =>
+    invoke<AgentSessionDto>("branch_agent_session", { sessionId, itemId }),
   deleteSession: (sessionId) => invoke<void>("delete_agent_session", { sessionId }),
   listItems: (sessionId) => invoke<AgentItemDto[]>("list_agent_items", { sessionId }),
   startRun: (request) => invoke<AgentRunDto>("start_agent_run", { request }),
@@ -51,6 +59,10 @@ export const resolveAgentInterruption = (request: ResolveAgentInterruptionReques
   agentRuntimeBindings.resolveInterruption(request);
 export const listAgentArtifacts = agentRuntimeBindings.listArtifacts;
 export const listAgentSkills = agentRuntimeBindings.listSkills;
+export const readAgentSkill = (skillId: string) =>
+  invoke<{ content: string; readOnly: boolean }>("read_agent_skill", { skillId });
+export const updateAgentSkill = (skillId: string, content: string) =>
+  invoke<AgentSkillDto>("update_agent_skill", { request: { skillId, content } });
 export const setAgentSkillEnabled = agentRuntimeBindings.setSkillEnabled;
 
 export type {
@@ -961,6 +973,10 @@ export async function agentFilePreview(path: string) {
 
 export async function agentFileText(path: string) {
   return invoke<string | null>("read_agent_artifact_text", { request: { path } });
+}
+
+export async function downloadAgentArtifact(path: string) {
+  return invoke<string>("download_agent_artifact", { request: { path } });
 }
 
 export async function revealPath(path: string) {

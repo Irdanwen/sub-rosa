@@ -42,6 +42,7 @@ export type RuntimeInitializeParams = {
 
 export type RunStartParams = {
   model: string;
+  reasoningEffort?: "minimal" | "medium" | "high";
   instructions: string;
   workspace: string;
   safetyMode: SafetyMode;
@@ -65,6 +66,11 @@ export type InterruptionResolution =
       interruptionId: string;
       kind: "clarification";
       answer: string;
+    }
+  | {
+      interruptionId: string;
+      kind: "secret";
+      decision: "approve" | "reject";
     };
 
 export type RunResumeParams = Omit<RunStartParams, "input" | "history"> & {
@@ -93,6 +99,13 @@ export type RuntimeInterruption =
       arguments: JsonValue;
       question: string;
       choices: string[];
+    }
+  | {
+      id: string;
+      kind: "secret";
+      toolName: "request_secret";
+      arguments: JsonValue;
+      reason: string;
     };
 
 export const REQUEST_CLARIFICATION_TOOL: RuntimeToolDescriptor = {
@@ -105,6 +118,21 @@ export const REQUEST_CLARIFICATION_TOOL: RuntimeToolDescriptor = {
       choices: { type: "array", items: { type: "string" } },
     },
     required: ["question"],
+    additionalProperties: false,
+  },
+  requiresApproval: true,
+};
+
+export const REQUEST_SECRET_TOOL: RuntimeToolDescriptor = {
+  name: "request_secret",
+  description:
+    "Securely ask the user for a secret required by a tool. The value is delivered through June's keychain boundary and is never added to model context.",
+  parameters: {
+    type: "object",
+    properties: {
+      reason: { type: "string" },
+    },
+    required: ["reason"],
     additionalProperties: false,
   },
   requiresApproval: true,

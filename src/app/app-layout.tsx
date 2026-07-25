@@ -12,6 +12,7 @@ import { Sidebar } from "../components/sidebar/Sidebar";
 import { TabBar } from "../components/tabs/TabBar";
 import { ConnectorApprovalsTray } from "../components/connectors/ConnectorApprovalsTray";
 import { ComputerUseApprovalsTray } from "../components/agent/ComputerUseApprovalsTray";
+import { BrowserApprovalsTray } from "../components/agent/BrowserApprovalsTray";
 import { OPEN_REFERRAL_DIALOG_EVENT, ReferralNudge } from "../components/referral/ReferralNudge";
 import { markReferralNudgeClickedThrough } from "../lib/referral-nudge";
 import { Dialog } from "../components/ui/Dialog";
@@ -550,6 +551,7 @@ export function renderAppLayout(dependencies: RenderAppLayoutDependencies) {
       {/* Connector action approvals (approval trust mode) can arrive from a
             routine or chat in any view, so the tray is mounted at the shell. */}
       <div className="shell-approvals-stack">
+        <BrowserApprovalsTray />
         <ComputerUseApprovalsTray />
         <ConnectorApprovalsTray />
       </div>

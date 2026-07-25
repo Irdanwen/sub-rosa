@@ -94,7 +94,7 @@ impl AgentRepository {
 
     pub async fn latest_run(&self, session_id: &str) -> Result<AgentRunDto, sqlx::Error> {
         query(
-            "SELECT id, session_id, status, model, started_at, updated_at, completed_at,
+            "SELECT id, session_id, status, model, reasoning_effort, started_at, updated_at, completed_at,
                       usage_json, interrupted_state_json, last_sequence, error_code, error_message
                FROM agent_runs WHERE session_id = ? ORDER BY started_at DESC LIMIT 1",
         )
@@ -108,18 +108,20 @@ impl AgentRepository {
         &self,
         session_id: &str,
         model: &str,
+        reasoning_effort: Option<&str>,
     ) -> Result<AgentRunDto, sqlx::Error> {
         let id = Uuid::new_v4().to_string();
         let now = now();
         let mut transaction = self.pool.begin().await?;
         query(
             "INSERT INTO agent_runs
-             (id, session_id, status, model, started_at, updated_at)
-             VALUES (?, ?, 'running', ?, ?, ?)",
+             (id, session_id, status, model, reasoning_effort, started_at, updated_at)
+             VALUES (?, ?, 'running', ?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(session_id)
         .bind(model)
+        .bind(reasoning_effort)
         .bind(&now)
         .bind(&now)
         .execute(&mut *transaction)
@@ -135,7 +137,7 @@ impl AgentRepository {
 
     pub async fn get_run(&self, id: &str) -> Result<AgentRunDto, sqlx::Error> {
         let row = query(
-            "SELECT id, session_id, status, model, started_at, updated_at, completed_at,
+            "SELECT id, session_id, status, model, reasoning_effort, started_at, updated_at, completed_at,
                     usage_json, interrupted_state_json, last_sequence, error_code, error_message
              FROM agent_runs WHERE id = ?",
         )
@@ -462,6 +464,7 @@ fn run_from_row(row: SqliteRow) -> AgentRunDto {
         session_id: row.get("session_id"),
         status: row.get("status"),
         model: row.get("model"),
+        reasoning_effort: row.get("reasoning_effort"),
         started_at: row.get("started_at"),
         updated_at: row.get("updated_at"),
         completed_at: row.get("completed_at"),

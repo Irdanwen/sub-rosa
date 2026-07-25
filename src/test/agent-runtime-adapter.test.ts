@@ -16,6 +16,49 @@ const frame = {
 };
 
 describe("agent runtime adapter", () => {
+  it("renders generated image and video tool results as media", () => {
+    const items = [
+      {
+        id: "image-result",
+        sessionId: "session-1",
+        runId: "run-1",
+        sequence: 1,
+        createdAt: "2026-07-22T12:00:00Z",
+        kind: "tool_result" as const,
+        callId: "image-call",
+        name: "generate_image",
+        output: {
+          mediaType: "image",
+          dataUrl: "data:image/png;base64,AA==",
+          path: "/tmp/image.png",
+          prompt: "A fox",
+        },
+        isError: false,
+      },
+      {
+        id: "video-result",
+        sessionId: "session-1",
+        runId: "run-1",
+        sequence: 2,
+        createdAt: "2026-07-22T12:00:01Z",
+        kind: "tool_result" as const,
+        callId: "video-call",
+        name: "generate_video",
+        output: {
+          mediaType: "video",
+          path: "/tmp/video.mp4",
+          prompt: "A fox running",
+        },
+        isError: false,
+      },
+    ];
+
+    expect(agentItemsToChatTurns(items).map((turn) => turn.parts.at(-1)?.type)).toEqual([
+      "image",
+      "video",
+    ]);
+  });
+
   it("builds a streaming transcript and ignores duplicate or stale events", () => {
     const started: AgentRuntimeEvent = {
       ...frame,
@@ -130,7 +173,7 @@ describe("agent runtime adapter", () => {
     });
   });
 
-  it("maps approval and clarification interruptions to existing action cards", () => {
+  it("maps approval, clarification, and secret interruptions to action cards", () => {
     const approval: AgentRuntimeEvent = {
       ...frame,
       eventId: "event-4",
@@ -172,10 +215,29 @@ describe("agent runtime adapter", () => {
         },
       },
     };
+    const secret: AgentRuntimeEvent = {
+      ...frame,
+      eventId: "event-6",
+      sequence: 6,
+      method: "interruption.requested",
+      data: {
+        itemId: "item-secret",
+        interruption: {
+          id: "secret-1",
+          kind: "secret",
+          sessionId: "session-1",
+          runId: "run-1",
+          status: "pending",
+          createdAt: "2026-07-22T12:00:04Z",
+          reason: "Authenticate a local command.",
+        },
+      },
+    };
 
     let projection = createAgentRuntimeProjection();
     projection = applyAgentRuntimeEvent(projection, approval);
     projection = applyAgentRuntimeEvent(projection, clarification);
+    projection = applyAgentRuntimeEvent(projection, secret);
 
     expect(agentItemsToChatTurns(projection.items)).toMatchObject([
       {
@@ -196,6 +258,16 @@ describe("agent runtime adapter", () => {
             id: "clarification-1",
             question: "Which project should I update?",
             choices: ["June", "Platform"],
+            status: "pending",
+          },
+        ],
+      },
+      {
+        parts: [
+          {
+            type: "secret",
+            id: "secret-1",
+            reason: "Authenticate a local command.",
             status: "pending",
           },
         ],

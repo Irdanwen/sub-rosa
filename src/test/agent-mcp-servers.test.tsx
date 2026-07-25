@@ -117,8 +117,9 @@ describe("AgentMcpServersSection", () => {
     await user.type(within(dialog).getByLabelText("Command"), "node");
     await user.click(within(dialog).getByRole("button", { name: "Add server" }));
 
-    expect(await within(dialog).findByText("Server configuration could not be saved."))
-      .toBeInTheDocument();
+    expect(
+      await within(dialog).findByText("Server configuration could not be saved."),
+    ).toBeInTheDocument();
     expect(within(dialog).queryByText("[object Object]")).not.toBeInTheDocument();
   });
 
@@ -141,5 +142,44 @@ describe("AgentMcpServersSection", () => {
       ),
     );
     expect(mocks.update.mock.calls[0]?.[0]).not.toHaveProperty("secrets");
+  });
+
+  it("guides migrated Hermes OAuth servers through a keychain-only reconnect", async () => {
+    mocks.list.mockResolvedValue([
+      {
+        ...server,
+        id: "legacy-oauth",
+        name: "Legacy OAuth tools",
+        enabled: false,
+        transport: "streamable_http",
+        command: undefined,
+        url: "https://example.test/mcp",
+        metadata: { legacyAuth: "oauth", needsReview: true },
+      },
+    ]);
+    const user = userEvent.setup();
+    render(<AgentMcpServersSection />);
+
+    await user.click(await screen.findByRole("button", { name: "Reconnect" }));
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByText(/old tokens were not copied/i),
+    ).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText("HTTP headers (JSON)"), {
+      target: { value: '{"Authorization":"Bearer replacement"}' },
+    });
+    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(mocks.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "legacy-oauth",
+          secrets: {
+            env: {},
+            headers: { Authorization: "Bearer replacement" },
+          },
+        }),
+      ),
+    );
   });
 });

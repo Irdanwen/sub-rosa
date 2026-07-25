@@ -38,14 +38,34 @@ import type {
 } from "../../lib/agent-runtime-contract";
 import {
   agentRuntimeBindings,
+  downloadAgentArtifact,
   dictationHelperCommand,
   listVeniceModels,
   type VeniceModelDto,
 } from "../../lib/tauri";
 import { dispatchAgentSessionStatus, dispatchAgentSessionsChanged } from "../../lib/agent-events";
 import { messageFromError } from "../../lib/errors";
+import {
+  forgetSessionThinkingLevel,
+  loadSessionThinkingLevels,
+  loadThinkingLevel,
+  rememberSessionThinkingLevel,
+  saveThinkingLevel,
+  thinkingEffortForLevel,
+  type ThinkingLevel,
+} from "../../lib/thinking-level";
+import {
+  prepareProjectPrompt,
+  ProjectContextSignatureStore,
+  stripProjectContext,
+} from "../../lib/agent-project-context";
 import { AgentChatTurnRow } from "./chat-turns/AgentChatTurnRow";
-import { AgentArtifactList, type AgentArtifact } from "./chat-turns/AgentArtifactPanel";
+import {
+  AgentArtifactList,
+  AgentArtifactPanel,
+  type AgentArtifact,
+  type AgentArtifactPanelState,
+} from "./chat-turns/AgentArtifactPanel";
 import { AgentSessionBar } from "./chat-turns/AgentSessionBar";
 import { AgentThinking } from "./AgentThinking";
 import {
@@ -68,6 +88,8 @@ import { modelPrivacyBadge } from "../../lib/model-privacy";
 import { AUTO_MODEL_ID, modelOptions, selectedModel } from "../settings/ModelPickerDialog";
 import { Dialog } from "../ui/Dialog";
 import { Spinner } from "../ui/Spinner";
+import { ShareDialog } from "../share/ShareDialog";
+import { buildSessionPayload } from "../../lib/share-payload";
 import {
   type AgentNewSessionDetail,
   pendingNewSessionRequest,
@@ -92,6 +114,7 @@ export {
 
 export const AGENT_RUNTIME_EVENT = "june://agent-runtime-event";
 const DEFAULT_MODEL = AUTO_MODEL_ID;
+const projectContextSignaturesBySessionId = new ProjectContextSignatureStore();
 
 export function composerInSteerStateFor(input: {
   selectedSessionId?: string;
@@ -161,20 +184,39 @@ export function AgentWorkspace({
     createAgentRuntimeProjection({ session: initialAgentSession }),
   );
   const [artifacts, setArtifacts] = useState<AgentArtifactDto[]>([]);
+  const [artifactPanel, setArtifactPanel] = useState<AgentArtifactPanelState | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string>();
+  const [usageOpen, setUsageOpen] = useState(false);
+  const [compactOpen, setCompactOpen] = useState(false);
+  const [compacting, setCompacting] = useState(false);
+  const [compactResult, setCompactResult] = useState<string>();
   const [models, setModels] = useState<VeniceModelDto[]>([]);
   const [model, setModel] = useState(initialAgentSession?.model || DEFAULT_MODEL);
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() => {
+    const sessionLevel = initialAgentSession?.id
+      ? loadSessionThinkingLevels()[initialAgentSession.id]
+      : undefined;
+    return sessionLevel ?? loadThinkingLevel();
+  });
   const [safetyMode, setSafetyMode] = useState<AgentSafetyMode>(
     initialAgentSession?.safetyMode ?? "sandboxed",
   );
   const [draft, setDraft] = useState(pendingRequestRef.current?.prompt ?? "");
   const [attachments, setAttachments] = useState<string[]>([]);
+  const [queuedFollowUp, setQueuedFollowUp] = useState<{
+    prompt: string;
+    attachments: string[];
+  }>();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
   const [approvalSubmitting, setApprovalSubmitting] = useState<
     Partial<Record<string, "once" | "session" | "always" | "deny">>
   >({});
   const [clarifySubmitting, setClarifySubmitting] = useState<Record<string, string>>({});
+  const [secretSubmitting, setSecretSubmitting] = useState<Record<string, true>>({});
   const [retryingFailureIds, setRetryingFailureIds] = useState<Record<string, true>>({});
+  const [branchingItemId, setBranchingItemId] = useState<string>();
   const [thinkingOpen, setThinkingOpen] = useState<Record<string, boolean>>({});
   const [heroGreeting] = useState(advanceHeroGreeting);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -190,8 +232,12 @@ export function AgentWorkspace({
       setNewSessionMode(true);
       setProjection(createAgentRuntimeProjection());
       setArtifacts([]);
+      setShareOpen(false);
+      setShareUrl(undefined);
+      setThinkingLevel(loadThinkingLevel());
       setDraft(request?.prompt ?? "");
       setAttachments([]);
+      setQueuedFollowUp(undefined);
       setSubmitting(false);
       setError(undefined);
       onSessionSelected?.(undefined);
@@ -227,15 +273,20 @@ export function AgentWorkspace({
 
   const hydrate = useCallback(
     async (sessionId: string) => {
-      const [session, items, files] = await Promise.all([
+      const [session, items, files, latestRun] = await Promise.all([
         agentRuntimeBindings.getSession(sessionId),
         agentRuntimeBindings.listItems(sessionId),
         agentRuntimeBindings.listArtifacts(sessionId),
+        agentRuntimeBindings.getLatestRun?.(sessionId) ?? Promise.resolve(null),
       ]);
       if (selectedIdRef.current !== sessionId) return;
-      setProjection(createAgentRuntimeProjection({ session, items }));
+      setProjection({
+        ...createAgentRuntimeProjection({ session, items }),
+        run: latestRun ?? undefined,
+      });
       setArtifacts(files);
       setModel(session.model);
+      setThinkingLevel(loadSessionThinkingLevels()[session.id] ?? loadThinkingLevel());
       setSafetyMode(session.safetyMode);
       setNewSessionMode(false);
       writeLastOpenSessionId(sessionId);
@@ -329,6 +380,16 @@ export function AgentWorkspace({
     }
   }, [projection.items]);
 
+  useEffect(() => {
+    if (running || waiting || submitting || !queuedFollowUp) return;
+    const queued = queuedFollowUp;
+    setQueuedFollowUp(undefined);
+    setDraft(queued.prompt);
+    setAttachments(queued.attachments);
+    const frame = requestAnimationFrame(() => composerRef.current?.requestSubmit());
+    return () => cancelAnimationFrame(frame);
+  }, [queuedFollowUp, running, submitting, waiting]);
+
   useLayoutEffect(() => {
     const scroller = scrollRef.current;
     const composer = composerRef.current;
@@ -354,10 +415,33 @@ export function AgentWorkspace({
     };
   }, [newSessionMode, selectedSession]);
 
+  useLayoutEffect(() => {
+    const shell = document.querySelector(".app-shell");
+    shell?.classList.toggle("app-shell-artifact-panel-open", artifactPanel !== null);
+    return () => shell?.classList.remove("app-shell-artifact-panel-open");
+  }, [artifactPanel]);
+
+  useEffect(() => {
+    if (!artifactPanel) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        setArtifactPanel(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [artifactPanel]);
+
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     const prompt = draft.trim();
-    if (!prompt || running || waiting || submitting || creditActionsDisabledReason) return;
+    if (!prompt || waiting || submitting || creditActionsDisabledReason) return;
+    if (running) {
+      setQueuedFollowUp({ prompt, attachments });
+      setDraft("");
+      setAttachments([]);
+      return;
+    }
     setSubmitting(true);
     setError(undefined);
     try {
@@ -410,15 +494,23 @@ export function AgentWorkspace({
       const enabledSkillIds = (await agentRuntimeBindings.listSkills())
         .filter((skill) => skill.enabled)
         .map((skill) => skill.id);
+      const preparedPrompt = prepareProjectPrompt(
+        prompt,
+        projectContext,
+        projectContextSignaturesBySessionId.get(activeSession.id),
+      );
       const run = await agentRuntimeBindings.startRun({
         sessionId: activeSession.id,
-        prompt,
+        prompt: preparedPrompt.text,
         model,
+        reasoningEffort: thinkingEffortForLevel(thinkingLevel) as "minimal" | "medium" | "high",
         safetyMode,
         workspacePath: activeSession.workspacePath,
         enabledSkillIds,
         attachments: attachedPaths,
       });
+      projectContextSignaturesBySessionId.set(activeSession.id, preparedPrompt.contextSignature);
+      rememberSessionThinkingLevel(activeSession.id, thinkingLevel);
       setProjection((current) => ({ ...current, run }));
       dispatchAgentSessionStatus({
         sessionId: activeSession.id,
@@ -508,6 +600,64 @@ export function AgentWorkspace({
     }
   }
 
+  async function respondToSecret(interruptionId: string, secret: string) {
+    setSecretSubmitting((current) => ({ ...current, [interruptionId]: true }));
+    try {
+      const run = await agentRuntimeBindings.resolveInterruption({
+        interruptionId,
+        resolution: secret
+          ? { kind: "secret", secret, choice: "once" }
+          : { kind: "secret", choice: "deny" },
+      });
+      setProjection((current) => ({ ...current, run }));
+    } catch (cause) {
+      setError(messageFromError(cause));
+    } finally {
+      setSecretSubmitting((current) => {
+        const next = { ...current };
+        delete next[interruptionId];
+        return next;
+      });
+    }
+  }
+
+  async function compactContext() {
+    if (!selectedId || !agentRuntimeBindings.compactSession) return;
+    setCompacting(true);
+    setCompactResult(undefined);
+    try {
+      const result = await agentRuntimeBindings.compactSession(selectedId);
+      setCompactResult(
+        result.compacted
+          ? `Context compacted. ${result.removedItems} earlier items were replaced with a summary.`
+          : "There is not enough earlier context to compact yet.",
+      );
+      await hydrate(selectedId);
+    } catch (cause) {
+      setCompactResult(messageFromError(cause));
+    } finally {
+      setCompacting(false);
+    }
+  }
+
+  async function branchFrom(itemId: string) {
+    if (!selectedId || !agentRuntimeBindings.branchSession) return;
+    setBranchingItemId(itemId);
+    setError(undefined);
+    try {
+      const branch = await agentRuntimeBindings.branchSession(selectedId, itemId);
+      setSessions((current) => [branch, ...current.filter((item) => item.id !== branch.id)]);
+      setSelectedId(branch.id);
+      selectedIdRef.current = branch.id;
+      setNewSessionMode(false);
+      await hydrate(branch.id);
+    } catch (cause) {
+      setError(messageFromError(cause));
+    } finally {
+      setBranchingItemId(undefined);
+    }
+  }
+
   async function pickAttachments() {
     const selected = await openFileDialog({ multiple: true, title: "Attach files" });
     if (!selected) return;
@@ -538,6 +688,8 @@ export function AgentWorkspace({
   async function remove() {
     if (!selectedId) return;
     await agentRuntimeBindings.deleteSession(selectedId);
+    projectContextSignaturesBySessionId.delete(selectedId);
+    forgetSessionThinkingLevel(selectedId);
     forgetLastOpenSessionId(selectedId);
     setSelectedId(undefined);
     setProjection(createAgentRuntimeProjection());
@@ -549,6 +701,14 @@ export function AgentWorkspace({
 
   const heroMode = newSessionMode && !selectedSession;
   const renderedArtifacts = artifacts.filter((artifact) => artifact.available).map(artifactView);
+  const openArtifact = (artifact: AgentArtifact) => setArtifactPanel({ view: "file", artifact });
+  const downloadArtifact = async (artifact: AgentArtifact) => {
+    try {
+      await downloadAgentArtifact(artifact.path);
+    } catch (cause) {
+      setError(messageFromError(cause));
+    }
+  };
   const activeModel = selectedModel(models, model);
   const composer = (
     <AgentComposer
@@ -558,6 +718,12 @@ export function AgentWorkspace({
       setDraft={setDraft}
       model={model}
       setModel={setModel}
+      thinkingLevel={thinkingLevel}
+      setThinkingLevel={(level) => {
+        setThinkingLevel(level);
+        saveThinkingLevel(level);
+        if (selectedId) rememberSessionThinkingLevel(selectedId, level);
+      }}
       models={models}
       safetyMode={safetyMode}
       setSafetyMode={setSafetyMode}
@@ -574,108 +740,281 @@ export function AgentWorkspace({
     />
   );
   return (
-    <section
-      className="agent-workspace"
-      aria-label="Session"
-      data-hero={heroMode ? "true" : undefined}
-    >
-      {!heroMode ? (
-        <AgentSessionBar
-          origin={origin}
-          title={selectedSession?.title ?? ""}
-          fullMode={selectedSession?.safetyMode === "unrestricted"}
-          artifactCount={renderedArtifacts.length}
-          inProject={sessionInProject}
-          projectContext={projectContext}
-          onRename={rename}
-          onMoveToProject={
-            selectedId && onMoveSessionToProject
-              ? () => onMoveSessionToProject(selectedId)
-              : undefined
-          }
-          onDelete={remove}
-        />
-      ) : null}
-      {heroMode ? (
-        <main className="agent-main" aria-label="Agent task details" data-hero="true">
-          {error ? (
-            <div className="agent-composer-notice" role="alert">
-              {error}
-            </div>
-          ) : null}
-          <div className="agent-hero-heading">
-            <h2 className="agent-hero-title">{heroGreeting}</h2>
-          </div>
-          {composer}
-          <div className="agent-hero-suggestions">
-            <div className="agent-hero-chips" data-hidden={draft.trim() ? "true" : undefined}>
-              {AGENT_SHORTCUTS.slice(0, 3).map((shortcut, index) => (
-                <button
-                  key={shortcut.key}
-                  type="button"
-                  className="agent-hero-chip"
-                  style={{ "--chip-i": index } as CSSProperties}
-                  title={shortcut.description}
-                  disabled={submitting}
-                  onClick={() => setDraft(shortcut.prompt)}
-                >
-                  <span className="agent-hero-chip-icon" aria-hidden>
-                    {shortcut.icon}
-                  </span>
-                  {shortcut.title}
-                </button>
-              ))}
-            </div>
-            <p className="agent-hero-footnote">
-              {heroPrivacyFootnote(
-                activeModel,
-                activeModel ? modelPrivacyBadge(activeModel) : undefined,
-              )}
-            </p>
-          </div>
-        </main>
-      ) : (
-        <div
-          ref={scrollRef}
-          className="agent-scroll"
-          style={{ "--agent-composer-clearance": `${composerClearance}px` } as CSSProperties}
-        >
-          <main className="agent-main" aria-label="Agent task details">
+    <>
+      <section
+        className="agent-workspace"
+        aria-label="Session"
+        data-hero={heroMode ? "true" : undefined}
+      >
+        {!heroMode ? (
+          <AgentSessionBar
+            origin={origin}
+            title={selectedSession?.title ?? ""}
+            fullMode={selectedSession?.safetyMode === "unrestricted"}
+            artifactCount={renderedArtifacts.length}
+            artifactsOpen={artifactPanel !== null}
+            onToggleArtifacts={() =>
+              setArtifactPanel((current) => (current ? null : { view: "list" }))
+            }
+            inProject={sessionInProject}
+            projectContext={projectContext}
+            shareUrl={shareUrl}
+            onShare={
+              canShareAgentSession({
+                selectedSessionId: selectedId,
+                newSessionMode,
+                provisional: false,
+                historyLoaded: true,
+                working: running || waiting,
+              })
+                ? () => setShareOpen(true)
+                : undefined
+            }
+            onUsage={() => setUsageOpen(true)}
+            onCompact={
+              agentRuntimeBindings.compactSession && !running && !waiting
+                ? () => {
+                    setCompactResult(undefined);
+                    setCompactOpen(true);
+                  }
+                : undefined
+            }
+            onRename={rename}
+            onMoveToProject={
+              selectedId && onMoveSessionToProject
+                ? () => onMoveSessionToProject(selectedId)
+                : undefined
+            }
+            onDelete={remove}
+          />
+        ) : null}
+        {heroMode ? (
+          <main className="agent-main" aria-label="Agent task details" data-hero="true">
             {error ? (
               <div className="agent-composer-notice" role="alert">
                 {error}
               </div>
             ) : null}
-            <div className="agent-timeline">
-              {turns.map((turn) => (
-                <AgentChatTurnRow
-                  key={turn.id}
-                  turn={turn}
-                  approvalSubmitting={approvalSubmitting}
-                  clarifySubmitting={clarifySubmitting}
-                  sudoSubmitting={{}}
-                  secretSubmitting={{}}
-                  thinkingOpen={(key) => thinkingOpen[key] ?? false}
-                  onThinkingOpenChange={(key, open) =>
-                    setThinkingOpen((current) => ({ ...current, [key]: open }))
-                  }
-                  onApproval={(part, choice) => void respondToApproval(part.id, choice)}
-                  onClarify={(part, answer) => void respondToClarification(part.id, answer)}
-                  onSudo={() => undefined}
-                  onSecret={() => undefined}
-                  onRetryUpstreamFailure={(turnId) => void retryFailure(turnId)}
-                  upstreamFailureRetryAttempted={Boolean(retryingFailureIds[turn.id])}
-                  upstreamFailureRetryDisabled={running || waiting || submitting}
-                />
-              ))}
-              <AgentArtifactList artifacts={renderedArtifacts} />
-              <AgentThinking visible={running && turns.at(-1)?.role === "user"} />
+            <div className="agent-hero-heading">
+              <h2 className="agent-hero-title">{heroGreeting}</h2>
             </div>
             {composer}
+            <div className="agent-hero-suggestions">
+              <div className="agent-hero-chips" data-hidden={draft.trim() ? "true" : undefined}>
+                {AGENT_SHORTCUTS.slice(0, 3).map((shortcut, index) => (
+                  <button
+                    key={shortcut.key}
+                    type="button"
+                    className="agent-hero-chip"
+                    style={{ "--chip-i": index } as CSSProperties}
+                    title={shortcut.description}
+                    disabled={submitting}
+                    onClick={() => setDraft(shortcut.prompt)}
+                  >
+                    <span className="agent-hero-chip-icon" aria-hidden>
+                      {shortcut.icon}
+                    </span>
+                    {shortcut.title}
+                  </button>
+                ))}
+              </div>
+              <p className="agent-hero-footnote">
+                {heroPrivacyFootnote(
+                  activeModel,
+                  activeModel ? modelPrivacyBadge(activeModel) : undefined,
+                )}
+              </p>
+            </div>
           </main>
-        </div>
-      )}
-    </section>
+        ) : (
+          <div
+            ref={scrollRef}
+            className="agent-scroll"
+            style={{ "--agent-composer-clearance": `${composerClearance}px` } as CSSProperties}
+          >
+            <main className="agent-main" aria-label="Agent task details">
+              {error ? (
+                <div className="agent-composer-notice" role="alert">
+                  {error}
+                </div>
+              ) : null}
+              <div className="agent-timeline">
+                {turns.map((turn) => (
+                  <AgentChatTurnRow
+                    key={turn.id}
+                    turn={turn}
+                    approvalSubmitting={approvalSubmitting}
+                    clarifySubmitting={clarifySubmitting}
+                    sudoSubmitting={{}}
+                    secretSubmitting={secretSubmitting}
+                    thinkingOpen={(key) => thinkingOpen[key] ?? false}
+                    onThinkingOpenChange={(key, open) =>
+                      setThinkingOpen((current) => ({ ...current, [key]: open }))
+                    }
+                    onApproval={(part, choice) => void respondToApproval(part.id, choice)}
+                    onClarify={(part, answer) => void respondToClarification(part.id, answer)}
+                    onSudo={() => undefined}
+                    onSecret={(part, secret) => void respondToSecret(part.id, secret)}
+                    onRetryUpstreamFailure={(turnId) => void retryFailure(turnId)}
+                    onBranch={(itemId) => void branchFrom(itemId)}
+                    branching={branchingItemId === turn.id}
+                    upstreamFailureRetryAttempted={Boolean(retryingFailureIds[turn.id])}
+                    upstreamFailureRetryDisabled={running || waiting || submitting}
+                  />
+                ))}
+                <AgentArtifactList
+                  artifacts={renderedArtifacts}
+                  onOpen={openArtifact}
+                  onDownload={(artifact) => void downloadArtifact(artifact)}
+                />
+                <AgentThinking visible={running && turns.at(-1)?.role === "user"} />
+              </div>
+              {queuedFollowUp ? (
+                <div className="agent-follow-up-row" role="status">
+                  <span className="agent-follow-up-copy">
+                    <span className="agent-follow-up-announcement">Queued follow-up</span>
+                    <span className="agent-follow-up-text">{queuedFollowUp.prompt}</span>
+                  </span>
+                  <span className="agent-follow-up-actions">
+                    <button
+                      type="button"
+                      aria-label="Remove queued follow-up"
+                      onClick={() => setQueuedFollowUp(undefined)}
+                    >
+                      <IconCrossSmall size={12} aria-hidden />
+                    </button>
+                  </span>
+                </div>
+              ) : null}
+              {composer}
+            </main>
+          </div>
+        )}
+      </section>
+      {artifactPanel ? (
+        <AgentArtifactPanel
+          artifacts={renderedArtifacts}
+          state={artifactPanel}
+          onShowList={() => setArtifactPanel({ view: "list" })}
+          onOpen={openArtifact}
+          onDownload={(artifact) => void downloadArtifact(artifact)}
+          onClose={() => setArtifactPanel(null)}
+        />
+      ) : null}
+      {usageOpen && selectedSession ? (
+        <aside className="agent-usage-panel" aria-label="Session usage">
+          <div className="agent-usage-header">
+            <h2 className="agent-usage-title">Usage</h2>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Close usage"
+              onClick={() => setUsageOpen(false)}
+            >
+              <IconCrossSmall size={14} />
+            </button>
+          </div>
+          <div className="agent-usage-body">
+            <div className="agent-usage-row">
+              <span className="agent-usage-primary">Model</span>
+              <span className="agent-usage-value">
+                {projection.run?.model ?? selectedSession.model}
+              </span>
+            </div>
+            {projection.run?.reasoningEffort ? (
+              <div className="agent-usage-row">
+                <span className="agent-usage-primary">Reasoning effort</span>
+                <span className="agent-usage-value">{projection.run.reasoningEffort}</span>
+              </div>
+            ) : null}
+            {projection.run?.usage ? (
+              <>
+                <div className="agent-usage-row">
+                  <span className="agent-usage-primary">Input</span>
+                  <span className="agent-usage-value">
+                    {projection.run.usage.inputTokens.toLocaleString()}
+                  </span>
+                </div>
+                <div className="agent-usage-row">
+                  <span className="agent-usage-primary">Output</span>
+                  <span className="agent-usage-value">
+                    {projection.run.usage.outputTokens.toLocaleString()}
+                  </span>
+                </div>
+                <div className="agent-usage-row">
+                  <span className="agent-usage-primary">Total</span>
+                  <span className="agent-usage-value">
+                    {projection.run.usage.totalTokens.toLocaleString()}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <p className="agent-usage-empty">No usage reported for this session yet.</p>
+            )}
+          </div>
+        </aside>
+      ) : null}
+      {selectedSession ? (
+        <ShareDialog
+          key={selectedSession.id}
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          onLinkChange={(url) => setShareUrl(url ?? undefined)}
+          item={{
+            kind: "session",
+            itemId: selectedSession.id,
+            title: selectedSession.title,
+            buildPayload: () =>
+              buildSessionPayload({
+                title: selectedSession.title,
+                messages: projection.items.flatMap((item) =>
+                  item.kind === "message" && (item.role === "user" || item.role === "assistant")
+                    ? [
+                        {
+                          role: item.role,
+                          content:
+                            item.role === "user" ? stripProjectContext(item.text) : item.text,
+                        },
+                      ]
+                    : [],
+                ),
+              }),
+          }}
+        />
+      ) : null}
+      <Dialog
+        open={compactOpen}
+        onClose={() => {
+          if (!compacting) setCompactOpen(false);
+        }}
+        title="Compact context?"
+        description="June will replace older conversation turns with one visible summary and keep recent turns unchanged."
+        footer={
+          <>
+            <button
+              type="button"
+              className="primary-action"
+              disabled={compacting}
+              onClick={() => setCompactOpen(false)}
+            >
+              {compactResult ? "Close" : "Cancel"}
+            </button>
+            {!compactResult ? (
+              <button
+                type="button"
+                className="primary-action primary-solid"
+                disabled={compacting}
+                onClick={() => void compactContext()}
+              >
+                {compacting ? "Compacting" : "Compact context"}
+              </button>
+            ) : null}
+          </>
+        }
+      >
+        {compactResult ? <p role="status">{compactResult}</p> : null}
+      </Dialog>
+    </>
   );
 }
 
@@ -686,6 +1025,8 @@ function AgentComposer({
   setDraft,
   model,
   setModel,
+  thinkingLevel,
+  setThinkingLevel,
   models,
   safetyMode,
   setSafetyMode,
@@ -706,6 +1047,8 @@ function AgentComposer({
   setDraft: (value: string) => void;
   model: string;
   setModel: (value: string) => void;
+  thinkingLevel: ThinkingLevel;
+  setThinkingLevel: (value: ThinkingLevel) => void;
   models: VeniceModelDto[];
   safetyMode: AgentSafetyMode;
   setSafetyMode: (value: AgentSafetyMode) => void;
@@ -853,6 +1196,7 @@ function AgentComposer({
             <ComposerModelPicker
               open={modelOpen}
               model={activeModel}
+              effort={thinkingLevel}
               readOnly={working}
               triggerRef={modelTriggerRef}
               onToggleOpen={() => setModelOpen((open) => !open)}
@@ -871,14 +1215,25 @@ function AgentComposer({
               <IconMicrophone size={18} />
             </button>
             {running ? (
-              <button
-                type="button"
-                className="agent-composer-stop"
-                aria-label="Stop June"
-                onClick={() => void onStop()}
-              >
-                <IconStop size={16} />
-              </button>
+              <>
+                {draft.trim() ? (
+                  <button
+                    type="submit"
+                    className="agent-composer-send"
+                    aria-label="Queue follow-up"
+                  >
+                    <IconArrowUp size={18} />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="agent-composer-stop"
+                  aria-label="Stop June"
+                  onClick={() => void onStop()}
+                >
+                  <IconStop size={16} />
+                </button>
+              </>
             ) : (
               <button
                 type="submit"
@@ -978,11 +1333,16 @@ function AgentComposer({
           search={modelSearch}
           popoverRef={modelPopoverRef}
           searchRef={modelSearchRef}
+          thinkingLevel={thinkingLevel}
           onFlyoutChange={setModelFlyout}
           onSearchChange={setModelSearch}
           onSelect={(nextModel) => {
             setModel(nextModel);
             setModelOpen(false);
+          }}
+          onSelectThinking={(level) => {
+            setThinkingLevel(level);
+            setModelFlyout(null);
           }}
         />
       ) : null}

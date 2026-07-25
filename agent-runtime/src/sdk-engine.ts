@@ -72,10 +72,15 @@ export class OpenAIAgentsEngine implements AgentEngine {
     for (const resolution of input.params.resolutions) {
       const interruption = interruptions.find((candidate) => interruptionId(candidate) === resolution.interruptionId);
       if (!interruption) throw new Error(`Unknown interruption: ${resolution.interruptionId}`);
-      if (resolution.kind === "clarification" || resolution.decision === "approve") {
+      if (
+        resolution.kind === "clarification" ||
+        (resolution.kind === "secret" && resolution.decision === "approve") ||
+        ("decision" in resolution && resolution.decision === "approve")
+      ) {
         state.approve(interruption);
       } else {
-        state.reject(interruption, resolution.message ? { message: resolution.message } : undefined);
+        const message = "message" in resolution ? resolution.message : undefined;
+        state.reject(interruption, message ? { message } : undefined);
       }
     }
     const stream = (await this.createRunner(input.sessionId, input.runId).run(agent, state, {
@@ -111,6 +116,9 @@ export class OpenAIAgentsEngine implements AgentEngine {
       name: "June",
       instructions: `${params.instructions}${skillCatalog}`,
       model: params.model,
+      ...(params.reasoningEffort
+        ? { modelSettings: { reasoning: { effort: params.reasoningEffort } } }
+        : {}),
       tools,
     });
   }
@@ -327,6 +335,19 @@ export function runtimeInterruptionFromSdk(interruption: unknown): RuntimeInterr
       choices: Array.isArray(argumentsRecord.choices)
         ? argumentsRecord.choices.filter((choice): choice is string => typeof choice === "string")
         : [],
+    };
+  }
+  if (toolName === "request_secret") {
+    const argumentsRecord = isRecord(argumentsValue) ? argumentsValue : {};
+    return {
+      id: interruptionId(interruption),
+      kind: "secret",
+      toolName: "request_secret",
+      arguments: argumentsValue,
+      reason:
+        typeof argumentsRecord.reason === "string"
+          ? argumentsRecord.reason
+          : "June needs a secret before it can continue.",
     };
   }
   return {

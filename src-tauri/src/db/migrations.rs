@@ -160,6 +160,10 @@ const AGENT_RUN_SKILLS_COLUMN: &[ColumnDefinition] = &[ColumnDefinition {
     name: "enabled_skills_json",
     definition: "TEXT NOT NULL DEFAULT '[]'",
 }];
+const AGENT_RUN_REASONING_EFFORT_COLUMN: &[ColumnDefinition] = &[ColumnDefinition {
+    name: "reasoning_effort",
+    definition: "TEXT",
+}];
 const FOLDER_MEMORY_COLUMNS: &[ColumnDefinition] = &[
     ColumnDefinition {
         name: "instructions",
@@ -1128,6 +1132,18 @@ const MIGRATIONS: &[Migration] = &[
         steps: &[MigrationStep::EnsureColumns {
             table: "agent_runs",
             columns: AGENT_RUN_SKILLS_COLUMN,
+        }],
+    },
+    Migration {
+        version: 39,
+        name: "agent_run_reasoning_effort",
+        requirements: &[SchemaRequirement::Column {
+            table: "agent_runs",
+            column: "reasoning_effort",
+        }],
+        steps: &[MigrationStep::EnsureColumns {
+            table: "agent_runs",
+            columns: AGENT_RUN_REASONING_EFFORT_COLUMN,
         }],
     },
 ];

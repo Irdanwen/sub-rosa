@@ -619,7 +619,10 @@ pub async fn start_claim(
     let started = async {
         query("INSERT INTO agent_sessions (id, title, status, model, safety_mode, workspace_path, source, created_at, updated_at) VALUES (?, ?, 'idle', ?, ?, ?, 'routine', ?, ?)")
             .bind(&session_id).bind(&claim.routine_name).bind(&claim.model).bind(claim.safety_mode.as_db()).bind(workspace.to_string_lossy().as_ref()).bind(&timestamp).bind(&timestamp).execute(pool).await.map_err(app_error)?;
-        let run = repository.create_run(&session_id, &claim.model).await.map_err(app_error)?;
+        let run = repository
+            .create_run(&session_id, &claim.model, Some("medium"))
+            .await
+            .map_err(app_error)?;
         repository.append_item(&session_id, Some(&run.id), 0, &AgentItemPayload::UserMessage(MessagePayload { role: "user".into(), content: claim.prompt.clone(), attachments: vec![] }), Some(&format!("routine:{}", claim.routine_run_id))).await.map_err(app_error)?;
         attach_run_mapping(pool, &claim.routine_run_id, &claim.token, &session_id, &run.id, &timestamp).await?;
         host.ensure_started(app, repository.clone()).await?;
@@ -1017,7 +1020,7 @@ async fn unattended_run_params(
         .await
         .map_err(|error| AppError::new("agent_mcp_policy_snapshot_failed", error.to_string()))?;
     Ok(
-        json!({ "model": request.model, "instructions": "You are June executing an unattended routine. Complete the requested work without asking questions. Never claim a tool succeeded unless its result confirms success. If a tool needs approval, pause and wait for the user instead of choosing for them.", "workspace": request.workspace, "safetyMode": request.safety_mode.as_db(), "input": request.prompt, "history": history, "tools": tools, "skills": [], "contextWindow": 128000, "maxOutputTokens": 8192 }),
+        json!({ "model": request.model, "reasoningEffort": "medium", "instructions": "You are June executing an unattended routine. Complete the requested work without asking questions. Never claim a tool succeeded unless its result confirms success. If a tool needs approval, pause and wait for the user instead of choosing for them.", "workspace": request.workspace, "safetyMode": request.safety_mode.as_db(), "input": request.prompt, "history": history, "tools": tools, "skills": [], "contextWindow": 128000, "maxOutputTokens": 8192 }),
     )
 }
 async fn unattended_tools(

@@ -902,7 +902,7 @@ pub(crate) fn memory_settings_path(app: &AppHandle) -> Result<PathBuf, AppError>
         .map_err(|error| AppError::new("memory_settings_unavailable", error.to_string()))
 }
 
-fn load_memory_settings(path: &Path) -> MemorySettingsDto {
+pub(crate) fn load_memory_settings(path: &Path) -> MemorySettingsDto {
     match fs::read_to_string(path) {
         Ok(settings) => {
             serde_json::from_str(&settings).unwrap_or(MemorySettingsDto { enabled: false })

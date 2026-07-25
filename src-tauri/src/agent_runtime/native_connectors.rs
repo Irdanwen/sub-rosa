@@ -12,7 +12,7 @@ use crate::{
         self,
         policy::{
             self, CALENDAR_EVENTS, CALENDAR_READONLY, GITHUB_READ, GITHUB_WRITE, GMAIL_COMPOSE,
-            GMAIL_READONLY, GMAIL_SEND, LINEAR_READ, LINEAR_WRITE,
+            GMAIL_MODIFY, GMAIL_READONLY, GMAIL_SEND, LINEAR_READ, LINEAR_WRITE,
         },
         ConnectorAccount, ConnectorAccountStatus, ConnectorProvider,
     },
@@ -78,6 +78,22 @@ const CAPABILITIES: &[Capability] = &[
         needs_selected_teams: false,
     },
     Capability {
+        name: "modify_labels",
+        description: "Add or remove Gmail labels from a message. The user must approve this action.",
+        provider: ConnectorProvider::Google,
+        required_scope: GMAIL_MODIFY,
+        mutation: true,
+        needs_selected_teams: false,
+    },
+    Capability {
+        name: "archive",
+        description: "Archive a Gmail message. The user must approve this action.",
+        provider: ConnectorProvider::Google,
+        required_scope: GMAIL_MODIFY,
+        mutation: true,
+        needs_selected_teams: false,
+    },
+    Capability {
         name: "list_events",
         description: "List events from a connected Google calendar.",
         provider: ConnectorProvider::Google,
@@ -104,6 +120,14 @@ const CAPABILITIES: &[Capability] = &[
     Capability {
         name: "create_event",
         description: "Create a Google calendar event. The user must approve this action.",
+        provider: ConnectorProvider::Google,
+        required_scope: CALENDAR_EVENTS,
+        mutation: true,
+        needs_selected_teams: false,
+    },
+    Capability {
+        name: "respond_to_invite",
+        description: "Accept, decline, or tentatively accept a Google calendar invite. The user must approve this action.",
         provider: ConnectorProvider::Google,
         required_scope: CALENDAR_EVENTS,
         mutation: true,
@@ -161,13 +185,13 @@ pub fn routine_tool_allowed(
     };
     match name {
         "search_threads" | "read_thread" | "list_unread" => has(JUNE_GMAIL_SERVER),
-        "create_draft" | "send_email" => {
+        "create_draft" | "send_email" | "modify_labels" | "archive" => {
             has(JUNE_GMAIL_ACTIONS_SERVER)
                 || (has_prefix("june_gmail_auto_")
                     && autonomous_tools.iter().any(|tool| tool == name))
         }
         "list_events" | "get_event" | "find_free_slots" => has(JUNE_GCAL_SERVER),
-        "create_event" => {
+        "create_event" | "respond_to_invite" => {
             has(JUNE_GCAL_ACTIONS_SERVER)
                 || (has_prefix("june_gcal_auto_")
                     && autonomous_tools.iter().any(|tool| tool == name))
@@ -361,6 +385,16 @@ fn input_schema(name: &str) -> (Map<String, Value>, Vec<&'static str>) {
             properties.insert("threadId".into(), string());
             required.extend(["to", "subject", "bodyText"]);
         }
+        "modify_labels" => {
+            properties.insert("messageId".into(), string());
+            properties.insert("add".into(), strings());
+            properties.insert("remove".into(), strings());
+            required.push("messageId");
+        }
+        "archive" => {
+            properties.insert("messageId".into(), string());
+            required.push("messageId");
+        }
         "list_events" => {
             properties.insert("calendarId".into(), string());
             properties.insert("timeMin".into(), string());
@@ -392,6 +426,15 @@ fn input_schema(name: &str) -> (Map<String, Value>, Vec<&'static str>) {
             properties.insert("endRfc3339".into(), string());
             properties.insert("attendeeEmails".into(), strings());
             required.extend(["summary", "startRfc3339", "endRfc3339"]);
+        }
+        "respond_to_invite" => {
+            properties.insert("calendarId".into(), string());
+            properties.insert("eventId".into(), string());
+            properties.insert(
+                "response".into(),
+                json!({ "type": "string", "enum": ["accepted", "declined", "tentative"] }),
+            );
+            required.extend(["eventId", "response"]);
         }
         "get_pull_request" => {
             properties.insert("owner".into(), string());
@@ -491,10 +534,13 @@ pub async fn dispatch(
         "list_unread" => gmail_list_unread(app, arguments).await,
         "create_draft" => gmail_create_draft(app, arguments).await,
         "send_email" => gmail_send_email(app, arguments).await,
+        "modify_labels" => gmail_modify_labels(app, arguments).await,
+        "archive" => gmail_archive(app, arguments).await,
         "list_events" => calendar_list_events(app, arguments).await,
         "get_event" => calendar_get_event(app, arguments).await,
         "find_free_slots" => calendar_find_free_slots(app, arguments).await,
         "create_event" => calendar_create_event(app, arguments).await,
+        "respond_to_invite" => calendar_respond_to_invite(app, arguments).await,
         "list_repositories" => github_list_repositories(app, arguments).await,
         "get_pull_request" => github_get_pull_request(app, arguments).await,
         "list_projects" => linear_list_projects(app, arguments).await,
@@ -687,6 +733,36 @@ async fn gmail_send_email(app: &AppHandle, arguments: Value) -> Result<Value, Ap
     )
 }
 
+async fn gmail_modify_labels(app: &AppHandle, arguments: Value) -> Result<Value, AppError> {
+    let token = google_token(app, &arguments, GMAIL_MODIFY).await?;
+    let add = string_list(&arguments, "add").unwrap_or_default();
+    let remove = string_list(&arguments, "remove").unwrap_or_default();
+    as_value(
+        crate::connectors::google::modify_labels(
+            &token,
+            &required(&arguments, "messageId")?,
+            &add,
+            &remove,
+        )
+        .await
+        .map_err(app_error)?,
+    )
+}
+
+async fn gmail_archive(app: &AppHandle, arguments: Value) -> Result<Value, AppError> {
+    let token = google_token(app, &arguments, GMAIL_MODIFY).await?;
+    as_value(
+        crate::connectors::google::modify_labels(
+            &token,
+            &required(&arguments, "messageId")?,
+            &[],
+            &["INBOX".to_string()],
+        )
+        .await
+        .map_err(app_error)?,
+    )
+}
+
 async fn calendar_list_events(app: &AppHandle, arguments: Value) -> Result<Value, AppError> {
     let token = google_token(app, &arguments, CALENDAR_READONLY).await?;
     let params = crate::connectors::google::ListEventsParams {
@@ -794,6 +870,40 @@ async fn calendar_create_event(app: &AppHandle, arguments: Value) -> Result<Valu
         crate::connectors::google::insert_event(&token, event.calendar_id.as_deref(), &payload)
             .await
             .map_err(app_error)?,
+    )
+}
+
+async fn calendar_respond_to_invite(app: &AppHandle, arguments: Value) -> Result<Value, AppError> {
+    let account = authorized_account(
+        app,
+        &account_id(&arguments)?,
+        ConnectorProvider::Google,
+        CALENDAR_EVENTS,
+        false,
+    )
+    .await?;
+    let token = connectors::google_access_token(app, &account.account_id).await?;
+    let response = match required(&arguments, "response")?.as_str() {
+        "accepted" => crate::connectors::google::InviteResponse::Accepted,
+        "declined" => crate::connectors::google::InviteResponse::Declined,
+        "tentative" => crate::connectors::google::InviteResponse::Tentative,
+        _ => {
+            return Err(AppError::new(
+                "invalid_arguments",
+                "response must be accepted, declined, or tentative.",
+            ));
+        }
+    };
+    as_value(
+        crate::connectors::google::respond_to_invite(
+            &token,
+            optional(&arguments, "calendarId").as_deref(),
+            &required(&arguments, "eventId")?,
+            &account.email,
+            response,
+        )
+        .await
+        .map_err(app_error)?,
     )
 }
 
