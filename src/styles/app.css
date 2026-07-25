@@ -2381,8 +2381,7 @@ input:focus-visible,
  * intrinsic coordinates from home-chat-bubble.svg. Render widths stay on
  * June's radius/spacing tokens; when a one-line bubble is shorter than the
  * two radius slices, WebKit scales them down together. */
-.agent-timeline[data-home="true"] .agent-user-turn:not(:has(+ .agent-user-turn))
-  .agent-user-turn-body {
+.agent-timeline[data-home="true"] .agent-user-turn[data-user-run-end="true"] .agent-user-turn-body {
   border-radius: 0;
   -webkit-mask-box-image-source: url("../assets/home-chat-bubble.svg");
   -webkit-mask-box-image-slice: 29 34 29 29 fill;
@@ -5796,13 +5795,6 @@ button.agent-user-attachment:hover {
     transform 120ms ease,
     bottom 120ms ease,
     background-color var(--t-fast) var(--ease-out);
-}
-
-/* The abandoned-draft chips re-offer hovers in the same slot above the box
- * (.agent-home-nudges-idle); when it's up, the pill steps one chip row higher
- * so the chips never cover the arrow. */
-.agent-composer:has(.agent-home-nudges-idle) .agent-scroll-to-latest {
-  bottom: calc(100% + var(--sp-2) + var(--control-md) + var(--sp-2));
 }
 
 .agent-scroll-to-latest[data-visible="true"] {
@@ -19798,22 +19790,11 @@ button.memory-project:hover {
 }
 
 .agent-workspace[data-home="true"]
-  .agent-composer-box:has(.agent-composer-attachments)
+  .agent-composer-box[data-stacked="true"]
   .agent-composer-editor-root,
+.agent-workspace[data-home="true"] .agent-composer-box[data-stacked="true"] .agent-composer-attach,
 .agent-workspace[data-home="true"]
-  .agent-composer-box:has(.agent-composer-attachments)
-  .agent-composer-attach,
-.agent-workspace[data-home="true"]
-  .agent-composer-box:has(.agent-composer-attachments)
-  .agent-composer-actions,
-.agent-workspace[data-home="true"]
-  .agent-composer-box:has(.agent-composer-size-warning)
-  .agent-composer-editor-root,
-.agent-workspace[data-home="true"]
-  .agent-composer-box:has(.agent-composer-size-warning)
-  .agent-composer-attach,
-.agent-workspace[data-home="true"]
-  .agent-composer-box:has(.agent-composer-size-warning)
+  .agent-composer-box[data-stacked="true"]
   .agent-composer-actions {
   grid-row: 2;
 }

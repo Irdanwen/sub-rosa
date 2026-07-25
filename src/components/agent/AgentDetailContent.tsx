@@ -319,6 +319,14 @@ export function AgentDetailContent(dependencies: RenderAgentDetailContentDepende
     }
     return handoffs;
   }, [home]);
+  const homeUserRunEndIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!home) return ids;
+    home.turns.forEach((turn, index) => {
+      if (turn.role === "user" && home.turns[index + 1]?.role !== "user") ids.add(turn.id);
+    });
+    return ids;
+  }, [home]);
   const renderHermesTurn = useCallback<RenderTurn>(
     (turn) => {
       const recoveryId = upstreamFailureRecoveryIdsRef.current.get(turn.id) ?? "";
@@ -359,6 +367,7 @@ export function AgentDetailContent(dependencies: RenderAgentDetailContentDepende
           homeTaskHandoff={homeHandoffsByTurnId.get(turn.id)}
           onOpenHomeTaskSession={home?.onOpenTaskSession}
           onRetryHomeTask={home?.onRetryTask}
+          homeUserRunEnd={homeUserRunEndIds.has(turn.id)}
           onVisibleMarkdownChange={pinTranscriptAfterVisibleReveal}
         />
       );
@@ -375,6 +384,7 @@ export function AgentDetailContent(dependencies: RenderAgentDetailContentDepende
       fundingTier,
       home,
       homeHandoffsByTurnId,
+      homeUserRunEndIds,
       onHermesApproval,
       onHermesBranch,
       onHermesClarify,

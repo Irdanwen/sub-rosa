@@ -99,6 +99,7 @@ export type AgentChatTurnRowProps = {
   homeTaskHandoff?: HomeTaskHandoff;
   onOpenHomeTaskSession?: (storedSessionId: string, title: string) => void;
   onRetryHomeTask?: (handoff: HomeTaskHandoff) => void;
+  homeUserRunEnd?: boolean;
   turn: AgentChatTurn;
 };
 
@@ -137,6 +138,7 @@ export const AgentChatTurnRow = memo(function AgentChatTurnRow({
   homeTaskHandoff,
   onOpenHomeTaskSession,
   onRetryHomeTask,
+  homeUserRunEnd,
   turn,
 }: AgentChatTurnRowProps) {
   const textParts = turn.parts.filter(
@@ -399,6 +401,7 @@ export const AgentChatTurnRow = memo(function AgentChatTurnRow({
       <article
         className="agent-user-turn"
         data-scheduled-run={turn.isScheduledRun ? "true" : undefined}
+        data-user-run-end={homeUserRunEnd ? "true" : undefined}
       >
         {turn.isScheduledRun ? (
           <span className="agent-user-turn-eyebrow">

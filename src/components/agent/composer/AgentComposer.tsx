@@ -353,7 +353,11 @@ export function renderAgentComposer(dependencies: RenderAgentComposerDependencie
           </motion.section>
         ) : null}
       </AnimatePresence>
-      <div ref={composerBoxRef} className="agent-composer-box">
+      <div
+        ref={composerBoxRef}
+        className="agent-composer-box"
+        data-stacked={attachments.length || visibleComposerSizeWarning ? "true" : undefined}
+      >
         {attachments.length ? (
           <div className="agent-composer-attachments">
             {attachments.map((attachment) => (
