@@ -628,7 +628,6 @@ pub async fn start_claim(
         host.ensure_started(app, repository.clone()).await?;
         let workspace = workspace.to_string_lossy();
         let request = UnattendedRunRequest {
-            session_id: &session_id,
             run_id: &run.id,
             routine_id: &claim.routine_id,
             model: &claim.model,
@@ -979,7 +978,6 @@ fn routine_workspace(app: &AppHandle, session_id: &str) -> Result<PathBuf, AppEr
 }
 
 struct UnattendedRunRequest<'a> {
-    session_id: &'a str,
     run_id: &'a str,
     routine_id: &'a str,
     model: &'a str,
@@ -994,7 +992,6 @@ async fn unattended_run_params(
     repository: &AgentRepository,
     request: &UnattendedRunRequest<'_>,
 ) -> Result<Value, AppError> {
-    let history = repository.items(request.session_id).await.map_err(app_error)?.into_iter().filter_map(|item| match item.payload { AgentItemPayload::UserMessage(message) | AgentItemPayload::AssistantMessage(message) | AgentItemPayload::SystemMessage(message) => Some(json!({ "id": item.id, "kind": "message", "role": message.role, "text": message.content })), AgentItemPayload::ContextSummary(summary) => Some(json!({ "id": item.id, "kind": "context_summary", "role": "system", "text": summary.text })), _ => None }).collect::<Vec<_>>();
     let tools = unattended_tools(
         app,
         repository,
@@ -1020,7 +1017,7 @@ async fn unattended_run_params(
         .await
         .map_err(|error| AppError::new("agent_mcp_policy_snapshot_failed", error.to_string()))?;
     Ok(
-        json!({ "model": request.model, "reasoningEffort": "medium", "instructions": "You are June executing an unattended routine. Complete the requested work without asking questions. Never claim a tool succeeded unless its result confirms success. If a tool needs approval, pause and wait for the user instead of choosing for them.", "workspace": request.workspace, "safetyMode": request.safety_mode.as_db(), "input": request.prompt, "history": history, "tools": tools, "skills": [], "contextWindow": 128000, "maxOutputTokens": 8192 }),
+        json!({ "model": request.model, "reasoningEffort": "medium", "instructions": "You are June executing an unattended routine. Complete the requested work without asking questions. Never claim a tool succeeded unless its result confirms success. If a tool needs approval, pause and wait for the user instead of choosing for them.", "workspace": request.workspace, "safetyMode": request.safety_mode.as_db(), "input": request.prompt, "history": [], "tools": tools, "skills": [], "contextWindow": 128000, "maxOutputTokens": 8192 }),
     )
 }
 async fn unattended_tools(

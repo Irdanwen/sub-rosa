@@ -15,6 +15,17 @@ test("redacts secret fields and credential-like strings", () => {
   );
 });
 
+test("redacts named secrets embedded in error and shell-output strings", () => {
+  const sanitized = sanitizeForLog(
+    'request failed: {"access_token":"plain-value","password":"two words"} api_key=plain-key',
+  );
+
+  assert.equal(
+    sanitized,
+    'request failed: {"access_token":"[redacted]","password":"[redacted]"} api_key=[redacted]',
+  );
+});
+
 test("bounds deeply nested log payloads", () => {
   let value: unknown = "leaf";
   for (let index = 0; index < 12; index += 1) value = { child: value };

@@ -1,12 +1,11 @@
 /**
  * Pure, render-free view logic for the private connectors (Google, Linear)
  * in local mode: scope-bundle metadata, account status labels, trust-mode
- * metadata and earned-autonomy gating, the trust-mode to Hermes toolset
- * composition, and event-trigger metadata.
+ * metadata and earned-autonomy gating, trust-mode tool composition, and
+ * event-trigger metadata.
  *
- * Kept separate from the React components and the Tauri bindings (mirroring
- * the hermes-admin/*-view.ts split) so all of it is unit-testable without a
- * Tauri runtime. Copy is sentence case, no em/en dashes, per June rules.
+ * Kept separate from the React components and the Tauri bindings so all of it
+ * is unit-testable without a Tauri runtime. Copy follows June's UI rules.
  */
 
 import { IconBolt } from "central-icons/IconBolt";

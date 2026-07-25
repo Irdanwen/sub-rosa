@@ -4,6 +4,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde_json::{json, Value};
 use sqlx::{query::query, row::Row};
 use std::{
+    fs,
     path::{Path, PathBuf},
     process::Stdio,
 };
@@ -15,6 +16,10 @@ use tokio::{
 };
 
 const MAX_TOOL_OUTPUT_BYTES: usize = 1_048_576;
+const MAX_SEARCH_FILE_BYTES: u64 = 1_048_576;
+const MAX_SEARCH_SCANNED_BYTES: u64 = 32 * 1_048_576;
+const MAX_SEARCH_FILES: usize = 10_000;
+const MAX_SEARCH_MATCHES: usize = 200;
 
 #[derive(Clone)]
 pub struct ToolContext {
@@ -826,25 +831,102 @@ async fn record_artifact_with_mime(
 }
 
 async fn search_files(context: &ToolContext, arguments: &Value) -> Result<Value, AppError> {
-    let needle = required_string(arguments, "query")?;
+    let needle = required_string(arguments, "query")?.to_string();
     let root = resolve_path(
         context,
         arguments.get("path").and_then(Value::as_str).unwrap_or("."),
         true,
     )?;
-    let mut command = Command::new("rg");
-    command
-        .arg("--line-number")
-        .arg("--no-heading")
-        .arg("--max-count")
-        .arg("200")
-        .arg("--")
-        .arg(needle)
-        .arg(&root);
-    let output = command.output().await.map_err(io_error)?;
-    Ok(
-        json!({ "matches": truncate(String::from_utf8_lossy(&output.stdout).into_owned()), "truncated": output.stdout.len() > MAX_TOOL_OUTPUT_BYTES }),
-    )
+    let result = tokio::task::spawn_blocking(move || search_text_files(&root, &needle))
+        .await
+        .map_err(|error| AppError::new("agent_file_search_failed", error.to_string()))?;
+    Ok(json!({ "matches": result.matches, "truncated": result.truncated }))
+}
+
+struct FileSearchResult {
+    matches: String,
+    truncated: bool,
+}
+
+fn search_text_files(root: &Path, needle: &str) -> FileSearchResult {
+    let mut output = String::new();
+    let mut stack = vec![root.to_path_buf()];
+    let mut scanned_bytes = 0_u64;
+    let mut scanned_files = 0_usize;
+    let mut match_count = 0_usize;
+    let mut truncated = false;
+
+    while let Some(path) = stack.pop() {
+        let Ok(metadata) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        if metadata.is_dir() {
+            let Ok(entries) = fs::read_dir(&path) else {
+                continue;
+            };
+            let mut children = entries
+                .flatten()
+                .filter_map(|entry| {
+                    let name = entry.file_name();
+                    let name = name.to_string_lossy();
+                    (!name.starts_with('.')).then(|| entry.path())
+                })
+                .collect::<Vec<_>>();
+            children.sort_by(|left, right| right.cmp(left));
+            stack.extend(children);
+            continue;
+        }
+        if !metadata.is_file() {
+            continue;
+        }
+        if scanned_files >= MAX_SEARCH_FILES
+            || scanned_bytes.saturating_add(metadata.len()) > MAX_SEARCH_SCANNED_BYTES
+        {
+            truncated = true;
+            break;
+        }
+        scanned_files += 1;
+        if metadata.len() > MAX_SEARCH_FILE_BYTES {
+            truncated = true;
+            continue;
+        }
+        scanned_bytes = scanned_bytes.saturating_add(metadata.len());
+        let Ok(bytes) = fs::read(&path) else {
+            continue;
+        };
+        if bytes.contains(&0) {
+            continue;
+        }
+        let Ok(text) = std::str::from_utf8(&bytes) else {
+            continue;
+        };
+        for (line_index, line) in text.lines().enumerate() {
+            if !line.contains(needle) {
+                continue;
+            }
+            let entry = format!("{}:{}:{}\n", path.display(), line_index + 1, line);
+            if match_count >= MAX_SEARCH_MATCHES
+                || output.len().saturating_add(entry.len()) > MAX_TOOL_OUTPUT_BYTES
+            {
+                truncated = true;
+                break;
+            }
+            output.push_str(&entry);
+            match_count += 1;
+        }
+        if truncated && (match_count >= MAX_SEARCH_MATCHES || output.len() >= MAX_TOOL_OUTPUT_BYTES)
+        {
+            break;
+        }
+    }
+
+    FileSearchResult {
+        matches: output,
+        truncated,
+    }
 }
 
 async fn run_shell(context: &ToolContext, arguments: &Value) -> Result<Value, AppError> {
@@ -1238,5 +1320,24 @@ mod tests {
             .get("payload_json");
         let payload: Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(payload["answerConsumed"], true);
+    }
+
+    #[test]
+    fn file_search_is_native_bounded_and_skips_hidden_or_binary_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let nested = directory.path().join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(directory.path().join("first.txt"), "needle one\nother\n").unwrap();
+        fs::write(nested.join("second.txt"), "other\nneedle two\n").unwrap();
+        fs::write(nested.join("binary.bin"), b"needle\0hidden").unwrap();
+        fs::write(directory.path().join(".hidden.txt"), "needle hidden\n").unwrap();
+
+        let result = search_text_files(directory.path(), "needle");
+
+        assert!(!result.truncated);
+        assert!(result.matches.contains("first.txt:1:needle one"));
+        assert!(result.matches.contains("second.txt:2:needle two"));
+        assert!(!result.matches.contains("binary.bin"));
+        assert!(!result.matches.contains("hidden.txt"));
     }
 }

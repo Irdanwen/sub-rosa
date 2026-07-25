@@ -19,6 +19,7 @@ import type { JsonObject, JsonValue } from "./types.js";
 type PendingRequest = {
   resolve: (value: JsonValue) => void;
   reject: (error: Error) => void;
+  cleanup?: () => void;
 };
 
 export type RequestHandler = (request: RpcRequest) => Promise<JsonValue>;
@@ -70,15 +71,15 @@ export class NdjsonRpcPeer {
         reject(abortError());
         return;
       }
-      this.pending.set(id, { resolve, reject });
-      signal?.addEventListener(
-        "abort",
-        () => {
-          if (!this.pending.delete(id)) return;
-          reject(abortError());
-        },
-        { once: true },
-      );
+      const onAbort = () => {
+        const pending = this.pending.get(id);
+        if (!pending || !this.pending.delete(id)) return;
+        pending.cleanup?.();
+        pending.reject(abortError());
+      };
+      const cleanup = signal ? () => signal.removeEventListener("abort", onAbort) : undefined;
+      this.pending.set(id, { resolve, reject, ...(cleanup ? { cleanup } : {}) });
+      signal?.addEventListener("abort", onAbort, { once: true });
       this.write(frame);
     });
   }
@@ -104,7 +105,10 @@ export class NdjsonRpcPeer {
   close(reason = new Error("Runtime transport closed")): void {
     if (this.closed) return;
     this.closed = true;
-    for (const pending of this.pending.values()) pending.reject(reason);
+    for (const pending of this.pending.values()) {
+      pending.cleanup?.();
+      pending.reject(reason);
+    }
     this.pending.clear();
   }
 
@@ -144,6 +148,7 @@ export class NdjsonRpcPeer {
     const pending = this.pending.get(frame.id);
     if (!pending) return;
     this.pending.delete(frame.id);
+    pending.cleanup?.();
     if ("error" in frame) pending.reject(new ProtocolError(frame.error.code, frame.error.message, frame.error.data));
     else pending.resolve(frame.result);
   }

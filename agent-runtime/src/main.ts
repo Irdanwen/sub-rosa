@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { OpenAIAgentsEngine } from "./sdk-engine.js";
+import { errorMessage } from "./sanitize.js";
 import { RuntimeService } from "./service.js";
 import { NdjsonRpcPeer } from "./transport.js";
 import type { JsonObject } from "./types.js";
@@ -28,6 +29,11 @@ process.on("SIGTERM", () => {
 });
 
 process.on("uncaughtException", (error) => {
-  process.stderr.write(`June agent runtime fatal error: ${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
+  process.stderr.write(`June agent runtime fatal error: ${errorMessage(error)}\n`);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (error) => {
+  process.stderr.write(`June agent runtime fatal rejection: ${errorMessage(error)}\n`);
+  process.exit(1);
 });

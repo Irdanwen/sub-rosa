@@ -23,11 +23,13 @@ use tokio::{
 use uuid::Uuid;
 
 pub const AGENT_RUNTIME_EVENT: &str = "june://agent-runtime-event";
+const RUNTIME_CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 type PendingRequests = Arc<Mutex<HashMap<String, oneshot::Sender<Result<Value, AppError>>>>>;
 
 #[derive(Default)]
 pub struct AgentRuntimeHost {
     inner: Mutex<Option<RunningRuntime>>,
+    startup: Mutex<()>,
     request_sequence: AtomicI64,
     model_streams: Arc<Mutex<HashMap<String, ModelStream>>>,
     cancellations: ToolCancellationRegistry,
@@ -53,12 +55,18 @@ impl AgentRuntimeHost {
         app: &AppHandle,
         repository: AgentRepository,
     ) -> Result<(), AppError> {
+        // Keep a second caller from observing a spawned process before the
+        // initialize handshake has completed.
+        let _startup = self.startup.lock().await;
         let mut guard = self.inner.lock().await;
-        if guard
-            .as_mut()
-            .is_some_and(|runtime| runtime.child.id().is_some())
-        {
-            return Ok(());
+        if let Some(runtime) = guard.as_mut() {
+            if runtime_process_running(&mut runtime.child) {
+                return Ok(());
+            }
+            // An exited child retains its pid until it is reaped. Drop the
+            // stale pipes so the next request gets a fresh initialized runtime
+            // instead of writing to the dead process.
+            *guard = None;
         }
 
         let (program, args) = resolve_runtime_command(app)?;
@@ -110,16 +118,30 @@ impl AgentRuntimeHost {
             pending,
         });
         drop(guard);
-        self.request(
-            "runtime.initialize",
-            "runtime",
-            "runtime",
-            json!({
-                "clientName": "June", "clientVersion": env!("CARGO_PKG_VERSION")
-            }),
-        )
-        .await?;
+        let initialized = self
+            .request(
+                "runtime.initialize",
+                "runtime",
+                "runtime",
+                json!({
+                    "clientName": "June", "clientVersion": env!("CARGO_PKG_VERSION")
+                }),
+            )
+            .await;
+        if let Err(error) = initialized {
+            self.discard_failed_start().await;
+            return Err(error);
+        }
         Ok(())
+    }
+
+    async fn discard_failed_start(&self) {
+        let mut guard = self.inner.lock().await;
+        let Some(mut runtime) = guard.take() else {
+            return;
+        };
+        let _ = runtime.child.kill().await;
+        let _ = runtime.child.wait().await;
     }
 
     pub async fn request(
@@ -143,15 +165,29 @@ impl AgentRuntimeHost {
             params,
         );
         let (send, receive) = oneshot::channel();
-        runtime.pending.lock().await.insert(id, send);
-        write_frame(&runtime.stdin, &frame).await?;
+        let pending = runtime.pending.clone();
+        pending.lock().await.insert(id.clone(), send);
+        if let Err(error) = write_frame(&runtime.stdin, &frame).await {
+            pending.lock().await.remove(&id);
+            return Err(error);
+        }
         drop(guard);
-        receive.await.map_err(|_| {
-            AppError::new("agent_runtime_disconnected", "Agent runtime disconnected.")
-        })?
+        match tokio::time::timeout(RUNTIME_CONTROL_TIMEOUT, receive).await {
+            Ok(response) => response.map_err(|_| {
+                AppError::new("agent_runtime_disconnected", "Agent runtime disconnected.")
+            })?,
+            Err(_) => {
+                pending.lock().await.remove(&id);
+                Err(AppError::new(
+                    "agent_runtime_request_timed_out",
+                    "The local agent runtime did not respond in time.",
+                ))
+            }
+        }
     }
 
     pub async fn shutdown(&self) {
+        let _startup = self.startup.lock().await;
         crate::agent_mcp::shutdown_sessions().await;
         let mut guard = self.inner.lock().await;
         let Some(mut runtime) = guard.take() else {
@@ -225,14 +261,26 @@ fn spawn_stdout_reader(
                 }
                 continue;
             }
-            let response =
-                handle_runtime_request(&app, &repository, &model_streams, &cancellations, &frame)
-                    .await;
-            let response_frame = match response {
-                Ok(value) => RpcFrame::success(&frame, value),
-                Err(error) => RpcFrame::failure(&frame, -32603, error.message),
-            };
-            let _ = write_frame(&stdin, &response_frame).await;
+            let request_app = app.clone();
+            let request_repository = repository.clone();
+            let request_streams = model_streams.clone();
+            let request_cancellations = cancellations.clone();
+            let request_stdin = stdin.clone();
+            tauri::async_runtime::spawn(async move {
+                let response = handle_runtime_request(
+                    &request_app,
+                    &request_repository,
+                    &request_streams,
+                    &request_cancellations,
+                    &frame,
+                )
+                .await;
+                let response_frame = match response {
+                    Ok(value) => RpcFrame::success(&frame, value),
+                    Err(error) => RpcFrame::failure(&frame, -32603, error.message),
+                };
+                let _ = write_frame(&request_stdin, &response_frame).await;
+            });
         }
         for (_, sender) in pending.lock().await.drain() {
             let _ = sender.send(Err(AppError::new(
@@ -744,11 +792,89 @@ fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 fn sanitize_log(value: &str) -> String {
-    let mut value = value.replace("Bearer ", "Bearer [redacted]");
-    if value.len() > 2_000 {
-        value.truncate(2_000);
+    let value = redact_bearer_tokens(value);
+    let value = redact_key_tokens(&value);
+    value.chars().take(2_000).collect()
+}
+
+fn runtime_process_running(child: &mut Child) -> bool {
+    matches!(child.try_wait(), Ok(None))
+}
+
+fn redact_bearer_tokens(value: &str) -> String {
+    const PREFIX: &str = "bearer ";
+    let mut output = String::with_capacity(value.len());
+    let mut cursor = 0;
+    while cursor < value.len() {
+        let tail = &value[cursor..];
+        if tail
+            .get(..PREFIX.len())
+            .is_some_and(|candidate| candidate.eq_ignore_ascii_case(PREFIX))
+        {
+            output.push_str(&tail[..PREFIX.len()]);
+            output.push_str("[redacted]");
+            cursor += PREFIX.len();
+            while cursor < value.len() {
+                let character = value[cursor..]
+                    .chars()
+                    .next()
+                    .expect("cursor remains on a character boundary");
+                if !matches!(character, 'A'..='Z' | 'a'..='z' | '0'..='9' | '.' | '_' | '~' | '+' | '/' | '=' | '-')
+                {
+                    break;
+                }
+                cursor += character.len_utf8();
+            }
+            continue;
+        }
+        let character = tail
+            .chars()
+            .next()
+            .expect("cursor remains on a character boundary");
+        output.push(character);
+        cursor += character.len_utf8();
     }
-    value
+    output
+}
+
+fn redact_key_tokens(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut cursor = 0;
+    while cursor < value.len() {
+        let tail = &value[cursor..];
+        let prefix_len = if tail.starts_with("osk_") {
+            4
+        } else if tail.starts_with("sk_") {
+            3
+        } else {
+            0
+        };
+        if prefix_len > 0 {
+            let mut end = cursor + prefix_len;
+            while end < value.len() {
+                let character = value[end..]
+                    .chars()
+                    .next()
+                    .expect("token cursor remains on a character boundary");
+                if !(character == '_' || character == '-' || character.is_ascii_alphanumeric()) {
+                    break;
+                }
+                end += character.len_utf8();
+            }
+            if end - cursor >= prefix_len + 12 {
+                output.push_str("[redacted]");
+                cursor = end;
+                continue;
+            }
+        }
+        let character = tail
+            .chars()
+            .next()
+            .expect("cursor remains on a character boundary");
+        output.push(character);
+        cursor += character.len_utf8();
+    }
+    output
 }
 
 #[cfg(test)]
@@ -769,5 +895,31 @@ mod tests {
             model_gateway_error_message(&json!({ "error": { "message": "invalid tool result" } })),
             "invalid tool result"
         );
+    }
+
+    #[test]
+    fn runtime_logs_remove_credentials_and_bound_unicode_safely() {
+        let sanitized = sanitize_log(&format!(
+            "Authorization: Bearer live.token-123 osk_abcdefghijklmnop sk_abcdefghijklmnop {}",
+            "é".repeat(2_100)
+        ));
+        assert!(!sanitized.contains("live.token-123"));
+        assert!(!sanitized.contains("osk_abcdefghijklmnop"));
+        assert!(!sanitized.contains("sk_abcdefghijklmnop"));
+        assert!(sanitized.contains("Bearer [redacted]"));
+        assert!(sanitized.chars().count() <= 2_000);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn exited_runtime_children_are_not_treated_as_running() {
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "exit 0"])
+            .spawn()
+            .expect("short-lived child should start");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        assert!(child.id().is_some(), "the exited child has not been reaped yet");
+        assert!(!runtime_process_running(&mut child));
     }
 }

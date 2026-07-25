@@ -13,6 +13,7 @@ use std::{
 use tauri::{AppHandle, Manager, State};
 
 const INSTRUCTIONS: &str = "You are June, a private personal AI assistant. Use the tools provided by the June app when they help answer the user's request. Never claim a tool succeeded unless its result confirms success. If an MCP tool returns elicitationRequired, call request_clarification with its clarificationQuestion exactly, then retry the same MCP tool after the user answers.";
+const MAX_INLINE_VISION_BYTES: i64 = 6 * 1024 * 1024;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -529,6 +530,7 @@ pub async fn start_agent_run(
             input: &request.prompt,
             skills: &requested_skills,
             attachments: &prepared_attachments,
+            excluded_history_run_id: None,
         },
     )
     .await?;
@@ -669,6 +671,7 @@ pub async fn retry_agent_run(
             input: &prompt,
             skills: &enabled_skill_ids,
             attachments: &attachments,
+            excluded_history_run_id: Some(&previous.id),
         },
     )
     .await?;
@@ -794,6 +797,7 @@ pub async fn resolve_agent_interruption(
             input: "",
             skills: &enabled_skill_ids,
             attachments: &[],
+            excluded_history_run_id: None,
         },
     )
     .await?;
@@ -1177,6 +1181,7 @@ struct RunParamsInput<'a> {
     input: &'a str,
     skills: &'a [String],
     attachments: &'a [MessageAttachmentPayload],
+    excluded_history_run_id: Option<&'a str>,
 }
 
 async fn run_params(
@@ -1186,12 +1191,10 @@ async fn run_params(
 ) -> Result<Value, AppError> {
     let model_capabilities = crate::providers::june_model_runtime_capabilities(request.model).await;
     let supports_vision = model_capabilities.supports_vision;
-    let mut history: Vec<Value> = repository
-        .items(request.session_id)
-        .await?
-        .into_iter()
-        .filter_map(history_item)
-        .collect();
+    let mut history = runtime_history(
+        repository.items(request.session_id).await?,
+        request.excluded_history_run_id,
+    );
     if !supports_vision {
         for item in &mut history {
             if let Some(object) = item.as_object_mut() {
@@ -1209,6 +1212,26 @@ async fn run_params(
                     .as_deref()
                     .is_some_and(is_supported_vision_mime_type)
         })
+        .cloned()
+        .collect::<Vec<_>>();
+    let current_vision_bytes = vision_attachments
+        .iter()
+        .map(|attachment| attachment.size_bytes.max(0))
+        .fold(0_i64, i64::saturating_add);
+    if current_vision_bytes > MAX_INLINE_VISION_BYTES {
+        return Err(AppError::new(
+            "agent_vision_attachments_too_large",
+            "Image attachments must total 6 MB or less for one message.",
+        ));
+    }
+    if supports_vision {
+        retain_recent_vision_attachments(
+            &mut history,
+            MAX_INLINE_VISION_BYTES - current_vision_bytes,
+        );
+    }
+    let vision_attachments = vision_attachments
+        .iter()
         .map(runtime_attachment)
         .collect::<Vec<_>>();
     let tools = tool_descriptors(app, repository, request.safety_mode, request.workspace).await?;
@@ -1384,6 +1407,14 @@ fn history_item(item: AgentItemDto) -> Option<Value> {
         }
         _ => None,
     }
+}
+
+fn runtime_history(items: Vec<AgentItemDto>, excluded_run_id: Option<&str>) -> Vec<Value> {
+    items
+        .into_iter()
+        .filter(|item| item.run_id.as_deref() != excluded_run_id)
+        .filter_map(history_item)
+        .collect()
 }
 
 fn session_json(session: super::AgentSessionDto) -> Value {
@@ -1562,7 +1593,35 @@ fn runtime_attachment(attachment: &MessageAttachmentPayload) -> Value {
     json!({
         "path": attachment.path,
         "mimeType": attachment.mime_type,
+        "sizeBytes": attachment.size_bytes,
     })
+}
+
+fn retain_recent_vision_attachments(history: &mut [Value], mut remaining_bytes: i64) {
+    for item in history.iter_mut().rev() {
+        let Some(attachments) = item.get_mut("attachments").and_then(Value::as_array_mut) else {
+            continue;
+        };
+        attachments.retain(|attachment| {
+            let is_vision = attachment
+                .get("mimeType")
+                .and_then(Value::as_str)
+                .is_some_and(is_supported_vision_mime_type);
+            if !is_vision {
+                return true;
+            }
+            let bytes = attachment
+                .get("sizeBytes")
+                .and_then(Value::as_i64)
+                .unwrap_or(MAX_INLINE_VISION_BYTES + 1)
+                .max(0);
+            if bytes > remaining_bytes {
+                return false;
+            }
+            remaining_bytes -= bytes;
+            true
+        });
+    }
 }
 
 fn is_supported_vision_mime_type(mime_type: &str) -> bool {
@@ -1690,6 +1749,7 @@ mod tests {
             "/workspace/attachments/brief.md"
         );
         assert_eq!(history["attachments"][0]["mimeType"], "text/markdown");
+        assert_eq!(history["attachments"][0]["sizeBytes"], 42);
     }
 
     #[test]
@@ -1760,5 +1820,45 @@ mod tests {
         assert_eq!(history["text"], "Use the launch plan");
         assert_eq!(value["kind"], "steering");
         assert_eq!(value["text"], "Use the launch plan");
+    }
+
+    #[test]
+    fn retry_history_excludes_every_item_from_the_failed_run() {
+        let item = |id: &str, run_id: &str, content: &str| AgentItemDto {
+            id: id.into(),
+            session_id: "session-1".into(),
+            run_id: Some(run_id.into()),
+            sequence: 0,
+            payload: AgentItemPayload::UserMessage(super::super::MessagePayload {
+                role: "user".into(),
+                content: content.into(),
+                attachments: Vec::new(),
+            }),
+            external_id: None,
+            created_at: "2026-07-25T12:00:00Z".into(),
+        };
+        let history = runtime_history(
+            vec![
+                item("prior", "run-prior", "Earlier request"),
+                item("failed", "run-failed", "Retry this once"),
+            ],
+            Some("run-failed"),
+        );
+
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0]["text"], "Earlier request");
+    }
+
+    #[test]
+    fn vision_budget_keeps_recent_images_and_drops_oversized_history() {
+        let mut history = vec![
+            json!({ "attachments": [{ "path": "/old.png", "mimeType": "image/png", "sizeBytes": 4 * 1024 * 1024 }] }),
+            json!({ "attachments": [{ "path": "/new.png", "mimeType": "image/png", "sizeBytes": 3 * 1024 * 1024 }] }),
+        ];
+
+        retain_recent_vision_attachments(&mut history, MAX_INLINE_VISION_BYTES);
+
+        assert_eq!(history[0]["attachments"], json!([]));
+        assert_eq!(history[1]["attachments"][0]["path"], "/new.png");
     }
 }
