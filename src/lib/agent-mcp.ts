@@ -61,6 +61,10 @@ export function testAgentMcpServer(serverId: string) {
   return invoke<AgentMcpToolDto[]>("test_agent_mcp_server", { serverId });
 }
 
+export function connectAgentMcpOauth(serverId: string) {
+  return invoke<AgentMcpServerDto>("connect_agent_mcp_oauth", { serverId });
+}
+
 export const DEFAULT_AGENT_MCP_SAFETY: AgentMcpSafetyPolicy = {
   requiresApproval: true,
   allowSandboxed: true,

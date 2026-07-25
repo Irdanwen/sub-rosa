@@ -722,6 +722,41 @@ export function AgentWorkspace({
     }
   };
   const activeModel = selectedModel(models, model);
+  const usageModel = selectedModel(
+    models,
+    models.some((candidate) => candidate.id === projection.run?.model)
+      ? (projection.run?.model ?? model)
+      : (selectedSession?.model ?? model),
+  );
+  const runUsage = projection.run?.usage;
+  const contextLimit = usageModel?.contextTokens;
+  const contextUsed = runUsage?.inputTokens;
+  const contextPercent =
+    contextUsed !== undefined && contextLimit !== undefined && contextLimit > 0
+      ? Math.min(100, (contextUsed / contextLimit) * 100)
+      : undefined;
+  const estimatedCredits =
+    runUsage &&
+    usageModel?.inputCreditsPerMillionTokens !== undefined &&
+    usageModel.outputCreditsPerMillionTokens !== undefined
+      ? (runUsage.inputTokens * usageModel.inputCreditsPerMillionTokens +
+          runUsage.outputTokens * usageModel.outputCreditsPerMillionTokens) /
+        1_000_000
+      : undefined;
+  const toolUsage = [...projection.items]
+    .filter(
+      (item) =>
+        item.kind === "tool_call" &&
+        (projection.run?.id === undefined || item.runId === projection.run.id),
+    )
+    .reduce<Map<string, { calls: number; failures: number }>>((summary, item) => {
+      if (item.kind !== "tool_call") return summary;
+      const current = summary.get(item.name) ?? { calls: 0, failures: 0 };
+      current.calls += 1;
+      if (item.status === "failed") current.failures += 1;
+      summary.set(item.name, current);
+      return summary;
+    }, new Map());
   const composer = (
     <AgentComposer
       formRef={composerRef}
@@ -930,9 +965,31 @@ export function AgentWorkspace({
             <div className="agent-usage-row">
               <span className="agent-usage-primary">Model</span>
               <span className="agent-usage-value">
-                {projection.run?.model ?? selectedSession.model}
+                {usageModel?.name ?? projection.run?.model ?? selectedSession.model}
               </span>
             </div>
+            {projection.run?.usage?.provider || usageModel?.provider ? (
+              <div className="agent-usage-row">
+                <span className="agent-usage-primary">Provider</span>
+                <span className="agent-usage-value">
+                  {projection.run?.usage?.provider ?? usageModel?.provider}
+                </span>
+              </div>
+            ) : null}
+            {projection.run?.usage?.privacyLevel || usageModel?.privacy ? (
+              <div className="agent-usage-row">
+                <span className="agent-usage-primary">Privacy</span>
+                <span className="agent-usage-value">
+                  {projection.run?.usage?.privacyLevel ?? usageModel?.privacy}
+                </span>
+              </div>
+            ) : null}
+            {projection.run?.usage?.endpoint ? (
+              <div className="agent-usage-row">
+                <span className="agent-usage-primary">Route</span>
+                <span className="agent-usage-value">{projection.run.usage.endpoint}</span>
+              </div>
+            ) : null}
             {projection.run?.reasoningEffort ? (
               <div className="agent-usage-row">
                 <span className="agent-usage-primary">Reasoning effort</span>
@@ -959,6 +1016,52 @@ export function AgentWorkspace({
                     {projection.run.usage.totalTokens.toLocaleString()}
                   </span>
                 </div>
+                {contextPercent !== undefined && contextUsed !== undefined && contextLimit ? (
+                  <div className="agent-usage-context">
+                    <div className="agent-usage-row">
+                      <span className="agent-usage-primary">Latest request context</span>
+                      <span className="agent-usage-value">
+                        {contextUsed.toLocaleString()} of {contextLimit.toLocaleString()} (
+                        {contextPercent.toFixed(1)}%)
+                      </span>
+                    </div>
+                    <div
+                      className="agent-usage-context-track"
+                      role="progressbar"
+                      aria-label="Context used"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={Math.round(contextPercent)}
+                    >
+                      <span style={{ transform: `scaleX(${contextPercent / 100})` }} />
+                    </div>
+                  </div>
+                ) : null}
+                {estimatedCredits !== undefined ? (
+                  <div className="agent-usage-row">
+                    <span className="agent-usage-primary">Estimated charge</span>
+                    <span className="agent-usage-value">
+                      {estimatedCredits.toLocaleString(undefined, {
+                        maximumFractionDigits: estimatedCredits < 1 ? 3 : 1,
+                      })}{" "}
+                      credits (about ${(estimatedCredits / 1_000).toFixed(4)})
+                    </span>
+                  </div>
+                ) : null}
+                {toolUsage.size > 0 ? (
+                  <div className="agent-usage-tools">
+                    <p className="agent-usage-section-title">Tools</p>
+                    {[...toolUsage.entries()].map(([name, usage]) => (
+                      <div className="agent-usage-row" key={name}>
+                        <span className="agent-usage-primary">{name}</span>
+                        <span className="agent-usage-value">
+                          {usage.calls} {usage.calls === 1 ? "call" : "calls"}
+                          {usage.failures > 0 ? `, ${usage.failures} failed` : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </>
             ) : (
               <p className="agent-usage-empty">No usage reported for this session yet.</p>

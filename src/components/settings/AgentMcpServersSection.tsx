@@ -5,6 +5,7 @@ import { IconTrashCan } from "central-icons/IconTrashCan";
 import { useCallback, useEffect, useState } from "react";
 import {
   createAgentMcpServer,
+  connectAgentMcpOauth,
   DEFAULT_AGENT_MCP_SAFETY,
   deleteAgentMcpServer,
   listAgentMcpServers,
@@ -32,6 +33,7 @@ type Draft = {
   approvalTools: string;
   requiresApproval: boolean;
   allowSandboxed: boolean;
+  oauth: boolean;
 };
 
 const EMPTY_DRAFT: Draft = {
@@ -47,6 +49,7 @@ const EMPTY_DRAFT: Draft = {
   approvalTools: "",
   requiresApproval: true,
   allowSandboxed: true,
+  oauth: false,
 };
 
 function parseSecretMap(raw: string, label: string): Record<string, string> {
@@ -139,6 +142,24 @@ export function AgentMcpServersSection() {
     }
   }
 
+  async function connectOauth(server: AgentMcpServerDto) {
+    setBusyId(server.id);
+    setError(undefined);
+    setTestResults((current) => ({ ...current, [server.id]: "Waiting for browser sign-in" }));
+    try {
+      const connected = await connectAgentMcpOauth(server.id);
+      setServers((current) => current.map((item) => (item.id === connected.id ? connected : item)));
+      setTestResults((current) => ({ ...current, [server.id]: "OAuth connected" }));
+    } catch (connectError) {
+      setTestResults((current) => ({
+        ...current,
+        [server.id]: messageFromError(connectError),
+      }));
+    } finally {
+      setBusyId(undefined);
+    }
+  }
+
   function openCreate() {
     setEditing(undefined);
     setDraft(EMPTY_DRAFT);
@@ -161,6 +182,7 @@ export function AgentMcpServersSection() {
       approvalTools: server.safety.approvalTools.join("\n"),
       requiresApproval: server.safety.requiresApproval,
       allowSandboxed: server.safety.allowSandboxed,
+      oauth: server.metadata.auth === "oauth" || server.metadata.legacyAuth === "oauth",
     });
     setSaveError(undefined);
     setAddOpen(true);
@@ -173,10 +195,20 @@ export function AgentMcpServersSection() {
         env: parseSecretMap(draft.env, "Environment"),
         headers: parseSecretMap(draft.headers, "Headers"),
       };
+      const metadata = { ...(editing?.metadata ?? {}) };
+      if (draft.oauth) {
+        metadata.auth = "oauth";
+      } else {
+        delete metadata.auth;
+        delete metadata.oauthConnected;
+        delete metadata.legacyAuth;
+        delete metadata.needsReview;
+        delete metadata.migrationWarning;
+      }
       const input = {
         id: editing?.id,
         name: draft.name.trim(),
-        enabled: editing?.enabled ?? true,
+        enabled: draft.oauth ? (editing?.enabled ?? false) : (editing?.enabled ?? true),
         transport: draft.transport,
         command: draft.transport === "stdio" ? draft.command.trim() : undefined,
         args:
@@ -187,7 +219,7 @@ export function AgentMcpServersSection() {
                 .filter(Boolean)
             : [],
         url: draft.transport === "streamable_http" ? draft.url.trim() : undefined,
-        metadata: editing?.metadata ?? {},
+        metadata,
         toolVisibility: {
           include: splitLines(draft.includeTools),
           exclude: splitLines(draft.excludeTools),
@@ -282,14 +314,14 @@ export function AgentMcpServersSection() {
                   </p>
                 </div>
                 <div className="settings-row-control">
-                  {server.metadata.legacyAuth === "oauth" ? (
+                  {server.metadata.legacyAuth === "oauth" || server.metadata.auth === "oauth" ? (
                     <button
                       type="button"
                       className="btn btn-secondary"
                       disabled={busyId === server.id}
-                      onClick={() => openEdit(server)}
+                      onClick={() => void connectOauth(server)}
                     >
-                      Reconnect
+                      {server.metadata.oauthConnected === true ? "Reconnect" : "Connect"}
                     </button>
                   ) : null}
                   <button
@@ -372,7 +404,7 @@ export function AgentMcpServersSection() {
           {editing?.metadata.legacyAuth === "oauth" ? (
             <InlineNotice
               tone="warning"
-              body="This server used Hermes OAuth. Its old tokens were not copied. Enter a new Authorization header below to reconnect it securely, then save and enable the server."
+              body="This server used OAuth previously. Save any configuration changes, then use Connect to sign in again. Tokens stay in your system keychain."
             />
           ) : null}
           <label className="dialog-field">
@@ -425,16 +457,28 @@ export function AgentMcpServersSection() {
               </label>
             </>
           ) : (
-            <label className="dialog-field">
-              URL
-              <input
-                className="dialog-input"
-                value={draft.url}
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, url: event.target.value }))
-                }
-              />
-            </label>
+            <>
+              <label className="dialog-field">
+                URL
+                <input
+                  className="dialog-input"
+                  value={draft.url}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, url: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="dialog-checkbox">
+                <input
+                  type="checkbox"
+                  checked={draft.oauth}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, oauth: event.target.checked }))
+                  }
+                />
+                Authenticate with OAuth
+              </label>
+            </>
           )}
           <label className="dialog-field">
             Environment variables (JSON)

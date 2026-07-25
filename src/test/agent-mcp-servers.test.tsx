@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   remove: vi.fn(),
   test: vi.fn(),
+  connectOauth: vi.fn(),
 }));
 
 vi.mock("../lib/agent-mcp", async (importOriginal) => ({
@@ -19,6 +20,7 @@ vi.mock("../lib/agent-mcp", async (importOriginal) => ({
   updateAgentMcpServer: mocks.update,
   deleteAgentMcpServer: mocks.remove,
   testAgentMcpServer: mocks.test,
+  connectAgentMcpOauth: mocks.connectOauth,
 }));
 
 const server: AgentMcpServerDto = {
@@ -46,6 +48,15 @@ describe("AgentMcpServersSection", () => {
     mocks.update.mockImplementation(async (input) => input);
     mocks.remove.mockResolvedValue(undefined);
     mocks.test.mockResolvedValue([{ name: "list_tasks", description: "", inputSchema: {} }]);
+    mocks.connectOauth.mockImplementation(async () => ({
+      ...server,
+      id: "legacy-oauth",
+      name: "Legacy OAuth tools",
+      transport: "streamable_http",
+      command: undefined,
+      url: "https://example.test/mcp",
+      metadata: { auth: "oauth", oauthConnected: true },
+    }));
   });
 
   it("hydrates, tests, toggles, and removes persisted servers", async () => {
@@ -101,6 +112,37 @@ describe("AgentMcpServersSection", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("creates an OAuth HTTP server disabled until browser sign-in", async () => {
+    mocks.list.mockResolvedValue([]);
+    mocks.create.mockImplementation(async (input) => ({
+      ...server,
+      ...input,
+      id: "oauth-created",
+    }));
+    const user = userEvent.setup();
+    render(<AgentMcpServersSection />);
+
+    await screen.findByText("No custom servers");
+    await user.click(screen.getByRole("button", { name: "Add server" }));
+    const dialog = screen.getByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Name"), "OAuth tools");
+    await user.selectOptions(within(dialog).getByLabelText("Transport"), "streamable_http");
+    await user.type(within(dialog).getByLabelText("URL"), "https://example.test/mcp");
+    await user.click(within(dialog).getByLabelText("Authenticate with OAuth"));
+    await user.click(within(dialog).getByRole("button", { name: "Add server" }));
+
+    await waitFor(() =>
+      expect(mocks.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          enabled: false,
+          metadata: { auth: "oauth" },
+          transport: "streamable_http",
+        }),
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
+  });
+
   it("renders structured Tauri errors instead of object coercion", async () => {
     mocks.list.mockResolvedValue([]);
     mocks.create.mockRejectedValue({
@@ -144,7 +186,7 @@ describe("AgentMcpServersSection", () => {
     expect(mocks.update.mock.calls[0]?.[0]).not.toHaveProperty("secrets");
   });
 
-  it("guides migrated Hermes OAuth servers through a keychain-only reconnect", async () => {
+  it("reconnects migrated OAuth servers through the browser flow", async () => {
     mocks.list.mockResolvedValue([
       {
         ...server,
@@ -160,24 +202,9 @@ describe("AgentMcpServersSection", () => {
     const user = userEvent.setup();
     render(<AgentMcpServersSection />);
 
-    await user.click(await screen.findByRole("button", { name: "Reconnect" }));
-    const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByText(/old tokens were not copied/i)).toBeInTheDocument();
-    fireEvent.change(within(dialog).getByLabelText("HTTP headers (JSON)"), {
-      target: { value: '{"Authorization":"Bearer replacement"}' },
-    });
-    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
-
-    await waitFor(() =>
-      expect(mocks.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: "legacy-oauth",
-          secrets: {
-            env: {},
-            headers: { Authorization: "Bearer replacement" },
-          },
-        }),
-      ),
-    );
+    await user.click(await screen.findByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(mocks.connectOauth).toHaveBeenCalledWith("legacy-oauth"));
+    expect(await screen.findByText(/OAuth connected/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reconnect" })).toBeInTheDocument();
   });
 });

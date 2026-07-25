@@ -77,6 +77,29 @@ test("emits each polled model chunk before the stream completes", async () => {
   assert.ok(events.some((event) => event.type === "response_done"));
 });
 
+test("retains the actual host route from the latest stream page", async () => {
+  const provider = new RpcChatCompletionsModelProvider(async () => ({
+    streamId: "stream-route",
+    chunks: [finalChunk],
+    done: true,
+    route: {
+      provider: "phala",
+      privacyLevel: "tee",
+      endpoint: "phala-glm-5.2",
+    },
+  }));
+  for await (const _event of provider
+    .getModel("private-auto")
+    .getStreamedResponse(modelRequest())) {
+    // Drain the model response.
+  }
+  assert.deepEqual(provider.latestRoute, {
+    provider: "phala",
+    privacyLevel: "tee",
+    endpoint: "phala-glm-5.2",
+  });
+});
+
 test("injects queued steering at the next model boundary and acknowledges consumption", async () => {
   const requests: JsonObject[] = [];
   const consumed: string[] = [];

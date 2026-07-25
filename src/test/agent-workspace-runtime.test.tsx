@@ -104,6 +104,10 @@ describe("AgentWorkspace runtime wiring", () => {
               modelType: "text",
               traits: [],
               capabilities: ["tools"],
+              privacy: "private",
+              contextTokens: 200_000,
+              inputCreditsPerMillionTokens: 2_000,
+              outputCreditsPerMillionTokens: 4_000,
             },
           ],
         });
@@ -172,6 +176,68 @@ describe("AgentWorkspace runtime wiring", () => {
     });
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Model: Fast" })).toBeEnabled());
+  });
+
+  it("shows context, estimated charge, and per-tool usage for the latest run", async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkspace initialSession={session} />);
+    await screen.findByText("Earlier answer");
+    const composer = screen.getByRole("textbox", { name: "Message June" });
+    await user.type(composer, "Use a tool");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("start_agent_run", expect.anything()),
+    );
+    await screen.findByRole("button", { name: "Stop June" });
+
+    act(() => {
+      mocks.runtimeListener?.({
+        payload: {
+          protocolVersion: 1,
+          eventId: "tool-start",
+          sessionId: session.id,
+          runId: "run-1",
+          sequence: 2,
+          method: "tool.started",
+          data: {
+            itemId: "tool-item-1",
+            callId: "call-1",
+            name: "read_file",
+            arguments: { path: "notes.md" },
+            createdAt: "2026-07-25T12:00:01Z",
+          },
+        },
+      });
+      mocks.runtimeListener?.({
+        payload: {
+          protocolVersion: 1,
+          eventId: "usage",
+          sessionId: session.id,
+          runId: "run-1",
+          sequence: 3,
+          method: "usage.updated",
+          data: {
+            inputTokens: 10_000,
+            outputTokens: 2_000,
+            totalTokens: 12_000,
+            provider: "phala",
+            privacyLevel: "tee",
+            endpoint: "phala-glm-5.2",
+          },
+        },
+      });
+    });
+
+    await user.click(screen.getByRole("button", { name: "Session actions" }));
+    await user.click(screen.getByRole("menuitem", { name: "Usage" }));
+    const usagePanel = screen.getByLabelText("Session usage");
+    expect(usagePanel).toHaveTextContent("10,000 of 200,000 (5.0%)");
+    expect(usagePanel).toHaveTextContent("28 credits (about $0.0280)");
+    expect(usagePanel).toHaveTextContent("read_file");
+    expect(usagePanel).toHaveTextContent("1 call");
+    expect(usagePanel).toHaveTextContent("phala");
+    expect(usagePanel).toHaveTextContent("tee");
+    expect(usagePanel).toHaveTextContent("phala-glm-5.2");
   });
 
   it("steers an active run at the next model boundary and retires the fallback queue", async () => {

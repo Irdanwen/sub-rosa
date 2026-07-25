@@ -183,7 +183,32 @@ pub struct DictateCleanupRequestParams {
 pub struct AgentChatCompletionsResponse {
     pub status: u16,
     pub content_type: String,
+    pub route: AgentModelRouteMetadata,
     upstream: reqwest::Response,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentModelRouteMetadata {
+    pub provider: Option<String>,
+    pub privacy_level: Option<String>,
+    pub endpoint: Option<String>,
+}
+
+fn agent_route_metadata(response: &reqwest::Response) -> AgentModelRouteMetadata {
+    let header = |name: &str| {
+        response
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_string)
+    };
+    AgentModelRouteMetadata {
+        provider: header("x-os-provider"),
+        privacy_level: header("x-os-privacy-level"),
+        endpoint: header("x-os-endpoint"),
+    }
 }
 
 impl AgentChatCompletionsResponse {
@@ -997,9 +1022,11 @@ pub async fn proxy_agent_chat_completions(
             .and_then(|value| value.to_str().ok())
             .unwrap_or("application/json")
             .to_string();
+        let route = agent_route_metadata(&response);
         return Ok(AgentChatCompletionsResponse {
             status,
             content_type,
+            route,
             upstream: response,
         });
     }
@@ -1103,9 +1130,15 @@ async fn proxy_local_agent_chat_completions(
         .and_then(|value| value.to_str().ok())
         .unwrap_or("application/json")
         .to_string();
+    let route = AgentModelRouteMetadata {
+        provider: Some(PROVIDER_LOCAL.to_string()),
+        privacy_level: Some("local".to_string()),
+        endpoint: Some(settings.model_id.clone()),
+    };
     Ok(AgentChatCompletionsResponse {
         status,
         content_type,
+        route,
         upstream: response,
     })
 }

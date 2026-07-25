@@ -29,7 +29,7 @@ use tokio::{
     time::timeout,
 };
 use uuid::Uuid;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 pub const AGENT_MCP_SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS agent_mcp_servers (
@@ -56,6 +56,9 @@ pub const DEFAULT_MAX_OUTPUT_BYTES: usize = 1_048_576;
 const KEYCHAIN_SERVICE: &str = "co.opensoftware.june.agent-mcp";
 const DEV_KEYCHAIN_SERVICE: &str = "co.opensoftware.june-dev.agent-mcp";
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
+const OAUTH_CONNECT_TIMEOUT: Duration = Duration::from_secs(300);
+const OAUTH_HTTP_TIMEOUT: Duration = Duration::from_secs(20);
+const OAUTH_EXPIRY_BUFFER_SECS: i64 = 60;
 
 type SharedMcpSession = Arc<AsyncMutex<McpSessionSlot>>;
 static MCP_SESSIONS: OnceLock<AsyncMutex<HashMap<String, SharedMcpSession>>> = OnceLock::new();
@@ -106,6 +109,10 @@ pub enum AgentMcpError {
     Storage,
     #[error("MCP transport operation failed")]
     Transport,
+    #[error("MCP authorization was rejected")]
+    Unauthorized,
+    #[error("MCP authorization has expired. Reconnect this server in Settings.")]
+    OauthReconnectRequired,
     #[error("MCP server requested user input: {0}")]
     ElicitationRequired(String),
 }
@@ -300,7 +307,7 @@ impl McpServerDefinition {
 /// Values held only in keychain. `env` is supplied to a stdio process and
 /// `headers` only to the configured HTTP origin. Neither is serialized with a
 /// [`McpServerDefinition`] or placed in runtime tool descriptors.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpSecretBundle {
     #[serde(default)]
     pub env: BTreeMap<String, String>,
@@ -311,6 +318,17 @@ pub struct McpSecretBundle {
     /// flow can replace the retired Hermes token cache safely.
     #[serde(default)]
     pub oauth: BTreeMap<String, String>,
+}
+
+impl std::fmt::Debug for McpSecretBundle {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("McpSecretBundle")
+            .field("env_keys", &self.env.keys().collect::<Vec<_>>())
+            .field("header_keys", &self.headers.keys().collect::<Vec<_>>())
+            .field("oauth_keys", &self.oauth.keys().collect::<Vec<_>>())
+            .finish()
+    }
 }
 
 impl Drop for McpSecretBundle {
@@ -351,6 +369,599 @@ impl McpSecretStore for KeychainMcpSecretStore {
     fn delete(&self, secret_ref: &str) -> Result<(), AgentMcpError> {
         platform_keychain_delete(keychain_service(), secret_ref)
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct OAuthResourceMetadata {
+    resource: String,
+    #[serde(default)]
+    authorization_servers: Vec<String>,
+    #[serde(default)]
+    scopes_supported: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OAuthAuthorizationServerMetadata {
+    issuer: String,
+    authorization_endpoint: String,
+    token_endpoint: String,
+    #[serde(default)]
+    registration_endpoint: Option<String>,
+    #[serde(default)]
+    response_types_supported: Vec<String>,
+    #[serde(default)]
+    grant_types_supported: Vec<String>,
+    #[serde(default)]
+    code_challenge_methods_supported: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct OAuthRegistrationRequest<'a> {
+    client_name: &'a str,
+    redirect_uris: Vec<&'a str>,
+    grant_types: Vec<&'a str>,
+    response_types: Vec<&'a str>,
+    token_endpoint_auth_method: &'a str,
+}
+
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
+struct OAuthRegistrationResponse {
+    client_id: String,
+    #[serde(default)]
+    client_secret: Option<String>,
+}
+
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
+struct OAuthTokenResponse {
+    access_token: String,
+    #[serde(default)]
+    refresh_token: Option<String>,
+    #[zeroize(skip)]
+    #[serde(default)]
+    expires_in: Option<i64>,
+    #[zeroize(skip)]
+    #[serde(default)]
+    scope: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct OAuthTokenError {
+    #[serde(default)]
+    error: Option<String>,
+}
+
+fn oauth_now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
+fn secure_oauth_url(raw: &str) -> Result<reqwest::Url, AgentMcpError> {
+    let parsed = reqwest::Url::parse(raw).map_err(|_| AgentMcpError::Protocol)?;
+    let secure = parsed.scheme() == "https"
+        || (parsed.scheme() == "http"
+            && parsed
+                .host_str()
+                .is_some_and(|host| matches!(host, "localhost" | "127.0.0.1" | "::1")));
+    if !secure
+        || parsed.username() != ""
+        || parsed.password().is_some()
+        || parsed.host_str().is_none()
+    {
+        return Err(AgentMcpError::Protocol);
+    }
+    Ok(parsed)
+}
+
+fn protected_resource_metadata_urls(
+    resource: &reqwest::Url,
+) -> Result<Vec<reqwest::Url>, AgentMcpError> {
+    let origin = format!(
+        "{}://{}{}",
+        resource.scheme(),
+        resource.host_str().ok_or(AgentMcpError::Protocol)?,
+        resource
+            .port()
+            .map(|port| format!(":{port}"))
+            .unwrap_or_default()
+    );
+    let mut paths = Vec::new();
+    let resource_path = resource.path().trim_start_matches('/');
+    if !resource_path.is_empty() {
+        paths.push(format!(
+            "{origin}/.well-known/oauth-protected-resource/{resource_path}"
+        ));
+    }
+    paths.push(format!("{origin}/.well-known/oauth-protected-resource"));
+    paths
+        .into_iter()
+        .map(|value| reqwest::Url::parse(&value).map_err(|_| AgentMcpError::Protocol))
+        .collect()
+}
+
+fn authorization_server_metadata_urls(
+    issuer: &reqwest::Url,
+) -> Result<Vec<reqwest::Url>, AgentMcpError> {
+    let origin = format!(
+        "{}://{}{}",
+        issuer.scheme(),
+        issuer.host_str().ok_or(AgentMcpError::Protocol)?,
+        issuer
+            .port()
+            .map(|port| format!(":{port}"))
+            .unwrap_or_default()
+    );
+    let issuer_path = issuer.path().trim_matches('/');
+    let suffix = if issuer_path.is_empty() {
+        String::new()
+    } else {
+        format!("/{issuer_path}")
+    };
+    [
+        format!("{origin}/.well-known/oauth-authorization-server{suffix}"),
+        format!("{origin}/.well-known/openid-configuration{suffix}"),
+    ]
+    .into_iter()
+    .map(|value| reqwest::Url::parse(&value).map_err(|_| AgentMcpError::Protocol))
+    .collect()
+}
+
+async fn get_first_oauth_metadata<T: for<'de> Deserialize<'de>>(
+    client: &reqwest::Client,
+    urls: Vec<reqwest::Url>,
+) -> Result<T, AgentMcpError> {
+    for url in urls {
+        let Ok(response) = client.get(url).timeout(OAUTH_HTTP_TIMEOUT).send().await else {
+            continue;
+        };
+        if response.status().is_success() {
+            if let Ok(metadata) = response.json::<T>().await {
+                return Ok(metadata);
+            }
+        }
+    }
+    Err(AgentMcpError::Protocol)
+}
+
+fn resource_metadata_from_challenge(value: &str) -> Option<&str> {
+    let marker = "resource_metadata=";
+    let start = value.find(marker)? + marker.len();
+    let remainder = value[start..].trim_start();
+    if let Some(quoted) = remainder.strip_prefix('"') {
+        return quoted.split_once('"').map(|(url, _)| url);
+    }
+    Some(
+        remainder
+            .split([',', ' '])
+            .next()
+            .unwrap_or_default()
+            .trim(),
+    )
+    .filter(|value| !value.is_empty())
+}
+
+async fn challenge_resource_metadata_url(
+    client: &reqwest::Client,
+    resource_url: &reqwest::Url,
+) -> Result<reqwest::Url, AgentMcpError> {
+    let response = client
+        .post(resource_url.clone())
+        .timeout(OAUTH_HTTP_TIMEOUT)
+        .header("accept", "application/json, text/event-stream")
+        .header("content-type", "application/json")
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": initialize_params()
+        }))
+        .send()
+        .await
+        .map_err(|_| AgentMcpError::Transport)?;
+    let advertised = response
+        .headers()
+        .get_all(reqwest::header::WWW_AUTHENTICATE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .find_map(resource_metadata_from_challenge)
+        .ok_or(AgentMcpError::Protocol)
+        .and_then(secure_oauth_url)?;
+    if advertised.origin() != resource_url.origin() {
+        return Err(AgentMcpError::Protocol);
+    }
+    Ok(advertised)
+}
+
+async fn discover_oauth_metadata(
+    endpoint: &str,
+) -> Result<(OAuthResourceMetadata, OAuthAuthorizationServerMetadata), AgentMcpError> {
+    let resource_url = secure_oauth_url(endpoint)?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| AgentMcpError::Transport)?;
+    let resource = match get_first_oauth_metadata::<OAuthResourceMetadata>(
+        &client,
+        protected_resource_metadata_urls(&resource_url)?,
+    )
+    .await
+    {
+        Ok(metadata) => metadata,
+        Err(_) => {
+            let advertised = challenge_resource_metadata_url(&client, &resource_url).await?;
+            get_first_oauth_metadata::<OAuthResourceMetadata>(&client, vec![advertised]).await?
+        }
+    };
+    let declared_resource = secure_oauth_url(&resource.resource)?;
+    if declared_resource.origin() != resource_url.origin() {
+        return Err(AgentMcpError::Protocol);
+    }
+    let issuer = resource
+        .authorization_servers
+        .first()
+        .ok_or(AgentMcpError::Protocol)
+        .and_then(|value| secure_oauth_url(value))?;
+    let auth = get_first_oauth_metadata::<OAuthAuthorizationServerMetadata>(
+        &client,
+        authorization_server_metadata_urls(&issuer)?,
+    )
+    .await?;
+    if secure_oauth_url(&auth.issuer)? != issuer
+        || secure_oauth_url(&auth.authorization_endpoint).is_err()
+        || secure_oauth_url(&auth.token_endpoint).is_err()
+        || !auth
+            .response_types_supported
+            .iter()
+            .any(|value| value == "code")
+        || (!auth.grant_types_supported.is_empty()
+            && !auth
+                .grant_types_supported
+                .iter()
+                .any(|value| value == "authorization_code"))
+        || !auth
+            .code_challenge_methods_supported
+            .iter()
+            .any(|value| value == "S256")
+    {
+        return Err(AgentMcpError::Protocol);
+    }
+    if let Some(registration_endpoint) = auth.registration_endpoint.as_deref() {
+        secure_oauth_url(registration_endpoint)?;
+    }
+    Ok((resource, auth))
+}
+
+async fn register_oauth_client(
+    auth: &OAuthAuthorizationServerMetadata,
+    redirect_uri: &str,
+) -> Result<OAuthRegistrationResponse, AgentMcpError> {
+    let endpoint = auth
+        .registration_endpoint
+        .as_deref()
+        .ok_or(AgentMcpError::Protocol)?;
+    let response = reqwest::Client::new()
+        .post(endpoint)
+        .timeout(OAUTH_HTTP_TIMEOUT)
+        .json(&OAuthRegistrationRequest {
+            client_name: "June",
+            redirect_uris: vec![redirect_uri],
+            grant_types: vec!["authorization_code", "refresh_token"],
+            response_types: vec!["code"],
+            token_endpoint_auth_method: "none",
+        })
+        .send()
+        .await
+        .map_err(|_| AgentMcpError::Transport)?;
+    if !response.status().is_success() {
+        return Err(AgentMcpError::Protocol);
+    }
+    let registration = response
+        .json::<OAuthRegistrationResponse>()
+        .await
+        .map_err(|_| AgentMcpError::Protocol)?;
+    if registration.client_id.trim().is_empty() {
+        return Err(AgentMcpError::Protocol);
+    }
+    Ok(registration)
+}
+
+fn oauth_authorization_url(
+    auth: &OAuthAuthorizationServerMetadata,
+    client_id: &str,
+    redirect_uri: &str,
+    challenge: &str,
+    state: &str,
+    resource: &str,
+    scope: &str,
+) -> Result<String, AgentMcpError> {
+    let mut url = secure_oauth_url(&auth.authorization_endpoint)?;
+    {
+        let mut query = url.query_pairs_mut();
+        query
+            .append_pair("client_id", client_id)
+            .append_pair("redirect_uri", redirect_uri)
+            .append_pair("response_type", "code")
+            .append_pair("code_challenge", challenge)
+            .append_pair("code_challenge_method", "S256")
+            .append_pair("state", state)
+            .append_pair("resource", resource);
+        if !scope.is_empty() {
+            query.append_pair("scope", scope);
+        }
+    }
+    Ok(url.to_string())
+}
+
+async fn exchange_oauth_code(
+    auth: &OAuthAuthorizationServerMetadata,
+    client_id: &str,
+    client_secret: Option<&str>,
+    code: &str,
+    verifier: &str,
+    redirect_uri: &str,
+    resource: &str,
+) -> Result<OAuthTokenResponse, AgentMcpError> {
+    let mut form = vec![
+        ("grant_type", "authorization_code"),
+        ("code", code),
+        ("code_verifier", verifier),
+        ("client_id", client_id),
+        ("redirect_uri", redirect_uri),
+        ("resource", resource),
+    ];
+    if let Some(secret) = client_secret.filter(|value| !value.is_empty()) {
+        form.push(("client_secret", secret));
+    }
+    let response = reqwest::Client::new()
+        .post(&auth.token_endpoint)
+        .timeout(OAUTH_HTTP_TIMEOUT)
+        .form(&form)
+        .send()
+        .await
+        .map_err(|_| AgentMcpError::Transport)?;
+    if !response.status().is_success() {
+        return Err(AgentMcpError::Protocol);
+    }
+    let tokens = response
+        .json::<OAuthTokenResponse>()
+        .await
+        .map_err(|_| AgentMcpError::Protocol)?;
+    if tokens.access_token.trim().is_empty() {
+        return Err(AgentMcpError::Protocol);
+    }
+    Ok(tokens)
+}
+
+async fn authorize_oauth_server(
+    server: &McpServerDefinition,
+    existing: &McpSecretBundle,
+) -> Result<McpSecretBundle, AgentMcpError> {
+    if server.transport != McpTransport::StreamableHttp {
+        return Err(AgentMcpError::InvalidDefinition(
+            "OAuth is available only for Streamable HTTP servers".into(),
+        ));
+    }
+    let endpoint = server.url.as_deref().ok_or(AgentMcpError::Protocol)?;
+    let (resource, auth) = discover_oauth_metadata(endpoint).await?;
+    let saved_port = existing
+        .oauth
+        .get("redirect_uri")
+        .and_then(|value| reqwest::Url::parse(value).ok())
+        .filter(|url| {
+            url.scheme() == "http"
+                && url.host_str() == Some("127.0.0.1")
+                && url.path() == "/callback"
+                && url.query().is_none()
+                && url.fragment().is_none()
+        })
+        .and_then(|url| url.port());
+    let (listener, can_reuse_registration) = if let Some(port) = saved_port {
+        match crate::connectors::oauth::bind_loopback(
+            &crate::connectors::oauth::LoopbackPort::Candidates(vec![port]),
+        )
+        .await
+        {
+            Ok(listener) => (listener, true),
+            Err(_) => (
+                crate::connectors::oauth::bind_loopback(
+                    &crate::connectors::oauth::LoopbackPort::Ephemeral,
+                )
+                .await
+                .map_err(|_| AgentMcpError::Transport)?,
+                false,
+            ),
+        }
+    } else {
+        (
+            crate::connectors::oauth::bind_loopback(
+                &crate::connectors::oauth::LoopbackPort::Ephemeral,
+            )
+            .await
+            .map_err(|_| AgentMcpError::Transport)?,
+            false,
+        )
+    };
+    let port = listener
+        .local_addr()
+        .map_err(|_| AgentMcpError::Transport)?
+        .port();
+    let redirect_uri = format!("http://127.0.0.1:{port}/callback");
+    let registration = match existing.oauth.get("client_id") {
+        Some(client_id) if can_reuse_registration && !client_id.trim().is_empty() => {
+            OAuthRegistrationResponse {
+                client_id: client_id.clone(),
+                client_secret: existing.oauth.get("client_secret").cloned(),
+            }
+        }
+        _ => register_oauth_client(&auth, &redirect_uri).await?,
+    };
+    let (verifier, challenge) = crate::connectors::oauth::pkce();
+    let state = crate::connectors::oauth::random_b64url(24);
+    let scope = existing
+        .oauth
+        .get("scope")
+        .cloned()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| resource.scopes_supported.join(" "));
+    let authorization_url = oauth_authorization_url(
+        &auth,
+        &registration.client_id,
+        &redirect_uri,
+        &challenge,
+        &state,
+        &resource.resource,
+        &scope,
+    )?;
+    crate::os_accounts::open_in_browser(&authorization_url)
+        .map_err(|_| AgentMcpError::Transport)?;
+    let code = timeout(
+        OAUTH_CONNECT_TIMEOUT,
+        crate::connectors::oauth::await_callback(&listener, &state, &server.name),
+    )
+    .await
+    .map_err(|_| AgentMcpError::TimedOut)?
+    .map_err(|_| AgentMcpError::Protocol)?;
+    let tokens = exchange_oauth_code(
+        &auth,
+        &registration.client_id,
+        registration.client_secret.as_deref(),
+        &code,
+        &verifier,
+        &redirect_uri,
+        &resource.resource,
+    )
+    .await?;
+    let mut bundle = existing.clone();
+    bundle
+        .oauth
+        .insert("access_token".into(), tokens.access_token.clone());
+    if let Some(refresh_token) = tokens.refresh_token.as_ref() {
+        bundle
+            .oauth
+            .insert("refresh_token".into(), refresh_token.clone());
+    }
+    bundle
+        .oauth
+        .insert("client_id".into(), registration.client_id.clone());
+    if let Some(client_secret) = registration.client_secret.as_ref() {
+        bundle
+            .oauth
+            .insert("client_secret".into(), client_secret.clone());
+    }
+    bundle
+        .oauth
+        .insert("token_endpoint".into(), auth.token_endpoint.clone());
+    bundle.oauth.insert(
+        "authorization_endpoint".into(),
+        auth.authorization_endpoint.clone(),
+    );
+    bundle
+        .oauth
+        .insert("resource".into(), resource.resource.clone());
+    bundle.oauth.insert("redirect_uri".into(), redirect_uri);
+    if let Some(expires_in) = tokens.expires_in {
+        bundle.oauth.insert(
+            "expires_at_unix".into(),
+            (oauth_now_unix() + expires_in.max(0)).to_string(),
+        );
+    } else {
+        bundle.oauth.remove("expires_at_unix");
+    }
+    if let Some(granted_scope) = tokens.scope.as_ref() {
+        bundle.oauth.insert("scope".into(), granted_scope.clone());
+    } else if !scope.is_empty() {
+        bundle.oauth.insert("scope".into(), scope);
+    }
+    Ok(bundle)
+}
+
+async fn refresh_oauth_bundle(
+    bundle: &mut McpSecretBundle,
+    force: bool,
+) -> Result<bool, AgentMcpError> {
+    let Some(refresh_token) = bundle.oauth.get("refresh_token").cloned() else {
+        return if force {
+            Err(AgentMcpError::OauthReconnectRequired)
+        } else {
+            Ok(false)
+        };
+    };
+    let should_refresh = force
+        || bundle
+            .oauth
+            .get("expires_at_unix")
+            .and_then(|value| value.parse::<i64>().ok())
+            .is_some_and(|expires| expires <= oauth_now_unix() + OAUTH_EXPIRY_BUFFER_SECS);
+    if !should_refresh {
+        return Ok(false);
+    }
+    let token_endpoint = bundle
+        .oauth
+        .get("token_endpoint")
+        .ok_or(AgentMcpError::Protocol)
+        .and_then(|value| secure_oauth_url(value))?;
+    let client_id = bundle
+        .oauth
+        .get("client_id")
+        .filter(|value| !value.trim().is_empty())
+        .ok_or(AgentMcpError::Protocol)?;
+    let mut form = vec![
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh_token.as_str()),
+        ("client_id", client_id.as_str()),
+    ];
+    if let Some(resource) = bundle.oauth.get("resource") {
+        form.push(("resource", resource.as_str()));
+    }
+    if let Some(client_secret) = bundle.oauth.get("client_secret") {
+        form.push(("client_secret", client_secret.as_str()));
+    }
+    let response = reqwest::Client::new()
+        .post(token_endpoint)
+        .timeout(OAUTH_HTTP_TIMEOUT)
+        .form(&form)
+        .send()
+        .await
+        .map_err(|_| AgentMcpError::Transport)?;
+    if !response.status().is_success() {
+        let invalid_grant = response
+            .json::<OAuthTokenError>()
+            .await
+            .ok()
+            .and_then(|body| body.error)
+            .is_some_and(|error| error == "invalid_grant");
+        return if invalid_grant {
+            Err(AgentMcpError::OauthReconnectRequired)
+        } else {
+            Err(AgentMcpError::Protocol)
+        };
+    }
+    let tokens = response
+        .json::<OAuthTokenResponse>()
+        .await
+        .map_err(|_| AgentMcpError::Protocol)?;
+    if tokens.access_token.trim().is_empty() {
+        return Err(AgentMcpError::Protocol);
+    }
+    bundle
+        .oauth
+        .insert("access_token".into(), tokens.access_token.clone());
+    if let Some(rotated) = tokens.refresh_token.as_ref() {
+        bundle.oauth.insert("refresh_token".into(), rotated.clone());
+    }
+    if let Some(expires_in) = tokens.expires_in {
+        bundle.oauth.insert(
+            "expires_at_unix".into(),
+            (oauth_now_unix() + expires_in.max(0)).to_string(),
+        );
+    } else {
+        bundle.oauth.remove("expires_at_unix");
+    }
+    if let Some(scope) = tokens.scope.as_ref() {
+        bundle.oauth.insert("scope".into(), scope.clone());
+    }
+    Ok(true)
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -654,6 +1265,21 @@ impl<S: McpSecretStore> AgentMcpSubsystem<S> {
             registry: Mutex::new(McpToolRegistry::default()),
         }
     }
+    async fn load_server_secrets(
+        &self,
+        server: &McpServerDefinition,
+        force_oauth_refresh: bool,
+    ) -> Result<McpSecretBundle, AgentMcpError> {
+        let Some(reference) = server.secret_ref.as_deref() else {
+            return Ok(McpSecretBundle::default());
+        };
+        let mut bundle = self.secrets.get(reference)?.unwrap_or_default();
+        if refresh_oauth_bundle(&mut bundle, force_oauth_refresh).await? {
+            self.secrets.put(reference, &bundle)?;
+            retire_server_sessions(&server.id).await;
+        }
+        Ok(bundle)
+    }
     pub async fn refresh_registry(&self) -> Result<Vec<RuntimeToolDescriptorJson>, AgentMcpError> {
         self.refresh_registry_for(false).await
     }
@@ -676,13 +1302,23 @@ impl<S: McpSecretStore> AgentMcpSubsystem<S> {
             .into_iter()
             .filter(|server| server_available(server, sandboxed, workspace))
         {
-            let secret = match server.secret_ref.as_deref() {
-                Some(reference) => self.secrets.get(reference)?,
-                None => None,
+            let secret = self.load_server_secrets(&server, false).await?;
+            let mut discovered =
+                discover_server(&server, &secret, sandboxed.then_some(workspace).flatten()).await;
+            if matches!(discovered, Err(AgentMcpError::Unauthorized)) && !secret.oauth.is_empty() {
+                discovered = match self.load_server_secrets(&server, true).await {
+                    Ok(refreshed) => {
+                        discover_server(
+                            &server,
+                            &refreshed,
+                            sandboxed.then_some(workspace).flatten(),
+                        )
+                        .await
+                    }
+                    Err(error) => Err(error),
+                };
             }
-            .unwrap_or_default();
-            match discover_server(&server, &secret, sandboxed.then_some(workspace).flatten()).await
-            {
+            match discovered {
                 Ok(tools) => next.register(&server, tools)?,
                 Err(error) => tracing::warn!(
                     error_code = "agent_mcp_discovery_failed",
@@ -742,20 +1378,29 @@ impl<S: McpSecretStore> AgentMcpSubsystem<S> {
         if !server_available(&server, sandboxed, workspace) {
             return Err(AgentMcpError::ToolUnavailable);
         }
-        let secret = match server.secret_ref.as_deref() {
-            Some(reference) => self.secrets.get(reference)?,
-            None => None,
-        }
-        .unwrap_or_default();
-        call_server(
+        let secret = self.load_server_secrets(&server, false).await?;
+        let first = call_server(
             &server,
             &secret,
             &registered.remote_name,
-            arguments,
+            arguments.clone(),
             sandboxed.then_some(workspace).flatten(),
             elicitation_answer,
         )
-        .await
+        .await;
+        if matches!(first, Err(AgentMcpError::Unauthorized)) && !secret.oauth.is_empty() {
+            let refreshed = self.load_server_secrets(&server, true).await?;
+            return call_server(
+                &server,
+                &refreshed,
+                &registered.remote_name,
+                arguments,
+                sandboxed.then_some(workspace).flatten(),
+                elicitation_answer,
+            )
+            .await;
+        }
+        first
     }
 
     pub fn server_name_for_tool(
@@ -1074,6 +1719,12 @@ fn session_fingerprint(
         hash.update([0]);
     }
     for (key, value) in &secrets.headers {
+        hash.update(key.as_bytes());
+        hash.update([0]);
+        hash.update(value.as_bytes());
+        hash.update([0]);
+    }
+    for (key, value) in &secrets.oauth {
         hash.update(key.as_bytes());
         hash.update([0]);
         hash.update(value.as_bytes());
@@ -1431,6 +2082,29 @@ pub(crate) async fn retire_server_sessions(server_id: &str) {
     }
 }
 
+fn apply_http_credentials(
+    mut request: reqwest::RequestBuilder,
+    secrets: &McpSecretBundle,
+) -> reqwest::RequestBuilder {
+    for (key, value) in &secrets.headers {
+        request = request.header(key, value);
+    }
+    if !secrets
+        .headers
+        .keys()
+        .any(|key| key.eq_ignore_ascii_case("authorization"))
+    {
+        if let Some(token) = secrets
+            .oauth
+            .get("access_token")
+            .filter(|value| !value.trim().is_empty())
+        {
+            request = request.bearer_auth(token);
+        }
+    }
+    request
+}
+
 async fn http_notify(
     client: &reqwest::Client,
     server: &McpServerDefinition,
@@ -1440,14 +2114,14 @@ async fn http_notify(
     params: Value,
 ) -> Result<(), AgentMcpError> {
     let url = server.url.as_deref().ok_or(AgentMcpError::Transport)?;
-    let mut request = client
-        .post(url)
-        .header("accept", "application/json, text/event-stream")
-        .header("content-type", "application/json")
-        .header("mcp-protocol-version", MCP_PROTOCOL_VERSION);
-    for (key, value) in &secrets.headers {
-        request = request.header(key, value);
-    }
+    let mut request = apply_http_credentials(
+        client
+            .post(url)
+            .header("accept", "application/json, text/event-stream")
+            .header("content-type", "application/json")
+            .header("mcp-protocol-version", MCP_PROTOCOL_VERSION),
+        secrets,
+    );
     if let Some(session_id) = session_id {
         request = request.header("mcp-session-id", session_id);
     }
@@ -1458,6 +2132,8 @@ async fn http_notify(
         .map_err(|_| AgentMcpError::Transport)?;
     if response.status().is_success() {
         Ok(())
+    } else if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        Err(AgentMcpError::Unauthorized)
     } else {
         Err(AgentMcpError::Transport)
     }
@@ -1474,14 +2150,14 @@ async fn http_post(
     elicitation_answer: Option<&str>,
 ) -> Result<(Value, Option<String>), AgentMcpError> {
     let url = server.url.as_deref().ok_or(AgentMcpError::Transport)?;
-    let mut request = client
-        .post(url)
-        .header("accept", "application/json, text/event-stream")
-        .header("content-type", "application/json")
-        .header("mcp-protocol-version", MCP_PROTOCOL_VERSION);
-    for (key, value) in &secrets.headers {
-        request = request.header(key, value);
-    }
+    let mut request = apply_http_credentials(
+        client
+            .post(url)
+            .header("accept", "application/json, text/event-stream")
+            .header("content-type", "application/json")
+            .header("mcp-protocol-version", MCP_PROTOCOL_VERSION),
+        secrets,
+    );
     if let Some(session_id) = session_id {
         request = request.header("mcp-session-id", session_id);
     }
@@ -1490,6 +2166,9 @@ async fn http_post(
         .send()
         .await
         .map_err(|_| AgentMcpError::Transport)?;
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(AgentMcpError::Unauthorized);
+    }
     if !response.status().is_success() {
         return Err(AgentMcpError::Transport);
     }
@@ -1546,14 +2225,14 @@ async fn http_respond_elicitation(
     answer: &str,
 ) -> Result<(), AgentMcpError> {
     let url = server.url.as_deref().ok_or(AgentMcpError::Transport)?;
-    let mut request = client
-        .post(url)
-        .header("accept", "application/json, text/event-stream")
-        .header("content-type", "application/json")
-        .header("mcp-protocol-version", MCP_PROTOCOL_VERSION);
-    for (key, value) in &secrets.headers {
-        request = request.header(key, value);
-    }
+    let mut request = apply_http_credentials(
+        client
+            .post(url)
+            .header("accept", "application/json, text/event-stream")
+            .header("content-type", "application/json")
+            .header("mcp-protocol-version", MCP_PROTOCOL_VERSION),
+        secrets,
+    );
     if let Some(session_id) = session_id {
         request = request.header("mcp-session-id", session_id);
     }
@@ -1571,6 +2250,8 @@ async fn http_respond_elicitation(
         .map_err(|_| AgentMcpError::Transport)?;
     if response.status().is_success() {
         Ok(())
+    } else if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        Err(AgentMcpError::Unauthorized)
     } else {
         Err(AgentMcpError::Transport)
     }
@@ -1771,7 +2452,7 @@ pub async fn create_agent_mcp_server(
     let mut definition = input.into_definition(None);
     let store = KeychainMcpSecretStore;
     if let Some(bundle) = secrets.as_ref() {
-        if !bundle.env.is_empty() || !bundle.headers.is_empty() {
+        if !bundle.env.is_empty() || !bundle.headers.is_empty() || !bundle.oauth.is_empty() {
             let secret_ref = Uuid::new_v4().to_string();
             store.put(&secret_ref, bundle).map_err(app_error)?;
             definition.secret_ref = Some(secret_ref);
@@ -1841,7 +2522,7 @@ pub async fn update_agent_mcp_server(
             .secret_ref
             .clone()
             .unwrap_or_else(|| Uuid::new_v4().to_string());
-        if bundle.env.is_empty() && bundle.headers.is_empty() {
+        if bundle.env.is_empty() && bundle.headers.is_empty() && bundle.oauth.is_empty() {
             if definition.secret_ref.is_some() {
                 store.delete(&secret_ref).map_err(app_error)?;
             }
@@ -1900,16 +2581,78 @@ pub async fn test_agent_mcp_server(
 ) -> Result<Vec<McpDiscoveredTool>, crate::domain::types::AppError> {
     let repository = command_repository(&app).await.map_err(app_error)?;
     let server = repository.get(&server_id).await.map_err(app_error)?;
-    let secrets = match server.secret_ref.as_deref() {
+    let mut secrets = match server.secret_ref.as_deref() {
         Some(secret_ref) => KeychainMcpSecretStore
             .get(secret_ref)
             .map_err(app_error)?
             .unwrap_or_default(),
         None => McpSecretBundle::default(),
     };
+    if refresh_oauth_bundle(&mut secrets, false)
+        .await
+        .map_err(app_error)?
+    {
+        if let Some(secret_ref) = server.secret_ref.as_deref() {
+            KeychainMcpSecretStore
+                .put(secret_ref, &secrets)
+                .map_err(app_error)?;
+            retire_server_sessions(&server.id).await;
+        }
+    }
     discover_server(&server, &secrets, None)
         .await
         .map_err(app_error)
+}
+
+#[tauri::command]
+pub async fn connect_agent_mcp_oauth(
+    app: AppHandle,
+    server_id: String,
+) -> Result<McpServerDefinition, crate::domain::types::AppError> {
+    let repository = command_repository(&app).await.map_err(app_error)?;
+    let existing = repository.get(&server_id).await.map_err(app_error)?;
+    let store = KeychainMcpSecretStore;
+    let old_bundle = match existing.secret_ref.as_deref() {
+        Some(secret_ref) => store
+            .get(secret_ref)
+            .map_err(app_error)?
+            .unwrap_or_default(),
+        None => McpSecretBundle::default(),
+    };
+    let bundle = authorize_oauth_server(&existing, &old_bundle)
+        .await
+        .map_err(app_error)?;
+    discover_server(&existing, &bundle, None)
+        .await
+        .map_err(app_error)?;
+
+    let secret_ref = existing
+        .secret_ref
+        .clone()
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    store.put(&secret_ref, &bundle).map_err(app_error)?;
+    let mut connected = existing.clone();
+    connected.secret_ref = Some(secret_ref.clone());
+    connected.enabled = true;
+    let metadata = connected
+        .metadata
+        .as_object_mut()
+        .ok_or_else(|| app_error(AgentMcpError::Storage))?;
+    metadata.remove("legacyAuth");
+    metadata.remove("needsReview");
+    metadata.remove("migrationWarning");
+    metadata.insert("auth".into(), json!("oauth"));
+    metadata.insert("oauthConnected".into(), json!(true));
+    if let Err(error) = repository.replace(&connected).await {
+        if let Some(previous_ref) = existing.secret_ref.as_deref() {
+            let _ = store.put(previous_ref, &old_bundle);
+        } else {
+            let _ = store.delete(&secret_ref);
+        }
+        return Err(app_error(error));
+    }
+    retire_server_sessions(&server_id).await;
+    Ok(connected)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2087,6 +2830,139 @@ mod tests {
             self.0.lock().unwrap().remove(id);
             Ok(())
         }
+    }
+
+    #[test]
+    fn oauth_metadata_candidates_follow_protected_resource_paths() {
+        let resource = reqwest::Url::parse("https://tools.example.com/team/mcp").unwrap();
+        let urls = protected_resource_metadata_urls(&resource)
+            .unwrap()
+            .into_iter()
+            .map(|url| url.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            urls,
+            vec![
+                "https://tools.example.com/.well-known/oauth-protected-resource/team/mcp",
+                "https://tools.example.com/.well-known/oauth-protected-resource",
+            ]
+        );
+        let issuer = reqwest::Url::parse("https://identity.example.com/tenant").unwrap();
+        let urls = authorization_server_metadata_urls(&issuer)
+            .unwrap()
+            .into_iter()
+            .map(|url| url.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            urls,
+            vec![
+                "https://identity.example.com/.well-known/oauth-authorization-server/tenant",
+                "https://identity.example.com/.well-known/openid-configuration/tenant",
+            ]
+        );
+    }
+
+    #[test]
+    fn oauth_challenge_extracts_quoted_and_unquoted_resource_metadata() {
+        assert_eq!(
+            resource_metadata_from_challenge(
+                r#"Bearer realm="mcp", resource_metadata="https://tools.example.com/.well-known/oauth-protected-resource""#
+            ),
+            Some("https://tools.example.com/.well-known/oauth-protected-resource")
+        );
+        assert_eq!(
+            resource_metadata_from_challenge(
+                "Bearer resource_metadata=https://tools.example.com/oauth-resource, scope=read"
+            ),
+            Some("https://tools.example.com/oauth-resource")
+        );
+        assert_eq!(resource_metadata_from_challenge("Bearer realm=mcp"), None);
+    }
+
+    #[test]
+    fn oauth_authorization_uses_pkce_resource_scope_and_state() {
+        let auth = OAuthAuthorizationServerMetadata {
+            issuer: "https://identity.example.com".into(),
+            authorization_endpoint: "https://identity.example.com/authorize".into(),
+            token_endpoint: "https://identity.example.com/token".into(),
+            registration_endpoint: None,
+            response_types_supported: vec!["code".into()],
+            grant_types_supported: vec!["authorization_code".into()],
+            code_challenge_methods_supported: vec!["S256".into()],
+        };
+        let url = oauth_authorization_url(
+            &auth,
+            "client",
+            "http://127.0.0.1:1234/callback",
+            "challenge",
+            "state",
+            "https://tools.example.com/mcp",
+            "read write",
+        )
+        .unwrap();
+        let parsed = reqwest::Url::parse(&url).unwrap();
+        let query = parsed.query_pairs().collect::<BTreeMap<_, _>>();
+        assert_eq!(query.get("code_challenge_method").unwrap(), "S256");
+        assert_eq!(
+            query.get("resource").unwrap(),
+            "https://tools.example.com/mcp"
+        );
+        assert_eq!(query.get("scope").unwrap(), "read write");
+        assert_eq!(query.get("state").unwrap(), "state");
+    }
+
+    #[test]
+    fn secret_debug_output_contains_keys_but_not_values() {
+        let bundle = McpSecretBundle {
+            env: BTreeMap::from([("TOKEN".into(), "env-secret".into())]),
+            headers: BTreeMap::from([("Authorization".into(), "header-secret".into())]),
+            oauth: BTreeMap::from([("access_token".into(), "oauth-secret".into())]),
+        };
+        let output = format!("{bundle:?}");
+        assert!(output.contains("access_token"));
+        assert!(!output.contains("env-secret"));
+        assert!(!output.contains("header-secret"));
+        assert!(!output.contains("oauth-secret"));
+    }
+
+    #[tokio::test]
+    async fn oauth_refresh_rotates_access_and_refresh_tokens() {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = vec![0; 4096];
+            let read = stream.read(&mut request).await.unwrap();
+            let request = String::from_utf8_lossy(&request[..read]);
+            assert!(request.contains("grant_type=refresh_token"));
+            assert!(request.contains("refresh_token=old-refresh"));
+            let body =
+                r#"{"access_token":"new-access","refresh_token":"new-refresh","expires_in":3600}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+        let mut bundle = McpSecretBundle::default();
+        bundle.oauth = BTreeMap::from([
+            ("access_token".into(), "old-access".into()),
+            ("refresh_token".into(), "old-refresh".into()),
+            ("client_id".into(), "client".into()),
+            (
+                "token_endpoint".into(),
+                format!("http://127.0.0.1:{port}/token"),
+            ),
+            ("expires_at_unix".into(), "0".into()),
+        ]);
+        assert!(refresh_oauth_bundle(&mut bundle, false).await.unwrap());
+        server.await.unwrap();
+        assert_eq!(bundle.oauth["access_token"], "new-access");
+        assert_eq!(bundle.oauth["refresh_token"], "new-refresh");
+        assert!(bundle.oauth["expires_at_unix"].parse::<i64>().unwrap() > oauth_now_unix());
     }
     async fn repository() -> AgentMcpRepository {
         let pool = SqlitePoolOptions::new()

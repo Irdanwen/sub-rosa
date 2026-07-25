@@ -35,6 +35,7 @@ pub struct AgentRuntimeHost {
 
 struct ModelStream {
     response: crate::june_api::AgentChatCompletionsResponse,
+    route: crate::june_api::AgentModelRouteMetadata,
     buffer: Vec<u8>,
     done: bool,
     run_id: String,
@@ -292,10 +293,12 @@ async fn handle_runtime_request(
                     ));
                 }
                 let stream_id = Uuid::new_v4().to_string();
+                let route = response.route.clone();
                 model_streams.lock().await.insert(
                     stream_id.clone(),
                     ModelStream {
                         response,
+                        route,
                         buffer: Vec::new(),
                         done: false,
                         run_id: frame.run_id.clone(),
@@ -380,7 +383,8 @@ async fn poll_model_stream(
         }
     }
     let done = stream.done;
-    let result = json!({ "streamId": stream_id, "chunks": chunks, "done": done });
+    let result =
+        json!({ "streamId": stream_id, "chunks": chunks, "done": done, "route": stream.route });
     if done {
         streams.remove(stream_id);
     }

@@ -67,3 +67,25 @@ The rest of ADR-0038 remains in force.
   that only their prompt was preserved.
 - June now owns the routine scheduler, MCP protocol compatibility, migration,
   and their release tests.
+
+## 2026-07-25 addendum: Generic MCP OAuth stays host-owned
+
+Remote Streamable HTTP servers may use the MCP authorization discovery
+protocol. June performs protected-resource and authorization-server metadata
+discovery, including a same-origin `WWW-Authenticate` metadata hint, then uses
+authorization code with PKCE and a loopback callback. Dynamic client
+registration is used when the server supplies it. A previously registered
+client is reused only when June can bind the exact saved redirect URI.
+
+Access tokens, refresh tokens, client credentials, token endpoints, and the
+exact granted scope remain together in the server's existing operating-system
+keychain bundle. SQLite stores only nonsecret connection status. June refreshes
+before expiry and after a real HTTP 401, rotates refresh tokens atomically, and
+invalidates the corresponding persistent MCP session. It never retries an MCP
+tool call for transport, timeout, protocol, or application failures because a
+duplicate mutation would be unsafe. A rejected or missing refresh grant
+requires an explicit reconnect in Settings.
+
+This keeps browser handoff, secret custody, retry policy, and server-session
+lifecycle in the trusted Rust host. The model and TypeScript agent runtime see
+only tool schemas, approval state, and sanitized tool results.

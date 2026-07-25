@@ -45,7 +45,8 @@ test("continues model inference after a host tool result", async () => {
         ],
       });
     }
-    return streamPage("answer-stream", {
+    return {
+      ...streamPage("answer-stream", {
       id: "completion-answer",
       object: "chat.completion.chunk",
       created: 2,
@@ -58,7 +59,13 @@ test("continues model inference after a host tool result", async () => {
         },
       ],
       usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 },
-    });
+      }),
+      route: {
+        provider: "phala",
+        privacyLevel: "tee",
+        endpoint: "phala-glm-5.2",
+      },
+    };
   });
   await engine.initialize({ clientName: "June", clientVersion: "test" });
   const events: EngineEvent[] = [];
@@ -111,6 +118,9 @@ test("continues model inference after a host tool result", async () => {
     ),
   );
   assert.ok(events.some((event) => event.type === "tool.completed"));
+  assert.equal(result.usage.provider, "phala");
+  assert.equal(result.usage.privacyLevel, "tee");
+  assert.equal(result.usage.endpoint, "phala-glm-5.2");
 });
 
 test("replays a persisted tool group into the next model turn", async () => {

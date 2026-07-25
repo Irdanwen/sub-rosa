@@ -19,6 +19,7 @@ export class RpcChatCompletionsModelProvider implements ModelProvider {
   readonly invoke: ModelRpcInvoker;
   readonly takeSteering: (() => SteeringMessage[]) | undefined;
   readonly onSteeringConsumed: ((message: SteeringMessage) => void) | undefined;
+  latestRoute: ModelRoute | undefined;
 
   constructor(
     invoke: ModelRpcInvoker,
@@ -78,6 +79,7 @@ export class RpcChatCompletionsModelProvider implements ModelProvider {
       }),
     );
     while (true) {
+      if (page.route) this.latestRoute = page.route;
       for (const chunk of page.chunks) yield chunk;
       if (page.done) return;
       page = requireStreamPage(
@@ -92,7 +94,13 @@ export class RpcChatCompletionsModelProvider implements ModelProvider {
   }
 }
 
-type StreamPage = { streamId: string; chunks: JsonObject[]; done: boolean };
+export type ModelRoute = {
+  provider?: string;
+  privacyLevel?: string;
+  endpoint?: string;
+};
+
+type StreamPage = { streamId: string; chunks: JsonObject[]; done: boolean; route?: ModelRoute };
 
 function requireStreamPage(value: JsonValue): StreamPage {
   if (!isRecord(value) || typeof value.streamId !== "string" || !Array.isArray(value.chunks) || typeof value.done !== "boolean") {
@@ -102,7 +110,18 @@ function requireStreamPage(value: JsonValue): StreamPage {
     if (!isRecord(chunk)) throw new Error("June model host returned a non-object stream chunk");
     return chunk;
   });
-  return { streamId: value.streamId, chunks, done: value.done };
+  const routeValue = isRecord(value.route) ? value.route : undefined;
+  const provider = stringValue(routeValue?.provider);
+  const privacyLevel = stringValue(routeValue?.privacyLevel);
+  const endpoint = stringValue(routeValue?.endpoint);
+  const route = routeValue
+    ? {
+        ...(provider ? { provider } : {}),
+        ...(privacyLevel ? { privacyLevel } : {}),
+        ...(endpoint ? { endpoint } : {}),
+      }
+    : undefined;
+  return { streamId: value.streamId, chunks, done: value.done, ...(route ? { route } : {}) };
 }
 
 async function collectChatCompletion(chunks: AsyncIterable<JsonObject>): Promise<JsonObject> {

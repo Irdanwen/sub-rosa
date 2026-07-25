@@ -57,17 +57,18 @@ export class OpenAIAgentsEngine implements AgentEngine {
       ...(await historyToSdkInput(input.params.history)),
       await userMessage(input.params.input, input.params.attachments ?? []),
     ];
-    const stream = (await this.createRunner(
+    const runner = this.createRunner(
       input.sessionId,
       input.runId,
       input.takeSteering,
       input.emit,
-    ).run(agent, sdkInput as never, {
+    );
+    const stream = (await runner.runner.run(agent, sdkInput as never, {
       stream: true,
       signal: input.signal,
       maxTurns: 40,
     })) as unknown as SdkStream;
-    return this.consumeStream(stream, input.params.history, input.emit);
+    return this.consumeStream(stream, input.params.history, input.emit, runner.modelProvider);
   }
 
   async resume(input: EngineResumeInput): Promise<EngineResult> {
@@ -88,17 +89,18 @@ export class OpenAIAgentsEngine implements AgentEngine {
         state.reject(interruption, message ? { message } : undefined);
       }
     }
-    const stream = (await this.createRunner(
+    const runner = this.createRunner(
       input.sessionId,
       input.runId,
       input.takeSteering,
       input.emit,
-    ).run(agent, state, {
+    );
+    const stream = (await runner.runner.run(agent, state, {
       stream: true,
       signal: input.signal,
       maxTurns: 40,
     })) as unknown as SdkStream;
-    return this.consumeStream(stream, [], input.emit);
+    return this.consumeStream(stream, [], input.emit, runner.modelProvider);
   }
 
   async shutdown(): Promise<void> {
@@ -177,6 +179,7 @@ export class OpenAIAgentsEngine implements AgentEngine {
     stream: SdkStream,
     _priorHistory: RuntimeHistoryItem[],
     emit: (event: EngineEvent) => void,
+    modelProvider: RpcChatCompletionsModelProvider,
   ): Promise<EngineResult> {
     for await (const event of stream) this.forwardSdkEvent(event, emit);
     await stream.completed;
@@ -189,7 +192,10 @@ export class OpenAIAgentsEngine implements AgentEngine {
     return {
       ...(typeof stream.finalOutput === "string" ? { finalOutput: stream.finalOutput } : {}),
       history,
-      usage: normalizeUsage(stream.usage),
+      usage: {
+        ...normalizeUsage(stream.usage),
+        ...modelProvider.latestRoute,
+      },
       interruptions,
       ...(serializedState === undefined ? {} : { serializedState }),
     };
@@ -212,7 +218,7 @@ export class OpenAIAgentsEngine implements AgentEngine {
     runId: string,
     takeSteering: EngineRunInput["takeSteering"],
     emit: (event: EngineEvent) => void,
-  ): Runner {
+  ): { runner: Runner; modelProvider: RpcChatCompletionsModelProvider } {
     if (!this.initialized) throw new Error("OpenAI Agents engine is not initialized");
     const modelProvider = new RpcChatCompletionsModelProvider(
       async (request) =>
@@ -230,12 +236,15 @@ export class OpenAIAgentsEngine implements AgentEngine {
           emit({ type: "steering.consumed", messageId: message.messageId, text: message.text }),
       },
     );
-    return new Runner({
+    return {
       modelProvider,
-      tracingDisabled: true,
-      toolNotFoundBehavior: "return_error_to_model",
-      toolExecution: { maxFunctionToolConcurrency: 4, preApprovalInputGuardrails: true },
-    });
+      runner: new Runner({
+        modelProvider,
+        tracingDisabled: true,
+        toolNotFoundBehavior: "return_error_to_model",
+        toolExecution: { maxFunctionToolConcurrency: 4, preApprovalInputGuardrails: true },
+      }),
+    };
   }
 }
 

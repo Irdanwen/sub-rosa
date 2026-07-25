@@ -83,6 +83,9 @@ export type RuntimeUsage = {
   outputTokens?: number;
   totalTokens?: number;
   requests?: number;
+  provider?: string;
+  privacyLevel?: string;
+  endpoint?: string;
 };
 
 export type RuntimeInterruption =
