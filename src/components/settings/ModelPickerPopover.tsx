@@ -108,6 +108,7 @@ export function ModelPickerPopover({
   allModelsLabel = `All ${modelModeLabel(mode)} models`,
   veniceApiKeyConfigured = false,
   catalogLoaded,
+  suggestedModelIds,
   rootSearchRef,
   rootSearch,
   onRootSearchChange,
@@ -143,6 +144,9 @@ export function ModelPickerPopover({
    * catalog should pass this; without it the popover falls back to treating
    * "any concrete entry present" as loaded. */
   catalogLoaded?: boolean;
+  /** Optional host-owned suggestion order. Agent sessions use this to keep
+   * Auto as the single quick pick while the full catalog remains searchable. */
+  suggestedModelIds?: readonly string[];
   /** Enables the root-layer search (the /model + composer trigger surface):
    * a field above the pinned controls whose query searches across BOTH
    * layers, suggested picks and the full catalog, as one flat result list.
@@ -365,7 +369,21 @@ export function ModelPickerPopover({
       ),
     [mode, onCostQualityChange, options],
   );
-  const suggested = useMemo(() => suggestedModelsForMode(mode, selectable), [mode, selectable]);
+  const suggested = useMemo(() => {
+    if (!suggestedModelIds) return suggestedModelsForMode(mode, selectable);
+    return suggestedModelIds.flatMap((id, index) => {
+      const option = selectable.find((candidate) => candidate.id === id);
+      if (!option) return [];
+      return [
+        {
+          key: `${id}:host:${index}`,
+          model: option,
+          reason: option.description ?? "Suggested for this surface.",
+          costQuality: undefined,
+        },
+      ];
+    });
+  }, [mode, selectable, suggestedModelIds]);
   const autoEnabled = onCostQualityChange !== undefined && model?.id === AUTO_MODEL_ID;
   const autoPreference = autoPreferenceFromCostQuality(costQuality ?? 100);
   // Toggling stays inside the popover: turning Auto off lands on the leading

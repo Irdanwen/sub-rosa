@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentRuntimeEvent, AgentSessionDto } from "../lib/agent-runtime-contract";
@@ -323,6 +323,75 @@ describe("AgentWorkspace runtime wiring", () => {
     });
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Model: Fast" })).toBeEnabled());
+  });
+
+  it("restores Auto-only suggestions, root model search, and compact effort choices", async () => {
+    const user = userEvent.setup();
+    const defaultInvoke = mocks.invoke.getMockImplementation();
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "list_venice_models") {
+        return Promise.resolve({
+          mode: "generation",
+          selectedModel: "fast",
+          modelType: "text",
+          models: [
+            {
+              provider: "june",
+              id: "fast",
+              name: "Fast",
+              modelType: "text",
+              traits: [],
+              capabilities: ["tool-calling"],
+            },
+            {
+              provider: "venice",
+              id: "kimi-k3",
+              name: "Kimi K3",
+              modelType: "text",
+              traits: [],
+              capabilities: ["tool-calling"],
+            },
+            {
+              provider: "venice",
+              id: "zai-org-glm-5-2",
+              name: "GLM 5.2",
+              modelType: "text",
+              traits: [],
+              capabilities: ["tool-calling"],
+            },
+          ],
+        });
+      }
+      return defaultInvoke?.(command, args);
+    });
+
+    render(<AgentWorkspace initialSession={session} />);
+    await screen.findByText("Earlier answer");
+    await user.click(await screen.findByRole("button", { name: "Model: Fast" }));
+
+    const suggested = screen.getByRole("listbox", { name: "Suggested text models" });
+    expect(within(suggested).getByRole("option", { name: /Auto/ })).toBeVisible();
+    expect(within(suggested).queryByText("GLM 5.2")).not.toBeInTheDocument();
+    expect(within(suggested).queryByText("Kimi K3")).not.toBeInTheDocument();
+
+    const search = screen.getByRole("combobox", { name: "Search models" });
+    await user.type(search, "Kimi");
+    expect(
+      within(screen.getByRole("listbox", { name: "Matching models" })).getByRole("option", {
+        name: /Kimi K3/,
+      }),
+    ).toBeVisible();
+
+    await user.clear(search);
+    await user.click(screen.getByRole("button", { name: /Effort.*Medium/ }));
+    const effort = screen.getByRole("group", { name: "Thinking level" });
+    expect(effort).toHaveClass("agent-composer-model-effort-panel");
+    expect(
+      within(effort).getByRole("menuitemradio", { name: /Low.*Faster responses/ }),
+    ).toBeVisible();
+    expect(
+      within(effort).getByRole("menuitemradio", { name: /High.*Deeper reasoning/ }),
+    ).toBeVisible();
   });
 
   it("shows context, estimated charge, and per-tool usage for the latest run", async () => {

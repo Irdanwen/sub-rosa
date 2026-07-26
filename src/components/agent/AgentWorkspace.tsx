@@ -84,15 +84,11 @@ import {
 } from "./agent-workspace-config";
 import { ComposerEditor, type ComposerEditorHandle } from "./composer/ComposerEditor";
 import { agentComposerClearance } from "./composer/layout";
-import {
-  ComposerModelPicker,
-  ComposerModelPopover,
-  heroPrivacyFootnote,
-  type ComposerModelFlyout,
-} from "./composer/ModelPicker";
+import { ComposerModelPicker, heroPrivacyFootnote } from "./composer/ModelPicker";
 import { modelPrivacyBadge } from "../../lib/model-privacy";
 import { getCurrentDataPartitionName } from "../../lib/data-partition";
 import { AUTO_MODEL_ID, modelOptions, selectedModel } from "../settings/ModelPickerDialog";
+import { ModelPickerPopover, type ModelPickerFlyout } from "../settings/ModelPickerPopover";
 import { Dialog } from "../ui/Dialog";
 import { Spinner } from "../ui/Spinner";
 import { JuneBloom } from "../brand/JuneBloom";
@@ -148,6 +144,16 @@ export {
 
 export const AGENT_RUNTIME_EVENT = "june://agent-runtime-event";
 const DEFAULT_MODEL = AUTO_MODEL_ID;
+const AGENT_SUGGESTED_MODEL_IDS = [AUTO_MODEL_ID] as const;
+const AGENT_AUTO_MODEL: VeniceModelDto = {
+  provider: "june",
+  id: AUTO_MODEL_ID,
+  name: "Auto",
+  description: "Chooses the best available model for each request.",
+  modelType: "text",
+  traits: [],
+  capabilities: ["tool-calling"],
+};
 const projectContextSignaturesBySessionId = new ProjectContextSignatureStore();
 
 export function composerInSteerStateFor(input: {
@@ -1849,11 +1855,13 @@ function AgentComposer({
   const editorRef = useRef<ComposerEditorHandle>(null);
   const publishedDraftRef = useRef(draft);
   const [modelOpen, setModelOpen] = useState(false);
-  const [modelFlyout, setModelFlyout] = useState<ComposerModelFlyout>(null);
+  const [modelFlyout, setModelFlyout] = useState<ModelPickerFlyout>(null);
   const [modelSearch, setModelSearch] = useState("");
+  const [modelRootSearch, setModelRootSearch] = useState("");
   const modelTriggerRef = useRef<HTMLButtonElement>(null);
   const modelPopoverRef = useRef<HTMLDivElement>(null);
   const modelSearchRef = useRef<HTMLInputElement>(null);
+  const modelRootSearchRef = useRef<HTMLInputElement>(null);
   const [safetyOpen, setSafetyOpen] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [confirmUnrestricted, setConfirmUnrestricted] = useState(false);
@@ -1862,6 +1870,9 @@ function AgentComposer({
   const safetyTriggerRef = useRef<HTMLButtonElement>(null);
   const safetyMenuRef = useRef<HTMLDivElement>(null);
   const activeModel = selectedModel(models, model);
+  const pickerModels = models.some((option) => option.id === AUTO_MODEL_ID)
+    ? models
+    : [AGENT_AUTO_MODEL, ...models];
   const working = running || submitting;
 
   useEffect(() => {
@@ -1890,6 +1901,10 @@ function AgentComposer({
     window.addEventListener("mousedown", close);
     return () => window.removeEventListener("mousedown", close);
   }, [attachOpen, modelOpen, safetyOpen]);
+
+  useLayoutEffect(() => {
+    if (modelOpen && modelFlyout === null) modelRootSearchRef.current?.focus();
+  }, [modelFlyout, modelOpen]);
 
   function referenceNote() {
     const prefix = draft && !/\s$/.test(draft) ? " @" : "@";
@@ -1982,7 +1997,16 @@ function AgentComposer({
               effort={thinkingLevel}
               readOnly={working}
               triggerRef={modelTriggerRef}
-              onToggleOpen={() => setModelOpen((open) => !open)}
+              onToggleOpen={() => {
+                if (modelOpen) {
+                  setModelOpen(false);
+                  return;
+                }
+                setModelFlyout(null);
+                setModelSearch("");
+                setModelRootSearch("");
+                setModelOpen(true);
+              }}
             />
             <button
               type="button"
@@ -2109,23 +2133,30 @@ function AgentComposer({
         </div>
       ) : null}
       {modelOpen ? (
-        <ComposerModelPopover
+        <ModelPickerPopover
+          mode="generation"
           flyout={modelFlyout}
           model={activeModel}
-          options={modelOptions(models, model)}
+          options={modelOptions(pickerModels, model)}
           search={modelSearch}
           popoverRef={modelPopoverRef}
           searchRef={modelSearchRef}
+          rootSearchRef={modelRootSearchRef}
+          rootSearch={modelRootSearch}
+          onRootSearchChange={setModelRootSearch}
+          catalogLoaded={models.length > 0}
+          suggestedModelIds={AGENT_SUGGESTED_MODEL_IDS}
           thinkingLevel={thinkingLevel}
           onFlyoutChange={setModelFlyout}
           onSearchChange={setModelSearch}
-          onSelect={(nextModel) => {
+          onSelect={(nextModel, _costQuality, options) => {
             setModel(nextModel);
-            setModelOpen(false);
+            if (!options?.keepOpen) setModelOpen(false);
           }}
           onSelectThinking={(level) => {
             setThinkingLevel(level);
             setModelFlyout(null);
+            setModelOpen(false);
           }}
         />
       ) : null}
