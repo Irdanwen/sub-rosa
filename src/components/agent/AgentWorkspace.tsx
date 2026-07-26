@@ -146,13 +146,13 @@ export const AGENT_RUNTIME_EVENT = "june://agent-runtime-event";
 const DEFAULT_MODEL = AUTO_MODEL_ID;
 const AGENT_SUGGESTED_MODEL_IDS = [AUTO_MODEL_ID] as const;
 const AGENT_AUTO_MODEL: VeniceModelDto = {
-  provider: "june",
+  provider: "",
   id: AUTO_MODEL_ID,
   name: "Auto",
   description: "Chooses the best available model for each request.",
   modelType: "text",
   traits: [],
-  capabilities: ["tool-calling"],
+  capabilities: [],
 };
 const projectContextSignaturesBySessionId = new ProjectContextSignatureStore();
 
@@ -267,7 +267,7 @@ export function AgentWorkspace({
   }>();
   const [pendingInitialTurn, setPendingInitialTurn] = useState<{
     prompt: string;
-    sessionId?: string;
+    storedSessionId?: string;
     title: string;
     turn: AgentChatTurn;
   }>();
@@ -462,7 +462,7 @@ export function AgentWorkspace({
     const nextId = initialSession?.id ?? initialSessionId;
     if (!nextId) return;
     setPendingInitialTurn((current) =>
-      current?.sessionId && current.sessionId !== nextId ? undefined : current,
+      current?.storedSessionId && current.storedSessionId !== nextId ? undefined : current,
     );
     setSelectedId(nextId);
     selectedIdRef.current = nextId;
@@ -658,7 +658,7 @@ export function AgentWorkspace({
           ...current.filter((item) => item.id !== createdSession.id),
         ]);
         setPendingInitialTurn((current) =>
-          current ? { ...current, sessionId: createdSession.id } : current,
+          current ? { ...current, storedSessionId: createdSession.id } : current,
         );
         onSessionSelected?.(createdSession);
         writeLastOpenSessionId(createdSession.id);

@@ -111,6 +111,14 @@ describe("AgentWorkspace runtime wiring", () => {
           models: [
             {
               provider: "june",
+              id: "open-software/auto",
+              name: "Auto",
+              modelType: "text",
+              traits: [],
+              capabilities: [],
+            },
+            {
+              provider: "june",
               id: "fast",
               name: "Fast",
               modelType: "text",
