@@ -687,9 +687,18 @@ describe("AgentWorkspace runtime wiring", () => {
 
   it("keeps a queued follow-up owned by its running session across navigation", async () => {
     const defaultInvoke = mocks.invoke.getMockImplementation();
+    let resolveRevisitItems: ((items: unknown[]) => void) | undefined;
+    const revisitItems = new Promise<unknown[]>((resolve) => {
+      resolveRevisitItems = resolve;
+    });
+    let sessionAItemsCalls = 0;
     mocks.invoke.mockImplementation((command: string, args?: unknown) => {
       const sessionId = (args as { sessionId?: string } | undefined)?.sessionId;
       if (command === "list_agent_sessions") return Promise.resolve([session, newSession]);
+      if (command === "list_agent_items" && sessionId === session.id) {
+        sessionAItemsCalls += 1;
+        if (sessionAItemsCalls > 1) return revisitItems;
+      }
       if (command === "get_agent_session" && sessionId === newSession.id) {
         return Promise.resolve(newSession);
       }
@@ -742,6 +751,24 @@ describe("AgentWorkspace runtime wiring", () => {
     expect(screen.queryByText("Only send this in session A")).not.toBeInTheDocument();
 
     rerender(<AgentWorkspace initialSession={session} />);
+    await act(async () => Promise.resolve());
+    expect(
+      mocks.invoke.mock.calls.filter(([command]) => command === "start_agent_run"),
+    ).toHaveLength(1);
+    await act(async () =>
+      resolveRevisitItems?.([
+        {
+          id: "message-1",
+          sessionId: session.id,
+          sequence: 1,
+          createdAt: session.createdAt,
+          kind: "message",
+          role: "assistant",
+          text: "Earlier answer",
+          status: "complete",
+        },
+      ]),
+    );
     await waitFor(() => {
       const starts = mocks.invoke.mock.calls.filter(([command]) => command === "start_agent_run");
       expect(starts).toHaveLength(2);
@@ -823,6 +850,12 @@ describe("AgentWorkspace runtime wiring", () => {
     await act(async () => rejectFirstStart?.(new Error("runtime unavailable")));
 
     rerender(<AgentWorkspace initialSession={session} />);
+    expect(await screen.findByRole("button", { name: "Retry queued follow-up" })).toBeVisible();
+    expect(
+      mocks.invoke.mock.calls.filter(([command]) => command === "start_agent_run"),
+    ).toHaveLength(1);
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Retry queued follow-up" }));
     await waitFor(() => {
       const starts = mocks.invoke.mock.calls.filter(([command]) => command === "start_agent_run");
       expect(starts).toHaveLength(2);
@@ -1129,6 +1162,55 @@ describe("AgentWorkspace runtime wiring", () => {
     );
   });
 
+  it("keeps a failed first submission recoverable without replacing a newer draft", async () => {
+    const user = userEvent.setup();
+    let rejectCreate: ((error: Error) => void) | undefined;
+    const firstCreate = new Promise<AgentSessionDto>((_, reject) => {
+      rejectCreate = reject;
+    });
+    let createCount = 0;
+    const defaultInvoke = mocks.invoke.getMockImplementation();
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "create_agent_session" && createCount++ === 0) return firstCreate;
+      return defaultInvoke?.(command, args);
+    });
+    mocks.openDialog
+      .mockResolvedValueOnce(["/tmp/first.pdf"])
+      .mockResolvedValueOnce(["/tmp/later.pdf"]);
+
+    render(<AgentWorkspace />);
+    await user.click(screen.getByRole("button", { name: "Add files or notes" }));
+    await user.click(screen.getByRole("menuitem", { name: "Attach files" }));
+    const composer = screen.getByRole("textbox", { name: "Message June" });
+    await user.type(composer, "First submission");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await screen.findByText("Thinking…");
+
+    const laterComposer = screen.getByRole("textbox", { name: "Message June" });
+    await user.type(laterComposer, "Later draft");
+    await user.click(screen.getByRole("button", { name: "Add files or notes" }));
+    await user.click(screen.getByRole("menuitem", { name: "Attach files" }));
+    await act(async () => rejectCreate?.(new Error("session creation failed")));
+
+    expect(await screen.findByText("Unsent message")).toBeVisible();
+    expect(screen.getByText("First submission")).toBeVisible();
+    expect(laterComposer).toHaveTextContent("Later draft");
+    expect(screen.getByText("later.pdf")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Retry unsent message" }));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("start_agent_run", {
+        request: expect.objectContaining({
+          prompt: "First submission",
+          attachments: ["/tmp/first.pdf"],
+        }),
+      }),
+    );
+    expect(laterComposer).toHaveTextContent("Later draft");
+    expect(screen.getByText("later.pdf")).toBeVisible();
+    expect(screen.queryByText("Unsent message")).not.toBeInTheDocument();
+  });
+
   it("stages model and effort changes made while a fresh session is still being created", async () => {
     const user = userEvent.setup();
     let resolveCreate: ((value: AgentSessionDto) => void) | undefined;
@@ -1190,6 +1272,9 @@ describe("AgentWorkspace runtime wiring", () => {
       "title",
       expect.stringContaining("Effort: High"),
     );
+    expect(
+      mocks.invoke.mock.calls.filter(([command]) => command === "set_venice_model"),
+    ).toHaveLength(1);
 
     rerender(<AgentWorkspace initialSession={session} />);
     expect(await screen.findByRole("button", { name: "Model: Fast" })).toBeEnabled();

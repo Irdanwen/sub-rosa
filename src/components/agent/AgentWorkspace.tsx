@@ -1,6 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { IconArrowDown } from "central-icons/IconArrowDown";
+import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconCheckmark2Small } from "central-icons/IconCheckmark2Small";
 import { IconChevronDownSmall } from "central-icons/IconChevronDownSmall";
@@ -240,9 +241,7 @@ export function AgentWorkspace({
   const [projection, setProjection] = useState<AgentRuntimeProjection>(() =>
     createAgentRuntimeProjection({ session: initialAgentSession }),
   );
-  const [hydratedSessionIds, setHydratedSessionIds] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
+  const [hydratedSelectionId, setHydratedSelectionId] = useState<string>();
   const [artifacts, setArtifacts] = useState<AgentArtifactDto[]>([]);
   const [artifactPanel, setArtifactPanel] = useState<AgentArtifactPanelState | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -280,8 +279,14 @@ export function AgentWorkspace({
     setDraft(value);
   }, []);
   const [attachments, setAttachments] = useState<string[]>([]);
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
   const [queuedFollowUps, setQueuedFollowUpsState] =
     useState<QueuedAgentFollowUps>(loadQueuedAgentFollowUps);
+  const attemptedQueuedMessageIdsRef = useRef(new Set<string>());
+  const [failedQueuedMessageIds, setFailedQueuedMessageIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const updateQueuedFollowUps = useCallback(
     (update: (current: QueuedAgentFollowUps) => QueuedAgentFollowUps) => {
       setQueuedFollowUpsState((current) => {
@@ -301,6 +306,14 @@ export function AgentWorkspace({
     model: string;
     thinkingLevel: ThinkingLevel;
   }>();
+  const [recoverableSubmission, setRecoverableSubmission] = useState<{
+    id: string;
+    prompt: string;
+    attachments: string[];
+    model: string;
+    thinkingLevel: ThinkingLevel;
+  }>();
+  const recoverableSubmissionSnapshotRef = useRef<typeof recoverableSubmission>();
   const [pendingInitialTurn, setPendingInitialTurn] = useState<{
     prompt: string;
     storedSessionId?: string;
@@ -308,6 +321,7 @@ export function AgentWorkspace({
     turn: AgentChatTurn;
   }>();
   const pendingSessionCreationRef = useRef<string>();
+  const hydrationRequestRef = useRef<string>();
   const submissionOwnerRef = useRef<string>();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
@@ -343,6 +357,8 @@ export function AgentWorkspace({
 
   const startNewSession = useCallback(
     (request?: AgentNewSessionDetail) => {
+      hydrationRequestRef.current = undefined;
+      setHydratedSelectionId(undefined);
       pendingSessionCreationRef.current = undefined;
       submissionOwnerRef.current = undefined;
       setSelectedId(undefined);
@@ -441,13 +457,18 @@ export function AgentWorkspace({
 
   const hydrate = useCallback(
     async (sessionId: string) => {
+      const requestId = crypto.randomUUID();
+      hydrationRequestRef.current = requestId;
+      if (selectedIdRef.current === sessionId) setHydratedSelectionId(undefined);
       const [session, items, files, latestRun] = await Promise.all([
         agentRuntimeBindings.getSession(sessionId),
         agentRuntimeBindings.listItems(sessionId),
         agentRuntimeBindings.listArtifacts(sessionId),
         agentRuntimeBindings.getLatestRun?.(sessionId) ?? Promise.resolve(null),
       ]);
-      if (selectedIdRef.current !== sessionId) return;
+      if (selectedIdRef.current !== sessionId || hydrationRequestRef.current !== requestId) {
+        return;
+      }
       setProjection({
         ...createAgentRuntimeProjection({ session, items }),
         run: latestRun ?? undefined,
@@ -459,10 +480,7 @@ export function AgentWorkspace({
           items.map((item) => item.id),
         ),
       );
-      setHydratedSessionIds((current) => {
-        if (current.has(sessionId)) return current;
-        return new Set([...current, sessionId]);
-      });
+      setHydratedSelectionId(sessionId);
       setArtifacts(files);
       setModel(homeMode ? AUTO_MODEL_ID : (loadSessionModels()[session.id] ?? session.model));
       setThinkingLevel(
@@ -552,6 +570,13 @@ export function AgentWorkspace({
     let unlisten: (() => void) | undefined;
     void listen<AgentRuntimeEvent>(AGENT_RUNTIME_EVENT, ({ payload }) => {
       if (payload.method === "steering.consumed") {
+        attemptedQueuedMessageIdsRef.current.delete(payload.data.messageId);
+        setFailedQueuedMessageIds((current) => {
+          if (!current.has(payload.data.messageId)) return current;
+          const next = new Set(current);
+          next.delete(payload.data.messageId);
+          return next;
+        });
         updateQueuedFollowUps((current) => {
           const queued = current[payload.sessionId];
           if (queued?.messageId !== payload.data.messageId) return current;
@@ -611,12 +636,15 @@ export function AgentWorkspace({
       textActionsDisabledReason ||
       !queuedFollowUp ||
       !selectedId ||
-      !hydratedSessionIds.has(selectedId)
+      hydratedSelectionId !== selectedId ||
+      failedQueuedMessageIds.has(queuedFollowUp.messageId) ||
+      attemptedQueuedMessageIdsRef.current.has(queuedFollowUp.messageId)
     ) {
       return;
     }
     const queued = queuedFollowUp;
     const ownerSessionId = selectedId;
+    attemptedQueuedMessageIdsRef.current.add(queued.messageId);
     queuedSubmissionSnapshotRef.current = {
       sessionId: ownerSessionId,
       messageId: queued.messageId,
@@ -628,12 +656,14 @@ export function AgentWorkspace({
     requestAnimationFrame(() => {
       if (selectedIdRef.current !== ownerSessionId) {
         queuedSubmissionSnapshotRef.current = undefined;
+        attemptedQueuedMessageIdsRef.current.delete(queued.messageId);
         return;
       }
       composerRef.current?.requestSubmit();
     });
   }, [
-    hydratedSessionIds,
+    failedQueuedMessageIds,
+    hydratedSelectionId,
     queuedFollowUp,
     running,
     selectedId,
@@ -691,7 +721,8 @@ export function AgentWorkspace({
       queuedSubmissionSnapshotRef.current = undefined;
       return;
     }
-    const prompt = (queuedSubmission?.prompt ?? draft).trim();
+    const recoveredSubmission = recoverableSubmissionSnapshotRef.current;
+    const prompt = (queuedSubmission?.prompt ?? recoveredSubmission?.prompt ?? draft).trim();
     if (!prompt || waiting || submitting || textActionsDisabledReason) return;
     if (running) {
       const ownerSessionId = selectedIdRef.current;
@@ -711,9 +742,12 @@ export function AgentWorkspace({
       return;
     }
     queuedSubmissionSnapshotRef.current = undefined;
+    recoverableSubmissionSnapshotRef.current = undefined;
     const queuedSnapshot = queuedSubmission;
-    const submittedModel = queuedSnapshot?.model ?? model;
-    const submittedThinkingLevel = queuedSnapshot?.thinkingLevel ?? thinkingLevel;
+    const recoveredSnapshot = recoveredSubmission;
+    const submittedModel = queuedSnapshot?.model ?? recoveredSnapshot?.model ?? model;
+    const submittedThinkingLevel =
+      queuedSnapshot?.thinkingLevel ?? recoveredSnapshot?.thinkingLevel ?? thinkingLevel;
     const submissionId = crypto.randomUUID();
     submissionOwnerRef.current = submissionId;
     setSubmitting(true);
@@ -722,7 +756,8 @@ export function AgentWorkspace({
     const creationRequestId = creatingSession ? crypto.randomUUID() : undefined;
     const optimisticId = `optimistic:${crypto.randomUUID()}`;
     const optimisticCreatedAt = new Date().toISOString();
-    const attachedPaths = queuedSnapshot?.attachments ?? attachments;
+    const attachedPaths =
+      queuedSnapshot?.attachments ?? recoveredSnapshot?.attachments ?? attachments;
     if (creatingSession) {
       pendingSessionCreationRef.current = creationRequestId;
       setPendingInitialTurn({
@@ -744,7 +779,7 @@ export function AgentWorkspace({
           ],
         },
       });
-      if (submissionOwnerRef.current === submissionId) {
+      if (submissionOwnerRef.current === submissionId && !recoveredSnapshot) {
         setDraft("");
         setAttachments([]);
       }
@@ -812,7 +847,12 @@ export function AgentWorkspace({
           items: [...current.items, optimistic],
         }));
       }
-      if (!queuedSnapshot && !creatingSession && submissionOwnerRef.current === submissionId) {
+      if (
+        !queuedSnapshot &&
+        !recoveredSnapshot &&
+        !creatingSession &&
+        submissionOwnerRef.current === submissionId
+      ) {
         setDraft("");
         setAttachments([]);
       }
@@ -838,6 +878,13 @@ export function AgentWorkspace({
         attachments: attachedPaths,
       });
       if (queuedSnapshot) {
+        attemptedQueuedMessageIdsRef.current.delete(queuedSnapshot.messageId);
+        setFailedQueuedMessageIds((current) => {
+          if (!current.has(queuedSnapshot.messageId)) return current;
+          const next = new Set(current);
+          next.delete(queuedSnapshot.messageId);
+          return next;
+        });
         updateQueuedFollowUps((current) => {
           if (current[queuedSnapshot.sessionId]?.messageId !== queuedSnapshot.messageId) {
             return current;
@@ -846,6 +893,11 @@ export function AgentWorkspace({
           delete next[queuedSnapshot.sessionId];
           return next;
         });
+      }
+      if (recoveredSnapshot) {
+        setRecoverableSubmission((current) =>
+          current?.id === recoveredSnapshot.id ? undefined : current,
+        );
       }
       clearSessionModelIfApplied(activeSession.id, submittedModel);
       projectContextSignaturesBySessionId.set(activeSession.id, preparedPrompt.contextSignature);
@@ -870,6 +922,9 @@ export function AgentWorkspace({
       });
       await refreshSessions();
     } catch (cause) {
+      if (queuedSnapshot) {
+        setFailedQueuedMessageIds((current) => new Set([...current, queuedSnapshot.messageId]));
+      }
       if (submissionOwnerRef.current !== submissionId) return;
       submissionOwnerRef.current = undefined;
       setSubmitting(false);
@@ -882,8 +937,21 @@ export function AgentWorkspace({
         setPendingInitialTurn(undefined);
         setNewSessionMode(true);
       }
-      setDraft((current) => current || prompt);
-      setAttachments((current) => (current.length > 0 ? current : attachedPaths));
+      if (!queuedSnapshot) {
+        const failedSubmission = {
+          id: recoveredSnapshot?.id ?? crypto.randomUUID(),
+          prompt,
+          attachments: attachedPaths,
+          model: submittedModel,
+          thinkingLevel: submittedThinkingLevel,
+        };
+        if (recoveredSnapshot || draftRef.current.trim() || attachmentsRef.current.length > 0) {
+          setRecoverableSubmission(failedSubmission);
+        } else {
+          setDraft(prompt);
+          setAttachments(attachedPaths);
+        }
+      }
       setError(messageFromError(cause));
     }
   }
@@ -1501,6 +1569,35 @@ export function AgentWorkspace({
       summary.set(item.name, current);
       return summary;
     }, new Map());
+  const recoverableSubmissionRow = recoverableSubmission ? (
+    <div className="agent-follow-up-row" role="status">
+      <span className="agent-follow-up-copy">
+        <span className="agent-follow-up-announcement">Unsent message</span>
+        <span className="agent-follow-up-text">{recoverableSubmission.prompt}</span>
+      </span>
+      <span className="agent-follow-up-actions">
+        <button
+          type="button"
+          aria-label="Retry unsent message"
+          disabled={running || waiting || submitting || Boolean(textActionsDisabledReason)}
+          onClick={() => {
+            recoverableSubmissionSnapshotRef.current = recoverableSubmission;
+            setError(undefined);
+            requestAnimationFrame(() => composerRef.current?.requestSubmit());
+          }}
+        >
+          <IconArrowRotateClockwise size={12} aria-hidden />
+        </button>
+        <button
+          type="button"
+          aria-label="Discard unsent message"
+          onClick={() => setRecoverableSubmission(undefined)}
+        >
+          <IconCrossSmall size={12} aria-hidden />
+        </button>
+      </span>
+    </div>
+  ) : null;
   const composer = (
     <AgentComposer
       formRef={composerRef}
@@ -1514,6 +1611,7 @@ export function AgentWorkspace({
           rememberSessionModel(selectedId, nextModel);
           return;
         }
+        if (pendingSessionCreationRef.current) return;
         void persistAgentDefaultModel(nextModel).catch((cause) => {
           if (modelRef.current === nextModel) setError(messageFromError(cause));
         });
@@ -1682,6 +1780,7 @@ export function AgentWorkspace({
             <div className="agent-hero-heading">
               <h2 className="agent-hero-title">{heroGreeting}</h2>
             </div>
+            {recoverableSubmissionRow}
             {composer}
             <div className="agent-hero-suggestions">
               <div className="agent-hero-chips" data-hidden={draft.trim() ? "true" : undefined}>
@@ -1755,6 +1854,7 @@ export function AgentWorkspace({
                   visible={(running || submitting) && visibleTurns.at(-1)?.role === "user"}
                 />
               </div>
+              {recoverableSubmissionRow}
               {queuedFollowUp ? (
                 <div className="agent-follow-up-row" role="status">
                   <span className="agent-follow-up-copy">
@@ -1762,11 +1862,39 @@ export function AgentWorkspace({
                     <span className="agent-follow-up-text">{queuedFollowUp.prompt}</span>
                   </span>
                   <span className="agent-follow-up-actions">
+                    {failedQueuedMessageIds.has(queuedFollowUp.messageId) ? (
+                      <button
+                        type="button"
+                        aria-label="Retry queued follow-up"
+                        disabled={
+                          running || waiting || submitting || Boolean(textActionsDisabledReason)
+                        }
+                        onClick={() => {
+                          attemptedQueuedMessageIdsRef.current.delete(queuedFollowUp.messageId);
+                          setFailedQueuedMessageIds((current) => {
+                            if (!current.has(queuedFollowUp.messageId)) return current;
+                            const next = new Set(current);
+                            next.delete(queuedFollowUp.messageId);
+                            return next;
+                          });
+                          setError(undefined);
+                        }}
+                      >
+                        <IconArrowRotateClockwise size={12} aria-hidden />
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       aria-label="Remove queued follow-up"
                       onClick={() => {
                         if (!selectedId) return;
+                        attemptedQueuedMessageIdsRef.current.delete(queuedFollowUp.messageId);
+                        setFailedQueuedMessageIds((current) => {
+                          if (!current.has(queuedFollowUp.messageId)) return current;
+                          const next = new Set(current);
+                          next.delete(queuedFollowUp.messageId);
+                          return next;
+                        });
                         updateQueuedFollowUps((current) => {
                           if (!(selectedId in current)) return current;
                           const next = { ...current };
