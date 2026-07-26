@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import type { RefObject } from "react";
 import { createPortal } from "react-dom";
@@ -480,12 +481,13 @@ export function ModelPickerPopover({
     : [];
   const resolvedRootActive = Math.min(rootActive, Math.max(rootResults.length - 1, 0));
   const rootStatusId = `${rootListId}-status`;
-  const rootSearchStatus = rootControlsMatch
-    ? `${rootVisibleControlCount} ${rootVisibleControlCount === 1 ? "setting" : "settings"} shown. Press Tab to review ${rootVisibleControlCount === 1 ? "it" : "settings"}.${
-        rootResults.length
-          ? ` ${rootResults.length} matching ${rootResults.length === 1 ? "model" : "models"}. Use the arrow keys to review ${rootResults.length === 1 ? "it" : "models"}.`
-          : ""
-      }`
+  const matchingModelsStatus = rootResults.length
+    ? `${rootResults.length} matching ${rootResults.length === 1 ? "model" : "models"}. Use the arrow keys to review ${rootResults.length === 1 ? "it" : "models"}.`
+    : "No results match your search.";
+  const rootSearchStatus = rootQueryActive
+    ? rootControlsMatch
+      ? `${rootVisibleControlCount} ${rootVisibleControlCount === 1 ? "setting" : "settings"} shown. Press Tab to review ${rootVisibleControlCount === 1 ? "it" : "settings"}. ${matchingModelsStatus}`
+      : matchingModelsStatus
     : undefined;
   useEffect(() => {
     setRootActive(0);
@@ -504,6 +506,16 @@ export function ModelPickerPopover({
           ?.scrollIntoView?.({ block: "nearest" });
       });
       return nextIndex;
+    });
+  }
+  function moveRootActiveTo(index: number) {
+    if (!rootResults.length) return;
+    const nextIndex = Math.max(0, Math.min(index, rootResults.length - 1));
+    setRootActive(nextIndex);
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById(`${rootListId}-option-${nextIndex}`)
+        ?.scrollIntoView?.({ block: "nearest" });
     });
   }
   const detail =
@@ -590,6 +602,24 @@ export function ModelPickerPopover({
     setBridging,
   });
 
+  function handleListboxNavigation(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const options = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="option"]'),
+    );
+    if (!options.length) return;
+    event.preventDefault();
+    const focusedIndex = options.indexOf(document.activeElement as HTMLButtonElement);
+    const currentIndex = focusedIndex >= 0 ? focusedIndex : 0;
+    const nextIndex =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? options.length - 1
+          : (currentIndex + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
+    options[nextIndex]?.focus();
+  }
+
   function catalogList(label: string) {
     return (
       <>
@@ -616,6 +646,7 @@ export function ModelPickerPopover({
             className="agent-composer-model-list"
             role="listbox"
             aria-label={label}
+            onKeyDown={handleListboxNavigation}
             onScroll={() => {
               fade.update();
               cancelHoverIntent();
@@ -645,7 +676,7 @@ export function ModelPickerPopover({
                 />
               ))
             ) : (
-              <p className="agent-composer-model-empty">
+              <p className="agent-composer-model-empty" role="status" aria-live="polite">
                 {privateOnly
                   ? query
                     ? "No private models match your search."
@@ -760,6 +791,16 @@ export function ModelPickerPopover({
               if (event.key === "ArrowUp" && rootResults.length) {
                 event.preventDefault();
                 moveRootActive(-1);
+                return;
+              }
+              if (event.key === "Home" && rootResults.length) {
+                event.preventDefault();
+                moveRootActiveTo(0);
+                return;
+              }
+              if (event.key === "End" && rootResults.length) {
+                event.preventDefault();
+                moveRootActiveTo(rootResults.length - 1);
                 return;
               }
             }}
@@ -1016,6 +1057,7 @@ export function ModelPickerPopover({
                 className="agent-composer-model-menu"
                 role="listbox"
                 aria-label={suggestedListLabel}
+                onKeyDown={handleListboxNavigation}
               >
                 {suggested.length ? (
                   suggested.map(({ key, model: option, costQuality: presetCostQuality }) => (

@@ -51,6 +51,19 @@ import {
 import { shouldBlockTextOnFunding } from "../../lib/account-gate";
 import { dispatchAgentSessionStatus, dispatchAgentSessionsChanged } from "../../lib/agent-events";
 import { messageFromError } from "../../lib/errors";
+import { persistAgentDefaultModel } from "../../lib/agent-default-model";
+import {
+  loadQueuedAgentFollowUps,
+  reconcileConsumedAgentFollowUp,
+  saveQueuedAgentFollowUps,
+  type QueuedAgentFollowUps,
+} from "../../lib/agent-follow-up-queue";
+import {
+  clearSessionModelIfApplied,
+  forgetSessionModel,
+  loadSessionModels,
+  rememberSessionModel,
+} from "../../lib/agent-session-models";
 import {
   forgetSessionThinkingLevel,
   loadSessionThinkingLevels,
@@ -227,6 +240,9 @@ export function AgentWorkspace({
   const [projection, setProjection] = useState<AgentRuntimeProjection>(() =>
     createAgentRuntimeProjection({ session: initialAgentSession }),
   );
+  const [hydratedSessionIds, setHydratedSessionIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [artifacts, setArtifacts] = useState<AgentArtifactDto[]>([]);
   const [artifactPanel, setArtifactPanel] = useState<AgentArtifactPanelState | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -242,6 +258,8 @@ export function AgentWorkspace({
   const [model, setModel] = useState(
     homeMode ? AUTO_MODEL_ID : initialAgentSession?.model || DEFAULT_MODEL,
   );
+  const modelRef = useRef(model);
+  modelRef.current = model;
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() => {
     if (homeMode) return "instant";
     const sessionLevel = initialAgentSession?.id
@@ -249,6 +267,8 @@ export function AgentWorkspace({
       : undefined;
     return sessionLevel ?? loadThinkingLevel();
   });
+  const thinkingLevelRef = useRef(thinkingLevel);
+  thinkingLevelRef.current = thinkingLevel;
   const [safetyMode, setSafetyMode] = useState<AgentSafetyMode>(
     initialAgentSession?.safetyMode ?? "sandboxed",
   );
@@ -260,10 +280,26 @@ export function AgentWorkspace({
     setDraft(value);
   }, []);
   const [attachments, setAttachments] = useState<string[]>([]);
-  const [queuedFollowUp, setQueuedFollowUp] = useState<{
+  const [queuedFollowUps, setQueuedFollowUpsState] =
+    useState<QueuedAgentFollowUps>(loadQueuedAgentFollowUps);
+  const updateQueuedFollowUps = useCallback(
+    (update: (current: QueuedAgentFollowUps) => QueuedAgentFollowUps) => {
+      setQueuedFollowUpsState((current) => {
+        const next = update(current);
+        if (next !== current) saveQueuedAgentFollowUps(next);
+        return next;
+      });
+    },
+    [],
+  );
+  const queuedFollowUp = selectedId ? queuedFollowUps[selectedId] : undefined;
+  const queuedSubmissionSnapshotRef = useRef<{
+    sessionId: string;
     messageId: string;
     prompt: string;
     attachments: string[];
+    model: string;
+    thinkingLevel: ThinkingLevel;
   }>();
   const [pendingInitialTurn, setPendingInitialTurn] = useState<{
     prompt: string;
@@ -319,7 +355,6 @@ export function AgentWorkspace({
       setThinkingLevel(loadThinkingLevel());
       setDraft(request?.prompt ?? "");
       setAttachments([]);
-      setQueuedFollowUp(undefined);
       setPendingInitialTurn(undefined);
       setSubmitting(false);
       setError(undefined);
@@ -417,8 +452,19 @@ export function AgentWorkspace({
         ...createAgentRuntimeProjection({ session, items }),
         run: latestRun ?? undefined,
       });
+      updateQueuedFollowUps((current) =>
+        reconcileConsumedAgentFollowUp(
+          current,
+          sessionId,
+          items.map((item) => item.id),
+        ),
+      );
+      setHydratedSessionIds((current) => {
+        if (current.has(sessionId)) return current;
+        return new Set([...current, sessionId]);
+      });
       setArtifacts(files);
-      setModel(homeMode ? AUTO_MODEL_ID : session.model);
+      setModel(homeMode ? AUTO_MODEL_ID : (loadSessionModels()[session.id] ?? session.model));
       setThinkingLevel(
         homeMode ? "instant" : (loadSessionThinkingLevels()[session.id] ?? loadThinkingLevel()),
       );
@@ -427,7 +473,7 @@ export function AgentWorkspace({
       if (!homeMode) writeLastOpenSessionId(sessionId);
       onSessionSelected?.(session);
     },
-    [homeMode, onSessionSelected],
+    [homeMode, onSessionSelected, updateQueuedFollowUps],
   );
 
   useEffect(() => {
@@ -450,7 +496,7 @@ export function AgentWorkspace({
         if (homeMode) {
           focusedHomeModelRef.current = response.selectedModel || DEFAULT_MODEL;
         }
-        if (!homeMode && !initialAgentSession?.model && response.selectedModel) {
+        if (!homeMode && !initialAgentSession && !initialSessionId && response.selectedModel) {
           setModel(response.selectedModel);
         }
       })
@@ -460,7 +506,7 @@ export function AgentWorkspace({
         setVeniceApiKeyConfigured(response.effectiveSettings.veniceApiKeyConfigured),
       )
       .catch(() => setVeniceApiKeyConfigured(false));
-  }, [homeMode, initialAgentSession?.model, refreshSessions]);
+  }, [homeMode, initialAgentSession, initialSessionId, refreshSessions]);
 
   useEffect(() => {
     const nextId = initialSession?.id ?? initialSessionId;
@@ -481,7 +527,7 @@ export function AgentWorkspace({
         ...current.filter((session) => session.id !== initialSession.id),
       ]);
       setProjection((current) => ({ ...current, session: initialSession }));
-      setModel(initialSession.model || DEFAULT_MODEL);
+      setModel(loadSessionModels()[initialSession.id] ?? (initialSession.model || DEFAULT_MODEL));
       setSafetyMode(initialSession.safetyMode);
       setNewSessionMode(false);
     }
@@ -505,16 +551,20 @@ export function AgentWorkspace({
     let disposed = false;
     let unlisten: (() => void) | undefined;
     void listen<AgentRuntimeEvent>(AGENT_RUNTIME_EVENT, ({ payload }) => {
+      if (payload.method === "steering.consumed") {
+        updateQueuedFollowUps((current) => {
+          const queued = current[payload.sessionId];
+          if (queued?.messageId !== payload.data.messageId) return current;
+          const next = { ...current };
+          delete next[payload.sessionId];
+          return next;
+        });
+      }
       if (payload.sessionId !== selectedIdRef.current) {
         void refreshSessions().catch(() => undefined);
         return;
       }
       setProjection((current) => applyAgentRuntimeEvent(current, payload));
-      if (payload.method === "steering.consumed") {
-        setQueuedFollowUp((current) =>
-          current?.messageId === payload.data.messageId ? undefined : current,
-        );
-      }
       dispatchAgentSessionStatus({
         sessionId: payload.sessionId,
         status:
@@ -544,7 +594,7 @@ export function AgentWorkspace({
       disposed = true;
       unlisten?.();
     };
-  }, [hydrate, refreshSessions]);
+  }, [hydrate, refreshSessions, updateQueuedFollowUps]);
 
   useEffect(() => {
     const scroller = scrollRef.current;
@@ -554,13 +604,43 @@ export function AgentWorkspace({
   }, [projection.items]);
 
   useEffect(() => {
-    if (running || waiting || submitting || !queuedFollowUp) return;
+    if (
+      running ||
+      waiting ||
+      submitting ||
+      textActionsDisabledReason ||
+      !queuedFollowUp ||
+      !selectedId ||
+      !hydratedSessionIds.has(selectedId)
+    ) {
+      return;
+    }
     const queued = queuedFollowUp;
-    setQueuedFollowUp(undefined);
-    setDraft(queued.prompt);
-    setAttachments(queued.attachments);
-    requestAnimationFrame(() => composerRef.current?.requestSubmit());
-  }, [queuedFollowUp, running, submitting, waiting]);
+    const ownerSessionId = selectedId;
+    queuedSubmissionSnapshotRef.current = {
+      sessionId: ownerSessionId,
+      messageId: queued.messageId,
+      prompt: queued.prompt,
+      attachments: queued.attachments,
+      model: queued.model,
+      thinkingLevel: queued.thinkingLevel,
+    };
+    requestAnimationFrame(() => {
+      if (selectedIdRef.current !== ownerSessionId) {
+        queuedSubmissionSnapshotRef.current = undefined;
+        return;
+      }
+      composerRef.current?.requestSubmit();
+    });
+  }, [
+    hydratedSessionIds,
+    queuedFollowUp,
+    running,
+    selectedId,
+    submitting,
+    textActionsDisabledReason,
+    waiting,
+  ]);
 
   useLayoutEffect(() => {
     const scroller = scrollRef.current;
@@ -606,11 +686,21 @@ export function AgentWorkspace({
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();
-    const prompt = draft.trim();
+    const queuedSubmission = queuedSubmissionSnapshotRef.current;
+    if (queuedSubmission && queuedSubmission.sessionId !== selectedIdRef.current) {
+      queuedSubmissionSnapshotRef.current = undefined;
+      return;
+    }
+    const prompt = (queuedSubmission?.prompt ?? draft).trim();
     if (!prompt || waiting || submitting || textActionsDisabledReason) return;
     if (running) {
+      const ownerSessionId = selectedIdRef.current;
+      if (!ownerSessionId) return;
       const messageId = crypto.randomUUID();
-      setQueuedFollowUp({ messageId, prompt, attachments });
+      updateQueuedFollowUps((current) => ({
+        ...current,
+        [ownerSessionId]: { messageId, prompt, attachments, model, thinkingLevel },
+      }));
       setDraft("");
       setAttachments([]);
       if (attachments.length === 0 && projection.run) {
@@ -620,6 +710,10 @@ export function AgentWorkspace({
       }
       return;
     }
+    queuedSubmissionSnapshotRef.current = undefined;
+    const queuedSnapshot = queuedSubmission;
+    const submittedModel = queuedSnapshot?.model ?? model;
+    const submittedThinkingLevel = queuedSnapshot?.thinkingLevel ?? thinkingLevel;
     const submissionId = crypto.randomUUID();
     submissionOwnerRef.current = submissionId;
     setSubmitting(true);
@@ -628,7 +722,7 @@ export function AgentWorkspace({
     const creationRequestId = creatingSession ? crypto.randomUUID() : undefined;
     const optimisticId = `optimistic:${crypto.randomUUID()}`;
     const optimisticCreatedAt = new Date().toISOString();
-    const attachedPaths = attachments;
+    const attachedPaths = queuedSnapshot?.attachments ?? attachments;
     if (creatingSession) {
       pendingSessionCreationRef.current = creationRequestId;
       setPendingInitialTurn({
@@ -660,11 +754,19 @@ export function AgentWorkspace({
       if (!session || newSessionMode) {
         const createdSession = await agentRuntimeBindings.createSession({
           title: titleFromPrompt(prompt),
-          model,
+          model: submittedModel,
           safetyMode,
           profile: getCurrentDataPartitionName(),
         });
         session = createdSession;
+        const latestModel = modelRef.current;
+        if (latestModel !== submittedModel) {
+          rememberSessionModel(createdSession.id, latestModel);
+        }
+        const latestThinkingLevel = thinkingLevelRef.current;
+        if (latestThinkingLevel !== submittedThinkingLevel) {
+          rememberSessionThinkingLevel(createdSession.id, latestThinkingLevel);
+        }
         setSessions((current) => [
           createdSession,
           ...current.filter((item) => item.id !== createdSession.id),
@@ -710,7 +812,7 @@ export function AgentWorkspace({
           items: [...current.items, optimistic],
         }));
       }
-      if (submissionOwnerRef.current === submissionId) {
+      if (!queuedSnapshot && !creatingSession && submissionOwnerRef.current === submissionId) {
         setDraft("");
         setAttachments([]);
       }
@@ -725,15 +827,32 @@ export function AgentWorkspace({
       const run = await agentRuntimeBindings.startRun({
         sessionId: activeSession.id,
         prompt: preparedPrompt.text,
-        model,
-        reasoningEffort: thinkingEffortForLevel(thinkingLevel) as "minimal" | "medium" | "high",
+        model: submittedModel,
+        reasoningEffort: thinkingEffortForLevel(submittedThinkingLevel) as
+          | "minimal"
+          | "medium"
+          | "high",
         safetyMode,
         workspacePath: activeSession.workspacePath,
         enabledSkillIds,
         attachments: attachedPaths,
       });
+      if (queuedSnapshot) {
+        updateQueuedFollowUps((current) => {
+          if (current[queuedSnapshot.sessionId]?.messageId !== queuedSnapshot.messageId) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[queuedSnapshot.sessionId];
+          return next;
+        });
+      }
+      clearSessionModelIfApplied(activeSession.id, submittedModel);
       projectContextSignaturesBySessionId.set(activeSession.id, preparedPrompt.contextSignature);
-      rememberSessionThinkingLevel(activeSession.id, thinkingLevel);
+      const storedThinkingLevel = loadSessionThinkingLevels()[activeSession.id];
+      if (!storedThinkingLevel || storedThinkingLevel === submittedThinkingLevel) {
+        rememberSessionThinkingLevel(activeSession.id, submittedThinkingLevel);
+      }
       if (selectedIdRef.current === activeSession.id) {
         setProjection((current) => ({ ...current, run }));
       }
@@ -1257,7 +1376,14 @@ export function AgentWorkspace({
     await agentRuntimeBindings.deleteSession(selectedId);
     projectContextSignaturesBySessionId.delete(selectedId);
     forgetSessionThinkingLevel(selectedId);
+    forgetSessionModel(selectedId);
     forgetLastOpenSessionId(selectedId);
+    updateQueuedFollowUps((current) => {
+      if (!(selectedId in current)) return current;
+      const next = { ...current };
+      delete next[selectedId];
+      return next;
+    });
     setSelectedId(undefined);
     setProjection(createAgentRuntimeProjection());
     setArtifacts([]);
@@ -1382,7 +1508,16 @@ export function AgentWorkspace({
       draft={draft}
       setDraft={setComposerDraft}
       model={model}
-      setModel={setModel}
+      setModel={(nextModel) => {
+        setModel(nextModel);
+        if (selectedId) {
+          rememberSessionModel(selectedId, nextModel);
+          return;
+        }
+        void persistAgentDefaultModel(nextModel).catch((cause) => {
+          if (modelRef.current === nextModel) setError(messageFromError(cause));
+        });
+      }}
       thinkingLevel={thinkingLevel}
       setThinkingLevel={(level) => {
         setThinkingLevel(level);
@@ -1402,6 +1537,7 @@ export function AgentWorkspace({
       submitting={submitting}
       disabledReason={textActionsDisabledReason}
       hero={heroMode}
+      showModelPicker={!homeMode}
     />
   );
   return (
@@ -1629,7 +1765,15 @@ export function AgentWorkspace({
                     <button
                       type="button"
                       aria-label="Remove queued follow-up"
-                      onClick={() => setQueuedFollowUp(undefined)}
+                      onClick={() => {
+                        if (!selectedId) return;
+                        updateQueuedFollowUps((current) => {
+                          if (!(selectedId in current)) return current;
+                          const next = { ...current };
+                          delete next[selectedId];
+                          return next;
+                        });
+                      }}
                     >
                       <IconCrossSmall size={12} aria-hidden />
                     </button>
@@ -1871,6 +2015,7 @@ function AgentComposer({
   submitting,
   disabledReason,
   hero = false,
+  showModelPicker = true,
 }: {
   formRef: RefObject<HTMLFormElement>;
   scrollRef: RefObject<HTMLDivElement>;
@@ -1893,6 +2038,7 @@ function AgentComposer({
   submitting: boolean;
   disabledReason?: string;
   hero?: boolean;
+  showModelPicker?: boolean;
 }) {
   const editorRef = useRef<ComposerEditorHandle>(null);
   const publishedDraftRef = useRef(draft);
@@ -1915,7 +2061,6 @@ function AgentComposer({
   const pickerModels = models.some((option) => option.id === AUTO_MODEL_ID)
     ? models
     : [AGENT_AUTO_MODEL, ...models];
-  const working = running || submitting;
 
   useEffect(() => {
     if (draft === publishedDraftRef.current) return;
@@ -2066,23 +2211,24 @@ function AgentComposer({
             </button>
           ) : null}
           <div className="agent-composer-actions">
-            <ComposerModelPicker
-              open={modelOpen}
-              model={activeModel}
-              effort={thinkingLevel}
-              readOnly={working}
-              triggerRef={modelTriggerRef}
-              onToggleOpen={() => {
-                if (modelOpen) {
-                  setModelOpen(false);
-                  return;
-                }
-                setModelFlyout(null);
-                setModelSearch("");
-                setModelRootSearch("");
-                setModelOpen(true);
-              }}
-            />
+            {showModelPicker ? (
+              <ComposerModelPicker
+                open={modelOpen}
+                model={activeModel}
+                effort={thinkingLevel}
+                triggerRef={modelTriggerRef}
+                onToggleOpen={() => {
+                  if (modelOpen) {
+                    setModelOpen(false);
+                    return;
+                  }
+                  setModelFlyout(null);
+                  setModelSearch("");
+                  setModelRootSearch("");
+                  setModelOpen(true);
+                }}
+              />
+            ) : null}
             <button
               type="button"
               className="agent-composer-mic"
@@ -2207,7 +2353,7 @@ function AgentComposer({
           })}
         </div>
       ) : null}
-      {modelOpen ? (
+      {showModelPicker && modelOpen ? (
         <ModelPickerPopover
           mode="generation"
           flyout={modelFlyout}

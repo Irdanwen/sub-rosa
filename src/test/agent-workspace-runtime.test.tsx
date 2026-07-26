@@ -38,6 +38,7 @@ import {
   setCurrentDataPartitionName,
 } from "../lib/data-partition";
 import { readJuneHomeStoredSessionId, writeJuneHomeStoredSessionId } from "../lib/june-home";
+import { saveQueuedAgentFollowUps } from "../lib/agent-follow-up-queue";
 
 const session: AgentSessionDto = {
   id: "session-1",
@@ -123,7 +124,7 @@ describe("AgentWorkspace runtime wiring", () => {
               name: "Fast",
               modelType: "text",
               traits: [],
-              capabilities: ["tools"],
+              capabilities: ["tool-calling"],
               privacy: "private",
               contextTokens: 200_000,
               inputCreditsPerMillionTokens: 2_000,
@@ -188,6 +189,7 @@ describe("AgentWorkspace runtime wiring", () => {
 
     render(<AgentWorkspace homeMode initialSession={homeSession} />);
     const composer = await screen.findByRole("textbox", { name: "Message June" });
+    expect(screen.queryByRole("button", { name: /Model:/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Add files or notes" }));
     await user.click(screen.getByRole("menuitem", { name: "Attach files" }));
     await waitFor(() => expect(screen.getByText("brief.pdf")).toBeVisible());
@@ -308,8 +310,15 @@ describe("AgentWorkspace runtime wiring", () => {
         }),
       }),
     );
-    expect(screen.queryByRole("button", { name: "Model: Fast" })).not.toBeInTheDocument();
-    expect(screen.getByText("Fast")).toBeInTheDocument();
+    const activeRunPicker = screen.getByRole("button", { name: "Model: Fast" });
+    expect(activeRunPicker).toBeEnabled();
+    await user.click(activeRunPicker);
+    await user.click(
+      within(screen.getByRole("listbox", { name: "Suggested text models" })).getByRole("option", {
+        name: /Auto/,
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Model: Auto" })).toBeEnabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Stop June" }));
     await waitFor(() =>
@@ -330,7 +339,19 @@ describe("AgentWorkspace runtime wiring", () => {
       });
     });
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Model: Fast" })).toBeEnabled());
+    const nextRunPicker = await screen.findByRole("button", { name: "Model: Auto" });
+    expect(nextRunPicker).toBeEnabled();
+    const nextComposer = screen.getByRole("textbox", { name: "Message June" });
+    await user.type(nextComposer, "Use the staged model");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("start_agent_run", {
+        request: expect.objectContaining({
+          prompt: "Use the staged model",
+          model: "open-software/auto",
+        }),
+      }),
+    );
   });
 
   it("restores Auto-only suggestions, root model search, and compact effort choices", async () => {
@@ -390,11 +411,27 @@ describe("AgentWorkspace runtime wiring", () => {
       }),
     ).toBeVisible();
 
+    await user.clear(search);
+    await user.type(search, "no-such-model");
+    const pickerDialog = screen.getByRole("dialog", { name: "Choose text model" });
+    expect(within(pickerDialog).getByRole("status")).toHaveTextContent(
+      "No results match your search.",
+    );
+    await user.clear(search);
+    await user.type(search, "Kimi");
+
     await user.keyboard("{Escape}");
     expect(search).toHaveValue("");
     expect(search).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "All models" }));
     expect(screen.getByRole("group", { name: "All text models" })).toBeVisible();
+    const allModelsList = screen.getByRole("listbox", { name: "All text models" });
+    const allModelOptions = within(allModelsList).getAllByRole("option");
+    allModelOptions[0]?.focus();
+    fireEvent.keyDown(allModelsList, { key: "End" });
+    expect(allModelOptions.at(-1)).toHaveFocus();
+    fireEvent.keyDown(allModelsList, { key: "Home" });
+    expect(allModelOptions[0]).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("group", { name: "All text models" })).not.toBeInTheDocument();
     expect(search).toHaveFocus();
@@ -601,10 +638,25 @@ describe("AgentWorkspace runtime wiring", () => {
     await user.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Stop June" })).toBeVisible());
 
+    await user.click(screen.getByRole("button", { name: "Model: Fast" }));
+    await user.click(
+      within(screen.getByRole("listbox", { name: "Suggested text models" })).getByRole("option", {
+        name: /Auto/,
+      }),
+    );
+
     composer = screen.getByRole("textbox", { name: "Message June" });
     composer.textContent = "Send this next";
     fireEvent.input(composer);
     await user.click(await screen.findByRole("button", { name: "Queue follow-up" }));
+
+    await user.click(screen.getByRole("button", { name: "Model: Auto" }));
+    await user.click(screen.getByRole("button", { name: "All models" }));
+    await user.click(
+      within(screen.getByRole("group", { name: "All text models" })).getByRole("option", {
+        name: /Fast/,
+      }),
+    );
 
     act(() => {
       mocks.runtimeListener?.({
@@ -624,9 +676,269 @@ describe("AgentWorkspace runtime wiring", () => {
       const starts = mocks.invoke.mock.calls.filter(([command]) => command === "start_agent_run");
       expect(starts).toHaveLength(2);
       expect(starts[1]?.[1]).toMatchObject({
-        request: expect.objectContaining({ prompt: "Send this next" }),
+        request: expect.objectContaining({
+          prompt: "Send this next",
+          model: "open-software/auto",
+        }),
       });
     });
+    expect(screen.getByRole("button", { name: "Model: Fast" })).toBeEnabled();
+  });
+
+  it("keeps a queued follow-up owned by its running session across navigation", async () => {
+    const defaultInvoke = mocks.invoke.getMockImplementation();
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      const sessionId = (args as { sessionId?: string } | undefined)?.sessionId;
+      if (command === "list_agent_sessions") return Promise.resolve([session, newSession]);
+      if (command === "get_agent_session" && sessionId === newSession.id) {
+        return Promise.resolve(newSession);
+      }
+      if (command === "list_agent_items" && sessionId === newSession.id) {
+        return Promise.resolve([]);
+      }
+      return defaultInvoke?.(command, args);
+    });
+
+    const user = userEvent.setup();
+    mocks.openDialog.mockResolvedValue(["/tmp/follow-up.pdf"]);
+    const { rerender } = render(<AgentWorkspace initialSession={session} />);
+    await screen.findByText("Earlier answer");
+    let composer = screen.getByRole("textbox", { name: "Message June" });
+    await user.type(composer, "Start in session A");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await screen.findByRole("button", { name: "Stop June" });
+
+    composer = screen.getByRole("textbox", { name: "Message June" });
+    await user.click(screen.getByRole("button", { name: "Add files or notes" }));
+    await user.click(screen.getByRole("menuitem", { name: "Attach files" }));
+    expect(await screen.findByText("follow-up.pdf")).toBeVisible();
+    composer.textContent = "Only send this in session A";
+    fireEvent.input(composer);
+    await user.click(await screen.findByRole("button", { name: "Queue follow-up" }));
+    expect(screen.getByText("Queued follow-up")).toBeVisible();
+
+    rerender(<AgentWorkspace initialSession={newSession} />);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Stop June" })).toBeNull());
+    expect(screen.queryByText("Queued follow-up")).not.toBeInTheDocument();
+
+    act(() => {
+      mocks.runtimeListener?.({
+        payload: {
+          protocolVersion: 1,
+          eventId: "event-session-a-completed",
+          sessionId: session.id,
+          runId: "run-1",
+          sequence: 3,
+          method: "run.completed",
+          data: { completedAt: "2026-07-22T12:01:00Z" },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      const starts = mocks.invoke.mock.calls.filter(([command]) => command === "start_agent_run");
+      expect(starts).toHaveLength(1);
+    });
+    expect(screen.queryByText("Only send this in session A")).not.toBeInTheDocument();
+
+    rerender(<AgentWorkspace initialSession={session} />);
+    await waitFor(() => {
+      const starts = mocks.invoke.mock.calls.filter(([command]) => command === "start_agent_run");
+      expect(starts).toHaveLength(2);
+      expect(starts[1]?.[1]).toMatchObject({
+        request: expect.objectContaining({
+          sessionId: session.id,
+          prompt: "Only send this in session A",
+          model: "fast",
+          attachments: ["/tmp/follow-up.pdf"],
+        }),
+      });
+    });
+  });
+
+  it("restores an attachment follow-up after the workspace remounts", async () => {
+    saveQueuedAgentFollowUps({
+      [session.id]: {
+        messageId: "restored-message",
+        prompt: "Resume with this file",
+        attachments: ["/tmp/restored.pdf"],
+        model: "open-software/auto",
+        thinkingLevel: "hard",
+      },
+    });
+
+    render(<AgentWorkspace initialSession={session} />);
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("start_agent_run", {
+        request: expect.objectContaining({
+          sessionId: session.id,
+          prompt: "Resume with this file",
+          attachments: ["/tmp/restored.pdf"],
+          model: "open-software/auto",
+          reasoningEffort: "high",
+        }),
+      }),
+    );
+    expect(await screen.findByText("Resume with this file")).toBeVisible();
+  });
+
+  it("keeps a restored follow-up when its run start fails after navigation", async () => {
+    saveQueuedAgentFollowUps({
+      [session.id]: {
+        messageId: "retry-after-navigation",
+        prompt: "Retry this in session A",
+        attachments: ["/tmp/retry.pdf"],
+        model: "fast",
+        thinkingLevel: "medium",
+      },
+    });
+    let rejectFirstStart: ((error: Error) => void) | undefined;
+    const firstStart = new Promise((_, reject) => {
+      rejectFirstStart = reject;
+    });
+    let startCount = 0;
+    const defaultInvoke = mocks.invoke.getMockImplementation();
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      const sessionId = (args as { sessionId?: string } | undefined)?.sessionId;
+      if (command === "list_agent_sessions") return Promise.resolve([session, newSession]);
+      if (command === "get_agent_session" && sessionId === newSession.id) {
+        return Promise.resolve(newSession);
+      }
+      if (command === "list_agent_items" && sessionId === newSession.id) {
+        return Promise.resolve([]);
+      }
+      if (command === "start_agent_run" && startCount++ === 0) return firstStart;
+      return defaultInvoke?.(command, args);
+    });
+
+    const { rerender } = render(<AgentWorkspace initialSession={session} />);
+    await waitFor(() =>
+      expect(
+        mocks.invoke.mock.calls.filter(([command]) => command === "start_agent_run"),
+      ).toHaveLength(1),
+    );
+
+    rerender(<AgentWorkspace initialSession={newSession} />);
+    await waitFor(() => expect(screen.queryByText("Retry this in session A")).toBeNull());
+    await act(async () => rejectFirstStart?.(new Error("runtime unavailable")));
+
+    rerender(<AgentWorkspace initialSession={session} />);
+    await waitFor(() => {
+      const starts = mocks.invoke.mock.calls.filter(([command]) => command === "start_agent_run");
+      expect(starts).toHaveLength(2);
+      expect(starts[1]?.[1]).toMatchObject({
+        request: expect.objectContaining({
+          sessionId: session.id,
+          prompt: "Retry this in session A",
+          attachments: ["/tmp/retry.pdf"],
+        }),
+      });
+    });
+  });
+
+  it("does not replay a restored follow-up that persisted history already consumed", async () => {
+    saveQueuedAgentFollowUps({
+      [session.id]: {
+        messageId: "already-consumed",
+        prompt: "Do not send this twice",
+        attachments: [],
+        model: "fast",
+        thinkingLevel: "medium",
+      },
+    });
+    const defaultInvoke = mocks.invoke.getMockImplementation();
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "list_agent_items") {
+        return Promise.resolve([
+          {
+            id: "steering:already-consumed",
+            sessionId: session.id,
+            runId: "run-consumed",
+            sequence: 1,
+            createdAt: session.createdAt,
+            kind: "steering",
+            text: "Do not send this twice",
+          },
+        ]);
+      }
+      return defaultInvoke?.(command, args);
+    });
+
+    render(<AgentWorkspace initialSession={session} />);
+    expect(await screen.findByText("Steering: Do not send this twice")).toBeVisible();
+    await waitFor(() =>
+      expect(
+        mocks.invoke.mock.calls.filter(([command]) => command === "start_agent_run"),
+      ).toHaveLength(0),
+    );
+  });
+
+  it("does not let a slow global catalog overwrite a restored session model", async () => {
+    let resolveCatalog:
+      | ((value: {
+          mode: "generation";
+          selectedModel: string;
+          modelType: string;
+          models: Array<{
+            provider: string;
+            id: string;
+            name: string;
+            modelType: string;
+            traits: string[];
+            capabilities: string[];
+          }>;
+        }) => void)
+      | undefined;
+    const pendingCatalog = new Promise<{
+      mode: "generation";
+      selectedModel: string;
+      modelType: string;
+      models: Array<{
+        provider: string;
+        id: string;
+        name: string;
+        modelType: string;
+        traits: string[];
+        capabilities: string[];
+      }>;
+    }>((resolve) => {
+      resolveCatalog = resolve;
+    });
+    const defaultInvoke = mocks.invoke.getMockImplementation();
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "list_venice_models") return pendingCatalog;
+      return defaultInvoke?.(command, args);
+    });
+
+    render(<AgentWorkspace initialSessionId={session.id} />);
+    await screen.findByText("Earlier answer");
+
+    await act(async () =>
+      resolveCatalog?.({
+        mode: "generation",
+        selectedModel: "open-software/auto",
+        modelType: "text",
+        models: [
+          {
+            provider: "june",
+            id: "open-software/auto",
+            name: "Auto",
+            modelType: "text",
+            traits: [],
+            capabilities: [],
+          },
+          {
+            provider: "june",
+            id: "fast",
+            name: "Fast",
+            modelType: "text",
+            traits: [],
+            capabilities: ["tool-calling"],
+          },
+        ],
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Model: Fast" })).toBeEnabled();
   });
 
   it("resolves clarification interruptions through the typed host command", async () => {
@@ -802,15 +1114,89 @@ describe("AgentWorkspace runtime wiring", () => {
     expect(screen.getByText("Thinking…")).toBeVisible();
     expect(container.querySelector(".agent-workspace[data-hero='true']")).toBeNull();
     expect(screen.queryByRole("button", { name: "Session actions" })).not.toBeInTheDocument();
+    const followUpComposer = screen.getByRole("textbox", { name: "Message June" });
+    await user.type(followUpComposer, "Follow-up draft");
 
     await act(async () => resolveCreate?.(newSession));
     await waitFor(() =>
       expect(mocks.invoke).toHaveBeenCalledWith("start_agent_run", expect.anything()),
     );
     expect(screen.getByRole("button", { name: "Session actions" })).toBeVisible();
+    expect(followUpComposer).toHaveTextContent("Follow-up draft");
     rerender(<AgentWorkspace initialSession={newSession} onSessionSelected={onSessionSelected} />);
     await waitFor(() =>
       expect(container.querySelector(".agent-user-turn")).toHaveTextContent("Fresh request"),
+    );
+  });
+
+  it("stages model and effort changes made while a fresh session is still being created", async () => {
+    const user = userEvent.setup();
+    let resolveCreate: ((value: AgentSessionDto) => void) | undefined;
+    const pendingCreate = new Promise<AgentSessionDto>((resolve) => {
+      resolveCreate = resolve;
+    });
+    const createdSession = { ...newSession, model: "fast" };
+    const defaultInvoke = mocks.invoke.getMockImplementation();
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      const sessionId = (args as { sessionId?: string } | undefined)?.sessionId;
+      if (command === "create_agent_session") return pendingCreate;
+      if (command === "get_agent_session" && sessionId === createdSession.id) {
+        return Promise.resolve(createdSession);
+      }
+      if (command === "list_agent_items" && sessionId === createdSession.id) {
+        return Promise.resolve([]);
+      }
+      return defaultInvoke?.(command, args);
+    });
+
+    const { rerender } = render(<AgentWorkspace />);
+    await user.click(await screen.findByRole("button", { name: "Model: Auto" }));
+    await user.click(screen.getByRole("button", { name: "All models" }));
+    await user.click(
+      within(screen.getByRole("group", { name: "All text models" })).getByRole("option", {
+        name: /Fast/,
+      }),
+    );
+    const composer = screen.getByRole("textbox", { name: "Message June" });
+    await user.type(composer, "Create this slowly");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await screen.findByText("Thinking…");
+
+    await user.click(screen.getByRole("button", { name: "Model: Fast" }));
+    await user.click(
+      within(screen.getByRole("listbox", { name: "Suggested text models" })).getByRole("option", {
+        name: /Auto/,
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Model: Auto" }));
+    await user.click(screen.getByRole("button", { name: /Effort.*Medium/ }));
+    await user.click(
+      within(screen.getByRole("group", { name: "Thinking level" })).getByRole("menuitemradio", {
+        name: /High.*Deeper reasoning/,
+      }),
+    );
+
+    await act(async () => resolveCreate?.(createdSession));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("start_agent_run", {
+        request: expect.objectContaining({
+          sessionId: createdSession.id,
+          model: "fast",
+          reasoningEffort: "medium",
+        }),
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Model: Auto" })).toHaveAttribute(
+      "title",
+      expect.stringContaining("Effort: High"),
+    );
+
+    rerender(<AgentWorkspace initialSession={session} />);
+    expect(await screen.findByRole("button", { name: "Model: Fast" })).toBeEnabled();
+    rerender(<AgentWorkspace initialSession={createdSession} />);
+    expect(await screen.findByRole("button", { name: "Model: Auto" })).toHaveAttribute(
+      "title",
+      expect.stringContaining("Effort: High"),
     );
   });
 
