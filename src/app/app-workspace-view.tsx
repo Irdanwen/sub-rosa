@@ -6,7 +6,7 @@ import { ShareLinkCopyAction } from "../components/share/ShareLinkCopyAction";
 import { NotesList } from "../components/notes-list/NotesList";
 import { BreadcrumbBar } from "../components/ui/BreadcrumbBar";
 import { IconProjects } from "central-icons/IconProjects";
-import { retryProcessing } from "../lib/tauri";
+import { agentRuntimeBindings, retryProcessing } from "../lib/tauri";
 import { selectSessionProjectContext } from "../lib/agent-project-context";
 import { messageFromError } from "../lib/errors";
 import {
@@ -30,6 +30,7 @@ export function renderAppWorkspace(dependencies: RenderAppWorkspaceDependencies)
     accessibilityStatus,
     account,
     accountLoading,
+    currentDataPartitionName,
     activeAgentSessionFolder,
     activeAgentSessionId,
     activeAgentSessionSeed,
@@ -90,6 +91,7 @@ export function renderAppWorkspace(dependencies: RenderAppWorkspaceDependencies)
     handleToggleSessionCompleted,
     handleTopUp,
     handleUpdateNote,
+    homeStoredSessionId,
     memoryFolderFilter,
     microphoneBlocked,
     microphoneStatus,
@@ -106,6 +108,7 @@ export function renderAppWorkspace(dependencies: RenderAppWorkspaceDependencies)
     recordingNoteId,
     refreshAccount,
     refreshFundingAccount,
+    rememberHomeSession,
     runUpdateCheck,
     selectedNote,
     selectedNoteId,
@@ -200,6 +203,43 @@ export function renderAppWorkspace(dependencies: RenderAppWorkspaceDependencies)
         setActiveAgentSession(session);
         setActiveView("agent");
       }}
+    />
+  ) : activeView === "home" ? (
+    <AgentWorkspaceRoute
+      key={`home:${currentDataPartitionName}`}
+      homeMode
+      homeUserDisplayName={account.user?.displayName}
+      initialSessionId={homeStoredSessionId}
+      onHomeSessionCreated={rememberHomeSession}
+      onOpenHomeTaskSession={(sessionId, title) => {
+        void (async () => {
+          try {
+            const session =
+              agentSessions.find((item) => item.id === sessionId) ??
+              (await agentRuntimeBindings.getSession(sessionId));
+            setAgentOrigin(undefined);
+            setActiveAgentSession(session);
+            setActiveView("agent");
+          } catch (cause) {
+            setError(messageFromError(cause) || `Could not open ${title}.`);
+          }
+        })();
+      }}
+      creditActionsDisabledReason={fundingRequired ? COMPOSER_FUNDING_DISABLED_REASON : undefined}
+      renderFundingNotice={
+        fundingRequired
+          ? (textFundingContext) => (
+              <FundingNotice
+                account={fundingAccount}
+                onRefresh={refreshFundingAccount}
+                textFundingContext={textFundingContext}
+              />
+            )
+          : undefined
+      }
+      fundingTier={fundingTierOf(fundingAccount)}
+      topUpLabel={topUpLabel}
+      onTopUp={handleTopUp}
     />
   ) : activeView === "agent" ? (
     // The origin crumbs render inside the workspace's own sticky

@@ -212,6 +212,7 @@ pub fn run() {
             routines::list_agent_routine_runs,
             routines::routine_browser_access_get,
             routines::routine_browser_access_set,
+            june_api::june_home_chat,
             commands::experimental_flags_get,
             commands::experimental_flags_set,
             commands::create_note,

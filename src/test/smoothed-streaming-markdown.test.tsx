@@ -391,6 +391,34 @@ describe("SmoothedStreamingMarkdown", () => {
     expect(view.container.textContent).toBe("MetricQ1Revenue1.2M");
   });
 
+  it("keeps streaming prose after a table finishes", () => {
+    vi.useFakeTimers();
+    const table = "| Metric | Q1 |\n| --- | --- |\n| Revenue | 1.2M |\n";
+    const view = render(<SmoothedStreamingMarkdown markdown="" running />);
+
+    view.rerender(<SmoothedStreamingMarkdown markdown={table} running />);
+    act(() => vi.advanceTimersByTime(80));
+    expect(view.container.querySelector("table")).not.toBeNull();
+
+    const afterTable = `${table}\nThe response continues after the table.`;
+    view.rerender(<SmoothedStreamingMarkdown markdown={afterTable} running />);
+    act(() => vi.advanceTimersByTime(80));
+    expect(view.container.textContent).toContain("The response continues after the table.");
+    expect(
+      [...view.container.querySelectorAll(".agent-stream-word")].some(
+        (word) => word.textContent === "continues",
+      ),
+    ).toBe(true);
+
+    view.rerender(
+      <SmoothedStreamingMarkdown markdown={`${afterTable} More streamed text.`} running />,
+    );
+    act(() => vi.advanceTimersByTime(80));
+    expect(view.container.textContent).toContain(
+      "The response continues after the table. More streamed text.",
+    );
+  });
+
   it("flushes a withheld tail when the turn completes", () => {
     vi.useFakeTimers();
     const view = render(<SmoothedStreamingMarkdown markdown="" running />);

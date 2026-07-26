@@ -14,6 +14,7 @@ import { IconShieldCrossed } from "central-icons/IconShieldCrossed";
 import { IconStop } from "central-icons/IconStop";
 import {
   type CSSProperties,
+  Fragment,
   type FormEvent,
   type RefObject,
   useCallback,
@@ -38,8 +39,11 @@ import type {
 } from "../../lib/agent-runtime-contract";
 import {
   agentRuntimeBindings,
+  assignSessionToProfile,
   downloadAgentArtifact,
   dictationHelperCommand,
+  juneHomeChat,
+  type JuneHomeChatResponse,
   listVeniceModels,
   providerModelSettings,
   type VeniceModelDto,
@@ -91,6 +95,7 @@ import { getCurrentDataPartitionName } from "../../lib/data-partition";
 import { AUTO_MODEL_ID, modelOptions, selectedModel } from "../settings/ModelPickerDialog";
 import { Dialog } from "../ui/Dialog";
 import { Spinner } from "../ui/Spinner";
+import { JuneBloom } from "../brand/JuneBloom";
 import { ShareDialog } from "../share/ShareDialog";
 import { buildSessionPayload } from "../../lib/share-payload";
 import {
@@ -100,6 +105,32 @@ import {
   forgetLastOpenSessionId,
 } from "./session-persistence";
 import type { AgentWorkspaceProps } from "./agent-workspace-types";
+import {
+  forgetJuneHomeStoredSessionId,
+  juneHomeDailyCheckIn,
+  juneHomeDayKey,
+  juneHomeDayLabel,
+  juneHomeGreetingParts,
+  juneHomeNudgePrompts,
+  JUNE_HOME_THREAD_CHANGED_EVENT,
+  resolveJuneHomeThreadSessionId,
+  stripJuneHomeContextFromPreview,
+  withJuneHomeCurrentResearch,
+  type JuneHomeConversationContext,
+  type JuneHomeTaskRequest,
+} from "../../lib/june-home";
+import type { AgentChatTurn } from "../../lib/agent-chat-runtime";
+import {
+  enqueueHomeDirectChat,
+  homeConversationContextFromTurns,
+  homeDemoReply,
+  insertHomeDirectReply,
+  persistHomeDirectTurns,
+  persistHomeTaskHandoffs,
+  readHomeDirectTurns,
+  readHomeTaskHandoffs,
+  type HomeTaskHandoff,
+} from "./home-thread";
 
 export type { AgentWorkspaceOrigin } from "./agent-workspace-types";
 export { markAgentNewSessionPending } from "./session-persistence";
@@ -169,6 +200,10 @@ function artifactView(artifact: AgentArtifactDto): AgentArtifact {
 export function AgentWorkspace({
   initialSession,
   initialSessionId,
+  homeMode = false,
+  homeUserDisplayName,
+  onHomeSessionCreated,
+  onOpenHomeTaskSession,
   origin,
   onSessionSelected,
   onMoveSessionToProject,
@@ -196,8 +231,13 @@ export function AgentWorkspace({
   const [compactResult, setCompactResult] = useState<string>();
   const [models, setModels] = useState<VeniceModelDto[]>([]);
   const [veniceApiKeyConfigured, setVeniceApiKeyConfigured] = useState(false);
-  const [model, setModel] = useState(initialAgentSession?.model || DEFAULT_MODEL);
+  const focusedHomeModelRef = useRef(DEFAULT_MODEL);
+  const focusedHomeThinkingLevelRef = useRef(loadThinkingLevel());
+  const [model, setModel] = useState(
+    homeMode ? AUTO_MODEL_ID : initialAgentSession?.model || DEFAULT_MODEL,
+  );
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() => {
+    if (homeMode) return "instant";
     const sessionLevel = initialAgentSession?.id
       ? loadSessionThinkingLevels()[initialAgentSession.id]
       : undefined;
@@ -207,6 +247,12 @@ export function AgentWorkspace({
     initialAgentSession?.safetyMode ?? "sandboxed",
   );
   const [draft, setDraft] = useState(pendingRequestRef.current?.prompt ?? "");
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const setComposerDraft = useCallback((value: string) => {
+    draftRef.current = value;
+    setDraft(value);
+  }, []);
   const [attachments, setAttachments] = useState<string[]>([]);
   const [queuedFollowUp, setQueuedFollowUp] = useState<{
     messageId: string;
@@ -229,6 +275,21 @@ export function AgentWorkspace({
   const [composerClearance, setComposerClearance] = useState(0);
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
+  const [homeDirectTurns, setHomeDirectTurns] = useState<AgentChatTurn[]>(() =>
+    homeMode ? readHomeDirectTurns(initialSessionId) : [],
+  );
+  const homeDirectTurnsRef = useRef(homeDirectTurns);
+  const [homeTaskHandoffs, setHomeTaskHandoffs] = useState<HomeTaskHandoff[]>(() =>
+    homeMode ? readHomeTaskHandoffs(initialSessionId) : [],
+  );
+  const [homeStreamingReply, setHomeStreamingReply] = useState<AgentChatTurn | null>(null);
+  const [homeDirectPendingCount, setHomeDirectPendingCount] = useState(0);
+  const homeSessionPromiseRef = useRef<Promise<string> | null>(null);
+  const handledHomeTaskToolCallsRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    homeDirectTurnsRef.current = homeDirectTurns;
+  }, [homeDirectTurns]);
 
   const startNewSession = useCallback(
     (request?: AgentNewSessionDetail) => {
@@ -264,6 +325,31 @@ export function AgentWorkspace({
     ? creditActionsDisabledReason
     : undefined;
 
+  useEffect(() => {
+    if (!homeMode || !selectedId) return;
+    const restoredTurns = readHomeDirectTurns(selectedId);
+    const restoredHandoffs = readHomeTaskHandoffs(selectedId);
+    homeDirectTurnsRef.current = restoredTurns;
+    setHomeDirectTurns(restoredTurns);
+    setHomeTaskHandoffs(restoredHandoffs);
+    onHomeSessionCreated?.(selectedId);
+  }, [homeMode, onHomeSessionCreated, selectedId]);
+
+  useEffect(() => {
+    if (!homeMode) return;
+    const refreshHomeThread = (event: Event) => {
+      const storedSessionId = (event as CustomEvent<{ storedSessionId?: string }>).detail
+        ?.storedSessionId;
+      if (!storedSessionId || storedSessionId !== selectedIdRef.current) return;
+      const restoredTurns = readHomeDirectTurns(storedSessionId);
+      homeDirectTurnsRef.current = restoredTurns;
+      setHomeDirectTurns(restoredTurns);
+      setHomeTaskHandoffs(readHomeTaskHandoffs(storedSessionId));
+    };
+    window.addEventListener(JUNE_HOME_THREAD_CHANGED_EVENT, refreshHomeThread);
+    return () => window.removeEventListener(JUNE_HOME_THREAD_CHANGED_EVENT, refreshHomeThread);
+  }, [homeMode]);
+
   const publishSessions = useCallback((next: AgentSessionDto[]) => {
     setSessions(next);
     dispatchAgentSessionsChanged({
@@ -298,22 +384,41 @@ export function AgentWorkspace({
         run: latestRun ?? undefined,
       });
       setArtifacts(files);
-      setModel(session.model);
-      setThinkingLevel(loadSessionThinkingLevels()[session.id] ?? loadThinkingLevel());
-      setSafetyMode(session.safetyMode);
+      setModel(homeMode ? AUTO_MODEL_ID : session.model);
+      setThinkingLevel(
+        homeMode ? "instant" : (loadSessionThinkingLevels()[session.id] ?? loadThinkingLevel()),
+      );
+      setSafetyMode(homeMode ? "sandboxed" : session.safetyMode);
       setNewSessionMode(false);
-      writeLastOpenSessionId(sessionId);
+      if (!homeMode) writeLastOpenSessionId(sessionId);
       onSessionSelected?.(session);
     },
-    [onSessionSelected],
+    [homeMode, onSessionSelected],
   );
 
   useEffect(() => {
-    void refreshSessions().catch((cause) => setError(messageFromError(cause)));
+    void refreshSessions()
+      .then((next) => {
+        const selected = selectedIdRef.current;
+        if (!homeMode || !selected || next.some((session) => session.id === selected)) return;
+        forgetJuneHomeStoredSessionId(getCurrentDataPartitionName(), selected);
+        selectedIdRef.current = undefined;
+        setSelectedId(undefined);
+        setNewSessionMode(true);
+        setProjection(createAgentRuntimeProjection());
+        setArtifacts([]);
+        setError(undefined);
+      })
+      .catch((cause) => setError(messageFromError(cause)));
     void listVeniceModels("generation")
       .then((response) => {
         setModels(response.models);
-        if (!initialAgentSession?.model && response.selectedModel) setModel(response.selectedModel);
+        if (homeMode) {
+          focusedHomeModelRef.current = response.selectedModel || DEFAULT_MODEL;
+        }
+        if (!homeMode && !initialAgentSession?.model && response.selectedModel) {
+          setModel(response.selectedModel);
+        }
       })
       .catch(() => undefined);
     void providerModelSettings()
@@ -321,7 +426,7 @@ export function AgentWorkspace({
         setVeniceApiKeyConfigured(response.effectiveSettings.veniceApiKeyConfigured),
       )
       .catch(() => setVeniceApiKeyConfigured(false));
-  }, [initialAgentSession?.model, refreshSessions]);
+  }, [homeMode, initialAgentSession?.model, refreshSessions]);
 
   useEffect(() => {
     const nextId = initialSession?.id ?? initialSessionId;
@@ -338,8 +443,11 @@ export function AgentWorkspace({
       setSafetyMode(initialSession.safetyMode);
       setNewSessionMode(false);
     }
-    void hydrate(nextId).catch((cause) => setError(messageFromError(cause)));
-  }, [hydrate, initialSession?.id, initialSessionId]);
+    void hydrate(nextId).catch((cause) => {
+      if (homeMode && selectedIdRef.current !== nextId) return;
+      setError(messageFromError(cause));
+    });
+  }, [homeMode, hydrate, initialSession?.id, initialSessionId]);
 
   useEffect(() => {
     const handleNewSession = (event: Event) => {
@@ -555,6 +663,329 @@ export function AgentWorkspace({
     }
   }
 
+  async function ensureHomeSession(): Promise<string> {
+    const selected = selectedIdRef.current;
+    if (selected) return selected;
+    if (homeSessionPromiseRef.current) return homeSessionPromiseRef.current;
+
+    const creation = agentRuntimeBindings
+      .createSession({
+        title: "Home",
+        model: AUTO_MODEL_ID,
+        safetyMode: "sandboxed",
+        profile: getCurrentDataPartitionName(),
+      })
+      .then((createdSession) => {
+        setSelectedId(createdSession.id);
+        selectedIdRef.current = createdSession.id;
+        setNewSessionMode(false);
+        setSessions((current) => [
+          createdSession,
+          ...current.filter((session) => session.id !== createdSession.id),
+        ]);
+        setProjection(createAgentRuntimeProjection({ session: createdSession }));
+        rememberSessionThinkingLevel(createdSession.id, "instant");
+        onHomeSessionCreated?.(createdSession.id);
+        return createdSession.id;
+      });
+    homeSessionPromiseRef.current = creation;
+    try {
+      return await creation;
+    } finally {
+      if (homeSessionPromiseRef.current === creation) homeSessionPromiseRef.current = null;
+    }
+  }
+
+  function commitHomeDirectTurns(storedSessionId: string, nextTurns: AgentChatTurn[]) {
+    homeDirectTurnsRef.current = nextTurns;
+    setHomeDirectTurns(nextTurns);
+    persistHomeDirectTurns(storedSessionId, nextTurns);
+  }
+
+  async function startHomeTask(
+    request: JuneHomeTaskRequest,
+    toolCallId: string,
+    conversation: JuneHomeConversationContext,
+    homeStoredSessionId: string,
+    profile: string,
+    taskAttachments: string[] = [],
+  ) {
+    const activeHomeSessionId = resolveJuneHomeThreadSessionId(homeStoredSessionId);
+    if (!activeHomeSessionId) return;
+    if (handledHomeTaskToolCallsRef.current.has(toolCallId)) return;
+    const handoffId = `home-task-${toolCallId}`;
+    const existing = readHomeTaskHandoffs(homeStoredSessionId).find(
+      (handoff) => handoff.id === handoffId,
+    );
+    if (existing && existing.status !== "failed") {
+      handledHomeTaskToolCallsRef.current.add(toolCallId);
+      return;
+    }
+    handledHomeTaskToolCallsRef.current.add(toolCallId);
+    const starting: HomeTaskHandoff = {
+      ...request,
+      id: handoffId,
+      status: "starting",
+      profile,
+      ...(taskAttachments.length ? { attachments: taskAttachments } : {}),
+    };
+    const storedHandoffs = readHomeTaskHandoffs(homeStoredSessionId);
+    const nextHandoffs = storedHandoffs.some((handoff) => handoff.id === handoffId)
+      ? storedHandoffs.map((handoff) => (handoff.id === handoffId ? starting : handoff))
+      : [...storedHandoffs, starting];
+    setHomeTaskHandoffs(nextHandoffs);
+    persistHomeTaskHandoffs(homeStoredSessionId, nextHandoffs);
+
+    const updateHandoff = (patch: Partial<HomeTaskHandoff>) => {
+      const next = readHomeTaskHandoffs(homeStoredSessionId).map((handoff) =>
+        handoff.id === handoffId ? { ...handoff, ...patch } : handoff,
+      );
+      setHomeTaskHandoffs(next);
+      persistHomeTaskHandoffs(homeStoredSessionId, next);
+    };
+
+    let focusedSession: AgentSessionDto | undefined;
+    try {
+      const focusedModel = focusedHomeModelRef.current;
+      const focusedThinkingLevel = focusedHomeThinkingLevelRef.current;
+      focusedSession = await agentRuntimeBindings.createSession({
+        title: request.title,
+        model: focusedModel,
+        safetyMode: "sandboxed",
+        profile: activeHomeSessionId === homeStoredSessionId ? profile : "default",
+      });
+      const activeAfterCreation = resolveJuneHomeThreadSessionId(homeStoredSessionId);
+      if (!activeAfterCreation) {
+        await agentRuntimeBindings.deleteSession(focusedSession.id);
+        return;
+      }
+      if (activeAfterCreation !== activeHomeSessionId) {
+        await assignSessionToProfile(focusedSession.id, "default");
+      }
+      const enabledSkillIds = (await agentRuntimeBindings.listSkills())
+        .filter((skill) => skill.enabled)
+        .map((skill) => skill.id);
+      const runtimePrompt = request.requiresCurrentResearch
+        ? withJuneHomeCurrentResearch(request.prompt, conversation)
+        : request.prompt;
+      await agentRuntimeBindings.startRun({
+        sessionId: focusedSession.id,
+        prompt: runtimePrompt,
+        model: focusedModel,
+        reasoningEffort: thinkingEffortForLevel(focusedThinkingLevel) as
+          | "minimal"
+          | "medium"
+          | "high",
+        safetyMode: "sandboxed",
+        workspacePath: focusedSession.workspacePath,
+        enabledSkillIds,
+        attachments: taskAttachments,
+      });
+      updateHandoff({ status: "running", storedSessionId: focusedSession.id });
+      void refreshSessions().catch(() => undefined);
+    } catch (cause) {
+      if (focusedSession) {
+        await agentRuntimeBindings.deleteSession(focusedSession.id).catch(() => undefined);
+      }
+      updateHandoff({ status: "failed", error: messageFromError(cause) });
+    }
+  }
+
+  function retryHomeTask(handoff: HomeTaskHandoff) {
+    if (handoff.status !== "failed") return;
+    const toolCallId = handoff.id.replace(/^home-task-/, "");
+    handledHomeTaskToolCallsRef.current.delete(toolCallId);
+    const homeStoredSessionId = selectedIdRef.current;
+    if (!homeStoredSessionId) return;
+    const conversation = homeConversationContextFromTurns([
+      ...turns,
+      ...readHomeDirectTurns(homeStoredSessionId),
+    ]);
+    void startHomeTask(
+      {
+        title: handoff.title,
+        prompt: handoff.prompt,
+        ...(handoff.summary ? { summary: handoff.summary } : {}),
+        ...(handoff.requiresCurrentResearch ? { requiresCurrentResearch: true } : {}),
+      },
+      toolCallId,
+      conversation,
+      homeStoredSessionId,
+      handoff.profile ?? getCurrentDataPartitionName(),
+      handoff.attachments ?? [],
+    );
+  }
+
+  async function submitHomeMessage(event?: FormEvent) {
+    event?.preventDefault();
+    const message = draft.trim();
+    if (!message || submitting || textActionsDisabledReason) return;
+    if (Array.from(message).length > 64_000) {
+      setError("Home messages must be 64,000 characters or less.");
+      return;
+    }
+    const profile = getCurrentDataPartitionName();
+    const messageAttachments = attachments;
+    setDraft("");
+    draftRef.current = "";
+    setAttachments([]);
+    setHomeDirectPendingCount((count) => count + 1);
+
+    let storedSessionId: string | undefined;
+    try {
+      storedSessionId = await ensureHomeSession();
+      const suffix = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
+      const userTurn: AgentChatTurn = {
+        id: `home:direct:user:${suffix}`,
+        role: "user",
+        createdAt: new Date().toISOString(),
+        status: "complete",
+        parts: [
+          { type: "text", text: message, status: "complete" },
+          ...messageAttachments.map((path) => ({
+            type: "attachment" as const,
+            name: path.split(/[\\/]/).pop() || path,
+            path,
+            kind: /\.(?:png|jpe?g|gif|webp|tiff?|bmp|avif)$/i.test(path)
+              ? ("image" as const)
+              : ("file" as const),
+          })),
+        ],
+      };
+      commitHomeDirectTurns(storedSessionId, [...readHomeDirectTurns(storedSessionId), userTurn]);
+
+      // Attachments and commands need the full June tool/runtime context. Home
+      // hands them to a focused session deterministically instead of running a
+      // second hidden agent turn and hoping it emits a legacy bridge tool.
+      if (messageAttachments.length > 0 || message.startsWith("/")) {
+        const toolCallId = `focused:${suffix}`;
+        const assistantTurn: AgentChatTurn = {
+          id: `home:direct:assistant:${suffix}`,
+          role: "assistant",
+          createdAt: new Date().toISOString(),
+          status: "complete",
+          parts: [
+            {
+              type: "tool",
+              id: toolCallId,
+              name: "june_home_start_task",
+              text: "",
+              status: "complete",
+            },
+          ],
+        };
+        const nextTurns = insertHomeDirectReply(storedSessionId, userTurn.id, assistantTurn);
+        homeDirectTurnsRef.current = nextTurns;
+        setHomeDirectTurns(nextTurns);
+        const conversation = homeConversationContextFromTurns([...turns, ...nextTurns]);
+        void startHomeTask(
+          { title: titleFromPrompt(message), prompt: message },
+          toolCallId,
+          conversation,
+          storedSessionId,
+          profile,
+          messageAttachments,
+        );
+        setError(undefined);
+        return;
+      }
+
+      await enqueueHomeDirectChat(storedSessionId, async () => {
+        const currentTurns = readHomeDirectTurns(storedSessionId as string);
+        const userIndex = currentTurns.findIndex((turn) => turn.id === userTurn.id);
+        const contextTurns = userIndex < 0 ? currentTurns : currentTurns.slice(0, userIndex + 1);
+        const conversation = homeConversationContextFromTurns([...turns, ...contextTurns]);
+        const streamingTurnId = `home:direct:assistant:${suffix}`;
+        const streamingStartedAt = new Date().toISOString();
+        let streamedContent = "";
+        let acceptingDeltas = true;
+        const onDelta = (content: string) => {
+          if (!acceptingDeltas) return;
+          streamedContent += content;
+          setHomeStreamingReply({
+            id: `${streamingTurnId}:stream`,
+            role: "assistant",
+            createdAt: streamingStartedAt,
+            status: "running",
+            parts: [{ type: "text", text: streamedContent, status: "running" }],
+          });
+        };
+        let response: JuneHomeChatResponse;
+        try {
+          response =
+            (await homeDemoReply(profile, onDelta)) ??
+            (await juneHomeChat(conversation.recentMessages, {
+              profile,
+              ...(conversation.earlierContext
+                ? { historyContext: conversation.earlierContext }
+                : {}),
+              onDelta,
+            }));
+        } finally {
+          acceptingDeltas = false;
+        }
+        const toolCallId = response.task ? `direct:${suffix}` : undefined;
+        const assistantTurn: AgentChatTurn =
+          response.task && toolCallId
+            ? {
+                id: streamingTurnId,
+                role: "assistant",
+                createdAt: new Date().toISOString(),
+                status: "complete",
+                parts: [
+                  {
+                    type: "tool",
+                    id: toolCallId,
+                    name: "june_home_start_task",
+                    text: "",
+                    status: "complete",
+                  },
+                ],
+              }
+            : {
+                id: streamingTurnId,
+                role: "assistant",
+                createdAt: new Date().toISOString(),
+                status: "complete",
+                parts: [
+                  {
+                    type: "text",
+                    text: response.content?.trim() || streamedContent.trim() || "I'm here.",
+                    status: "complete",
+                  },
+                ],
+              };
+        const nextTurns = insertHomeDirectReply(
+          storedSessionId as string,
+          userTurn.id,
+          assistantTurn,
+        );
+        homeDirectTurnsRef.current = nextTurns;
+        setHomeDirectTurns(nextTurns);
+        setHomeStreamingReply(null);
+        if (response.task && toolCallId) {
+          void startHomeTask(
+            response.task,
+            toolCallId,
+            conversation,
+            storedSessionId as string,
+            profile,
+          );
+        }
+      });
+      setError(undefined);
+    } catch (cause) {
+      setHomeStreamingReply(null);
+      // The persisted user bubble is the durable retry record. Never remove it
+      // when a newer draft exists or when this workspace unmounted while the
+      // request was in flight. Restore the text only when the composer is free.
+      if (!draftRef.current.trim()) setDraft(message);
+      setError(messageFromError(cause));
+    } finally {
+      setHomeDirectPendingCount((count) => Math.max(0, count - 1));
+    }
+  }
+
   async function stop() {
     if (!projection.run) return;
     try {
@@ -729,7 +1160,69 @@ export function AgentWorkspace({
     await refreshSessions();
   }
 
-  const heroMode = newSessionMode && !selectedSession;
+  const heroMode = !homeMode && newSessionMode && !selectedSession;
+  const homeConversationTurns = useMemo(
+    () =>
+      [
+        ...turns.map((turn) =>
+          turn.role === "user"
+            ? {
+                ...turn,
+                parts: turn.parts.map((part) =>
+                  part.type === "text"
+                    ? {
+                        ...part,
+                        text: stripJuneHomeContextFromPreview(part.text) ?? part.text,
+                      }
+                    : part,
+                ),
+              }
+            : turn,
+        ),
+        ...homeDirectTurns,
+        ...(homeStreamingReply ? [homeStreamingReply] : []),
+      ].sort(
+        (left, right) =>
+          left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
+      ),
+    [homeDirectTurns, homeStreamingReply, turns],
+  );
+  const homeHandoffsByTurnId = useMemo(() => {
+    const handoffs = new Map<string, HomeTaskHandoff>();
+    for (const turn of homeConversationTurns) {
+      const tool = turn.parts.find(
+        (part) =>
+          part.type === "tool" &&
+          homeTaskHandoffs.some((handoff) => handoff.id === `home-task-${part.id}`),
+      );
+      const handoff =
+        tool?.type === "tool"
+          ? homeTaskHandoffs.find((candidate) => candidate.id === `home-task-${tool.id}`)
+          : undefined;
+      if (handoff) handoffs.set(turn.id, handoff);
+    }
+    return handoffs;
+  }, [homeConversationTurns, homeTaskHandoffs]);
+  const homeUserRunEndIds = useMemo(() => {
+    const ids = new Set<string>();
+    homeConversationTurns.forEach((turn, index) => {
+      if (turn.role === "user" && homeConversationTurns[index + 1]?.role !== "user") {
+        ids.add(turn.id);
+      }
+    });
+    return ids;
+  }, [homeConversationTurns]);
+  const homeCheckIn = homeMode
+    ? juneHomeDailyCheckIn(getCurrentDataPartitionName())
+    : { createdAt: "", text: "" };
+  const lastHomeTurn = homeConversationTurns.at(-1);
+  const homeGreetingVisible =
+    homeMode && (!lastHomeTurn || lastHomeTurn.createdAt.localeCompare(homeCheckIn.createdAt) < 0);
+  const homeGreeting = juneHomeGreetingParts(new Date(), {
+    displayName: homeUserDisplayName,
+    returning: homeConversationTurns.length > 0,
+  });
+  const homeNudgePrompts = juneHomeNudgePrompts(new Date());
   const renderedArtifacts = artifacts.filter((artifact) => artifact.available).map(artifactView);
   const openArtifact = (artifact: AgentArtifact) => setArtifactPanel({ view: "file", artifact });
   const downloadArtifact = async (artifact: AgentArtifact) => {
@@ -780,7 +1273,7 @@ export function AgentWorkspace({
       formRef={composerRef}
       scrollRef={scrollRef}
       draft={draft}
-      setDraft={setDraft}
+      setDraft={setComposerDraft}
       model={model}
       setModel={setModel}
       thinkingLevel={thinkingLevel}
@@ -796,7 +1289,7 @@ export function AgentWorkspace({
       setAttachments={setAttachments}
       onPickAttachments={pickAttachments}
       onDictate={startDictation}
-      onSubmit={submit}
+      onSubmit={homeMode ? submitHomeMessage : submit}
       onStop={stop}
       running={running}
       submitting={submitting}
@@ -808,10 +1301,11 @@ export function AgentWorkspace({
     <>
       <section
         className="agent-workspace"
-        aria-label="Session"
+        aria-label={homeMode ? "Home" : "Session"}
         data-hero={heroMode ? "true" : undefined}
+        data-home={homeMode ? "true" : undefined}
       >
-        {!heroMode ? (
+        {!heroMode && !homeMode ? (
           <AgentSessionBar
             origin={origin}
             title={selectedSession?.title ?? ""}
@@ -853,7 +1347,87 @@ export function AgentWorkspace({
             onDelete={remove}
           />
         ) : null}
-        {heroMode ? (
+        {homeMode ? (
+          <div
+            ref={scrollRef}
+            className="agent-scroll"
+            style={{ "--agent-composer-clearance": `${composerClearance}px` } as CSSProperties}
+          >
+            <main className="agent-main" aria-label="Home conversation">
+              {error ? (
+                <div className="agent-composer-notice" role="alert">
+                  {error}
+                </div>
+              ) : null}
+              <div className="agent-timeline" data-home="true">
+                {homeConversationTurns.map((turn, index) => {
+                  const previous = index > 0 ? homeConversationTurns[index - 1] : undefined;
+                  const dayKey = juneHomeDayKey(turn.createdAt);
+                  const dayMarker =
+                    previous && dayKey && dayKey !== juneHomeDayKey(previous.createdAt) ? (
+                      <div className="agent-home-day">{juneHomeDayLabel(turn.createdAt)}</div>
+                    ) : null;
+                  return (
+                    <Fragment key={turn.id}>
+                      {dayMarker}
+                      <AgentChatTurnRow
+                        turn={turn}
+                        approvalSubmitting={approvalSubmitting}
+                        clarifySubmitting={clarifySubmitting}
+                        sudoSubmitting={{}}
+                        secretSubmitting={secretSubmitting}
+                        thinkingOpen={(key) => thinkingOpen[key] ?? false}
+                        onThinkingOpenChange={(key, open) =>
+                          setThinkingOpen((current) => ({ ...current, [key]: open }))
+                        }
+                        onApproval={(part, choice) => void respondToApproval(part.id, choice)}
+                        onClarify={(part, answer) => void respondToClarification(part.id, answer)}
+                        onSudo={() => undefined}
+                        onSecret={(part, secret) => void respondToSecret(part.id, secret)}
+                        homeTaskHandoff={homeHandoffsByTurnId.get(turn.id)}
+                        onOpenHomeTaskSession={onOpenHomeTaskSession}
+                        onRetryHomeTask={retryHomeTask}
+                        homeUserRunEnd={homeUserRunEndIds.has(turn.id)}
+                      />
+                    </Fragment>
+                  );
+                })}
+                {homeGreetingVisible ? (
+                  <>
+                    {homeConversationTurns.length > 0 &&
+                    juneHomeDayKey(homeCheckIn.createdAt) !==
+                      juneHomeDayKey(homeConversationTurns.at(-1)?.createdAt ?? "") ? (
+                      <div className="agent-home-day">
+                        {juneHomeDayLabel(homeCheckIn.createdAt)}
+                      </div>
+                    ) : null}
+                    <div className="agent-home-greeting">
+                      <span className="agent-home-greeting-mark" aria-hidden>
+                        <JuneBloom size={30} animated />
+                      </span>
+                      <h2>{homeGreeting.salutation}</h2>
+                      <p>{homeGreeting.question}</p>
+                    </div>
+                  </>
+                ) : null}
+                {homeConversationTurns.length === 0 ? (
+                  <section className="agent-home-nudges" aria-label="Suggestions">
+                    {homeNudgePrompts.map((prompt) => (
+                      <button key={prompt} type="button" onClick={() => setDraft(prompt)}>
+                        {prompt}
+                      </button>
+                    ))}
+                  </section>
+                ) : null}
+                <AgentThinking
+                  variant="typing-bubble"
+                  visible={!homeStreamingReply && homeDirectPendingCount > 0}
+                />
+              </div>
+              {composer}
+            </main>
+          </div>
+        ) : heroMode ? (
           <main className="agent-main" aria-label="Agent task details" data-hero="true">
             {error ? (
               <div className="agent-composer-notice" role="alert">

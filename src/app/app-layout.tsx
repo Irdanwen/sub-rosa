@@ -17,7 +17,7 @@ import { OPEN_REFERRAL_DIALOG_EVENT, ReferralNudge } from "../components/referra
 import { markReferralNudgeClickedThrough } from "../lib/referral-nudge";
 import { Dialog } from "../components/ui/Dialog";
 import { osAccountsOpenPortal } from "../lib/tauri";
-import { isWindowsPlatform } from "../lib/platform";
+import { isMacLikePlatform, isWindowsPlatform } from "../lib/platform";
 import { messageFromError } from "../lib/errors";
 import type { AgentSessionDto } from "../lib/agent-runtime-contract";
 import type { NoteListItemDto } from "../lib/tauri";
@@ -85,6 +85,7 @@ export function renderAppLayout(dependencies: RenderAppLayoutDependencies) {
     handleSetSessionFolder,
     handleSignOut,
     handleToggleSessionCompleted,
+    homeStoredSessionId,
     mainPanelBodyRef,
     maxUpgradeError,
     maxUpgradePrompt,
@@ -203,6 +204,8 @@ export function renderAppLayout(dependencies: RenderAppLayoutDependencies) {
       <Sidebar
         notes={state.notes}
         activeView={activeView}
+        homeEnabled={isMacLikePlatform()}
+        homeStoredSessionId={homeStoredSessionId}
         account={account}
         settingsTab={settingsTab}
         onSettingsTabChange={changeSettingsTab}
@@ -340,7 +343,11 @@ export function renderAppLayout(dependencies: RenderAppLayoutDependencies) {
           layoutFrozen={sidebarResizing}
           onDragRegionPointerDown={handleTitlebarPointerDown}
         />
-        <section className={`main-panel${activeView === "agent" ? " main-panel-agent-view" : ""}`}>
+        <section
+          className={`main-panel${
+            activeView === "agent" || activeView === "home" ? " main-panel-agent-view" : ""
+          }`}
+        >
           {accessibilityBlocked && !accessibilityBannerDismissed ? (
             <PermissionBanner
               onDismiss={() => setAccessibilityBannerDismissed(true)}

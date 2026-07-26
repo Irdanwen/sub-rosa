@@ -1,5 +1,6 @@
 import { IconArrowsRepeat } from "central-icons/IconArrowsRepeat";
 import { IconBranch } from "central-icons/IconBranch";
+import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
 import { IconConcise } from "central-icons/IconConcise";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -17,6 +18,7 @@ import { hasBrowserAccessRequest, stripBrowserAccessRequest } from "../../../lib
 import { agentFilePreview } from "../../../lib/tauri";
 import type { FundingTier } from "../../account/FundingNotice";
 import { CopyStateIcon } from "../../ui/CopyStateIcon";
+import { DotSpinner } from "../../DotSpinner";
 import { HoverTip } from "../../ui/HoverTip";
 import { relativeDate } from "../agent-workspace-helpers";
 import { FileTypeIcon } from "../FileTypeIcon";
@@ -45,6 +47,7 @@ import {
   UpstreamProviderFailureNoticePart,
 } from "./RunNotices";
 import { AgentThinkingGroup, AgentToolStack } from "./ThinkingAndTools";
+import type { HomeTaskHandoff } from "../home-thread";
 
 export function AgentChatTurnRow({
   activeThinkingKey,
@@ -78,6 +81,10 @@ export function AgentChatTurnRow({
   onVisibleMarkdownChange,
   onBranch,
   branching,
+  homeTaskHandoff,
+  onOpenHomeTaskSession,
+  onRetryHomeTask,
+  homeUserRunEnd,
   turn,
 }: {
   activeThinkingKey?: string;
@@ -120,6 +127,10 @@ export function AgentChatTurnRow({
   onVisibleMarkdownChange?: (visibleMarkdown: string) => void;
   onBranch?: (itemId: string) => void;
   branching?: boolean;
+  homeTaskHandoff?: HomeTaskHandoff;
+  onOpenHomeTaskSession?: (storedSessionId: string, title: string) => void;
+  onRetryHomeTask?: (handoff: HomeTaskHandoff) => void;
+  homeUserRunEnd?: boolean;
   turn: AgentChatTurn;
 }) {
   const textParts = turn.parts.filter(
@@ -340,11 +351,54 @@ export function AgentChatTurnRow({
     );
   }
 
+  if (homeTaskHandoff) {
+    const copy =
+      homeTaskHandoff.status === "failed"
+        ? `I couldn't create the session for “${homeTaskHandoff.title}”.`
+        : homeTaskHandoff.status === "starting"
+          ? `I'm creating a session for “${homeTaskHandoff.title}”...`
+          : `I created a session for “${homeTaskHandoff.title}”.`;
+    return (
+      <article className="agent-assistant-turn" data-status={homeTaskHandoff.status}>
+        <div className="agent-assistant-turn-body">
+          <div className="agent-home-task-message" data-status={homeTaskHandoff.status}>
+            <span>{copy}</span>
+            {homeTaskHandoff.status === "failed" ? (
+              onRetryHomeTask ? (
+                <button type="button" onClick={() => onRetryHomeTask(homeTaskHandoff)}>
+                  Try again
+                </button>
+              ) : null
+            ) : homeTaskHandoff.storedSessionId ? (
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenHomeTaskSession?.(
+                    homeTaskHandoff.storedSessionId as string,
+                    homeTaskHandoff.title,
+                  )
+                }
+              >
+                Open session
+                <IconChevronRightSmall size={14} aria-hidden />
+              </button>
+            ) : (
+              <span className="agent-home-task-pending" role="status" aria-label="Creating session">
+                <DotSpinner />
+              </span>
+            )}
+          </div>
+        </div>
+      </article>
+    );
+  }
+
   if (turn.role === "user") {
     return (
       <article
         className="agent-user-turn"
         data-scheduled-run={turn.isScheduledRun ? "true" : undefined}
+        data-user-run-end={homeUserRunEnd ? "true" : undefined}
       >
         {turn.isScheduledRun ? (
           <span className="agent-user-turn-eyebrow">

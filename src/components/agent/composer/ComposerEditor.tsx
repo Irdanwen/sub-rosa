@@ -78,6 +78,8 @@ type ComposerEditorProps = {
   /** Returns true when the host handles the selected command as an immediate
    * action instead of inserting its slash text into the draft. */
   onBuiltinSlashCommand?: (name: BuiltinComposerSlashCommandName) => boolean;
+  /** Builtin commands the host surface does not offer in the slash menu. */
+  hiddenBuiltinSlashCommands?: readonly BuiltinComposerSlashCommandName[];
   /** Hands the live editor up to the parent (e.g. so the composer box can read
    * its DOM element for layout). */
   onReady?: (editor: Editor) => void;
@@ -89,6 +91,26 @@ type ComposerEditorProps = {
 };
 
 export const COMPOSER_CHANGE_DELAY_MS = 75;
+
+export function composerScrollMargin(fadeSize: string, paddingBottom: string): number {
+  const parsedFadeSize = Number.parseFloat(fadeSize);
+  const parsedPadding = Number.parseFloat(paddingBottom);
+  return Math.max(
+    Number.isFinite(parsedFadeSize) ? parsedFadeSize : 0,
+    Number.isFinite(parsedPadding) ? parsedPadding : 6,
+  );
+}
+
+export type ComposerDocumentEdge = "start" | "end";
+
+export function composerDocumentEdge(
+  selectionHead: number,
+  documentEnd: number,
+): ComposerDocumentEdge | null {
+  if (selectionHead <= 1) return "start";
+  if (selectionHead >= documentEnd - 1) return "end";
+  return null;
+}
 
 type PendingEditorAction =
   | { type: "focus" }
@@ -316,6 +338,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       onFocusChange,
       onContentChange,
       onBuiltinSlashCommand,
+      hiddenBuiltinSlashCommands,
       onReady,
       testOnlySerializePlainText,
       testOnlyChangeDelayMs,
@@ -348,6 +371,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     const onFocusChangeRef = useRef(onFocusChange);
     const onContentChangeRef = useRef(onContentChange);
     const onBuiltinSlashCommandRef = useRef(onBuiltinSlashCommand);
+    const hiddenBuiltinSlashCommandsRef = useRef(hiddenBuiltinSlashCommands);
     const onReadyRef = useRef(onReady);
     useEffect(() => {
       onChangeRef.current = onChange;
@@ -356,6 +380,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       onFocusChangeRef.current = onFocusChange;
       onContentChangeRef.current = onContentChange;
       onBuiltinSlashCommandRef.current = onBuiltinSlashCommand;
+      hiddenBuiltinSlashCommandsRef.current = hiddenBuiltinSlashCommands;
       onReadyRef.current = onReady;
       skillsRef.current = skills;
     }, [
@@ -365,6 +390,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       onFocusChange,
       onContentChange,
       onBuiltinSlashCommand,
+      hiddenBuiltinSlashCommands,
       onReady,
       skills,
     ]);
@@ -466,7 +492,21 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       if (!nextEditor.state.selection.empty) {
         delete frame.dataset.fadeTop;
         delete frame.dataset.fadeBottom;
+        delete frame.dataset.caretEdge;
         return;
+      }
+      const selectionEdge = composerDocumentEdge(
+        nextEditor.state.selection.head,
+        nextEditor.state.doc.content.size,
+      );
+      if (selectionEdge) {
+        const caret = nextEditor.view.coordsAtPos(nextEditor.state.selection.head);
+        const box = scroller.getBoundingClientRect();
+        const caretVisible = caret.bottom >= box.top && caret.top <= box.bottom;
+        if (caretVisible) frame.dataset.caretEdge = selectionEdge;
+        else delete frame.dataset.caretEdge;
+      } else {
+        delete frame.dataset.caretEdge;
       }
       const overflow = scroller.scrollHeight - scroller.clientHeight > 1;
       const atTop = scroller.scrollTop <= 1;
@@ -517,6 +557,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
             if (!flushPendingChange({ changeKey: changeKeyRef.current })) return false;
             return onBuiltinSlashCommandRef.current?.(name) ?? false;
           },
+          hiddenBuiltinCommands: () => hiddenBuiltinSlashCommandsRef.current,
         }),
         createNoteReference(),
       ],
@@ -536,7 +577,31 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           const scroller = view.dom;
           const caret = view.coordsAtPos(view.state.selection.head);
           const box = scroller.getBoundingClientRect();
-          const margin = 6; // the editor's own vertical padding
+          const frame = frameRef.current;
+          const selectionEdge = composerDocumentEdge(
+            view.state.selection.head,
+            view.state.doc.content.size,
+          );
+          if (frame) {
+            if (selectionEdge) frame.dataset.caretEdge = selectionEdge;
+            else delete frame.dataset.caretEdge;
+          }
+          if (selectionEdge === "start") {
+            scroller.scrollTop = 0;
+            if (frame) delete frame.dataset.fadeTop;
+            return true;
+          }
+          if (selectionEdge === "end") {
+            scroller.scrollTop = scroller.scrollHeight;
+            if (frame) delete frame.dataset.fadeBottom;
+            return true;
+          }
+          const frameStyles = frame ? getComputedStyle(frame) : null;
+          const scrollerStyles = getComputedStyle(scroller);
+          const margin = composerScrollMargin(
+            frameStyles?.getPropertyValue("--scroll-fade-size") ?? "",
+            scrollerStyles.paddingBottom,
+          );
           if (caret.top < box.top + margin) {
             scroller.scrollTop -= box.top + margin - caret.top;
           } else if (caret.bottom > box.bottom - margin) {

@@ -667,7 +667,7 @@ describe("App shortcuts", () => {
     try {
       render(<App />);
 
-      expect(await screen.findByRole("heading", { name: HERO_GREETING })).toBeInTheDocument();
+      expect(await screen.findByRole("region", { name: "Home" })).toBeInTheDocument();
 
       const firstSession = {
         id: "session-1",
@@ -684,6 +684,9 @@ describe("App shortcuts", () => {
               workingSessionIds: [],
             },
           }),
+        );
+        window.dispatchEvent(
+          new CustomEvent(AGENT_OPEN_EVENT, { detail: { session: firstSession } }),
         );
       });
 
@@ -1298,8 +1301,8 @@ describe("App shortcuts", () => {
     await user.click(screen.getByRole("button", { name: "Continue with OpenSoftware" }));
 
     await waitFor(() => expect(mocks.bootstrapApp).toHaveBeenCalledOnce());
-    // Clearing the gate lands on a fresh agent session, not a new note.
-    expect(await screen.findByRole("heading", { name: HERO_GREETING })).toBeInTheDocument();
+    // Clearing the gate lands in the persistent June conversation, not a new note.
+    expect(await screen.findByRole("region", { name: "Home" })).toBeInTheDocument();
     expect(mocks.createNote).not.toHaveBeenCalled();
   });
 
@@ -1361,7 +1364,7 @@ describe("App shortcuts", () => {
       subscription: { subscribed: true, status: "active" },
     });
 
-    expect(await screen.findByRole("heading", { name: HERO_GREETING })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Home" })).toBeInTheDocument();
   });
 
   it("bypasses account gates in dev when account status is unavailable", async () => {
@@ -1369,7 +1372,7 @@ describe("App shortcuts", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: HERO_GREETING })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Home" })).toBeInTheDocument();
     expect(mocks.bootstrapApp).toHaveBeenCalledOnce();
     expect(screen.queryByRole("button", { name: "Continue with OpenSoftware" })).toBeNull();
   });

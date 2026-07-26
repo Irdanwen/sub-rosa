@@ -79,6 +79,7 @@ export type RenderAppLayoutDependencies = {
   ) => Promise<void>;
   handleSignOut: () => Promise<void>;
   handleToggleSessionCompleted: (sessionId: string, completed: boolean) => Promise<void>;
+  homeStoredSessionId: string | undefined;
   mainPanelBodyRef: React.MutableRefObject<HTMLDivElement | null>;
   maxUpgradeError: string | undefined;
   maxUpgradePrompt: {

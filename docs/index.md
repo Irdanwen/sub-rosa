@@ -83,6 +83,7 @@ Per-repo config the engineering skills read before acting (see the
 
 ## Subsystems
 
+- [home-assistant.md](home-assistant.md) - persistent Home conversation and focused-session handoff contract
 - [browser-computer-use-prd.md](browser-computer-use-prd.md) — PRD: Browser use + Computer use plugins (JUN-278); extension in the user's browser + routines-only managed browser, phase-2 computer use
 - [release-extension.md](release-extension.md) - Chrome Web Store publisher setup, RC review gate, stable promotion, and recovery runbook
 - [computer-use-cua-driver-spike.md](computer-use-cua-driver-spike.md) — spike (JUN-288): run the bundled cua-driver outside the write jail as a broker-owned, separately-signed daemon (recommended on identity/lifecycle grounds; a fully relocated daemon does start in-jail, up to the TCC gate); pinning + installer-never-runs confirmed

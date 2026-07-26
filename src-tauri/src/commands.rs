@@ -630,10 +630,14 @@ pub async fn profile_data_summary(
 }
 
 #[tauri::command]
-pub async fn move_profile_data_to_default(app: AppHandle, profile: String) -> Result<(), AppError> {
+pub async fn move_profile_data_to_default(
+    app: AppHandle,
+    profile: String,
+    redundant_session_id: Option<String>,
+) -> Result<(), AppError> {
     Ok(repositories(&app)
         .await?
-        .move_profile_data_to_default(&profile)
+        .move_profile_data_to_default(&profile, redundant_session_id.as_deref())
         .await?)
 }
 

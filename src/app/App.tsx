@@ -50,6 +50,7 @@ import {
 import { selectSessionProjectContext } from "../lib/agent-project-context";
 import { rememberSessionManuallyTitled } from "../lib/agent-session-titles";
 import { messageFromError } from "../lib/errors";
+import { readJuneHomeStoredSessionId, writeJuneHomeStoredSessionId } from "../lib/june-home";
 import type { AgentSessionDto } from "../lib/agent-runtime-contract";
 import {
   getCurrentDataPartitionName,
@@ -307,6 +308,25 @@ export function App() {
     setLiveTranscriptEvents,
     setRecordingNote,
   } = useAppState();
+  const [homeStoredSessionId, setHomeStoredSessionId] = useState(() =>
+    readJuneHomeStoredSessionId(currentDataPartitionName),
+  );
+  useEffect(() => {
+    setHomeStoredSessionId(readJuneHomeStoredSessionId(currentDataPartitionName));
+  }, [currentDataPartitionName]);
+  const homeStoredSessionIdRef = useRef(homeStoredSessionId);
+  homeStoredSessionIdRef.current = homeStoredSessionId;
+  const focusedAgentSessions = useMemo(
+    () => agentSessions.filter((session) => session.id !== homeStoredSessionId),
+    [agentSessions, homeStoredSessionId],
+  );
+  const rememberHomeSession = useCallback(
+    (sessionId: string) => {
+      writeJuneHomeStoredSessionId(currentDataPartitionName, sessionId);
+      setHomeStoredSessionId(sessionId);
+    },
+    [currentDataPartitionName],
+  );
   const noteSaveControllerRef = useRef<NoteSaveController | null>(null);
   if (!noteSaveControllerRef.current) {
     noteSaveControllerRef.current = new NoteSaveController({
@@ -486,7 +506,9 @@ export function App() {
         // openable from the native menu bar's recent-session shortcuts
         // (JUN-203 review).
         sessions: agentMenuBarSessionsRef.current.filter(
-          (session) => !completedSessionsRef.current[session.id],
+          (session) =>
+            session.id !== homeStoredSessionIdRef.current &&
+            !completedSessionsRef.current[session.id],
         ),
         workingSessionIds: agentMenuBarWorkingSessionIdsRef.current,
         waitingSessionIds: agentMenuBarWaitingSessionIdsRef.current,
@@ -1917,6 +1939,7 @@ export function App() {
     accessibilityStatus,
     account,
     accountLoading,
+    currentDataPartitionName,
     activeAgentSessionFolder,
     activeAgentSessionId,
     activeAgentSessionSeed,
@@ -1924,7 +1947,7 @@ export function App() {
     agentOrigin,
     agentOriginFolder,
     agentProjectContextFolder,
-    agentSessions,
+    agentSessions: focusedAgentSessions,
     agentSessionsListRef,
     agentWaitingSessionIds,
     agentWorkingSessionIds,
@@ -1977,6 +2000,7 @@ export function App() {
     handleToggleSessionCompleted,
     handleTopUp,
     handleUpdateNote,
+    homeStoredSessionId,
     memoryFolderFilter,
     microphoneBlocked,
     microphoneStatus,
@@ -1993,6 +2017,7 @@ export function App() {
     recordingNoteId,
     refreshAccount,
     refreshFundingAccount,
+    rememberHomeSession,
     runUpdateCheck,
     selectedNote,
     selectedNoteId,
@@ -2026,7 +2051,7 @@ export function App() {
     activateTab,
     activeTabId,
     activeView,
-    agentSessions,
+    agentSessions: focusedAgentSessions,
     agentSessionsListRef,
     appMaxGrantWaitRef,
     billingNotice,
@@ -2061,6 +2086,7 @@ export function App() {
     handleSetSessionFolder,
     handleSignOut,
     handleToggleSessionCompleted,
+    homeStoredSessionId,
     mainPanelBodyRef,
     maxUpgradeError,
     maxUpgradePrompt,

@@ -13,6 +13,7 @@ import { IconDotGrid1x3Vertical } from "central-icons/IconDotGrid1x3Vertical";
 import { IconFolderAddRight } from "central-icons/IconFolderAddRight";
 import { IconFolderDelete } from "central-icons/IconFolderDelete";
 import { IconGift1 } from "central-icons/IconGift1";
+import { IconHomeOpen } from "central-icons/IconHomeOpen";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconMicrophoneSparkle } from "central-icons/IconMicrophoneSparkle";
@@ -115,6 +116,7 @@ async function fetchSessionPartitionMap(): Promise<SessionPartitionMap | null> {
 }
 
 export type SidebarView =
+  | "home"
   | "notes"
   | "meetings"
   | "all-notes"
@@ -144,6 +146,10 @@ type SidebarProps = {
   onOpenMoveDialog: (noteId: string) => void;
   onRemoveNoteFromFolder: (noteId: string, folderId: string) => void;
   onNewAgentSession: () => void;
+  /** Whether the persistent Home conversation is available on this platform. */
+  homeEnabled?: boolean;
+  /** The persistent Home conversation is not shown among focused sessions. */
+  homeStoredSessionId?: string;
   /** stored session id (not the runtime session id). */
   onRenameAgentSession: (sessionId: string, title: string) => void;
   onSelectAgentSession: (session: AgentSessionDto) => void;
@@ -315,6 +321,8 @@ export function Sidebar({
   onOpenMoveDialog,
   onRemoveNoteFromFolder,
   onNewAgentSession,
+  homeEnabled = true,
+  homeStoredSessionId,
   onRenameAgentSession,
   onSelectAgentSession,
   sessionFolderIds,
@@ -368,7 +376,9 @@ export function Sidebar({
   );
   // __emptyStates() preview (dev console): the agent section renders its
   // "No sessions yet" line as a fresh install would, real data untouched.
-  const agentSessions = useForcedEmptyStates() ? NO_AGENT_SESSIONS : dataPartitionAgentSessions;
+  const agentSessions = useForcedEmptyStates()
+    ? NO_AGENT_SESSIONS
+    : dataPartitionAgentSessions.filter((session) => session.id !== homeStoredSessionId);
   const [pinnedAgentSessionIds, setPinnedAgentSessionIds] = useState<Set<string>>(() =>
     readPinnedAgentSessionIds(),
   );
@@ -569,6 +579,17 @@ export function Sidebar({
       .slice(0, 6);
 
     const quickItems: CommandPromptItem[] = [
+      ...(homeEnabled
+        ? [
+            {
+              id: "quick:home",
+              label: "Go to Home",
+              icon: <IconHomeOpen size={15} />,
+              searchText: normalizeCommandQuery("home june personal assistant conversation"),
+              action: () => onChangeView("home"),
+            } satisfies CommandPromptItem,
+          ]
+        : []),
       {
         id: "quick:new-session",
         label: "New session",
@@ -706,6 +727,7 @@ export function Sidebar({
     account.signedIn,
     agentSessions,
     commandQuery,
+    homeEnabled,
     notes,
     onChangeView,
     onOpenRecording,
@@ -1106,6 +1128,20 @@ export function Sidebar({
           </label>
 
           <nav className="sidebar-nav" aria-label="Primary">
+            {homeEnabled ? (
+              <button
+                type="button"
+                className="sidebar-nav-item"
+                data-active={activeView === "home" || undefined}
+                aria-current={activeView === "home" ? "page" : undefined}
+                onClick={() => onChangeView("home")}
+              >
+                <span className="sidebar-nav-icon">
+                  <IconHomeOpen size={15} />
+                </span>
+                <span className="sidebar-nav-label">Home</span>
+              </button>
+            ) : null}
             <button
               type="button"
               className="sidebar-nav-item"

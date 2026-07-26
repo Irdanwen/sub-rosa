@@ -2217,6 +2217,7 @@ impl Repositories {
     pub async fn move_profile_data_to_default(
         &self,
         profile: &str,
+        redundant_session_id: Option<&str>,
     ) -> Result<(), sqlx::error::Error> {
         if profile == "default" {
             return Ok(());
@@ -2290,6 +2291,21 @@ impl Repositories {
             .bind(profile)
             .execute(&mut *transaction)
             .await?;
+        if let Some(session_id) = redundant_session_id {
+            query(
+                "DELETE FROM agent_sessions
+                 WHERE id = ?
+                   AND EXISTS (
+                     SELECT 1 FROM session_profiles
+                     WHERE session_id = ? AND profile = ?
+                   )",
+            )
+            .bind(session_id)
+            .bind(session_id)
+            .bind(profile)
+            .execute(&mut *transaction)
+            .await?;
+        }
         query("UPDATE session_profiles SET profile = 'default' WHERE profile = ?")
             .bind(profile)
             .execute(&mut *transaction)
@@ -2328,6 +2344,16 @@ impl Repositories {
             .bind(profile)
             .execute(&mut *transaction)
             .await?;
+        // Session profile rows are only labels. Deleting those labels alone
+        // would make June-owned agent sessions fall back to Default and expose
+        // data the user explicitly chose to delete permanently.
+        query(
+            "DELETE FROM agent_sessions
+             WHERE id IN (SELECT session_id FROM session_profiles WHERE profile = ?)",
+        )
+        .bind(profile)
+        .execute(&mut *transaction)
+        .await?;
         query("DELETE FROM session_profiles WHERE profile = ?")
             .bind(profile)
             .execute(&mut *transaction)
@@ -6161,7 +6187,7 @@ mod tests {
             .expect("create source memory");
 
         repos
-            .move_profile_data_to_default("work")
+            .move_profile_data_to_default("work", None)
             .await
             .expect("move profile data");
 
@@ -6186,6 +6212,82 @@ mod tests {
             .expect("moved memory");
         assert_eq!(memory_row.get::<String, _>("profile"), "default");
         assert_eq!(memory_row.get::<String, _>("folder_id"), default_folder.id);
+    }
+
+    #[tokio::test]
+    async fn moving_profile_atomically_deletes_the_redundant_home_session() {
+        let repos = test_repositories().await;
+        let agents = crate::agent_runtime::AgentRepository::new(repos.pool.clone());
+        let retained = agents
+            .create_session_in_profile(
+                "Default Home",
+                "open-software/auto",
+                crate::agent_runtime::AgentSafetyMode::Sandboxed,
+                None,
+                "default",
+            )
+            .await
+            .expect("default Home session");
+        let redundant = agents
+            .create_session_in_profile(
+                "Work Home",
+                "open-software/auto",
+                crate::agent_runtime::AgentSafetyMode::Sandboxed,
+                None,
+                "work",
+            )
+            .await
+            .expect("work Home session");
+        let ordinary = agents
+            .create_session_in_profile(
+                "Work task",
+                "open-software/auto",
+                crate::agent_runtime::AgentSafetyMode::Sandboxed,
+                None,
+                "work",
+            )
+            .await
+            .expect("ordinary work session");
+
+        repos
+            .move_profile_data_to_default("work", Some(&redundant.id))
+            .await
+            .expect("move profile and retire duplicate Home");
+
+        assert!(agents.get_session(&retained.id).await.is_ok());
+        assert!(agents.get_session(&ordinary.id).await.is_ok());
+        assert!(agents.get_session(&redundant.id).await.is_err());
+        let moved_profile: String =
+            query("SELECT profile FROM session_profiles WHERE session_id = ?")
+                .bind(&ordinary.id)
+                .fetch_one(&repos.pool)
+                .await
+                .expect("moved session profile")
+                .get("profile");
+        assert_eq!(moved_profile, "default");
+    }
+
+    #[tokio::test]
+    async fn deleting_profile_deletes_its_agent_sessions_instead_of_exposing_them_as_default() {
+        let repos = test_repositories().await;
+        let agents = crate::agent_runtime::AgentRepository::new(repos.pool.clone());
+        let private_session = agents
+            .create_session_in_profile(
+                "Private Home",
+                "open-software/auto",
+                crate::agent_runtime::AgentSafetyMode::Sandboxed,
+                None,
+                "private",
+            )
+            .await
+            .expect("private session");
+
+        repos
+            .delete_profile_data("private")
+            .await
+            .expect("delete private profile");
+
+        assert!(agents.get_session(&private_session.id).await.is_err());
     }
 
     fn transcription_plan(

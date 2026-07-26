@@ -34,7 +34,11 @@ import { SIDEBAR_DEFAULT_WIDTH, type RecordingInactivityPrompt } from "./app-she
 export function useAppState() {
   const replayOnboarding = shouldReplayOnboarding();
   const currentDataPartitionName = useCurrentDataPartitionName();
-  const startsOnAgent = isMacLikePlatform() || isWindowsPlatform();
+  const initialView: SidebarView = isMacLikePlatform()
+    ? "home"
+    : isWindowsPlatform()
+      ? "agent"
+      : "notes";
   const [dataPartitionRefreshRevision, setDataPartitionRefreshRevision] = useState(0);
   const [state, dispatch] = useReducer(notesReducer, undefined, createInitialState);
   const [error, setError] = useState<string | null>(null);
@@ -43,12 +47,11 @@ export function useAppState() {
   const [sidebarResizing, setSidebarResizing] = useState(false);
   const [sidebarTransition, setSidebarTransition] = useState<"none" | "smooth">("none");
   const [bootstrapped, setBootstrapped] = useState(false);
-  // Supported release platforms launch on a fresh agent session. Keep Linux's
-  // existing Notes default until it becomes a supported desktop target.
+  // macOS opens the persistent Home conversation. Windows retains the fresh
+  // agent launch, while Linux keeps Notes until it becomes a supported target.
   const [activeView, setActiveView] = useState<SidebarView>(() => {
-    if (!startsOnAgent) return "notes";
-    markAgentNewSessionPending();
-    return "agent";
+    if (initialView === "agent") markAgentNewSessionPending();
+    return initialView;
   });
   const activeViewRef = useRef<SidebarView>(activeView);
   activeViewRef.current = activeView;
@@ -57,7 +60,15 @@ export function useAppState() {
   // while switching or opening a tab restores its snapshot. The first tab
   // matches the launch view.
   const [tabs, setTabs] = useState<Tab[]>(() => [
-    { id: makeTabId(), nav: startsOnAgent ? defaultNav() : { view: "notes" } },
+    {
+      id: makeTabId(),
+      nav:
+        initialView === "home"
+          ? { view: "home" }
+          : initialView === "agent"
+            ? defaultNav()
+            : { view: "notes" },
+    },
   ]);
   const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0]!.id);
   const tabsRef = useRef(tabs);

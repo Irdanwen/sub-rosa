@@ -1,4 +1,5 @@
 import { IconBubble3 } from "central-icons/IconBubble3";
+import { IconHomeOpen } from "central-icons/IconHomeOpen";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconNoteText } from "central-icons/IconNoteText";
 import { IconProjects } from "central-icons/IconProjects";
@@ -105,6 +106,11 @@ export function tabMeta(
   settingsSectionLabel?: string,
 ): { title: string; icon: ReactNode } {
   switch (nav.view) {
+    case "home":
+      return {
+        title: "Home",
+        icon: <IconHomeOpen size={TAB_ICON_SIZE} />,
+      };
     case "meetings": {
       const note = nav.noteId ? notes.find((n) => n.id === nav.noteId) : undefined;
       return {

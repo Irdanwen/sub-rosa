@@ -23,6 +23,7 @@ export type RenderAppWorkspaceDependencies = {
   accessibilityStatus: string | undefined;
   account: AccountStatus;
   accountLoading: boolean;
+  currentDataPartitionName: string;
   activeAgentSessionFolder: FolderDto | undefined;
   activeAgentSessionId: string | undefined;
   activeAgentSessionSeed: AgentSessionDto | undefined;
@@ -99,6 +100,7 @@ export type RenderAppWorkspaceDependencies = {
   handleToggleSessionCompleted: (sessionId: string, completed: boolean) => Promise<void>;
   handleTopUp: () => void;
   handleUpdateNote: (noteId: string, patch: NoteEditablePatch) => void;
+  homeStoredSessionId: string | undefined;
   memoryFolderFilter: string | undefined;
   microphoneBlocked: boolean;
   microphoneStatus: string | undefined;
@@ -115,6 +117,7 @@ export type RenderAppWorkspaceDependencies = {
   recordingNoteId: string | undefined;
   refreshAccount: () => Promise<AccountStatus | undefined>;
   refreshFundingAccount: () => Promise<AccountStatus | undefined>;
+  rememberHomeSession: (sessionId: string) => void;
   runUpdateCheck: (mode: UpdateCheckMode, check?: () => Promise<JuneUpdate | null>) => void;
   selectedNote: NoteDto | undefined;
   selectedNoteId: string | undefined;

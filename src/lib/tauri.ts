@@ -1,4 +1,4 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type {
   AgentArtifactDto,
   AgentInterruptionDto,
@@ -12,10 +12,55 @@ import type {
   StartAgentRunRequest,
 } from "./agent-runtime-contract";
 import { parseDictationHelperEvent } from "./dictation-events";
+import { juneHomeProfileRemovalPlan, reconcileJuneHomeProfileRemoval } from "./june-home";
 
 // Re-exported so modules that build their own command calls route through the
 // same `invoke` as the rest of the app's bindings.
 export { invoke };
+
+export type JuneHomeChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type JuneHomeChatResponse = {
+  content?: string;
+  task?: {
+    title: string;
+    prompt: string;
+    summary?: string;
+    requiresCurrentResearch?: boolean;
+  };
+};
+
+export type JuneHomeChatOptions = {
+  /** Data partition captured at the send boundary for memory isolation. */
+  profile?: string;
+  /** Bounded excerpts from older turns outside the verbatim recent window. */
+  historyContext?: string;
+  /** Receives upstream model text as it arrives. */
+  onDelta?: (content: string) => void;
+};
+
+/** Lightweight private conversation path for Home. Concrete work is returned
+ * as a structured handoff and continues in a normal June agent session. */
+export async function juneHomeChat(
+  messages: JuneHomeChatMessage[],
+  options: JuneHomeChatOptions = {},
+) {
+  const onEvent = new Channel<{ event: "delta"; data: { content: string } }>();
+  onEvent.onmessage = (event) => {
+    if (event.event === "delta") options.onDelta?.(event.data.content);
+  };
+  return invoke<JuneHomeChatResponse>("june_home_chat", {
+    request: {
+      profile: options.profile,
+      ...(options.historyContext ? { historyContext: options.historyContext } : {}),
+      messages,
+    },
+    onEvent,
+  });
+}
 
 /** June-owned agent runtime command surface. Keep command spelling here so UI
  * code never depends on native transport details. */
@@ -785,11 +830,14 @@ export async function profileDataSummary(profile: string) {
 }
 
 export async function moveProfileDataToDefault(profile: string) {
-  return invoke<void>("move_profile_data_to_default", { profile });
+  const { redundantSessionId } = juneHomeProfileRemovalPlan(profile, "move");
+  await invoke<void>("move_profile_data_to_default", { profile, redundantSessionId });
+  reconcileJuneHomeProfileRemoval(profile, "move");
 }
 
 export async function deleteProfileData(profile: string) {
-  return invoke<void>("delete_profile_data", { profile });
+  await invoke<void>("delete_profile_data", { profile });
+  reconcileJuneHomeProfileRemoval(profile, "delete");
 }
 
 export async function removeSessionFromFolder(sessionId: string, folderId: string) {

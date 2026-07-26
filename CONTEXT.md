@@ -216,6 +216,14 @@ focus target.
 
 ### Agent runtime
 
+**Home conversation**:
+June's persistent relationship-level conversation for quick answers, ongoing
+context, and task handoffs. Each data partition has at most one Home backing
+session. Concrete work can start a normal focused **agent session** without
+leaving Home, and the Home backing session is omitted from focused-session
+lists and native recent-session shortcuts.
+_Avoid_: dashboard, default agent session, Hermes Home.
+
 **Agent harness**:
 The June-owned local service that runs the OpenAI Agents SDK model and tool
 loop. It is a trusted orchestration process, while Rust owns secrets,

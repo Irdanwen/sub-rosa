@@ -13,6 +13,12 @@ export type AgentWorkspaceOrigin = {
 export type AgentWorkspaceProps = {
   initialSession?: AgentSessionDto;
   initialSessionId?: string;
+  /** Persistent relationship-level conversation, distinct from focused sessions. */
+  homeMode?: boolean;
+  /** Best-effort account display name used only for Home's greeting. */
+  homeUserDisplayName?: string;
+  onHomeSessionCreated?: (storedSessionId: string) => void;
+  onOpenHomeTaskSession?: (storedSessionId: string, title: string) => void;
   origin?: AgentWorkspaceOrigin;
   onSessionSelected?: (session: AgentSessionDto | undefined) => void;
   onTopUp?: () => void | Promise<void>;
