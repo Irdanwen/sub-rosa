@@ -1948,6 +1948,14 @@ fn retained_june_home_messages(messages: Vec<JuneHomeChatMessage>) -> Vec<serde_
     retained
 }
 
+fn june_home_message_too_large(messages: &[JuneHomeChatMessage]) -> bool {
+    messages
+        .iter()
+        .rev()
+        .find(|message| message.role.trim().eq_ignore_ascii_case("user"))
+        .is_some_and(|message| message.content.chars().count() > JUNE_HOME_RECENT_MAX_TOTAL_CHARS)
+}
+
 fn june_home_requires_current_information(message: &str) -> bool {
     let words = message
         .to_lowercase()
@@ -2130,17 +2138,23 @@ fn require_june_home_current_research(
 
 /// Fast path for June's persistent Home conversation.
 ///
-/// Full Hermes sessions intentionally carry the complete agent system prompt
-/// and every enabled tool schema. That context is valuable for focused work but
-/// adds substantial prefill latency to short personal-assistant turns. Home
-/// sends only its compact relationship prompt and one handoff tool; delegated
-/// work still runs in a normal Hermes session after `start_task` is returned.
+/// Full June agent sessions intentionally carry the complete agent system
+/// prompt and enabled tool schemas. That context is valuable for focused work
+/// but adds substantial prefill latency to short personal-assistant turns.
+/// Home sends only its compact relationship prompt and one handoff tool;
+/// delegated work continues in the June-owned Agents runtime.
 #[tauri::command]
 pub async fn june_home_chat(
     app: AppHandle,
     request: JuneHomeChatRequest,
     on_event: Channel<JuneHomeChatEvent>,
 ) -> Result<JuneHomeChatResponse, AppError> {
+    if june_home_message_too_large(&request.messages) {
+        return Err(AppError::new(
+            "home_chat_message_too_large",
+            "Home messages must be 64,000 characters or less.",
+        ));
+    }
     let profile = request
         .profile
         .as_deref()
@@ -4722,6 +4736,21 @@ data: [DONE]
             retained.last().and_then(|item| item["content"].as_str()),
             Some("message 120")
         );
+    }
+
+    #[test]
+    fn home_chat_rejects_an_oversized_newest_user_message() {
+        let at_limit = vec![JuneHomeChatMessage {
+            role: "user".to_string(),
+            content: "x".repeat(JUNE_HOME_RECENT_MAX_TOTAL_CHARS),
+        }];
+        let over_limit = vec![JuneHomeChatMessage {
+            role: "user".to_string(),
+            content: "x".repeat(JUNE_HOME_RECENT_MAX_TOTAL_CHARS + 1),
+        }];
+
+        assert!(!june_home_message_too_large(&at_limit));
+        assert!(june_home_message_too_large(&over_limit));
     }
 
     #[test]

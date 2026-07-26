@@ -39,6 +39,7 @@ import type {
 } from "../../lib/agent-runtime-contract";
 import {
   agentRuntimeBindings,
+  assignSessionToProfile,
   downloadAgentArtifact,
   dictationHelperCommand,
   juneHomeChat,
@@ -105,12 +106,15 @@ import {
 } from "./session-persistence";
 import type { AgentWorkspaceProps } from "./agent-workspace-types";
 import {
+  forgetJuneHomeStoredSessionId,
   juneHomeDailyCheckIn,
   juneHomeDayKey,
   juneHomeDayLabel,
   juneHomeGreetingParts,
   juneHomeNudgePrompts,
   JUNE_HOME_THREAD_CHANGED_EVENT,
+  resolveJuneHomeThreadSessionId,
+  stripJuneHomeContextFromPreview,
   withJuneHomeCurrentResearch,
   type JuneHomeConversationContext,
   type JuneHomeTaskRequest,
@@ -227,8 +231,13 @@ export function AgentWorkspace({
   const [compactResult, setCompactResult] = useState<string>();
   const [models, setModels] = useState<VeniceModelDto[]>([]);
   const [veniceApiKeyConfigured, setVeniceApiKeyConfigured] = useState(false);
-  const [model, setModel] = useState(initialAgentSession?.model || DEFAULT_MODEL);
+  const focusedHomeModelRef = useRef(DEFAULT_MODEL);
+  const focusedHomeThinkingLevelRef = useRef(loadThinkingLevel());
+  const [model, setModel] = useState(
+    homeMode ? AUTO_MODEL_ID : initialAgentSession?.model || DEFAULT_MODEL,
+  );
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() => {
+    if (homeMode) return "instant";
     const sessionLevel = initialAgentSession?.id
       ? loadSessionThinkingLevels()[initialAgentSession.id]
       : undefined;
@@ -238,6 +247,12 @@ export function AgentWorkspace({
     initialAgentSession?.safetyMode ?? "sandboxed",
   );
   const [draft, setDraft] = useState(pendingRequestRef.current?.prompt ?? "");
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const setComposerDraft = useCallback((value: string) => {
+    draftRef.current = value;
+    setDraft(value);
+  }, []);
   const [attachments, setAttachments] = useState<string[]>([]);
   const [queuedFollowUp, setQueuedFollowUp] = useState<{
     messageId: string;
@@ -369,22 +384,41 @@ export function AgentWorkspace({
         run: latestRun ?? undefined,
       });
       setArtifacts(files);
-      setModel(session.model);
-      setThinkingLevel(loadSessionThinkingLevels()[session.id] ?? loadThinkingLevel());
-      setSafetyMode(session.safetyMode);
+      setModel(homeMode ? AUTO_MODEL_ID : session.model);
+      setThinkingLevel(
+        homeMode ? "instant" : (loadSessionThinkingLevels()[session.id] ?? loadThinkingLevel()),
+      );
+      setSafetyMode(homeMode ? "sandboxed" : session.safetyMode);
       setNewSessionMode(false);
-      writeLastOpenSessionId(sessionId);
+      if (!homeMode) writeLastOpenSessionId(sessionId);
       onSessionSelected?.(session);
     },
-    [onSessionSelected],
+    [homeMode, onSessionSelected],
   );
 
   useEffect(() => {
-    void refreshSessions().catch((cause) => setError(messageFromError(cause)));
+    void refreshSessions()
+      .then((next) => {
+        const selected = selectedIdRef.current;
+        if (!homeMode || !selected || next.some((session) => session.id === selected)) return;
+        forgetJuneHomeStoredSessionId(getCurrentDataPartitionName(), selected);
+        selectedIdRef.current = undefined;
+        setSelectedId(undefined);
+        setNewSessionMode(true);
+        setProjection(createAgentRuntimeProjection());
+        setArtifacts([]);
+        setError(undefined);
+      })
+      .catch((cause) => setError(messageFromError(cause)));
     void listVeniceModels("generation")
       .then((response) => {
         setModels(response.models);
-        if (!initialAgentSession?.model && response.selectedModel) setModel(response.selectedModel);
+        if (homeMode) {
+          focusedHomeModelRef.current = response.selectedModel || DEFAULT_MODEL;
+        }
+        if (!homeMode && !initialAgentSession?.model && response.selectedModel) {
+          setModel(response.selectedModel);
+        }
       })
       .catch(() => undefined);
     void providerModelSettings()
@@ -392,7 +426,7 @@ export function AgentWorkspace({
         setVeniceApiKeyConfigured(response.effectiveSettings.veniceApiKeyConfigured),
       )
       .catch(() => setVeniceApiKeyConfigured(false));
-  }, [initialAgentSession?.model, refreshSessions]);
+  }, [homeMode, initialAgentSession?.model, refreshSessions]);
 
   useEffect(() => {
     const nextId = initialSession?.id ?? initialSessionId;
@@ -409,8 +443,11 @@ export function AgentWorkspace({
       setSafetyMode(initialSession.safetyMode);
       setNewSessionMode(false);
     }
-    void hydrate(nextId).catch((cause) => setError(messageFromError(cause)));
-  }, [hydrate, initialSession?.id, initialSessionId]);
+    void hydrate(nextId).catch((cause) => {
+      if (homeMode && selectedIdRef.current !== nextId) return;
+      setError(messageFromError(cause));
+    });
+  }, [homeMode, hydrate, initialSession?.id, initialSessionId]);
 
   useEffect(() => {
     const handleNewSession = (event: Event) => {
@@ -634,8 +671,8 @@ export function AgentWorkspace({
     const creation = agentRuntimeBindings
       .createSession({
         title: "Home",
-        model,
-        safetyMode,
+        model: AUTO_MODEL_ID,
+        safetyMode: "sandboxed",
         profile: getCurrentDataPartitionName(),
       })
       .then((createdSession) => {
@@ -647,6 +684,7 @@ export function AgentWorkspace({
           ...current.filter((session) => session.id !== createdSession.id),
         ]);
         setProjection(createAgentRuntimeProjection({ session: createdSession }));
+        rememberSessionThinkingLevel(createdSession.id, "instant");
         onHomeSessionCreated?.(createdSession.id);
         return createdSession.id;
       });
@@ -670,7 +708,10 @@ export function AgentWorkspace({
     conversation: JuneHomeConversationContext,
     homeStoredSessionId: string,
     profile: string,
+    taskAttachments: string[] = [],
   ) {
+    const activeHomeSessionId = resolveJuneHomeThreadSessionId(homeStoredSessionId);
+    if (!activeHomeSessionId) return;
     if (handledHomeTaskToolCallsRef.current.has(toolCallId)) return;
     const handoffId = `home-task-${toolCallId}`;
     const existing = readHomeTaskHandoffs(homeStoredSessionId).find(
@@ -686,6 +727,7 @@ export function AgentWorkspace({
       id: handoffId,
       status: "starting",
       profile,
+      ...(taskAttachments.length ? { attachments: taskAttachments } : {}),
     };
     const storedHandoffs = readHomeTaskHandoffs(homeStoredSessionId);
     const nextHandoffs = storedHandoffs.some((handoff) => handoff.id === handoffId)
@@ -702,13 +744,24 @@ export function AgentWorkspace({
       persistHomeTaskHandoffs(homeStoredSessionId, next);
     };
 
+    let focusedSession: AgentSessionDto | undefined;
     try {
-      const focusedSession = await agentRuntimeBindings.createSession({
+      const focusedModel = focusedHomeModelRef.current;
+      const focusedThinkingLevel = focusedHomeThinkingLevelRef.current;
+      focusedSession = await agentRuntimeBindings.createSession({
         title: request.title,
-        model,
-        safetyMode,
-        profile,
+        model: focusedModel,
+        safetyMode: "sandboxed",
+        profile: activeHomeSessionId === homeStoredSessionId ? profile : "default",
       });
+      const activeAfterCreation = resolveJuneHomeThreadSessionId(homeStoredSessionId);
+      if (!activeAfterCreation) {
+        await agentRuntimeBindings.deleteSession(focusedSession.id);
+        return;
+      }
+      if (activeAfterCreation !== activeHomeSessionId) {
+        await assignSessionToProfile(focusedSession.id, "default");
+      }
       const enabledSkillIds = (await agentRuntimeBindings.listSkills())
         .filter((skill) => skill.enabled)
         .map((skill) => skill.id);
@@ -718,16 +771,22 @@ export function AgentWorkspace({
       await agentRuntimeBindings.startRun({
         sessionId: focusedSession.id,
         prompt: runtimePrompt,
-        model,
-        reasoningEffort: thinkingEffortForLevel(thinkingLevel) as "minimal" | "medium" | "high",
-        safetyMode,
+        model: focusedModel,
+        reasoningEffort: thinkingEffortForLevel(focusedThinkingLevel) as
+          | "minimal"
+          | "medium"
+          | "high",
+        safetyMode: "sandboxed",
         workspacePath: focusedSession.workspacePath,
         enabledSkillIds,
-        attachments: [],
+        attachments: taskAttachments,
       });
       updateHandoff({ status: "running", storedSessionId: focusedSession.id });
-      await refreshSessions();
+      void refreshSessions().catch(() => undefined);
     } catch (cause) {
+      if (focusedSession) {
+        await agentRuntimeBindings.deleteSession(focusedSession.id).catch(() => undefined);
+      }
       updateHandoff({ status: "failed", error: messageFromError(cause) });
     }
   }
@@ -753,6 +812,7 @@ export function AgentWorkspace({
       conversation,
       homeStoredSessionId,
       handoff.profile ?? getCurrentDataPartitionName(),
+      handoff.attachments ?? [],
     );
   }
 
@@ -760,12 +820,18 @@ export function AgentWorkspace({
     event?.preventDefault();
     const message = draft.trim();
     if (!message || submitting || textActionsDisabledReason) return;
+    if (Array.from(message).length > 64_000) {
+      setError("Home messages must be 64,000 characters or less.");
+      return;
+    }
     const profile = getCurrentDataPartitionName();
+    const messageAttachments = attachments;
     setDraft("");
+    draftRef.current = "";
+    setAttachments([]);
     setHomeDirectPendingCount((count) => count + 1);
 
     let storedSessionId: string | undefined;
-    let userTurnId: string | undefined;
     try {
       storedSessionId = await ensureHomeSession();
       const suffix = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
@@ -774,10 +840,55 @@ export function AgentWorkspace({
         role: "user",
         createdAt: new Date().toISOString(),
         status: "complete",
-        parts: [{ type: "text", text: message, status: "complete" }],
+        parts: [
+          { type: "text", text: message, status: "complete" },
+          ...messageAttachments.map((path) => ({
+            type: "attachment" as const,
+            name: path.split(/[\\/]/).pop() || path,
+            path,
+            kind: /\.(?:png|jpe?g|gif|webp|tiff?|bmp|avif)$/i.test(path)
+              ? ("image" as const)
+              : ("file" as const),
+          })),
+        ],
       };
-      userTurnId = userTurn.id;
       commitHomeDirectTurns(storedSessionId, [...readHomeDirectTurns(storedSessionId), userTurn]);
+
+      // Attachments and commands need the full June tool/runtime context. Home
+      // hands them to a focused session deterministically instead of running a
+      // second hidden agent turn and hoping it emits a legacy bridge tool.
+      if (messageAttachments.length > 0 || message.startsWith("/")) {
+        const toolCallId = `focused:${suffix}`;
+        const assistantTurn: AgentChatTurn = {
+          id: `home:direct:assistant:${suffix}`,
+          role: "assistant",
+          createdAt: new Date().toISOString(),
+          status: "complete",
+          parts: [
+            {
+              type: "tool",
+              id: toolCallId,
+              name: "june_home_start_task",
+              text: "",
+              status: "complete",
+            },
+          ],
+        };
+        const nextTurns = insertHomeDirectReply(storedSessionId, userTurn.id, assistantTurn);
+        homeDirectTurnsRef.current = nextTurns;
+        setHomeDirectTurns(nextTurns);
+        const conversation = homeConversationContextFromTurns([...turns, ...nextTurns]);
+        void startHomeTask(
+          { title: titleFromPrompt(message), prompt: message },
+          toolCallId,
+          conversation,
+          storedSessionId,
+          profile,
+          messageAttachments,
+        );
+        setError(undefined);
+        return;
+      }
 
       await enqueueHomeDirectChat(storedSessionId, async () => {
         const currentTurns = readHomeDirectTurns(storedSessionId as string);
@@ -865,13 +976,10 @@ export function AgentWorkspace({
       setError(undefined);
     } catch (cause) {
       setHomeStreamingReply(null);
-      if (storedSessionId && userTurnId) {
-        const retained = readHomeDirectTurns(storedSessionId).filter(
-          (turn) => turn.id !== userTurnId,
-        );
-        commitHomeDirectTurns(storedSessionId, retained);
-      }
-      setDraft((current) => current || message);
+      // The persisted user bubble is the durable retry record. Never remove it
+      // when a newer draft exists or when this workspace unmounted while the
+      // request was in flight. Restore the text only when the composer is free.
+      if (!draftRef.current.trim()) setDraft(message);
       setError(messageFromError(cause));
     } finally {
       setHomeDirectPendingCount((count) => Math.max(0, count - 1));
@@ -1055,7 +1163,25 @@ export function AgentWorkspace({
   const heroMode = !homeMode && newSessionMode && !selectedSession;
   const homeConversationTurns = useMemo(
     () =>
-      [...turns, ...homeDirectTurns, ...(homeStreamingReply ? [homeStreamingReply] : [])].sort(
+      [
+        ...turns.map((turn) =>
+          turn.role === "user"
+            ? {
+                ...turn,
+                parts: turn.parts.map((part) =>
+                  part.type === "text"
+                    ? {
+                        ...part,
+                        text: stripJuneHomeContextFromPreview(part.text) ?? part.text,
+                      }
+                    : part,
+                ),
+              }
+            : turn,
+        ),
+        ...homeDirectTurns,
+        ...(homeStreamingReply ? [homeStreamingReply] : []),
+      ].sort(
         (left, right) =>
           left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
       ),
@@ -1147,7 +1273,7 @@ export function AgentWorkspace({
       formRef={composerRef}
       scrollRef={scrollRef}
       draft={draft}
-      setDraft={setDraft}
+      setDraft={setComposerDraft}
       model={model}
       setModel={setModel}
       thinkingLevel={thinkingLevel}
@@ -1163,11 +1289,7 @@ export function AgentWorkspace({
       setAttachments={setAttachments}
       onPickAttachments={pickAttachments}
       onDictate={startDictation}
-      onSubmit={
-        homeMode && attachments.length === 0 && !draft.trim().startsWith("/")
-          ? submitHomeMessage
-          : submit
-      }
+      onSubmit={homeMode ? submitHomeMessage : submit}
       onStop={stop}
       running={running}
       submitting={submitting}

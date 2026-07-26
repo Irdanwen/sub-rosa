@@ -6,6 +6,8 @@ export const LEGACY_JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY = "june.home.taskHandoff
 export const LEGACY_JUNE_HOME_DIRECT_TURNS_STORAGE_KEY = "june.home.directTurns.v1";
 export const JUNE_HOME_THREAD_CHANGED_EVENT = "june:agent:home-thread-changed";
 
+const homeThreadRetargets = new Map<string, string | null>();
+
 export const JUNE_HOME_CONTEXT_OPEN = "[June home context]";
 export const JUNE_HOME_CONTEXT_CLOSE = "[/June home context]";
 
@@ -255,10 +257,36 @@ export function writeJuneHomeStoredSessionId(profile: string, storedSessionId: s
   const normalizedProfile = profile.trim() || "default";
   const normalizedSessionId = storedSessionId.trim();
   if (!normalizedSessionId) return;
+  // An explicit new profile mapping reactivates this id. This matters when a
+  // test fixture or repaired prerelease database deliberately reuses an id
+  // that was retired earlier in the same WebView process.
+  homeThreadRetargets.delete(normalizedSessionId);
   writeJson(JUNE_HOME_SESSION_IDS_STORAGE_KEY, {
     ...readStringMap(JUNE_HOME_SESSION_IDS_STORAGE_KEY),
     [normalizedProfile]: normalizedSessionId,
   });
+}
+
+/** Resolve writes owned by an in-flight Home request after its profile was
+ * moved or deleted. Moving redirects the late assistant reply into the merged
+ * thread; permanent deletion drops it instead of recreating private data. */
+export function resolveJuneHomeThreadSessionId(storedSessionId: string): string | undefined {
+  let current = storedSessionId;
+  const visited = new Set<string>();
+  while (!visited.has(current) && homeThreadRetargets.has(current)) {
+    visited.add(current);
+    const target = homeThreadRetargets.get(current);
+    if (!target) return undefined;
+    current = target;
+  }
+  return current;
+}
+
+export function retargetJuneHomeThread(sourceSessionId: string, targetSessionId?: string): void {
+  const source = sourceSessionId.trim();
+  const target = targetSessionId?.trim();
+  if (!source || source === target) return;
+  homeThreadRetargets.set(source, target || null);
 }
 
 export function forgetJuneHomeStoredSessionId(
@@ -317,19 +345,44 @@ function reconcileHomeThreadStore(
   writeJson(storageKey, records);
 }
 
-export function reconcileJuneHomeProfileRemoval(
+export type JuneHomeProfileRemovalPlan = {
+  sourceSessionId?: string;
+  targetSessionId?: string;
+  redundantSessionId?: string;
+};
+
+export function juneHomeProfileRemovalPlan(
   profile: string,
   disposition: "move" | "delete",
-): void {
+): JuneHomeProfileRemovalPlan {
   const normalizedProfile = profile.trim();
-  if (!normalizedProfile || normalizedProfile === "default") return;
-
+  if (!normalizedProfile || normalizedProfile === "default") return {};
   const sessionIds = readStringMap(JUNE_HOME_SESSION_IDS_STORAGE_KEY);
   const sourceSessionId = sessionIds[normalizedProfile]?.trim();
   const targetSessionId =
     disposition === "move" ? sessionIds.default?.trim() || sourceSessionId : undefined;
+  return {
+    ...(sourceSessionId ? { sourceSessionId } : {}),
+    ...(targetSessionId ? { targetSessionId } : {}),
+    ...(disposition === "move" && sourceSessionId && targetSessionId !== sourceSessionId
+      ? { redundantSessionId: sourceSessionId }
+      : {}),
+  };
+}
+
+export function reconcileJuneHomeProfileRemoval(
+  profile: string,
+  disposition: "move" | "delete",
+): JuneHomeProfileRemovalPlan {
+  const normalizedProfile = profile.trim();
+  if (!normalizedProfile || normalizedProfile === "default") return {};
+
+  const sessionIds = readStringMap(JUNE_HOME_SESSION_IDS_STORAGE_KEY);
+  const plan = juneHomeProfileRemovalPlan(profile, disposition);
+  const { sourceSessionId, targetSessionId } = plan;
 
   if (sourceSessionId) {
+    retargetJuneHomeThread(sourceSessionId, targetSessionId);
     for (const storageKey of [
       JUNE_HOME_DIRECT_TURNS_STORAGE_KEY,
       JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY,
@@ -351,6 +404,8 @@ export function reconcileJuneHomeProfileRemoval(
   }
   delete checkIns[normalizedProfile];
   writeJson(JUNE_HOME_CHECK_INS_STORAGE_KEY, checkIns);
+
+  return plan;
 }
 
 export function withJuneHomeContext(prompt: string): string {
@@ -429,7 +484,7 @@ export function stripJuneHomeContextFromPreview(preview: string | undefined): st
   if (preview === undefined) return undefined;
   const stripped = stripJuneHomeContext(preview);
   if (stripped !== preview) return stripped;
-  // Hermes may truncate the preview before the closing marker. Never expose
+  // A retired runtime may have truncated the preview before the closing marker. Never expose
   // a partial hidden block in lists while the full message remains intact.
   if (preview.trimStart().startsWith(JUNE_HOME_CONTEXT_OPEN)) return "Home message";
   return preview;

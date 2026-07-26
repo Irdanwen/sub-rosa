@@ -12,6 +12,7 @@ import type {
   StartAgentRunRequest,
 } from "./agent-runtime-contract";
 import { parseDictationHelperEvent } from "./dictation-events";
+import { juneHomeProfileRemovalPlan, reconcileJuneHomeProfileRemoval } from "./june-home";
 
 // Re-exported so modules that build their own command calls route through the
 // same `invoke` as the rest of the app's bindings.
@@ -829,11 +830,14 @@ export async function profileDataSummary(profile: string) {
 }
 
 export async function moveProfileDataToDefault(profile: string) {
-  return invoke<void>("move_profile_data_to_default", { profile });
+  const { redundantSessionId } = juneHomeProfileRemovalPlan(profile, "move");
+  await invoke<void>("move_profile_data_to_default", { profile, redundantSessionId });
+  reconcileJuneHomeProfileRemoval(profile, "move");
 }
 
 export async function deleteProfileData(profile: string) {
-  return invoke<void>("delete_profile_data", { profile });
+  await invoke<void>("delete_profile_data", { profile });
+  reconcileJuneHomeProfileRemoval(profile, "delete");
 }
 
 export async function removeSessionFromFolder(sessionId: string, folderId: string) {

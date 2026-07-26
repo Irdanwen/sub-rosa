@@ -5,10 +5,14 @@ import type { AgentRuntimeEvent, AgentSessionDto } from "../lib/agent-runtime-co
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
+  openDialog: vi.fn(),
   runtimeListener: undefined as ((event: { payload: AgentRuntimeEvent }) => void) | undefined,
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
+  Channel: class {
+    onmessage?: (event: unknown) => void;
+  },
   convertFileSrc: vi.fn((path: string) => path),
   invoke: mocks.invoke,
 }));
@@ -23,7 +27,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   ),
 }));
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.openDialog }));
 
 import { AgentWorkspace } from "../components/agent/AgentWorkspace";
 import { markAgentNewSessionPending } from "../components/agent/session-persistence";
@@ -33,6 +37,7 @@ import {
   resetCurrentDataPartitionForTests,
   setCurrentDataPartitionName,
 } from "../lib/data-partition";
+import { readJuneHomeStoredSessionId, writeJuneHomeStoredSessionId } from "../lib/june-home";
 
 const session: AgentSessionDto = {
   id: "session-1",
@@ -56,8 +61,10 @@ const newSession: AgentSessionDto = {
 describe("AgentWorkspace runtime wiring", () => {
   beforeEach(() => {
     resetCurrentDataPartitionForTests();
+    window.localStorage.clear();
     mocks.runtimeListener = undefined;
     mocks.invoke.mockReset();
+    mocks.openDialog.mockReset();
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_agent_sessions") return Promise.resolve([session]);
       if (command === "get_agent_session") return Promise.resolve(session);
@@ -133,6 +140,141 @@ describe("AgentWorkspace runtime wiring", () => {
   it("reserves the overlap between the transcript and fixed composer", () => {
     expect(agentComposerClearance(800, 620)).toBe(180);
     expect(agentComposerClearance(600, 620)).toBe(0);
+  });
+
+  it("hands Home attachments to a focused June runtime session with send-time profile", async () => {
+    const user = userEvent.setup();
+    const homeSession: AgentSessionDto = {
+      ...session,
+      id: "home-session",
+      title: "Home",
+      workspacePath: "/tmp/home-session",
+    };
+    const focusedSession: AgentSessionDto = {
+      ...newSession,
+      id: "focused-session",
+      title: "Summarize this file",
+      workspacePath: "/tmp/focused-session",
+    };
+    setCurrentDataPartitionName("work");
+    mocks.openDialog.mockResolvedValue(["/tmp/brief.pdf"]);
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_agent_sessions") return [homeSession, focusedSession];
+      if (command === "get_agent_session") return homeSession;
+      if (command === "list_agent_items" || command === "list_agent_artifacts") return [];
+      if (command === "list_agent_skills") return [];
+      if (command === "list_venice_models") {
+        return { mode: "generation", selectedModel: "fast", modelType: "text", models: [] };
+      }
+      if (command === "create_agent_session") return focusedSession;
+      if (command === "start_agent_run") {
+        return {
+          id: "focused-run",
+          sessionId: focusedSession.id,
+          status: "running",
+          model: "fast",
+        };
+      }
+      return undefined;
+    });
+
+    render(<AgentWorkspace homeMode initialSession={homeSession} />);
+    const composer = await screen.findByRole("textbox", { name: "Message June" });
+    await user.click(screen.getByRole("button", { name: "Add files or notes" }));
+    await user.click(screen.getByRole("menuitem", { name: "Attach files" }));
+    await waitFor(() => expect(screen.getByText("brief.pdf")).toBeVisible());
+    await user.type(composer, "Summarize this file");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("create_agent_session", {
+        request: {
+          title: "Summarize this file",
+          model: "fast",
+          safetyMode: "sandboxed",
+          profile: "work",
+        },
+      }),
+    );
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("start_agent_run", {
+        request: expect.objectContaining({
+          sessionId: "focused-session",
+          prompt: "Summarize this file",
+          model: "fast",
+          reasoningEffort: "medium",
+          safetyMode: "sandboxed",
+          attachments: ["/tmp/brief.pdf"],
+        }),
+      }),
+    );
+    expect(await screen.findByRole("button", { name: "Open session" })).toBeVisible();
+  });
+
+  it("repairs a stale Home mapping when its June-owned session is missing", async () => {
+    writeJuneHomeStoredSessionId("default", "missing-home-session");
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_agent_sessions") return [];
+      if (command === "get_agent_session") throw new Error("Session not found");
+      if (command === "list_agent_items" || command === "list_agent_artifacts") return [];
+      if (command === "list_venice_models") {
+        return {
+          mode: "generation",
+          selectedModel: "open-software/auto",
+          modelType: "text",
+          models: [],
+        };
+      }
+      return undefined;
+    });
+
+    render(<AgentWorkspace homeMode initialSessionId="missing-home-session" />);
+
+    await waitFor(() => expect(readJuneHomeStoredSessionId("default")).toBeUndefined());
+    expect(screen.queryByText("Session not found")).not.toBeInTheDocument();
+  });
+
+  it("keeps a failed Home message when the user has already drafted another", async () => {
+    const user = userEvent.setup();
+    const homeSession: AgentSessionDto = {
+      ...session,
+      id: "home-failure-session",
+      title: "Home",
+      workspacePath: "/tmp/home-failure-session",
+    };
+    let rejectHome: ((error: Error) => void) | undefined;
+    const pendingHome = new Promise((_, reject) => {
+      rejectHome = reject;
+    });
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_agent_sessions") return [homeSession];
+      if (command === "get_agent_session") return homeSession;
+      if (command === "list_agent_items" || command === "list_agent_artifacts") return [];
+      if (command === "list_venice_models") {
+        return { mode: "generation", selectedModel: "fast", modelType: "text", models: [] };
+      }
+      if (command === "june_home_chat") return pendingHome;
+      return undefined;
+    });
+
+    render(<AgentWorkspace homeMode initialSession={homeSession} />);
+    const composer = await screen.findByRole("textbox", { name: "Message June" });
+    await user.type(composer, "First message");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("june_home_chat", expect.anything()),
+    );
+    const activeComposer = screen.getByRole("textbox", { name: "Message June" });
+    activeComposer.textContent = "New draft";
+    fireEvent.input(activeComposer);
+    expect(activeComposer).toHaveTextContent("New draft");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled());
+    rejectHome?.(new Error("Home is temporarily unavailable"));
+
+    expect(await screen.findByText("First message")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Message June" })).toHaveTextContent("New draft"),
+    );
   });
 
   it("hydrates history, shows an optimistic turn, and cancels", async () => {

@@ -8,6 +8,7 @@ import {
   juneHomeDayLabel,
   juneHomeGreetingParts,
   juneHomeNudgePrompts,
+  juneHomeProfileRemovalPlan,
   juneHomeTaskRequestFromPayload,
   readJuneHomeStoredSessionId,
   reconcileJuneHomeProfileRemoval,
@@ -17,6 +18,14 @@ import {
   withJuneHomeContext,
   writeJuneHomeStoredSessionId,
 } from "../lib/june-home";
+import {
+  insertHomeDirectReply,
+  persistHomeDirectTurns,
+  persistHomeTaskHandoffs,
+  readHomeDirectTurns,
+  readHomeTaskHandoffs,
+} from "../components/agent/home-thread";
+import type { AgentChatTurn } from "../lib/agent-chat-runtime";
 
 describe("June Home", () => {
   beforeEach(() => window.localStorage.clear());
@@ -59,6 +68,11 @@ describe("June Home", () => {
       }),
     );
 
+    expect(juneHomeProfileRemovalPlan("research", "move")).toEqual({
+      sourceSessionId: "home-research",
+      targetSessionId: "home-default",
+      redundantSessionId: "home-research",
+    });
     reconcileJuneHomeProfileRemoval("research", "move");
 
     expect(readJuneHomeStoredSessionId("research")).toBeUndefined();
@@ -110,6 +124,63 @@ describe("June Home", () => {
         "home-research",
       );
     }
+  });
+
+  it("redirects an in-flight reply into a moved thread and drops it after deletion", () => {
+    const userTurn: AgentChatTurn = {
+      id: "late-user",
+      role: "user",
+      createdAt: "2026-07-24T10:00:00Z",
+      status: "complete",
+      parts: [{ type: "text", text: "Finish this reply", status: "complete" }],
+    };
+    const assistantTurn: AgentChatTurn = {
+      id: "late-assistant",
+      role: "assistant",
+      createdAt: "2026-07-24T10:00:01Z",
+      status: "complete",
+      parts: [{ type: "text", text: "Finished", status: "complete" }],
+    };
+    writeJuneHomeStoredSessionId("default", "late-default");
+    writeJuneHomeStoredSessionId("moving", "late-source");
+    persistHomeDirectTurns("late-source", [userTurn]);
+
+    reconcileJuneHomeProfileRemoval("moving", "move");
+    insertHomeDirectReply("late-source", userTurn.id, assistantTurn);
+
+    expect(readHomeDirectTurns("late-default").map((turn) => turn.id)).toEqual([
+      "late-user",
+      "late-assistant",
+    ]);
+    const movedStore = JSON.parse(
+      window.localStorage.getItem("june:home:direct-turns:v1") ?? "{}",
+    ) as Record<string, unknown>;
+    expect(movedStore).not.toHaveProperty("late-source");
+
+    writeJuneHomeStoredSessionId("deleting", "deleted-source");
+    persistHomeDirectTurns("deleted-source", [userTurn]);
+    reconcileJuneHomeProfileRemoval("deleting", "delete");
+    insertHomeDirectReply("deleted-source", userTurn.id, assistantTurn);
+
+    const deletedStore = JSON.parse(
+      window.localStorage.getItem("june:home:direct-turns:v1") ?? "{}",
+    ) as Record<string, unknown>;
+    expect(deletedStore).not.toHaveProperty("deleted-source");
+  });
+
+  it("keeps handoff metadata for every retained Home task card", () => {
+    writeJuneHomeStoredSessionId("handoffs", "home-many-handoffs");
+    const handoffs = Array.from({ length: 40 }, (_, index) => ({
+      id: `home-task-${index}`,
+      title: `Task ${index}`,
+      prompt: `Run task ${index}`,
+      status: "running" as const,
+      storedSessionId: `focused-${index}`,
+    }));
+
+    persistHomeTaskHandoffs("home-many-handoffs", handoffs);
+
+    expect(readHomeTaskHandoffs("home-many-handoffs")).toHaveLength(40);
   });
 
   it("injects Home context without exposing it in the transcript or previews", () => {

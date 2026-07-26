@@ -544,7 +544,7 @@ async fn move_profile_data_to_default_retags_owned_rows_only() {
         .expect("other memory");
 
     repos
-        .move_profile_data_to_default("x")
+        .move_profile_data_to_default("x", None)
         .await
         .expect("move profile data");
 

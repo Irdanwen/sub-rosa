@@ -63,10 +63,13 @@ memories as background facts rather than instructions and is told to use only
 relevant ones. Project-scoped memories are excluded because Home has no active
 project boundary.
 
-Turns with attachments, slash commands, or other agent-only features run in
-Home's June-owned backing session. Ordinary text-only conversation continues
-to use the lightweight path, while concrete work returned by that path starts
-a separate focused session through the standard runtime.
+Turns with attachments, slash commands, or other agent-only features become a
+focused session immediately. The Home client records the visible user turn and
+structured handoff card, then starts the focused work through the June-owned
+runtime with the original attachments. It does not run a second hidden agent
+turn inside Home. Ordinary text-only conversation continues to use the
+lightweight path, while concrete work returned by that path uses the same
+focused-session handoff.
 
 Both paths emit the same structured task request and render the same inline
 handoff card. A process-wide queue keyed by the stored Home session id
@@ -101,10 +104,11 @@ input. Transport diagnostics stay in error details and logs; the primary Home
 error is a short retryable message.
 
 The merged transcript is currently a UI contract rather than one shared model
-context for every capability. A backing-session turn that needs an attachment
-or slash command does not yet receive the lightweight path's full local history. Do not
-describe the entire visible Home transcript as shared semantic context until
-this boundary has a retrieval or summary contract.
+context for every capability. A focused attachment or slash-command handoff
+receives the user's current request and attachments, but not the lightweight
+path's full local history. Do not describe the entire visible Home transcript
+as shared semantic context until this boundary has a retrieval or summary
+contract.
 
 ## Structured task handoff
 

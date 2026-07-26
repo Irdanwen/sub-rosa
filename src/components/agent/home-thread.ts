@@ -10,7 +10,8 @@ import {
   LEGACY_JUNE_HOME_DIRECT_TURNS_STORAGE_KEY,
   LEGACY_JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY,
   readJuneHomeStoredSessionId,
-  stripJuneHomeContext,
+  resolveJuneHomeThreadSessionId,
+  stripJuneHomeContextFromPreview,
   type JuneHomeConversationContext,
   type JuneHomeTaskRequest,
   writeJuneHomeStoredSessionId,
@@ -23,6 +24,7 @@ export type HomeTaskHandoff = JuneHomeTaskRequest & {
   storedSessionId?: string;
   error?: string;
   profile?: string;
+  attachments?: string[];
 };
 
 export const HOME_DEMO_SEEDED_EVENT = "june:agent:home-demo-seeded";
@@ -82,12 +84,17 @@ function validHomeTurn(value: unknown): value is AgentChatTurn {
 }
 
 export function readHomeDirectTurns(storedSessionId: string | undefined): AgentChatTurn[] {
-  if (!storedSessionId) return [];
-  const turns = readRecord(JUNE_HOME_DIRECT_TURNS_STORAGE_KEY)[storedSessionId];
+  const activeSessionId = storedSessionId
+    ? resolveJuneHomeThreadSessionId(storedSessionId)
+    : undefined;
+  if (!activeSessionId) return [];
+  const turns = readRecord(JUNE_HOME_DIRECT_TURNS_STORAGE_KEY)[activeSessionId];
   return Array.isArray(turns) ? turns.filter(validHomeTurn) : [];
 }
 
 export function persistHomeDirectTurns(storedSessionId: string, turns: AgentChatTurn[]) {
+  const activeSessionId = resolveJuneHomeThreadSessionId(storedSessionId);
+  if (!activeSessionId) return;
   const records = readRecord(JUNE_HOME_DIRECT_TURNS_STORAGE_KEY);
   // The relationship thread is intentionally long-lived. Keep all turns while
   // storage permits it, then retain the deepest viable recent tail.
@@ -99,9 +106,9 @@ export function persistHomeDirectTurns(storedSessionId: string, turns: AgentChat
     try {
       window.localStorage.setItem(
         JUNE_HOME_DIRECT_TURNS_STORAGE_KEY,
-        JSON.stringify({ ...records, [storedSessionId]: candidate }),
+        JSON.stringify({ ...records, [activeSessionId]: candidate }),
       );
-      dispatchJuneHomeThreadChanged(storedSessionId);
+      dispatchJuneHomeThreadChanged(activeSessionId);
       return;
     } catch {
       // Try the next smaller durable tail.
@@ -125,8 +132,11 @@ export function insertHomeDirectReply(
 }
 
 export function readHomeTaskHandoffs(storedSessionId: string | undefined): HomeTaskHandoff[] {
-  if (!storedSessionId) return [];
-  const values = readRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY)[storedSessionId];
+  const activeSessionId = storedSessionId
+    ? resolveJuneHomeThreadSessionId(storedSessionId)
+    : undefined;
+  if (!activeSessionId) return [];
+  const values = readRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY)[activeSessionId];
   if (!Array.isArray(values)) return [];
   return values
     .map((value) => {
@@ -149,19 +159,37 @@ export function readHomeTaskHandoffs(storedSessionId: string | undefined): HomeT
           handoff.status === "running" ||
           handoff.status === "failed") &&
         (handoff.profile === undefined || typeof handoff.profile === "string") &&
+        (handoff.attachments === undefined ||
+          (Array.isArray(handoff.attachments) &&
+            handoff.attachments.every((path) => typeof path === "string"))) &&
         (handoff.status !== "running" || typeof handoff.storedSessionId === "string")
       );
     });
 }
 
 export function persistHomeTaskHandoffs(storedSessionId: string, handoffs: HomeTaskHandoff[]) {
+  const activeSessionId = resolveJuneHomeThreadSessionId(storedSessionId);
+  if (!activeSessionId) return;
   const records = readRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY);
-  const durable = handoffs.slice(-24);
-  writeRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY, {
-    ...records,
-    [storedSessionId]: durable,
-  });
-  dispatchJuneHomeThreadChanged(storedSessionId);
+  // Handoffs back every visible task card in the long-lived transcript. Keep
+  // the full set when storage permits, then degrade in lockstep-sized tails
+  // instead of silently dropping every card after the newest 24.
+  const candidates = [handoffs, handoffs.slice(-2000), handoffs.slice(-1000), handoffs.slice(-400)];
+  const attemptedLengths = new Set<number>();
+  for (const candidate of candidates) {
+    if (attemptedLengths.has(candidate.length)) continue;
+    attemptedLengths.add(candidate.length);
+    try {
+      window.localStorage.setItem(
+        JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY,
+        JSON.stringify({ ...records, [activeSessionId]: candidate }),
+      );
+      dispatchJuneHomeThreadChanged(activeSessionId);
+      return;
+    } catch {
+      // Try the next smaller durable tail.
+    }
+  }
 }
 
 function textForTurn(turn: AgentChatTurn): string {
@@ -186,7 +214,8 @@ export function homeConversationContextFromTurns(
     )
     .map((turn) => {
       const rawText = textForTurn(turn);
-      const text = turn.role === "user" ? stripJuneHomeContext(rawText) : rawText;
+      const text =
+        turn.role === "user" ? (stripJuneHomeContextFromPreview(rawText) ?? rawText) : rawText;
       const delegated = turn.parts.some(
         (part) => part.type === "tool" && isJuneHomeStartTaskTool(part.name),
       );
