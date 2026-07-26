@@ -1764,29 +1764,28 @@ pub fn stop_helper(app: &AppHandle) {
                 timeout_ms = HELPER_SHUTDOWN_MUTEX_TIMEOUT.as_millis(),
                 "dictation helper shutdown timed out acquiring the process lock"
             );
-            // A command thread can be blocked writing to a wedged helper while
-            // it owns `state.process`. Dropping the app in that state detaches
-            // the child and leaves its global event tap alive. On macOS the
-            // per-instance ownership record gives us a second, lock-independent
-            // handle to the exact helper this process spawned. Validate the
-            // complete (pid, start time) identities before killing it so a
-            // concurrently running June instance is never touched.
-            #[cfg(target_os = "macos")]
-            if !reap_current_owned_helper_without_process_lock(app) {
-                tracing::warn!(
-                    "dictation helper shutdown fallback could not confirm the helper exited"
-                );
-            }
             None
         }
     };
     if let Some(helper) = helper {
         abandon_helper(helper);
     }
+    // A command thread can be blocked writing to a wedged helper while it owns
+    // `state.process`, or the child handle can race out of the slot before the
+    // bounded reaper confirms exit. Dropping the app in either state detaches
+    // the child and leaves its global event tap alive. On macOS the per-instance
+    // ownership record gives us a lock-independent handle to the exact helper
+    // this process spawned. Always verify that record after the normal path so
+    // shutdown does not return until the helper is gone (or ownership fails
+    // closed). This also removes the now-stale record after a clean exit.
+    #[cfg(target_os = "macos")]
+    if !reap_current_owned_helper_without_process_lock(app) {
+        tracing::warn!("dictation helper shutdown fallback could not confirm the helper exited");
+    }
 }
 
 #[cfg(target_os = "macos")]
-fn decide_owned_lock_timeout_action(
+fn decide_owned_shutdown_action(
     recorded_app_pid: u32,
     current_app_pid: u32,
     owner: OwnerLiveness,
@@ -1810,10 +1809,11 @@ fn decide_owned_lock_timeout_action(
 #[cfg(target_os = "macos")]
 fn reap_current_owned_helper_without_process_lock(app: &AppHandle) -> bool {
     let Some(path) = helper_ownership_path(app) else {
-        return false;
+        return true;
     };
     let raw = match fs::read_to_string(&path) {
         Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return true,
         Err(error) => {
             tracing::warn!(
                 path = %path.display(),
@@ -1840,7 +1840,7 @@ fn reap_current_owned_helper_without_process_lock(app: &AppHandle) -> bool {
         &record.helper_start,
         &inspect_helper_identity(record.helper_pid),
     );
-    match decide_owned_lock_timeout_action(record.app_pid, std::process::id(), owner, helper) {
+    match decide_owned_shutdown_action(record.app_pid, std::process::id(), owner, helper) {
         RecordAction::Reap => {
             kill_pid(record.helper_pid);
             if !wait_for_pid_exit(record.helper_pid, HELPER_ORPHAN_EXIT_TIMEOUT) {
@@ -3181,7 +3181,10 @@ fn spawn_helper(app: &AppHandle) -> Result<HelperProcess, AppError> {
             )
         })?;
 
-    let mut child = Command::new(&helper_path)
+    let mut command = Command::new(&helper_path);
+    #[cfg(target_os = "macos")]
+    command.env("JUNE_OWNER_PID", std::process::id().to_string());
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -6234,48 +6237,28 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn lock_timeout_fallback_reaps_only_the_current_instances_helper() {
+    fn shutdown_fallback_reaps_only_the_current_instances_helper() {
         assert_eq!(
-            decide_owned_lock_timeout_action(
-                42,
-                42,
-                OwnerLiveness::Alive,
-                HelperMatch::MatchesRecord,
-            ),
+            decide_owned_shutdown_action(42, 42, OwnerLiveness::Alive, HelperMatch::MatchesRecord,),
             RecordAction::Reap
         );
         assert_eq!(
-            decide_owned_lock_timeout_action(
-                42,
-                42,
-                OwnerLiveness::Alive,
-                HelperMatch::GoneOrReused,
-            ),
+            decide_owned_shutdown_action(42, 42, OwnerLiveness::Alive, HelperMatch::GoneOrReused,),
             RecordAction::DeleteStale
         );
         // A sibling instance's ownership record is never a shutdown target.
         assert_eq!(
-            decide_owned_lock_timeout_action(
-                41,
-                42,
-                OwnerLiveness::Alive,
-                HelperMatch::MatchesRecord,
-            ),
+            decide_owned_shutdown_action(41, 42, OwnerLiveness::Alive, HelperMatch::MatchesRecord,),
             RecordAction::Abort
         );
         // Pid reuse, an already-dead owner, or any uncertain helper identity
         // fails closed instead of signalling an unverified process.
         assert_eq!(
-            decide_owned_lock_timeout_action(
-                42,
-                42,
-                OwnerLiveness::Dead,
-                HelperMatch::MatchesRecord,
-            ),
+            decide_owned_shutdown_action(42, 42, OwnerLiveness::Dead, HelperMatch::MatchesRecord,),
             RecordAction::Abort
         );
         assert_eq!(
-            decide_owned_lock_timeout_action(42, 42, OwnerLiveness::Alive, HelperMatch::Unknown,),
+            decide_owned_shutdown_action(42, 42, OwnerLiveness::Alive, HelperMatch::Unknown,),
             RecordAction::Abort
         );
     }
