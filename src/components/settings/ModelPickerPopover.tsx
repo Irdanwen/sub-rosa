@@ -176,6 +176,7 @@ export function ModelPickerPopover({
   onSelectThinking?: (level: ThinkingLevel) => void;
 }) {
   const flyoutRef = useRef<HTMLDivElement | null>(null);
+  const focusEffortChoiceRef = useRef(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const hovercardRef = useRef<HTMLDivElement | null>(null);
   // "Private" catalog filter. Local to the popover on purpose: it resets when
@@ -269,12 +270,14 @@ export function ModelPickerPopover({
   }, [flyout]);
 
   useLayoutEffect(() => {
-    if (flyout?.kind !== "effort") return;
-    window.requestAnimationFrame(() => {
+    if (flyout?.kind !== "effort" || !focusEffortChoiceRef.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      focusEffortChoiceRef.current = false;
       flyoutRef.current
         ?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')
         ?.focus();
     });
+    return () => window.cancelAnimationFrame(frame);
   }, [flyout]);
 
   // The detail card opens beside the popover, its top pinned to the active
@@ -902,7 +905,10 @@ export function ModelPickerPopover({
                     if (modelBridge.isActive()) {
                       return;
                     }
-                    const open = () => onFlyoutChange({ kind: "effort" });
+                    const open = () => {
+                      focusEffortChoiceRef.current = false;
+                      onFlyoutChange({ kind: "effort" });
+                    };
                     if (flyout) {
                       cancelHoverIntent();
                       open();
@@ -912,10 +918,12 @@ export function ModelPickerPopover({
                   }}
                   onFocus={() => {
                     cancelHoverIntent();
+                    focusEffortChoiceRef.current = true;
                     onFlyoutChange({ kind: "effort" });
                   }}
                   onClick={() => {
                     cancelHoverIntent();
+                    focusEffortChoiceRef.current = true;
                     onFlyoutChange({ kind: "effort" });
                   }}
                 >

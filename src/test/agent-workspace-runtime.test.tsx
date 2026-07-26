@@ -399,7 +399,15 @@ describe("AgentWorkspace runtime wiring", () => {
     expect(screen.queryByRole("group", { name: "All text models" })).not.toBeInTheDocument();
     expect(search).toHaveFocus();
 
-    await user.click(screen.getByRole("button", { name: /Effort.*Medium/ }));
+    const effortTrigger = screen.getByRole("button", { name: /Effort.*Medium/ });
+    fireEvent.mouseEnter(effortTrigger);
+    expect(await screen.findByRole("group", { name: "Thinking level" })).toBeVisible();
+    expect(search).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("group", { name: "Thinking level" })).not.toBeInTheDocument();
+    expect(search).toHaveFocus();
+
+    await user.click(effortTrigger);
     const effort = screen.getByRole("group", { name: "Thinking level" });
     expect(effort).toHaveClass("agent-composer-model-effort-panel");
     const lowEffort = within(effort).getByRole("menuitemradio", {
@@ -830,6 +838,9 @@ describe("AgentWorkspace runtime wiring", () => {
     rerender(<AgentWorkspace initialSession={session} onSessionSelected={onSessionSelected} />);
     expect(await screen.findByText("Earlier answer")).toBeVisible();
     await waitFor(() => expect(screen.queryByText("Fresh request")).not.toBeInTheDocument());
+    const activeComposer = screen.getByRole("textbox", { name: "Message June" });
+    await user.type(activeComposer, "Keep this draft");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled());
 
     await act(async () => resolveCreate?.(newSession));
     await waitFor(() =>
@@ -839,6 +850,8 @@ describe("AgentWorkspace runtime wiring", () => {
     );
     expect(screen.getByText("Earlier answer")).toBeVisible();
     expect(screen.queryByText("Fresh request")).not.toBeInTheDocument();
+    expect(activeComposer).toHaveTextContent("Keep this draft");
+    expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
     expect(onSessionSelected).not.toHaveBeenCalledWith(newSession);
   });
 

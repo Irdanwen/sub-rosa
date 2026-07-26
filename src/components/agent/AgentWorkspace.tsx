@@ -272,6 +272,7 @@ export function AgentWorkspace({
     turn: AgentChatTurn;
   }>();
   const pendingSessionCreationRef = useRef<string>();
+  const submissionOwnerRef = useRef<string>();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
   const [approvalSubmitting, setApprovalSubmitting] = useState<
@@ -307,6 +308,7 @@ export function AgentWorkspace({
   const startNewSession = useCallback(
     (request?: AgentNewSessionDetail) => {
       pendingSessionCreationRef.current = undefined;
+      submissionOwnerRef.current = undefined;
       setSelectedId(undefined);
       selectedIdRef.current = undefined;
       setNewSessionMode(true);
@@ -465,6 +467,7 @@ export function AgentWorkspace({
     if (!nextId) return;
     if (selectedIdRef.current !== nextId) {
       pendingSessionCreationRef.current = undefined;
+      submissionOwnerRef.current = undefined;
       setSubmitting(false);
     }
     setPendingInitialTurn((current) =>
@@ -617,6 +620,8 @@ export function AgentWorkspace({
       }
       return;
     }
+    const submissionId = crypto.randomUUID();
+    submissionOwnerRef.current = submissionId;
     setSubmitting(true);
     setError(undefined);
     const creatingSession = !selectedSession || newSessionMode;
@@ -645,8 +650,10 @@ export function AgentWorkspace({
           ],
         },
       });
-      setDraft("");
-      setAttachments([]);
+      if (submissionOwnerRef.current === submissionId) {
+        setDraft("");
+        setAttachments([]);
+      }
     }
     try {
       let session = selectedSession;
@@ -703,8 +710,10 @@ export function AgentWorkspace({
           items: [...current.items, optimistic],
         }));
       }
-      setDraft("");
-      setAttachments([]);
+      if (submissionOwnerRef.current === submissionId) {
+        setDraft("");
+        setAttachments([]);
+      }
       const enabledSkillIds = (await agentRuntimeBindings.listSkills())
         .filter((skill) => skill.enabled)
         .map((skill) => skill.id);
@@ -731,7 +740,10 @@ export function AgentWorkspace({
       if (pendingSessionCreationRef.current === creationRequestId) {
         pendingSessionCreationRef.current = undefined;
       }
-      setSubmitting(false);
+      if (submissionOwnerRef.current === submissionId) {
+        submissionOwnerRef.current = undefined;
+        setSubmitting(false);
+      }
       dispatchAgentSessionStatus({
         sessionId: activeSession.id,
         title: activeSession.title,
@@ -739,6 +751,8 @@ export function AgentWorkspace({
       });
       await refreshSessions();
     } catch (cause) {
+      if (submissionOwnerRef.current !== submissionId) return;
+      submissionOwnerRef.current = undefined;
       setSubmitting(false);
       const operationIsVisible = creationRequestId
         ? pendingSessionCreationRef.current === creationRequestId
