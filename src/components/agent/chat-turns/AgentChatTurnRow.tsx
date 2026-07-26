@@ -1,6 +1,7 @@
 import { IconArrowsRepeat } from "central-icons/IconArrowsRepeat";
+import { IconBranch } from "central-icons/IconBranch";
 import { IconConcise } from "central-icons/IconConcise";
-import { memo, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   displayedComposerUserMessageText,
   stripRenderedMediaReferences,
@@ -13,7 +14,7 @@ import {
   stripAgentCliAccessRequest,
 } from "../../../lib/agent-cli-access";
 import { hasBrowserAccessRequest, stripBrowserAccessRequest } from "../../../lib/browser-access";
-import { hermesBridgeFilePreview } from "../../../lib/tauri";
+import { agentFilePreview } from "../../../lib/tauri";
 import type { FundingTier } from "../../account/FundingNotice";
 import { CopyStateIcon } from "../../ui/CopyStateIcon";
 import { HoverTip } from "../../ui/HoverTip";
@@ -31,23 +32,54 @@ import {
 } from "./AgentActionCards";
 import { AgentArtifactList, type AgentArtifact } from "./AgentArtifactPanel";
 import {
-  BranchFromHereAction,
   SecretPart,
   SudoPart,
   TURN_ACTION_TIP_DELAY_MS,
-  branchSourceSessionIdForTurn,
   turnIsConcreteResponse,
-} from "./BranchAndSensitiveActions";
+} from "./TurnPresentation";
 import { AgentGeneratedImage, AgentGeneratedVideo } from "./GeneratedMedia";
 import {
   ContextOverflowNoticePart,
   CreditsNoticePart,
   SteeringPart,
   UpstreamProviderFailureNoticePart,
-} from "./SessionNotices";
+} from "./RunNotices";
 import { AgentThinkingGroup, AgentToolStack } from "./ThinkingAndTools";
 
-export type AgentChatTurnRowProps = {
+export function AgentChatTurnRow({
+  activeThinkingKey,
+  approvalSubmitting,
+  artifacts,
+  clarifySubmitting,
+  sudoSubmitting,
+  secretSubmitting,
+  cliAccess,
+  browserAccess,
+  thinkingOpen,
+  onApproval,
+  onClarify,
+  onSudo,
+  onSecret,
+  onDownloadArtifact,
+  onOpenArtifact,
+  onDownloadImage,
+  onOpenImage,
+  onRetryImage,
+  onDownloadVideo,
+  onRetryVideo,
+  onRetryUpstreamFailure,
+  upstreamFailureRetryAttempted,
+  upstreamFailureRetryDisabled,
+  creditActionsDisabledReason,
+  onThinkingOpenChange,
+  onTopUp,
+  topUpLabel,
+  fundingTier,
+  onVisibleMarkdownChange,
+  onBranch,
+  branching,
+  turn,
+}: {
   activeThinkingKey?: string;
   approvalSubmitting: Partial<Record<string, AgentApprovalChoice>>;
   artifacts?: AgentArtifact[];
@@ -86,50 +118,10 @@ export type AgentChatTurnRowProps = {
   topUpLabel?: string;
   fundingTier?: FundingTier;
   onVisibleMarkdownChange?: (visibleMarkdown: string) => void;
-  /** Fork the conversation from this turn into a new session (feature 07).
-   * Optional: only Hermes-session rows pass it — task rows and the dev gallery
-   * omit it, so the action is absent there. */
-  onBranch?: (messageId: string, sessionId?: string) => void;
-  /** The message id a branch is currently in flight for, so its action shows a
-   * working/disabled state. */
-  branchingMessageId?: string | null;
+  onBranch?: (itemId: string) => void;
+  branching?: boolean;
   turn: AgentChatTurn;
-};
-
-export const AgentChatTurnRow = memo(function AgentChatTurnRow({
-  activeThinkingKey,
-  approvalSubmitting,
-  artifacts,
-  clarifySubmitting,
-  sudoSubmitting,
-  secretSubmitting,
-  cliAccess,
-  browserAccess,
-  thinkingOpen,
-  onApproval,
-  onClarify,
-  onSudo,
-  onSecret,
-  onDownloadArtifact,
-  onOpenArtifact,
-  onDownloadImage,
-  onOpenImage,
-  onRetryImage,
-  onDownloadVideo,
-  onRetryVideo,
-  onRetryUpstreamFailure,
-  upstreamFailureRetryAttempted,
-  upstreamFailureRetryDisabled,
-  creditActionsDisabledReason,
-  onThinkingOpenChange,
-  onTopUp,
-  topUpLabel,
-  fundingTier,
-  onVisibleMarkdownChange,
-  onBranch,
-  branchingMessageId,
-  turn,
-}: AgentChatTurnRowProps) {
+}) {
   const textParts = turn.parts.filter(
     (part): part is Extract<AgentChatPart, { type: "text" }> => part.type === "text",
   );
@@ -267,21 +259,6 @@ export const AgentChatTurnRow = memo(function AgentChatTurnRow({
     }
   }
 
-  // Per-turn transcript actions. Branch is rendered only on Hermes-session rows
-  // (which pass `onBranch`); pending user prompts and live assistant rows route
-  // to the nearest saved fork point, while other synthetic rows still explain
-  // that they need to be saved first.
-  const branchSessionId = branchSourceSessionIdForTurn(turn);
-  const branchMessageId = turn.branchMessageId ?? turn.id;
-  const branchSubmitting = branchingMessageId === branchMessageId;
-  const branchAction = onBranch ? (
-    <BranchFromHereAction
-      messageId={branchMessageId}
-      sessionId={branchSessionId}
-      onBranch={onBranch}
-      submitting={branchSubmitting}
-    />
-  ) : null;
   const copyAction = copyText ? (
     <HoverTip
       compact
@@ -302,6 +279,26 @@ export const AgentChatTurnRow = memo(function AgentChatTurnRow({
       </button>
     </HoverTip>
   ) : null;
+  const branchAction =
+    concreteResponse && onBranch ? (
+      <HoverTip
+        compact
+        width={136}
+        delay={TURN_ACTION_TIP_DELAY_MS}
+        tip="Branch from here"
+        className="agent-turn-action-tip"
+      >
+        <button
+          type="button"
+          className="agent-turn-action"
+          aria-label={branching ? "Creating branch" : "Branch from here"}
+          disabled={branching}
+          onClick={() => onBranch(turn.id)}
+        >
+          <IconBranch size={14} aria-hidden />
+        </button>
+      </HoverTip>
+    ) : null;
   // Timestamp for the row. relativeDate returns "" for an unparseable value, so
   // we only render the <time> when there's a real date to show.
   const timestampLabel = relativeDate(turn.createdAt);
@@ -320,7 +317,7 @@ export const AgentChatTurnRow = memo(function AgentChatTurnRow({
   ) : null;
   const turnActions =
     concreteResponse && (copyAction || branchAction || timestampAction) ? (
-      <div className="agent-turn-actions" data-branching={branchSubmitting ? "true" : undefined}>
+      <div className="agent-turn-actions">
         <div className="agent-turn-actions-inner">
           {/* The timestamp sits on the outer/far side of the row: before the
            * icons on right-aligned user turns, after them on left-aligned
@@ -536,7 +533,7 @@ export const AgentChatTurnRow = memo(function AgentChatTurnRow({
       </div>
     </article>
   );
-});
+}
 
 type AccessRequestCardKind = "browser" | "cli";
 
@@ -572,7 +569,7 @@ function AgentUserAttachment({
   useEffect(() => {
     if (attachment.kind !== "image") return;
     let cancelled = false;
-    hermesBridgeFilePreview(attachment.path)
+    agentFilePreview(attachment.path)
       .then((dataUrl) => {
         if (!cancelled) setPreviewDataUrl(dataUrl);
       })

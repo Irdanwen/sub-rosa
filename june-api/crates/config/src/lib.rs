@@ -76,15 +76,13 @@ const IMAGE_EDIT_JSON_OVERHEAD_BYTES: usize = 16 * 1024;
 pub const DEFAULT_MAX_IMAGE_EDIT_BYTES: usize =
     base64_encoded_len(IMAGE_EDIT_SOURCE_MAX_BYTES) + IMAGE_EDIT_JSON_OVERHEAD_BYTES;
 /// Dedicated request-body cap for `/v1/chat/completions`. Sized to the
-/// desktop provider proxy's chat body cap
-/// (`JUNE_PROVIDER_PROXY_MAX_CHAT_BODY_BYTES`, 12 MiB, in
-/// `src-tauri/src/hermes_bridge.rs`) so an in-window agent chat request the
-/// proxy forwards is never rejected here by a stricter outer gate before
+/// desktop provider proxy's 12 MiB chat body cap so an in-window agent chat
+/// request the proxy forwards is never rejected here by a stricter outer gate before
 /// `validate_agent_chat_body` can size-check it (JUN-336). 12 MiB is the
 /// byte-image of the 6M-char semantic cap (`MAX_AGENT_TOTAL_STRING_CHARS`) at
 /// ~2 bytes/char, sized for a 1M-token context window. This is only an abuse
 /// ceiling above every valid agent chat request; semantic size rejection stays
-/// in `validate_agent_chat_body`. Keep this in sync with the proxy constant
+/// in `validate_agent_chat_body`. Keep this in sync with the desktop proxy
 /// across the src-tauri / june-api workspace boundary.
 pub const DEFAULT_MAX_AGENT_CHAT_BYTES: usize = 12 * 1024 * 1024;
 /// Global cap on the total in-flight request-body bytes buffered across the

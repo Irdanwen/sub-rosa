@@ -41,15 +41,15 @@ const ISSUE_REPORT_MULTIPART_TIMEOUT: Duration = Duration::from_secs(900);
 const AGENT_HTTP_TIMEOUT: Duration = Duration::from_secs(600);
 const AGENT_PROXY_MAX_MESSAGES: usize = 64;
 const AGENT_PROXY_MAX_INSTRUCTION_MESSAGES: usize = 4;
-// Mirrors the public June API validation cap. Hermes may request a larger
+// Mirrors the public June API validation cap. The agent runtime may request a larger
 // per-call output budget than the backend accepts, which otherwise trips a
 // validation error that it misclassifies as prompt context overflow.
 const AGENT_PROXY_MAX_OUTPUT_TOKENS: u64 = 32_768;
-/// Internal Hermes model id used to carry a per-run Auto preference through
+/// Internal agent model id used to carry a per-run Auto preference through
 /// session-scoped `config.set`. June's on-device provider proxy rewrites it
 /// before forwarding, so June API never sees this implementation detail.
 const AGENT_RUN_AUTO_MODEL_PREFIX: &str = "__june_auto_generation__:";
-/// Internal Hermes model id that preserves an explicitly remote selection
+/// Internal agent model id that preserves an explicitly remote selection
 /// even when a configured local endpoint exposes the same raw model id.
 const AGENT_RUN_REMOTE_MODEL_PREFIX: &str = "__june_remote_generation__:";
 /// The frontend's synthetic catalog id prefix for the local model option
@@ -178,12 +178,37 @@ pub struct DictateCleanupRequestParams {
 
 /// Response from the agent chat-completions proxy. Holds the upstream
 /// reqwest response so callers can forward body bytes as they arrive
-/// (Hermes requests `stream: true`) instead of buffering the whole
+/// (The agent runtime requests `stream: true`) instead of buffering the whole
 /// generation before the first token is visible.
 pub struct AgentChatCompletionsResponse {
     pub status: u16,
     pub content_type: String,
+    pub route: AgentModelRouteMetadata,
     upstream: reqwest::Response,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentModelRouteMetadata {
+    pub provider: Option<String>,
+    pub privacy_level: Option<String>,
+    pub endpoint: Option<String>,
+}
+
+fn agent_route_metadata(response: &reqwest::Response) -> AgentModelRouteMetadata {
+    let header = |name: &str| {
+        response
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_string)
+    };
+    AgentModelRouteMetadata {
+        provider: header("x-os-provider"),
+        privacy_level: header("x-os-privacy-level"),
+        endpoint: header("x-os-endpoint"),
+    }
 }
 
 impl AgentChatCompletionsResponse {
@@ -872,7 +897,8 @@ async fn write_video_bytes(app: &AppHandle, bytes: &[u8]) -> Result<(String, u64
     reject_oversized_video_bytes(bytes.len() as u64)?;
     let videos_dir = crate::app_paths::app_data_dir(app)
         .map_err(|error| AppError::new("video_write_failed", error.to_string()))?
-        .join("hermes")
+        .join("agent-workspaces")
+        .join("generated-media")
         .join("videos");
     fs::create_dir_all(&videos_dir)
         .map_err(|error| AppError::new("video_write_failed", error.to_string()))?;
@@ -967,7 +993,7 @@ pub async fn proxy_agent_chat_completions(
         &crate::providers::generation_provider(),
     )?;
     normalize_agent_chat_request_for_proxy(&mut body);
-    // Route from the tagged model Hermes stored for this session, not from a
+    // Route from the tagged model the agent session stored for this session, not from a
     // mutable process-wide provider setting. Every inference in one agent run
     // therefore keeps the route selected at its prompt boundary.
     if route == AgentGenerationRoute::Local {
@@ -996,9 +1022,11 @@ pub async fn proxy_agent_chat_completions(
             .and_then(|value| value.to_str().ok())
             .unwrap_or("application/json")
             .to_string();
+        let route = agent_route_metadata(&response);
         return Ok(AgentChatCompletionsResponse {
             status,
             content_type,
+            route,
             upstream: response,
         });
     }
@@ -1102,9 +1130,15 @@ async fn proxy_local_agent_chat_completions(
         .and_then(|value| value.to_str().ok())
         .unwrap_or("application/json")
         .to_string();
+    let route = AgentModelRouteMetadata {
+        provider: Some(PROVIDER_LOCAL.to_string()),
+        privacy_level: Some("local".to_string()),
+        endpoint: Some(settings.model_id.clone()),
+    };
     Ok(AgentChatCompletionsResponse {
         status,
         content_type,
+        route,
         upstream: response,
     })
 }
@@ -3898,13 +3932,13 @@ data: \"data\":{\"content\":\"Joined\",\"titleSuggestion\":null,\"provider\":\"v
     #[test]
     fn agent_proxy_preserves_session_selected_model() {
         let mut body = serde_json::json!({
-            "model": "hermes-selected-model",
+            "model": "agent-selected-model",
             "messages": [{ "role": "user", "content": "hello" }],
         });
 
         normalize_agent_chat_request_for_proxy(&mut body);
 
-        assert_eq!(body["model"], serde_json::json!("hermes-selected-model"));
+        assert_eq!(body["model"], serde_json::json!("agent-selected-model"));
     }
 
     #[test]
@@ -4153,7 +4187,7 @@ data: \"data\":{\"content\":\"Joined\",\"titleSuggestion\":null,\"provider\":\"v
     #[test]
     fn agent_proxy_caps_oversized_output_token_budgets() {
         let mut body = serde_json::json!({
-            "model": "hermes-selected-model",
+            "model": "agent-selected-model",
             "messages": [{ "role": "user", "content": "hello" }],
             "max_tokens": AGENT_PROXY_MAX_OUTPUT_TOKENS + 1,
             "max_completion_tokens": AGENT_PROXY_MAX_OUTPUT_TOKENS + 10,
@@ -4174,7 +4208,7 @@ data: \"data\":{\"content\":\"Joined\",\"titleSuggestion\":null,\"provider\":\"v
     #[test]
     fn agent_proxy_preserves_valid_output_token_budgets() {
         let mut body = serde_json::json!({
-            "model": "hermes-selected-model",
+            "model": "agent-selected-model",
             "messages": [{ "role": "user", "content": "hello" }],
             "max_tokens": 500,
             "max_completion_tokens": AGENT_PROXY_MAX_OUTPUT_TOKENS,
@@ -4192,7 +4226,7 @@ data: \"data\":{\"content\":\"Joined\",\"titleSuggestion\":null,\"provider\":\"v
     #[test]
     fn agent_proxy_caps_float_output_token_budgets_over_the_limit() {
         let mut body = serde_json::json!({
-            "model": "hermes-selected-model",
+            "model": "agent-selected-model",
             "messages": [{ "role": "user", "content": "hello" }],
             "max_tokens": 32769.0,
         });
@@ -4208,7 +4242,7 @@ data: \"data\":{\"content\":\"Joined\",\"titleSuggestion\":null,\"provider\":\"v
     #[test]
     fn agent_proxy_leaves_negative_output_token_budgets_for_backend_validation() {
         let mut body = serde_json::json!({
-            "model": "hermes-selected-model",
+            "model": "agent-selected-model",
             "messages": [{ "role": "user", "content": "hello" }],
             "max_tokens": -1,
         });
@@ -4678,7 +4712,7 @@ Microphone: Great. Let's ship the feed fix this week, then review the onboarding
 
     /// Drives `proxy_agent_chat_completions` on the local path: buffered
     /// JSON first, then `stream: true` asserting SSE framing terminated by
-    /// `data: [DONE]` (the shape Hermes consumes through the proxy).
+    /// `data: [DONE]` (the shape the agent runtime consumes through the proxy).
     #[tokio::test]
     #[ignore = "requires a live local OpenAI-compatible server"]
     async fn live_local_agent_proxy_completes_buffered_and_streaming() {
@@ -4716,7 +4750,7 @@ Microphone: Great. Let's ship the feed fix this week, then review the onboarding
             .expect("completion should carry non-empty assistant content");
         assert!(!content.trim().is_empty());
 
-        // Streaming request, the shape Hermes actually uses.
+        // Streaming request, the shape the agent runtime uses.
         let mut response = proxy_agent_chat_completions(serde_json::json!({
             "messages": [
                 { "role": "user", "content": "Reply with the single word: pong" }
