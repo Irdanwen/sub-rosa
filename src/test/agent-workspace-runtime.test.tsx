@@ -801,11 +801,13 @@ describe("AgentWorkspace runtime wiring", () => {
     );
     expect(screen.getByText("Thinking…")).toBeVisible();
     expect(container.querySelector(".agent-workspace[data-hero='true']")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Session actions" })).not.toBeInTheDocument();
 
     await act(async () => resolveCreate?.(newSession));
     await waitFor(() =>
       expect(mocks.invoke).toHaveBeenCalledWith("start_agent_run", expect.anything()),
     );
+    expect(screen.getByRole("button", { name: "Session actions" })).toBeVisible();
     rerender(<AgentWorkspace initialSession={newSession} onSessionSelected={onSessionSelected} />);
     await waitFor(() =>
       expect(container.querySelector(".agent-user-turn")).toHaveTextContent("Fresh request"),

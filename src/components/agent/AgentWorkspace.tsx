@@ -1267,6 +1267,7 @@ export function AgentWorkspace({
   }
 
   const heroMode = !homeMode && newSessionMode && !selectedSession && !pendingInitialTurn;
+  const sessionActionsAvailable = Boolean(selectedId && selectedSession);
   const homeConversationTurns = useMemo(
     () =>
       [
@@ -1418,8 +1419,10 @@ export function AgentWorkspace({
             fullMode={selectedSession?.safetyMode === "unrestricted"}
             artifactCount={renderedArtifacts.length}
             artifactsOpen={artifactPanel !== null}
-            onToggleArtifacts={() =>
-              setArtifactPanel((current) => (current ? null : { view: "list" }))
+            onToggleArtifacts={
+              sessionActionsAvailable
+                ? () => setArtifactPanel((current) => (current ? null : { view: "list" }))
+                : undefined
             }
             inProject={sessionInProject}
             projectContext={projectContext}
@@ -1435,22 +1438,22 @@ export function AgentWorkspace({
                 ? () => setShareOpen(true)
                 : undefined
             }
-            onUsage={() => setUsageOpen(true)}
+            onUsage={sessionActionsAvailable ? () => setUsageOpen(true) : undefined}
             onCompact={
-              agentRuntimeBindings.compactSession && !running && !waiting
+              sessionActionsAvailable && agentRuntimeBindings.compactSession && !running && !waiting
                 ? () => {
                     setCompactResult(undefined);
                     setCompactOpen(true);
                   }
                 : undefined
             }
-            onRename={rename}
+            onRename={sessionActionsAvailable ? rename : undefined}
             onMoveToProject={
-              selectedId && onMoveSessionToProject
+              sessionActionsAvailable && selectedId && onMoveSessionToProject
                 ? () => onMoveSessionToProject(selectedId)
                 : undefined
             }
-            onDelete={remove}
+            onDelete={sessionActionsAvailable ? remove : undefined}
           />
         ) : null}
         {homeMode ? (
