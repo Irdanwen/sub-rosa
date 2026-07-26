@@ -3116,10 +3116,10 @@ button.agent-user-attachment:hover {
 /* While a turn streams, each newly revealed word mounts as a span and fades
  * in over a deliberately long window: a quick rise to ~30% ink so new words
  * are readable at once, then a slow linear crawl to full. Because the crawl
- * far outlasts the gap between chunks, the last second-or-so of prose reads
+ * far outlasts the gap between word-paced steps, the last second-or-so of prose reads
  * as a soft ink gradient trailing the reveal — SmoothedStreamingMarkdown
- * batches deltas so words that arrived together mount together and settle
- * together. Opacity-only on purpose: batches land several times a second and
+ * decouples the visible cadence from provider delta sizes. Opacity-only on
+ * purpose: new words land several times a second and
  * blur/transform here would churn compositor layers in WKWebView. The
  * settle clock below derives from the same duration token and keeps the spans
  * mounted after completion so the tail finishes settling instead of popping

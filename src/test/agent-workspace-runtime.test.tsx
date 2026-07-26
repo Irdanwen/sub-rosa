@@ -660,6 +660,48 @@ describe("AgentWorkspace runtime wiring", () => {
     expect(onSessionSelected).toHaveBeenLastCalledWith(newSession);
   });
 
+  it("shows the first message and thinking before fresh session creation finishes", async () => {
+    const user = userEvent.setup();
+    let resolveCreate: ((value: AgentSessionDto) => void) | undefined;
+    const pendingCreate = new Promise<AgentSessionDto>((resolve) => {
+      resolveCreate = resolve;
+    });
+    const defaultInvoke = mocks.invoke.getMockImplementation();
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "create_agent_session") return pendingCreate;
+      if (
+        command === "list_agent_items" &&
+        (args as { sessionId?: string } | undefined)?.sessionId === newSession.id
+      ) {
+        return Promise.resolve([]);
+      }
+      return defaultInvoke?.(command, args);
+    });
+
+    const onSessionSelected = vi.fn();
+    const { container, rerender } = render(
+      <AgentWorkspace onSessionSelected={onSessionSelected} />,
+    );
+    const composer = screen.getByRole("textbox", { name: "Message June" });
+    await user.type(composer, "Fresh request");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() =>
+      expect(container.querySelector(".agent-user-turn")).toHaveTextContent("Fresh request"),
+    );
+    expect(screen.getByText("Thinking…")).toBeVisible();
+    expect(container.querySelector(".agent-workspace[data-hero='true']")).toBeNull();
+
+    await act(async () => resolveCreate?.(newSession));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("start_agent_run", expect.anything()),
+    );
+    rerender(<AgentWorkspace initialSession={newSession} onSessionSelected={onSessionSelected} />);
+    await waitFor(() =>
+      expect(container.querySelector(".agent-user-turn")).toHaveTextContent("Fresh request"),
+    );
+  });
+
   it("uses the priced June Auto model id for a fresh workspace", async () => {
     setCurrentDataPartitionName("private");
     const user = userEvent.setup();

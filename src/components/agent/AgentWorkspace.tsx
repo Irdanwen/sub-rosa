@@ -259,6 +259,12 @@ export function AgentWorkspace({
     prompt: string;
     attachments: string[];
   }>();
+  const [pendingInitialTurn, setPendingInitialTurn] = useState<{
+    prompt: string;
+    sessionId?: string;
+    title: string;
+    turn: AgentChatTurn;
+  }>();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
   const [approvalSubmitting, setApprovalSubmitting] = useState<
@@ -304,6 +310,7 @@ export function AgentWorkspace({
       setDraft(request?.prompt ?? "");
       setAttachments([]);
       setQueuedFollowUp(undefined);
+      setPendingInitialTurn(undefined);
       setSubmitting(false);
       setError(undefined);
       onSessionSelected?.(undefined);
@@ -316,6 +323,23 @@ export function AgentWorkspace({
   const running = projection.run?.status === "running" || projection.run?.status === "queued";
   const waiting = projection.run?.status === "waiting_for_user";
   const turns = useMemo(() => agentItemsToChatTurns(projection.items), [projection.items]);
+  const visibleTurns = useMemo(() => {
+    if (!pendingInitialTurn) return turns;
+    if (turns.some((turn) => turn.id === pendingInitialTurn.turn.id)) return turns;
+    return [pendingInitialTurn.turn, ...turns];
+  }, [pendingInitialTurn, turns]);
+
+  useEffect(() => {
+    if (!pendingInitialTurn) return;
+    const persisted = projection.items.some(
+      (item) =>
+        item.kind === "message" &&
+        item.role === "user" &&
+        !item.id.startsWith("optimistic:") &&
+        stripProjectContext(item.text).trim() === pendingInitialTurn.prompt,
+    );
+    if (persisted) setPendingInitialTurn(undefined);
+  }, [pendingInitialTurn, projection.items]);
   const activeModel = selectedModel(models, model);
   const textActionsDisabledReason = shouldBlockTextOnFunding(Boolean(creditActionsDisabledReason), {
     activeModelId: model || undefined,
@@ -431,6 +455,9 @@ export function AgentWorkspace({
   useEffect(() => {
     const nextId = initialSession?.id ?? initialSessionId;
     if (!nextId) return;
+    setPendingInitialTurn((current) =>
+      current?.sessionId && current.sessionId !== nextId ? undefined : current,
+    );
     setSelectedId(nextId);
     selectedIdRef.current = nextId;
     if (initialSession) {
@@ -580,6 +607,33 @@ export function AgentWorkspace({
     }
     setSubmitting(true);
     setError(undefined);
+    const creatingSession = !selectedSession || newSessionMode;
+    const optimisticId = `optimistic:${crypto.randomUUID()}`;
+    const optimisticCreatedAt = new Date().toISOString();
+    const attachedPaths = attachments;
+    if (creatingSession) {
+      setPendingInitialTurn({
+        prompt,
+        title: titleFromPrompt(prompt),
+        turn: {
+          id: optimisticId,
+          createdAt: optimisticCreatedAt,
+          role: "user",
+          status: "complete",
+          parts: [
+            ...attachedPaths.map((path): AgentChatTurn["parts"][number] => ({
+              type: "attachment",
+              name: path.split(/[\\/]/).pop() || path,
+              path,
+              kind: /\.(?:avif|gif|jpe?g|png|webp)$/i.test(path) ? "image" : "file",
+            })),
+            { type: "text", text: prompt, status: "complete" },
+          ],
+        },
+      });
+      setDraft("");
+      setAttachments([]);
+    }
     try {
       let session = selectedSession;
       if (!session || newSessionMode) {
@@ -597,20 +651,23 @@ export function AgentWorkspace({
           createdSession,
           ...current.filter((item) => item.id !== createdSession.id),
         ]);
+        setPendingInitialTurn((current) =>
+          current ? { ...current, sessionId: createdSession.id } : current,
+        );
         onSessionSelected?.(createdSession);
         writeLastOpenSessionId(createdSession.id);
       }
       const activeSession = session;
       const optimistic: AgentItemDto = {
-        id: `optimistic:${crypto.randomUUID()}`,
+        id: optimisticId,
         sessionId: activeSession.id,
         sequence: Math.max(0, ...projection.items.map((item) => item.sequence)) + 1,
-        createdAt: new Date().toISOString(),
+        createdAt: optimisticCreatedAt,
         kind: "message",
         role: "user",
         text: prompt,
         status: "complete",
-        attachments: attachments.map((path, index) => ({
+        attachments: attachedPaths.map((path, index) => ({
           id: `attachment:${index}:${path}`,
           sessionId: activeSession.id,
           name: path.split(/[\\/]/).pop() || path,
@@ -626,7 +683,6 @@ export function AgentWorkspace({
         items: [...current.items, optimistic],
       }));
       setDraft("");
-      const attachedPaths = attachments;
       setAttachments([]);
       const enabledSkillIds = (await agentRuntimeBindings.listSkills())
         .filter((skill) => skill.enabled)
@@ -658,7 +714,12 @@ export function AgentWorkspace({
       await refreshSessions();
     } catch (cause) {
       setSubmitting(false);
+      if (creatingSession && !selectedIdRef.current) {
+        setPendingInitialTurn(undefined);
+        setNewSessionMode(true);
+      }
       setDraft((current) => current || prompt);
+      setAttachments((current) => (current.length > 0 ? current : attachedPaths));
       setError(messageFromError(cause));
     }
   }
@@ -1160,7 +1221,7 @@ export function AgentWorkspace({
     await refreshSessions();
   }
 
-  const heroMode = !homeMode && newSessionMode && !selectedSession;
+  const heroMode = !homeMode && newSessionMode && !selectedSession && !pendingInitialTurn;
   const homeConversationTurns = useMemo(
     () =>
       [
@@ -1308,7 +1369,7 @@ export function AgentWorkspace({
         {!heroMode && !homeMode ? (
           <AgentSessionBar
             origin={origin}
-            title={selectedSession?.title ?? ""}
+            title={selectedSession?.title ?? pendingInitialTurn?.title ?? ""}
             fullMode={selectedSession?.safetyMode === "unrestricted"}
             artifactCount={renderedArtifacts.length}
             artifactsOpen={artifactPanel !== null}
@@ -1478,7 +1539,7 @@ export function AgentWorkspace({
                 </div>
               ) : null}
               <div className="agent-timeline">
-                {turns.map((turn) => (
+                {visibleTurns.map((turn) => (
                   <AgentChatTurnRow
                     key={turn.id}
                     turn={turn}
@@ -1506,7 +1567,9 @@ export function AgentWorkspace({
                   onOpen={openArtifact}
                   onDownload={(artifact) => void downloadArtifact(artifact)}
                 />
-                <AgentThinking visible={running && turns.at(-1)?.role === "user"} />
+                <AgentThinking
+                  visible={(running || submitting) && visibleTurns.at(-1)?.role === "user"}
+                />
               </div>
               {queuedFollowUp ? (
                 <div className="agent-follow-up-row" role="status">
