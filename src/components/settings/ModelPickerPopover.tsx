@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import type { RefObject } from "react";
 import { createPortal } from "react-dom";
@@ -108,6 +109,7 @@ export function ModelPickerPopover({
   allModelsLabel = `All ${modelModeLabel(mode)} models`,
   veniceApiKeyConfigured = false,
   catalogLoaded,
+  suggestedModelIds,
   rootSearchRef,
   rootSearch,
   onRootSearchChange,
@@ -143,6 +145,9 @@ export function ModelPickerPopover({
    * catalog should pass this; without it the popover falls back to treating
    * "any concrete entry present" as loaded. */
   catalogLoaded?: boolean;
+  /** Optional host-owned suggestion order. Agent sessions use this to keep
+   * Auto as the single quick pick while the full catalog remains searchable. */
+  suggestedModelIds?: readonly string[];
   /** Enables the root-layer search (the /model + composer trigger surface):
    * a field above the pinned controls whose query searches across BOTH
    * layers, suggested picks and the full catalog, as one flat result list.
@@ -172,6 +177,7 @@ export function ModelPickerPopover({
   onSelectThinking?: (level: ThinkingLevel) => void;
 }) {
   const flyoutRef = useRef<HTMLDivElement | null>(null);
+  const focusEffortChoiceRef = useRef(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const hovercardRef = useRef<HTMLDivElement | null>(null);
   // "Private" catalog filter. Local to the popover on purpose: it resets when
@@ -262,6 +268,17 @@ export function ModelPickerPopover({
     if (el.getBoundingClientRect().left < 12) {
       el.dataset.side = "right";
     }
+  }, [flyout]);
+
+  useLayoutEffect(() => {
+    if (flyout?.kind !== "effort" || !focusEffortChoiceRef.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      focusEffortChoiceRef.current = false;
+      flyoutRef.current
+        ?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')
+        ?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [flyout]);
 
   // The detail card opens beside the popover, its top pinned to the active
@@ -365,7 +382,21 @@ export function ModelPickerPopover({
       ),
     [mode, onCostQualityChange, options],
   );
-  const suggested = useMemo(() => suggestedModelsForMode(mode, selectable), [mode, selectable]);
+  const suggested = useMemo(() => {
+    if (!suggestedModelIds) return suggestedModelsForMode(mode, selectable);
+    return suggestedModelIds.flatMap((id, index) => {
+      const option = selectable.find((candidate) => candidate.id === id);
+      if (!option) return [];
+      return [
+        {
+          key: `${id}:host:${index}`,
+          model: option,
+          reason: option.description ?? "Suggested for this surface.",
+          costQuality: undefined,
+        },
+      ];
+    });
+  }, [mode, selectable, suggestedModelIds]);
   const autoEnabled = onCostQualityChange !== undefined && model?.id === AUTO_MODEL_ID;
   const autoPreference = autoPreferenceFromCostQuality(costQuality ?? 100);
   // Toggling stays inside the popover: turning Auto off lands on the leading
@@ -450,12 +481,13 @@ export function ModelPickerPopover({
     : [];
   const resolvedRootActive = Math.min(rootActive, Math.max(rootResults.length - 1, 0));
   const rootStatusId = `${rootListId}-status`;
-  const rootSearchStatus = rootControlsMatch
-    ? `${rootVisibleControlCount} ${rootVisibleControlCount === 1 ? "setting" : "settings"} shown. Press Tab to review ${rootVisibleControlCount === 1 ? "it" : "settings"}.${
-        rootResults.length
-          ? ` ${rootResults.length} matching ${rootResults.length === 1 ? "model" : "models"}. Use the arrow keys to review ${rootResults.length === 1 ? "it" : "models"}.`
-          : ""
-      }`
+  const matchingModelsStatus = rootResults.length
+    ? `${rootResults.length} matching ${rootResults.length === 1 ? "model" : "models"}. Use the arrow keys to review ${rootResults.length === 1 ? "it" : "models"}.`
+    : "No results match your search.";
+  const rootSearchStatus = rootQueryActive
+    ? rootControlsMatch
+      ? `${rootVisibleControlCount} ${rootVisibleControlCount === 1 ? "setting" : "settings"} shown. Press Tab to review ${rootVisibleControlCount === 1 ? "it" : "settings"}. ${matchingModelsStatus}`
+      : matchingModelsStatus
     : undefined;
   useEffect(() => {
     setRootActive(0);
@@ -474,6 +506,16 @@ export function ModelPickerPopover({
           ?.scrollIntoView?.({ block: "nearest" });
       });
       return nextIndex;
+    });
+  }
+  function moveRootActiveTo(index: number) {
+    if (!rootResults.length) return;
+    const nextIndex = Math.max(0, Math.min(index, rootResults.length - 1));
+    setRootActive(nextIndex);
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById(`${rootListId}-option-${nextIndex}`)
+        ?.scrollIntoView?.({ block: "nearest" });
     });
   }
   const detail =
@@ -560,6 +602,24 @@ export function ModelPickerPopover({
     setBridging,
   });
 
+  function handleListboxNavigation(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const options = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="option"]'),
+    );
+    if (!options.length) return;
+    event.preventDefault();
+    const focusedIndex = options.indexOf(document.activeElement as HTMLButtonElement);
+    const currentIndex = focusedIndex >= 0 ? focusedIndex : 0;
+    const nextIndex =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? options.length - 1
+          : (currentIndex + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
+    options[nextIndex]?.focus();
+  }
+
   function catalogList(label: string) {
     return (
       <>
@@ -586,6 +646,7 @@ export function ModelPickerPopover({
             className="agent-composer-model-list"
             role="listbox"
             aria-label={label}
+            onKeyDown={handleListboxNavigation}
             onScroll={() => {
               fade.update();
               cancelHoverIntent();
@@ -615,7 +676,7 @@ export function ModelPickerPopover({
                 />
               ))
             ) : (
-              <p className="agent-composer-model-empty">
+              <p className="agent-composer-model-empty" role="status" aria-live="polite">
                 {privateOnly
                   ? query
                     ? "No private models match your search."
@@ -730,6 +791,16 @@ export function ModelPickerPopover({
               if (event.key === "ArrowUp" && rootResults.length) {
                 event.preventDefault();
                 moveRootActive(-1);
+                return;
+              }
+              if (event.key === "Home" && rootResults.length) {
+                event.preventDefault();
+                moveRootActiveTo(0);
+                return;
+              }
+              if (event.key === "End" && rootResults.length) {
+                event.preventDefault();
+                moveRootActiveTo(rootResults.length - 1);
                 return;
               }
             }}
@@ -875,7 +946,10 @@ export function ModelPickerPopover({
                     if (modelBridge.isActive()) {
                       return;
                     }
-                    const open = () => onFlyoutChange({ kind: "effort" });
+                    const open = () => {
+                      focusEffortChoiceRef.current = false;
+                      onFlyoutChange({ kind: "effort" });
+                    };
                     if (flyout) {
                       cancelHoverIntent();
                       open();
@@ -885,10 +959,12 @@ export function ModelPickerPopover({
                   }}
                   onFocus={() => {
                     cancelHoverIntent();
+                    focusEffortChoiceRef.current = true;
                     onFlyoutChange({ kind: "effort" });
                   }}
                   onClick={() => {
                     cancelHoverIntent();
+                    focusEffortChoiceRef.current = true;
                     onFlyoutChange({ kind: "effort" });
                   }}
                 >
@@ -910,6 +986,28 @@ export function ModelPickerPopover({
                   className="agent-composer-model-flyout agent-composer-model-effort-panel"
                   role="group"
                   aria-label="Thinking level"
+                  onKeyDown={(event) => {
+                    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+                    const choices = Array.from(
+                      event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                        '[role="menuitemradio"]',
+                      ),
+                    );
+                    if (!choices.length) return;
+                    event.preventDefault();
+                    const currentIndex = Math.max(
+                      0,
+                      choices.indexOf(document.activeElement as HTMLButtonElement),
+                    );
+                    const nextIndex =
+                      event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? choices.length - 1
+                          : (currentIndex + (event.key === "ArrowDown" ? 1 : -1) + choices.length) %
+                            choices.length;
+                    choices[nextIndex]?.focus();
+                  }}
                   onPointerLeave={() => {
                     cancelHoverIntent();
                     setBridging(false);
@@ -923,6 +1021,7 @@ export function ModelPickerPopover({
                         className="agent-composer-model-row agent-composer-model-choice-option"
                         role="menuitemradio"
                         aria-checked={option.id === thinkingLevel}
+                        tabIndex={option.id === thinkingLevel ? 0 : -1}
                         onClick={() => onSelectThinking(option.id)}
                       >
                         <span className="agent-composer-model-choice-copy">
@@ -958,6 +1057,7 @@ export function ModelPickerPopover({
                 className="agent-composer-model-menu"
                 role="listbox"
                 aria-label={suggestedListLabel}
+                onKeyDown={handleListboxNavigation}
               >
                 {suggested.length ? (
                   suggested.map(({ key, model: option, costQuality: presetCostQuality }) => (
