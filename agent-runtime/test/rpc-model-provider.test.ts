@@ -156,6 +156,46 @@ test("preserves function tool calls when synthesizing a stream", async () => {
   assert.equal(done?.response.output[0]?.type, "function_call");
 });
 
+test("normalizes an empty streamed tool argument payload to an object", async () => {
+  const provider = new RpcChatCompletionsModelProvider(async () => ({
+    streamId: "stream-empty-tool-arguments",
+    chunks: [
+      {
+        ...firstChunk,
+        choices: [
+          {
+            index: 0,
+            finish_reason: null,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call-empty",
+                  type: "function",
+                  function: { name: "increment", arguments: "" },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        ...finalChunk,
+        choices: [{ index: 0, finish_reason: "tool_calls", delta: {} }],
+      },
+    ],
+    done: true,
+  }));
+  const events = [];
+  for await (const event of provider.getModel("private-auto").getStreamedResponse(modelRequest())) {
+    events.push(event);
+  }
+  const done = events.find((event) => event.type === "response_done");
+  const call = asRecord(done?.response.output[0]);
+  assert.equal(call.type, "function_call");
+  assert.equal(call.arguments, "{}");
+});
+
 function modelRequest(): ModelRequest {
   return {
     input: [{ role: "user", content: "Say hello" }],
