@@ -268,6 +268,15 @@ export function ModelPickerPopover({
     }
   }, [flyout]);
 
+  useLayoutEffect(() => {
+    if (flyout?.kind !== "effort") return;
+    window.requestAnimationFrame(() => {
+      flyoutRef.current
+        ?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')
+        ?.focus();
+    });
+  }, [flyout]);
+
   // The detail card opens beside the popover, its top pinned to the active
   // row's top. It's portaled to the body (see render), so `offsetTop` is
   // meaningless — compute viewport-fixed coords here, the same math as
@@ -928,6 +937,28 @@ export function ModelPickerPopover({
                   className="agent-composer-model-flyout agent-composer-model-effort-panel"
                   role="group"
                   aria-label="Thinking level"
+                  onKeyDown={(event) => {
+                    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+                    const choices = Array.from(
+                      event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                        '[role="menuitemradio"]',
+                      ),
+                    );
+                    if (!choices.length) return;
+                    event.preventDefault();
+                    const currentIndex = Math.max(
+                      0,
+                      choices.indexOf(document.activeElement as HTMLButtonElement),
+                    );
+                    const nextIndex =
+                      event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? choices.length - 1
+                          : (currentIndex + (event.key === "ArrowDown" ? 1 : -1) + choices.length) %
+                            choices.length;
+                    choices[nextIndex]?.focus();
+                  }}
                   onPointerLeave={() => {
                     cancelHoverIntent();
                     setBridging(false);
@@ -941,6 +972,7 @@ export function ModelPickerPopover({
                         className="agent-composer-model-row agent-composer-model-choice-option"
                         role="menuitemradio"
                         aria-checked={option.id === thinkingLevel}
+                        tabIndex={option.id === thinkingLevel ? 0 : -1}
                         onClick={() => onSelectThinking(option.id)}
                       >
                         <span className="agent-composer-model-choice-copy">

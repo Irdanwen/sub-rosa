@@ -271,6 +271,7 @@ export function AgentWorkspace({
     title: string;
     turn: AgentChatTurn;
   }>();
+  const pendingSessionCreationRef = useRef<string>();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
   const [approvalSubmitting, setApprovalSubmitting] = useState<
@@ -305,6 +306,7 @@ export function AgentWorkspace({
 
   const startNewSession = useCallback(
     (request?: AgentNewSessionDetail) => {
+      pendingSessionCreationRef.current = undefined;
       setSelectedId(undefined);
       selectedIdRef.current = undefined;
       setNewSessionMode(true);
@@ -461,8 +463,12 @@ export function AgentWorkspace({
   useEffect(() => {
     const nextId = initialSession?.id ?? initialSessionId;
     if (!nextId) return;
+    if (selectedIdRef.current !== nextId) {
+      pendingSessionCreationRef.current = undefined;
+      setSubmitting(false);
+    }
     setPendingInitialTurn((current) =>
-      current?.storedSessionId && current.storedSessionId !== nextId ? undefined : current,
+      current && current.storedSessionId !== nextId ? undefined : current,
     );
     setSelectedId(nextId);
     selectedIdRef.current = nextId;
@@ -614,10 +620,12 @@ export function AgentWorkspace({
     setSubmitting(true);
     setError(undefined);
     const creatingSession = !selectedSession || newSessionMode;
+    const creationRequestId = creatingSession ? crypto.randomUUID() : undefined;
     const optimisticId = `optimistic:${crypto.randomUUID()}`;
     const optimisticCreatedAt = new Date().toISOString();
     const attachedPaths = attachments;
     if (creatingSession) {
+      pendingSessionCreationRef.current = creationRequestId;
       setPendingInitialTurn({
         prompt,
         title: titleFromPrompt(prompt),
@@ -650,18 +658,23 @@ export function AgentWorkspace({
           profile: getCurrentDataPartitionName(),
         });
         session = createdSession;
-        setSelectedId(createdSession.id);
-        selectedIdRef.current = createdSession.id;
-        setNewSessionMode(false);
         setSessions((current) => [
           createdSession,
           ...current.filter((item) => item.id !== createdSession.id),
         ]);
-        setPendingInitialTurn((current) =>
-          current ? { ...current, storedSessionId: createdSession.id } : current,
-        );
-        onSessionSelected?.(createdSession);
-        writeLastOpenSessionId(createdSession.id);
+        const shouldPresentCreatedSession =
+          pendingSessionCreationRef.current === creationRequestId &&
+          selectedIdRef.current === undefined;
+        if (shouldPresentCreatedSession) {
+          setSelectedId(createdSession.id);
+          selectedIdRef.current = createdSession.id;
+          setNewSessionMode(false);
+          setPendingInitialTurn((current) =>
+            current ? { ...current, storedSessionId: createdSession.id } : current,
+          );
+          onSessionSelected?.(createdSession);
+          writeLastOpenSessionId(createdSession.id);
+        }
       }
       const activeSession = session;
       const optimistic: AgentItemDto = {
@@ -683,11 +696,13 @@ export function AgentWorkspace({
           createdAt: new Date().toISOString(),
         })),
       };
-      setProjection((current) => ({
-        ...current,
-        session: activeSession,
-        items: [...current.items, optimistic],
-      }));
+      if (selectedIdRef.current === activeSession.id) {
+        setProjection((current) => ({
+          ...current,
+          session: activeSession,
+          items: [...current.items, optimistic],
+        }));
+      }
       setDraft("");
       setAttachments([]);
       const enabledSkillIds = (await agentRuntimeBindings.listSkills())
@@ -710,7 +725,12 @@ export function AgentWorkspace({
       });
       projectContextSignaturesBySessionId.set(activeSession.id, preparedPrompt.contextSignature);
       rememberSessionThinkingLevel(activeSession.id, thinkingLevel);
-      setProjection((current) => ({ ...current, run }));
+      if (selectedIdRef.current === activeSession.id) {
+        setProjection((current) => ({ ...current, run }));
+      }
+      if (pendingSessionCreationRef.current === creationRequestId) {
+        pendingSessionCreationRef.current = undefined;
+      }
       setSubmitting(false);
       dispatchAgentSessionStatus({
         sessionId: activeSession.id,
@@ -720,7 +740,12 @@ export function AgentWorkspace({
       await refreshSessions();
     } catch (cause) {
       setSubmitting(false);
+      const operationIsVisible = creationRequestId
+        ? pendingSessionCreationRef.current === creationRequestId
+        : selectedIdRef.current === selectedSession?.id;
+      if (!operationIsVisible) return;
       if (creatingSession && !selectedIdRef.current) {
+        pendingSessionCreationRef.current = undefined;
         setPendingInitialTurn(undefined);
         setNewSessionMode(true);
       }
@@ -1902,6 +1927,39 @@ function AgentComposer({
     return () => window.removeEventListener("mousedown", close);
   }, [attachOpen, modelOpen, safetyOpen]);
 
+  useEffect(() => {
+    if (!modelOpen && !safetyOpen && !attachOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      if (modelOpen) {
+        if (modelFlyout) {
+          if (modelFlyout.kind === "all") setModelSearch("");
+          setModelFlyout(null);
+          requestAnimationFrame(() => modelRootSearchRef.current?.focus());
+          return;
+        }
+        if (modelRootSearch) {
+          setModelRootSearch("");
+          requestAnimationFrame(() => modelRootSearchRef.current?.focus());
+          return;
+        }
+        setModelOpen(false);
+        requestAnimationFrame(() => modelTriggerRef.current?.focus());
+        return;
+      }
+      if (safetyOpen) {
+        setSafetyOpen(false);
+        requestAnimationFrame(() => safetyTriggerRef.current?.focus());
+        return;
+      }
+      setAttachOpen(false);
+      requestAnimationFrame(() => attachTriggerRef.current?.focus());
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [attachOpen, modelFlyout, modelOpen, modelRootSearch, safetyOpen]);
+
   useLayoutEffect(() => {
     if (modelOpen && modelFlyout === null) modelRootSearchRef.current?.focus();
   }, [modelFlyout, modelOpen]);
@@ -2151,12 +2209,16 @@ function AgentComposer({
           onSearchChange={setModelSearch}
           onSelect={(nextModel, _costQuality, options) => {
             setModel(nextModel);
-            if (!options?.keepOpen) setModelOpen(false);
+            if (!options?.keepOpen) {
+              setModelOpen(false);
+              requestAnimationFrame(() => modelTriggerRef.current?.focus());
+            }
           }}
           onSelectThinking={(level) => {
             setThinkingLevel(level);
             setModelFlyout(null);
             setModelOpen(false);
+            requestAnimationFrame(() => modelTriggerRef.current?.focus());
           }}
         />
       ) : null}

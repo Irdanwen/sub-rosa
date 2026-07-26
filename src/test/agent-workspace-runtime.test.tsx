@@ -390,16 +390,41 @@ describe("AgentWorkspace runtime wiring", () => {
       }),
     ).toBeVisible();
 
-    await user.clear(search);
+    await user.keyboard("{Escape}");
+    expect(search).toHaveValue("");
+    expect(search).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "All models" }));
+    expect(screen.getByRole("group", { name: "All text models" })).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("group", { name: "All text models" })).not.toBeInTheDocument();
+    expect(search).toHaveFocus();
+
     await user.click(screen.getByRole("button", { name: /Effort.*Medium/ }));
     const effort = screen.getByRole("group", { name: "Thinking level" });
     expect(effort).toHaveClass("agent-composer-model-effort-panel");
-    expect(
-      within(effort).getByRole("menuitemradio", { name: /Low.*Faster responses/ }),
-    ).toBeVisible();
-    expect(
-      within(effort).getByRole("menuitemradio", { name: /High.*Deeper reasoning/ }),
-    ).toBeVisible();
+    const lowEffort = within(effort).getByRole("menuitemradio", {
+      name: /Low.*Faster responses/,
+    });
+    const mediumEffort = within(effort).getByRole("menuitemradio", {
+      name: /Medium.*Balances speed/,
+    });
+    const highEffort = within(effort).getByRole("menuitemradio", {
+      name: /High.*Deeper reasoning/,
+    });
+    expect(lowEffort).toBeVisible();
+    expect(highEffort).toBeVisible();
+    await waitFor(() => expect(mediumEffort).toHaveFocus());
+    await user.keyboard("{ArrowDown}");
+    expect(highEffort).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("group", { name: "Thinking level" })).not.toBeInTheDocument();
+    const trigger = screen.getByRole("button", { name: "Model: Fast" });
+    await waitFor(() => expect(trigger).toHaveFocus());
+
+    await user.click(trigger);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("combobox", { name: "Search models" })).not.toBeInTheDocument();
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 
   it("shows context, estimated charge, and per-tool usage for the latest run", async () => {
@@ -777,6 +802,44 @@ describe("AgentWorkspace runtime wiring", () => {
     await waitFor(() =>
       expect(container.querySelector(".agent-user-turn")).toHaveTextContent("Fresh request"),
     );
+  });
+
+  it("does not take over the workspace when a delayed fresh session finishes after navigation", async () => {
+    const user = userEvent.setup();
+    let resolveCreate: ((value: AgentSessionDto) => void) | undefined;
+    const pendingCreate = new Promise<AgentSessionDto>((resolve) => {
+      resolveCreate = resolve;
+    });
+    const defaultInvoke = mocks.invoke.getMockImplementation();
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "create_agent_session") return pendingCreate;
+      return defaultInvoke?.(command, args);
+    });
+
+    const onSessionSelected = vi.fn();
+    const { container, rerender } = render(
+      <AgentWorkspace onSessionSelected={onSessionSelected} />,
+    );
+    const composer = screen.getByRole("textbox", { name: "Message June" });
+    await user.type(composer, "Fresh request");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() =>
+      expect(container.querySelector(".agent-user-turn")).toHaveTextContent("Fresh request"),
+    );
+
+    rerender(<AgentWorkspace initialSession={session} onSessionSelected={onSessionSelected} />);
+    expect(await screen.findByText("Earlier answer")).toBeVisible();
+    await waitFor(() => expect(screen.queryByText("Fresh request")).not.toBeInTheDocument());
+
+    await act(async () => resolveCreate?.(newSession));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("start_agent_run", {
+        request: expect.objectContaining({ sessionId: newSession.id }),
+      }),
+    );
+    expect(screen.getByText("Earlier answer")).toBeVisible();
+    expect(screen.queryByText("Fresh request")).not.toBeInTheDocument();
+    expect(onSessionSelected).not.toHaveBeenCalledWith(newSession);
   });
 
   it("uses the priced June Auto model id for a fresh workspace", async () => {
