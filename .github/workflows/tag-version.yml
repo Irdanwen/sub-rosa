@@ -36,7 +36,7 @@ jobs:
       # and that header overrides any PAT embedded in a push URL — the tag
       # then authenticates as GITHUB_TOKEN and never triggers release.yml
       # (exactly the silent failure this workflow exists to avoid).
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
           persist-credentials: false
       - name: Resolve tag
