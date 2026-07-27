@@ -42,7 +42,7 @@
     "@tiptap/extension-placeholder": "^3.27.1",
     "@tiptap/pm": "3.27.1",
     "@tiptap/react": "^3.27.1",
-    "@tiptap/starter-kit": "^3.27.1",
+    "@tiptap/starter-kit": "^3.29.1",
     "@tiptap/suggestion": "3.27.1",
     "@xyflow/react": "^12.11.1",
     "border-beam": "^1.2.0",
