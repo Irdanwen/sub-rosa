@@ -990,6 +990,37 @@ export async function acknowledgeMeetingStartRequest(requestId: string) {
   return invoke<boolean>("acknowledge_meeting_start_request", { requestId });
 }
 
+export type MeetingEndStatus = {
+  sessionId: string;
+  phase: "tracking" | "countdown" | "suppressed" | "finishQueued";
+  expiresAtMs?: number;
+};
+
+export type PendingMeetingEndFinishRequest = {
+  requestId: string;
+  sessionId: string;
+};
+
+export async function pendingMeetingEndStatus() {
+  return invoke<MeetingEndStatus | null>("pending_meeting_end_status");
+}
+
+export async function pendingMeetingEndFinishRequest() {
+  return invoke<PendingMeetingEndFinishRequest | null>("pending_meeting_end_finish_request");
+}
+
+export async function queueMeetingEndFinishRequest(sessionId: string) {
+  return invoke<void>("queue_meeting_end_finish_request", { sessionId });
+}
+
+export async function keepMeetingRecording(sessionId: string) {
+  return invoke<void>("keep_meeting_recording", { sessionId });
+}
+
+export async function acknowledgeMeetingEndFinishRequest(requestId: string) {
+  return invoke<boolean>("acknowledge_meeting_end_finish_request", { requestId });
+}
+
 export type SubmitIssueReportRequest = {
   /** Which kind of report this is: "bug" | "feedback" | "feature". Drives the
    * team's triage. Direct dialog reports run no model turn, so there is
