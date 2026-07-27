@@ -41,11 +41,16 @@ import type {
 } from "../../lib/agent-runtime-contract";
 import {
   agentRuntimeBindings,
+  companionCompleteFrontendRequest,
+  companionPublishAgentEvent,
+  type CompanionAgentStatus,
+  type CompanionFrontendRequest,
   assignSessionToProfile,
   downloadAgentArtifact,
   dictationHelperCommand,
   juneHomeChat,
   type JuneHomeChatResponse,
+  listSessionPartitions,
   listVeniceModels,
   providerModelSettings,
   setCostQuality as setProviderCostQuality,
@@ -54,6 +59,12 @@ import {
 import { shouldBlockTextOnFunding } from "../../lib/account-gate";
 import { dispatchAgentSessionStatus, dispatchAgentSessionsChanged } from "../../lib/agent-events";
 import { messageFromError } from "../../lib/errors";
+import { useExperimentalFlags } from "../../lib/experimental-flags";
+import {
+  COMPANION_FRONTEND_QUEUE_EVENT,
+  registerCompanionFrontendConsumer,
+  takeCompanionFrontendRequests,
+} from "../../lib/companion-frontend-router";
 import { persistAgentDefaultModel } from "../../lib/agent-default-model";
 import { agentModelSelection, agentRunModelId } from "../../lib/agent-model-selection";
 import {
@@ -108,6 +119,10 @@ import { ComposerModelPicker, heroPrivacyFootnote } from "./composer/ModelPicker
 import { modelPrivacyBadge } from "../../lib/model-privacy";
 import { autoPillDesignation } from "../../lib/suggested-models";
 import { getCurrentDataPartitionName } from "../../lib/data-partition";
+import {
+  filterAgentSessionsForDataPartition,
+  sessionPartitionMap,
+} from "../../lib/session-partition-filter";
 import { AUTO_MODEL_ID, modelOptions, selectedModel } from "../settings/ModelPickerDialog";
 import { ModelPickerPopover, type ModelPickerFlyout } from "../settings/ModelPickerPopover";
 import { Dialog } from "../ui/Dialog";
@@ -294,8 +309,10 @@ export function AgentWorkspace({
   onMoveSessionToProject,
   sessionInProject = false,
   projectContext,
+  resolveSessionProjectContext,
   creditActionsDisabledReason,
 }: AgentWorkspaceProps = {}) {
+  const { companionPairingEnabled } = useExperimentalFlags();
   const initialAgentSession = initialSession;
   const pendingRequestRef = useRef(pendingNewSessionRequest());
   const [sessions, setSessions] = useState<AgentSessionDto[]>(
@@ -343,6 +360,8 @@ export function AgentWorkspace({
   const [safetyMode, setSafetyMode] = useState<AgentSafetyMode>(
     initialAgentSession?.safetyMode ?? "sandboxed",
   );
+  const safetyModeRef = useRef(safetyMode);
+  safetyModeRef.current = safetyMode;
   const [draft, setDraft] = useState(pendingRequestRef.current?.prompt ?? "");
   const [draftRevision, setDraftRevision] = useState(0);
   const draftRef = useRef(draft);
@@ -415,6 +434,20 @@ export function AgentWorkspace({
   const [composerClearance, setComposerClearance] = useState(0);
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
+  const projectContextRef = useRef(projectContext);
+  projectContextRef.current = projectContext;
+  const resolveSessionProjectContextRef = useRef(resolveSessionProjectContext);
+  resolveSessionProjectContextRef.current = resolveSessionProjectContext;
+  const preparePromptForSession = useCallback((storedSessionId: string, prompt: string) => {
+    const targetProjectContext =
+      resolveSessionProjectContextRef.current?.(storedSessionId) ??
+      (selectedIdRef.current === storedSessionId ? projectContextRef.current : undefined);
+    return prepareProjectPrompt(
+      prompt,
+      targetProjectContext,
+      projectContextSignaturesBySessionId.get(storedSessionId),
+    );
+  }, []);
   const [homeDirectTurns, setHomeDirectTurns] = useState<AgentChatTurn[]>(() =>
     homeMode ? readHomeDirectTurns(initialSessionId) : [],
   );
@@ -739,6 +772,30 @@ export function AgentWorkspace({
           clearQueuedAgentFollowUpSteering(current, payload.sessionId),
         );
       }
+      if (companionPairingEnabled && payload.method === "message.delta" && payload.data.delta) {
+        void companionPublishAgentEvent({
+          type: "delta",
+          data: { storedSessionId: payload.sessionId, text: payload.data.delta },
+        }).catch(() => undefined);
+      }
+      const companionStatus: CompanionAgentStatus | undefined =
+        payload.method === "interruption.requested"
+          ? "waitingForUser"
+          : payload.method === "run.completed"
+            ? "completed"
+            : payload.method === "run.cancelled"
+              ? "cancelled"
+              : payload.method === "run.failed"
+                ? "failed"
+                : payload.method === "run.started"
+                  ? "running"
+                  : undefined;
+      if (companionPairingEnabled && companionStatus) {
+        void companionPublishAgentEvent({
+          type: "status",
+          data: { storedSessionId: payload.sessionId, status: companionStatus },
+        }).catch(() => undefined);
+      }
       if (payload.sessionId !== selectedIdRef.current) {
         void refreshSessions().catch(() => undefined);
         return;
@@ -769,7 +826,151 @@ export function AgentWorkspace({
       disposed = true;
       unlisten?.();
     };
-  }, [hydrate, refreshSessions, updateQueuedFollowUps]);
+  }, [companionPairingEnabled, hydrate, refreshSessions, updateQueuedFollowUps]);
+
+  useEffect(() => {
+    if (!companionPairingEnabled) return;
+    async function companionSessionInActivePartition(storedSessionId: string) {
+      const [sessions, assignments] = await Promise.all([
+        agentRuntimeBindings.listSessions(),
+        listSessionPartitions(),
+      ]);
+      return filterAgentSessionsForDataPartition(
+        sessions,
+        sessionPartitionMap(assignments),
+        getCurrentDataPartitionName(),
+      ).find((session) => session.id === storedSessionId);
+    }
+
+    async function rejectUnavailableCompanionSession(operationId: string) {
+      await companionCompleteFrontendRequest(operationId, {
+        type: "error",
+        data: {
+          code: "not_found",
+          message: "That agent session is no longer available.",
+          retryable: false,
+        },
+      });
+    }
+
+    async function handleCompanionRequest(payload: CompanionFrontendRequest) {
+      try {
+        switch (payload.intent.type) {
+          case "agentSessionsList":
+          case "agentMessagesList":
+            return;
+          case "agentSend": {
+            const { storedSessionId: requestedStoredSessionId, message } = payload.intent.data;
+            let session: AgentSessionDto | undefined;
+            let createdSessionPartition: string | undefined;
+            if (requestedStoredSessionId) {
+              session = await companionSessionInActivePartition(requestedStoredSessionId).catch(
+                () => undefined,
+              );
+              if (!session) {
+                await rejectUnavailableCompanionSession(payload.operationId);
+                return;
+              }
+            } else {
+              createdSessionPartition = getCurrentDataPartitionName();
+              session = await agentRuntimeBindings.createSession({
+                title: titleFromPrompt(message),
+                model: DEFAULT_MODEL,
+                safetyMode: "sandboxed",
+                profile: createdSessionPartition,
+              });
+              void refreshSessions().catch(() => undefined);
+            }
+            const enabledSkillIds = (await agentRuntimeBindings.listSkills())
+              .filter((skill) => skill.enabled)
+              .map((skill) => skill.id);
+            const authorizedSession = requestedStoredSessionId
+              ? await companionSessionInActivePartition(session.id).catch(() => undefined)
+              : createdSessionPartition === getCurrentDataPartitionName()
+                ? session
+                : undefined;
+            if (!authorizedSession) {
+              await rejectUnavailableCompanionSession(payload.operationId);
+              return;
+            }
+            const preparedPrompt = preparePromptForSession(authorizedSession.id, message);
+            await agentRuntimeBindings.startRun({
+              sessionId: authorizedSession.id,
+              prompt: preparedPrompt.text,
+              model: authorizedSession.model,
+              reasoningEffort: thinkingEffortForLevel(thinkingLevelRef.current) as
+                | "minimal"
+                | "medium"
+                | "high",
+              safetyMode: authorizedSession.safetyMode,
+              workspacePath: authorizedSession.workspacePath,
+              enabledSkillIds,
+              attachments: [],
+            });
+            projectContextSignaturesBySessionId.set(
+              authorizedSession.id,
+              preparedPrompt.contextSignature,
+            );
+            await companionCompleteFrontendRequest(payload.operationId, {
+              type: "agentAccepted",
+              data: { storedSessionId: authorizedSession.id },
+            });
+            return;
+          }
+          case "agentCancel": {
+            const { storedSessionId } = payload.intent.data;
+            if (
+              !(await companionSessionInActivePartition(storedSessionId).catch(() => undefined))
+            ) {
+              await rejectUnavailableCompanionSession(payload.operationId);
+              return;
+            }
+            const run = await agentRuntimeBindings.getLatestRun?.(storedSessionId);
+            if (
+              run &&
+              (run.status === "queued" ||
+                run.status === "running" ||
+                run.status === "waiting_for_user")
+            ) {
+              if (
+                !(await companionSessionInActivePartition(storedSessionId).catch(() => undefined))
+              ) {
+                await rejectUnavailableCompanionSession(payload.operationId);
+                return;
+              }
+              await agentRuntimeBindings.cancelRun(run.id);
+            }
+            await companionCompleteFrontendRequest(payload.operationId, { type: "accepted" });
+            return;
+          }
+        }
+      } catch (error) {
+        await companionCompleteFrontendRequest(payload.operationId, {
+          type: "error",
+          data: {
+            code: "internal",
+            message: messageFromError(error),
+            retryable: true,
+          },
+        }).catch(() => undefined);
+      }
+    }
+
+    function consumeQueuedRequests() {
+      for (const request of takeCompanionFrontendRequests()) {
+        void handleCompanionRequest(request);
+      }
+    }
+
+    const unregisterConsumer = registerCompanionFrontendConsumer();
+    window.addEventListener(COMPANION_FRONTEND_QUEUE_EVENT, consumeQueuedRequests);
+    consumeQueuedRequests();
+    return () => {
+      unregisterConsumer();
+      window.removeEventListener(COMPANION_FRONTEND_QUEUE_EVENT, consumeQueuedRequests);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companionPairingEnabled, preparePromptForSession, refreshSessions]);
 
   useEffect(() => {
     const scroller = scrollRef.current;
@@ -1068,11 +1269,7 @@ export function AgentWorkspace({
       const enabledSkillIds = (await agentRuntimeBindings.listSkills())
         .filter((skill) => skill.enabled)
         .map((skill) => skill.id);
-      const preparedPrompt = prepareProjectPrompt(
-        prompt,
-        projectContext,
-        projectContextSignaturesBySessionId.get(activeSession.id),
-      );
+      const preparedPrompt = preparePromptForSession(activeSession.id, prompt);
       const run = await agentRuntimeBindings.startRun({
         sessionId: activeSession.id,
         prompt: preparedPrompt.text,

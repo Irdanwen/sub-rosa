@@ -42,6 +42,8 @@ pub struct ListNotesResponse {
     pub items: Vec<NoteListItemDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
+    #[serde(skip)]
+    pub(crate) item_cursors: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,6 +112,8 @@ pub struct NoteListItemDto {
     pub folder_ids: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// Monotonic compare-and-swap revision for remote-safe edits.
+    pub revision: u64,
     pub duration_ms: Option<i64>,
 }
 
@@ -123,6 +127,8 @@ pub struct NoteDto {
     pub folder_ids: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// Monotonic compare-and-swap revision for remote-safe edits.
+    pub revision: u64,
     pub duration_ms: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub calendar_event: Option<NoteCalendarEventDto>,

@@ -3601,7 +3601,7 @@ fn agent_http_client() -> &'static reqwest::Client {
     })
 }
 
-fn app_version_headers() -> reqwest::header::HeaderMap {
+pub(crate) fn app_version_headers() -> reqwest::header::HeaderMap {
     let mut headers = reqwest::header::HeaderMap::new();
     if let Ok(value) = reqwest::header::HeaderValue::from_str(APP_VERSION) {
         headers.insert(JUNE_APP_VERSION_HEADER, value);
@@ -3654,7 +3654,7 @@ fn june_api_operation_id(operation_id: &str) -> String {
     format!("june-op-{:x}", digest.finalize())
 }
 
-fn june_api_url() -> String {
+pub(crate) fn june_api_url() -> String {
     crate::os_accounts::load_local_env();
     std::env::var("JUNE_API_URL")
         .ok()

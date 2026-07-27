@@ -9,6 +9,7 @@ import { NoteHeaderActions } from "../components/note-editor/NoteHeaderActions";
 import { toast } from "../components/ui/Toaster";
 import { exportNoteAsPdf } from "../lib/note-pdf";
 import { useNoteChat } from "../components/note-chat/useNoteChat";
+import { useExperimentalFlags } from "../lib/experimental-flags";
 import { noteReadyToShare } from "../lib/share-payload";
 import { SETTINGS_TABS } from "../components/settings/AppSettings";
 import type { TabItem } from "../components/tabs/TabBar";
@@ -16,6 +17,11 @@ import { reorderTabs } from "./tabs/tabs";
 import { useReferralNudgeTriggers } from "./referral-nudge-triggers";
 import {
   checkRecordingSourceReadiness,
+  companionCompleteFrontendRequest,
+  listAgentItems,
+  type CompanionAgentStatus,
+  type CompanionFrontendRequest,
+  type CompanionResultPayload,
   createFolder,
   createNote,
   dictationHelperCommand,
@@ -50,6 +56,11 @@ import {
 import { selectSessionProjectContext } from "../lib/agent-project-context";
 import { rememberSessionManuallyTitled } from "../lib/agent-session-titles";
 import { messageFromError } from "../lib/errors";
+import { boundedCompanionText, companionAgentMessagesFromItems } from "../lib/agent-chat-runtime";
+import {
+  companionFrontendConsumerAvailable,
+  queueCompanionFrontendRequest,
+} from "../lib/companion-frontend-router";
 import { readJuneHomeStoredSessionId, writeJuneHomeStoredSessionId } from "../lib/june-home";
 import type { AgentSessionDto } from "../lib/agent-runtime-contract";
 import {
@@ -175,6 +186,7 @@ import { useAppState } from "./use-app-state";
 import { renderAppAccountGate } from "./app-account-gates";
 
 export function App() {
+  const { companionPairingEnabled } = useExperimentalFlags();
   const {
     currentDataPartitionName,
     dataPartitionRefreshRevision,
@@ -1002,6 +1014,199 @@ export function App() {
     setActiveView,
     setAgentOrigin,
   });
+
+  const companionScopedSessions = useCallback(async () => {
+    const [sessions, partitions] = await Promise.all([
+      listAgentSessions(),
+      refreshSessionPartitions(),
+    ]);
+    const fresh = dataPartitionScopedAgentSessions(sessions, partitions);
+    const currentById = new Map(
+      agentMenuBarSessionsRef.current.map((session) => [session.id, session]),
+    );
+    const scoped = fresh.map((session) => {
+      const current = currentById.get(session.id);
+      return current?.title?.trim() ? { ...session, title: current.title } : session;
+    });
+    scoped.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    return scoped;
+  }, [dataPartitionScopedAgentSessions, refreshSessionPartitions]);
+
+  const openCompanionAgentSession = useCallback(
+    async (storedSessionId?: string | null) => {
+      if (!storedSessionId) {
+        setAgentOrigin(undefined);
+        setActiveView("agent");
+        setActiveAgentSession(undefined);
+        return;
+      }
+      const session = (await companionScopedSessions().catch(() => [])).find(
+        (candidate) => candidate.id === storedSessionId,
+      );
+      if (!session) return;
+      setAgentOrigin(undefined);
+      setActiveView("agent");
+      setActiveAgentSession(session);
+    },
+    [companionScopedSessions, setActiveAgentSession],
+  );
+
+  useEffect(() => {
+    if (!companionPairingEnabled) return;
+    type CompanionFocusTarget =
+      | "settings"
+      | { agent: { storedSessionId?: string | null } }
+      | { note: { noteId: string } };
+    let aborted = false;
+    let unlisten: (() => void) | undefined;
+    void listen<CompanionFocusTarget>("june://companion-focus", (event) => {
+      const target = event.payload;
+      if (target === "settings") {
+        openSettings();
+        return;
+      }
+      if ("note" in target) {
+        setActiveView("meetings");
+        void getNote(target.note.noteId)
+          .then((note) => dispatch({ type: "noteLoaded", note }))
+          .catch((error) => setError(messageFromError(error)));
+        return;
+      }
+      void openCompanionAgentSession(target.agent.storedSessionId);
+    }).then((cleanup) => {
+      if (aborted) cleanup();
+      else unlisten = cleanup;
+    });
+    return () => {
+      aborted = true;
+      unlisten?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companionPairingEnabled, openSettings]);
+
+  useEffect(() => {
+    if (!companionPairingEnabled) return;
+    let aborted = false;
+    let unlisten: (() => void) | undefined;
+
+    async function handleCompanionRequest(payload: CompanionFrontendRequest) {
+      try {
+        switch (payload.intent.type) {
+          case "agentSessionsList": {
+            const sessions = await companionScopedSessions();
+            const page = companionByteBoundedPage(
+              sessions.map((session) => ({
+                id: session.id,
+                title: boundedCompanionText(session.title.trim() || "New session", 512),
+                status: companionAgentSessionStatus(
+                  session,
+                  agentMenuBarWorkingSessionIdsRef.current,
+                  agentMenuBarWaitingSessionIdsRef.current,
+                ),
+                updatedAt: session.updatedAt,
+              })),
+              payload.intent.data.cursor,
+              payload.intent.data.limit,
+            );
+            await companionCompleteFrontendRequest(
+              payload.operationId,
+              page ? { type: "agentSessions", data: page } : companionCursorError("agent session"),
+            );
+            return;
+          }
+          case "agentMessagesList": {
+            const { storedSessionId, cursor, limit } = payload.intent.data;
+            const knownSession = (await companionScopedSessions()).some(
+              (session) => session.id === storedSessionId,
+            );
+            if (!knownSession) {
+              await companionCompleteFrontendRequest(payload.operationId, {
+                type: "error",
+                data: {
+                  code: "not_found",
+                  message: "That agent session is no longer available.",
+                  retryable: false,
+                },
+              });
+              return;
+            }
+            const items = await listAgentItems(storedSessionId);
+            const stillKnownSession = (await companionScopedSessions()).some(
+              (session) => session.id === storedSessionId,
+            );
+            if (!stillKnownSession) {
+              await companionCompleteFrontendRequest(payload.operationId, {
+                type: "error",
+                data: {
+                  code: "not_found",
+                  message: "That agent session is no longer available.",
+                  retryable: false,
+                },
+              });
+              return;
+            }
+            const messages = companionAgentMessagesFromItems(items);
+            const page = companionByteBoundedPage([...messages].reverse(), cursor, limit);
+            page?.items.reverse();
+            await companionCompleteFrontendRequest(
+              payload.operationId,
+              page ? { type: "agentMessages", data: page } : companionCursorError("agent message"),
+            );
+            return;
+          }
+          case "agentSend":
+          case "agentCancel": {
+            const storedSessionId = payload.intent.data.storedSessionId;
+            if (
+              storedSessionId &&
+              !(await companionScopedSessions()).some((session) => session.id === storedSessionId)
+            ) {
+              await companionCompleteFrontendRequest(payload.operationId, {
+                type: "error",
+                data: {
+                  code: "not_found",
+                  message: "That agent session is no longer available.",
+                  retryable: false,
+                },
+              });
+              return;
+            }
+            const consumerAvailable = companionFrontendConsumerAvailable();
+            queueCompanionFrontendRequest(payload);
+            if (consumerAvailable) return;
+            void openCompanionAgentSession(payload.intent.data.storedSessionId);
+            return;
+          }
+        }
+      } catch (error) {
+        await companionCompleteFrontendRequest(payload.operationId, {
+          type: "error",
+          data: {
+            code: "internal",
+            message: messageFromError(error),
+            retryable: true,
+          },
+        }).catch(() => undefined);
+      }
+    }
+
+    void listen<CompanionFrontendRequest>("june://companion-request", ({ payload }) => {
+      void handleCompanionRequest(payload);
+    }).then((cleanup) => {
+      if (aborted) cleanup();
+      else unlisten = cleanup;
+    });
+    return () => {
+      aborted = true;
+      unlisten?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    companionPairingEnabled,
+    companionScopedSessions,
+    openCompanionAgentSession,
+    setActiveAgentSession,
+  ]);
 
   useAgentAttentionNotifications({
     activeAgentSessionIdRef,
@@ -2163,3 +2368,68 @@ export function App() {
 }
 
 // The collapsed transform is driven by `aria-pressed` on the parent button.
+
+function companionByteBoundedPage<T>(
+  items: T[],
+  cursor: string | undefined,
+  limit: number,
+): { items: T[]; nextCursor?: string } | undefined {
+  const offset = companionCursorOffset(cursor);
+  if (offset === undefined) return undefined;
+  const page: T[] = [];
+  let encodedBytes = 0;
+  let index = offset;
+  while (index < items.length && page.length < limit) {
+    const item = items[index];
+    if (item === undefined) break;
+    const itemBytes = new TextEncoder().encode(JSON.stringify(item)).byteLength;
+    if (page.length > 0 && encodedBytes + itemBytes > 38 * 1024) break;
+    page.push(item);
+    encodedBytes += itemBytes;
+    index += 1;
+  }
+  return {
+    items: page,
+    ...(index < items.length ? { nextCursor: String(index) } : {}),
+  };
+}
+
+function companionCursorOffset(cursor: string | undefined) {
+  if (cursor !== undefined && !/^\d+$/.test(cursor)) return undefined;
+  const offset = cursor === undefined ? 0 : Number(cursor);
+  return Number.isSafeInteger(offset) && offset >= 0 ? offset : undefined;
+}
+
+function companionCursorError(scope: string): CompanionResultPayload {
+  return {
+    type: "error",
+    data: {
+      code: "invalid_request",
+      message: `The ${scope} cursor is invalid.`,
+      retryable: false,
+    },
+  };
+}
+
+function companionAgentSessionStatus(
+  session: AgentSessionDto,
+  workingSessionIds: ReadonlySet<string>,
+  waitingSessionIds: ReadonlySet<string>,
+): CompanionAgentStatus {
+  if (waitingSessionIds.has(session.id)) return "waitingForUser";
+  if (workingSessionIds.has(session.id)) return "running";
+  switch (session.status) {
+    case "running":
+      return "running";
+    case "waiting_for_user":
+      return "waitingForUser";
+    case "completed":
+      return "completed";
+    case "failed":
+      return "failed";
+    case "interrupted":
+      return "cancelled";
+    default:
+      return "idle";
+  }
+}
