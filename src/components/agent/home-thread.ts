@@ -22,6 +22,7 @@ export type HomeTaskHandoff = JuneHomeTaskRequest & {
   id: string;
   status: "starting" | "running" | "failed";
   storedSessionId?: string;
+  sourceUserTurnId?: string;
   error?: string;
   profile?: string;
   attachments?: string[];
@@ -36,6 +37,20 @@ const LEGACY_HOME_STORAGE_KEYS: Partial<Record<string, string>> = {
   [JUNE_HOME_DIRECT_TURNS_STORAGE_KEY]: LEGACY_JUNE_HOME_DIRECT_TURNS_STORAGE_KEY,
   [HOME_DEMO_BACKUP_STORAGE_KEY]: LEGACY_HOME_DEMO_BACKUP_STORAGE_KEY,
 };
+
+const activeHomeTaskHandoffs = new Set<string>();
+
+function activeHomeTaskHandoffKey(storedSessionId: string, handoffId: string): string {
+  return `${resolveJuneHomeThreadSessionId(storedSessionId) ?? storedSessionId}:${handoffId}`;
+}
+
+export function markHomeTaskHandoffActive(storedSessionId: string, handoffId: string) {
+  activeHomeTaskHandoffs.add(activeHomeTaskHandoffKey(storedSessionId, handoffId));
+}
+
+export function clearHomeTaskHandoffActive(storedSessionId: string, handoffId: string) {
+  activeHomeTaskHandoffs.delete(activeHomeTaskHandoffKey(storedSessionId, handoffId));
+}
 
 function parseRecord(value: string | null): Record<string, unknown> {
   try {
@@ -159,6 +174,7 @@ export function readHomeTaskHandoffs(storedSessionId: string | undefined): HomeT
           handoff.status === "running" ||
           handoff.status === "failed") &&
         (handoff.profile === undefined || typeof handoff.profile === "string") &&
+        (handoff.sourceUserTurnId === undefined || typeof handoff.sourceUserTurnId === "string") &&
         (handoff.attachments === undefined ||
           (Array.isArray(handoff.attachments) &&
             handoff.attachments.every((path) => typeof path === "string"))) &&
@@ -192,6 +208,87 @@ export function persistHomeTaskHandoffs(storedSessionId: string, handoffs: HomeT
   }
 }
 
+export function recoverInterruptedHomeTaskHandoffs(storedSessionId: string): HomeTaskHandoff[] {
+  const handoffs = readHomeTaskHandoffs(storedSessionId);
+  let changed = false;
+  const recovered = handoffs.map((handoff) => {
+    if (
+      handoff.status !== "starting" ||
+      activeHomeTaskHandoffs.has(activeHomeTaskHandoffKey(storedSessionId, handoff.id))
+    ) {
+      return handoff;
+    }
+    changed = true;
+    return {
+      ...handoff,
+      status: "failed" as const,
+      error: "Session creation was interrupted. Try again.",
+    };
+  });
+  if (changed) persistHomeTaskHandoffs(storedSessionId, recovered);
+  return recovered;
+}
+
+const HOME_HANDOFF_ACKNOWLEDGEMENTS = new Set([
+  "all good",
+  "cool",
+  "got it",
+  "great",
+  "k",
+  "nice",
+  "ok",
+  "okay",
+  "perfect",
+  "sounds good",
+  "thank you",
+  "thanks",
+  "understood",
+  "yep",
+  "yes",
+  "yup",
+]);
+
+function normalizedHomeAcknowledgement(message: string): string {
+  return message
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[.!?,;:]+$/g, "")
+    .replace(/\s+/g, " ");
+}
+
+export function compareHomeTurnOrder(left: AgentChatTurn, right: AgentChatTurn): number {
+  // Array.sort is stable. Equal timestamps therefore retain persisted causal
+  // order instead of letting role-prefixed ids put an assistant before its user.
+  return left.createdAt.localeCompare(right.createdAt);
+}
+
+export function isHomeTaskHandoffAcknowledgement(
+  message: string,
+  priorTurns: AgentChatTurn[],
+  handoffs: HomeTaskHandoff[],
+): boolean {
+  if (!HOME_HANDOFF_ACKNOWLEDGEMENTS.has(normalizedHomeAcknowledgement(message))) return false;
+  const priorTurn = [...priorTurns].sort(compareHomeTurnOrder).at(-1);
+  if (priorTurn?.role !== "assistant") return false;
+  const taskTool = priorTurn.parts.find(
+    (part) => part.type === "tool" && isJuneHomeStartTaskTool(part.name),
+  );
+  if (taskTool?.type !== "tool") return false;
+  return handoffs.some(
+    (handoff) => handoff.id === `home-task-${taskTool.id}` && handoff.status !== "failed",
+  );
+}
+
+export function existingHomeTaskHandoffForSourceTurn(
+  handoffs: HomeTaskHandoff[],
+  sourceUserTurnId: string | undefined,
+): HomeTaskHandoff | undefined {
+  if (!sourceUserTurnId) return undefined;
+  return handoffs.find(
+    (handoff) => handoff.sourceUserTurnId === sourceUserTurnId && handoff.status !== "failed",
+  );
+}
+
 function textForTurn(turn: AgentChatTurn): string {
   return turn.parts
     .filter((part): part is Extract<AgentChatPart, { type: "text" }> => part.type === "text")
@@ -204,10 +301,7 @@ export function homeConversationContextFromTurns(
   turns: AgentChatTurn[],
 ): JuneHomeConversationContext {
   const messages = [...turns]
-    .sort(
-      (left, right) =>
-        left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
-    )
+    .sort(compareHomeTurnOrder)
     .filter(
       (turn): turn is AgentChatTurn & { role: "user" | "assistant" } =>
         turn.role === "user" || turn.role === "assistant",
@@ -221,7 +315,11 @@ export function homeConversationContextFromTurns(
       );
       return {
         role: turn.role,
-        content: text || (delegated ? "I created a focused session for that task." : ""),
+        content:
+          text ||
+          (delegated
+            ? "I created a focused session for that task. A brief acknowledgement does not request another session."
+            : ""),
         createdAt: turn.createdAt,
       };
     })
