@@ -20,7 +20,7 @@ june-services = { path = "crates/services" }
 
 async-trait = "0.1"
 axum = { version = "0.8", features = ["multipart"] }
-base64 = "0.22"
+base64 = "0.23"
 bytes = "1"
 clap = { version = "4", features = ["derive"] }
 dotenvy = "0.15"
