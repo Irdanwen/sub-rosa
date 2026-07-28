@@ -1516,11 +1516,21 @@ pub async fn retry_processing(
     Ok(note)
 }
 
-/// Resume-time sweep (mobile): re-run notes whose processing died on a
-/// transport error while the app was suspended — a screen lock kills the
-/// in-flight loopback request even with the background-task grace period.
-/// Best-effort: any failure leaves the note in its failed state, where the
-/// manual retry still applies.
+/// Resume-time sweep (mobile): re-run the notes whose processing did not
+/// survive the app leaving the foreground. Two shapes, both covered:
+///
+/// - the pipeline woke up to a dead loopback request and marked the note
+///   `failed` (a screen lock kills the in-flight request even with the
+///   background-task grace period);
+/// - the process was suspended and then killed outright, so the note is still
+///   sitting in `transcribing`/`generating` with nobody working on it.
+///
+/// The second case is why the sweep asks `domain::processing::is_processing`
+/// rather than trusting the row: a warm resume can find a pipeline that is
+/// genuinely still running, and restarting it would transcribe the note twice.
+///
+/// Best-effort: any failure leaves the note where it was, where the manual
+/// retry still applies.
 #[cfg(mobile)]
 pub fn resume_interrupted_processing(app: &AppHandle) {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -1532,7 +1542,14 @@ pub fn resume_interrupted_processing(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         let sweep = async {
             let repos = repositories(&app).await?;
-            let note_ids = repos.list_notes_failed_in_transit().await?;
+            // The two queries select disjoint statuses, so concatenating them
+            // cannot produce the same note twice.
+            let mut note_ids = repos.list_notes_failed_in_transit().await?;
+            for note_id in repos.list_notes_stuck_in_processing().await? {
+                if !crate::domain::processing::is_processing(&note_id) {
+                    note_ids.push(note_id);
+                }
+            }
             for note_id in note_ids {
                 let _ = retry_processing(
                     app.clone(),

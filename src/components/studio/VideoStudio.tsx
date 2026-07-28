@@ -1,24 +1,18 @@
 // Video studio: model families group the text-to-video, image-to-video, and
 // reference-to-video variants behind one picker with a direction toggle.
 // Generation is always async (quote → queue → poll → download) and any number
-// of renders can run at once — the job list shows each one and queued jobs
-// persist so a render paid for before a restart re-attaches instead of
-// orphaning.
+// of renders can run at once. Rust owns the poll and the download once a job
+// is queued, so a render survives the app being closed and lands in the
+// gallery on its own — the job list here is a view of those durable rows.
 
 import { IconVideo } from "central-icons/IconVideo";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   listArtifacts,
   readArtifactBase64,
-  saveArtifactFromResult,
+  registerDownloadedArtifact,
 } from "../../lib/studio/artifacts";
-import {
-  fileResultFrom,
-  formatElapsed,
-  type MediaFileResult,
-  pendingJobs,
-  useMediaJobQueue,
-} from "../../lib/studio/async-job";
+import { formatElapsed, useMediaJobQueue } from "../../lib/studio/async-job";
 import {
   formatCredits,
   isSeedanceModel,
@@ -48,7 +42,7 @@ import { GalleryStrip } from "./GalleryStrip";
 import { GenerationLayout } from "./GenerationLayout";
 import { effectiveOption, PillGroup, StudioField } from "./controls";
 
-const videoResultFrom = fileResultFrom("video_url", "url");
+const VIDEO_URL_FIELDS = ["video_url", "url"];
 
 /** The four video intents. Text needs no photo; "image" animates one photo
  * as the opening frame (with an optional end frame - that pair also drives
@@ -168,21 +162,17 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
   const effectiveAspect = effectiveOption(aspectOptions, aspectRatio);
   const effectiveResolution = effectiveOption(resolutionOptions, resolution);
 
-  const queue = useMediaJobQueue<MediaFileResult>(async (result, finished) => {
-    await saveArtifactFromResult(result, "mp4", {
+  // Rust downloaded the file into the gallery directory already (possibly
+  // while the app was closed); the hook hydrates from the durable rows on
+  // mount, so pending renders re-appear on their own.
+  const queue = useMediaJobQueue("video", (artifact, finished) => {
+    registerDownloadedArtifact(artifact, {
       kind: "video",
       model: finished.model,
       prompt: finished.prompt,
     });
     setGalleryEpoch((epoch) => epoch + 1);
-  }, videoResultFrom);
-  const resumeJob = queue.resume;
-
-  // Re-attach every pending render automatically: they are already paid for,
-  // and the job list gives each one a visible card.
-  useEffect(() => {
-    for (const pending of pendingJobs("video")) void resumeJob(pending);
-  }, [resumeJob]);
+  });
 
   // Request body for any target model of the active direction: settings are
   // resolved against that model's own constraints so a comparison family never
@@ -288,6 +278,7 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
           path: VIDEO_RETRIEVE_PATH,
           body: retrieveBody(queueId, target.id),
         }),
+        urlFields: VIDEO_URL_FIELDS,
       });
     }
   }, [model, alsoFamilies, slot, bodyForModel, prompt, queue]);

@@ -7,6 +7,13 @@
 //! `/v1/dictate/cleanup` pipeline the desktop uses, and the polished text
 //! comes back to the UI for copy/share. History rows share the desktop's
 //! `dictation_history` table.
+//!
+//! The transcription round-trip is durable: the recorded WAV is moved out of
+//! the temp directory and a `pending_dictations` row is written *before* the
+//! first network call, so a screen lock that suspends the app mid-transcription
+//! costs time rather than the recording. [`resume_pending`] finishes those rows
+//! on the next launch, resume, or iOS background window, files the result in
+//! the history, and notifies the user (see `crate::background`).
 
 use crate::{
     domain::{processing::build_dictionary_context, types::AppError},
@@ -20,11 +27,12 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::BufWriter,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, LazyLock, Mutex},
     time::Instant,
 };
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
+use tauri_plugin_notification::NotificationExt;
 
 static ACTIVE_DICTATION: LazyLock<Mutex<Option<ActiveDictation>>> =
     LazyLock::new(|| Mutex::new(None));
@@ -233,28 +241,98 @@ pub async fn mobile_dictation_stop(
     #[cfg(target_os = "ios")]
     crate::audio::ios_session::deactivate();
 
-    // The audio session no longer keeps the app alive past this point; hold
-    // background time so a screen lock doesn't kill the transcription.
-    let _background = crate::ios_background::BackgroundTask::begin("dictation-transcribe");
+    let style = request
+        .style
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "standard".to_string());
+    let language = request.language.filter(|value| !value.trim().is_empty());
 
     let repos = crate::commands::repositories(&app).await?;
+    // The audio session no longer keeps the app alive past this point, so the
+    // recording has to be able to outlive this call: park it where a later
+    // sweep can find it before the first request goes out.
+    let audio_path = park_audio(&app, &dictation.session_id, &dictation.path)
+        .unwrap_or_else(|| dictation.path.clone());
+    repos
+        .insert_pending_dictation(
+            &dictation.session_id,
+            &audio_path.to_string_lossy(),
+            &style,
+            language.as_deref(),
+        )
+        .await?;
+
+    // Hold background time so a screen lock doesn't cut the transcription
+    // short in the first place — the pending row is the fallback, not the plan.
+    let _background = crate::ios_background::BackgroundTask::begin("dictation-transcribe");
+
+    let result = transcribe_pending(
+        &repos,
+        &dictation.session_id,
+        &audio_path,
+        &style,
+        language.as_deref(),
+    )
+    .await;
+    match result {
+        Ok(result) => {
+            settle(&repos, &dictation.session_id, &audio_path).await;
+            Ok(result)
+        }
+        Err(error) => {
+            // Empty audio is a verdict, not an interruption: retrying it would
+            // resurrect a silent recording on every launch.
+            if error.code == "dictation_empty" {
+                settle(&repos, &dictation.session_id, &audio_path).await;
+            }
+            Err(error)
+        }
+    }
+}
+
+/// Move the finished WAV out of the temp directory, which iOS is free to purge
+/// between launches, into the app's own data directory.
+fn park_audio(app: &AppHandle, session_id: &str, source: &Path) -> Option<PathBuf> {
+    let dir = crate::app_paths::app_data_dir(app).ok()?.join("dictations");
+    std::fs::create_dir_all(&dir).ok()?;
+    let target = dir.join(format!("{session_id}.wav"));
+    std::fs::rename(source, &target)
+        .or_else(|_| std::fs::copy(source, &target).map(|_| ()))
+        .ok()?;
+    let _ = std::fs::remove_file(source);
+    Some(target)
+}
+
+async fn settle(
+    repos: &crate::db::repositories::Repositories,
+    session_id: &str,
+    audio_path: &Path,
+) {
+    let _ = repos.delete_pending_dictation(session_id).await;
+    let _ = std::fs::remove_file(audio_path);
+}
+
+/// Transcribe + polish one recording and file it in the history. Shared by the
+/// live stop path and the resume sweep so both produce the same history row.
+async fn transcribe_pending(
+    repos: &crate::db::repositories::Repositories,
+    session_id: &str,
+    audio_path: &Path,
+    style: &str,
+    language: Option<&str>,
+) -> Result<MobileDictationResultDto, AppError> {
     let dictionary_entries = repos.list_dictionary_entries().await?;
     let dictionary_context = build_dictionary_context(&dictionary_entries);
     let utterance_id = uuid::Uuid::new_v4().to_string();
 
     let transcript = dictate_transcribe(DictateTranscribeRequest {
-        audio_path: dictation.path.clone(),
+        audio_path: audio_path.to_path_buf(),
         context: dictionary_context.clone(),
-        language: request
-            .language
-            .clone()
-            .filter(|value| !value.trim().is_empty()),
-        session_id: dictation.session_id.clone(),
+        language: language.map(str::to_string),
+        session_id: session_id.to_string(),
         utterance_id: utterance_id.clone(),
     })
-    .await;
-    let _ = std::fs::remove_file(&dictation.path);
-    let transcript = transcript?;
+    .await?;
 
     let raw_text = transcript.text.trim().to_string();
     if raw_text.is_empty() {
@@ -263,17 +341,13 @@ pub async fn mobile_dictation_stop(
             "No speech was detected in the recording.",
         ));
     }
-    let style = request
-        .style
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "standard".to_string());
     // Cleanup is best-effort polish; if the model is unavailable the raw
     // transcript is still a useful result.
     let text = cleanup_text(DictateCleanupRequestParams {
         text: raw_text.clone(),
         dictionary_context,
-        style,
-        session_id: dictation.session_id,
+        style: style.to_string(),
+        session_id: session_id.to_string(),
         utterance_id,
         // Sub Rosa does not detect the paste-target app (upstream #597 unported).
         app_context: None,
@@ -290,6 +364,65 @@ pub async fn mobile_dictation_stop(
         raw_text,
         language: transcript.language,
     })
+}
+
+/// Webview event for a dictation that finished outside its own command call
+/// (the app was suspended when the transcription came back).
+pub const DICTATION_RECOVERED_EVENT: &str = "june://dictation-recovered";
+
+/// Give up on a recording after this many sweeps. A recording the backend
+/// consistently rejects must not be retried on every launch forever.
+const MAX_DICTATION_ATTEMPTS: i64 = 5;
+
+/// Finish the dictations whose transcription never came back. Called from
+/// [`crate::background::sweep`], so it runs on cold launch, on resume, and in
+/// an iOS background window.
+pub async fn resume_pending(app: &AppHandle) {
+    let Ok(repos) = crate::commands::repositories(app).await else {
+        return;
+    };
+    let Ok(pending) = repos.claim_pending_dictations(MAX_DICTATION_ATTEMPTS).await else {
+        return;
+    };
+    if pending.is_empty() {
+        return;
+    }
+    let _background = crate::ios_background::BackgroundTask::begin("dictation-resume");
+    for entry in pending {
+        let audio_path = PathBuf::from(&entry.audio_path);
+        if !audio_path.exists() {
+            let _ = repos.delete_pending_dictation(&entry.id).await;
+            continue;
+        }
+        match transcribe_pending(
+            &repos,
+            &entry.id,
+            &audio_path,
+            &entry.style,
+            entry.language.as_deref(),
+        )
+        .await
+        {
+            Ok(result) => {
+                settle(&repos, &entry.id, &audio_path).await;
+                let _ = app.emit(DICTATION_RECOVERED_EVENT, &result);
+                // The user asked for this text and walked away; tell them it
+                // is waiting in the dictation history.
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title("Your dictation is ready")
+                    .body(result.text.chars().take(120).collect::<String>())
+                    .show();
+            }
+            Err(error) if error.code == "dictation_empty" => {
+                settle(&repos, &entry.id, &audio_path).await;
+            }
+            // Still unreachable: leave the row for the next sweep (its attempt
+            // count was already bumped by the claim).
+            Err(_) => {}
+        }
+    }
 }
 
 fn take_active() -> Result<Option<ActiveDictation>, AppError> {

@@ -3,17 +3,9 @@
 // the input rules, and the copy differ.
 
 import { IconSoundFx } from "central-icons/IconSoundFx";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { saveArtifactFromResult } from "../../lib/studio/artifacts";
-import {
-  fileResultFrom,
-  formatElapsed,
-  type MediaFileResult,
-  type PersistedJob,
-  pendingJobs,
-  removePersistedJob,
-  useMediaJob,
-} from "../../lib/studio/async-job";
+import { useCallback, useMemo, useState } from "react";
+import { registerDownloadedArtifact } from "../../lib/studio/artifacts";
+import { formatElapsed, useMediaJob } from "../../lib/studio/async-job";
 import {
   estimateCostCredits,
   musicCapabilities,
@@ -32,7 +24,7 @@ import { CostHint, ModelSelect, SliderField, StudioField } from "./controls";
  * long descriptions anyway. */
 export const SFX_PROMPT_LIMIT = 250;
 
-const audioResultFrom = fileResultFrom("audio_url", "url");
+const AUDIO_URL_FIELDS = ["audio_url", "url"];
 
 export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
   const models = useMemo(() => soundEffectsModels(catalog), [catalog]);
@@ -46,21 +38,18 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
   // slider only appears (and is only sent) when the user takes over.
   const [autoDuration, setAutoDuration] = useState(true);
   const [durationSeconds, setDurationSeconds] = useState(5);
-  const [resumable, setResumable] = useState<PersistedJob[]>([]);
   const [galleryEpoch, setGalleryEpoch] = useState(0);
 
-  const job = useMediaJob<MediaFileResult>(async (result, finished) => {
-    await saveArtifactFromResult(result, "mp3", {
+  // The file is already in the gallery directory (Rust downloaded it, possibly
+  // while the app was closed); indexing it is all that is left.
+  const job = useMediaJob("sfx", (artifact, finished) => {
+    registerDownloadedArtifact(artifact, {
       kind: "sfx",
       model: finished.model,
       prompt: finished.prompt,
     });
     setGalleryEpoch((epoch) => epoch + 1);
   });
-
-  useEffect(() => {
-    setResumable(pendingJobs("sfx"));
-  }, []);
 
   const duration = caps.durationSeconds
     ? Math.min(Math.max(durationSeconds, caps.durationSeconds.min), caps.durationSeconds.max)
@@ -96,17 +85,9 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
         path: paths.retrieve,
         body: retrieveBody(queueId, model.id),
       }),
-      getResult: audioResultFrom,
+      urlFields: AUDIO_URL_FIELDS,
     });
   }, [model, prompt, autoDuration, duration, job, paths]);
-
-  const resume = useCallback(
-    (pending: PersistedJob) => {
-      setResumable((jobs) => jobs.filter((entry) => entry.id !== pending.id));
-      void job.resume(pending, audioResultFrom);
-    },
-    [job],
-  );
 
   const controls = (
     <>
@@ -179,29 +160,6 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
   return (
     <GenerationLayout controls={controls} action={action}>
       {job.state.phase === "failed" ? <p className="studio-error">{job.state.message}</p> : null}
-      {resumable.map((pending) => (
-        <div key={pending.id} className="studio-resume">
-          <span>
-            An effect from an earlier session may still be rendering: "{pending.prompt.slice(0, 80)}
-            "
-          </span>
-          <span className="studio-card-actions">
-            <button type="button" className="btn btn-secondary" onClick={() => resume(pending)}>
-              Check on it
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => {
-                removePersistedJob(pending.id);
-                setResumable((jobs) => jobs.filter((entry) => entry.id !== pending.id));
-              }}
-            >
-              Dismiss
-            </button>
-          </span>
-        </div>
-      ))}
       <GalleryStrip
         kind="sfx"
         epoch={galleryEpoch}

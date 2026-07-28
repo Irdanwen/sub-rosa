@@ -16,7 +16,7 @@ import {
   listArtifacts,
   readArtifactBase64,
   saveArtifactFromBase64,
-  saveArtifactFromResult,
+  registerDownloadedArtifact,
 } from "../../../lib/studio/artifacts";
 import {
   defaultEditModel,
@@ -54,13 +54,7 @@ import {
 } from "../../../lib/studio/edit-image";
 import { prepareEditReference } from "../../../lib/studio/downscale";
 import { compareBodies, generateImages } from "../../../lib/studio/generate-image";
-import {
-  fileResultFrom,
-  type MediaFileResult,
-  type PersistedJob,
-  pendingJobs,
-  useMediaJob,
-} from "../../../lib/studio/async-job";
+import { useMediaJob } from "../../../lib/studio/async-job";
 import {
   VIDEO_QUEUE_PATH,
   VIDEO_QUOTE_PATH,
@@ -89,10 +83,10 @@ type StudioMode = "image" | "video" | "audio" | "flows";
 type ImageMode = "generate" | "edit" | "upscale" | "cutout";
 type AudioMode = "music" | "speech" | "sfx";
 
-const videoResultFrom = fileResultFrom("video_url", "url");
+const VIDEO_URL_FIELDS = ["video_url", "url"];
 // Carpe Diem streams the finished track as the retrieve body (one shot);
 // Venice answers JSON with an `audio_url`. Both shapes must be accepted.
-const audioResultFrom = fileResultFrom("audio_url", "url");
+const AUDIO_URL_FIELDS = ["audio_url", "url"];
 
 /**
  * Mobile Studio: image, video, music, and guided flows over the shared studio
@@ -1031,11 +1025,13 @@ function VideoPanel({
   const [negativePrompt, setNegativePrompt] = useState("");
   const [duration, setDuration] = useState("");
   const [quote, setQuote] = useState<number | undefined>(undefined);
-  const [resumable, setResumable] = useState<PersistedJob[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const job = useMediaJob<MediaFileResult>(async (result, finished) => {
-    await saveArtifactFromResult(result, "mp4", {
+  // Rust polled the render and wrote the file into the gallery directory, so
+  // this runs even for a job that finished while the app was closed: the hook
+  // hydrates from the durable rows on mount.
+  const job = useMediaJob("video", (artifact, finished) => {
+    registerDownloadedArtifact(artifact, {
       kind: "video",
       model: finished.model,
       prompt: finished.prompt,
@@ -1043,16 +1039,6 @@ function VideoPanel({
     hapticNotify("success");
     onGenerated();
   });
-
-  useEffect(() => {
-    const pending = pendingJobs("video");
-    if (pending.length === 0) return;
-    // Re-attach to the newest already-paid-for job automatically (poll +
-    // download its result), and keep any older ones as manual "Resume" chips.
-    const [newest, ...rest] = pending;
-    setResumable(rest);
-    void job.resume(newest, videoResultFrom);
-  }, []);
 
   const durationOptions = constraints?.durations ?? [];
   const effectiveDuration = duration || durationOptions[0] || "";
@@ -1123,17 +1109,9 @@ function VideoPanel({
         path: VIDEO_RETRIEVE_PATH,
         body: retrieveBody(queueId, model.id),
       }),
-      getResult: videoResultFrom,
+      urlFields: VIDEO_URL_FIELDS,
     });
   }, [queueBody, model, prompt, job]);
-
-  const resume = useCallback(
-    (pending: PersistedJob) => {
-      setResumable((jobs) => jobs.filter((entry) => entry.id !== pending.id));
-      void job.resume(pending, videoResultFrom);
-    },
-    [job],
-  );
 
   return (
     <div className="mobile-studio-form">
@@ -1257,16 +1235,6 @@ function VideoPanel({
       {job.state.phase === "failed" ? (
         <p className="mobile-dictation-error">{job.state.message}</p>
       ) : null}
-      {resumable.map((pending) => (
-        <button
-          key={pending.id}
-          type="button"
-          className="mobile-chip-button"
-          onClick={() => resume(pending)}
-        >
-          Resume: {pending.prompt.slice(0, 40)}
-        </button>
-      ))}
       {pickerOpen ? (
         <ModelSheet
           title="Video model"
@@ -1502,11 +1470,12 @@ function SfxPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerated
   const [prompt, setPrompt] = useState("");
   const [autoDuration, setAutoDuration] = useState(true);
   const [durationSeconds, setDurationSeconds] = useState(5);
-  const [resumable, setResumable] = useState<PersistedJob[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const job = useMediaJob<MediaFileResult>(async (result, finished) => {
-    await saveArtifactFromResult(result, "mp3", {
+  // The file is already in the gallery directory (Rust downloaded it, possibly
+  // while the app was closed); indexing it is all that is left.
+  const job = useMediaJob("sfx", (artifact, finished) => {
+    registerDownloadedArtifact(artifact, {
       kind: "sfx",
       model: finished.model,
       prompt: finished.prompt,
@@ -1514,14 +1483,6 @@ function SfxPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerated
     hapticNotify("success");
     onGenerated();
   });
-
-  useEffect(() => {
-    const pending = pendingJobs("sfx");
-    if (pending.length === 0) return;
-    const [newest, ...rest] = pending;
-    setResumable(rest);
-    void job.resume(newest, audioResultFrom);
-  }, []);
 
   const duration = caps.durationSeconds
     ? Math.min(Math.max(durationSeconds, caps.durationSeconds.min), caps.durationSeconds.max)
@@ -1555,17 +1516,9 @@ function SfxPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerated
         path: paths.retrieve,
         body: retrieveBody(queueId, model.id),
       }),
-      getResult: audioResultFrom,
+      urlFields: AUDIO_URL_FIELDS,
     });
   }, [model, prompt, autoDuration, duration, job, paths]);
-
-  const resume = useCallback(
-    (pending: PersistedJob) => {
-      setResumable((jobs) => jobs.filter((entry) => entry.id !== pending.id));
-      void job.resume(pending, audioResultFrom);
-    },
-    [job],
-  );
 
   return (
     <>
@@ -1627,16 +1580,6 @@ function SfxPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerated
       {job.state.phase === "failed" ? (
         <p className="mobile-dictation-error">{job.state.message}</p>
       ) : null}
-      {resumable.map((pending) => (
-        <button
-          key={pending.id}
-          type="button"
-          className="mobile-chip-button"
-          onClick={() => resume(pending)}
-        >
-          Resume: {pending.prompt.slice(0, 40)}
-        </button>
-      ))}
       {pickerOpen ? (
         <ModelSheet
           title="Effect model"
@@ -1666,11 +1609,12 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
   const [prompt, setPrompt] = useState("");
   const [lyrics, setLyrics] = useState("");
   const [instrumental, setInstrumental] = useState(false);
-  const [resumable, setResumable] = useState<PersistedJob[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const job = useMediaJob<MediaFileResult>(async (result, finished) => {
-    await saveArtifactFromResult(result, "mp3", {
+  // The file is already in the gallery directory (Rust downloaded it, possibly
+  // while the app was closed); indexing it is all that is left.
+  const job = useMediaJob("music", (artifact, finished) => {
+    registerDownloadedArtifact(artifact, {
       kind: "music",
       model: finished.model,
       prompt: finished.prompt,
@@ -1678,14 +1622,6 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
     hapticNotify("success");
     onGenerated();
   });
-
-  useEffect(() => {
-    const pending = pendingJobs("music");
-    if (pending.length === 0) return;
-    const [newest, ...rest] = pending;
-    setResumable(rest);
-    void job.resume(newest, audioResultFrom);
-  }, []);
 
   const duration = caps.durationSeconds
     ? Math.min(Math.max(60, caps.durationSeconds.min), caps.durationSeconds.max)
@@ -1720,17 +1656,9 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
         path: paths.retrieve,
         body: retrieveBody(queueId, model.id),
       }),
-      getResult: audioResultFrom,
+      urlFields: AUDIO_URL_FIELDS,
     });
   }, [model, prompt, caps, instrumental, lyrics, duration, job, paths]);
-
-  const resume = useCallback(
-    (pending: PersistedJob) => {
-      setResumable((jobs) => jobs.filter((entry) => entry.id !== pending.id));
-      void job.resume(pending, audioResultFrom);
-    },
-    [job],
-  );
 
   return (
     <>
@@ -1788,16 +1716,6 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
       {job.state.phase === "failed" ? (
         <p className="mobile-dictation-error">{job.state.message}</p>
       ) : null}
-      {resumable.map((pending) => (
-        <button
-          key={pending.id}
-          type="button"
-          className="mobile-chip-button"
-          onClick={() => resume(pending)}
-        >
-          Resume: {pending.prompt.slice(0, 40)}
-        </button>
-      ))}
       {pickerOpen ? (
         <ModelSheet
           title="Music model"

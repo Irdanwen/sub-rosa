@@ -42,6 +42,15 @@ targets:
       properties:
         LSRequiresIPhoneOS: true
         UILaunchStoryboardName: LaunchScreen
+        # Background execution (see src-tauri/src/ios_background.rs):
+        # `audio` keeps a note recording alive with the screen locked,
+        # `processing`/`fetch` let BGTaskScheduler wake the app up later to
+        # finish queued generations, transcriptions and chat turns. The
+        # permitted identifiers must match the ones registered in Rust.
+        UIBackgroundModes: [audio, processing, fetch]
+        BGTaskSchedulerPermittedIdentifiers:
+          - xyz.carpediem.subrosa.refresh
+          - xyz.carpediem.subrosa.processing
         UIRequiredDeviceCapabilities: [arm64, metal]
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -73,6 +82,9 @@ targets:
     dependencies:
       - framework: libapp.a
         embed: false
+      # BGTaskScheduler is looked up dynamically from Rust, which only finds
+      # the class if the framework is actually linked into the process.
+      - sdk: BackgroundTasks.framework
       - sdk: CoreGraphics.framework
       - sdk: Metal.framework
       - sdk: MetalKit.framework

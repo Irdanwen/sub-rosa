@@ -6,6 +6,7 @@ import { IconTrashCan } from "central-icons/IconTrashCan";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { messageFromError } from "../../../lib/errors";
 import { hapticImpact, hapticNotify } from "../../../lib/haptics";
+import { ensureNotificationPermission } from "../../../lib/notifications";
 import {
   type DictationHistoryItemDto,
   type DictationStyle,
@@ -81,6 +82,10 @@ export function DictationScreen() {
 
   const stop = useCallback(async () => {
     setPhase("processing");
+    // The transcription can outlive this screen: if the phone is locked before
+    // it lands, Rust finishes it in the background and notifies. Ask for the
+    // permission here, where the wait explains the prompt.
+    void ensureNotificationPermission();
     try {
       const outcome = await mobileDictationStop({ style: styleRef.current });
       setResult(outcome);

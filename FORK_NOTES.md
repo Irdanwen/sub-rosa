@@ -243,6 +243,14 @@ généré (`src-tauri/gen/apple/`, committé). Décisions structurantes :
   d'ouvrir le stream — `src-tauri/src/audio/ios_session.rs` (objc2, framework AVFAudio lié dans
   build.rs). `UIBackgroundModes: audio` (Info.plist) couvre l'écran verrouillé. Capture système
   et mode `MicrophonePlusSystem` refusés sur mobile.
+- **Arrière-plan = lignes durables, pas de tâches longues**
+  ([ADR-0018](docs/adr/0018-ios-background-work-is-durable-rows.md)). iOS gèle la WebView et
+  suspend le process : rien de long ne peut vivre dans une promesse JS ni dans une tâche tokio
+  nue. Toute opération qui peut survivre au premier plan **écrit d'abord une ligne** (`notes`,
+  `media_jobs`, `pending_dictations`, `agent_tasks`), et `crate::background::sweep` la relance au
+  boot, au `Resumed` et dans les fenêtres BGTaskScheduler. Corollaire : ne jamais rajouter une
+  boucle de polling dans `src/lib/studio/` — elle s'arrêterait à l'instant où l'app passe en
+  arrière-plan.
 - **Deux listes `generate_handler!`** dans `lib.rs` (desktop complète / mobile sous-ensemble) —
   la macro ne cfg-e pas les entrées individuelles. **Garder les commandes partagées en sync.**
 - **Shell mobile dédié** : `src/main.tsx` choisit `MobileApp` (`src/app/mobile/`) via
@@ -269,6 +277,8 @@ généré (`src-tauri/gen/apple/`, committé). Décisions structurantes :
 | `src/main.tsx` | Choix du shell desktop/mobile + import `mobile.css` | 4 lignes |
 | `src/app/App.tsx` | `recordingToStatus` extrait vers `src/lib/recording-status.ts` | 1 import |
 | `src/components/studio/ImageStudio.tsx` | Logique queue/heavy extraite vers `src/lib/studio/generate-image.ts` | 1 import + 1 appel |
+| `src/lib/studio/async-job.ts`, `media-notifications.ts` | Le poll/download/notify est passé côté Rust ; les hooks `useMediaJob`/`useMediaJobQueue` ne font plus qu'observer les lignes `media_jobs` (événement `june://media-job` + réconciliation `media_job_list` au montage) | Ne pas réintroduire un poll JS (ADR-0018) |
+| `src/components/studio/{VideoStudio,MusicStudio,SoundFxStudio}.tsx`, `src/components/mobile/screens/StudioScreen.tsx` | Nouvelle signature des hooks (`kind` + `urlFields`, callback qui reçoit un `ArtifactFile` déjà écrit) ; les puces « Resume » ont disparu (Rust poll déjà tout) | Additif |
 | `src/lib/tauri.ts` | Wrappers `importAudioNote`, `mobileDictation*`, `agentLiteRun` + types | Additif |
 | `vite.config.ts` | `host: TAURI_DEV_HOST \|\| 127.0.0.1` (dev sur device) | 1 ligne |
 | `src-tauri/capabilities/*.json` | `platforms` desktop ajoutés (sinon tauri-build iOS rejette `process:allow-restart`) ; permission clipboard | Garder `platforms` |
@@ -278,22 +288,26 @@ généré (`src-tauri/gen/apple/`, committé). Décisions structurantes :
 | Fichier | Rôle |
 |---|---|
 | `june-api/crates/embed/` | Composition root partagée + `serve()` embarquable |
-| `src-tauri/gen/apple/` | Projet Xcode (Info.plist : micro + `UIBackgroundModes` audio) |
+| `src-tauri/gen/apple/` | Projet Xcode (Info.plist : micro, `UIBackgroundModes` audio+processing+fetch, `BGTaskSchedulerPermittedIdentifiers` ; `BackgroundTasks.framework` lié dans `project.yml` **et** dans le `.pbxproj` committé) |
 | `src-tauri/tauri.ios.conf.json` | 1 fenêtre, pas d'externalBin/resources/updater |
 | `src-tauri/capabilities/mobile-main.json` | Capability du webview mobile (⚠️ `haptics:default` n'existe pas dans tauri-plugin-haptics — lister les `haptics:allow-*` explicites, sinon tous les invokes haptics sont refusés en silence) |
 | `src-tauri/src/audio/ios_session.rs` | AVAudioSession (objc2) |
 | `src-tauri/src/dictation_mobile.rs` | Dictée in-app (cpal→WAV→`/v1/dictate`+cleanup, historique partagé) |
-| `src-tauri/src/agent_lite/mod.rs` | Boucle d'outils agent-lite (tient un `ios_background::BackgroundTask` pendant tout le tour) |
-| `src-tauri/src/ios_background.rs` | Garde RAII `beginBackgroundTaskWithName:` (objc2) : ~30 s de sursis après verrouillage d'écran ; tenue par le tour agent-lite, les pipelines de traitement de note (`domain/processing.rs`) et la transcription de dictée ; no-op hors iOS |
-| Sweep `resume_interrupted_processing` (`commands.rs`) | Au `Resumed` et au lancement : re-traite les notes en `failed` avec `last_error LIKE '%error sending request%'` (requête tuée par la suspension iOS) ; s'appuie sur le heal request-side du sidecar |
+| `src-tauri/src/agent_lite/mod.rs` | Boucle d'outils agent-lite (tient un `ios_background::BackgroundTask` pendant tout le tour ; `resume_interrupted_turns` rejoue les tours coupés, `TurnClaim` évite la double réponse) |
+| `src-tauri/src/ios_background.rs` | Coordinateur d'arrière-plan iOS (objc2) : garde RAII **ref-comptée** sur un seul `beginBackgroundTaskWithName:`, enregistrement + soumission `BGTaskScheduler`, observateurs `didEnterBackground`/`willEnterForeground` ; no-op hors iOS |
+| `src-tauri/src/background.rs` | Le sweep durable : notes, jobs média, dictées, tours de chat. Lancé au boot, au `Resumed` et depuis les handlers BGTaskScheduler. `has_pending_work()` décide si on demande une fenêtre à iOS |
+| `src-tauri/src/carpe_diem/jobs.rs` | Runner durable des générations Studio (poll + download + notification côté Rust, table `media_jobs`) — la WebView ne fait plus que la mise en file et l'observation |
+| `src-tauri/migrations/011_background_jobs.sql` | Tables `media_jobs` + `pending_dictations` |
+| Sweep `resume_interrupted_processing` (`commands.rs`) | Au `Resumed` et au lancement : re-traite les notes en `failed` (`last_error LIKE '%error sending request%'`) **et** celles restées en `transcribing`/`generating` sans pipeline vivant (`domain::processing::is_processing`) ; s'appuie sur le heal request-side du sidecar |
 | `src/lib/mobile.ts`, `src/lib/recording-status.ts`, `src/lib/studio/generate-image.ts` | Détection plateforme + helpers factorisés |
 | `src/app/mobile/{MobileApp.tsx,nav.ts}` | Shell mobile (gates, état, navigation tabs+stack) |
 | `src/components/mobile/**` | TabBar, StackHeader, écrans Notes/NoteDetail/Folders/Dictation/Agent/Studio/Settings |
 | `src/styles/mobile.css` | Chrome mobile (safe areas, 44 pt, tab bar, chat, studio) |
 
-**Reste à faire (iOS)** : test micro sur iPhone physique (spike AVAudioSession réel), gestion des
-interruptions/changements de route audio, partage (share sheet), lane TestFlight
-(`tauri ios build --export-method app-store-connect` + fastlane), CI `ios-release.yml`.
+**Reste à faire (iOS)** : porter le moteur de workflow (Flows) côté Rust — ses nœuds chaînent
+leurs sorties en mémoire, donc la progression d'un nœud au suivant reste liée au premier plan
+(chaque génération individuelle, elle, est déjà durable). Voir la section « Alternatives » de
+l'ADR-0018.
 
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour

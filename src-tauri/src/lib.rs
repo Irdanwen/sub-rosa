@@ -7,6 +7,7 @@ pub mod agent_hud;
 pub mod agent_lite;
 pub mod app_paths;
 pub mod audio;
+pub mod background;
 pub mod carpe_diem;
 pub mod commands;
 pub mod db;
@@ -366,6 +367,10 @@ pub fn run() {
             carpe_diem::media::carpe_diem_media_delete_artifact,
             carpe_diem::media::carpe_diem_media_read_artifact,
             carpe_diem::media::carpe_diem_media_list_artifacts,
+            carpe_diem::jobs::media_job_start,
+            carpe_diem::jobs::media_job_list,
+            carpe_diem::jobs::media_job_stop,
+            carpe_diem::jobs::media_job_dismiss,
             videomaker::commands::videomaker_get_settings,
             videomaker::commands::videomaker_set_base_url,
             videomaker::commands::videomaker_activate,
@@ -500,6 +505,10 @@ pub fn run() {
         carpe_diem::media::carpe_diem_media_delete_artifact,
         carpe_diem::media::carpe_diem_media_read_artifact,
         carpe_diem::media::carpe_diem_media_list_artifacts,
+        carpe_diem::jobs::media_job_start,
+        carpe_diem::jobs::media_job_list,
+        carpe_diem::jobs::media_job_stop,
+        carpe_diem::jobs::media_job_dismiss,
     ]);
 
     builder
@@ -551,10 +560,14 @@ pub fn run() {
                 meeting_detection::setup(app);
             }
             repair_agent_task_statuses_on_app_start(app);
-            // Notes killed in transit by a suspension in a previous session
-            // (Resumed doesn't fire on a cold launch, so sweep here too).
-            #[cfg(mobile)]
-            commands::resume_interrupted_processing(app.handle());
+            // Register the iOS background-execution hooks before the app
+            // finishes launching: BGTaskScheduler rejects (and throws on) a
+            // launch handler registered any later.
+            ios_background::setup(app.handle());
+            // Work killed in transit by a suspension, a kill, or a quit in a
+            // previous session. `Resumed` doesn't fire on a cold launch, so
+            // the sweep has to run here too.
+            background::sweep_detached(app.handle());
             #[cfg(desktop)]
             {
                 hermes_bridge::start_on_app_start(app);
@@ -572,9 +585,11 @@ pub fn run() {
             #[cfg(mobile)]
             tauri::RunEvent::Resumed => {
                 carpe_diem::sidecar::ensure_alive(app);
-                // Notes whose processing died while suspended self-heal here
-                // (the retry waits for the sidecar via the request-side heal).
-                commands::resume_interrupted_processing(app);
+                // Everything whose durable row outlived the suspension self-heals
+                // here: notes mid-transcription, queued Studio generations,
+                // dictations, and chat turns. The retries wait for the sidecar
+                // via the request-side heal.
+                background::sweep_detached(app);
             }
             tauri::RunEvent::Exit => {
                 #[cfg(desktop)]
