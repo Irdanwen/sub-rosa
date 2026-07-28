@@ -9,11 +9,15 @@ import { useCallback, useMemo, useState } from "react";
  */
 export type MobileTab = "notes" | "dictation" | "agent" | "studio" | "settings";
 
+/** The settings detail screens the root list pushes to. */
+export type SettingsSection = "memory" | "connection";
+
 export type MobileRoute =
   | { view: "note"; noteId: string }
   | { view: "folder"; folderId: string }
   | { view: "agent-session"; sessionId?: string }
-  | { view: "agent-history" };
+  | { view: "agent-history" }
+  | { view: "settings-section"; section: SettingsSection };
 
 export type MobileNav = {
   tab: MobileTab;
