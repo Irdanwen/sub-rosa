@@ -1000,3 +1000,84 @@ pub enum SourceState {
     Recoverable,
     Failed,
 }
+
+/// A Studio generation the backend has already accepted (and charged for),
+/// tracked in SQLite so the poll survives the app being suspended or killed.
+/// Rust owns the whole lifecycle from here on: poll, download into the gallery,
+/// notify. The frontend reads these rows instead of polling itself.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaJobDto {
+    /// The backend's queue id — also the row's primary key, so re-queueing the
+    /// same job twice cannot produce two rows.
+    pub id: String,
+    /// "video" | "music" | "image" | "sfx" — the gallery bucket to file into.
+    pub kind: String,
+    pub model: String,
+    pub prompt: String,
+    /// Extension for the downloaded artifact ("mp4", "mp3", ...).
+    pub extension: String,
+    pub status: MediaJobStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Absolute path of the finished file in the gallery directory.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifact_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifact_file_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifact_bytes: Option<i64>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum MediaJobStatus {
+    Queued,
+    Processing,
+    Completed,
+    Failed,
+}
+
+impl MediaJobStatus {
+    pub fn as_db(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Processing => "processing",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+        }
+    }
+
+    /// Whether the backend may still be working on it — the rows a sweep picks
+    /// back up.
+    pub fn is_active(self) -> bool {
+        matches!(self, Self::Queued | Self::Processing)
+    }
+}
+
+impl From<&str> for MediaJobStatus {
+    fn from(value: &str) -> Self {
+        match value {
+            "processing" => Self::Processing,
+            "completed" => Self::Completed,
+            "failed" => Self::Failed,
+            _ => Self::Queued,
+        }
+    }
+}
+
+/// A dictation whose audio is already on disk but whose transcription has not
+/// come back yet. The row is what makes the round-trip resumable: losing it to
+/// a screen lock used to lose the recording with it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingDictationDto {
+    pub id: String,
+    pub audio_path: String,
+    pub style: String,
+    pub language: Option<String>,
+    pub attempts: i64,
+    pub created_at: String,
+}

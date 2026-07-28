@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		066500FF616993CCFDE476BB /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 17B0E9718B06C2BD5260AEE7 /* main.mm */; };
+		0A1B2C3D4E5F60718293A4B5 /* BackgroundTasks.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0B1C2D3E4F506172839AB4C5 /* BackgroundTasks.framework */; };
 		0684520B1B4C61CF90C01866 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7B3AC24A3C5224C51308B453 /* CoreGraphics.framework */; };
 		642A3EF1947511AF06947865 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B271CD608158B5B3BF5A84DD /* Security.framework */; };
 		6D2CC85D961DFD9334548BF4 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 960E44DBEDA3229A391DF40E /* LaunchScreen.storyboard */; };
@@ -57,6 +58,7 @@
 		929FF0B957B199ED3DA685DB /* dictation.rs */ = {isa = PBXFileReference; path = dictation.rs; sourceTree = "<group>"; };
 		959450BA5613973A882E0958 /* june_web_mcp.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = june_web_mcp.py; sourceTree = "<group>"; };
 		960E44DBEDA3229A391DF40E /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		0B1C2D3E4F506172839AB4C5 /* BackgroundTasks.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = BackgroundTasks.framework; path = System/Library/Frameworks/BackgroundTasks.framework; sourceTree = SDKROOT; };
 		97402B24C9614C6337EC3588 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
 		9BDAF296761D0B1605EE81F2 /* settings.rs */ = {isa = PBXFileReference; path = settings.rs; sourceTree = "<group>"; };
 		A010AB76724CC38B8F39C6D8 /* agent_hud.rs */ = {isa = PBXFileReference; path = agent_hud.rs; sourceTree = "<group>"; };
@@ -87,6 +89,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FCE47DB9823A42DE4721DE10 /* libapp.a in Frameworks */,
+				0A1B2C3D4E5F60718293A4B5 /* BackgroundTasks.framework in Frameworks */,
 				0684520B1B4C61CF90C01866 /* CoreGraphics.framework in Frameworks */,
 				F1A2E3E180D3FE38E0121CCD /* Metal.framework in Frameworks */,
 				AD9E89DDEBE7AC249FBEAB57 /* MetalKit.framework in Frameworks */,
@@ -241,6 +244,7 @@
 		A555BFD05A06D4D1B5F64092 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				0B1C2D3E4F506172839AB4C5 /* BackgroundTasks.framework */,
 				7B3AC24A3C5224C51308B453 /* CoreGraphics.framework */,
 				7A4BF3FD0A0A8FDD5B5A3124 /* libapp.a */,
 				DE8A0A12265F59FA4DA79CF0 /* Metal.framework */,

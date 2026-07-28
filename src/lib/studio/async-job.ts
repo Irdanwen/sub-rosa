@@ -1,21 +1,36 @@
-// Generic queue → poll → retrieve machinery for the async media endpoints
-// (video, music, heavy image models). One implementation serves them all —
-// the endpoints share the same lifecycle, only paths and response fields vary.
+// Async media generations (video, music, sound effects, heavy image models):
+// queue here, then hand the job to Rust.
 //
-// Jobs are persisted to localStorage the moment they are queued: a generation
-// the user already paid for must survive an app restart, so views re-attach
-// to pending jobs on mount instead of orphaning them.
+// These renders take minutes. The poll used to live in this file, which meant
+// it lived in the webview — and iOS freezes the webview the moment the app
+// leaves the foreground, so locking the phone stalled a render the user had
+// already paid for until they came back to the exact screen that started it.
+// The poll, the download and the "it's ready" notification now belong to
+// `carpe_diem::jobs` in Rust, which keeps running through the background
+// window and picks up unfinished rows on the next launch.
+//
+// What is left here is the view layer: queue the job, hand it over, then
+// observe. Observation has two halves, and both are needed — the event stream
+// for while the webview is awake, and a reconcile through `media_job_list` on
+// mount for everything that landed while it was not.
 
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MediaError, mediaJson, mediaRaw } from "./client";
-import { ensureNotificationPermission, notifyMediaJobDone } from "./media-notifications";
+import { ensureNotificationPermission } from "../notifications";
+import type { ArtifactFile } from "./types";
 
 export const POLL_INTERVAL_MS = 3_000;
 /** ~15 minutes at the default interval; video renders can take a while. */
 export const MAX_POLL_ATTEMPTS = 300;
 
-const JOBS_STORAGE_KEY = "os-june:studio-jobs";
-const MAX_PERSISTED_JOBS = 20;
+/** Rust emits this whenever a job changes state. */
+const MEDIA_JOB_EVENT = "june://media-job";
+/** Backstop for the window where the webview was frozen and missed events. */
+const RECONCILE_INTERVAL_MS = 5_000;
+/** Same backstop with nothing in flight, where it is only a safety net. */
+const IDLE_RECONCILE_INTERVAL_MS = 30_000;
 
 export type JobPhase = "queued" | "processing" | "completed" | "failed";
 
@@ -73,9 +88,13 @@ function sleep(ms: number, signal?: AbortSignal) {
   });
 }
 
-/** Polls a retrieve endpoint until the job completes or fails. Transient
- * retrieve errors don't kill the poll — only a terminal status, an abort, or
- * the attempt budget do. */
+/** In-webview polling, kept for the workflow engine: its nodes chain their
+ * outputs in memory, so the run is foreground-bound anyway and there is
+ * nothing for a durable row to resume into. Everything the user starts as a
+ * standalone generation goes through {@link useMediaJobQueue} instead.
+ *
+ * Transient retrieve errors don't kill the poll — only a terminal status, an
+ * abort, or the attempt budget do. */
 export async function pollUntilDone<T>(options: PollOptions<T>): Promise<T> {
   const interval = options.intervalMs ?? POLL_INTERVAL_MS;
   const maxAttempts = options.maxAttempts ?? MAX_POLL_ATTEMPTS;
@@ -151,59 +170,200 @@ export function fileResultFrom(
   };
 }
 
-// --- persisted pending jobs ---------------------------------------------------
+// --- durable jobs -------------------------------------------------------------
 
-export type PersistedJobKind = "video" | "music" | "image" | "sfx";
+export type MediaJobKind = "video" | "music" | "image" | "sfx";
 
-/** Everything needed to re-attach to a queued generation after a restart. */
-export interface PersistedJob {
+/** A generation Rust is tracking. Mirrors `MediaJobDto`. */
+export interface MediaJob {
   id: string;
-  kind: PersistedJobKind;
+  kind: MediaJobKind;
   model: string;
   prompt: string;
-  queueId: string;
-  retrievePath: string;
-  retrieveBody: Record<string, unknown>;
-  /** File extension for the eventual artifact download. */
   extension: string;
-  createdAt: number;
+  status: JobPhase;
+  error?: string;
+  artifactPath?: string;
+  artifactFileName?: string;
+  artifactBytes?: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
-function readJobs(): PersistedJob[] {
-  try {
-    const raw = window.localStorage.getItem(JOBS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as PersistedJob[]) : [];
-  } catch {
-    return [];
+export interface StartJobOptions {
+  kind: MediaJobKind;
+  model: string;
+  prompt: string;
+  extension: string;
+  queuePath: string;
+  queueBody: Record<string, unknown>;
+  /** Retrieve request built from the queue id (video needs `{id, model}`). */
+  retrieve: (queueId: string) => { path: string; body: Record<string, unknown> };
+  /** Response fields Rust should read the finished file's URL from, in order. */
+  urlFields: string[];
+}
+
+function startedAtOf(job: MediaJob): number {
+  const parsed = Date.parse(job.createdAt);
+  return Number.isNaN(parsed) ? Date.now() : parsed;
+}
+
+function artifactOf(job: MediaJob): ArtifactFile | undefined {
+  if (!job.artifactPath || !job.artifactFileName) return undefined;
+  return {
+    path: job.artifactPath,
+    fileName: job.artifactFileName,
+    bytes: job.artifactBytes ?? 0,
+  };
+}
+
+/** Queue a generation upstream, then hand the id to Rust. The queue call is
+ * the one part that has to happen here: it is what turns a prompt into a job
+ * id, and it is short enough to finish inside the background grace window. */
+async function queueAndHandOff(options: StartJobOptions): Promise<MediaJob> {
+  const queued = await mediaJson<Record<string, unknown>>(options.queuePath, options.queueBody);
+  const queueId = queued.queue_id ?? queued.id;
+  if (typeof queueId !== "string" || !queueId) {
+    throw new MediaError("The backend did not return a job id.", { status: 200 });
   }
+  const retrieve = options.retrieve(queueId);
+  // Ask for notification permission in context: the user just started a
+  // generation that can take minutes, so a "when it's done" prompt reads
+  // naturally here — and the notification is now what tells them it landed
+  // while they were in another app.
+  void ensureNotificationPermission();
+  return invoke<MediaJob>("media_job_start", {
+    request: {
+      queueId,
+      kind: options.kind,
+      model: options.model,
+      prompt: options.prompt,
+      extension: options.extension,
+      retrievePath: retrieve.path,
+      retrieveBody: retrieve.body,
+      urlFields: options.urlFields,
+    },
+  });
 }
 
-function writeJobs(jobs: PersistedJob[]) {
-  try {
-    window.localStorage.setItem(
-      JOBS_STORAGE_KEY,
-      JSON.stringify(jobs.slice(0, MAX_PERSISTED_JOBS)),
+/**
+ * Watch the durable jobs of one kind.
+ *
+ * Rust owns the work; this owns the reconciliation. A job that completes while
+ * the app is away is not "seen" until we index its artifact in the gallery, so
+ * the reducer here calls `onCompleted` and only then dismisses the row. That
+ * handshake is what makes a render that finished overnight show up.
+ */
+function useDurableJobs(
+  kind: MediaJobKind,
+  onCompleted: (artifact: ArtifactFile, job: MediaJob) => Promise<void> | void,
+) {
+  const [jobs, setJobs] = useState<MediaJob[]>([]);
+  const [now, setNow] = useState(() => Date.now());
+  const onCompletedRef = useRef(onCompleted);
+  onCompletedRef.current = onCompleted;
+  /** Jobs whose artifact is being filed, so a re-render cannot file it twice. */
+  const settling = useRef(new Set<string>());
+
+  const ingest = useCallback(
+    (incoming: MediaJob[]) => {
+      const mine = incoming.filter((job) => job.kind === kind);
+      setJobs((current) => {
+        const byId = new Map(current.map((job) => [job.id, job]));
+        for (const job of mine) byId.set(job.id, job);
+        // Drop rows Rust no longer knows about, but only when we have the full
+        // picture (a single-job event says nothing about the others).
+        return [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      });
+      for (const job of mine) {
+        if (job.status !== "completed" || settling.current.has(job.id)) continue;
+        const artifact = artifactOf(job);
+        if (!artifact) continue;
+        settling.current.add(job.id);
+        void (async () => {
+          try {
+            await onCompletedRef.current(artifact, job);
+          } finally {
+            await invoke("media_job_dismiss", { id: job.id }).catch(() => {});
+            settling.current.delete(job.id);
+            setJobs((current) => current.filter((entry) => entry.id !== job.id));
+          }
+        })();
+      }
+    },
+    [kind],
+  );
+
+  const reconcile = useCallback(async () => {
+    try {
+      const all = await invoke<MediaJob[]>("media_job_list");
+      const mine = all.filter((job) => job.kind === kind);
+      setJobs((current) => {
+        const known = new Set(mine.map((job) => job.id));
+        // Anything the list no longer carries is settled: keep only rows still
+        // being filed by `ingest`.
+        const kept = current.filter((job) => known.has(job.id) || settling.current.has(job.id));
+        const byId = new Map(kept.map((job) => [job.id, job]));
+        for (const job of mine) byId.set(job.id, job);
+        return [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      });
+      ingest(mine);
+    } catch {
+      // The command surface is unavailable (browser preview, early boot):
+      // the next tick tries again.
+    }
+  }, [ingest, kind]);
+
+  const watching = jobs.length > 0;
+  useEffect(() => {
+    void reconcile();
+    const unlisten = listen<MediaJob>(MEDIA_JOB_EVENT, (event) => ingest([event.payload]));
+    // Events do not queue up while iOS has the webview frozen, so poll the
+    // durable list as well: this is what catches everything that landed while
+    // the app was away. Fast while something is in flight, slow otherwise —
+    // with no job of this kind there is nothing that can complete behind our
+    // back, and the mount above already caught up.
+    const tick = window.setInterval(
+      () => void reconcile(),
+      watching ? RECONCILE_INTERVAL_MS : IDLE_RECONCILE_INTERVAL_MS,
     );
-  } catch {
-    // Quota pressure: pending-job bookkeeping is best-effort.
-  }
+    return () => {
+      void unlisten.then((stop) => stop()).catch(() => {});
+      window.clearInterval(tick);
+    };
+  }, [ingest, reconcile, watching]);
+
+  // One shared clock for the elapsed counters.
+  useEffect(() => {
+    const tick = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(tick);
+  }, []);
+
+  const start = useCallback(
+    async (options: StartJobOptions) => {
+      const job = await queueAndHandOff(options);
+      ingest([job]);
+    },
+    [ingest],
+  );
+
+  /** Stop watching one job. The backend keeps rendering (and has already
+   * billed), so the row stays and Rust resumes it on the next sweep. */
+  const stop = useCallback(async (id: string) => {
+    await invoke("media_job_stop", { id }).catch(() => {});
+    setJobs((current) => current.filter((job) => job.id !== id));
+  }, []);
+
+  /** Forget a job for good (a failure the user dismissed). */
+  const dismiss = useCallback(async (id: string) => {
+    await invoke("media_job_dismiss", { id }).catch(() => {});
+    setJobs((current) => current.filter((job) => job.id !== id));
+  }, []);
+
+  return { jobs, now, start, stop, dismiss };
 }
 
-export function persistJob(job: PersistedJob) {
-  writeJobs([job, ...readJobs().filter((existing) => existing.id !== job.id)]);
-}
-
-export function removePersistedJob(id: string) {
-  writeJobs(readJobs().filter((job) => job.id !== id));
-}
-
-export function pendingJobs(kind: PersistedJobKind): PersistedJob[] {
-  return readJobs().filter((job) => job.kind === kind);
-}
-
-// --- React hook ---------------------------------------------------------------
+// --- single-slot hook ---------------------------------------------------------
 
 export type MediaJobState =
   | { phase: "idle" }
@@ -211,145 +371,68 @@ export type MediaJobState =
   | { phase: "queued" | "processing"; startedAt: number; elapsedMs: number }
   | { phase: "failed"; message: string };
 
-export interface StartJobOptions<T> {
-  kind: PersistedJobKind;
-  model: string;
-  prompt: string;
-  extension: string;
-  queuePath: string;
-  queueBody: Record<string, unknown>;
-  /** Retrieve body from the queue id (video needs `{id, model}`). */
-  retrieve: (queueId: string) => { path: string; body: Record<string, unknown> };
-  getResult: (response: Record<string, unknown>) => T | undefined;
-}
+/**
+ * Drives one generation at a time for the simple views. Reports the newest
+ * unfinished job of its kind — including one started in a previous session, so
+ * reopening the app mid-render shows the render rather than an empty form.
+ */
+export function useMediaJob(
+  kind: MediaJobKind,
+  onCompleted: (artifact: ArtifactFile, job: MediaJob) => Promise<void> | void,
+) {
+  const { jobs, now, start, stop, dismiss } = useDurableJobs(kind, onCompleted);
+  const [queueing, setQueueing] = useState(false);
+  const [dismissed, setDismissed] = useState<string | undefined>(undefined);
+  /** A queue call that never produced a job id, so there is no row to carry
+   * the message. Cleared by the next attempt. */
+  const [submitError, setSubmitError] = useState<string | undefined>(undefined);
 
-/** Drives one async generation at a time: queue, persist, poll, report.
- * `onCompleted` receives the extracted result plus the persisted job (for
- * downloading + gallery metadata); the hook clears the persisted entry. */
-export function useMediaJob<T>(onCompleted: (result: T, job: PersistedJob) => Promise<void>) {
-  const [state, setState] = useState<MediaJobState>({ phase: "idle" });
-  const abortRef = useRef<AbortController | undefined>(undefined);
-  const onCompletedRef = useRef(onCompleted);
-  onCompletedRef.current = onCompleted;
+  const active = jobs.find((job) => job.status === "queued" || job.status === "processing");
+  const failed = jobs.find((job) => job.status === "failed" && job.id !== dismissed);
 
-  useEffect(() => {
-    const tick = window.setInterval(() => {
-      setState((current) =>
-        current.phase === "queued" || current.phase === "processing"
-          ? { ...current, elapsedMs: Date.now() - current.startedAt }
-          : current,
-      );
-    }, 1_000);
-    return () => window.clearInterval(tick);
-  }, []);
+  let state: MediaJobState = { phase: "idle" };
+  if (active) {
+    const startedAt = startedAtOf(active);
+    // `active` is filtered to the two running phases just above.
+    const phase = active.status as "queued" | "processing";
+    state = { phase, startedAt, elapsedMs: Math.max(0, now - startedAt) };
+  } else if (queueing) {
+    state = { phase: "queueing" };
+  } else if (submitError) {
+    state = { phase: "failed", message: submitError };
+  } else if (failed) {
+    state = { phase: "failed", message: failed.error ?? "The generation failed." };
+  }
 
-  useEffect(() => () => abortRef.current?.abort(), []);
-
-  const attach = useCallback(
-    async (job: PersistedJob, getResult: (response: Record<string, unknown>) => T | undefined) => {
-      const controller = new AbortController();
-      abortRef.current?.abort();
-      abortRef.current = controller;
-      const startedAt = job.createdAt;
-      setState({ phase: "queued", startedAt, elapsedMs: Date.now() - startedAt });
+  const startJob = useCallback(
+    async (options: StartJobOptions) => {
+      setQueueing(true);
+      setSubmitError(undefined);
+      setDismissed(undefined);
       try {
-        const result = await pollUntilDone<T>({
-          retrievePath: job.retrievePath,
-          retrieveBody: job.retrieveBody,
-          getResult,
-          signal: controller.signal,
-          onPhase: (phase) =>
-            setState((current) =>
-              (phase === "queued" || phase === "processing") &&
-              (current.phase === "queued" || current.phase === "processing")
-                ? { phase, startedAt: current.startedAt, elapsedMs: current.elapsedMs }
-                : current,
-            ),
-        });
-        await onCompletedRef.current(result, job);
-        removePersistedJob(job.id);
-        // Best-effort local notification: long renders finish while the user is
-        // elsewhere in (or just returning to) the app.
-        void notifyMediaJobDone(job.kind, job.prompt);
-        setState({ phase: "idle" });
+        await start(options);
       } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          setState({ phase: "idle" });
-          return;
-        }
-        // Terminal failure: the backend won't finish this job, drop it.
-        if (!(error instanceof MediaError && error.status === 0)) {
-          removePersistedJob(job.id);
-        }
-        setState({
-          phase: "failed",
-          message: error instanceof Error ? error.message : "The generation failed.",
-        });
+        setSubmitError(error instanceof Error ? error.message : "Queueing the generation failed.");
+      } finally {
+        setQueueing(false);
       }
     },
-    [],
+    [start],
   );
 
-  const start = useCallback(
-    async (options: StartJobOptions<T>) => {
-      setState({ phase: "queueing" });
-      let queueId: string;
-      try {
-        const queued = await mediaJson<Record<string, unknown>>(
-          options.queuePath,
-          options.queueBody,
-        );
-        const id = queued.queue_id ?? queued.id;
-        if (typeof id !== "string" || !id) {
-          throw new MediaError("The backend did not return a job id.", { status: 200 });
-        }
-        queueId = id;
-      } catch (error) {
-        setState({
-          phase: "failed",
-          message: error instanceof Error ? error.message : "Queueing the generation failed.",
-        });
-        return;
-      }
-      const retrieve = options.retrieve(queueId);
-      const job: PersistedJob = {
-        id: queueId,
-        kind: options.kind,
-        model: options.model,
-        prompt: options.prompt,
-        queueId,
-        retrievePath: retrieve.path,
-        retrieveBody: retrieve.body,
-        extension: options.extension,
-        createdAt: Date.now(),
-      };
-      persistJob(job);
-      // Ask for notification permission in context: the user just started a
-      // generation that can take minutes, so a "when it's done" prompt reads
-      // naturally here.
-      void ensureNotificationPermission();
-      await attach(job, options.getResult);
-    },
-    [attach],
-  );
-
-  /** Re-attach to a job persisted before a restart. */
-  const resume = useCallback(
-    (job: PersistedJob, getResult: (response: Record<string, unknown>) => T | undefined) =>
-      attach(job, getResult),
-    [attach],
-  );
-
-  /** Stops polling. The backend keeps rendering (and billing) — the persisted
-   * job stays so the user can re-attach later instead of losing the output. */
   const cancel = useCallback(() => {
-    abortRef.current?.abort();
-    setState({ phase: "idle" });
-  }, []);
+    if (active) void stop(active.id);
+  }, [active, stop]);
 
-  const reset = useCallback(() => setState({ phase: "idle" }), []);
+  const reset = useCallback(() => {
+    setSubmitError(undefined);
+    if (failed) {
+      setDismissed(failed.id);
+      void dismiss(failed.id);
+    }
+  }, [dismiss, failed]);
 
-  return { state, start, resume, cancel, reset };
+  return { state, start: startJob, cancel, reset };
 }
 
 // --- multi-job hook -----------------------------------------------------------
@@ -357,167 +440,76 @@ export function useMediaJob<T>(onCompleted: (result: T, job: PersistedJob) => Pr
 /** One entry in a view's live job list. Completed jobs leave the list (their
  * artifact lands in the gallery); failed ones stay until dismissed. */
 export interface QueuedJobState {
-  job: PersistedJob;
+  job: MediaJob;
   phase: "queued" | "processing" | "failed";
   elapsedMs: number;
   message?: string;
 }
 
 /**
- * Drives any number of concurrent async generations for one view: queue,
- * persist, poll each independently, report all of them as a list. The single
- * `getResult` is fixed at the hook level because a view polls one media kind.
- * `useMediaJob` remains for the single-slot views (mobile).
+ * Drives any number of concurrent generations for one view. Rust polls them
+ * all in parallel whether or not this component is mounted, so the list is a
+ * read of durable state rather than a set of in-flight promises.
  */
-export function useMediaJobQueue<T>(
-  onCompleted: (result: T, job: PersistedJob) => Promise<void>,
-  getResult: (response: Record<string, unknown>) => T | undefined,
+export function useMediaJobQueue(
+  kind: MediaJobKind,
+  onCompleted: (artifact: ArtifactFile, job: MediaJob) => Promise<void> | void,
 ) {
-  const [jobs, setJobs] = useState<QueuedJobState[]>([]);
-  const controllers = useRef(new Map<string, AbortController>());
-  const onCompletedRef = useRef(onCompleted);
-  onCompletedRef.current = onCompleted;
-  const getResultRef = useRef(getResult);
-  getResultRef.current = getResult;
+  const { jobs, now, start, stop, dismiss } = useDurableJobs(kind, onCompleted);
+  /** Submits that never reached the backend: no queue id, so no durable row —
+   * they live here until the user dismisses them. */
+  const [rejected, setRejected] = useState<QueuedJobState[]>([]);
 
-  useEffect(() => {
-    const tick = window.setInterval(() => {
-      setJobs((current) =>
-        current.map((entry) =>
-          entry.phase === "failed"
-            ? entry
-            : { ...entry, elapsedMs: Date.now() - entry.job.createdAt },
-        ),
-      );
-    }, 1_000);
-    return () => window.clearInterval(tick);
-  }, []);
+  const entries: QueuedJobState[] = [
+    ...rejected,
+    ...jobs
+      .filter((job) => job.status !== "completed")
+      .map((job) => ({
+        job,
+        phase: job.status as "queued" | "processing" | "failed",
+        elapsedMs: Math.max(0, now - startedAtOf(job)),
+        message: job.error,
+      })),
+  ];
 
-  useEffect(
-    () => () => {
-      for (const controller of controllers.current.values()) controller.abort();
-    },
-    [],
-  );
-
-  const patchJob = useCallback((id: string, patch: Partial<QueuedJobState>) => {
-    setJobs((current) =>
-      current.map((entry) => (entry.job.id === id ? { ...entry, ...patch } : entry)),
-    );
-  }, []);
-
-  const attach = useCallback(
-    async (job: PersistedJob) => {
-      if (controllers.current.has(job.id)) return;
-      const controller = new AbortController();
-      controllers.current.set(job.id, controller);
-      setJobs((current) => [
-        { job, phase: "queued" as const, elapsedMs: Date.now() - job.createdAt },
-        ...current.filter((entry) => entry.job.id !== job.id),
-      ]);
+  const startJob = useCallback(
+    async (options: StartJobOptions) => {
       try {
-        const result = await pollUntilDone<T>({
-          retrievePath: job.retrievePath,
-          retrieveBody: job.retrieveBody,
-          getResult: (response) => getResultRef.current(response),
-          signal: controller.signal,
-          onPhase: (phase) => {
-            if (phase === "queued" || phase === "processing") patchJob(job.id, { phase });
-          },
-        });
-        await onCompletedRef.current(result, job);
-        removePersistedJob(job.id);
-        void notifyMediaJobDone(job.kind, job.prompt);
-        setJobs((current) => current.filter((entry) => entry.job.id !== job.id));
+        await start(options);
       } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          // Stop-waiting: the card goes, the persisted job stays for later.
-          setJobs((current) => current.filter((entry) => entry.job.id !== job.id));
-          return;
-        }
-        // Terminal failure: the backend won't finish this job, drop it.
-        if (!(error instanceof MediaError && error.status === 0)) {
-          removePersistedJob(job.id);
-        }
-        patchJob(job.id, {
-          phase: "failed",
-          message: error instanceof Error ? error.message : "The generation failed.",
-        });
-      } finally {
-        controllers.current.delete(job.id);
-      }
-    },
-    [patchJob],
-  );
-
-  const start = useCallback(
-    async (options: Omit<StartJobOptions<T>, "getResult">) => {
-      let queueId: string;
-      try {
-        const queued = await mediaJson<Record<string, unknown>>(
-          options.queuePath,
-          options.queueBody,
-        );
-        const id = queued.queue_id ?? queued.id;
-        if (typeof id !== "string" || !id) {
-          throw new MediaError("The backend did not return a job id.", { status: 200 });
-        }
-        queueId = id;
-      } catch (error) {
-        // The submit itself failed: nothing was paid for, surface it as a
-        // failed card the user can dismiss.
-        const failed: PersistedJob = {
-          id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          kind: options.kind,
-          model: options.model,
-          prompt: options.prompt,
-          queueId: "",
-          retrievePath: "",
-          retrieveBody: {},
-          extension: options.extension,
-          createdAt: Date.now(),
-        };
-        setJobs((current) => [
+        const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        setRejected((current) => [
           {
-            job: failed,
-            phase: "failed" as const,
+            job: {
+              id,
+              kind: options.kind,
+              model: options.model,
+              prompt: options.prompt,
+              extension: options.extension,
+              status: "failed",
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+            phase: "failed",
             elapsedMs: 0,
             message: error instanceof Error ? error.message : "Queueing the generation failed.",
           },
           ...current,
         ]);
-        return;
       }
-      const retrieve = options.retrieve(queueId);
-      const job: PersistedJob = {
-        id: queueId,
-        kind: options.kind,
-        model: options.model,
-        prompt: options.prompt,
-        queueId,
-        retrievePath: retrieve.path,
-        retrieveBody: retrieve.body,
-        extension: options.extension,
-        createdAt: Date.now(),
-      };
-      persistJob(job);
-      void ensureNotificationPermission();
-      await attach(job);
     },
-    [attach],
+    [start],
   );
 
-  /** Stops polling one job. The backend keeps rendering (and billing) — the
-   * persisted entry stays so it can be re-attached later. */
-  const stop = useCallback((id: string) => {
-    controllers.current.get(id)?.abort();
-  }, []);
+  const dismissEntry = useCallback(
+    (id: string) => {
+      setRejected((current) => current.filter((entry) => entry.job.id !== id));
+      void dismiss(id);
+    },
+    [dismiss],
+  );
 
-  const dismiss = useCallback((id: string) => {
-    setJobs((current) => current.filter((entry) => entry.job.id !== id));
-  }, []);
-
-  return { jobs, start, resume: attach, stop, dismiss };
+  return { jobs: entries, start: startJob, stop, dismiss: dismissEntry };
 }
 
 export function formatElapsed(elapsedMs: number): string {

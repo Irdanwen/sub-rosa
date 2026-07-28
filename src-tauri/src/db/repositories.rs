@@ -2,8 +2,9 @@ use crate::domain::types::{
     AgentMessageDto, AgentMessageRole, AgentSafetyProfile, AgentTaskDto, AgentTaskListResponse,
     AgentTaskStatus, AgentToolEventDto, AgentToolEventStatus, AppError, AudioArtifactDto,
     DictationHistoryItemDto, DictionaryEntryDto, FolderDto, ListDictationHistoryResponse,
-    ListNotesResponse, MemoryDto, MemorySource, NoteDto, NoteListItemDto, ProcessingStatus,
-    RecordingSourceMode, RecordingState, SessionFolderDto, TranscriptCoverageDto, TranscriptDto,
+    ListNotesResponse, MediaJobDto, MediaJobStatus, MemoryDto, MemorySource, NoteDto,
+    NoteListItemDto, PendingDictationDto, ProcessingStatus, RecordingSourceMode, RecordingState,
+    SessionFolderDto, TranscriptCoverageDto, TranscriptDto,
 };
 use chrono::{Duration, SecondsFormat, Utc};
 use sqlx::query::query;
@@ -1417,6 +1418,22 @@ impl Repositories {
         Ok(rows.iter().map(|row| row.get("id")).collect())
     }
 
+    /// Notes parked mid-pipeline. On iOS the process is suspended and later
+    /// killed without warning, so the status never reaches `failed` and the
+    /// note would otherwise sit in `transcribing` forever. Whether a pipeline
+    /// is still alive is an in-process question, answered by
+    /// `domain::processing::is_processing`, not by this row.
+    pub async fn list_notes_stuck_in_processing(&self) -> Result<Vec<String>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT id FROM notes
+             WHERE processing_status IN ('transcribing', 'generating')
+               AND deleted_at IS NULL",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(|row| row.get("id")).collect())
+    }
+
     pub async fn set_note_status(
         &self,
         note_id: &str,
@@ -2738,6 +2755,272 @@ impl Repositories {
         .fetch_all(&self.pool)
         .await?;
         Ok(rows.into_iter().map(|row| row.get("folder_id")).collect())
+    }
+
+    // --- durable background jobs ------------------------------------------
+    //
+    // Studio generations and dictation transcriptions outlive the foreground
+    // session that started them, so they are rows first and futures second
+    // (see `crate::background`).
+
+    /// Record a generation the backend has already accepted. Re-inserting the
+    /// same queue id is a no-op, so a retried start cannot double-track a job.
+    pub async fn insert_media_job(
+        &self,
+        job: &MediaJobDto,
+        retrieve_path: &str,
+        retrieve_body: &str,
+        url_fields: &str,
+    ) -> Result<(), sqlx::error::Error> {
+        let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+        query(
+            "INSERT OR IGNORE INTO media_jobs
+                 (id, kind, model, prompt, extension, retrieve_path, retrieve_body,
+                  url_fields, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)",
+        )
+        .bind(&job.id)
+        .bind(&job.kind)
+        .bind(&job.model)
+        .bind(&job.prompt)
+        .bind(&job.extension)
+        .bind(retrieve_path)
+        .bind(retrieve_body)
+        .bind(url_fields)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Every job the UI should know about: the ones still running plus the
+    /// finished ones it has not acknowledged yet (a generation that landed
+    /// while the app was closed is only "delivered" once the gallery has it).
+    pub async fn list_media_jobs(&self) -> Result<Vec<MediaJobDto>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT id, kind, model, prompt, extension, status, error, artifact_path,
+                    artifact_file_name, artifact_bytes, created_at, updated_at
+             FROM media_jobs ORDER BY created_at DESC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(media_job_from_row).collect())
+    }
+
+    /// The still-running jobs, with the fields a poll needs. Sorted oldest
+    /// first so a backlog drains in the order the user queued it.
+    #[allow(clippy::type_complexity)]
+    pub async fn active_media_jobs(
+        &self,
+    ) -> Result<Vec<(MediaJobDto, String, String, String)>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT id, kind, model, prompt, extension, status, error, artifact_path,
+                    artifact_file_name, artifact_bytes, created_at, updated_at,
+                    retrieve_path, retrieve_body, url_fields
+             FROM media_jobs WHERE status IN ('queued', 'processing')
+             ORDER BY created_at ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                let retrieve_path: String = row.get("retrieve_path");
+                let retrieve_body: String = row.get("retrieve_body");
+                let url_fields: String = row.get("url_fields");
+                (
+                    media_job_from_row(row),
+                    retrieve_path,
+                    retrieve_body,
+                    url_fields,
+                )
+            })
+            .collect())
+    }
+
+    pub async fn set_media_job_status(
+        &self,
+        id: &str,
+        status: MediaJobStatus,
+        error: Option<&str>,
+    ) -> Result<Option<MediaJobDto>, sqlx::error::Error> {
+        query("UPDATE media_jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?")
+            .bind(status.as_db())
+            .bind(error)
+            .bind(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true))
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        self.get_media_job(id).await
+    }
+
+    /// Mark a job delivered: the file is in the gallery directory and its path
+    /// is what the frontend indexes.
+    pub async fn complete_media_job(
+        &self,
+        id: &str,
+        path: &str,
+        file_name: &str,
+        bytes: i64,
+    ) -> Result<Option<MediaJobDto>, sqlx::error::Error> {
+        query(
+            "UPDATE media_jobs
+             SET status = 'completed', error = NULL, artifact_path = ?,
+                 artifact_file_name = ?, artifact_bytes = ?, updated_at = ?
+             WHERE id = ?",
+        )
+        .bind(path)
+        .bind(file_name)
+        .bind(bytes)
+        .bind(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true))
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        self.get_media_job(id).await
+    }
+
+    pub async fn get_media_job(&self, id: &str) -> Result<Option<MediaJobDto>, sqlx::error::Error> {
+        let row = query(
+            "SELECT id, kind, model, prompt, extension, status, error, artifact_path,
+                    artifact_file_name, artifact_bytes, created_at, updated_at
+             FROM media_jobs WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(media_job_from_row))
+    }
+
+    pub async fn delete_media_job(&self, id: &str) -> Result<(), sqlx::error::Error> {
+        query("DELETE FROM media_jobs WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn bump_media_job_attempts(&self, id: &str) -> Result<i64, sqlx::error::Error> {
+        query("UPDATE media_jobs SET attempts = attempts + 1, updated_at = ? WHERE id = ?")
+            .bind(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true))
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        let row = query("SELECT attempts FROM media_jobs WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(|row| row.get::<i64, _>("attempts")).unwrap_or(0))
+    }
+
+    pub async fn insert_pending_dictation(
+        &self,
+        id: &str,
+        audio_path: &str,
+        style: &str,
+        language: Option<&str>,
+    ) -> Result<(), sqlx::error::Error> {
+        let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+        query(
+            "INSERT OR REPLACE INTO pending_dictations
+                 (id, audio_path, style, language, attempts, created_at, updated_at)
+             VALUES (?, ?, ?, ?, 0, ?, ?)",
+        )
+        .bind(id)
+        .bind(audio_path)
+        .bind(style)
+        .bind(language)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Pending dictations, oldest first, with their retry count bumped so a
+    /// recording that fails forever cannot be swept in a loop.
+    pub async fn claim_pending_dictations(
+        &self,
+        max_attempts: i64,
+    ) -> Result<Vec<PendingDictationDto>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT id, audio_path, style, language, attempts, created_at
+             FROM pending_dictations WHERE attempts < ? ORDER BY created_at ASC",
+        )
+        .bind(max_attempts)
+        .fetch_all(&self.pool)
+        .await?;
+        let pending: Vec<PendingDictationDto> = rows
+            .into_iter()
+            .map(|row| PendingDictationDto {
+                id: row.get("id"),
+                audio_path: row.get("audio_path"),
+                style: row.get("style"),
+                language: row.get("language"),
+                attempts: row.get("attempts"),
+                created_at: row.get("created_at"),
+            })
+            .collect();
+        for entry in &pending {
+            query("UPDATE pending_dictations SET attempts = attempts + 1, updated_at = ? WHERE id = ?")
+                .bind(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true))
+                .bind(&entry.id)
+                .execute(&self.pool)
+                .await?;
+        }
+        Ok(pending)
+    }
+
+    pub async fn delete_pending_dictation(&self, id: &str) -> Result<(), sqlx::error::Error> {
+        query("DELETE FROM pending_dictations WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Chat sessions whose reply never landed: the last persisted message is
+    /// still the user's, so re-running the turn is the same work rather than a
+    /// duplicate.
+    ///
+    /// `paused` is included, which is only safe **on mobile** — and this is
+    /// only called from the mobile sweep. Agent-lite has no deliberate pause
+    /// (the mobile screen always creates sessions with `run_placeholder:
+    /// false`), so the single way a mobile task reaches `paused` is
+    /// [`Self::pause_running_agent_tasks_on_launch`] sweeping up a turn that a
+    /// suspension killed — exactly what we want to resume. On desktop `paused`
+    /// is a deliberate resting state and must never be auto-resumed.
+    pub async fn agent_tasks_awaiting_reply(&self) -> Result<Vec<String>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT id FROM agent_tasks
+             WHERE status IN ('queued', 'running', 'paused')
+               AND (SELECT role
+                    FROM agent_messages
+                    WHERE task_id = agent_tasks.id
+                    ORDER BY created_at DESC, rowid DESC
+                    LIMIT 1) = 'user'
+             ORDER BY updated_at ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|row| row.get("id")).collect())
+    }
+}
+
+fn media_job_from_row(row: sqlx_sqlite::SqliteRow) -> MediaJobDto {
+    MediaJobDto {
+        id: row.get("id"),
+        kind: row.get("kind"),
+        model: row.get("model"),
+        prompt: row.get("prompt"),
+        extension: row.get("extension"),
+        status: MediaJobStatus::from(row.get::<String, _>("status").as_str()),
+        error: row.get("error"),
+        artifact_path: row.get("artifact_path"),
+        artifact_file_name: row.get("artifact_file_name"),
+        artifact_bytes: row.get("artifact_bytes"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
     }
 }
 

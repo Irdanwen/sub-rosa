@@ -76,6 +76,20 @@ committed under `src-tauri/gen/apple/`). Full architecture + upstream-diff table
   (permission prompt included); `UIBackgroundModes: audio` keeps lock-screen recording
   alive. Native iOS bridges: `photos_ios.rs` (save to photo library), `share_ios.rs`
   (share sheet for note export).
+- **Background work is durable rows, never long-lived tasks**
+  ([ADR-0018](docs/adr/0018-ios-background-work-is-durable-rows.md)). iOS freezes the
+  webview and suspends the process, so **nothing long may live in a JS promise or a bare
+  tokio task** — in particular, never add a polling loop under `src/lib/studio/`. Anything
+  that can outlast a foreground session writes a row first (`notes`, `media_jobs`,
+  `pending_dictations`, `agent_tasks`), and `crate::background::sweep` re-drives all of
+  them on cold launch, on `Resumed`, and from the BGTaskScheduler launch handlers
+  registered in `ios_background.rs` (whose identifiers must match
+  `BGTaskSchedulerPermittedIdentifiers` in the Info.plist). Long work holds an
+  `ios_background::BackgroundTask` guard for the grace window; whether a row is *live* is
+  an in-process question (`domain::processing::is_processing`, agent-lite's `TurnClaim`),
+  never a database one, or a warm resume double-runs it. Studio's poll, download and
+  "it's ready" notification live in `carpe_diem/jobs.rs`; the webview only queues and
+  observes.
 - **Mobile shell**: `src/main.tsx` picks `MobileApp` (`src/app/mobile/`, screens in
   `src/components/mobile/`) via `isMobilePlatform()`; `?mobile=1` forces it in a browser.
   Desktop `App.tsx` is untouched. Shared pieces reused: `notesReducer`, `src/lib/tauri.ts`,

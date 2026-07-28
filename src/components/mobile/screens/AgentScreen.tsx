@@ -15,6 +15,7 @@ import { hapticImpact, hapticNotify, hapticSelection } from "../../../lib/haptic
 import { useKeyboardInset } from "../../../lib/keyboard-inset";
 import { SimpleMarkdown } from "../../../lib/simple-markdown";
 import { fetchMediaCatalog, formatCredits, modelsOfType } from "../../../lib/studio/catalog";
+import { ensureNotificationPermission } from "../../../lib/notifications";
 import { resolveTurnModel } from "../../../lib/vision-routing";
 import type { MediaModel } from "../../../lib/studio/types";
 import {
@@ -548,6 +549,10 @@ export function AgentSessionScreen({
         models,
         hasImages: turnAttachments.some((entry) => entry.kind === "image"),
       });
+      // A turn interrupted by a screen lock is finished by the background
+      // sweep and announced with a notification, so ask for the permission the
+      // first time the user actually sends something.
+      void ensureNotificationPermission();
       const finished = await agentLiteRun(
         current.id,
         turnModel || undefined,

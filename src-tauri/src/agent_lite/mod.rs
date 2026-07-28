@@ -19,6 +19,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_notification::NotificationExt;
 
 pub const AGENT_LITE_STATUS_EVENT: &str = "agent-lite://status";
 pub const AGENT_LITE_DONE_EVENT: &str = "agent-lite://done";
@@ -76,8 +77,11 @@ pub async fn agent_lite_run(
     let attachments = request.attachments.unwrap_or_default();
     // Locking the screen mid-turn suspends the process and used to kill the
     // reply; hold a background task for the whole turn (every tool-loop
-    // request included) so it survives the lock.
+    // request included) so it survives the lock. If the lock outlasts the
+    // window, the persisted user message is what lets `resume_interrupted_turns`
+    // pick the turn back up.
     let _background = crate::ios_background::BackgroundTask::begin("agent-lite-turn");
+    let _claim = TurnClaim::hold(&task_id);
     repos
         .update_agent_task_status(&task_id, AgentTaskStatus::Running, Some("Working."), None)
         .await?;
@@ -116,6 +120,96 @@ pub async fn agent_lite_run(
             let task = repos.get_agent_task(&task_id).await?;
             let _ = app.emit(AGENT_LITE_DONE_EVENT, &task);
             Err(error)
+        }
+    }
+}
+
+/// Task ids with a turn running in this process right now. A turn only becomes
+/// resumable once nobody is driving it — otherwise the resume sweep would
+/// answer the same message a second time.
+static RUNNING_TURNS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+
+struct TurnClaim(String);
+
+impl TurnClaim {
+    fn hold(task_id: &str) -> Self {
+        claims().insert(task_id.to_string());
+        Self(task_id.to_string())
+    }
+}
+
+impl Drop for TurnClaim {
+    fn drop(&mut self) {
+        claims().remove(&self.0);
+    }
+}
+
+fn claims() -> std::sync::MutexGuard<'static, std::collections::HashSet<String>> {
+    RUNNING_TURNS
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+}
+
+/// Re-run the chat turns a suspension cut in half: their last persisted message
+/// is the user's, so the reply was never written and re-running is the same
+/// work, not a duplicate. Called from [`crate::background::sweep`].
+pub async fn resume_interrupted_turns(app: &AppHandle) {
+    let Ok(repos) = crate::commands::repositories(app).await else {
+        return;
+    };
+    let Ok(task_ids) = repos.agent_tasks_awaiting_reply().await else {
+        return;
+    };
+    let pending: Vec<String> = {
+        let running = claims();
+        task_ids
+            .into_iter()
+            .filter(|id| !running.contains(id))
+            .collect()
+    };
+    if pending.is_empty() {
+        return;
+    }
+    let _background = crate::ios_background::BackgroundTask::begin("agent-lite-resume");
+    for task_id in pending {
+        let _claim = TurnClaim::hold(&task_id);
+        let model = repos
+            .get_agent_task(&task_id)
+            .await
+            .ok()
+            .and_then(|task| task.model);
+        // Attachments belong to the original turn only and are not persisted,
+        // so the resumed turn runs on the conversation text alone.
+        match run_turn(app, &repos, &task_id, model.as_deref(), &[]).await {
+            Ok(answer) => {
+                let _ = repos
+                    .add_agent_message(&task_id, AgentMessageRole::Assistant, &answer)
+                    .await;
+                let _ = repos
+                    .update_agent_task_status(
+                        &task_id,
+                        AgentTaskStatus::Completed,
+                        Some("Completed."),
+                        None,
+                    )
+                    .await;
+                if let Ok(task) = repos.get_agent_task(&task_id).await {
+                    let _ = app.emit(AGENT_LITE_DONE_EVENT, &task);
+                }
+                crate::memory::extract::maybe_extract_after_agent_lite_turn(app, task_id.clone());
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title("Your assistant replied")
+                    .body(answer.chars().take(120).collect::<String>())
+                    .show();
+            }
+            // Still failing: leave the task running so a later sweep retries
+            // rather than showing the user an error they cannot act on.
+            Err(error) => {
+                eprintln!("agent-lite resume for {task_id} failed: {}", error.message);
+            }
         }
     }
 }

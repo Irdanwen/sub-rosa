@@ -2,17 +2,9 @@
 // (lyrics required / optional / forbidden) and duration-bracket pricing.
 
 import { IconAudio } from "central-icons/IconAudio";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { saveArtifactFromResult } from "../../lib/studio/artifacts";
-import {
-  fileResultFrom,
-  formatElapsed,
-  type MediaFileResult,
-  pendingJobs,
-  removePersistedJob,
-  useMediaJob,
-  type PersistedJob,
-} from "../../lib/studio/async-job";
+import { useCallback, useMemo, useState } from "react";
+import { registerDownloadedArtifact } from "../../lib/studio/artifacts";
+import { formatElapsed, useMediaJob } from "../../lib/studio/async-job";
 import { estimateCostCredits, musicCapabilities, musicModels } from "../../lib/studio/catalog";
 import { musicPaths, retrieveBody } from "../../lib/studio/paths";
 import type { MediaCatalog } from "../../lib/studio/types";
@@ -25,7 +17,7 @@ import { CostHint, ModelSelect, SliderField, StudioField } from "./controls";
 
 // Carpe Diem streams the finished track as the retrieve body (one shot);
 // Venice answers JSON with an `audio_url`. Both shapes must be accepted.
-const audioResultFrom = fileResultFrom("audio_url", "url");
+const AUDIO_URL_FIELDS = ["audio_url", "url"];
 
 export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
   const models = useMemo(() => musicModels(catalog), [catalog]);
@@ -38,21 +30,18 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
   const [lyrics, setLyrics] = useState("");
   const [instrumental, setInstrumental] = useState(false);
   const [durationSeconds, setDurationSeconds] = useState(60);
-  const [resumable, setResumable] = useState<PersistedJob[]>([]);
   const [galleryEpoch, setGalleryEpoch] = useState(0);
 
-  const job = useMediaJob<MediaFileResult>(async (result, finished) => {
-    await saveArtifactFromResult(result, "mp3", {
+  // Rust already wrote the file into the gallery directory (it may have landed
+  // while the app was closed); all that is left is indexing it.
+  const job = useMediaJob("music", (artifact, finished) => {
+    registerDownloadedArtifact(artifact, {
       kind: "music",
       model: finished.model,
       prompt: finished.prompt,
     });
     setGalleryEpoch((epoch) => epoch + 1);
   });
-
-  useEffect(() => {
-    setResumable(pendingJobs("music"));
-  }, []);
 
   const duration = caps.durationSeconds
     ? Math.min(Math.max(durationSeconds, caps.durationSeconds.min), caps.durationSeconds.max)
@@ -92,17 +81,9 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
         path: paths.retrieve,
         body: retrieveBody(queueId, model.id),
       }),
-      getResult: audioResultFrom,
+      urlFields: AUDIO_URL_FIELDS,
     });
   }, [model, prompt, caps, instrumental, lyrics, duration, job, paths]);
-
-  const resume = useCallback(
-    (pending: PersistedJob) => {
-      setResumable((jobs) => jobs.filter((entry) => entry.id !== pending.id));
-      void job.resume(pending, audioResultFrom);
-    },
-    [job],
-  );
 
   const controls = (
     <>
@@ -194,28 +175,6 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
       {lyricsMissing && prompt.trim() ? (
         <p className="studio-error">This model needs lyrics, or switch to instrumental.</p>
       ) : null}
-      {resumable.map((pending) => (
-        <div key={pending.id} className="studio-resume">
-          <span>
-            A track from an earlier session may still be rendering: "{pending.prompt.slice(0, 80)}"
-          </span>
-          <span className="studio-card-actions">
-            <button type="button" className="btn btn-secondary" onClick={() => resume(pending)}>
-              Check on it
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => {
-                removePersistedJob(pending.id);
-                setResumable((jobs) => jobs.filter((entry) => entry.id !== pending.id));
-              }}
-            >
-              Dismiss
-            </button>
-          </span>
-        </div>
-      ))}
       <GalleryStrip
         kind="music"
         epoch={galleryEpoch}

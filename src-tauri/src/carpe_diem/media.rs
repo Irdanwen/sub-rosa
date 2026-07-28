@@ -72,7 +72,22 @@ pub struct MediaResponseDto {
 pub async fn carpe_diem_media_request(
     request: MediaRequestDto,
 ) -> Result<MediaResponseDto, AppError> {
-    let method = match request.method.to_ascii_uppercase().as_str() {
+    // Queueing a generation is the one moment the user is waiting on a live
+    // request: a screen lock here would drop it before the backend ever
+    // charged for it. Hold background time for the round-trip.
+    let _background = crate::ios_background::BackgroundTask::begin("media-request");
+    send(&request.method, &request.path, request.body.as_ref()).await
+}
+
+/// The proxy itself, callable from Rust. The durable job runner
+/// ([`super::jobs`]) polls through this rather than through the command, so
+/// the allowlist and the key handling stay in one place.
+pub(super) async fn send(
+    method: &str,
+    path: &str,
+    body: Option<&serde_json::Value>,
+) -> Result<MediaResponseDto, AppError> {
+    let method = match method.to_ascii_uppercase().as_str() {
         "GET" => reqwest::Method::GET,
         "POST" => reqwest::Method::POST,
         other => {
@@ -82,10 +97,10 @@ pub async fn carpe_diem_media_request(
             ));
         }
     };
-    if !path_allowed(&method, &request.path) {
+    if !path_allowed(&method, path) {
         return Err(AppError::new(
             "media_path_not_allowed",
-            format!("Path {} is not allowed on the media proxy.", request.path),
+            format!("Path {path} is not allowed on the media proxy."),
         ));
     }
     let Some(key) = settings::api_key() else {
@@ -96,16 +111,16 @@ pub async fn carpe_diem_media_request(
     };
     // Media (`/image/*`, `/video/*`, `/audio/*`, catalogs) lives only on the
     // `/v1` rail — the `/router` aggregator does not serve these paths.
-    let url = format!("{}{}", settings::catalog_base_url(), request.path);
+    let url = format!("{}{}", settings::catalog_base_url(), path);
     let mut builder = media_http_client().request(method, &url).bearer_auth(&key);
-    if let Some(body) = &request.body {
+    if let Some(body) = body {
         builder = builder.json(body);
     }
     let response = builder.send().await.map_err(|error| {
         AppError::new(
             "media_request_failed",
             if error.is_timeout() {
-                format!("The media request to {} timed out.", request.path)
+                format!("The media request to {path} timed out.")
             } else {
                 format!("Couldn't reach the media backend: {error}")
             },
@@ -531,9 +546,17 @@ pub async fn carpe_diem_media_save_artifact(
     app: AppHandle,
     request: SaveArtifactRequest,
 ) -> Result<ArtifactDto, AppError> {
-    let extension = validate_extension(&request.extension)?;
+    save_base64(&app, &request.base64, &request.extension).await
+}
+
+pub(super) async fn save_base64(
+    app: &AppHandle,
+    payload: &str,
+    extension: &str,
+) -> Result<ArtifactDto, AppError> {
+    let extension = validate_extension(extension)?;
     let bytes = base64::engine::general_purpose::STANDARD
-        .decode(request.base64.as_bytes())
+        .decode(payload.as_bytes())
         .map_err(|error| AppError::new("media_artifact_invalid", error.to_string()))?;
     if bytes.is_empty() {
         return Err(AppError::new(
@@ -541,7 +564,7 @@ pub async fn carpe_diem_media_save_artifact(
             "The artifact is empty.",
         ));
     }
-    let dir = artifacts_dir(&app)?;
+    let dir = artifacts_dir(app)?;
     let file_name = format!("{}.{extension}", uuid::Uuid::new_v4());
     let path = dir.join(&file_name);
     let byte_count = bytes.len() as u64;
@@ -563,11 +586,19 @@ pub async fn carpe_diem_media_fetch_artifact(
     app: AppHandle,
     request: FetchArtifactRequest,
 ) -> Result<ArtifactDto, AppError> {
-    let extension = validate_extension(&request.extension)?;
+    download(&app, &request.url, &request.extension).await
+}
+
+pub(super) async fn download(
+    app: &AppHandle,
+    source: &str,
+    extension: &str,
+) -> Result<ArtifactDto, AppError> {
+    let extension = validate_extension(extension)?;
     // Media artifacts are produced and served on the `/v1` rail; resolve
     // relative URLs against it, not the `/router` inference rail.
     let base = settings::catalog_base_url();
-    let url = resolve_media_url(&base, &request.url);
+    let url = resolve_media_url(&base, source);
     let mut builder = download_http_client().get(&url);
     // Only attach the key to the backend's own host — a signed CDN URL on
     // another host must not receive it.
@@ -581,7 +612,7 @@ pub async fn carpe_diem_media_fetch_artifact(
         .error_for_status()
         .map_err(|error| AppError::new("media_download_failed", error.to_string()))?;
 
-    let dir = artifacts_dir(&app)?;
+    let dir = artifacts_dir(app)?;
     let file_name = format!("{}.{extension}", uuid::Uuid::new_v4());
     let path = dir.join(&file_name);
     let mut file = tokio::fs::File::create(&path)
