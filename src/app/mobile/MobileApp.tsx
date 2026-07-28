@@ -9,6 +9,8 @@ import { DictationScreen } from "../../components/mobile/screens/DictationScreen
 import { FolderScreen } from "../../components/mobile/screens/FoldersScreen";
 import { NoteDetailScreen } from "../../components/mobile/screens/NoteDetailScreen";
 import { NotesScreen } from "../../components/mobile/screens/NotesScreen";
+import { ConnectionScreen } from "../../components/mobile/screens/ConnectionScreen";
+import { MemoryScreen } from "../../components/mobile/screens/MemoryScreen";
 import { SettingsScreen } from "../../components/mobile/screens/SettingsScreen";
 import { StudioScreen } from "../../components/mobile/screens/StudioScreen";
 import { errorCode, messageFromError } from "../../lib/errors";
@@ -634,6 +636,13 @@ export function MobileApp() {
         }}
       />
     );
+  } else if (top?.view === "settings-section") {
+    screen =
+      top.section === "memory" ? (
+        <MemoryScreen onBack={nav.pop} />
+      ) : (
+        <ConnectionScreen onBack={nav.pop} />
+      );
   } else if (top?.view === "folder") {
     const folder = state.folders.find((item) => item.id === top.folderId);
     screen = (
@@ -690,7 +699,9 @@ export function MobileApp() {
         screen = <StudioScreen />;
         break;
       case "settings":
-        screen = <SettingsScreen />;
+        screen = (
+          <SettingsScreen onOpen={(section) => nav.push({ view: "settings-section", section })} />
+        );
         break;
     }
   }
@@ -698,7 +709,8 @@ export function MobileApp() {
   // The keyboard covers the tab bar anyway; hiding it while typing keeps
   // keyboard-inset math simple (the inset is measured from the window bottom,
   // which is only the screen's bottom edge when the tab bar is gone).
-  const showTabBar = (!top || top.view === "folder") && keyboardInset === 0;
+  const showTabBar =
+    (!top || top.view === "folder" || top.view === "settings-section") && keyboardInset === 0;
 
   return (
     <div className="mobile-shell">

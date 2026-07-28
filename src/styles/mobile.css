@@ -507,22 +507,171 @@
   padding-bottom: calc(var(--sp-12) + env(safe-area-inset-bottom));
 }
 
-.mobile-settings-section {
+/* Inset grouped list (SettingsList.tsx). The desktop `settings-row` grid puts
+ * the control in a fixed second column, which a 390 pt screen cannot honor —
+ * buttons wrapped onto their own lines and descriptions ran at half width.
+ * Here a row is one flex line with a 44 pt target, and long prose lives in the
+ * group footer instead of beside the label. */
+.mobile-settings-group {
   margin-bottom: var(--sp-6);
 }
 
-.mobile-settings-section-title {
+.mobile-settings-group-title {
+  margin: 0 var(--sp-4) var(--sp-2);
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   color: var(--muted-foreground);
-  text-transform: none;
-  margin: 0 0 var(--sp-2);
+}
+
+.mobile-settings-group-body {
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  background: var(--card);
+  overflow: hidden;
+}
+
+/* Hairline between rows, inset from the left like the platform's lists. A
+ * pseudo-element rather than a border so it never doubles up against a
+ * swipe row's own background. */
+.mobile-settings-group-body > * + * {
+  position: relative;
+}
+
+.mobile-settings-group-body > * + *::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto var(--sp-4);
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.mobile-settings-group-footer {
+  margin: var(--sp-2) var(--sp-4) 0;
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+
+.mobile-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--sp-3) var(--sp-4);
+  border: none;
+  background: none;
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  text-align: left;
+}
+
+/* Controls that need the full width (segmented, field + button) drop under
+ * the label rather than fighting it for the trailing edge. */
+.mobile-settings-row[data-align="stack"] {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-3);
+}
+
+.mobile-settings-row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mobile-settings-row-title {
+  font-size: var(--fs-md);
+  color: var(--foreground);
+}
+
+.mobile-settings-row-detail {
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.mobile-settings-row-control {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
+/* A stacked control owns the row's width; without this it shrink-wraps its
+ * content and a segmented control ends up hugging its labels. */
+.mobile-settings-row[data-align="stack"] .mobile-settings-row-control {
+  flex-shrink: 1;
+  width: 100%;
+}
+
+.mobile-settings-row[data-align="stack"] .mobile-settings-row-control > * {
+  width: 100%;
+}
+
+/* `.mobile-segmented` carries a bottom margin for its usual home (directly
+ * under a screen header); inside a row the row's padding is the spacing. */
+.mobile-settings-row .mobile-segmented {
+  margin-bottom: 0;
+}
+
+.mobile-settings-link-row:active,
+.mobile-settings-action-row:active {
+  background: var(--muted);
+}
+
+.mobile-settings-link-value {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+}
+
+/* The value can be long ("Connected · Router"); the chevron never shrinks. */
+.mobile-settings-link-value > svg {
+  flex-shrink: 0;
+}
+
+.mobile-settings-action-row {
+  justify-content: center;
+  font-weight: var(--fw-medium);
+}
+
+.mobile-settings-action-row[data-tone="destructive"] {
+  color: var(--destructive);
+}
+
+.mobile-settings-action-row:disabled {
+  opacity: 0.45;
 }
 
 .mobile-settings-footnote {
+  margin: 0;
+  padding: 0 var(--sp-4) var(--sp-6);
   font-size: var(--fs-sm);
+  line-height: 1.45;
   color: var(--muted-foreground);
-  padding-bottom: var(--sp-6);
+}
+
+.mobile-settings-result[data-ok="true"] {
+  color: var(--success);
+}
+
+.mobile-settings-result[data-ok="false"] {
+  color: var(--destructive);
+}
+
+/* The status pill is shared with desktop, where it sits under a row title;
+ * here it is the row's trailing value. */
+.mobile-settings-row .carpe-diem-status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-md);
+  color: var(--muted-foreground);
 }
 
 /* --- Placeholder + gate + errors -------------------------------------------- */
@@ -1704,11 +1853,25 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-3);
-  margin-bottom: var(--sp-5);
+  width: 100%;
+  margin-bottom: var(--sp-6);
   padding: var(--sp-4);
   border: 1px solid var(--border);
   border-radius: var(--r-xl);
   background: var(--card);
+  color: var(--foreground);
+  text-align: left;
+}
+
+.mobile-credits-card:active {
+  background: var(--muted);
+}
+
+.mobile-credits-action {
+  flex-shrink: 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  color: var(--muted-foreground);
 }
 
 .mobile-credits-main {
@@ -2448,12 +2611,6 @@
 
 /* --- Memory settings ------------------------------------------------------------ */
 
-.mobile-memory {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-
 .mobile-memory-add {
   display: flex;
   gap: var(--sp-2);
@@ -2484,37 +2641,40 @@
   opacity: 0.35;
 }
 
-.mobile-memory-empty,
-.mobile-memory-error {
+.mobile-memory-empty {
   margin: 0;
+  padding: var(--sp-4);
   font-size: var(--fs-sm);
+  line-height: 1.45;
   color: var(--muted-foreground);
 }
 
 .mobile-memory-error {
+  margin: 0 var(--sp-4);
+  font-size: var(--fs-sm);
   color: var(--destructive);
 }
 
-.mobile-memory-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
+/* One memory, inside a grouped card and behind a SwipeableRow: the actions
+ * live in the swipe drawer, so the row itself is only the fact and where it
+ * came from. The opaque background is what the drawer slides under. */
 .mobile-memory-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  padding: var(--sp-3) 0;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.mobile-memory-row-main {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--card);
+}
+
+/* The group's own hairline is drawn on the swipe row and then painted over by
+ * this opaque content (which has to be opaque, or the action drawer shows
+ * through). Draw the separator here instead, inset to match the group. */
+.mobile-settings-group-body > .swipe-row + .swipe-row .mobile-memory-row {
+  background-image: linear-gradient(var(--border-subtle), var(--border-subtle));
+  background-repeat: no-repeat;
+  background-position: var(--sp-4) 0;
+  background-size: calc(100% - var(--sp-4)) 1px;
 }
 
 .mobile-memory-text {
@@ -2529,34 +2689,6 @@
 .mobile-memory-meta {
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
-}
-
-.mobile-memory-row-actions {
-  display: flex;
-  gap: var(--sp-2);
-  flex-shrink: 0;
-}
-
-.mobile-memory-row-actions button {
-  min-height: 32px;
-  padding: 0 var(--sp-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--card);
-  font-size: var(--fs-sm);
-}
-
-.mobile-memory-delete {
-  color: var(--destructive);
-}
-
-.mobile-memory-clear {
-  min-height: 44px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--card);
-  font-size: var(--fs-md);
-  color: var(--destructive);
 }
 
 /* --- Reduced motion ------------------------------------------------------------ */
