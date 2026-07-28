@@ -13240,10 +13240,21 @@ button.agent-user-attachment:hover {
   flex-shrink: 0;
 }
 
-/* Layout slot for the recovery prompt — sits in editor-content with
- * spacing below it before the editor body begins. */
+/* Layout slot for the recovery prompt — sits in editor-content with spacing
+ * below it before the editor body begins. */
 .note-recovery-prompt {
   margin: 0 0 var(--sp-5);
+}
+
+/* NoteRecoveryPrompt adds this class only after measuring one rendered body
+ * line. Wrapped and funding-blocked prompts retain the shared first-line and
+ * top alignment above. */
+.inline-notice.note-recovery-prompt-single-line {
+  align-items: center;
+}
+
+.note-recovery-prompt-single-line .inline-notice-icon {
+  align-self: center;
 }
 
 .note-transcription-warning {
