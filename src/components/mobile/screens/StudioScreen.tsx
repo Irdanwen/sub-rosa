@@ -1,5 +1,6 @@
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
+import { IconChevronDownSmall } from "central-icons/IconChevronDownSmall";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -9,8 +10,9 @@ import {
   useArtifactThumbnail,
 } from "../../../lib/artifact-media";
 import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
-import { hapticNotify } from "../../../lib/haptics";
+import { hapticNotify, hapticSelection } from "../../../lib/haptics";
 import { isMobilePlatform } from "../../../lib/mobile";
+import { Switch } from "../../ui/Switch";
 import {
   deleteArtifact,
   listArtifacts,
@@ -749,14 +751,6 @@ function ImagePanel({
           />
           {mode === "generate" ? (
             <>
-              <textarea
-                className="mobile-studio-prompt"
-                value={negativePrompt}
-                rows={2}
-                placeholder="Negative prompt (optional)"
-                aria-label="Negative prompt"
-                onChange={(event) => setNegativePrompt(event.target.value)}
-              />
               {aspectOptions.length > 0 ? (
                 <StudioSetting label="Aspect ratio">
                   <div className="mobile-pill-row" role="radiogroup" aria-label="Aspect ratio">
@@ -774,124 +768,125 @@ function ImagePanel({
                   </div>
                 </StudioSetting>
               ) : null}
-              {resolutionOptions.length > 0 ? (
-                <StudioSetting label="Resolution">
-                  <div className="mobile-pill-row" role="radiogroup" aria-label="Resolution">
-                    {resolutionOptions.map((option) => (
+              <MoreOptions>
+                <textarea
+                  className="mobile-studio-prompt"
+                  value={negativePrompt}
+                  rows={2}
+                  placeholder="Negative prompt (optional)"
+                  aria-label="Negative prompt"
+                  onChange={(event) => setNegativePrompt(event.target.value)}
+                />
+                {resolutionOptions.length > 0 ? (
+                  <StudioSetting label="Resolution">
+                    <div className="mobile-pill-row" role="radiogroup" aria-label="Resolution">
+                      {resolutionOptions.map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          className="mobile-pill"
+                          data-active={effectiveResolution === option ? "true" : undefined}
+                          onClick={() => setResolution(option)}
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  </StudioSetting>
+                ) : null}
+                {maxSteps > 1 ? (
+                  <SliderSetting
+                    label="Steps"
+                    min={1}
+                    max={maxSteps}
+                    value={steps > 0 ? Math.min(steps, maxSteps) : defaultSteps}
+                    onChange={setSteps}
+                  />
+                ) : null}
+                {!comparing ? (
+                  <SliderSetting
+                    label="Variants"
+                    min={1}
+                    max={4}
+                    value={variants}
+                    onChange={setVariants}
+                  />
+                ) : null}
+                <StudioSetting
+                  label="Compare models"
+                  hint={comparing ? `${compareModels.length + 1} side by side` : "Optional"}
+                >
+                  <div className="mobile-reference-actions">
+                    {compareModels.map((entry) => (
                       <button
-                        key={option}
+                        key={entry.id}
+                        type="button"
+                        className="mobile-chip-button"
+                        aria-label={`Stop comparing with ${entry.name}`}
+                        onClick={() =>
+                          setCompareIds((current) => current.filter((id) => id !== entry.id))
+                        }
+                      >
+                        {entry.name} x
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="mobile-chip-button"
+                      onClick={() => setComparePickerOpen(true)}
+                    >
+                      Add a model
+                    </button>
+                  </div>
+                </StudioSetting>
+                <StudioSetting label="Seed" hint="Blank for random">
+                  <input
+                    className="mobile-studio-input"
+                    inputMode="numeric"
+                    value={seed}
+                    placeholder="Random"
+                    aria-label="Seed"
+                    onChange={(event) => setSeed(event.target.value.replace(/[^0-9]/g, ""))}
+                  />
+                </StudioSetting>
+                {styles.length > 0 ? (
+                  <ModelPickerButton
+                    label="Style"
+                    value={stylePreset || "None"}
+                    onOpen={() => setStylePickerOpen(true)}
+                  />
+                ) : null}
+                <StudioToggle
+                  label="Improve prompt with AI"
+                  checked={improvePrompt}
+                  onChange={setImprovePrompt}
+                />
+                <StudioSetting label="Format">
+                  <div className="mobile-pill-row" role="radiogroup" aria-label="Image format">
+                    {(["png", "webp", "jpeg"] as const).map((entry) => (
+                      <button
+                        key={entry}
                         type="button"
                         className="mobile-pill"
-                        data-active={effectiveResolution === option ? "true" : undefined}
-                        onClick={() => setResolution(option)}
+                        data-active={format === entry ? "true" : undefined}
+                        onClick={() => setFormat(entry)}
                       >
-                        {option}
+                        {entry}
                       </button>
                     ))}
                   </div>
                 </StudioSetting>
-              ) : null}
-              {maxSteps > 1 ? (
-                <SliderSetting
-                  label="Steps"
-                  min={1}
-                  max={maxSteps}
-                  value={steps > 0 ? Math.min(steps, maxSteps) : defaultSteps}
-                  onChange={setSteps}
-                />
-              ) : null}
-              {!comparing ? (
-                <SliderSetting
-                  label="Variants"
-                  min={1}
-                  max={4}
-                  value={variants}
-                  onChange={setVariants}
-                />
-              ) : null}
-              <StudioSetting
-                label="Compare models"
-                hint={comparing ? `${compareModels.length + 1} side by side` : "Optional"}
-              >
-                <div className="mobile-reference-actions">
-                  {compareModels.map((entry) => (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      className="mobile-chip-button"
-                      aria-label={`Stop comparing with ${entry.name}`}
-                      onClick={() =>
-                        setCompareIds((current) => current.filter((id) => id !== entry.id))
-                      }
-                    >
-                      {entry.name} x
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    className="mobile-chip-button"
-                    onClick={() => setComparePickerOpen(true)}
-                  >
-                    Add a model
-                  </button>
-                </div>
-              </StudioSetting>
-              <StudioSetting label="Seed" hint="Blank for random">
-                <input
-                  className="mobile-studio-input"
-                  inputMode="numeric"
-                  value={seed}
-                  placeholder="Random"
-                  aria-label="Seed"
-                  onChange={(event) => setSeed(event.target.value.replace(/[^0-9]/g, ""))}
-                />
-              </StudioSetting>
-              {styles.length > 0 ? (
-                <ModelPickerButton
-                  label="Style"
-                  value={stylePreset || "None"}
-                  onOpen={() => setStylePickerOpen(true)}
-                />
-              ) : null}
-              <label className="mobile-toggle-row">
-                <input
-                  type="checkbox"
-                  checked={improvePrompt}
-                  onChange={(event) => setImprovePrompt(event.target.checked)}
-                />
-                <span>Improve prompt with AI</span>
-              </label>
-              <StudioSetting label="Format">
-                <div className="mobile-pill-row" role="radiogroup" aria-label="Image format">
-                  {(["png", "webp", "jpeg"] as const).map((entry) => (
-                    <button
-                      key={entry}
-                      type="button"
-                      className="mobile-pill"
-                      data-active={format === entry ? "true" : undefined}
-                      onClick={() => setFormat(entry)}
-                    >
-                      {entry}
-                    </button>
-                  ))}
-                </div>
-              </StudioSetting>
-              <label className="mobile-toggle-row">
-                <input
-                  type="checkbox"
+                <StudioToggle
+                  label="Hide watermark"
                   checked={hideWatermark}
-                  onChange={(event) => setHideWatermark(event.target.checked)}
+                  onChange={setHideWatermark}
                 />
-                <span>Hide watermark</span>
-              </label>
-              <label className="mobile-toggle-row">
-                <input
-                  type="checkbox"
+                <StudioToggle
+                  label="Embed prompt in metadata"
                   checked={embedExif}
-                  onChange={(event) => setEmbedExif(event.target.checked)}
+                  onChange={setEmbedExif}
                 />
-                <span>Embed prompt in metadata</span>
-              </label>
+              </MoreOptions>
             </>
           ) : null}
           <button
@@ -1194,20 +1189,20 @@ function VideoPanel({
         onChange={(event) => setNegativePrompt(event.target.value)}
       />
       {needsConsent ? (
-        <label className="mobile-toggle-row mobile-studio-consent">
-          <input
-            type="checkbox"
+        <div className="mobile-toggle-row mobile-studio-consent">
+          <Switch
             checked={consent}
-            onChange={(event) => {
-              setConsent(event.target.checked);
-              rememberSeedanceConsent(event.target.checked);
+            aria-label="I have the right to use this photo"
+            onCheckedChange={(next) => {
+              setConsent(next);
+              rememberSeedanceConsent(next);
             }}
           />
           <span>
             I have the right to use this photo and accept this model's face-media policy for anyone
             shown in it.
           </span>
-        </label>
+        </div>
       ) : null}
       <button
         type="button"
@@ -1261,6 +1256,64 @@ function VideoPanel({
 }
 
 // --- Music ------------------------------------------------------------------
+
+/** A labelled switch row. Studio used raw `<input type="checkbox">`, which
+ * renders as the iOS system checkbox: a blue tick that belongs to no other
+ * surface in the app now that Settings uses `Switch`. */
+function StudioToggle({
+  label,
+  checked,
+  onChange,
+  hint,
+}: {
+  label: ReactNode;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  hint?: ReactNode;
+}) {
+  return (
+    <div className="mobile-toggle-row">
+      <span className="mobile-toggle-label">
+        {label}
+        {hint ? <span className="mobile-toggle-hint">{hint}</span> : null}
+      </span>
+      <Switch
+        checked={checked}
+        onCheckedChange={(next) => {
+          hapticSelection();
+          onChange(next);
+        }}
+        aria-label={typeof label === "string" ? label : undefined}
+      />
+    </div>
+  );
+}
+
+/** Everything past "describe it and go", folded away by default.
+ *
+ * The generate form exposed nine controls at once, which pushed the Generate
+ * button itself below the fold: the primary action was the one thing you
+ * could not see. */
+function MoreOptions({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mobile-studio-more" data-open={open ? "true" : undefined}>
+      <button
+        type="button"
+        className="mobile-studio-more-trigger"
+        aria-expanded={open}
+        onClick={() => {
+          hapticSelection();
+          setOpen((current) => !current);
+        }}
+      >
+        <span>{open ? "Fewer options" : "More options"}</span>
+        <IconChevronDownSmall size={14} aria-hidden />
+      </button>
+      {open ? <div className="mobile-studio-more-body">{children}</div> : null}
+    </div>
+  );
+}
 
 // --- Audio (music / speech / sound effects) -----------------------------------
 
@@ -1535,14 +1588,7 @@ function SfxPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerated
         placeholder="Describe a short sound (a door creak, rain on glass)"
         onChange={(event) => setPrompt(event.target.value)}
       />
-      <label className="mobile-toggle-row">
-        <input
-          type="checkbox"
-          checked={autoDuration}
-          onChange={(event) => setAutoDuration(event.target.checked)}
-        />
-        <span>Auto duration</span>
-      </label>
+      <StudioToggle label="Auto duration" checked={autoDuration} onChange={setAutoDuration} />
       {!autoDuration && caps.durationSeconds ? (
         <div className="mobile-studio-field">
           <div className="mobile-studio-field-head">
@@ -1677,14 +1723,11 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
       {caps.lyrics !== "none" ? (
         <>
           {caps.instrumental ? (
-            <label className="mobile-toggle-row">
-              <input
-                type="checkbox"
-                checked={instrumental}
-                onChange={(event) => setInstrumental(event.target.checked)}
-              />
-              <span>Instrumental (no vocals)</span>
-            </label>
+            <StudioToggle
+              label="Instrumental (no vocals)"
+              checked={instrumental}
+              onChange={setInstrumental}
+            />
           ) : null}
           {!instrumental ? (
             <textarea

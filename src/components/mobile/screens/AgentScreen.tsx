@@ -694,7 +694,26 @@ export function AgentSessionScreen({
               <BrandGradientMark />
             </span>
             <h2 className="mobile-chat-hero-greeting">{greeting()}</h2>
-            <p className="mobile-chat-hero-hint">Your notes, the web, and vision models.</p>
+            <p className="mobile-chat-hero-hint">Ask about your notes, or have me write one.</p>
+            {/* An empty chat with only a placeholder makes the user invent the
+             * capability. These name what it can actually do now: read a note
+             * in full, search the web, and write back. */}
+            <div className="mobile-chat-suggestions">
+              {SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  className="mobile-chat-suggestion"
+                  onClick={() => {
+                    hapticSelection();
+                    setDraft(suggestion);
+                    chatInputRef.current?.focus();
+                  }}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
           </div>
         ) : null}
         {task?.messages.map((message) => (
@@ -984,6 +1003,14 @@ async function downscaleImageFile(file: File, maxDim = 2048): Promise<string> {
 }
 
 /** Time-of-day greeting in the device language (French or English). */
+/** Openers for an empty chat. Each one exercises a different tool, so the
+ * first reply also teaches what the assistant reaches for. */
+const SUGGESTIONS = [
+  "Summarise my last meeting",
+  "What did I work on this week?",
+  "Remember that I prefer short replies",
+];
+
 function greeting(): string {
   const hour = new Date().getHours();
   const french = (navigator.language || "").toLowerCase().startsWith("fr");

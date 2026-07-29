@@ -2,7 +2,6 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { IconMicrophone } from "central-icons/IconMicrophone";
-import { IconTrashCan } from "central-icons/IconTrashCan";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { messageFromError } from "../../../lib/errors";
 import { hapticImpact, hapticNotify } from "../../../lib/haptics";
@@ -18,7 +17,10 @@ import {
   mobileDictationStop,
   mobileListDictationHistory,
 } from "../../../lib/tauri";
+import { SettingsGroup } from "../SettingsList";
 import { StackHeader } from "../StackHeader";
+import { SwipeableRow } from "../SwipeableRow";
+import { formatNoteTime } from "./NoteRow";
 
 type Phase = "idle" | "recording" | "processing";
 
@@ -180,32 +182,33 @@ export function DictationScreen() {
         ) : null}
 
         {history.length > 0 ? (
-          <section className="mobile-settings-section">
-            <h2 className="mobile-settings-section-title">History</h2>
-            <ul className="mobile-dictation-history">
-              {history.map((item) => (
-                <li key={item.id} className="mobile-dictation-history-item">
-                  <button
-                    type="button"
-                    className="mobile-dictation-history-text"
-                    onClick={() => void copyResult(item.text)}
-                  >
-                    {item.text}
-                  </button>
-                  <button
-                    type="button"
-                    className="mobile-icon-button"
-                    aria-label="Delete dictation"
-                    onClick={() => {
+          <SettingsGroup title="History" footer="Tap to copy, swipe to delete.">
+            {history.map((item) => (
+              <SwipeableRow
+                key={item.id}
+                actions={[
+                  {
+                    label: "Delete",
+                    tone: "destructive",
+                    onAction: () => {
                       void mobileDeleteDictationHistoryItem(item.id).then(refreshHistory);
-                    }}
-                  >
-                    <IconTrashCan size={16} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
+                    },
+                  },
+                ]}
+              >
+                <button
+                  type="button"
+                  className="mobile-dictation-history-item"
+                  onClick={() => void copyResult(item.text)}
+                >
+                  <span className="mobile-dictation-history-text">{item.text}</span>
+                  <span className="mobile-dictation-history-time">
+                    {formatNoteTime(item.createdAt)}
+                  </span>
+                </button>
+              </SwipeableRow>
+            ))}
+          </SettingsGroup>
         ) : null}
       </div>
     </div>
