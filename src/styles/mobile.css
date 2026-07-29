@@ -172,10 +172,24 @@
   text-overflow: ellipsis;
 }
 
+/* Title and its actions share one baseline row, so the actions read as
+ * belonging to the screen rather than hovering above it. */
+.mobile-stack-header-large-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-height: 44px;
+}
+
 .mobile-stack-header-large-title {
   font-family: var(--font-serif);
   font-size: var(--fs-2xl);
-  margin: var(--sp-1) 0 0;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mobile-stack-header-spacer {
@@ -414,6 +428,46 @@
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
   flex-shrink: 0;
+}
+
+/* Duration reads as a fact about the recording, so it sits ahead of the
+ * preview rather than competing with it. */
+.mobile-note-row-duration {
+  flex-shrink: 0;
+  /* Proportional figures on purpose: ABC Diatype's tabular default puts a
+   * fixed-width cell around each digit, which strands "8" from "min". Nothing
+   * here lines up in a column, so the prose figures are the right ones. */
+  font-variant-numeric: proportional-nums;
+  color: var(--muted-foreground);
+}
+
+.mobile-note-row-duration::after {
+  content: "·";
+  margin: 0 var(--sp-1);
+}
+
+/* Transcribing / generating / validating: sweep a highlight across the status
+ * word so a note being worked on reads as in-flight rather than stuck. The
+ * markup already carried `data-shimmer`; only the desktop had a rule for it,
+ * so on the phone it did nothing. */
+.mobile-note-row-subtitle [data-shimmer="true"] {
+  background: linear-gradient(
+    100deg,
+    var(--muted-foreground) 35%,
+    var(--foreground) 50%,
+    var(--muted-foreground) 65%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: note-status-shimmer 1.5s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-note-row-subtitle [data-shimmer="true"] {
+    animation: none;
+  }
 }
 
 /* --- Record FAB ---------------------------------------------------------- */
