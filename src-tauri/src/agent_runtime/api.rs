@@ -48,6 +48,14 @@ pub struct StartRunRequest {
     pub enabled_skill_ids: Vec<String>,
     #[serde(default)]
     pub attachments: Vec<String>,
+    #[serde(default)]
+    pub attachment_metadata: Vec<AttachmentMetadataInput>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentMetadataInput {
+    pub name: String,
+    pub media_type: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -550,8 +558,12 @@ pub async fn start_agent_run(
     .bind(&session.id)
     .execute(&repository.pool)
     .await?;
-    let prepared_attachments =
-        prepare_attachments(&request.attachments, std::path::Path::new(&workspace)).await?;
+    let prepared_attachments = prepare_attachments(
+        &request.attachments,
+        &request.attachment_metadata,
+        std::path::Path::new(&workspace),
+    )
+    .await?;
     let available_skills = agent_skill_catalog(&app, &repository).await?;
     let requested_skills = request
         .enabled_skill_ids
@@ -655,6 +667,7 @@ pub async fn cancel_agent_run(
     host.request("run.cancel", &run.session_id, &run.id, json!({}))
         .await?;
     host.cancel_run_streams(&run.id).await;
+    crate::companion::cancel_computer_use_approvals_for_session(&app, &run.session_id);
     Ok(())
 }
 
@@ -805,9 +818,108 @@ pub async fn resolve_agent_interruption(
     host: State<'_, AgentRuntimeHost>,
     request: ResolveInterruptionRequest,
 ) -> Result<Value, AppError> {
-    let repository = repository(&app).await?;
+    resolve_agent_interruption_inner(&app, &host, request, InterruptionResolutionOrigin::Desktop)
+        .await
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum InterruptionResolutionOrigin {
+    Desktop,
+    Companion(crate::companion::ComputerUseApprovalOrigin),
+}
+
+pub(crate) async fn resolve_companion_computer_use_approval(
+    app: &AppHandle,
+    request_id: &str,
+    stored_session_id: &str,
+    decision: june_companion_protocol::ComputerUseApprovalDecision,
+    origin: crate::companion::ComputerUseApprovalOrigin,
+) -> Result<Value, AppError> {
+    use sqlx::row::Row;
+    let repository = repository(app).await?;
+    let row = sqlx::query::query(
+        "SELECT run_id
+         FROM agent_items
+         WHERE session_id = ?
+           AND kind = 'interruption'
+           AND json_extract(payload_json, '$.id') = ?
+           AND json_extract(payload_json, '$.status') = 'pending'
+         ORDER BY created_at DESC
+         LIMIT 1",
+    )
+    .bind(stored_session_id)
+    .bind(request_id)
+    .fetch_optional(&repository.pool)
+    .await?
+    .ok_or_else(|| {
+        AppError::new(
+            "agent_interruption_not_found",
+            "This interruption could not be found.",
+        )
+    })?;
+    let request = ResolveInterruptionRequest {
+        interruption_id: request_id.to_string(),
+        run_id: row.get("run_id"),
+        resolution: json!({
+            "kind": "approval",
+            "choice": match decision {
+                june_companion_protocol::ComputerUseApprovalDecision::Approve => "once",
+                june_companion_protocol::ComputerUseApprovalDecision::Deny => "deny",
+            },
+            "storedSessionId": stored_session_id,
+        }),
+    };
+    let host = app.state::<AgentRuntimeHost>();
+    resolve_agent_interruption_inner(
+        app,
+        &host,
+        request,
+        InterruptionResolutionOrigin::Companion(origin),
+    )
+    .await
+}
+
+async fn resolve_agent_interruption_inner(
+    app: &AppHandle,
+    host: &AgentRuntimeHost,
+    request: ResolveInterruptionRequest,
+    origin: InterruptionResolutionOrigin,
+) -> Result<Value, AppError> {
+    let _resolution = host
+        .lock_interruption_resolution(&request.interruption_id)
+        .await;
+    let companion_session_id = match &origin {
+        InterruptionResolutionOrigin::Desktop => None,
+        InterruptionResolutionOrigin::Companion(companion_origin) => {
+            let stored_session_id = request
+                .resolution
+                .get("storedSessionId")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    AppError::new(
+                        "companion_computer_use_approval_invalid",
+                        "The Computer use approval session is missing.",
+                    )
+                })?;
+            crate::companion::begin_companion_computer_use_resolution(
+                app,
+                &request.interruption_id,
+                stored_session_id,
+                companion_origin.clone(),
+            )?;
+            Some(stored_session_id.to_string())
+        }
+    };
+    let repository = repository(app).await?;
     let row = sqlx::query::query("SELECT id, run_id, session_id, payload_json FROM agent_items WHERE run_id = ? AND kind = 'interruption' AND json_extract(payload_json, '$.id') = ? AND json_extract(payload_json, '$.status') = 'pending' LIMIT 1")
-        .bind(&request.run_id).bind(&request.interruption_id).fetch_one(&repository.pool).await?;
+        .bind(&request.run_id)
+        .bind(&request.interruption_id)
+        .fetch_optional(&repository.pool)
+        .await?
+        .ok_or_else(|| AppError::new(
+            "agent_interruption_not_found",
+            "This interruption could not be found.",
+        ))?;
     use sqlx::row::Row;
     let run_id: String = row.get("run_id");
     let session_id: String = row.get("session_id");
@@ -815,6 +927,17 @@ pub async fn resolve_agent_interruption(
     let original_interruption_json: String = row.get("payload_json");
     let mut interruption: Value = serde_json::from_str(&original_interruption_json)
         .map_err(|error| AppError::new("agent_interruption_invalid", error.to_string()))?;
+    if let Some(expected_session_id) = companion_session_id.as_deref() {
+        if session_id != expected_session_id
+            || interruption.get("kind").and_then(Value::as_str) != Some("approval")
+            || interruption.get("toolName").and_then(Value::as_str) != Some("computer_use")
+        {
+            return Err(AppError::new(
+                "companion_computer_use_approval_invalid",
+                "The Computer use approval does not match the pending action.",
+            ));
+        }
+    }
     let run = repository.get_run(&run_id).await?;
     if run.status != "waiting_for_user" {
         return Err(AppError::new(
@@ -879,6 +1002,7 @@ pub async fn resolve_agent_interruption(
             ));
         }
     };
+    let resolved_at = chrono::Utc::now().to_rfc3339();
     let workspace = session.workspace_path.clone().ok_or_else(|| {
         AppError::new(
             "agent_workspace_missing",
@@ -895,11 +1019,11 @@ pub async fn resolve_agent_interruption(
         ));
     }
     let enabled_skill_ids = repository.run_enabled_skills(&run.id).await?;
-    host.ensure_started(&app, repository.clone()).await?;
+    host.ensure_started(app, repository.clone()).await?;
     let mut params = match repository.run_config(&run.id).await? {
         Some(config) => config,
         None => match crate::routines::reconstruct_unattended_resume_params(
-            &app,
+            app,
             &repository,
             &run.id,
             &session.id,
@@ -912,7 +1036,7 @@ pub async fn resolve_agent_interruption(
             Some(config) => config,
             None => resumable_run_config(
                 &run_params(
-                    &app,
+                    app,
                     &repository,
                     RunParamsInput {
                         session_id: &session.id,
@@ -967,7 +1091,29 @@ pub async fn resolve_agent_interruption(
     interruption["status"] = json!("resolved");
     interruption["approved"] = json!(approved);
     interruption["resolutionNonce"] = json!(resolution_nonce);
-    interruption["resolvedAt"] = json!(chrono::Utc::now().to_rfc3339());
+    interruption["resolvedAt"] = json!(resolved_at);
+    if interruption_kind == "approval" {
+        interruption["resolution"] = request
+            .resolution
+            .get("choice")
+            .cloned()
+            .unwrap_or_else(|| json!("deny"));
+        interruption["resolvedBy"] = json!(match &origin {
+            InterruptionResolutionOrigin::Desktop => "desktop",
+            InterruptionResolutionOrigin::Companion(
+                crate::companion::ComputerUseApprovalOrigin::Companion { .. },
+            ) => "linkedDevice",
+            InterruptionResolutionOrigin::Companion(
+                crate::companion::ComputerUseApprovalOrigin::Timeout,
+            ) => "timeout",
+        });
+        if let InterruptionResolutionOrigin::Companion(
+            crate::companion::ComputerUseApprovalOrigin::Companion { device_id },
+        ) = &origin
+        {
+            interruption["resolvedByDeviceId"] = json!(device_id);
+        }
+    }
     if let Some(answer) = clarification_answer.as_deref() {
         interruption["answer"] = json!(answer);
     }
@@ -1004,6 +1150,20 @@ pub async fn resolve_agent_interruption(
                 "This interruption can no longer be resumed.",
             ));
         }
+        if let InterruptionResolutionOrigin::Companion(
+            crate::companion::ComputerUseApprovalOrigin::Companion { device_id },
+        ) = &origin
+        {
+            crate::db::repositories::Repositories::record_companion_computer_use_approval_decision_in_transaction(
+                &mut transaction,
+                device_id,
+                &request.interruption_id,
+                companion_session_id.as_deref().unwrap_or(&session_id),
+                if approved { "approve" } else { "deny" },
+                &resolved_at,
+            )
+            .await?;
+        }
         transaction.commit().await?;
         Ok(())
     }
@@ -1013,6 +1173,20 @@ pub async fn resolve_agent_interruption(
             let _ = super::secrets::delete(secret_ref).await;
         }
         return Err(error);
+    }
+    if let InterruptionResolutionOrigin::Companion(companion_origin) = &origin {
+        crate::companion::complete_computer_use_resolution(
+            app,
+            &request.interruption_id,
+            companion_session_id.as_deref().unwrap_or(&session_id),
+            approved,
+            approved
+                && matches!(
+                    companion_origin,
+                    crate::companion::ComputerUseApprovalOrigin::Companion { .. }
+                ),
+            Some(companion_origin.clone()),
+        );
     }
     if let Err(error) = host
         .request("run.resume", &session.id, &run.id, params)
@@ -1048,9 +1222,33 @@ pub async fn resolve_agent_interruption(
                 );
             }
         }
+        if let Some(stored_session_id) = companion_session_id.as_deref() {
+            crate::companion::cancel_computer_use_resolution(
+                app,
+                &request.interruption_id,
+                stored_session_id,
+            );
+        }
         restore_result?;
         return Err(error);
     }
+    if origin == InterruptionResolutionOrigin::Desktop {
+        crate::companion::complete_computer_use_resolution(
+            app,
+            &request.interruption_id,
+            &session_id,
+            approved,
+            false,
+            None,
+        );
+    }
+    tracing::info!(
+        interruption_id = %request.interruption_id,
+        stored_session_id = %session_id,
+        approved,
+        origin = ?origin,
+        "resolved agent interruption"
+    );
     Ok(run_json(
         repository
             .update_run_status(&run.id, "running", None, None, None)
@@ -1833,10 +2031,17 @@ async fn inherit_session_profile(
 
 async fn prepare_attachments(
     source_paths: &[String],
+    supplied_metadata: &[AttachmentMetadataInput],
     workspace: &std::path::Path,
 ) -> Result<Vec<MessageAttachmentPayload>, AppError> {
     if source_paths.is_empty() {
         return Ok(Vec::new());
+    }
+    if !supplied_metadata.is_empty() && supplied_metadata.len() != source_paths.len() {
+        return Err(AppError::new(
+            "agent_attachment_invalid",
+            "Attachment metadata does not match the selected files.",
+        ));
     }
     let destination_root = workspace.join("attachments");
     tokio::fs::create_dir_all(&destination_root)
@@ -1844,7 +2049,7 @@ async fn prepare_attachments(
         .map_err(io_error)?;
     let canonical_workspace = workspace.canonicalize().map_err(io_error)?;
     let mut attachments = Vec::with_capacity(source_paths.len());
-    for source_path in source_paths {
+    for (index, source_path) in source_paths.iter().enumerate() {
         let source = PathBuf::from(source_path)
             .canonicalize()
             .map_err(io_error)?;
@@ -1854,10 +2059,17 @@ async fn prepare_attachments(
                 "Attachment source is not a file.",
             ));
         }
-        let name = source
-            .file_name()
-            .and_then(|value| value.to_str())
-            .filter(|value| !value.is_empty())
+        let name = supplied_metadata
+            .get(index)
+            .map(|metadata| metadata.name.trim())
+            .or_else(|| source.file_name().and_then(|value| value.to_str()))
+            .filter(|value| {
+                !value.is_empty()
+                    && value.len() <= 255
+                    && !value
+                        .chars()
+                        .any(|character| character.is_control() || matches!(character, '/' | '\\'))
+            })
             .ok_or_else(|| {
                 AppError::new(
                     "agent_attachment_invalid",
@@ -1879,7 +2091,10 @@ async fn prepare_attachments(
             id: uuid::Uuid::new_v4().to_string(),
             name,
             path: destination.to_string_lossy().into_owned(),
-            mime_type: attachment_mime_type(&destination).map(str::to_string),
+            mime_type: supplied_metadata
+                .get(index)
+                .and_then(|metadata| metadata.media_type.clone())
+                .or_else(|| attachment_mime_type(&destination).map(str::to_string)),
             size_bytes: metadata.len() as i64,
             available: true,
             created_at: chrono::Utc::now().to_rfc3339(),
@@ -2115,7 +2330,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn attachments_are_copied_into_the_session_workspace_and_added_to_context() {
+    async fn supplied_attachment_name_and_media_type_survive_workspace_copy() {
         let source_directory = tempfile::tempdir().expect("source directory");
         let workspace = tempfile::tempdir().expect("workspace");
         let source = source_directory.path().join("brief.md");
@@ -2123,14 +2338,23 @@ mod tests {
             .await
             .expect("source attachment");
 
-        let attachments =
-            prepare_attachments(&[source.to_string_lossy().into_owned()], workspace.path())
-                .await
-                .expect("prepared attachments");
+        let attachments = prepare_attachments(
+            &[source.to_string_lossy().into_owned()],
+            &[AttachmentMetadataInput {
+                name: "launch-brief.custom".to_string(),
+                media_type: Some("application/x-june-brief".to_string()),
+            }],
+            workspace.path(),
+        )
+        .await
+        .expect("prepared attachments");
 
         assert_eq!(attachments.len(), 1);
-        assert_eq!(attachments[0].name, "brief.md");
-        assert_eq!(attachments[0].mime_type.as_deref(), Some("text/markdown"));
+        assert_eq!(attachments[0].name, "launch-brief.custom");
+        assert_eq!(
+            attachments[0].mime_type.as_deref(),
+            Some("application/x-june-brief")
+        );
         assert!(PathBuf::from(&attachments[0].path).starts_with(workspace.path()));
         assert_eq!(
             tokio::fs::read_to_string(&attachments[0].path)
@@ -2140,7 +2364,7 @@ mod tests {
         );
         let input = message_with_attachment_context("Summarize this.", &attachments);
         assert!(input.starts_with("[June attachment manifest v1]"));
-        assert!(input.contains("brief.md"));
+        assert!(input.contains("launch-brief.custom"));
         assert!(input.contains(&attachments[0].path));
         assert!(input.ends_with("Summarize this."));
     }

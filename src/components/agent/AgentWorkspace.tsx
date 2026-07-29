@@ -42,6 +42,7 @@ import type {
 import {
   agentRuntimeBindings,
   companionCompleteFrontendRequest,
+  companionConsumeAttachments,
   companionPublishAgentEvent,
   type CompanionAgentStatus,
   type CompanionFrontendRequest,
@@ -50,7 +51,6 @@ import {
   dictationHelperCommand,
   juneHomeChat,
   type JuneHomeChatResponse,
-  listSessionPartitions,
   listVeniceModels,
   providerModelSettings,
   setCostQuality as setProviderCostQuality,
@@ -77,6 +77,8 @@ import {
   type QueuedAgentFollowUps,
 } from "../../lib/agent-follow-up-queue";
 import {
+  AGENT_SESSION_MODEL_CHANGED_EVENT,
+  type AgentSessionModelChangedDetail,
   clearSessionModelIfApplied,
   forgetSessionModel,
   loadSessionModels,
@@ -119,10 +121,8 @@ import { ComposerModelPicker, heroPrivacyFootnote } from "./composer/ModelPicker
 import { modelPrivacyBadge } from "../../lib/model-privacy";
 import { autoPillDesignation } from "../../lib/suggested-models";
 import { getCurrentDataPartitionName } from "../../lib/data-partition";
-import {
-  filterAgentSessionsForDataPartition,
-  sessionPartitionMap,
-} from "../../lib/session-partition-filter";
+import { companionSessionInActivePartition } from "../../lib/companion-partition";
+import { createCompanionPublicationQueue } from "../../lib/companion-publication-queue";
 import { AUTO_MODEL_ID, modelOptions, selectedModel } from "../settings/ModelPickerDialog";
 import { ModelPickerPopover, type ModelPickerFlyout } from "../settings/ModelPickerPopover";
 import { Dialog } from "../ui/Dialog";
@@ -627,6 +627,17 @@ export function AgentWorkspace({
     }
   }, []);
 
+  useEffect(() => {
+    const applyExternalSessionModel = (event: Event) => {
+      const detail = (event as CustomEvent<AgentSessionModelChangedDetail>).detail;
+      if (!detail || detail.sessionId !== selectedIdRef.current) return;
+      applySessionModel(detail.storedModel);
+    };
+    window.addEventListener(AGENT_SESSION_MODEL_CHANGED_EVENT, applyExternalSessionModel);
+    return () =>
+      window.removeEventListener(AGENT_SESSION_MODEL_CHANGED_EVENT, applyExternalSessionModel);
+  }, [applySessionModel]);
+
   const hydrate = useCallback(
     async (sessionId: string) => {
       const requestId = crypto.randomUUID();
@@ -756,6 +767,49 @@ export function AgentWorkspace({
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
+    const companionPublicationQueue = createCompanionPublicationQueue({
+      isSessionPublishable: async (storedSessionId) =>
+        Boolean(await companionSessionInActivePartition(storedSessionId)) && !disposed,
+      onFailure: ({ error, eventType, storedSessionId }) => {
+        // biome-ignore lint/suspicious/noConsole: stream publication failures need a content-free diagnostic
+        console.warn("Failed to publish companion agent event", {
+          eventType,
+          reason: messageFromError(error),
+          storedSessionId,
+        });
+      },
+    });
+    const enqueueCompanionPublication = (
+      storedSessionId: string,
+      eventType: "delta" | "status",
+      publish: () => Promise<void>,
+    ) => {
+      void companionPublicationQueue.enqueue({ eventType, publish, storedSessionId });
+    };
+    const publishCompanionStatus = (
+      storedSessionId: string,
+      status: CompanionAgentStatus,
+      runId?: string,
+    ) => {
+      enqueueCompanionPublication(storedSessionId, "status", () =>
+        companionPublishAgentEvent({
+          type: "status",
+          data: {
+            storedSessionId,
+            status,
+            ...(runId ? { runId } : {}),
+          },
+        }),
+      );
+    };
+    const publishCompanionDelta = (storedSessionId: string, text: string) => {
+      enqueueCompanionPublication(storedSessionId, "delta", () =>
+        companionPublishAgentEvent({
+          type: "delta",
+          data: { storedSessionId, text },
+        }),
+      );
+    };
     void listen<AgentRuntimeEvent>(AGENT_RUNTIME_EVENT, ({ payload }) => {
       if (payload.method === "steering.consumed") {
         attemptedQueuedMessageIdsRef.current.delete(payload.data.messageId);
@@ -781,10 +835,10 @@ export function AgentWorkspace({
         );
       }
       if (companionPairingEnabled && payload.method === "message.delta" && payload.data.delta) {
-        void companionPublishAgentEvent({
-          type: "delta",
-          data: { storedSessionId: payload.sessionId, text: payload.data.delta },
-        }).catch(() => undefined);
+        publishCompanionDelta(payload.sessionId, payload.data.delta);
+      }
+      if (companionPairingEnabled && payload.method === "tool.completed") {
+        publishCompanionStatus(payload.sessionId, "running", payload.runId);
       }
       const companionStatus: CompanionAgentStatus | undefined =
         payload.method === "interruption.requested"
@@ -799,10 +853,11 @@ export function AgentWorkspace({
                   ? "running"
                   : undefined;
       if (companionPairingEnabled && companionStatus) {
-        void companionPublishAgentEvent({
-          type: "status",
-          data: { storedSessionId: payload.sessionId, status: companionStatus },
-        }).catch(() => undefined);
+        publishCompanionStatus(
+          payload.sessionId,
+          companionStatus,
+          terminal ? payload.runId : undefined,
+        );
       }
       if (payload.sessionId !== selectedIdRef.current) {
         void refreshSessions().catch(() => undefined);
@@ -838,18 +893,6 @@ export function AgentWorkspace({
 
   useEffect(() => {
     if (!companionPairingEnabled) return;
-    async function companionSessionInActivePartition(storedSessionId: string) {
-      const [sessions, assignments] = await Promise.all([
-        agentRuntimeBindings.listSessions(),
-        listSessionPartitions(),
-      ]);
-      return filterAgentSessionsForDataPartition(
-        sessions,
-        sessionPartitionMap(assignments),
-        getCurrentDataPartitionName(),
-      ).find((session) => session.id === storedSessionId);
-    }
-
     async function rejectUnavailableCompanionSession(operationId: string) {
       await companionCompleteFrontendRequest(operationId, {
         type: "error",
@@ -866,9 +909,17 @@ export function AgentWorkspace({
         switch (payload.intent.type) {
           case "agentSessionsList":
           case "agentMessagesList":
+          case "modelsList":
+          case "sessionModelGet":
+          case "sessionModelSet":
             return;
           case "agentSend": {
-            const { storedSessionId: requestedStoredSessionId, message } = payload.intent.data;
+            const {
+              storedSessionId: requestedStoredSessionId,
+              message,
+              attachments = [],
+              attachmentReferenceIds = [],
+            } = payload.intent.data;
             let session: AgentSessionDto | undefined;
             let createdSessionPartition: string | undefined;
             if (requestedStoredSessionId) {
@@ -902,10 +953,12 @@ export function AgentWorkspace({
               return;
             }
             const preparedPrompt = preparePromptForSession(authorizedSession.id, message);
+            const stagedModel = loadSessionModels()[authorizedSession.id];
+            const submittedModel = stagedModel ?? authorizedSession.model;
             await agentRuntimeBindings.startRun({
               sessionId: authorizedSession.id,
               prompt: preparedPrompt.text,
-              model: authorizedSession.model,
+              model: submittedModel,
               reasoningEffort: thinkingEffortForLevel(thinkingLevelRef.current) as
                 | "minimal"
                 | "medium"
@@ -913,8 +966,11 @@ export function AgentWorkspace({
               safetyMode: authorizedSession.safetyMode,
               workspacePath: authorizedSession.workspacePath,
               enabledSkillIds,
-              attachments: [],
+              attachments: attachments.map((attachment) => attachment.path),
+              attachmentMetadata: attachments.map(({ name, mediaType }) => ({ name, mediaType })),
             });
+            clearSessionModelIfApplied(authorizedSession.id, submittedModel);
+            await companionConsumeAttachments(attachmentReferenceIds).catch(() => undefined);
             projectContextSignaturesBySessionId.set(
               authorizedSession.id,
               preparedPrompt.contextSignature,
