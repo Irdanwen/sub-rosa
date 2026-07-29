@@ -920,6 +920,7 @@ const STAGE_TEXT: Record<string, string> = {
   "reading-note": "Reading a note",
   "writing-note": "Writing to your notes",
   remembering: "Remembering that",
+  "reading-page": "Reading a page",
 };
 
 function stageText(stage: AgentLiteStatusDto["stage"]): string {
