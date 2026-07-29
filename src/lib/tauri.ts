@@ -1642,6 +1642,12 @@ export async function mobileDeleteDictationHistoryItem(id: string) {
 
 export const AGENT_LITE_STATUS_EVENT = "agent-lite://status";
 export const AGENT_LITE_DONE_EVENT = "agent-lite://done";
+/** Reply text as it is generated: `{ taskId, text }`, `text` being the
+ * fragment to append to what has arrived so far. */
+export const AGENT_LITE_DELTA_EVENT = "agent-lite://delta";
+/** The assistant wrote to the notes (create_note / append_to_note), so any
+ * list showing them is stale. */
+export const AGENT_LITE_NOTES_CHANGED_EVENT = "agent-lite://notes-changed";
 
 export type AgentLiteStatusDto = {
   taskId: string;
