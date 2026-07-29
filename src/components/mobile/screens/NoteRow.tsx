@@ -1,3 +1,4 @@
+import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconNoteText } from "central-icons/IconNoteText";
 import type { NoteListItemDto } from "../../../lib/tauri";
 
@@ -20,21 +21,37 @@ export function NoteRow({ note, recording, onSelect }: NoteRowProps) {
 
   // No wrapping <li> here: callers render rows inside their own <li> (with
   // SwipeableRow between), and nested list items are invalid DOM.
+  // A note that came from audio and one that was typed are different things to
+  // scan for; the row carried the same glyph for both, and never showed the
+  // duration it already knows.
+  const recorded = typeof note.durationMs === "number" && note.durationMs > 0;
+  const duration = recorded ? formatDuration(note.durationMs as number) : null;
+
   return (
     <button type="button" className="mobile-note-row" onClick={onSelect}>
       <span className="mobile-note-row-icon" aria-hidden>
-        <IconNoteText size={16} />
+        {recorded ? <IconMicrophone size={16} /> : <IconNoteText size={16} />}
       </span>
       <span className="mobile-note-row-body">
         <span className="mobile-note-row-title">{title}</span>
         <span className="mobile-note-row-subtitle">
           {recording ? <span className="note-recording-dot" aria-hidden /> : null}
+          {duration ? <span className="mobile-note-row-duration">{duration}</span> : null}
           <span data-shimmer={processing ? "true" : undefined}>{preview}</span>
         </span>
       </span>
       <span className="mobile-note-row-time">{formatNoteTime(note.updatedAt)}</span>
     </button>
   );
+}
+
+/** Recording length, as the list would say it out loud: "8 min", "1 h 04". */
+function formatDuration(ms: number): string {
+  const totalMinutes = Math.max(1, Math.round(ms / 60_000));
+  if (totalMinutes < 60) return `${totalMinutes} min`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours} h ${minutes.toString().padStart(2, "0")}`;
 }
 
 function statusLabel(status: NoteListItemDto["processingStatus"]) {
