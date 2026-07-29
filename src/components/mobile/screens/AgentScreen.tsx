@@ -19,6 +19,7 @@ import { ensureNotificationPermission } from "../../../lib/notifications";
 import { resolveTurnModel } from "../../../lib/vision-routing";
 import type { MediaModel } from "../../../lib/studio/types";
 import {
+  AGENT_LITE_DELTA_EVENT,
   AGENT_LITE_DONE_EVENT,
   AGENT_LITE_STATUS_EVENT,
   type AgentLiteAttachment,
@@ -280,6 +281,9 @@ export function AgentSessionScreen({
   const [draft, setDraft] = useState("");
   const [running, setRunning] = useState(false);
   const [stage, setStage] = useState<AgentLiteStatusDto | null>(null);
+  // The reply as it is being written. Rendered as a live assistant bubble and
+  // cleared by the done event, which carries the persisted message.
+  const [streamed, setStreamed] = useState("");
   // The ordered stages of the current run, so the status bubble reads as a
   // short activity log (thinking -> searching notes -> searching web) rather
   // than a single flickering line.
@@ -351,12 +355,20 @@ export function AgentSessionScreen({
         return [...prev, event.payload];
       });
     });
+    const unlistenDelta = listen<{ taskId: string; text: string }>(
+      AGENT_LITE_DELTA_EVENT,
+      (event) => {
+        if (event.payload.taskId !== taskIdRef.current) return;
+        setStreamed((current) => current + event.payload.text);
+      },
+    );
     const unlistenDone = listen<AgentTaskDto>(AGENT_LITE_DONE_EVENT, (event) => {
       if (event.payload.id !== taskIdRef.current) return;
       lastStepKeyRef.current = null;
       setTask(event.payload);
       setStage(null);
       setSteps([]);
+      setStreamed("");
       setRunning(false);
       // Fire the "reply is ready" haptic here, off the canonical completion
       // signal, rather than off the invoke resolving: it lands reliably even
@@ -367,6 +379,7 @@ export function AgentSessionScreen({
     });
     return () => {
       void unlistenStatus.then((fn) => fn());
+      void unlistenDelta.then((fn) => fn());
       void unlistenDone.then((fn) => fn());
     };
   }, []);
@@ -374,7 +387,7 @@ export function AgentSessionScreen({
   useEffect(() => {
     if (!pinnedRef.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [task?.messages.length, stage]);
+  }, [task?.messages.length, stage, streamed]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -517,6 +530,7 @@ export function AgentSessionScreen({
     setAttachments([]);
     setError(null);
     setCanRetry(false);
+    setStreamed("");
     setRunning(true);
     setSteps([]);
     lastStepKeyRef.current = null;
@@ -580,6 +594,7 @@ export function AgentSessionScreen({
       setRunning(false);
       setStage(null);
       setSteps([]);
+      setStreamed("");
     }
   }, [draft, attachments, running, task, model, models, onSessionCreated]);
 
@@ -591,6 +606,7 @@ export function AgentSessionScreen({
     if (!taskId || running) return;
     setError(null);
     setCanRetry(false);
+    setStreamed("");
     setRunning(true);
     setSteps([]);
     lastStepKeyRef.current = null;
@@ -620,17 +636,11 @@ export function AgentSessionScreen({
       setRunning(false);
       setStage(null);
       setSteps([]);
+      setStreamed("");
     }
   }, [running, model, models]);
 
-  const stageLabel =
-    stage?.stage === "searching-notes"
-      ? "Searching your notes"
-      : stage?.stage === "searching-web"
-        ? "Searching the web"
-        : stage?.stage === "searching-memory"
-          ? "Recalling your memories"
-          : "Thinking";
+  const stageLabel = stageText(stage?.stage ?? "thinking");
   // Prefer the catalog's display name ("Claude Opus 4.7") over the raw id.
   const activeModelLabel =
     models.find((entry) => entry.id === model)?.name || shortModelLabel(model) || "Default model";
@@ -707,7 +717,12 @@ export function AgentSessionScreen({
             )}
           </div>
         ))}
-        {running ? (
+        {running && streamed ? (
+          <div className="mobile-chat-bubble" data-role="assistant">
+            <SimpleMarkdown text={streamed} />
+          </div>
+        ) : null}
+        {running && !streamed ? (
           <div className="mobile-chat-bubble mobile-chat-status" data-role="assistant">
             <ul className="mobile-chat-steps">
               {steps.map((step, i) => {
@@ -898,11 +913,17 @@ function shortModelLabel(modelId: string): string {
   return modelId.length > 18 ? `${modelId.slice(0, 17)}…` : modelId;
 }
 
+const STAGE_TEXT: Record<string, string> = {
+  "searching-notes": "Searching your notes",
+  "searching-web": "Searching the web",
+  "searching-memory": "Recalling your memories",
+  "reading-note": "Reading a note",
+  "writing-note": "Writing to your notes",
+  remembering: "Remembering that",
+};
+
 function stageText(stage: AgentLiteStatusDto["stage"]): string {
-  if (stage === "searching-notes") return "Searching your notes";
-  if (stage === "searching-web") return "Searching the web";
-  if (stage === "searching-memory") return "Recalling your memories";
-  return "Thinking";
+  return STAGE_TEXT[stage] ?? "Thinking";
 }
 
 /** Copies a finished reply to the clipboard, with a brief confirmation. */

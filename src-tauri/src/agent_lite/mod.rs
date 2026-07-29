@@ -4,10 +4,25 @@
 //! with skills and MCP servers) — impossible on iOS. Agent-lite keeps the
 //! product promise ("chat with an assistant over your notes") with what the
 //! platform allows: a tool-loop over the June API's chat-completions proxy
-//! (Carpe Diem upstream), with two tools that run in-process:
+//! (Carpe Diem upstream), with tools that run in-process.
 //!
-//! - `search_notes` — LIKE retrieval over the local SQLite notes/transcripts;
-//! - `web_search`   — the June API `/v1/web/search` passthrough.
+//! Reading:
+//! - `search_notes`      — LIKE retrieval over the local SQLite notes/transcripts;
+//! - `read_note`         — one note in full, note body plus transcript;
+//! - `list_recent_notes` — the newest notes, for questions about a period;
+//! - `search_memories`   — hybrid recall over remembered facts (memory on only);
+//! - `web_search`        — the June API `/v1/web/search` passthrough.
+//!
+//! Writing:
+//! - `create_note`, `append_to_note` — the assistant can put something in the
+//!   user's notes when asked, and the shell refreshes on
+//!   [`AGENT_LITE_NOTES_CHANGED_EVENT`];
+//! - `remember`          — store a durable fact on request (memory on only).
+//!
+//! Search returns a keyword window, never a whole note, so anything about what
+//! a note *says* has to go through `read_note`. The system prompt says so
+//! explicitly, because a model that only searches will confidently summarise
+//! 700 characters as if they were the meeting.
 //!
 //! Sessions persist in the same `agent_tasks`/`agent_messages` tables the
 //! desktop uses, so the data model stays one thing. Status streams to the UI
@@ -23,17 +38,30 @@ use tauri_plugin_notification::NotificationExt;
 
 pub const AGENT_LITE_STATUS_EVENT: &str = "agent-lite://status";
 pub const AGENT_LITE_DONE_EVENT: &str = "agent-lite://done";
+/// Reply text as it is generated, so the chat fills in instead of sitting on a
+/// spinner for the length of the answer. Payload: `{ taskId, text }`, where
+/// `text` is the fragment to append.
+pub const AGENT_LITE_DELTA_EVENT: &str = "agent-lite://delta";
 
 /// Hard cap on tool round-trips per user turn, so a confused model cannot
-/// loop on searches forever (each iteration is a paid completion).
-const MAX_TOOL_ITERATIONS: usize = 3;
-const SYSTEM_PROMPT: &str = "You are Sub Rosa's assistant on the user's device. You answer questions using the user's meeting notes and dictations when relevant: call search_notes with a short keyword query to look them up (results include note titles and snippets). Call web_search when the question needs current public information. Prefer searching notes before answering questions about the user's meetings, decisions, or plans. Answer in the user's language, concisely, in plain prose or simple markdown. If searches come back empty, say what you looked for.";
+/// loop forever (each iteration is a paid completion). Three was enough when
+/// the only tools were two searches; finding a note, reading it, and writing a
+/// summary back is already three before the model has said anything.
+const MAX_TOOL_ITERATIONS: usize = 8;
+const SYSTEM_PROMPT: &str = "You are Sub Rosa's assistant on the user's device, and you can both read and write the user's notes.
+
+Finding things: search_notes takes a short keyword query and returns a window around each match, with note ids. list_recent_notes answers questions about a period rather than a keyword. Neither gives you a note's full text: when the question is about what a note actually says (summarising it, listing its decisions, quoting it), call read_note with the id. Prefer looking in the notes before answering anything about the user's meetings, decisions, or plans. Call web_search when the question needs current public information.
+
+Acting: create_note when the user asks you to write something down or save a summary, append_to_note to add to an existing one, remember for a lasting preference or a fact they ask you to keep. Never use a write tool to answer a question, and never write without being asked.
+
+Answer in the user's language, concisely, in plain prose or simple markdown. If a search comes back empty, say what you looked for.";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentLiteStatusDto {
     pub task_id: String,
     /// "thinking" | "searching-notes" | "searching-web" | "searching-memory"
+    /// | "reading-note" | "writing-note" | "remembering"
     pub stage: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
@@ -245,14 +273,22 @@ async fn run_turn(
         attach_to_last_user_message(&mut messages, attachments);
     }
 
-    // Vision turns skip the tool declarations: several upstream vision routes
-    // reject tool-bearing requests outright (502 upstream_provider_failed),
-    // and an image question is not a notes/web lookup anyway.
+    // Several upstream vision routes reject tool-bearing requests outright
+    // (502 upstream_provider_failed), which is why image turns used to drop
+    // every tool. Dropping them unconditionally also means a photo can never
+    // be cross-referenced with the user's notes, so instead we offer the tools
+    // and fall back once if the route turns out to be one of the strict ones.
     let has_images = attachments.iter().any(|a| a.kind == "image");
+    let mut tools_withheld = false;
+    // Streaming is what makes the reply appear as it is written instead of
+    // landing whole after ten to thirty seconds. It is also the newer path, so
+    // any route that answers a streamed request with nothing usable gets the
+    // turn replayed buffered rather than an error.
+    let mut stream_withheld = false;
 
     for _iteration in 0..=MAX_TOOL_ITERATIONS {
         emit_status(app, task_id, "thinking", None);
-        let mut body = if has_images {
+        let mut body = if tools_withheld {
             serde_json::json!({
                 "messages": messages,
                 "temperature": 0.3,
@@ -269,6 +305,11 @@ async fn run_turn(
         };
         if let (Some(model), Some(object)) = (model, body.as_object_mut()) {
             object.insert("model".to_string(), serde_json::json!(model));
+        }
+        if !stream_withheld {
+            if let Some(object) = body.as_object_mut() {
+                object.insert("stream".to_string(), serde_json::json!(true));
+            }
         }
         let response = june_api::proxy_agent_chat_completions(body).await?;
         if !(200..300).contains(&response.status) {
@@ -306,6 +347,15 @@ async fn run_turn(
             // instead of dumping `upstream_provider_failed`. Mirrors
             // isUpstreamProviderFailureMessage in src/lib/errors.ts.
             if is_provider_failure_detail(&detail) {
+                // The known-strict vision routes fail exactly here. Retry the
+                // same turn once without the tool declarations rather than
+                // handing the user an error for a question the model can
+                // answer from the image alone.
+                if has_images && !tools_withheld {
+                    tracing::warn!("vision route rejected tools, retrying without them");
+                    tools_withheld = true;
+                    continue;
+                }
                 return Err(AppError::new(
                     "agent_lite_provider_failed",
                     "The model provider could not answer this message. Send again, or switch to another model.",
@@ -316,15 +366,39 @@ async fn run_turn(
                 format!("The assistant request failed with status {status}: {detail}"),
             ));
         }
-        let body = response.collect_body().await?;
-        let value: serde_json::Value = serde_json::from_slice(&body)
-            .map_err(|error| AppError::new("agent_lite_invalid", error.to_string()))?;
-        let message = value
-            .pointer("/choices/0/message")
-            .cloned()
-            .ok_or_else(|| {
-                AppError::new("agent_lite_invalid", "The assistant returned no message.")
-            })?;
+        // A route that ignored `stream` answers with ordinary JSON; read
+        // whichever shape actually came back rather than trusting the request.
+        let streamed = !stream_withheld && response.content_type.contains("event-stream");
+        let message = if streamed {
+            let reply = collect_stream(app, task_id, response).await?;
+            if reply.is_empty() {
+                // Nothing usable came out of the stream. Replay this same
+                // iteration buffered before giving up on the turn.
+                tracing::warn!("streamed completion was empty, retrying buffered");
+                stream_withheld = true;
+                continue;
+            }
+            reply.into_message()
+        } else {
+            let body = response.collect_body().await?;
+            let value: serde_json::Value = serde_json::from_slice(&body)
+                .map_err(|error| AppError::new("agent_lite_invalid", error.to_string()))?;
+            let mut message = value
+                .pointer("/choices/0/message")
+                .cloned()
+                .ok_or_else(|| {
+                    AppError::new("agent_lite_invalid", "The assistant returned no message.")
+                })?;
+            // `extract_chat_completion_text` knows the shapes the rails answer
+            // with (ADR-0015); prefer it over reading `content` directly.
+            if let (Some(object), Some(text)) = (
+                message.as_object_mut(),
+                june_api::extract_chat_completion_text(&value),
+            ) {
+                object.insert("content".to_string(), serde_json::json!(text));
+            }
+            message
+        };
 
         let tool_calls = message
             .get("tool_calls")
@@ -332,7 +406,9 @@ async fn run_turn(
             .cloned()
             .unwrap_or_default();
         if tool_calls.is_empty() {
-            let text = june_api::extract_chat_completion_text(&value)
+            let text = message
+                .get("content")
+                .and_then(serde_json::Value::as_str)
                 .map(|text| text.trim().to_string())
                 .filter(|text| !text.is_empty())
                 .ok_or_else(|| {
@@ -356,19 +432,17 @@ async fn run_turn(
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or_default()
                 .to_string();
+            // The whole argument object, not just a `query` string: tools that
+            // address a specific note (or write one) need more than one field,
+            // and a model that answers with an unparseable blob gets an empty
+            // object rather than a silently dropped call.
             let arguments = tool_call
                 .pointer("/function/arguments")
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("{}");
-            let query = serde_json::from_str::<serde_json::Value>(arguments)
-                .ok()
-                .and_then(|args| {
-                    args.get("query")
-                        .and_then(serde_json::Value::as_str)
-                        .map(str::to_string)
-                })
-                .unwrap_or_default();
-            let content = execute_tool(app, repos, task_id, &name, &query).await;
+            let args = serde_json::from_str::<serde_json::Value>(arguments)
+                .unwrap_or_else(|_| serde_json::json!({}));
+            let content = execute_tool(app, repos, task_id, &name, &args).await;
             messages.push(serde_json::json!({
                 "role": "tool",
                 "tool_call_id": id,
@@ -383,17 +457,185 @@ async fn run_turn(
     ))
 }
 
+/// Read a string argument, treating blank as absent — models routinely pass
+/// `""` for a field they mean to omit.
+fn arg_str(args: &serde_json::Value, key: &str) -> Option<String> {
+    args.get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+/// Read a numeric argument. Models sometimes send `"5"` instead of `5`.
+fn arg_i64(args: &serde_json::Value, key: &str) -> Option<i64> {
+    let value = args.get(key)?;
+    value
+        .as_i64()
+        .or_else(|| value.as_str().and_then(|text| text.trim().parse().ok()))
+}
+
+/// A tool result has to leave room for the conversation it rides back into.
+fn truncate(text: String, limit: usize) -> String {
+    if text.chars().count() <= limit {
+        return text;
+    }
+    let kept: String = text.chars().take(limit).collect();
+    format!("{kept}\n\n[truncated]")
+}
+
+/// The webview refreshes its note list on this, so a note the assistant just
+/// wrote shows up without a manual pull to refresh.
+pub const AGENT_LITE_NOTES_CHANGED_EVENT: &str = "agent-lite://notes-changed";
+
+/// An assistant message rebuilt from a stream of deltas.
+#[derive(Default)]
+struct StreamedReply {
+    content: String,
+    /// Indexed by the `index` the deltas carry: `(id, name, arguments)`, each
+    /// arrived in fragments.
+    calls: Vec<(String, String, String)>,
+}
+
+impl StreamedReply {
+    fn is_empty(&self) -> bool {
+        self.content.trim().is_empty() && self.calls.is_empty()
+    }
+
+    /// The same shape the buffered path produces, so the tool loop does not
+    /// care which way the answer arrived.
+    fn into_message(self) -> serde_json::Value {
+        let tool_calls: Vec<serde_json::Value> = self
+            .calls
+            .into_iter()
+            .filter(|(_, name, _)| !name.is_empty())
+            .map(|(id, name, arguments)| {
+                serde_json::json!({
+                    "id": id,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        // An empty fragment stream still has to parse.
+                        "arguments": if arguments.is_empty() { "{}".to_string() } else { arguments },
+                    }
+                })
+            })
+            .collect();
+        let mut message = serde_json::json!({
+            "role": "assistant",
+            "content": self.content,
+        });
+        if !tool_calls.is_empty() {
+            message["tool_calls"] = serde_json::Value::Array(tool_calls);
+        }
+        message
+    }
+
+    fn apply(&mut self, delta: &serde_json::Value) {
+        if let Some(text) = delta.get("content").and_then(serde_json::Value::as_str) {
+            self.content.push_str(text);
+        }
+        let Some(calls) = delta
+            .get("tool_calls")
+            .and_then(serde_json::Value::as_array)
+        else {
+            return;
+        };
+        for call in calls {
+            // Deltas address a slot by index and fill it in over several
+            // frames: the id and name arrive once, the arguments in pieces.
+            let index = call
+                .get("index")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0) as usize;
+            if self.calls.len() <= index {
+                self.calls
+                    .resize(index + 1, (String::new(), String::new(), String::new()));
+            }
+            let slot = &mut self.calls[index];
+            if let Some(id) = call.get("id").and_then(serde_json::Value::as_str) {
+                if !id.is_empty() {
+                    slot.0 = id.to_string();
+                }
+            }
+            if let Some(name) = call
+                .pointer("/function/name")
+                .and_then(serde_json::Value::as_str)
+            {
+                if !name.is_empty() {
+                    slot.1 = name.to_string();
+                }
+            }
+            if let Some(arguments) = call
+                .pointer("/function/arguments")
+                .and_then(serde_json::Value::as_str)
+            {
+                slot.2.push_str(arguments);
+            }
+        }
+    }
+}
+
+/// Read a server-sent completion stream to the end, emitting the reply text to
+/// the webview as it arrives.
+///
+/// Batched one emit per network chunk rather than per token: a chunk already
+/// groups whatever arrived together, and an event per token would spend more
+/// time crossing the IPC boundary than rendering.
+async fn collect_stream(
+    app: &AppHandle,
+    task_id: &str,
+    mut response: june_api::AgentChatCompletionsResponse,
+) -> Result<StreamedReply, AppError> {
+    let mut reply = StreamedReply::default();
+    let mut buffer = String::new();
+    while let Some(chunk) = response.chunk().await? {
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        let before = reply.content.len();
+        // Frames are newline-delimited; keep the tail, which may be a partial
+        // line that the next chunk completes.
+        while let Some(newline) = buffer.find('\n') {
+            let line = buffer[..newline].trim().to_string();
+            buffer.drain(..newline + 1);
+            let Some(data) = line.strip_prefix("data:") else {
+                continue;
+            };
+            let data = data.trim();
+            if data.is_empty() || data == "[DONE]" {
+                continue;
+            }
+            let Ok(frame) = serde_json::from_str::<serde_json::Value>(data) else {
+                continue;
+            };
+            if let Some(delta) = frame.pointer("/choices/0/delta") {
+                reply.apply(delta);
+            }
+        }
+        if reply.content.len() > before {
+            let _ = app.emit(
+                AGENT_LITE_DELTA_EVENT,
+                serde_json::json!({
+                    "taskId": task_id,
+                    "text": &reply.content[before..],
+                }),
+            );
+        }
+    }
+    Ok(reply)
+}
+
 async fn execute_tool(
     app: &AppHandle,
     repos: &crate::db::repositories::Repositories,
     task_id: &str,
     name: &str,
-    query: &str,
+    args: &serde_json::Value,
 ) -> String {
+    let query = arg_str(args, "query").unwrap_or_default();
     match name {
         "search_notes" => {
-            emit_status(app, task_id, "searching-notes", Some(query.to_string()));
-            match repos.search_note_context(query, 6).await {
+            emit_status(app, task_id, "searching-notes", Some(query.clone()));
+            match repos.search_note_context(&query, 6).await {
                 Ok(snippets) if snippets.is_empty() => {
                     "No matching notes or transcripts were found.".to_string()
                 }
@@ -403,11 +645,11 @@ async fn execute_tool(
             }
         }
         "search_memories" => {
-            emit_status(app, task_id, "searching-memory", Some(query.to_string()));
+            emit_status(app, task_id, "searching-memory", Some(query.clone()));
             if !crate::memory::settings().enabled {
                 return "Memory is disabled in the user's settings.".to_string();
             }
-            match crate::memory::recall::recall(repos, query, 8).await {
+            match crate::memory::recall::recall(repos, &query, 8).await {
                 Ok(memories) if memories.is_empty() => {
                     "No stored memories match that query.".to_string()
                 }
@@ -429,7 +671,7 @@ async fn execute_tool(
             }
         }
         "web_search" => {
-            emit_status(app, task_id, "searching-web", Some(query.to_string()));
+            emit_status(app, task_id, "searching-web", Some(query.clone()));
             // The June API web handler requires a non-empty `requestId` (it
             // scopes metering idempotency); omit it and the call is rejected
             // with a 400 before it ever reaches the web. A fresh id per call is
@@ -448,6 +690,144 @@ async fn execute_tool(
                 }
                 Ok(response) => format!("Web search failed with status {}.", response.status),
                 Err(error) => format!("Web search failed: {}", error.message),
+            }
+        }
+        // `search_notes` answers with a keyword window, which is enough to find
+        // a note and never enough to reason about one. This is what makes
+        // "summarise Tuesday's meeting" answerable.
+        "read_note" => {
+            let Some(note_id) = arg_str(args, "note_id") else {
+                return "read_note needs a note_id from search_notes or list_recent_notes."
+                    .to_string();
+            };
+            emit_status(app, task_id, "reading-note", None);
+            match repos.get_note(&note_id).await {
+                Ok(note) => {
+                    let content = note
+                        .edited_content
+                        .or(note.generated_content)
+                        .unwrap_or_default();
+                    let transcript = note
+                        .transcript
+                        .map(|transcript| transcript.text)
+                        .unwrap_or_default();
+                    truncate(
+                        serde_json::json!({
+                            "noteId": note.id,
+                            "title": note.title,
+                            "createdAt": note.created_at,
+                            "updatedAt": note.updated_at,
+                            "status": note.processing_status.as_db(),
+                            "note": content,
+                            "transcript": transcript,
+                        })
+                        .to_string(),
+                        24_000,
+                    )
+                }
+                Err(error) => format!("No note with that id ({error})."),
+            }
+        }
+        // Lets the model answer "what did I work on this week" without guessing
+        // keywords, and gives it ids to follow up with read_note.
+        "list_recent_notes" => {
+            emit_status(app, task_id, "reading-note", None);
+            let limit = arg_i64(args, "limit").unwrap_or(10).clamp(1, 30);
+            match repos.list_notes(None, limit, None).await {
+                Ok(response) => {
+                    let items: Vec<serde_json::Value> = response
+                        .items
+                        .iter()
+                        .map(|note| {
+                            serde_json::json!({
+                                "noteId": note.id,
+                                "title": note.title,
+                                "preview": note.preview,
+                                "createdAt": note.created_at,
+                            })
+                        })
+                        .collect();
+                    if items.is_empty() {
+                        "There are no notes yet.".to_string()
+                    } else {
+                        serde_json::to_string(&items)
+                            .unwrap_or_else(|_| "Listing failed to serialize.".to_string())
+                    }
+                }
+                Err(error) => format!("Listing notes failed: {error}"),
+            }
+        }
+        "create_note" => {
+            let Some(content) = arg_str(args, "content") else {
+                return "create_note needs content.".to_string();
+            };
+            let title = arg_str(args, "title").unwrap_or_else(|| "Untitled note".to_string());
+            emit_status(app, task_id, "writing-note", Some(title.clone()));
+            match repos.create_note(None).await {
+                Ok(note) => match repos
+                    .update_note(&note.id, Some(title.clone()), Some(content), None)
+                    .await
+                {
+                    Ok(saved) => {
+                        let _ = app.emit(AGENT_LITE_NOTES_CHANGED_EVENT, ());
+                        format!("Created note \"{}\" (noteId {}).", saved.title, saved.id)
+                    }
+                    Err(error) => format!("Creating the note failed: {error}"),
+                },
+                Err(error) => format!("Creating the note failed: {error}"),
+            }
+        }
+        "append_to_note" => {
+            let (Some(note_id), Some(addition)) =
+                (arg_str(args, "note_id"), arg_str(args, "content"))
+            else {
+                return "append_to_note needs a note_id and content.".to_string();
+            };
+            emit_status(app, task_id, "writing-note", None);
+            match repos.get_note(&note_id).await {
+                Ok(note) => {
+                    // Append to what the user would see: their own edits when
+                    // they have any, the generated note otherwise. Writing to
+                    // `edited_content` is what the note editor reads back.
+                    let existing = note
+                        .edited_content
+                        .or(note.generated_content)
+                        .unwrap_or_default();
+                    let merged = if existing.trim().is_empty() {
+                        addition
+                    } else {
+                        format!("{}\n\n{}", existing.trim_end(), addition)
+                    };
+                    match repos.update_note(&note_id, None, Some(merged), None).await {
+                        Ok(saved) => {
+                            let _ = app.emit(AGENT_LITE_NOTES_CHANGED_EVENT, ());
+                            format!("Appended to \"{}\".", saved.title)
+                        }
+                        Err(error) => format!("Updating the note failed: {error}"),
+                    }
+                }
+                Err(error) => format!("No note with that id ({error})."),
+            }
+        }
+        // "Remember that I…" only worked by accident before, when the periodic
+        // extractor happened to pick the fact up two turns later.
+        "remember" => {
+            let Some(text) = arg_str(args, "text") else {
+                return "remember needs the fact to store.".to_string();
+            };
+            if !crate::memory::settings().enabled {
+                return "Memory is disabled in the user's settings.".to_string();
+            }
+            emit_status(app, task_id, "remembering", Some(text.clone()));
+            match repos.memory_with_text_exists(&text).await {
+                Ok(true) => "That fact is already remembered.".to_string(),
+                _ => match repos
+                    .insert_memory(&text, crate::domain::types::MemorySource::Manual, 3)
+                    .await
+                {
+                    Ok(_) => format!("Remembered: {text}"),
+                    Err(error) => format!("Storing the memory failed: {error}"),
+                },
             }
         }
         other => format!("Unknown tool: {other}."),
@@ -488,7 +868,87 @@ fn tool_definitions(memory_enabled: bool) -> serde_json::Value {
             }
         }),
     ];
+    tools.push(serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": "read_note",
+            "description": "Read one note in full: its written note and its transcript. Use this after search_notes or list_recent_notes whenever the question is about what a note actually says (summarising it, listing its decisions, quoting it). Search only returns a short window around a keyword.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "note_id": {
+                        "type": "string",
+                        "description": "The noteId from a previous search_notes or list_recent_notes result."
+                    }
+                },
+                "required": ["note_id"]
+            }
+        }
+    }));
+    tools.push(serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": "list_recent_notes",
+            "description": "List the user's most recent notes, newest first, with their ids, titles and previews. Use this for questions about a period rather than a keyword (\"what did I do this week\"), or to find a note when you do not know what to search for.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "How many notes to list, 1 to 30. Defaults to 10."
+                    }
+                }
+            }
+        }
+    }));
+    tools.push(serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": "create_note",
+            "description": "Create a new note in the user's notes. Use it when the user asks you to write something down, draft something, or save a summary. Do not use it to answer a question: answer in the conversation.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string", "description": "Short title, in the user's language." },
+                    "content": { "type": "string", "description": "The note body, in markdown." }
+                },
+                "required": ["content"]
+            }
+        }
+    }));
+    tools.push(serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": "append_to_note",
+            "description": "Add text to the end of an existing note. Use it when the user asks to add something to a note that already exists.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "note_id": { "type": "string", "description": "The noteId to append to." },
+                    "content": { "type": "string", "description": "The text to add, in markdown." }
+                },
+                "required": ["note_id", "content"]
+            }
+        }
+    }));
     if memory_enabled {
+        tools.push(serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "remember",
+                "description": "Store a durable fact about the user so it is available in every future conversation. Use it when the user explicitly asks you to remember something, or states a lasting preference or constraint. Do not use it for one-off details of the current conversation.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "text": {
+                            "type": "string",
+                            "description": "The fact, as one self-contained sentence in the user's language."
+                        }
+                    },
+                    "required": ["text"]
+                }
+            }
+        }));
         tools.push(serde_json::json!({
             "type": "function",
             "function": {
@@ -671,24 +1131,146 @@ mod tests {
         assert!(with_memory.ends_with(block));
     }
 
-    #[test]
-    fn memory_tool_is_only_advertised_when_memory_is_enabled() {
-        let with_memory = tool_definitions(true);
-        let names: Vec<&str> = with_memory
+    fn tool_names(tools: &serde_json::Value) -> Vec<String> {
+        tools
             .as_array()
-            .expect("tools array")
+            .unwrap()
             .iter()
-            .filter_map(|tool| tool.pointer("/function/name")?.as_str())
-            .collect();
-        assert_eq!(names, vec!["search_notes", "web_search", "search_memories"]);
+            .map(|tool| tool["function"]["name"].as_str().unwrap().to_string())
+            .collect()
+    }
 
-        let without_memory = tool_definitions(false);
-        let names: Vec<&str> = without_memory
+    #[test]
+    fn a_stream_rebuilds_the_message_the_tool_loop_expects() {
+        let mut reply = StreamedReply::default();
+        // Content arrives token by token.
+        reply.apply(&serde_json::json!({ "content": "Hel" }));
+        reply.apply(&serde_json::json!({ "content": "lo" }));
+        assert_eq!(reply.content, "Hello");
+        let message = reply.into_message();
+        assert_eq!(message["content"], "Hello");
+        assert!(message.get("tool_calls").is_none());
+    }
+
+    #[test]
+    fn tool_call_fragments_reassemble_by_index() {
+        let mut reply = StreamedReply::default();
+        // The id and name land once, the arguments across several frames, and
+        // two parallel calls interleave by index.
+        reply.apply(&serde_json::json!({
+            "tool_calls": [
+                { "index": 0, "id": "a", "function": { "name": "read_note", "arguments": "{\"note" } },
+                { "index": 1, "id": "b", "function": { "name": "web_search", "arguments": "{\"que" } }
+            ]
+        }));
+        reply.apply(&serde_json::json!({
+            "tool_calls": [
+                { "index": 0, "function": { "arguments": "_id\":\"n1\"}" } },
+                { "index": 1, "function": { "arguments": "ry\":\"x\"}" } }
+            ]
+        }));
+        let message = reply.into_message();
+        let calls = message["tool_calls"].as_array().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0]["id"], "a");
+        assert_eq!(calls[0]["function"]["name"], "read_note");
+        assert_eq!(calls[0]["function"]["arguments"], "{\"note_id\":\"n1\"}");
+        assert_eq!(calls[1]["function"]["arguments"], "{\"query\":\"x\"}");
+    }
+
+    #[test]
+    fn an_empty_stream_is_reported_so_the_turn_can_be_replayed_buffered() {
+        assert!(StreamedReply::default().is_empty());
+        let mut whitespace = StreamedReply::default();
+        whitespace.apply(&serde_json::json!({ "content": "   " }));
+        assert!(whitespace.is_empty());
+        let mut answered = StreamedReply::default();
+        answered.apply(&serde_json::json!({ "content": "hi" }));
+        assert!(!answered.is_empty());
+    }
+
+    #[test]
+    fn a_tool_call_without_a_name_is_dropped_rather_than_sent_nameless() {
+        let mut reply = StreamedReply::default();
+        reply.apply(&serde_json::json!({
+            "tool_calls": [{ "index": 0, "id": "a", "function": { "arguments": "{}" } }]
+        }));
+        assert!(reply.into_message().get("tool_calls").is_none());
+    }
+
+    #[test]
+    fn blank_string_arguments_read_as_absent() {
+        // Models routinely send "" for a field they mean to omit; treating that
+        // as a real value makes read_note look up the empty note id.
+        let args = serde_json::json!({ "note_id": "  ", "title": " Standup ", "content": "x" });
+        assert_eq!(arg_str(&args, "note_id"), None);
+        assert_eq!(arg_str(&args, "title").as_deref(), Some("Standup"));
+        assert_eq!(arg_str(&args, "missing"), None);
+    }
+
+    #[test]
+    fn numeric_arguments_accept_both_json_shapes() {
+        assert_eq!(
+            arg_i64(&serde_json::json!({ "limit": 5 }), "limit"),
+            Some(5)
+        );
+        assert_eq!(
+            arg_i64(&serde_json::json!({ "limit": "5" }), "limit"),
+            Some(5)
+        );
+        assert_eq!(arg_i64(&serde_json::json!({ "limit": "x" }), "limit"), None);
+    }
+
+    #[test]
+    fn truncation_is_announced_so_the_model_knows_it_saw_a_fragment() {
+        assert_eq!(truncate("short".to_string(), 10), "short");
+        let long = truncate("a".repeat(50), 10);
+        assert!(long.starts_with(&"a".repeat(10)));
+        assert!(long.ends_with("[truncated]"));
+    }
+
+    #[test]
+    fn reading_and_writing_tools_are_advertised() {
+        let names = tool_names(&tool_definitions(true));
+        for expected in [
+            "search_notes",
+            "read_note",
+            "list_recent_notes",
+            "create_note",
+            "append_to_note",
+            "web_search",
+        ] {
+            assert!(names.contains(&expected.to_string()), "missing {expected}");
+        }
+    }
+
+    #[test]
+    fn read_note_requires_the_id_search_handed_back() {
+        let tools = tool_definitions(false);
+        let read = tools
             .as_array()
-            .expect("tools array")
+            .unwrap()
             .iter()
-            .filter_map(|tool| tool.pointer("/function/name")?.as_str())
-            .collect();
-        assert_eq!(names, vec!["search_notes", "web_search"]);
+            .find(|tool| tool["function"]["name"] == "read_note")
+            .unwrap();
+        assert_eq!(
+            read["function"]["parameters"]["required"],
+            serde_json::json!(["note_id"])
+        );
+    }
+
+    #[test]
+    fn memory_tools_are_only_advertised_when_memory_is_enabled() {
+        // Both directions matter: advertising `remember` while memory is off
+        // would have the model promise to remember something that is dropped.
+        let with_memory = tool_names(&tool_definitions(true));
+        assert!(with_memory.contains(&"search_memories".to_string()));
+        assert!(with_memory.contains(&"remember".to_string()));
+
+        let without_memory = tool_names(&tool_definitions(false));
+        assert!(!without_memory.contains(&"search_memories".to_string()));
+        assert!(!without_memory.contains(&"remember".to_string()));
+        // The rest of the surface is unaffected by the memory setting.
+        assert!(without_memory.contains(&"read_note".to_string()));
     }
 }

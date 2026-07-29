@@ -24,6 +24,7 @@ import {
   type LiveTranscriptEventDto,
   type RecordingSourceReadinessDto,
   assignNoteToFolder,
+  AGENT_LITE_NOTES_CHANGED_EVENT,
   bootstrapApp,
   carpeDiemSidecarStatus,
   checkRecordingSourceReadiness,
@@ -533,6 +534,18 @@ export function MobileApp() {
     const payload = await bootstrapApp();
     dispatch({ type: "bootstrapLoaded", payload });
   }, []);
+
+  // The chat assistant can now write notes. Without this, a note it just
+  // created stays invisible until the user pulls to refresh, which reads as
+  // the tool having failed.
+  useEffect(() => {
+    const unlisten = listen(AGENT_LITE_NOTES_CHANGED_EVENT, () => {
+      void handleRefreshNotes().catch(() => undefined);
+    });
+    return () => {
+      void unlisten.then((stop) => stop()).catch(() => undefined);
+    };
+  }, [handleRefreshNotes]);
 
   const handleCreateFolder = useCallback(async (name: string) => {
     try {
