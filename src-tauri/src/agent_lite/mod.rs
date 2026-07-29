@@ -11,7 +11,8 @@
 //! - `read_note`         — one note in full, note body plus transcript;
 //! - `list_recent_notes` — the newest notes, for questions about a period;
 //! - `search_memories`   — hybrid recall over remembered facts (memory on only);
-//! - `web_search`        — the June API `/v1/web/search` passthrough.
+//! - `web_search`        — the June API `/v1/web/search` passthrough;
+//! - `fetch_page`        — `/v1/web/fetch`, the text of one page.
 //!
 //! Writing:
 //! - `create_note`, `append_to_note` — the assistant can put something in the
@@ -50,7 +51,7 @@ pub const AGENT_LITE_DELTA_EVENT: &str = "agent-lite://delta";
 const MAX_TOOL_ITERATIONS: usize = 8;
 const SYSTEM_PROMPT: &str = "You are Sub Rosa's assistant on the user's device, and you can both read and write the user's notes.
 
-Finding things: search_notes takes a short keyword query and returns a window around each match, with note ids. list_recent_notes answers questions about a period rather than a keyword. Neither gives you a note's full text: when the question is about what a note actually says (summarising it, listing its decisions, quoting it), call read_note with the id. Prefer looking in the notes before answering anything about the user's meetings, decisions, or plans. Call web_search when the question needs current public information.
+Finding things: search_notes takes a short keyword query and returns a window around each match, with note ids. list_recent_notes answers questions about a period rather than a keyword. Neither gives you a note's full text: when the question is about what a note actually says (summarising it, listing its decisions, quoting it), call read_note with the id. Prefer looking in the notes before answering anything about the user's meetings, decisions, or plans. Call web_search when the question needs current or public information, then fetch_page on the most promising result when the snippets do not settle it. Cite the pages you used by name.
 
 Acting: create_note when the user asks you to write something down or save a summary, append_to_note to add to an existing one, remember for a lasting preference or a fact they ask you to keep. Never use a write tool to answer a question, and never write without being asked.
 
@@ -61,7 +62,7 @@ Answer in the user's language, concisely, in plain prose or simple markdown. If 
 pub struct AgentLiteStatusDto {
     pub task_id: String,
     /// "thinking" | "searching-notes" | "searching-web" | "searching-memory"
-    /// | "reading-note" | "writing-note" | "remembering"
+    /// | "reading-note" | "writing-note" | "remembering" | "reading-page"
     pub stage: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
@@ -457,6 +458,81 @@ async fn run_turn(
     ))
 }
 
+/// How many web results to ask for. The upstream snippets run to a couple of
+/// thousand characters each, so this is a context budget, not a preference.
+const WEB_SEARCH_RESULTS: u32 = 5;
+/// Per-result snippet budget after cleaning.
+const WEB_SNIPPET_CHARS: usize = 400;
+/// A fetched page is the one tool output worth a large slice of context.
+const WEB_PAGE_CHARS: usize = 12_000;
+
+/// Strip the markup the search provider highlights matches with, collapse
+/// whitespace, and drop the duplicate paragraph it tends to append.
+fn clean_snippet(raw: &str) -> String {
+    let mut text = String::with_capacity(raw.len());
+    let mut in_tag = false;
+    for ch in raw.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => text.push(ch),
+            _ => {}
+        }
+    }
+    // The provider repeats the matched passage after a blank line; the second
+    // copy is pure context cost.
+    let first = text
+        .split("\n\n")
+        .find(|part| !part.trim().is_empty())
+        .unwrap_or(&text);
+    let collapsed = first.split_whitespace().collect::<Vec<_>>().join(" ");
+    collapsed.chars().take(WEB_SNIPPET_CHARS).collect()
+}
+
+/// Turn the web handler's envelope into the smallest thing a model can cite
+/// from: title, url, date, and a trimmed snippet.
+///
+/// This used to forward the raw body truncated to 6000 characters. With five
+/// results at ~2000 characters of marked-up, duplicated snippet each, that cut
+/// the JSON mid-string: the model saw a broken fragment and silently lost most
+/// of the results.
+fn summarize_web_results(body: &[u8]) -> String {
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return "The web search returned an unreadable response.".to_string();
+    };
+    let results = value
+        .pointer("/data/results")
+        .and_then(serde_json::Value::as_array);
+    let Some(results) = results else {
+        return "The web search returned no results.".to_string();
+    };
+    if results.is_empty() {
+        return "The web search returned no results.".to_string();
+    }
+    let items: Vec<serde_json::Value> = results
+        .iter()
+        .map(|result| {
+            let mut item = serde_json::json!({
+                "title": result.get("title").and_then(serde_json::Value::as_str).unwrap_or(""),
+                "url": result.get("url").and_then(serde_json::Value::as_str).unwrap_or(""),
+                "snippet": clean_snippet(
+                    result.get("snippet").and_then(serde_json::Value::as_str).unwrap_or(""),
+                ),
+            });
+            if let Some(published) = result
+                .get("publishedAt")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.is_empty())
+            {
+                item["publishedAt"] = serde_json::json!(published);
+            }
+            item
+        })
+        .collect();
+    serde_json::to_string(&items)
+        .unwrap_or_else(|_| "The web search failed to serialize.".to_string())
+}
+
 /// Read a string argument, treating blank as absent — models routinely pass
 /// `""` for a field they mean to omit.
 fn arg_str(args: &serde_json::Value, key: &str) -> Option<String> {
@@ -678,18 +754,56 @@ async fn execute_tool(
             // correct here — agent-lite does not retry the tool.
             let body = serde_json::json!({
                 "query": query,
-                "limit": 5,
+                "limit": WEB_SEARCH_RESULTS,
                 "requestId": uuid::Uuid::new_v4().to_string(),
             });
             match june_api::forward_web_request("/v1/web/search", &body).await {
                 Ok(response) if (200..300).contains(&response.status) => {
-                    String::from_utf8_lossy(&response.body)
-                        .chars()
-                        .take(6000)
-                        .collect()
+                    summarize_web_results(&response.body)
                 }
                 Ok(response) => format!("Web search failed with status {}.", response.status),
                 Err(error) => format!("Web search failed: {}", error.message),
+            }
+        }
+        // Searching without being able to open anything is half a capability:
+        // the snippets are a few sentences, so anything that needs the actual
+        // page (a doc, an article, a changelog) was previously unreachable.
+        "fetch_page" => {
+            let Some(url) = arg_str(args, "url") else {
+                return "fetch_page needs a url from a web_search result.".to_string();
+            };
+            emit_status(app, task_id, "reading-page", Some(url.clone()));
+            let body = serde_json::json!({
+                "url": url,
+                "requestId": uuid::Uuid::new_v4().to_string(),
+            });
+            match june_api::forward_web_request("/v1/web/fetch", &body).await {
+                Ok(response) if (200..300).contains(&response.status) => {
+                    let content = serde_json::from_slice::<serde_json::Value>(&response.body)
+                        .ok()
+                        .and_then(|value| {
+                            value
+                                .pointer("/data/content")
+                                .and_then(serde_json::Value::as_str)
+                                .map(str::to_string)
+                        });
+                    match content {
+                        Some(text) if !text.trim().is_empty() => truncate(text, WEB_PAGE_CHARS),
+                        // A page that blocks automated access answers 200 with
+                        // nothing useful; say so rather than returning "".
+                        _ => "That page returned no readable text.".to_string(),
+                    }
+                }
+                // The handler answers 400 for a URL the upstream refuses (a
+                // site that blocks scraping); that is about this URL, not a
+                // broken tool, so the model can try another result.
+                Ok(response) if response.status == 400 => {
+                    "That page could not be read. Try another result.".to_string()
+                }
+                Ok(response) => {
+                    format!("Fetching the page failed with status {}.", response.status)
+                }
+                Err(error) => format!("Fetching the page failed: {}", error.message),
             }
         }
         // `search_notes` answers with a keyword window, which is enough to find
@@ -868,6 +982,23 @@ fn tool_definitions(memory_enabled: bool) -> serde_json::Value {
             }
         }),
     ];
+    tools.push(serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": "fetch_page",
+            "description": "Open a web page and read its text. Use it after web_search when the snippets do not actually answer the question: the snippet is a couple of sentences, the page is the source. Also use it when the user gives you a URL.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Full URL, normally taken from a web_search result."
+                    }
+                },
+                "required": ["url"]
+            }
+        }
+    }));
     tools.push(serde_json::json!({
         "type": "function",
         "function": {
@@ -1196,6 +1327,51 @@ mod tests {
             "tool_calls": [{ "index": 0, "id": "a", "function": { "arguments": "{}" } }]
         }));
         assert!(reply.into_message().get("tool_calls").is_none());
+    }
+
+    #[test]
+    fn web_snippets_lose_their_markup_and_duplicate_paragraph() {
+        // Exactly the shape the provider returns: highlight tags, then the
+        // same passage repeated after a blank line.
+        let raw = "Lisbon, its <strong>capital</strong>, is the largest city.\n\nLisbon, its capital, is the largest city.";
+        let cleaned = clean_snippet(raw);
+        assert_eq!(cleaned, "Lisbon, its capital, is the largest city.");
+        assert!(!cleaned.contains('<'));
+    }
+
+    #[test]
+    fn web_snippets_are_capped_so_five_results_still_fit() {
+        let cleaned = clean_snippet(&"word ".repeat(500));
+        assert!(cleaned.chars().count() <= WEB_SNIPPET_CHARS);
+    }
+
+    #[test]
+    fn every_web_result_survives_the_shaping() {
+        // The regression this replaces: the raw body was forwarded truncated
+        // at 6000 chars, which cut the JSON mid-result and silently dropped
+        // most of what was found. Long snippets must not cost a result.
+        let long = "x".repeat(3000);
+        let body = serde_json::json!({
+            "data": {
+                "results": (0..5).map(|index| serde_json::json!({
+                    "title": format!("Result {index}"),
+                    "url": format!("https://example.com/{index}"),
+                    "snippet": long,
+                })).collect::<Vec<_>>()
+            }
+        })
+        .to_string();
+        let shaped = summarize_web_results(body.as_bytes());
+        let items: Vec<serde_json::Value> = serde_json::from_str(&shaped).expect("valid json");
+        assert_eq!(items.len(), 5);
+        assert_eq!(items[4]["url"], "https://example.com/4");
+    }
+
+    #[test]
+    fn an_empty_or_unreadable_web_response_says_so() {
+        assert!(summarize_web_results(b"not json").contains("unreadable"));
+        let empty = serde_json::json!({ "data": { "results": [] } }).to_string();
+        assert!(summarize_web_results(empty.as_bytes()).contains("no results"));
     }
 
     #[test]
