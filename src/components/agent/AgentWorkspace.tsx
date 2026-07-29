@@ -422,6 +422,8 @@ export function AgentWorkspace({
   const hydrationRequestRef = useRef<string>();
   const submissionOwnerRef = useRef<string>();
   const [submitting, setSubmitting] = useState(false);
+  const [stoppingRunId, setStoppingRunId] = useState<string>();
+  const stoppingRunIdRef = useRef<string>();
   const [error, setError] = useState<string>();
   const [approvalSubmitting, setApprovalSubmitting] = useState<
     Partial<Record<string, "once" | "session" | "always" | "deny">>
@@ -1810,11 +1812,30 @@ export function AgentWorkspace({
   }
 
   async function stop() {
-    if (!projection.run) return;
+    const runId = projection.run?.id;
+    if (!runId || stoppingRunIdRef.current === runId) return;
+    stoppingRunIdRef.current = runId;
+    setStoppingRunId(runId);
+    let cancellationFailed = false;
     try {
-      await agentRuntimeBindings.cancelRun(projection.run.id);
+      await agentRuntimeBindings.cancelRun(runId);
     } catch (cause) {
+      cancellationFailed = true;
       setError(messageFromError(cause));
+    } finally {
+      const sessionId = selectedIdRef.current;
+      try {
+        if (sessionId) {
+          await Promise.all([hydrate(sessionId), refreshSessions()]);
+        }
+      } catch (cause) {
+        if (!cancellationFailed) setError(messageFromError(cause));
+      } finally {
+        if (stoppingRunIdRef.current === runId) {
+          stoppingRunIdRef.current = undefined;
+          setStoppingRunId(undefined);
+        }
+      }
     }
   }
 
@@ -2194,6 +2215,8 @@ export function AgentWorkspace({
       onSubmit={homeMode ? submitHomeMessage : submit}
       onStop={stop}
       running={running}
+      waiting={waiting}
+      stopping={stoppingRunId === projection.run?.id}
       submitting={submitting}
       disabledReason={textActionsDisabledReason}
       notice={!heroMode ? error : undefined}
@@ -2720,6 +2743,8 @@ function AgentComposer({
   onSubmit,
   onStop,
   running,
+  waiting,
+  stopping,
   submitting,
   disabledReason,
   notice,
@@ -2748,6 +2773,8 @@ function AgentComposer({
   onSubmit: (event?: FormEvent) => Promise<void>;
   onStop: () => Promise<void>;
   running: boolean;
+  waiting: boolean;
+  stopping: boolean;
   submitting: boolean;
   disabledReason?: string;
   notice?: string;
@@ -2991,11 +3018,22 @@ function AgentComposer({
                   type="button"
                   className="agent-composer-stop"
                   aria-label="Stop June"
+                  disabled={stopping}
                   onClick={() => void onStop()}
                 >
                   <IconStop size={16} />
                 </button>
               </>
+            ) : waiting ? (
+              <button
+                type="button"
+                className="agent-composer-stop"
+                aria-label="Stop June"
+                disabled={stopping}
+                onClick={() => void onStop()}
+              >
+                <IconStop size={16} />
+              </button>
             ) : (
               <button
                 type="submit"

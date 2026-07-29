@@ -664,6 +664,23 @@ pub async fn cancel_agent_run(
 ) -> Result<(), AppError> {
     let repository = repository(&app).await?;
     let run = repository.get_run(&run_id).await?;
+    if run.status == "waiting_for_user" {
+        let pending_interruption_ids = repository.pending_interruption_ids(&run.id).await?;
+        let mut _resolution_guards = Vec::with_capacity(pending_interruption_ids.len());
+        for interruption_id in pending_interruption_ids {
+            _resolution_guards.push(host.lock_interruption_resolution(&interruption_id).await);
+        }
+        let Some(cancelled_run) = repository.cancel_waiting_run(&run.id).await? else {
+            return Err(AppError::new(
+                "agent_waiting_cancel_conflict",
+                "This request is already resuming. Wait for June to continue before stopping it.",
+            ));
+        };
+        crate::companion::cancel_computer_use_approvals_for_session(&app, &run.session_id);
+        host.cancel_run_streams(&run.id).await;
+        super::host::emit_persisted_run_cancelled(&app, &cancelled_run)?;
+        return Ok(());
+    }
     host.request("run.cancel", &run.session_id, &run.id, json!({}))
         .await?;
     host.cancel_run_streams(&run.id).await;
@@ -1015,7 +1032,7 @@ async fn resolve_agent_interruption_inner(
     if auto_run && resolved_model.is_none() {
         return Err(AppError::new(
             "agent_auto_resume_model_missing",
-            "This approval cannot safely resume because its Auto model was not recorded. Retry the agent run.",
+            "This older Auto run cannot resume because its model was not recorded. Stop the run to continue.",
         ));
     }
     let enabled_skill_ids = repository.run_enabled_skills(&run.id).await?;
