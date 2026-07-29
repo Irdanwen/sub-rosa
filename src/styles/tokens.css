@@ -214,7 +214,15 @@
    * UI recolors. The logo art (mark + app icon) stays this fixed rose. */
   --brand: #936862;
 
-  --record: oklch(60% 0.22 27);
+  /* Recording red. It has to read as "record/stop" at a glance, so it stays
+   * red — but at chroma 0.22 it was a fire-engine red sitting in an otherwise
+   * warm, desaturated palette, and it became the loudest thing in the app.
+   * Pulled toward the brand's warmth (hue 28) and down to chroma 0.16: still
+   * unmistakably the record colour, no longer from another design language. */
+  --record: oklch(55% 0.16 28);
+  /* Always paired as a filled surface. `--accent-foreground` is near-black,
+   * which is what put a black microphone on a red disc. */
+  --record-foreground: oklch(99% 0 none);
   /* Soft dusty tint of the brand, for quiet button backdrops and hovers
    * (e.g. the session-view quick-action buttons). Derived from --brand so it
    * tracks the selected accent without touching any foreground/text color. */

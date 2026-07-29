@@ -58,7 +58,7 @@ function statusLabel(status: NoteListItemDto["processingStatus"]) {
   }
 }
 
-function formatNoteTime(iso: string): string {
+export function formatNoteTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   const now = new Date();

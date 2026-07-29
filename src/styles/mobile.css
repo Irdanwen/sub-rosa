@@ -430,7 +430,7 @@
   border: none;
   border-radius: var(--r-pill);
   background: var(--record, var(--accent));
-  color: var(--accent-foreground);
+  color: var(--record-foreground);
   font-size: var(--fs-md);
   font-weight: var(--fw-medium);
   box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
@@ -782,7 +782,7 @@
   border: none;
   border-radius: 50%;
   background: var(--record, var(--accent));
-  color: var(--accent-foreground);
+  color: var(--record-foreground);
 }
 
 /* Voice-level halo. `--dictation-level` (0-1, set inline while recording)
@@ -881,32 +881,49 @@
   font-size: var(--fs-sm);
 }
 
-.mobile-dictation-history {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
+/* One past dictation, inside a grouped card and behind a SwipeableRow. Delete
+ * used to be a permanent trash icon on every row, which is both louder than
+ * the content and a different idiom from the notes list. The background is
+ * opaque because the swipe drawer slides under it. */
 .mobile-dictation-history-item {
   display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  border-bottom: 1px solid var(--border-subtle);
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  border: none;
+  background: var(--card);
+  color: var(--foreground);
+  text-align: left;
+}
+
+.mobile-dictation-history-item:active {
+  background: var(--muted);
 }
 
 .mobile-dictation-history-text {
-  flex: 1;
   min-width: 0;
-  border: none;
-  background: none;
-  color: var(--foreground);
-  text-align: left;
-  padding: var(--sp-3) 0;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.mobile-dictation-history-time {
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+
+/* Same inset hairline the settings groups use; drawn here because the row's
+ * own opaque background covers the group's. */
+.mobile-settings-group-body > .swipe-row + .swipe-row .mobile-dictation-history-item {
+  background-image: linear-gradient(var(--border-subtle), var(--border-subtle));
+  background-repeat: no-repeat;
+  background-position: var(--sp-4) 0;
+  background-size: calc(100% - var(--sp-4)) 1px;
 }
 
 /* --- Chat (agent-lite) ------------------------------------------------------- */
@@ -1642,12 +1659,65 @@
   width: 100%;
 }
 
+/* Label left, switch at the trailing edge — the shape Settings uses, so a
+ * toggle reads the same wherever it appears. */
 .mobile-toggle-row {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
+  justify-content: space-between;
+  gap: var(--sp-4);
   min-height: 44px;
   font-size: var(--fs-md);
+}
+
+.mobile-toggle-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mobile-toggle-hint {
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+/* Progressive disclosure for the generate forms. Collapsed, the screen is
+ * model, prompt, aspect ratio, Generate — everything you need for the common
+ * case, with the primary action above the fold. */
+.mobile-studio-more {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.mobile-studio-more-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  align-self: flex-start;
+  min-height: 36px;
+  padding: 0 var(--sp-3) 0 0;
+  border: none;
+  background: none;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.mobile-studio-more-trigger > svg {
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.mobile-studio-more[data-open="true"] .mobile-studio-more-trigger > svg {
+  transform: rotate(180deg);
+}
+
+.mobile-studio-more-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
 }
 
 /* The seedance consent label wraps to two lines, so pin the checkbox to the
@@ -1658,8 +1728,39 @@
   color: var(--muted-foreground);
 }
 
-.mobile-studio-consent input {
+.mobile-studio-consent {
+  justify-content: flex-start;
+  gap: var(--sp-3);
+}
+
+.mobile-studio-consent .switch {
   margin-top: 2px;
+}
+
+/* Openers on an empty chat: quiet, tappable, and stacked so a long one wraps
+ * rather than being clipped by a row. */
+.mobile-chat-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: 100%;
+  max-width: 320px;
+  margin-top: var(--sp-6);
+}
+
+.mobile-chat-suggestion {
+  min-height: 44px;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  text-align: center;
+}
+
+.mobile-chat-suggestion:active {
+  background: var(--muted);
 }
 
 /* --- Simple markdown (chat bubbles) --------------------------------------------- */
