@@ -24,6 +24,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Sub Rosa records microphone audio locally so it can transcribe and generate your notes.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Sub Rosa opens the camera when you take a photo to attach to a chat or to a Studio generation.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
