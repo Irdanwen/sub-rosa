@@ -110,3 +110,80 @@ delta shape) from the array position when the buffered message omits it.
 Validated against the live `/router` rail: a `stream: true` + `tools` request
 through the sidecar now yields a tool-call delta chunk, `finish_reason:
 "tool_calls"`, a usage frame, and `[DONE]`.
+
+## Addendum (2026-07-29): withhold `stream_options` from the `/router` rail
+
+The two fixes above made a `/router` turn *parse*. A third failure mode kept it
+from being *sent*: the sidecar injects `stream_options: {include_usage: true}`
+on every streamed chat completion (to obtain the usage frame for metering), and
+`/router` rejects that field with a hard **400** whenever arbitration resolves to
+an external market. The rail drops `stream: true` from the body it forwards but
+keeps `stream_options`, so the market's validator rejects a request that was
+valid OpenAI when we sent it. `retry::is_retryable_status` correctly classes 400
+as deterministic, so the sidecar did not replay it — the turn died as a `502
+upstream_provider_failed`, and the user saw "the model provider could not answer".
+
+Measured on the live rail, n=10 per cell, identical bodies:
+`llama-3.3-70b` 0/10 on `/router` vs 10/10 on `/v1`; `zai-org-glm-5-2` 2/10 vs
+10/10; `claude-opus-5` and `openai-gpt-56-terra` 10/10 on both. Every failure
+carried `X-Carpe-Route-Market: none`, every success `carpe`. Removing the single
+field took `llama-3.3-70b` from 0/10 to 10/10. The rate therefore tracks how
+often price arbitration picks an external market for a given model, which is why
+it presented as intermittent, model-dependent "provider errors" rather than an
+outright outage. Carpe Diem's documented guarantee that "a request never fails
+because an external market does" does not hold for this 4xx: there is no
+fallback to Carpe, and the failed routes are not counted in `/stats/router`.
+
+**Decision.** The sidecar sends `stream_options` only when it has reason to
+believe the upstream will actually stream:
+
+1. **Seeded from the rail.** `UpstreamConfig::is_router_rail()` (a sibling of the
+   existing `catalog_base_url()` rail derivation) initializes a per-`VeniceChat`
+   `stream_options_supported` flag to `false` on a `/router` base. The field buys
+   nothing there anyway — the rail never returns SSE (0/8 models tested), so
+   there is no usage frame to include, and metering reads usage off the buffered
+   body via `token_usage_from_value` exactly as before.
+   **Withholding means stripping, not merely not injecting.** Hermes sets
+   `stream_options: {include_usage: true}` on every streamed turn of its own
+   accord (`chat_completion_helpers.py`; it omits it only for native Gemini
+   bases), and the sidecar forwards the client body, so skipping our injection
+   alone would still have shipped the client's copy and kept failing. When the
+   flag is clear, the field is removed from the outgoing body whoever wrote it.
+2. **Self-healing for everything else, decided by evidence rather than by
+   wording.** On any 400, if the outgoing body still carries `stream_options`,
+   the field is withdrawn and the turn replayed once — no attempt and no backoff
+   spent, since nothing was transient, and bounded by a per-call flag so it
+   cannot loop. The persistent lesson is recorded **only if that replay
+   succeeds**: becoming acceptable the moment the field disappeared is the proof
+   that the upstream refuses it.
+
+   We deliberately do **not** parse the rejection text, which was the first
+   design. These 400s echo the offending request back (Carpe Diem's include an
+   `input` with the full body), so matching on the field name would also fire on
+   an unrelated 400 — a bad model id, a context-length overflow — whose echo
+   happens to contain it, and would then cost every later turn its usage frame
+   for nothing. That failure would be silent: metering degrades to zero rather
+   than erroring, and it bills for real on upstream June, whose base is always
+   `/v1`. Trading a wasted round trip on an unrelated 400 (bounded: one, and only
+   for streamed turns) for the impossibility of a false positive is the right way
+   round.
+
+Rejected alternatives: (a) *drop `stream_options` unconditionally* — `/v1`
+streams for real, and without the field its SSE carries no usage frame, so
+metering would break on the rail that works; (b) *treat the 400 as retryable* —
+replaying an identical body against a deterministic rejection just burns the
+attempt budget; (c) *pin the app to `/v1`* — already rejected in this ADR, and
+the point is parity between rails, not retreat from one.
+
+The flag lives on `VeniceChat`, which `serve()` builds once and shares as an
+`Arc` for the process, so the lesson genuinely outlives a turn.
+
+Validated end to end through the real sidecar against the live rail with the body
+Hermes actually sends (`stream_options` included by the client): **36/36** turns
+across both rails and `llama-3.3-70b`, `zai-org-glm-5-2`, `claude-opus-5` — the
+first two were 0/10 and 2/10 on `/router` before. Tool calls and
+`reasoning_content` intact, usage frame present in the synthesized stream, `/v1`
+unchanged. The upstream defects are reported separately in
+[`docs/reports/2026-07-29-carpe-diem-router-rail.md`](../reports/2026-07-29-carpe-diem-router-rail.md);
+this addendum is the client-side compensation, which stands whether or not they
+are fixed.

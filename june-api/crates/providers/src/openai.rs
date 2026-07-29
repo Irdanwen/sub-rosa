@@ -97,20 +97,17 @@ impl OpenAiTranscriber {
             .map_err(|error| {
                 let retryable = retry::is_retryable_transport_error(&error);
                 tracing::error!(%error, %url, model = %model_id, retryable, "openai: transport error");
-                UpstreamAttemptError {
-                    error: DomainError::UpstreamProvider,
-                    retryable,
-                }
+                UpstreamAttemptError::new(DomainError::UpstreamProvider, retryable)
             })?;
         let status = response.status();
         if !status.is_success() {
             let retryable = retry::is_retryable_status(status);
             let body = response.text().await.unwrap_or_default();
             tracing::error!(%status, %url, model = %model_id, body_bytes = body.len(), retryable, "openai: non-success response");
-            return Err(UpstreamAttemptError {
-                error: retry::error_for_status(status),
+            return Err(UpstreamAttemptError::new(
+                retry::error_for_status(status),
                 retryable,
-            });
+            ));
         }
         let parsed = response
             .json::<TranscriptionWireResponse>()

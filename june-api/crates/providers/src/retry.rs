@@ -25,14 +25,24 @@ pub(crate) const AGENT_CHAT_BACKOFF: Duration = Duration::from_secs(1);
 pub(crate) struct UpstreamAttemptError {
     pub(crate) error: DomainError,
     pub(crate) retryable: bool,
+    /// The upstream answered 400. Deterministic, so replaying the same body is
+    /// pointless — but replaying a *different* body is not, which is what the
+    /// agent chat path does when it can drop a field the upstream may be
+    /// refusing. Nothing else reads this.
+    pub(crate) bad_request: bool,
 }
 
 impl UpstreamAttemptError {
-    pub(crate) fn fatal(error: DomainError) -> Self {
+    pub(crate) fn new(error: DomainError, retryable: bool) -> Self {
         Self {
             error,
-            retryable: false,
+            retryable,
+            bad_request: false,
         }
+    }
+
+    pub(crate) fn fatal(error: DomainError) -> Self {
+        Self::new(error, false)
     }
 }
 

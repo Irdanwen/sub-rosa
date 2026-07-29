@@ -232,20 +232,17 @@ impl VeniceTranscriber {
             .map_err(|error| {
                 let retryable = retry::is_retryable_transport_error(&error);
                 tracing::error!(%error, %url, model = %model_id, retryable, "venice: transport error");
-                UpstreamAttemptError {
-                    error: DomainError::UpstreamProvider,
-                    retryable,
-                }
+                UpstreamAttemptError::new(DomainError::UpstreamProvider, retryable)
             })?;
         let status = response.status();
         if !status.is_success() {
             let retryable = retry::is_retryable_status(status);
             let body = response.text().await.unwrap_or_default();
             tracing::error!(%status, %url, model = %model_id, body_bytes = body.len(), retryable, "venice: non-success response");
-            return Err(UpstreamAttemptError {
-                error: retry::error_for_status(status),
+            return Err(UpstreamAttemptError::new(
+                retry::error_for_status(status),
                 retryable,
-            });
+            ));
         }
         let parsed = response
             .json::<TranscriptionWireResponse>()
@@ -427,6 +424,12 @@ struct VeniceChat {
     http: reqwest::Client,
     api_key: String,
     base_url: String,
+    /// Whether this upstream accepts `stream_options` on a streamed chat
+    /// completion. Seeded from the rail (Carpe Diem's `/router` never streams,
+    /// so it has no usage frame to ask for) and cleared for the process the
+    /// first time an upstream rejects the field, so one wasted round trip
+    /// teaches every later turn (ADR-0015, 2026-07-29 addendum).
+    stream_options_supported: std::sync::atomic::AtomicBool,
 }
 
 impl VeniceChat {
@@ -435,6 +438,7 @@ impl VeniceChat {
             http,
             api_key: config.api_key.clone(),
             base_url: config.base_url.trim_end_matches('/').to_string(),
+            stream_options_supported: std::sync::atomic::AtomicBool::new(!config.is_router_rail()),
         }
     }
 
@@ -485,20 +489,17 @@ impl VeniceChat {
             .map_err(|error| {
                 let retryable = retry::is_retryable_transport_error(&error);
                 tracing::error!(%error, %url, model = %body.model, retryable, "venice: chat transport error");
-                UpstreamAttemptError {
-                    error: DomainError::UpstreamProvider,
-                    retryable,
-                }
+                UpstreamAttemptError::new(DomainError::UpstreamProvider, retryable)
             })?;
         let status = response.status();
         if !status.is_success() {
             let retryable = retry::is_retryable_status(status);
             let body_text = response.text().await.unwrap_or_default();
             tracing::error!(%status, %url, model = %body.model, body_bytes = body_text.len(), retryable, "venice: chat non-success response");
-            return Err(UpstreamAttemptError {
-                error: retry::error_for_status(status),
+            return Err(UpstreamAttemptError::new(
+                retry::error_for_status(status),
                 retryable,
-            });
+            ));
         }
         response
             .json::<ChatCompletionResponse>()
@@ -526,17 +527,30 @@ impl VeniceChat {
         );
         inject_safety_context(object);
         if object.get("stream").and_then(serde_json::Value::as_bool) == Some(true) {
-            let stream_options = object
-                .entry("stream_options")
-                .or_insert_with(|| serde_json::json!({}));
-            // Replace a non-object `stream_options` instead of leaving it:
-            // without `include_usage` the stream carries no usage frame, so
-            // metering fails after the upstream call has already been made.
-            if !stream_options.is_object() {
-                *stream_options = serde_json::json!({});
-            }
-            if let Some(options) = stream_options.as_object_mut() {
-                options.insert("include_usage".to_string(), serde_json::Value::Bool(true));
+            if self
+                .stream_options_supported
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
+                let stream_options = object
+                    .entry("stream_options")
+                    .or_insert_with(|| serde_json::json!({}));
+                // Replace a non-object `stream_options` instead of leaving it:
+                // without `include_usage` the stream carries no usage frame, so
+                // metering fails after the upstream call has already been made.
+                if !stream_options.is_object() {
+                    *stream_options = serde_json::json!({});
+                }
+                if let Some(options) = stream_options.as_object_mut() {
+                    options.insert("include_usage".to_string(), serde_json::Value::Bool(true));
+                }
+            } else {
+                // Withdrawing the field means withdrawing the client's copy too,
+                // not just skipping our own injection: Hermes sends
+                // `stream_options: {include_usage: true}` on every streamed turn
+                // of its own accord, and the upstream rejects it whoever wrote
+                // it. Metering does not suffer — usage comes off the buffered
+                // body this upstream returns instead of a stream.
+                object.remove("stream_options");
             }
         }
         let url = format!("{}/chat/completions", self.base_url);
@@ -548,12 +562,51 @@ impl VeniceChat {
         // success. A body-read failure after a 200 is NOT replayed — that
         // generation already ran (and billed) upstream.
         let mut backoff = retry::AGENT_CHAT_BACKOFF;
-        for attempt in 0..retry::AGENT_CHAT_ATTEMPTS {
+        let mut attempt = 0;
+        let mut withdrew_stream_options = false;
+        while attempt < retry::AGENT_CHAT_ATTEMPTS {
             let error = match self.complete_raw_once(&url, &body, api_key).await {
-                Ok(completion) => return Ok(completion),
+                Ok(completion) => {
+                    if withdrew_stream_options {
+                        // The turn became acceptable the moment the field was
+                        // gone. THAT is the evidence this upstream refuses it —
+                        // not the wording of the rejection, which we deliberately
+                        // do not parse: these 400s echo the request back, so a
+                        // body-text match would also fire on an unrelated 400
+                        // (bad model, context length) whose echo happens to carry
+                        // the field, and would cost every later turn its usage
+                        // frame for nothing. Only a successful replay persists.
+                        self.stream_options_supported
+                            .store(false, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    return Ok(completion);
+                }
                 Err(error) => error,
             };
-            if error.retryable && attempt + 1 < retry::AGENT_CHAT_ATTEMPTS {
+            // A 400 is deterministic, so replaying the same body is pointless —
+            // but a body minus `stream_options` is a different request, and that
+            // field is the one thing we add that an upstream may refuse (Carpe
+            // Diem's `/router` does, once arbitration lands on an external
+            // market). Withdraw it and replay once: nothing here was transient,
+            // so this spends neither an attempt nor a backoff. `remove` returning
+            // `None` means there was nothing to withdraw, so no replay.
+            if error.bad_request && !withdrew_stream_options {
+                let withdrawn = body
+                    .as_object_mut()
+                    .and_then(|object| object.remove("stream_options"))
+                    .is_some();
+                if withdrawn {
+                    withdrew_stream_options = true;
+                    tracing::warn!(
+                        %url,
+                        model = %model.0,
+                        "venice: upstream rejected the request, replaying without stream_options"
+                    );
+                    continue;
+                }
+            }
+            attempt += 1;
+            if error.retryable && attempt < retry::AGENT_CHAT_ATTEMPTS {
                 tracing::warn!(
                     %url,
                     model = %model.0,
@@ -592,10 +645,7 @@ impl VeniceChat {
             .map_err(|error| {
                 let retryable = retry::is_retryable_transport_error(&error);
                 tracing::error!(%error, %url, model, retryable, "venice: agent chat transport error");
-                UpstreamAttemptError {
-                    error: DomainError::UpstreamProvider,
-                    retryable,
-                }
+                UpstreamAttemptError::new(DomainError::UpstreamProvider, retryable)
             })?;
         let status = response.status();
         let content_type = response
@@ -607,6 +657,7 @@ impl VeniceChat {
         if !status.is_success() {
             let retryable = retry::is_retryable_status(status);
             let body = response.bytes().await.unwrap_or_default();
+            let bad_request = status == reqwest::StatusCode::BAD_REQUEST;
             tracing::error!(
                 %status,
                 %url,
@@ -618,6 +669,7 @@ impl VeniceChat {
             return Err(UpstreamAttemptError {
                 error: retry::error_for_status(status),
                 retryable,
+                bad_request,
             });
         }
         let body = response.bytes().await.map_err(|error| {
@@ -1835,6 +1887,171 @@ mod tests {
 
         assert_eq!(completion.usage.prompt_tokens, 1);
         assert_eq!(completion.usage.completion_tokens, 2);
+    }
+
+    #[tokio::test]
+    async fn agent_chat_withholds_stream_options_on_the_router_rail() {
+        // The `/router` rail answers buffered JSON even for `stream: true`, so
+        // there is no usage frame to ask for — and asking anyway is a hard 400
+        // once arbitration lands on an external market. Metering still works:
+        // usage is read off the buffered body (ADR-0015, 2026-07-29 addendum).
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/router/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "choices": [{ "message": { "content": "hi" }, "finish_reason": "stop" }],
+                "usage": { "prompt_tokens": 7, "completion_tokens": 3 }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let agent = VeniceAgentChat::from_config(
+            http::default_client(),
+            &UpstreamConfig {
+                api_key: "cdm_key".to_string(),
+                base_url: format!("{}/router", server.uri()),
+            },
+        );
+
+        let completion = agent
+            .complete(AgentChatRequest {
+                body: json!({
+                    "model": "text-model",
+                    "stream": true,
+                    // Hermes sends this itself on every streamed turn, so
+                    // withholding our injection is not enough — the client's
+                    // own copy has to go too.
+                    "stream_options": { "include_usage": true },
+                    "messages": [{ "role": "user", "content": "hi" }],
+                }),
+                model: ModelId("text-model".to_string()),
+                provider_credentials: ProviderCredentials::default(),
+            })
+            .await
+            .expect("completion succeeds");
+
+        // Metering survives the withdrawal.
+        assert_eq!(completion.usage.prompt_tokens, 7);
+        assert_eq!(completion.usage.completion_tokens, 3);
+        let received = server.received_requests().await.unwrap_or_default();
+        let body = String::from_utf8_lossy(&received[0].body).to_string();
+        assert!(!body.contains("stream_options"), "body: {body}");
+        // The client still asked for a stream, so it still gets one.
+        assert_eq!(completion.content_type, EVENT_STREAM_CONTENT_TYPE);
+    }
+
+    #[tokio::test]
+    async fn agent_chat_replays_without_stream_options_when_upstream_rejects_them() {
+        // Safety net for any upstream (a market the router picks, a self-hosted
+        // gateway) that rejects the field on a `/v1`-shaped base: withdraw it
+        // and replay at once rather than surfacing a 502 the user cannot act on.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .and(body_string_contains("stream_options"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+                "error": "Value error, Stream options can only be defined when stream is true.",
+                "code": "UPSTREAM_ERROR"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "choices": [{ "message": { "content": "hi" }, "finish_reason": "stop" }],
+                "usage": { "prompt_tokens": 5, "completion_tokens": 1 }
+            })))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let agent = VeniceAgentChat::from_config(
+            http::default_client(),
+            &UpstreamConfig {
+                api_key: "venice_key".to_string(),
+                base_url: server.uri(),
+            },
+        );
+        let request = || AgentChatRequest {
+            body: json!({
+                "model": "text-model",
+                "stream": true,
+                "messages": [{ "role": "user", "content": "hi" }],
+            }),
+            model: ModelId("text-model".to_string()),
+            provider_credentials: ProviderCredentials::default(),
+        };
+
+        let completion = agent.complete(request()).await.expect("replay succeeds");
+        assert_eq!(completion.usage.prompt_tokens, 5);
+
+        // The downgrade is remembered: the next turn never sends the field
+        // again, so exactly one request in the whole run carried it.
+        agent
+            .complete(request())
+            .await
+            .expect("second turn succeeds without a wasted round trip");
+        let carried_options = server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .iter()
+            .filter(|request| String::from_utf8_lossy(&request.body).contains("stream_options"))
+            .count();
+        assert_eq!(carried_options, 1);
+    }
+
+    #[tokio::test]
+    async fn agent_chat_keeps_stream_options_when_withdrawing_them_does_not_help() {
+        // The counterpart to the test above, and the reason the downgrade is
+        // decided by a successful replay rather than by reading the 400: these
+        // rejections echo the request back, so an unrelated 400 (bad model,
+        // context length) can carry the field name in its body. That must not
+        // cost every later turn its usage frame — a replay that fails too leaves
+        // the upstream's capability exactly as it was.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+                // An echo of the offending request, `stream_options` and all —
+                // the shape Carpe Diem actually returns.
+                "error": "Invalid model id",
+                "input": { "model": "nope", "stream_options": { "include_usage": true } }
+            })))
+            .mount(&server)
+            .await;
+        let agent = VeniceAgentChat::from_config(
+            http::default_client(),
+            &UpstreamConfig {
+                api_key: "venice_key".to_string(),
+                base_url: server.uri(),
+            },
+        );
+        let request = || AgentChatRequest {
+            body: json!({
+                "model": "text-model",
+                "stream": true,
+                "messages": [{ "role": "user", "content": "hi" }],
+            }),
+            model: ModelId("text-model".to_string()),
+            provider_credentials: ProviderCredentials::default(),
+        };
+
+        agent
+            .complete(request())
+            .await
+            .expect_err("a 400 that outlives the withdrawal still fails");
+        agent.complete(request()).await.expect_err("still fails");
+
+        // Both turns asked for the usage frame: the first tried once with the
+        // field and once without (the one bounded replay), the second started
+        // over with it, because nothing ever proved the upstream refuses it.
+        let sent = server.received_requests().await.unwrap_or_default();
+        let with_options = sent
+            .iter()
+            .filter(|request| String::from_utf8_lossy(&request.body).contains("stream_options"))
+            .count();
+        assert_eq!(with_options, 2, "sent {} requests", sent.len());
     }
 
     #[tokio::test]

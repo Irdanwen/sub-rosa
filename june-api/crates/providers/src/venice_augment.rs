@@ -98,10 +98,7 @@ impl VeniceAugment {
             .map_err(|error| {
                 let retryable = retry::is_retryable_transport_error(&error);
                 tracing::error!(%error, url = %endpoint.url, retryable, "venice augment: transport error");
-                UpstreamAttemptError {
-                    error: DomainError::UpstreamProvider,
-                    retryable,
-                }
+                UpstreamAttemptError::new(DomainError::UpstreamProvider, retryable)
             })?;
         let status = response.status();
         if !status.is_success() {
@@ -119,10 +116,10 @@ impl VeniceAugment {
                     reason: endpoint.client_error_reason.to_string(),
                 }));
             }
-            return Err(UpstreamAttemptError {
-                error: retry::error_for_status(status),
+            return Err(UpstreamAttemptError::new(
+                retry::error_for_status(status),
                 retryable,
-            });
+            ));
         }
         response.json::<T>().await.map_err(|error| {
             // A body we can't parse means the experimental schema drifted (or

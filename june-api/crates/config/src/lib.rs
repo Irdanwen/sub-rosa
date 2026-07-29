@@ -342,6 +342,17 @@ impl UpstreamConfig {
             None => base.to_string(),
         }
     }
+
+    /// Whether `base_url` targets the best-price `/router` rail, which arbitrates
+    /// each request across markets instead of serving it from the operator's own
+    /// models. The rail answers a buffered `application/json` completion even when
+    /// the client asked for `stream: true`, so a streaming client gets no usage
+    /// frame to ask for — and a request that carries `stream_options` anyway is
+    /// rejected outright once arbitration lands on an external market (ADR-0015,
+    /// 2026-07-29 addendum). Callers use this to withhold `stream_options`.
+    pub fn is_router_rail(&self) -> bool {
+        self.base_url.trim_end_matches('/').ends_with("/router")
+    }
 }
 
 impl Debug for UpstreamConfig {
@@ -1230,6 +1241,20 @@ mod tests {
             with("http://127.0.0.1:8080").catalog_base_url(),
             "http://127.0.0.1:8080"
         );
+    }
+
+    #[test]
+    fn is_router_rail_only_matches_the_router_base() {
+        use super::UpstreamConfig;
+        let with = |base: &str| UpstreamConfig {
+            api_key: String::new(),
+            base_url: base.to_string(),
+        };
+        assert!(with("https://carpe-diem.xyz/api/operator/router").is_router_rail());
+        assert!(with("https://carpe-diem.xyz/api/operator/router/").is_router_rail());
+        assert!(!with("https://carpe-diem.xyz/api/operator/v1").is_router_rail());
+        assert!(!with("https://api.venice.ai/api/v1").is_router_rail());
+        assert!(!with("http://127.0.0.1:8080").is_router_rail());
     }
 
     #[test]

@@ -54,10 +54,7 @@ impl VeniceImageGenerator {
             .map_err(|error| {
                 let retryable = retry::is_retryable_transport_error(&error);
                 tracing::error!(%error, %url, model = %body.model, retryable, "venice image: transport error");
-                UpstreamAttemptError {
-                    error: DomainError::UpstreamProvider,
-                    retryable,
-                }
+                UpstreamAttemptError::new(DomainError::UpstreamProvider, retryable)
             })?;
         let status = response.status();
         if !status.is_success() {
@@ -73,10 +70,10 @@ impl VeniceImageGenerator {
                     reason: "image_generation_rejected".to_string(),
                 }));
             }
-            return Err(UpstreamAttemptError {
-                error: retry::error_for_status(status),
+            return Err(UpstreamAttemptError::new(
+                retry::error_for_status(status),
                 retryable,
-            });
+            ));
         }
         response
             .json::<VeniceImageResponse>()

@@ -62,6 +62,14 @@ feature specs). Full index: [spec/index.md](../spec/index.md).
 - [github-security-readiness.md](github-security-readiness.md) — pre-public repo hardening checklist
 - [settings-focus-runbook.md](settings-focus-runbook.md) — transient: settings tabs hidden while admin surfaces stabilize
 
+## Upstream reports (defects filed with Carpe Diem)
+
+Measured, reproducible findings written to be handed to the operator. Each one
+pairs with the client-side compensation shipped for it, which stands whether or
+not the upstream fix lands.
+
+- [reports/2026-07-29-carpe-diem-router-rail.md](reports/2026-07-29-carpe-diem-router-rail.md) — `/router` vs `/v1`: `stream_options` rejected with 400 on externally-routed requests, no Carpe fallback on that 4xx, and no SSE on `/router` at all (pairs with the 2026-07-29 addendum to [ADR-0015](adr/0015-normalize-carpe-diem-router-responses.md))
+
 ## QA
 
 - [qa/agent-driven-integration.md](qa/agent-driven-integration.md) — QA strategy (3 layers, skill-first agent-driven)

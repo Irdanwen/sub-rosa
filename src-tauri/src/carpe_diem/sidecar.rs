@@ -408,12 +408,23 @@ fn start_backend(
     Ok(shutdown_tx)
 }
 
+/// The JSON body budget for the local sidecar. The catalog default (512 KiB in
+/// `config.toml`) sizes a public deployment; this one listens on loopback for a
+/// single client, and that client sends whole conversations — a long agent
+/// thread, or a vision turn carrying a base64 image, runs past 512 KiB and used
+/// to come back as an unexplained `413 Failed to buffer the request body`
+/// mid-task. Matches the iOS in-process server, which already raises it for the
+/// same reason (`june-embed`), so both shells accept the same turn.
+#[cfg(desktop)]
+const MAX_JSON_BYTES: usize = 16 * 1024 * 1024;
+
 /// Common `JUNE__…` env for the child: local mode + Carpe Diem upstream.
 #[cfg(desktop)]
 fn apply_june_api_env(command: &mut Command, port: u16, token: &str, base_url: &str, key: &str) {
     command
         .env("JUNE__SERVER__HOST", "127.0.0.1")
         .env("JUNE__SERVER__PORT", port.to_string())
+        .env("JUNE__SERVER__MAX_JSON_BYTES", MAX_JSON_BYTES.to_string())
         .env("JUNE__LOCAL_DEV__ENABLED", "true")
         .env("JUNE__LOCAL_DEV__BEARER_TOKEN", token)
         .env("JUNE__LOCAL_DEV__USER_ID", LOCAL_USER_ID)
