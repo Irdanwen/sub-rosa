@@ -1732,8 +1732,12 @@ describe("Agent chat runtime", () => {
       status: "running",
     });
     // The first subagent's row accumulated its activity then its summary.
-    expect((tools?.[0] as { text?: string }).text).toContain("edit privacy.tsx");
-    expect((tools?.[0] as { text?: string }).text).toContain("Done: 1 file written");
+    // Asserted before reading: `tools?.[0]` is undefined when the turn has no
+    // tool parts, and reading `.text` off that throws instead of failing.
+    const firstTool = tools?.[0] as { text?: string } | undefined;
+    expect(firstTool).toBeDefined();
+    expect(firstTool?.text).toContain("edit privacy.tsx");
+    expect(firstTool?.text).toContain("Done: 1 file written");
   });
 
   it("keeps the goal label when a later subagent event omits it", () => {

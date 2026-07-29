@@ -157,7 +157,7 @@ describe("SkillReviewController", () => {
 
     const approvedIds = invoke.mock.calls
       .filter(([command]) => command === RESOLVE_PENDING_SKILL_WRITE_COMMAND)
-      .map(([, args]) => (args?.request as { id: string }).id);
+      .map(([, args]) => (args as { request?: { id: string } })?.request?.id ?? "");
     expect(approvedIds).toEqual(["good"]);
     // The unreadable write stays for explicit rejection.
     expect(controller.getSnapshot().writes.map((w) => w.id)).toEqual(["bad"]);

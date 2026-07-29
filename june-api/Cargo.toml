@@ -20,13 +20,16 @@ june-services = { path = "crates/services" }
 
 async-trait = "0.1"
 axum = { version = "0.8", features = ["multipart"] }
-base64 = "0.22"
+base64 = "0.23"
 bytes = "1"
 clap = { version = "4", features = ["derive"] }
 dotenvy = "0.15"
 figment = { version = "0.10", features = ["env", "toml"] }
 hound = "3.5"
-jsonwebtoken = "9"
+# jsonwebtoken 11 no longer picks a crypto backend on its own and panics at
+# runtime unless exactly one is selected. `rust_crypto` is pure Rust, so it
+# cross-compiles to iOS without a C toolchain, unlike `aws_lc_rs`.
+jsonwebtoken = { version = "11", features = ["rust_crypto"] }
 sha2 = "0.11"
 # Pure-Rust MP4/M4A parser used for duration probing on the /v1/dictate
 # path, where the desktop helper records AAC-in-MPEG-4. Hound is WAV-only.

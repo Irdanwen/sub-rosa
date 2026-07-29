@@ -1060,17 +1060,17 @@ describe("NoteEditor", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Generating notes");
   });
 
-  it.each([
-    "transcribing",
-    "generating",
-  ] as const)("shows the processing badge and no skeleton while %s", (processingStatus) => {
-    const { container } = render(
-      <NoteEditor {...props} note={note({ processingStatus, activeTab: "notes" })} />,
-    );
+  it.each(["transcribing", "generating"] as const)(
+    "shows the processing badge and no skeleton while %s",
+    (processingStatus) => {
+      const { container } = render(
+        <NoteEditor {...props} note={note({ processingStatus, activeTab: "notes" })} />,
+      );
 
-    expect(container.querySelector(".note-skeleton")).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toBeInTheDocument();
-  });
+      expect(container.querySelector(".note-skeleton")).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toBeInTheDocument();
+    },
+  );
 
   it("wipes the notes in when generation finishes for the open note", () => {
     const { container, rerender } = render(

@@ -366,7 +366,42 @@ pub fn checksum_file(path: &Path) -> Result<String, std::io::Error> {
         }
         hasher.update(&buffer[..read]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    // sha2 0.11 returns a `hybrid_array::Array` rather than a `GenericArray`,
+    // and that type no longer implements `LowerHex`. The stored checksums are
+    // lowercase hex, so keep producing exactly that.
+    Ok(hasher
+        .finalize()
+        .iter()
+        .fold(String::with_capacity(64), |mut hex, byte| {
+            use std::fmt::Write as _;
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        }))
+}
+
+#[cfg(test)]
+mod checksum_tests {
+    use super::checksum_file;
+    use std::io::Write as _;
+
+    /// The stored checksums are lowercase hex SHA-256, and they gate whether a
+    /// recording is considered intact. sha2 0.11 changed the digest's return
+    /// type out from under the old `{:x}` formatting, so pin the output against
+    /// a published vector rather than trusting that it still compiles.
+    #[test]
+    fn checksums_a_file_as_lowercase_hex_sha256() {
+        let path = std::env::temp_dir().join("sub-rosa-checksum-kat.bin");
+        let mut file = std::fs::File::create(&path).expect("temp file");
+        file.write_all(b"abc").expect("write");
+        drop(file);
+        let digest = checksum_file(&path).expect("checksum");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            digest,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(digest.len(), 64);
+    }
 }
 
 #[cfg(test)]
