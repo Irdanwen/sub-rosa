@@ -39,9 +39,33 @@ targets:
       - path: LaunchScreen.storyboard
     info:
       path: os-june_iOS/Info.plist
+      # XcodeGen *generates* Info.plist from these properties, so a key that is
+      # only in the committed plist is silently dropped the next time the
+      # project is regenerated (`tauri ios init` / `xcodegen`). For the privacy
+      # usage descriptions that is not cosmetic: iOS terminates the app the
+      # moment it touches a protected resource without one, so a lost key is a
+      # crash, not a denied permission.
       properties:
         LSRequiresIPhoneOS: true
         UILaunchStoryboardName: LaunchScreen
+        ITSAppUsesNonExemptEncryption: false
+        # Recording a note or a dictation.
+        NSMicrophoneUsageDescription:
+          Sub Rosa records microphone audio locally so it can transcribe and generate your notes.
+        # The system-audio source of a note (microphone plus system audio).
+        NSAudioCaptureUsageDescription:
+          Sub Rosa records system audio locally when you choose microphone plus system audio for a note.
+        # Taking a photo to attach to a chat, and the Studio reference picker's
+        # camera button (capture="environment").
+        NSCameraUsageDescription:
+          Sub Rosa opens the camera when you take a photo to attach to a chat or to a Studio generation.
+        # Saving a Studio generation to the photo library. Write only: the
+        # picker reads through PHPicker, which needs no permission.
+        NSPhotoLibraryAddUsageDescription:
+          Sub Rosa saves images and videos you generate in Studio to your photo library.
+        CFBundleURLTypes:
+          - CFBundleURLName: subrosa
+            CFBundleURLSchemes: [subrosa]
         # Background execution (see src-tauri/src/ios_background.rs):
         # `audio` keeps a note recording alive with the screen locked,
         # `processing`/`fetch` let BGTaskScheduler wake the app up later to
