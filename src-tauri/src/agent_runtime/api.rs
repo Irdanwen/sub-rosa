@@ -1514,8 +1514,35 @@ async fn run_params(
     crate::agent_mcp::snapshot_run_policies(&repository.pool, request.run_id, &mcp_descriptors)
         .await
         .map_err(|error| AppError::new("agent_mcp_policy_snapshot_failed", error.to_string()))?;
+    let skill_catalog = agent_skill_catalog(app, repository).await?;
+    let skill_lookup: HashMap<String, Value> = skill_catalog
+        .into_iter()
+        .filter_map(|skill| {
+            let id = skill
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::to_string)?;
+            Some((id, skill))
+        })
+        .collect();
+    let skills = request
+        .skills
+        .iter()
+        .map(|name| {
+            let entry = skill_lookup.get(name);
+            let description = entry
+                .and_then(|skill| skill.get("description").and_then(Value::as_str))
+                .unwrap_or("June agent skill")
+                .to_string();
+            let source = entry
+                .and_then(|skill| skill.get("source").and_then(Value::as_str))
+                .unwrap_or("managed")
+                .to_string();
+            json!({ "name": name, "description": description, "source": source })
+        })
+        .collect::<Vec<_>>();
     Ok(
-        json!({ "model": request.model, "reasoningEffort": request.reasoning_effort, "instructions": INSTRUCTIONS, "workspace": request.workspace, "safetyMode": request.safety_mode.as_db(), "input": message_with_attachment_context(request.input, request.attachments), "attachments": vision_attachments, "history": history, "tools": tools, "skills": request.skills.iter().map(|name| json!({ "name": name, "description": "Enabled June skill", "source": "managed" })).collect::<Vec<_>>(), "contextWindow": context_window, "maxOutputTokens": agent_model_output_reserve(context_window) }),
+        json!({ "model": request.model, "reasoningEffort": request.reasoning_effort, "instructions": INSTRUCTIONS, "workspace": request.workspace, "safetyMode": request.safety_mode.as_db(), "input": message_with_attachment_context(request.input, request.attachments), "attachments": vision_attachments, "history": history, "tools": tools, "skills": skills, "contextWindow": context_window, "maxOutputTokens": agent_model_output_reserve(context_window) }),
     )
 }
 
@@ -1546,7 +1573,7 @@ async fn tool_descriptors(
         { "name": "generate_image", "description": "Generate an image from a text description and show it in the conversation.", "parameters": { "type": "object", "properties": { "prompt": { "type": "string" } }, "required": ["prompt"], "additionalProperties": false } },
         { "name": "edit_image", "description": "Edit an image file in the June session workspace and show the result in the conversation.", "parameters": { "type": "object", "properties": { "sourcePath": { "type": "string" }, "instruction": { "type": "string" } }, "required": ["sourcePath", "instruction"], "additionalProperties": false } },
         { "name": "generate_video", "description": "Generate a short video from a text description and show it in the conversation.", "parameters": { "type": "object", "properties": { "prompt": { "type": "string" }, "duration": { "type": "string" }, "aspectRatio": { "type": "string" }, "audio": { "type": "boolean" } }, "required": ["prompt"], "additionalProperties": false } },
-        { "name": "get_obsidian_vault", "description": "Discover the current Obsidian vault selected in June. Re-query for each distinct task.", "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false } },
+        { "name": "get_obsidian_vault", "description": "Discover the current Obsidian vault selected in June. When the june-obsidian skill is available, load it before Obsidian note work. Call this tool before every distinct Obsidian task because the user may change or disconnect the vault while the session remains open. If connected is false, do not guess a vault path. If available is false, do not infer or reconstruct its path. A returned path is current discovery only, not write authorization; stay within that vault and use only filesystem operations allowed by the current safety mode.", "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false } },
         { "name": "start_recording", "description": "Start a visible June recording only when the user explicitly asks to begin recording now.", "parameters": { "type": "object", "properties": { "sourceMode": { "type": "string", "enum": ["microphoneOnly", "microphonePlusSystem"] } }, "required": [], "additionalProperties": false }, "requiresApproval": true },
         { "name": "stop_recording", "description": "Stop the recording currently visible in June.", "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false }, "requiresApproval": true },
         { "name": "recording_status", "description": "Check whether June is currently recording and return the active recording metadata.", "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false } },
@@ -2134,6 +2161,29 @@ mod tests {
             )
             .as_deref(),
             Some("Readable managed skill summary.")
+        );
+    }
+
+    #[test]
+    fn bundled_obsidian_skill_has_correct_tool_reference_and_frontmatter() {
+        let skill_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("agent-skills")
+            .join("june-obsidian")
+            .join("SKILL.md");
+        let content = std::fs::read_to_string(&skill_path)
+            .unwrap_or_else(|_| panic!("skill file should exist at {}", skill_path.display()));
+        assert!(
+            content.contains("get_obsidian_vault"),
+            "skill must reference the unprefixed get_obsidian_vault host tool"
+        );
+        assert!(
+            !content.contains("june_obsidian.get_obsidian_vault"),
+            "skill must not reference the retired june_obsidian MCP server prefix"
+        );
+        assert_eq!(
+            skill_description(&content).as_deref(),
+            Some("Work with the Obsidian vault currently selected in June.")
         );
     }
 
