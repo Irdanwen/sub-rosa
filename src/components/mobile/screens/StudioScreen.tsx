@@ -1,4 +1,6 @@
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { IconAudio } from "central-icons/IconAudio";
+import { IconPlay } from "central-icons-filled/IconPlay";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconChevronDownSmall } from "central-icons/IconChevronDownSmall";
 import { IconClipboard } from "central-icons/IconClipboard";
@@ -79,9 +81,10 @@ import { EmptyState } from "../../ui/EmptyState";
 import { Spinner } from "../../ui/Spinner";
 import { ModelSheet } from "../ModelSheet";
 import { StackHeader } from "../StackHeader";
+import { formatNoteTime } from "./NoteRow";
 import { FlowsPanel } from "./FlowsPanel";
 
-type StudioMode = "image" | "video" | "audio" | "flows";
+type StudioMode = "image" | "video" | "audio" | "flows" | "library";
 type ImageMode = "generate" | "edit" | "upscale" | "cutout";
 type AudioMode = "music" | "speech" | "sfx";
 
@@ -187,7 +190,7 @@ export function StudioScreen() {
         }
       />
       <div className="mobile-segmented" role="tablist" aria-label="Studio mode">
-        {(["image", "video", "audio", "flows"] as const).map((entry) => (
+        {(["image", "video", "audio", "flows", "library"] as const).map((entry) => (
           <button
             key={entry}
             type="button"
@@ -203,7 +206,9 @@ export function StudioScreen() {
                 ? "Video"
                 : entry === "audio"
                   ? "Audio"
-                  : "Flows"}
+                  : entry === "flows"
+                    ? "Flows"
+                    : "Library"}
           </button>
         ))}
       </div>
@@ -239,8 +244,10 @@ export function StudioScreen() {
                 onModeChange={setAudioMode}
                 onGenerated={refreshGallery}
               />
-            ) : (
+            ) : mode === "flows" ? (
               <FlowsPanel catalog={catalog} onGenerated={refreshGallery} />
+            ) : (
+              <Library items={artifacts} onOpen={setPreview} onChanged={refreshGallery} />
             )}
             {galleryKind ? (
               <Gallery
@@ -1781,6 +1788,241 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
 
 // --- Gallery + lightbox -------------------------------------------------------
 
+/**
+ * Everything ever generated, in one place.
+ *
+ * The per-kind galleries hang under their own generate form, so answering
+ * "what have I made?" meant visiting four tabs and scrolling past four forms.
+ * This is the library that question deserves: every kind together, newest
+ * first, grouped by day, filterable by kind and searchable by prompt.
+ */
+function Library({
+  items,
+  onOpen,
+  onChanged,
+}: {
+  items: StudioArtifact[];
+  onOpen: (artifact: StudioArtifact) => void;
+  onChanged: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<ArtifactKind | "all">("all");
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [deleting, setDeleting] = useState(false);
+
+  const exitSelection = useCallback(() => {
+    setSelecting(false);
+    setSelected(new Set());
+  }, []);
+
+  const toggle = useCallback((path: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
+
+  // A library you cannot prune is an archive. Deleting frees real disk on the
+  // phone, so it belongs here and not only under each kind's own tab.
+  const deleteSelected = useCallback(async () => {
+    if (selected.size === 0) return;
+    setDeleting(true);
+    for (const artifact of items.filter((entry) => selected.has(entry.path))) {
+      try {
+        await deleteArtifact(artifact);
+        evictArtifactDataUrl(artifact.path);
+      } catch {
+        // Leave failures in place; the next listing reconciles with disk.
+      }
+    }
+    setDeleting(false);
+    hapticNotify("success");
+    exitSelection();
+    onChanged();
+  }, [items, selected, exitSelection, onChanged]);
+
+  // Only offer filters for kinds actually present: a chip row of empty
+  // categories is noise on a phone.
+  const kinds = useMemo(() => {
+    const present = new Set(items.map((artifact) => artifact.kind));
+    return (["image", "video", "music", "speech", "sfx"] as const).filter((kind) =>
+      present.has(kind),
+    );
+  }, [items]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items.filter((artifact) => {
+      if (filter !== "all" && artifact.kind !== filter) return false;
+      if (!q) return true;
+      return (
+        (artifact.prompt ?? "").toLowerCase().includes(q) ||
+        (artifact.model ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [items, filter, query]);
+
+  // Day buckets, in order. A flat wall of two hundred tiles gives the eye
+  // nothing to hold on to.
+  const groups = useMemo(() => {
+    const buckets = new Map<string, StudioArtifact[]>();
+    for (const artifact of filtered) {
+      const label = dayLabel(artifact.createdAt);
+      const bucket = buckets.get(label);
+      if (bucket) bucket.push(artifact);
+      else buckets.set(label, [artifact]);
+    }
+    return [...buckets.entries()];
+  }, [filtered]);
+
+  if (items.length === 0) {
+    return (
+      <EmptyState
+        title="Nothing generated yet"
+        description="Images, videos and audio you make in Studio collect here, on this device."
+      />
+    );
+  }
+
+  return (
+    <div className="mobile-studio-gallery">
+      <div className="mobile-studio-gallery-bar">
+        <input
+          className="mobile-studio-search"
+          type="search"
+          value={query}
+          placeholder="Search everything"
+          aria-label="Search the library"
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <button
+          type="button"
+          className="mobile-chip-button"
+          onClick={() => (selecting ? exitSelection() : setSelecting(true))}
+        >
+          {selecting ? "Done" : "Select"}
+        </button>
+      </div>
+      {kinds.length > 1 ? (
+        <div className="mobile-pill-row" role="radiogroup" aria-label="Filter by kind">
+          {(["all", ...kinds] as const).map((entry) => (
+            <button
+              key={entry}
+              type="button"
+              role="radio"
+              aria-checked={filter === entry}
+              className="mobile-pill"
+              data-active={filter === entry ? "true" : undefined}
+              onClick={() => {
+                hapticSelection();
+                setFilter(entry);
+              }}
+            >
+              {entry === "all" ? "All" : KIND_LABELS[entry]}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {filtered.length === 0 ? (
+        <p className="mobile-studio-empty-hint">Nothing matches that search.</p>
+      ) : (
+        groups.map(([label, group]) => (
+          <section key={label} className="mobile-library-day">
+            <h3 className="mobile-library-day-title">{label}</h3>
+            <div className="mobile-studio-grid mobile-library-grid">
+              {group.map((artifact) =>
+                artifact.kind === "image" || artifact.kind === "video" ? (
+                  <LibraryCell
+                    key={artifact.path}
+                    artifact={artifact}
+                    selecting={selecting}
+                    selected={selected.has(artifact.path)}
+                    onOpen={() => (selecting ? toggle(artifact.path) : onOpen(artifact))}
+                  />
+                ) : (
+                  <AudioTile
+                    key={artifact.path}
+                    artifact={artifact}
+                    selected={selecting && selected.has(artifact.path)}
+                    onOpen={() => (selecting ? toggle(artifact.path) : onOpen(artifact))}
+                  />
+                ),
+              )}
+            </div>
+          </section>
+        ))
+      )}
+      <p className="mobile-studio-empty-hint">
+        {items.length} {items.length === 1 ? "item" : "items"} on this device.
+      </p>
+      {selecting ? (
+        <div className="mobile-studio-select-bar">
+          <span>{selected.size} selected</span>
+          <button
+            type="button"
+            className="mobile-studio-delete-selected"
+            disabled={selected.size === 0 || deleting}
+            onClick={() => void deleteSelected()}
+          >
+            {deleting ? <Spinner /> : `Delete${selected.size ? ` (${selected.size})` : ""}`}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const KIND_LABELS: Record<ArtifactKind, string> = {
+  image: "Images",
+  video: "Videos",
+  music: "Music",
+  speech: "Speech",
+  sfx: "Effects",
+};
+
+/** Audio has no thumbnail, so its tile is a label rather than a black square. */
+function AudioTile({
+  artifact,
+  onOpen,
+  selected,
+}: {
+  artifact: StudioArtifact;
+  onOpen: () => void;
+  selected?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className="mobile-studio-cell mobile-studio-cell-audio"
+      data-selected={selected ? "true" : undefined}
+      onClick={onOpen}
+    >
+      <IconAudio size={20} aria-hidden />
+      <span>{artifact.prompt?.slice(0, 48) || KIND_LABELS[artifact.kind]}</span>
+    </button>
+  );
+}
+
+/** "Today", "Yesterday", then a written date. */
+function dayLabel(createdAt: number): string {
+  const date = new Date(createdAt);
+  const today = new Date();
+  const startOf = (value: Date) =>
+    new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+  const days = Math.round((startOf(today) - startOf(date)) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  return date.toLocaleDateString(undefined, {
+    weekday: days < 7 ? "long" : undefined,
+    month: "short",
+    day: "numeric",
+    year: date.getFullYear() === today.getFullYear() ? undefined : "numeric",
+  });
+}
+
 function Gallery({
   items,
   kind,
@@ -1922,6 +2164,96 @@ function Gallery({
       ) : null}
     </div>
   );
+}
+
+/**
+ * A library tile: the picture, plus what made it.
+ *
+ * The per-kind strips are three columns of bare thumbnails, which is right for
+ * glancing at what you just generated. The library is where you go to *find*
+ * something, so it trades a column for a caption: without one, a grid of
+ * images carries no prompt, no model, and no way to tell a video from a still.
+ */
+function LibraryCell({
+  artifact,
+  onOpen,
+  selecting = false,
+  selected = false,
+}: {
+  artifact: StudioArtifact;
+  onOpen: () => void;
+  selecting?: boolean;
+  selected?: boolean;
+}) {
+  const src = useArtifactThumbnail(artifact);
+  const [duration, setDuration] = useState<string | null>(null);
+  const isVideo = artifact.kind === "video";
+
+  return (
+    <div className="mobile-library-item">
+      <button
+        type="button"
+        className="mobile-studio-cell"
+        data-selected={selected ? "true" : undefined}
+        onClick={onOpen}
+      >
+        {src ? (
+          isVideo ? (
+            // `#t=0.1` nudges WKWebView to decode and paint the first frame as
+            // a poster; without it the tile stays black until played.
+            <video
+              src={`${src}#t=0.1`}
+              muted
+              playsInline
+              preload="metadata"
+              onLoadedMetadata={(event) => {
+                const seconds = event.currentTarget.duration;
+                if (Number.isFinite(seconds) && seconds > 0) {
+                  setDuration(formatClipLength(seconds));
+                }
+              }}
+            />
+          ) : (
+            <img src={src} alt={artifact.prompt || "Generated image"} />
+          )
+        ) : (
+          <span className="mobile-studio-cell-loading" aria-hidden />
+        )}
+        {isVideo ? (
+          <span className="mobile-library-badge" aria-hidden>
+            <IconPlay size={11} />
+            {duration ?? ""}
+          </span>
+        ) : null}
+        {selecting ? (
+          <span
+            className="mobile-studio-cell-check"
+            data-on={selected ? "true" : undefined}
+            aria-hidden
+          >
+            {selected ? <IconCheckmark1Small size={14} /> : null}
+          </span>
+        ) : null}
+      </button>
+      <span className="mobile-library-caption">
+        <span className="mobile-library-prompt">
+          {artifact.prompt?.trim() || "No prompt recorded"}
+        </span>
+        <span className="mobile-library-meta">
+          {[artifact.model, formatNoteTime(new Date(artifact.createdAt).toISOString())]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+/** "0:42", "3:07" — the way a player writes it. */
+function formatClipLength(seconds: number): string {
+  const whole = Math.round(seconds);
+  const minutes = Math.floor(whole / 60);
+  return `${minutes}:${(whole % 60).toString().padStart(2, "0")}`;
 }
 
 function GalleryCell({

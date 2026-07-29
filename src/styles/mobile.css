@@ -1231,10 +1231,21 @@
   position: relative;
   border: none;
   padding: 0;
-  background: none;
+  /* A frame, not transparency: WKWebView does not always paint a video's first
+   * frame as a poster, and a cell with no background simply vanishes when it
+   * does not. The tile stays visible and tappable either way. */
+  background: var(--muted);
   aspect-ratio: 1;
   border-radius: var(--r-sm);
   overflow: hidden;
+}
+
+.mobile-studio-cell > img,
+.mobile-studio-cell > video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .mobile-studio-cell[data-selected="true"] {
@@ -2052,6 +2063,102 @@
   gap: 2px;
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
+}
+
+/* Two columns, not three: the library trades a column for a caption, which is
+ * what turns a wall of pictures into something you can search with your eyes. */
+.mobile-library-grid {
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-3);
+}
+
+.mobile-library-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.mobile-library-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.mobile-library-prompt {
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mobile-library-meta {
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Play glyph plus length, so a video is never mistaken for a still. Sits on
+ * the frame itself because that is what it describes. */
+.mobile-library-badge {
+  position: absolute;
+  left: var(--sp-2);
+  bottom: var(--sp-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px var(--sp-2) 2px var(--sp-1);
+  border-radius: var(--r-pill);
+  background: oklch(0% 0 none / 55%);
+  color: #fff;
+  font-size: var(--fs-xs);
+  font-variant-numeric: proportional-nums;
+}
+
+/* --- Studio library ---------------------------------------------------------- */
+
+.mobile-library-day {
+  margin-bottom: var(--sp-5);
+}
+
+/* A day marker, not a section title: it orients the eye down a long grid
+ * without competing with the work itself. */
+.mobile-library-day-title {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted-foreground);
+}
+
+/* Audio has no frame to show, so its tile carries its prompt instead of
+ * rendering as a black square in a grid of pictures. */
+.mobile-studio-cell-audio {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  text-align: left;
+  overflow: hidden;
+}
+
+.mobile-studio-cell-audio > span {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--foreground);
 }
 
 /* --- Reference picker ---------------------------------------------------------- */

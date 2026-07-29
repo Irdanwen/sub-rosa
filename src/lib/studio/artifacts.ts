@@ -117,29 +117,68 @@ export async function saveArtifactFromResult(
  * itself is still there. */
 export async function listArtifacts(kind?: ArtifactKind): Promise<StudioArtifact[]> {
   const index = readIndex();
-  let byName: Map<string, string> | undefined;
+  let files: DiskArtifact[] | undefined;
   try {
-    const files = await invoke<Array<{ fileName: string; path: string }>>(
-      "carpe_diem_media_list_artifacts",
-    );
-    byName = new Map(files.map((file) => [file.fileName, file.path]));
+    files = await invoke<DiskArtifact[]>("carpe_diem_media_list_artifacts");
   } catch {
     // If the disk listing fails, trust the index rather than showing nothing.
   }
-  let healed = false;
-  const alive = byName
-    ? index
-        .filter((entry) => byName.has(entry.fileName))
-        .map((entry) => {
-          const current = byName.get(entry.fileName) as string;
-          if (current === entry.path) return entry;
-          healed = true;
-          return { ...entry, path: current };
-        })
-    : index;
-  if (healed || alive.length !== index.length) writeIndex(alive);
-  const sorted = [...alive].sort((a, b) => b.createdAt - a.createdAt);
-  return kind ? sorted.filter((entry) => entry.kind === kind) : sorted;
+  if (!files) {
+    const sorted = [...index].sort((a, b) => b.createdAt - a.createdAt);
+    return kind ? sorted.filter((entry) => entry.kind === kind) : sorted;
+  }
+
+  const byName = new Map(files.map((file) => [file.fileName, file]));
+  let changed = false;
+  const alive = index
+    .filter((entry) => byName.has(entry.fileName))
+    .map((entry) => {
+      const current = byName.get(entry.fileName) as DiskArtifact;
+      if (current.path === entry.path) return entry;
+      changed = true;
+      return { ...entry, path: current.path };
+    });
+
+  // Adopt files the index does not know about. The index is capped and can be
+  // halved under quota pressure, and it is per-install — without this, a file
+  // that falls out of it is still on disk, still costing space, and can never
+  // be seen or deleted from the app again. Prompt and model are genuinely lost
+  // (they only ever lived in the index), so say so rather than inventing them.
+  const known = new Set(alive.map((entry) => entry.fileName));
+  const adopted: StudioArtifact[] = files
+    .filter((file) => !known.has(file.fileName))
+    .map((file) => ({
+      id: file.fileName,
+      kind: kindFromFileName(file.fileName),
+      path: file.path,
+      fileName: file.fileName,
+      bytes: file.bytes,
+      model: "",
+      prompt: "",
+      createdAt: file.modifiedMs ?? Date.now(),
+    }));
+  if (adopted.length > 0) changed = true;
+
+  const merged = [...alive, ...adopted].sort((a, b) => b.createdAt - a.createdAt);
+  if (changed || merged.length !== index.length) writeIndex(merged);
+  return kind ? merged.filter((entry) => entry.kind === kind) : merged;
+}
+
+interface DiskArtifact {
+  path: string;
+  fileName: string;
+  bytes: number;
+  modifiedMs?: number;
+}
+
+/** Best guess for a file the index lost track of. Audio collapses to "music":
+ * the extension cannot tell a track from a narration, and the gallery groups
+ * them the same way. */
+function kindFromFileName(fileName: string): ArtifactKind {
+  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "mp4" || ext === "webm" || ext === "mov") return "video";
+  if (ext === "mp3" || ext === "wav" || ext === "m4a" || ext === "ogg") return "music";
+  return "image";
 }
 
 /** Reads a gallery file back as base64 (to feed edit/upscale/i2v inputs). */
