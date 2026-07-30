@@ -16,6 +16,7 @@ use sqlx::{query::query, row::Row};
 use sqlx_sqlite::SqlitePool;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
+    future::Future,
     process::Stdio,
     sync::{Arc, Mutex, OnceLock},
     time::Duration,
@@ -59,6 +60,18 @@ const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const OAUTH_CONNECT_TIMEOUT: Duration = Duration::from_secs(300);
 const OAUTH_HTTP_TIMEOUT: Duration = Duration::from_secs(20);
 const OAUTH_EXPIRY_BUFFER_SECS: i64 = 60;
+pub const MANAGED_LINEAR_SERVER_ID: &str = "builtin:linear";
+pub const MANAGED_LINEAR_SERVER_NAME: &str = "linear";
+pub const MANAGED_LINEAR_MCP_URL: &str = "https://mcp.linear.app/mcp";
+const MANAGED_LINEAR_POLICY_REVISION: &str = "linear-official-mcp-v1";
+const MANAGED_MCP_TOOL_SCHEMA_MAX_BYTES: usize = 64 * 1024;
+const MANAGED_MCP_TOOL_ANNOTATIONS_MAX_BYTES: usize = 64 * 1024;
+const MANAGED_MCP_DESCRIPTION_MAX_CHARS: usize = 240;
+const MANAGED_MCP_TOOL_NAME_MAX_CHARS: usize = 128;
+const MANAGED_MCP_DISCOVERY_MAX_PAGES: usize = 20;
+const MANAGED_MCP_DISCOVERY_MAX_TOOLS: usize = 512;
+const MANAGED_MCP_DISCOVERY_MAX_BYTES: usize = 4 * 1024 * 1024;
+const MANAGED_MCP_CURSOR_MAX_CHARS: usize = 2_048;
 
 type SharedMcpSession = Arc<AsyncMutex<McpSessionSlot>>;
 static MCP_SESSIONS: OnceLock<AsyncMutex<HashMap<String, SharedMcpSession>>> = OnceLock::new();
@@ -67,6 +80,7 @@ struct McpSessionSlot {
     fingerprint: String,
     next_request_id: u64,
     transport: Option<PersistentMcpTransport>,
+    discovery_pages: BTreeMap<String, Value>,
 }
 
 enum PersistentMcpTransport {
@@ -315,6 +329,20 @@ impl McpServerDefinition {
                     ));
                 }
             }
+        }
+        Ok(())
+    }
+
+    fn validate_custom(&self) -> Result<(), AgentMcpError> {
+        self.validate()?;
+        self.validate_custom_id()
+    }
+
+    fn validate_custom_id(&self) -> Result<(), AgentMcpError> {
+        if self.id.trim() == MANAGED_LINEAR_SERVER_ID {
+            return Err(AgentMcpError::InvalidDefinition(
+                "server id is reserved for managed Linear".into(),
+            ));
         }
         Ok(())
     }
@@ -1058,7 +1086,7 @@ impl AgentMcpRepository {
         Ok(())
     }
     pub async fn create(&self, definition: &McpServerDefinition) -> Result<(), AgentMcpError> {
-        definition.validate()?;
+        definition.validate_custom()?;
         let now = now();
         let result = query("INSERT INTO agent_mcp_servers (id, name, enabled, transport, command, args_json, url, secret_ref, metadata_json, tool_visibility_json, safety_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
             .bind(&definition.id).bind(definition.name.trim()).bind(definition.enabled as i64).bind(definition.transport.as_db())
@@ -1074,7 +1102,7 @@ impl AgentMcpRepository {
         }
     }
     pub async fn replace(&self, definition: &McpServerDefinition) -> Result<(), AgentMcpError> {
-        definition.validate()?;
+        definition.validate_custom()?;
         let result = query("UPDATE agent_mcp_servers SET name = ?, enabled = ?, transport = ?, command = ?, args_json = ?, url = ?, secret_ref = ?, metadata_json = ?, tool_visibility_json = ?, safety_json = ?, updated_at = ? WHERE id = ?")
             .bind(definition.name.trim()).bind(definition.enabled as i64).bind(definition.transport.as_db()).bind(&definition.command)
             .bind(json_text(&definition.args)?).bind(&definition.url).bind(&definition.secret_ref).bind(json_text(&definition.metadata)?)
@@ -1145,6 +1173,50 @@ pub struct McpDiscoveredTool {
     pub description: String,
     #[serde(default)]
     pub input_schema: Value,
+    #[serde(default)]
+    pub annotations: McpToolAnnotations,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct McpToolAnnotations(Value);
+
+impl Default for McpToolAnnotations {
+    fn default() -> Self {
+        Self(json!({}))
+    }
+}
+
+impl McpToolAnnotations {
+    #[cfg(test)]
+    fn from_hints(read_only_hint: Option<bool>, destructive_hint: Option<bool>) -> Self {
+        let mut annotations = Map::new();
+        if let Some(value) = read_only_hint {
+            annotations.insert("readOnlyHint".into(), Value::Bool(value));
+        }
+        if let Some(value) = destructive_hint {
+            annotations.insert("destructiveHint".into(), Value::Bool(value));
+        }
+        Self(Value::Object(annotations))
+    }
+
+    fn read_only_hint(&self) -> Option<bool> {
+        self.0.get("readOnlyHint").and_then(Value::as_bool)
+    }
+
+    fn destructive_hint(&self) -> Option<bool> {
+        self.0.get("destructiveHint").and_then(Value::as_bool)
+    }
+
+    #[cfg(test)]
+    fn raw(&self) -> &Value {
+        &self.0
+    }
+
+    #[cfg(test)]
+    fn from_raw(value: Value) -> Self {
+        Self(value)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1155,7 +1227,15 @@ pub struct RuntimeToolDescriptorJson {
     pub description: String,
     pub parameters: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub strict: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub requires_approval: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_remote_tool_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -1170,6 +1250,7 @@ pub struct RegisteredMcpTool {
 pub struct McpToolPolicy {
     pub server_id: String,
     pub requires_approval: bool,
+    pub policy_fingerprint: Option<String>,
 }
 
 #[derive(Default)]
@@ -1183,6 +1264,86 @@ impl McpToolRegistry {
         server: &McpServerDefinition,
         discovered: Vec<McpDiscoveredTool>,
     ) -> Result<(), AgentMcpError> {
+        server.validate_custom_id()?;
+        self.register_with_approval(server, discovered, |server, tool| {
+            server.safety.requires_approval
+                || server
+                    .safety
+                    .approval_tools
+                    .iter()
+                    .any(|item| item == &tool.name)
+        })
+    }
+
+    fn register_managed_linear(
+        &mut self,
+        server: &McpServerDefinition,
+        discovered: Vec<McpDiscoveredTool>,
+    ) -> Result<(), AgentMcpError> {
+        let mut seen_remote = BTreeSet::new();
+        let mut seen_runtime = BTreeSet::new();
+        for tool in discovered {
+            let Some(tool) = normalize_managed_mcp_tool(tool) else {
+                tracing::warn!(
+                    error_code = "linear_managed_mcp_tool_invalid",
+                    "Skipping an invalid Linear hosted MCP tool"
+                );
+                continue;
+            };
+            if tool.name.is_empty()
+                || !seen_remote.insert(tool.name.clone())
+                || !server.tool_visibility.allows(&tool.name)
+            {
+                continue;
+            }
+            let name = match runtime_tool_name(&server.name, &tool.name) {
+                Ok(name) if seen_runtime.insert(name.clone()) => name,
+                Ok(_) => continue,
+                Err(error) => {
+                    tracing::warn!(
+                        error_code = "linear_managed_mcp_tool_invalid",
+                        error = %error,
+                        "Skipping an invalid Linear hosted MCP tool"
+                    );
+                    continue;
+                }
+            };
+            let requires_approval = tool.annotations.read_only_hint() != Some(true)
+                || tool.annotations.destructive_hint() == Some(true);
+            let policy_fingerprint = managed_linear_policy_fingerprint(&tool)?;
+            let descriptor = RuntimeToolDescriptorJson {
+                id: format!("mcp:{}/{}", server.id, tool.name),
+                name: name.clone(),
+                description: tool.description,
+                parameters: object_schema(tool.input_schema),
+                strict: Some(false),
+                requires_approval: requires_approval.then_some(true),
+                approval_provider: Some("Linear".to_string()),
+                approval_remote_tool_name: Some(tool.name.clone()),
+                policy_fingerprint: Some(policy_fingerprint),
+            };
+            // The managed source owns the mcp_linear_* namespace. A
+            // user-configured server with the same display name must not
+            // shadow Linear's official tools.
+            self.tools.insert(
+                name,
+                RegisteredMcpTool {
+                    server_id: server.id.clone(),
+                    server_name: server.name.clone(),
+                    remote_name: tool.name,
+                    descriptor,
+                },
+            );
+        }
+        Ok(())
+    }
+
+    fn register_with_approval(
+        &mut self,
+        server: &McpServerDefinition,
+        discovered: Vec<McpDiscoveredTool>,
+        requires_approval: impl Fn(&McpServerDefinition, &McpDiscoveredTool) -> bool,
+    ) -> Result<(), AgentMcpError> {
         let mut seen = BTreeSet::new();
         for tool in discovered {
             if tool.name.is_empty()
@@ -1195,18 +1356,17 @@ impl McpToolRegistry {
             if self.tools.contains_key(&name) {
                 return Err(AgentMcpError::DuplicateServer);
             }
-            let requires_approval = server.safety.requires_approval
-                || server
-                    .safety
-                    .approval_tools
-                    .iter()
-                    .any(|item| item == &tool.name);
+            let requires_approval = requires_approval(server, &tool);
             let descriptor = RuntimeToolDescriptorJson {
                 id: format!("mcp:{}/{}", server.id, tool.name),
                 name: name.clone(),
                 description: tool.description,
                 parameters: object_schema(tool.input_schema),
+                strict: None,
                 requires_approval: requires_approval.then_some(true),
+                approval_provider: None,
+                approval_remote_tool_name: None,
+                policy_fingerprint: None,
             };
             self.tools.insert(
                 name,
@@ -1268,6 +1428,63 @@ fn object_schema(value: Value) -> Value {
     }
 }
 
+fn normalize_managed_mcp_tool(mut tool: McpDiscoveredTool) -> Option<McpDiscoveredTool> {
+    let name = tool.name.trim();
+    if name.is_empty() || name.chars().count() > MANAGED_MCP_TOOL_NAME_MAX_CHARS {
+        return None;
+    }
+    let schema = tool.input_schema.as_object()?;
+    if schema.get("type").and_then(Value::as_str) != Some("object")
+        || schema
+            .get("properties")
+            .is_some_and(|properties| !properties.is_object())
+        || schema.get("required").is_some_and(|required| {
+            !required
+                .as_array()
+                .is_some_and(|items| items.iter().all(Value::is_string))
+        })
+    {
+        return None;
+    }
+    if serde_json::to_vec(schema)
+        .map(|encoded| encoded.len() > MANAGED_MCP_TOOL_SCHEMA_MAX_BYTES)
+        .unwrap_or(true)
+        || serde_json::to_vec(&tool.annotations)
+            .map(|encoded| encoded.len() > MANAGED_MCP_TOOL_ANNOTATIONS_MAX_BYTES)
+            .unwrap_or(true)
+    {
+        return None;
+    }
+    tool.name = name.to_string();
+    let description = tool.description.trim().to_string();
+    tool.description = description
+        .chars()
+        .take(MANAGED_MCP_DESCRIPTION_MAX_CHARS)
+        .collect();
+    if description.chars().count() > MANAGED_MCP_DESCRIPTION_MAX_CHARS {
+        tool.description.push_str("...");
+    }
+    Some(tool)
+}
+
+fn managed_linear_policy_fingerprint(tool: &McpDiscoveredTool) -> Result<String, AgentMcpError> {
+    let identity = serde_json::to_vec(&json!({
+        "remoteName": tool.name,
+        "description": tool.description,
+        "inputSchema": tool.input_schema,
+        "annotations": tool.annotations,
+    }))
+    .map_err(|_| AgentMcpError::Protocol)?;
+    let mut hash = Sha256::new();
+    hash.update(MANAGED_LINEAR_POLICY_REVISION.as_bytes());
+    hash.update([0]);
+    hash.update(identity);
+    Ok(format!(
+        "{MANAGED_LINEAR_POLICY_REVISION}:{:x}",
+        hash.finalize()
+    ))
+}
+
 pub struct AgentMcpSubsystem<S: McpSecretStore> {
     pub repository: AgentMcpRepository,
     pub secrets: S,
@@ -1310,14 +1527,39 @@ impl<S: McpSecretStore> AgentMcpSubsystem<S> {
         sandboxed: bool,
         workspace: Option<&std::path::Path>,
     ) -> Result<Vec<RuntimeToolDescriptorJson>, AgentMcpError> {
+        self.refresh_registry_for_workspace_internal(sandboxed, workspace, None)
+            .await
+    }
+
+    pub async fn refresh_registry_for_workspace_with_managed_linear(
+        &self,
+        app: &AppHandle,
+        sandboxed: bool,
+        workspace: Option<&std::path::Path>,
+    ) -> Result<Vec<RuntimeToolDescriptorJson>, AgentMcpError> {
+        self.refresh_registry_for_workspace_internal(sandboxed, workspace, Some(app))
+            .await
+    }
+
+    async fn refresh_registry_for_workspace_internal(
+        &self,
+        sandboxed: bool,
+        workspace: Option<&std::path::Path>,
+        app: Option<&AppHandle>,
+    ) -> Result<Vec<RuntimeToolDescriptorJson>, AgentMcpError> {
         let mut next = McpToolRegistry::default();
-        for server in self
-            .repository
-            .list()
-            .await?
-            .into_iter()
-            .filter(|server| server_available(server, sandboxed, workspace))
-        {
+        for server in self.repository.list().await? {
+            if server.id.trim() == MANAGED_LINEAR_SERVER_ID {
+                tracing::warn!(
+                    error_code = "agent_mcp_server_id_reserved",
+                    server_id = %server.id,
+                    "Skipping a custom MCP server with a reserved managed id"
+                );
+                continue;
+            }
+            if !server_available(&server, sandboxed, workspace) {
+                continue;
+            }
             let secret = self.load_server_secrets(&server, false).await?;
             let mut discovered =
                 discover_server(&server, &secret, sandboxed.then_some(workspace).flatten()).await;
@@ -1342,6 +1584,18 @@ impl<S: McpSecretStore> AgentMcpSubsystem<S> {
                     transport = ?server.transport,
                     error = %error,
                     "MCP server discovery failed; continuing with the remaining servers"
+                ),
+            }
+        }
+        if let Some(app) = app {
+            match discover_managed_linear(app, sandboxed.then_some(workspace).flatten()).await {
+                Ok(Some((server, tools))) => next.register_managed_linear(&server, tools)?,
+                Ok(None) => {}
+                Err(error) => tracing::warn!(
+                    error_code = "linear_managed_mcp_discovery_failed",
+                    server_id = MANAGED_LINEAR_SERVER_ID,
+                    error = %error,
+                    "Linear hosted MCP discovery failed"
                 ),
             }
         }
@@ -1383,6 +1637,46 @@ impl<S: McpSecretStore> AgentMcpSubsystem<S> {
         workspace: Option<&std::path::Path>,
         elicitation_answer: Option<&str>,
     ) -> Result<Value, AgentMcpError> {
+        self.invoke_registered(
+            runtime_name,
+            arguments,
+            sandboxed,
+            workspace,
+            elicitation_answer,
+            None,
+        )
+        .await
+    }
+
+    pub async fn invoke_in_workspace_with_elicitation_and_managed_linear(
+        &self,
+        app: &AppHandle,
+        runtime_name: &str,
+        arguments: Value,
+        sandboxed: bool,
+        workspace: Option<&std::path::Path>,
+        elicitation_answer: Option<&str>,
+    ) -> Result<Value, AgentMcpError> {
+        self.invoke_registered(
+            runtime_name,
+            arguments,
+            sandboxed,
+            workspace,
+            elicitation_answer,
+            Some(app),
+        )
+        .await
+    }
+
+    async fn invoke_registered(
+        &self,
+        runtime_name: &str,
+        arguments: Value,
+        sandboxed: bool,
+        workspace: Option<&std::path::Path>,
+        elicitation_answer: Option<&str>,
+        app: Option<&AppHandle>,
+    ) -> Result<Value, AgentMcpError> {
         let registered = self
             .registry
             .lock()
@@ -1390,6 +1684,25 @@ impl<S: McpSecretStore> AgentMcpSubsystem<S> {
             .resolve(runtime_name)
             .cloned()
             .ok_or(AgentMcpError::ToolUnavailable)?;
+        if registered.server_id == MANAGED_LINEAR_SERVER_ID {
+            let app = app.ok_or(AgentMcpError::ToolUnavailable)?;
+            let Some((server, secrets, lifecycle)) = managed_linear_connection(app, false).await?
+            else {
+                return Err(AgentMcpError::ToolUnavailable);
+            };
+            // Never replay a hosted Linear tools/call request. A timeout,
+            // disconnect, or 401 can arrive after Linear applied a mutation.
+            return call_server(
+                &server,
+                &secrets,
+                &registered.remote_name,
+                arguments,
+                sandboxed.then_some(workspace).flatten(),
+                elicitation_answer,
+                Some(&lifecycle),
+            )
+            .await;
+        }
         let server = self.repository.get(&registered.server_id).await?;
         if !server_available(&server, sandboxed, workspace) {
             return Err(AgentMcpError::ToolUnavailable);
@@ -1402,6 +1715,7 @@ impl<S: McpSecretStore> AgentMcpSubsystem<S> {
             arguments.clone(),
             sandboxed.then_some(workspace).flatten(),
             elicitation_answer,
+            None,
         )
         .await;
         if matches!(first, Err(AgentMcpError::Unauthorized)) && !secret.oauth.is_empty() {
@@ -1413,6 +1727,7 @@ impl<S: McpSecretStore> AgentMcpSubsystem<S> {
                 arguments,
                 sandboxed.then_some(workspace).flatten(),
                 elicitation_answer,
+                None,
             )
             .await;
         }
@@ -1443,7 +1758,108 @@ impl<S: McpSecretStore> AgentMcpSubsystem<S> {
             .map(|registered| McpToolPolicy {
                 server_id: registered.server_id.clone(),
                 requires_approval: registered.descriptor.requires_approval == Some(true),
+                policy_fingerprint: registered.descriptor.policy_fingerprint.clone(),
             }))
+    }
+}
+
+fn managed_linear_definition() -> McpServerDefinition {
+    McpServerDefinition {
+        id: MANAGED_LINEAR_SERVER_ID.to_string(),
+        name: MANAGED_LINEAR_SERVER_NAME.to_string(),
+        enabled: true,
+        transport: McpTransport::StreamableHttp,
+        command: None,
+        args: Vec::new(),
+        url: Some(MANAGED_LINEAR_MCP_URL.to_string()),
+        secret_ref: None,
+        metadata: json!({"managed": true, "provider": "linear"}),
+        tool_visibility: McpToolVisibility::default(),
+        safety: McpSafetyPolicy {
+            requires_approval: false,
+            ..McpSafetyPolicy::default()
+        },
+    }
+}
+
+async fn managed_linear_connection(
+    app: &AppHandle,
+    force_refresh: bool,
+) -> Result<
+    Option<(
+        McpServerDefinition,
+        McpSecretBundle,
+        crate::connectors::LinearLifecycleSnapshot,
+    )>,
+    AgentMcpError,
+> {
+    let account = crate::connectors::list_runtime_accounts(app)
+        .await
+        .map_err(|_| AgentMcpError::Storage)?
+        .into_iter()
+        .find(|account| {
+            account.provider == crate::connectors::ConnectorProvider::Linear
+                && account.status == crate::connectors::ConnectorAccountStatus::Connected
+        });
+    let Some(account) = account else {
+        return Ok(None);
+    };
+    let lifecycle = crate::connectors::acquire_linear_lifecycle(&account.account_id).await;
+    let still_connected = crate::connectors::list_runtime_accounts(app)
+        .await
+        .map_err(|_| AgentMcpError::Storage)?
+        .into_iter()
+        .any(|candidate| {
+            candidate.provider == crate::connectors::ConnectorProvider::Linear
+                && candidate.account_id == account.account_id
+                && candidate.status == crate::connectors::ConnectorAccountStatus::Connected
+        });
+    if !still_connected {
+        return Ok(None);
+    }
+    // Capture eligibility while the account row is stable, then release the
+    // lifecycle gate before token refresh can perform network I/O. Disconnect
+    // advances this epoch before waiting on the shared refresh lock, so an
+    // overlapping refresh either finishes before custody deletion or observes
+    // missing custody; either way this snapshot becomes stale before MCP I/O.
+    let snapshot = lifecycle.snapshot();
+    drop(lifecycle);
+    let token = if force_refresh {
+        crate::connectors::force_refresh_linear_access_token(app, &account.account_id).await
+    } else {
+        crate::connectors::linear_access_token(app, &account.account_id).await
+    }
+    .map_err(|error| match error.code.as_str() {
+        "connector_reconnect_required" | "linear_unauthorized" => AgentMcpError::Unauthorized,
+        _ => AgentMcpError::Transport,
+    })?;
+    let mut secrets = McpSecretBundle::default();
+    secrets
+        .headers
+        .insert("Authorization".to_string(), format!("Bearer {token}"));
+    Ok(Some((managed_linear_definition(), secrets, snapshot)))
+}
+
+async fn discover_managed_linear(
+    app: &AppHandle,
+    sandbox_workspace: Option<&std::path::Path>,
+) -> Result<Option<(McpServerDefinition, Vec<McpDiscoveredTool>)>, AgentMcpError> {
+    let Some((server, secrets, lifecycle)) = managed_linear_connection(app, false).await? else {
+        return Ok(None);
+    };
+    match discover_managed_server(&server, &secrets, sandbox_workspace, &lifecycle).await {
+        Ok(tools) => Ok(Some((server, tools))),
+        Err(AgentMcpError::Unauthorized) => {
+            retire_server_sessions(MANAGED_LINEAR_SERVER_ID).await;
+            let Some((server, refreshed, lifecycle)) = managed_linear_connection(app, true).await?
+            else {
+                return Ok(None);
+            };
+            discover_managed_server(&server, &refreshed, sandbox_workspace, &lifecycle)
+                .await
+                .map(|tools| Some((server, tools)))
+        }
+        Err(error) => Err(error),
     }
 }
 
@@ -1482,13 +1898,20 @@ pub async fn snapshot_run_policies(
         else {
             continue;
         };
-        let updated_at = query("SELECT updated_at FROM agent_mcp_servers WHERE id = ?")
-            .bind(server_id)
-            .fetch_optional(&mut *transaction)
-            .await
-            .map_err(|_| AgentMcpError::Storage)?
-            .map(|row| row.get::<String, _>("updated_at"))
-            .ok_or(AgentMcpError::NotFound)?;
+        let updated_at = if server_id == MANAGED_LINEAR_SERVER_ID {
+            descriptor
+                .policy_fingerprint
+                .clone()
+                .ok_or(AgentMcpError::Storage)?
+        } else {
+            query("SELECT updated_at FROM agent_mcp_servers WHERE id = ?")
+                .bind(server_id)
+                .fetch_optional(&mut *transaction)
+                .await
+                .map_err(|_| AgentMcpError::Storage)?
+                .map(|row| row.get::<String, _>("updated_at"))
+                .ok_or(AgentMcpError::NotFound)?
+        };
         query(
             "INSERT INTO agent_run_mcp_policies
              (run_id, tool_name, server_id, server_updated_at, requires_approval)
@@ -1524,6 +1947,28 @@ pub async fn run_policy_matches(
     tool_name: &str,
     current: &McpToolPolicy,
 ) -> Result<bool, AgentMcpError> {
+    if current.server_id == MANAGED_LINEAR_SERVER_ID {
+        let row = query(
+            "SELECT server_id, server_updated_at, requires_approval
+             FROM agent_run_mcp_policies
+             WHERE run_id = ? AND tool_name = ?",
+        )
+        .bind(run_id)
+        .bind(tool_name)
+        .fetch_optional(pool)
+        .await
+        .map_err(|_| AgentMcpError::Storage)?;
+        return Ok(row.is_some_and(|row| {
+            row.get::<String, _>("server_id") == current.server_id
+                && current
+                    .policy_fingerprint
+                    .as_ref()
+                    .is_some_and(|fingerprint| {
+                        row.get::<String, _>("server_updated_at") == *fingerprint
+                    })
+                && row.get::<bool, _>("requires_approval") == current.requires_approval
+        }));
+    }
     let row = query(
         "SELECT policy.server_id, policy.server_updated_at, policy.requires_approval,
                 server.updated_at AS current_updated_at
@@ -1570,11 +2015,115 @@ async fn discover_server(
         json!({}),
         sandbox_workspace,
         None,
+        None,
     )
     .await?;
-    let tools = value
+    discovered_tools_from_response(&value)
+}
+
+#[derive(Debug)]
+struct McpDiscoveredToolsPage {
+    tools: Vec<McpDiscoveredTool>,
+    next_cursor: Option<String>,
+}
+
+async fn discover_managed_tools_with<F, Fut>(
+    mut fetch_page: F,
+) -> Result<Vec<McpDiscoveredTool>, AgentMcpError>
+where
+    F: FnMut(Value) -> Fut,
+    Fut: Future<Output = Result<Value, AgentMcpError>>,
+{
+    let mut tools = Vec::new();
+    let mut total_bytes = 0usize;
+    let mut next_cursor: Option<String> = None;
+    let mut seen_cursors = BTreeSet::new();
+
+    for _ in 0..MANAGED_MCP_DISCOVERY_MAX_PAGES {
+        let params = next_cursor
+            .as_deref()
+            .map_or_else(|| json!({}), |cursor| json!({ "cursor": cursor }));
+        let page = discovered_tools_page_from_response(&fetch_page(params).await?)?;
+        if tools.len().saturating_add(page.tools.len()) > MANAGED_MCP_DISCOVERY_MAX_TOOLS {
+            return Err(AgentMcpError::Protocol);
+        }
+        let page_bytes = serde_json::to_vec(&page.tools)
+            .map_err(|_| AgentMcpError::Protocol)?
+            .len();
+        total_bytes = total_bytes
+            .checked_add(page_bytes)
+            .ok_or(AgentMcpError::Protocol)?;
+        if total_bytes > MANAGED_MCP_DISCOVERY_MAX_BYTES {
+            return Err(AgentMcpError::Protocol);
+        }
+        tools.extend(page.tools);
+
+        let Some(cursor) = page.next_cursor else {
+            return Ok(tools);
+        };
+        if cursor.chars().count() > MANAGED_MCP_CURSOR_MAX_CHARS
+            || !seen_cursors.insert(cursor.clone())
+        {
+            return Err(AgentMcpError::Protocol);
+        }
+        next_cursor = Some(cursor);
+    }
+
+    Err(AgentMcpError::Protocol)
+}
+
+async fn discover_managed_server(
+    server: &McpServerDefinition,
+    secrets: &McpSecretBundle,
+    sandbox_workspace: Option<&std::path::Path>,
+    lifecycle: &crate::connectors::LinearLifecycleSnapshot,
+) -> Result<Vec<McpDiscoveredTool>, AgentMcpError> {
+    discover_managed_tools_with(|params| {
+        session_request(
+            server,
+            secrets,
+            "tools/list",
+            params,
+            sandbox_workspace,
+            None,
+            Some(lifecycle),
+        )
+    })
+    .await
+}
+
+fn discovered_tools_from_response(value: &Value) -> Result<Vec<McpDiscoveredTool>, AgentMcpError> {
+    let result = value
         .get("result")
-        .and_then(|result| result.get("tools"))
+        .and_then(Value::as_object)
+        .ok_or(AgentMcpError::Protocol)?;
+    discovered_tools_from_result(result)
+}
+
+fn discovered_tools_page_from_response(
+    value: &Value,
+) -> Result<McpDiscoveredToolsPage, AgentMcpError> {
+    let result = value
+        .get("result")
+        .and_then(Value::as_object)
+        .ok_or(AgentMcpError::Protocol)?;
+    let next_cursor = match result.get("nextCursor") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(cursor)) if cursor.is_empty() => None,
+        Some(Value::String(cursor)) => Some(cursor.clone()),
+        Some(_) => return Err(AgentMcpError::Protocol),
+    };
+    Ok(McpDiscoveredToolsPage {
+        tools: discovered_tools_from_result(result)?,
+        next_cursor,
+    })
+}
+
+fn discovered_tools_from_result(
+    result: &Map<String, Value>,
+) -> Result<Vec<McpDiscoveredTool>, AgentMcpError> {
+    let tools = result
+        .get("tools")
         .and_then(Value::as_array)
         .ok_or(AgentMcpError::Protocol)?;
     Ok(tools
@@ -1592,10 +2141,15 @@ async fn discover_server(
                     .get("inputSchema")
                     .or_else(|| tool.get("input_schema"))
                     .cloned()
-                    .unwrap_or_else(|| json!({"type":"object","properties":{}})),
+                    .unwrap_or(Value::Null),
+                annotations: tool
+                    .get("annotations")
+                    .cloned()
+                    .and_then(|annotations| serde_json::from_value(annotations).ok())
+                    .unwrap_or_default(),
             })
         })
-        .collect::<Vec<_>>())
+        .collect())
 }
 async fn call_server(
     server: &McpServerDefinition,
@@ -1604,6 +2158,7 @@ async fn call_server(
     arguments: Value,
     sandbox_workspace: Option<&std::path::Path>,
     elicitation_answer: Option<&str>,
+    linear_lifecycle: Option<&crate::connectors::LinearLifecycleSnapshot>,
 ) -> Result<Value, AgentMcpError> {
     let value = session_request(
         server,
@@ -1612,6 +2167,7 @@ async fn call_server(
         json!({"name":tool_name,"arguments":arguments}),
         sandbox_workspace,
         elicitation_answer,
+        linear_lifecycle,
     )
     .await?;
     value.get("result").cloned().ok_or(AgentMcpError::Protocol)
@@ -1623,20 +2179,81 @@ async fn session_request(
     params: Value,
     sandbox_workspace: Option<&std::path::Path>,
     elicitation_answer: Option<&str>,
+    linear_lifecycle: Option<&crate::connectors::LinearLifecycleSnapshot>,
 ) -> Result<Value, AgentMcpError> {
+    if linear_lifecycle.is_some_and(|snapshot| !snapshot.is_current()) {
+        return Err(AgentMcpError::ToolUnavailable);
+    }
     let deadline = Duration::from_millis(server.safety.timeout_ms);
     let result = timeout(deadline, async move {
         let shared = persistent_session(server, secrets, sandbox_workspace).await;
+        // Linearize eligibility before taking the persistent-session slot and
+        // keep it through the remote request. Disconnect and reconnect take
+        // the same lifecycle gate before retiring the slot, so the global
+        // lock order is lifecycle -> session and an admitted request either
+        // finishes before the epoch advances or fails here as stale.
+        let _linear_dispatch_guard = match linear_lifecycle {
+            Some(snapshot) => Some(
+                snapshot
+                    .acquire_current()
+                    .await
+                    .ok_or(AgentMcpError::ToolUnavailable)?,
+            ),
+            None => None,
+        };
         let mut slot = shared.lock().await;
+        if linear_lifecycle.is_some_and(|snapshot| !snapshot.is_current()) {
+            slot.close().await;
+            return Err(AgentMcpError::ToolUnavailable);
+        }
         let fingerprint = session_fingerprint(server, secrets, sandbox_workspace);
         if slot.fingerprint != fingerprint {
             slot.close().await;
             slot.fingerprint = fingerprint;
             slot.next_request_id = 2;
         }
+        let discovery_cache_key = (method == "tools/list")
+            .then(|| serde_json::to_string(&params).ok())
+            .flatten();
+        // A server-initiated elicitation parks the original tools/call inside
+        // this session. A turn retry rebuilds the ephemeral registry before
+        // loading the user's answer; replay the already-validated discovery
+        // page instead of letting that tools/list collide with the parked
+        // call. Managed pagination keys each cached page by its cursor params.
+        let has_pending_elicitation = slot
+            .transport
+            .as_ref()
+            .is_some_and(PersistentMcpTransport::has_pending_elicitation);
+        if has_pending_elicitation {
+            if let Some(cached) = discovery_cache_key
+                .as_ref()
+                .and_then(|key| slot.discovery_pages.get(key))
+            {
+                return Ok(cached.clone());
+            }
+        } else if method == "tools/list"
+            && params.as_object().is_some_and(serde_json::Map::is_empty)
+        {
+            // A non-parked empty-params request starts a fresh discovery
+            // round. Retain only that round's bounded pages; older cursor
+            // values are never needed to resume a future elicitation.
+            slot.discovery_pages.clear();
+        }
         for attempt in 0..2 {
+            if linear_lifecycle.is_some_and(|snapshot| !snapshot.is_current()) {
+                slot.close().await;
+                return Err(AgentMcpError::ToolUnavailable);
+            }
             if slot.transport.is_none() {
                 slot.transport = Some(start_transport(server, secrets, sandbox_workspace).await?);
+                // Initialization performs network I/O while this session slot
+                // is held. Disconnect can advance the lifecycle epoch while
+                // waiting to retire the slot, so recheck before the first
+                // request is allowed to leave the initialized transport.
+                if linear_lifecycle.is_some_and(|snapshot| !snapshot.is_current()) {
+                    slot.close().await;
+                    return Err(AgentMcpError::ToolUnavailable);
+                }
             }
             let id = slot.next_request_id;
             slot.next_request_id = slot.next_request_id.saturating_add(1);
@@ -1666,7 +2283,12 @@ async fn session_request(
                 }
             };
             match result {
-                Ok(value) => return Ok(value),
+                Ok(value) => {
+                    if let Some(key) = discovery_cache_key.as_ref() {
+                        slot.discovery_pages.insert(key.clone(), value.clone());
+                    }
+                    return Ok(value);
+                }
                 // Discovery/listing is read-only and can be retried after a
                 // reconnect. A tool call may already have mutated remote
                 // state before its response was lost, so never replay it.
@@ -1710,6 +2332,7 @@ async fn persistent_session(
                 fingerprint: session_fingerprint(server, secrets, sandbox_workspace),
                 next_request_id: 2,
                 transport: None,
+                discovery_pages: BTreeMap::new(),
             }))
         })
         .clone()
@@ -2186,6 +2809,16 @@ impl McpSessionSlot {
             let _ = session.child.wait().await;
         }
         self.transport = None;
+        self.discovery_pages.clear();
+    }
+}
+
+impl PersistentMcpTransport {
+    fn has_pending_elicitation(&self) -> bool {
+        match self {
+            PersistentMcpTransport::Stdio(session) => session.pending.is_some(),
+            PersistentMcpTransport::Http(session) => session.pending.is_some(),
+        }
     }
 }
 
@@ -2687,7 +3320,7 @@ pub async fn update_agent_mcp_server(
     let existing = repository.get(&id).await.map_err(app_error)?;
     let replacement_secrets = input.secrets.clone();
     let mut definition = input.into_definition(Some(&existing));
-    definition.validate().map_err(app_error)?;
+    definition.validate_custom().map_err(app_error)?;
     let mut legacy_oauth = definition
         .metadata
         .get("legacyAuth")
@@ -2972,7 +3605,7 @@ pub fn parse_legacy_mcp_config(input: &str) -> Result<LegacyMcpImport, AgentMcpE
             definition.secret_ref = Some(reference.clone());
             secrets.push((reference, bundle));
         }
-        if let Err(error) = definition.validate() {
+        if let Err(error) = definition.validate_custom() {
             let requested_enabled = definition.enabled;
             definition.enabled = false;
             if !definition.metadata.is_object() {
@@ -3255,6 +3888,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn custom_servers_cannot_claim_the_managed_linear_id() {
+        let repo = repository().await;
+        let mut custom = McpServerDefinition::new("custom linear", McpTransport::Stdio);
+        custom.id = MANAGED_LINEAR_SERVER_ID.into();
+        custom.command = Some("node".into());
+
+        assert!(matches!(
+            repo.create(&custom).await,
+            Err(AgentMcpError::InvalidDefinition(_))
+        ));
+        assert!(repo.list().await.unwrap().is_empty());
+
+        let mut registry = McpToolRegistry::default();
+        assert!(matches!(
+            registry.register(&custom, Vec::new()),
+            Err(AgentMcpError::InvalidDefinition(_))
+        ));
+        assert!(managed_linear_definition().validate().is_ok());
+
+        query(
+            "INSERT INTO agent_mcp_servers
+             (id, name, enabled, transport, command, args_json, url, secret_ref,
+              metadata_json, tool_visibility_json, safety_json, created_at, updated_at)
+             VALUES
+             ('builtin:linear', 'legacy collision', 1, 'stdio', 'must-not-spawn', '[]',
+              NULL, NULL, '{}', '{}', '{}', '2026-01-01T00:00:00Z',
+              '2026-01-01T00:00:00Z')",
+        )
+        .execute(&repo.pool)
+        .await
+        .unwrap();
+        let subsystem = AgentMcpSubsystem::new(repo, MemorySecrets::default());
+        assert!(subsystem
+            .refresh_registry_for(false)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
     async fn active_run_rejects_a_server_definition_changed_after_snapshot() {
         let repo = repository().await;
         query(
@@ -3284,7 +3957,11 @@ mod tests {
             name: "mcp_docs_search".into(),
             description: "Search docs".into(),
             parameters: json!({"type":"object","properties":{}}),
+            strict: None,
             requires_approval: None,
+            approval_provider: None,
+            approval_remote_tool_name: None,
+            policy_fingerprint: None,
         };
         snapshot_run_policies(&repo.pool, "run-1", std::slice::from_ref(&descriptor))
             .await
@@ -3292,6 +3969,7 @@ mod tests {
         let policy = McpToolPolicy {
             server_id: server.id.clone(),
             requires_approval: false,
+            policy_fingerprint: None,
         };
         assert!(
             run_policy_matches(&repo.pool, "run-1", &descriptor.name, &policy)
@@ -3311,6 +3989,143 @@ mod tests {
                 .await
                 .unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn managed_linear_policy_snapshot_binds_the_exact_hosted_tool_contract() {
+        let repo = repository().await;
+        query(
+            "CREATE TABLE agent_runs (
+                id TEXT PRIMARY KEY,
+                mcp_policy_snapshotted INTEGER NOT NULL DEFAULT 0
+             )",
+        )
+        .execute(&repo.pool)
+        .await
+        .unwrap();
+        for statement in include_str!("../migrations/028_agent_run_mcp_policy.sql")
+            .split(';')
+            .filter(|statement| !statement.trim().is_empty())
+        {
+            query(statement).execute(&repo.pool).await.unwrap();
+        }
+        query("INSERT INTO agent_runs (id) VALUES ('run-linear')")
+            .execute(&repo.pool)
+            .await
+            .unwrap();
+        let annotations = McpToolAnnotations::from_hints(None, Some(false));
+        let input_schema = json!({
+            "type":"object",
+            "properties":{"title":{"type":"string"}}
+        });
+        let fingerprint = managed_linear_policy_fingerprint(&McpDiscoveredTool {
+            name: "save-issue".into(),
+            description: "Save an issue".into(),
+            input_schema: input_schema.clone(),
+            annotations: annotations.clone(),
+        })
+        .unwrap();
+        let descriptor = RuntimeToolDescriptorJson {
+            id: format!("mcp:{MANAGED_LINEAR_SERVER_ID}/save-issue"),
+            name: "mcp_linear_save_issue".into(),
+            description: "Save an issue".into(),
+            parameters: input_schema.clone(),
+            strict: Some(false),
+            requires_approval: Some(true),
+            approval_provider: Some("Linear".into()),
+            approval_remote_tool_name: Some("save-issue".into()),
+            policy_fingerprint: Some(fingerprint.clone()),
+        };
+
+        snapshot_run_policies(&repo.pool, "run-linear", std::slice::from_ref(&descriptor))
+            .await
+            .unwrap();
+
+        let policy = McpToolPolicy {
+            server_id: MANAGED_LINEAR_SERVER_ID.into(),
+            requires_approval: true,
+            policy_fingerprint: Some(fingerprint),
+        };
+        assert!(
+            run_policy_matches(&repo.pool, "run-linear", &descriptor.name, &policy)
+                .await
+                .unwrap()
+        );
+        assert!(!run_policy_matches(
+            &repo.pool,
+            "run-linear",
+            &descriptor.name,
+            &McpToolPolicy {
+                server_id: MANAGED_LINEAR_SERVER_ID.into(),
+                requires_approval: true,
+                policy_fingerprint: None,
+            },
+        )
+        .await
+        .unwrap());
+        for changed_tool in [
+            McpDiscoveredTool {
+                name: "save.issue".into(),
+                description: "Save an issue".into(),
+                input_schema: input_schema.clone(),
+                annotations: annotations.clone(),
+            },
+            McpDiscoveredTool {
+                name: "save-issue".into(),
+                description: "Save an issue".into(),
+                input_schema: json!({
+                    "type":"object",
+                    "properties":{"issueId":{"type":"string"}}
+                }),
+                annotations: annotations.clone(),
+            },
+            McpDiscoveredTool {
+                name: "save-issue".into(),
+                description: "Save an issue".into(),
+                input_schema: input_schema.clone(),
+                annotations: McpToolAnnotations::from_hints(Some(false), Some(false)),
+            },
+            McpDiscoveredTool {
+                name: "save-issue".into(),
+                description: "Save an issue".into(),
+                input_schema: input_schema.clone(),
+                annotations: McpToolAnnotations::from_raw(json!({
+                    "destructiveHint": false,
+                    "idempotentHint": true
+                })),
+            },
+        ] {
+            assert!(!run_policy_matches(
+                &repo.pool,
+                "run-linear",
+                &descriptor.name,
+                &McpToolPolicy {
+                    server_id: MANAGED_LINEAR_SERVER_ID.into(),
+                    requires_approval: true,
+                    policy_fingerprint: Some(
+                        managed_linear_policy_fingerprint(&changed_tool).unwrap()
+                    ),
+                },
+            )
+            .await
+            .unwrap());
+        }
+
+        query("INSERT INTO agent_runs (id) VALUES ('run-linear-missing-fingerprint')")
+            .execute(&repo.pool)
+            .await
+            .unwrap();
+        let mut missing_fingerprint = descriptor;
+        missing_fingerprint.policy_fingerprint = None;
+        assert!(matches!(
+            snapshot_run_policies(
+                &repo.pool,
+                "run-linear-missing-fingerprint",
+                &[missing_fingerprint],
+            )
+            .await,
+            Err(AgentMcpError::Storage)
+        ));
     }
 
     #[tokio::test]
@@ -3347,7 +4162,11 @@ mod tests {
             name: "mcp_later_search".into(),
             description: "Search later".into(),
             parameters: json!({"type":"object","properties":{}}),
+            strict: None,
             requires_approval: None,
+            approval_provider: None,
+            approval_remote_tool_name: None,
+            policy_fingerprint: None,
         };
         snapshot_run_policies(&repo.pool, "run-empty", &[descriptor])
             .await
@@ -3451,10 +4270,10 @@ done
 
             let tools = discover_server(&server, &secrets, None).await.unwrap();
             assert_eq!(tools[0].name, "increment");
-            let first = call_server(&server, &secrets, "increment", json!({}), None, None)
+            let first = call_server(&server, &secrets, "increment", json!({}), None, None, None)
                 .await
                 .unwrap();
-            let second = call_server(&server, &secrets, "increment", json!({}), None, None)
+            let second = call_server(&server, &secrets, "increment", json!({}), None, None, None)
                 .await
                 .unwrap();
 
@@ -3558,10 +4377,10 @@ done
         server.url = Some(format!("http://{address}/mcp"));
         let secrets = McpSecretBundle::default();
         discover_server(&server, &secrets, None).await.unwrap();
-        let first = call_server(&server, &secrets, "increment", json!({}), None, None)
+        let first = call_server(&server, &secrets, "increment", json!({}), None, None, None)
             .await
             .unwrap();
-        let second = call_server(&server, &secrets, "increment", json!({}), None, None)
+        let second = call_server(&server, &secrets, "increment", json!({}), None, None, None)
             .await
             .unwrap();
 
@@ -3589,16 +4408,19 @@ done
         let answer = Arc::new(TokioMutex::new(None::<Value>));
         let answer_ready = Arc::new(Notify::new());
         let tool_calls = Arc::new(AtomicUsize::new(0));
+        let discovery_calls = Arc::new(AtomicUsize::new(0));
         let server_task = tokio::spawn({
             let answer = answer.clone();
             let answer_ready = answer_ready.clone();
             let tool_calls = tool_calls.clone();
+            let discovery_calls = discovery_calls.clone();
             async move {
                 loop {
                     let (mut stream, _) = listener.accept().await.unwrap();
                     let answer = answer.clone();
                     let answer_ready = answer_ready.clone();
                     let tool_calls = tool_calls.clone();
+                    let discovery_calls = discovery_calls.clone();
                     tokio::spawn(async move {
                         let mut request = Vec::new();
                         let mut buffer = [0_u8; 4096];
@@ -3659,6 +4481,40 @@ done
                                     )
                                     .await
                                     .unwrap();
+                            }
+                            Some("tools/list") => {
+                                discovery_calls.fetch_add(1, Ordering::SeqCst);
+                                let body = if frame["params"]["cursor"] == json!("page-2") {
+                                    json!({
+                                        "jsonrpc": "2.0",
+                                        "id": frame["id"],
+                                        "result": {
+                                            "tools": [{
+                                                "name": "other",
+                                                "inputSchema": {"type": "object"}
+                                            }]
+                                        }
+                                    })
+                                } else {
+                                    json!({
+                                        "jsonrpc": "2.0",
+                                        "id": frame["id"],
+                                        "result": {
+                                            "tools": [{
+                                                "name": "choose",
+                                                "inputSchema": {"type": "object"}
+                                            }],
+                                            "nextCursor": "page-2"
+                                        }
+                                    })
+                                }
+                                .to_string();
+                                let headers = format!(
+                                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nmcp-session-id: elicitation-session\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                                    body.len()
+                                );
+                                stream.write_all(headers.as_bytes()).await.unwrap();
+                                stream.write_all(body.as_bytes()).await.unwrap();
                             }
                             Some("tools/call") => {
                                 tool_calls.fetch_add(1, Ordering::SeqCst);
@@ -3744,7 +4600,23 @@ done
             format!("eliciting-http-{}", Uuid::new_v4()),
             McpTransport::StreamableHttp,
         );
+        server.name = MANAGED_LINEAR_SERVER_NAME.to_string();
         server.url = Some(format!("http://{address}/mcp"));
+        let lifecycle_account = format!("linear-elicit-{}", Uuid::new_v4());
+        let lifecycle_guard = crate::connectors::acquire_linear_lifecycle(&lifecycle_account).await;
+        let lifecycle = lifecycle_guard.snapshot();
+        drop(lifecycle_guard);
+        let discovered =
+            discover_managed_server(&server, &McpSecretBundle::default(), None, &lifecycle)
+                .await
+                .unwrap();
+        assert_eq!(
+            discovered
+                .iter()
+                .map(|tool| tool.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["choose", "other"]
+        );
         let first = call_server(
             &server,
             &McpSecretBundle::default(),
@@ -3752,9 +4624,23 @@ done
             json!({}),
             None,
             None,
+            Some(&lifecycle),
         )
         .await;
         assert!(matches!(first, Err(AgentMcpError::ElicitationRequired(_))));
+        // A resumed turn recreates its registry. Discovery must use the page
+        // cached before the tool call instead of colliding with the parked
+        // elicitation in the persistent session. Both managed cursor pages
+        // must replay without another server request.
+        let rediscovered =
+            discover_managed_server(&server, &McpSecretBundle::default(), None, &lifecycle)
+                .await
+                .unwrap();
+        let mut registry = McpToolRegistry::default();
+        registry
+            .register_managed_linear(&server, rediscovered)
+            .unwrap();
+        assert!(registry.resolve("mcp_linear_choose").is_some());
         let result = call_server(
             &server,
             &McpSecretBundle::default(),
@@ -3762,12 +4648,14 @@ done
             json!({}),
             None,
             Some("Alpha"),
+            Some(&lifecycle),
         )
         .await
         .unwrap();
 
         assert_eq!(result["content"][0]["text"], "Alpha selected");
         assert_eq!(tool_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(discovery_calls.load(Ordering::SeqCst), 2);
         assert_eq!(
             answer.lock().await.as_ref().unwrap()["project"],
             json!("Alpha")
@@ -3824,11 +4712,12 @@ done
             let secrets = McpSecretBundle::default();
 
             discover_server(&server, &secrets, None).await.unwrap();
-            let first = call_server(&server, &secrets, "instance", json!({}), None, None)
+            let first = call_server(&server, &secrets, "instance", json!({}), None, None, None)
                 .await
                 .unwrap();
-            let second = call_server(&server, &secrets, "instance", json!({}), None, None).await;
-            let third = call_server(&server, &secrets, "instance", json!({}), None, None)
+            let second =
+                call_server(&server, &secrets, "instance", json!({}), None, None, None).await;
+            let third = call_server(&server, &secrets, "instance", json!({}), None, None, None)
                 .await
                 .unwrap();
 
@@ -3880,7 +4769,8 @@ done
                     "tools/call",
                     json!({"name":"hang","arguments":{}}),
                     None,
-                    None
+                    None,
+                    None,
                 )
                 .await,
                 Err(AgentMcpError::TimedOut)
@@ -3966,6 +4856,7 @@ done
                 json!({}),
                 None,
                 None,
+                None,
             )
             .await;
             assert!(matches!(first, Err(AgentMcpError::ElicitationRequired(_))));
@@ -3976,6 +4867,7 @@ done
                 json!({}),
                 None,
                 Some("Alpha"),
+                None,
             )
             .await
             .unwrap();
@@ -4003,16 +4895,602 @@ done
                         name: "read-file".into(),
                         description: String::new(),
                         input_schema: json!({"type":"object"}),
+                        annotations: McpToolAnnotations::default(),
                     },
                     McpDiscoveredTool {
                         name: "hidden".into(),
                         description: String::new(),
                         input_schema: json!({}),
+                        annotations: McpToolAnnotations::default(),
                     },
                 ],
             )
             .unwrap();
         assert_eq!(registry.descriptors().len(), 1);
-        assert!(registry.resolve("mcp_my_server_read_file").is_some());
+        assert_eq!(
+            registry
+                .resolve("mcp_my_server_read_file")
+                .unwrap()
+                .descriptor
+                .strict,
+            None
+        );
+    }
+
+    #[test]
+    fn managed_linear_uses_the_fixed_official_endpoint() {
+        let server = managed_linear_definition();
+        assert_eq!(server.id, MANAGED_LINEAR_SERVER_ID);
+        assert_eq!(server.name, MANAGED_LINEAR_SERVER_NAME);
+        assert_eq!(server.url.as_deref(), Some(MANAGED_LINEAR_MCP_URL));
+        assert_eq!(server.transport, McpTransport::StreamableHttp);
+        assert!(server.secret_ref.is_none());
+        assert!(server.validate().is_ok());
+    }
+
+    #[test]
+    fn hosted_tool_discovery_retains_safety_annotations_and_fails_closed_on_malformed_data() {
+        let tools = discovered_tools_from_response(&json!({
+            "result": {
+                "nextCursor": 42,
+                "tools": [
+                    {
+                        "name": "read",
+                        "inputSchema": {"type": "object"},
+                        "annotations": {
+                            "readOnlyHint": true,
+                            "destructiveHint": false,
+                            "idempotentHint": true
+                        }
+                    },
+                    {
+                        "name": "unknown",
+                        "inputSchema": {"type": "object"},
+                        "annotations": {"readOnlyHint": "not-a-boolean"}
+                    }
+                ]
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            tools[0].annotations.raw(),
+            &json!({
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true
+            })
+        );
+        assert_eq!(
+            tools[1].annotations.raw(),
+            &json!({"readOnlyHint": "not-a-boolean"})
+        );
+    }
+
+    #[test]
+    fn managed_linear_rejects_a_missing_schema_without_changing_custom_tolerance() {
+        let discovered = discovered_tools_from_response(&json!({
+            "result": {
+                "tools": [{
+                    "name": "schema_missing",
+                    "description": "No inputSchema field"
+                }]
+            }
+        }))
+        .unwrap();
+        assert!(discovered[0].input_schema.is_null());
+
+        let mut managed = McpToolRegistry::default();
+        managed
+            .register_managed_linear(&managed_linear_definition(), discovered.clone())
+            .unwrap();
+        assert!(managed.resolve("mcp_linear_schema_missing").is_none());
+
+        let mut custom_server = McpServerDefinition::new("custom", McpTransport::StreamableHttp);
+        custom_server.url = Some("https://example.com/mcp".into());
+        let mut custom = McpToolRegistry::default();
+        custom.register(&custom_server, discovered).unwrap();
+        assert_eq!(
+            custom
+                .resolve("mcp_custom_schema_missing")
+                .unwrap()
+                .descriptor
+                .parameters,
+            json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn managed_linear_discovery_follows_bounded_cursor_pagination() {
+        let mut pages = std::collections::VecDeque::from([
+            json!({
+                "result": {
+                    "tools": [{
+                        "name": "first",
+                        "inputSchema": {"type": "object"}
+                    }],
+                    "nextCursor": "page-2"
+                }
+            }),
+            json!({
+                "result": {
+                    "tools": [{
+                        "name": "second",
+                        "inputSchema": {"type": "object"}
+                    }]
+                }
+            }),
+        ]);
+        let mut requests = Vec::new();
+
+        let tools = discover_managed_tools_with(|params| {
+            requests.push(params);
+            std::future::ready(pages.pop_front().ok_or(AgentMcpError::Protocol))
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(
+            tools
+                .iter()
+                .map(|tool| tool.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["first", "second"]
+        );
+        assert_eq!(requests, vec![json!({}), json!({"cursor": "page-2"})]);
+    }
+
+    #[tokio::test]
+    async fn stale_linear_lifecycle_cannot_start_a_managed_session() {
+        let account_id = format!("linear-session-{}", Uuid::new_v4());
+        let lifecycle = crate::connectors::acquire_linear_lifecycle(&account_id).await;
+        let stale = lifecycle.snapshot();
+        lifecycle.bump_epoch();
+        drop(lifecycle);
+        let mut server = managed_linear_definition();
+        server.id = format!("builtin:linear-stale-{}", Uuid::new_v4());
+
+        let result = session_request(
+            &server,
+            &McpSecretBundle::default(),
+            "tools/list",
+            json!({}),
+            None,
+            None,
+            Some(&stale),
+        )
+        .await;
+
+        assert!(matches!(result, Err(AgentMcpError::ToolUnavailable)));
+        retire_server_sessions(&server.id).await;
+    }
+
+    #[tokio::test]
+    async fn admitted_linear_dispatch_blocks_epoch_change_until_guard_drops() {
+        let account_id = format!("linear-session-slot-{}", Uuid::new_v4());
+        let lifecycle = crate::connectors::acquire_linear_lifecycle(&account_id).await;
+        let snapshot = lifecycle.snapshot();
+        drop(lifecycle);
+        let dispatch = snapshot.acquire_current().await.unwrap();
+
+        let lifecycle_change = tokio::spawn(async move {
+            let lifecycle = crate::connectors::acquire_linear_lifecycle(&account_id).await;
+            lifecycle.bump_epoch();
+        });
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        assert!(!lifecycle_change.is_finished());
+        assert!(snapshot.is_current());
+
+        drop(dispatch);
+        tokio::time::timeout(Duration::from_secs(1), lifecycle_change)
+            .await
+            .expect("lifecycle change must not deadlock")
+            .unwrap();
+        assert!(!snapshot.is_current());
+    }
+
+    #[tokio::test]
+    async fn admitted_request_finishes_before_lifecycle_change() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::{net::TcpListener, sync::Notify};
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let initialize_started = Arc::new(Notify::new());
+        let release_initialize = Arc::new(Notify::new());
+        let tool_calls = Arc::new(AtomicUsize::new(0));
+        let server_task = tokio::spawn({
+            let initialize_started = initialize_started.clone();
+            let release_initialize = release_initialize.clone();
+            let tool_calls = tool_calls.clone();
+            async move {
+                loop {
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    let initialize_started = initialize_started.clone();
+                    let release_initialize = release_initialize.clone();
+                    let tool_calls = tool_calls.clone();
+                    tokio::spawn(async move {
+                        let mut request = Vec::new();
+                        let mut buffer = [0_u8; 4096];
+                        loop {
+                            let read = stream.read(&mut buffer).await.unwrap();
+                            if read == 0 {
+                                break;
+                            }
+                            request.extend_from_slice(&buffer[..read]);
+                            let Some(headers_end) =
+                                request.windows(4).position(|window| window == b"\r\n\r\n")
+                            else {
+                                continue;
+                            };
+                            let headers = String::from_utf8_lossy(&request[..headers_end]);
+                            let content_length = headers
+                                .lines()
+                                .find_map(|line| {
+                                    let (name, value) = line.split_once(':')?;
+                                    name.eq_ignore_ascii_case("content-length")
+                                        .then(|| value.trim().parse::<usize>().ok())
+                                        .flatten()
+                                })
+                                .unwrap_or(0);
+                            if request.len() >= headers_end + 4 + content_length {
+                                break;
+                            }
+                        }
+                        let body_start = request
+                            .windows(4)
+                            .position(|window| window == b"\r\n\r\n")
+                            .unwrap()
+                            + 4;
+                        let frame: Value = serde_json::from_slice(&request[body_start..]).unwrap();
+                        match frame.get("method").and_then(Value::as_str) {
+                            Some("initialize") => {
+                                initialize_started.notify_one();
+                                release_initialize.notified().await;
+                                let body = json!({
+                                    "jsonrpc": "2.0",
+                                    "id": frame["id"],
+                                    "result": {
+                                        "protocolVersion": MCP_PROTOCOL_VERSION,
+                                        "capabilities": {},
+                                        "serverInfo": {
+                                            "name": "delayed-initialize",
+                                            "version": "1"
+                                        }
+                                    }
+                                })
+                                .to_string();
+                                let headers = format!(
+                                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nmcp-session-id: delayed-session\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                                    body.len()
+                                );
+                                stream.write_all(headers.as_bytes()).await.unwrap();
+                                stream.write_all(body.as_bytes()).await.unwrap();
+                            }
+                            Some("notifications/initialized") => {
+                                stream
+                                    .write_all(
+                                        b"HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
+                                    )
+                                    .await
+                                    .unwrap();
+                            }
+                            Some("tools/call") => {
+                                tool_calls.fetch_add(1, Ordering::SeqCst);
+                                let body = json!({
+                                    "jsonrpc": "2.0",
+                                    "id": frame["id"],
+                                    "result": {"content": []}
+                                })
+                                .to_string();
+                                let headers = format!(
+                                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                                    body.len()
+                                );
+                                stream.write_all(headers.as_bytes()).await.unwrap();
+                                stream.write_all(body.as_bytes()).await.unwrap();
+                            }
+                            _ => {}
+                        }
+                    });
+                }
+            }
+        });
+
+        let account_id = format!("linear-init-{}", Uuid::new_v4());
+        let lifecycle_guard = crate::connectors::acquire_linear_lifecycle(&account_id).await;
+        let snapshot = lifecycle_guard.snapshot();
+        drop(lifecycle_guard);
+        let mut server = managed_linear_definition();
+        server.id = format!("builtin:linear-init-{}", Uuid::new_v4());
+        server.url = Some(format!("http://{address}/mcp"));
+        let request_server = server.clone();
+        let request_snapshot = snapshot.clone();
+        let request = tokio::spawn(async move {
+            session_request(
+                &request_server,
+                &McpSecretBundle::default(),
+                "tools/call",
+                json!({"name": "create_issue", "arguments": {}}),
+                None,
+                None,
+                Some(&request_snapshot),
+            )
+            .await
+        });
+
+        initialize_started.notified().await;
+        let lifecycle_change = tokio::spawn(async move {
+            let lifecycle = crate::connectors::acquire_linear_lifecycle(&account_id).await;
+            lifecycle.bump_epoch();
+        });
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        assert!(!lifecycle_change.is_finished());
+        release_initialize.notify_one();
+
+        assert!(request.await.unwrap().is_ok());
+        tokio::time::timeout(Duration::from_secs(1), lifecycle_change)
+            .await
+            .expect("lifecycle change must not deadlock")
+            .unwrap();
+        assert_eq!(tool_calls.load(Ordering::SeqCst), 1);
+        retire_server_sessions(&server.id).await;
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn managed_linear_discovery_rejects_repeated_cursors() {
+        let mut pages = std::collections::VecDeque::from([
+            json!({"result": {"tools": [], "nextCursor": "repeat"}}),
+            json!({"result": {"tools": [], "nextCursor": "repeat"}}),
+        ]);
+        let mut requests = Vec::new();
+
+        let result = discover_managed_tools_with(|params| {
+            requests.push(params);
+            std::future::ready(pages.pop_front().ok_or(AgentMcpError::Protocol))
+        })
+        .await;
+
+        assert!(matches!(result, Err(AgentMcpError::Protocol)));
+        assert_eq!(requests.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn managed_linear_discovery_enforces_aggregate_bounds() {
+        let mut page_requests = 0usize;
+        let page_result = discover_managed_tools_with(|_| {
+            page_requests += 1;
+            std::future::ready(Ok(json!({
+                "result": {
+                    "tools": [],
+                    "nextCursor": format!("page-{page_requests}")
+                }
+            })))
+        })
+        .await;
+        assert!(matches!(page_result, Err(AgentMcpError::Protocol)));
+        assert_eq!(page_requests, MANAGED_MCP_DISCOVERY_MAX_PAGES);
+
+        let too_many_tools = vec![
+            json!({
+                "name": "tool",
+                "inputSchema": {"type": "object"}
+            });
+            MANAGED_MCP_DISCOVERY_MAX_TOOLS + 1
+        ];
+        let tool_result = discover_managed_tools_with(|_| {
+            std::future::ready(Ok(json!({"result": {"tools": too_many_tools}})))
+        })
+        .await;
+        assert!(matches!(tool_result, Err(AgentMcpError::Protocol)));
+
+        let long_cursor = "x".repeat(MANAGED_MCP_CURSOR_MAX_CHARS + 1);
+        let cursor_result = discover_managed_tools_with(|_| {
+            std::future::ready(Ok(json!({
+                "result": {"tools": [], "nextCursor": long_cursor}
+            })))
+        })
+        .await;
+        assert!(matches!(cursor_result, Err(AgentMcpError::Protocol)));
+
+        let oversized_description = "x".repeat(MANAGED_MCP_DISCOVERY_MAX_BYTES + 1);
+        let byte_result = discover_managed_tools_with(|_| {
+            std::future::ready(Ok(json!({
+                "result": {
+                    "tools": [{
+                        "name": "oversized",
+                        "description": oversized_description,
+                        "inputSchema": {"type": "object"}
+                    }]
+                }
+            })))
+        })
+        .await;
+        assert!(matches!(byte_result, Err(AgentMcpError::Protocol)));
+    }
+
+    #[test]
+    fn managed_linear_requires_approval_unless_annotations_are_clearly_read_only() {
+        let server = managed_linear_definition();
+        let tool = |name: &str, read_only_hint, destructive_hint| McpDiscoveredTool {
+            name: name.to_string(),
+            description: String::new(),
+            input_schema: json!({"type":"object"}),
+            annotations: McpToolAnnotations::from_hints(read_only_hint, destructive_hint),
+        };
+        let mut registry = McpToolRegistry::default();
+        registry
+            .register_managed_linear(
+                &server,
+                vec![
+                    tool("safe", Some(true), Some(false)),
+                    tool("ambiguous", None, None),
+                    tool("missing_destructive", Some(true), None),
+                    tool("conflicting", Some(true), Some(true)),
+                    tool("write", Some(false), Some(false)),
+                    McpDiscoveredTool {
+                        name: "malformed".into(),
+                        description: String::new(),
+                        input_schema: json!({"type":"object"}),
+                        annotations: McpToolAnnotations::from_raw(json!({
+                            "readOnlyHint": "not-a-boolean",
+                            "destructiveHint": false
+                        })),
+                    },
+                ],
+            )
+            .unwrap();
+
+        for name in ["safe", "missing_destructive"] {
+            assert_eq!(
+                registry
+                    .resolve(&format!("mcp_linear_{name}"))
+                    .unwrap()
+                    .descriptor
+                    .requires_approval,
+                None
+            );
+        }
+        for name in ["ambiguous", "conflicting", "write", "malformed"] {
+            assert_eq!(
+                registry
+                    .resolve(&format!("mcp_linear_{name}"))
+                    .unwrap()
+                    .descriptor
+                    .requires_approval,
+                Some(true)
+            );
+        }
+        assert!(registry
+            .descriptors()
+            .iter()
+            .all(|descriptor| descriptor.strict == Some(false)));
+    }
+
+    #[test]
+    fn managed_linear_skips_invalid_tools_and_cannot_be_shadowed_by_custom_mcp() {
+        let server = managed_linear_definition();
+        let mut custom = McpServerDefinition::new("linear", McpTransport::Stdio);
+        custom.command = Some("node".into());
+        let mut registry = McpToolRegistry::default();
+        registry
+            .register(
+                &custom,
+                vec![McpDiscoveredTool {
+                    name: "search".into(),
+                    description: "custom".into(),
+                    input_schema: json!({"type":"object"}),
+                    annotations: McpToolAnnotations::default(),
+                }],
+            )
+            .unwrap();
+        registry
+            .register_managed_linear(
+                &server,
+                vec![
+                    McpDiscoveredTool {
+                        name: "x".repeat(200),
+                        description: "invalid".into(),
+                        input_schema: json!({"type":"object"}),
+                        annotations: McpToolAnnotations::default(),
+                    },
+                    McpDiscoveredTool {
+                        name: "search".into(),
+                        description: "official".into(),
+                        input_schema: json!({"type":"object"}),
+                        annotations: McpToolAnnotations::from_hints(Some(true), Some(false)),
+                    },
+                ],
+            )
+            .unwrap();
+
+        let search = registry.resolve("mcp_linear_search").unwrap();
+        assert_eq!(search.server_id, MANAGED_LINEAR_SERVER_ID);
+        assert_eq!(search.descriptor.description, "official");
+        assert_eq!(
+            search.descriptor.approval_provider.as_deref(),
+            Some("Linear")
+        );
+        assert_eq!(
+            search.descriptor.approval_remote_tool_name.as_deref(),
+            Some("search")
+        );
+        assert_eq!(registry.descriptors().len(), 1);
+    }
+
+    #[test]
+    fn managed_linear_bounds_each_hosted_descriptor_independently() {
+        let server = managed_linear_definition();
+        let oversized = "x".repeat(MANAGED_MCP_TOOL_SCHEMA_MAX_BYTES + 1);
+        let oversized_annotations = "x".repeat(MANAGED_MCP_TOOL_ANNOTATIONS_MAX_BYTES + 1);
+        let long_description = "d".repeat(MANAGED_MCP_DESCRIPTION_MAX_CHARS + 10);
+        let mut registry = McpToolRegistry::default();
+        registry
+            .register_managed_linear(
+                &server,
+                vec![
+                    McpDiscoveredTool {
+                        name: "bad-schema".into(),
+                        description: "invalid".into(),
+                        input_schema: json!(["not", "an", "object"]),
+                        annotations: McpToolAnnotations::default(),
+                    },
+                    McpDiscoveredTool {
+                        name: "wrong-schema-type".into(),
+                        description: "invalid".into(),
+                        input_schema: json!({"type":"array","items":{}}),
+                        annotations: McpToolAnnotations::default(),
+                    },
+                    McpDiscoveredTool {
+                        name: "malformed-properties".into(),
+                        description: "invalid".into(),
+                        input_schema: json!({"type":"object","properties":[]}),
+                        annotations: McpToolAnnotations::default(),
+                    },
+                    McpDiscoveredTool {
+                        name: "malformed-required".into(),
+                        description: "invalid".into(),
+                        input_schema: json!({"type":"object","required":{}}),
+                        annotations: McpToolAnnotations::default(),
+                    },
+                    McpDiscoveredTool {
+                        name: "oversized".into(),
+                        description: "invalid".into(),
+                        input_schema: json!({
+                            "type": "object",
+                            "description": oversized,
+                        }),
+                        annotations: McpToolAnnotations::default(),
+                    },
+                    McpDiscoveredTool {
+                        name: "oversized-annotations".into(),
+                        description: "invalid".into(),
+                        input_schema: json!({"type":"object"}),
+                        annotations: McpToolAnnotations::from_raw(json!({
+                            "futureHint": oversized_annotations
+                        })),
+                    },
+                    McpDiscoveredTool {
+                        name: "valid".into(),
+                        description: long_description,
+                        input_schema: json!({"type":"object"}),
+                        annotations: McpToolAnnotations::from_hints(Some(true), Some(false)),
+                    },
+                ],
+            )
+            .unwrap();
+
+        let valid = registry.resolve("mcp_linear_valid").unwrap();
+        assert_eq!(
+            valid.descriptor.description.chars().count(),
+            MANAGED_MCP_DESCRIPTION_MAX_CHARS + 3
+        );
+        assert!(valid.descriptor.description.ends_with("..."));
+        assert_eq!(registry.descriptors().len(), 1);
     }
 }

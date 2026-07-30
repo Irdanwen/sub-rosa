@@ -25,8 +25,8 @@ export type AgentApprovalChoice = "once" | "session" | "always" | "deny";
 export type AgentChatApprovalPart = {
   type: "approval";
   id: string;
-  sessionId?: string;
   runId: string;
+  sessionId?: string;
   command: string;
   description: string;
   allowPermanent: boolean;
@@ -37,8 +37,8 @@ export type AgentChatApprovalPart = {
 export type AgentChatClarifyPart = {
   type: "clarify";
   id: string;
-  sessionId?: string;
   runId: string;
+  sessionId?: string;
   question: string;
   choices: string[];
   answer?: string;

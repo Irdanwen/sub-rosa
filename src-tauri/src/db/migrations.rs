@@ -1291,6 +1291,45 @@ const MIGRATIONS: &[Migration] = &[
             "../../migrations/033_companion_computer_use_approval_audit.sql"
         ))],
     },
+    Migration {
+        version: 48,
+        name: "linear_managed_mcp",
+        requirements: &[
+            SchemaRequirement::Table("linear_mcp_connection"),
+            SchemaRequirement::Column {
+                table: "linear_mcp_connection",
+                column: "preset_id",
+            },
+            SchemaRequirement::Column {
+                table: "linear_mcp_connection",
+                column: "state",
+            },
+        ],
+        steps: &[MigrationStep::Sql(include_str!(
+            "../../migrations/033_linear_managed_mcp.sql"
+        ))],
+    },
+    Migration {
+        version: 49,
+        name: "linear_managed_mcp_repair",
+        requirements: &[
+            SchemaRequirement::Table("linear_mcp_connection"),
+            SchemaRequirement::Column {
+                table: "linear_mcp_connection",
+                column: "preset_id",
+            },
+            SchemaRequirement::Column {
+                table: "linear_mcp_connection",
+                column: "state",
+            },
+        ],
+        // The ledger repair is implemented in
+        // repair_prerelease_linear_managed_mcp_stamp. Re-running the
+        // compatibility DDL keeps clean and prerelease databases convergent.
+        steps: &[MigrationStep::Sql(include_str!(
+            "../../migrations/033_linear_managed_mcp.sql"
+        ))],
+    },
 ];
 
 const NOTE_REVISION_COLUMN: &[ColumnDefinition] = &[ColumnDefinition {
@@ -1446,7 +1485,9 @@ async fn run_migration_catalog(
     validate_catalog(migrations)?;
 
     if let Some(applied) = read_applied_migrations_from_pool(pool).await? {
-        if is_prerelease_agent_runtime_stamp(&applied, migrations) {
+        if is_prerelease_agent_runtime_stamp(&applied, migrations)
+            || is_prerelease_linear_managed_mcp_stamp(&applied, migrations)
+        {
             // Repair needs the same write lock and transaction as a normal
             // migration, so continue into migrate_locked.
         } else {
@@ -1479,6 +1520,11 @@ async fn migrate_locked(
     let mut applied = read_applied_migrations_from_transaction(transaction).await?;
     if let Some(ref stamped) = applied {
         if repair_prerelease_agent_runtime_stamp(transaction, stamped, migrations).await? {
+            applied = read_applied_migrations_from_transaction(transaction).await?;
+        }
+    }
+    if let Some(ref stamped) = applied {
+        if repair_prerelease_linear_managed_mcp_stamp(transaction, stamped, migrations).await? {
             applied = read_applied_migrations_from_transaction(transaction).await?;
         }
     }
@@ -1589,6 +1635,120 @@ async fn repair_prerelease_agent_runtime_stamp(
     // the requirement check above.
     stamp_legacy_migrations(transaction, std::slice::from_ref(runtime)).await?;
     Ok(true)
+}
+
+async fn repair_prerelease_linear_managed_mcp_stamp(
+    transaction: &mut SqliteTransaction<'_>,
+    applied: &[AppliedMigration],
+    migrations: &[Migration],
+) -> Result<bool, sqlx::Error> {
+    let Some(displaced_index) = prerelease_linear_managed_mcp_index(applied, migrations) else {
+        return Ok(false);
+    };
+
+    validate_applied_migrations(&applied[..displaced_index], migrations)?;
+    let managed_mcp_index = migrations
+        .iter()
+        .position(|migration| migration.name == "linear_managed_mcp")
+        .ok_or_else(|| {
+            sqlx::Error::Protocol(
+                "Linear managed MCP prerelease repair is missing its migration".into(),
+            )
+        })?;
+    let managed_mcp = &migrations[managed_mcp_index];
+    let managed_mcp_repair = migrations
+        .iter()
+        .find(|migration| migration.name == "linear_managed_mcp_repair")
+        .ok_or_else(|| {
+            sqlx::Error::Protocol(
+                "Linear managed MCP prerelease repair is missing its repair migration".into(),
+            )
+        })?;
+    let snapshot = SchemaSnapshot::load(transaction).await?;
+    if !managed_mcp
+        .requirements
+        .iter()
+        .copied()
+        .all(|requirement| snapshot.satisfies(requirement))
+    {
+        return Ok(false);
+    }
+
+    for (old_version, new_version, name) in [
+        (
+            applied[displaced_index + 1].version,
+            managed_mcp_repair.version,
+            managed_mcp_repair.name,
+        ),
+        (
+            applied[displaced_index].version,
+            managed_mcp.version,
+            managed_mcp.name,
+        ),
+    ] {
+        let result = query(
+            "UPDATE schema_migrations
+             SET version = ?
+             WHERE version = ? AND name = ?",
+        )
+        .bind(new_version)
+        .bind(old_version)
+        .bind(name)
+        .execute(&mut **transaction)
+        .await?;
+        if result.rows_affected() != 1 {
+            return Err(sqlx::Error::Protocol(format!(
+                "Linear managed MCP prerelease repair could not move {name}"
+            )));
+        }
+    }
+    for migration in &migrations[displaced_index..managed_mcp_index] {
+        apply_migration(transaction, migration).await?;
+        stamp_legacy_migrations(transaction, std::slice::from_ref(migration)).await?;
+    }
+    Ok(true)
+}
+
+fn prerelease_linear_managed_mcp_index(
+    applied: &[AppliedMigration],
+    migrations: &[Migration],
+) -> Option<usize> {
+    let calendar_index = migrations
+        .iter()
+        .position(|migration| migration.name == "calendar_event_html_link")?;
+    let calendar = &migrations[calendar_index];
+    let displaced_index = if applied.len() == calendar_index + 2 {
+        calendar_index
+    } else if applied.len() == calendar_index + 3
+        && applied.get(calendar_index).is_some_and(|applied| {
+            applied.version == calendar.version && applied.name == calendar.name
+        })
+    {
+        calendar_index + 1
+    } else {
+        return None;
+    };
+    let managed_mcp = applied.get(displaced_index)?;
+    let managed_mcp_repair = applied.get(displaced_index + 1)?;
+
+    // Linear prerelease builds stamped 45/46 before the calendar migration,
+    // then 46/47 after the calendar repair. Main subsequently shipped two
+    // companion migrations at 46/47, so both exact branch histories must move
+    // to the append-only Linear positions without replaying provider state.
+    let displaced_version =
+        calendar.version + i64::try_from(displaced_index - calendar_index).ok()?;
+    (managed_mcp.version == displaced_version
+        && managed_mcp.name == "linear_managed_mcp"
+        && managed_mcp_repair.version == displaced_version + 1
+        && managed_mcp_repair.name == "linear_managed_mcp_repair")
+        .then_some(displaced_index)
+}
+
+fn is_prerelease_linear_managed_mcp_stamp(
+    applied: &[AppliedMigration],
+    migrations: &[Migration],
+) -> bool {
+    prerelease_linear_managed_mcp_index(applied, migrations).is_some()
 }
 
 fn is_prerelease_agent_runtime_stamp(
@@ -2162,6 +2322,8 @@ mod tests {
             vec![
                 (46, "companion_files".to_string()),
                 (47, "companion_computer_use_approval_audit".to_string()),
+                (48, "linear_managed_mcp".to_string()),
+                (49, "linear_managed_mcp_repair".to_string()),
             ]
         );
         assert_latest_stamp(&pool).await;
@@ -2341,6 +2503,257 @@ mod tests {
             assert_eq!(present, 1, "{index} should be restored");
         }
         assert_latest_stamp(&pool).await;
+    }
+
+    #[tokio::test]
+    async fn prerelease_linear_stamps_shift_after_calendar_release_without_replaying() {
+        let pool = test_pool().await;
+        run_migration_catalog(&pool, &MIGRATIONS[..44])
+            .await
+            .expect("schema before calendar release");
+        query(
+            "CREATE TABLE linear_mcp_connection (
+                preset_id TEXT PRIMARY KEY NOT NULL,
+                state TEXT NOT NULL
+             )",
+        )
+        .execute(&pool)
+        .await
+        .expect("prerelease Linear schema");
+        query(
+            "INSERT INTO linear_mcp_connection (preset_id, state)
+             VALUES ('builtin:linear', 'connected')",
+        )
+        .execute(&pool)
+        .await
+        .expect("prerelease Linear state");
+        for (version, name) in [
+            (45_i64, "linear_managed_mcp"),
+            (46_i64, "linear_managed_mcp_repair"),
+        ] {
+            query(
+                "INSERT INTO schema_migrations (version, name)
+                 VALUES (?, ?)",
+            )
+            .bind(version)
+            .bind(name)
+            .execute(&pool)
+            .await
+            .expect("prerelease Linear migration stamp");
+        }
+
+        run_migrations(&pool)
+            .await
+            .expect("repair prerelease Linear migration stamps");
+        run_migrations(&pool)
+            .await
+            .expect("idempotent prerelease Linear stamp repair");
+
+        let rows = query(
+            "SELECT version, name
+             FROM schema_migrations
+             WHERE version >= 45
+             ORDER BY version",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("repaired migration stamps");
+        let stamps = rows
+            .iter()
+            .map(|row| (row.get::<i64, _>("version"), row.get::<String, _>("name")))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            stamps,
+            vec![
+                (45, "calendar_event_html_link".to_string()),
+                (46, "companion_files".to_string()),
+                (47, "companion_computer_use_approval_audit".to_string()),
+                (48, "linear_managed_mcp".to_string()),
+                (49, "linear_managed_mcp_repair".to_string()),
+            ]
+        );
+
+        let calendar_column_count: i64 = query(
+            "SELECT COUNT(*) AS count
+             FROM pragma_table_info('notes')
+             WHERE name = 'calendar_event_html_link'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("calendar column")
+        .get("count");
+        assert_eq!(calendar_column_count, 1);
+        let linear_state: String =
+            query("SELECT state FROM linear_mcp_connection WHERE preset_id = 'builtin:linear'")
+                .fetch_one(&pool)
+                .await
+                .expect("preserved Linear state")
+                .get("state");
+        assert_eq!(linear_state, "connected");
+    }
+
+    #[tokio::test]
+    async fn clean_database_installs_linear_managed_mcp_compatibility_migrations() {
+        let pool = test_pool().await;
+        run_migrations(&pool).await.expect("current schema");
+        run_migrations(&pool)
+            .await
+            .expect("idempotent current schema");
+
+        assert!(table_exists(&pool, "linear_mcp_connection").await);
+        let rows: i64 = query("SELECT COUNT(*) AS count FROM linear_mcp_connection")
+            .fetch_one(&pool)
+            .await
+            .expect("compatibility table")
+            .get("count");
+        assert_eq!(rows, 0, "migration must not invent connection authority");
+        assert_latest_stamp(&pool).await;
+    }
+
+    #[tokio::test]
+    async fn released_version_45_database_advances_through_linear_migrations() {
+        let pool = test_pool().await;
+        run_migration_catalog(&pool, &MIGRATIONS[..45])
+            .await
+            .expect("released version 45 schema");
+
+        run_migrations(&pool)
+            .await
+            .expect("advance through Linear migrations");
+
+        assert!(table_exists(&pool, "linear_mcp_connection").await);
+        assert_latest_stamp(&pool).await;
+    }
+
+    #[tokio::test]
+    async fn repaired_linear_stamps_are_accepted_without_replaying_state() {
+        let pool = test_pool().await;
+        run_migration_catalog(&pool, &MIGRATIONS[..45])
+            .await
+            .expect("released version 45 schema");
+        query(
+            "CREATE TABLE linear_mcp_connection (
+                preset_id TEXT PRIMARY KEY NOT NULL,
+                state TEXT NOT NULL
+             )",
+        )
+        .execute(&pool)
+        .await
+        .expect("prerelease Linear schema");
+        query(
+            "INSERT INTO linear_mcp_connection (preset_id, state)
+             VALUES ('builtin:linear', 'connected')",
+        )
+        .execute(&pool)
+        .await
+        .expect("prerelease Linear state");
+        for (version, name) in [
+            (46_i64, "linear_managed_mcp"),
+            (47_i64, "linear_managed_mcp_repair"),
+        ] {
+            query("INSERT INTO schema_migrations (version, name) VALUES (?, ?)")
+                .bind(version)
+                .bind(name)
+                .execute(&pool)
+                .await
+                .expect("repaired Linear migration stamp");
+        }
+
+        run_migrations(&pool)
+            .await
+            .expect("accept repaired Linear stamps");
+
+        assert!(table_exists(&pool, "companion_browse_roots").await);
+        assert!(table_exists(&pool, "companion_uploads").await);
+        assert!(table_exists(&pool, "companion_computer_use_approval_audit").await);
+        let state: String =
+            query("SELECT state FROM linear_mcp_connection WHERE preset_id = 'builtin:linear'")
+                .fetch_one(&pool)
+                .await
+                .expect("preserved Linear state")
+                .get("state");
+        assert_eq!(state, "connected");
+        assert_latest_stamp(&pool).await;
+    }
+
+    #[tokio::test]
+    async fn malformed_linear_prerelease_stamp_is_rejected_transactionally() {
+        let pool = test_pool().await;
+        run_migration_catalog(&pool, &MIGRATIONS[..44])
+            .await
+            .expect("schema before calendar release");
+        query(
+            "CREATE TABLE linear_mcp_connection (
+                preset_id TEXT PRIMARY KEY NOT NULL,
+                state TEXT NOT NULL
+             )",
+        )
+        .execute(&pool)
+        .await
+        .expect("prerelease Linear schema");
+        for (version, name) in [
+            (45_i64, "linear_managed_mcp"),
+            (46_i64, "linear_managed_mcp_wrong"),
+        ] {
+            query("INSERT INTO schema_migrations (version, name) VALUES (?, ?)")
+                .bind(version)
+                .bind(name)
+                .execute(&pool)
+                .await
+                .expect("malformed Linear migration stamp");
+        }
+
+        assert!(run_migrations(&pool).await.is_err());
+        let calendar_column_count: i64 = query(
+            "SELECT COUNT(*) AS count
+             FROM pragma_table_info('notes')
+             WHERE name = 'calendar_event_html_link'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("calendar column lookup")
+        .get("count");
+        assert_eq!(calendar_column_count, 0);
+    }
+
+    #[tokio::test]
+    async fn malformed_linear_prerelease_schema_is_rejected_transactionally() {
+        let pool = test_pool().await;
+        run_migration_catalog(&pool, &MIGRATIONS[..44])
+            .await
+            .expect("schema before calendar release");
+        query(
+            "CREATE TABLE linear_mcp_connection (
+                wrong_id TEXT PRIMARY KEY NOT NULL,
+                state TEXT NOT NULL
+             )",
+        )
+        .execute(&pool)
+        .await
+        .expect("malformed prerelease Linear schema");
+        for (version, name) in [
+            (45_i64, "linear_managed_mcp"),
+            (46_i64, "linear_managed_mcp_repair"),
+        ] {
+            query("INSERT INTO schema_migrations (version, name) VALUES (?, ?)")
+                .bind(version)
+                .bind(name)
+                .execute(&pool)
+                .await
+                .expect("prerelease Linear migration stamp");
+        }
+
+        assert!(run_migrations(&pool).await.is_err());
+        let calendar_column_count: i64 = query(
+            "SELECT COUNT(*) AS count
+             FROM pragma_table_info('notes')
+             WHERE name = 'calendar_event_html_link'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("calendar column lookup")
+        .get("count");
+        assert_eq!(calendar_column_count, 0);
     }
 
     #[tokio::test]

@@ -293,12 +293,17 @@ async fn mcp_tool(context: &ToolContext, name: &str, arguments: Value) -> Result
         crate::agent_mcp::KeychainMcpSecretStore,
     );
     subsystem
-        .refresh_registry_for_workspace(
+        .refresh_registry_for_workspace_with_managed_linear(
+            &context.app,
             context.safety_mode == AgentSafetyMode::Sandboxed,
             Some(&context.workspace),
         )
         .await
         .map_err(agent_mcp_error)?;
+    let current_policy = subsystem
+        .policy_for_tool(name)
+        .map_err(agent_mcp_error)?
+        .ok_or_else(|| AppError::new("agent_mcp_tool_failed", "MCP tool is unavailable."))?;
     let server_name = subsystem
         .server_name_for_tool(name)
         .map_err(agent_mcp_error)?
@@ -306,7 +311,9 @@ async fn mcp_tool(context: &ToolContext, name: &str, arguments: Value) -> Result
     if crate::routines::routine_mcp_server_allowed_for_session(
         &context.repository.pool,
         &context.session_id,
+        &current_policy.server_id,
         &server_name,
+        current_policy.requires_approval,
     )
     .await?
         == Some(false)
@@ -316,10 +323,6 @@ async fn mcp_tool(context: &ToolContext, name: &str, arguments: Value) -> Result
             "This MCP server is not enabled for the routine.",
         ));
     }
-    let current_policy = subsystem
-        .policy_for_tool(name)
-        .map_err(agent_mcp_error)?
-        .ok_or_else(|| AppError::new("agent_mcp_tool_failed", "MCP tool is unavailable."))?;
     if !crate::agent_mcp::run_policy_matches(
         &context.repository.pool,
         &context.run_id,
@@ -335,7 +338,8 @@ async fn mcp_tool(context: &ToolContext, name: &str, arguments: Value) -> Result
         ));
     }
     let elicitation_answer = latest_mcp_elicitation_answer(context).await?;
-    let invocation = subsystem.invoke_in_workspace_with_elicitation(
+    let invocation = subsystem.invoke_in_workspace_with_elicitation_and_managed_linear(
+        &context.app,
         name,
         arguments,
         context.safety_mode == AgentSafetyMode::Sandboxed,

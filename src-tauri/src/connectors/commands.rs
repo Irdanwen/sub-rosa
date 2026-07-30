@@ -56,6 +56,7 @@ pub async fn connectors_connect(
     let provider = parse_provider(request.provider.as_deref())?;
     let bundles = parse_bundles(&request.scopes)?;
     validate_bundle_providers(&bundles, provider)?;
+    let _operation = flow.begin_operation()?;
     let account = match provider {
         ConnectorProvider::Google => {
             begin_connect(&app, &flow, &bundles, request.login_hint.as_deref()).await?
@@ -115,8 +116,7 @@ pub fn connectors_cancel_connect(flow: tauri::State<'_, ConnectFlow>) -> Result<
 #[serde(rename_all = "camelCase")]
 pub struct ConnectorsDisconnectRequest {
     pub account_id: String,
-    /// Also revoke the grant at Google (best-effort) instead of only
-    /// removing local custody.
+    /// Also ask the provider to revoke the grant after removing local custody.
     #[serde(default)]
     pub revoke: bool,
 }
@@ -125,7 +125,7 @@ pub struct ConnectorsDisconnectRequest {
 pub async fn connectors_disconnect(
     app: tauri::AppHandle,
     request: ConnectorsDisconnectRequest,
-) -> Result<(), AppError> {
+) -> Result<super::DisconnectOutcome, AppError> {
     disconnect(&app, &request.account_id, request.revoke).await
 }
 

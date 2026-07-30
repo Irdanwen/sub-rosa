@@ -53,15 +53,15 @@ describe("agent runtime Tauri bindings", () => {
     invoke.mockResolvedValue(undefined);
 
     await agentRuntimeBindings.resolveInterruption({
-      interruptionId: "approval-1",
       runId: "run-1",
+      interruptionId: "approval-1",
       resolution: { kind: "approval", choice: "once" },
     });
 
     expect(invoke).toHaveBeenCalledWith("resolve_agent_interruption", {
       request: {
-        interruptionId: "approval-1",
         runId: "run-1",
+        interruptionId: "approval-1",
         resolution: { kind: "approval", choice: "once" },
       },
     });

@@ -27,9 +27,12 @@ export type RuntimeToolDescriptor = {
   name: string;
   description: string;
   parameters: JsonObject;
-  requiresApproval?: boolean;
-  notionAction?: boolean;
   strict?: boolean;
+  requiresApproval?: boolean;
+  approvalProvider?: string;
+  approvalRemoteToolName?: string;
+  policyFingerprint?: string;
+  notionAction?: boolean;
 };
 
 export type RuntimeSkillDescriptor = {
@@ -100,6 +103,8 @@ export type RuntimeInterruption =
       kind: "approval";
       toolName: string;
       arguments: JsonValue;
+      approvalProvider?: string;
+      approvalRemoteToolName?: string;
       approvalPresentation?: {
         title: string;
         description: string;

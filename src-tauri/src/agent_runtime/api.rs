@@ -60,8 +60,8 @@ pub struct AttachmentMetadataInput {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolveInterruptionRequest {
-    pub interruption_id: String,
     pub run_id: String,
+    pub interruption_id: String,
     pub resolution: Value,
 }
 #[derive(Deserialize)]
@@ -512,7 +512,12 @@ pub async fn list_agent_items(app: AppHandle, session_id: String) -> Result<Vec<
         .latest_run(&session_id)
         .await
         .ok()
-        .filter(|run| matches!(run.status.as_str(), "running" | "waiting_for_user"))
+        .filter(|run| {
+            matches!(
+                run.status.as_str(),
+                "queued" | "running" | "waiting_for_user"
+            )
+        })
         .map(|run| run.id);
     repository
         .items(&session_id)
@@ -829,6 +834,149 @@ fn retry_message(items: Vec<AgentItemDto>, run_id: &str) -> Option<super::Messag
     })
 }
 
+struct InterruptionRecord {
+    item_id: String,
+    run_id: String,
+    session_id: String,
+    payload_json: String,
+}
+
+async fn interruption_record(
+    repository: &AgentRepository,
+    run_id: &str,
+    interruption_id: &str,
+) -> Result<Option<InterruptionRecord>, sqlx::Error> {
+    use sqlx::row::Row;
+
+    let row = sqlx::query::query(
+        "SELECT id, run_id, session_id, payload_json
+         FROM agent_items
+         WHERE kind = 'interruption'
+           AND run_id = ?
+           AND json_extract(payload_json, '$.id') = ?
+         ORDER BY created_at DESC
+         LIMIT 1",
+    )
+    .bind(run_id)
+    .bind(interruption_id)
+    .fetch_optional(&repository.pool)
+    .await?;
+
+    Ok(row.map(|row| InterruptionRecord {
+        item_id: row.get("id"),
+        run_id: row.get("run_id"),
+        session_id: row.get("session_id"),
+        payload_json: row.get("payload_json"),
+    }))
+}
+
+async fn claim_interruption_resume(
+    repository: &AgentRepository,
+    record: &InterruptionRecord,
+    original_payload_json: &str,
+    resolved_payload_json: &str,
+    updated_at: &str,
+    companion_audit: Option<(&str, &str, &str, &str, &str)>,
+) -> Result<bool, sqlx::Error> {
+    let mut transaction = repository.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let claimed = sqlx::query::query(
+        "UPDATE agent_runs
+         SET status = 'queued', last_sequence = 0, updated_at = ?
+         WHERE id = ? AND status = 'waiting_for_user'",
+    )
+    .bind(updated_at)
+    .bind(&record.run_id)
+    .execute(&mut *transaction)
+    .await?
+    .rows_affected();
+    if claimed != 1 {
+        transaction.rollback().await?;
+        return Ok(false);
+    }
+    let item_updated = sqlx::query::query(
+        "UPDATE agent_items
+         SET payload_json = ?
+         WHERE id = ?
+           AND run_id = ?
+           AND payload_json = ?
+           AND COALESCE(json_extract(payload_json, '$.status'), 'pending') = 'pending'",
+    )
+    .bind(resolved_payload_json)
+    .bind(&record.item_id)
+    .bind(&record.run_id)
+    .bind(original_payload_json)
+    .execute(&mut *transaction)
+    .await?
+    .rows_affected();
+    if item_updated != 1 {
+        transaction.rollback().await?;
+        return Ok(false);
+    }
+    let session_updated = sqlx::query::query(
+        "UPDATE agent_sessions
+         SET status = 'running', updated_at = ?, last_error = NULL
+         WHERE id = ? AND status = 'waiting_for_user'",
+    )
+    .bind(updated_at)
+    .bind(&record.session_id)
+    .execute(&mut *transaction)
+    .await?
+    .rows_affected();
+    if session_updated != 1 {
+        transaction.rollback().await?;
+        return Ok(false);
+    }
+    if let Some((device_id, request_id, session_id, decision, resolved_at)) = companion_audit {
+        crate::db::repositories::Repositories::record_companion_computer_use_approval_decision_in_transaction(
+            &mut transaction,
+            device_id,
+            request_id,
+            session_id,
+            decision,
+            resolved_at,
+        )
+        .await?;
+    }
+    transaction.commit().await?;
+    Ok(true)
+}
+
+fn settle_interruption_payload(
+    interruption: &mut Value,
+    interruption_kind: &str,
+    approval_choice: Option<&str>,
+    clarification_answer: Option<&str>,
+    secret_ref: Option<&str>,
+    resolved_at: &str,
+) {
+    interruption["status"] = json!("resolved");
+    interruption["resolvedAt"] = json!(resolved_at);
+    if interruption_kind == "approval" {
+        if let Some(choice) = approval_choice {
+            interruption["resolution"] = json!(choice);
+        }
+    }
+    if let Some(answer) = clarification_answer {
+        interruption["answer"] = json!(answer);
+    }
+    if let Some(secret_ref) = secret_ref {
+        interruption["secretRef"] = json!(secret_ref);
+    }
+}
+
+fn approval_choice_from_resolution<'a>(
+    interruption_kind: &str,
+    resolution: &'a Value,
+) -> Option<&'a str> {
+    if interruption_kind != "approval" {
+        return None;
+    }
+    match resolution.get("choice").and_then(Value::as_str) {
+        Some(choice @ ("once" | "session" | "always" | "deny")) => Some(choice),
+        _ => Some("deny"),
+    }
+}
+
 #[tauri::command]
 pub async fn resolve_agent_interruption(
     app: AppHandle,
@@ -928,24 +1076,19 @@ async fn resolve_agent_interruption_inner(
         }
     };
     let repository = repository(app).await?;
-    let row = sqlx::query::query("SELECT id, run_id, session_id, payload_json FROM agent_items WHERE run_id = ? AND kind = 'interruption' AND json_extract(payload_json, '$.id') = ? AND json_extract(payload_json, '$.status') = 'pending' LIMIT 1")
-        .bind(&request.run_id)
-        .bind(&request.interruption_id)
-        .fetch_optional(&repository.pool)
+    let record = interruption_record(&repository, &request.run_id, &request.interruption_id)
         .await?
-        .ok_or_else(|| AppError::new(
-            "agent_interruption_not_found",
-            "This interruption could not be found.",
-        ))?;
-    use sqlx::row::Row;
-    let run_id: String = row.get("run_id");
-    let session_id: String = row.get("session_id");
-    let item_id: String = row.get("id");
-    let original_interruption_json: String = row.get("payload_json");
+        .ok_or_else(|| {
+            AppError::new(
+                "agent_interruption_expired",
+                "This interruption can no longer be resumed.",
+            )
+        })?;
+    let original_interruption_json = record.payload_json.clone();
     let mut interruption: Value = serde_json::from_str(&original_interruption_json)
         .map_err(|error| AppError::new("agent_interruption_invalid", error.to_string()))?;
     if let Some(expected_session_id) = companion_session_id.as_deref() {
-        if session_id != expected_session_id
+        if record.session_id != expected_session_id
             || interruption.get("kind").and_then(Value::as_str) != Some("approval")
             || interruption.get("toolName").and_then(Value::as_str) != Some("computer_use")
         {
@@ -955,14 +1098,14 @@ async fn resolve_agent_interruption_inner(
             ));
         }
     }
-    let run = repository.get_run(&run_id).await?;
+    let run = repository.get_run(&record.run_id).await?;
     if run.status != "waiting_for_user" {
         return Err(AppError::new(
             "agent_interruption_expired",
             "This interruption can no longer be resumed.",
         ));
     }
-    let session = repository.get_session(&session_id).await?;
+    let session = repository.get_session(&record.session_id).await?;
     let serialized_state = run
         .interrupted_state
         .as_ref()
@@ -1019,7 +1162,8 @@ async fn resolve_agent_interruption_inner(
             ));
         }
     };
-    let resolved_at = chrono::Utc::now().to_rfc3339();
+    let approval_choice = approval_choice_from_resolution(&interruption_kind, &request.resolution)
+        .map(str::to_string);
     let workspace = session.workspace_path.clone().ok_or_else(|| {
         AppError::new(
             "agent_workspace_missing",
@@ -1105,16 +1249,18 @@ async fn resolve_agent_interruption_inner(
         None
     };
     let resolution_nonce = uuid::Uuid::new_v4().to_string();
-    interruption["status"] = json!("resolved");
+    let resolution_time = chrono::Utc::now().to_rfc3339();
+    settle_interruption_payload(
+        &mut interruption,
+        &interruption_kind,
+        approval_choice.as_deref(),
+        clarification_answer.as_deref(),
+        secret_ref.as_deref(),
+        &resolution_time,
+    );
     interruption["approved"] = json!(approved);
     interruption["resolutionNonce"] = json!(resolution_nonce);
-    interruption["resolvedAt"] = json!(resolved_at);
     if interruption_kind == "approval" {
-        interruption["resolution"] = request
-            .resolution
-            .get("choice")
-            .cloned()
-            .unwrap_or_else(|| json!("deny"));
         interruption["resolvedBy"] = json!(match &origin {
             InterruptionResolutionOrigin::Desktop => "desktop",
             InterruptionResolutionOrigin::Companion(
@@ -1131,71 +1277,59 @@ async fn resolve_agent_interruption_inner(
             interruption["resolvedByDeviceId"] = json!(device_id);
         }
     }
-    if let Some(answer) = clarification_answer.as_deref() {
-        interruption["answer"] = json!(answer);
-    }
-    if let Some(secret_ref) = secret_ref.as_deref() {
-        interruption["secretRef"] = json!(secret_ref);
-    }
+    let resolved_interruption_json = interruption.to_string();
+    let companion_audit = match &origin {
+        InterruptionResolutionOrigin::Companion(
+            crate::companion::ComputerUseApprovalOrigin::Companion { device_id },
+        ) => Some((
+            device_id.as_str(),
+            request.interruption_id.as_str(),
+            companion_session_id
+                .as_deref()
+                .unwrap_or(record.session_id.as_str()),
+            if approved { "approve" } else { "deny" },
+            resolution_time.as_str(),
+        )),
+        _ => None,
+    };
     // Persist the visible resolution and reset sequencing as one unit. The
     // sidecar can emit resumed events immediately after accepting the request,
     // so both must be in place before dispatch, but neither may be left behind
     // when preparation or persistence fails.
-    let persist_result: Result<(), AppError> = async {
-        let mut transaction = repository.pool.begin().await?;
-        let item_updated = sqlx::query::query("UPDATE agent_items SET payload_json = ? WHERE id = ? AND json_extract(payload_json, '$.status') = 'pending'")
-            .bind(interruption.to_string())
-            .bind(&item_id)
-            .execute(&mut *transaction)
-            .await?
-            .rows_affected();
-        if item_updated != 1 {
-            return Err(AppError::new(
-                "agent_interruption_expired",
-                "This interruption can no longer be resumed.",
-            ));
+    let claimed = match claim_interruption_resume(
+        &repository,
+        &record,
+        &original_interruption_json,
+        &resolved_interruption_json,
+        &resolution_time,
+        companion_audit,
+    )
+    .await
+    {
+        Ok(claimed) => claimed,
+        Err(error) => {
+            if let Some(secret_ref) = secret_ref.as_deref() {
+                let _ = super::secrets::delete(secret_ref).await;
+            }
+            return Err(error.into());
         }
-        let run_updated = sqlx::query::query("UPDATE agent_runs SET last_sequence = 0, updated_at = ? WHERE id = ? AND status = 'waiting_for_user'")
-            .bind(chrono::Utc::now().to_rfc3339())
-            .bind(&run.id)
-            .execute(&mut *transaction)
-            .await?
-            .rows_affected();
-        if run_updated != 1 {
-            return Err(AppError::new(
-                "agent_interruption_expired",
-                "This interruption can no longer be resumed.",
-            ));
-        }
-        if let InterruptionResolutionOrigin::Companion(
-            crate::companion::ComputerUseApprovalOrigin::Companion { device_id },
-        ) = &origin
-        {
-            crate::db::repositories::Repositories::record_companion_computer_use_approval_decision_in_transaction(
-                &mut transaction,
-                device_id,
-                &request.interruption_id,
-                companion_session_id.as_deref().unwrap_or(&session_id),
-                if approved { "approve" } else { "deny" },
-                &resolved_at,
-            )
-            .await?;
-        }
-        transaction.commit().await?;
-        Ok(())
-    }
-    .await;
-    if let Err(error) = persist_result {
+    };
+    if !claimed {
         if let Some(secret_ref) = secret_ref.as_deref() {
             let _ = super::secrets::delete(secret_ref).await;
         }
-        return Err(error);
+        return Err(AppError::new(
+            "agent_interruption_expired",
+            "This interruption can no longer be resumed.",
+        ));
     }
     if let InterruptionResolutionOrigin::Companion(companion_origin) = &origin {
         crate::companion::complete_computer_use_resolution(
             app,
             &request.interruption_id,
-            companion_session_id.as_deref().unwrap_or(&session_id),
+            companion_session_id
+                .as_deref()
+                .unwrap_or(record.session_id.as_str()),
             approved,
             approved
                 && matches!(
@@ -1209,34 +1343,64 @@ async fn resolve_agent_interruption_inner(
         .request("run.resume", &session.id, &run.id, params)
         .await
     {
-        let restore_result = async {
-            let mut transaction = repository.pool.begin().await?;
-            let restored = sqlx::query::query("UPDATE agent_items SET payload_json = ? WHERE id = ? AND json_extract(payload_json, '$.resolutionNonce') = ? AND COALESCE(json_extract(payload_json, '$.executionState'), 'unconsumed') = 'unconsumed'")
-                .bind(&original_interruption_json)
-                .bind(&item_id)
-                .bind(&resolution_nonce)
-                .execute(&mut *transaction)
-                .await?
-                .rows_affected();
-            if restored == 1 {
-                sqlx::query::query(
-                    "UPDATE agent_runs SET last_sequence = ?, updated_at = ? WHERE id = ?",
-                )
-                .bind(run.last_sequence)
-                .bind(chrono::Utc::now().to_rfc3339())
-                .bind(&run.id)
-                .execute(&mut *transaction)
-                .await?;
+        let restore_result: Result<bool, sqlx::Error> = async {
+            let mut transaction = repository.pool.begin_with("BEGIN IMMEDIATE").await?;
+            let run_restored = sqlx::query::query(
+                "UPDATE agent_runs
+                 SET status = 'waiting_for_user', last_sequence = ?, updated_at = ?
+                 WHERE id = ? AND status = 'queued'",
+            )
+            .bind(run.last_sequence)
+            .bind(chrono::Utc::now().to_rfc3339())
+            .bind(&run.id)
+            .execute(&mut *transaction)
+            .await?
+            .rows_affected();
+            if run_restored != 1 {
+                transaction.rollback().await?;
+                return Ok(false);
             }
-            transaction.commit().await
+            let item_restored = sqlx::query::query(
+                "UPDATE agent_items
+                 SET payload_json = ?
+                 WHERE id = ? AND payload_json = ?",
+            )
+            .bind(&original_interruption_json)
+            .bind(&record.item_id)
+            .bind(&resolved_interruption_json)
+            .execute(&mut *transaction)
+            .await?
+            .rows_affected();
+            if item_restored != 1 {
+                transaction.rollback().await?;
+                return Ok(false);
+            }
+            let session_restored = sqlx::query::query(
+                "UPDATE agent_sessions
+                 SET status = 'waiting_for_user', updated_at = ?
+                 WHERE id = ? AND status = 'running'",
+            )
+            .bind(chrono::Utc::now().to_rfc3339())
+            .bind(&session.id)
+            .execute(&mut *transaction)
+            .await?
+            .rows_affected();
+            if session_restored != 1 {
+                transaction.rollback().await?;
+                return Ok(false);
+            }
+            transaction.commit().await?;
+            Ok(true)
         }
         .await;
-        if let Some(secret_ref) = secret_ref.as_deref() {
-            if let Err(cleanup_error) = super::secrets::delete(secret_ref).await {
-                tracing::warn!(
-                    error_code = %cleanup_error.code,
-                    "failed to remove a secret after resume dispatch failed"
-                );
+        if restore_result.as_ref().is_ok_and(|restored| *restored) {
+            if let Some(secret_ref) = secret_ref.as_deref() {
+                if let Err(cleanup_error) = super::secrets::delete(secret_ref).await {
+                    tracing::warn!(
+                        error_code = %cleanup_error.code,
+                        "failed to remove a secret after resume dispatch failed"
+                    );
+                }
             }
         }
         if let Some(stored_session_id) = companion_session_id.as_deref() {
@@ -1253,7 +1417,7 @@ async fn resolve_agent_interruption_inner(
         crate::companion::complete_computer_use_resolution(
             app,
             &request.interruption_id,
-            &session_id,
+            &session.id,
             approved,
             false,
             None,
@@ -1261,7 +1425,7 @@ async fn resolve_agent_interruption_inner(
     }
     tracing::info!(
         interruption_id = %request.interruption_id,
-        stored_session_id = %session_id,
+        stored_session_id = %session.id,
         approved,
         origin = ?origin,
         "resolved agent interruption"
@@ -1833,7 +1997,8 @@ async fn tool_descriptors(
         crate::agent_mcp::KeychainMcpSecretStore,
     );
     match subsystem
-        .refresh_registry_for_workspace(
+        .refresh_registry_for_workspace_with_managed_linear(
+            app,
             safety_mode == AgentSafetyMode::Sandboxed,
             Some(std::path::Path::new(workspace)),
         )
@@ -2287,6 +2452,267 @@ mod tests {
             retry_message(items, "run-failed").unwrap().content,
             "Retry this"
         );
+    }
+
+    #[tokio::test]
+    async fn interruption_lookup_uses_the_originating_run_when_sdk_ids_repeat() {
+        use sqlx_sqlite::SqlitePoolOptions;
+
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("memory database");
+        crate::db::migrations::run_migrations(&pool)
+            .await
+            .expect("migrations");
+        let repository = AgentRepository::new(pool);
+        let session = repository
+            .create_session("Approvals", "auto", AgentSafetyMode::Sandboxed, None)
+            .await
+            .expect("session");
+        let old_run = repository
+            .create_run(&session.id, "auto", None)
+            .await
+            .expect("old run");
+        let old_item = repository
+            .append_item(
+                &session.id,
+                Some(&old_run.id),
+                1,
+                &AgentItemPayload::Interruption(json!({
+                    "id": "functions.mcp_linear_save_issue:0",
+                    "kind": "approval",
+                    "runId": old_run.id,
+                    "sessionId": session.id,
+                    "status": "resolved"
+                })),
+                Some(&format!(
+                    "interruption:{}:functions.mcp_linear_save_issue:0",
+                    old_run.id
+                )),
+            )
+            .await
+            .expect("old interruption")
+            .expect("old interruption inserted");
+        repository
+            .update_run_status(&old_run.id, "completed", None, None, None)
+            .await
+            .expect("old run completed");
+
+        let waiting_run = repository
+            .create_run(&session.id, "auto", None)
+            .await
+            .expect("waiting run");
+        let waiting_item = repository
+            .append_item(
+                &session.id,
+                Some(&waiting_run.id),
+                1,
+                &AgentItemPayload::Interruption(json!({
+                    "id": "functions.mcp_linear_save_issue:0",
+                    "kind": "approval",
+                    "runId": waiting_run.id,
+                    "sessionId": session.id,
+                    "status": "pending"
+                })),
+                Some(&format!(
+                    "interruption:{}:functions.mcp_linear_save_issue:0",
+                    waiting_run.id
+                )),
+            )
+            .await
+            .expect("waiting interruption")
+            .expect("waiting interruption inserted");
+
+        let selected = interruption_record(
+            &repository,
+            &waiting_run.id,
+            "functions.mcp_linear_save_issue:0",
+        )
+        .await
+        .expect("lookup")
+        .expect("waiting interruption");
+
+        assert_eq!(selected.item_id, waiting_item.id);
+        assert_eq!(selected.run_id, waiting_run.id);
+        assert_ne!(selected.item_id, old_item.id);
+    }
+
+    #[test]
+    fn settled_approval_payload_persists_the_submitted_choice() {
+        let mut interruption = json!({
+            "id": "functions.mcp_linear_save_issue:0",
+            "kind": "approval",
+            "status": "pending"
+        });
+
+        settle_interruption_payload(
+            &mut interruption,
+            "approval",
+            Some("deny"),
+            None,
+            None,
+            "2026-07-28T00:00:00Z",
+        );
+
+        assert_eq!(interruption["status"], "resolved");
+        assert_eq!(interruption["resolution"], "deny");
+        assert_eq!(interruption["resolvedAt"], "2026-07-28T00:00:00Z");
+    }
+
+    #[test]
+    fn approval_choice_validation_accepts_known_values_and_fails_closed() {
+        assert_eq!(
+            approval_choice_from_resolution("approval", &json!({"choice": "always"})),
+            Some("always")
+        );
+        assert_eq!(
+            approval_choice_from_resolution("approval", &json!({"choice": "unexpected"})),
+            Some("deny")
+        );
+        assert_eq!(
+            approval_choice_from_resolution("approval", &json!({})),
+            Some("deny")
+        );
+        assert_eq!(
+            approval_choice_from_resolution("clarification", &json!({"choice": "always"})),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn interruption_resume_claim_only_accepts_one_resolution() {
+        use sqlx::{query::query, row::Row};
+        use sqlx_sqlite::SqlitePoolOptions;
+
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("memory database");
+        crate::db::migrations::run_migrations(&pool)
+            .await
+            .expect("migrations");
+        let repository = AgentRepository::new(pool);
+        let session = repository
+            .create_session("Approval claim", "auto", AgentSafetyMode::Sandboxed, None)
+            .await
+            .expect("session");
+        let run = repository
+            .create_run(&session.id, "auto", None)
+            .await
+            .expect("run");
+        repository
+            .update_run_status(
+                &run.id,
+                "waiting_for_user",
+                None,
+                Some(&json!("serialized")),
+                None,
+            )
+            .await
+            .expect("waiting run");
+        let item = repository
+            .append_item(
+                &session.id,
+                Some(&run.id),
+                1,
+                &AgentItemPayload::Interruption(json!({
+                    "id": "functions.mcp_linear_save_issue:0",
+                    "kind": "approval",
+                    "runId": run.id,
+                    "sessionId": session.id,
+                    "status": "pending"
+                })),
+                Some(&format!(
+                    "interruption:{}:functions.mcp_linear_save_issue:0",
+                    run.id
+                )),
+            )
+            .await
+            .expect("pending interruption")
+            .expect("interruption inserted");
+        let original_payload: String = query("SELECT payload_json FROM agent_items WHERE id = ?")
+            .bind(&item.id)
+            .fetch_one(&repository.pool)
+            .await
+            .expect("stored interruption")
+            .get("payload_json");
+        let record = InterruptionRecord {
+            item_id: item.id,
+            run_id: run.id.clone(),
+            session_id: session.id,
+            payload_json: original_payload.clone(),
+        };
+        let first_payload = json!({"status":"resolved","decision":"approve"}).to_string();
+        let second_payload = json!({"status":"resolved","decision":"deny"}).to_string();
+
+        let first = claim_interruption_resume(
+            &repository,
+            &record,
+            &original_payload,
+            &first_payload,
+            "2026-07-28T00:00:00Z",
+            Some((
+                "device-1",
+                "functions.mcp_linear_save_issue:0",
+                &record.session_id,
+                "approve",
+                "2026-07-28T00:00:00Z",
+            )),
+        )
+        .await
+        .expect("first claim");
+        let second = claim_interruption_resume(
+            &repository,
+            &record,
+            &original_payload,
+            &second_payload,
+            "2026-07-28T00:00:01Z",
+            Some((
+                "device-1",
+                "functions.mcp_linear_save_issue:0",
+                &record.session_id,
+                "deny",
+                "2026-07-28T00:00:01Z",
+            )),
+        )
+        .await
+        .expect("second claim");
+
+        assert!(first);
+        assert!(!second);
+        assert_eq!(
+            repository
+                .get_run(&run.id)
+                .await
+                .expect("claimed run")
+                .status,
+            "queued"
+        );
+        let stored_payload: String = query("SELECT payload_json FROM agent_items WHERE id = ?")
+            .bind(&record.item_id)
+            .fetch_one(&repository.pool)
+            .await
+            .expect("claimed interruption")
+            .get("payload_json");
+        assert_eq!(stored_payload, first_payload);
+        let audit_decisions: Vec<String> = query(
+            "SELECT decision
+             FROM companion_computer_use_approval_audit
+             WHERE device_id = ? AND request_id = ? AND stored_session_id = ?",
+        )
+        .bind("device-1")
+        .bind("functions.mcp_linear_save_issue:0")
+        .bind(&record.session_id)
+        .fetch_all(&repository.pool)
+        .await
+        .expect("approval audit")
+        .into_iter()
+        .map(|row| row.get("decision"))
+        .collect();
+        assert_eq!(audit_decisions, vec!["approve"]);
     }
 
     #[tokio::test]
