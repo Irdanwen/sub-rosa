@@ -1,14 +1,17 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSettingsSection } from "../components/settings/AgentSettingsSection";
 import { AGENT_HUD_ENABLED_KEY, AGENT_HUD_PLACEMENT_KEY } from "../lib/agent-hud-settings";
+import { onboardingArea, onboardingMood } from "../lib/onboarding";
 
 const mocks = vi.hoisted(() => ({
   agentHudHide: vi.fn(),
   agentHudShow: vi.fn(),
   emit: vi.fn().mockResolvedValue(undefined),
+  junePersona: vi.fn(),
   listAgentSkills: vi.fn(),
+  setJunePersona: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -18,17 +21,122 @@ vi.mock("@tauri-apps/api/event", () => ({
 vi.mock("../lib/tauri", () => ({
   agentHudHide: mocks.agentHudHide,
   agentHudShow: mocks.agentHudShow,
+  junePersona: mocks.junePersona,
   listAgentSkills: mocks.listAgentSkills,
   readAgentSkill: vi.fn(),
   setAgentSkillEnabled: vi.fn(),
+  setJunePersona: mocks.setJunePersona,
   updateAgentSkill: vi.fn(),
 }));
 
-describe("AgentSettingsSection HUD settings", () => {
+describe("AgentSettingsSection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
     mocks.listAgentSkills.mockResolvedValue([]);
+    mocks.junePersona.mockResolvedValue({
+      schemaVersion: 1,
+      area: "personal",
+      voice: 80,
+      detail: 55,
+      initiative: 70,
+      humor: 45,
+    });
+    mocks.setJunePersona.mockImplementation(async (request) => ({
+      schemaVersion: 1,
+      ...request,
+    }));
+  });
+
+  it("loads the current native personality into the Agent settings", async () => {
+    render(<AgentSettingsSection />);
+
+    expect(await screen.findByRole("heading", { name: "Personality" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Calm/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /Calm/ }).closest("label")).toHaveClass(
+      "settings-card",
+    );
+    expect(screen.getByText("Take your time. What should we think through first?")).toHaveClass(
+      "shimmer",
+    );
+    expect(document.querySelector(".settings-personality-option-check")).toBeNull();
+    expect(screen.queryByText("Focus area")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
+  });
+
+  it("automatically saves a new personality while preserving the onboarding area", async () => {
+    const user = userEvent.setup();
+    render(<AgentSettingsSection />);
+    await screen.findByRole("radio", { name: /Calm/ });
+
+    await user.click(screen.getByRole("radio", { name: /Quick-witted/ }));
+
+    expect(mocks.setJunePersona).toHaveBeenCalledWith({
+      area: "personal",
+      voice: 85,
+      detail: 70,
+      initiative: 80,
+      humor: 95,
+    });
+    expect(await screen.findByText("Saved")).toBeInTheDocument();
+    expect(onboardingArea()).toBe("personal");
+    expect(onboardingMood()).toBe("quick-witted");
+  });
+
+  it("restores the persisted personality when an automatic save fails", async () => {
+    const user = userEvent.setup();
+    mocks.setJunePersona.mockRejectedValueOnce(new Error("Could not write persona settings"));
+    render(<AgentSettingsSection />);
+    await screen.findByRole("radio", { name: /Calm/ });
+
+    await user.click(screen.getByRole("radio", { name: /Strategic/ }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not write persona settings");
+    expect(screen.getByRole("radio", { name: /Calm/ })).toBeChecked();
+    expect(screen.queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
+    expect(onboardingArea()).toBeNull();
+  });
+
+  it("keeps a queued personality visible and rolls it back to the latest successful save", async () => {
+    const user = userEvent.setup();
+    const firstSave = deferred<{
+      schemaVersion: number;
+      area: "personal";
+      voice: number;
+      detail: number;
+      initiative: number;
+      humor: number;
+    }>();
+    const secondSave = deferred<never>();
+    mocks.setJunePersona
+      .mockReturnValueOnce(firstSave.promise)
+      .mockReturnValueOnce(secondSave.promise);
+    render(<AgentSettingsSection />);
+    await screen.findByRole("radio", { name: /Calm/ });
+
+    await user.click(screen.getByRole("radio", { name: /Quick-witted/ }));
+    await user.click(screen.getByRole("radio", { name: /Strategic/ }));
+
+    await act(async () => {
+      firstSave.resolve({
+        schemaVersion: 1,
+        area: "personal",
+        voice: 85,
+        detail: 70,
+        initiative: 80,
+        humor: 95,
+      });
+    });
+    await waitFor(() => expect(mocks.setJunePersona).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("radio", { name: /Strategic/ })).toBeChecked();
+
+    await act(async () => {
+      secondSave.reject(new Error("Could not save queued persona"));
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not save queued persona");
+    expect(screen.getByRole("radio", { name: /Quick-witted/ })).toBeChecked();
+    expect(onboardingMood()).toBe("quick-witted");
   });
 
   it("lets the HUD window react to visibility changes without directly showing it", async () => {
@@ -69,3 +177,13 @@ describe("AgentSettingsSection HUD settings", () => {
     ).toHaveTextContent("Bottom left");
   });
 });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
