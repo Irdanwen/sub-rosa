@@ -584,6 +584,52 @@ describe("agent runtime adapter", () => {
     ]);
   });
 
+  it("maps persisted failure categories to specific notices", () => {
+    const base = {
+      sessionId: "session-1",
+      runId: "run-1",
+      createdAt: "2026-07-22T12:00:00Z",
+      kind: "error" as const,
+      message: "sanitized detail",
+      retryable: true,
+    };
+    const turns = agentItemsToChatTurns([
+      { ...base, id: "tool", sequence: 1, category: "tool" },
+      { ...base, id: "runtime", sequence: 2, category: "runtime" },
+      { ...base, id: "provider", sequence: 3, category: "provider" },
+    ]);
+
+    expect(turns.map((turn) => turn.parts[0])).toMatchObject([
+      { type: "notice", kind: "tool" },
+      { type: "notice", kind: "runtime" },
+      { type: "notice", kind: "upstream-provider" },
+    ]);
+  });
+
+  it("keeps non-retryable tool detail out of the transcript", () => {
+    const turns = agentItemsToChatTurns([
+      {
+        id: "tool",
+        sessionId: "session-1",
+        runId: "run-1",
+        sequence: 1,
+        createdAt: "2026-07-22T12:00:00Z",
+        kind: "error",
+        message: "private host response",
+        category: "tool",
+        code: "agent_tool_failed",
+        retryable: false,
+      },
+    ]);
+
+    expect(turns[0]?.parts[0]).toMatchObject({
+      type: "notice",
+      kind: "tool",
+      retryable: false,
+    });
+    expect(JSON.stringify(turns)).not.toContain("private host response");
+  });
+
   it("rejects an incompatible protocol version", () => {
     const event = {
       ...frame,

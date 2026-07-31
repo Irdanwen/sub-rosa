@@ -299,6 +299,8 @@ export function applyAgentRuntimeEvent(
         createdAt: event.data.completedAt,
         kind: "error",
         message: event.data.message,
+        category: event.data.category,
+        code: event.data.code,
         retryable: event.data.retryable,
       });
       break;
@@ -439,17 +441,35 @@ export function agentItemsToChatTurns(items: AgentItemDto[]): AgentChatTurn[] {
             parts: [interruptionToPart(item.interruption, item.runId)],
           };
         case "error":
+          if (item.category === "context") {
+            return {
+              ...base,
+              role: "system",
+              parts: [{ type: "notice", kind: "context-overflow", text: item.message }],
+            };
+          }
+          if (item.category === "credits") {
+            return {
+              ...base,
+              role: "system",
+              parts: [{ type: "notice", kind: "credits", text: item.message }],
+            };
+          }
           return {
             ...base,
             role: "system",
             parts: [
-              item.retryable
-                ? {
-                    type: "notice",
-                    kind: "upstream-provider",
-                    text: UPSTREAM_PROVIDER_FAILURE_NOTICE_BODY,
-                  }
-                : { type: "text", text: item.message, status: "complete" },
+              {
+                type: "notice",
+                kind:
+                  item.category === "tool"
+                    ? "tool"
+                    : item.category === "runtime"
+                      ? "runtime"
+                      : "upstream-provider",
+                text: UPSTREAM_PROVIDER_FAILURE_NOTICE_BODY,
+                retryable: item.retryable,
+              },
             ],
           };
         default:
