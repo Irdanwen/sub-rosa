@@ -15,6 +15,7 @@ import {
   isUpstreamRateLimitedMessage,
 } from "./errors";
 import { isScheduledRunPreamble, stripScheduledRunPreamble } from "./hermes-adapter";
+import { stripMentionPromptBlock } from "./agent-mentions";
 import { type HermesProcessNotice, parseHermesProcessNotice } from "./hermes-process-notice";
 import { displayedUserMessageText } from "./issue-report-prompt";
 import { displayedSkillInvocationText } from "./skill-slash-commands";
@@ -1417,8 +1418,10 @@ function displayedUserPromptText(content: string) {
 }
 
 export function displayedComposerUserMessageText(content: string): string {
-  return stripAttachmentPromptBlock(
-    displayedUserPromptText(stripImageAnalysisFailureNotice(content)),
+  // The mention block is scaffolding the send path appends, exactly like the
+  // attachment block: the user typed "@report.md", not a list of paths.
+  return stripMentionPromptBlock(
+    stripAttachmentPromptBlock(displayedUserPromptText(stripImageAnalysisFailureNotice(content))),
   );
 }
 

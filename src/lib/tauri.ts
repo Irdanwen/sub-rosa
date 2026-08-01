@@ -1236,6 +1236,37 @@ export async function revealAgentWorkingDir(path: string) {
   });
 }
 
+export type AgentFolderEntry = {
+  path: string;
+  relativePath: string;
+  name: string;
+  kind: "file" | "folder";
+};
+
+export type AgentFolderEntries = {
+  root: string;
+  rootLabel: string;
+  entries: AgentFolderEntry[];
+};
+
+/** Files and folders under a session's root, for the composer's `@` palette.
+ * `path` is the session's working folder; omitting it searches the default
+ * workspace. Build output, dependency trees, dotfiles and symlinks never come
+ * back — see `list_agent_folder_entries`. */
+export async function listAgentFolderEntries(input: {
+  path?: string;
+  query?: string;
+  limit?: number;
+}) {
+  return invoke<AgentFolderEntries>("list_agent_folder_entries", {
+    request: {
+      path: input.path ?? null,
+      query: input.query ?? "",
+      limit: input.limit ?? null,
+    },
+  });
+}
+
 export async function stopHermesBridge() {
   return invoke<HermesBridgeStatus>("stop_hermes_bridge");
 }

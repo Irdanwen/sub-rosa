@@ -5123,6 +5123,57 @@ input:focus-visible,
   flex: 0 0 auto;
 }
 
+/* An "@" mention: a document the message points at. Same pill geometry as the
+ * category chip so the composer reads as one system, but neutral rather than
+ * tinted — a mention is a reference, not a classification, and several can sit
+ * in one sentence without turning it into a color chart. */
+.agent-mention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: baseline;
+  max-width: 28ch;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: var(--muted);
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Truncation lives on the label, not the chip: ellipsis needs a box that
+ * lays out inline-block, which the flex chip is not. A long name elides
+ * (the full path is in the chip's tooltip) instead of being cut mid-word. */
+.agent-mention-chip-label {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+.agent-mention-chip-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+}
+
+/* Where the document lives, trailing its name in the palette row. Muted and
+ * elided: it disambiguates two files with the same name without competing
+ * with the name itself. */
+.agent-mention-menu-detail {
+  overflow: hidden;
+  margin-left: var(--sp-2);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .agent-category-chip[data-category="bug"] {
   --category-tint: var(--destructive);
   --category-ink: var(--destructive);

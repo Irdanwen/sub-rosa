@@ -196,6 +196,15 @@ process row, never as a message bubble (`src/lib/hermes-process-notice.ts`).
 _Avoid_: user message, background task (that is the work itself, not the
 notification about it).
 
+**Mention**:
+A document the message points at, typed with `@` in the composer: a file or
+folder in the session's **working folder**, or a note. A mention *refers* —
+the agent opens the real file in place — where an **attachment** *imports* (a
+copy in the workspace). It carries a path or a note id, never the document's
+content.
+_Avoid_: attachment (that is the copy), reference (unqualified), tag (that is
+the report category chip).
+
 **Skill / Toolset / MCP server**:
 A Skill is a bundled/installed capability pack; a Toolset is a togglable tool
 group; an MCP server is an external tool provider (June ships `june_context`

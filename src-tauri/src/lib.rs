@@ -281,6 +281,7 @@ pub fn run() {
             hermes_bridge::stop_hermes_bridge,
             hermes_working_dir::validate_agent_working_dir,
             hermes_working_dir::reveal_agent_working_dir,
+            hermes_working_dir::list_agent_folder_entries,
             hermes_bridge::toggle_hermes_bridge_skill,
             hermes_bridge::get_hermes_bridge_skill,
             hermes_bridge::update_hermes_bridge_skill,

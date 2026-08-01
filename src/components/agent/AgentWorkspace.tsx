@@ -115,6 +115,8 @@ import {
   carpeDiemOpenDashboard,
   providerModelSettings,
   retryAgentTask,
+  listAgentFolderEntries,
+  listNotes,
   revealAgentWorkingDir,
   setHermesAgentCliAccess,
   setVeniceModel,
@@ -173,6 +175,11 @@ import {
   isSensitiveKey,
   type HermesMode,
 } from "../../lib/hermes-control-plane";
+import {
+  composerMentionItems,
+  type ComposerMention,
+  promptWithMentions,
+} from "../../lib/agent-mentions";
 import {
   attachImageToSession,
   attachmentStateFrom,
@@ -3163,17 +3170,41 @@ export function AgentWorkspace({
     setBusyNotice(null);
   }, [busyNotice, selectedHermesSessionId, workingSessionIds]);
 
+  /** Rows for the composer's "@" palette: files and folders under this
+   * session's root, plus matching notes. The root is the session's recorded
+   * working folder (the draft one while a session is being started), or the
+   * app workspace when there is none — the same folder the sandbox grants, so
+   * everything offered is something the agent can actually open and edit. */
+  const mentionItemsForComposer = useCallback(async (query: string) => {
+    const root =
+      (!newSessionModeRef.current && selectedHermesSessionIdRef.current
+        ? sessionWorkingDir(selectedHermesSessionIdRef.current)
+        : workingDirDraftRef.current) ?? undefined;
+    return composerMentionItems({
+      query,
+      listEntries: async (search, limit) =>
+        (await listAgentFolderEntries({ path: root, query: search, limit })).entries,
+      listNotes: async () => (await listNotes()).items,
+    });
+  }, []);
+
   async function prepareComposerSubmission(
     message: string,
     messageAttachments: AgentAttachment[],
+    mentions: ComposerMention[] = [],
   ): Promise<PreparedComposerSubmission> {
+    // "@report.md" is prose in the message; the agent needs the path. Same
+    // shape as the attachment block: appended to the sent text, hidden again
+    // when the transcript renders it.
+    const withDocuments = (text: string) =>
+      promptWithMentions(promptWithAttachments(text, messageAttachments), mentions);
     const parsed = parseSkillSlashCommands(message);
     const commandTokens = commandTokensForResolutions(
       parsed.commandNames,
       parseSkillSlashCommandTokens(message),
     );
     if (!parsed.commandNames.length) {
-      const content = promptWithAttachments(message, messageAttachments);
+      const content = withDocuments(message);
       return {
         displayContent: content,
         runtimeContent: content,
@@ -3189,7 +3220,7 @@ export function AgentWorkspace({
         resolution.status !== "resolved" && isPathLikeSlashToken(commandTokens[index]?.name ?? ""),
     );
     if (pathLikePromptIndex === 0) {
-      const content = promptWithAttachments(message, messageAttachments);
+      const content = withDocuments(message);
       return {
         displayContent: content,
         runtimeContent: content,
@@ -3220,7 +3251,7 @@ export function AgentWorkspace({
         name: resolution.skill.name,
       })),
     );
-    const displayContent = promptWithAttachments(typedMessage, messageAttachments);
+    const displayContent = withDocuments(typedMessage);
     return {
       displayContent,
       runtimeContent: explicitSkillInvocationPrompt(documents, displayContent),
@@ -3650,7 +3681,11 @@ export function AgentWorkspace({
         }
       | undefined;
     try {
-      const prepared = await prepareComposerSubmission(message, attachments);
+      const prepared = await prepareComposerSubmission(
+        message,
+        attachments,
+        composerEditorRef.current?.mentions() ?? [],
+      );
       const runtimeContent = reportCategory
         ? categoryPrompt(reportCategory, prepared.runtimeContent)
         : prepared.runtimeContent;
@@ -6996,6 +7031,7 @@ export function AgentWorkspace({
           <ComposerEditor
             ref={composerEditorRef}
             skills={skills}
+            mentionItems={mentionItemsForComposer}
             placeholder={
               generatingImage
                 ? "Generating image…"

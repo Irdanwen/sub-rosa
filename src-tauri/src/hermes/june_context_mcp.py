@@ -79,6 +79,25 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "get_note",
+        "description": (
+            "Read one note in full by its id, including its transcript. Use "
+            "this when the user points at a specific note — a message that "
+            "mentions a note gives you its id, and this returns the whole "
+            "thing rather than the search snippet."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "note_id": {
+                    "type": "string",
+                    "description": "The note's id, as given in the message that mentioned it.",
+                },
+            },
+            "required": ["note_id"],
+        },
+    },
+    {
         "name": "search_dictation_history",
         "description": (
             "Search June dictation history. Use this when the user asks about "
@@ -195,6 +214,8 @@ def call_tool(
     try:
         if name == "search_meeting_notes":
             result = search_meeting_notes(db_path, arguments)
+        elif name == "get_note":
+            result = get_note(db_path, arguments)
         elif name == "search_dictation_history":
             result = search_dictation_history(db_path, arguments)
         elif name == "search_user_memories" and memory_enabled:
@@ -304,6 +325,55 @@ def search_meeting_notes(db_path: Path, arguments: dict[str, Any]) -> dict[str, 
             }
         )
     return {"query": query, "count": len(items), "items": items}
+
+
+def get_note(db_path: Path, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Read one note whole, by id.
+
+    Mentioning a note in the composer sends its id, so the agent needs a way
+    to open that exact note instead of guessing from a search. Returns the
+    full body and transcript -- untruncated, unlike the search snippets --
+    because the user pointed at this note deliberately.
+    """
+    note_id = str(arguments.get("note_id") or "").strip()
+    if not note_id:
+        return {"error": "note_id is required."}
+    if not db_path.exists():
+        return {"error": "June notes database does not exist yet."}
+
+    sql = """
+        SELECT
+            n.id,
+            n.title,
+            n.generated_content,
+            n.edited_content,
+            n.processing_status,
+            n.created_at,
+            n.updated_at,
+            (
+                SELECT group_concat(t.text, char(10))
+                FROM transcripts t
+                WHERE t.note_id = n.id
+                  AND trim(coalesce(t.text, '')) != ''
+            ) AS transcript_text
+        FROM notes n
+        WHERE n.id = ?
+        LIMIT 1
+    """
+    with connect_readonly(db_path) as conn:
+        row = conn.execute(sql, [note_id]).fetchone()
+
+    if row is None:
+        return {"error": f"No note with id {note_id}."}
+    return {
+        "id": row["id"],
+        "title": row["title"] or "Untitled note",
+        "processingStatus": row["processing_status"],
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+        "content": first_text(row["edited_content"], row["generated_content"]),
+        "transcript": row["transcript_text"] or "",
+    }
 
 
 def search_dictation_history(db_path: Path, arguments: dict[str, Any]) -> dict[str, Any]:

@@ -309,6 +309,249 @@ pub async fn reveal_agent_working_dir(
     open_in_file_manager(&canonical)
 }
 
+/// A file or folder the composer's `@` palette can mention.
+#[derive(Clone, Debug, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderEntry {
+    /// Absolute path — what the agent is given, so it opens the real file in
+    /// place rather than a copy.
+    pub path: String,
+    /// Path relative to the session root, which is what the user recognizes
+    /// and what the palette displays and matches on.
+    pub relative_path: String,
+    pub name: String,
+    /// `"file"` or `"folder"`. A mentioned folder is a legitimate target: the
+    /// agent lists or searches it.
+    pub kind: &'static str,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderEntriesResponse {
+    /// The root that was actually searched, canonical.
+    pub root: String,
+    /// Its display name, for the palette's empty and header states.
+    pub root_label: String,
+    pub entries: Vec<FolderEntry>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderEntriesRequest {
+    /// The session's working folder. Omitted (or empty) means the session has
+    /// none, and the default workspace is searched instead.
+    pub path: Option<String>,
+    /// What the user typed after `@`. Empty lists the most recently touched
+    /// entries, which is the useful default right after typing the trigger.
+    #[serde(default)]
+    pub query: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// How deep the walk goes. Deep trees are normal (a repo, a Documents
+/// subtree); what matters is that the walk always ends.
+const MENTION_MAX_DEPTH: usize = 6;
+/// Ceiling on entries *visited*, not returned: a runaway tree must not hang
+/// the palette. Hitting it truncates silently — the query narrows the walk,
+/// so a user looking for a specific file still finds it.
+const MENTION_MAX_VISITED: usize = 20_000;
+const MENTION_DEFAULT_LIMIT: usize = 30;
+const MENTION_MAX_LIMIT: usize = 100;
+
+/// Directories never worth mentioning: build output, dependency trees, and
+/// VCS internals. Skipped wholesale (the walk does not descend into them),
+/// which is also what keeps the walk fast in a real project.
+const MENTION_SKIPPED_DIRS: &[&str] = &[
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    ".next",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".cache",
+    ".gradle",
+    "Pods",
+    "DerivedData",
+    ".terraform",
+];
+
+/// Lists the files and folders under a session's root so the composer can
+/// offer them for `@` mentions.
+///
+/// The root is the session's working folder, or the default workspace when it
+/// has none — which is exactly the area the Seatbelt jail re-grants for
+/// writes. Offering anything outside it would advertise a file the agent can
+/// read but never modify, so the palette stops where the sandbox stops.
+///
+/// A working folder goes through the same [`validate_working_dir`] as every
+/// other use of a user-influenced path (credential stores, system folders and
+/// the app's own data dir are refused), and the walk never follows symlinks,
+/// so no entry can point outside the validated root.
+#[tauri::command]
+pub async fn list_agent_folder_entries(
+    app: AppHandle,
+    request: FolderEntriesRequest,
+) -> Result<FolderEntriesResponse, AppError> {
+    let default_workspace = crate::app_paths::app_data_dir(&app)
+        .ok()
+        .map(|dir| dir.join("hermes").join("workspace"));
+    let requested = request.path.as_deref().map(str::trim).unwrap_or("");
+    let root = if requested.is_empty() {
+        default_workspace.ok_or_else(|| {
+            AppError::new(
+                "working_dir_unavailable",
+                "The workspace folder isn't available yet.",
+            )
+        })?
+    } else {
+        validate_working_dir(&app, requested)?.path
+    };
+    // A workspace that Hermes has not created yet is not an error: the
+    // palette shows "nothing to mention" and the user carries on.
+    let root = match root.canonicalize() {
+        Ok(path) => path,
+        Err(_) => {
+            return Ok(FolderEntriesResponse {
+                root_label: folder_display_name(&root),
+                root: root.to_string_lossy().into_owned(),
+                entries: Vec::new(),
+            })
+        }
+    };
+    let limit = request
+        .limit
+        .unwrap_or(MENTION_DEFAULT_LIMIT)
+        .clamp(1, MENTION_MAX_LIMIT);
+    let entries = collect_folder_entries(&root, request.query.trim(), limit);
+    Ok(FolderEntriesResponse {
+        root_label: folder_display_name(&root),
+        root: root.to_string_lossy().into_owned(),
+        entries,
+    })
+}
+
+fn folder_display_name(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string_lossy().into_owned())
+}
+
+/// Walks `root` breadth-first and returns the best `limit` matches for
+/// `query`. Breadth-first on purpose: with a truncated walk, the entries
+/// nearest the root are the ones a user is most likely to mean.
+fn collect_folder_entries(root: &Path, query: &str, limit: usize) -> Vec<FolderEntry> {
+    let needle = query.to_lowercase();
+    let mut scored: Vec<(i32, std::time::SystemTime, FolderEntry)> = Vec::new();
+    let mut queue = std::collections::VecDeque::from([(root.to_path_buf(), 0usize)]);
+    let mut visited = 0usize;
+
+    while let Some((dir, depth)) = queue.pop_front() {
+        let Ok(read_dir) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in read_dir.flatten() {
+            if visited >= MENTION_MAX_VISITED {
+                break;
+            }
+            visited += 1;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            // Dotfiles are noise in a mention palette, and skipping them also
+            // keeps local credential files (.env, .npmrc) out of the list.
+            if name.starts_with('.') {
+                continue;
+            }
+            // `file_type` does not follow symlinks: a link is neither walked
+            // into nor listed, so the walk cannot leave the validated root.
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_symlink() {
+                continue;
+            }
+            let path = entry.path();
+            let Ok(relative) = path.strip_prefix(root) else {
+                continue;
+            };
+            let relative_path = relative.to_string_lossy().replace('\\', "/");
+            let is_dir = file_type.is_dir();
+            if is_dir && MENTION_SKIPPED_DIRS.contains(&name.as_str()) {
+                continue;
+            }
+            if is_dir && depth + 1 < MENTION_MAX_DEPTH {
+                queue.push_back((path.clone(), depth + 1));
+            }
+            let Some(score) = mention_score(&name, &relative_path, &needle) else {
+                continue;
+            };
+            let modified = entry
+                .metadata()
+                .and_then(|meta| meta.modified())
+                .unwrap_or(std::time::UNIX_EPOCH);
+            scored.push((
+                score,
+                modified,
+                FolderEntry {
+                    path: path.to_string_lossy().into_owned(),
+                    relative_path,
+                    name,
+                    kind: if is_dir { "folder" } else { "file" },
+                },
+            ));
+        }
+        if visited >= MENTION_MAX_VISITED {
+            break;
+        }
+    }
+
+    // With no query, most recently touched first: the palette opens on what
+    // was just worked on. With a query, best match first and — at equal score
+    // — the shortest path, so `report.md` beats `report-archive/` instead of
+    // whichever happened to be saved last.
+    if needle.is_empty() {
+        scored.sort_by(|a, b| b.1.cmp(&a.1));
+    } else {
+        scored.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then_with(|| a.2.relative_path.len().cmp(&b.2.relative_path.len()))
+                .then_with(|| b.1.cmp(&a.1))
+        });
+    }
+    scored
+        .into_iter()
+        .take(limit)
+        .map(|(_, _, entry)| entry)
+        .collect()
+}
+
+/// Ranks an entry against the typed query, or `None` when it does not match.
+/// Deliberately simple and predictable: a name that starts with what you typed
+/// beats one that merely contains it, which beats a match elsewhere in the
+/// path. An empty query matches everything, so the palette opens on the
+/// recently-touched list.
+fn mention_score(name: &str, relative_path: &str, needle: &str) -> Option<i32> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    let name_lower = name.to_lowercase();
+    if name_lower == needle {
+        return Some(100);
+    }
+    if name_lower.starts_with(needle) {
+        return Some(80);
+    }
+    if name_lower.contains(needle) {
+        return Some(60);
+    }
+    if relative_path.to_lowercase().contains(needle) {
+        return Some(40);
+    }
+    None
+}
+
 fn open_in_file_manager(path: &Path) -> Result<(), AppError> {
     #[cfg(target_os = "macos")]
     let mut command = {
@@ -333,6 +576,122 @@ fn open_in_file_manager(path: &Path) -> Result<(), AppError> {
         .spawn()
         .map(|_| ())
         .map_err(|error| AppError::new("working_dir_reveal_failed", error.to_string()))
+}
+
+#[cfg(test)]
+mod mention_tests {
+    use super::*;
+
+    fn write(path: &Path, contents: &str) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create parent");
+        }
+        std::fs::write(path, contents).expect("write file");
+    }
+
+    fn names(entries: &[FolderEntry]) -> Vec<&str> {
+        entries.iter().map(|entry| entry.name.as_str()).collect()
+    }
+
+    #[test]
+    fn lists_files_and_folders_under_the_root() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical root");
+        write(&root.join("report.md"), "hello");
+        write(&root.join("notes/draft.md"), "hello");
+
+        let entries = collect_folder_entries(&root, "", 30);
+        let listed = names(&entries);
+        assert!(listed.contains(&"report.md"));
+        assert!(listed.contains(&"draft.md"));
+        // A folder is mentionable too: the agent lists or searches it.
+        assert!(listed.contains(&"notes"));
+        let nested = entries
+            .iter()
+            .find(|entry| entry.name == "draft.md")
+            .expect("nested entry");
+        // The palette shows the path the user recognizes; the agent gets the
+        // absolute one, so it opens the real file in place.
+        assert_eq!(nested.relative_path, "notes/draft.md");
+        assert_eq!(nested.path, root.join("notes/draft.md").to_string_lossy());
+        assert_eq!(nested.kind, "file");
+    }
+
+    #[test]
+    fn ranks_a_name_match_above_a_path_match() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical root");
+        write(&root.join("report.md"), "");
+        write(&root.join("report-archive/old.md"), "");
+        write(&root.join("unrelated.md"), "");
+
+        let entries = collect_folder_entries(&root, "report", 30);
+        let listed = names(&entries);
+        assert_eq!(listed.first(), Some(&"report.md"));
+        // Matched on its path, so it is offered — just lower.
+        assert!(listed.contains(&"old.md"));
+        assert!(!listed.contains(&"unrelated.md"));
+    }
+
+    #[test]
+    fn skips_dependency_trees_dotfiles_and_symlinks() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical root");
+        write(&root.join("keep.md"), "");
+        write(&root.join("node_modules/left-pad/index.js"), "");
+        write(&root.join(".git/config"), "");
+        // A local credential file is a dotfile, and dotfiles never surface.
+        write(&root.join(".env"), "SECRET=1");
+
+        let entries = collect_folder_entries(&root, "", 100);
+        let listed = names(&entries);
+        assert_eq!(listed, vec!["keep.md"]);
+
+        // A symlink is neither listed nor walked into, so no entry can point
+        // outside the validated root. The target lives in its own tempdir —
+        // planting it inside `root` would make it a legitimate entry and the
+        // test would prove nothing.
+        #[cfg(unix)]
+        {
+            let elsewhere = tempfile::tempdir().expect("tempdir");
+            let outside = elsewhere.path().join("outside");
+            std::fs::create_dir_all(&outside).expect("create outside");
+            write(&outside.join("secret.txt"), "");
+            std::os::unix::fs::symlink(&outside, root.join("escape")).expect("symlink");
+            let entries = collect_folder_entries(&root, "", 100);
+            let listed = names(&entries);
+            assert!(!listed.contains(&"escape"));
+            assert!(!listed.contains(&"secret.txt"));
+        }
+    }
+
+    #[test]
+    fn stops_at_the_depth_limit() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical root");
+        let deep = (0..MENTION_MAX_DEPTH + 3).fold(root.clone(), |path, index| {
+            path.join(format!("level{index}"))
+        });
+        write(&deep.join("buried.md"), "");
+        write(&root.join("surface.md"), "");
+
+        let entries = collect_folder_entries(&root, "", 100);
+        let listed = names(&entries);
+        assert!(listed.contains(&"surface.md"));
+        assert!(!listed.contains(&"buried.md"));
+    }
+
+    #[test]
+    fn an_empty_query_matches_everything_and_honors_the_limit() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical root");
+        for index in 0..10 {
+            write(&root.join(format!("file{index}.md")), "");
+        }
+        assert_eq!(collect_folder_entries(&root, "", 4).len(), 4);
+        assert_eq!(collect_folder_entries(&root, "", 100).len(), 10);
+        assert!(collect_folder_entries(&root, "nothing-matches-this", 100).is_empty());
+    }
 }
 
 #[cfg(test)]
