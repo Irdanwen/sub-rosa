@@ -512,7 +512,7 @@ fn collect_folder_entries(root: &Path, query: &str, limit: usize) -> Vec<FolderE
     // — the shortest path, so `report.md` beats `report-archive/` instead of
     // whichever happened to be saved last.
     if needle.is_empty() {
-        scored.sort_by(|a, b| b.1.cmp(&a.1));
+        scored.sort_by_key(|(_, modified, _)| std::cmp::Reverse(*modified));
     } else {
         scored.sort_by(|a, b| {
             b.0.cmp(&a.0)
