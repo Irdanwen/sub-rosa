@@ -1,6 +1,6 @@
 [package]
 name = "os-june"
-version = "1.31.7"
+version = "1.32.0"
 description = "Sub Rosa"
 authors = ["Open Software Network"]
 license = "MIT"
