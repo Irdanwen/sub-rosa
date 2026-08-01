@@ -248,6 +248,66 @@ fn context_tokens_cache() -> &'static Mutex<Option<(String, i64)>> {
     CACHE.get_or_init(|| Mutex::new(None))
 }
 
+/// Whether the configured generation model can read images, from the catalog
+/// (never guessed — [ADR-0007](../../docs/adr/0007-model-capability-source-of-truth.md)).
+///
+/// Hermes decides per turn whether to hand an attached image to the model as
+/// image content or to pre-describe it with `vision_analyze`, and in `auto`
+/// mode it answers that from models.dev. Our provider is `custom` on a
+/// loopback URL and our model ids are the operator's, so models.dev knows
+/// neither: Hermes failed closed to the text path, which base64-encodes the
+/// image *into the prompt* and blows the context on any real photo
+/// (`prompt_too_long`). Telling it the capability outright is the escape
+/// hatch Hermes documents for custom OpenAI-compatible routes.
+///
+/// Returns `None` when the catalog is unreachable or does not list the model,
+/// so callers can omit the key and leave Hermes on its own detection rather
+/// than assert something unverified.
+pub async fn generation_model_supports_vision() -> Option<bool> {
+    let model_id = generation_model();
+    if let Ok(cache) = supports_vision_cache().lock() {
+        if let Some((cached_id, supports)) = cache.as_ref() {
+            if *cached_id == model_id {
+                return Some(*supports);
+            }
+        }
+    }
+    let models = crate::june_api::list_models(ModelMode::Generation.api_type())
+        .await
+        .ok()?;
+    let supports = models
+        .into_iter()
+        .find(|model| model.id == model_id)
+        .map(|model| capabilities_include_vision(&model.capabilities))?;
+    if let Ok(mut cache) = supports_vision_cache().lock() {
+        *cache = Some((model_id, supports));
+    }
+    Some(supports)
+}
+
+/// The catalog reports capabilities as the names of the flags that are true
+/// (`capability_names` in june-api flattens `{supportsVision: true}` to
+/// `"supportsVision"`). Matched loosely on purpose — the mirror of
+/// `modelSupportsImageInput` in `src/lib/model-privacy.ts`, which must keep
+/// agreeing with this: the frontend decides whether to send the image at all,
+/// this decides how Hermes carries it.
+fn capabilities_include_vision(capabilities: &[String]) -> bool {
+    capabilities.iter().any(|capability| {
+        capability
+            .chars()
+            .filter(|c| c.is_ascii_alphabetic())
+            .map(|c| c.to_ascii_lowercase())
+            .collect::<String>()
+            .contains("supportsvision")
+    })
+}
+
+/// Single entry, same reasoning as [`context_tokens_cache`].
+fn supports_vision_cache() -> &'static Mutex<Option<(String, bool)>> {
+    static CACHE: OnceLock<Mutex<Option<(String, bool)>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
+}
+
 // Legacy name kept for callers we haven't migrated yet.
 pub fn venice_generation_model() -> String {
     generation_model()
@@ -588,6 +648,36 @@ impl ModelMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The catalog lists only the capability flags that are true, in the
+    /// operator's casing. Matched the same loose way as the frontend's
+    /// `modelSupportsImageInput`, so the two never disagree about whether an
+    /// image may be sent (frontend) and how Hermes should carry it (here).
+    #[test]
+    fn vision_capability_is_read_from_the_catalog_flag() {
+        assert!(capabilities_include_vision(&[
+            "supportsFunctionCalling".to_string(),
+            "supportsVision".to_string(),
+        ]));
+        // Casing and separators vary across catalog shapes.
+        assert!(capabilities_include_vision(
+            &["supports_vision".to_string()]
+        ));
+        assert!(capabilities_include_vision(&[
+            "capabilities.supportsVision".to_string()
+        ]));
+        // Absent means absent: `capability_names` omits a false flag, and a
+        // model that only does text must not be declared vision-capable.
+        assert!(!capabilities_include_vision(&[
+            "supportsFunctionCalling".to_string(),
+            "supportsWebSearch".to_string(),
+        ]));
+        assert!(!capabilities_include_vision(&[]));
+        // A video-input model is not an image-input model.
+        assert!(!capabilities_include_vision(&[
+            "supportsVideoInput".to_string()
+        ]));
+    }
 
     #[test]
     fn model_mode_deserializes_canonical_values() {
