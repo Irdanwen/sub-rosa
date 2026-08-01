@@ -11,8 +11,15 @@ import {
   createCategoryChip,
   insertReportCategory,
 } from "./categoryChip";
+import {
+  MENTION_CHIP_NODE,
+  createMentionChip,
+  dedupeMentions,
+  mentionsFromDoc,
+} from "./mentionChip";
 import type { ReportCategory } from "./reportCategory";
 import type { HermesSkillInfo } from "../../../lib/tauri";
+import type { ComposerMention, ComposerMentionItem } from "../../../lib/agent-mentions";
 
 export type ComposerEditorHandle = {
   focus: () => void;
@@ -28,12 +35,17 @@ export type ComposerEditorHandle = {
   ) => void;
   /** Inserts or swaps the message's single category tag at the caret. */
   insertCategory: (category: ReportCategory) => void;
+  /** The documents mentioned with "@", in document order and deduped. */
+  mentions: () => ComposerMention[];
   isEmpty: () => boolean;
 };
 
 type ComposerEditorProps = {
   placeholder: string;
   skills?: HermesSkillInfo[] | null;
+  /** Resolves the "@" palette's rows. Omitted on surfaces with no session
+   * root (the palette then simply never opens with anything to offer). */
+  mentionItems?: (query: string) => Promise<ComposerMentionItem[]>;
   onChange: (text: string, category: ReportCategory | null) => void;
   onSubmit: () => void;
   /** Hands the live editor up to the parent (e.g. so the composer box can read
@@ -45,9 +57,14 @@ type ComposerEditorProps = {
  * hard-break boundaries become newlines, and the category chip (a leaf atom)
  * contributes nothing — its meaning rides along as the category, not as text. */
 export function serializePlainText(doc: ProseMirrorNode): string {
-  return doc.textBetween(0, doc.content.size, "\n", (leaf) =>
-    leaf.type.name === "hardBreak" ? "\n" : "",
-  );
+  return doc.textBetween(0, doc.content.size, "\n", (leaf) => {
+    if (leaf.type.name === "hardBreak") return "\n";
+    // A mention is prose: the user wrote "summarize @report.md" and that is
+    // what the agent should read. The resolved path rides in the reference
+    // block appended at send time, never here.
+    if (leaf.type.name === MENTION_CHIP_NODE) return `@${(leaf.attrs.label as string) ?? ""}`;
+    return "";
+  });
 }
 
 /** Focuses the editor with the caret at the end, synchronously. tiptap's
@@ -91,9 +108,10 @@ function buildDoc(text: string, category?: ReportCategory | null) {
 }
 
 export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorProps>(
-  ({ placeholder, skills, onChange, onSubmit, onReady }, ref) => {
+  ({ placeholder, skills, mentionItems, onChange, onSubmit, onReady }, ref) => {
     const frameRef = useRef<HTMLDivElement | null>(null);
     const skillsRef = useRef(skills);
+    const mentionItemsRef = useRef(mentionItems);
     // Latest callbacks behind refs so the editor (created once) never closes
     // over a stale handler.
     const onChangeRef = useRef(onChange);
@@ -104,7 +122,8 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       onSubmitRef.current = onSubmit;
       onReadyRef.current = onReady;
       skillsRef.current = skills;
-    }, [onChange, onSubmit, onReady, skills]);
+      mentionItemsRef.current = mentionItems;
+    }, [onChange, onSubmit, onReady, skills, mentionItems]);
 
     useEffect(() => {
       document.querySelectorAll(".agent-category-menu-host").forEach((host) => {
@@ -155,6 +174,9 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
         }),
         Placeholder.configure({ placeholder }),
         createCategoryChip({ skills: () => skillsRef.current }),
+        createMentionChip({
+          items: async (query) => (await mentionItemsRef.current?.(query)) ?? [],
+        }),
       ],
       editorProps: {
         attributes: {
@@ -235,6 +257,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
         insertCategory: (category) => {
           if (editor) insertReportCategory(editor, category);
         },
+        mentions: () => (editor ? dedupeMentions(mentionsFromDoc(editor.state.doc)) : []),
         isEmpty: () => editor?.isEmpty ?? true,
       }),
       [editor],

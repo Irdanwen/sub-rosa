@@ -1,6 +1,6 @@
 import Mention from "@tiptap/extension-mention";
 import type { Editor } from "@tiptap/react";
-import { ReactNodeViewRenderer, ReactRenderer } from "@tiptap/react";
+import { ReactNodeViewRenderer } from "@tiptap/react";
 import { PluginKey, TextSelection } from "@tiptap/pm/state";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
@@ -16,6 +16,7 @@ import { matchReportCategories, reportCategoryDef, type ReportCategory } from ".
 import type { HermesSkillInfo } from "../../../lib/tauri";
 import { matchSkillSlashSuggestions } from "../../../lib/skill-slash-commands";
 import { matchBuiltinComposerSlashCommands } from "../../../lib/agent-composer-slash-commands";
+import { createSuggestionPopover } from "./suggestionPopover";
 
 /** Node name for the inline category chip. Distinct from the generic
  * "mention" node so the composer's chip styling never bleeds into (or
@@ -173,155 +174,20 @@ export function createCategoryChip(options: CategoryChipOptions = {}) {
         }
         insertSlashCommandText(editor, `/${item.skill.name} `, range);
       },
-      render: () => {
-        let renderer: ReactRenderer<
-          CategorySuggestionListHandle,
-          CategorySuggestionListProps
-        > | null = null;
-        let host: HTMLDivElement | null = null;
-        let latestProps: {
-          command: CategorySuggestionListProps["command"];
-          editor: Editor;
-          query: string;
-          clientRect?: (() => DOMRect | null) | null;
-        } | null = null;
-        let ownerDocument: Document | null = null;
-        let ownerWindow: Window | null = null;
-
-        function position(props: { clientRect?: (() => DOMRect | null) | null; editor: Editor }) {
-          if (!host || !props.clientRect) return;
-          const rect = props.clientRect();
-          if (!rect) return;
-          const viewport = props.editor.view.dom.ownerDocument.defaultView ?? window;
-          const gap = 6;
-          const pad = 8;
-          const composerBox = props.editor.view.dom.closest<HTMLElement>(".agent-composer-box");
-          const composerRect = composerBox?.getBoundingClientRect();
-          const width = Math.min(
-            composerRect?.width ?? host.getBoundingClientRect().width,
-            viewport.innerWidth - pad * 2,
-          );
-          host.style.setProperty("--agent-category-menu-width", `${width}px`);
-          const maxLeft = viewport.innerWidth - width - pad;
-          const left = Math.min(
-            Math.max(composerRect?.left ?? rect.left, pad),
-            Math.max(pad, maxLeft),
-          );
-          const anchorRect = composerRect ?? rect;
-          const belowTop = anchorRect.bottom + gap;
-          const belowSpace = viewport.innerHeight - belowTop - pad;
-          const aboveSpace = anchorRect.top - gap - pad;
-          const hostRect = host.getBoundingClientRect();
-          const hasMeasuredHeight = hostRect.height > 0;
-          const fitsBelow = hasMeasuredHeight && belowSpace >= hostRect.height;
-          const fitsAbove = hasMeasuredHeight && aboveSpace >= hostRect.height;
-          const placeBelow = fitsBelow || (!fitsAbove && belowSpace >= aboveSpace);
-          const maxHeight = Math.max(0, Math.min(placeBelow ? belowSpace : aboveSpace, 280));
-
-          host.style.setProperty("--agent-category-menu-max-height", `${maxHeight}px`);
-          if (placeBelow) {
-            host.style.bottom = "";
-            host.style.top = `${Math.max(belowTop, pad)}px`;
-          } else {
-            // Anchor the menu's composer-facing edge instead of deriving its
-            // top from a height that can be stale while async skills render.
-            // The portal then grows upward and remains inside short webviews.
-            host.style.top = "";
-            host.style.bottom = `${Math.max(viewport.innerHeight - anchorRect.top + gap, pad)}px`;
-          }
-          host.style.left = `${left}px`;
-        }
-
-        function positionLatest() {
-          if (latestProps) position(latestProps);
-        }
-
-        function updateLatestProps(props: {
-          command: unknown;
-          editor: Editor;
-          query: string;
-          clientRect?: (() => DOMRect | null) | null;
-        }) {
-          latestProps = {
-            ...props,
-            command: props.command as CategorySuggestionListProps["command"],
-          };
-        }
-
-        function refreshItems() {
-          if (!renderer || !latestProps) return;
-          renderer.updateProps({
-            items: composerSlashCommandItems(latestProps.query, options.skills?.()),
-            command: latestProps.command,
-          });
-          position(latestProps);
-        }
-
-        function dismissFromPointerDown(event: PointerEvent) {
-          const target = event.target;
-          if (!(target instanceof Node) || host?.contains(target)) return;
-          const view = latestProps?.editor.view;
-          if (!view) return;
-          view.dispatch(
-            view.state.tr.setMeta(CATEGORY_SUGGESTION_PLUGIN_KEY, {
-              exit: true,
-            }),
-          );
-        }
-
-        function cleanupPopover() {
-          renderer?.destroy();
-          host?.removeEventListener(CATEGORY_SKILLS_CHANGED_EVENT, refreshItems);
-          ownerDocument?.removeEventListener("pointerdown", dismissFromPointerDown, true);
-          ownerWindow?.removeEventListener("resize", positionLatest);
-          ownerWindow?.visualViewport?.removeEventListener("resize", positionLatest);
-          host?.remove();
-          renderer = null;
-          host = null;
-          latestProps = null;
-          ownerDocument = null;
-          ownerWindow = null;
-        }
-
-        return {
-          onStart(props) {
-            updateLatestProps(props);
-            renderer = new ReactRenderer(CategorySuggestionList, {
-              props: { items: props.items, command: props.command },
-              editor: props.editor,
-            });
-            host = document.createElement("div");
-            host.className = "agent-category-menu-host";
-            host.addEventListener(CATEGORY_SKILLS_CHANGED_EVENT, refreshItems);
-            host.appendChild(renderer.element);
-            document.body.appendChild(host);
-            ownerDocument = props.editor.view.dom.ownerDocument;
-            ownerWindow = ownerDocument.defaultView;
-            ownerDocument.addEventListener("pointerdown", dismissFromPointerDown, true);
-            ownerWindow?.addEventListener("resize", positionLatest);
-            ownerWindow?.visualViewport?.addEventListener("resize", positionLatest);
-            position(props);
-          },
-          onUpdate(props) {
-            updateLatestProps(props);
-            renderer?.updateProps({
-              items: props.items,
-              command: props.command,
-            });
-            position(props);
-          },
-          onKeyDown(props) {
-            if (props.event.key === "Escape") {
-              cleanupPopover();
-              return true;
-            }
-            return renderer?.ref?.onKeyDown(props.event) ?? false;
-          },
-          onExit() {
-            cleanupPopover();
-          },
-        };
-      },
+      render: createSuggestionPopover<
+        ComposerSlashCommandItem,
+        CategorySuggestionListHandle,
+        CategorySuggestionListProps
+      >({
+        listComponent: CategorySuggestionList,
+        pluginKey: CATEGORY_SUGGESTION_PLUGIN_KEY,
+        // Skills load asynchronously; when they land, the open menu
+        // rebuilds instead of showing a list that is missing them.
+        refresh: {
+          eventName: CATEGORY_SKILLS_CHANGED_EVENT,
+          itemsFor: (query) => composerSlashCommandItems(query, options.skills?.()),
+        },
+      }),
     },
   });
 }
