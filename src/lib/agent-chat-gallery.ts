@@ -299,6 +299,58 @@ export function buildAgentChatGallery(): AgentChatGallerySection[] {
       ],
     },
     {
+      label: "Background process notice",
+      description:
+        "Hermes wakes the agent by submitting a background process's output as a prompt, so it lands in the transcript as a user message the user never wrote. Rendered as a quiet process row (never a bubble, no turn actions); expand for the notification verbatim. Three variants: a watch match, a clean end, a failure.",
+      turns: [
+        {
+          id: "gallery:process-watch",
+          role: "user",
+          createdAt: BASE,
+          status: "complete",
+          parts: [
+            {
+              type: "process",
+              kind: "watch-match",
+              label: 'Background process matched "Serving HTTP on"',
+              detail:
+                'Background process proc_a8f9b7e429b2 matched watch pattern "Serving HTTP on".\nCommand: python3 -m http.server 8765 --bind 127.0.0.1\nMatched output:\nServing HTTP on 127.0.0.1 port 8765 (http://127.0.0.1:8765/) ...',
+            },
+          ],
+        },
+        {
+          id: "gallery:process-finished",
+          role: "user",
+          createdAt: BASE,
+          status: "complete",
+          parts: [
+            {
+              type: "process",
+              kind: "finished",
+              label: "Background process finished",
+              detail:
+                "Background process proc_31c0d4 completed normally (exit code 0).\nCommand: pnpm build\nOutput:\nvite v5.4.10 building for production...\n✓ built in 12.41s",
+            },
+          ],
+        },
+        {
+          id: "gallery:process-failed",
+          role: "user",
+          createdAt: BASE,
+          status: "complete",
+          parts: [
+            {
+              type: "process",
+              kind: "failed",
+              label: "Background process exited with code 1",
+              detail:
+                "Background process proc_9f21ab exited (exit code 1).\nCommand: cargo test --workspace\nOutput:\nerror: test failed, to rerun pass `--lib`",
+            },
+          ],
+        },
+      ],
+    },
+    {
       label: "Approval: pending",
       description:
         "Approval request awaiting a choice. Buttons: Explain first / Approve once / This session / Always / Deny.",

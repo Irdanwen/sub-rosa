@@ -15,6 +15,7 @@ import {
   isUpstreamRateLimitedMessage,
 } from "./errors";
 import { isScheduledRunPreamble, stripScheduledRunPreamble } from "./hermes-adapter";
+import { type HermesProcessNotice, parseHermesProcessNotice } from "./hermes-process-notice";
 import { displayedUserMessageText } from "./issue-report-prompt";
 import { displayedSkillInvocationText } from "./skill-slash-commands";
 import { STEER_EVENT_TYPE, steeringPartText } from "./hermes-session-steer";
@@ -129,6 +130,15 @@ export type AgentChatSteeringPart = {
   text: string;
 };
 
+/** A background-process notification Hermes injected as a prompt to wake the
+ * agent back up (see {@link parseHermesProcessNotice}). Stored as a `user`
+ * message, so it keeps the user role that drives the transcript's "the agent
+ * owes a reply" heuristics — but it renders as a quiet expandable process row,
+ * never as a message bubble: the user did not write it. */
+export type AgentChatProcessPart = HermesProcessNotice & {
+  type: "process";
+};
+
 /** A built-in image generation result (the `/image` slash command). It lives as
  * an assistant part so the generated image renders inline in the thread — with
  * its own loader and error states — instead of being dropped into the composer
@@ -162,6 +172,7 @@ export type AgentChatPart =
   | AgentChatSecretPart
   | AgentChatNoticePart
   | AgentChatSteeringPart
+  | AgentChatProcessPart
   | AgentChatImagePart;
 
 export type AgentChatTurn = {
@@ -222,6 +233,9 @@ export function buildHermesSessionChatTurns(
 
     const content = displayContentForHermesMessage(message);
     const contextPart = content ? contextCompactionPartForHermesContent(content) : undefined;
+    // Parsed off the raw stored text, not `content`: the user-message display
+    // pipeline strips scaffolding that the notification's own wrapper needs.
+    const processPart = contextPart ? undefined : processNoticePartForHermesMessage(message);
 
     const turn: AgentChatTurn = {
       id: message.id,
@@ -240,6 +254,8 @@ export function buildHermesSessionChatTurns(
 
     if (contextPart) {
       turn.parts.push(contextPart);
+    } else if (processPart) {
+      turn.parts.push(processPart);
     } else {
       const reasoning =
         stringValue(message.reasoning, true) ??
@@ -1430,6 +1446,23 @@ function isScheduledRunMessage(message: HermesSessionMessage) {
   return message.role === "user" && isScheduledRunPreamble(resolveHermesMessageText(message));
 }
 
+/** The `user` message Hermes writes when it wakes the agent with a background
+ * process's output is not something the user sent — it renders as a process
+ * row instead of a bubble. */
+function processNoticePartForHermesMessage(
+  message: HermesSessionMessage,
+): AgentChatProcessPart | undefined {
+  if (message.role !== "user") return undefined;
+  const notice = parseHermesProcessNotice(resolveHermesMessageText(message));
+  return notice ? { type: "process", ...notice } : undefined;
+}
+
+/** True when the turn is a machine notification rather than a message the user
+ * wrote — the transcript's user-prompt affordances (edit, retry) must skip it. */
+export function isProcessNoticeTurn(turn: AgentChatTurn) {
+  return turn.parts.length > 0 && turn.parts.every((part) => part.type === "process");
+}
+
 function contextCompactionPartForHermesContent(content: string): AgentChatContextPart | undefined {
   const text = content.trim();
   if (!isHermesContextCompactionSummary(text)) return undefined;
@@ -1558,6 +1591,10 @@ function partText(part: AgentChatPart) {
   if (part.type === "sudo") return [part.command ?? "", part.reason ?? "", "sudo"].join(" ");
   if (part.type === "secret") return [part.keyName ?? "", part.reason ?? "", "secret"].join(" ");
   if (part.type === "context") return part.preview || part.text;
+  // A process notification's label carries the row; the detail is the raw
+  // notification. Reporting the label keeps the turn from being filtered out as
+  // empty even when the process printed nothing.
+  if (part.type === "process") return part.label || part.detail;
   // A generated image is meaningful even though it has no body text — report the
   // prompt so the turn isn't filtered out as empty and a copy reads sensibly.
   if (part.type === "image") return part.prompt;
