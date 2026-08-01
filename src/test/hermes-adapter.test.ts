@@ -39,6 +39,50 @@ describe("scheduled-run helpers", () => {
     expect(stripScheduledRunPreamble("  hello there  ")).toBe("hello there");
   });
 
+  it("names a session woken by a background process after what happened", () => {
+    // Hermes previews a session with its LAST message, and the notification it
+    // injects to wake the agent is a message like any other — so an untitled
+    // session would otherwise be listed as "[IMPORTANT: Background process…".
+    const sessions = normalizeHermesSessionsResponse({
+      sessions: [
+        {
+          id: "s-1",
+          title: "",
+          preview:
+            '[IMPORTANT: Background process proc_a8f9 matched watch pattern "Serving HTTP on". Command: python3 -m http.server 8765 Matched outp',
+          last_active: "2026-06-11T12:00:00Z",
+        },
+        {
+          id: "s-2",
+          title: "Improve the HTML document",
+          preview: "[IMPORTANT: Background process proc_31c0 completed normally (exit code 0).",
+          last_active: "2026-06-11T12:00:00Z",
+        },
+      ],
+    });
+
+    expect(sessions[0]?.preview).toBe('Background process matched "Serving HTTP on"');
+    expect(sessions[0]?.title).toBe('Background process matched "Serving HTTP on"');
+    // A session the user (or the titler) already named keeps its name.
+    expect(sessions[1]?.title).toBe("Improve the HTML document");
+    expect(sessions[1]?.preview).toBe("Background process finished");
+  });
+
+  it("leaves an ordinary session's title and preview untouched", () => {
+    const sessions = normalizeHermesSessionsResponse({
+      sessions: [
+        {
+          id: "s-3",
+          title: "Improve the HTML document",
+          preview: "Run the build in the background",
+          last_active: "2026-06-11T12:00:00Z",
+        },
+      ],
+    });
+    expect(sessions[0]?.preview).toBe("Run the build in the background");
+    expect(sessions[0]?.title).toBe("Improve the HTML document");
+  });
+
   it("gives cron sessions a readable title and clean preview", () => {
     const sessions = normalizeHermesSessionsResponse({
       sessions: [

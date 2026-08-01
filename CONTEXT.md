@@ -187,6 +187,15 @@ A file or image imported into the Hermes workspace and referenced by path;
 images additionally get a structured `image.attach_bytes`.
 _Avoid_: upload (unqualified).
 
+**Process notice**:
+The notification Hermes injects to wake the agent when a background process
+matches a watch pattern, ends, or an async subagent reports back. The runtime
+delivers it by *submitting it as a prompt*, so it persists as a `user` message
+— but the user never wrote it, and the transcript renders it as a quiet
+process row, never as a message bubble (`src/lib/hermes-process-notice.ts`).
+_Avoid_: user message, background task (that is the work itself, not the
+notification about it).
+
 **Skill / Toolset / MCP server**:
 A Skill is a bundled/installed capability pack; a Toolset is a togglable tool
 group; an MCP server is an external tool provider (June ships `june_context`

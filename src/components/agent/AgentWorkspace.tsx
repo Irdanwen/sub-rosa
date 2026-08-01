@@ -292,6 +292,7 @@ import {
   hermesMessagesEndInterrupted,
   hermesMessagesHaveAssistantReply,
   hermesMessagesShowCompletedTurn,
+  isProcessNoticeTurn,
   repairContractionSpacing,
   textFromHermesContent,
   appendLiveHermesEvent,
@@ -5896,7 +5897,13 @@ export function AgentWorkspace({
   // re-ask.
   function retryLastHermesUserTurn() {
     if (!selectedHermesSessionId || workingSessionIds.has(selectedHermesSessionId)) return;
-    const lastUserTurn = [...hermesTurns].reverse().find((turn) => turn.role === "user");
+    // The newest turn the user actually wrote. A background-process
+    // notification is stored as a user message too, so re-asking "the last user
+    // turn" blindly would either resubmit machine scaffolding or, once it has
+    // no prompt text, silently do nothing.
+    const lastUserTurn = [...hermesTurns]
+      .reverse()
+      .find((turn) => turn.role === "user" && !isProcessNoticeTurn(turn));
     const text = lastUserTurn ? userPromptTextForTurn(lastUserTurn) : "";
     if (!text.trim()) return;
     void submitHermesSession(text).catch((err: unknown) => {
@@ -9617,7 +9624,9 @@ function AgentResponseGallery({
   );
 }
 
-function AgentChatTurnRow({
+// Exported for the transcript rendering tests (the dev gallery renders it
+// through <AgentResponseGallery>); not part of the workspace's public surface.
+export function AgentChatTurnRow({
   activeThinkingKey,
   approvalSubmitting,
   artifacts,
@@ -9744,6 +9753,9 @@ function AgentChatTurnRow({
   const contextParts = turn.parts.filter(
     (part): part is Extract<AgentChatPart, { type: "context" }> => part.type === "context",
   );
+  const processParts = turn.parts.filter(
+    (part): part is Extract<AgentChatPart, { type: "process" }> => part.type === "process",
+  );
   const nonTextParts = turn.parts.filter((part) => part.type !== "text");
   const copyText = copyableTextForTurn(turn);
   const userPromptText = turn.role === "user" ? copyText : "";
@@ -9825,6 +9837,24 @@ function AgentChatTurnRow({
         {contextParts.map((part, index) => (
           <ContextCompactionPart
             key={`${turn.id}:context:${index}`}
+            createdAt={turn.createdAt}
+            part={part}
+          />
+        ))}
+      </>
+    );
+  }
+
+  // A background-process notification Hermes injected as a prompt. It is stored
+  // as a user message but the user never wrote it, so it renders as a quiet
+  // process row — and with no turn actions: there is nothing here to copy,
+  // edit, or branch from.
+  if (processParts.length && isProcessNoticeTurn(turn)) {
+    return (
+      <>
+        {processParts.map((part, index) => (
+          <ProcessNoticeItem
+            key={`${turn.id}:process:${index}`}
             createdAt={turn.createdAt}
             part={part}
           />
@@ -10048,6 +10078,42 @@ function ContextCompactionPart({
         <time>{relativeDate(createdAt)}</time>
       </summary>
       <MarkdownContent markdown={part.text} />
+    </details>
+  );
+}
+
+/**
+ * A background-process notification the runtime injected to wake the agent
+ * back up: a watch-pattern match, a process ending, a stopped watch, or an
+ * async subagent reporting in.
+ *
+ * Same quiet expandable row as {@link ContextCompactionPart} — the transcript
+ * already reads as a sequence of beats, and this is a machine beat, not a
+ * message. Collapsed it says what happened; expanded it shows the notification
+ * verbatim (command and output) as preformatted text, since process output is
+ * not markdown and must not be reflowed. `data-kind` lets a failure read a
+ * shade louder without turning the row into an error card: the agent usually
+ * handles it in the very next turn.
+ */
+function ProcessNoticeItem({
+  createdAt,
+  part,
+}: {
+  createdAt: string;
+  part: Extract<AgentChatPart, { type: "process" }>;
+}) {
+  return (
+    <details className="agent-process-notice" data-kind={part.kind}>
+      <summary>
+        <span className="agent-tool-icon">
+          <IconConsoleSimple size={15} className="agent-process-icon-glyph" />
+          <span className="agent-tool-icon-expand">+</span>
+          <span className="agent-tool-icon-minimize">−</span>
+        </span>
+        <span className="agent-process-label">{part.label}</span>
+        <time>{relativeDate(createdAt)}</time>
+      </summary>
+      <pre className="agent-process-detail">{part.detail}</pre>
     </details>
   );
 }

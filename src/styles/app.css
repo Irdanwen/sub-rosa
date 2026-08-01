@@ -1876,14 +1876,18 @@ input:focus-visible,
   font-weight: 500;
 }
 
-.agent-context-summary {
+/* The transcript's two machine disclosures — context compaction and a
+ * background-process notification — share one quiet expandable row. */
+.agent-context-summary,
+.agent-process-notice {
   width: min(760px, 100%);
   padding: 0 var(--sp-2);
   color: var(--muted-foreground);
   font-size: var(--fs-lg);
 }
 
-.agent-context-summary > summary {
+.agent-context-summary > summary,
+.agent-process-notice > summary {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -1891,19 +1895,22 @@ input:focus-visible,
   list-style: none;
 }
 
-.agent-context-summary > summary::-webkit-details-marker {
+.agent-context-summary > summary::-webkit-details-marker,
+.agent-process-notice > summary::-webkit-details-marker {
   display: none;
 }
 
 /* Whole row firms up on hover, same quiet treatment as the tool disclosures. */
-.agent-context-summary > summary:hover {
+.agent-context-summary > summary:hover,
+.agent-process-notice > summary:hover {
   color: var(--foreground);
 }
 
 /* Flat icon cell shared with the tool rows: the glyph and the "+"/"−" hints
  * stack in one pinned cell so the hover swap is pure opacity — no layout, no
  * WKWebView compositing hitch. */
-.agent-context-summary .agent-tool-icon {
+.agent-context-summary .agent-tool-icon,
+.agent-process-notice .agent-tool-icon {
   display: inline-grid;
   place-items: center;
   flex: 0 0 auto;
@@ -1914,7 +1921,8 @@ input:focus-visible,
   color: inherit;
 }
 
-.agent-context-summary .agent-tool-icon > * {
+.agent-context-summary .agent-tool-icon > *,
+.agent-process-notice .agent-tool-icon > * {
   grid-area: 1 / 1;
 }
 
@@ -1924,26 +1932,52 @@ input:focus-visible,
   stroke-width: 1.5;
 }
 
-.agent-context-summary > summary:hover .agent-context-icon-glyph {
+.agent-context-summary > summary:hover .agent-context-icon-glyph,
+.agent-process-notice > summary:hover .agent-process-icon-glyph {
   opacity: 0;
 }
 
 .agent-context-summary:not([open]) > summary:hover .agent-tool-icon-expand,
-.agent-context-summary[open] > summary:hover .agent-tool-icon-minimize {
+.agent-context-summary[open] > summary:hover .agent-tool-icon-minimize,
+.agent-process-notice:not([open]) > summary:hover .agent-tool-icon-expand,
+.agent-process-notice[open] > summary:hover .agent-tool-icon-minimize {
   opacity: 1;
 }
 
 /* Label sits at the row's weight — not bold; the muted color alone keeps it
  * subordinate to the answer text. */
-.agent-context-label {
+.agent-context-label,
+.agent-process-label {
   font-weight: 400;
 }
 
+/* Unlike the fixed "Context compacted", this label can carry a watch pattern
+ * the agent chose, so it elides rather than wrapping the row onto two lines or
+ * pushing the timestamp around. The full pattern is one expand away. */
+.agent-process-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A process that ended badly is worth noticing without becoming an error card:
+ * the agent is normally already picking the failure back up in the next turn. */
+.agent-process-notice[data-kind="failed"] .agent-process-label {
+  color: var(--foreground);
+}
+
 /* Timestamp pins to the right edge and matches the row's body size. */
-.agent-context-summary time {
+.agent-context-summary time,
+.agent-process-notice time {
   margin-left: auto;
   color: var(--muted-foreground);
   font-size: var(--fs-lg);
+}
+
+/* Never squeezed by a long label: the label elides instead. */
+.agent-process-notice time {
+  flex: 0 0 auto;
 }
 
 /* Feature 06: the "Steering" system item recording a mid-run instruction. Quiet
@@ -1995,6 +2029,25 @@ input:focus-visible,
 }
 
 .agent-context-summary:not([open]) > .agent-markdown {
+  display: none;
+}
+
+/* The raw notification: process output, so it keeps its own line breaks and
+ * spacing (monospace, no reflow) and scrolls in both axes rather than pushing
+ * the transcript wide. */
+.agent-process-detail {
+  overflow: auto;
+  max-height: 320px;
+  margin: var(--sp-2) 0 0 calc(15px + var(--sp-2));
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-process-notice:not([open]) > .agent-process-detail {
   display: none;
 }
 

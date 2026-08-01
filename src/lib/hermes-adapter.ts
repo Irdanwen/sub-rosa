@@ -5,6 +5,7 @@ import {
   type HermesSessionInfo,
   type HermesSessionMessage,
 } from "./tauri";
+import { parseHermesProcessNotice } from "./hermes-process-notice";
 
 export type HermesSessionListOptions = {
   limit?: number;
@@ -48,6 +49,7 @@ export function normalizeHermesSessionsResponse(response: unknown) {
     .filter(isHermesSessionInfo)
     .filter((session) => !isDelegatedSubagentSession(session))
     .map(withScheduledRunDisplay)
+    .map(withProcessNoticeDisplay)
     .sort((a, b) => sessionTimestamp(b).localeCompare(sessionTimestamp(a)));
 }
 
@@ -214,6 +216,20 @@ function withScheduledRunDisplay(session: HermesSessionInfo): HermesSessionInfo 
     ? titleFromPrompt(cleanedPreview)
     : storedTitle;
   return { ...session, title, preview: cleanedPreview || session.preview };
+}
+
+/** Hermes builds a session's preview from its LAST message, and a background
+ * process notification is stored as a message like any other — so a session the
+ * runtime just woke back up previews (and, untitled, is named) as
+ * "[IMPORTANT: Background process proc_… matched watch pattern …". The row says
+ * what happened instead, in the same words the transcript's process row uses.
+ * Sessions with an ordinary preview pass through. */
+function withProcessNoticeDisplay(session: HermesSessionInfo): HermesSessionInfo {
+  const notice = parseHermesProcessNotice(session.preview ?? "");
+  if (!notice) return session;
+  const storedTitle = session.title?.trim() ?? "";
+  const title = isReplaceableScheduledRunTitle(storedTitle) ? notice.label : storedTitle;
+  return { ...session, title, preview: notice.label };
 }
 
 export function normalizeHermesSessionMessagesResponse(response: unknown) {

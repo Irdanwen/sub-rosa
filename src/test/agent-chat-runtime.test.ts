@@ -10,6 +10,8 @@ import {
   hermesMessagesEndInterrupted,
   hermesMessagesHaveAssistantReply,
   hermesMessagesShowCompletedTurn,
+  isProcessNoticeTurn,
+  type AgentChatTurn,
   type LiveHermesEvent,
   repairContractionSpacing,
   toolEventKey,
@@ -87,6 +89,49 @@ describe("Agent chat runtime", () => {
     ]);
 
     expect(turns[0]?.isScheduledRun).toBeUndefined();
+  });
+
+  it("renders an injected background-process notification as a process row", () => {
+    // Hermes wakes the agent by submitting the process output as a prompt, so
+    // this lands in the transcript as a `user` message the user never wrote.
+    const turns = buildHermesSessionChatTurns([
+      {
+        id: "1",
+        role: "user",
+        content:
+          '[IMPORTANT: Background process proc_a8f9b7e429b2 matched watch pattern "Serving HTTP on".\nCommand: python3 -m http.server 8765\nMatched output:\nServing HTTP on 127.0.0.1 port 8765]',
+        timestamp: "2026-06-11T12:00:00.000Z",
+      },
+    ]);
+
+    expect(turns).toHaveLength(1);
+    // The role stays `user`: it is what Hermes stored, and the transcript's
+    // "the agent owes a reply" heuristics key off it. Only the rendering
+    // changes, and the part carries no text part to copy or edit.
+    expect(turns[0]?.role).toBe("user");
+    expect(turns[0]?.parts).toEqual([
+      {
+        type: "process",
+        kind: "watch-match",
+        label: 'Background process matched "Serving HTTP on"',
+        detail: expect.stringContaining("Command: python3 -m http.server 8765"),
+      },
+    ]);
+    expect(isProcessNoticeTurn(turns[0] as AgentChatTurn)).toBe(true);
+  });
+
+  it("keeps a real user message out of the process-row path", () => {
+    const turns = buildHermesSessionChatTurns([
+      {
+        id: "1",
+        role: "user",
+        content: "Start the build in the background",
+        timestamp: "2026-06-11T12:00:00.000Z",
+      },
+    ]);
+
+    expect(turns[0]?.parts[0]?.type).toBe("text");
+    expect(isProcessNoticeTurn(turns[0] as AgentChatTurn)).toBe(false);
   });
 
   it("renders persisted Hermes user and assistant messages", () => {
