@@ -1083,7 +1083,8 @@ async fn start_hermes_bridge_inner(
         &june_web_mcp,
         &june_media_mcp,
         &june_films_mcp,
-    )?;
+    )
+    .await?;
 
     // Wrap the spawn in a macOS Seatbelt write-jail when possible. The model,
     // its tool calls, and any subprocess it forks all inherit the profile, so
@@ -7275,7 +7276,7 @@ fn default_python_command() -> &'static str {
     }
 }
 
-fn sync_hermes_config(
+async fn sync_hermes_config(
     hermes_home: &std::path::Path,
     provider_proxy_port: u16,
     provider_proxy_token: &str,
@@ -7293,6 +7294,9 @@ fn sync_hermes_config(
         provider_proxy_token,
         &CRON_SANDBOXED_TOOLSETS.join(", "),
         external_skill_dirs,
+        // Catalog-sourced, never assumed: an unreachable catalog writes no key
+        // and leaves Hermes on its own detection (see the function's docs).
+        crate::providers::generation_model_supports_vision().await,
         Some(june_context_mcp),
         Some(june_web_mcp),
         Some(june_media_mcp),
@@ -7313,11 +7317,29 @@ fn render_hermes_config(
     provider_proxy_token: &str,
     cron_toolsets: &str,
     external_skill_dirs: &[PathBuf],
+    supports_vision: Option<bool>,
     june_context_mcp: Option<&JuneContextMcpConfig>,
     june_web_mcp: Option<&JuneWebMcpConfig>,
     june_media_mcp: Option<&JuneMediaMcpConfig>,
     june_films_mcp: Option<&JuneFilmsMcpConfig>,
 ) -> String {
+    // Hermes resolves a model's vision capability through models.dev, which
+    // knows neither our `custom` provider nor the operator's model ids, so it
+    // failed closed to the text path: the image was base64-ed into the prompt
+    // and a real photo blew the context (`prompt_too_long`). Declaring the
+    // capability is the documented escape hatch for custom OpenAI-compatible
+    // routes. Both keys are needed, and only together:
+    // `agent.image_input_mode` decides how an attached image rides the turn,
+    // while `model.supports_vision` is what the `vision_analyze` tool's own
+    // native fast path additionally requires (a custom provider is not in its
+    // allowlist). A non-vision model keeps the describe-then-send path, which
+    // is the right behavior for it, so only `true` turns native on.
+    let vision_block = match supports_vision {
+        Some(true) => ("  supports_vision: true\n", "  image_input_mode: native\n"),
+        Some(false) => ("  supports_vision: false\n", ""),
+        None => ("", ""),
+    };
+    let (model_vision_line, agent_vision_line) = vision_block;
     let skills_block = if external_skill_dirs.is_empty() {
         "  external_dirs: []\n".to_string()
     } else {
@@ -7340,8 +7362,8 @@ fn render_hermes_config(
   base_url: {base_url}
   api_key: {provider_proxy_token}
   api_mode: chat_completions
-agent:
-  max_turns: 200
+{model_vision_line}agent:
+{agent_vision_line}  max_turns: 200
   gateway_timeout: 7200
   gateway_timeout_warning: 3600
   gateway_auto_continue_freshness: 10800
@@ -9518,6 +9540,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
 
         assert!(config.contains("model:\n  default: \"glm\""));
@@ -9564,6 +9587,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
 
         assert!(config.contains("skills:\n  external_dirs: []\n"));
@@ -9587,6 +9611,7 @@ mod tests {
             "tok",
             "web",
             &[],
+            None,
             None,
             None,
             None,
@@ -9625,11 +9650,85 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
 
         assert!(config.contains(
             "agent:\n  max_turns: 200\n  gateway_timeout: 7200\n  gateway_timeout_warning: 3600\n  gateway_auto_continue_freshness: 10800\n"
         ));
+    }
+
+    /// An attached photo reached the model as base64 *text* and blew the
+    /// context (`prompt_too_long`), because Hermes resolves vision capability
+    /// through models.dev — which knows neither our `custom` provider nor the
+    /// operator's model ids — and fails closed to the describe-first path.
+    /// The capability is declared from the catalog instead. Both keys matter:
+    /// `image_input_mode` routes the attached image, `supports_vision` is the
+    /// extra condition `vision_analyze`'s own native fast path checks (a
+    /// custom provider is not in its allowlist).
+    #[test]
+    fn render_hermes_config_declares_vision_capability_for_a_vision_model() {
+        let config = render_hermes_config(
+            "glm",
+            "http://127.0.0.1:9/v1",
+            "tok",
+            "web",
+            &[],
+            Some(true),
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert!(config.contains("  api_mode: chat_completions\n  supports_vision: true\nagent:\n"));
+        assert!(config.contains("agent:\n  image_input_mode: native\n  max_turns: 200\n"));
+    }
+
+    /// A model that genuinely cannot read images keeps Hermes' describe-first
+    /// path — that is the correct behavior for it, and forcing native input
+    /// would turn a lossy description into a hard provider error.
+    #[test]
+    fn render_hermes_config_keeps_a_text_model_on_the_describe_path() {
+        let config = render_hermes_config(
+            "glm",
+            "http://127.0.0.1:9/v1",
+            "tok",
+            "web",
+            &[],
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert!(config.contains("  supports_vision: false\n"));
+        assert!(!config.contains("image_input_mode"));
+    }
+
+    /// Offline, or a model the catalog does not list: assert nothing. Writing
+    /// a guessed capability is worse than leaving Hermes on its own detection
+    /// (ADR-0007 — capabilities come from the catalog, never inferred).
+    #[test]
+    fn render_hermes_config_omits_vision_keys_when_the_capability_is_unknown() {
+        let config = render_hermes_config(
+            "glm",
+            "http://127.0.0.1:9/v1",
+            "tok",
+            "web",
+            &[],
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert!(!config.contains("supports_vision"));
+        assert!(!config.contains("image_input_mode"));
+        // The block it sits between is untouched.
+        assert!(config.contains("  api_mode: chat_completions\nagent:\n  max_turns: 200\n"));
     }
 
     fn test_june_web_mcp_config() -> JuneWebMcpConfig {
@@ -9668,6 +9767,7 @@ mod tests {
             "proxy-tok",
             "web",
             &[],
+            None,
             Some(&context),
             Some(&web),
             Some(&media),
@@ -9736,6 +9836,7 @@ mod tests {
             "tok",
             "web",
             &[],
+            None,
             None,
             None,
             None,
@@ -10146,8 +10247,8 @@ mod tests {
         assert!(!envs_of(&bare).contains_key("HERMES_ENVIRONMENT_HINT"));
     }
 
-    #[test]
-    fn synced_config_gates_cron_runs_to_the_sandboxed_toolsets() {
+    #[tokio::test]
+    async fn synced_config_gates_cron_runs_to_the_sandboxed_toolsets() {
         // Routines execute in the unjailed launchd gateway, so the only
         // default-deny boundary they have is this config gate: a cron job
         // with no per-job enabled_toolsets must resolve to the sandboxed
@@ -10168,6 +10269,7 @@ mod tests {
             &media,
             &films,
         )
+        .await
         .expect("sync config");
 
         let config = std::fs::read_to_string(home.path().join("config.yaml")).expect("read config");
