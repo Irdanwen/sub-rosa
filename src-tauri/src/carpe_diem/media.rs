@@ -208,8 +208,8 @@ async fn map_response(response: reqwest::Response) -> Result<MediaResponseDto, A
 #[serde(rename_all = "camelCase")]
 pub struct MediaModelDto {
     pub id: String,
-    /// `image | imageEdit | video | imageToVideo | music | tts | upscale |
-    /// text | asr | embedding | other` — Carpe Diem's `carpe_diem_type`
+    /// `image | imageEdit | video | imageToVideo | referenceToVideo | music |
+    /// tts | upscale | text | asr | embedding | other` — Carpe Diem's `carpe_diem_type`
     /// vocabulary, derived from Venice's `type` + constraints when the stored
     /// key talks to Venice directly.
     pub media_type: String,

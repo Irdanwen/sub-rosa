@@ -91,6 +91,42 @@ describe("video family grouping", () => {
     expect(grouped[0].imageModel?.id).toBe("wan-2-7-image-to-video");
     expect(grouped[0].referenceModel?.id).toBe("wan-2-7-reference-to-video");
   });
+
+  it("picks up the dedicated reference-to-video type and keeps it in its family", () => {
+    // Carpe Diem moved most reference-to-video models out of `imageToVideo`
+    // into their own type; reading only the two old types hid them entirely.
+    // Their display name carries a direction shorthand that must not split the
+    // family in two.
+    const grouped = videoFamilies(
+      catalog([
+        model({ id: "kling-o3-4k-text-to-video", mediaType: "video", name: "Kling O3 4K" }),
+        model({
+          id: "kling-o3-4k-reference-to-video",
+          mediaType: "referenceToVideo",
+          name: "Kling O3 4K R2V",
+        }),
+        model({
+          id: "happyhorse-1-0-reference-to-video",
+          mediaType: "referenceToVideo",
+          name: "HappyHorse 1.0 Reference",
+        }),
+        // No Venice spec publishes the seedance names, so these group by id.
+        model({ id: "seedance-2-0-text-to-video", mediaType: "video" }),
+        model({ id: "seedance-2-0-reference-to-video", mediaType: "referenceToVideo" }),
+      ]),
+    );
+
+    const kling = grouped.find((family) => family.key === "kling o3 4k");
+    expect(kling?.textModel?.id).toBe("kling-o3-4k-text-to-video");
+    expect(kling?.referenceModel?.id).toBe("kling-o3-4k-reference-to-video");
+    expect(kling?.name).toBe("Kling O3 4K");
+    const seedance = grouped.find((family) => family.key === "seedance-2-0");
+    expect(seedance?.referenceModel?.id).toBe("seedance-2-0-reference-to-video");
+    // A family with only a reference variant still shows up under it.
+    const happyhorse = grouped.find((family) => family.key === "happyhorse 1.0");
+    expect(happyhorse?.referenceModel?.id).toBe("happyhorse-1-0-reference-to-video");
+    expect(happyhorse?.textModel).toBeUndefined();
+  });
 });
 
 describe("video duration fallbacks", () => {
@@ -98,6 +134,7 @@ describe("video duration fallbacks", () => {
     const patched = withVideoDurationFallbacks(
       catalog([
         model({ id: "seedance-2-0-image-to-video", mediaType: "imageToVideo" }),
+        model({ id: "seedance-2-0-reference-to-video", mediaType: "referenceToVideo" }),
         model({ id: "seedance-1-5-pro-text-to-video", mediaType: "video" }),
         model({ id: "wan-2-7-text-to-video", mediaType: "video" }),
       ]),
@@ -106,6 +143,9 @@ describe("video duration fallbacks", () => {
     const seedance2 = byId.get("seedance-2-0-image-to-video")?.constraints?.durations;
     expect(seedance2?.[0]).toBe("4s");
     expect(seedance2?.at(-1)).toBe("15s");
+    // The dedicated reference type needs the same menu: seedance rejects a
+    // request with no `duration`.
+    expect(byId.get("seedance-2-0-reference-to-video")?.constraints?.durations?.at(-1)).toBe("15s");
     const seedance15 = byId.get("seedance-1-5-pro-text-to-video")?.constraints?.durations;
     expect(seedance15?.at(-1)).toBe("12s");
     // Unlisted families stay untouched (no fabricated menus).

@@ -80,7 +80,19 @@ RELAYED_CONSTRAINT_KEYS = ("aspectRatios", "durations", "resolutions", "promptCh
 # JSON envelope around a base64 reference image.
 MAX_REFERENCE_IMAGE_BYTES = 2 * 1024 * 1024
 
-MEDIA_TYPES = ("image", "imageEdit", "video", "imageToVideo", "music", "tts", "upscale")
+MEDIA_TYPES = (
+    "image",
+    "imageEdit",
+    "video",
+    "imageToVideo",
+    # Reference-to-video: the photo steers style/subject instead of being the
+    # opening frame. Its own catalog type, so it needs listing explicitly or
+    # the agent never sees those models.
+    "referenceToVideo",
+    "music",
+    "tts",
+    "upscale",
+)
 
 CATALOG_TTL_SECONDS = 600
 _catalog_cache: dict[str, Any] = {"at": 0.0, "backend": "", "models": []}
@@ -164,8 +176,11 @@ TOOLS: list[dict[str, Any]] = [
                 "image_path": {
                     "type": "string",
                     "description": (
-                        "Absolute path of a local image to animate (image-to-video). "
-                        "Requires an image-to-video capable model."
+                        "Absolute path of a local image. With an image-to-video "
+                        "model it is the opening frame to animate; with a "
+                        "reference-to-video model it steers style and subject "
+                        "while the prompt drives the action. Requires a model of "
+                        "one of those two types."
                     ),
                 },
             },
@@ -507,7 +522,13 @@ def generate_video(base_url: str, token: str, arguments: dict[str, Any]) -> dict
             body[field] = value.strip()
     image_path = str(arguments.get("image_path") or "").strip()
     if image_path:
-        body["image_url"] = local_image_data_uri(image_path)
+        data_uri = local_image_data_uri(image_path)
+        # Reference-to-video models take the photo as a style/subject reference
+        # (a list), image-to-video as the opening frame.
+        if "reference-to-video" in model.lower():
+            body["reference_image_urls"] = [data_uri]
+        else:
+            body["image_url"] = data_uri
 
     dto = proxy_request(base_url, token, "POST", "/video/queue", body)
     if not dto.get("ok"):

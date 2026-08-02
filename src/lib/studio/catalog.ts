@@ -83,11 +83,16 @@ function secondsRange(min: number, max: number): string[] {
   return Array.from({ length: max - min + 1 }, (_, index) => `${min + index}s`);
 }
 
+/** Every catalog type that ends up in a video family - the duration fallbacks
+ * apply to all of them (a seedance reference-to-video rejects a request with
+ * no `duration` exactly like its text variant does). */
+const VIDEO_MEDIA_TYPES: MediaType[] = ["video", "imageToVideo", "referenceToVideo"];
+
 export function withVideoDurationFallbacks(catalog: MediaCatalog): MediaCatalog {
   return {
     ...catalog,
     models: catalog.models.map((model) => {
-      if (model.mediaType !== "video" && model.mediaType !== "imageToVideo") return model;
+      if (!VIDEO_MEDIA_TYPES.includes(model.mediaType)) return model;
       if (model.constraints?.durations?.length) return model;
       const id = model.id.toLowerCase();
       const fallback = VIDEO_DURATION_FALLBACKS.find((entry) => id.includes(entry.match));
@@ -135,17 +140,24 @@ export function videoFamilyKey(model: MediaModel): string {
   return key.toLowerCase();
 }
 
+/** The shorthand the catalog appends to a variant's display name ("Kling O3 4K
+ * R2V", "Wan 2.7 Reference", "Grok Imagine R2V"). It names the direction, not
+ * the family, so leaving it in splits one family into two. */
+const DIRECTION_NAME_SUFFIX = /\s+(r2v|i2v|t2v|v2v|reference)$/i;
+
 function stripDirectionWords(name: string): string {
   return name
     .replace(/\b(text|image|reference|video)\s+to\s+video\b/gi, "")
+    .replace(DIRECTION_NAME_SUFFIX, "")
     .replace(/\s{2,}/g, " ")
     .trim();
 }
 
-/** image-to-video and reference-to-video share the `imageToVideo` catalog type;
- * the direction word in the id (or display name) tells them apart. A single
- * `imageModel` slot silently dropped every reference-to-video variant, so they
- * get their own slot here. */
+/** Reference-to-video mostly has its own catalog type now, but a few families
+ * (the grok ones, probed 2026-08-02) are still published as `imageToVideo`,
+ * where only the direction word in the id (or display name) tells the two
+ * apart. A single `imageModel` slot silently dropped every reference-to-video
+ * variant, so they get their own slot here. */
 function isReferenceToVideo(model: MediaModel): boolean {
   const hay = `${model.id} ${model.name}`.toLowerCase();
   return hay.includes("reference-to-video") || hay.includes("reference to video");
@@ -202,6 +214,9 @@ export function videoFamilies(catalog: MediaCatalog): VideoFamily[] {
   }
   for (const model of modelsOfType(catalog, "imageToVideo")) {
     register(model, isReferenceToVideo(model) ? "referenceModel" : "imageModel");
+  }
+  for (const model of modelsOfType(catalog, "referenceToVideo")) {
+    register(model, "referenceModel");
   }
   return [...families.values()].sort((a, b) => a.name.localeCompare(b.name));
 }

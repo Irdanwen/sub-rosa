@@ -7,6 +7,11 @@ export type MediaType =
   | "imageEdit"
   | "video"
   | "imageToVideo"
+  /** Reference-to-video: photos steer style/subject rather than being the
+   * opening frame. Carpe Diem split these out of `imageToVideo` into their own
+   * type; a handful of families (grok) are still published as `imageToVideo`
+   * and are told apart by their id (see `isReferenceToVideo`). */
+  | "referenceToVideo"
   | "music"
   | "tts"
   | "upscale"
