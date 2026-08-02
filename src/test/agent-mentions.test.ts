@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   composerMentionItems,
+  isImageMention,
   promptWithMentions,
   stripMentionPromptBlock,
   type ComposerMention,
 } from "../lib/agent-mentions";
 import { displayedComposerUserMessageText } from "../lib/agent-chat-runtime";
+import { mentionedImageAttachments } from "../components/agent/AgentWorkspace";
+import { pendingImageAttachments } from "../lib/hermes-image-attach";
 
 const FILE_MENTION: ComposerMention = {
   kind: "file",
@@ -43,6 +46,35 @@ describe("promptWithMentions", () => {
   it("stands in for an empty message", () => {
     // Sending only a mention is a legitimate ask ("this file, please").
     expect(promptWithMentions("", [FILE_MENTION])).toContain("Use the mentioned document(s).");
+  });
+});
+
+describe("image mentions", () => {
+  it("recognizes the image extensions the runtime can look at", () => {
+    for (const path of ["/w/shot.png", "/w/a.JPG", "/w/b.jpeg", "/w/c.webp", "/w/d.heic"]) {
+      expect(isImageMention({ kind: "file", label: "x", path })).toBe(true);
+    }
+    // Everything else is a document the agent opens with its file tools.
+    for (const path of ["/w/report.md", "/w/data.csv", "/w/deck.pdf", "/w/clip.mp4"]) {
+      expect(isImageMention({ kind: "file", label: "x", path })).toBe(false);
+    }
+    // A folder or a note is never an image, whatever it is called.
+    expect(isImageMention({ kind: "folder", label: "shots.png", path: "/w/shots.png" })).toBe(
+      false,
+    );
+    expect(isImageMention({ kind: "note", label: "Screenshot", noteId: "n-1" })).toBe(false);
+  });
+
+  it("tells the agent the picture is on the turn, not somewhere to go open", () => {
+    // The reported failure: handed only a path, the agent never tried to look
+    // at the image and asked the user to describe it instead.
+    const prompt = promptWithMentions("voilà les images @shot.png", [
+      { kind: "file", label: "shot.png", path: "/w/shot.png" },
+    ]);
+    expect(prompt).toContain('- Image "shot.png": attached to this message, look at it directly.');
+    expect(prompt).toContain("/w/shot.png");
+    // A non-image mention keeps the plain reference wording.
+    expect(promptWithMentions("x", [FILE_MENTION])).toContain('- File "report.md":');
   });
 });
 
@@ -123,5 +155,31 @@ describe("composerMentionItems", () => {
       },
     });
     expect(withoutNotes.map((item) => item.label)).toEqual(["report.md", "draft.md"]);
+  });
+});
+
+describe("mentionedImageAttachments", () => {
+  it("makes a mentioned image an image attachment the send will carry", () => {
+    const attachments = mentionedImageAttachments([
+      { kind: "file", label: "shot.png", path: "/w/shot.png" },
+      { kind: "file", label: "report.md", path: "/w/report.md" },
+      { kind: "note", label: "Team sync", noteId: "n-1" },
+    ]);
+
+    // Only the image: a document and a note stay plain references.
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0]).toMatchObject({
+      name: "shot.png",
+      // Points at where the file already lives — a mention copies nothing.
+      path: "/w/shot.png",
+    });
+    // `kind: "image"` + `status: "imported"` is what makes the send pick it up
+    // for image.attach_bytes (see pendingImageAttachments).
+    expect(attachments[0]?.attach).toMatchObject({
+      kind: "image",
+      status: "imported",
+      workspacePath: "/w/shot.png",
+    });
+    expect(pendingImageAttachments(attachments.map((item) => item.attach))).toHaveLength(1);
   });
 });
