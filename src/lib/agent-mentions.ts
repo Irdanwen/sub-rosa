@@ -16,6 +16,19 @@
  * 2. **Mentions stay inside the session's root**, which is the one folder the
  *    sandbox re-grants for writes. Offering a file outside it would advertise
  *    something the agent can read but never modify.
+ *
+ * And one rule the runtime imposes on us:
+ *
+ * 3. **Every path is written inside backticks.** The runtime scans the prompt
+ *    text for bare absolute paths ending in an image extension and, finding
+ *    one that exists on disk, attaches that file to the turn *at its native
+ *    size* (`extract_image_refs` / `build_native_content_parts`). A mentioned
+ *    image is already attached, resized to fit the request — so a bare path
+ *    made the runtime attach the original a second time, un-resized, and two
+ *    ordinary screenshots blew past every size gate on the way out. The
+ *    runtime skips matches inside inline code, so backticks are the documented
+ *    way to say "this is a name, not an attachment". They cost nothing: the
+ *    agent still reads the path and can still act on it.
  */
 
 export type ComposerMentionKind = "file" | "folder" | "note";
@@ -80,6 +93,18 @@ export function isImageMention(mention: ComposerMention): boolean {
   return IMAGE_EXTENSIONS.some((extension) => lower.endsWith(extension));
 }
 
+/**
+ * Writes a path as inline code, so the runtime reads it as a name rather than
+ * as a file to attach (rule 3 in the module header). A path containing a
+ * backtick would break out of the span, so those are stripped rather than
+ * escaped - a filename with a backtick is vanishingly rare, and a slightly
+ * wrong name the agent can still resolve beats a prompt that silently
+ * re-attaches a multi-megabyte original.
+ */
+function quotedPath(path: string | undefined): string {
+  return `\`${(path ?? "").replaceAll("`", "")}\``;
+}
+
 export function mentionItemToMention(item: ComposerMentionItem): ComposerMention {
   return {
     kind: item.kind,
@@ -106,10 +131,11 @@ export function promptWithMentions(message: string, mentions: ComposerMention[])
     if (isImageMention(mention)) {
       // Say it plainly: the picture is on this turn. Without this the agent
       // sees a path ending in .png and starts looking for a way to open it.
-      return `- Image "${mention.label}": attached to this message, look at it directly. Saved at ${mention.path}.`;
+      // The backticks are load-bearing, not cosmetic - see rule 3 above.
+      return `- Image "${mention.label}": attached to this message, look at it directly. Saved at ${quotedPath(mention.path)}.`;
     }
     const what = mention.kind === "folder" ? "Folder" : "File";
-    return `- ${what} "${mention.label}": ${mention.path}`;
+    return `- ${what} "${mention.label}": ${quotedPath(mention.path)}`;
   });
   return [
     message || "Use the mentioned document(s).",
