@@ -18,7 +18,8 @@ import { Select } from "../ui/Select";
 import { Spinner } from "../ui/Spinner";
 import { GalleryStrip } from "./GalleryStrip";
 import { GenerationLayout } from "./GenerationLayout";
-import { SliderField, StudioField } from "./controls";
+import type { ChainShot } from "../../lib/studio/chain";
+import { formatSeconds, SliderField, StudioField } from "./controls";
 
 interface Cut {
   key: string;
@@ -45,11 +46,14 @@ function probeDuration(src: string): Promise<number | undefined> {
   });
 }
 
-function formatSeconds(value: number): string {
-  return `${Math.round(value * 10) / 10}s`;
-}
-
-export function AssembleStudio() {
+export function AssembleStudio({
+  pendingCuts,
+  onPendingCutsApplied,
+}: {
+  /** A shot chain handed over by the video studio, trims already resolved. */
+  pendingCuts?: ChainShot[];
+  onPendingCutsApplied?: () => void;
+} = {}) {
   const [galleryVideos, setGalleryVideos] = useState<StudioArtifact[]>([]);
   const [galleryAudio, setGalleryAudio] = useState<StudioArtifact[]>([]);
   const [cuts, setCuts] = useState<Cut[]>([]);
@@ -106,6 +110,33 @@ export function AssembleStudio() {
       );
     }
   }, []);
+
+  // A chain arriving from the video studio becomes the cut list: shots in
+  // order, each already trimmed at the point the next one took over. Replaces
+  // the staged list rather than appending, because the chain is the film.
+  useEffect(() => {
+    if (!pendingCuts?.length) return;
+    const staged: Cut[] = pendingCuts.map((shot) => ({
+      key: `cut-${nextCutKey++}`,
+      artifact: shot.artifact,
+      inSeconds: 0,
+      outSeconds: shot.outSeconds,
+    }));
+    setCuts(staged);
+    onPendingCutsApplied?.();
+    // Durations are only needed for the timeline read-out, so they fill in
+    // behind the list rather than holding it up.
+    for (const cut of staged) {
+      void probeDuration(artifactSrc(cut.artifact)).then((duration) => {
+        if (duration === undefined) return;
+        setCuts((current) =>
+          current.map((entry) =>
+            entry.key === cut.key ? { ...entry, durationSeconds: duration } : entry,
+          ),
+        );
+      });
+    }
+  }, [pendingCuts, onPendingCutsApplied]);
 
   const move = useCallback((key: string, delta: -1 | 1) => {
     setCuts((current) => {

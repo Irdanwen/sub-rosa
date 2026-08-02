@@ -7,6 +7,7 @@
 import { fileResultFrom, type MediaFileResult, pollUntilDone } from "../async-job";
 import { fetchMediaCatalog } from "../catalog";
 import { mediaBinary, mediaJson } from "../client";
+import { extractFrameAt, extractHandoffFrame } from "../frames";
 import { musicPaths, retrieveBody } from "../paths";
 import { maybeNodeSchema, type Workflow, type WorkflowEdge, type WorkflowNode } from "./schema";
 import { validateWorkflow } from "./validator";
@@ -29,6 +30,16 @@ export interface NodeRunResult {
 export interface RunWorkflowOptions {
   signal?: AbortSignal;
   onUpdate?: (result: NodeRunResult) => void;
+  /**
+   * Turn a backend video URL into something the webview can decode, so a
+   * `lastFrame` node can read a still out of it.
+   *
+   * Injected rather than imported: the engine stays storage-agnostic, and only
+   * the caller knows where a clip should land (the gallery on both shells) and
+   * which URL scheme this platform's webview can actually play. Without it,
+   * `lastFrame` fails with a clear message instead of silently doing nothing.
+   */
+  materializeVideo?: (url: string, signal?: AbortSignal) => Promise<string>;
 }
 
 /** Carries the per-node status map so callers keep the results of branches
@@ -168,6 +179,7 @@ async function executeNode(
   edges: WorkflowEdge[],
   results: Map<string, NodeRunResult>,
   signal?: AbortSignal,
+  materializeVideo?: RunWorkflowOptions["materializeVideo"],
 ): Promise<NodeOutput> {
   const params = node.params;
   const parents = parentOutputs(node.id, edges, results);
@@ -301,6 +313,28 @@ async function executeNode(
       return { kind: "video", url };
     }
 
+    case "lastFrame": {
+      const source = parents.find(
+        (output): output is Extract<NodeOutput, { kind: "video" }> => output.kind === "video",
+      );
+      if (!source) throw new Error("Connect a video to take a frame from.");
+      if (!materializeVideo) {
+        throw new Error("This runner cannot read frames out of a video.");
+      }
+      const src = await materializeVideo(source.url, signal);
+      const position = stringParam(params, "position") ?? "handoff";
+      const frame =
+        position === "handoff"
+          ? await extractHandoffFrame(src)
+          : await extractFrameAt(src, position === "start" ? 0 : Number.MAX_SAFE_INTEGER);
+      const comma = frame.dataUrl.indexOf(",");
+      return {
+        kind: "image",
+        base64: comma >= 0 ? frame.dataUrl.slice(comma + 1) : frame.dataUrl,
+        mimeType: "image/jpeg",
+      };
+    }
+
     default:
       throw new Error(`Unknown node type: ${String(node.type)}.`);
   }
@@ -351,7 +385,13 @@ export async function runWorkflow(
         if (!maybeNodeSchema(node.type)) return;
         update({ nodeId, status: "running" });
         try {
-          const output = await executeNode(node, workflow.edges, results, options.signal);
+          const output = await executeNode(
+            node,
+            workflow.edges,
+            results,
+            options.signal,
+            options.materializeVideo,
+          );
           update({ nodeId, status: "done", output });
         } catch (error) {
           if (error instanceof DOMException && error.name === "AbortError") {

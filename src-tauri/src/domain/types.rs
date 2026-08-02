@@ -1027,6 +1027,19 @@ pub struct MediaJobDto {
     pub artifact_file_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub artifact_bytes: Option<i64>,
+    /// Gallery id of the clip this one continues, when it was started from a
+    /// handoff frame. Carried on the row so a chain survives the app being
+    /// closed mid-render.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_artifact_id: Option<String>,
+    /// Where in the parent the handoff frame was taken, in seconds: the point
+    /// assembly trims the parent's tail to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_handoff_seconds: Option<f64>,
+    /// The quote this render was accepted at, in credits. An estimate, not a
+    /// receipt: it is what the backend priced before rendering.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_credits: Option<f64>,
     pub created_at: String,
     pub updated_at: String,
 }

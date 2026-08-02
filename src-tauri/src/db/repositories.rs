@@ -2776,8 +2776,9 @@ impl Repositories {
         query(
             "INSERT OR IGNORE INTO media_jobs
                  (id, kind, model, prompt, extension, retrieve_path, retrieve_body,
-                  url_fields, status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)",
+                  url_fields, status, parent_artifact_id, parent_handoff_seconds,
+                  cost_credits, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)",
         )
         .bind(&job.id)
         .bind(&job.kind)
@@ -2787,6 +2788,9 @@ impl Repositories {
         .bind(retrieve_path)
         .bind(retrieve_body)
         .bind(url_fields)
+        .bind(&job.parent_artifact_id)
+        .bind(job.parent_handoff_seconds)
+        .bind(job.cost_credits)
         .bind(&now)
         .bind(&now)
         .execute(&self.pool)
@@ -2800,7 +2804,8 @@ impl Repositories {
     pub async fn list_media_jobs(&self) -> Result<Vec<MediaJobDto>, sqlx::error::Error> {
         let rows = query(
             "SELECT id, kind, model, prompt, extension, status, error, artifact_path,
-                    artifact_file_name, artifact_bytes, created_at, updated_at
+                    artifact_file_name, artifact_bytes, parent_artifact_id,
+                    parent_handoff_seconds, cost_credits, created_at, updated_at
              FROM media_jobs ORDER BY created_at DESC",
         )
         .fetch_all(&self.pool)
@@ -2816,7 +2821,8 @@ impl Repositories {
     ) -> Result<Vec<(MediaJobDto, String, String, String)>, sqlx::error::Error> {
         let rows = query(
             "SELECT id, kind, model, prompt, extension, status, error, artifact_path,
-                    artifact_file_name, artifact_bytes, created_at, updated_at,
+                    artifact_file_name, artifact_bytes, parent_artifact_id,
+                    parent_handoff_seconds, cost_credits, created_at, updated_at,
                     retrieve_path, retrieve_body, url_fields
              FROM media_jobs WHERE status IN ('queued', 'processing')
              ORDER BY created_at ASC",
@@ -2883,7 +2889,8 @@ impl Repositories {
     pub async fn get_media_job(&self, id: &str) -> Result<Option<MediaJobDto>, sqlx::error::Error> {
         let row = query(
             "SELECT id, kind, model, prompt, extension, status, error, artifact_path,
-                    artifact_file_name, artifact_bytes, created_at, updated_at
+                    artifact_file_name, artifact_bytes, parent_artifact_id,
+                    parent_handoff_seconds, cost_credits, created_at, updated_at
              FROM media_jobs WHERE id = ?",
         )
         .bind(id)
@@ -3019,6 +3026,9 @@ fn media_job_from_row(row: sqlx_sqlite::SqliteRow) -> MediaJobDto {
         artifact_path: row.get("artifact_path"),
         artifact_file_name: row.get("artifact_file_name"),
         artifact_bytes: row.get("artifact_bytes"),
+        parent_artifact_id: row.get("parent_artifact_id"),
+        parent_handoff_seconds: row.get("parent_handoff_seconds"),
+        cost_credits: row.get("cost_credits"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
     }

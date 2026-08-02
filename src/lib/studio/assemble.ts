@@ -4,6 +4,8 @@
 // to bundle, notarize, or license; the webview's own codecs do the work. The
 // cost is that an export takes as long as the film runs.
 
+import { loadVideoElement, seekVideo } from "./frames";
+
 export interface AssembleClip {
   /** Where the clip's bytes live (an `artifactSrc` URL). */
   src: string;
@@ -67,31 +69,12 @@ export function timelineSeconds(
   }, 0);
 }
 
+/** Unmuted: the assembly mixes every clip's own audio into the recording. */
 function loadVideo(src: string): Promise<HTMLVideoElement> {
-  return new Promise((resolve, reject) => {
-    const video = document.createElement("video");
-    video.crossOrigin = "anonymous";
-    video.preload = "auto";
-    video.muted = false;
-    video.playsInline = true;
-    video.src = src;
-    video.addEventListener("loadedmetadata", () => resolve(video), { once: true });
-    video.addEventListener("error", () => reject(new Error("A clip failed to load.")), {
-      once: true,
-    });
-  });
+  return loadVideoElement(src, { muted: false });
 }
 
-function seek(video: HTMLVideoElement, time: number): Promise<void> {
-  return new Promise((resolve) => {
-    if (Math.abs(video.currentTime - time) < 0.01) {
-      resolve();
-      return;
-    }
-    video.addEventListener("seeked", () => resolve(), { once: true });
-    video.currentTime = time;
-  });
-}
+const seek = seekVideo;
 
 /**
  * Render the cut list to a single file. Loads every clip up front (so a bad

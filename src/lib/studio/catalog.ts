@@ -163,6 +163,14 @@ function isReferenceToVideo(model: MediaModel): boolean {
   return hay.includes("reference-to-video") || hay.includes("reference to video");
 }
 
+/** True for a model whose contract takes style/subject reference photos. Every
+ * such id carries the direction (checked across both catalogs), so this holds
+ * for the ones the operator types `referenceToVideo` and for the few it still
+ * types `imageToVideo`. */
+export function isReferenceToVideoModel(modelId: string): boolean {
+  return modelId.toLowerCase().includes("reference-to-video");
+}
+
 /** Video upscalers (e.g. `topaz-video-upscale`) take a source clip plus an
  * `upscale_factor` instead of a prompt-driven restyle. */
 export function isVideoUpscaleModel(modelId: string): boolean {

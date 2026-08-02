@@ -10,6 +10,7 @@ export type WorkflowNodeType =
   | "tts"
   | "music"
   | "video"
+  | "lastFrame"
   | "output";
 
 export interface WorkflowNode {
@@ -184,6 +185,25 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
       },
       { name: "aspectRatio", type: "string", label: "Aspect ratio", default: "" },
       { name: "resolution", type: "string", label: "Resolution", default: "" },
+    ],
+  },
+  lastFrame: {
+    type: "lastFrame",
+    label: "Frame from video",
+    description:
+      "Take a still out of a video: the handoff frame near its end (the sharpest one, so the next shot can continue from it), its very end, or its first frame. Feeds an image input.",
+    input: "video",
+    output: "image",
+    params: [
+      {
+        name: "position",
+        type: "enum",
+        label: "Frame",
+        enumValues: ["handoff", "end", "start"],
+        default: "handoff",
+        description:
+          "Handoff is taken just before the end and picks the sharpest candidate, which is what a continuation should start from.",
+      },
     ],
   },
   output: {

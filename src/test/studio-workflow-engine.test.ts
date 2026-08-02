@@ -333,3 +333,69 @@ describe("runWorkflow", () => {
     await expect(run).rejects.toMatchObject({ name: "AbortError" });
   });
 });
+
+describe("frame-from-video node", () => {
+  /** A finished video node feeding a lastFrame node. */
+  function videoThenFrame(): Workflow {
+    return workflow(
+      [
+        node("clip", "video", { model: "kling-2.5-turbo-pro-text-to-video", prompt: "a shot" }),
+        node("frame", "lastFrame"),
+        node("out", "output"),
+      ],
+      [edge("clip", "frame"), edge("frame", "out")],
+    );
+  }
+
+  function mockVideoRender() {
+    mediaJsonMock.mockImplementation(async (path: string) => {
+      if (path === "/video/queue") return { id: "vid-1" };
+      throw new Error(`Unexpected path: ${path}`);
+    });
+    // The retrieve poll goes through mediaRaw, not mediaJson.
+    mediaRawMock.mockImplementation(async () => ({
+      status: 200,
+      ok: true,
+      json: { status: "completed", video_url: "https://example.test/clip.mp4" },
+    }));
+  }
+
+  it("reads a still out of the clip and passes it on as an image", async () => {
+    mockVideoRender();
+    // The engine never touches storage itself: the runner hands it a URL this
+    // platform can decode. Both halves are stubbed here.
+    const materializeVideo = vi.fn(async () => "blob:clip");
+    vi.spyOn(await import("../lib/studio/frames"), "extractHandoffFrame").mockResolvedValue({
+      dataUrl: "data:image/jpeg;base64,AAAA",
+      timeSeconds: 9.5,
+      durationSeconds: 10,
+      sharpness: 42,
+      width: 1920,
+      height: 1080,
+    });
+
+    const finished = await runWorkflow(videoThenFrame(), { materializeVideo });
+
+    expect(materializeVideo).toHaveBeenCalledWith("https://example.test/clip.mp4", undefined);
+    const frame = finished.get("frame");
+    expect(frame?.status).toBe("done");
+    // The data URL prefix is stripped: node outputs carry raw base64.
+    expect(frame?.output).toEqual({ kind: "image", base64: "AAAA", mimeType: "image/jpeg" });
+    vi.restoreAllMocks();
+  });
+
+  it("says so rather than failing silently when the runner cannot fetch clips", async () => {
+    mockVideoRender();
+    await expect(runWorkflow(videoThenFrame())).rejects.toThrow(WorkflowRunError);
+  });
+
+  it("refuses a frame node with nothing to read from", async () => {
+    const orphan = workflow(
+      [node("frame", "lastFrame"), node("out", "output")],
+      [edge("frame", "out")],
+    );
+    await expect(
+      runWorkflow(orphan, { materializeVideo: async () => "blob:clip" }),
+    ).rejects.toThrow(WorkflowRunError);
+  });
+});

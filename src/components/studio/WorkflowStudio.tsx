@@ -25,6 +25,7 @@ import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { saveArtifactFromBase64, saveArtifactFromUrl } from "../../lib/studio/artifacts";
 import { modelsOfType } from "../../lib/studio/catalog";
+import { materializeVideo } from "../../lib/studio/workflow-run";
 import type { MediaCatalog, MediaType } from "../../lib/studio/types";
 import {
   createWorkflow,
@@ -455,6 +456,9 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
     try {
       const finished = await runWorkflow(serialized, {
         signal: controller.signal,
+        // Frame nodes need a clip on disk to read from; the canvas runs the
+        // engine directly, so it supplies the capability itself.
+        materializeVideo,
         onUpdate: (result) =>
           setResults((currentResults) => {
             const next = new Map(currentResults);

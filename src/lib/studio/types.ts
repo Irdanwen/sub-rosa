@@ -97,4 +97,14 @@ export interface StudioArtifact {
   model: string;
   prompt: string;
   createdAt: number;
+  /** Shot continuity: the clip this one continues, when it was rendered from a
+   * handoff frame. Absent on a first shot and on everything older than the
+   * feature. */
+  parentId?: string;
+  /** Where in the parent the handoff frame was taken, in seconds. Assembly
+   * trims the parent's tail to this point so the seam is not replayed. */
+  parentHandoffSeconds?: number;
+  /** What this render was quoted at, in credits. An estimate the backend
+   * priced before rendering, not a receipt. */
+  costCredits?: number;
 }

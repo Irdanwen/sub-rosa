@@ -136,6 +136,11 @@ export function SliderField({
   );
 }
 
+/** A clip position or length, to a tenth of a second. */
+export function formatSeconds(value: number): string {
+  return `${Math.round(value * 10) / 10}s`;
+}
+
 /** Keeps a selection valid when the option list changes with the model. */
 export function effectiveOption<T extends string>(options: readonly T[], selected: T | ""): T | "" {
   if (options.length === 0) return "";

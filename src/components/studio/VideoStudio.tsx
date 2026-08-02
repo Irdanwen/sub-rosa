@@ -8,6 +8,7 @@
 import { IconVideo } from "central-icons/IconVideo";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  artifactSrc,
   listArtifacts,
   readArtifactBase64,
   registerDownloadedArtifact,
@@ -15,6 +16,7 @@ import {
 import { formatElapsed, useMediaJobQueue } from "../../lib/studio/async-job";
 import {
   formatCredits,
+  isReferenceToVideoModel,
   isSeedanceModel,
   isVideoUpscaleModel,
   type VideoFamily,
@@ -26,6 +28,22 @@ import {
   rememberSeedanceConsent,
   withSeedanceConsent,
 } from "../../lib/studio/consent";
+import {
+  alternativeCount,
+  anchorOf,
+  type ChainShot,
+  chainCost,
+  chainCuts,
+  chainOf,
+  isChained,
+} from "../../lib/studio/chain";
+import {
+  closestAspectRatio,
+  continuationPrompt,
+  extractFrameAt,
+  extractHandoffFrame,
+  HANDOFF_ADJUST_WINDOW_SECONDS,
+} from "../../lib/studio/frames";
 import {
   retrieveBody,
   supportsVideoQuote,
@@ -40,7 +58,7 @@ import { Select } from "../ui/Select";
 import { Spinner } from "../ui/Spinner";
 import { GalleryStrip } from "./GalleryStrip";
 import { GenerationLayout } from "./GenerationLayout";
-import { effectiveOption, PillGroup, StudioField } from "./controls";
+import { effectiveOption, formatSeconds, PillGroup, SliderField, StudioField } from "./controls";
 
 const VIDEO_URL_FIELDS = ["video_url", "url"];
 
@@ -65,11 +83,32 @@ const DIRECTION_SLOT: Record<
  * one inflates the request. */
 const MAX_VIDEO_REFERENCES = 4;
 
+/** The clip the opening frame was handed off from, and where in it. */
+interface Handoff {
+  artifactId: string;
+  fileName: string;
+  src: string;
+  timeSeconds: number;
+  durationSeconds: number;
+}
+
+/** Where in the chain's first shot the anchor frame is taken, as a fraction of
+ * its length: early enough to show the subject established, past any opening
+ * fade. */
+const ANCHOR_AT_FRACTION = 0.15;
+
 /** Source-clip ceiling: the backends cap media inputs around this size, and a
  * bigger clip would also stall the IPC bridge. */
 const MAX_VIDEO_INPUT_BYTES = 15 * 1024 * 1024;
 
-export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
+export function VideoStudio({
+  catalog,
+  onAssembleChain,
+}: {
+  catalog: MediaCatalog;
+  /** Hand a finished chain to the Assemble tab, trims already applied. */
+  onAssembleChain?: (cuts: ChainShot[]) => void;
+}) {
   const families = useMemo(() => videoFamilies(catalog), [catalog]);
   const availableDirections = useMemo<VideoDirection[]>(
     () =>
@@ -90,8 +129,7 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
   const [familyKey, setFamilyKey] = useState("");
   const family =
     familiesForDirection.find((entry) => entry.key === familyKey) ?? familiesForDirection[0];
-  const model = family?.[slot];
-  const constraints = model?.constraints;
+  const baseModel = family?.[slot];
   // Comparison: extra families that render the same request in parallel; each
   // shows up as its own card in the job list.
   const [alsoKeys, setAlsoKeys] = useState<string[]>([]);
@@ -121,13 +159,52 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
   const [sourceVideoName, setSourceVideoName] = useState("");
   const [sourceVideoError, setSourceVideoError] = useState<string | undefined>(undefined);
   const [upscaleFactor, setUpscaleFactor] = useState<"1" | "2" | "4">("2");
+  // Continuity: which clip is being read for a handoff frame, and where the
+  // opening frame currently in the form came from.
+  const [continuingId, setContinuingId] = useState<string | undefined>(undefined);
+  const [handoff, setHandoff] = useState<Handoff | undefined>(undefined);
+  // The handoff point the slider is asking for, which trails the extracted one
+  // while a re-read is in flight.
+  const [handoffTime, setHandoffTime] = useState(0);
+  const [handoffError, setHandoffError] = useState<string | undefined>(undefined);
+  const [handoffNote, setHandoffNote] = useState<string | undefined>(undefined);
+  // The chain the next render joins, and the look it is anchored to: a frame
+  // from its first shot, sent as a reference so a face does not drift over
+  // four generations that each only ever saw their predecessor.
+  const [anchorFrame, setAnchorFrame] = useState("");
+  const [keepLook, setKeepLook] = useState(true);
+  const [looping, setLooping] = useState(false);
+  const [videoArtifacts, setVideoArtifacts] = useState<StudioArtifact[]>([]);
   const [galleryVideos, setGalleryVideos] = useState<StudioArtifact[]>([]);
-  const [quote, setQuote] = useState<number | undefined>(undefined);
+  const [quote, setQuote] = useState<undefined | number>(undefined);
   const [galleryEpoch, setGalleryEpoch] = useState(0);
   const openingInputRef = useRef<HTMLInputElement>(null);
   const endInputRef = useRef<HTMLInputElement>(null);
   const referenceInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Anchoring renders the shot with the family's reference-to-video model
+   * instead of its image-to-video one: that is the contract that takes several
+   * photos, so the handoff frame can open the clip while the anchor holds the
+   * look. Only offered when the family has both and a chain is in progress.
+   */
+  const canAnchor = Boolean(
+    effectiveDirection === "image" && anchorFrame && family?.referenceModel,
+  );
+  const anchoring = canAnchor && keepLook;
+  const model = anchoring ? (family?.referenceModel ?? baseModel) : baseModel;
+  const constraints = model?.constraints;
+
+  // The chain on screen: the one being continued, else the most recent one in
+  // the gallery (artifacts arrive newest first).
+  const activeChain = useMemo(() => {
+    const seed = handoff
+      ? videoArtifacts.find((entry) => entry.id === handoff.artifactId)
+      : videoArtifacts.find((entry) => isChained(entry, videoArtifacts));
+    return seed ? chainOf(seed, videoArtifacts) : [];
+  }, [handoff, videoArtifacts]);
+  const chainSpend = useMemo(() => chainCost(activeChain), [activeChain]);
 
   const isUpscale = Boolean(model && isVideoUpscaleModel(model.id));
 
@@ -170,6 +247,11 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
       kind: "video",
       model: finished.model,
       prompt: finished.prompt,
+      // Rust carried the lineage on the row, so a render that landed while the
+      // app was closed still joins its chain when it is indexed here.
+      parentId: finished.parentArtifactId,
+      parentHandoffSeconds: finished.parentHandoffSeconds,
+      costCredits: finished.costCredits,
     });
     setGalleryEpoch((epoch) => epoch + 1);
   });
@@ -205,6 +287,12 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
       if (effectiveDirection === "image") {
         body.image_url = openingFrame;
         if (endFrame) body.end_image_url = endFrame;
+        // Anchoring rides the reference-to-video contract (several photos,
+        // verified), never an undocumented extra field on image-to-video: the
+        // handoff frame still opens the clip, the anchor holds the look.
+        if (anchorFrame && isReferenceToVideoModel(target.id)) {
+          body.reference_image_urls = [openingFrame, anchorFrame];
+        }
       } else if (effectiveDirection === "reference") {
         body.reference_image_urls = references;
       } else if (effectiveDirection === "video") {
@@ -231,6 +319,7 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
       aspectRatio,
       resolution,
       consent,
+      anchorFrame,
     ],
   );
 
@@ -274,6 +363,9 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
         extension: "mp4",
         queuePath: VIDEO_QUEUE_PATH,
         queueBody: body,
+        parentArtifactId: handoff?.artifactId,
+        parentHandoffSeconds: handoff?.timeSeconds,
+        costCredits: quoteCredits,
         retrieve: (queueId) => ({
           path: VIDEO_RETRIEVE_PATH,
           body: retrieveBody(queueId, target.id),
@@ -281,7 +373,7 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
         urlFields: VIDEO_URL_FIELDS,
       });
     }
-  }, [model, alsoFamilies, slot, bodyForModel, prompt, queue]);
+  }, [model, alsoFamilies, slot, bodyForModel, prompt, queue, handoff]);
 
   const readInto = useCallback((file: File | undefined, set: (dataUri: string) => void) => {
     if (!file) return;
@@ -322,6 +414,119 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
       setSourceVideoError("Couldn't read that clip from the gallery.");
     }
   }, []);
+
+  /**
+   * Start the next shot where this clip ended: its handoff frame becomes the
+   * opening frame, its prompt becomes the continuity prompt, and the family it
+   * was rendered with is reselected when it can animate a frame.
+   */
+  const continueFrom = useCallback(
+    async (artifact: StudioArtifact) => {
+      const src = artifactSrc(artifact);
+      setContinuingId(artifact.id);
+      setHandoffError(undefined);
+      setHandoffNote(undefined);
+      try {
+        const frame = await extractHandoffFrame(src);
+        const source = families.find((entry) =>
+          [entry.textModel, entry.imageModel, entry.referenceModel, entry.videoModel].some(
+            (candidate) => candidate?.id === artifact.model,
+          ),
+        );
+        setDirection("image");
+        if (source?.imageModel) {
+          setFamilyKey(source.key);
+        } else if (source) {
+          // Silently falling back to another family is how you end up wondering
+          // why the continuation does not look like the shot it continues.
+          setHandoffNote(
+            `${source.name} cannot start from an image. Pick the model to continue with.`,
+          );
+          setFamilyKey("");
+        }
+        setOpeningFrame(frame.dataUrl);
+        setEndFrame("");
+        setPrompt((current) => continuationPrompt(artifact.prompt || current));
+        // Match the clip's own shape, or the next shot silently changes format.
+        const ratio = closestAspectRatio(frame.width / Math.max(1, frame.height), aspectOptions);
+        if (ratio) setAspectRatio(ratio);
+        setHandoff({
+          artifactId: artifact.id,
+          fileName: artifact.fileName,
+          src,
+          timeSeconds: frame.timeSeconds,
+          durationSeconds: frame.durationSeconds,
+        });
+        setHandoffTime(frame.timeSeconds);
+        // The chain this render will join, and a frame from its first shot to
+        // anchor the look on. Taken early in that shot (not at its handoff
+        // point) so it shows the subject established, not mid-transition.
+        const joined = chainOf(artifact, videoArtifacts);
+        const first = anchorOf(joined) ?? artifact;
+        const anchorSrc = first.id === artifact.id ? src : artifactSrc(first);
+        extractFrameAt(anchorSrc, ANCHOR_AT_FRACTION * frame.durationSeconds)
+          .then((anchor) => setAnchorFrame(anchor.dataUrl))
+          // Anchoring is an improvement, never a requirement: without it the
+          // chain still renders, it just drifts more.
+          .catch(() => setAnchorFrame(""));
+      } catch {
+        setHandoffError("Couldn't read a frame from that clip.");
+      } finally {
+        setContinuingId(undefined);
+      }
+    },
+    [families, aspectOptions],
+  );
+
+  // Dragging the handoff point re-reads that frame. Debounced: a drag fires a
+  // stream of values and each read costs a seek plus a full-size encode.
+  useEffect(() => {
+    if (!handoff || Math.abs(handoffTime - handoff.timeSeconds) < 0.01) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      extractFrameAt(handoff.src, handoffTime)
+        .then((frame) => {
+          if (cancelled) return;
+          setOpeningFrame(frame.dataUrl);
+          setHandoff((current) =>
+            current && current.artifactId === handoff.artifactId
+              ? { ...current, timeSeconds: frame.timeSeconds }
+              : current,
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setHandoffError("Couldn't read that frame.");
+        });
+    }, 220);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [handoff, handoffTime]);
+
+  /**
+   * Close the loop: end this shot on the frame the chain opened with, so the
+   * sequence can play round. Only the models that accept an end frame honour
+   * it - the same bet the End frame field already makes.
+   */
+  const closeLoop = useCallback(
+    async (next: boolean) => {
+      setLooping(next);
+      const first = activeChain[0];
+      if (!next || !first) {
+        setEndFrame("");
+        return;
+      }
+      try {
+        const frame = await extractFrameAt(artifactSrc(first), 0);
+        setEndFrame(frame.dataUrl);
+      } catch {
+        setLooping(false);
+        setHandoffError("Couldn't read the first shot's opening frame.");
+      }
+    },
+    [activeChain],
+  );
 
   const multiplier = catalog.priceMultiplier ?? 1;
   const quoteCredits = quote !== undefined ? quote * 100 * multiplier : undefined;
@@ -399,15 +604,30 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
       ) : null}
       {effectiveDirection === "image" ? (
         <>
-          <StudioField label="Opening frame">
+          <StudioField
+            label="Opening frame"
+            hint={
+              handoff
+                ? `Continuing at ${formatSeconds(handoff.timeSeconds)} of ${formatSeconds(handoff.durationSeconds)}`
+                : undefined
+            }
+          >
             <div className="studio-upload">
               {openingFrame ? (
                 <img src={openingFrame} alt="Opening frame" className="studio-upload-preview" />
               ) : null}
+              {handoff ? (
+                <p className="studio-field-note">Handed off from {handoff.fileName}</p>
+              ) : null}
+              {handoffNote ? <p className="studio-field-note">{handoffNote}</p> : null}
+              {handoffError ? <p className="studio-error">{handoffError}</p> : null}
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={() => openingInputRef.current?.click()}
+                onClick={() => {
+                  setHandoff(undefined);
+                  openingInputRef.current?.click();
+                }}
               >
                 {openingFrame ? "Replace image" : "Choose an image"}
               </button>
@@ -423,6 +643,48 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
               />
             </div>
           </StudioField>
+          {canAnchor ? (
+            <label className="studio-consent">
+              <input
+                type="checkbox"
+                checked={keepLook}
+                onChange={(event) => setKeepLook(event.currentTarget.checked)}
+              />
+              <span>
+                Keep the first shot's look
+                <span className="studio-consent-meta">
+                  Renders with {family?.referenceModel?.name ?? "the reference model"} so a frame
+                  from the first shot can hold the subject and lighting steady down the chain.
+                </span>
+              </span>
+            </label>
+          ) : null}
+          {handoff ? (
+            <SliderField
+              label="Handoff point"
+              min={Math.max(0, handoff.durationSeconds - HANDOFF_ADJUST_WINDOW_SECONDS)}
+              max={handoff.durationSeconds}
+              step={0.05}
+              value={handoffTime}
+              format={formatSeconds}
+              onChange={setHandoffTime}
+            />
+          ) : null}
+          {activeChain.length > 1 ? (
+            <label className="studio-consent">
+              <input
+                type="checkbox"
+                checked={looping}
+                onChange={(event) => void closeLoop(event.currentTarget.checked)}
+              />
+              <span>
+                Close the loop
+                <span className="studio-consent-meta">
+                  Ends this shot on the frame the chain opened with, so the sequence plays round.
+                </span>
+              </span>
+            </label>
+          ) : null}
           <StudioField label="End frame" hint="Optional">
             <div className="studio-upload">
               {endFrame ? (
@@ -704,9 +966,51 @@ export function VideoStudio({ catalog }: { catalog: MediaCatalog }) {
           </span>
         </div>
       ))}
+      {handoffError && !openingFrame ? <p className="studio-error">{handoffError}</p> : null}
+      {activeChain.length > 1 ? (
+        <section className="studio-chain" aria-label="Shot chain">
+          <div className="studio-chain-head">
+            <span className="studio-field-label">Shot chain · {activeChain.length} shots</span>
+            {onAssembleChain ? (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => onAssembleChain(chainCuts(activeChain))}
+              >
+                Send to assemble
+              </button>
+            ) : null}
+          </div>
+          <ol className="studio-chain-list">
+            {activeChain.map((shot, index) => (
+              <li
+                key={shot.id}
+                className="studio-chain-shot"
+                data-continuing={shot.id === handoff?.artifactId ? "true" : undefined}
+              >
+                <span className="studio-chain-index">{index + 1}</span>
+                <span className="studio-chain-prompt" title={shot.prompt}>
+                  {shot.prompt || shot.fileName}
+                </span>
+                {alternativeCount(shot, activeChain, videoArtifacts) > 0 ? (
+                  <span className="studio-chain-index" title="Other takes continue from this shot">
+                    +{alternativeCount(shot, activeChain, videoArtifacts)}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+          <p className="studio-field-note">
+            Each shot is cut where the next one took over, so the seam is not played twice.
+          </p>
+        </section>
+      ) : null}
       <GalleryStrip
         kind="video"
         epoch={galleryEpoch}
+        onArtifactsChanged={setVideoArtifacts}
+        onContinue={(artifact) => void continueFrom(artifact)}
+        continuingId={continuingId}
         empty={
           queue.jobs.length === 0 ? (
             <EmptyState

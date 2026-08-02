@@ -41,6 +41,7 @@ import {
   rememberSeedanceConsent,
   withSeedanceConsent,
 } from "../../../lib/studio/consent";
+import { continuationPrompt, extractHandoffFrame } from "../../../lib/studio/frames";
 import {
   generateSpeech,
   SPEECH_FORMATS,
@@ -111,6 +112,8 @@ export function StudioScreen() {
   const [imageMode, setImageMode] = useState<ImageMode>("generate");
   // Lifted so the gallery under the audio tab follows the active sub-mode.
   const [audioMode, setAudioMode] = useState<AudioMode>("music");
+  // A handoff frame waiting to be applied to the video panel's form.
+  const [videoHandoff, setVideoHandoff] = useState<VideoHandoff | undefined>(undefined);
 
   useEffect(() => {
     fetchMediaCatalog()
@@ -125,6 +128,7 @@ export function StudioScreen() {
       .then(setArtifacts)
       .catch(() => undefined);
   }, []);
+  const clearVideoHandoff = useCallback(() => setVideoHandoff(undefined), []);
   useEffect(() => {
     refreshGallery();
   }, [refreshGallery]);
@@ -170,6 +174,30 @@ export function StudioScreen() {
       hapticNotify("success");
     } catch {
       // The tile stays; the user can retry.
+    }
+  }, []);
+
+  /** Read the clip's handoff frame and hand it to the video panel as a pending
+   * command, rather than lifting that panel's whole form up here. */
+  const handleContinueShot = useCallback(async (artifact: StudioArtifact) => {
+    try {
+      // Videos resolve to a blob: URL on mobile, which is what a <video> needs
+      // to seek at all (a data: URL cannot answer a byte-range request).
+      const frame = await extractHandoffFrame(await artifactDataUrl(artifact));
+      setVideoHandoff({
+        dataUrl: frame.dataUrl,
+        prompt: continuationPrompt(artifact.prompt ?? ""),
+        artifactId: artifact.id,
+        model: artifact.model,
+        fileName: artifact.fileName,
+        timeSeconds: frame.timeSeconds,
+        durationSeconds: frame.durationSeconds,
+      });
+      setPreview(null);
+      setMode("video");
+      hapticNotify("success");
+    } catch {
+      hapticNotify("error");
     }
   }, []);
 
@@ -236,6 +264,8 @@ export function StudioScreen() {
                 catalog={catalog}
                 galleryImages={galleryImages}
                 onGenerated={refreshGallery}
+                handoff={videoHandoff}
+                onHandoffApplied={clearVideoHandoff}
               />
             ) : mode === "audio" ? (
               <AudioPanel
@@ -267,6 +297,9 @@ export function StudioScreen() {
           onDelete={() => void handleDeleteArtifact(preview)}
           onUseAsReference={
             preview.kind === "image" ? () => void handleUseAsReference(preview) : undefined
+          }
+          onContinueShot={
+            preview.kind === "video" ? () => void handleContinueShot(preview) : undefined
           }
           onUpscaled={refreshGallery}
           canRemoveBackground={Boolean(catalog && supportsBackgroundRemoval(catalog))}
@@ -988,14 +1021,32 @@ const VIDEO_MODE_SLOT: Record<VideoMode, "textModel" | "imageModel" | "reference
   reference: "referenceModel",
 };
 
+/** A frame handed off from a finished clip, waiting to open the next shot. */
+interface VideoHandoff {
+  dataUrl: string;
+  prompt: string;
+  /** Gallery id of the clip being continued, recorded on the durable row. */
+  artifactId: string;
+  /** Model the source clip was rendered with, reselected when it does i2v. */
+  model: string;
+  fileName: string;
+  timeSeconds: number;
+  durationSeconds: number;
+}
+
 function VideoPanel({
   catalog,
   galleryImages,
   onGenerated,
+  handoff,
+  onHandoffApplied,
 }: {
   catalog: MediaCatalog;
   galleryImages: StudioArtifact[];
   onGenerated: () => void;
+  /** Pending handoff to load into the form; cleared once applied. */
+  handoff?: VideoHandoff;
+  onHandoffApplied: () => void;
 }) {
   const families = useMemo(() => videoFamilies(catalog), [catalog]);
   // Only offer a mode when at least one family provides that direction.
@@ -1037,6 +1088,10 @@ function VideoPanel({
       kind: "video",
       model: finished.model,
       prompt: finished.prompt,
+      // Read back off the durable row, so a render that landed while the app
+      // was suspended still joins its chain.
+      parentId: finished.parentArtifactId,
+      parentHandoffSeconds: finished.parentHandoffSeconds,
     });
     hapticNotify("success");
     onGenerated();
@@ -1045,6 +1100,33 @@ function VideoPanel({
   const durationOptions = constraints?.durations ?? [];
   const effectiveDuration = duration || durationOptions[0] || "";
   const referenceReady = !needsReference || references.length > 0;
+  // Where the opening frame came from, so the form says what it is continuing.
+  const [handoffFrom, setHandoffFrom] = useState<
+    | { artifactId: string; fileName: string; timeSeconds: number; durationSeconds: number }
+    | undefined
+  >(undefined);
+
+  // A pending handoff loads the form: opening frame, continuity prompt, and
+  // the family the source clip was rendered with when it can animate a frame.
+  useEffect(() => {
+    if (!handoff) return;
+    setMode("image");
+    setReferences([handoff.dataUrl]);
+    setPrompt(handoff.prompt);
+    const source = families.find((entry) =>
+      [entry.textModel, entry.imageModel, entry.referenceModel].some(
+        (candidate) => candidate?.id === handoff.model,
+      ),
+    );
+    if (source?.imageModel) setFamilyKey(source.key);
+    setHandoffFrom({
+      artifactId: handoff.artifactId,
+      fileName: handoff.fileName,
+      timeSeconds: handoff.timeSeconds,
+      durationSeconds: handoff.durationSeconds,
+    });
+    onHandoffApplied();
+  }, [handoff, families, onHandoffApplied]);
 
   const queueBody = useCallback((): Record<string, unknown> | undefined => {
     if (!model || !prompt.trim()) return undefined;
@@ -1112,8 +1194,10 @@ function VideoPanel({
         body: retrieveBody(queueId, model.id),
       }),
       urlFields: VIDEO_URL_FIELDS,
+      parentArtifactId: handoffFrom?.artifactId,
+      parentHandoffSeconds: handoffFrom?.timeSeconds,
     });
-  }, [queueBody, model, prompt, job]);
+  }, [queueBody, model, prompt, job, handoffFrom]);
 
   return (
     <div className="mobile-studio-form">
@@ -1161,13 +1245,18 @@ function VideoPanel({
       {needsReference ? (
         <ReferencePicker
           references={references}
-          onChange={(refs) => setReferences(effectiveMode === "image" ? refs.slice(0, 2) : refs)}
+          onChange={(refs) => {
+            setHandoffFrom(undefined);
+            setReferences(effectiveMode === "image" ? refs.slice(0, 2) : refs);
+          }}
           galleryImages={galleryImages}
           hint={
             effectiveMode === "image"
-              ? references.length > 1
-                ? "First photo opens the clip; the second is its end frame."
-                : "The clip animates from this photo. Add a second to set the end frame."
+              ? handoffFrom
+                ? `Continuing ${handoffFrom.fileName} at ${Math.round(handoffFrom.timeSeconds * 10) / 10}s of ${Math.round(handoffFrom.durationSeconds * 10) / 10}s.`
+                : references.length > 1
+                  ? "First photo opens the clip; the second is its end frame."
+                  : "The clip animates from this photo. Add a second to set the end frame."
               : references.length > 1
                 ? "All these photos steer the style and subject."
                 : "This photo steers the style and subject; the prompt drives the action."
@@ -2346,6 +2435,7 @@ function Lightbox({
   onClose,
   onDelete,
   onUseAsReference,
+  onContinueShot,
   onUpscaled,
   canRemoveBackground = false,
 }: {
@@ -2353,6 +2443,8 @@ function Lightbox({
   onClose: () => void;
   onDelete: () => void;
   onUseAsReference?: () => void;
+  /** Video-only: start the next shot from this clip's handoff frame. */
+  onContinueShot?: () => void;
   onUpscaled: () => void;
   /** Backend-dependent: the cutout endpoint only exists on some backends. */
   canRemoveBackground?: boolean;
@@ -2518,6 +2610,11 @@ function Lightbox({
           {onUseAsReference ? (
             <button type="button" className="mobile-chip-button" onClick={onUseAsReference}>
               Use as reference
+            </button>
+          ) : null}
+          {onContinueShot ? (
+            <button type="button" className="mobile-chip-button" onClick={onContinueShot}>
+              Continue this shot
             </button>
           ) : null}
           <button

@@ -5,7 +5,9 @@
 // image/video/track actually lands in the gallery — before this, mobile ran
 // flows but never saved them.
 
-import { saveArtifactFromBase64, saveArtifactFromUrl } from "./artifacts";
+import { artifactDataUrl } from "../artifact-media";
+import { isMobilePlatform } from "../mobile";
+import { artifactSrc, saveArtifactFromBase64, saveArtifactFromUrl } from "./artifacts";
 import {
   type NodeRunResult,
   runWorkflow,
@@ -19,6 +21,26 @@ function audioExtension(mimeType: string): string {
   return "mp3";
 }
 
+/**
+ * Bring a rendered clip down to disk and hand back a URL this webview can
+ * decode, so a `lastFrame` node can read a still out of it.
+ *
+ * The download has to go through Rust either way (the webview cannot fetch the
+ * backend cross-origin), which means the clip lands in the gallery - the right
+ * outcome anyway: an intermediate shot of a chain is a deliverable, not a
+ * temp file. On iOS the asset protocol does not resolve in the webview and a
+ * data: URL cannot answer the byte-range requests a <video> makes, so the
+ * bytes come back as a blob: URL instead.
+ */
+export async function materializeVideo(url: string): Promise<string> {
+  const artifact = await saveArtifactFromUrl(url, "mp4", {
+    kind: "video",
+    model: "workflow",
+    prompt: "",
+  });
+  return isMobilePlatform() ? artifactDataUrl(artifact) : artifactSrc(artifact);
+}
+
 /** Runs `workflow` and saves whatever reached an `output` node to the gallery.
  * Returns the finished per-node results (same shape `runWorkflow` returns). */
 export async function runAndSaveWorkflow(
@@ -28,7 +50,7 @@ export async function runAndSaveWorkflow(
   const outputNodeIds = new Set(
     workflow.nodes.filter((node) => node.type === "output").map((node) => node.id),
   );
-  const finished = await runWorkflow(workflow, options);
+  const finished = await runWorkflow(workflow, { materializeVideo, ...options });
   for (const [nodeId, result] of finished) {
     if (!outputNodeIds.has(nodeId) || !result.output) continue;
     const output = result.output;

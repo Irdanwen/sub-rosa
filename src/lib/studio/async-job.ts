@@ -186,6 +186,14 @@ export interface MediaJob {
   artifactPath?: string;
   artifactFileName?: string;
   artifactBytes?: number;
+  /** Gallery id of the clip this render continues, when it started from a
+   * handoff frame. Lives on the durable row so a chain survives the app being
+   * closed mid-render. */
+  parentArtifactId?: string;
+  /** Where in the parent the handoff frame was taken, in seconds. */
+  parentHandoffSeconds?: number;
+  /** What the render was quoted at, in credits. */
+  costCredits?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -201,6 +209,12 @@ export interface StartJobOptions {
   retrieve: (queueId: string) => { path: string; body: Record<string, unknown> };
   /** Response fields Rust should read the finished file's URL from, in order. */
   urlFields: string[];
+  /** Gallery id of the clip this render continues (shot continuity). */
+  parentArtifactId?: string;
+  /** Where in the parent the handoff frame was taken, in seconds. */
+  parentHandoffSeconds?: number;
+  /** The quote accepted for this render, in credits, for chain totals. */
+  costCredits?: number;
 }
 
 function startedAtOf(job: MediaJob): number {
@@ -242,6 +256,9 @@ async function queueAndHandOff(options: StartJobOptions): Promise<MediaJob> {
       retrievePath: retrieve.path,
       retrieveBody: retrieve.body,
       urlFields: options.urlFields,
+      parentArtifactId: options.parentArtifactId,
+      parentHandoffSeconds: options.parentHandoffSeconds,
+      costCredits: options.costCredits,
     },
   });
 }

@@ -28,6 +28,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0016](adr/0016-session-activity-comes-from-the-runtime.md) — only the runtime (`session.active_list`) or a terminal gateway event ends a run; the persisted transcript is a one-directional fallback, because an agent loop persists an assistant row at every step
 - [adr/0017](adr/0017-product-autonomy-from-june.md) — the fork cuts every product-level dependency on June (identity, accounts, coordinates, release CI) but keeps upstream's technical identifiers, so cherry-picking upstream fixes keeps working; a CI guard enforces it
 - [adr/0018](adr/0018-ios-background-work-is-durable-rows.md) — iOS freezes the webview and suspends the process, so anything that can outlive a foreground session writes a durable row first and is re-driven by one sweep (launch, resume, BGTaskScheduler); locking the phone costs time, never a result
+- [adr/0019](adr/0019-shot-chains-are-parent-links.md) — a shot chain is never stored as a sequence: each clip records the one it continues (and where it took over) on its durable row, and the chain is derived, so it survives a render that outlives the session, a deleted clip, and a re-generation that forks
 
 ## Enforceable rules (spec/)
 

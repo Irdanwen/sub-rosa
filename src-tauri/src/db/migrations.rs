@@ -140,6 +140,17 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
             query(statement).execute(_pool).await?;
         }
     }
+    // Shot continuity: a generation can continue an earlier clip, starting from
+    // a frame taken near its end. The link belongs on the durable row, not in
+    // the webview - the render outlives the session that queued it, so a chain
+    // held only in React state loses its parent when the app is closed
+    // mid-render (ADR-0018). `parent_handoff_seconds` is where in the parent
+    // the frame was taken, so assembly can trim its tail exactly at the seam.
+    ensure_column(_pool, "media_jobs", "parent_artifact_id", "TEXT").await?;
+    ensure_column(_pool, "media_jobs", "parent_handoff_seconds", "REAL").await?;
+    // What the render was quoted at, so a chain can total what it cost without
+    // the frontend having to remember prices across restarts.
+    ensure_column(_pool, "media_jobs", "cost_credits", "REAL").await?;
     Ok(())
 }
 

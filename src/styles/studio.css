@@ -353,6 +353,70 @@
   color: var(--muted-foreground);
 }
 
+/* Shot chain: the sequence the next render joins, oldest shot first. */
+.studio-chain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--muted);
+  border-radius: var(--r-lg);
+}
+
+.studio-chain-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.studio-chain-list {
+  display: flex;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  list-style: none;
+}
+
+.studio-chain-shot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 0 0 auto;
+  max-width: 220px;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+  background: var(--background);
+  border-radius: var(--r-md);
+}
+
+.studio-chain-shot[data-continuing="true"] {
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.studio-chain-index {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+}
+
+.studio-chain-prompt {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Provenance line under a field: where a value was carried over from. */
+.studio-field-note {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
 .studio-error {
   margin: 0;
   padding: var(--sp-3) var(--sp-4);

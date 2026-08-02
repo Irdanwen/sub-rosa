@@ -76,6 +76,16 @@ pub struct StartMediaJobRequest {
     /// Response fields to read the finished file's URL from, in order. A job
     /// whose retrieve streams the bytes instead falls back to the body.
     pub url_fields: Vec<String>,
+    /// Gallery id of the clip this render continues, when it was started from
+    /// a handoff frame.
+    #[serde(default)]
+    pub parent_artifact_id: Option<String>,
+    /// Where in that clip the handoff frame was taken, in seconds.
+    #[serde(default)]
+    pub parent_handoff_seconds: Option<f64>,
+    /// The quote this render was accepted at, in credits.
+    #[serde(default)]
+    pub cost_credits: Option<f64>,
 }
 
 /// Hand a freshly queued generation over to Rust. Returns as soon as the row
@@ -102,6 +112,9 @@ pub async fn media_job_start(
         artifact_path: None,
         artifact_file_name: None,
         artifact_bytes: None,
+        parent_artifact_id: request.parent_artifact_id,
+        parent_handoff_seconds: request.parent_handoff_seconds,
+        cost_credits: request.cost_credits,
         created_at: String::new(),
         updated_at: String::new(),
     };

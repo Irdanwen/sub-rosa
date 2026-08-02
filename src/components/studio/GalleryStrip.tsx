@@ -4,6 +4,7 @@
 
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { IconArrowDownCircle } from "central-icons/IconArrowDownCircle";
+import { IconArrowRightCircle } from "central-icons/IconArrowRightCircle";
 import { IconPencil } from "central-icons/IconPencil";
 import { IconTrashCanSimple } from "central-icons/IconTrashCanSimple";
 import type { ReactNode } from "react";
@@ -15,6 +16,7 @@ import {
   listArtifacts,
 } from "../../lib/studio/artifacts";
 import type { ArtifactKind, StudioArtifact } from "../../lib/studio/types";
+import { Spinner } from "../ui/Spinner";
 
 export function GalleryStrip({
   kind,
@@ -22,6 +24,8 @@ export function GalleryStrip({
   empty,
   onArtifactsChanged,
   onSendToEdit,
+  onContinue,
+  continuingId,
 }: {
   kind: ArtifactKind;
   /** Bump to reload after a save. */
@@ -30,6 +34,10 @@ export function GalleryStrip({
   onArtifactsChanged?: (artifacts: StudioArtifact[]) => void;
   /** Image-only affordance: feed this artifact into the edit tool. */
   onSendToEdit?: (artifact: StudioArtifact) => void;
+  /** Video-only affordance: start the next shot from this clip's last frame. */
+  onContinue?: (artifact: StudioArtifact) => void;
+  /** Artifact whose handoff frame is being extracted right now. */
+  continuingId?: string;
 }) {
   const [artifacts, setArtifacts] = useState<StudioArtifact[]>([]);
   const [lightbox, setLightbox] = useState<StudioArtifact | undefined>(undefined);
@@ -146,6 +154,22 @@ export function GalleryStrip({
               {artifact.prompt || artifact.model}
             </span>
             <span className="studio-card-actions">
+              {onContinue ? (
+                <button
+                  type="button"
+                  className="studio-icon-button"
+                  aria-label="Continue this shot"
+                  title="Continue this shot: start the next one from its last frame"
+                  disabled={continuingId === artifact.id}
+                  onClick={() => onContinue(artifact)}
+                >
+                  {continuingId === artifact.id ? (
+                    <Spinner aria-hidden />
+                  ) : (
+                    <IconArrowRightCircle size={14} />
+                  )}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="studio-icon-button"

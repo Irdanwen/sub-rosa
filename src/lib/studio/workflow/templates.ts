@@ -12,6 +12,9 @@ const IMAGE_MODEL = "seedream-v4";
 const TTS_MODEL = "tts-kokoro";
 const MUSIC_MODEL = "ace-step-15";
 const VIDEO_MODEL = "kling-2.5-turbo-pro-text-to-video";
+/** The image-to-video half of the same family, for a shot that continues
+ * another one from its handoff frame. */
+const VIDEO_FROM_IMAGE_MODEL = "kling-2.5-turbo-pro-image-to-video";
 
 function node(
   id: string,
@@ -145,7 +148,44 @@ function shortVideoAd(): Workflow {
   };
 }
 
+/** Two shots that run on: the second starts from the frame the first ended on,
+ * which is the only way past a single model's clip length. */
+function twoShotSequence(): Workflow {
+  return {
+    id: "template-two-shot-sequence",
+    name: "Two shot sequence",
+    createdAt: 0,
+    updatedAt: 0,
+    nodes: [
+      node("scene", "textInput", "Scene", 0, 0, {
+        text: "A woman in a grey coat walks along a rain-slicked metro platform at night, neon reflections in the puddles.",
+      }),
+      node("first", "video", "First shot", 1, 0, {
+        model: VIDEO_MODEL,
+        duration: "5s",
+        aspectRatio: "16:9",
+        prompt: "{{input}} The camera tracks her from the side.",
+      }),
+      node("frame", "lastFrame", "Handoff frame", 2, 0, { position: "handoff" }),
+      node("second", "video", "Second shot", 3, 0, {
+        model: VIDEO_FROM_IMAGE_MODEL,
+        duration: "5s",
+        aspectRatio: "16:9",
+        prompt:
+          "Continue the shot, no cut: she reaches the end of the platform and looks back down the tunnel. Same lighting, same coat.",
+      }),
+      node("out", "output", "Second shot", 4, 0),
+    ],
+    edges: [
+      edge("scene", "first"),
+      edge("first", "frame"),
+      edge("frame", "second"),
+      edge("second", "out"),
+    ],
+  };
+}
+
 /** Fresh copies each call so callers can mutate their clone safely. */
 export function templateWorkflows(): Workflow[] {
-  return [albumCover(), storyScene(), musicFromMood(), shortVideoAd()];
+  return [albumCover(), storyScene(), musicFromMood(), shortVideoAd(), twoShotSequence()];
 }

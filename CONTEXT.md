@@ -264,6 +264,29 @@ The app-managed secp256k1 keypair that *is* the user's Videomaker account
 (SIWE identity only — holds no funds, never exported, keychain-stored).
 _Avoid_: crypto wallet, account key (ambiguous with the `cdm_` API key).
 
+### Shot continuity (fork)
+
+**Handoff frame**:
+The still taken near the end of a generated clip so the next clip can start
+from it: the sharpest of a few candidates sampled just before the end, never
+the last frame (blurred, and a seek to `duration` reads back black). Where it
+was taken is recorded, so assembly trims the parent's tail to exactly that
+point. See [ADR-0019](docs/adr/0019-shot-chains-are-parent-links.md).
+_Avoid_: last frame (it deliberately is not), thumbnail, poster.
+
+**Shot chain**:
+A sequence of Studio clips where each continues the previous one from its
+handoff frame — how a sequence outruns a single model's clip length. Never
+stored as a list: each clip records only its parent, and the chain is derived.
+Distinct from a Videomaker **shotlist**, which is planned up front server-side.
+_Avoid_: sequence, timeline (that is Assemble's cut list), storyboard.
+
+**Anchor frame**:
+A frame from a chain's *first* clip, sent as a reference on later shots so the
+subject and lighting do not drift over generations that each only ever see
+their immediate predecessor. Rides the reference-to-video contract.
+_Avoid_: keyframe, style reference (too generic).
+
 ### AI work & billing
 
 **Dictation**:

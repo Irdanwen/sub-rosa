@@ -3,7 +3,8 @@
 // and prices all come from the merged catalog — nothing here hardcodes what
 // a backend can do today.
 
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import type { ChainShot } from "../../lib/studio/chain";
 import { EmptyState } from "../ui/EmptyState";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { Spinner } from "../ui/Spinner";
@@ -48,6 +49,14 @@ function initialTab(): StudioTab {
 export function StudioView() {
   const [tab, setTab] = useState<StudioTab>(initialTab);
   const { catalog, error, loading, retry } = useMediaCatalog();
+  // A shot chain on its way to the Assemble tab: the video studio hands over
+  // the cut list, the tab switches, and Assemble loads it once.
+  const [pendingCuts, setPendingCuts] = useState<ChainShot[] | undefined>(undefined);
+  const assembleChain = useCallback((cuts: ChainShot[]) => {
+    setPendingCuts(cuts);
+    setTab("assemble");
+  }, []);
+  const clearPendingCuts = useCallback(() => setPendingCuts(undefined), []);
 
   useEffect(() => {
     try {
@@ -101,11 +110,11 @@ export function StudioView() {
       ) : tab === "image" ? (
         <ImageStudio catalog={catalog} />
       ) : tab === "video" ? (
-        <VideoStudio catalog={catalog} />
+        <VideoStudio catalog={catalog} onAssembleChain={assembleChain} />
       ) : tab === "audio" ? (
         <AudioStudio catalog={catalog} />
       ) : tab === "assemble" ? (
-        <AssembleStudio />
+        <AssembleStudio pendingCuts={pendingCuts} onPendingCutsApplied={clearPendingCuts} />
       ) : (
         <Suspense
           fallback={

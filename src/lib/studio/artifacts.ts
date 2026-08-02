@@ -47,6 +47,12 @@ interface ArtifactMetadata {
   kind: ArtifactKind;
   model: string;
   prompt: string;
+  /** Shot continuity: the clip this one continues, and where in it the handoff
+   * frame was taken. Both come off the durable job row, so a chain survives a
+   * render that finished while the app was closed. */
+  parentId?: string;
+  parentHandoffSeconds?: number;
+  costCredits?: number;
 }
 
 function register(file: ArtifactFile, metadata: ArtifactMetadata): StudioArtifact {
@@ -59,6 +65,9 @@ function register(file: ArtifactFile, metadata: ArtifactMetadata): StudioArtifac
     model: metadata.model,
     prompt: metadata.prompt,
     createdAt: Date.now(),
+    parentId: metadata.parentId,
+    parentHandoffSeconds: metadata.parentHandoffSeconds,
+    costCredits: metadata.costCredits,
   };
   writeIndex([artifact, ...readIndex().filter((entry) => entry.id !== artifact.id)]);
   return artifact;
