@@ -4,6 +4,7 @@
 // presents one family with a Text/Image toggle, like a single "model".
 
 import { invoke } from "@tauri-apps/api/core";
+import { probedConstraints } from "./model-constraints";
 import type { MediaCatalog, MediaModel, MediaType } from "./types";
 
 const CATALOG_TTL_MS = 5 * 60 * 1000;
@@ -18,7 +19,7 @@ export async function fetchMediaCatalog(force = false): Promise<MediaCatalog> {
   if (!inflight) {
     inflight = invoke<MediaCatalog>("carpe_diem_media_catalog")
       .then((catalog) => {
-        const patched = withVideoDurationFallbacks(catalog);
+        const patched = withVideoConstraintFallbacks(catalog);
         cached = { catalog: patched, fetchedAt: Date.now() };
         return patched;
       })
@@ -67,37 +68,46 @@ export function imageEditModels(catalog: MediaCatalog): MediaModel[] {
   return [...live, ...extras].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Duration menus for video families whose constraints never arrive. Venice's
- * public catalog does not list these models, so the merged catalog carries no
- * `durations` and the studios queued without a `duration` — which these models
- * reject with a 400 ("duration Required"). Bounds probed live against
- * `/video/quote` (2026-07-13). Matched by id substring, most specific first;
- * only applied when the catalog has no durations, so live constraints win the
- * moment Venice publishes them. */
-const VIDEO_DURATION_FALLBACKS: Array<{ match: string; durations: string[] }> = [
-  { match: "seedance-1-5-pro", durations: secondsRange(4, 12) },
-  { match: "seedance", durations: secondsRange(4, 15) },
-];
-
-function secondsRange(min: number, max: number): string[] {
-  return Array.from({ length: max - min + 1 }, (_, index) => `${min + index}s`);
-}
-
-/** Every catalog type that ends up in a video family - the duration fallbacks
- * apply to all of them (a seedance reference-to-video rejects a request with
- * no `duration` exactly like its text variant does). */
+/** Every catalog type that ends up in a video family: all three take the same
+ * constraint fallbacks (a seedance reference-to-video rejects a request with no
+ * `duration` exactly like its text variant does). */
 const VIDEO_MEDIA_TYPES: MediaType[] = ["video", "imageToVideo", "referenceToVideo"];
 
-export function withVideoDurationFallbacks(catalog: MediaCatalog): MediaCatalog {
+/**
+ * Fill in what the catalog leaves empty for a video model.
+ *
+ * The enrichment pass matches operator models against Venice's public catalog,
+ * which does not publish several whole families - 43 of 101 video models come
+ * back with no `aspect_ratios`, and the seedance ones with no durations at all.
+ * The studio only offers what it can see, so those models were queued without
+ * the fields the provider requires, and the render failed after being queued.
+ *
+ * Published constraints always win; this only ever fills a hole. See
+ * `./model-constraints` for where the values come from and how a rejection
+ * teaches the studio more.
+ */
+export function withVideoConstraintFallbacks(catalog: MediaCatalog): MediaCatalog {
   return {
     ...catalog,
     models: catalog.models.map((model) => {
       if (!VIDEO_MEDIA_TYPES.includes(model.mediaType)) return model;
-      if (model.constraints?.durations?.length) return model;
-      const id = model.id.toLowerCase();
-      const fallback = VIDEO_DURATION_FALLBACKS.find((entry) => id.includes(entry.match));
-      if (!fallback) return model;
-      return { ...model, constraints: { ...model.constraints, durations: fallback.durations } };
+      const probed = probedConstraints(model.id);
+      if (!probed) return model;
+      const constraints = { ...model.constraints };
+      let changed = false;
+      if (!constraints.durations?.length && probed.durations?.length) {
+        constraints.durations = probed.durations;
+        changed = true;
+      }
+      if (!constraints.aspect_ratios?.length && probed.aspectRatios?.length) {
+        constraints.aspect_ratios = probed.aspectRatios;
+        changed = true;
+      }
+      if (!constraints.resolutions?.length && probed.resolutions?.length) {
+        constraints.resolutions = probed.resolutions;
+        changed = true;
+      }
+      return changed ? { ...model, constraints } : model;
     }),
   };
 }

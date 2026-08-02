@@ -12,7 +12,7 @@ import {
   supportsBackgroundRemoval,
   videoFamilies,
   videoFamilyKey,
-  withVideoDurationFallbacks,
+  withVideoConstraintFallbacks,
 } from "../lib/studio/catalog";
 import { musicPaths, retrieveBody, supportsVideoQuote } from "../lib/studio/paths";
 import type { MediaCatalog, MediaModel } from "../lib/studio/types";
@@ -131,12 +131,12 @@ describe("video family grouping", () => {
 
 describe("video duration fallbacks", () => {
   it("fills durations for seedance models the catalogs never constrain", () => {
-    const patched = withVideoDurationFallbacks(
+    const patched = withVideoConstraintFallbacks(
       catalog([
         model({ id: "seedance-2-0-image-to-video", mediaType: "imageToVideo" }),
         model({ id: "seedance-2-0-reference-to-video", mediaType: "referenceToVideo" }),
         model({ id: "seedance-1-5-pro-text-to-video", mediaType: "video" }),
-        model({ id: "wan-2-7-text-to-video", mediaType: "video" }),
+        model({ id: "veo3-fast-text-to-video", mediaType: "video" }),
       ]),
     );
     const byId = new Map(patched.models.map((entry) => [entry.id, entry]));
@@ -148,12 +148,13 @@ describe("video duration fallbacks", () => {
     expect(byId.get("seedance-2-0-reference-to-video")?.constraints?.durations?.at(-1)).toBe("15s");
     const seedance15 = byId.get("seedance-1-5-pro-text-to-video")?.constraints?.durations;
     expect(seedance15?.at(-1)).toBe("12s");
-    // Unlisted families stay untouched (no fabricated menus).
-    expect(byId.get("wan-2-7-text-to-video")?.constraints).toBeUndefined();
+    // A family nobody probed stays untouched: an invented menu would be a
+    // guess, and an unrecognised value is rejected as hard as a missing one.
+    expect(byId.get("veo3-fast-text-to-video")?.constraints).toBeUndefined();
   });
 
   it("never overrides durations the live catalog already publishes", () => {
-    const patched = withVideoDurationFallbacks(
+    const patched = withVideoConstraintFallbacks(
       catalog([
         model({
           id: "seedance-2-0-image-to-video",

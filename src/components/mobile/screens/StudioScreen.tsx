@@ -43,6 +43,11 @@ import {
 } from "../../../lib/studio/consent";
 import { continuationPrompt, extractHandoffFrame } from "../../../lib/studio/frames";
 import {
+  effectiveVideoConstraints,
+  explainConstraintError,
+  rememberConstraintError,
+} from "../../../lib/studio/model-constraints";
+import {
   generateSpeech,
   SPEECH_FORMATS,
   SPEECH_INPUT_LIMIT,
@@ -1073,10 +1078,18 @@ function VideoPanel({
   // remembered so the box stays ticked across sessions.
   const [consent, setConsent] = useState(hasSeedanceConsent);
   const needsConsent = needsSeedanceConsent(model, needsReference);
-  const constraints = model?.constraints;
+  const [constraintEpoch, setConstraintEpoch] = useState(0);
+  const constraints = useMemo(
+    () => effectiveVideoConstraints(model),
+    // biome-ignore lint/correctness/useExhaustiveDependencies: the epoch is the
+    // signal that a rejection taught us new options.
+    [model, constraintEpoch],
+  );
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
   const [duration, setDuration] = useState("");
+  const [aspectRatio, setAspectRatio] = useState("");
+  const [resolution, setResolution] = useState("");
   const [quote, setQuote] = useState<number | undefined>(undefined);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -1097,8 +1110,22 @@ function VideoPanel({
     onGenerated();
   });
 
+  // A rejection names what the model wanted; remember it so the pickers offer
+  // the right values next time.
+  useEffect(() => {
+    if (job.state.phase !== "failed" || !job.state.message) return;
+    if (!model) return;
+    if (Object.keys(rememberConstraintError(model.id, job.state.message)).length > 0) {
+      setConstraintEpoch((epoch) => epoch + 1);
+    }
+  }, [job.state, model]);
+
   const durationOptions = constraints?.durations ?? [];
   const effectiveDuration = duration || durationOptions[0] || "";
+  const videoAspectOptions = constraints?.aspect_ratios ?? [];
+  const effectiveVideoAspect = aspectRatio || videoAspectOptions[0] || "";
+  const videoResolutionOptions = constraints?.resolutions ?? [];
+  const effectiveVideoResolution = resolution || videoResolutionOptions[0] || "";
   const referenceReady = !needsReference || references.length > 0;
   // Where the opening frame came from, so the form says what it is continuing.
   const [handoffFrom, setHandoffFrom] = useState<
@@ -1134,6 +1161,10 @@ function VideoPanel({
     const body: Record<string, unknown> = { model: model.id, prompt: prompt.trim() };
     if (negativePrompt.trim()) body.negative_prompt = negativePrompt.trim();
     if (effectiveDuration) body.duration = effectiveDuration;
+    // A known option list means the model takes the field, and several reject
+    // the render outright when it is missing.
+    if (effectiveVideoAspect) body.aspect_ratio = effectiveVideoAspect;
+    if (effectiveVideoResolution) body.resolution = effectiveVideoResolution;
     // image-to-video takes one opening frame (a second photo becomes the end
     // frame - that pair also drives the transition models); reference-to-video
     // takes the set of style/subject references.
@@ -1149,6 +1180,8 @@ function VideoPanel({
     prompt,
     negativePrompt,
     effectiveDuration,
+    effectiveVideoAspect,
+    effectiveVideoResolution,
     references,
     needsReference,
     effectiveMode,
@@ -1242,6 +1275,36 @@ function VideoPanel({
           ))}
         </div>
       ) : null}
+      {videoAspectOptions.length > 0 ? (
+        <div className="mobile-pill-row" role="radiogroup" aria-label="Aspect ratio">
+          {videoAspectOptions.map((option) => (
+            <button
+              key={option}
+              type="button"
+              className="mobile-pill"
+              data-active={effectiveVideoAspect === option ? "true" : undefined}
+              onClick={() => setAspectRatio(option)}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {videoResolutionOptions.length > 0 ? (
+        <div className="mobile-pill-row" role="radiogroup" aria-label="Resolution">
+          {videoResolutionOptions.map((option) => (
+            <button
+              key={option}
+              type="button"
+              className="mobile-pill"
+              data-active={effectiveVideoResolution === option ? "true" : undefined}
+              onClick={() => setResolution(option)}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {needsReference ? (
         <ReferencePicker
           references={references}
@@ -1324,7 +1387,9 @@ function VideoPanel({
         </p>
       ) : null}
       {job.state.phase === "failed" ? (
-        <p className="mobile-dictation-error">{job.state.message}</p>
+        <p className="mobile-dictation-error">
+          {explainConstraintError(job.state.message ?? "") ?? job.state.message}
+        </p>
       ) : null}
       {pickerOpen ? (
         <ModelSheet

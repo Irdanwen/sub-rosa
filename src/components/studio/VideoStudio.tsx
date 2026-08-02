@@ -45,6 +45,12 @@ import {
   HANDOFF_ADJUST_WINDOW_SECONDS,
 } from "../../lib/studio/frames";
 import {
+  effectiveVideoConstraints,
+  explainConstraintError,
+  missingRequiredFields,
+  rememberConstraintError,
+} from "../../lib/studio/model-constraints";
+import {
   retrieveBody,
   supportsVideoQuote,
   VIDEO_QUEUE_PATH,
@@ -194,7 +200,14 @@ export function VideoStudio({
   );
   const anchoring = canAnchor && keepLook;
   const model = anchoring ? (family?.referenceModel ?? baseModel) : baseModel;
-  const constraints = model?.constraints;
+  // Bumped when a rejection teaches us something, so the pickers re-derive.
+  const [constraintEpoch, setConstraintEpoch] = useState(0);
+  const constraints = useMemo(
+    () => effectiveVideoConstraints(model),
+    // biome-ignore lint/correctness/useExhaustiveDependencies: the epoch is the
+    // signal that learned constraints changed under us.
+    [model, constraintEpoch],
+  );
 
   // The chain on screen: the one being continued, else the most recent one in
   // the gallery (artifacts arrive newest first).
@@ -256,6 +269,24 @@ export function VideoStudio({
     setGalleryEpoch((epoch) => epoch + 1);
   });
 
+  // A rejected render carries the provider's own account of what the model
+  // wanted. Read it once per job: the pickers then offer the right values, so
+  // the second attempt is informed even for a model the catalog says nothing
+  // about.
+  const learnedJobs = useRef(new Set<string>());
+  useEffect(() => {
+    let learnedSomething = false;
+    for (const entry of queue.jobs) {
+      if (entry.phase !== "failed" || !entry.message) continue;
+      if (learnedJobs.current.has(entry.job.id)) continue;
+      learnedJobs.current.add(entry.job.id);
+      if (Object.keys(rememberConstraintError(entry.job.model, entry.message)).length > 0) {
+        learnedSomething = true;
+      }
+    }
+    if (learnedSomething) setConstraintEpoch((epoch) => epoch + 1);
+  }, [queue.jobs]);
+
   // Request body for any target model of the active direction: settings are
   // resolved against that model's own constraints so a comparison family never
   // receives an option it does not offer.
@@ -277,10 +308,14 @@ export function VideoStudio({
         body.duration = "Auto";
         return body;
       }
-      const targetConstraints = target.constraints;
+      const targetConstraints = effectiveVideoConstraints(target);
       const targetDuration = effectiveOption(targetConstraints?.durations ?? [], duration);
       const targetAspect = effectiveOption(targetConstraints?.aspect_ratios ?? [], aspectRatio);
       const targetResolution = effectiveOption(targetConstraints?.resolutions ?? [], resolution);
+      // A known option list means the field exists on this model, so it is
+      // always sent - leaving it out is what the provider rejects. No list
+      // means nobody knows the field applies, and sending an unrecognised key
+      // fails just as hard, so it stays out until a rejection teaches us.
       if (targetDuration) body.duration = targetDuration;
       if (targetAspect) body.aspect_ratio = targetAspect;
       if (targetResolution) body.resolution = targetResolution;
@@ -530,7 +565,16 @@ export function VideoStudio({
 
   const multiplier = catalog.priceMultiplier ?? 1;
   const quoteCredits = quote !== undefined ? quote * 100 * multiplier : undefined;
-  const canSubmit = Boolean(queueBody()) && (!needsConsent || consent);
+  // Anything a provider has already refused this model for. Only fields it
+  // complained about explicitly, so this can never block a valid render.
+  const missingFields = useMemo(() => {
+    const body = queueBody();
+    return model && body ? missingRequiredFields(model.id, body) : [];
+    // biome-ignore lint/correctness/useExhaustiveDependencies: the epoch tracks
+    // what the last rejection taught us.
+  }, [model, queueBody, constraintEpoch]);
+  const canSubmit =
+    Boolean(queueBody()) && (!needsConsent || consent) && missingFields.length === 0;
 
   const controls = (
     <>
@@ -915,6 +959,11 @@ export function VideoStudio({
       {quoteCredits !== undefined ? (
         <p className="studio-quote">This render will cost about {formatCredits(quoteCredits)}.</p>
       ) : null}
+      {missingFields.length > 0 ? (
+        <p className="studio-error">
+          {`This model needs ${missingFields.map((field) => field.replace(/_/g, " ")).join(" and ")} before it will render.`}
+        </p>
+      ) : null}
       <button type="button" className="studio-primary-button" disabled={!canSubmit} onClick={start}>
         Generate video
       </button>
@@ -934,7 +983,9 @@ export function VideoStudio({
         <div key={entry.job.id} className="studio-resume" data-phase={entry.phase}>
           <span>
             {entry.phase === "failed"
-              ? (entry.message ?? "The render failed.")
+              ? (explainConstraintError(entry.message ?? "") ??
+                entry.message ??
+                "The render failed.")
               : entry.phase === "processing"
                 ? `Rendering - ${formatElapsed(entry.elapsedMs)}`
                 : `Queued - ${formatElapsed(entry.elapsedMs)}`}
