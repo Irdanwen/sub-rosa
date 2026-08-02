@@ -49,6 +49,37 @@ const MENTION_BLOCK_HEADER = "Mentioned in the message above:";
 const MENTION_BLOCK_FOOTER =
   "Open these yourself when you need them: they are the real files, in place, so edits apply to the user's copy.";
 
+/** Image extensions the runtime can actually look at. Mirrors `_IMAGE_EXTS` in
+ * the pinned Hermes runtime's `agent/image_routing.py`, kept tight on purpose:
+ * anything else is a document the agent opens with its file tools. */
+const IMAGE_EXTENSIONS = [
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".tiff",
+  ".tif",
+  ".heic",
+];
+
+/**
+ * True for a mention that points at an image.
+ *
+ * An image is the one case where a reference is not enough. Handed a path, the
+ * agent has no way to know there are pixels at the other end worth looking at
+ * — it reads what it can, finds bytes, and reports that it cannot see the
+ * picture. A mentioned image is therefore *attached* to the turn as image
+ * content (the same `image.attach_bytes` path a dragged-in photo takes), so
+ * the model sees it directly.
+ */
+export function isImageMention(mention: ComposerMention): boolean {
+  if (mention.kind !== "file" || !mention.path) return false;
+  const lower = mention.path.toLowerCase();
+  return IMAGE_EXTENSIONS.some((extension) => lower.endsWith(extension));
+}
+
 export function mentionItemToMention(item: ComposerMentionItem): ComposerMention {
   return {
     kind: item.kind,
@@ -71,6 +102,11 @@ export function promptWithMentions(message: string, mentions: ComposerMention[])
   const lines = mentions.map((mention) => {
     if (mention.kind === "note") {
       return `- Note "${mention.label}" (note id ${mention.noteId}) - read it in full with the get_note tool.`;
+    }
+    if (isImageMention(mention)) {
+      // Say it plainly: the picture is on this turn. Without this the agent
+      // sees a path ending in .png and starts looking for a way to open it.
+      return `- Image "${mention.label}": attached to this message, look at it directly. Saved at ${mention.path}.`;
     }
     const what = mention.kind === "folder" ? "Folder" : "File";
     return `- ${what} "${mention.label}": ${mention.path}`;

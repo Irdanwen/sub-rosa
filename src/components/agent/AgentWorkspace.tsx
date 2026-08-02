@@ -178,6 +178,7 @@ import {
 import {
   composerMentionItems,
   type ComposerMention,
+  isImageMention,
   promptWithMentions,
 } from "../../lib/agent-mentions";
 import {
@@ -3681,11 +3682,13 @@ export function AgentWorkspace({
         }
       | undefined;
     try {
-      const prepared = await prepareComposerSubmission(
-        message,
-        attachments,
-        composerEditorRef.current?.mentions() ?? [],
-      );
+      const mentions = composerEditorRef.current?.mentions() ?? [];
+      const prepared = await prepareComposerSubmission(message, attachments, mentions);
+      // A mentioned image rides the turn as image content, not as a path: the
+      // model has to see the pixels. Everything else stays a reference. These
+      // are turn-scoped only — the composer chips and the attachment block
+      // describe files copied into the workspace, which a mention never does.
+      const turnAttachments = [...attachments, ...mentionedImageAttachments(mentions)];
       const runtimeContent = reportCategory
         ? categoryPrompt(reportCategory, prepared.runtimeContent)
         : prepared.runtimeContent;
@@ -3747,7 +3750,7 @@ export function AgentWorkspace({
       await submitHermesSession(runtimeContent, undefined, {
         displayContent: prepared.displayContent,
         titleContent: prepared.titleContent,
-        attachments,
+        attachments: turnAttachments,
         ...(nextIssueReport ? { issueReport: nextIssueReport } : {}),
       });
       if (reportFollowUpSessionId) {
@@ -12377,6 +12380,33 @@ function composerInputHash(value: string) {
 
 function formatComposerTokenCount(value: number) {
   return value.toLocaleString();
+}
+
+/** Turns the images a message mentioned into turn-scoped image attachments, so
+ * they reach the model as pixels through the same `image.attach_bytes` path a
+ * dragged-in photo takes.
+ *
+ * The file is NOT copied: the attachment points at the mentioned path where it
+ * already lives. If it vanished between the mention and the send, the attach
+ * fails loudly like any other image, rather than the message going out with the
+ * model quietly blind. */
+export function mentionedImageAttachments(mentions: ComposerMention[]): AgentAttachment[] {
+  return mentions.filter(isImageMention).flatMap((mention) => {
+    if (!mention.path) return [];
+    const file: ImportedHermesFile = {
+      name: mention.label,
+      path: mention.path,
+      rootLabel: "Mentioned",
+      size: 0,
+    };
+    return [
+      {
+        ...file,
+        id: `mention:${mention.path}:${Date.now()}`,
+        attach: attachmentStateFrom(file),
+      },
+    ];
+  });
 }
 
 function promptWithAttachments(message: string, attachments: AgentAttachment[]): string {
