@@ -1049,6 +1049,17 @@ export async function hermesBridgeFilePreview(path: string) {
   });
 }
 
+// Reads a workspace image as a data url sized for the model, re-encoding it
+// when the file is bigger than the request can carry. Use this for attaching,
+// not hermesBridgeFilePreview: that one stays byte-faithful for the thumbnail,
+// while an attach has to clear the proxy's body cap and june-api's character
+// caps. `maxBytes` is this turn's per-image budget (see imageAttachByteBudget).
+export async function hermesBridgeImageForModel(path: string, maxBytes?: number) {
+  return invoke<string | null>("hermes_bridge_image_for_model", {
+    request: { path, maxBytes },
+  });
+}
+
 // Null when the file can't be shown as text (too large or binary) — the
 // caller falls back to a download affordance instead of erroring.
 export async function hermesBridgeFileText(path: string) {

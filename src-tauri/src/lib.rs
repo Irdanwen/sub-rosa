@@ -18,6 +18,7 @@ pub mod dictation_mobile;
 pub mod domain;
 #[cfg(desktop)]
 pub mod hermes_bridge;
+pub mod hermes_image_fit;
 #[cfg(desktop)]
 pub mod hermes_working_dir;
 pub mod ios_background;
@@ -264,6 +265,7 @@ pub fn run() {
             hermes_bridge::save_hermes_bridge_file,
             hermes_bridge::copy_hermes_bridge_file_to_clipboard,
             hermes_bridge::hermes_bridge_file_preview,
+            hermes_bridge::hermes_bridge_image_for_model,
             hermes_bridge::hermes_bridge_file_text,
             hermes_bridge::import_hermes_bridge_file,
             hermes_bridge::import_hermes_bridge_file_bytes,

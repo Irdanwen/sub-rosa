@@ -5,6 +5,7 @@ import {
   attachImageToSession,
   attachmentBlocksSubmit,
   attachmentStateFrom,
+  imageAttachByteBudget,
   isAttachableImageType,
   parseImageDataUrl,
   pendingImageAttachments,
@@ -90,6 +91,40 @@ describe("pendingImageAttachments", () => {
     expect(pending).toHaveLength(1);
     expect(pending[0].kind).toBe("image");
     expect(pending[0].status).toBe("imported");
+  });
+});
+
+describe("imageAttachByteBudget", () => {
+  /** june-api rejects a request whose strings exceed this, counting an image's
+   * base64 alongside the prompt. Base64 is 4/3 of the bytes. */
+  const AGGREGATE_CHAR_CAP = 1_500_000;
+  const asBase64Chars = (bytes: number) => Math.ceil(bytes / 3) * 4;
+
+  it("leaves room for the conversation riding along with one image", () => {
+    // The bug this guards: a 2.4 MB screenshot encoded to 3.2M characters and
+    // was rejected for length before the model ever saw it.
+    const budget = imageAttachByteBudget(1);
+    expect(asBase64Chars(budget)).toBeLessThan(AGGREGATE_CHAR_CAP * 0.75);
+  });
+
+  it("splits one allowance across a multi-image turn", () => {
+    // The caps are counted per REQUEST, so three images share the budget rather
+    // than each getting it — three full-size images would trip the cap together
+    // even though each one passed on its own.
+    const single = imageAttachByteBudget(1);
+    expect(imageAttachByteBudget(2)).toBe(Math.floor(single / 2));
+    expect(imageAttachByteBudget(3) * 3).toBeLessThanOrEqual(single);
+  });
+
+  it("stops shrinking at a size the re-encoder can actually hit", () => {
+    // Past the floor, dividing further would ask for images too degraded to
+    // read. The honest outcome there is an over-cap request, not mush.
+    expect(imageAttachByteBudget(50)).toBe(imageAttachByteBudget(500));
+    expect(imageAttachByteBudget(50)).toBeGreaterThanOrEqual(64 * 1024);
+  });
+
+  it("treats an empty turn like a single image", () => {
+    expect(imageAttachByteBudget(0)).toBe(imageAttachByteBudget(1));
   });
 });
 
