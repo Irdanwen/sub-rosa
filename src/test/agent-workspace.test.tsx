@@ -40,6 +40,7 @@ const mocks = vi.hoisted(() => ({
   getHermesBridgeSkill: vi.fn(),
   hermesBridgeFilesystemSnapshot: vi.fn(),
   hermesBridgeFilePreview: vi.fn(),
+  hermesBridgeImageForModel: vi.fn(),
   hermesBridgeFileText: vi.fn(),
   hermesBridgeMessagingPlatforms: vi.fn(),
   hermesBridgeSkills: vi.fn(),
@@ -104,6 +105,7 @@ vi.mock("../lib/tauri", () => ({
   getHermesBridgeSkill: mocks.getHermesBridgeSkill,
   hermesBridgeFilesystemSnapshot: mocks.hermesBridgeFilesystemSnapshot,
   hermesBridgeFilePreview: mocks.hermesBridgeFilePreview,
+  hermesBridgeImageForModel: mocks.hermesBridgeImageForModel,
   hermesBridgeFileText: mocks.hermesBridgeFileText,
   hermesBridgeMessagingPlatforms: mocks.hermesBridgeMessagingPlatforms,
   hermesAgentCliAccess: mocks.hermesAgentCliAccess,
@@ -319,6 +321,12 @@ describe("AgentWorkspace", () => {
     // data url, anything else null. Feature 19's structured image attach reads
     // the bytes through this command at attach time.
     mocks.hermesBridgeFilePreview.mockImplementation(async (path: string) =>
+      /\.(png|jpe?g|gif|webp|tiff?)$/i.test(path) ? "data:image/png;base64,cHJldmlldw==" : null,
+    );
+    // Mirrors the Rust hermes_bridge_image_for_model: same data url, but sized
+    // for the request. This is what the ATTACH path reads (the preview command
+    // above stays byte-faithful for thumbnails).
+    mocks.hermesBridgeImageForModel.mockImplementation(async (path: string) =>
       /\.(png|jpe?g|gif|webp|tiff?)$/i.test(path) ? "data:image/png;base64,cHJldmlldw==" : null,
     );
     mocks.hermesBridgeFileText.mockResolvedValue(null);
@@ -6331,6 +6339,14 @@ describe("AgentWorkspace", () => {
         filename: "screenshot.png",
       }),
     );
+    // The bytes come from the sizing command, with this turn's budget — not
+    // from the byte-faithful preview. A 2.4 MB screenshot read raw here is what
+    // made every size gate downstream reject the turn as "prompt too long".
+    expect(mocks.hermesBridgeImageForModel).toHaveBeenCalledWith(
+      expect.stringContaining("screenshot.png"),
+      expect.any(Number),
+    );
+
     // image.attach_bytes precedes prompt.submit for the same turn.
     const attachIndex = mocks.gatewayRequest.mock.calls.findIndex(
       ([method]) => method === "image.attach_bytes",

@@ -27,6 +27,11 @@ chrono = { version = "0.4", features = ["serde"] }
 cpal = "0.15"
 dotenvy = "0.15"
 hound = "3.5"
+# Re-encodes an attached image down to what the request can carry (see
+# `hermes_image_fit`). Decoders for the formats the bridge accepts, plus the
+# JPEG encoder it re-encodes to; no default features, so nothing else is pulled
+# in for a dependency tauri already resolves.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "tiff"] }
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "cookies"] }
 # Pure-Rust FFT for the echo-rejection similarity gate (GCC-PHAT lag estimation).

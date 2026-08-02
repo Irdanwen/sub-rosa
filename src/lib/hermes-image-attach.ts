@@ -118,6 +118,34 @@ export function isAttachableImageType(mimeType: string): boolean {
 }
 
 /**
+ * How many bytes ALL of this turn's images may occupy together, before base64.
+ *
+ * The binding gate is june-api's 1.5M-character aggregate cap, which counts an
+ * image's base64 against the same allowance as the prompt and history. Base64
+ * inflates 4/3, so 750 KB of image is ~1M characters and leaves ~500k for the
+ * conversation riding along.
+ */
+const TURN_IMAGE_BYTE_BUDGET = 750 * 1024;
+
+/** Floor for one image on a turn carrying many. A 768px JPEG lands under this,
+ * so the re-encode ladder can always reach it. */
+const MIN_IMAGE_BYTE_BUDGET = 80 * 1024;
+
+/**
+ * The per-image byte budget for a turn attaching `imageCount` images.
+ *
+ * Shared, not per-image: three images on one turn each get a third of the
+ * allowance, because the caps they must clear are counted across the whole
+ * request. Below the floor the split stops shrinking — at that point the turn
+ * carries more images than any budget can serve, and the honest failure is an
+ * over-cap request rather than a set of images too degraded to read.
+ */
+export function imageAttachByteBudget(imageCount: number): number {
+  if (imageCount <= 1) return TURN_IMAGE_BYTE_BUDGET;
+  return Math.max(MIN_IMAGE_BYTE_BUDGET, Math.floor(TURN_IMAGE_BYTE_BUDGET / imageCount));
+}
+
+/**
  * Split a `data:<mime>;base64,<data>` url into its parts, but only for an
  * attachable image mime. Returns null for non-image mimes, non-base64 urls, or
  * anything malformed/empty — so the caller never sends junk to the gateway.

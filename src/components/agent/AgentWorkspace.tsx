@@ -99,6 +99,7 @@ import {
   hermesBridgeFilesystemSnapshot,
   hermesBridgeMessagingPlatforms,
   hermesBridgeFilePreview,
+  hermesBridgeImageForModel,
   hermesBridgeFileText,
   hermesAgentCliAccess,
   hermesBridgeSkills,
@@ -184,6 +185,7 @@ import {
 import {
   attachImageToSession,
   attachmentStateFrom,
+  imageAttachByteBudget,
   pendingImageAttachments,
   type HermesAttachmentState,
 } from "../../lib/hermes-image-attach";
@@ -4105,8 +4107,9 @@ export function AgentWorkspace({
   /**
    * Attach this turn's pending images to the live session via image.attach_bytes
    * (feature 19), updating each chip's status and feeding the artifact timeline.
-   * The base64 is read on demand from the workspace file (hermesBridgeFilePreview
-   * returns a data url), passed straight to the typed attachImage, and discarded;
+   * The base64 is read on demand from the workspace file (hermesBridgeImageForModel
+   * returns a data url, re-encoded down if the file is too big for the request to
+   * carry), passed straight to the typed attachImage, and discarded;
    * it never lands on composer state and the trace entry is redacted to a byte
    * count. Throws a single blocking error if any image failed so the prompt is
    * not sent with a missing image.
@@ -4120,9 +4123,13 @@ export function AgentWorkspace({
     const pending = pendingImageAttachments(turnAttachments.map((attachment) => attachment.attach));
     if (!pending.length) return;
     const methods = createHermesMethods(gateway);
+    // Budget shared across this turn's images: the caps downstream count every
+    // image's base64 against one allowance, so two images get half each. The
+    // bridge re-encodes only what overshoots and leaves the rest byte-faithful.
+    const byteBudget = imageAttachByteBudget(pending.length);
     const deps = {
       attachImage: methods.attachImage,
-      readImageData: (path: string) => hermesBridgeFilePreview(path),
+      readImageData: (path: string) => hermesBridgeImageForModel(path, byteBudget),
       isSupported: () => isHermesFeatureSupported("image.attach_bytes"),
     };
     const mode = hermesModeFor(storedSessionId);

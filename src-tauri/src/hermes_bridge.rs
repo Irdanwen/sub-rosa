@@ -58,6 +58,20 @@ const FILESYSTEM_MAX_DEPTH: usize = 2;
 const FILESYSTEM_MAX_ENTRIES_PER_DIR: usize = 80;
 const HERMES_IMPORT_MAX_BYTES: u64 = 50 * 1024 * 1024;
 const HERMES_IMAGE_PREVIEW_MAX_BYTES: u64 = 5 * 1024 * 1024;
+// Budget handed to `hermes_image_fit` for ONE attached image when the caller
+// names none. Sized against the tightest gate the attach must clear: june-api's
+// 1.5M-character per-string cap, which counts base64 (4/3 of the bytes). 750 KB
+// encodes to ~1M characters, leaving the rest of the allowance for the prompt
+// and history that ride along. The frontend divides this across a multi-image
+// turn, which is why the command clamps rather than trusts.
+const HERMES_IMAGE_ATTACH_DEFAULT_BUDGET_BYTES: usize = 750 * 1024;
+// Floor for a turn carrying many images. A 768px JPEG lands well under this, so
+// the ladder can always reach it.
+const HERMES_IMAGE_ATTACH_MIN_BUDGET_BYTES: usize = 80 * 1024;
+// Refuse to decode a source larger than this. `import_hermes_bridge_file`
+// already caps imports at 50 MB; this bounds the decode buffer for a file that
+// reached the workspace another way.
+const HERMES_IMAGE_ATTACH_MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
 const HERMES_TEXT_PREVIEW_MAX_BYTES: u64 = 2 * 1024 * 1024;
 const HERMES_SKILL_MAX_BYTES: usize = 512 * 1024;
 const JUNE_PROVIDER_PROXY_MAX_HEADER_BYTES: usize = 32 * 1024;
@@ -786,6 +800,15 @@ pub struct SaveHermesFileRequest {
 #[serde(rename_all = "camelCase")]
 pub struct HermesFilePreviewRequest {
     pub path: String,
+}
+
+/// A preview request that also carries the caller's size budget for the turn.
+/// `max_bytes` is optional so an older frontend keeps working on the default.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HermesImageForModelRequest {
+    pub path: String,
+    pub max_bytes: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2893,6 +2916,54 @@ pub async fn hermes_bridge_file_preview(
 ) -> Result<Option<String>, AppError> {
     let requested = validate_hermes_file_path(&app, &request.path)?;
     image_preview_data_url(&requested)
+}
+
+/// Reads a workspace image as a data url sized for the model, re-encoding it
+/// when the file is larger than the request can carry.
+///
+/// Distinct from `hermes_bridge_file_preview`, which backs the UI thumbnail and
+/// must stay byte-faithful. This one feeds `image.attach_bytes`, where the bytes
+/// have to survive the proxy's body cap and june-api's character caps — gates
+/// sized for prose that count an image's base64 as if it were a document (see
+/// `hermes_image_fit`). `maxBytes` is the caller's per-image budget for the
+/// turn; the image comes back untouched when it already fits.
+#[tauri::command]
+pub async fn hermes_bridge_image_for_model(
+    app: AppHandle,
+    request: HermesImageForModelRequest,
+) -> Result<Option<String>, AppError> {
+    let requested = validate_hermes_file_path(&app, &request.path)?;
+    let Some(mime_type) = image_mime_type(&requested) else {
+        return Ok(None);
+    };
+    let metadata = fs::metadata(&requested)
+        .map_err(|error| AppError::new("hermes_file_preview_failed", error.to_string()))?;
+    // The import cap already bounds what can reach the workspace; this guards
+    // the decode buffer against a file that slipped in by another route.
+    if metadata.len() > HERMES_IMAGE_ATTACH_MAX_SOURCE_BYTES {
+        return Ok(None);
+    }
+    let bytes = fs::read(&requested)
+        .map_err(|error| AppError::new("hermes_file_preview_failed", error.to_string()))?;
+    let budget = request
+        .max_bytes
+        .unwrap_or(HERMES_IMAGE_ATTACH_DEFAULT_BUDGET_BYTES)
+        .clamp(
+            HERMES_IMAGE_ATTACH_MIN_BUDGET_BYTES,
+            HERMES_IMAGE_ATTACH_DEFAULT_BUDGET_BYTES,
+        );
+    // Decoding and re-encoding a multi-megapixel image is CPU work, not IO:
+    // off the async runtime so a big paste cannot stall the command thread.
+    let fitted = tauri::async_runtime::spawn_blocking(move || {
+        crate::hermes_image_fit::fit_image_for_model(bytes, mime_type, budget)
+    })
+    .await
+    .map_err(|error| AppError::new("hermes_file_preview_failed", error.to_string()))?;
+    Ok(Some(format!(
+        "data:{};base64,{}",
+        fitted.mime_type,
+        BASE64_STANDARD.encode(&fitted.bytes)
+    )))
 }
 
 #[tauri::command]
