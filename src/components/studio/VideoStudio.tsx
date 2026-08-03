@@ -17,17 +17,16 @@ import { formatElapsed, useMediaJobQueue } from "../../lib/studio/async-job";
 import {
   formatCredits,
   isReferenceToVideoModel,
+  variantFor,
+  variantLabel,
   isSeedanceModel,
   isVideoUpscaleModel,
   type VideoFamily,
   videoFamilies,
 } from "../../lib/studio/catalog";
 import { mediaJson } from "../../lib/studio/client";
-import {
-  hasSeedanceConsent,
-  rememberSeedanceConsent,
-  withSeedanceConsent,
-} from "../../lib/studio/consent";
+import { videoRequestBody } from "../../lib/studio/video-request";
+import { hasSeedanceConsent, rememberSeedanceConsent } from "../../lib/studio/consent";
 import {
   alternativeCount,
   anchorOf,
@@ -68,25 +67,25 @@ import { effectiveOption, formatSeconds, PillGroup, SliderField, StudioField } f
 
 const VIDEO_URL_FIELDS = ["video_url", "url"];
 
-/** The four video intents. Text needs no photo; "image" animates one photo
- * as the opening frame (with an optional end frame - that pair also drives
- * the transition models); "reference" sends photos that steer style/subject
- * while the prompt drives the action; "video" restyles or upscales an
- * existing clip. */
-type VideoDirection = "text" | "image" | "reference" | "video";
+/**
+ * Two surfaces, not four.
+ *
+ * "shot" builds a new clip out of whatever is provided: nothing (text to
+ * video), an opening frame (image to video), reference photos (reference to
+ * video), or a frame *and* references - which the backend accepts, and which
+ * is exactly what continuing a shot while keeping a character sheet needs.
+ * The variant is derived from the inputs rather than picked by hand, the same
+ * way a family already hides its variants behind one entry.
+ *
+ * "video" stays separate: restyling or upscaling an existing clip is a
+ * genuinely different contract (a source clip, no opening frame, sometimes no
+ * prompt), and folding it in would only blur that.
+ */
+type VideoSurface = "shot" | "video";
 
-const DIRECTION_SLOT: Record<
-  VideoDirection,
-  "textModel" | "imageModel" | "referenceModel" | "videoModel"
-> = {
-  text: "textModel",
-  image: "imageModel",
-  reference: "referenceModel",
-  video: "videoModel",
-};
-
-/** Style/subject references stay a small set - more rarely helps and every
- * one inflates the request. */
+/** Style/subject references the user supplies. The schema accepts more (8 was
+ * still fine when probed), but every one inflates the request and their
+ * influence thins out; the chain's own anchor frame rides on top of this. */
 const MAX_VIDEO_REFERENCES = 4;
 
 /** The clip the opening frame was handed off from, and where in it. */
@@ -116,26 +115,33 @@ export function VideoStudio({
   onAssembleChain?: (cuts: ChainShot[]) => void;
 }) {
   const families = useMemo(() => videoFamilies(catalog), [catalog]);
-  const availableDirections = useMemo<VideoDirection[]>(
+  const availableSurfaces = useMemo<VideoSurface[]>(
     () =>
-      (["text", "image", "reference", "video"] as const).filter((entry) =>
-        families.some((family) => family[DIRECTION_SLOT[entry]]),
+      (["shot", "video"] as const).filter((entry) =>
+        families.some((family) =>
+          entry === "video"
+            ? family.videoModel
+            : family.textModel || family.imageModel || family.referenceModel,
+        ),
       ),
     [families],
   );
-  const [direction, setDirection] = useState<VideoDirection>("text");
-  const effectiveDirection = availableDirections.includes(direction)
-    ? direction
-    : (availableDirections[0] ?? "text");
-  const slot = DIRECTION_SLOT[effectiveDirection];
-  const familiesForDirection = useMemo(
-    () => families.filter((family) => family[slot]),
-    [families, slot],
+  const [surface, setSurface] = useState<VideoSurface>("shot");
+  const effectiveSurface = availableSurfaces.includes(surface)
+    ? surface
+    : (availableSurfaces[0] ?? "shot");
+  const familiesForSurface = useMemo(
+    () =>
+      families.filter((family) =>
+        effectiveSurface === "video"
+          ? family.videoModel
+          : family.textModel || family.imageModel || family.referenceModel,
+      ),
+    [families, effectiveSurface],
   );
   const [familyKey, setFamilyKey] = useState("");
   const family =
-    familiesForDirection.find((entry) => entry.key === familyKey) ?? familiesForDirection[0];
-  const baseModel = family?.[slot];
+    familiesForSurface.find((entry) => entry.key === familyKey) ?? familiesForSurface[0];
   // Comparison: extra families that render the same request in parallel; each
   // shows up as its own card in the job list.
   const [alsoKeys, setAlsoKeys] = useState<string[]>([]);
@@ -143,9 +149,9 @@ export function VideoStudio({
     () =>
       alsoKeys
         .filter((key) => key !== family?.key)
-        .map((key) => familiesForDirection.find((entry) => entry.key === key))
+        .map((key) => familiesForSurface.find((entry) => entry.key === key))
         .filter((entry): entry is VideoFamily => Boolean(entry)),
-    [alsoKeys, family, familiesForDirection],
+    [alsoKeys, family, familiesForSurface],
   );
 
   const [prompt, setPrompt] = useState("");
@@ -153,11 +159,11 @@ export function VideoStudio({
   const [duration, setDuration] = useState("");
   const [aspectRatio, setAspectRatio] = useState("");
   const [resolution, setResolution] = useState("");
-  // Image direction: one opening frame plus an optional end frame (the pair
-  // is how transition models morph between two stills).
+  // Shot inputs, all optional and all combinable: an opening frame (with an
+  // optional end frame - the pair is how transition models morph between two
+  // stills) and style/subject reference photos.
   const [openingFrame, setOpeningFrame] = useState("");
   const [endFrame, setEndFrame] = useState("");
-  // Reference direction: a small set of style/subject photos.
   const [references, setReferences] = useState<string[]>([]);
   // Video direction: one source clip (upload or gallery) + the upscale factor
   // for the upscaler models.
@@ -190,16 +196,27 @@ export function VideoStudio({
   const videoInputRef = useRef<HTMLInputElement>(null);
 
   /**
-   * Anchoring renders the shot with the family's reference-to-video model
-   * instead of its image-to-video one: that is the contract that takes several
-   * photos, so the handoff frame can open the clip while the anchor holds the
-   * look. Only offered when the family has both and a chain is in progress.
+   * The chain's anchor frame is one more reference photo, offered when a chain
+   * is in progress and the family can take references at all.
    */
-  const canAnchor = Boolean(
-    effectiveDirection === "image" && anchorFrame && family?.referenceModel,
-  );
+  const canAnchor = Boolean(effectiveSurface === "shot" && anchorFrame && family?.referenceModel);
   const anchoring = canAnchor && keepLook;
-  const model = anchoring ? (family?.referenceModel ?? baseModel) : baseModel;
+  /** Everything that goes out as `reference_image_urls`: the user's photos
+   * first (they were chosen deliberately), the chain's anchor last. */
+  const outgoingReferences = useMemo(
+    () => (anchoring ? [...references, anchorFrame] : references),
+    [references, anchoring, anchorFrame],
+  );
+  // The variant follows the inputs: photos mean reference-to-video (the only
+  // one that also takes a starting frame), a frame alone means image-to-video,
+  // neither means text-to-video.
+  const model =
+    effectiveSurface === "video"
+      ? family?.videoModel
+      : variantFor(family, {
+          hasFrame: Boolean(openingFrame),
+          hasReferences: outgoingReferences.length > 0,
+        });
   // Bumped when a rejection teaches us something, so the pickers re-derive.
   const [constraintEpoch, setConstraintEpoch] = useState(0);
   const constraints = useMemo(
@@ -225,25 +242,35 @@ export function VideoStudio({
   // remembered so it is asked once. A comparison render can target several
   // models at once, so any seedance target in a reference direction pulls it in.
   const [consent, setConsent] = useState(hasSeedanceConsent);
-  const referenceDirection = effectiveDirection === "image" || effectiveDirection === "reference";
+  /** Any photo of a person can drive the clip, whether it opens it or steers
+   * it, so the attestation follows the presence of a photo, not a mode. */
+  const buildsFromPhoto = Boolean(openingFrame) || outgoingReferences.length > 0;
   const consentTargets = useMemo(
     () =>
-      [model, ...alsoFamilies.map((entry) => entry[slot])].filter((entry): entry is MediaModel =>
-        Boolean(entry),
-      ),
-    [model, alsoFamilies, slot],
+      [
+        model,
+        ...alsoFamilies.map((entry) =>
+          effectiveSurface === "video"
+            ? entry.videoModel
+            : variantFor(entry, {
+                hasFrame: Boolean(openingFrame),
+                hasReferences: outgoingReferences.length > 0,
+              }),
+        ),
+      ].filter((entry): entry is MediaModel => Boolean(entry)),
+    [model, alsoFamilies, effectiveSurface, openingFrame, outgoingReferences.length],
   );
   const needsConsent =
-    referenceDirection && consentTargets.some((target) => isSeedanceModel(target.id));
+    buildsFromPhoto && consentTargets.some((target) => isSeedanceModel(target.id));
 
   // The gallery's own clips are the natural v2v sources; refresh the list as
   // finished renders land.
   useEffect(() => {
-    if (effectiveDirection !== "video") return;
+    if (effectiveSurface !== "video") return;
     listArtifacts("video")
       .then(setGalleryVideos)
       .catch(() => undefined);
-  }, [effectiveDirection, galleryEpoch]);
+  }, [effectiveSurface, galleryEpoch]);
 
   const durationOptions = constraints?.durations ?? [];
   const aspectOptions = constraints?.aspect_ratios ?? [];
@@ -287,74 +314,38 @@ export function VideoStudio({
     if (learnedSomething) setConstraintEpoch((epoch) => epoch + 1);
   }, [queue.jobs]);
 
-  // Request body for any target model of the active direction: settings are
-  // resolved against that model's own constraints so a comparison family never
-  // receives an option it does not offer.
+  // Request body for any target model on the active surface. The shape lives
+  // in `videoRequestBody` so both shells build the same one and it can be
+  // tested without a component.
   const bodyForModel = useCallback(
-    (target: MediaModel): Record<string, unknown> | undefined => {
-      const targetUpscale = isVideoUpscaleModel(target.id);
-      // Upscaling needs no prompt; every other direction does.
-      if (!prompt.trim() && !targetUpscale) return undefined;
-      if (effectiveDirection === "image" && !openingFrame) return undefined;
-      if (effectiveDirection === "reference" && references.length === 0) return undefined;
-      if (effectiveDirection === "video" && !sourceVideo) return undefined;
-      const body: Record<string, unknown> = { model: target.id };
-      if (prompt.trim()) body.prompt = prompt.trim();
-      if (negativePrompt.trim()) body.negative_prompt = negativePrompt.trim();
-      if (effectiveDirection === "video" && targetUpscale) {
-        // The upscaler contract: source clip + factor, duration "Auto".
-        body.video_url = sourceVideo;
-        body.upscale_factor = Number(upscaleFactor);
-        body.duration = "Auto";
-        return body;
-      }
-      const targetConstraints = effectiveVideoConstraints(target);
-      const targetDuration = effectiveOption(targetConstraints?.durations ?? [], duration);
-      const targetAspect = effectiveOption(targetConstraints?.aspect_ratios ?? [], aspectRatio);
-      const targetResolution = effectiveOption(targetConstraints?.resolutions ?? [], resolution);
-      // A known option list means the field exists on this model, so it is
-      // always sent - leaving it out is what the provider rejects. No list
-      // means nobody knows the field applies, and sending an unrecognised key
-      // fails just as hard, so it stays out until a rejection teaches us.
-      if (targetDuration) body.duration = targetDuration;
-      if (targetAspect) body.aspect_ratio = targetAspect;
-      if (targetResolution) body.resolution = targetResolution;
-      if (effectiveDirection === "image") {
-        body.image_url = openingFrame;
-        if (endFrame) body.end_image_url = endFrame;
-        // Anchoring rides the reference-to-video contract (several photos,
-        // verified), never an undocumented extra field on image-to-video: the
-        // handoff frame still opens the clip, the anchor holds the look.
-        if (anchorFrame && isReferenceToVideoModel(target.id)) {
-          body.reference_image_urls = [openingFrame, anchorFrame];
-        }
-      } else if (effectiveDirection === "reference") {
-        body.reference_image_urls = references;
-      } else if (effectiveDirection === "video") {
-        body.video_url = sourceVideo;
-      }
-      // Only the seedance targets carry the face-media attestation, and only
-      // once the user has acknowledged it.
-      const referenceRender = effectiveDirection === "image" || effectiveDirection === "reference";
-      if (referenceRender && consent && isSeedanceModel(target.id)) {
-        return withSeedanceConsent(body);
-      }
-      return body;
-    },
+    (target: MediaModel): Record<string, unknown> | undefined =>
+      videoRequestBody({
+        target,
+        prompt,
+        negativePrompt,
+        openingFrame: effectiveSurface === "shot" ? openingFrame : undefined,
+        endFrame: effectiveSurface === "shot" ? endFrame : undefined,
+        references: effectiveSurface === "shot" ? outgoingReferences : undefined,
+        sourceVideo: effectiveSurface === "video" ? sourceVideo : undefined,
+        upscaleFactor: Number(upscaleFactor),
+        duration,
+        aspectRatio,
+        resolution,
+        consent,
+      }),
     [
       prompt,
       negativePrompt,
-      effectiveDirection,
+      effectiveSurface,
       openingFrame,
       endFrame,
-      references,
+      outgoingReferences,
       sourceVideo,
       upscaleFactor,
       duration,
       aspectRatio,
       resolution,
       consent,
-      anchorFrame,
     ],
   );
 
@@ -385,9 +376,17 @@ export function VideoStudio({
 
   const start = useCallback(() => {
     if (!model) return;
-    const targets = [model, ...alsoFamilies.map((entry) => entry[slot])].filter(
-      (entry): entry is MediaModel => Boolean(entry),
-    );
+    const targets = [
+      model,
+      ...alsoFamilies.map((entry) =>
+        effectiveSurface === "video"
+          ? entry.videoModel
+          : variantFor(entry, {
+              hasFrame: Boolean(openingFrame),
+              hasReferences: outgoingReferences.length > 0,
+            }),
+      ),
+    ].filter((entry): entry is MediaModel => Boolean(entry));
     for (const target of targets) {
       const body = bodyForModel(target);
       if (!body) continue;
@@ -400,7 +399,7 @@ export function VideoStudio({
         queueBody: body,
         parentArtifactId: handoff?.artifactId,
         parentHandoffSeconds: handoff?.timeSeconds,
-        costCredits: quoteCredits,
+        costCredits: quote !== undefined ? quote * 100 * (catalog.priceMultiplier ?? 1) : undefined,
         retrieve: (queueId) => ({
           path: VIDEO_RETRIEVE_PATH,
           body: retrieveBody(queueId, target.id),
@@ -408,7 +407,19 @@ export function VideoStudio({
         urlFields: VIDEO_URL_FIELDS,
       });
     }
-  }, [model, alsoFamilies, slot, bodyForModel, prompt, queue, handoff]);
+  }, [
+    model,
+    alsoFamilies,
+    effectiveSurface,
+    openingFrame,
+    outgoingReferences.length,
+    bodyForModel,
+    prompt,
+    queue,
+    handoff,
+    quote,
+    catalog.priceMultiplier,
+  ]);
 
   const readInto = useCallback((file: File | undefined, set: (dataUri: string) => void) => {
     if (!file) return;
@@ -468,8 +479,8 @@ export function VideoStudio({
             (candidate) => candidate?.id === artifact.model,
           ),
         );
-        setDirection("image");
-        if (source?.imageModel) {
+        setSurface("shot");
+        if (source?.imageModel || source?.referenceModel) {
           setFamilyKey(source.key);
         } else if (source) {
           // Silently falling back to another family is how you end up wondering
@@ -575,40 +586,47 @@ export function VideoStudio({
   }, [model, queueBody, constraintEpoch]);
   const canSubmit =
     Boolean(queueBody()) && (!needsConsent || consent) && missingFields.length === 0;
+  /** Photos were supplied but the resolved variant cannot carry them. */
+  const droppedReferences = Boolean(
+    effectiveSurface === "shot" &&
+      outgoingReferences.length > 0 &&
+      model &&
+      !isReferenceToVideoModel(model.id),
+  );
 
   const controls = (
     <>
-      {availableDirections.length > 1 ? (
+      {availableSurfaces.length > 1 ? (
         <SegmentedControl
-          value={effectiveDirection}
+          value={effectiveSurface}
           onValueChange={(value) => {
-            setDirection(value);
+            setSurface(value);
             setFamilyKey("");
           }}
-          aria-label="Video input"
-          options={availableDirections.map((entry) => ({
+          aria-label="What to build"
+          options={availableSurfaces.map((entry) => ({
             value: entry,
-            label:
-              entry === "text"
-                ? "From text"
-                : entry === "image"
-                  ? "From image"
-                  : entry === "reference"
-                    ? "From reference"
-                    : "From video",
+            label: entry === "shot" ? "New shot" : "From video",
           }))}
         />
       ) : null}
-      <StudioField label="Model">
+      <StudioField
+        label="Model"
+        hint={
+          // The variant follows the inputs, and it changes the price, so it is
+          // named rather than left to be inferred from a checkbox label.
+          model && model.id !== family?.textModel?.id ? variantLabel(model.id) : undefined
+        }
+      >
         <Select
           value={family?.key ?? null}
           placeholder="Choose a model"
           ariaLabel="Video model"
           onChange={setFamilyKey}
-          options={familiesForDirection.map((entry) => ({ value: entry.key, label: entry.name }))}
+          options={familiesForSurface.map((entry) => ({ value: entry.key, label: entry.name }))}
         />
       </StudioField>
-      {familiesForDirection.length > 1 ? (
+      {familiesForSurface.length > 1 ? (
         <StudioField
           label="Also render with"
           hint={alsoFamilies.length > 0 ? `${alsoFamilies.length + 1} renders` : "Optional"}
@@ -639,14 +657,14 @@ export function VideoStudio({
               onChange={(key) =>
                 setAlsoKeys((current) => (current.includes(key) ? current : [...current, key]))
               }
-              options={familiesForDirection
+              options={familiesForSurface
                 .filter((entry) => entry.key !== family?.key && !alsoKeys.includes(entry.key))
                 .map((entry) => ({ value: entry.key, label: entry.name }))}
             />
           </div>
         </StudioField>
       ) : null}
-      {effectiveDirection === "image" ? (
+      {effectiveSurface === "shot" ? (
         <>
           <StudioField
             label="Opening frame"
@@ -766,7 +784,7 @@ export function VideoStudio({
           </StudioField>
         </>
       ) : null}
-      {effectiveDirection === "reference" ? (
+      {effectiveSurface === "shot" && family?.referenceModel ? (
         <StudioField
           label="Reference photos"
           hint={`${references.length} / ${MAX_VIDEO_REFERENCES}`}
@@ -815,7 +833,7 @@ export function VideoStudio({
           </div>
         </StudioField>
       ) : null}
-      {effectiveDirection === "video" ? (
+      {effectiveSurface === "video" ? (
         <>
           <StudioField label="Source clip" hint={sourceVideoName || undefined}>
             <div className="studio-upload">
@@ -899,14 +917,14 @@ export function VideoStudio({
           rows={4}
           value={prompt}
           placeholder={
-            effectiveDirection === "image"
-              ? "Describe the motion"
-              : effectiveDirection === "reference"
-                ? "Describe the scene to build from the references"
-                : effectiveDirection === "video"
-                  ? isUpscale
-                    ? "Optional note for the upscaler"
-                    : "Describe how to restyle the clip"
+            effectiveSurface === "video"
+              ? isUpscale
+                ? "Optional note for the upscaler"
+                : "Describe how to restyle the clip"
+              : openingFrame
+                ? "Describe the motion"
+                : references.length > 0
+                  ? "Describe the scene to build from the references"
                   : "Describe the scene and the motion"
           }
           onChange={(event) => setPrompt(event.target.value)}
@@ -958,6 +976,11 @@ export function VideoStudio({
     <>
       {quoteCredits !== undefined ? (
         <p className="studio-quote">This render will cost about {formatCredits(quoteCredits)}.</p>
+      ) : null}
+      {droppedReferences ? (
+        <p className="studio-field-note">
+          {`${family?.name ?? "This model"} cannot take reference photos, so only the opening frame will be used.`}
+        </p>
       ) : null}
       {missingFields.length > 0 ? (
         <p className="studio-error">
@@ -1021,7 +1044,12 @@ export function VideoStudio({
       {activeChain.length > 1 ? (
         <section className="studio-chain" aria-label="Shot chain">
           <div className="studio-chain-head">
-            <span className="studio-field-label">Shot chain · {activeChain.length} shots</span>
+            <span className="studio-field-label">
+              Shot chain · {activeChain.length} shots
+              {chainSpend.known > 0
+                ? ` · ${chainSpend.known < chainSpend.total ? "at least " : ""}${formatCredits(chainSpend.credits)}`
+                : ""}
+            </span>
             {onAssembleChain ? (
               <button
                 type="button"

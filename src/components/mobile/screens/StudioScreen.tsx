@@ -30,18 +30,20 @@ import {
   imageEditModels,
   modelsOfType,
   musicCapabilities,
+  isReferenceToVideoModel,
   musicModels,
   soundEffectsModels,
   supportsBackgroundRemoval,
+  variantFor,
   videoFamilies,
 } from "../../../lib/studio/catalog";
 import {
   hasSeedanceConsent,
   needsSeedanceConsent,
   rememberSeedanceConsent,
-  withSeedanceConsent,
 } from "../../../lib/studio/consent";
 import { continuationPrompt, extractHandoffFrame } from "../../../lib/studio/frames";
+import { videoRequestBody } from "../../../lib/studio/video-request";
 import {
   effectiveVideoConstraints,
   explainConstraintError,
@@ -1015,16 +1017,8 @@ function ImagePanel({
 
 // --- Video ------------------------------------------------------------------
 
-/** The three video intents. Text needs no photo; "animate" uses one photo as
- * the opening frame (image-to-video); "reference" uses one or more photos to
- * steer style/subject while the prompt drives the action (reference-to-video). */
-type VideoMode = "text" | "image" | "reference";
-
-const VIDEO_MODE_SLOT: Record<VideoMode, "textModel" | "imageModel" | "referenceModel"> = {
-  text: "textModel",
-  image: "imageModel",
-  reference: "referenceModel",
-};
+/** Cap on the user's own reference photos, matching the desktop studio. */
+const MAX_VIDEO_REFERENCES = 4;
 
 /** A frame handed off from a finished clip, waiting to open the next shot. */
 interface VideoHandoff {
@@ -1054,30 +1048,27 @@ function VideoPanel({
   onHandoffApplied: () => void;
 }) {
   const families = useMemo(() => videoFamilies(catalog), [catalog]);
-  // Only offer a mode when at least one family provides that direction.
-  const availableModes = useMemo<VideoMode[]>(
-    () =>
-      (["text", "image", "reference"] as const).filter((entry) =>
-        families.some((family) => family[VIDEO_MODE_SLOT[entry]]),
-      ),
-    [families],
-  );
-  const [mode, setMode] = useState<VideoMode>("text");
-  const effectiveMode = availableModes.includes(mode) ? mode : (availableModes[0] ?? "text");
-  const slot = VIDEO_MODE_SLOT[effectiveMode];
   const familiesForMode = useMemo(
-    () => families.filter((family) => family[slot]),
-    [families, slot],
+    () =>
+      families.filter((family) => family.textModel || family.imageModel || family.referenceModel),
+    [families],
   );
   const [familyKey, setFamilyKey] = useState("");
   const family = familiesForMode.find((entry) => entry.key === familyKey) ?? familiesForMode[0];
-  const model = family?.[slot];
-  const needsReference = effectiveMode !== "text";
+  // Inputs, not modes: an opening frame and reference photos are independent
+  // and combinable, and the variant follows from what is filled in (same rule
+  // as the desktop studio).
+  const [openingFrame, setOpeningFrame] = useState<string[]>([]);
   const [references, setReferences] = useState<string[]>([]);
+  const model = variantFor(family, {
+    hasFrame: openingFrame.length > 0,
+    hasReferences: references.length > 0,
+  });
+  const buildsFromPhoto = openingFrame.length > 0 || references.length > 0;
   // Seedance needs a face-media attestation for any clip built from a photo;
   // remembered so the box stays ticked across sessions.
   const [consent, setConsent] = useState(hasSeedanceConsent);
-  const needsConsent = needsSeedanceConsent(model, needsReference);
+  const needsConsent = needsSeedanceConsent(model, buildsFromPhoto);
   const [constraintEpoch, setConstraintEpoch] = useState(0);
   const constraints = useMemo(
     () => effectiveVideoConstraints(model),
@@ -1126,7 +1117,7 @@ function VideoPanel({
   const effectiveVideoAspect = aspectRatio || videoAspectOptions[0] || "";
   const videoResolutionOptions = constraints?.resolutions ?? [];
   const effectiveVideoResolution = resolution || videoResolutionOptions[0] || "";
-  const referenceReady = !needsReference || references.length > 0;
+
   // Where the opening frame came from, so the form says what it is continuing.
   const [handoffFrom, setHandoffFrom] = useState<
     | { artifactId: string; fileName: string; timeSeconds: number; durationSeconds: number }
@@ -1137,8 +1128,7 @@ function VideoPanel({
   // the family the source clip was rendered with when it can animate a frame.
   useEffect(() => {
     if (!handoff) return;
-    setMode("image");
-    setReferences([handoff.dataUrl]);
+    setOpeningFrame([handoff.dataUrl]);
     setPrompt(handoff.prompt);
     const source = families.find((entry) =>
       [entry.textModel, entry.imageModel, entry.referenceModel].some(
@@ -1155,26 +1145,20 @@ function VideoPanel({
     onHandoffApplied();
   }, [handoff, families, onHandoffApplied]);
 
+  // Same body builder as the desktop studio, so the two shells cannot drift.
   const queueBody = useCallback((): Record<string, unknown> | undefined => {
-    if (!model || !prompt.trim()) return undefined;
-    if (needsReference && references.length === 0) return undefined;
-    const body: Record<string, unknown> = { model: model.id, prompt: prompt.trim() };
-    if (negativePrompt.trim()) body.negative_prompt = negativePrompt.trim();
-    if (effectiveDuration) body.duration = effectiveDuration;
-    // A known option list means the model takes the field, and several reject
-    // the render outright when it is missing.
-    if (effectiveVideoAspect) body.aspect_ratio = effectiveVideoAspect;
-    if (effectiveVideoResolution) body.resolution = effectiveVideoResolution;
-    // image-to-video takes one opening frame (a second photo becomes the end
-    // frame - that pair also drives the transition models); reference-to-video
-    // takes the set of style/subject references.
-    if (effectiveMode === "image") {
-      body.image_url = references[0];
-      if (references[1]) body.end_image_url = references[1];
-    } else if (effectiveMode === "reference") {
-      body.reference_image_urls = references;
-    }
-    return needsConsent && consent ? withSeedanceConsent(body) : body;
+    if (!model) return undefined;
+    return videoRequestBody({
+      target: model,
+      prompt,
+      negativePrompt,
+      openingFrame: openingFrame[0],
+      references,
+      duration: effectiveDuration,
+      aspectRatio: effectiveVideoAspect,
+      resolution: effectiveVideoResolution,
+      consent,
+    });
   }, [
     model,
     prompt,
@@ -1182,10 +1166,8 @@ function VideoPanel({
     effectiveDuration,
     effectiveVideoAspect,
     effectiveVideoResolution,
+    openingFrame,
     references,
-    needsReference,
-    effectiveMode,
-    needsConsent,
     consent,
   ]);
 
@@ -1234,27 +1216,6 @@ function VideoPanel({
 
   return (
     <div className="mobile-studio-form">
-      {availableModes.length > 1 ? (
-        <div className="mobile-segmented" role="tablist" aria-label="Video mode">
-          {availableModes.map((entry) => (
-            <button
-              key={entry}
-              type="button"
-              role="tab"
-              aria-selected={effectiveMode === entry}
-              className="mobile-segmented-item"
-              data-active={effectiveMode === entry ? "true" : undefined}
-              onClick={() => {
-                setMode(entry);
-                setFamilyKey("");
-                if (entry === "text") setReferences([]);
-              }}
-            >
-              {entry === "text" ? "Text" : entry === "image" ? "Animate a photo" : "Reference"}
-            </button>
-          ))}
-        </div>
-      ) : null}
       <ModelPickerButton
         label="Video model"
         value={family?.name ?? ""}
@@ -1305,24 +1266,30 @@ function VideoPanel({
           ))}
         </div>
       ) : null}
-      {needsReference ? (
+      {family?.imageModel || family?.referenceModel ? (
         <ReferencePicker
-          references={references}
+          references={openingFrame}
           onChange={(refs) => {
             setHandoffFrom(undefined);
-            setReferences(effectiveMode === "image" ? refs.slice(0, 2) : refs);
+            setOpeningFrame(refs.slice(0, 1));
           }}
           galleryImages={galleryImages}
           hint={
-            effectiveMode === "image"
-              ? handoffFrom
-                ? `Continuing ${handoffFrom.fileName} at ${Math.round(handoffFrom.timeSeconds * 10) / 10}s of ${Math.round(handoffFrom.durationSeconds * 10) / 10}s.`
-                : references.length > 1
-                  ? "First photo opens the clip; the second is its end frame."
-                  : "The clip animates from this photo. Add a second to set the end frame."
-              : references.length > 1
-                ? "All these photos steer the style and subject."
-                : "This photo steers the style and subject; the prompt drives the action."
+            handoffFrom
+              ? `Continuing ${handoffFrom.fileName} at ${Math.round(handoffFrom.timeSeconds * 10) / 10}s of ${Math.round(handoffFrom.durationSeconds * 10) / 10}s.`
+              : "Optional opening frame: the clip starts from this photo."
+          }
+        />
+      ) : null}
+      {family?.referenceModel ? (
+        <ReferencePicker
+          references={references}
+          onChange={(refs) => setReferences(refs.slice(0, MAX_VIDEO_REFERENCES))}
+          galleryImages={galleryImages}
+          hint={
+            references.length > 0
+              ? "These photos steer the style and subject, alongside the opening frame."
+              : "Optional reference photos: they steer style and subject while the prompt drives the action."
           }
         />
       ) : null}
@@ -1331,9 +1298,9 @@ function VideoPanel({
         value={prompt}
         rows={3}
         placeholder={
-          effectiveMode === "image"
+          openingFrame.length > 0
             ? "Describe the motion"
-            : effectiveMode === "reference"
+            : references.length > 0
               ? "Describe the scene to build from the reference"
               : "Describe the video to generate"
         }
@@ -1366,7 +1333,7 @@ function VideoPanel({
       <button
         type="button"
         className="mobile-studio-generate"
-        disabled={!model || !prompt.trim() || !referenceReady || (needsConsent && !consent) || busy}
+        disabled={!model || !prompt.trim() || (needsConsent && !consent) || busy}
         onClick={start}
       >
         {busy ? <Spinner /> : "Generate"}
@@ -1374,11 +1341,9 @@ function VideoPanel({
           <span className="mobile-studio-cost">{formatCredits(quote)}</span>
         ) : null}
       </button>
-      {needsReference && references.length === 0 ? (
+      {references.length > 0 && model && !isReferenceToVideoModel(model.id) ? (
         <p className="mobile-reference-hint">
-          {effectiveMode === "image"
-            ? "Add a photo to animate."
-            : "Add at least one reference photo."}
+          {`${family?.name ?? "This model"} cannot take reference photos, so only the opening frame will be used.`}
         </p>
       ) : null}
       {busy ? (
@@ -1397,12 +1362,13 @@ function VideoPanel({
           entries={familiesForMode.map((entry) => ({
             id: entry.key,
             name: entry.name,
-            subtitle:
-              effectiveMode === "text"
-                ? "text to video"
-                : effectiveMode === "image"
-                  ? "animate a photo"
-                  : "reference to video",
+            subtitle: [
+              entry.textModel ? "text" : undefined,
+              entry.imageModel ? "photo" : undefined,
+              entry.referenceModel ? "reference" : undefined,
+            ]
+              .filter(Boolean)
+              .join(" · "),
           }))}
           selectedId={family?.key ?? ""}
           onSelect={(id) => {

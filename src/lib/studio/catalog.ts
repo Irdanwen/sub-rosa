@@ -248,6 +248,28 @@ function familyDisplayName(model: MediaModel): string {
   return videoFamilyKey(model);
 }
 
+/** Which slot a set of inputs resolves to. Reference wins whenever photos are
+ * present, because it is the only variant that takes both a starting frame and
+ * references; without photos an opening frame means image-to-video, and
+ * nothing at all means text-to-video. */
+export function variantFor(
+  family: VideoFamily | undefined,
+  { hasFrame, hasReferences }: { hasFrame: boolean; hasReferences: boolean },
+): MediaModel | undefined {
+  if (!family) return undefined;
+  if (hasReferences) return family.referenceModel ?? family.imageModel ?? family.textModel;
+  if (hasFrame) return family.imageModel ?? family.referenceModel ?? family.textModel;
+  return family.textModel ?? family.imageModel ?? family.referenceModel;
+}
+
+/** How a resolved variant reads next to the family name. */
+export function variantLabel(modelId: string): string {
+  if (isReferenceToVideoModel(modelId)) return "reference to video";
+  if (modelId.includes("image-to-video")) return "image to video";
+  if (modelId.includes("video-to-video")) return "video to video";
+  return "text to video";
+}
+
 /** The "Automatic" edit model: a capable, reasonably priced default so the
  * edit surfaces work without picking a model first. Preference order favors
  * instruction-following editors that handle both photos and renders well;
