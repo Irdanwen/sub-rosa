@@ -45,28 +45,48 @@ function secondsRange(min: number, max: number): string[] {
   return Array.from({ length: max - min + 1 }, (_, index) => `${min + index}s`);
 }
 
-/** Every seedance variant shares one aspect and resolution set (read off the
- * provider's own rejection message). */
+/** The aspect ratios every model that takes one offers (read off the
+ * provider's own rejection). */
 const SEEDANCE_RATIOS = ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
-const SEEDANCE_RESOLUTIONS = ["480p", "720p", "1080p", "4k"];
+
+/**
+ * Image-to-video models take their frame from the source image, so
+ * `aspect_ratio` is not a parameter there at all - the validator answers
+ * "This model does not support aspect_ratio" rather than listing values, and
+ * the catalogs express the same thing by publishing an empty list. Offering a
+ * control for it would be inventing a setting.
+ */
+function takesAspectRatio(modelId: string): boolean {
+  return !modelId.toLowerCase().includes("image-to-video");
+}
 
 /**
  * Probed capabilities, most specific match first. Only ever consulted for a
  * field the catalog left empty, so a family that starts publishing its
  * constraints silently takes over.
+ *
+ * Resolutions vary per model rather than per family, which is easy to get
+ * wrong: 2.0 reaches 4k, 2.0 fast stops at 720p, and 1.5 pro at 1080p.
+ * Durations are every whole second in range, not just the round ones.
  */
 export const PROBED_VIDEO_CONSTRAINTS: ProbedConstraints[] = [
   {
     match: "seedance-1-5-pro",
     durations: secondsRange(4, 12),
     aspectRatios: SEEDANCE_RATIOS,
-    resolutions: SEEDANCE_RESOLUTIONS,
+    resolutions: ["480p", "720p", "1080p"],
+  },
+  {
+    match: "seedance-2-0-fast",
+    durations: secondsRange(4, 15),
+    aspectRatios: SEEDANCE_RATIOS,
+    resolutions: ["480p", "720p"],
   },
   {
     match: "seedance",
     durations: secondsRange(4, 15),
     aspectRatios: SEEDANCE_RATIOS,
-    resolutions: SEEDANCE_RESOLUTIONS,
+    resolutions: ["480p", "720p", "1080p", "4k"],
   },
   // The reference variant takes a shorter list than its image counterpart.
   { match: "wan-2-7-reference-to-video", durations: ["5s", "10s"] },
@@ -82,7 +102,10 @@ export const PROBED_VIDEO_CONSTRAINTS: ProbedConstraints[] = [
 
 export function probedConstraints(modelId: string): ProbedConstraints | undefined {
   const id = modelId.toLowerCase();
-  return PROBED_VIDEO_CONSTRAINTS.find((entry) => id.includes(entry.match));
+  const entry = PROBED_VIDEO_CONSTRAINTS.find((probe) => id.includes(probe.match));
+  if (!entry) return undefined;
+  // The ratios in the table belong to the variants that take one.
+  return takesAspectRatio(modelId) ? entry : { ...entry, aspectRatios: undefined };
 }
 
 // --- learning from the provider's own rejection -----------------------------
@@ -93,6 +116,8 @@ export interface LearnedConstraints {
   resolutions?: string[];
   /** Fields the provider said it required. */
   required?: string[];
+  /** Keys the model refused outright, so a retry does not resend them. */
+  rejectedKeys?: string[];
 }
 
 /** Field name in the error to the constraint it describes. */
@@ -149,8 +174,27 @@ export function parseConstraintError(message: string): LearnedConstraints {
     const prefix = match[2];
     const field = Object.keys(FIELD_TO_CONSTRAINT).find((name) => name.startsWith(prefix));
     const target = field ? FIELD_TO_CONSTRAINT[field] : undefined;
-    if (!target || target === "required" || learned[target]) continue;
+    if (!target || target === "required" || target === "rejectedKeys" || learned[target]) continue;
     learned[target] = values;
+  }
+
+  // The structured shape the operator is moving to, where the validator's own
+  // rows travel as `details.issues` instead of a wrapped string. It is real
+  // JSON, so it is read as JSON rather than pattern-matched.
+  for (const issue of structuredIssues(message)) {
+    const field = typeof issue.param === "string" ? issue.param : issue.path;
+    if (typeof field !== "string") continue;
+    if (issue.code === "unrecognized_keys" || /unrecognized/i.test(String(issue.message ?? ""))) {
+      learned.rejectedKeys = [...new Set([...(learned.rejectedKeys ?? []), field])];
+      continue;
+    }
+    const target = FIELD_TO_CONSTRAINT[field];
+    if (!target || target === "required" || target === "rejectedKeys") continue;
+    const values = issue.accepted ?? issue.expected;
+    if (Array.isArray(values)) {
+      const strings = values.filter((entry): entry is string => typeof entry === "string");
+      if (strings.length > 0 && !learned[target]) learned[target] = strings;
+    }
   }
 
   return learned;
@@ -164,6 +208,50 @@ export function parseConstraintError(message: string): LearnedConstraints {
 export function missingRequiredFields(modelId: string, body: Record<string, unknown>): string[] {
   const required = learnedConstraints(modelId)?.required ?? [];
   return required.filter((field) => body[field] === undefined || body[field] === "");
+}
+
+interface StructuredIssue {
+  param?: unknown;
+  path?: unknown;
+  code?: unknown;
+  message?: unknown;
+  accepted?: unknown;
+  expected?: unknown;
+  keys?: unknown;
+}
+
+/**
+ * The `details.issues` rows of a structured rejection, or nothing when the
+ * message is not one (an older wrapped string, a network error, plain text).
+ * A body that does not parse is not an error here - the regex readers above
+ * still get their turn.
+ */
+function structuredIssues(message: string): StructuredIssue[] {
+  const start = message.indexOf("{");
+  if (start < 0) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(message.slice(start));
+  } catch {
+    return [];
+  }
+  const details = (parsed as { details?: { issues?: unknown } })?.details;
+  const issues = details?.issues;
+  if (!Array.isArray(issues)) return [];
+  const rows: StructuredIssue[] = [];
+  for (const issue of issues) {
+    if (!issue || typeof issue !== "object") continue;
+    const row = issue as StructuredIssue;
+    // `unrecognized_keys` carries its subject in `keys[]` rather than a field.
+    if (Array.isArray(row.keys)) {
+      for (const key of row.keys) {
+        if (typeof key === "string") rows.push({ path: key, code: "unrecognized_keys" });
+      }
+      continue;
+    }
+    rows.push(row);
+  }
+  return rows;
 }
 
 function readLearned(): Record<string, LearnedConstraints> {
@@ -230,7 +318,9 @@ export function effectiveVideoConstraints(model: MediaModel | undefined): VideoC
     fromProbed: string[] | undefined,
   ): string[] | undefined => {
     if (fromLearned?.length) return fromLearned;
-    if (fromPublished?.length) return fromPublished;
+    // A published empty list is a statement, not a gap: the model does not
+    // take that field, so nothing may fill it in.
+    if (fromPublished !== undefined) return fromPublished.length ? fromPublished : undefined;
     return fromProbed?.length ? fromProbed : undefined;
   };
   return {

@@ -95,18 +95,21 @@ export function withVideoConstraintFallbacks(catalog: MediaCatalog): MediaCatalo
       if (!probed) return model;
       const constraints = { ...model.constraints };
       let changed = false;
-      if (!constraints.durations?.length && probed.durations?.length) {
-        constraints.durations = probed.durations;
+      // An absent field means "nobody said"; a published *empty* list means
+      // "this model does not take that field" (the catalogs' own convention
+      // for, say, aspect_ratio on an image-to-video model). Only the first is
+      // a hole to fill - overriding the second would invent a control.
+      const fill = (
+        current: string[] | undefined,
+        probedValues: string[] | undefined,
+      ): string[] | undefined => {
+        if (current !== undefined || !probedValues?.length) return current;
         changed = true;
-      }
-      if (!constraints.aspect_ratios?.length && probed.aspectRatios?.length) {
-        constraints.aspect_ratios = probed.aspectRatios;
-        changed = true;
-      }
-      if (!constraints.resolutions?.length && probed.resolutions?.length) {
-        constraints.resolutions = probed.resolutions;
-        changed = true;
-      }
+        return probedValues;
+      };
+      constraints.durations = fill(constraints.durations, probed.durations);
+      constraints.aspect_ratios = fill(constraints.aspect_ratios, probed.aspectRatios);
+      constraints.resolutions = fill(constraints.resolutions, probed.resolutions);
       return changed ? { ...model, constraints } : model;
     }),
   };

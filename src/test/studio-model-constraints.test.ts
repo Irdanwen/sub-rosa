@@ -125,13 +125,14 @@ describe("learning from a rejection", () => {
   it("falls back to published, then probed, field by field", () => {
     const constraints = effectiveVideoConstraints(
       model({
-        id: "seedance-2-0-image-to-video",
-        mediaType: "imageToVideo",
+        id: "seedance-2-0-reference-to-video",
+        mediaType: "referenceToVideo",
         constraints: { durations: ["7s"] },
       }),
     );
     expect(constraints.durations).toEqual(["7s"]);
     expect(constraints.aspect_ratios).toContain("16:9");
+    expect(constraints.resolutions).toContain("1080p");
     expect(effectiveVideoConstraints(undefined)).toEqual({});
   });
 });
@@ -191,5 +192,63 @@ describe("required-field guard", () => {
     expect(missingRequiredFields("seedance-2-0-reference-to-video", { aspect_ratio: "" })).toEqual([
       "aspect_ratio",
     ]);
+  });
+});
+
+describe("what the provider says a model does not take", () => {
+  it("never offers an aspect ratio on an image-to-video model", () => {
+    // Verified against the validator, which answers "This model does not
+    // support aspect_ratio" there rather than listing values.
+    expect(probedConstraints("seedance-2-0-image-to-video")?.aspectRatios).toBeUndefined();
+    expect(probedConstraints("seedance-1-5-pro-image-to-video")?.aspectRatios).toBeUndefined();
+    // Its siblings still take one.
+    expect(probedConstraints("seedance-2-0-reference-to-video")?.aspectRatios).toContain("21:9");
+    expect(probedConstraints("seedance-2-0-text-to-video")?.aspectRatios).toContain("9:16");
+  });
+
+  it("keeps resolutions per model, not per family", () => {
+    expect(probedConstraints("seedance-2-0-text-to-video")?.resolutions).toContain("4k");
+    // 2.0 fast stops at 720p and 1.5 pro at 1080p; a family-wide list would
+    // offer resolutions the model refuses.
+    expect(probedConstraints("seedance-2-0-fast-text-to-video")?.resolutions).toEqual([
+      "480p",
+      "720p",
+    ]);
+    expect(probedConstraints("seedance-1-5-pro-text-to-video")?.resolutions).not.toContain("4k");
+  });
+
+  it("treats a published empty list as 'no such control', not as a gap", () => {
+    const constraints = effectiveVideoConstraints(
+      model({
+        id: "some-image-to-video",
+        mediaType: "imageToVideo",
+        constraints: { aspect_ratios: [], durations: ["5s"] },
+      }),
+    );
+    expect(constraints.aspect_ratios).toBeUndefined();
+    expect(constraints.durations).toEqual(["5s"]);
+  });
+});
+
+describe("the structured error shape", () => {
+  const STRUCTURED =
+    '{"code":"VIDEO_PARAM_REJECTED","details":{"issues":[{"param":"duration","value":"7s","accepted":["5s","10s"]},{"param":"aspect_ratio","value":"21:9","accepted":["16:9","9:16","1:1"]}]}}';
+
+  it("learns from the operator's own rows, not just the wrapped string", () => {
+    const learned = parseConstraintError(STRUCTURED);
+    expect(learned.durations).toEqual(["5s", "10s"]);
+    expect(learned.aspectRatios).toEqual(["16:9", "9:16", "1:1"]);
+  });
+
+  it("reads the {path, expected} spelling too", () => {
+    const other =
+      '{"details":{"issues":[{"path":"aspect_ratio","message":"Invalid enum value","expected":["16:9","9:16"]}]}}';
+    expect(parseConstraintError(other).aspectRatios).toEqual(["16:9", "9:16"]);
+  });
+
+  it("records a key the model refuses outright", () => {
+    const refused =
+      '{"details":{"issues":[{"code":"unrecognized_keys","path":"seed","message":"Unrecognized key"}]}}';
+    expect(parseConstraintError(refused).rejectedKeys).toEqual(["seed"]);
   });
 });
