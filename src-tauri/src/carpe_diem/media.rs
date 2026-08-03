@@ -347,8 +347,14 @@ fn merge_carpe_diem_catalog(
                 privacy: string_field(entry, "privacy"),
                 offline: false,
                 voices: string_list(entry.get("voices")),
-                constraints: spec
-                    .and_then(|spec| spec.get("constraints"))
+                // The operator publishes its own constraints since 2026-08-03,
+                // measured against the provider's validator, and they cover
+                // families Venice's public catalogue does not list at all.
+                // They win; the Venice spec stays the fallback for anything
+                // the operator has not described.
+                constraints: entry
+                    .get("constraints")
+                    .or_else(|| spec.and_then(|spec| spec.get("constraints")))
                     .filter(|value| !value.is_null())
                     .cloned(),
                 model_sets: string_list(spec.and_then(|spec| spec.get("model_sets"))),
@@ -980,6 +986,59 @@ mod tests {
         // Ports are ignored on purpose: the host is what decides key custody.
         assert!(same_host(base, "https://carpe-diem.xyz:443/files/a.mp4"));
         assert!(!same_host(base, "https://cdn.example.com/a.mp4"));
+    }
+
+    #[test]
+    fn operator_constraints_win_over_the_venice_spec() {
+        // The operator measures its own constraints against the provider's
+        // validator and covers families Venice does not publish at all, so its
+        // values are the ones to follow when both are present.
+        let primary = json!({ "data": [
+            {
+                "id": "seedance-2-0-image-to-video",
+                "carpe_diem_type": "imageToVideo",
+                "constraints": {
+                    "durations": ["4s", "15s"],
+                    // Empty means "this model has no such control", which is
+                    // not the same as saying nothing.
+                    "aspect_ratios": [],
+                    "resolutions": ["4k", "720p"]
+                }
+            },
+            { "id": "kling-2.5-turbo-pro-text-to-video", "carpe_diem_type": "video" }
+        ]});
+        let venice = json!({ "data": [
+            {
+                "id": "seedance-2-0-image-to-video",
+                "type": "video",
+                "model_spec": { "constraints": { "durations": ["5s"], "aspect_ratios": ["16:9"] } }
+            },
+            {
+                "id": "kling-2.5-turbo-pro-text-to-video",
+                "type": "video",
+                "model_spec": { "constraints": { "durations": ["5s", "10s"] } }
+            }
+        ]});
+
+        let models = merge_carpe_diem_catalog(&primary, Some(&venice), None);
+        let seedance = models
+            .iter()
+            .find(|model| model.id == "seedance-2-0-image-to-video")
+            .expect("seedance present");
+        let constraints = seedance.constraints.as_ref().expect("constraints kept");
+        assert_eq!(constraints["durations"], json!(["4s", "15s"]));
+        assert_eq!(constraints["aspect_ratios"], json!([]));
+        assert_eq!(constraints["resolutions"], json!(["4k", "720p"]));
+
+        // Nothing published by the operator: the Venice spec still applies.
+        let kling = models
+            .iter()
+            .find(|model| model.id == "kling-2.5-turbo-pro-text-to-video")
+            .expect("kling present");
+        assert_eq!(
+            kling.constraints.as_ref().expect("venice constraints")["durations"],
+            json!(["5s", "10s"])
+        );
     }
 
     #[test]
