@@ -9,7 +9,21 @@ const PREVIEW_MAX_EDGE = 1024;
 const PREVIEW_QUALITY = 0.85;
 
 export async function readFilmRef(file: File, role: FilmRefRole): Promise<FilmBriefRef> {
-  const dataUri = await readAsDataUri(file);
+  return buildFilmRef(await readAsDataUri(file), file.name || "reference.png", role);
+}
+
+/**
+ * The same intake for an image already in hand as a data URI - a pick from the
+ * studio library rather than a file the user just chose. Shares the body with
+ * {@link readFilmRef} so a library reference and an uploaded one are the same
+ * thing downstream: same downscaled preview for the improver, same untouched
+ * original for the upload.
+ */
+export async function buildFilmRef(
+  dataUri: string,
+  fileName: string,
+  role: FilmRefRole,
+): Promise<FilmBriefRef> {
   const base64Data = dataUri.replace(/^data:[^,]*,/, "");
   // Downscaling is best-effort: a decode failure falls back to the original
   // (the Rust side caps oversized previews instead of failing the improve).
@@ -18,7 +32,7 @@ export async function readFilmRef(file: File, role: FilmRefRole): Promise<FilmBr
     id: crypto.randomUUID(),
     role,
     label: "",
-    fileName: file.name || "reference.png",
+    fileName: fileName || "reference.png",
     base64Data,
     previewDataUri,
   };

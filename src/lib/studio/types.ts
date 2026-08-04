@@ -104,6 +104,16 @@ export interface StudioArtifact {
   /** Where in the parent the handoff frame was taken, in seconds. Assembly
    * trims the parent's tail to this point so the seam is not replayed. */
   parentHandoffSeconds?: number;
+  /** Frame capture: the clip this still was read out of, and where in it.
+   *
+   * Deliberately not `parentId`/`parentHandoffSeconds`, which mean "this shot
+   * continues that one" and are what `chain.ts` walks to rebuild a chain and
+   * count its branches. A capture is an image, not a shot, and must never join
+   * a chain - reusing those fields would work only for as long as every caller
+   * kept filtering the list down to videos first, an invariant `chain.ts`
+   * cannot see or enforce. */
+  sourceArtifactId?: string;
+  sourceTimeSeconds?: number;
   /** What this render was quoted at, in credits. An estimate the backend
    * priced before rendering, not a receipt. */
   costCredits?: number;

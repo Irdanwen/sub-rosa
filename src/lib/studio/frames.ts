@@ -41,6 +41,33 @@ export const HANDOFF_SPREAD_SECONDS = 0.4;
 /** One frame at 25 fps: the floor for "not the very last frame". */
 const FRAME_SECONDS = 0.04;
 
+/**
+ * How an extracted frame is encoded, which is not one question but two.
+ *
+ * `payload` is what every generation path needs: a JPEG downscaled under the
+ * proxy's body cap, because the frame is about to ride inside a request.
+ *
+ * `capture` is what a frame kept for rework needs: the clip's native
+ * resolution, PNG, no downscale. The file is going to the gallery, to disk,
+ * and possibly into another editor - handing back a quietly downscaled JPEG
+ * would be a lossy surprise the user cannot undo, and the size ceilings that
+ * justify it do not apply to a file that is never sent anywhere.
+ */
+export type FrameEncoding = "payload" | "capture";
+
+/**
+ * The last position in a clip that reliably decodes to a picture.
+ *
+ * Seeking to `duration` itself lands past the final decoded frame on most
+ * decoders: the canvas reads back black, and some never fire `seeked` at all.
+ * So "the last frame" always means one frame short of the end - exported
+ * because the capture UI has to be able to say so rather than let the slider
+ * promise a position that would come back empty.
+ */
+export function lastReadableTime(durationSeconds: number): number {
+  return Math.max(0, durationSeconds - FRAME_SECONDS);
+}
+
 /** Longest side of an extracted frame. Above this the payload starts tripping
  * the backend's request-size ceilings for no visible gain (the video models
  * top out at 1080p anyway). */
@@ -200,22 +227,30 @@ function scoreCurrentFrame(video: HTMLVideoElement): number {
   }
 }
 
-/** The frame currently displayed, encoded for sending. */
-async function encodeCurrentFrame(video: HTMLVideoElement): Promise<string> {
+/** The frame currently displayed, encoded for its destination. */
+async function encodeCurrentFrame(
+  video: HTMLVideoElement,
+  encoding: FrameEncoding,
+): Promise<string> {
   const canvas = drawTo(video, video.videoWidth, video.videoHeight);
+  if (encoding === "capture") return canvas.toDataURL("image/png");
   const raw = canvas.toDataURL("image/jpeg", 0.94);
   return downscaleDataUrl(raw, { maxEdge: FRAME_MAX_EDGE, maxBytes: FRAME_MAX_BYTES });
 }
 
 /** Grab one specific frame, for when the automatic pick is not the wanted one. */
-export async function extractFrameAt(src: string, timeSeconds: number): Promise<ExtractedFrame> {
+export async function extractFrameAt(
+  src: string,
+  timeSeconds: number,
+  { encoding = "payload" }: { encoding?: FrameEncoding } = {},
+): Promise<ExtractedFrame> {
   const video = await loadVideoElement(src);
   try {
     const duration = Number.isFinite(video.duration) ? video.duration : 0;
-    const time = Math.max(0, Math.min(timeSeconds, Math.max(0, duration - FRAME_SECONDS)));
+    const time = Math.max(0, Math.min(timeSeconds, lastReadableTime(duration)));
     await seekVideo(video, time);
     return {
-      dataUrl: await encodeCurrentFrame(video),
+      dataUrl: await encodeCurrentFrame(video, encoding),
       timeSeconds: time,
       durationSeconds: duration,
       sharpness: scoreCurrentFrame(video),
@@ -248,7 +283,7 @@ export async function extractHandoffFrame(
     const pick = best ?? { time: times[0] ?? 0, sharpness: 0 };
     await seekVideo(video, pick.time);
     return {
-      dataUrl: await encodeCurrentFrame(video),
+      dataUrl: await encodeCurrentFrame(video, "payload"),
       timeSeconds: pick.time,
       durationSeconds: duration,
       sharpness: pick.sharpness,

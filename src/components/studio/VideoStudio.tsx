@@ -61,6 +61,7 @@ import { EmptyState } from "../ui/EmptyState";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { Select } from "../ui/Select";
 import { Spinner } from "../ui/Spinner";
+import { GalleryPicker } from "./GalleryPicker";
 import { GalleryStrip } from "./GalleryStrip";
 import { GenerationLayout } from "./GenerationLayout";
 import { effectiveOption, formatSeconds, PillGroup, SliderField, StudioField } from "./controls";
@@ -165,6 +166,9 @@ export function VideoStudio({
   const [openingFrame, setOpeningFrame] = useState("");
   const [endFrame, setEndFrame] = useState("");
   const [references, setReferences] = useState<string[]>([]);
+  // Which image slot the gallery picker is filling, if any. One picker serves
+  // all three: they differ only in what they do with what comes back.
+  const [picking, setPicking] = useState<"opening" | "end" | "reference" | undefined>(undefined);
   // Video direction: one source clip (upload or gallery) + the upscale factor
   // for the upscaler models.
   const [sourceVideo, setSourceVideo] = useState("");
@@ -683,16 +687,25 @@ export function VideoStudio({
               ) : null}
               {handoffNote ? <p className="studio-field-note">{handoffNote}</p> : null}
               {handoffError ? <p className="studio-error">{handoffError}</p> : null}
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => {
-                  setHandoff(undefined);
-                  openingInputRef.current?.click();
-                }}
-              >
-                {openingFrame ? "Replace image" : "Choose an image"}
-              </button>
+              <div className="studio-upload-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setHandoff(undefined);
+                    openingInputRef.current?.click();
+                  }}
+                >
+                  {openingFrame ? "Replace image" : "Choose an image"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setPicking("opening")}
+                >
+                  From the gallery
+                </button>
+              </div>
               <input
                 ref={openingInputRef}
                 type="file"
@@ -752,13 +765,20 @@ export function VideoStudio({
               {endFrame ? (
                 <img src={endFrame} alt="End frame" className="studio-upload-preview" />
               ) : null}
-              <div className="studio-card-actions">
+              <div className="studio-upload-actions">
                 <button
                   type="button"
                   className="btn btn-secondary"
                   onClick={() => endInputRef.current?.click()}
                 >
                   {endFrame ? "Replace image" : "Add an end frame"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setPicking("end")}
+                >
+                  From the gallery
                 </button>
                 {endFrame ? (
                   <button
@@ -813,13 +833,22 @@ export function VideoStudio({
               </div>
             ) : null}
             {references.length < MAX_VIDEO_REFERENCES ? (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => referenceInputRef.current?.click()}
-              >
-                {references.length > 0 ? "Add another photo" : "Choose a photo"}
-              </button>
+              <div className="studio-upload-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => referenceInputRef.current?.click()}
+                >
+                  {references.length > 0 ? "Add another photo" : "Choose a photo"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setPicking("reference")}
+                >
+                  From the gallery
+                </button>
+              </div>
             ) : null}
             <input
               ref={referenceInputRef}
@@ -1005,6 +1034,30 @@ export function VideoStudio({
 
   return (
     <GenerationLayout controls={controls} action={action}>
+      {picking ? (
+        <GalleryPicker
+          onClose={() => setPicking(undefined)}
+          description={
+            picking === "reference"
+              ? "Pick an image you have already produced. It steers style and subject, alongside the opening frame."
+              : "Pick an image you have already produced."
+          }
+          onPick={(dataUri) => {
+            if (picking === "opening") {
+              // Same reset the file input does: the handoff describes a frame
+              // read out of a clip, and it would otherwise keep captioning a
+              // picture it has nothing to do with - and overwrite it on the
+              // next drag of the handoff slider.
+              setHandoff(undefined);
+              setOpeningFrame(dataUri);
+            } else if (picking === "end") {
+              setEndFrame(dataUri);
+            } else {
+              setReferences((current) => [...current, dataUri].slice(0, MAX_VIDEO_REFERENCES));
+            }
+          }}
+        />
+      ) : null}
       {queue.jobs.map((entry) => (
         <div key={entry.job.id} className="studio-resume" data-phase={entry.phase}>
           <span>

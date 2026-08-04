@@ -5,6 +5,7 @@ import {
   frameSampleTimes,
   HANDOFF_LEAD_SECONDS,
   laplacianVariance,
+  lastReadableTime,
   parseAspectRatio,
   stripContinuationPrefix,
 } from "../lib/studio/frames";
@@ -62,6 +63,20 @@ describe("handoff sample times", () => {
   it("never returns the same timestamp twice", () => {
     const times = frameSampleTimes(10, { samples: 40, spreadSeconds: 0.05 });
     expect(new Set(times).size).toBe(times.length);
+  });
+});
+
+describe("last readable position", () => {
+  it("stops short of the end rather than landing on it", () => {
+    // Seeking to `duration` itself decodes past the final frame: a capture UI
+    // that let the slider reach it would read back black.
+    expect(lastReadableTime(5)).toBeLessThan(5);
+    expect(lastReadableTime(5)).toBeGreaterThan(4.9);
+  });
+
+  it("never answers a negative position for a degenerate duration", () => {
+    expect(lastReadableTime(0)).toBe(0);
+    expect(lastReadableTime(0.01)).toBe(0);
   });
 });
 

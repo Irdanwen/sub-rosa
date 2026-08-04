@@ -287,6 +287,27 @@ subject and lighting do not drift over generations that each only ever see
 their immediate predecessor. Rides the reference-to-video contract.
 _Avoid_: keyframe, style reference (too generic).
 
+### Studio gallery (fork)
+
+**Gallery**:
+Every file the Studio produced, on disk, indexed in localStorage and reconciled
+against the disk on load. It is also the exchange format between Studio
+surfaces: anything produced can be pulled into any image input, and anything
+worth keeping is written into it rather than held in a form's state. See
+[ADR-0020](docs/adr/0020-the-gallery-is-the-studio-exchange-format.md).
+_Avoid_: library, assets, media pool, uploads (nothing is uploaded); "the
+gallery" is the word in the code, the desktop UI, and the mobile sheet alike.
+
+**Captured still**:
+An image the user pulls out of a generated clip and keeps: written to the
+gallery as an ordinary image artifact, at the clip's native resolution, so it
+exports, edits, and serves as a reference like any other. Chosen rather than
+computed — the scrubber runs the whole clip and reaches the last readable
+position if that is what is wanted — and it records `sourceArtifactId` /
+`sourceTimeSeconds`, never a chain's parent link.
+_Avoid_: handoff frame (that one is computed and feeds a render), screenshot,
+thumbnail, grab.
+
 ### AI work & billing
 
 **Dictation**:

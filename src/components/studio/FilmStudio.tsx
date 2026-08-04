@@ -25,7 +25,7 @@ import {
   parseStatus,
   parseUploadedRef,
 } from "../../lib/films";
-import { readFilmRef } from "../../lib/films/refs";
+import { buildFilmRef, readFilmRef } from "../../lib/films/refs";
 import { registerDownloadedArtifact } from "../../lib/studio/artifacts";
 import {
   videomakerCancelRun,
@@ -47,6 +47,7 @@ import { Spinner } from "../ui/Spinner";
 import { Switch } from "../ui/Switch";
 import { FilmDirectorPanel } from "./FilmDirectorPanel";
 import { FilmProduceControl } from "./FilmProduceControl";
+import { GalleryPicker } from "./GalleryPicker";
 import { GalleryStrip } from "./GalleryStrip";
 import { PillGroup, StudioField } from "./controls";
 
@@ -110,6 +111,7 @@ export function FilmStudio() {
   // Reference images picked for the next film (uploaded at produce time —
   // the studio's upload endpoint needs the project to exist first).
   const [refs, setRefs] = useState<FilmBriefRef[]>([]);
+  const [pickingRef, setPickingRef] = useState(false);
   const refInputRef = useRef<HTMLInputElement | null>(null);
   // AI brief development: the improved text lands in a preview the user
   // explicitly accepts — never a silent overwrite of their draft.
@@ -253,6 +255,16 @@ export function FilmStudio() {
         Array.from(files).map((file) => readFilmRef(file, "character")),
       );
       setRefs((current) => [...current, ...picked].slice(0, MAX_REFS));
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
+  }, []);
+
+  const addLibraryRef = useCallback(async (dataUri: string, fileName: string) => {
+    setError(null);
+    try {
+      const picked = await buildFilmRef(dataUri, fileName, "character");
+      setRefs((current) => [...current, picked].slice(0, MAX_REFS));
     } catch (cause) {
       setError(errorMessage(cause));
     }
@@ -580,6 +592,13 @@ export function FilmStudio() {
 
   return (
     <div className="studio-generation film-studio">
+      {pickingRef ? (
+        <GalleryPicker
+          onClose={() => setPickingRef(false)}
+          description="Pick an image you have already produced. Set its role once it is in the list."
+          onPick={(dataUri, artifact) => void addLibraryRef(dataUri, artifact.fileName)}
+        />
+      ) : null}
       <div className="studio-controls">
         <div className="studio-controls-fields">
           <StudioField label="Title">
@@ -692,14 +711,24 @@ export function FilmStudio() {
                 </div>
               ))}
               {refs.length < MAX_REFS ? (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={creating}
-                  onClick={() => refInputRef.current?.click()}
-                >
-                  Add an image
-                </button>
+                <div className="studio-upload-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={creating}
+                    onClick={() => refInputRef.current?.click()}
+                  >
+                    Add an image
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={creating}
+                    onClick={() => setPickingRef(true)}
+                  >
+                    From the gallery
+                  </button>
+                </div>
               ) : null}
               <input
                 ref={refInputRef}

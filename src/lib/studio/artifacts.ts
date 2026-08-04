@@ -52,6 +52,10 @@ interface ArtifactMetadata {
    * render that finished while the app was closed. */
   parentId?: string;
   parentHandoffSeconds?: number;
+  /** Frame capture provenance: the clip the still came out of, and where in
+   * it. Kept apart from the chain fields above - see `StudioArtifact`. */
+  sourceArtifactId?: string;
+  sourceTimeSeconds?: number;
   costCredits?: number;
 }
 
@@ -67,6 +71,8 @@ function register(file: ArtifactFile, metadata: ArtifactMetadata): StudioArtifac
     createdAt: Date.now(),
     parentId: metadata.parentId,
     parentHandoffSeconds: metadata.parentHandoffSeconds,
+    sourceArtifactId: metadata.sourceArtifactId,
+    sourceTimeSeconds: metadata.sourceTimeSeconds,
     costCredits: metadata.costCredits,
   };
   writeIndex([artifact, ...readIndex().filter((entry) => entry.id !== artifact.id)]);

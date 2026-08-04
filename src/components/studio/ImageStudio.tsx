@@ -5,7 +5,8 @@
 
 import { IconImagesSparkle } from "central-icons/IconImagesSparkle";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { saveArtifactFromBase64, readArtifactBase64 } from "../../lib/studio/artifacts";
+import { artifactDataUrl } from "../../lib/artifact-media";
+import { saveArtifactFromBase64 } from "../../lib/studio/artifacts";
 import {
   defaultEditModel,
   estimateCostCredits,
@@ -23,6 +24,7 @@ import { SegmentedControl } from "../ui/SegmentedControl";
 import { Select } from "../ui/Select";
 import { Spinner } from "../ui/Spinner";
 import { Switch } from "../ui/Switch";
+import { GalleryPicker } from "./GalleryPicker";
 import { GalleryStrip } from "./GalleryStrip";
 import { GenerationLayout } from "./GenerationLayout";
 import {
@@ -79,6 +81,9 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
   const [upscaleEnhance, setUpscaleEnhance] = useState(false);
   const editInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Which slot the gallery picker is filling, if any. One picker serves both:
+  // the slots differ only in what they do with the image they get back.
+  const [picking, setPicking] = useState<"compose" | "source" | undefined>(undefined);
 
   // Style presets are a Venice nicety the backend may not expose: hide the
   // control when the request fails rather than surfacing an error.
@@ -308,10 +313,11 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
   }, []);
 
   const sendToEdit = useCallback(async (artifact: StudioArtifact) => {
-    const base64 = await readArtifactBase64(artifact);
-    setEditSources((current) =>
-      [...current, `data:image/png;base64,${base64}`].slice(0, MAX_COMPOSE_IMAGES),
-    );
+    // Through the media loader, which derives the mime from the file: this
+    // used to hardcode a PNG prefix, so a jpeg or webp gallery entry reached
+    // the edit endpoint mislabelled.
+    const dataUri = await artifactDataUrl(artifact);
+    setEditSources((current) => [...current, dataUri].slice(0, MAX_COMPOSE_IMAGES));
     setMode("edit");
   }, []);
 
@@ -539,13 +545,22 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
                 </div>
               ) : null}
               {editSources.length < MAX_COMPOSE_IMAGES ? (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => editInputRef.current?.click()}
-                >
-                  {editSources.length > 0 ? "Add another image" : "Choose an image"}
-                </button>
+                <div className="studio-upload-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => editInputRef.current?.click()}
+                  >
+                    {editSources.length > 0 ? "Add another image" : "Choose an image"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setPicking("compose")}
+                  >
+                    From the gallery
+                  </button>
+                </div>
               ) : null}
               <input
                 ref={editInputRef}
@@ -595,13 +610,22 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
               {sourceDataUri ? (
                 <img src={sourceDataUri} alt="Source" className="studio-upload-preview" />
               ) : null}
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {sourceDataUri ? "Replace image" : "Choose an image"}
-              </button>
+              <div className="studio-upload-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {sourceDataUri ? "Replace image" : "Choose an image"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setPicking("source")}
+                >
+                  From the gallery
+                </button>
+              </div>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -670,6 +694,23 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
 
   return (
     <GenerationLayout controls={controls} action={action}>
+      {picking ? (
+        <GalleryPicker
+          onClose={() => setPicking(undefined)}
+          description={
+            picking === "compose"
+              ? "Pick an image you have already produced. It joins the sources in the order you add them."
+              : "Pick an image you have already produced."
+          }
+          onPick={(dataUri) => {
+            if (picking === "compose") {
+              setEditSources((current) => [...current, dataUri].slice(0, MAX_COMPOSE_IMAGES));
+            } else {
+              setSourceDataUri(dataUri);
+            }
+          }}
+        />
+      ) : null}
       {error ? <p className="studio-error">{error}</p> : null}
       {busy && isGenerate ? (
         <div className="studio-image-grid" aria-hidden>
