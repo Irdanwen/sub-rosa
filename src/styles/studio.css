@@ -620,6 +620,22 @@
   object-fit: cover;
 }
 
+/* The position the prompt refers to ("the jacket in image 2"): the request
+ * sends the sources as an ordered array with no labels, so the order on
+ * screen is the only handle the user has on them. Shown from two sources up. */
+.studio-edit-source-index {
+  position: absolute;
+  left: var(--sp-1);
+  bottom: var(--sp-1);
+  padding: 1px 5px;
+  border-radius: var(--r-sm);
+  color: white;
+  background: rgba(0, 0, 0, 0.6);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  pointer-events: none;
+}
+
 .studio-edit-source-remove {
   position: absolute;
   top: var(--sp-1);
@@ -1087,6 +1103,13 @@
   gap: var(--sp-2);
   flex: 1;
   min-width: 0;
+}
+
+/* Verbatim the name the brief and the crew manifest use for this image, so
+ * the user can write "Reference image 2" and mean the right one. */
+.film-ref-index {
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
 }
 
 .film-brief-actions {

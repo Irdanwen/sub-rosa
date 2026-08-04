@@ -511,7 +511,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
             label="Source images"
             hint={
               editSources.length > 1
-                ? `Combining ${editSources.length}`
+                ? `Combining ${editSources.length}, in this order`
                 : `Add up to ${MAX_COMPOSE_IMAGES} to combine`
             }
           >
@@ -521,6 +521,9 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
                   {editSources.map((source, index) => (
                     <div key={`${index}-${source.slice(-24)}`} className="studio-edit-source">
                       <img src={source} alt={`Source ${index + 1}`} />
+                      {editSources.length > 1 ? (
+                        <span className="studio-edit-source-index">Image {index + 1}</span>
+                      ) : null}
                       <button
                         type="button"
                         className="studio-edit-source-remove"
@@ -577,7 +580,9 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
               rows={3}
               value={editPrompt}
               placeholder={
-                editSources.length > 1 ? "Describe how to combine them" : "Describe the change"
+                editSources.length > 1
+                  ? "Describe how to combine them, e.g. the jacket from image 2 on the person in image 1"
+                  : "Describe the change"
               }
               onChange={(event) => setEditPrompt(event.target.value)}
             />

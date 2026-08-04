@@ -776,7 +776,7 @@ function ImagePanel({
               prepare={prepareEditReference}
               hint={
                 references.length > 1
-                  ? `Combining ${references.length} photos into one (up to ${MAX_COMPOSE_IMAGES}).`
+                  ? `Combining ${references.length} photos into one (up to ${MAX_COMPOSE_IMAGES}). The prompt can call them image 1, image 2, in the order shown.`
                   : references.length === 1
                     ? "The prompt describes the edit. Add another photo to combine them."
                     : "Add a photo to edit, or two to three to combine."
@@ -2749,7 +2749,14 @@ function ReferencePicker({
               onClick={() => onChange(references.filter((_, i) => i !== index))}
             >
               <img src={reference} alt={`Reference ${index + 1}`} />
-              <span aria-hidden>x</span>
+              {references.length > 1 ? (
+                <span className="mobile-reference-index" aria-hidden>
+                  {index + 1}
+                </span>
+              ) : null}
+              <span className="mobile-reference-remove" aria-hidden>
+                x
+              </span>
             </button>
           ))}
         </div>

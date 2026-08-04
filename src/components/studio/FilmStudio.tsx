@@ -655,13 +655,14 @@ export function FilmStudio() {
           )}
           <StudioField
             label="Reference images"
-            hint="Up to 4 images the studio anchors characters, locations, or the visual style on."
+            hint="Up to 4 images the studio anchors characters, locations, or the visual style on. The brief and the crew call them by the number shown on each card."
           >
             <div className="film-refs">
               {refs.map((ref, index) => (
                 <div key={ref.id} className="film-ref-card">
                   <img src={ref.previewDataUri} alt={ref.fileName} className="film-ref-thumb" />
                   <div className="film-ref-meta">
+                    <span className="film-ref-index">Reference image {index + 1}</span>
                     <PillGroup
                       options={FILM_REF_ROLES.map((role) => ({
                         value: role,

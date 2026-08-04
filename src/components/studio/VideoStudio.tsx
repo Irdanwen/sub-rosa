@@ -795,6 +795,9 @@ export function VideoStudio({
                 {references.map((reference, index) => (
                   <div key={`${index}-${reference.slice(-24)}`} className="studio-edit-source">
                     <img src={reference} alt={`Reference ${index + 1}`} />
+                    {references.length > 1 ? (
+                      <span className="studio-edit-source-index">Photo {index + 1}</span>
+                    ) : null}
                     <button
                       type="button"
                       className="studio-edit-source-remove"
