@@ -106,21 +106,8 @@ pub async fn videomaker_improve_brief(request: ImproveBriefRequest) -> Result<St
         }
     }
     let refs: Vec<&BriefRef> = request.refs.iter().take(MAX_REFS).collect();
-    for (index, reference) in refs.iter().enumerate() {
-        let label = reference
-            .label
-            .as_deref()
-            .map(str::trim)
-            .filter(|label| !label.is_empty())
-            .map(|label| format!(" \"{label}\""))
-            .unwrap_or_default();
-        context_lines.push(format!(
-            "Reference image {} ({}{}): attached",
-            index + 1,
-            reference.role.trim(),
-            label
-        ));
-    }
+    let (ref_lines, previews) = ref_context(&refs);
+    context_lines.extend(ref_lines);
     let system = system_prompt(request.mode.as_deref());
     let draft_heading = if matches!(request.mode.as_deref(), Some("direction")) {
         "Draft note to the crew"
@@ -129,10 +116,8 @@ pub async fn videomaker_improve_brief(request: ImproveBriefRequest) -> Result<St
     };
     let user_text = format!("{}\n\n{draft_heading}:\n{draft}", context_lines.join("\n"));
 
-    let image_parts: Vec<Value> = refs
+    let image_parts: Vec<Value> = previews
         .iter()
-        .filter_map(|reference| reference.data_uri.as_deref())
-        .filter(|uri| uri.starts_with("data:image/") && uri.len() <= MAX_REF_PREVIEW_BYTES)
         .map(|uri| json!({ "type": "image_url", "image_url": { "url": uri } }))
         .collect();
 
@@ -155,6 +140,62 @@ pub async fn videomaker_improve_brief(request: ImproveBriefRequest) -> Result<St
         { "role": "user", "content": user_text }
     ]))
     .await
+}
+
+/// The preview that will actually ride with the request, if any. The frontend
+/// downscales every pick before calling, so a missing or oversized data URI is
+/// the exception, not the rule.
+fn ref_preview(reference: &BriefRef) -> Option<&str> {
+    reference
+        .data_uri
+        .as_deref()
+        .filter(|uri| uri.starts_with("data:image/") && uri.len() <= MAX_REF_PREVIEW_BYTES)
+}
+
+/// Context lines naming the picked references, plus the previews to attach in
+/// the same order.
+///
+/// The number is the reference's position in the create form — the same one
+/// `buildRefsManifest` hands the crew and the same one the form now prints on
+/// each card. The three have to agree, or "Reference image 2" in the improved
+/// brief anchors a different image than the crew resolves later. So a
+/// reference whose preview cannot ride along keeps its number and is marked
+/// unattached rather than renumbering the ones after it; the trailing note
+/// tells the model how to line the images it did receive up with the list.
+fn ref_context<'a>(refs: &[&'a BriefRef]) -> (Vec<String>, Vec<&'a str>) {
+    let mut lines: Vec<String> = Vec::with_capacity(refs.len());
+    let mut previews: Vec<&'a str> = Vec::with_capacity(refs.len());
+    for (index, reference) in refs.iter().copied().enumerate() {
+        let label = reference
+            .label
+            .as_deref()
+            .map(str::trim)
+            .filter(|label| !label.is_empty())
+            .map(|label| format!(" \"{label}\""))
+            .unwrap_or_default();
+        let preview = ref_preview(reference);
+        lines.push(format!(
+            "Reference image {} ({}{}): {}",
+            index + 1,
+            reference.role.trim(),
+            label,
+            if preview.is_some() {
+                "attached"
+            } else {
+                "not attached, no image to look at"
+            }
+        ));
+        if let Some(preview) = preview {
+            previews.push(preview);
+        }
+    }
+    if !previews.is_empty() && previews.len() < refs.len() {
+        lines.push(
+            "The attached images come in that order, skipping the references marked not attached."
+                .to_string(),
+        );
+    }
+    (lines, previews)
 }
 
 /// Unknown modes fall back to the full brief treatment (the safer, richer
@@ -220,6 +261,65 @@ fn clean_brief(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn brief_ref(role: &str, label: Option<&str>, data_uri: Option<String>) -> BriefRef {
+        BriefRef {
+            role: role.to_string(),
+            label: label.map(str::to_string),
+            data_uri,
+        }
+    }
+
+    #[test]
+    fn ref_context_numbers_by_form_position_even_when_a_preview_is_dropped() {
+        let oversized = format!(
+            "data:image/png;base64,{}",
+            "A".repeat(MAX_REF_PREVIEW_BYTES)
+        );
+        let refs = [
+            brief_ref("character", Some("Marc"), Some(oversized)),
+            brief_ref(
+                "location",
+                None,
+                Some("data:image/png;base64,ok".to_string()),
+            ),
+            brief_ref("style", Some(" "), None),
+        ];
+        let borrowed: Vec<&BriefRef> = refs.iter().collect();
+        let (lines, previews) = ref_context(&borrowed);
+
+        // The location keeps number 2, the number the crew manifest and the
+        // create form use for it, instead of sliding up to 1.
+        assert_eq!(
+            lines[0],
+            "Reference image 1 (character \"Marc\"): not attached, no image to look at"
+        );
+        assert_eq!(lines[1], "Reference image 2 (location): attached");
+        assert_eq!(
+            lines[2],
+            "Reference image 3 (style): not attached, no image to look at"
+        );
+        assert!(lines[3].starts_with("The attached images come in that order"));
+        assert_eq!(previews, vec!["data:image/png;base64,ok"]);
+    }
+
+    #[test]
+    fn ref_context_skips_the_ordering_note_when_every_preview_rides_along() {
+        let refs = [
+            brief_ref(
+                "character",
+                None,
+                Some("data:image/png;base64,a".to_string()),
+            ),
+            brief_ref("style", None, Some("data:image/png;base64,b".to_string())),
+        ];
+        let borrowed: Vec<&BriefRef> = refs.iter().collect();
+        let (lines, previews) = ref_context(&borrowed);
+
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[1], "Reference image 2 (style): attached");
+        assert_eq!(previews.len(), 2);
+    }
 
     #[test]
     fn clean_brief_strips_a_wrapping_fence_and_language_tag() {
