@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   closestAspectRatio,
   continuationPrompt,
+  extractFrameAt,
   frameSampleTimes,
   HANDOFF_LEAD_SECONDS,
   laplacianVariance,
@@ -25,6 +26,174 @@ function buffer(width: number, height: number, shade: (x: number, y: number) => 
   }
   return { data, width, height, colorSpace: "srgb" } as ImageData;
 }
+
+/**
+ * A `<video>`/`<canvas>` pair standing in for a decoder, wired to the one rule
+ * that matters here: the canvas only receives pixels when the element actually
+ * holds a picture. Below `HAVE_CURRENT_DATA`, `drawImage` is a no-op per spec -
+ * it does not throw, so the canvas simply stays transparent.
+ */
+function stubDecoder({
+  duration = 10,
+  /** Which positions the decoder can hand a picture back for. */
+  decodes = (_time: number) => true,
+  /** Positions where `seeked` fires before the frame is there. */
+  readyAfterSeek = (_time: number) => 2,
+}: {
+  duration?: number;
+  decodes?: (time: number) => boolean;
+  readyAfterSeek?: (time: number) => number;
+} = {}) {
+  const video = new EventTarget() as EventTarget & {
+    readyState: number;
+    currentTime: number;
+    src: string;
+  };
+  let position = 0;
+  Object.assign(video, {
+    videoWidth: 1920,
+    videoHeight: 1080,
+    duration,
+    readyState: 1,
+    crossOrigin: "",
+    preload: "",
+    muted: false,
+    playsInline: false,
+  });
+  Object.defineProperty(video, "currentTime", {
+    get: () => position,
+    set: (value: number) => {
+      position = value;
+      setTimeout(() => {
+        video.readyState = readyAfterSeek(value);
+        video.dispatchEvent(new Event("seeked"));
+        // A decoder that reports the frame late still gets there: this is the
+        // wait the read has to survive rather than draw through.
+        if (video.readyState < 2) {
+          setTimeout(() => {
+            video.readyState = 2;
+            video.dispatchEvent(new Event("canplay"));
+          }, 40);
+        }
+      }, 0);
+    },
+  });
+  Object.defineProperty(video, "src", {
+    get: () => "clip.mp4",
+    set: () => setTimeout(() => video.dispatchEvent(new Event("loadedmetadata")), 0),
+  });
+
+  const draws: { at: number; width: number }[] = [];
+  vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+    if (tag === "video") return video as unknown as HTMLElement;
+    let painted = false;
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: () => context,
+      toDataURL: () => `data:image/png;base64,${painted ? "picture" : "blank"}`,
+    };
+    const context = {
+      // Copying an already-drawn canvas carries its pixels; drawing the video
+      // is where the decoder gets a say, and where it can quietly no-op.
+      drawImage: (source: { width: number; height: number } | typeof video) => {
+        if (source !== video) {
+          painted = (source as { painted?: boolean }).painted === true;
+          return;
+        }
+        if (video.readyState < 2 || !decodes(position)) return;
+        draws.push({ at: position, width: canvas.width });
+        painted = true;
+      },
+      getImageData: (_x: number, _y: number, width: number, height: number) => ({
+        data: new Uint8ClampedArray(width * height * 4).fill(painted ? 255 : 0),
+        width,
+        height,
+        colorSpace: "srgb",
+      }),
+    };
+    Object.defineProperty(canvas, "painted", { get: () => painted });
+    return canvas as unknown as HTMLElement;
+  });
+  return { video, draws };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("reading a frame back", () => {
+  it("waits for the decoder rather than drawing on a premature seeked", async () => {
+    // WebKit fires `seeked` on a fresh element before the frame is decoded.
+    // Drawing there paints nothing at all, silently.
+    const { draws } = stubDecoder({ readyAfterSeek: () => 1 });
+
+    const frame = await extractFrameAt("clip.mp4", 7.8, { encoding: "capture" });
+
+    expect(frame.dataUrl).toBe("data:image/png;base64,picture");
+    expect(draws.length).toBeGreaterThan(0);
+  });
+
+  it("moves on a frame when a position decodes nothing", async () => {
+    const { draws } = stubDecoder({ decodes: (time) => time > 7.8 });
+
+    const frame = await extractFrameAt("clip.mp4", 7.8, { encoding: "capture" });
+
+    expect(frame.dataUrl).toBe("data:image/png;base64,picture");
+    // Reported where it landed, not where it was asked to: a still's recorded
+    // position has to match the picture it holds.
+    expect(frame.timeSeconds).toBeGreaterThan(7.8);
+    expect(draws.every((draw) => draw.at > 7.8)).toBe(true);
+  });
+
+  it("retries backwards at the end stop, where forward has nowhere to go", async () => {
+    // The end stop is both the position a decoder is likeliest to refuse and
+    // the one a retry cannot step past. Nudging forward there re-reads the
+    // same failing position and calls it three attempts.
+    const { draws } = stubDecoder({ duration: 10, decodes: (time) => time < 9.9 });
+
+    const frame = await extractFrameAt("clip.mp4", 10, { encoding: "capture" });
+
+    expect(frame.dataUrl).toBe("data:image/png;base64,picture");
+    expect(frame.timeSeconds).toBeLessThan(9.9);
+    expect(draws.length).toBeGreaterThan(0);
+  });
+
+  it("encodes the canvas it checked, at the clip's own resolution", async () => {
+    // Checking a small draw and encoding a separate full-size one leaves the
+    // encoded canvas unexamined - the same bug, one step along.
+    const { draws } = stubDecoder();
+
+    const frame = await extractFrameAt("clip.mp4", 4, { encoding: "capture" });
+
+    expect(frame.dataUrl).toBe("data:image/png;base64,picture");
+    expect(draws.map((draw) => draw.width)).toEqual([1920]);
+  });
+
+  it("fails rather than hand back an empty picture", async () => {
+    // The bug this guards: an empty read encodes to a full-size, fully
+    // transparent PNG, saves without an error, and shows up as a gallery tile
+    // that is simply not there.
+    stubDecoder({ decodes: () => false });
+
+    await expect(extractFrameAt("clip.mp4", 7.8, { encoding: "capture" })).rejects.toThrow();
+  });
+
+  it("gives up on a clip that answers nothing at all", async () => {
+    // Neither `loadedmetadata` nor `error`: a stalled asset request, which
+    // used to leave the capture dialog spinning on a promise that never
+    // settled. Bounded like every other wait in the read.
+    vi.useFakeTimers();
+    vi.spyOn(document, "createElement").mockImplementation(
+      () => new EventTarget() as unknown as HTMLElement,
+    );
+    const read = extractFrameAt("clip.mp4", 4, { encoding: "capture" });
+    const settled = expect(read).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(20_000);
+    await settled;
+    vi.useRealTimers();
+  });
+});
 
 describe("handoff sample times", () => {
   it("brackets the lead point and stops short of the end", () => {

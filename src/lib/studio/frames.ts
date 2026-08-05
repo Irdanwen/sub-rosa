@@ -2,11 +2,15 @@
  * Frame extraction for shot continuity: pull a still out of a generated clip
  * so the next shot can start where the last one ended.
  *
- * Three things make this more than "seek to the end and grab a pixel buffer":
+ * Four things make this more than "seek to the end and grab a pixel buffer":
  *
  *  - Seeking to `duration` exactly lands past the last decoded frame on most
  *    decoders: the canvas comes back black, and some never fire `seeked` at
  *    all. Every sample is taken at least one frame short of the end.
+ *  - `seeked` does not promise a decoded picture. Drawing an element that is
+ *    still below `HAVE_CURRENT_DATA` is a silent no-op per spec, so the frame
+ *    that gets encoded is the one that was checked (see `captureAt`), and a
+ *    read that proves empty fails loudly rather than saving a blank file.
  *  - The very last frames of a generated clip are the worst ones (motion blur,
  *    the most encode drift). We sample a few candidates and keep the sharpest.
  *  - Restarting the next shot from the exact final frame freezes the motion at
@@ -79,6 +83,39 @@ const FRAME_MAX_BYTES = 3_000_000;
 /** Analysis buffer width: sharpness is a relative score between candidates of
  * the same clip, so a small buffer is both enough and much faster. */
 const SHARPNESS_WIDTH = 320;
+
+/**
+ * The `readyState` from which `drawImage` actually paints.
+ *
+ * Below it the draw is a no-op *per spec* - not an error, not an exception:
+ * the canvas keeps its transparent pixels, `toDataURL` happily encodes them,
+ * and what lands in the gallery is a correctly sized, completely blank PNG.
+ * Nothing anywhere reports a failure, which is why this has to be checked.
+ */
+const HAVE_CURRENT_DATA = 2;
+
+/** How long a seek, and the decode behind it, is given before the read moves
+ * on and lets the blank check have the last word. Generous: the clip may be
+ * tens of megabytes and the seek lands far from what is buffered. */
+const SEEK_TIMEOUT_MS = 5_000;
+
+/** Poll interval while waiting for the decoder. WebKit can reach
+ * `HAVE_CURRENT_DATA` after a premature `seeked` without firing anything
+ * else, so the wait cannot be purely event-driven. */
+const DECODE_POLL_MS = 25;
+
+/** How long a clip is given to hand over its metadata. Past this the read
+ * fails with a message rather than leaving a dialog spinning on a promise
+ * that will never settle - the same reason every wait below is bounded. */
+const LOAD_TIMEOUT_MS = 15_000;
+
+/** Positions tried before a clip is declared unreadable at that point. Each
+ * retry moves one frame away: when a seek lands between two decodable frames,
+ * nudging is what actually unsticks it. */
+const FRAME_SETTLE_ATTEMPTS = 3;
+
+/** Seeks nearer than this are treated as already there. */
+const SEEK_EPSILON = 0.01;
 
 export interface ExtractedFrame {
   /** The frame as a JPEG data URL, ready to send as a start frame. */
@@ -180,24 +217,89 @@ export function loadVideoElement(src: string, { muted = true } = {}): Promise<HT
     video.preload = "auto";
     video.muted = muted;
     video.playsInline = true;
+    const settle = (outcome: () => void) => {
+      video.removeEventListener("loadedmetadata", onLoaded);
+      video.removeEventListener("error", onError);
+      window.clearTimeout(timer);
+      outcome();
+    };
+    const onLoaded = () => settle(() => resolve(video));
+    const onError = () => settle(() => reject(new Error("A clip failed to load.")));
+    // A source that answers neither `loadedmetadata` nor `error` is not a
+    // hypothetical: that is what a stalled asset request looks like from here.
+    const timer = window.setTimeout(onError, LOAD_TIMEOUT_MS);
+    video.addEventListener("loadedmetadata", onLoaded);
+    video.addEventListener("error", onError);
     video.src = src;
-    video.addEventListener("loadedmetadata", () => resolve(video), { once: true });
-    video.addEventListener("error", () => reject(new Error("A clip failed to load.")), {
-      once: true,
-    });
   });
 }
 
-/** Seek and wait for the decoder to actually land on the frame. */
-export function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
+/** `requestVideoFrameCallback` is the one first-hand answer to "is there a
+ * picture to draw": it fires when a frame has actually been presented. Safari
+ * and WKWebView have it, the DOM lib types it as always present - and it is
+ * still absent from plenty of runtimes this code is asked to survive. */
+type FrameCallbacks = Partial<
+  Pick<HTMLVideoElement, "requestVideoFrameCallback" | "cancelVideoFrameCallback">
+>;
+
+/**
+ * Resolves once the element holds a decoded picture, or once the wait runs
+ * out - never rejects, because the caller verifies the readback anyway and a
+ * decoder that is merely slow should not cost us the frame.
+ *
+ * Three signals, because none of them is sufficient alone. The frame callback
+ * is the authoritative one but never fires when the frame on screen is already
+ * the wanted one; the media events do not always repeat after a premature
+ * `seeked`; `readyState` is a proxy that can be reached without an event. So:
+ * whichever answers first.
+ */
+function decodedFrame(video: HTMLVideoElement): Promise<void> {
+  if (video.readyState >= HAVE_CURRENT_DATA) return Promise.resolve();
   return new Promise((resolve) => {
-    if (Math.abs(video.currentTime - time) < 0.01) {
+    const frames: FrameCallbacks = video;
+    const finish = () => {
+      video.removeEventListener("loadeddata", check);
+      video.removeEventListener("canplay", check);
+      if (handle !== undefined) frames.cancelVideoFrameCallback?.(handle);
+      window.clearInterval(poll);
+      window.clearTimeout(timer);
       resolve();
-      return;
-    }
-    video.addEventListener("seeked", () => resolve(), { once: true });
-    video.currentTime = time;
+    };
+    const check = () => {
+      if (video.readyState >= HAVE_CURRENT_DATA) finish();
+    };
+    const poll = window.setInterval(check, DECODE_POLL_MS);
+    const timer = window.setTimeout(finish, SEEK_TIMEOUT_MS);
+    video.addEventListener("loadeddata", check);
+    video.addEventListener("canplay", check);
+    const handle = frames.requestVideoFrameCallback?.(finish);
   });
+}
+
+/**
+ * Seek and wait for the decoder to actually land on the frame.
+ *
+ * Two waits, not one. `seeked` says the playback position moved; it does not
+ * say a picture exists there, and WebKit fires it early on a fresh element
+ * seeking into a large clip. Waiting for `HAVE_CURRENT_DATA` after it is what
+ * makes the following `drawImage` paint something. Both waits are bounded: a
+ * `seeked` that never comes used to hang the read forever, which showed up as
+ * a capture dialog spinning on "Reading the frame" with no way out.
+ */
+export async function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
+  if (Math.abs(video.currentTime - time) >= SEEK_EPSILON) {
+    await new Promise<void>((resolve) => {
+      const finish = () => {
+        video.removeEventListener("seeked", finish);
+        window.clearTimeout(timer);
+        resolve();
+      };
+      const timer = window.setTimeout(finish, SEEK_TIMEOUT_MS);
+      video.addEventListener("seeked", finish);
+      video.currentTime = time;
+    });
+  }
+  await decodedFrame(video);
 }
 
 function drawTo(video: HTMLVideoElement, width: number, height: number): HTMLCanvasElement {
@@ -210,31 +312,131 @@ function drawTo(video: HTMLVideoElement, width: number, height: number): HTMLCan
   return canvas;
 }
 
-/** Sharpness of the frame currently displayed, read back small. */
-function scoreCurrentFrame(video: HTMLVideoElement): number {
-  const width = Math.min(SHARPNESS_WIDTH, Math.max(3, video.videoWidth));
-  const ratio = video.videoHeight / Math.max(1, video.videoWidth);
-  const height = Math.max(3, Math.round(width * ratio));
+/** The analysis buffer's shape for a given clip. */
+function sampleSize(width: number, height: number): { width: number; height: number } {
+  const sampleWidth = Math.min(SHARPNESS_WIDTH, Math.max(3, width));
+  const ratio = height / Math.max(1, width);
+  return { width: sampleWidth, height: Math.max(3, Math.round(sampleWidth * ratio)) };
+}
+
+/**
+ * A small readback of pixels already drawn - `undefined` when the readback is
+ * refused (a tainted canvas, a decoder that will not hand pixels over). That
+ * costs us the ranking and the blank check, not the extraction: "cannot tell"
+ * is treated as "fine" everywhere below.
+ */
+function sampleOf(source: CanvasImageSource, width: number, height: number): ImageData | undefined {
+  const size = sampleSize(width, height);
   try {
-    const canvas = drawTo(video, width, height);
-    const context = canvas.getContext("2d");
-    if (!context) return 0;
-    return laplacianVariance(context.getImageData(0, 0, canvas.width, canvas.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = size.width;
+    canvas.height = size.height;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return undefined;
+    context.drawImage(source, 0, 0, canvas.width, canvas.height);
+    return context.getImageData(0, 0, canvas.width, canvas.height);
   } catch {
-    // A tainted canvas (or a decoder that refuses the readback) costs us the
-    // ranking, not the extraction: every candidate scores 0 and the first wins.
-    return 0;
+    return undefined;
   }
 }
 
-/** The frame currently displayed, encoded for its destination. */
-async function encodeCurrentFrame(
-  video: HTMLVideoElement,
-  encoding: FrameEncoding,
-): Promise<string> {
+/**
+ * True when nothing was painted at all: every pixel fully transparent.
+ *
+ * This is the signature of a draw that no-opped, not of any frame a clip can
+ * hold - the generated formats carry no alpha channel, so a decoded picture is
+ * opaque everywhere. A black frame is not blank; it has alpha 255, and a fade
+ * to black is a frame the user may well want.
+ */
+function isBlank(image: ImageData): boolean {
+  const { data } = image;
+  for (let alpha = 3; alpha < data.length; alpha += 4) {
+    if (data[alpha] !== 0) return false;
+  }
+  return true;
+}
+
+/** A drawn frame, with what could be told about it from its own pixels. */
+interface Capture {
+  canvas: HTMLCanvasElement;
+  /** Nothing was painted: this canvas must not become a file. */
+  blank: boolean;
+  sharpness: number;
+}
+
+/**
+ * Draw the current frame at the clip's own resolution and judge *that* canvas.
+ *
+ * One draw, one verdict, one thing encoded. Checking a separate small draw and
+ * then encoding a full-size one would leave the encoded canvas unexamined -
+ * which is the exact shape of the bug this file now guards against, just moved
+ * one step along.
+ */
+function captureFrame(video: HTMLVideoElement): Capture {
   const canvas = drawTo(video, video.videoWidth, video.videoHeight);
-  if (encoding === "capture") return canvas.toDataURL("image/png");
-  const raw = canvas.toDataURL("image/jpeg", 0.94);
+  const sample = sampleOf(canvas, canvas.width, canvas.height);
+  return {
+    canvas,
+    blank: sample ? isBlank(sample) : false,
+    sharpness: sample ? laplacianVariance(sample) : 0,
+  };
+}
+
+/** A candidate's sharpness, read straight off the video: the ranking pass runs
+ * once per sample and has no use for a full-size draw. `undefined` means the
+ * position decoded nothing, which is not the same as a flat frame. */
+function scoreCandidate(video: HTMLVideoElement): number | undefined {
+  const sample = sampleOf(video, video.videoWidth, video.videoHeight);
+  if (!sample) return 0;
+  return isBlank(sample) ? undefined : laplacianVariance(sample);
+}
+
+/**
+ * Where attempt `n` looks. A frame forward normally; a frame *back* when the
+ * ask already sits at the end stop - which is both where a decoder is most
+ * likely to hand back nothing and where forward has nowhere left to go. Retry
+ * positions that cannot move are retries in name only.
+ */
+function retryPosition(time: number, attempt: number, last: number): number {
+  const step = attempt * FRAME_SECONDS;
+  const forward = time + step;
+  return forward <= last ? Math.max(0, forward) : Math.max(0, time - step);
+}
+
+/** A beat for the decoder to catch up before the position is written off. */
+function decodeBeat(): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, DECODE_POLL_MS));
+}
+
+/**
+ * Land on a position that actually decodes, and prove it before anything is
+ * encoded. Answers the drawn canvas and where it came from, which is not
+ * always where it was asked from.
+ *
+ * The proof is the point. Without it a draw that no-opped is indistinguishable
+ * from a successful one all the way to disk, and what the user gets is a
+ * gallery tile that is simply not there - a full-size, fully transparent PNG,
+ * saved without a single error along the way.
+ */
+async function captureAt(
+  video: HTMLVideoElement,
+  time: number,
+): Promise<{ capture: Capture; timeSeconds: number }> {
+  const duration = Number.isFinite(video.duration) ? video.duration : 0;
+  const last = lastReadableTime(duration);
+  for (let attempt = 0; attempt < FRAME_SETTLE_ATTEMPTS; attempt += 1) {
+    await seekVideo(video, retryPosition(time, attempt, last));
+    const capture = captureFrame(video);
+    if (!capture.blank) return { capture, timeSeconds: video.currentTime };
+    await decodeBeat();
+  }
+  throw new Error("That clip decoded no picture at that position.");
+}
+
+/** A drawn frame, encoded for its destination. */
+async function encodeCapture(capture: Capture, encoding: FrameEncoding): Promise<string> {
+  if (encoding === "capture") return capture.canvas.toDataURL("image/png");
+  const raw = capture.canvas.toDataURL("image/jpeg", 0.94);
   return downscaleDataUrl(raw, { maxEdge: FRAME_MAX_EDGE, maxBytes: FRAME_MAX_BYTES });
 }
 
@@ -248,12 +450,14 @@ export async function extractFrameAt(
   try {
     const duration = Number.isFinite(video.duration) ? video.duration : 0;
     const time = Math.max(0, Math.min(timeSeconds, lastReadableTime(duration)));
-    await seekVideo(video, time);
+    // Report where the decoder actually landed, not what was asked for: a
+    // still's recorded provenance should match the picture it holds.
+    const { capture, timeSeconds: at } = await captureAt(video, time);
     return {
-      dataUrl: await encodeCurrentFrame(video, encoding),
-      timeSeconds: time,
+      dataUrl: await encodeCapture(capture, encoding),
+      timeSeconds: at,
       durationSeconds: duration,
-      sharpness: scoreCurrentFrame(video),
+      sharpness: capture.sharpness,
       width: video.videoWidth,
       height: video.videoHeight,
     };
@@ -277,16 +481,21 @@ export async function extractHandoffFrame(
     let best: { time: number; sharpness: number } | undefined;
     for (const time of times) {
       await seekVideo(video, time);
-      const sharpness = scoreCurrentFrame(video);
+      // A candidate that decoded nothing is not a flat frame, it is no frame.
+      // Scoring it as 0 would let it win a clip whose real frames are flatter.
+      const sharpness = scoreCandidate(video);
+      if (sharpness === undefined) continue;
       if (!best || sharpness > best.sharpness) best = { time, sharpness };
     }
-    const pick = best ?? { time: times[0] ?? 0, sharpness: 0 };
-    await seekVideo(video, pick.time);
+    const pick = best ?? { time: times[0] ?? 0 };
+    const { capture, timeSeconds: at } = await captureAt(video, pick.time);
     return {
-      dataUrl: await encodeCurrentFrame(video, "payload"),
-      timeSeconds: pick.time,
+      dataUrl: await encodeCapture(capture, "payload"),
+      timeSeconds: at,
+      // The score of the frame actually encoded: the retry may have landed a
+      // frame away from the candidate that won the ranking.
+      sharpness: capture.sharpness,
       durationSeconds: duration,
-      sharpness: pick.sharpness,
       width: video.videoWidth,
       height: video.videoHeight,
     };
