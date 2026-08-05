@@ -20,11 +20,13 @@ import {
   type RefObject,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   agentItemsToChatTurns,
   applyAgentRuntimeEvent,
@@ -209,6 +211,8 @@ const AGENT_AUTO_MODEL: VeniceModelDto = {
   capabilities: [],
 };
 const projectContextSignaturesBySessionId = new ProjectContextSignatureStore();
+const USAGE_FOCUSABLE =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function composerInSteerStateFor(input: {
   selectedSessionId?: string;
@@ -347,11 +351,60 @@ export function AgentWorkspace({
   const [shareOpen, setShareOpen] = useState(false);
   const [shareUrl, setShareUrl] = useState<string>();
   const [usageOpen, setUsageOpen] = useState(false);
+  const usagePanelRef = useRef<HTMLElement>(null);
+  const usageReturnFocusRef = useRef<HTMLElement | null>(null);
+  const usageTitleId = useId();
   const [compactOpen, setCompactOpen] = useState(false);
   const [compacting, setCompacting] = useState(false);
   const [compactResult, setCompactResult] = useState<string>();
   const [models, setModels] = useState<VeniceModelDto[]>([]);
   const [veniceApiKeyConfigured, setVeniceApiKeyConfigured] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!usageOpen || !usagePanelRef.current) return;
+    usageReturnFocusRef.current = document.activeElement as HTMLElement | null;
+    usagePanelRef.current.querySelector<HTMLElement>(USAGE_FOCUSABLE)?.focus();
+    return () => {
+      usageReturnFocusRef.current?.focus?.();
+      usageReturnFocusRef.current = null;
+    };
+  }, [usageOpen]);
+
+  useEffect(() => {
+    if (!usageOpen) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setUsageOpen(false);
+        return;
+      }
+      if (event.key !== "Tab" || !usagePanelRef.current) return;
+      const focusables = Array.from(
+        usagePanelRef.current.querySelectorAll<HTMLElement>(USAGE_FOCUSABLE),
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (!usagePanelRef.current.contains(document.activeElement)) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [usageOpen]);
+
   const focusedHomeModelRef = useRef(DEFAULT_MODEL);
   const focusedHomeThinkingLevelRef = useRef(loadThinkingLevel());
   const initialModelSelection = agentModelSelection(initialAgentSession?.model || DEFAULT_MODEL);
@@ -2553,138 +2606,159 @@ export function AgentWorkspace({
           onClose={() => setArtifactPanel(null)}
         />
       ) : null}
-      {usageOpen && selectedSession ? (
-        <aside className="agent-usage-panel" aria-label="Session usage">
-          <div className="agent-usage-header">
-            <h2 className="agent-usage-title">Usage</h2>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label="Close usage"
-              onClick={() => setUsageOpen(false)}
+      {usageOpen && selectedSession
+        ? createPortal(
+            <div
+              className="agent-usage-overlay"
+              role="presentation"
+              onClick={(event) => {
+                if (event.target === event.currentTarget) setUsageOpen(false);
+              }}
             >
-              <IconCrossSmall size={14} />
-            </button>
-          </div>
-          <div className="agent-usage-body">
-            <div className="agent-usage-row">
-              <span className="agent-usage-primary">Model</span>
-              <span className="agent-usage-value">{usageModel?.name ?? sessionDisplayModel}</span>
-            </div>
-            {projection.run?.usage?.provider || usageModel?.provider ? (
-              <div className="agent-usage-row">
-                <span className="agent-usage-primary">Provider</span>
-                <span className="agent-usage-value">
-                  {projection.run?.usage?.provider ?? usageModel?.provider}
-                </span>
-              </div>
-            ) : null}
-            {projection.run?.usage?.privacyLevel || usageModel?.privacy ? (
-              <div className="agent-usage-row">
-                <span className="agent-usage-primary">Privacy</span>
-                <span className="agent-usage-value">
-                  {projection.run?.usage?.privacyLevel ?? usageModel?.privacy}
-                </span>
-              </div>
-            ) : null}
-            {projection.run?.usage?.endpoint ? (
-              <div className="agent-usage-row">
-                <span className="agent-usage-primary">Route</span>
-                <span className="agent-usage-value">{projection.run.usage.endpoint}</span>
-              </div>
-            ) : null}
-            {projection.run?.reasoningEffort ? (
-              <div className="agent-usage-row">
-                <span className="agent-usage-primary">Reasoning effort</span>
-                <span className="agent-usage-value">{projection.run.reasoningEffort}</span>
-              </div>
-            ) : null}
-            {projection.run?.usage ? (
-              <>
-                {projection.run.usage.inputTokens !== undefined ? (
+              <aside
+                ref={usagePanelRef}
+                className="agent-usage-panel"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={usageTitleId}
+              >
+                <div className="agent-usage-header">
+                  <h2 id={usageTitleId} className="agent-usage-title">
+                    Usage
+                  </h2>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label="Close usage"
+                    onClick={() => setUsageOpen(false)}
+                  >
+                    <IconCrossSmall size={14} />
+                  </button>
+                </div>
+                <div className="agent-usage-body">
                   <div className="agent-usage-row">
-                    <span className="agent-usage-primary">Input</span>
+                    <span className="agent-usage-primary">Model</span>
                     <span className="agent-usage-value">
-                      {projection.run.usage.inputTokens.toLocaleString()}
+                      {usageModel?.name ?? sessionDisplayModel}
                     </span>
                   </div>
-                ) : null}
-                {projection.run.usage.outputTokens !== undefined ? (
-                  <div className="agent-usage-row">
-                    <span className="agent-usage-primary">Output</span>
-                    <span className="agent-usage-value">
-                      {projection.run.usage.outputTokens.toLocaleString()}
-                    </span>
-                  </div>
-                ) : null}
-                {projection.run.usage.totalTokens !== undefined ? (
-                  <div className="agent-usage-row">
-                    <span className="agent-usage-primary">Total</span>
-                    <span className="agent-usage-value">
-                      {projection.run.usage.totalTokens.toLocaleString()}
-                    </span>
-                  </div>
-                ) : null}
-                {projection.run.usage.inputTokens === undefined &&
-                projection.run.usage.outputTokens === undefined &&
-                projection.run.usage.totalTokens === undefined ? (
-                  <p className="agent-usage-empty">
-                    Token counts were not reported for this request.
-                  </p>
-                ) : null}
-                {contextPercent !== undefined && contextUsed !== undefined && contextLimit ? (
-                  <div className="agent-usage-context">
+                  {projection.run?.usage?.provider || usageModel?.provider ? (
                     <div className="agent-usage-row">
-                      <span className="agent-usage-primary">Latest request context</span>
+                      <span className="agent-usage-primary">Provider</span>
                       <span className="agent-usage-value">
-                        {contextUsed.toLocaleString()} of {contextLimit.toLocaleString()} (
-                        {contextPercent.toFixed(1)}%)
+                        {projection.run?.usage?.provider ?? usageModel?.provider}
                       </span>
                     </div>
-                    <div
-                      className="agent-usage-context-track"
-                      role="progressbar"
-                      aria-label="Context used"
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={Math.round(contextPercent)}
-                    >
-                      <span style={{ transform: `scaleX(${contextPercent / 100})` }} />
+                  ) : null}
+                  {projection.run?.usage?.privacyLevel || usageModel?.privacy ? (
+                    <div className="agent-usage-row">
+                      <span className="agent-usage-primary">Privacy</span>
+                      <span className="agent-usage-value">
+                        {projection.run?.usage?.privacyLevel ?? usageModel?.privacy}
+                      </span>
                     </div>
-                  </div>
-                ) : null}
-                {estimatedCredits !== undefined ? (
-                  <div className="agent-usage-row">
-                    <span className="agent-usage-primary">Estimated charge</span>
-                    <span className="agent-usage-value">
-                      {estimatedCredits.toLocaleString(undefined, {
-                        maximumFractionDigits: estimatedCredits < 1 ? 3 : 1,
-                      })}{" "}
-                      credits (about ${(estimatedCredits / 1_000).toFixed(4)})
-                    </span>
-                  </div>
-                ) : null}
-                {toolUsage.size > 0 ? (
-                  <div className="agent-usage-tools">
-                    <p className="agent-usage-section-title">Tools</p>
-                    {[...toolUsage.entries()].map(([name, usage]) => (
-                      <div className="agent-usage-row" key={name}>
-                        <span className="agent-usage-primary">{name}</span>
-                        <span className="agent-usage-value">
-                          {usage.calls} {usage.calls === 1 ? "call" : "calls"}
-                          {usage.failures > 0 ? `, ${usage.failures} failed` : ""}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              <p className="agent-usage-empty">No usage reported for this session yet.</p>
-            )}
-          </div>
-        </aside>
-      ) : null}
+                  ) : null}
+                  {projection.run?.usage?.endpoint ? (
+                    <div className="agent-usage-row">
+                      <span className="agent-usage-primary">Route</span>
+                      <span className="agent-usage-value">{projection.run.usage.endpoint}</span>
+                    </div>
+                  ) : null}
+                  {projection.run?.reasoningEffort ? (
+                    <div className="agent-usage-row">
+                      <span className="agent-usage-primary">Reasoning effort</span>
+                      <span className="agent-usage-value">{projection.run.reasoningEffort}</span>
+                    </div>
+                  ) : null}
+                  {projection.run?.usage ? (
+                    <>
+                      {projection.run.usage.inputTokens !== undefined ? (
+                        <div className="agent-usage-row">
+                          <span className="agent-usage-primary">Input</span>
+                          <span className="agent-usage-value">
+                            {projection.run.usage.inputTokens.toLocaleString()}
+                          </span>
+                        </div>
+                      ) : null}
+                      {projection.run.usage.outputTokens !== undefined ? (
+                        <div className="agent-usage-row">
+                          <span className="agent-usage-primary">Output</span>
+                          <span className="agent-usage-value">
+                            {projection.run.usage.outputTokens.toLocaleString()}
+                          </span>
+                        </div>
+                      ) : null}
+                      {projection.run.usage.totalTokens !== undefined ? (
+                        <div className="agent-usage-row">
+                          <span className="agent-usage-primary">Total</span>
+                          <span className="agent-usage-value">
+                            {projection.run.usage.totalTokens.toLocaleString()}
+                          </span>
+                        </div>
+                      ) : null}
+                      {projection.run.usage.inputTokens === undefined &&
+                      projection.run.usage.outputTokens === undefined &&
+                      projection.run.usage.totalTokens === undefined ? (
+                        <p className="agent-usage-empty">
+                          Token counts were not reported for this request.
+                        </p>
+                      ) : null}
+                      {contextPercent !== undefined && contextUsed !== undefined && contextLimit ? (
+                        <div className="agent-usage-context">
+                          <div className="agent-usage-row">
+                            <span className="agent-usage-primary">Latest request context</span>
+                            <span className="agent-usage-value">
+                              {contextUsed.toLocaleString()} of {contextLimit.toLocaleString()} (
+                              {contextPercent.toFixed(1)}%)
+                            </span>
+                          </div>
+                          <div
+                            className="agent-usage-context-track"
+                            role="progressbar"
+                            aria-label="Context used"
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={Math.round(contextPercent)}
+                          >
+                            <span style={{ transform: `scaleX(${contextPercent / 100})` }} />
+                          </div>
+                        </div>
+                      ) : null}
+                      {estimatedCredits !== undefined ? (
+                        <div className="agent-usage-row">
+                          <span className="agent-usage-primary">Estimated charge</span>
+                          <span className="agent-usage-value">
+                            {estimatedCredits.toLocaleString(undefined, {
+                              maximumFractionDigits: estimatedCredits < 1 ? 3 : 1,
+                            })}{" "}
+                            credits (about ${(estimatedCredits / 1_000).toFixed(4)})
+                          </span>
+                        </div>
+                      ) : null}
+                      {toolUsage.size > 0 ? (
+                        <div className="agent-usage-tools">
+                          <p className="agent-usage-section-title">Tools</p>
+                          {[...toolUsage.entries()].map(([name, usage]) => (
+                            <div className="agent-usage-row" key={name}>
+                              <span className="agent-usage-primary">{name}</span>
+                              <span className="agent-usage-value">
+                                {usage.calls} {usage.calls === 1 ? "call" : "calls"}
+                                {usage.failures > 0 ? `, ${usage.failures} failed` : ""}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="agent-usage-empty">No usage reported for this session yet.</p>
+                  )}
+                </div>
+              </aside>
+            </div>,
+            document.querySelector(".app-shell") ?? document.body,
+          )
+        : null}
       {selectedSession ? (
         <ShareDialog
           key={selectedSession.id}
