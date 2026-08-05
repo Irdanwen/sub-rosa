@@ -42,11 +42,11 @@ import {
   needsSeedanceConsent,
   rememberSeedanceConsent,
 } from "../../../lib/studio/consent";
+import { JobFailureNotice } from "../../studio/JobFailureNotice";
 import { continuationPrompt, extractHandoffFrame } from "../../../lib/studio/frames";
 import { videoRequestBody } from "../../../lib/studio/video-request";
 import {
   effectiveVideoConstraints,
-  explainConstraintError,
   rememberConstraintError,
 } from "../../../lib/studio/model-constraints";
 import {
@@ -1352,9 +1352,13 @@ function VideoPanel({
         </p>
       ) : null}
       {job.state.phase === "failed" ? (
-        <p className="mobile-dictation-error">
-          {explainConstraintError(job.state.message ?? "") ?? job.state.message}
-        </p>
+        <JobFailureNotice
+          message={job.state.message}
+          status={job.state.status}
+          className="mobile-dictation-error"
+          retryClassName="mobile-chip-button"
+          onRetry={job.canRetry ? job.retry : undefined}
+        />
       ) : null}
       {pickerOpen ? (
         <ModelSheet
@@ -1751,7 +1755,13 @@ function SfxPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerated
         </p>
       ) : null}
       {job.state.phase === "failed" ? (
-        <p className="mobile-dictation-error">{job.state.message}</p>
+        <JobFailureNotice
+          message={job.state.message}
+          status={job.state.status}
+          className="mobile-dictation-error"
+          retryClassName="mobile-chip-button"
+          onRetry={job.canRetry ? job.retry : undefined}
+        />
       ) : null}
       {pickerOpen ? (
         <ModelSheet
@@ -1884,7 +1894,13 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
         </p>
       ) : null}
       {job.state.phase === "failed" ? (
-        <p className="mobile-dictation-error">{job.state.message}</p>
+        <JobFailureNotice
+          message={job.state.message}
+          status={job.state.status}
+          className="mobile-dictation-error"
+          retryClassName="mobile-chip-button"
+          onRetry={job.canRetry ? job.retry : undefined}
+        />
       ) : null}
       {pickerOpen ? (
         <ModelSheet

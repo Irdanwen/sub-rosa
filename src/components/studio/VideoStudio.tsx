@@ -43,6 +43,7 @@ import {
   extractHandoffFrame,
   HANDOFF_ADJUST_WINDOW_SECONDS,
 } from "../../lib/studio/frames";
+import { describeJobFailure } from "../../lib/studio/job-errors";
 import {
   effectiveVideoConstraints,
   explainConstraintError,
@@ -1058,44 +1059,67 @@ export function VideoStudio({
           }}
         />
       ) : null}
-      {queue.jobs.map((entry) => (
-        <div key={entry.job.id} className="studio-resume" data-phase={entry.phase}>
-          <span>
-            {entry.phase === "failed"
-              ? (explainConstraintError(entry.message ?? "") ??
-                entry.message ??
-                "The render failed.")
-              : entry.phase === "processing"
-                ? `Rendering - ${formatElapsed(entry.elapsedMs)}`
-                : `Queued - ${formatElapsed(entry.elapsedMs)}`}
-            {" · "}
-            {entry.job.model}
-            {entry.job.prompt ? ` · "${entry.job.prompt.slice(0, 60)}"` : ""}
-          </span>
-          <span className="studio-card-actions">
-            {entry.phase === "failed" ? (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => queue.dismiss(entry.job.id)}
-              >
-                Dismiss
-              </button>
-            ) : (
-              <>
-                <Spinner aria-hidden />
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => queue.stop(entry.job.id)}
-                >
-                  Stop waiting
-                </button>
-              </>
-            )}
-          </span>
-        </div>
-      ))}
+      {queue.jobs.map((entry) => {
+        // A constraint error names the field to fix and is the most useful
+        // thing we can say, so it wins. Everything else goes through the
+        // failure reader, which is what turns a backend's own vocabulary into
+        // something to do next.
+        const constraint =
+          entry.phase === "failed" ? explainConstraintError(entry.message ?? "") : undefined;
+        const failure =
+          entry.phase === "failed" && !constraint
+            ? describeJobFailure({ message: entry.message, status: entry.status })
+            : undefined;
+        return (
+          <div key={entry.job.id} className="studio-resume" data-phase={entry.phase}>
+            {/* The backend's own words stay reachable on hover: the summary is
+             * for acting on, the detail is for reporting. */}
+            <span title={failure?.detail}>
+              {entry.phase === "failed"
+                ? (constraint ?? failure?.text ?? "The render failed.")
+                : entry.phase === "processing"
+                  ? `Rendering - ${formatElapsed(entry.elapsedMs)}`
+                  : `Queued - ${formatElapsed(entry.elapsedMs)}`}
+              {" · "}
+              {entry.job.model}
+              {entry.job.prompt ? ` · "${entry.job.prompt.slice(0, 60)}"` : ""}
+            </span>
+            <span className="studio-card-actions">
+              {entry.phase === "failed" ? (
+                <>
+                  {failure?.retryable && entry.canRetry ? (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => void queue.retry(entry.job.id)}
+                    >
+                      Start again
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => queue.dismiss(entry.job.id)}
+                  >
+                    Dismiss
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Spinner aria-hidden />
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => queue.stop(entry.job.id)}
+                  >
+                    Stop waiting
+                  </button>
+                </>
+              )}
+            </span>
+          </div>
+        );
+      })}
       {handoffError && !openingFrame ? <p className="studio-error">{handoffError}</p> : null}
       {activeChain.length > 1 ? (
         <section className="studio-chain" aria-label="Shot chain">

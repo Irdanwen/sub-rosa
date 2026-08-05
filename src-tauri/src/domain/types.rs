@@ -1020,6 +1020,13 @@ pub struct MediaJobDto {
     pub status: MediaJobStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// The HTTP status the failure arrived with, when it came from the backend
+    /// rather than from us. Kept beside the message because the messages
+    /// themselves do not distinguish the cases the user has to act on: a job
+    /// the operator dropped and one the upstream refused read almost alike,
+    /// and only the code says which.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_status: Option<i64>,
     /// Absolute path of the finished file in the gallery directory.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub artifact_path: Option<String>,

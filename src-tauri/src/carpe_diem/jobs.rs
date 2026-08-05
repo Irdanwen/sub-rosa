@@ -37,6 +37,30 @@ pub const MEDIA_JOB_EVENT: &str = "june://media-job";
 
 /// Matches the cadence the backends expect for retrieve polling.
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
+
+/// Cadence for the first few polls, and how many of them run at it.
+///
+/// A render never finishes in the first seconds, so a fast poll there buys
+/// nothing about *success*. It is about failure, and specifically about being
+/// told why. Some backends validate a job only after accepting it - the queue
+/// call answers a job id for a payload that will be refused - and then drop the
+/// refused job, so the real message (which names the offending field) exists for
+/// a short window and is replaced by "unknown or expired queue_id" afterwards.
+/// At a flat three seconds we lose that race often enough to have lost it in
+/// production. These polls are free and unmetered, so the only cost of winning
+/// it is a handful of extra requests in the first seconds of a render.
+const FAST_POLL_INTERVAL: Duration = Duration::from_millis(750);
+const FAST_POLL_ATTEMPTS: u32 = 8;
+
+/// How long to wait before poll number `attempt` (0 is the first, which never
+/// waits). Pure so the ramp is testable without a backend or a clock.
+fn poll_delay(attempt: u32) -> Duration {
+    match attempt {
+        0 => Duration::ZERO,
+        n if n <= FAST_POLL_ATTEMPTS => FAST_POLL_INTERVAL,
+        _ => POLL_INTERVAL,
+    }
+}
 /// Give up entirely past this age. The backend has either lost the job or is
 /// never going to answer, and an immortal row would be swept forever.
 const MAX_JOB_AGE: chrono::Duration = chrono::Duration::hours(6);
@@ -109,6 +133,7 @@ pub async fn media_job_start(
         extension: request.extension,
         status: MediaJobStatus::Queued,
         error: None,
+        error_status: None,
         artifact_path: None,
         artifact_file_name: None,
         artifact_bytes: None,
@@ -188,11 +213,17 @@ pub async fn resume_all(app: &AppHandle) {
             continue;
         }
         if expired(&job) {
-            fail(app, &job.id, "The generation timed out.").await;
+            fail(app, &job.id, "The generation timed out.", None).await;
             continue;
         }
         let Ok(body) = serde_json::from_str::<serde_json::Value>(&retrieve_body) else {
-            fail(app, &job.id, "The job's retrieve request is unreadable.").await;
+            fail(
+                app,
+                &job.id,
+                "The job's retrieve request is unreadable.",
+                None,
+            )
+            .await;
             continue;
         };
         let fields =
@@ -253,11 +284,12 @@ async fn run(
     let mut last_reported: Option<MediaJobStatus> = None;
 
     for attempt in 0.. {
-        if attempt > 0 {
-            tokio::time::sleep(POLL_INTERVAL).await;
+        let delay = poll_delay(attempt);
+        if !delay.is_zero() {
+            tokio::time::sleep(delay).await;
         }
         if expired(&job) || started.elapsed() > runtime_budget {
-            fail(&app, &id, "The generation timed out.").await;
+            fail(&app, &id, "The generation timed out.", None).await;
             return;
         }
         let response = match super::media::send("POST", &retrieve_path, Some(&retrieve_body)).await
@@ -272,7 +304,7 @@ async fn run(
             // waiting fixes it. 5xx and rate limits are the backend catching
             // its breath.
             if (400..500).contains(&response.status) {
-                fail(&app, &id, &backend_error(&response)).await;
+                fail(&app, &id, &backend_error(&response), Some(response.status)).await;
                 return;
             }
             continue;
@@ -284,7 +316,7 @@ async fn run(
         // failed write here cannot be retried by polling again.
         if let Some(base64) = response.body_base64.as_deref() {
             if !deliver(&app, &job, Payload::Base64(base64.to_string())).await {
-                fail(&app, &id, "The finished file could not be saved.").await;
+                fail(&app, &id, "The finished file could not be saved.", None).await;
             }
             return;
         }
@@ -294,7 +326,7 @@ async fn run(
         match status_of(payload) {
             Some(MediaJobStatus::Completed) => {
                 let Some(url) = url_from(payload, &url_fields) else {
-                    fail(&app, &id, "The job completed but returned no output.").await;
+                    fail(&app, &id, "The job completed but returned no output.", None).await;
                     return;
                 };
                 // A download failure is worth another try: the job stays
@@ -310,7 +342,9 @@ async fn run(
                     .and_then(serde_json::Value::as_str)
                     .filter(|value| !value.trim().is_empty())
                     .unwrap_or("The generation failed.");
-                fail(&app, &id, reason).await;
+                // A `failed` status in the body is the backend's own verdict, delivered
+                // over a 200 - there is no HTTP code to attribute it to.
+                fail(&app, &id, reason, None).await;
                 return;
             }
             // Only on the transition: this loop ticks every few seconds and
@@ -369,16 +403,25 @@ async fn deliver(app: &AppHandle, job: &MediaJobDto, payload: Payload) -> bool {
 
 async fn mark(app: &AppHandle, id: &str, status: MediaJobStatus) {
     if let Ok(repos) = crate::commands::repositories(app).await {
-        if let Ok(Some(job)) = repos.set_media_job_status(id, status, None).await {
+        if let Ok(Some(job)) = repos.set_media_job_status(id, status, None, None).await {
             emit(app, &job);
         }
     }
 }
 
-async fn fail(app: &AppHandle, id: &str, reason: &str) {
+/// Settle a job as failed. `status` is the HTTP code the failure came back
+/// with, and is `None` for the failures we decide ourselves (a timeout, a file
+/// that would not save) - the row has to be able to say "the backend said so"
+/// apart from "we gave up", because only the first is worth re-queueing.
+async fn fail(app: &AppHandle, id: &str, reason: &str, status: Option<u16>) {
     if let Ok(repos) = crate::commands::repositories(app).await {
         if let Ok(Some(job)) = repos
-            .set_media_job_status(id, MediaJobStatus::Failed, Some(reason))
+            .set_media_job_status(
+                id,
+                MediaJobStatus::Failed,
+                Some(reason),
+                status.map(i64::from),
+            )
             .await
         {
             emit(app, &job);
@@ -499,5 +542,28 @@ mod tests {
             retry_after_ms: None,
         };
         assert_eq!(backend_error(&response), "Unknown job id.");
+    }
+
+    #[test]
+    fn polls_fast_at_first_then_settles_into_the_normal_cadence() {
+        // The first poll never waits.
+        assert_eq!(poll_delay(0), Duration::ZERO);
+        // The window a refused job's real message lives in is measured in
+        // seconds, so the early polls have to be inside it.
+        assert_eq!(poll_delay(1), FAST_POLL_INTERVAL);
+        assert_eq!(poll_delay(FAST_POLL_ATTEMPTS), FAST_POLL_INTERVAL);
+        // And then back to the cadence the backends expect: a render takes
+        // minutes, and hammering retrieve for all of it would be rude.
+        assert_eq!(poll_delay(FAST_POLL_ATTEMPTS + 1), POLL_INTERVAL);
+        assert_eq!(poll_delay(500), POLL_INTERVAL);
+    }
+
+    #[test]
+    fn the_fast_window_covers_the_first_seconds_of_a_render() {
+        // The incident this exists for failed 13s in, having polled 5 times.
+        // The ramp has to put several polls inside the first few seconds.
+        let elapsed: Duration = (0..=FAST_POLL_ATTEMPTS).map(poll_delay).sum();
+        assert!(elapsed >= Duration::from_secs(5), "{elapsed:?}");
+        assert!(elapsed <= Duration::from_secs(10), "{elapsed:?}");
     }
 }

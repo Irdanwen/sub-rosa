@@ -2803,7 +2803,7 @@ impl Repositories {
     /// while the app was closed is only "delivered" once the gallery has it).
     pub async fn list_media_jobs(&self) -> Result<Vec<MediaJobDto>, sqlx::error::Error> {
         let rows = query(
-            "SELECT id, kind, model, prompt, extension, status, error, artifact_path,
+            "SELECT id, kind, model, prompt, extension, status, error, error_status, artifact_path,
                     artifact_file_name, artifact_bytes, parent_artifact_id,
                     parent_handoff_seconds, cost_credits, created_at, updated_at
              FROM media_jobs ORDER BY created_at DESC",
@@ -2820,7 +2820,7 @@ impl Repositories {
         &self,
     ) -> Result<Vec<(MediaJobDto, String, String, String)>, sqlx::error::Error> {
         let rows = query(
-            "SELECT id, kind, model, prompt, extension, status, error, artifact_path,
+            "SELECT id, kind, model, prompt, extension, status, error, error_status, artifact_path,
                     artifact_file_name, artifact_bytes, parent_artifact_id,
                     parent_handoff_seconds, cost_credits, created_at, updated_at,
                     retrieve_path, retrieve_body, url_fields
@@ -2845,19 +2845,27 @@ impl Repositories {
             .collect())
     }
 
+    /// `error_status` is the HTTP status a backend failure arrived with, and is
+    /// written even when it is `None`: a job that fails a second time for a
+    /// different reason must not keep the first failure's code.
     pub async fn set_media_job_status(
         &self,
         id: &str,
         status: MediaJobStatus,
         error: Option<&str>,
+        error_status: Option<i64>,
     ) -> Result<Option<MediaJobDto>, sqlx::error::Error> {
-        query("UPDATE media_jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?")
-            .bind(status.as_db())
-            .bind(error)
-            .bind(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true))
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        query(
+            "UPDATE media_jobs SET status = ?, error = ?, error_status = ?, updated_at = ?
+             WHERE id = ?",
+        )
+        .bind(status.as_db())
+        .bind(error)
+        .bind(error_status)
+        .bind(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true))
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
         self.get_media_job(id).await
     }
 
@@ -2872,7 +2880,7 @@ impl Repositories {
     ) -> Result<Option<MediaJobDto>, sqlx::error::Error> {
         query(
             "UPDATE media_jobs
-             SET status = 'completed', error = NULL, artifact_path = ?,
+             SET status = 'completed', error = NULL, error_status = NULL, artifact_path = ?,
                  artifact_file_name = ?, artifact_bytes = ?, updated_at = ?
              WHERE id = ?",
         )
@@ -2888,7 +2896,7 @@ impl Repositories {
 
     pub async fn get_media_job(&self, id: &str) -> Result<Option<MediaJobDto>, sqlx::error::Error> {
         let row = query(
-            "SELECT id, kind, model, prompt, extension, status, error, artifact_path,
+            "SELECT id, kind, model, prompt, extension, status, error, error_status, artifact_path,
                     artifact_file_name, artifact_bytes, parent_artifact_id,
                     parent_handoff_seconds, cost_credits, created_at, updated_at
              FROM media_jobs WHERE id = ?",
@@ -3023,6 +3031,7 @@ fn media_job_from_row(row: sqlx_sqlite::SqliteRow) -> MediaJobDto {
         extension: row.get("extension"),
         status: MediaJobStatus::from(row.get::<String, _>("status").as_str()),
         error: row.get("error"),
+        error_status: row.get("error_status"),
         artifact_path: row.get("artifact_path"),
         artifact_file_name: row.get("artifact_file_name"),
         artifact_bytes: row.get("artifact_bytes"),

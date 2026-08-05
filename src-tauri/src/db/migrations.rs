@@ -151,6 +151,12 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
     // What the render was quoted at, so a chain can total what it cost without
     // the frontend having to remember prices across restarts.
     ensure_column(_pool, "media_jobs", "cost_credits", "REAL").await?;
+    // The HTTP status that killed the job, next to the message. Backends answer
+    // several distinct failures with near-identical prose - a job the operator
+    // dropped (404) reads much like one whose provider key was revoked (410) -
+    // and without the code a failed row cannot be told apart after the fact,
+    // which is exactly the hole a real incident fell into.
+    ensure_column(_pool, "media_jobs", "error_status", "INTEGER").await?;
     Ok(())
 }
 

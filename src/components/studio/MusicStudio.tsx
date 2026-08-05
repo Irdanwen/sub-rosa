@@ -12,6 +12,7 @@ import { EmptyState } from "../ui/EmptyState";
 import { Spinner } from "../ui/Spinner";
 import { Switch } from "../ui/Switch";
 import { GalleryStrip } from "./GalleryStrip";
+import { JobFailureNotice } from "./JobFailureNotice";
 import { GenerationLayout } from "./GenerationLayout";
 import { CostHint, ModelSelect, SliderField, StudioField } from "./controls";
 
@@ -171,7 +172,13 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
 
   return (
     <GenerationLayout controls={controls} action={action}>
-      {job.state.phase === "failed" ? <p className="studio-error">{job.state.message}</p> : null}
+      {job.state.phase === "failed" ? (
+        <JobFailureNotice
+          message={job.state.message}
+          status={job.state.status}
+          onRetry={job.canRetry ? job.retry : undefined}
+        />
+      ) : null}
       {lyricsMissing && prompt.trim() ? (
         <p className="studio-error">This model needs lyrics, or switch to instrumental.</p>
       ) : null}

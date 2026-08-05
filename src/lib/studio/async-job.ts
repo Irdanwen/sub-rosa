@@ -183,6 +183,9 @@ export interface MediaJob {
   extension: string;
   status: JobPhase;
   error?: string;
+  /** HTTP status the failure arrived with, when it came from the backend. The
+   * messages alone do not separate the cases a user has to act on. */
+  errorStatus?: number;
   artifactPath?: string;
   artifactFileName?: string;
   artifactBytes?: number;
@@ -360,6 +363,7 @@ function useDurableJobs(
     async (options: StartJobOptions) => {
       const job = await queueAndHandOff(options);
       ingest([job]);
+      return job;
     },
     [ingest],
   );
@@ -386,7 +390,10 @@ export type MediaJobState =
   | { phase: "idle" }
   | { phase: "queueing" }
   | { phase: "queued" | "processing"; startedAt: number; elapsedMs: number }
-  | { phase: "failed"; message: string };
+  /** `status` is the HTTP code the failure came back with, when it came from
+   * the backend at all: what the message says and what the user can do about
+   * it are two different questions, and only the code answers the second. */
+  | { phase: "failed"; message: string; status?: number };
 
 /**
  * Drives one generation at a time for the simple views. Reports the newest
@@ -403,6 +410,12 @@ export function useMediaJob(
   /** A queue call that never produced a job id, so there is no row to carry
    * the message. Cleared by the next attempt. */
   const [submitError, setSubmitError] = useState<string | undefined>(undefined);
+  /** What the last submit asked for, so "start it again" can mean the same
+   * request rather than whatever the form happens to hold now. Deliberately
+   * not persisted: after a restart the honest answer is that we no longer
+   * know what was asked for, and silently re-spending on a guess is worse
+   * than not offering the button. */
+  const lastOptions = useRef<StartJobOptions | undefined>(undefined);
 
   const active = jobs.find((job) => job.status === "queued" || job.status === "processing");
   const failed = jobs.find((job) => job.status === "failed" && job.id !== dismissed);
@@ -418,7 +431,11 @@ export function useMediaJob(
   } else if (submitError) {
     state = { phase: "failed", message: submitError };
   } else if (failed) {
-    state = { phase: "failed", message: failed.error ?? "The generation failed." };
+    state = {
+      phase: "failed",
+      message: failed.error ?? "The generation failed.",
+      status: failed.errorStatus,
+    };
   }
 
   const startJob = useCallback(
@@ -426,6 +443,7 @@ export function useMediaJob(
       setQueueing(true);
       setSubmitError(undefined);
       setDismissed(undefined);
+      lastOptions.current = options;
       try {
         await start(options);
       } catch (error) {
@@ -449,7 +467,24 @@ export function useMediaJob(
     }
   }, [dismiss, failed]);
 
-  return { state, start: startJob, cancel, reset };
+  /** Queue the failed request again, unchanged. Clears the old row first so
+   * the failure does not linger next to its own replacement. */
+  const retry = useCallback(() => {
+    const options = lastOptions.current;
+    if (!options) return;
+    reset();
+    void startJob(options);
+  }, [reset, startJob]);
+
+  return {
+    state,
+    start: startJob,
+    cancel,
+    reset,
+    retry,
+    /** Whether there is a request to repeat at all. */
+    canRetry: lastOptions.current !== undefined,
+  };
 }
 
 // --- multi-job hook -----------------------------------------------------------
@@ -461,6 +496,10 @@ export interface QueuedJobState {
   phase: "queued" | "processing" | "failed";
   elapsedMs: number;
   message?: string;
+  /** HTTP status behind a failure, when the backend gave one. */
+  status?: number;
+  /** Whether this entry's request is still known well enough to repeat. */
+  canRetry: boolean;
 }
 
 /**
@@ -476,6 +515,11 @@ export function useMediaJobQueue(
   /** Submits that never reached the backend: no queue id, so no durable row —
    * they live here until the user dismisses them. */
   const [rejected, setRejected] = useState<QueuedJobState[]>([]);
+  /** What each submit asked for, so "start it again" repeats that request
+   * rather than rebuilding one from a form the user may have changed since.
+   * Not persisted on purpose: after a restart we genuinely do not know what
+   * was asked for, and re-spending on a guess is worse than no button. */
+  const attempts = useRef(new Map<string, StartJobOptions>());
 
   const entries: QueuedJobState[] = [
     ...rejected,
@@ -486,15 +530,19 @@ export function useMediaJobQueue(
         phase: job.status as "queued" | "processing" | "failed",
         elapsedMs: Math.max(0, now - startedAtOf(job)),
         message: job.error,
+        status: job.errorStatus,
+        canRetry: attempts.current.has(job.id),
       })),
   ];
 
   const startJob = useCallback(
     async (options: StartJobOptions) => {
       try {
-        await start(options);
+        const job = await start(options);
+        attempts.current.set(job.id, options);
       } catch (error) {
         const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        attempts.current.set(id, options);
         setRejected((current) => [
           {
             job: {
@@ -510,6 +558,11 @@ export function useMediaJobQueue(
             phase: "failed",
             elapsedMs: 0,
             message: error instanceof Error ? error.message : "Queueing the generation failed.",
+            // Carry the status here too, or a queue call refused for a bad
+            // field reads the same as one that never left the machine - and
+            // only one of those is worth sending again unchanged.
+            status: error instanceof MediaError ? error.status : undefined,
+            canRetry: true,
           },
           ...current,
         ]);
@@ -520,13 +573,27 @@ export function useMediaJobQueue(
 
   const dismissEntry = useCallback(
     (id: string) => {
+      attempts.current.delete(id);
       setRejected((current) => current.filter((entry) => entry.job.id !== id));
       void dismiss(id);
     },
     [dismiss],
   );
 
-  return { jobs: entries, start: startJob, stop, dismiss: dismissEntry };
+  /** Queue one failed entry's request again, unchanged, and drop the entry it
+   * replaces. A re-queue gets a new job id, so this is a new row, not a
+   * resurrection of the old one. */
+  const retry = useCallback(
+    async (id: string) => {
+      const options = attempts.current.get(id);
+      if (!options) return;
+      dismissEntry(id);
+      await startJob(options);
+    },
+    [dismissEntry, startJob],
+  );
+
+  return { jobs: entries, start: startJob, stop, dismiss: dismissEntry, retry };
 }
 
 export function formatElapsed(elapsedMs: number): string {
