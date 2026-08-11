@@ -25,7 +25,7 @@ export async function stageDroppedAgentFiles(
   existingAttachmentCount: number,
 ): Promise<string[]> {
   if (!files.length) {
-    throw new Error("Drop files from Finder to attach them to June.");
+    throw new Error("Drop files from Finder to attach them to Clovy.");
   }
   if (existingAttachmentCount + files.length > MAX_AGENT_COMPOSER_ATTACHMENTS) {
     throw new Error(`You can attach up to ${MAX_AGENT_COMPOSER_ATTACHMENTS} files at a time.`);

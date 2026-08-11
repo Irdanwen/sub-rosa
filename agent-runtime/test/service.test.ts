@@ -16,8 +16,8 @@ import type {
 
 const runParams: JsonObject = {
   model: "private-auto",
-  instructions: "You are June.",
-  workspace: "/tmp/june-workspace",
+  instructions: "You are Clovy.",
+  workspace: "/tmp/clovy-workspace",
   safetyMode: "sandboxed",
   input: "Hello",
   history: [],
@@ -40,6 +40,40 @@ test("streams lifecycle events and completion in monotonic order", async () => {
     ["run.started", "message.delta", "message.completed", "usage.updated", "run.completed"],
   );
   assert.deepEqual(events.map((event) => event.sequence), [1, 2, 3, 4, 5]);
+});
+
+test("answers identity before history compaction or model inference", async () => {
+  const engine = new FakeEngine();
+  const { service, frames } = harness(engine);
+  await initialize(service);
+  const history = Array.from({ length: 9 }, (_, index) => ({
+    id: `identity-history-${index}`,
+    kind: "message",
+    role: index % 2 === 0 ? "user" : "assistant",
+    text: `${index}:${"x".repeat(4_000)}`,
+  }));
+
+  await service.handle(
+    request("run.start", {
+      ...runParams,
+      input: "Hi, who r u?",
+      history,
+      contextWindow: 7_000,
+      maxOutputTokens: 1_024,
+    }),
+  );
+  await nextTurn();
+
+  assert.equal(engine.starts, 0);
+  assert.equal(engine.summaryInputs.length, 0);
+  const events = frames().filter((frame) => "eventId" in frame);
+  assert.deepEqual(
+    events.map((event) => event.method),
+    ["run.started", "message.delta", "message.completed", "usage.updated", "run.completed"],
+  );
+  assert.equal(events[1]?.params.delta, "I'm Clovy, your personal AI assistant.");
+  assert.equal(events[2]?.params.text, "I'm Clovy, your personal AI assistant.");
+  assert.equal(events[3]?.params.resolvedModel, undefined);
 });
 
 test("emits the visible context summary and exact removed ids after compaction", async () => {
@@ -196,8 +230,8 @@ test("dispatches durable approval resolutions through run.resume", async () => {
   await service.handle(
     request("run.resume", {
       model: "private-auto",
-      instructions: "You are June.",
-      workspace: "/tmp/june-workspace",
+      instructions: "You are Clovy.",
+      workspace: "/tmp/clovy-workspace",
       safetyMode: "sandboxed",
       tools: [],
       skills: [],
@@ -219,21 +253,21 @@ test("dispatches clarification answers through run.resume", async () => {
   await service.handle(
     request("run.resume", {
       model: "private-auto",
-      instructions: "You are June.",
-      workspace: "/tmp/june-workspace",
+      instructions: "You are Clovy.",
+      workspace: "/tmp/clovy-workspace",
       safetyMode: "sandboxed",
       tools: [],
       skills: [],
       contextWindow: 16_000,
       serializedState: "{\"state\":true}",
       resolutions: [
-        { interruptionId: "clarify-1", kind: "clarification", answer: "June" },
+        { interruptionId: "clarify-1", kind: "clarification", answer: "Clovy" },
       ],
     }),
   );
   await nextTurn();
   assert.deepEqual(engine.resolutions, [
-    { interruptionId: "clarify-1", kind: "clarification", answer: "June" },
+    { interruptionId: "clarify-1", kind: "clarification", answer: "Clovy" },
   ]);
 });
 
@@ -244,8 +278,8 @@ test("dispatches opaque secret approval through run.resume without a value", asy
   await service.handle(
     request("run.resume", {
       model: "private-auto",
-      instructions: "You are June.",
-      workspace: "/tmp/june-workspace",
+      instructions: "You are Clovy.",
+      workspace: "/tmp/clovy-workspace",
       safetyMode: "sandboxed",
       tools: [],
       skills: [],
@@ -535,7 +569,7 @@ function harness(engine: AgentEngine) {
 async function initialize(service: RuntimeService): Promise<void> {
   await service.handle(
     request("runtime.initialize", {
-      clientName: "June",
+      clientName: "Clovy",
       clientVersion: "test",
     }),
   );

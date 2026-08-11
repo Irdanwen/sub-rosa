@@ -3,14 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>June</title>
+    <title>Clovy</title>
     <script>
       // Pre-paint theme bootstrap. Keep in sync with src/lib/theme.ts; the
       // storage key is duplicated here so the attribute is set before the
       // module bundle runs, avoiding a light-mode flash on dark systems.
       (function () {
         try {
-          var stored = localStorage.getItem("os-june:theme");
+          var stored =
+            localStorage.getItem("os-clovy:theme") ||
+            localStorage.getItem("os-june:theme");
           var resolved =
             stored === "light" || stored === "dark"
               ? stored
@@ -20,12 +22,14 @@
           document.documentElement.setAttribute("data-theme", resolved);
           // Pre-paint brand accent + surface wash. Keep the id->[accent, wash]
           // map in sync with src/lib/brand.ts so a non-default accent doesn't
-          // flash clay first.
-          var brand = localStorage.getItem("os-june:brand");
+          // flash sage first.
+          var brand =
+            localStorage.getItem("os-clovy:brand") ||
+            localStorage.getItem("os-june:brand");
           var brands = {
             clay: ["#b5551f", "#976851"],
             rose: ["#a5655c", "#9e6961"],
-            sage: ["#527f4d", "#5a7c56"],
+            sage: ["#3f812f", "#5a7c56"],
             ocean: ["#3d7b9a", "#467a95"],
             // "blue" was renamed to "ocean"; keep the alias so a stored
             // "blue" still pre-paints its swatch instead of flashing clay.
@@ -35,7 +39,7 @@
             amber: ["#b5551f", "#976851"],
             plum: ["#965d84", "#8f6380"],
           };
-          var accent = brands[brand] || brands.clay;
+          var accent = brands[brand] || brands.sage;
           document.documentElement.style.setProperty("--brand", accent[0]);
           document.documentElement.style.setProperty(
             "--brand-wash",
@@ -44,7 +48,9 @@
           // Pre-paint text-size multiplier. Keep the id->multiplier map in sync
           // with src/lib/font-scale.ts so a non-default size doesn't flash the
           // base scale before the bundle runs.
-          var scale = localStorage.getItem("os-june:font-scale");
+          var scale =
+            localStorage.getItem("os-clovy:font-scale") ||
+            localStorage.getItem("os-june:font-scale");
           var scales = { default: 1, large: 1.1, larger: 1.2 };
           document.documentElement.style.setProperty(
             "--font-scale",

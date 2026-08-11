@@ -1,6 +1,6 @@
 /**
  * Per-session record of settled title edits. Keyed by stored session id (not
- * runtime request id) because June's session list and persistence use the
+ * runtime request id) because Clovy's session list and persistence use the
  * durable id across every run. Absence means auto-titling is allowed, so
  * sessions from before this record existed fall back to the safe default.
  *
@@ -9,7 +9,7 @@
  * title suggester decides whether a loaded title is replaceable.
  */
 
-const STORAGE_KEY = "june.agent.manuallyTitledSessions";
+const STORAGE_KEY = "clovy.agent.manuallyTitledSessions";
 let volatileStore: Record<string, AgentSessionSettledTitleKind> = {};
 
 export type AgentSessionSettledTitleKind = "manual" | "exchange" | "rejected" | "rejected-final";
@@ -95,6 +95,7 @@ const QUESTION_SUBJECTS = new Set([
   "it",
   "they",
   "june",
+  "clovy",
   "this",
   "that",
   "these",

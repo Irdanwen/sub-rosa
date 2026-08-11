@@ -8,7 +8,7 @@ const SCHEMA_MIGRATIONS_TABLE: &str = "schema_migrations";
 
 const LEGACY_PENDING_COMPANION_MESSAGE: &str =
     "This request may already have reached June. Check your Mac before trying a different request.";
-const OUTCOME_UNKNOWN_COMPANION_MESSAGE: &str = "This request may already have reached June. Check your Mac, then choose the action again only if it is still needed.";
+const OUTCOME_UNKNOWN_COMPANION_MESSAGE: &str = "This request may already have reached Clovy. Check your Mac, then choose the action again only if it is still needed.";
 
 #[derive(Clone, Copy)]
 struct ColumnDefinition {
@@ -1452,7 +1452,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
 async fn migrate_legacy_companion_reservations(
     pool: &SqlitePool,
 ) -> Result<(), sqlx::error::Error> {
-    use june_companion_protocol::{FailureCode, ResultPayload};
+    use clovy_companion_protocol::{FailureCode, ResultPayload};
 
     let rows = query(
         "SELECT device_id, operation_id, response
@@ -1466,7 +1466,7 @@ async fn migrate_legacy_companion_reservations(
     for row in rows {
         let encoded: Vec<u8> = row.get("response");
         let Ok(mut response) =
-            serde_json::from_slice::<june_companion_protocol::Response>(&encoded)
+            serde_json::from_slice::<clovy_companion_protocol::Response>(&encoded)
         else {
             continue;
         };
@@ -1917,11 +1917,11 @@ fn validate_applied_migrations_with_tolerance(
     if applied.len() > migrations.len() {
         if !tolerate_newer {
             return Err(sqlx::Error::Protocol(
-                "database schema is newer than this June build".to_string(),
+                "database schema is newer than this Clovy build".to_string(),
             ));
         }
         eprintln!(
-            "warning: database schema is {} migration(s) ahead of this June build; \
+            "warning: database schema is {} migration(s) ahead of this Clovy build; \
              continuing because this is a dev build on the dev data dir",
             applied.len() - migrations.len()
         );
@@ -1953,7 +1953,7 @@ fn detect_legacy_version(
 
     let mut detected = 0;
     let mut first_missing: Option<&Migration> = None;
-    // The first June-owned agent runtime migration intentionally retires the
+    // The first Clovy-owned agent runtime migration intentionally retires the
     // three Hermes-era agent tables after importing them. Builds that shipped
     // that migration before the version catalog landed therefore have a
     // complete, unversioned runtime schema where migrations 9 through 11 are
@@ -1980,7 +1980,7 @@ fn detect_legacy_version(
         });
     if agent_runtime_tables_present && !agent_runtime_installed {
         return Err(sqlx::Error::Protocol(
-            "unversioned database contains an incomplete June agent runtime schema".to_string(),
+            "unversioned database contains an incomplete Clovy agent runtime schema".to_string(),
         ));
     }
     for migration in migrations {
@@ -2009,7 +2009,7 @@ fn detect_legacy_version(
 
     if detected == 0 {
         return Err(sqlx::Error::Protocol(
-            "unversioned database does not match a known June schema".to_string(),
+            "unversioned database does not match a known Clovy schema".to_string(),
         ));
     }
     Ok(detected)
@@ -3149,7 +3149,7 @@ mod tests {
 
         let error = validate_applied_migrations_with_tolerance(&applied, FAILING_MIGRATIONS, false)
             .expect_err("newer stamp must refuse");
-        assert!(error.to_string().contains("newer than this June build"));
+        assert!(error.to_string().contains("newer than this Clovy build"));
     }
 
     #[test]

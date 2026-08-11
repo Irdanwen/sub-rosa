@@ -25,7 +25,7 @@ const bundleDir = path.resolve(
   options.bundle || path.join(rootDir, ".tauri-helper", pin.bundleName),
 );
 const executable = path.join(bundleDir, "Contents", "MacOS", pin.executable);
-const stampPath = path.join(bundleDir, "Contents", "Resources", "june-cua-driver-pin.json");
+const stampPath = path.join(bundleDir, "Contents", "Resources", "clovy-cua-driver-pin.json");
 
 async function main() {
   if (process.platform !== "darwin") {
@@ -62,7 +62,7 @@ async function main() {
       if (permissionPrompt) {
         await driver.close();
         driver = await startHost(permissionPrompt);
-        console.error(`Requested ${permissionPrompt} for June Computer Use Driver.`);
+        console.error(`Requested ${permissionPrompt} for Clovy Computer Use Driver.`);
       }
     }
     const toolsResult = await driver.request("tools/list", {});
@@ -79,7 +79,7 @@ async function main() {
       await runLiveSelfTest(driver, false);
     }
     console.error(
-      `Computer use ${options.live ? "live " : ""}self-test passed for June's helper built from cua-driver ${pin.version} (${pin.sourceCommit}).`,
+      `Computer use ${options.live ? "live " : ""}self-test passed for Clovy's helper built from cua-driver ${pin.version} (${pin.sourceCommit}).`,
     );
   } finally {
     await driver?.close();
@@ -136,7 +136,7 @@ function validateBundle() {
     );
   }
   const version = run(executable, ["--version"]).combined.match(
-    /june-computer-use-driver\s+([^\s]+)\s+([0-9a-f]{40})/,
+    /clovy-computer-use-driver\s+([^\s]+)\s+([0-9a-f]{40})/,
   );
   if (version?.[1] !== pin.version || version?.[2] !== pin.sourceCommit) {
     throw new Error(
@@ -145,7 +145,7 @@ function validateBundle() {
   }
 
   const stamp = readJson(stampPath);
-  const profile = stamp.juneBuild?.profile;
+  const profile = stamp.clovyBuild?.profile;
   const expectedBundleIdentifier = computerUseBundleIdentifier({
     baseIdentifier: pin.bundleIdentifier,
     profile,
@@ -160,9 +160,9 @@ function validateBundle() {
   const plist = path.join(bundleDir, "Contents", "Info.plist");
   for (const [key, expected] of [
     ["CFBundleIdentifier", expectedBundleIdentifier],
-    ["CFBundleDisplayName", "June Computer Use Driver"],
-    ["CFBundleIconFile", "June.icns"],
-    ["CFBundleName", "June Computer Use Driver"],
+    ["CFBundleDisplayName", "Clovy Computer Use Driver"],
+    ["CFBundleIconFile", "Clovy.icns"],
+    ["CFBundleName", "Clovy Computer Use Driver"],
     ["LSMinimumSystemVersion", pin.minimumMacOSVersion],
   ]) {
     const actual = run("/usr/bin/plutil", ["-extract", key, "raw", "-o", "-", plist]).stdout.trim();
@@ -170,13 +170,13 @@ function validateBundle() {
       throw new Error(`Computer use helper ${key} is ${actual}; expected ${expected}.`);
     }
   }
-  const bundledIcon = path.join(bundleDir, "Contents", "Resources", "June.icns");
+  const bundledIcon = path.join(bundleDir, "Contents", "Resources", "Clovy.icns");
   if (
     readFileSync(bundledIcon).compare(
       readFileSync(path.join(rootDir, "src-tauri", "icons", "icon.icns")),
     ) !== 0
   ) {
-    throw new Error("Computer use helper icon does not match June's app icon.");
+    throw new Error("Computer use helper icon does not match Clovy's app icon.");
   }
   const screenReason = run("/usr/bin/plutil", [
     "-extract",
@@ -186,21 +186,23 @@ function validateBundle() {
     "-",
     plist,
   ]).stdout.trim();
-  if (!screenReason.startsWith("June captures only the app windows")) {
-    throw new Error("Computer use helper is missing June's Screen Recording usage description.");
+  if (!screenReason.startsWith("Clovy captures only the app windows")) {
+    throw new Error("Computer use helper is missing Clovy's Screen Recording usage description.");
   }
 
   if (
     stamp.version !== pin.version ||
     stamp.sourceCommit !== pin.sourceCommit ||
-    stamp.juneBuild?.sourceSha256 !== helperSourceSha256()
+    stamp.clovyBuild?.sourceSha256 !== helperSourceSha256()
   ) {
-    throw new Error("Computer use helper stamp does not match June's pinned source build.");
+    throw new Error("Computer use helper stamp does not match Clovy's pinned source build.");
   }
-  if (options.requireDeveloperId && stamp.juneBuild?.profile !== "release") {
+  if (options.requireDeveloperId && stamp.clovyBuild?.profile !== "release") {
     throw new Error("A signed Computer use release must contain a release-profile helper.");
   }
-  const sbom = readJson(path.join(bundleDir, "Contents", "Resources", "june-cua-driver.spdx.json"));
+  const sbom = readJson(
+    path.join(bundleDir, "Contents", "Resources", "clovy-cua-driver.spdx.json"),
+  );
   const sbomPackage = sbom.packages?.find((entry) => entry.name === "cua-driver-rs");
   const sbomSource = sbomPackage?.externalRefs?.find(
     (reference) => reference.referenceType === "purl",
@@ -223,7 +225,7 @@ function validateBundle() {
   const architectures = new Set(
     run("/usr/bin/lipo", ["-archs", executable]).stdout.trim().split(/\s+/),
   );
-  const declaredArchitectures = stamp.juneBuild?.architectures || [];
+  const declaredArchitectures = stamp.clovyBuild?.architectures || [];
   if (declaredArchitectures.length === 0 || architectures.size !== declaredArchitectures.length) {
     throw new Error("Computer use helper architecture declarations do not match its binary.");
   }
@@ -252,11 +254,11 @@ function validateDirectLaunchRefusal() {
     timeout: 10_000,
     env: {
       ...driverEnvironment(),
-      JUNE_COMPUTER_USE_HELPER_CAPABILITY: "a".repeat(64),
+      CLOVY_COMPUTER_USE_HELPER_CAPABILITY: "a".repeat(64),
     },
   });
   const output = `${direct.stdout || ""}\n${direct.stderr || ""}`;
-  if (direct.status === 0 || !output.includes("must be launched directly by June")) {
+  if (direct.status === 0 || !output.includes("must be launched directly by Clovy")) {
     throw new Error("Bundled Computer use helper accepted a direct MCP launch.");
   }
 }
@@ -268,11 +270,11 @@ function resolveSelfTestHost() {
     return host;
   }
   const stamp = readJson(stampPath);
-  const profile = stamp.juneBuild?.profile === "release" ? "release" : "debug";
+  const profile = stamp.clovyBuild?.profile === "release" ? "release" : "debug";
   const host = path.join(rootDir, "src-tauri", "target", profile, "os-june");
   if (!existsSync(host)) {
     throw new Error(
-      `Computer use self-test host is missing: ${host}. Build June first or pass --host.`,
+      `Computer use self-test host is missing: ${host}. Build Clovy first or pass --host.`,
     );
   }
   return host;
@@ -283,7 +285,7 @@ async function startMcp(command, args = [], env = driverEnvironment()) {
   const initialized = await client.request("initialize", {
     protocolVersion: contract.protocolVersion,
     capabilities: {},
-    clientInfo: { name: "June Computer use self-test", version: "1" },
+    clientInfo: { name: "Clovy Computer use self-test", version: "1" },
   });
   if (!initialized?.serverInfo?.name) {
     await client.close();
@@ -338,11 +340,11 @@ async function runLiveSelfTest(client, promptPermissions) {
     permissions.screen_recording_capturable !== true
   ) {
     throw new Error(
-      "Live Computer use self-test needs Accessibility and a live Screen Recording grant for the signed June Computer Use Driver helper.",
+      "Live Computer use self-test needs Accessibility and a live Screen Recording grant for the signed Clovy Computer Use Driver helper.",
     );
   }
 
-  const tempDir = mkdtempSync(path.join(tmpdir(), "june-computer-use-self-test-"));
+  const tempDir = mkdtempSync(path.join(tmpdir(), "clovy-computer-use-self-test-"));
   let targetPid = 0;
   let observerPid = 0;
   let targetChild;
@@ -402,7 +404,7 @@ async function runLiveSelfTest(client, promptPermissions) {
       );
     }
     const windowsBefore = await waitForWindows(client, [targetPid, observerPid]);
-    const target = findFixtureWindow(windowsBefore, targetPid, "June Computer Use Target");
+    const target = findFixtureWindow(windowsBefore, targetPid, "Clovy Computer Use Target");
     if (!target) {
       throw new Error(
         `Computer use fixture target window did not appear. Process windows: ${windowDiagnostic(windowsBefore, targetPid)}`,
@@ -483,8 +485,8 @@ async function runLiveSelfTest(client, promptPermissions) {
     }
     const windowsAfter = await waitForWindows(client, [targetPid, observerPid]);
     for (const [pid, title] of [
-      [targetPid, "June Computer Use Target"],
-      [observerPid, "June Computer Use Observer"],
+      [targetPid, "Clovy Computer Use Target"],
+      [observerPid, "Clovy Computer Use Observer"],
     ]) {
       const prior = findFixtureWindow(windowsBefore, pid, title);
       const current = findFixtureWindow(windowsAfter, pid, title);
@@ -541,7 +543,7 @@ function buildFixture(tempDir) {
 }
 
 function makeFixtureApp(tempDir, fixtureExecutable, role) {
-  const displayName = role === "observer" ? "June CU Observer" : "June CU Target";
+  const displayName = role === "observer" ? "Clovy CU Observer" : "Clovy CU Target";
   const app = path.join(tempDir, `${displayName}.app`);
   const macos = path.join(app, "Contents", "MacOS");
   mkdirSync(macos, { recursive: true });
@@ -555,7 +557,7 @@ function makeFixtureApp(tempDir, fixtureExecutable, role) {
 <plist version="1.0"><dict>
 <key>CFBundleDisplayName</key><string>${displayName}</string>
 <key>CFBundleExecutable</key><string>${executableName}</string>
-<key>CFBundleIdentifier</key><string>co.opensoftware.june.computer-use-self-test.${role}</string>
+<key>CFBundleIdentifier</key><string>co.opensoftware.clovy.computer-use-self-test.${role}</string>
 <key>CFBundleName</key><string>${displayName}</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>1.0</string>
@@ -689,8 +691,9 @@ function driverEnvironment() {
   for (const name of Object.keys(env)) {
     if (
       name.startsWith("CUA_DRIVER_RS_") ||
+      name.startsWith("CLOVY_CUA_DRIVER") ||
       name.startsWith("JUNE_CUA_DRIVER") ||
-      name === "JUNE_COMPUTER_USE_BACKEND" ||
+      name === "CLOVY_COMPUTER_USE_BACKEND" ||
       ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"].includes(
         name,
       )

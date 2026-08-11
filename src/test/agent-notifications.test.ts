@@ -38,9 +38,9 @@ describe("agent notifications", () => {
     vi.clearAllMocks();
     delete (
       globalThis as typeof globalThis & {
-        __juneAgentNotificationTimes?: Map<string, number>;
+        __clovyAgentNotificationTimes?: Map<string, number>;
       }
-    ).__juneAgentNotificationTimes;
+    ).__clovyAgentNotificationTimes;
   });
 
   it("maps attention to sound and native delivery based on what the user can see", () => {
@@ -92,11 +92,11 @@ describe("agent notifications", () => {
       agentNotificationCopy({
         status: "waitingForUser",
         title: "Approve a tool",
-        summary: "June needs approval.",
+        summary: "Clovy needs approval.",
       }),
     ).toEqual({
-      title: "June needs your input",
-      body: "June needs approval.",
+      title: "Clovy needs your input",
+      body: "Clovy needs approval.",
     });
   });
 
@@ -140,7 +140,7 @@ describe("agent notifications", () => {
         {
           sessionId: "session-2",
           title: "Make a PDF",
-          summary: "June finished.",
+          summary: "Clovy finished.",
         },
         FOCUSED_ELSEWHERE,
       ),
@@ -158,16 +158,16 @@ describe("agent notifications", () => {
         {
           sessionId: "session-3",
           title: "Make a PDF",
-          summary: "June finished.",
+          summary: "Clovy finished.",
         },
         { ...FOCUSED_ELSEWHERE, away: true },
       ),
     ).resolves.toBe(true);
 
     expect(tauriMocks.sendAppNotification).toHaveBeenCalledWith({
-      title: "June is ready",
+      title: "Clovy is ready",
       body: "Make a PDF",
-      group: "june-agent-session-3",
+      group: "clovy-agent-session-3",
       sessionId: "session-3",
     });
     expect(tauriMocks.sendAppNotification.mock.calls[0]?.[0]).not.toHaveProperty("sound");
@@ -180,7 +180,7 @@ describe("agent notifications", () => {
         {
           sessionId: "session-hud-ready",
           title: "Make a PDF",
-          summary: "June finished.",
+          summary: "Clovy finished.",
         },
         { ...FOCUSED_ELSEWHERE, away: true, agentHudEnabled: true },
       ),
@@ -202,7 +202,7 @@ describe("agent notifications", () => {
           sessionId: `session-hud-${status}`,
           status,
           title: "Make a PDF",
-          summary: "June needs attention.",
+          summary: "Clovy needs attention.",
         },
         { ...FOCUSED_ELSEWHERE, away: true, agentHudEnabled: true },
       ),
@@ -223,16 +223,16 @@ describe("agent notifications", () => {
         {
           sessionId: "session-fallback",
           title: "Make a PDF",
-          summary: "June finished.",
+          summary: "Clovy finished.",
         },
         { ...FOCUSED_ELSEWHERE, away: true, captureActive: true },
       ),
     ).resolves.toBe(true);
 
     expect(notificationMocks.sendNotification).toHaveBeenCalledWith({
-      title: "June is ready",
+      title: "Clovy is ready",
       body: "Make a PDF",
-      group: "june-agent-session-fallback",
+      group: "clovy-agent-session-fallback",
     });
     expect(notificationMocks.sendNotification.mock.calls[0]?.[0]).not.toHaveProperty("sound");
   });
@@ -277,11 +277,11 @@ describe("agent notifications", () => {
 
   it("dedupes duplicate attention events", async () => {
     await notifyAgentRunSettled(
-      { sessionId: "session-6", title: "Make a PDF", summary: "June finished." },
+      { sessionId: "session-6", title: "Make a PDF", summary: "Clovy finished." },
       FOCUSED_ELSEWHERE,
     );
     await notifyAgentRunSettled(
-      { sessionId: "session-6", title: "Make a PDF", summary: "June finished." },
+      { sessionId: "session-6", title: "Make a PDF", summary: "Clovy finished." },
       FOCUSED_ELSEWHERE,
     );
 
@@ -300,7 +300,7 @@ describe("agent notifications", () => {
     const detail = {
       sessionId: "session-concurrent",
       title: "Make a PDF",
-      summary: "June finished.",
+      summary: "Clovy finished.",
     };
     const context = { ...FOCUSED_ELSEWHERE, away: true, captureActive: true };
 
@@ -319,7 +319,7 @@ describe("agent notifications", () => {
     const detail = {
       sessionId: "session-retry",
       title: "Make a PDF",
-      summary: "June finished.",
+      summary: "Clovy finished.",
     };
     const context = { ...FOCUSED_ELSEWHERE, away: true, captureActive: true };
 
@@ -352,9 +352,9 @@ describe("agent notifications", () => {
       expect(tauriMocks.sendAppNotification).toHaveBeenCalledTimes(2);
       const recent = (
         globalThis as typeof globalThis & {
-          __juneAgentNotificationTimes?: Map<string, number>;
+          __clovyAgentNotificationTimes?: Map<string, number>;
         }
-      ).__juneAgentNotificationTimes;
+      ).__clovyAgentNotificationTimes;
       expect(recent?.size).toBe(1);
     } finally {
       vi.useRealTimers();
@@ -370,7 +370,7 @@ describe("agent notifications", () => {
 
     await expect(
       notifyAgentRunSettled(
-        { sessionId: "session-7", title: "Make a PDF", summary: "June finished." },
+        { sessionId: "session-7", title: "Make a PDF", summary: "Clovy finished." },
         { ...FOCUSED_ELSEWHERE, away: true },
       ),
     ).resolves.toBe(true);

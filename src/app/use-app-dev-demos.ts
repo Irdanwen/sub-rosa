@@ -208,15 +208,15 @@ export function useAppDevDemos(dependencies: UseAppDevDemosDependencies) {
       dispose?.();
     };
   }, []);
-  // Dev console driver (window.__juneSounds) for hearing the full recording
+  // Dev console driver (window.__clovySounds) for hearing the full recording
   // and agent sound family without walking each production lifecycle.
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     let cancelled = false;
     let dispose: (() => void) | undefined;
-    void import("../lib/june-sounds-demo").then(({ registerJuneSoundsDemo }) => {
+    void import("../lib/clovy-sounds-demo").then(({ registerClovySoundsDemo }) => {
       if (cancelled) return;
-      ({ dispose } = registerJuneSoundsDemo());
+      ({ dispose } = registerClovySoundsDemo());
     });
     return () => {
       cancelled = true;

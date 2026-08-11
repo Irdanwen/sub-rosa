@@ -2,7 +2,7 @@
  * Launch-at-login state, backed by tauri-plugin-autostart (a LaunchAgent on
  * macOS, registry entry on Windows).
  *
- * June is a background assistant: dictation hotkeys, meeting detection, and
+ * Clovy is a background assistant: dictation hotkeys, meeting detection, and
  * scheduled routines only work while the app is running, so a fresh install
  * enables launch at login once during onboarding completion. The OS login
  * item itself stays the single source of truth; the one-shot marker below
@@ -10,13 +10,13 @@
  * login item off (in Settings or System Settings) is never re-opted-in.
  */
 
-const DEFAULT_APPLIED_KEY = "june.autostart.defaultApplied";
+const DEFAULT_APPLIED_KEY = "clovy.autostart.defaultApplied";
 /** Set on a first-ever onboarding completion, cleared once the default
  * lands. Keeps a failed enable retryable across replays: completion is
  * marked before this helper runs, so without this marker a retry could
  * never distinguish "fresh install whose enable failed" from "existing
  * user who must not be enrolled". */
-const DEFAULT_ELIGIBLE_KEY = "june.autostart.defaultEligible";
+const DEFAULT_ELIGIBLE_KEY = "clovy.autostart.defaultEligible";
 
 function inTauri() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;

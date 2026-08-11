@@ -5,7 +5,7 @@ use crate::{
     domain::types::{AppError, NoteDto, SessionRequest},
     providers,
 };
-use june_companion_protocol::{
+use clovy_companion_protocol::{
     ActiveRecording, ActiveRecordingSnapshot, ActiveRecordingState, Body, Capability, DeviceSelf,
     DictationStyle, FailureCode, FocusTarget, Frame, NoteConflict, NoteRecord, NoteSummary, Page,
     ProtocolFailure, Response, ResultPayload, SafeSettings, DEFAULT_CONTROL_TTL_MS,
@@ -482,7 +482,7 @@ impl Controller {
                     let _ = window.unminimize();
                     let _ = window.set_focus();
                 }
-                app.emit("june://companion-focus", &target)
+                app.emit("clovy://companion-focus", &target)
                     .map_err(|error| {
                         AppError::new(
                             "companion_focus_failed",
@@ -624,7 +624,7 @@ fn pending_operation_response(capability: Capability) -> Response {
         capability,
         ResultPayload::Error(ProtocolFailure {
             code: FailureCode::OutcomeUnknown,
-            message: "This request may already have reached June. Check your Mac, then choose the action again only if it is still needed."
+            message: "This request may already have reached Clovy. Check your Mac, then choose the action again only if it is still needed."
                 .to_string(),
             retryable: false,
         }),
@@ -637,7 +637,7 @@ fn reservation_capacity_response(capability: Capability) -> Response {
         ResultPayload::Error(ProtocolFailure {
             code: FailureCode::Busy,
             message:
-                "June is still resolving earlier companion actions. Check your Mac, then try again."
+                "Clovy is still resolving earlier companion actions. Check your Mac, then try again."
                     .to_string(),
             retryable: true,
         }),
@@ -832,7 +832,7 @@ fn device_self(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use june_companion_protocol::{
+    use clovy_companion_protocol::{
         AgentSendRequest, ComputerUseApprovalDecision, ComputerUseApprovalDecisionRequest,
         ComputerUseApprovalReceipt, PageRequest,
     };

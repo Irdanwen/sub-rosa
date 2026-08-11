@@ -37,7 +37,7 @@ pub struct DetectedBrowser {
 
 /// Actionable copy shown when no supported browser is installed. This exact
 /// wording is a JUN-289 acceptance criterion (sentence case, no em dashes).
-pub const NO_BROWSER_MESSAGE: &str = "No compatible browser is installed. Install Google Chrome, Microsoft Edge, Brave, or Chromium so June can run its managed browser.";
+pub const NO_BROWSER_MESSAGE: &str = "No compatible browser is installed. Install Google Chrome, Microsoft Edge, Brave, or Chromium so Clovy can run its managed browser.";
 
 /// Detects the highest-priority installed browser, or `None` if none is present
 /// (callers surface [`NO_BROWSER_MESSAGE`]).
@@ -133,7 +133,7 @@ fn which_in_path(name: &str) -> Option<PathBuf> {
 /// [`sweep_profiles_root`]) so a crash that skipped Drop never leaves a stale
 /// profile behind on the next run.
 pub fn profiles_root() -> PathBuf {
-    std::env::temp_dir().join("co.opensoftware.june.browser-profiles")
+    std::env::temp_dir().join("co.opensoftware.clovy.browser-profiles")
 }
 
 /// Best-effort delete of everything under [`profiles_root`]. Called once at app
@@ -141,6 +141,7 @@ pub fn profiles_root() -> PathBuf {
 /// is already the desired state).
 pub fn sweep_profiles_root() {
     sweep_profiles_root_at(&profiles_root());
+    sweep_profiles_root_at(&std::env::temp_dir().join("co.opensoftware.june.browser-profiles"));
 }
 
 pub(super) fn sweep_profiles_root_at(root: &Path) {

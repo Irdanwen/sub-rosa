@@ -324,7 +324,7 @@ pub struct RemoveNoteFromFolderRequest {
     pub folder_id: String,
 }
 
-// Records which project (folder) a June-owned agent session is filed under.
+// Records which project (folder) a Clovy-owned agent session is filed under.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionFolderDto {
@@ -332,7 +332,7 @@ pub struct SessionFolderDto {
     pub folder_id: String,
 }
 
-// Records which June profile a session was created under.
+// Records which Clovy profile a session was created under.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionProfileDto {
@@ -357,7 +357,7 @@ pub struct AssignSessionToFolderRequest {
     pub folder_id: String,
 }
 
-// June records completion locally, keyed by the stored session id.
+// Clovy records completion locally, keyed by the stored session id.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompletedSessionDto {
@@ -922,7 +922,7 @@ pub struct SubmitIssueReportRequest {
 pub struct SubmitIssueReportResponse {
     pub received: bool,
     /// Names of attachments whose bytes were omitted locally, by a
-    /// compatibility fallback, or by June API. The report still carries the
+    /// compatibility fallback, or by Clovy API. The report still carries the
     /// names so the team knows which files were intended.
     #[serde(default)]
     pub skipped_attachment_names: Vec<String>,
@@ -1099,7 +1099,7 @@ pub enum SourceState {
 }
 
 // ---- Private sharing (JUN-308) -------------------------------------------
-// Wire DTOs for the june-api /v1/shares endpoints plus the local key-store
+// Wire DTOs for the clovy-api /v1/shares endpoints plus the local key-store
 // commands. Ciphertext, IVs, envelopes, and keys cross the IPC boundary as
 // base64url strings; the Tauri layer only moves ciphertext and metadata,
 // never plaintext or unwrapped keys (crypto happens in the webview).

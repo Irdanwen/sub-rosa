@@ -125,7 +125,7 @@ fn ensure_connection_revision(expected: u64) -> Result<(), AppError> {
     if connection_revision() != expected {
         return Err(AppError::new(
             "notion_connection_changed",
-            "The Notion connection changed while June was waiting. Please try again.",
+            "The Notion connection changed while Clovy was waiting. Please try again.",
         ));
     }
     Ok(())
@@ -138,14 +138,14 @@ fn http_client() -> Result<&'static reqwest::Client, AppError> {
             // Keep it direct-to-provider for this preview instead of honoring
             // ambient process proxy variables that could redirect credentials.
             // This means proxy-required networks are intentionally unsupported
-            // until June has an explicit trusted-proxy connector setting.
+            // until Clovy has an explicit trusted-proxy connector setting.
             reqwest::Client::builder()
                 .no_proxy()
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(HTTP_CONNECT_TIMEOUT)
                 .pool_idle_timeout(Duration::from_secs(90))
                 .tcp_keepalive(Some(Duration::from_secs(30)))
-                .user_agent("os-june/0.1 notion-hosted-mcp-preview")
+                .user_agent("clovy/0.1 notion-hosted-mcp-preview")
                 .build()
                 .map_err(|error| error.to_string())
         })
@@ -606,7 +606,7 @@ fn verify_required_hosted_tools(tools: &[NotionMcpTool]) -> Result<(), AppError>
     {
         return Err(AppError::new(
             "notion_mcp_required_tools_missing",
-            "Notion hosted MCP is missing tools June requires.",
+            "Notion hosted MCP is missing tools Clovy requires.",
         ));
     }
     Ok(())
@@ -616,7 +616,7 @@ fn verify_required_tool_access(result: &serde_json::Value) -> Result<(), AppErro
     let malformed = || {
         AppError::new(
             "notion_mcp_tool_access_check_failed",
-            "June could not verify which Notion tools are available for this workspace. Please try again.",
+            "Clovy could not verify which Notion tools are available for this workspace. Please try again.",
         )
     };
     let result = result.as_object().ok_or_else(&malformed)?;
@@ -670,7 +670,7 @@ fn verify_required_tool_access(result: &serde_json::Value) -> Result<(), AppErro
     if unavailable {
         return Err(AppError::new(
             "notion_mcp_required_tools_unavailable",
-            "This Notion workspace does not currently enable every tool June requires. Enable or upgrade access, then try again.",
+            "This Notion workspace does not currently enable every tool Clovy requires. Enable or upgrade access, then try again.",
         ));
     }
     Ok(())
@@ -726,7 +726,7 @@ pub async fn call_hosted_tool(
     let Some(tool_name) = tool_allowed_for_agent(&request.tool_name) else {
         return Err(AppError::new(
             "notion_tool_not_allowed",
-            "That Notion hosted MCP tool is not enabled in June yet.",
+            "That Notion hosted MCP tool is not enabled in Clovy yet.",
         ));
     };
     preflight_read_tool_arguments(tool_name, &request.arguments)?;
@@ -740,7 +740,7 @@ pub async fn call_hosted_action_tool(
     let Some(tool_name) = action_tool_allowed_for_agent(&request.tool_name) else {
         return Err(AppError::new(
             "notion_tool_not_allowed",
-            "That Notion hosted MCP action is not enabled in June yet.",
+            "That Notion hosted MCP action is not enabled in Clovy yet.",
         ));
     };
     preflight_action_arguments(tool_name, &request.arguments)?;
@@ -774,7 +774,7 @@ pub async fn call_hosted_action_tool(
     .map_err(|_| {
         AppError::new(
             "notion_mcp_action_timeout",
-            "Notion did not finish the approved action before June's safety timeout. Check Notion before retrying.",
+            "Notion did not finish the approved action before Clovy's safety timeout. Check Notion before retrying.",
         )
     })?
 }
@@ -790,7 +790,7 @@ pub async fn call_hosted_action_tool_approved(
     let Some(tool_name) = action_tool_allowed_for_agent(&request.tool_name) else {
         return Err(AppError::new(
             "notion_tool_not_allowed",
-            "That Notion hosted MCP action is not enabled in June yet.",
+            "That Notion hosted MCP action is not enabled in Clovy yet.",
         ));
     };
     ensure_connection_revision(expected_revision)?;
@@ -808,7 +808,7 @@ pub async fn call_hosted_action_tool_approved(
     .map_err(|_| {
         AppError::new(
             "notion_mcp_action_timeout",
-            "Notion did not finish the approved action before June's safety timeout. Check Notion before retrying.",
+            "Notion did not finish the approved action before Clovy's safety timeout. Check Notion before retrying.",
         )
     })?
 }
@@ -940,7 +940,7 @@ async fn call_hosted_action_for_revision(
         }
         return Err(AppError::new(
             "notion_mcp_action_retry_required",
-            "Notion rejected the action after it may have been received. June did not replay the mutation. Check Notion, then retry if needed.",
+            "Notion rejected the action after it may have been received. Clovy did not replay the mutation. Check Notion, then retry if needed.",
         ));
     }
     first
@@ -1343,7 +1343,7 @@ async fn get_json<T: for<'de> Deserialize<'de>>(url: &str) -> Result<T, AppError
 fn metadata_error() -> AppError {
     AppError::new(
         "notion_oauth_metadata_invalid",
-        "Notion's hosted MCP OAuth metadata did not match June's expected endpoint.",
+        "Notion's hosted MCP OAuth metadata did not match Clovy's expected endpoint.",
     )
 }
 
@@ -1430,7 +1430,7 @@ async fn register_client(
         .post(endpoint)
         .timeout(HTTP_TIMEOUT)
         .json(&RegistrationRequest {
-            client_name: "June",
+            client_name: "Clovy",
             redirect_uris: vec![redirect_uri],
             grant_types: vec!["authorization_code", "refresh_token"],
             response_types: vec!["code"],
@@ -1555,7 +1555,7 @@ impl McpHttpClient {
                     "protocolVersion": MCP_PROTOCOL_VERSION,
                     "capabilities": {},
                     "clientInfo": {
-                        "name": "June",
+                        "name": "Clovy",
                         "version": env!("CARGO_PKG_VERSION"),
                     },
                 },
@@ -1682,7 +1682,7 @@ impl McpHttpClient {
             if response.status() == reqwest::StatusCode::UNAUTHORIZED {
                 return Err(AppError::new(
                     "notion_mcp_unauthorized",
-                    "Notion rejected the saved connection. June will refresh it and retry.",
+                    "Notion rejected the saved connection. Clovy will refresh it and retry.",
                 ));
             }
             return Err(AppError::new(
@@ -1723,7 +1723,7 @@ async fn read_mcp_json(
         if bytes.len().saturating_add(chunk.len()) > MCP_RESPONSE_MAX_BYTES {
             return Err(AppError::new(
                 "notion_mcp_response_too_large",
-                "Notion hosted MCP returned more metadata than June will accept.",
+                "Notion hosted MCP returned more metadata than Clovy will accept.",
             ));
         }
         bytes.extend_from_slice(&chunk);
@@ -1874,7 +1874,7 @@ fn filter_allowed_tools(
 fn apply_action_tool_contract(tool: &mut NotionMcpTool) {
     let (description, schema) = match tool.name.as_str() {
         "notion-create-pages" => (
-            "Create exactly one Notion page with an explicit parent, title, and previewable content. June rejects batching, async execution, icons, covers, and templates.",
+            "Create exactly one Notion page with an explicit parent, title, and previewable content. Clovy rejects batching, async execution, icons, covers, and templates.",
             serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -1905,7 +1905,7 @@ fn apply_action_tool_contract(tool: &mut NotionMcpTool) {
             }),
         ),
         "notion-update-page" => (
-            "Update one explicit Notion page using June's previewable, approval-gated subset. Archiving, trashing, async execution, icons, covers, templates, and child deletion are unavailable.",
+            "Update one explicit Notion page using Clovy's previewable, approval-gated subset. Archiving, trashing, async execution, icons, covers, templates, and child deletion are unavailable.",
             serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -2035,7 +2035,7 @@ fn preflight_action_arguments(
         "notion-update-page" => preflight_update_page_arguments(arguments),
         _ => Err(AppError::new(
             "notion_tool_not_allowed",
-            "That Notion hosted MCP action is not enabled in June yet.",
+            "That Notion hosted MCP action is not enabled in Clovy yet.",
         )),
     }
 }
@@ -2086,7 +2086,7 @@ fn preflight_create_pages_arguments(arguments: &serde_json::Value) -> Result<(),
     if pages.len() > 1 {
         return Err(AppError::new(
             "notion_create_pages_batching_unsupported",
-            "Create one Notion page at a time so June can show and approve its exact destination and content.",
+            "Create one Notion page at a time so Clovy can show and approve its exact destination and content.",
         ));
     }
     let Some(page) = pages.first().and_then(serde_json::Value::as_object) else {
@@ -2134,7 +2134,7 @@ fn preflight_create_pages_arguments(arguments: &serde_json::Value) -> Result<(),
     if !has_previewable_create_content(page) {
         return Err(AppError::new(
             "notion_create_pages_missing_content",
-            "Notion page creation requires content June can preview for approval.",
+            "Notion page creation requires content Clovy can preview for approval.",
         ));
     }
     Ok(())
@@ -2836,8 +2836,10 @@ fn now_unix() -> i64 {
 mod store {
     use super::*;
 
-    const KEYCHAIN_SERVICE: &str = "co.opensoftware.june.notion-hosted-mcp";
-    const DEV_KEYCHAIN_SERVICE: &str = "co.opensoftware.june-dev.notion-hosted-mcp";
+    const KEYCHAIN_SERVICE: &str = "co.opensoftware.clovy.notion-hosted-mcp";
+    const DEV_KEYCHAIN_SERVICE: &str = "co.opensoftware.clovy-dev.notion-hosted-mcp";
+    const LEGACY_KEYCHAIN_SERVICE: &str = "co.opensoftware.june.notion-hosted-mcp";
+    const LEGACY_DEV_KEYCHAIN_SERVICE: &str = "co.opensoftware.june-dev.notion-hosted-mcp";
 
     pub async fn store(tokens: &StoredNotionConnection) -> Result<(), AppError> {
         let json = serde_json::to_string(tokens)
@@ -2855,10 +2857,14 @@ mod store {
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     async fn store_platform(json: String) -> Result<(), AppError> {
-        let service = keychain_service().to_string();
+        let (service, legacy_service) = keychain_services();
         tokio::task::spawn_blocking(move || {
-            keyring::Entry::new(&service, NOTION_ACCOUNT_ID)
-                .and_then(|entry| entry.set_password(&json))
+            crate::credential_compat::set_password(
+                service,
+                legacy_service,
+                NOTION_ACCOUNT_ID,
+                &json,
+            )
         })
         .await
         .map_err(|e| AppError::new("notion_keychain_write_failed", e.to_string()))?
@@ -2875,18 +2881,13 @@ mod store {
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     async fn load_platform() -> Result<Option<StoredNotionConnection>, AppError> {
-        let service = keychain_service().to_string();
+        let (service, legacy_service) = keychain_services();
         let raw = tokio::task::spawn_blocking(move || {
-            match keyring::Entry::new(&service, NOTION_ACCOUNT_ID)
-                .and_then(|entry| entry.get_password())
-            {
-                Ok(raw) => Ok(Some(raw)),
-                Err(keyring::Error::NoEntry) => Ok(None),
-                Err(e) => Err(AppError::new("notion_keychain_read_failed", e.to_string())),
-            }
+            crate::credential_compat::get_password(service, legacy_service, NOTION_ACCOUNT_ID)
         })
         .await
-        .map_err(|e| AppError::new("notion_keychain_read_failed", e.to_string()))??;
+        .map_err(|e| AppError::new("notion_keychain_read_failed", e.to_string()))?
+        .map_err(|e| AppError::new("notion_keychain_read_failed", e.to_string()))?;
         let Some(raw) = raw else {
             return Ok(None);
         };
@@ -2907,20 +2908,13 @@ mod store {
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     async fn delete_platform() -> Result<(), AppError> {
-        let service = keychain_service().to_string();
+        let (service, legacy_service) = keychain_services();
         tokio::task::spawn_blocking(move || {
-            match keyring::Entry::new(&service, NOTION_ACCOUNT_ID)
-                .and_then(|entry| entry.delete_credential())
-            {
-                Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-                Err(e) => Err(AppError::new(
-                    "notion_keychain_delete_failed",
-                    e.to_string(),
-                )),
-            }
+            crate::credential_compat::delete_password(service, legacy_service, NOTION_ACCOUNT_ID)
         })
         .await
         .map_err(|e| AppError::new("notion_keychain_delete_failed", e.to_string()))?
+        .map_err(|e| AppError::new("notion_keychain_delete_failed", e.to_string()))
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -2929,11 +2923,11 @@ mod store {
     }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
-    fn keychain_service() -> &'static str {
+    fn keychain_services() -> (&'static str, &'static str) {
         if cfg!(debug_assertions) {
-            DEV_KEYCHAIN_SERVICE
+            (DEV_KEYCHAIN_SERVICE, LEGACY_DEV_KEYCHAIN_SERVICE)
         } else {
-            KEYCHAIN_SERVICE
+            (KEYCHAIN_SERVICE, LEGACY_KEYCHAIN_SERVICE)
         }
     }
 }

@@ -233,7 +233,7 @@ pub fn system_audio_readiness() -> SourceReadinessDto {
             ))
         } else if !helper_available {
             Some(
-                "System audio helper is not built. Restart June or run pnpm tauri:dev again."
+                "System audio helper is not built. Restart Clovy or run pnpm tauri:dev again."
                     .to_string(),
             )
         } else {
@@ -284,7 +284,7 @@ pub fn helper_permission_check() -> Result<(), AppError> {
         ));
     }
     terminate_existing_helpers();
-    let temp = std::env::temp_dir().join(format!("os-june-audio-check-{}", uuid::Uuid::new_v4()));
+    let temp = std::env::temp_dir().join(format!("clovy-audio-check-{}", uuid::Uuid::new_v4()));
     let output_path = temp.with_extension("wav");
     let status_path = temp.with_extension("json");
     let pid_path = temp.with_extension("pid");
@@ -464,7 +464,7 @@ fn send_signal(pid: u32, signal: &str) {
 
 fn terminate_existing_helpers() {
     // Also match the pre-rename helper so a recorder left over from an older
-    // "June" build still gets cleaned up.
+    // legacy June build still gets cleaned up.
     let helper_names = [
         "june-system-audio-recorder",
         "os-june-system-audio-recorder",

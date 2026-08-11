@@ -1,6 +1,6 @@
 import type { VeniceModelDto } from "./tauri";
 
-// June's default video model. Mirrors DEFAULT_VIDEO_MODEL in the Rust providers
+// Clovy's default video model. Mirrors DEFAULT_VIDEO_MODEL in the Rust providers
 // module (src-tauri/src/providers/mod.rs). Keep the two in sync.
 export const DEFAULT_VIDEO_MODEL = "wan-2.2-a14b-text-to-video";
 
@@ -33,16 +33,16 @@ function videoModel({
 // default, a photorealistic option, and a higher-detail option — rather than
 // the full compatible catalog. Three hard constraints govern any entry; a model
 // that breaks the first two fails at generation time, not here:
-//   1. It must be priced in june-api's `video_pricing` map (ADR 0015): that map
+//   1. It must be priced in clovy-api's `video_pricing` map (ADR 0015): that map
 //      doubles as the allowlist, and an unlisted model is rejected
 //      `model_not_priced`. Keep these ids in sync with that map AND with
 //      `KNOWN_VIDEO_MODELS` in src-tauri/src/providers/mod.rs.
-//   2. It must accept the fixed fast-path shape June injects (5s / 720p / 16:9;
+//   2. It must accept the fixed fast-path shape Clovy injects (5s / 720p / 16:9;
 //      see the DEFAULT_VIDEO_* constants in src-tauri/src/providers/mod.rs).
 //      Each id below is a
 //      text-to-video Venice model that lists all three in its catalog
 //      constraints; a model missing any would 400 at queue on the fast path.
-//   3. Venice `private` privacy tier, to match June's privacy stance (several
+//   3. Venice `private` privacy tier, to match Clovy's privacy stance (several
 //      compatible models are `anonymized` — logged, de-identified — and are
 //      deliberately excluded).
 export const VIDEO_MODELS: VeniceModelDto[] = [

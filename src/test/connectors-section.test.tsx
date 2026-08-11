@@ -51,7 +51,7 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   extensionPairingStatus: mocks.extensionPairingStatus,
   registerBrowserExtensionHost: mocks.registerBrowserExtensionHost,
   browserTransportPolicy: mocks.browserTransportPolicy,
-  EXTENSION_PAIRING_CHANGED_EVENT: "june://extension-pairing-changed",
+  EXTENSION_PAIRING_CHANGED_EVENT: "clovy://extension-pairing-changed",
   connectorsLinearTeams: mocks.connectorsLinearTeams,
   connectorsSetSelectedTeams: mocks.connectorsSetSelectedTeams,
   obsidianStatus: mocks.obsidianStatus,
@@ -136,8 +136,8 @@ beforeEach(() => {
   mocks.connectorsSetSelectedTeams.mockResolvedValue(linearAccount());
   mocks.extensionPairingStatus.mockResolvedValue({ paired: false, listenerRunning: true });
   mocks.registerBrowserExtensionHost.mockResolvedValue({
-    manifestPath: "/tmp/co.opensoftware.june.extension.json",
-    shimPath: "/tmp/june-nm-shim",
+    manifestPath: "/tmp/co.opensoftware.clovy.extension.json",
+    shimPath: "/tmp/clovy-nm-shim",
   });
   mocks.browserTransportPolicy.mockResolvedValue({
     attendedEnabled: true,
@@ -329,7 +329,7 @@ describe("ConnectorsSection", () => {
     expect(mocks.notionConnectorConnect).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog", { name: "Connect Notion" })).toBeInTheDocument();
     expect(
-      screen.getByText(/You'll sign in to Notion and approve June's access/i),
+      screen.getByText(/You'll sign in to Notion and approve Clovy's access/i),
     ).toBeInTheDocument();
     expect(
       screen.getAllByText(/Access may extend beyond selected pages/i).length,
@@ -429,7 +429,7 @@ describe("ConnectorsSection", () => {
     expect(mocks.notionConnectorConnect).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog", { name: "Reconnect Notion" })).toBeInTheDocument();
     expect(
-      screen.getByText(/You'll sign in to Notion and approve June's access/i),
+      screen.getByText(/You'll sign in to Notion and approve Clovy's access/i),
     ).toBeInTheDocument();
     expect(
       screen.getAllByText(/Access may extend beyond selected pages/i).length,
@@ -459,7 +459,7 @@ describe("ConnectorsSection", () => {
 
     expect(await screen.findByText("Status unavailable")).toBeInTheDocument();
     expect(
-      screen.getByText("June could not confirm the Notion connection. Try again in a moment."),
+      screen.getByText("Clovy could not confirm the Notion connection. Try again in a moment."),
     ).toBeInTheDocument();
     await userEvent.hover(screen.getByRole("button", { name: "Notion privacy and access scope" }));
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
@@ -556,7 +556,7 @@ describe("ConnectorsSection", () => {
     expect(screen.getByText("Connected")).toBeInTheDocument();
     expect(screen.getByText(/read mail, manage calendar/i)).toBeInTheDocument();
     // Subscribed to the connectors-changed Tauri event to stay fresh.
-    expect(mocks.listen).toHaveBeenCalledWith("june://connectors-changed", expect.any(Function));
+    expect(mocks.listen).toHaveBeenCalledWith("clovy://connectors-changed", expect.any(Function));
   });
 
   it("keeps local mode to one account: a connected provider offers no second connect", async () => {
@@ -671,9 +671,9 @@ describe("ConnectorsSection", () => {
     await userEvent.click(screen.getByRole("button", { name: "Disconnect Google" }));
     const dialog = await screen.findByRole("dialog", { name: /Disconnect alex@example.com/ });
     // Checked on open: a disconnect that leaves the grant alive also drops
-    // June's tokens, so the user could never revoke it from June afterward.
+    // Clovy's tokens, so the user could never revoke it from Clovy afterward.
     expect(
-      within(dialog).getByRole("checkbox", { name: /revoke June's access with Google/i }),
+      within(dialog).getByRole("checkbox", { name: /revoke Clovy's access with Google/i }),
     ).toBeChecked();
 
     mocks.connectorsList.mockResolvedValue([]);
@@ -697,7 +697,7 @@ describe("ConnectorsSection", () => {
     const dialog = await screen.findByRole("dialog", { name: /Disconnect alex@example.com/ });
     // Unchecking is a deliberate "I'll reconnect shortly" choice.
     await userEvent.click(
-      within(dialog).getByRole("checkbox", { name: /revoke June's access with Google/i }),
+      within(dialog).getByRole("checkbox", { name: /revoke Clovy's access with Google/i }),
     );
     await userEvent.click(within(dialog).getByRole("button", { name: "Disconnect" }));
 
@@ -826,7 +826,7 @@ describe("ConnectorsSection — Linear", () => {
 
     await waitFor(() =>
       expect(mocks.toastWarning).toHaveBeenCalledWith(
-        "Disconnected Acme locally. June could not confirm revocation with Linear; you can remove June in Linear settings.",
+        "Disconnected Acme locally. Clovy could not confirm revocation with Linear; you can remove Clovy in Linear settings.",
       ),
     );
     expect(mocks.toastSuccess).not.toHaveBeenCalled();
@@ -978,7 +978,7 @@ describe("ConnectorsSection — GitHub", () => {
 
     // Fire the device-code event from the backend.
     act(() => {
-      eventHandlers.get("june://connectors-github-device-code")?.({
+      eventHandlers.get("clovy://connectors-github-device-code")?.({
         payload: {
           userCode: "RECON-5678",
           verificationUri: "https://github.com/login/device",
@@ -990,7 +990,7 @@ describe("ConnectorsSection — GitHub", () => {
     // The device-code panel is visible INSIDE the dialog (regression guard).
     expect(await within(dialog).findByText("RECON-5678")).toBeInTheDocument();
     expect(
-      within(dialog).getByText(/enter this code at github\.com\/login\/device to approve June/i),
+      within(dialog).getByText(/enter this code at github\.com\/login\/device to approve Clovy/i),
     ).toBeInTheDocument();
   });
 
@@ -1065,7 +1065,7 @@ describe("ConnectorsSection — GitHub", () => {
     await userEvent.click(screen.getByRole("button", { name: "Disconnect GitHub" }));
     const dialog = await screen.findByRole("dialog", { name: /Disconnect octocat/ });
     expect(
-      within(dialog).getByRole("checkbox", { name: /revoke June's access with GitHub/i }),
+      within(dialog).getByRole("checkbox", { name: /revoke Clovy's access with GitHub/i }),
     ).toBeChecked();
 
     mocks.connectorsList.mockResolvedValue([]);
@@ -1092,7 +1092,7 @@ describe("ConnectorsSection — GitHub", () => {
 
     // Fire the device-code event from the backend.
     act(() => {
-      eventHandlers.get("june://connectors-github-device-code")?.({
+      eventHandlers.get("clovy://connectors-github-device-code")?.({
         payload: {
           userCode: "ABCD-1234",
           verificationUri: "https://github.com/login/device",
@@ -1104,7 +1104,7 @@ describe("ConnectorsSection — GitHub", () => {
     // The device-code panel replaces the bundle picker.
     expect(await screen.findByText("ABCD-1234")).toBeInTheDocument();
     expect(
-      screen.getByText(/enter this code at github\.com\/login\/device to approve June/i),
+      screen.getByText(/enter this code at github\.com\/login\/device to approve Clovy/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/waiting for approval on GitHub/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /copy code/i })).toBeInTheDocument();
@@ -1121,7 +1121,7 @@ describe("ConnectorsSection — GitHub", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Connect" }));
 
     act(() => {
-      eventHandlers.get("june://connectors-github-device-code")?.({
+      eventHandlers.get("clovy://connectors-github-device-code")?.({
         payload: {
           userCode: "FIRST-111",
           verificationUri: "https://github.com/login/device",
@@ -1132,7 +1132,7 @@ describe("ConnectorsSection — GitHub", () => {
     expect(await screen.findByText("FIRST-111")).toBeInTheDocument();
 
     act(() => {
-      eventHandlers.get("june://connectors-github-device-code")?.({
+      eventHandlers.get("clovy://connectors-github-device-code")?.({
         payload: {
           userCode: "SECOND-222",
           verificationUri: "https://github.com/login/device",
@@ -1160,7 +1160,7 @@ describe("ConnectorsSection — GitHub", () => {
 
     // Fire device code so the panel shows up.
     act(() => {
-      eventHandlers.get("june://connectors-github-device-code")?.({
+      eventHandlers.get("clovy://connectors-github-device-code")?.({
         payload: {
           userCode: "ABCD-9999",
           verificationUri: "https://github.com/login/device",
@@ -1196,7 +1196,7 @@ describe("ConnectorsSection — GitHub", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Connect" }));
 
     act(() => {
-      eventHandlers.get("june://connectors-github-device-code")?.({
+      eventHandlers.get("clovy://connectors-github-device-code")?.({
         payload: {
           userCode: "EXPIRING-1",
           verificationUri: "https://github.com/login/device",
@@ -1227,7 +1227,7 @@ describe("ConnectorsSection — GitHub", () => {
 
     // Fire a device-code event — must be silently ignored for Google.
     act(() => {
-      eventHandlers.get("june://connectors-github-device-code")?.({
+      eventHandlers.get("clovy://connectors-github-device-code")?.({
         payload: {
           userCode: "SHOULD-NOT-SHOW",
           verificationUri: "https://github.com/login/device",
@@ -1256,7 +1256,7 @@ describe("ConnectorsSection — GitHub", () => {
     const dialog = await screen.findByRole("dialog", { name: "Connect Linear workspace" });
 
     act(() => {
-      eventHandlers.get("june://connectors-github-device-code")?.({
+      eventHandlers.get("clovy://connectors-github-device-code")?.({
         payload: {
           userCode: "SHOULD-NOT-SHOW",
           verificationUri: "https://github.com/login/device",

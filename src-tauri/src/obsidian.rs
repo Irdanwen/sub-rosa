@@ -1,4 +1,4 @@
-#![allow(dead_code)] // Preserved June-owned Obsidian discovery for a neutral tool follow-up.
+#![allow(dead_code)] // Preserved Clovy-owned Obsidian discovery for a neutral tool follow-up.
 
 use crate::domain::types::AppError;
 use serde::{Deserialize, Serialize};
@@ -89,7 +89,7 @@ pub fn obsidian_disconnect(app: AppHandle) -> Result<ObsidianStatus, AppError> {
 
 /// Resolves the selected vault at the point the MCP request is handled. The
 /// MCP adapter deliberately does not interpret `obsidian.json` itself, so all
-/// validation and unavailable-vault privacy behavior remain June-owned.
+/// validation and unavailable-vault privacy behavior remain Clovy-owned.
 pub(crate) fn discovery_for_app(app: &AppHandle) -> Result<ObsidianDiscovery, AppError> {
     let Some(config) = read_config_optional(app)? else {
         return Ok(ObsidianDiscovery {
@@ -293,11 +293,14 @@ fn validate_vault_path(path: &Path) -> Result<PathBuf, AppError> {
 fn ensure_readable(path: &Path) -> Result<(), AppError> {
     fs::read_dir(path)
         .map(|_| ())
-        .map_err(|_| AppError::new("obsidian_vault_unreadable", "June cannot read this vault."))
+        .map_err(|_| AppError::new("obsidian_vault_unreadable", "Clovy cannot read this vault."))
 }
 
 fn ensure_writable(path: &Path) -> Result<(), AppError> {
-    let probe = path.join(format!(".june-obsidian-write-probe-{}", std::process::id()));
+    let probe = path.join(format!(
+        ".clovy-obsidian-write-probe-{}",
+        std::process::id()
+    ));
     let result = OpenOptions::new()
         .create_new(true)
         .write(true)
@@ -307,7 +310,7 @@ fn ensure_writable(path: &Path) -> Result<(), AppError> {
     result.map(|_| ()).map_err(|_| {
         AppError::new(
             "obsidian_vault_unwritable",
-            "June cannot write to this vault.",
+            "Clovy cannot write to this vault.",
         )
     })
 }

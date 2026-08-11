@@ -9,9 +9,9 @@ const mocks = vi.hoisted(() => ({
   agentHudHide: vi.fn(),
   agentHudShow: vi.fn(),
   emit: vi.fn().mockResolvedValue(undefined),
-  junePersona: vi.fn(),
+  clovyPersona: vi.fn(),
   listAgentSkills: vi.fn(),
-  setJunePersona: vi.fn(),
+  setClovyPersona: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -21,11 +21,11 @@ vi.mock("@tauri-apps/api/event", () => ({
 vi.mock("../lib/tauri", () => ({
   agentHudHide: mocks.agentHudHide,
   agentHudShow: mocks.agentHudShow,
-  junePersona: mocks.junePersona,
+  clovyPersona: mocks.clovyPersona,
   listAgentSkills: mocks.listAgentSkills,
   readAgentSkill: vi.fn(),
   setAgentSkillEnabled: vi.fn(),
-  setJunePersona: mocks.setJunePersona,
+  setClovyPersona: mocks.setClovyPersona,
   updateAgentSkill: vi.fn(),
 }));
 
@@ -34,7 +34,7 @@ describe("AgentSettingsSection", () => {
     vi.clearAllMocks();
     localStorage.clear();
     mocks.listAgentSkills.mockResolvedValue([]);
-    mocks.junePersona.mockResolvedValue({
+    mocks.clovyPersona.mockResolvedValue({
       schemaVersion: 1,
       area: "personal",
       voice: 80,
@@ -42,7 +42,7 @@ describe("AgentSettingsSection", () => {
       initiative: 70,
       humor: 45,
     });
-    mocks.setJunePersona.mockImplementation(async (request) => ({
+    mocks.setClovyPersona.mockImplementation(async (request) => ({
       schemaVersion: 1,
       ...request,
     }));
@@ -71,7 +71,7 @@ describe("AgentSettingsSection", () => {
 
     await user.click(screen.getByRole("radio", { name: /Quick-witted/ }));
 
-    expect(mocks.setJunePersona).toHaveBeenCalledWith({
+    expect(mocks.setClovyPersona).toHaveBeenCalledWith({
       area: "personal",
       voice: 85,
       detail: 70,
@@ -85,7 +85,7 @@ describe("AgentSettingsSection", () => {
 
   it("restores the persisted personality when an automatic save fails", async () => {
     const user = userEvent.setup();
-    mocks.setJunePersona.mockRejectedValueOnce(new Error("Could not write persona settings"));
+    mocks.setClovyPersona.mockRejectedValueOnce(new Error("Could not write persona settings"));
     render(<AgentSettingsSection />);
     await screen.findByRole("radio", { name: /Calm/ });
 
@@ -108,7 +108,7 @@ describe("AgentSettingsSection", () => {
       humor: number;
     }>();
     const secondSave = deferred<never>();
-    mocks.setJunePersona
+    mocks.setClovyPersona
       .mockReturnValueOnce(firstSave.promise)
       .mockReturnValueOnce(secondSave.promise);
     render(<AgentSettingsSection />);
@@ -127,7 +127,7 @@ describe("AgentSettingsSection", () => {
         humor: 95,
       });
     });
-    await waitFor(() => expect(mocks.setJunePersona).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.setClovyPersona).toHaveBeenCalledTimes(2));
     expect(screen.getByRole("radio", { name: /Strategic/ })).toBeChecked();
 
     await act(async () => {

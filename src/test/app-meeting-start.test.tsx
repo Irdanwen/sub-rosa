@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 // This suite verifies native meeting event orchestration, not workspace chunk loading.
 // Preload the lazy editor module so transform latency cannot consume assertion timeouts.
 import "../components/note-editor/NoteEditor";
@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
     | undefined,
   listen: vi.fn((event: string, listener: TauriListener) => {
     mocks.listeners.set(event, listener);
-    return Promise.resolve(vi.fn());
+    return Promise.resolve(vi.fn<() => void>());
   }),
   readPendingMeetingStartRequest: vi.fn(async () => mocks.pendingMeetingStartRequest ?? null),
   acknowledgeMeetingStartRequest: vi.fn(async (requestId: string) => {
@@ -160,7 +160,7 @@ vi.mock("../lib/tauri", () => ({
   updateNote: mocks.updateNote,
   patchNote: mocks.patchNote,
   completeNoteSaveFlush: mocks.completeNoteSaveFlush,
-  NOTE_SAVE_FLUSH_REQUESTED_EVENT: "june://flush-pending-note-saves",
+  NOTE_SAVE_FLUSH_REQUESTED_EVENT: "clovy://flush-pending-note-saves",
   checkRecordingSourceReadiness: mocks.checkRecordingSourceReadiness,
   companionListAgentMedia: vi.fn(async () => []),
   companionReadAgentMediaChunk: vi.fn(),
@@ -196,7 +196,7 @@ vi.mock("../lib/tauri", () => ({
   // these tests focused on the meetings surfaces.
   hermesBridgeStatus: vi.fn(async () => ({ running: false })),
   listAgentTasks: vi.fn(async () => ({ items: [] })),
-  juneVerifyUrl: vi.fn(async () => ""),
+  clovyOpenVerifyPage: vi.fn(async () => ""),
   providerModelSettings: vi.fn(async () => ({
     settings: { generationModel: "" },
   })),
@@ -1135,7 +1135,7 @@ describe("meeting start transcription event", () => {
   });
 
   it("cleans up Tauri listeners that resolve after unmount", async () => {
-    const cleanups: Array<ReturnType<typeof vi.fn>> = [];
+    const cleanups: Array<Mock<() => void>> = [];
     const pendingListeners: Array<(cleanup: (typeof cleanups)[number]) => void> = [];
     mocks.listen.mockImplementation((event: string, listener: TauriListener) => {
       mocks.listeners.set(event, listener);
@@ -1151,7 +1151,7 @@ describe("meeting start transcription event", () => {
 
     await act(async () => {
       for (const resolve of pendingListeners) {
-        const cleanup = vi.fn();
+        const cleanup = vi.fn<() => void>();
         cleanups.push(cleanup);
         resolve(cleanup);
       }

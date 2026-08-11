@@ -164,7 +164,7 @@ pub(crate) fn handle_exit_requested(
     }
 
     // Tauri ignores this for its built-in restart code, but ordinary exit must
-    // remain alive while the coordinator owns teardown. June's updater avoids
+    // remain alive while the coordinator owns teardown. Clovy's updater avoids
     // the restart exception by latching Restart directly through its command.
     api.prevent_exit();
     if code == Some(tauri::RESTART_EXIT_CODE) && coordinator.is_idle() {
@@ -263,14 +263,14 @@ pub(crate) fn prepare_for_updater_exit(app: &tauri::AppHandle) -> Result<(), App
                     );
                     Err(AppError::new(
                         "update_cleanup_timed_out",
-                        "June could not finish preparing for the update. Try installing it again.",
+                        "Clovy could not finish preparing for the update. Try installing it again.",
                     ))
                 }
             }
         }
         BeginShutdown::AlreadyRunning(_) => Err(AppError::new(
             "update_cleanup_incomplete",
-            "June is already shutting down. Try installing the update again.",
+            "Clovy is already shutting down. Try installing the update again.",
         )),
     }
 }
@@ -358,11 +358,11 @@ where
     F: FnOnce(Option<CleanupOutcome>) + Send + 'static,
 {
     thread::Builder::new()
-        .name("june-shutdown-supervisor".to_string())
+        .name("clovy-shutdown-supervisor".to_string())
         .spawn(move || {
             let (done_tx, done_rx) = mpsc::sync_channel(1);
             let cleanup_spawn = thread::Builder::new()
-                .name("june-shutdown-cleanup".to_string())
+                .name("clovy-shutdown-cleanup".to_string())
                 .spawn(move || {
                     let _ = done_tx.send(cleanup());
                 });
@@ -400,7 +400,7 @@ where
 {
     let (done_tx, done_rx) = mpsc::sync_channel(1);
     let spawned = thread::Builder::new()
-        .name("june-shutdown-cleanup".to_string())
+        .name("clovy-shutdown-cleanup".to_string())
         .spawn(move || {
             let _ = done_tx.send(cleanup());
         })
@@ -529,7 +529,7 @@ pub(crate) fn terminate_child_with(
 
 fn spawn_detached_child_reaper(mut child: Child) {
     if let Err(error) = thread::Builder::new()
-        .name("june-child-reaper".to_string())
+        .name("clovy-child-reaper".to_string())
         .spawn(move || {
             let _ = child.wait();
         })

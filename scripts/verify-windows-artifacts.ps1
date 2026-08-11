@@ -37,7 +37,7 @@ if (-not $SevenZipPath -or -not (Test-Path -LiteralPath $SevenZipPath -PathType 
   throw "A usable 7-Zip executable is required."
 }
 
-$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("June Windows payload " + [guid]::NewGuid())
+$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("Clovy Windows payload " + [guid]::NewGuid())
 try {
   New-Item -ItemType Directory -Path $tempRoot | Out-Null
   $installerRoot = Join-Path $tempRoot "installer contents"
@@ -68,8 +68,8 @@ try {
 
   $app = Require-One "os-june.exe"
   # The MSVC target statically links WebView2Loader; only GNU builds ship its DLL.
-  $runtime = Require-One "june-agent-runtime.exe"
-  $checksum = Require-One "june-agent-runtime.exe.sha256"
+  $runtime = Require-One "clovy-agent-runtime.exe"
+  $checksum = Require-One "clovy-agent-runtime.exe.sha256"
   $helper = Require-One "june-dictation-helper.exe"
   if ($runtime.DirectoryName -ne $checksum.DirectoryName -or $runtime.DirectoryName -ne $helper.DirectoryName) {
     throw "Runtime, checksum, and dictation helper are not adjacent in the payload."

@@ -1,5 +1,5 @@
 /**
- * Unsent composer text follows its stored agent session while June stays open.
+ * Unsent composer text follows its stored agent session while Clovy stays open.
  * Keep this process-local: drafts can contain sensitive material and should
  * not survive an app restart.
  */

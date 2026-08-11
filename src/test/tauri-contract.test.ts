@@ -5,13 +5,13 @@ import {
   downloadNoteAudio,
   finishRecording,
   getNote,
-  juneOpenCommunityPage,
-  junePersona,
+  clovyOpenCommunityPage,
+  clovyPersona,
   patchNote,
   recoverRecording,
   retryProcessing,
   startRecording,
-  setJunePersona,
+  setClovyPersona,
   updateNote,
 } from "../lib/tauri";
 
@@ -125,15 +125,15 @@ describe("Tauri command contracts", () => {
     });
   });
 
-  it("opens the June community through a dedicated command", async () => {
-    await juneOpenCommunityPage();
+  it("opens the Clovy community through a dedicated command", async () => {
+    await clovyOpenCommunityPage();
 
-    expect(mocks.invoke).toHaveBeenCalledWith("june_open_community_page");
+    expect(mocks.invoke).toHaveBeenCalledWith("clovy_open_community_page");
   });
 
-  it("loads and saves June's persona through stable native commands", async () => {
-    await junePersona();
-    await setJunePersona({
+  it("loads and saves Clovy's persona through stable native commands", async () => {
+    await clovyPersona();
+    await setClovyPersona({
       area: "thinking",
       voice: 45,
       detail: 90,
@@ -141,8 +141,8 @@ describe("Tauri command contracts", () => {
       humor: 20,
     });
 
-    expect(mocks.invoke).toHaveBeenNthCalledWith(1, "june_persona");
-    expect(mocks.invoke).toHaveBeenNthCalledWith(2, "set_june_persona", {
+    expect(mocks.invoke).toHaveBeenNthCalledWith(1, "clovy_persona");
+    expect(mocks.invoke).toHaveBeenNthCalledWith(2, "set_clovy_persona", {
       request: {
         area: "thinking",
         voice: 45,

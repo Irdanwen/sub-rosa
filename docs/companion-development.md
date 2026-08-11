@@ -1,25 +1,30 @@
-# June Companion local development
+# Clovy Companion local development
 
 ## Prerequisites
 
 Use Rust with `aarch64-apple-ios-sim`, Xcode 26, and XcodeGen 2.45.4 or newer.
 The native app has no Node, Metro, React Native, or CocoaPods dependency.
-Local June API permits the in-memory relay; restart loses links.
+Local Clovy API permits the in-memory relay; restart loses links.
 
-June Companion does not need an OS Accounts OAuth registration. Pairing is
-created by a signed-in June Desktop and authorizes the phone with a revocable
+The `clovy-companion-app` repository is canonical. Its existing
+`JuneCompanion` Xcode project, target, and scheme names remain external
+compatibility inputs until that repository completes its own bridge under
+[ADR-0055](adr/0055-clovy-technical-identity-migrates-through-a-compatibility-bridge.md).
+
+Clovy Companion does not need an OS Accounts OAuth registration. Pairing is
+created by a signed-in Clovy Desktop and authorizes the phone with a revocable
 device credential after explicit Desktop approval. The Desktop token is never
 copied.
 
 ## Run
 
 ```sh
-cd ../june-companion-app/native-ios  # the mobile app lives in the june-companion-app repo
+cd ../clovy-companion-app/native-ios  # the mobile app lives in the clovy-companion-app repo
 xcodegen generate
 open JuneCompanion.xcodeproj
 ```
 
-Run June API and a signed-in June Desktop with the relay URL. Open Desktop
+Run Clovy API and a signed-in Clovy Desktop with the relay URL. Open Desktop
 Settings > Linked devices and show a pairing code. Scan it from the companion,
 or expand Enter a code instead on Desktop and choose Enter pairing code on the
 phone. Review the device name and capabilities on Desktop, then approve.
@@ -37,17 +42,17 @@ expiry and explicit Desktop approval are the authorization backstops.
 ## Verify
 
 ```sh
-cd ../june-companion-app/native-ios  # the mobile app lives in the june-companion-app repo
+cd ../clovy-companion-app/native-ios  # the mobile app lives in the clovy-companion-app repo
 xcodegen generate
 xcodebuild -project JuneCompanion.xcodeproj -scheme JuneCompanion \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5' test
 xcodebuild -project JuneCompanion.xcodeproj -scheme JuneCompanion \
   -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5),OS=26.5' build
-cargo test --manifest-path crates/june-companion-protocol/Cargo.toml
-cargo test --manifest-path crates/june-companion-crypto/Cargo.toml
+cargo test --manifest-path crates/clovy-companion-protocol/Cargo.toml
+cargo test --manifest-path crates/clovy-companion-crypto/Cargo.toml
 pnpm typecheck
 pnpm test:rust
-pnpm test:june-api
+pnpm test:clovy-api
 ```
 
 Build both an iPhone and iPad simulator destination with `xcodebuild` and take

@@ -18,10 +18,10 @@ const MEETING_END_COUNTDOWN_MS: u64 = 15_000;
 const MEETING_END_MAX_PROBE_GAP_MS: u64 = 2_500;
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 const MEETING_DETECTION_EVENT_NAME: &str = "meeting-detection-event";
-const MEETING_START_REQUEST_EVENT_NAME: &str = "june://meeting-start-transcription";
+const MEETING_START_REQUEST_EVENT_NAME: &str = "clovy://meeting-start-transcription";
 const MEETING_START_REQUEST_TTL_MS: u64 = 30_000;
 pub const MEETING_END_STATE_EVENT_NAME: &str = "meeting-end-state-event";
-pub const MEETING_END_FINISH_REQUEST_EVENT_NAME: &str = "june://meeting-end-finish";
+pub const MEETING_END_FINISH_REQUEST_EVENT_NAME: &str = "clovy://meeting-end-finish";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -344,7 +344,7 @@ impl MeetingStartRequestState {
     ) -> Result<MeetingEndStatus, String> {
         let mut tracker = MeetingEndTracker::new(
             session_id,
-            BTreeSet::from(["june.debug.meeting-end".to_string()]),
+            BTreeSet::from(["clovy.debug.meeting-end".to_string()]),
         );
         tracker.phase = MeetingEndTrackerPhase::Countdown {
             expires_at_ms: now_ms.saturating_add(MEETING_END_COUNTDOWN_MS),
@@ -862,13 +862,13 @@ impl MeetingDetectionState {
         &mut self,
         signed_in: bool,
         active_external_input: bool,
-        os_june_capture_active: bool,
+        clovy_capture_active: bool,
     ) -> Option<MeetingDetectionEvent> {
         if !signed_in {
             return self.clear();
         }
 
-        let should_be_active = active_external_input && !os_june_capture_active;
+        let should_be_active = active_external_input && !clovy_capture_active;
         if should_be_active {
             self.inactive_polls = 0;
             if !self.active {
@@ -2269,7 +2269,7 @@ mod tests {
     }
 
     #[test]
-    fn detector_suppresses_while_os_june_capture_is_active() {
+    fn detector_suppresses_while_clovy_capture_is_active() {
         let mut state = MeetingDetectionState::default();
 
         assert_eq!(state.update(true, true, true), None);
@@ -2313,7 +2313,7 @@ mod tests {
     }
 
     #[test]
-    fn detector_clears_when_os_june_capture_starts() {
+    fn detector_clears_when_clovy_capture_starts() {
         let mut state = MeetingDetectionState::default();
         assert_eq!(
             state.update(true, true, false),

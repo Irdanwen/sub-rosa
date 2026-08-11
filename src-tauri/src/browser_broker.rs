@@ -1,4 +1,4 @@
-#![allow(dead_code)] // Preserved June browser policy broker; only cleanup is wired initially.
+#![allow(dead_code)] // Preserved Clovy browser policy broker; only cleanup is wired initially.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -22,7 +22,7 @@ use crate::{
     extension_host::{ExtensionHost, ExtensionResponse},
 };
 
-pub const BROWSER_APPROVALS_CHANGED_EVENT: &str = "june://browser-approvals-changed";
+pub const BROWSER_APPROVALS_CHANGED_EVENT: &str = "clovy://browser-approvals-changed";
 const BROWSER_APPROVAL_TIMEOUT_MS: u64 = 600_000;
 
 fn constant_time_eq(left: &str, right: &str) -> bool {
@@ -2070,7 +2070,7 @@ fn parked_action_result(approval_id: &str) -> Value {
     json!({
         "parked": true,
         "actionId": approval_id,
-        "message": "Waiting for your approval in June.",
+        "message": "Waiting for your approval in Clovy.",
     })
 }
 
@@ -2710,7 +2710,7 @@ mod tests {
         );
         broker.set_routine_grant(RoutineBrowserGrant {
             job_id: "job-1".into(),
-            server_name: "june_browser_routine_job1".into(),
+            server_name: "clovy_browser_routine_job1".into(),
             token: "token".into(),
             enabled: true,
         });
@@ -2742,7 +2742,7 @@ mod tests {
         );
         broker.set_routine_grant(RoutineBrowserGrant {
             job_id: "routine-independent".into(),
-            server_name: "june_browser_routine_independent".into(),
+            server_name: "clovy_browser_routine_independent".into(),
             token: "routine-token".into(),
             enabled: true,
         });
@@ -2782,7 +2782,7 @@ mod tests {
         );
         broker.set_routine_grant(RoutineBrowserGrant {
             job_id: "routine-revoked".into(),
-            server_name: "june_browser_routine_revoked".into(),
+            server_name: "clovy_browser_routine_revoked".into(),
             token: "routine-token".into(),
             enabled: true,
         });
@@ -2797,7 +2797,7 @@ mod tests {
 
         broker.set_routine_grant(RoutineBrowserGrant {
             job_id: "routine-revoked".into(),
-            server_name: "june_browser_routine_revoked".into(),
+            server_name: "clovy_browser_routine_revoked".into(),
             token: "routine-token".into(),
             enabled: false,
         });
@@ -2838,7 +2838,7 @@ mod tests {
         );
         broker.set_routine_grant(RoutineBrowserGrant {
             job_id: "routine-downgraded".into(),
-            server_name: "june_browser_routine_downgraded".into(),
+            server_name: "clovy_browser_routine_downgraded".into(),
             token: "routine-token".into(),
             enabled: true,
         });
@@ -3247,7 +3247,7 @@ mod tests {
         }
         broker.set_routine_grant(RoutineBrowserGrant {
             job_id: "routine-1".into(),
-            server_name: "june_browser_routine_1".into(),
+            server_name: "clovy_browser_routine_1".into(),
             token: "routine-token".into(),
             enabled: true,
         });

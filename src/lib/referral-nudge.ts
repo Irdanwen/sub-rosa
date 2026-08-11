@@ -1,5 +1,5 @@
 // Trigger state for the referral delight nudge (see the ReferralNudge
-// component for the card itself). The nudge appears at moments June has just
+// component for the card itself). The nudge appears at moments Clovy has just
 // delivered value; this module owns the per-install counters and the
 // frequency caps that make it rare:
 //
@@ -18,15 +18,15 @@
 //
 // Counters start at zero when this ships: an install that already has many
 // notes or dictations earns its thresholds from here forward, which keeps
-// every fire a genuine "June just did this for you" moment rather than a
+// every fire a genuine "Clovy just did this for you" moment rather than a
 // backfill surprise on update.
 
 export type ReferralNudgeMoment = "meetings" | "agent" | "dictation" | "feedback";
 
 /** Dispatched on window when a moment fires and the caps permit showing. */
-export const REFERRAL_NUDGE_EVENT = "june:referral-nudge";
+export const REFERRAL_NUDGE_EVENT = "clovy:referral-nudge";
 
-export const REFERRAL_NUDGE_STORAGE_KEY = "june.referralNudge";
+export const REFERRAL_NUDGE_STORAGE_KEY = "clovy.referralNudge";
 
 export const REFERRAL_NUDGE_NOTE_THRESHOLD = 5;
 export const REFERRAL_NUDGE_DICTATION_THRESHOLD = 25;

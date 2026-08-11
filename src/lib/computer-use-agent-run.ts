@@ -1,3 +1,5 @@
+// Compatibility toolset identity retained for restored agent-run settings;
+// ADR-0040 replaced the former Clovy-owned MCP integration with host tools.
 export const COMPUTER_USE_AGENT_RUN_TOOLSETS = ["june_computer_use"] as const;
 
 const COMPUTER_USE_PHRASE = String.raw`computer(?:\s+|-)use`;
@@ -21,7 +23,7 @@ const NEGATED_COMPUTER_USE_REQUEST = new RegExp(
 /**
  * A new agent has to choose its tool snapshot before the model sees the agent run.
  * Keep the fast path deliberately explicit: descriptive questions about the
- * feature retain June's normal tools, while requests that name Computer use as
+ * feature retain Clovy's normal tools, while requests that name Computer use as
  * the execution mechanism receive only the app-owned Computer use server.
  */
 export function toolsetsForComputerUseAgentRun(prompt: string): string[] | null {

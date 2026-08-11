@@ -1,24 +1,24 @@
 import type { AgentChatPart, AgentChatTurn } from "../../lib/agent-chat-runtime";
 import { getCurrentDataPartitionName } from "../../lib/data-partition";
 import {
-  buildJuneHomeConversationContext,
-  dispatchJuneHomeThreadChanged,
-  forgetJuneHomeStoredSessionId,
-  isJuneHomeStartTaskTool,
-  JUNE_HOME_DIRECT_TURNS_STORAGE_KEY,
-  JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY,
-  LEGACY_JUNE_HOME_DIRECT_TURNS_STORAGE_KEY,
-  LEGACY_JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY,
-  readJuneHomeStoredSessionId,
-  resolveJuneHomeThreadSessionId,
-  stripJuneHomeContextFromPreview,
-  type JuneHomeConversationContext,
-  type JuneHomeTaskRequest,
-  writeJuneHomeStoredSessionId,
-} from "../../lib/june-home";
-import type { JuneHomeChatResponse } from "../../lib/tauri";
+  buildClovyHomeConversationContext,
+  dispatchClovyHomeThreadChanged,
+  forgetClovyHomeStoredSessionId,
+  isClovyHomeStartTaskTool,
+  CLOVY_HOME_DIRECT_TURNS_STORAGE_KEY,
+  CLOVY_HOME_TASK_HANDOFFS_STORAGE_KEY,
+  LEGACY_CLOVY_HOME_DIRECT_TURNS_STORAGE_KEY,
+  LEGACY_CLOVY_HOME_TASK_HANDOFFS_STORAGE_KEY,
+  readClovyHomeStoredSessionId,
+  resolveClovyHomeThreadSessionId,
+  stripClovyHomeContextFromPreview,
+  type ClovyHomeConversationContext,
+  type ClovyHomeTaskRequest,
+  writeClovyHomeStoredSessionId,
+} from "../../lib/clovy-home";
+import type { ClovyHomeChatResponse } from "../../lib/tauri";
 
-export type HomeTaskHandoff = JuneHomeTaskRequest & {
+export type HomeTaskHandoff = ClovyHomeTaskRequest & {
   id: string;
   status: "starting" | "running" | "failed";
   storedSessionId?: string;
@@ -28,20 +28,20 @@ export type HomeTaskHandoff = JuneHomeTaskRequest & {
   attachments?: string[];
 };
 
-export const HOME_DEMO_SEEDED_EVENT = "june:agent:home-demo-seeded";
-const HOME_DEMO_BACKUP_STORAGE_KEY = "june:home:demo-backup:v3";
-const LEGACY_HOME_DEMO_BACKUP_STORAGE_KEY = "june.home.demoBackup.v3";
+export const HOME_DEMO_SEEDED_EVENT = "clovy:agent:home-demo-seeded";
+const HOME_DEMO_BACKUP_STORAGE_KEY = "clovy:home:demo-backup:v3";
+const LEGACY_HOME_DEMO_BACKUP_STORAGE_KEY = "clovy.home.demoBackup.v3";
 
 const LEGACY_HOME_STORAGE_KEYS: Partial<Record<string, string>> = {
-  [JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY]: LEGACY_JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY,
-  [JUNE_HOME_DIRECT_TURNS_STORAGE_KEY]: LEGACY_JUNE_HOME_DIRECT_TURNS_STORAGE_KEY,
+  [CLOVY_HOME_TASK_HANDOFFS_STORAGE_KEY]: LEGACY_CLOVY_HOME_TASK_HANDOFFS_STORAGE_KEY,
+  [CLOVY_HOME_DIRECT_TURNS_STORAGE_KEY]: LEGACY_CLOVY_HOME_DIRECT_TURNS_STORAGE_KEY,
   [HOME_DEMO_BACKUP_STORAGE_KEY]: LEGACY_HOME_DEMO_BACKUP_STORAGE_KEY,
 };
 
 const activeHomeTaskHandoffs = new Set<string>();
 
 function activeHomeTaskHandoffKey(storedSessionId: string, handoffId: string): string {
-  return `${resolveJuneHomeThreadSessionId(storedSessionId) ?? storedSessionId}:${handoffId}`;
+  return `${resolveClovyHomeThreadSessionId(storedSessionId) ?? storedSessionId}:${handoffId}`;
 }
 
 export function markHomeTaskHandoffActive(storedSessionId: string, handoffId: string) {
@@ -100,17 +100,17 @@ function validHomeTurn(value: unknown): value is AgentChatTurn {
 
 export function readHomeDirectTurns(storedSessionId: string | undefined): AgentChatTurn[] {
   const activeSessionId = storedSessionId
-    ? resolveJuneHomeThreadSessionId(storedSessionId)
+    ? resolveClovyHomeThreadSessionId(storedSessionId)
     : undefined;
   if (!activeSessionId) return [];
-  const turns = readRecord(JUNE_HOME_DIRECT_TURNS_STORAGE_KEY)[activeSessionId];
+  const turns = readRecord(CLOVY_HOME_DIRECT_TURNS_STORAGE_KEY)[activeSessionId];
   return Array.isArray(turns) ? turns.filter(validHomeTurn) : [];
 }
 
 export function persistHomeDirectTurns(storedSessionId: string, turns: AgentChatTurn[]) {
-  const activeSessionId = resolveJuneHomeThreadSessionId(storedSessionId);
+  const activeSessionId = resolveClovyHomeThreadSessionId(storedSessionId);
   if (!activeSessionId) return;
-  const records = readRecord(JUNE_HOME_DIRECT_TURNS_STORAGE_KEY);
+  const records = readRecord(CLOVY_HOME_DIRECT_TURNS_STORAGE_KEY);
   // The relationship thread is intentionally long-lived. Keep all turns while
   // storage permits it, then retain the deepest viable recent tail.
   const candidates = [turns, turns.slice(-2000), turns.slice(-1000), turns.slice(-400)];
@@ -120,10 +120,10 @@ export function persistHomeDirectTurns(storedSessionId: string, turns: AgentChat
     attemptedLengths.add(candidate.length);
     try {
       window.localStorage.setItem(
-        JUNE_HOME_DIRECT_TURNS_STORAGE_KEY,
+        CLOVY_HOME_DIRECT_TURNS_STORAGE_KEY,
         JSON.stringify({ ...records, [activeSessionId]: candidate }),
       );
-      dispatchJuneHomeThreadChanged(activeSessionId);
+      dispatchClovyHomeThreadChanged(activeSessionId);
       return;
     } catch {
       // Try the next smaller durable tail.
@@ -148,10 +148,10 @@ export function insertHomeDirectReply(
 
 export function readHomeTaskHandoffs(storedSessionId: string | undefined): HomeTaskHandoff[] {
   const activeSessionId = storedSessionId
-    ? resolveJuneHomeThreadSessionId(storedSessionId)
+    ? resolveClovyHomeThreadSessionId(storedSessionId)
     : undefined;
   if (!activeSessionId) return [];
-  const values = readRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY)[activeSessionId];
+  const values = readRecord(CLOVY_HOME_TASK_HANDOFFS_STORAGE_KEY)[activeSessionId];
   if (!Array.isArray(values)) return [];
   return values
     .map((value) => {
@@ -185,7 +185,7 @@ export function readHomeTaskHandoffs(storedSessionId: string | undefined): HomeT
 
 export function readAllHomeTaskHandoffAttachments(): string[] {
   const attachments: string[] = [];
-  for (const handoffs of Object.values(readRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY))) {
+  for (const handoffs of Object.values(readRecord(CLOVY_HOME_TASK_HANDOFFS_STORAGE_KEY))) {
     if (!Array.isArray(handoffs)) continue;
     for (const value of handoffs) {
       if (!value || typeof value !== "object" || Array.isArray(value)) continue;
@@ -200,9 +200,9 @@ export function readAllHomeTaskHandoffAttachments(): string[] {
 }
 
 export function persistHomeTaskHandoffs(storedSessionId: string, handoffs: HomeTaskHandoff[]) {
-  const activeSessionId = resolveJuneHomeThreadSessionId(storedSessionId);
+  const activeSessionId = resolveClovyHomeThreadSessionId(storedSessionId);
   if (!activeSessionId) return;
-  const records = readRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY);
+  const records = readRecord(CLOVY_HOME_TASK_HANDOFFS_STORAGE_KEY);
   // Handoffs back every visible task card in the long-lived transcript. Keep
   // the full set when storage permits, then degrade in lockstep-sized tails
   // instead of silently dropping every card after the newest 24.
@@ -213,10 +213,10 @@ export function persistHomeTaskHandoffs(storedSessionId: string, handoffs: HomeT
     attemptedLengths.add(candidate.length);
     try {
       window.localStorage.setItem(
-        JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY,
+        CLOVY_HOME_TASK_HANDOFFS_STORAGE_KEY,
         JSON.stringify({ ...records, [activeSessionId]: candidate }),
       );
-      dispatchJuneHomeThreadChanged(activeSessionId);
+      dispatchClovyHomeThreadChanged(activeSessionId);
       return;
     } catch {
       // Try the next smaller durable tail.
@@ -265,7 +265,7 @@ const HOME_HANDOFF_ACKNOWLEDGEMENTS = new Set([
 ]);
 
 const HOME_CONVERSATION_GREETING =
-  /^(?:(?:hi|hey|hello)(?: there| again)?|(?:good )?(?:morning|afternoon|evening)|greetings|good to see you)(?: june)?$/u;
+  /^(?:(?:hi|hey|hello)(?: there| again)?|(?:good )?(?:morning|afternoon|evening)|greetings|good to see you)(?: (?:clovy|june))?$/u;
 const HOME_CONVERSATION_HELLO_FROM = /^hello\s+from\s+(.+?)[\p{P}\p{S}\s]*$/iu;
 const HOME_CONVERSATION_LOCATION_CONNECTORS = new Set([
   "da",
@@ -364,6 +364,7 @@ const HOME_TASK_GROUNDING_STOP_WORDS = new Set([
   "hiya",
   "howdy",
   "june",
+  "clovy",
   "morning",
   "make",
   "me",
@@ -458,7 +459,7 @@ function normalizedHomeTaskIntent(value: string): string {
     .replace(/\s+/g, " ");
 }
 
-function homeTaskSimilarity(left: JuneHomeTaskRequest, right: JuneHomeTaskRequest): number {
+function homeTaskSimilarity(left: ClovyHomeTaskRequest, right: ClovyHomeTaskRequest): number {
   const normalizedLeftTitle = normalizedHomeTaskIntent(left.title).toLocaleLowerCase();
   const normalizedRightTitle = normalizedHomeTaskIntent(right.title).toLocaleLowerCase();
   if (normalizedLeftTitle && normalizedLeftTitle === normalizedRightTitle) return 1;
@@ -470,14 +471,14 @@ function homeTaskSimilarity(left: JuneHomeTaskRequest, right: JuneHomeTaskReques
 }
 
 function matchingPriorHomeTaskHandoffs(
-  task: JuneHomeTaskRequest,
+  task: ClovyHomeTaskRequest,
   handoffs: HomeTaskHandoff[],
 ): HomeTaskHandoff[] {
   return handoffs.filter((handoff) => homeTaskSimilarity(task, handoff) >= 0.6);
 }
 
 function latestHomeTaskNovelGrounding(
-  task: JuneHomeTaskRequest,
+  task: ClovyHomeTaskRequest,
   latestMessage: string,
   matchingHandoffs: HomeTaskHandoff[],
 ): { hasNovelGrounding: boolean; taskUsesNovelGrounding: boolean } {
@@ -495,13 +496,13 @@ function latestHomeTaskNovelGrounding(
   };
 }
 
-function homeTaskSharesLatestGrounding(task: JuneHomeTaskRequest, latestMessage: string): boolean {
+function homeTaskSharesLatestGrounding(task: ClovyHomeTaskRequest, latestMessage: string): boolean {
   const taskTokens = homeTaskGroundingTokens(`${task.title} ${task.prompt}`);
   return [...homeTaskGroundingTokens(latestMessage)].some((token) => taskTokens.has(token));
 }
 
 function homeTaskHasPositiveReplacementAfterNegation(
-  task: JuneHomeTaskRequest,
+  task: ClovyHomeTaskRequest,
   latestMessage: string,
   matchingHandoffs: HomeTaskHandoff[],
 ): boolean {
@@ -552,7 +553,7 @@ function homeTaskHasPositiveReplacementAfterNegation(
 }
 
 export function isHomeTaskReplayWithoutNewIntent(
-  task: JuneHomeTaskRequest,
+  task: ClovyHomeTaskRequest,
   latestMessage: string,
   handoffs: HomeTaskHandoff[],
 ): boolean {
@@ -592,7 +593,7 @@ export function isHomeTaskHandoffAcknowledgement(
   const priorTurn = [...priorTurns].sort(compareHomeTurnOrder).at(-1);
   if (priorTurn?.role !== "assistant") return false;
   const taskTool = priorTurn.parts.find(
-    (part) => part.type === "tool" && isJuneHomeStartTaskTool(part.name),
+    (part) => part.type === "tool" && isClovyHomeStartTaskTool(part.name),
   );
   if (taskTool?.type !== "tool") return false;
   return handoffs.some(
@@ -620,7 +621,7 @@ function textForTurn(turn: AgentChatTurn): string {
 
 export function homeConversationContextFromTurns(
   turns: AgentChatTurn[],
-): JuneHomeConversationContext {
+): ClovyHomeConversationContext {
   const messages = [...turns]
     .sort(compareHomeTurnOrder)
     .filter(
@@ -630,9 +631,9 @@ export function homeConversationContextFromTurns(
     .map((turn) => {
       const rawText = textForTurn(turn);
       const text =
-        turn.role === "user" ? (stripJuneHomeContextFromPreview(rawText) ?? rawText) : rawText;
+        turn.role === "user" ? (stripClovyHomeContextFromPreview(rawText) ?? rawText) : rawText;
       const delegated = turn.parts.some(
-        (part) => part.type === "tool" && isJuneHomeStartTaskTool(part.name),
+        (part) => part.type === "tool" && isClovyHomeStartTaskTool(part.name),
       );
       return {
         role: turn.role,
@@ -645,7 +646,7 @@ export function homeConversationContextFromTurns(
       };
     })
     .filter((message) => message.content);
-  return buildJuneHomeConversationContext(messages);
+  return buildClovyHomeConversationContext(messages);
 }
 
 const homeDirectChatChains = new Map<string, Promise<void>>();
@@ -699,7 +700,7 @@ export function homeDemoEnabled(profile: string) {
 export async function homeDemoReply(
   profile: string,
   onDelta: (content: string) => void,
-): Promise<JuneHomeChatResponse | undefined> {
+): Promise<ClovyHomeChatResponse | undefined> {
   if (!homeDemoEnabled(profile)) return undefined;
   const replies = [
     "That makes sense. What would help you move it forward?",
@@ -741,7 +742,7 @@ function demoTaskTurn(id: string, createdAt: string): AgentChatTurn {
       {
         type: "tool",
         id,
-        name: "mcp_june_home_start_task",
+        name: "mcp_clovy_home_start_task",
         text: "",
         status: "complete",
       },
@@ -841,8 +842,8 @@ Anything after a table or code block keeps rendering in the same response.`,
       error: "The session could not be created. Please try again.",
     },
   ];
-  writeRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY, {
-    ...readRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY),
+  writeRecord(CLOVY_HOME_TASK_HANDOFFS_STORAGE_KEY, {
+    ...readRecord(CLOVY_HOME_TASK_HANDOFFS_STORAGE_KEY),
     [storedSessionId]: handoffs,
   });
   window.dispatchEvent(new CustomEvent(HOME_DEMO_SEEDED_EVENT));
@@ -853,18 +854,18 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
     if (mode === false) {
       const snapshot = homeDemoSnapshot ?? readDemoSnapshot();
       if (!snapshot) return "Home demo is already off.";
-      const direct = readRecord(JUNE_HOME_DIRECT_TURNS_STORAGE_KEY);
-      const handoffs = readRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY);
+      const direct = readRecord(CLOVY_HOME_DIRECT_TURNS_STORAGE_KEY);
+      const handoffs = readRecord(CLOVY_HOME_TASK_HANDOFFS_STORAGE_KEY);
       if (snapshot.directTurns === undefined) delete direct[snapshot.demoSessionId];
       else direct[snapshot.demoSessionId] = snapshot.directTurns;
       if (snapshot.handoffs === undefined) delete handoffs[snapshot.demoSessionId];
       else handoffs[snapshot.demoSessionId] = snapshot.handoffs;
-      writeRecord(JUNE_HOME_DIRECT_TURNS_STORAGE_KEY, direct);
-      writeRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY, handoffs);
+      writeRecord(CLOVY_HOME_DIRECT_TURNS_STORAGE_KEY, direct);
+      writeRecord(CLOVY_HOME_TASK_HANDOFFS_STORAGE_KEY, handoffs);
       if (snapshot.sessionId) {
-        writeJuneHomeStoredSessionId(snapshot.profile, snapshot.sessionId);
+        writeClovyHomeStoredSessionId(snapshot.profile, snapshot.sessionId);
       } else {
-        forgetJuneHomeStoredSessionId(snapshot.profile, snapshot.demoSessionId);
+        forgetClovyHomeStoredSessionId(snapshot.profile, snapshot.demoSessionId);
       }
       window.localStorage.removeItem(HOME_DEMO_BACKUP_STORAGE_KEY);
       window.localStorage.removeItem(LEGACY_HOME_DEMO_BACKUP_STORAGE_KEY);
@@ -878,19 +879,19 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
       return `Home demo is active for ${homeDemoSnapshot.profile}. Run __homeDemo(false) first.`;
     }
     if (!homeDemoSnapshot) {
-      const sessionId = readJuneHomeStoredSessionId(profile);
+      const sessionId = readClovyHomeStoredSessionId(profile);
       const demoSessionId = sessionId ?? "home-demo-session";
       homeDemoSnapshot = {
         profile,
         sessionId,
         demoSessionId,
-        directTurns: readRecord(JUNE_HOME_DIRECT_TURNS_STORAGE_KEY)[demoSessionId],
-        handoffs: readRecord(JUNE_HOME_TASK_HANDOFFS_STORAGE_KEY)[demoSessionId],
+        directTurns: readRecord(CLOVY_HOME_DIRECT_TURNS_STORAGE_KEY)[demoSessionId],
+        handoffs: readRecord(CLOVY_HOME_TASK_HANDOFFS_STORAGE_KEY)[demoSessionId],
       };
       window.localStorage.setItem(HOME_DEMO_BACKUP_STORAGE_KEY, JSON.stringify(homeDemoSnapshot));
     }
-    const storedSessionId = readJuneHomeStoredSessionId(profile) ?? homeDemoSnapshot.demoSessionId;
-    writeJuneHomeStoredSessionId(profile, storedSessionId);
+    const storedSessionId = readClovyHomeStoredSessionId(profile) ?? homeDemoSnapshot.demoSessionId;
+    writeClovyHomeStoredSessionId(profile, storedSessionId);
     if (mode === "empty") {
       persistHomeDirectTurns(storedSessionId, []);
       persistHomeTaskHandoffs(storedSessionId, []);

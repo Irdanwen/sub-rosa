@@ -182,7 +182,7 @@ beforeEach(() => {
   tauriMocks.routineBrowserAccessGet.mockResolvedValue({ enabled: false });
   tauriMocks.routineBrowserAccessSet.mockImplementation(async (input: { enabled: boolean }) =>
     input.enabled
-      ? { enabled: true, serverName: "june_browser_routine_abc123" }
+      ? { enabled: true, serverName: "clovy_browser_routine_abc123" }
       : { enabled: false },
   );
   tauriMocks.routineTrustRecordRun.mockResolvedValue(null);
@@ -362,7 +362,7 @@ describe("RoutinesView list", () => {
     renderView();
 
     expect(
-      await screen.findByText("June ran into a problem with that request."),
+      await screen.findByText("Clovy ran into a problem with that request."),
     ).toBeInTheDocument();
     expect(screen.queryByText(rawError, { exact: false })).toBeNull();
 
@@ -450,17 +450,17 @@ describe("RoutinesView templates and creation", () => {
 
     // The composer bar is permanently anchored to the page bottom.
     const composer = screen.getByRole("form", {
-      name: "Describe a routine to June",
+      name: "Describe a routine to Clovy",
     });
     // Its sandbox trigger reflects the default mode.
     expect(within(composer).getByRole("button", { name: /sandboxed/i })).toBeInTheDocument();
 
     await userEvent.type(within(composer).getByRole("textbox"), "watch the weather and message me");
-    await userEvent.click(within(composer).getByRole("button", { name: "Ask June to set it up" }));
+    await userEvent.click(within(composer).getByRole("button", { name: "Ask Clovy to set it up" }));
 
     const prompt = onCreateRoutine.mock.calls[0][0] as string;
     expect(prompt).toContain("watch the weather and message me");
-    expect(prompt).toContain("Create a new June routine");
+    expect(prompt).toContain("Create a new Clovy routine");
     expect(prompt).toContain("sandboxed default");
     expect(prompt).not.toContain("unrestricted mode");
   });
@@ -475,7 +475,7 @@ describe("RoutinesView templates and creation", () => {
       await screen.findByText("Morning brief");
 
       const composer = screen.getByRole("form", {
-        name: "Describe a routine to June",
+        name: "Describe a routine to Clovy",
       });
       const textbox = within(composer).getByRole("textbox", {
         name: "Describe a routine",
@@ -501,7 +501,7 @@ describe("RoutinesView templates and creation", () => {
 
     const createPage = screen.getByRole("region", { name: "New routine" });
     const describeBar = screen
-      .getByRole("form", { name: "Describe a routine to June" })
+      .getByRole("form", { name: "Describe a routine to Clovy" })
       .closest(".routines-describe");
     expect(describeBar).not.toBeNull();
     expect(createPage.contains(describeBar)).toBe(false);
@@ -517,7 +517,7 @@ describe("RoutinesView templates and creation", () => {
     await screen.findByText("Morning brief");
 
     const composer = screen.getByRole("form", {
-      name: "Describe a routine to June",
+      name: "Describe a routine to Clovy",
     });
     // Arm Unrestricted through the composer's sandbox menu.
     await userEvent.click(within(composer).getByRole("button", { name: /sandboxed/i }));
@@ -526,7 +526,7 @@ describe("RoutinesView templates and creation", () => {
       within(composer).getByRole("textbox"),
       "clean up my downloads folder nightly",
     );
-    await userEvent.click(within(composer).getByRole("button", { name: "Ask June to set it up" }));
+    await userEvent.click(within(composer).getByRole("button", { name: "Ask Clovy to set it up" }));
 
     const prompt = onCreateRoutine.mock.calls[0][0] as string;
     expect(prompt).toContain("unrestricted mode");
@@ -538,7 +538,7 @@ describe("RoutinesView templates and creation", () => {
     await screen.findByText("Morning brief");
 
     const composer = screen.getByRole("form", {
-      name: "Describe a routine to June",
+      name: "Describe a routine to Clovy",
     });
     await userEvent.click(within(composer).getByRole("button", { name: /sandboxed/i }));
     expect(
@@ -801,7 +801,7 @@ describe("RoutinesView detail", () => {
     expect(mocks.updateRoutine).toHaveBeenCalledWith(
       "abc123",
       expect.objectContaining({
-        enabledToolsets: expect.arrayContaining(["june_browser_routine_abc123"]),
+        enabledToolsets: expect.arrayContaining(["clovy_browser_routine_abc123"]),
       }),
     );
     expect(tauriMocks.connectorsApplyRuntime).toHaveBeenCalled();
@@ -1083,12 +1083,12 @@ describe("RoutinesView detail", () => {
     expect(screen.getByText("Last run failed.")).toBeInTheDocument();
     await waitFor(() =>
       expect(eventMocks.listen).toHaveBeenCalledWith(
-        "june://agent-runtime-event",
+        "clovy://agent-runtime-event",
         expect.any(Function),
       ),
     );
     const runtimeListener = eventMocks.listen.mock.calls.find(
-      ([eventName]) => eventName === "june://agent-runtime-event",
+      ([eventName]) => eventName === "clovy://agent-runtime-event",
     )?.[1] as ((event: { payload: { method: string } }) => void) | undefined;
     expect(runtimeListener).toBeDefined();
 
@@ -1146,7 +1146,7 @@ describe("RoutinesView detail", () => {
     const draft = await screen.findByRole("textbox", { name: "Describe a routine" });
     await userEvent.type(draft, "Summarize my mornings");
 
-    const send = screen.getByRole("button", { name: "Ask June to set it up" });
+    const send = screen.getByRole("button", { name: "Ask Clovy to set it up" });
     expect(send).toBeDisabled();
     expect(send).toHaveAttribute("title", "Add credits before running a routine.");
 
@@ -1217,7 +1217,7 @@ describe("RoutinesView detail", () => {
     await userEvent.click(screen.getByRole("switch", { name: "Morning summary active" }));
 
     expect(
-      await screen.findByText("June ran into a problem with that request."),
+      await screen.findByText("Clovy ran into a problem with that request."),
     ).toBeInTheDocument();
     expect(screen.queryByText(rawError, { exact: false })).toBeNull();
 

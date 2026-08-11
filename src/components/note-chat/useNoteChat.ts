@@ -27,7 +27,7 @@ import {
   rememberNoteChatSession,
 } from "./noteChatSessions";
 
-const AGENT_RUNTIME_EVENT = "june://agent-runtime-event";
+const AGENT_RUNTIME_EVENT = "clovy://agent-runtime-event";
 const DEFAULT_MODEL = "auto";
 
 export type NoteChatAttachment = {
@@ -68,7 +68,7 @@ function runIsActive(projection: AgentRuntimeProjection) {
   return projection.run?.status === "queued" || projection.run?.status === "running";
 }
 
-/** A note-scoped conversation backed by the June-owned runtime. The pairing
+/** A note-scoped conversation backed by the Clovy-owned runtime. The pairing
  * is retained locally so reopening the panel resumes the same session. */
 export function useNoteChat(note: NoteReferenceInput | null): NoteChat {
   const noteId = note?.id;

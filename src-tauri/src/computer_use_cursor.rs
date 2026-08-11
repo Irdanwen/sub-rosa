@@ -1,4 +1,4 @@
-//! Click-through visual cursor for June's virtual Computer use position.
+//! Click-through visual cursor for Clovy's virtual Computer use position.
 //!
 //! The signed helper continues to own Accessibility and input delivery. It
 //! reports pointer positions in the latest window screenshot's pixel space;
@@ -13,7 +13,7 @@ use std::sync::Mutex;
 use std::sync::OnceLock;
 use tauri::{AppHandle, Manager};
 
-pub(crate) const DRIVER_POINTER_NOTIFICATION_METHOD: &str = "june/pointer";
+pub(crate) const DRIVER_POINTER_NOTIFICATION_METHOD: &str = "clovy/pointer";
 
 const CURSOR_WIDTH: f64 = 20.0;
 const CURSOR_HEIGHT: f64 = 24.0;

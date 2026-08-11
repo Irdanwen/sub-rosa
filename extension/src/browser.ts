@@ -5,8 +5,8 @@ import {
   type ChunkMessage,
 } from "./protocol";
 
-const GROUP_TITLE = "June";
-const MUTATION_BINDING = "__juneDomMutation";
+const GROUP_TITLE = "Clovy";
+const MUTATION_BINDING = "__clovyDomMutation";
 const CHUNK_BYTES = 256 * 1024;
 const INLINE_SNAPSHOT_BYTES = 384 * 1024;
 
@@ -234,9 +234,9 @@ async function attach(tabId: number): Promise<void> {
   await cdp(tabId, "Runtime.enable");
   await cdp(tabId, "Runtime.addBinding", { name: MUTATION_BINDING });
   const installMutationObserver = `(() => {
-      if (globalThis.__juneMutationObserver) return;
-      globalThis.__juneMutationObserver = new MutationObserver(() => globalThis.${MUTATION_BINDING}());
-      globalThis.__juneMutationObserver.observe(document, {subtree:true, childList:true, attributes:true, characterData:true});
+      if (globalThis.__clovyMutationObserver) return;
+      globalThis.__clovyMutationObserver = new MutationObserver(() => globalThis.${MUTATION_BINDING}());
+      globalThis.__clovyMutationObserver.observe(document, {subtree:true, childList:true, attributes:true, characterData:true});
     })()`;
   await cdp(tabId, "Page.addScriptToEvaluateOnNewDocument", { source: installMutationObserver });
   await cdp(tabId, "Runtime.evaluate", { expression: installMutationObserver });
@@ -772,7 +772,7 @@ export class BrowserController {
 
   offerTab(tabId: number): string {
     if (this.registry.find(tabId))
-      throw toolError("tab_already_owned", "This tab already belongs to June.");
+      throw toolError("tab_already_owned", "This tab already belongs to Clovy.");
     return this.shares.offer(tabId);
   }
 
@@ -839,7 +839,7 @@ export class BrowserController {
       await detach(tabId);
       throw toolError(
         "tab_not_owned",
-        "The tab is no longer in this Browser use session's June group.",
+        "The tab is no longer in this Browser use session's Clovy group.",
       );
     }
   }
@@ -861,7 +861,7 @@ export class BrowserController {
     if (!this.registry.setRefs(sessionId, tabId, snapshot.epoch, snapshot.refs)) {
       throw toolError(
         "snapshot_invalidated",
-        "The page changed while June was taking the snapshot. Take another snapshot.",
+        "The page changed while Clovy was taking the snapshot. Take another snapshot.",
       );
     }
     const bytes = new TextEncoder().encode(JSON.stringify(snapshot));
@@ -1047,7 +1047,7 @@ export class BrowserController {
           const tab = await chrome.tabs.get(ownedId);
           tabs.push({ tabId: ownedId, title: tab.title ?? "", url: tab.url ?? "" });
         } catch {
-          // A tab that left the June group is removed from ownership above.
+          // A tab that left the Clovy group is removed from ownership above.
         }
       }
       return { tabs, activeTabId: this.registry.session(sessionId).activeTabId };

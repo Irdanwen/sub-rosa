@@ -22,7 +22,7 @@ use tokio::{
 };
 use uuid::Uuid;
 
-pub const AGENT_RUNTIME_EVENT: &str = "june://agent-runtime-event";
+pub const AGENT_RUNTIME_EVENT: &str = "clovy://agent-runtime-event";
 const RUNTIME_CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 const HISTORY_COMPACTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 type PendingRequests = Arc<Mutex<HashMap<String, oneshot::Sender<Result<Value, AppError>>>>>;
@@ -61,8 +61,8 @@ pub struct AgentRuntimeHost {
 }
 
 struct ModelStream {
-    response: crate::june_api::AgentChatCompletionsResponse,
-    route: crate::june_api::AgentModelRouteMetadata,
+    response: crate::clovy_api::AgentChatCompletionsResponse,
+    route: crate::clovy_api::AgentModelRouteMetadata,
     buffer: Vec<u8>,
     done: bool,
     run_id: String,
@@ -193,7 +193,7 @@ impl AgentRuntimeHost {
                 "runtime",
                 "runtime",
                 json!({
-                    "clientName": "June", "clientVersion": env!("CARGO_PKG_VERSION")
+                    "clientName": "Clovy", "clientVersion": env!("CARGO_PKG_VERSION")
                 }),
             )
             .await;
@@ -522,7 +522,7 @@ fn spawn_stdout_reader(stdout: tokio::process::ChildStdout, context: RuntimeRead
                             event_id: Some(Uuid::new_v4().to_string()),
                             method: Some("run.failed".into()),
                             params: Some(json!({
-                                "error": "June stopped unexpectedly.",
+                                "error": "Clovy stopped unexpectedly.",
                                 "category": "runtime",
                                 "code": "runtime_crashed",
                                 "retryable": true,
@@ -585,7 +585,7 @@ async fn handle_runtime_request(
                 .get("arguments")
                 .cloned()
                 .unwrap_or_else(|| json!({}));
-            if name == "__june_notion_action_preflight" {
+            if name == "__clovy_notion_action_preflight" {
                 let runtime_name = arguments
                     .get("toolName")
                     .and_then(Value::as_str)
@@ -624,7 +624,10 @@ async fn handle_runtime_request(
                     AppError::new("agent_connector_response_invalid", error.to_string())
                 });
             }
-            if name == "__june_model_chat_completions" {
+            if matches!(
+                name,
+                "__clovy_model_chat_completions" | "__june_model_chat_completions"
+            ) {
                 if !model_scopes.lock().await.contains(&frame.run_id) {
                     return Err(AppError::new(
                         "agent_model_scope_inactive",
@@ -649,7 +652,7 @@ async fn handle_runtime_request(
                     ));
                 }
                 let response = tokio::select! {
-                    response = crate::june_api::proxy_agent_chat_completions(request) => response?,
+                    response = crate::clovy_api::proxy_agent_chat_completions(request) => response?,
                     _ = cancelled.cancelled() => {
                         return Err(AppError::new(
                             "agent_model_scope_cancelled",
@@ -755,7 +758,7 @@ fn model_gateway_error_message(body: &Value) -> &str {
         .and_then(|error| error.get("message").or(Some(error)))
         .and_then(Value::as_str)
         .or_else(|| body.get("message").and_then(Value::as_str))
-        .unwrap_or("June's model routing service rejected the request.")
+        .unwrap_or("Clovy's model routing service rejected the request.")
 }
 
 async fn poll_model_stream(
@@ -975,10 +978,10 @@ async fn persist_and_emit_event(
             persistence_external_id = interruption_external_id(&frame.run_id, &interruption_id);
             let interruption = match kind {
                 "clarification" => {
-                    json!({ "id": interruption_id, "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "clarification", "question": params.get("question").cloned().unwrap_or_else(|| json!("What would you like June to do?")), "choices": params.get("choices").cloned().unwrap_or_else(|| json!([])) })
+                    json!({ "id": interruption_id, "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "clarification", "question": params.get("question").cloned().unwrap_or_else(|| json!("What would you like Clovy to do?")), "choices": params.get("choices").cloned().unwrap_or_else(|| json!([])) })
                 }
                 "secret" => {
-                    json!({ "id": interruption_id, "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "secret", "reason": params.get("reason").cloned().unwrap_or_else(|| json!("June needs a secret before it can continue.")) })
+                    json!({ "id": interruption_id, "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "secret", "reason": params.get("reason").cloned().unwrap_or_else(|| json!("Clovy needs a secret before it can continue.")) })
                 }
                 _ => {
                     let tool_name = params
@@ -991,7 +994,7 @@ async fn persist_and_emit_event(
                         let (operation_name, operation_description) =
                             approval_operation_identity(&params, tool_name);
                         let command = approval_command(&operation_name, params.get("arguments"));
-                        json!({ "id": interruption_id, "toolCallId": params.get("callId").cloned().unwrap_or(Value::Null), "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "approval", "toolName": tool_name, "title": "Approval required", "description": format!("June wants to run {operation_description}. Review the requested operation before approving."), "command": command, "allowAlways": false })
+                        json!({ "id": interruption_id, "toolCallId": params.get("callId").cloned().unwrap_or(Value::Null), "sessionId": frame.session_id, "runId": frame.run_id, "status": "pending", "createdAt": created_at, "kind": "approval", "toolName": tool_name, "title": "Approval required", "description": format!("Clovy wants to run {operation_description}. Review the requested operation before approving."), "command": command, "allowAlways": false })
                     }
                 }
             };
@@ -1255,9 +1258,9 @@ fn resolve_runtime_command(app: &AppHandle) -> Result<(PathBuf, Vec<PathBuf>), A
         ));
     }
     let name = if cfg!(target_os = "windows") {
-        "june-agent-runtime.exe"
+        "clovy-agent-runtime.exe"
     } else {
-        "june-agent-runtime"
+        "clovy-agent-runtime"
     };
     let executable = app
         .path()

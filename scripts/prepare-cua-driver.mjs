@@ -13,7 +13,7 @@ const pin = JSON.parse(readFileSync(pinPath, "utf8"));
 const sbomSource = path.join(rootDir, "src-tauri", "cua-driver-sbom.spdx.json");
 const licenseSource = path.join(rootDir, "src-tauri", "cua-driver-LICENSE.md");
 const iconSource = path.join(rootDir, "src-tauri", "icons", "icon.icns");
-const iconFileName = "June.icns";
+const iconFileName = "Clovy.icns";
 
 const tauriPlatform = process.env.TAURI_ENV_PLATFORM?.trim();
 if (process.platform !== "darwin" || (tauriPlatform && tauriPlatform !== "darwin")) {
@@ -45,7 +45,7 @@ const contentsDir = path.join(bundleDir, "Contents");
 const executableDir = path.join(contentsDir, "MacOS");
 const resourcesDir = path.join(contentsDir, "Resources");
 const executable = path.join(executableDir, pin.executable);
-const stampPath = path.join(resourcesDir, "june-cua-driver-pin.json");
+const stampPath = path.join(resourcesDir, "clovy-cua-driver-pin.json");
 const iconDestination = path.join(resourcesDir, iconFileName);
 
 if (preparedBundleMatches()) {
@@ -115,19 +115,19 @@ writeFileSync(
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleDisplayName</key><string>June Computer Use Driver</string>
+  <key>CFBundleDisplayName</key><string>Clovy Computer Use Driver</string>
   <key>CFBundleExecutable</key><string>${pin.executable}</string>
   <key>CFBundleIdentifier</key><string>${bundleIdentifier}</string>
   <key>CFBundleIconFile</key><string>${iconFileName}</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>June Computer Use Driver</string>
+  <key>CFBundleName</key><string>Clovy Computer Use Driver</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${pin.version}</string>
   <key>CFBundleVersion</key><string>${pin.version}</string>
   <key>LSMinimumSystemVersion</key><string>${pin.minimumMacOSVersion}</string>
   <key>LSUIElement</key><true/>
-  <key>NSAccessibilityUsageDescription</key><string>June uses Accessibility only to operate the app windows you ask it to control.</string>
-  <key>NSScreenCaptureUsageDescription</key><string>June captures only the app windows you ask it to operate so June can understand and complete your task.</string>
+  <key>NSAccessibilityUsageDescription</key><string>Clovy uses Accessibility only to operate the app windows you ask it to control.</string>
+  <key>NSScreenCaptureUsageDescription</key><string>Clovy captures only the app windows you ask it to operate so Clovy can understand and complete your task.</string>
 </dict>
 </plist>
 `,
@@ -138,13 +138,13 @@ writeFileSync(
     {
       ...pin,
       bundleIdentifier,
-      juneBuild: { profile, architectures: [...architectures].sort(), sourceSha256 },
+      clovyBuild: { profile, architectures: [...architectures].sort(), sourceSha256 },
     },
     null,
     2,
   )}\n`,
 );
-cpSync(sbomSource, path.join(resourcesDir, "june-cua-driver.spdx.json"));
+cpSync(sbomSource, path.join(resourcesDir, "clovy-cua-driver.spdx.json"));
 cpSync(licenseSource, path.join(resourcesDir, "cua-driver-LICENSE.md"));
 cpSync(iconSource, iconDestination);
 run("/usr/bin/codesign", [
@@ -192,7 +192,7 @@ function helperVersion(file) {
   const result = spawnSync(file, ["--version"], { encoding: "utf8" });
   if (result.status !== 0) return {};
   const match = `${result.stdout}\n${result.stderr}`.match(
-    /june-computer-use-driver\s+([^\s]+)\s+([0-9a-f]{40})/,
+    /clovy-computer-use-driver\s+([^\s]+)\s+([0-9a-f]{40})/,
   );
   return { version: match?.[1], commit: match?.[2] };
 }
@@ -231,8 +231,8 @@ function preparedBundleMatches() {
     stamp.version === pin.version &&
     stamp.sourceCommit === pin.sourceCommit &&
     stamp.bundleIdentifier === bundleIdentifier &&
-    stamp.juneBuild?.profile === profile &&
-    stamp.juneBuild?.sourceSha256 === sourceSha256 &&
+    stamp.clovyBuild?.profile === profile &&
+    stamp.clovyBuild?.sourceSha256 === sourceSha256 &&
     architectures.every((architecture) => actualArchitectures.has(architecture)) &&
     version.version === pin.version &&
     version.commit === pin.sourceCommit &&

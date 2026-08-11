@@ -1,8 +1,8 @@
 /** Persistence for the note → chat session pairing. The note chat panel keeps
  * one agent session per note so reopening the panel continues the same
- * conversation; June only remembers which session belongs to which note. */
+ * conversation; Clovy only remembers which session belongs to which note. */
 
-const STORAGE_KEY = "june.noteChat.sessionsByNote.v1";
+const STORAGE_KEY = "clovy.noteChat.sessionsByNote.v1";
 
 type NoteChatSessionMap = Record<string, string>;
 

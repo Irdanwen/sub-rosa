@@ -1662,7 +1662,7 @@ impl Repositories {
         Ok(())
     }
 
-    /// Remove every June-owned row keyed to a routine when the routine itself is
+    /// Remove every Clovy-owned row keyed to a routine when the routine itself is
     /// deleted: its triggers (so the poller stops firing a missing job), its
     /// per-job event cursor, its trust row and credited-run ledger, and its
     /// autonomy grants, and its Browser use credential (so a deleted routine
@@ -2787,7 +2787,7 @@ impl Repositories {
             .execute(&mut *transaction)
             .await?;
         // Session profile rows are only labels. Deleting those labels alone
-        // would make June-owned agent sessions fall back to Default and expose
+        // would make Clovy-owned agent sessions fall back to Default and expose
         // data the user explicitly chose to delete permanently.
         query(
             "DELETE FROM agent_sessions
@@ -5262,7 +5262,7 @@ impl Repositories {
         query(
             "UPDATE notes
              SET processing_status = 'failed',
-                 last_error = 'Transcription was interrupted when June closed. Your recording is saved locally, so you can retry.',
+                 last_error = 'Transcription was interrupted when Clovy closed. Your recording is saved locally, so you can retry.',
                  updated_at = ?
              WHERE processing_status IN ('transcribing', 'generating')
                AND EXISTS (
@@ -8825,7 +8825,7 @@ mod tests {
 
     #[tokio::test]
     async fn companion_legacy_mutation_reservations_migrate_to_outcome_unknown() {
-        use june_companion_protocol::{
+        use clovy_companion_protocol::{
             Capability, FailureCode, ProtocolFailure, Response, ResultPayload,
         };
 
@@ -9529,7 +9529,7 @@ mod tests {
         repos
             .set_routine_browser_grant(&super::RoutineBrowserGrantRecord {
                 job_id: "job-1".to_string(),
-                server_name: "june_browser_routine_job1".to_string(),
+                server_name: "clovy_browser_routine_job1".to_string(),
                 token: "browser-token".to_string(),
                 enabled: true,
             })
@@ -9579,7 +9579,7 @@ mod tests {
         let repos = test_repositories().await;
         let enabled = super::RoutineBrowserGrantRecord {
             job_id: "job-1".to_string(),
-            server_name: "june_browser_routine_job1".to_string(),
+            server_name: "clovy_browser_routine_job1".to_string(),
             token: "browser-token".to_string(),
             enabled: true,
         };

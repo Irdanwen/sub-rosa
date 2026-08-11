@@ -41,8 +41,8 @@ function status(state, version, { published = false } = {}) {
 }
 
 async function releaseFixture({ state = "submission-required", required = true } = {}) {
-  const directory = await mkdtemp(join(tmpdir(), "june-extension-release-"));
-  const packagePath = join(directory, "June-extension.zip");
+  const directory = await mkdtemp(join(tmpdir(), "clovy-extension-release-"));
+  const packagePath = join(directory, "Clovy-extension.zip");
   const packageBytes = Buffer.from("deterministic extension package");
   await writeFile(packagePath, packageBytes);
   const packageSha256 = `sha256:${createHash("sha256").update(packageBytes).digest("hex")}`;
@@ -59,7 +59,7 @@ async function releaseFixture({ state = "submission-required", required = true }
           required: true,
           reason: "changed",
           supersedes: null,
-          packageFile: "June-extension.zip",
+          packageFile: "Clovy-extension.zip",
           packageSha256,
         }
       : {
@@ -100,7 +100,7 @@ describe("Chrome extension release versioning", () => {
   });
 
   it("fingerprints package bytes while ignoring release-only manifest versions", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "june-extension-payload-"));
+    const directory = await mkdtemp(join(tmpdir(), "clovy-extension-payload-"));
     const first = join(directory, "first");
     const second = join(directory, "second");
     await mkdir(first);
@@ -127,7 +127,7 @@ describe("Chrome extension release versioning", () => {
 
 describe("stable desktop release provenance", () => {
   it("binds every published desktop asset to the exact version and source commit", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "june-stable-release-"));
+    const directory = await mkdtemp(join(tmpdir(), "clovy-stable-release-"));
     for (const name of STABLE_ASSET_NAMES) {
       await writeFile(join(directory, name), `release bytes for ${name}\n`);
     }
@@ -160,7 +160,7 @@ describe("stable desktop release provenance", () => {
   });
 
   it("rejects provenance from a different stable promotion", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "june-stable-identity-"));
+    const directory = await mkdtemp(join(tmpdir(), "clovy-stable-identity-"));
     for (const name of STABLE_ASSET_NAMES) {
       await writeFile(join(directory, name), name);
     }
@@ -211,7 +211,7 @@ describe("extension release metadata", () => {
   });
 
   it("rebuilds with the higher RC version when a reusable package is missing or mismatched", async () => {
-    const root = await mkdtemp(join(tmpdir(), "june-extension-prepare-"));
+    const root = await mkdtemp(join(tmpdir(), "clovy-extension-prepare-"));
     const dist = join(root, "extension", "dist");
     const output = join(root, "output");
     await mkdir(dist, { recursive: true });
@@ -238,7 +238,7 @@ describe("extension release metadata", () => {
   });
 
   it("strips the manifest key from the packaged payload while deriving the ID from it", async () => {
-    const root = await mkdtemp(join(tmpdir(), "june-extension-keystrip-"));
+    const root = await mkdtemp(join(tmpdir(), "clovy-extension-keystrip-"));
     const dist = join(root, "extension", "dist");
     const output = join(root, "output");
     await mkdir(dist, { recursive: true });
@@ -261,7 +261,7 @@ describe("extension release metadata", () => {
   });
 
   it("carries an active correlated RC when the payload returns to stable bytes", async () => {
-    const root = await mkdtemp(join(tmpdir(), "june-extension-revert-"));
+    const root = await mkdtemp(join(tmpdir(), "clovy-extension-revert-"));
     const dist = join(root, "extension", "dist");
     const output = join(root, "output");
     await mkdir(dist, { recursive: true });

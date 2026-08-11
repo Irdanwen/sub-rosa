@@ -1,6 +1,6 @@
 /**
  * Client-side crypto for private sharing (JUN-308). WebCrypto only; used by
- * both the June app webview and the browser viewer. See
+ * both the Clovy app webview and the browser viewer. See
  * docs/private-sharing-design.md.
  *
  * - Content key (CK): 256-bit random per share; encrypts the share payload
@@ -159,7 +159,7 @@ export function fromBase64Url(value: string): Uint8Array {
 
 /**
  * Standard (padded) base64. The share API's `*B64` fields (ciphertext, IVs,
- * envelopes) use this alphabet, because june-api decodes them with the
+ * envelopes) use this alphabet, because clovy-api decodes them with the
  * standard base64 decoder. base64url is reserved for the URL fragment, which
  * must stay URL-safe.
  */
