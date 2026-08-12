@@ -7,6 +7,7 @@
 import { fileResultFrom, type MediaFileResult, pollUntilDone } from "../async-job";
 import { fetchMediaCatalog } from "../catalog";
 import { mediaBinary, mediaJson } from "../client";
+import { generateImages } from "../generate-image";
 import { extractFrameAt, extractHandoffFrame } from "../frames";
 import { musicPaths, retrieveBody } from "../paths";
 import { maybeNodeSchema, type Workflow, type WorkflowEdge, type WorkflowNode } from "./schema";
@@ -212,8 +213,9 @@ async function executeNode(
     }
 
     case "image": {
+      const model = stringParam(params, "model") ?? "";
       const body: Record<string, unknown> = {
-        model: stringParam(params, "model") ?? "",
+        model,
         prompt: resolvePrompt(stringParam(params, "prompt") ?? "", inputText),
         hide_watermark: booleanParam(params, "hideWatermark") ?? true,
         format: "png",
@@ -225,8 +227,9 @@ async function executeNode(
       if (aspectRatio) body.aspect_ratio = aspectRatio;
       const stylePreset = stringParam(params, "stylePreset");
       if (stylePreset) body.style_preset = stylePreset;
-      const response = await mediaJson<{ images?: unknown[] }>("/image/generate", body, signal);
-      const first = response.images?.[0];
+      // Route through generateImages so heavy models land on the async queue
+      // instead of bouncing off the sync path's 409/502.
+      const [first] = await generateImages(model, body, signal);
       if (typeof first !== "string" || first === "") {
         throw new Error("The image backend returned no image.");
       }

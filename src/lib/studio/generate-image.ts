@@ -1,8 +1,11 @@
-import { MediaError, mediaJson, mediaRaw } from "./client";
+import { isAsyncRetrySignal, MediaError, mediaJson, mediaRaw } from "./client";
 import type { MediaModel } from "./types";
 
-/** Models whose sync path exceeds the edge cap: queue from the start. */
-const HEAVY_IMAGE_MODELS = ["gpt-image", "nano-banana-pro", "recraft-v4-pro"];
+/** Models the backend refuses (409 MODEL_REQUIRES_ASYNC) or drops (the ~60 s
+ * edge cap 502) on the sync path: queue from the start. Best-effort — a model
+ * missing here still lands on the queue via the fallback in
+ * {@link generateImages}, at the cost of one wasted sync round-trip. */
+const HEAVY_IMAGE_MODELS = ["gpt-image", "nano-banana-pro", "recraft-v4-pro", "qwen-image-3-pro"];
 
 const IMAGE_QUEUE_POLL_MS = 3_000;
 const IMAGE_QUEUE_MAX_ATTEMPTS = 100;
@@ -33,14 +36,14 @@ function normalizeVariants(value: unknown): number {
  * Submit one queue job and poll until it yields an image. `retrieve` returns
  * JSON while pending and raw image bytes once done.
  */
-async function runQueueJob(body: Record<string, unknown>): Promise<string> {
-  const queued = await mediaJson<Record<string, unknown>>("/image/generate/queue", body);
+async function runQueueJob(body: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
+  const queued = await mediaJson<Record<string, unknown>>("/image/generate/queue", body, signal);
   const queueId = queued.queue_id ?? queued.id;
   if (typeof queueId !== "string" || !queueId) {
     throw new MediaError("The backend did not return a job id.", { status: 200 });
   }
   for (let attempt = 0; attempt < IMAGE_QUEUE_MAX_ATTEMPTS; attempt += 1) {
-    const response = await mediaRaw("/image/generate/retrieve", { queue_id: queueId });
+    const response = await mediaRaw("/image/generate/retrieve", { queue_id: queueId }, signal);
     if (response.bodyBase64) return response.bodyBase64;
     const json = response.json as Record<string, unknown> | undefined;
     const status = typeof json?.status === "string" ? json.status.toLowerCase() : "";
@@ -64,17 +67,20 @@ async function runQueueJob(body: Record<string, unknown>): Promise<string> {
  * Partial success returns whatever completed — the async path bills only on
  * retrievable success, so we never discard paid images over one failed sibling.
  */
-async function generateViaQueue(body: Record<string, unknown>): Promise<string[]> {
+async function generateViaQueue(
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<string[]> {
   const variants = normalizeVariants(body.variants);
   if (variants <= 1) {
-    return [await runQueueJob(body)];
+    return [await runQueueJob(body, signal)];
   }
   const seed = typeof body.seed === "number" && Number.isFinite(body.seed) ? body.seed : undefined;
   const settled = await Promise.allSettled(
     Array.from({ length: variants }, (_unused, index) => {
       const jobBody: Record<string, unknown> = { ...body, variants: 1 };
       if (seed !== undefined) jobBody.seed = seed + index;
-      return runQueueJob(jobBody);
+      return runQueueJob(jobBody, signal);
     }),
   );
   const images = settled
@@ -137,23 +143,24 @@ export function compareBodies(
 /**
  * Generate images for a `/image/generate` request body, routing heavy models
  * through the async queue and retrying the sync path through the queue when
- * the edge cap 502s. Returns base64 image payloads. Shared by the desktop
- * ImageStudio and the mobile Studio screen.
+ * the backend redirects there (the edge cap 502, or the upfront
+ * `409 MODEL_REQUIRES_ASYNC` rejection). Returns base64 image payloads.
+ * Shared by the desktop ImageStudio, the mobile Studio screen, and the
+ * workflow engine's image node.
  */
 export async function generateImages(
   modelId: string,
   body: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<string[]> {
   if (isHeavyImageModel(modelId)) {
-    return generateViaQueue(body);
+    return generateViaQueue(body, signal);
   }
   try {
-    return imagesFromResponse(await mediaJson<GenerateResponse>("/image/generate", body));
+    return imagesFromResponse(await mediaJson<GenerateResponse>("/image/generate", body, signal));
   } catch (syncError) {
-    // A 502 on a sync call is usually the edge cap, not a failure: the async
-    // path renders the same request without the cap.
-    if (syncError instanceof MediaError && syncError.status === 502) {
-      return generateViaQueue(body);
+    if (isAsyncRetrySignal(syncError)) {
+      return generateViaQueue(body, signal);
     }
     throw syncError;
   }

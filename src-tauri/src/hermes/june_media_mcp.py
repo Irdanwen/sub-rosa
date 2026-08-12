@@ -51,9 +51,16 @@ REQUEST_TIMEOUT_SECONDS = 60
 IMAGE_QUEUE_POLL_SECONDS = 3
 IMAGE_QUEUE_MAX_ATTEMPTS = 60
 
-# Models whose sync path exceeds the edge cap: queue from the start (mirrors
-# the Studio's list).
-HEAVY_IMAGE_MODELS = ("gpt-image", "nano-banana-pro", "recraft-v4-pro")
+# Models the backend refuses (409 MODEL_REQUIRES_ASYNC) or drops (edge-cap
+# 502) on the sync path: queue from the start (mirrors the Studio's list).
+# Best-effort — a model missing here still lands on the queue via the
+# fallback in generate_image, at the cost of one wasted sync round-trip.
+HEAVY_IMAGE_MODELS = (
+    "gpt-image",
+    "nano-banana-pro",
+    "recraft-v4-pro",
+    "qwen-image-3-pro",
+)
 
 # When the agent names no model, prefer the catalog entry carrying the
 # "default" trait, then these ids (in order). The catalog's own ordering is
@@ -460,9 +467,10 @@ def generate_image(base_url: str, token: str, arguments: dict[str, Any]) -> dict
         )
         if dto.get("ok"):
             b64, extension = first_image(dto), "png"
-        elif dto.get("status") == 502:
-            # A 502 on the sync path is usually the backend's edge cap, not a
-            # failure: the async queue renders the same request without it.
+        elif wants_async_queue(dto):
+            # The backend redirects heavy models to its async queue: either
+            # the ~60 s edge cap 502s, or the model is rejected upfront with
+            # 409 MODEL_REQUIRES_ASYNC. The queue renders the same request.
             b64, extension = generate_image_via_queue(base_url, token, body)
         else:
             raise RuntimeError(upstream_error(dto, "Image generation failed."))
@@ -779,6 +787,14 @@ def call_proxy(
 def is_heavy_image_model(model: str) -> bool:
     lowered = model.lower()
     return any(marker in lowered for marker in HEAVY_IMAGE_MODELS)
+
+
+def wants_async_queue(dto: dict[str, Any]) -> bool:
+    """A failed sync call the backend wants retried on its async queue."""
+    if dto.get("status") in (409, 502):
+        return True
+    payload = dto.get("json")
+    return isinstance(payload, dict) and payload.get("code") == "MODEL_REQUIRES_ASYNC"
 
 
 def first_image(dto: dict[str, Any]) -> str:

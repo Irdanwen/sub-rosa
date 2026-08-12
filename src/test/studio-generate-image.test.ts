@@ -1,26 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // No network, no Tauri: generateImages only talks through the media client.
-vi.mock("../lib/studio/client", () => {
-  class MediaError extends Error {
-    status: number;
-    code?: string;
-
-    constructor(message: string, options: { status: number; code?: string }) {
-      super(message);
-      this.name = "MediaError";
-      this.status = options.status;
-      this.code = options.code;
-    }
-  }
-  return {
-    MediaError,
-    mediaJson: vi.fn(),
-    mediaRaw: vi.fn(),
-    mediaBinary: vi.fn(),
-    mediaGet: vi.fn(),
-  };
-});
+// Keep the real MediaError (isAsyncRetrySignal instanceof-checks the class the
+// code under test throws); mock only the transport functions.
+vi.mock("../lib/studio/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/studio/client")>()),
+  mediaJson: vi.fn(),
+  mediaRaw: vi.fn(),
+  mediaBinary: vi.fn(),
+  mediaGet: vi.fn(),
+}));
 
 import { compareBodies, generateImages } from "../lib/studio/generate-image";
 import { MediaError, mediaJson, mediaRaw } from "../lib/studio/client";
@@ -145,8 +134,47 @@ describe("generateImages — queue variant fan-out", () => {
     expect(mediaJsonMock).toHaveBeenCalledWith(
       "/image/generate",
       expect.objectContaining({ variants: 2 }),
+      undefined,
     );
     expect(mediaRawMock).not.toHaveBeenCalled();
+  });
+
+  it("routes qwen-image-3-pro through the queue without trying the sync path", async () => {
+    wireHappyQueue();
+
+    const images = await generateImages("qwen-image-3-pro", {
+      model: "qwen-image-3-pro",
+      prompt: "a fox",
+      variants: 1,
+    });
+
+    expect(images).toHaveLength(1);
+    expect(mediaJsonMock.mock.calls.filter(([p]) => p === "/image/generate")).toHaveLength(0);
+    expect(mediaJsonMock.mock.calls.filter(([p]) => p === "/image/generate/queue")).toHaveLength(1);
+  });
+
+  it("falls back to the queue when the sync path rejects with 409 MODEL_REQUIRES_ASYNC", async () => {
+    // A model not in the heavy list that the backend has since flipped to
+    // async-only: the sync call 409s and the request retries on the queue.
+    mediaJsonMock.mockImplementation(async (path: string) => {
+      if (path === "/image/generate") {
+        throw new MediaError(
+          "some-new-model exceeds the synchronous request limit - use POST /v1/image/generate/queue (async).",
+          { status: 409, code: "MODEL_REQUIRES_ASYNC" },
+        );
+      }
+      return { queue_id: "q-fallback" };
+    });
+    mediaRawMock.mockResolvedValue({ status: 200, ok: true, bodyBase64: "img-q-fallback" });
+
+    const images = await generateImages("some-new-model", {
+      model: "some-new-model",
+      prompt: "a fox",
+      variants: 1,
+    });
+
+    expect(images).toEqual(["img-q-fallback"]);
+    expect(mediaJsonMock.mock.calls.filter(([p]) => p === "/image/generate/queue")).toHaveLength(1);
   });
 });
 

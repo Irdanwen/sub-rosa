@@ -1,4 +1,4 @@
-import { MediaError, mediaJson, mediaRaw } from "./client";
+import { isAsyncRetrySignal, MediaError, mediaJson, mediaRaw } from "./client";
 import type { MediaProxyResponse } from "./types";
 
 const EDIT_QUEUE_POLL_MS = 3_000;
@@ -89,19 +89,6 @@ export async function editImage(
     }
     throw syncError;
   }
-}
-
-/** A sync edit/compose that the backend wants run through its async queue: the
- * edge cap 502s, or the backend answers `MODEL_REQUIRES_ASYNC` / a "use the
- * queue" message. */
-function isAsyncRetrySignal(error: unknown): boolean {
-  return (
-    error instanceof MediaError &&
-    (error.status === 502 ||
-      error.status === 409 ||
-      error.code === "MODEL_REQUIRES_ASYNC" ||
-      /queue|synchronous|async/i.test(error.message))
-  );
 }
 
 /**

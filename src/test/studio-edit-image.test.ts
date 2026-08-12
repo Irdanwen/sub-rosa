@@ -2,26 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MediaProxyResponse } from "../lib/studio/types";
 
 // Replace the media client so composeImages/editImage routing can be asserted
-// without any network or Tauri invoke.
-vi.mock("../lib/studio/client", () => {
-  class MediaError extends Error {
-    status: number;
-    code?: string;
-    retryAfterMs?: number;
-
-    constructor(message: string, options: { status: number; code?: string }) {
-      super(message);
-      this.name = "MediaError";
-      this.status = options.status;
-      this.code = options.code;
-    }
-  }
-  return {
-    MediaError,
-    mediaJson: vi.fn(),
-    mediaRaw: vi.fn(),
-  };
-});
+// without any network or Tauri invoke. Keep the real MediaError
+// (isAsyncRetrySignal instanceof-checks the class the tests throw); mock only
+// the transport functions.
+vi.mock("../lib/studio/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/studio/client")>()),
+  mediaJson: vi.fn(),
+  mediaRaw: vi.fn(),
+}));
 
 import { MediaError, mediaJson, mediaRaw } from "../lib/studio/client";
 import { composeImages, editImage, removeBackground } from "../lib/studio/edit-image";

@@ -2,27 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Replace the media client wholesale: no network, no Tauri invoke. The
 // async-job poller imports the same module, so retrieve polling is mocked too.
-vi.mock("../lib/studio/client", () => {
-  class MediaError extends Error {
-    status: number;
-    code?: string;
-    retryAfterMs?: number;
-
-    constructor(message: string, options: { status: number; code?: string }) {
-      super(message);
-      this.name = "MediaError";
-      this.status = options.status;
-      this.code = options.code;
-    }
-  }
-  return {
-    MediaError,
-    mediaJson: vi.fn(),
-    mediaBinary: vi.fn(),
-    mediaGet: vi.fn(),
-    mediaRaw: vi.fn(),
-  };
-});
+// The spread keeps the real MediaError and isAsyncRetrySignal so the image
+// node's queue fallback sees the class the mocks throw.
+vi.mock("../lib/studio/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/studio/client")>()),
+  mediaJson: vi.fn(),
+  mediaBinary: vi.fn(),
+  mediaGet: vi.fn(),
+  mediaRaw: vi.fn(),
+}));
 
 // The music node resolves the backend (Carpe Diem vs Venice paths) from the
 // cached catalog; pin it so the test never reaches a Tauri invoke.

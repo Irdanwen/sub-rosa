@@ -28,6 +28,19 @@ export class MediaError extends Error {
   }
 }
 
+/** A sync media call the backend wants run through its async queue instead:
+ * the edge cap 502s, or the backend rejects the model upfront with
+ * `409 MODEL_REQUIRES_ASYNC` / a "use the queue" message. */
+export function isAsyncRetrySignal(error: unknown): boolean {
+  return (
+    error instanceof MediaError &&
+    (error.status === 502 ||
+      error.status === 409 ||
+      error.code === "MODEL_REQUIRES_ASYNC" ||
+      /queue|synchronous|async/i.test(error.message))
+  );
+}
+
 interface MediaCall {
   method: "GET" | "POST";
   path: string;
