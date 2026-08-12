@@ -79,7 +79,10 @@ describe("starting a failed generation again", () => {
     // answers empty would erase the very row under test.
     const rows = new Map<string, MediaJob>();
     let queued = 0;
-    media.json.mockImplementation(async () => ({ queue_id: `job-${(queued += 1)}` }));
+    media.json.mockImplementation(async () => {
+      queued += 1;
+      return { queue_id: `job-${queued}` };
+    });
     invoked.invoke.mockImplementation(async (command: string, args: Record<string, unknown>) => {
       if (command === "media_job_start") {
         const request = args.request as { queueId: string };
