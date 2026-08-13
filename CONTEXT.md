@@ -320,6 +320,14 @@ input it is a checkpoint; with several, approving picks which *candidate*
 run, never to the saved workflow. _Avoid_: breakpoint, review step; and it is
 distinct from Videomaker's server-side phase gates (`decideGate`).
 
+**Connection order**:
+The order of a multi port's inputs — assemble's cut list, a video node's
+references, an image edit's sources, a gate's candidates. It IS the order of
+the edges in the workflow's edge array (the order the connections were made),
+shown as numbered badges and a reorderable list once a port has two inputs,
+and it is what "image 1" / "image 2" mean in a prompt. _Avoid_: z-order,
+index, priority.
+
 **Captured still**:
 An image the user pulls out of a generated clip and keeps: written to the
 gallery as an ordinary image artifact, at the clip's native resolution, so it

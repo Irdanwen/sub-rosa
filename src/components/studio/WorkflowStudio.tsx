@@ -10,18 +10,25 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
   Background,
+  BaseEdge,
   Controls,
+  EdgeLabelRenderer,
+  getBezierPath,
   Handle,
   Position,
   ReactFlow,
+  useStore,
   type Connection,
   type Edge as FlowEdge,
   type EdgeChange,
+  type EdgeProps,
   type Node as FlowNode,
   type NodeChange,
   type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { IconArrowDown } from "central-icons/IconArrowDown";
+import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatCredits } from "../../lib/studio/catalog";
@@ -35,9 +42,12 @@ import {
   type WorkflowRunSummary,
 } from "../../lib/studio/workflow-run";
 import {
+  applyPortOrder,
+  chainOrderSuggestion,
   createWorkflow,
   defaultParams,
   deleteWorkflow,
+  edgesOnPort,
   estimateNodeCost,
   estimateWorkflowCost,
   fetchVideoQuotes,
@@ -50,6 +60,7 @@ import {
   nodeCostMap,
   nodeSchema,
   outputKindOf,
+  reorderPortEdge,
   resolveInputPort,
   saveWorkflow,
   templateWorkflows,
@@ -69,6 +80,15 @@ import { Switch } from "../ui/Switch";
 import { GalleryPicker } from "./GalleryPicker";
 import { NotePicker } from "./NotePicker";
 
+/** One connection into a multi port, as the ordering list shows it. */
+interface PortSourceEntry {
+  edgeId: string;
+  sourceId: string;
+  label: string;
+  /** A small preview when the source has produced an image this run. */
+  image?: string;
+}
+
 interface StudioNodeData extends Record<string, unknown> {
   wfNode: WorkflowNode;
   catalog: MediaCatalog;
@@ -79,9 +99,63 @@ interface StudioNodeData extends Record<string, unknown> {
   gateSources?: Array<{ id: string; label: string }>;
   /** Gate nodes only: decide this gate and continue the held production. */
   onApproveGate?: (gateId: string, choice: string | undefined) => void;
+  /** Multi ports with two or more connections: their sources, in order. */
+  portSources?: Record<string, PortSourceEntry[]>;
+  /** Move one connection up or down within its port's order. */
+  onReorderEdge?: (edgeId: string, delta: -1 | 1) => void;
+  /** Assemble nodes only: apply the graph's chain order to the clips port. */
+  chainSuggestion?: string[];
+  onApplyChainOrder?: (nodeId: string, orderedEdgeIds: string[]) => void;
 }
 
 type StudioFlowNode = FlowNode<StudioNodeData, "studio">;
+
+/** How far out the canvas can zoom before the order badges become noise.
+ * A fit-to-view of a production-sized graph sits around 0.6-0.8, and the
+ * badges must be there in that default state — they only vanish once the
+ * nodes themselves have shrunk past reading. */
+const EDGE_ORDER_MIN_ZOOM = 0.45;
+
+/** The default bezier edge plus a connection-order badge pinned at the port
+ * end. The badge only exists on edges into a multi port with two or more
+ * connections, and fades out when the canvas is zoomed too far to wire. */
+function StudioEdge(props: EdgeProps) {
+  const [path] = getBezierPath({
+    sourceX: props.sourceX,
+    sourceY: props.sourceY,
+    sourcePosition: props.sourcePosition,
+    targetX: props.targetX,
+    targetY: props.targetY,
+    targetPosition: props.targetPosition,
+  });
+  const zoom = useStore((state) => state.transform[2]);
+  const order = (props.data as { order?: number } | undefined)?.order;
+  return (
+    <>
+      <BaseEdge id={props.id} path={path} style={props.style} markerEnd={props.markerEnd} />
+      {order !== undefined && zoom >= EDGE_ORDER_MIN_ZOOM ? (
+        <EdgeLabelRenderer>
+          <span
+            className="studio-edge-order"
+            style={{
+              // Edges of one port share a handle, so a fixed offset would
+              // stack every badge on the same pixel. Stagger them along the
+              // arrival tangent instead: 1 sits closest to the port, 2 behind
+              // it — the row reads like the port's ordered list.
+              transform: `translate(-50%, -50%) translate(${
+                props.targetX - 18 - (order - 1) * 18
+              }px, ${props.targetY}px)`,
+            }}
+          >
+            {order}
+          </span>
+        </EdgeLabelRenderer>
+      ) : null}
+    </>
+  );
+}
+
+const EDGE_TYPES = { studio: StudioEdge };
 
 const SAVE_DEBOUNCE_MS = 300;
 
@@ -143,6 +217,15 @@ function toFlowEdges(workflow: Workflow): FlowEdge[] {
   });
 }
 
+function toWorkflowEdge(edge: FlowEdge) {
+  return {
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    targetPort: edge.targetHandle ?? undefined,
+  };
+}
+
 function fromFlow(base: Workflow, nodes: StudioFlowNode[], edges: FlowEdge[]): Workflow {
   return {
     ...base,
@@ -150,12 +233,7 @@ function fromFlow(base: Workflow, nodes: StudioFlowNode[], edges: FlowEdge[]): W
       ...node.data.wfNode,
       position: { x: node.position.x, y: node.position.y },
     })),
-    edges: edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      targetPort: edge.targetHandle ?? undefined,
-    })),
+    edges: edges.map(toWorkflowEdge),
   };
 }
 
@@ -386,9 +464,9 @@ function GateApproval({ data }: { data: StudioNodeData }) {
           aria-label="Candidate to continue with"
           onChange={(event) => setChoice(event.target.value)}
         >
-          {sources.map((source) => (
+          {sources.map((source, index) => (
             <option key={source.id} value={source.id}>
-              {source.label}
+              {`${index + 1}. ${source.label}${index === 0 ? " (default)" : ""}`}
             </option>
           ))}
         </select>
@@ -450,6 +528,75 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
           ))}
         </div>
       ) : null}
+      {schema.inputs
+        .filter((port) => port.multi && (data.portSources?.[port.id]?.length ?? 0) > 1)
+        .map((port) => {
+          const sources = data.portSources?.[port.id] ?? [];
+          // Image inputs of a prompted node can be talked about by position:
+          // clicking an entry drops "image N" into the prompt.
+          const mentionable =
+            port.kind === "image" && schema.params.some((param) => param.name === "prompt");
+          return (
+            <div key={port.id} className="studio-port-order nodrag">
+              <span className="studio-port-order-head">{port.label} order</span>
+              <ol className="studio-port-order-list">
+                {sources.map((source, index) => (
+                  <li key={source.edgeId}>
+                    <button
+                      type="button"
+                      className="studio-port-order-entry"
+                      disabled={!mentionable}
+                      title={mentionable ? `Add "image ${index + 1}" to the prompt` : undefined}
+                      onClick={() => {
+                        const prompt =
+                          typeof wfNode.params.prompt === "string" ? wfNode.params.prompt : "";
+                        const mention = `image ${index + 1}`;
+                        onParamsChange(wfNode.id, {
+                          ...wfNode.params,
+                          prompt: prompt ? `${prompt.trimEnd()} ${mention}` : mention,
+                        });
+                      }}
+                    >
+                      <span className="studio-port-order-index">{index + 1}</span>
+                      {source.image ? <img src={source.image} alt="" /> : null}
+                      <span className="studio-port-order-label">{source.label}</span>
+                    </button>
+                    <span className="studio-port-order-actions">
+                      <button
+                        type="button"
+                        className="studio-icon-button"
+                        aria-label={`Move ${source.label} up`}
+                        disabled={index === 0}
+                        onClick={() => data.onReorderEdge?.(source.edgeId, -1)}
+                      >
+                        <IconArrowUp size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        className="studio-icon-button"
+                        aria-label={`Move ${source.label} down`}
+                        disabled={index === sources.length - 1}
+                        onClick={() => data.onReorderEdge?.(source.edgeId, 1)}
+                      >
+                        <IconArrowDown size={12} />
+                      </button>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+              {wfNode.type === "assemble" && port.id === "clips" && data.chainSuggestion ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary studio-port-order-chain"
+                  title="These clips continue each other; cut them in chain order."
+                  onClick={() => data.onApplyChainOrder?.(wfNode.id, data.chainSuggestion ?? [])}
+                >
+                  Order by chain
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
       {schema.params.map((param) => (
         <ParamField
           key={param.name}
@@ -545,6 +692,8 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
   const saveTimer = useRef<number | undefined>(undefined);
   const currentRef = useRef<Workflow | undefined>(current);
   currentRef.current = current;
+  const flowNodesRef = useRef<StudioFlowNode[]>([]);
+  flowNodesRef.current = flowNodes;
   /** The durable run this canvas is showing (started or resumed here), so a
    * gate approval knows which run to continue. */
   const runIdRef = useRef<string | undefined>(undefined);
@@ -637,30 +786,86 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
     // `current` is a dependency so renames persist without a canvas change.
   }, [flowNodes, flowEdges, current]);
 
+  /** Move one connection within its port's order. The engine reads edge
+   * order, so this IS the reorder — nothing else changes. */
+  const onReorderEdge = useCallback((edgeId: string, delta: -1 | 1) => {
+    setFlowEdges((edges) => {
+      const graph = {
+        nodes: flowNodesRef.current.map((node) => node.data.wfNode),
+        edges: edges.map(toWorkflowEdge),
+      };
+      const reordered = reorderPortEdge(graph, edgeId, delta);
+      if (reordered === graph.edges) return edges;
+      const byId = new Map(edges.map((edge) => [edge.id, edge]));
+      return reordered.flatMap((entry) => byId.get(entry.id) ?? []);
+    });
+  }, []);
+
+  const onApplyChainOrder = useCallback((_nodeId: string, orderedEdgeIds: string[]) => {
+    setFlowEdges((edges) => {
+      const applied = applyPortOrder(edges.map(toWorkflowEdge), orderedEdgeIds);
+      const byId = new Map(edges.map((edge) => [edge.id, edge]));
+      return applied.flatMap((entry) => byId.get(entry.id) ?? []);
+    });
+  }, []);
+
   // Keep node data in sync with run results without disturbing positions.
-  // Gate candidates refresh here too, so a rewired gate approves the inputs
-  // it actually has.
+  // Connection-order lists, gate candidates, and the assemble node's chain
+  // suggestion refresh here too, so they always describe the wiring as it is.
   useEffect(() => {
     setFlowNodes((nodes) => {
+      const graph = {
+        nodes: nodes.map((node) => node.data.wfNode),
+        edges: flowEdges.map(toWorkflowEdge),
+      };
       const labelOf = new Map(
         nodes.map((node) => [node.id, node.data.wfNode.label || node.data.wfNode.type]),
       );
-      return nodes.map((node) => ({
-        ...node,
-        data: {
-          ...node.data,
-          result: results.get(node.id),
-          catalog,
-          gateSources:
-            node.data.wfNode.type === "gate"
-              ? flowEdges
-                  .filter((edge) => edge.target === node.id)
-                  .map((edge) => ({ id: edge.source, label: labelOf.get(edge.source) ?? "" }))
-              : undefined,
-        },
-      }));
+      const imageOf = (nodeId: string): string | undefined => {
+        const output = results.get(nodeId)?.output;
+        return output?.kind === "image"
+          ? `data:${output.mimeType};base64,${output.base64}`
+          : undefined;
+      };
+      return nodes.map((node) => {
+        const wfNode = node.data.wfNode;
+        const schema = maybeNodeSchema(wfNode.type);
+        let portSources: Record<string, PortSourceEntry[]> | undefined;
+        for (const port of schema?.inputs ?? []) {
+          if (!port.multi) continue;
+          const portEdges = edgesOnPort(graph, node.id, port.id);
+          if (portEdges.length < 2) continue;
+          portSources ??= {};
+          portSources[port.id] = portEdges.map((edge) => ({
+            edgeId: edge.id,
+            sourceId: edge.source,
+            label: labelOf.get(edge.source) ?? edge.source,
+            image: imageOf(edge.source),
+          }));
+        }
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            result: results.get(node.id),
+            catalog,
+            onReorderEdge,
+            onApplyChainOrder,
+            portSources,
+            chainSuggestion:
+              wfNode.type === "assemble" ? chainOrderSuggestion(graph, node.id) : undefined,
+            gateSources:
+              wfNode.type === "gate"
+                ? edgesOnPort(graph, node.id, "in").map((edge) => ({
+                    id: edge.source,
+                    label: labelOf.get(edge.source) ?? "",
+                  }))
+                : undefined,
+          },
+        };
+      });
     });
-  }, [results, catalog, flowEdges]);
+  }, [results, catalog, flowEdges, onReorderEdge, onApplyChainOrder]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<StudioFlowNode>[]) =>
@@ -765,6 +970,45 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
     () => (serialized ? validateWorkflow(serialized) : undefined),
     [serialized],
   );
+
+  /** What edge-order resolution actually depends on: node identities, types,
+   * and the asset kinds that drive affinity — NOT positions. Keying on this
+   * keeps a node drag (which recreates `flowNodes` every frame) from
+   * recomputing and re-identifying every edge. */
+  const orderGraphKey = flowNodes
+    .map(
+      (node) =>
+        `${node.id}:${node.data.wfNode.type}:${String(node.data.wfNode.params.assetKind ?? "")}`,
+    )
+    .join("|");
+
+  /** Connection-order badges: edges into a multi port with two or more
+   * connections carry their 1-based position; everything else stays bare. */
+  const displayEdges = useMemo(() => {
+    const graph = {
+      nodes: flowNodesRef.current.map((node) => node.data.wfNode),
+      edges: flowEdges.map(toWorkflowEdge),
+    };
+    const orders = new Map<string, number>();
+    for (const node of graph.nodes) {
+      for (const port of maybeNodeSchema(node.type)?.inputs ?? []) {
+        if (!port.multi) continue;
+        const portEdges = edgesOnPort(graph, node.id, port.id);
+        if (portEdges.length < 2) continue;
+        portEdges.forEach((edge, index) => {
+          orders.set(edge.id, index + 1);
+        });
+      }
+    }
+    return flowEdges.map((edge) => ({
+      ...edge,
+      type: "studio" as const,
+      data: { order: orders.get(edge.id) },
+    }));
+    // orderGraphKey stands in for the node list: order only depends on the
+    // parts of it the key captures.
+    // biome-ignore lint/correctness/useExhaustiveDependencies: see above
+  }, [flowEdges, orderGraphKey]);
   const estimate = useMemo(
     () => (serialized ? estimateWorkflowCost(serialized, catalog) : undefined),
     [serialized, catalog],
@@ -1073,8 +1317,9 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
       <div className="studio-workflow-canvas">
         <ReactFlow
           nodes={flowNodes}
-          edges={flowEdges}
+          edges={displayEdges}
           nodeTypes={NODE_TYPES}
+          edgeTypes={EDGE_TYPES}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}

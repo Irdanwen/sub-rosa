@@ -999,6 +999,117 @@
   color: var(--muted-foreground);
 }
 
+/* Connection order: the badge an edge wears at its port end, and the
+ * reorderable source list a multi port shows once it has two inputs. */
+.studio-edge-order {
+  position: absolute;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 var(--sp-1);
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--background);
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.studio-port-order {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2);
+  background: var(--surface-subtle);
+  border-radius: var(--r-md);
+}
+
+.studio-port-order-head {
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+
+.studio-port-order-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.studio-port-order-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.studio-port-order-entry {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-1);
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  color: var(--foreground);
+}
+
+.studio-port-order-entry:disabled {
+  cursor: default;
+}
+
+.studio-port-order-entry:hover:not(:disabled) {
+  background: var(--muted);
+}
+
+.studio-port-order-entry img {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.studio-port-order-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--background);
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.studio-port-order-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-port-order-actions {
+  display: flex;
+  gap: var(--sp-1);
+  flex-shrink: 0;
+}
+
+.studio-port-order-chain {
+  align-self: flex-start;
+}
+
 .studio-node-picker {
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--border);

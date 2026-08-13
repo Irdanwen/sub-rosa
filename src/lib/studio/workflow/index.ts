@@ -54,5 +54,11 @@ export {
   type WorkflowCostEstimate,
 } from "./cost";
 export { modelsForParam } from "./models";
+export {
+  applyPortOrder,
+  chainOrderSuggestion,
+  edgesOnPort,
+  reorderPortEdge,
+} from "./ordering";
 export { createWorkflow, deleteWorkflow, listWorkflows, saveWorkflow } from "./store";
 export { templateWorkflows } from "./templates";
