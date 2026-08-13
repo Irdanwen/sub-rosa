@@ -2401,6 +2401,55 @@
   gap: var(--sp-1);
 }
 
+.mobile-workflow-cost {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+  text-align: right;
+}
+
+.mobile-workflow-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-sm);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.mobile-flows-resume {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.mobile-flows-resume-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--surface-subtle);
+}
+
+.mobile-flows-resume-name {
+  font-size: var(--fs-sm);
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-flows-resume-actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
 .mobile-workflow-editor-actions {
   display: flex;
   align-items: center;

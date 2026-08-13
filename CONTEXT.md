@@ -298,6 +298,28 @@ worth keeping is written into it rather than held in a form's state. See
 _Avoid_: library, assets, media pool, uploads (nothing is uploaded); "the
 gallery" is the word in the code, the desktop UI, and the mobile sheet alike.
 
+### Studio workflows (fork)
+
+**Port (workflow input)**:
+A named, typed input on a workflow node — a video node's prompt, opening
+frame, end frame, and references are four ports, not one merged stream. Media
+ports are binding (an image port only takes images); text ports take anything
+and degrade media to a description. Edges saved before ports existed resolve
+by kind affinity. _Avoid_: slot, socket, pin.
+
+**Asset node**:
+The workflow node that pulls one gallery item (image, clip, or track) into a
+graph, typically fanned out to every scene that should reuse it. It reads the
+gallery; it never uploads anything. _Avoid_: reference node (a *reference* is
+one specific video port), import node.
+
+**Approval gate**:
+The workflow node that pauses a production until the user decides. With one
+input it is a checkpoint; with several, approving picks which *candidate*
+(alternative take, wired in as its own node) continues. Approvals belong to a
+run, never to the saved workflow. _Avoid_: breakpoint, review step; and it is
+distinct from Videomaker's server-side phase gates (`decideGate`).
+
 **Captured still**:
 An image the user pulls out of a generated clip and keeps: written to the
 gallery as an ordinary image artifact, at the clip's native resolution, so it

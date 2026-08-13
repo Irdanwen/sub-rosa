@@ -1,9 +1,18 @@
 // Structural validation for Studio workflows. Errors block execution;
 // warnings surface in the UI but the run proceeds.
+//
+// Ports made part of this binding: a media port only accepts its own kind
+// (an error, where the pre-port validator only warned), text ports accept
+// everything but degrade media to a description (still a warning), and a
+// port that is required, over-filled, or unknown blocks the run.
 
 import {
   isIdealMatch,
+  isInputCompatible,
   maybeNodeSchema,
+  outputKindOf,
+  resolveInputPort,
+  type InputPort,
   type Workflow,
   type WorkflowEdge,
   type WorkflowNode,
@@ -54,14 +63,37 @@ function hasCycle(nodes: WorkflowNode[], edges: WorkflowEdge[]): boolean {
   return false;
 }
 
+/** User-legible requirement for picker params, instead of the generic
+ * missing-param wording which would name an internal field. */
+function pickerRequirement(paramType: string): string | undefined {
+  if (paramType === "artifact") return "pick a gallery item";
+  if (paramType === "note") return "pick a note";
+  return undefined;
+}
+
 export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): ValidationResult {
   const { nodes, edges } = workflow;
   const errors: ValidationIssue[] = [];
   const warnings: ValidationIssue[] = [];
   const nodeIds = new Set(nodes.map((node) => node.id));
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
 
   if (nodes.length === 0) {
     warnings.push({ severity: "warning", message: "The workflow is empty." });
+  }
+
+  const kindContext = { nodeById, edges };
+  /** The port each valid edge resolved to, for capacity + connection checks. */
+  const resolvedPorts = new Map<string, InputPort | undefined>();
+  for (const edge of edges) {
+    const source = nodeById.get(edge.source);
+    const target = nodeById.get(edge.target);
+    const targetSchema = target ? maybeNodeSchema(target.type) : undefined;
+    if (!source || !targetSchema) continue;
+    resolvedPorts.set(
+      edge.id,
+      resolveInputPort(targetSchema, edge, outputKindOf(source, kindContext)),
+    );
   }
 
   for (const node of nodes) {
@@ -78,12 +110,23 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
 
     for (const param of schema.params) {
       if (!param.required || !isParamMissing(node, param.name)) continue;
-      // A missing prompt/text is fine when an inbound edge can feed it.
-      const feedable =
+      const picker = pickerRequirement(param.type);
+      if (picker) {
+        errors.push({
+          severity: "error",
+          nodeId: node.id,
+          message: `${schema.label}: ${picker}.`,
+        });
+        continue;
+      }
+      // A missing prompt/text is fine when an inbound text edge can feed it.
+      const textFed =
         (param.name === "prompt" || param.name === "text") &&
-        schema.input !== "none" &&
-        incoming.length > 0;
-      if (!feedable) {
+        incoming.some((edge) => {
+          const port = resolvedPorts.get(edge.id);
+          return port !== undefined && (port.kind === "text" || port.kind === "any");
+        });
+      if (!textFed) {
         errors.push({
           severity: "error",
           nodeId: node.id,
@@ -92,7 +135,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       }
     }
 
-    if (schema.input === "none") {
+    if (schema.inputs.length === 0) {
       for (const edge of incoming) {
         errors.push({
           severity: "error",
@@ -102,14 +145,37 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       }
     } else if (incoming.length === 0) {
       // An unconnected input is only worth flagging when the node also has no
-      // prompt of its own to run from.
+      // prompt of its own to run from — and not when a required-port error
+      // below already says the same thing louder.
       const hasOwnPrompt =
         schema.params.some((param) => param.name === "prompt") && !isParamMissing(node, "prompt");
-      if (!hasOwnPrompt) {
+      const hasRequiredPort = schema.inputs.some((port) => port.required);
+      if (!hasOwnPrompt && !hasRequiredPort) {
         warnings.push({
           severity: "warning",
           nodeId: node.id,
           message: `${schema.label}: no upstream input connected.`,
+        });
+      }
+    }
+
+    for (const port of schema.inputs) {
+      const landing = incoming.filter((edge) => resolvedPorts.get(edge.id)?.id === port.id);
+      if (port.required && landing.length === 0) {
+        errors.push({
+          severity: "error",
+          nodeId: node.id,
+          message: `${schema.label}: connect the "${port.label}" input.`,
+        });
+      }
+      const capacity = port.multi ? port.max : 1;
+      if (capacity !== undefined && landing.length > capacity) {
+        errors.push({
+          severity: "error",
+          nodeId: node.id,
+          message: `${schema.label}: "${port.label}" takes at most ${capacity} ${
+            capacity === 1 ? "connection" : "connections"
+          }.`,
         });
       }
     }
@@ -125,7 +191,6 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
     }
   }
 
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   for (const edge of edges) {
     if (!nodeIds.has(edge.source)) {
       errors.push({
@@ -155,14 +220,37 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
     const target = nodeById.get(edge.target);
     const sourceSchema = source ? maybeNodeSchema(source.type) : undefined;
     const targetSchema = target ? maybeNodeSchema(target.type) : undefined;
-    if (!sourceSchema || !targetSchema) continue;
-    // "none" ports are already reported as errors by the per-node checks.
-    if (sourceSchema.output === "none" || targetSchema.input === "none") continue;
-    if (!isIdealMatch(sourceSchema.output, targetSchema.input)) {
+    if (!source || !sourceSchema || !targetSchema) continue;
+    // Nodes without inputs already reported every inbound edge as an error.
+    if (targetSchema.inputs.length === 0) continue;
+    const sourceKind = outputKindOf(source, kindContext);
+    // "none" outputs are already reported as errors by the per-node checks.
+    if (sourceKind === "none") continue;
+    const port = resolvedPorts.get(edge.id);
+    if (!port) {
+      errors.push({
+        severity: "error",
+        edgeId: edge.id,
+        message:
+          edge.targetPort !== undefined
+            ? `${targetSchema.label} has no "${edge.targetPort}" input.`
+            : `${targetSchema.label} has no input that accepts ${sourceKind}.`,
+      });
+      continue;
+    }
+    if (!isInputCompatible(sourceKind, port.kind)) {
+      errors.push({
+        severity: "error",
+        edgeId: edge.id,
+        message: `${targetSchema.label}: "${port.label}" expects ${port.kind} but ${sourceSchema.label} outputs ${sourceKind}.`,
+      });
+      continue;
+    }
+    if (!isIdealMatch(sourceKind, port.kind)) {
       warnings.push({
         severity: "warning",
         edgeId: edge.id,
-        message: `${sourceSchema.label} outputs ${sourceSchema.output} but ${targetSchema.label} expects ${targetSchema.input}. The media will chain as a text description.`,
+        message: `${sourceSchema.label} outputs ${sourceKind} but "${port.label}" expects ${port.kind}. The media will chain as a text description.`,
       });
     }
   }

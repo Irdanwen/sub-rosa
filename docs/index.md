@@ -30,6 +30,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0018](adr/0018-ios-background-work-is-durable-rows.md) — iOS freezes the webview and suspends the process, so anything that can outlive a foreground session writes a durable row first and is re-driven by one sweep (launch, resume, BGTaskScheduler); locking the phone costs time, never a result
 - [adr/0019](adr/0019-shot-chains-are-parent-links.md) — a shot chain is never stored as a sequence: each clip records the one it continues (and where it took over) on its durable row, and the chain is derived, so it survives a render that outlives the session, a deleted clip, and a re-generation that forks
 - [adr/0020](adr/0020-the-gallery-is-the-studio-exchange-format.md) — Studio surfaces exchange images through the gallery rather than through each other: a captured frame is written as an ordinary artifact (so export, edit, and reuse come free) and every image input pulls from the gallery instead of waiting to be pushed at
+- [adr/0021](adr/0021-workflow-runs-are-durable-rows-stitched-by-the-webview.md) — a workflow production is durable rows (`workflow_runs` + per-node state), its long renders ride the existing `media_jobs` pollers, and the webview stitches between them: a resume replays finished nodes and re-attaches to in-flight renders by job id, never re-buying either
 
 ## Enforceable rules (spec/)
 

@@ -157,6 +157,16 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
     // and without the code a failed row cannot be told apart after the fact,
     // which is exactly the hole a real incident fell into.
     ensure_column(_pool, "media_jobs", "error_status", "INTEGER").await?;
+    // Who queued the job. NULL or "studio" is a hand-run generation; a
+    // workflow run's renders say "workflow" so the Studio surfaces do not
+    // file and dismiss a row the run is still waiting on (ADR-0021).
+    ensure_column(_pool, "media_jobs", "source", "TEXT").await?;
+    for statement in include_str!("../../migrations/012_workflow_runs.sql").split(';') {
+        let statement = statement.trim();
+        if !statement.is_empty() {
+            query(statement).execute(_pool).await?;
+        }
+    }
     Ok(())
 }
 

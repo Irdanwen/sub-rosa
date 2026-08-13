@@ -48,11 +48,20 @@ describe("picking from the gallery", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("only ever offers images, whatever else is in the gallery", async () => {
-    artifacts.list.mockResolvedValue([]);
+  it("only offers the requested kinds, whatever else is in the gallery", async () => {
+    const clip: StudioArtifact = {
+      ...IMAGE,
+      id: "clip.mp4",
+      kind: "video",
+      path: "/gallery/clip.mp4",
+      fileName: "clip.mp4",
+      prompt: "A tracking shot",
+    };
+    artifacts.list.mockResolvedValue([IMAGE, clip]);
     render(<GalleryPicker onPick={vi.fn()} onClose={vi.fn()} />);
 
-    await waitFor(() => expect(artifacts.list).toHaveBeenCalledWith("image"));
+    await screen.findByRole("button", { name: "A rainy platform at dusk" });
+    expect(screen.queryByRole("button", { name: "A tracking shot" })).toBeNull();
   });
 
   it("says the gallery is empty rather than showing a blank sheet", async () => {
@@ -71,7 +80,7 @@ describe("picking from the gallery", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "A rainy platform at dusk" }));
 
-    expect(await screen.findByText("Couldn't read that image from the gallery.")).toBeTruthy();
+    expect(await screen.findByText("Couldn't read that item from the gallery.")).toBeTruthy();
     expect(onPick).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });

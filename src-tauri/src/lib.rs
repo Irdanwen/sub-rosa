@@ -374,6 +374,12 @@ pub fn run() {
             carpe_diem::jobs::media_job_list,
             carpe_diem::jobs::media_job_stop,
             carpe_diem::jobs::media_job_dismiss,
+            carpe_diem::workflow_runs::workflow_run_create,
+            carpe_diem::workflow_runs::workflow_run_list,
+            carpe_diem::workflow_runs::workflow_run_get,
+            carpe_diem::workflow_runs::workflow_run_set_node,
+            carpe_diem::workflow_runs::workflow_run_finish,
+            carpe_diem::workflow_runs::workflow_run_dismiss,
             videomaker::commands::videomaker_get_settings,
             videomaker::commands::videomaker_set_base_url,
             videomaker::commands::videomaker_activate,
@@ -512,6 +518,12 @@ pub fn run() {
         carpe_diem::jobs::media_job_list,
         carpe_diem::jobs::media_job_stop,
         carpe_diem::jobs::media_job_dismiss,
+        carpe_diem::workflow_runs::workflow_run_create,
+        carpe_diem::workflow_runs::workflow_run_list,
+        carpe_diem::workflow_runs::workflow_run_get,
+        carpe_diem::workflow_runs::workflow_run_set_node,
+        carpe_diem::workflow_runs::workflow_run_finish,
+        carpe_diem::workflow_runs::workflow_run_dismiss,
     ]);
 
     builder

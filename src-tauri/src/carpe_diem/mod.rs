@@ -12,3 +12,4 @@ pub mod jobs;
 pub mod media;
 pub mod settings;
 pub mod sidecar;
+pub mod workflow_runs;

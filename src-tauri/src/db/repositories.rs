@@ -4,7 +4,8 @@ use crate::domain::types::{
     DictationHistoryItemDto, DictionaryEntryDto, FolderDto, ListDictationHistoryResponse,
     ListNotesResponse, MediaJobDto, MediaJobStatus, MemoryDto, MemorySource, NoteDto,
     NoteListItemDto, PendingDictationDto, ProcessingStatus, RecordingSourceMode, RecordingState,
-    SessionFolderDto, TranscriptCoverageDto, TranscriptDto,
+    SessionFolderDto, TranscriptCoverageDto, TranscriptDto, WorkflowRunDto, WorkflowRunNodeDto,
+    WorkflowRunStatus,
 };
 use chrono::{Duration, SecondsFormat, Utc};
 use sqlx::query::query;
@@ -2777,8 +2778,8 @@ impl Repositories {
             "INSERT OR IGNORE INTO media_jobs
                  (id, kind, model, prompt, extension, retrieve_path, retrieve_body,
                   url_fields, status, parent_artifact_id, parent_handoff_seconds,
-                  cost_credits, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)",
+                  cost_credits, source, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",
         )
         .bind(&job.id)
         .bind(&job.kind)
@@ -2791,6 +2792,7 @@ impl Repositories {
         .bind(&job.parent_artifact_id)
         .bind(job.parent_handoff_seconds)
         .bind(job.cost_credits)
+        .bind(&job.source)
         .bind(&now)
         .bind(&now)
         .execute(&self.pool)
@@ -2805,7 +2807,7 @@ impl Repositories {
         let rows = query(
             "SELECT id, kind, model, prompt, extension, status, error, error_status, artifact_path,
                     artifact_file_name, artifact_bytes, parent_artifact_id,
-                    parent_handoff_seconds, cost_credits, created_at, updated_at
+                    parent_handoff_seconds, cost_credits, source, created_at, updated_at
              FROM media_jobs ORDER BY created_at DESC",
         )
         .fetch_all(&self.pool)
@@ -2822,7 +2824,7 @@ impl Repositories {
         let rows = query(
             "SELECT id, kind, model, prompt, extension, status, error, error_status, artifact_path,
                     artifact_file_name, artifact_bytes, parent_artifact_id,
-                    parent_handoff_seconds, cost_credits, created_at, updated_at,
+                    parent_handoff_seconds, cost_credits, source, created_at, updated_at,
                     retrieve_path, retrieve_body, url_fields
              FROM media_jobs WHERE status IN ('queued', 'processing')
              ORDER BY created_at ASC",
@@ -2898,7 +2900,7 @@ impl Repositories {
         let row = query(
             "SELECT id, kind, model, prompt, extension, status, error, error_status, artifact_path,
                     artifact_file_name, artifact_bytes, parent_artifact_id,
-                    parent_handoff_seconds, cost_credits, created_at, updated_at
+                    parent_handoff_seconds, cost_credits, source, created_at, updated_at
              FROM media_jobs WHERE id = ?",
         )
         .bind(id)
@@ -2926,6 +2928,161 @@ impl Repositories {
             .fetch_optional(&self.pool)
             .await?;
         Ok(row.map(|row| row.get::<i64, _>("attempts")).unwrap_or(0))
+    }
+
+    // --- workflow runs (ADR-0021) ------------------------------------------
+    // A Studio production, frozen at launch. The graph executes in the
+    // webview; these rows are what a resume reads to stitch on from where it
+    // stopped, so every write here happens before the work it describes.
+
+    /// Create a run and one pending row per node, atomically: a run whose
+    /// node rows are missing could never be resumed.
+    pub async fn insert_workflow_run(
+        &self,
+        run: &WorkflowRunDto,
+        node_ids: &[String],
+    ) -> Result<(), sqlx::error::Error> {
+        let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+        let mut tx = self.pool.begin().await?;
+        query(
+            "INSERT INTO workflow_runs
+                 (id, workflow_id, name, definition, status, error, node_costs,
+                  created_at, updated_at)
+             VALUES (?, ?, ?, ?, 'running', NULL, ?, ?, ?)",
+        )
+        .bind(&run.id)
+        .bind(&run.workflow_id)
+        .bind(&run.name)
+        .bind(&run.definition)
+        .bind(&run.node_costs)
+        .bind(&now)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await?;
+        for node_id in node_ids {
+            query(
+                "INSERT INTO workflow_run_nodes (run_id, node_id, status, updated_at)
+                 VALUES (?, ?, 'pending', ?)",
+            )
+            .bind(&run.id)
+            .bind(node_id)
+            .bind(&now)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await
+    }
+
+    /// Every run the UI should know about, newest first: the resumable ones
+    /// plus the settled ones the user has not dismissed yet.
+    pub async fn list_workflow_runs(&self) -> Result<Vec<WorkflowRunDto>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT id, workflow_id, name, definition, status, error, node_costs,
+                    created_at, updated_at
+             FROM workflow_runs ORDER BY created_at DESC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(workflow_run_from_row).collect())
+    }
+
+    pub async fn get_workflow_run(
+        &self,
+        id: &str,
+    ) -> Result<Option<(WorkflowRunDto, Vec<WorkflowRunNodeDto>)>, sqlx::error::Error> {
+        let row = query(
+            "SELECT id, workflow_id, name, definition, status, error, node_costs,
+                    created_at, updated_at
+             FROM workflow_runs WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let run = workflow_run_from_row(row);
+        let nodes = query(
+            "SELECT node_id, status, output, error, updated_at
+             FROM workflow_run_nodes WHERE run_id = ?",
+        )
+        .bind(id)
+        .fetch_all(&self.pool)
+        .await?
+        .into_iter()
+        .map(|row| WorkflowRunNodeDto {
+            node_id: row.get("node_id"),
+            status: row.get("status"),
+            output: row.get("output"),
+            error: row.get("error"),
+            updated_at: row.get("updated_at"),
+        })
+        .collect();
+        Ok(Some((run, nodes)))
+    }
+
+    /// One node's durable state. `output` replaces the previous value whole:
+    /// it is either the dehydrated result (done) or the pending job pointer
+    /// (running), never a merge of the two.
+    pub async fn set_workflow_run_node(
+        &self,
+        run_id: &str,
+        node_id: &str,
+        status: &str,
+        output: Option<&str>,
+        error: Option<&str>,
+    ) -> Result<(), sqlx::error::Error> {
+        query(
+            "UPDATE workflow_run_nodes
+             SET status = ?, output = ?, error = ?, updated_at = ?
+             WHERE run_id = ? AND node_id = ?",
+        )
+        .bind(status)
+        .bind(output)
+        .bind(error)
+        .bind(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true))
+        .bind(run_id)
+        .bind(node_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn set_workflow_run_status(
+        &self,
+        id: &str,
+        status: WorkflowRunStatus,
+        error: Option<&str>,
+    ) -> Result<Option<WorkflowRunDto>, sqlx::error::Error> {
+        query("UPDATE workflow_runs SET status = ?, error = ?, updated_at = ? WHERE id = ?")
+            .bind(status.as_db())
+            .bind(error)
+            .bind(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true))
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        let row = query(
+            "SELECT id, workflow_id, name, definition, status, error, node_costs,
+                    created_at, updated_at
+             FROM workflow_runs WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(workflow_run_from_row))
+    }
+
+    pub async fn delete_workflow_run(&self, id: &str) -> Result<(), sqlx::error::Error> {
+        let mut tx = self.pool.begin().await?;
+        query("DELETE FROM workflow_run_nodes WHERE run_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        query("DELETE FROM workflow_runs WHERE id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await
     }
 
     pub async fn insert_pending_dictation(
@@ -3022,6 +3179,20 @@ impl Repositories {
     }
 }
 
+fn workflow_run_from_row(row: sqlx_sqlite::SqliteRow) -> WorkflowRunDto {
+    WorkflowRunDto {
+        id: row.get("id"),
+        workflow_id: row.get("workflow_id"),
+        name: row.get("name"),
+        definition: row.get("definition"),
+        status: WorkflowRunStatus::from(row.get::<String, _>("status").as_str()),
+        error: row.get("error"),
+        node_costs: row.get("node_costs"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    }
+}
+
 fn media_job_from_row(row: sqlx_sqlite::SqliteRow) -> MediaJobDto {
     MediaJobDto {
         id: row.get("id"),
@@ -3038,6 +3209,7 @@ fn media_job_from_row(row: sqlx_sqlite::SqliteRow) -> MediaJobDto {
         parent_artifact_id: row.get("parent_artifact_id"),
         parent_handoff_seconds: row.get("parent_handoff_seconds"),
         cost_credits: row.get("cost_credits"),
+        source: row.get("source"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
     }

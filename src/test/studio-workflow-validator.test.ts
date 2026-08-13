@@ -22,8 +22,13 @@ function node(
   };
 }
 
-function edge(source: string, target: string): WorkflowEdge {
-  return { id: `${source}-${target}`, source, target };
+function edge(source: string, target: string, targetPort?: string): WorkflowEdge {
+  return {
+    id: `${source}-${target}${targetPort ? `-${targetPort}` : ""}`,
+    source,
+    target,
+    targetPort,
+  };
 }
 
 function workflow(nodes: WorkflowNode[], edges: WorkflowEdge[]): Workflow {
@@ -151,5 +156,135 @@ describe("validateWorkflow", () => {
     const result = validateWorkflow(workflow([bogus], []));
     expect(result.ok).toBe(false);
     expect(result.errors.some((issue) => issue.message.includes("hologram"))).toBe(true);
+  });
+});
+
+describe("validateWorkflow with named ports", () => {
+  it("rejects a media port fed the wrong kind", () => {
+    const result = validateWorkflow(
+      workflow(
+        [
+          node("in", "textInput", { text: "hello" }),
+          node("clip", "video", { model: "m", prompt: "p" }),
+        ],
+        [edge("in", "clip", "openingFrame")],
+      ),
+    );
+    expect(result.ok).toBe(false);
+    expect(
+      result.errors.some(
+        (issue) => issue.edgeId === "in-clip-openingFrame" && issue.message.includes("expects"),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects an edge naming a port the node does not have", () => {
+    const result = validateWorkflow(
+      workflow(
+        [
+          node("in", "textInput", { text: "hello" }),
+          node("llm", "chat", { model: "m", prompt: "p" }),
+        ],
+        [edge("in", "llm", "ghostPort")],
+      ),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((issue) => issue.message.includes("ghostPort"))).toBe(true);
+  });
+
+  it("caps a single port at one connection and references at four", () => {
+    const stills = ["s1", "s2"].map((id) =>
+      node(id, "asset", { assetKind: "image", artifactId: id }),
+    );
+    const doubleOpening = validateWorkflow(
+      workflow(
+        [...stills, node("clip", "video", { model: "m", prompt: "p" })],
+        [edge("s1", "clip", "openingFrame"), edge("s2", "clip", "openingFrame")],
+      ),
+    );
+    expect(doubleOpening.ok).toBe(false);
+    expect(
+      doubleOpening.errors.some(
+        (issue) => issue.nodeId === "clip" && issue.message.includes("at most 1"),
+      ),
+    ).toBe(true);
+
+    const five = ["r1", "r2", "r3", "r4", "r5"].map((id) =>
+      node(id, "asset", { assetKind: "image", artifactId: id }),
+    );
+    const tooManyRefs = validateWorkflow(
+      workflow(
+        [...five, node("clip", "video", { model: "m", prompt: "p" })],
+        five.map((still) => edge(still.id, "clip", "references")),
+      ),
+    );
+    expect(tooManyRefs.ok).toBe(false);
+    expect(
+      tooManyRefs.errors.some(
+        (issue) => issue.nodeId === "clip" && issue.message.includes("at most 4"),
+      ),
+    ).toBe(true);
+  });
+
+  it("requires the ports a node cannot run without", () => {
+    const frame = validateWorkflow(workflow([node("frame", "lastFrame")], []));
+    expect(frame.ok).toBe(false);
+    expect(
+      frame.errors.some((issue) => issue.nodeId === "frame" && issue.message.includes('"Video"')),
+    ).toBe(true);
+
+    const film = validateWorkflow(workflow([node("film", "assemble")], []));
+    expect(film.ok).toBe(false);
+    expect(
+      film.errors.some((issue) => issue.nodeId === "film" && issue.message.includes('"Clips"')),
+    ).toBe(true);
+  });
+
+  it("asks for a gallery item and a note in picker words, not param names", () => {
+    const result = validateWorkflow(
+      workflow([node("ref", "asset", { artifactId: "" }), node("doc", "document")], []),
+    );
+    expect(result.ok).toBe(false);
+    expect(
+      result.errors.some(
+        (issue) => issue.nodeId === "ref" && issue.message.includes("pick a gallery item"),
+      ),
+    ).toBe(true);
+    expect(
+      result.errors.some(
+        (issue) => issue.nodeId === "doc" && issue.message.includes("pick a note"),
+      ),
+    ).toBe(true);
+  });
+
+  it("accepts a portless image edge into a video node without warnings", () => {
+    const result = validateWorkflow(
+      workflow(
+        [
+          node("still", "asset", { assetKind: "image", artifactId: "a" }),
+          node("clip", "video", { model: "m", prompt: "p" }),
+        ],
+        [edge("still", "clip")],
+      ),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("resolves kinds through a gate: an approved image still lands on a media port", () => {
+    const result = validateWorkflow(
+      workflow(
+        [
+          node("still", "asset", { assetKind: "image", artifactId: "a" }),
+          node("check", "gate"),
+          node("clip", "video", { model: "m", prompt: "p" }),
+        ],
+        // Portless gate→video edge: affinity must see the image behind the
+        // gate, not a generic text output.
+        [edge("still", "check"), edge("check", "clip")],
+      ),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toEqual([]);
   });
 });

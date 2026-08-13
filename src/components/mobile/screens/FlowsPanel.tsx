@@ -1,22 +1,34 @@
 import { IconChevronRight } from "central-icons/IconChevronRight";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { hapticNotify } from "../../../lib/haptics";
 import type { MediaCatalog } from "../../../lib/studio/types";
 import {
+  estimateWorkflowCost,
   listWorkflows,
+  needsRunConfirmation,
   type NodeRunResult,
+  nodeCostMap,
   nodeSchema,
   saveWorkflow,
   templateWorkflows,
   type ValidationIssue,
   type Workflow,
+  type WorkflowCostEstimate,
   WorkflowRunError,
   validateWorkflow,
 } from "../../../lib/studio/workflow";
-import { runAndSaveWorkflow } from "../../../lib/studio/workflow-run";
+import {
+  approveRunGates,
+  dismissWorkflowRun,
+  listResumableRuns,
+  resumeWorkflowRun,
+  runAndSaveWorkflow,
+  type WorkflowRunSummary,
+} from "../../../lib/studio/workflow-run";
+import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { Spinner } from "../../ui/Spinner";
-import { WorkflowEditor } from "./WorkflowEditor";
+import { runCostDescription, WorkflowEditor } from "./WorkflowEditor";
 
 function stepCount(workflow: Workflow): number {
   return workflow.nodes.filter((node) => node.type !== "output").length;
@@ -39,8 +51,54 @@ export function FlowsPanel({
   const [saved, setSaved] = useState<Workflow[]>(() => listWorkflows());
   const [editing, setEditing] = useState<Workflow | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<Workflow | null>(null);
+  /** Interrupted durable runs (ADR-0021), offered for resume. */
+  const [resumable, setResumable] = useState<WorkflowRunSummary[]>([]);
+  const [resuming, setResuming] = useState<string | null>(null);
+  const [resumeError, setResumeError] = useState<string | null>(null);
 
   const refreshSaved = useCallback(() => setSaved(listWorkflows()), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listResumableRuns().then((runs) => {
+      if (!cancelled) setResumable(runs);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const resume = useCallback(
+    async (entry: WorkflowRunSummary) => {
+      if (resuming) return;
+      setResuming(entry.id);
+      setResumeError(null);
+      try {
+        // A gate-held run continues through a one-tap approval (first
+        // candidate per gate); an interrupted one just picks back up.
+        if (entry.status === "awaitingGate") {
+          await approveRunGates(entry.id);
+        } else {
+          await resumeWorkflowRun(entry.id);
+        }
+        hapticNotify("success");
+        onGenerated();
+        setResumable((entries) => entries.filter((candidate) => candidate.id !== entry.id));
+      } catch (error) {
+        hapticNotify("error");
+        setResumeError(error instanceof Error ? error.message : "The resume failed.");
+        setResumable((entries) => entries.filter((candidate) => candidate.id !== entry.id));
+      } finally {
+        setResuming(null);
+      }
+    },
+    [resuming, onGenerated],
+  );
+
+  const dismissRun = useCallback(async (entry: WorkflowRunSummary) => {
+    await dismissWorkflowRun(entry.id);
+    setResumable((entries) => entries.filter((candidate) => candidate.id !== entry.id));
+  }, []);
 
   const createNew = useCallback(() => {
     // Kept in memory only; the editor persists it on the first Save/Run so an
@@ -98,6 +156,7 @@ export function FlowsPanel({
     return (
       <TemplateRunner
         template={selectedTemplate}
+        catalog={catalog}
         onBack={() => setSelectedTemplate(null)}
         onGenerated={onGenerated}
       />
@@ -110,6 +169,42 @@ export function FlowsPanel({
         Chained generations: one input, several models working in sequence. Results land in the
         gallery.
       </p>
+
+      {resumable.length > 0 ? (
+        <ul className="mobile-flows-resume" aria-label="Interrupted productions">
+          {resumable.map((entry) => (
+            <li key={entry.id} className="mobile-flows-resume-row">
+              <span className="mobile-flows-resume-name">{entry.name || "Untitled workflow"}</span>
+              <span className="mobile-flows-resume-actions">
+                <button
+                  type="button"
+                  className="mobile-chip-button"
+                  disabled={resuming !== null}
+                  onClick={() => void dismissRun(entry)}
+                >
+                  Dismiss
+                </button>
+                <button
+                  type="button"
+                  className="mobile-chip-button"
+                  disabled={resuming !== null}
+                  onClick={() => void resume(entry)}
+                >
+                  {resuming === entry.id ? (
+                    <Spinner />
+                  ) : entry.status === "awaitingGate" ? (
+                    "Approve and continue"
+                  ) : (
+                    "Resume"
+                  )}
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {resumeError ? <p className="mobile-dictation-error">{resumeError}</p> : null}
+
       <button type="button" className="mobile-studio-generate" onClick={createNew}>
         <IconPlusMedium size={18} />
         New workflow
@@ -171,10 +266,12 @@ export function FlowsPanel({
  * rest of the graph fixed. Deliverables save to the gallery. */
 function TemplateRunner({
   template,
+  catalog,
   onBack,
   onGenerated,
 }: {
   template: Workflow;
+  catalog: MediaCatalog;
   onBack: () => void;
   onGenerated: () => void;
 }) {
@@ -191,15 +288,45 @@ function TemplateRunner({
   const [running, setRunning] = useState(false);
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [confirmRun, setConfirmRun] = useState<{
+    workflow: Workflow;
+    estimate: WorkflowCostEstimate;
+  } | null>(null);
 
   const textInputs = useMemo(
     () => template.nodes.filter((node) => node.type === "textInput"),
     [template],
   );
 
-  const run = useCallback(async () => {
+  const launch = useCallback(
+    async (workflow: Workflow, nodeCosts?: Record<string, number>) => {
+      setRunning(true);
+      const live = new Map<string, NodeRunResult>();
+      setResults(new Map());
+      try {
+        const finished = await runAndSaveWorkflow(workflow, {
+          nodeCosts,
+          onUpdate: (result) => {
+            live.set(result.nodeId, result);
+            setResults(new Map(live));
+          },
+        });
+        setResults(new Map(finished));
+        hapticNotify("success");
+        onGenerated();
+      } catch (err) {
+        hapticNotify("error");
+        if (err instanceof WorkflowRunError) setResults(new Map(err.results));
+        setError(err instanceof Error ? err.message : "The workflow failed.");
+      } finally {
+        setRunning(false);
+      }
+    },
+    [onGenerated],
+  );
+
+  const run = useCallback(() => {
     if (running) return;
-    setRunning(true);
     setError(null);
     setIssues([]);
     const workflow: Workflow = {
@@ -213,29 +340,16 @@ function TemplateRunner({
     const validation = validateWorkflow(workflow);
     if (!validation.ok) {
       setIssues([...validation.errors, ...validation.warnings]);
-      setRunning(false);
       return;
     }
-    const live = new Map<string, NodeRunResult>();
-    setResults(new Map());
-    try {
-      const finished = await runAndSaveWorkflow(workflow, {
-        onUpdate: (result) => {
-          live.set(result.nodeId, result);
-          setResults(new Map(live));
-        },
-      });
-      setResults(new Map(finished));
-      hapticNotify("success");
-      onGenerated();
-    } catch (err) {
-      hapticNotify("error");
-      if (err instanceof WorkflowRunError) setResults(new Map(err.results));
-      setError(err instanceof Error ? err.message : "The workflow failed.");
-    } finally {
-      setRunning(false);
+    // Templates spend like any workflow: same pre-spend handshake.
+    const estimate = estimateWorkflowCost(workflow, catalog);
+    if (needsRunConfirmation(estimate)) {
+      setConfirmRun({ workflow, estimate });
+      return;
     }
-  }, [template, running, inputs, onGenerated]);
+    void launch(workflow, nodeCostMap(estimate));
+  }, [template, running, inputs, catalog, launch]);
 
   return (
     <div className="mobile-studio-form">
@@ -260,10 +374,22 @@ function TemplateRunner({
         type="button"
         className="mobile-studio-generate"
         disabled={running || textInputs.some((node) => !(inputs[node.id] ?? "").trim())}
-        onClick={() => void run()}
+        onClick={run}
       >
         {running ? <Spinner /> : "Run flow"}
       </button>
+      <ConfirmDialog
+        open={confirmRun !== null}
+        title="Run this flow?"
+        description={confirmRun ? runCostDescription(confirmRun.estimate) : ""}
+        confirmLabel="Run"
+        onConfirm={() => {
+          const pending = confirmRun;
+          setConfirmRun(null);
+          if (pending) void launch(pending.workflow, nodeCostMap(pending.estimate));
+        }}
+        onClose={() => setConfirmRun(null)}
+      />
       {results ? (
         <ul className="mobile-flows-steps" aria-label="Flow progress">
           {template.nodes
@@ -283,6 +409,8 @@ function TemplateRunner({
                       "Done"
                     ) : status === "error" ? (
                       "Failed"
+                    ) : status === "awaiting" ? (
+                      "Needs your approval"
                     ) : (
                       "Waiting"
                     )}
@@ -316,6 +444,9 @@ export function FlowStepOutput({ state }: { state?: NodeRunResult }) {
   if (!state) return null;
   if (state.status === "error" && state.error) {
     return <p className="mobile-flows-output mobile-dictation-error">{state.error}</p>;
+  }
+  if (state.status === "awaiting") {
+    return <p className="mobile-flows-output">Paused here until you approve.</p>;
   }
   if (state.status !== "done" || !state.output) return null;
   const output = state.output;

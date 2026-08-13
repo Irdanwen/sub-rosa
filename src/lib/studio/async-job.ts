@@ -88,10 +88,12 @@ function sleep(ms: number, signal?: AbortSignal) {
   });
 }
 
-/** In-webview polling, kept for the workflow engine: its nodes chain their
- * outputs in memory, so the run is foreground-bound anyway and there is
- * nothing for a durable row to resume into. Everything the user starts as a
- * standalone generation goes through {@link useMediaJobQueue} instead.
+/** In-webview polling, kept as the workflow engine's *fallback*: a run whose
+ * durable row could not be recorded (tests, browser previews) still executes,
+ * it is just foreground-bound. Everything the user actually starts — durable
+ * workflow runs (ADR-0021) and standalone generations — rides the Rust job
+ * rows instead ({@link useMediaJobQueue}, the durable runner in
+ * workflow-run.ts).
  *
  * Transient retrieve errors don't kill the poll — only a terminal status, an
  * abort, or the attempt budget do. */
@@ -197,6 +199,10 @@ export interface MediaJob {
   parentHandoffSeconds?: number;
   /** What the render was quoted at, in credits. */
   costCredits?: number;
+  /** Who queued the job: absent/"studio" for hand-run generations,
+   * "workflow" for a durable run's renders. The Studio surfaces leave
+   * workflow jobs alone — the run files and dismisses them itself. */
+  source?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -287,7 +293,9 @@ function useDurableJobs(
 
   const ingest = useCallback(
     (incoming: MediaJob[]) => {
-      const mine = incoming.filter((job) => job.kind === kind);
+      // Workflow-run renders are not this surface's to file or dismiss: the
+      // durable runner is waiting on those rows (ADR-0021).
+      const mine = incoming.filter((job) => job.kind === kind && job.source !== "workflow");
       setJobs((current) => {
         const byId = new Map(current.map((job) => [job.id, job]));
         for (const job of mine) byId.set(job.id, job);
@@ -317,7 +325,7 @@ function useDurableJobs(
   const reconcile = useCallback(async () => {
     try {
       const all = await invoke<MediaJob[]>("media_job_list");
-      const mine = all.filter((job) => job.kind === kind);
+      const mine = all.filter((job) => job.kind === kind && job.source !== "workflow");
       setJobs((current) => {
         const known = new Set(mine.map((job) => job.id));
         // Anything the list no longer carries is settled: keep only rows still

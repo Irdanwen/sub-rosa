@@ -110,6 +110,10 @@ pub struct StartMediaJobRequest {
     /// The quote this render was accepted at, in credits.
     #[serde(default)]
     pub cost_credits: Option<f64>,
+    /// Who queued the job: absent/"studio" for hand-run generations,
+    /// "workflow" for a run's renders (the Studio surfaces skip those).
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 /// Hand a freshly queued generation over to Rust. Returns as soon as the row
@@ -140,6 +144,7 @@ pub async fn media_job_start(
         parent_artifact_id: request.parent_artifact_id,
         parent_handoff_seconds: request.parent_handoff_seconds,
         cost_credits: request.cost_credits,
+        source: request.source,
         created_at: String::new(),
         updated_at: String::new(),
     };

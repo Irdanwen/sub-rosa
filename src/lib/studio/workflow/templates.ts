@@ -2,7 +2,13 @@
 // and timestamps are 0: the UI clones a template with fresh ids before
 // letting the user edit or save it.
 
-import { defaultParams, type Workflow, type WorkflowNode, type WorkflowNodeType } from "./schema";
+import {
+  defaultParams,
+  type Workflow,
+  type WorkflowEdge,
+  type WorkflowNode,
+  type WorkflowNodeType,
+} from "./schema";
 
 const LEVEL_X = 300;
 const ROW_Y = 220;
@@ -33,8 +39,13 @@ function node(
   };
 }
 
-function edge(source: string, target: string): { id: string; source: string; target: string } {
-  return { id: `${source}-${target}`, source, target };
+function edge(source: string, target: string, targetPort?: string): WorkflowEdge {
+  return {
+    id: `${source}-${target}${targetPort ? `-${targetPort}` : ""}`,
+    source,
+    target,
+    targetPort,
+  };
 }
 
 function albumCover(): Workflow {
@@ -177,15 +188,73 @@ function twoShotSequence(): Workflow {
       node("out", "output", "Second shot", 4, 0),
     ],
     edges: [
-      edge("scene", "first"),
-      edge("first", "frame"),
-      edge("frame", "second"),
+      edge("scene", "first", "prompt"),
+      edge("first", "frame", "video"),
+      edge("frame", "second", "openingFrame"),
       edge("second", "out"),
+    ],
+  };
+}
+
+/** The whole production loop on one canvas: two chained shots, a score, and
+ * an assemble node that cuts them into one film with the music under it. */
+function shortFilm(): Workflow {
+  return {
+    id: "template-short-film",
+    name: "Short film with score",
+    createdAt: 0,
+    updatedAt: 0,
+    nodes: [
+      node("scene", "textInput", "Scene", 0, 0, {
+        text: "A paper boat drifts down a rain gutter through a miniature city of moss and bottle caps, dusk light.",
+      }),
+      node("first", "video", "First shot", 1, 0, {
+        model: VIDEO_MODEL,
+        duration: "5s",
+        aspectRatio: "16:9",
+        prompt: "{{input}} Low tracking shot at water level, following the boat.",
+      }),
+      node("frame", "lastFrame", "Handoff frame", 2, 0, { position: "handoff" }),
+      node("second", "video", "Second shot", 3, 0, {
+        model: VIDEO_FROM_IMAGE_MODEL,
+        duration: "5s",
+        aspectRatio: "16:9",
+        prompt:
+          "Continue the shot, no cut: the boat tips over a tiny waterfall between two cobblestones and rights itself. Same light.",
+      }),
+      node("mood", "textInput", "Score mood", 0, 1, {
+        text: "A tiny adventure: playful strings and a music box, light rain percussion, wonder.",
+      }),
+      node("score", "music", "Score", 1, 1, {
+        model: MUSIC_MODEL,
+        instrumental: true,
+        durationSeconds: 30,
+      }),
+      node("film", "assemble", "Final cut", 4, 0, { audioVolume: 0.6 }),
+      node("out", "output", "Film", 5, 0),
+    ],
+    edges: [
+      edge("scene", "first", "prompt"),
+      edge("first", "frame", "video"),
+      edge("frame", "second", "openingFrame"),
+      // Clips cut in connection order: first shot, then its continuation.
+      edge("first", "film", "clips"),
+      edge("second", "film", "clips"),
+      edge("mood", "score", "prompt"),
+      edge("score", "film", "audio"),
+      edge("film", "out"),
     ],
   };
 }
 
 /** Fresh copies each call so callers can mutate their clone safely. */
 export function templateWorkflows(): Workflow[] {
-  return [albumCover(), storyScene(), musicFromMood(), shortVideoAd(), twoShotSequence()];
+  return [
+    albumCover(),
+    storyScene(),
+    musicFromMood(),
+    shortVideoAd(),
+    twoShotSequence(),
+    shortFilm(),
+  ];
 }

@@ -1047,6 +1047,11 @@ pub struct MediaJobDto {
     /// receipt: it is what the backend priced before rendering.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost_credits: Option<f64>,
+    /// Who queued the job. `None`/"studio" is a hand-run generation; a
+    /// workflow run's renders say "workflow" so the Studio surfaces leave
+    /// their rows alone (the run is what files and dismisses them).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -1084,6 +1089,88 @@ impl From<&str> for MediaJobStatus {
             "completed" => Self::Completed,
             "failed" => Self::Failed,
             _ => Self::Queued,
+        }
+    }
+}
+
+/// A Studio workflow production, frozen at launch and resumable (ADR-0021).
+///
+/// The graph executes in the webview (two of its node types need WebKit), but
+/// the *state* of the run lives here: which nodes are done and what they
+/// produced, which render job a node is waiting on. Long renders ride
+/// `media_jobs`, so a kill mid-render loses nothing — the next foreground
+/// session reads these rows and stitches on from exactly where it stopped.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRunDto {
+    pub id: String,
+    /// The saved workflow this run was started from (may be deleted since).
+    pub workflow_id: String,
+    pub name: String,
+    /// The workflow graph as launched, JSON. Frozen so edits to the saved
+    /// workflow cannot change what a resume re-executes.
+    pub definition: String,
+    pub status: WorkflowRunStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Per-node cost figures the run was confirmed at, JSON, for stamping
+    /// onto what a resume produces.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_costs: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// One node's durable state inside a workflow run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRunNodeDto {
+    pub node_id: String,
+    /// Mirrors the engine: pending, running, done or error.
+    pub status: String,
+    /// The node's dehydrated output once done (JSON: artifact references and
+    /// small payloads, never large media bytes) — or, while running, the
+    /// `pendingJobId` of the media job it waits on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkflowRunStatus {
+    Running,
+    /// A gate node is holding the production for the user's approval. Not
+    /// terminal: the run resumes once they decide.
+    AwaitingGate,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+impl WorkflowRunStatus {
+    pub fn as_db(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::AwaitingGate => "awaiting_gate",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+impl From<&str> for WorkflowRunStatus {
+    fn from(value: &str) -> Self {
+        match value {
+            // Both spellings: the DB stores snake case, the IPC camel case.
+            "awaiting_gate" | "awaitingGate" => Self::AwaitingGate,
+            "completed" => Self::Completed,
+            "failed" => Self::Failed,
+            "cancelled" => Self::Cancelled,
+            _ => Self::Running,
         }
     }
 }
