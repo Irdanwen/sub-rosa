@@ -2316,10 +2316,53 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The step's name, editable in place. Reads as a title until it is touched:
+   an unnamed step's type IS its title, so the placeholder is at full
+   strength and the field has no frame of its own. */
 .mobile-workflow-step-title {
   flex: 1;
   min-width: 0;
+  font: inherit;
   font-weight: 600;
+  color: var(--foreground);
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.mobile-workflow-step-title::placeholder {
+  color: var(--foreground);
+  opacity: 1;
+}
+
+.mobile-workflow-step-type {
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+
+/* Places the upstream text where the user wants it in the prompt, rather than
+   letting it be appended at the end. */
+.mobile-workflow-marker {
+  align-self: flex-start;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The gallery item a step points at. Only images preview on iOS: decoding a
+   whole clip to fill a form row is what the thumbnail cache exists to avoid
+   (see `useArtifactPreview`), so a clip keeps its name and nothing more. */
+.mobile-workflow-asset {
+  width: 100%;
+  max-height: 120px;
+  object-fit: cover;
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+}
+
+.mobile-workflow-asset-missing {
+  max-height: none;
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--destructive);
 }
 
 .mobile-workflow-step-actions {

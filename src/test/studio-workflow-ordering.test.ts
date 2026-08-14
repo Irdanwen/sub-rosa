@@ -33,6 +33,7 @@ import {
   chainOrderSuggestion,
   edgesOnPort,
   reorderPortEdge,
+  textSourceLabels,
 } from "../lib/studio/workflow/ordering";
 import {
   defaultParams,
@@ -99,29 +100,84 @@ beforeEach(() => {
 });
 
 describe("edgesOnPort", () => {
-  const graph = workflow(
-    [
-      node("a", "asset", { assetKind: "image", artifactId: "a" }),
-      node("b", "asset", { assetKind: "image", artifactId: "b" }),
-      node("still", "asset", { assetKind: "image", artifactId: "s" }),
-      node("clip", "video", { model: "seedance-2-0-reference-to-video-basic", prompt: "p" }),
-    ],
-    [
-      edge("a", "clip", "references"),
-      // Portless: lands on openingFrame by kind affinity, NOT on references.
-      edge("still", "clip"),
-      edge("b", "clip", "references"),
-    ],
-  );
+  const clipGraph = (model: string) =>
+    workflow(
+      [
+        node("a", "asset", { assetKind: "image", artifactId: "a" }),
+        node("b", "asset", { assetKind: "image", artifactId: "b" }),
+        node("still", "asset", { assetKind: "image", artifactId: "s" }),
+        node("clip", "video", { model, prompt: "p" }),
+      ],
+      [
+        edge("a", "clip", "references"),
+        // Portless: resolved by kind affinity, which port it lands on depends
+        // on which ports the node's model leaves open.
+        edge("still", "clip"),
+        edge("b", "clip", "references"),
+      ],
+    );
 
   it("buckets explicit and affinity edges the way the engine does", () => {
+    // No model yet, so every port is open and affinity picks the opening frame
+    // ahead of the references, exactly as it always has.
+    const graph = clipGraph("");
+    expect(edgesOnPort(graph, "clip", "openingFrame").map((entry) => entry.source)).toEqual([
+      "still",
+    ]);
     expect(edgesOnPort(graph, "clip", "references").map((entry) => entry.source)).toEqual([
       "a",
       "b",
     ]);
-    expect(edgesOnPort(graph, "clip", "openingFrame").map((entry) => entry.source)).toEqual([
+  });
+
+  it("re-homes a portless edge when the model closed the port it used to take", () => {
+    // A reference-to-video model has no opening frame: the portless image
+    // joins the references rather than resolving to nothing, and it does so in
+    // its own edge-array position (a, still, b), which is its render order.
+    const graph = clipGraph("seedance-2-0-reference-to-video-basic");
+    expect(edgesOnPort(graph, "clip", "openingFrame")).toEqual([]);
+    expect(edgesOnPort(graph, "clip", "references").map((entry) => entry.source)).toEqual([
+      "a",
       "still",
+      "b",
     ]);
+  });
+});
+
+describe("textSourceLabels", () => {
+  // What decides whether an editor offers to write "{{input}}": the marker is
+  // meaningless on a node nothing upstream is talking to, and naming the
+  // source is what turns the token into a sentence the user can check.
+  it("names the nodes feeding a node's text input", () => {
+    const graph = workflow(
+      [
+        node("brief", "textInput", { text: "a brief" }),
+        node("notes", "textInput", { text: "more" }),
+        node("still", "asset", { assetKind: "image", artifactId: "a" }),
+        node("shot", "video", { model: "kling-2.5-turbo-pro-image-to-video", prompt: "p" }),
+      ],
+      [
+        edge("brief", "shot", "prompt"),
+        edge("still", "shot", "openingFrame"),
+        edge("notes", "shot", "prompt"),
+      ],
+    );
+    // Named, in connection order, and the image is not one of them.
+    expect(textSourceLabels(graph, "shot")).toEqual(["brief", "notes"]);
+  });
+
+  it("is empty when nothing feeds the text input, or there is none", () => {
+    const graph = workflow(
+      [
+        node("brief", "textInput", { text: "a brief" }),
+        node("shot", "video", { model: "kling-2.5-turbo-pro-text-to-video", prompt: "p" }),
+        node("out", "output"),
+      ],
+      [edge("shot", "out")],
+    );
+    expect(textSourceLabels(graph, "shot")).toEqual([]);
+    // An asset node has no inputs at all.
+    expect(textSourceLabels(graph, "brief")).toEqual([]);
   });
 });
 

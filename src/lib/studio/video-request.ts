@@ -14,7 +14,12 @@
  * `variantFor`) and this fills the body that variant accepts.
  */
 
-import { isReferenceToVideoModel, isSeedanceModel, isVideoUpscaleModel } from "./catalog";
+import {
+  isImageToVideoModel,
+  isReferenceToVideoModel,
+  isSeedanceModel,
+  isVideoUpscaleModel,
+} from "./catalog";
 import { withSeedanceConsent } from "./consent";
 import { effectiveVideoConstraints } from "./model-constraints";
 import { maxReferenceAudio, maxReferenceVideos, maxVideoReferences } from "./seedance";
@@ -190,10 +195,6 @@ export function inlineMediaInputs(body: Record<string, unknown>): string[] {
     }
   }
   return inputs;
-}
-
-function isImageToVideoModel(modelId: string): boolean {
-  return modelId.toLowerCase().includes("image-to-video");
 }
 
 function isVideoToVideoModel(modelId: string): boolean {

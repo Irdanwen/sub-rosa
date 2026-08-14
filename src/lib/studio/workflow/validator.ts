@@ -7,9 +7,11 @@
 // port that is required, over-filled, or unknown blocks the run.
 
 import {
+  closedInputPort,
   isIdealMatch,
   isInputCompatible,
   maybeNodeSchema,
+  openInputPorts,
   outputKindOf,
   portCapacity,
   resolveInputPort,
@@ -90,11 +92,8 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
     const source = nodeById.get(edge.source);
     const target = nodeById.get(edge.target);
     const targetSchema = target ? maybeNodeSchema(target.type) : undefined;
-    if (!source || !targetSchema) continue;
-    resolvedPorts.set(
-      edge.id,
-      resolveInputPort(targetSchema, edge, outputKindOf(source, kindContext)),
-    );
+    if (!source || !target || !targetSchema) continue;
+    resolvedPorts.set(edge.id, resolveInputPort(target, edge, outputKindOf(source, kindContext)));
   }
 
   for (const node of nodes) {
@@ -108,6 +107,8 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       continue;
     }
     const incoming = edges.filter((edge) => edge.target === node.id);
+    // What this node carries, which its chosen model can narrow (ADR-0022).
+    const inputs = openInputPorts(schema, node.params);
 
     for (const param of schema.params) {
       if (!param.required || !isParamMissing(node, param.name)) continue;
@@ -145,12 +146,14 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
         });
       }
     } else if (incoming.length === 0) {
+      // A node whose model closed every port is judged on its own params,
+      // exactly like one that never had inputs.
       // An unconnected input is only worth flagging when the node also has no
       // prompt of its own to run from — and not when a required-port error
       // below already says the same thing louder.
       const hasOwnPrompt =
         schema.params.some((param) => param.name === "prompt") && !isParamMissing(node, "prompt");
-      const hasRequiredPort = schema.inputs.some((port) => port.required);
+      const hasRequiredPort = inputs.some((port) => port.required);
       if (!hasOwnPrompt && !hasRequiredPort) {
         warnings.push({
           severity: "warning",
@@ -160,7 +163,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       }
     }
 
-    for (const port of schema.inputs) {
+    for (const port of inputs) {
       const landing = incoming.filter((edge) => resolvedPorts.get(edge.id)?.id === port.id);
       if (port.required && landing.length === 0) {
         errors.push({
@@ -221,7 +224,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
     const target = nodeById.get(edge.target);
     const sourceSchema = source ? maybeNodeSchema(source.type) : undefined;
     const targetSchema = target ? maybeNodeSchema(target.type) : undefined;
-    if (!source || !sourceSchema || !targetSchema) continue;
+    if (!source || !target || !sourceSchema || !targetSchema) continue;
     // Nodes without inputs already reported every inbound edge as an error.
     if (targetSchema.inputs.length === 0) continue;
     const sourceKind = outputKindOf(source, kindContext);
@@ -229,11 +232,18 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
     if (sourceKind === "none") continue;
     const port = resolvedPorts.get(edge.id);
     if (!port) {
+      // A port the node's own model closed is named for what it is, rather
+      // than reported as an unknown input the user never typed.
+      const closed =
+        edge.targetPort !== undefined
+          ? closedInputPort(targetSchema, target.params, edge.targetPort)
+          : undefined;
       errors.push({
         severity: "error",
         edgeId: edge.id,
-        message:
-          edge.targetPort !== undefined
+        message: closed
+          ? `${targetSchema.label}: the chosen model has no "${closed.label}" input. Remove this connection.`
+          : edge.targetPort !== undefined
             ? `${targetSchema.label} has no "${edge.targetPort}" input.`
             : `${targetSchema.label} has no input that accepts ${sourceKind}.`,
       });

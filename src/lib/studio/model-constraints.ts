@@ -353,6 +353,45 @@ export function effectiveVideoConstraints(model: MediaModel | undefined): VideoC
   };
 }
 
+/** The three option lists a video model can publish. */
+export type VideoConstraintField = "durations" | "aspectRatios" | "resolutions";
+
+/**
+ * Whether a model has this setting at all.
+ *
+ * Three states collapse into two answers, and the difference is the whole
+ * point: a **published empty list** is a statement - the catalogs' way of
+ * saying the field does not exist on this model, which is how an
+ * image-to-video model declares it has no aspect ratio (its validator answers
+ * "This model does not support aspect_ratio") - while an **absent** list only
+ * means nobody has said. The first must hide the control; the second must
+ * leave it free text, because a model we know nothing about may still need the
+ * field and an unrecognised key is rejected as hard as a missing required one.
+ *
+ * False only where we positively know. Everything else is true.
+ */
+export function videoFieldApplies(
+  model: MediaModel | undefined,
+  field: VideoConstraintField,
+): boolean {
+  if (!model) return true;
+  if (field === "aspectRatios" && !takesAspectRatio(model.id)) return false;
+  const published = model.constraints?.[FIELD_KEY[field]];
+  if (Array.isArray(published) && published.length === 0) {
+    // Unless a rejection has since taught us otherwise: the provider's own
+    // account outranks a catalog that says the field is not there.
+    return Boolean(learnedConstraints(model.id)?.[field]?.length);
+  }
+  return true;
+}
+
+/** How each field is spelled in the published constraints. */
+const FIELD_KEY = {
+  durations: "durations",
+  aspectRatios: "aspect_ratios",
+  resolutions: "resolutions",
+} as const;
+
 // --- making a rejection readable --------------------------------------------
 
 const FIELD_LABELS: Record<string, string> = {

@@ -195,6 +195,57 @@ export function isReferenceToVideoModel(modelId: string): boolean {
   return modelId.toLowerCase().includes("reference-to-video");
 }
 
+/** True for a model whose contract opens on a supplied frame (`image_url`,
+ * and `end_image_url` where the family takes one). Reference-to-video ids do
+ * not match: they carry `reference_image_urls` and are told apart above. */
+export function isImageToVideoModel(modelId: string): boolean {
+  return modelId.toLowerCase().includes("image-to-video");
+}
+
+/** Which inputs a video model's contract is built around: a prompt alone, a
+ * supplied frame, style/subject photos, or a source clip. */
+export type VideoDirection = "text" | "image" | "reference" | "video";
+
+/**
+ * The direction of a model the catalog is in hand for.
+ *
+ * The operator's own `carpe_diem_type` is the trustworthy answer and the id is
+ * only a hint: of the 101 video models it publishes, **nine carry no direction
+ * in their id at all**, and five of those are image-to-video - including
+ * `flux-3-first-last-frame-to-video` and the two `pixverse-*-transition`
+ * models, whose whole point is the opening and end frames. Reading the id
+ * alone would take the frames away from exactly the models that exist for
+ * them.
+ *
+ * The id still decides the reference direction, because six models the
+ * operator still types `imageToVideo` are reference-to-video (the grok ones),
+ * which only their id and name say.
+ */
+export function videoDirection(model: MediaModel): VideoDirection {
+  if (isVideoUpscaleModel(model.id) || isVideoToVideo(model)) return "video";
+  if (model.mediaType === "referenceToVideo" || isReferenceToVideo(model)) return "reference";
+  if (model.mediaType === "imageToVideo") return "image";
+  return "text";
+}
+
+/**
+ * The direction an id alone can vouch for, or undefined when it names none.
+ *
+ * The fallback for everywhere that has no catalog: the workflow validator, the
+ * engine, and any graph built outside the editor. Undefined is a real answer
+ * and must stay one - "this id says nothing" is not "text to video", and a
+ * surface that treated it as such would close the frame port on
+ * `runway-gen4-turbo`.
+ */
+export function videoDirectionFromId(modelId: string): VideoDirection | undefined {
+  const id = modelId.toLowerCase();
+  if (isVideoUpscaleModel(id) || id.includes("video-to-video")) return "video";
+  if (isReferenceToVideoModel(id)) return "reference";
+  if (isImageToVideoModel(id)) return "image";
+  if (id.includes("text-to-video")) return "text";
+  return undefined;
+}
+
 /** Video upscalers (e.g. `topaz-video-upscale`) take a source clip plus an
  * `upscale_factor` instead of a prompt-driven restyle. */
 export function isVideoUpscaleModel(modelId: string): boolean {

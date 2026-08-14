@@ -22,6 +22,7 @@ import type { ArtifactKind, MediaModel } from "../types";
 import { videoRequestBody } from "../video-request";
 import {
   maybeNodeSchema,
+  nodeLabel,
   outputKindOf,
   resolveInputPort,
   type Workflow,
@@ -250,12 +251,17 @@ export function topoLevels(nodes: WorkflowNode[], edges: WorkflowEdge[]): string
   return levels;
 }
 
+/** Where a prompt asks for its upstream text to be placed. Exported because
+ * the editors offer to write it, and a marker spelled differently there would
+ * simply not be one. */
+export const INPUT_MARKER = "{{input}}";
+
 /** {{input}} substitutes upstream text; without the marker the input is
  * appended after the prompt; an empty prompt passes the input through. */
 export function resolvePrompt(template: string, input: string): string {
   if (!template) return input;
   // split/join instead of replace: input may contain "$" patterns.
-  if (template.includes("{{input}}")) return template.split("{{input}}").join(input);
+  if (template.includes(INPUT_MARKER)) return template.split(INPUT_MARKER).join(input);
   return input ? `${template}\n\n${input}` : template;
 }
 
@@ -314,7 +320,11 @@ function portInputs(
     const parent = nodeById.get(edge.source);
     const output = results.get(edge.source)?.output;
     if (!parent || !output) continue;
-    const port = resolveInputPort(schema, edge, outputKindOf(parent, { nodeById, edges }));
+    // Resolved against the node itself, so an input its model does not carry
+    // (a frame on a reference-to-video model) is dropped here rather than
+    // reaching the request builder, which would send a field the model
+    // ignores while still billing the render.
+    const port = resolveInputPort(node, edge, outputKindOf(parent, { nodeById, edges }));
     if (!port) continue;
     const bucket = ports.get(port.id);
     if (bucket) bucket.push(output);
@@ -858,7 +868,7 @@ async function executeNode(
       const saved = await storageForFilm.save({ base64: await blobToBase64(blob) }, extension, {
         kind: "video",
         model: "assemble",
-        prompt: node.label,
+        prompt: nodeLabel(node),
       });
       return { kind: "video", artifactId: saved.artifactId, src: saved.src };
     }

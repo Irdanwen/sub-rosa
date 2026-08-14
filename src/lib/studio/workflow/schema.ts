@@ -9,7 +9,13 @@
 // to connect to. Edges saved before ports existed carry no `targetPort`; they
 // resolve by kind affinity (see `resolveInputPort`), which preserves the old
 // behavior — an image feeding a video node still becomes its start frame.
+//
+// A port's capacity can be zero, and then the port is *closed*: the node's
+// chosen model does not carry that input at all. Closed ports are not drawn,
+// refuse connections, and make any edge still landing on one an error. See
+// `openInputPorts`, which every surface must read instead of `schema.inputs`.
 
+import { videoDirectionFromId, type VideoDirection } from "../catalog";
 import { maxReferenceVideos, maxVideoReferences } from "../seedance";
 
 export type WorkflowNodeType =
@@ -71,18 +77,59 @@ export interface InputPort {
    * value stays the ceiling any model may reach.
    */
   max?: number;
-  /** Refines `max` from the node's params (its model, chiefly). */
-  maxFor?: (params: Record<string, unknown>) => number;
+  /** Refines `max` from the node's params (its model, chiefly). Returning
+   * undefined means "nothing to refine here": the schema's own figure stands,
+   * which is how a port stays open while no model has been chosen. Returning
+   * zero closes the port (see `openInputPorts`). */
+  maxFor?: (params: Record<string, unknown>) => number | undefined;
   /** The node cannot run without this port connected. */
   required?: boolean;
 }
 
-/** The effective cap of a port for one node: the schema's, refined per model. */
+/** The effective cap of a port for one node: the schema's, refined per model.
+ * Zero means the port is closed on this node (see `openInputPorts`). */
 export function portCapacity(port: InputPort, params: Record<string, unknown>): number | undefined {
-  if (!port.multi) return 1;
   const refined = port.maxFor?.(params);
   if (refined !== undefined) return refined;
+  if (!port.multi) return 1;
   return port.max;
+}
+
+/** Whether this node carries that input at all. */
+export function isPortOpen(port: InputPort, params: Record<string, unknown>): boolean {
+  return (portCapacity(port, params) ?? Number.POSITIVE_INFINITY) > 0;
+}
+
+/**
+ * The input ports a node actually carries, given its params.
+ *
+ * Read this rather than `schema.inputs` everywhere a port is drawn, resolved,
+ * counted or validated: what a model accepts is answered from what it
+ * publishes and from its direction (ADR-0022), so the same node type carries
+ * different inputs depending on the model chosen in it.
+ */
+export function openInputPorts(
+  schema: NodeSchema,
+  params: Record<string, unknown>,
+): readonly InputPort[] {
+  // Fast path: most node types have no per-model ports at all.
+  return schema.inputs.some((port) => port.maxFor !== undefined)
+    ? schema.inputs.filter((port) => isPortOpen(port, params))
+    : schema.inputs;
+}
+
+/**
+ * A port of this node type that the node's own params have closed, or
+ * undefined when the id is not a port of it at all. Lets a surface say "this
+ * model has no end frame" instead of "unknown input".
+ */
+export function closedInputPort(
+  schema: NodeSchema,
+  params: Record<string, unknown>,
+  portId: string,
+): InputPort | undefined {
+  const port = schema.inputs.find((candidate) => candidate.id === portId);
+  return port && !isPortOpen(port, params) ? port : undefined;
 }
 
 export interface ParamSchema {
@@ -102,6 +149,20 @@ export interface ParamSchema {
    * text-to-video, image-to-video, or reference-to-video). Overrides
    * `mediaType` when present. */
   mediaTypes?: string[];
+  /**
+   * For params whose choices belong to the node's chosen model rather than to
+   * the schema: which of that model's constraints to offer. Resolved by
+   * `paramOptions`, which needs a catalog; a model nobody knows anything about
+   * leaves the field free text, because an unrecognised key is rejected as
+   * hard as a missing required one.
+   */
+  modelOptions?: "durations" | "aspectRatios" | "resolutions";
+  /**
+   * This param is the node's prompt template, so `{{input}}` in it is where
+   * upstream text lands. Editors offer to write the marker; the engine's
+   * `resolvePrompt` is what reads it.
+   */
+  acceptsInputMarker?: boolean;
 }
 
 export interface NodeSchema {
@@ -115,6 +176,83 @@ export interface NodeSchema {
 
 /** The conventional single text port most generators read their prompt from. */
 const PROMPT_PORT: InputPort = { id: "prompt", label: "Prompt", kind: "text", multi: true };
+
+/** The model a generator node is pinned to, or "" while none is chosen. */
+function modelIdOf(params: Record<string, unknown>): string {
+  return typeof params.model === "string" ? params.model : "";
+}
+
+/**
+ * The direction the node's model runs in, or undefined when nobody can say.
+ *
+ * Read from `modelDirection`, which the model picker writes next to the id -
+ * the same way an asset node keeps `assetLabel` next to `artifactId`. The
+ * catalog is the only trustworthy source (nine of the operator's video models
+ * name no direction in their id, five of them image-to-video), and neither the
+ * validator nor the engine has one in hand; carrying the answer in the params
+ * is what lets every surface agree without one.
+ *
+ * Falls back to the id for workflows saved before the field existed, for
+ * templates, and for graphs built outside the editor.
+ */
+function videoDirectionOf(params: Record<string, unknown>): VideoDirection | undefined {
+  const declared = params.modelDirection;
+  if (
+    declared === "text" ||
+    declared === "image" ||
+    declared === "reference" ||
+    declared === "video"
+  ) {
+    return declared;
+  }
+  const id = modelIdOf(params);
+  return id === "" ? undefined : videoDirectionFromId(id);
+}
+
+/**
+ * Whether a video node carries the frame inputs (`image_url`,
+ * `end_image_url`).
+ *
+ * The studios pin a *family* and let the filled-in inputs resolve the variant;
+ * a workflow node pins one model, so its ports are that model's contract and
+ * nothing else. The frames are the image-to-video contract: the operator
+ * documents `image_url` as image-to-video only, and a reference-to-video
+ * render steers from `reference_image_urls` instead.
+ *
+ * Not settled by probing, and deliberately so: the operator's pre-flight
+ * (`VIDEO_PARAM_REJECTED`) enumerates every rejected *value* but says nothing
+ * about unrecognised *keys*, so a frame sent to a reference model comes back
+ * as a rendered clip that quietly ignored it - and is billed. Closing the port
+ * is the reading that cannot cost anything.
+ *
+ * An unknown direction - no model yet, or an id that vouches for none - keeps
+ * every port open. Closing one on a guess would take the frames away from the
+ * models that exist for them.
+ */
+function videoFrameCapacity(params: Record<string, unknown>): number | undefined {
+  const direction = videoDirectionOf(params);
+  return direction === undefined || direction === "image" ? undefined : 0;
+}
+
+/** Reference clips, once a model is in hand. Before that the port stays open
+ * on the schema's own ceiling: `maxReferenceVideos` answers zero for "no
+ * model", which is the right answer for a request and the wrong one for an
+ * editor the user has not finished filling in. */
+function videoClipCapacity(params: Record<string, unknown>): number | undefined {
+  const id = modelIdOf(params);
+  return id === "" ? undefined : maxReferenceVideos({ id });
+}
+
+/** Reference photos are the reference-to-video contract; `videoRequestBody`
+ * fills `reference_image_urls` for no other direction, so wiring them onto a
+ * text- or image-to-video model dropped them in silence at submit. */
+function videoReferenceCapacity(params: Record<string, unknown>): number {
+  const id = modelIdOf(params);
+  const model = id === "" ? undefined : { id };
+  const direction = videoDirectionOf(params);
+  if (direction === undefined) return maxVideoReferences(model);
+  return direction === "reference" ? maxVideoReferences(model) : 0;
+}
 
 export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
   textInput: {
@@ -167,6 +305,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         description: "Use {{input}} to place upstream text, or leave the marker out to append it.",
         required: true,
         default: "",
+        acceptsInputMarker: true,
       },
       {
         name: "temperature",
@@ -195,6 +334,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         description: "Use {{input}} to place upstream text, or leave the marker out to append it.",
         required: true,
         default: "",
+        acceptsInputMarker: true,
       },
       { name: "negativePrompt", type: "text", label: "Negative prompt", default: "" },
       { name: "aspectRatio", type: "string", label: "Aspect ratio", default: "" },
@@ -221,6 +361,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         description: "Use {{input}} to place upstream text, or leave the marker out to append it.",
         required: true,
         default: "",
+        acceptsInputMarker: true,
       },
     ],
   },
@@ -270,18 +411,23 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
       "Generate a short video. Feed an image to start from, an image to end on, reference images that keep a subject consistent, and (on the seedance reference models that take video input) clips to edit, extend or stitch.",
     inputs: [
       PROMPT_PORT,
-      { id: "openingFrame", label: "Opening frame", kind: "image" },
-      { id: "endFrame", label: "End frame", kind: "image" },
+      {
+        id: "openingFrame",
+        label: "Opening frame",
+        kind: "image",
+        maxFor: videoFrameCapacity,
+      },
+      { id: "endFrame", label: "End frame", kind: "image", maxFor: videoFrameCapacity },
       {
         id: "references",
         label: "References",
         kind: "image",
         multi: true,
         // The ceiling is the most generous family's (seedance 2.5); what the
-        // chosen model actually takes comes from `maxVideoReferences`.
+        // chosen model actually takes comes from `videoReferenceCapacity`,
+        // which is zero outside the reference-to-video direction.
         max: 30,
-        maxFor: (params) =>
-          maxVideoReferences(typeof params.model === "string" ? { id: params.model } : undefined),
+        maxFor: videoReferenceCapacity,
       },
       {
         // Reference clips: what the seedance edit, extend and stitch workflows
@@ -295,8 +441,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         kind: "video",
         multi: true,
         max: 10,
-        maxFor: (params) =>
-          maxReferenceVideos(typeof params.model === "string" ? { id: params.model } : undefined),
+        maxFor: videoClipCapacity,
       },
     ],
     output: "video",
@@ -316,6 +461,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         description: "Use {{input}} to place upstream text, or leave the marker out to append it.",
         required: true,
         default: "",
+        acceptsInputMarker: true,
       },
       {
         name: "duration",
@@ -323,9 +469,22 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         label: "Duration",
         description: 'For example "5s".',
         default: "",
+        modelOptions: "durations",
       },
-      { name: "aspectRatio", type: "string", label: "Aspect ratio", default: "" },
-      { name: "resolution", type: "string", label: "Resolution", default: "" },
+      {
+        name: "aspectRatio",
+        type: "string",
+        label: "Aspect ratio",
+        default: "",
+        modelOptions: "aspectRatios",
+      },
+      {
+        name: "resolution",
+        type: "string",
+        label: "Resolution",
+        default: "",
+        modelOptions: "resolutions",
+      },
     ],
   },
   lastFrame: {
@@ -409,6 +568,18 @@ export function maybeNodeSchema(type: string): NodeSchema | undefined {
   return Object.hasOwn(NODE_SCHEMAS, type) ? NODE_SCHEMAS[type as WorkflowNodeType] : undefined;
 }
 
+/**
+ * What a node is called: the name its author gave it, else its type's.
+ *
+ * A node is created *without* a name, so that "never named" stays tellable
+ * from "named after its own type" - three asset nodes all reading "Asset" is
+ * exactly what a name is for. Every surface that shows or sends a node's name
+ * must come through here; `label` on its own is empty far more often than not.
+ */
+export function nodeLabel(node: Pick<WorkflowNode, "type" | "label">): string {
+  return node.label.trim() || maybeNodeSchema(node.type)?.label || String(node.type);
+}
+
 export function defaultParams(type: WorkflowNodeType): Record<string, unknown> {
   const params: Record<string, unknown> = {};
   for (const param of NODE_SCHEMAS[type].params) {
@@ -474,26 +645,42 @@ export function isIdealMatch(sourceKind: IOKind, portKind: PortKind): boolean {
 }
 
 /**
- * The port an edge lands on.
+ * The port an edge lands on, or undefined when it has nowhere to land.
  *
- * An explicit `targetPort` wins (unknown ids resolve to undefined so the
- * validator can flag them). A portless edge — anything saved before ports
- * existed, and every edge mobile's linear editor builds — resolves by kind
- * affinity: the first port that consumes exactly the source's kind, else the
- * first port that accepts it at all. That affinity rule is what keeps an
+ * An explicit `targetPort` wins (unknown *and closed* ids resolve to undefined
+ * so the validator can flag them). A portless edge — anything saved before
+ * ports existed, and every edge mobile's linear editor builds — resolves by
+ * kind affinity: the first port that consumes exactly the source's kind, else
+ * the first port that accepts it at all. That affinity rule is what keeps an
  * old image→video edge behaving as the start frame rather than becoming a
  * "[generated image]" mention in the prompt.
+ *
+ * Only *open* ports are candidates, so affinity re-homes rather than breaks:
+ * on a reference-to-video model the opening frame is closed, and a portless
+ * image edge lands on the references instead of resolving to nothing.
+ *
+ * Takes the node rather than its schema because the answer depends on the
+ * node's own params — passing a bare schema is what let a closed port keep
+ * accepting edges.
  */
 export function resolveInputPort(
-  target: NodeSchema,
+  target: Pick<WorkflowNode, "type" | "params">,
   edge: Pick<WorkflowEdge, "targetPort">,
   sourceKind: IOKind,
 ): InputPort | undefined {
+  const schema = maybeNodeSchema(target.type);
+  if (!schema) return undefined;
+  const ports = openInputPorts(schema, target.params);
   if (edge.targetPort !== undefined) {
-    return target.inputs.find((port) => port.id === edge.targetPort);
+    return ports.find((port) => port.id === edge.targetPort);
   }
-  return (
-    target.inputs.find((port) => port.kind === sourceKind) ??
-    target.inputs.find((port) => isInputCompatible(sourceKind, port.kind))
-  );
+  const exact = ports.find((port) => port.kind === sourceKind);
+  if (exact) return exact;
+  // Closed is not absent. A node whose ports of this kind were all closed by
+  // its model must not quietly fall through to a text port, where the media
+  // would chain as "[generated image]" and the render would look fine while
+  // ignoring it. Nothing to land on is the honest answer, and the validator
+  // says which model closed what.
+  if (schema.inputs.some((port) => port.kind === sourceKind)) return undefined;
+  return ports.find((port) => isInputCompatible(sourceKind, port.kind));
 }

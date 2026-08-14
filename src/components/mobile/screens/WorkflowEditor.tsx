@@ -2,8 +2,8 @@ import { IconArrowDown } from "central-icons/IconArrowDown";
 import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconTrashCan } from "central-icons/IconTrashCan";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useArtifactThumbnail } from "../../../lib/artifact-media";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useArtifactIndex, useArtifactThumbnail } from "../../../lib/artifact-media";
 import { hapticImpact, hapticNotify } from "../../../lib/haptics";
 import { formatCredits } from "../../../lib/studio/catalog";
 import { listArtifacts } from "../../../lib/studio/artifacts";
@@ -13,15 +13,22 @@ import {
   awaitingGateIds,
   defaultParams,
   deleteWorkflow,
+  effectiveParamValue,
   estimateWorkflowCost,
+  INPUT_MARKER,
   maybeNodeSchema,
+  modelParamPatch,
   modelsForParam,
   needsRunConfirmation,
   type NodeRunResult,
   nodeCostMap,
   nodeSchema,
+  openInputPorts,
   type ParamSchema,
+  paramApplies,
+  paramOptions,
   saveWorkflow,
+  textSourceLabels,
   type ValidationIssue,
   type Workflow,
   type WorkflowCostEstimate,
@@ -33,6 +40,7 @@ import {
 import { runAndSaveWorkflow } from "../../../lib/studio/workflow-run";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { Spinner } from "../../ui/Spinner";
+import { AssetPreview } from "../../studio/AssetPreview";
 import { ModelSheet } from "../ModelSheet";
 import { FlowStepOutput } from "./FlowsPanel";
 
@@ -88,8 +96,19 @@ export function WorkflowEditor({
   const [savedTick, setSavedTick] = useState(false);
   /** The run stopped at an approval gate rather than finishing. */
   const [paused, setPaused] = useState(false);
+  /** One gallery listing for the whole editor, so a step can show the asset
+   * it points at without a listing per step. */
+  const artifacts = useArtifactIndex();
 
   const assembled = useMemo(() => assembleWorkflow(workflow, name, steps), [workflow, name, steps]);
+  /** Which steps feed each step's text input, named. Read off the assembled
+   * chain rather than guessed from the list order: a step that takes no text
+   * is not in anyone's way, and the marker must only be offered where it
+   * would do something. */
+  const textFeeds = useMemo(
+    () => new Map(steps.map((node) => [node.id, textSourceLabels(assembled, node.id)])),
+    [assembled, steps],
+  );
   const estimate = useMemo(() => estimateWorkflowCost(assembled, catalog), [assembled, catalog]);
 
   const updateParams = useCallback((id: string, params: Record<string, unknown>) => {
@@ -112,6 +131,11 @@ export function WorkflowEditor({
     setSteps((current) => current.filter((node) => node.id !== id));
   }, []);
 
+  /** Naming a step names it everywhere the flow reports on itself. */
+  const rename = useCallback((id: string, label: string) => {
+    setSteps((current) => current.map((node) => (node.id === id ? { ...node, label } : node)));
+  }, []);
+
   const addStep = useCallback((type: WorkflowNodeType) => {
     const schema = nodeSchema(type);
     setSteps((current) => [
@@ -119,7 +143,9 @@ export function WorkflowEditor({
       {
         id: crypto.randomUUID(),
         type,
-        label: schema.label,
+        // Unnamed: the type stands in as the placeholder until the user gives
+        // the step a name of its own.
+        label: "",
         position: { x: 0, y: 0 },
         params: defaultParams(type),
       },
@@ -209,7 +235,19 @@ export function WorkflowEditor({
             <li key={node.id} className="mobile-workflow-step" data-status={state?.status}>
               <div className="mobile-workflow-step-head">
                 <span className="mobile-workflow-step-index">{index + 1}</span>
-                <span className="mobile-workflow-step-title">{schema.label}</span>
+                {/* The step's own name, its type standing in until it has one
+                    (the same field as the desktop's node title). */}
+                <input
+                  className="mobile-workflow-step-title"
+                  value={node.label}
+                  placeholder={schema.label}
+                  aria-label={`${schema.label} name`}
+                  disabled={running}
+                  onChange={(event) => rename(node.id, event.target.value)}
+                />
+                {node.label.trim() ? (
+                  <span className="mobile-workflow-step-type">{schema.label}</span>
+                ) : null}
                 <span className="mobile-workflow-step-actions">
                   <button
                     type="button"
@@ -239,19 +277,26 @@ export function WorkflowEditor({
               </div>
               <p className="mobile-workflow-step-desc">{schema.description}</p>
               <div className="mobile-workflow-step-params">
-                {schema.params.map((param) => (
-                  <ParamField
-                    key={param.name}
-                    param={param}
-                    value={node.params[param.name]}
-                    nodeParams={node.params}
-                    catalog={catalog}
-                    onMerge={(partial) => updateParams(node.id, { ...node.params, ...partial })}
-                    onChange={(value) =>
-                      updateParams(node.id, { ...node.params, [param.name]: value })
-                    }
-                  />
-                ))}
+                {schema.params
+                  // Settings the chosen model does not have are not shown (an
+                  // image-to-video model has no aspect ratio).
+                  .filter((param) => paramApplies(param, node.params, catalog))
+                  .map((param) => (
+                    <ParamField
+                      key={param.name}
+                      param={param}
+                      value={node.params[param.name]}
+                      nodeType={node.type}
+                      nodeParams={node.params}
+                      catalog={catalog}
+                      artifacts={artifacts}
+                      textSources={textFeeds.get(node.id) ?? []}
+                      onMerge={(partial) => updateParams(node.id, { ...node.params, ...partial })}
+                      onChange={(value) =>
+                        updateParams(node.id, { ...node.params, [param.name]: value })
+                      }
+                    />
+                  ))}
               </div>
               {state ? <FlowStepOutput state={state} /> : null}
             </li>
@@ -405,7 +450,10 @@ export function assembleWorkflow(base: Workflow, name: string, steps: WorkflowNo
   const edges: Workflow["edges"] = [];
   let pendingSources: string[] = [];
   for (const step of steps) {
-    const accepts = (maybeNodeSchema(step.type)?.inputs.length ?? 0) > 0;
+    // What the step carries with the model it is set to: a port its model
+    // closed is not one an upstream step can be chained onto.
+    const stepSchema = maybeNodeSchema(step.type);
+    const accepts = stepSchema ? openInputPorts(stepSchema, step.params).length > 0 : false;
     if (accepts) {
       for (const source of pendingSources) {
         edges.push({ id: `${source}-${step.id}`, source, target: step.id });
@@ -443,16 +491,26 @@ function assetSheetKinds(nodeParams: Record<string, unknown>): ArtifactKind[] {
 function ParamField({
   param,
   value,
+  nodeType,
   nodeParams,
   catalog,
+  artifacts,
+  textSources,
   onChange,
   onMerge,
 }: {
   param: ParamSchema;
   value: unknown;
+  /** The step's type, for the sibling params a model pick has to re-settle. */
+  nodeType: WorkflowNodeType;
   /** The whole step's params, for picker labels and multi-key writes. */
   nodeParams: Record<string, unknown>;
   catalog: MediaCatalog;
+  /** The editor's one gallery listing, so a picked asset can be shown. */
+  artifacts: ReturnType<typeof useArtifactIndex>;
+  /** The steps feeding this one's text input, named. Empty when there is no
+   * upstream text, which is when `{{input}}` means nothing. */
+  textSources: string[];
   onChange: (value: unknown) => void;
   onMerge: (partial: Record<string, unknown>) => void;
 }) {
@@ -460,19 +518,68 @@ function ParamField({
     () => (param.type === "model" ? modelsForParam(catalog, param) : []),
     [param, catalog],
   );
+  const stepSchema = nodeSchema(nodeType);
+  const modelId = typeof nodeParams.model === "string" ? nodeParams.model : "";
+  /** Values this param's model publishes, empty when it is free text. */
+  const options = useMemo(
+    () => paramOptions(param, nodeParams, catalog),
+    // biome-ignore lint/correctness/useExhaustiveDependencies: the options
+    // follow the model, not every keystroke in the params next to it.
+    [param, modelId, catalog],
+  );
   const [pickerOpen, setPickerOpen] = useState(false);
+  /** The prompt field, so the marker lands at the caret, not at the end. */
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+
+  if (param.modelOptions && options.length > 0) {
+    // The value shown is the one that will be sent: the request builder picks
+    // the first option when the stored one is not on offer.
+    const current = effectiveParamValue(options, value);
+    return (
+      <div className="mobile-workflow-param">
+        <span>{param.label}</span>
+        <button
+          type="button"
+          className="mobile-workflow-select mobile-workflow-picker"
+          onClick={() => setPickerOpen(true)}
+        >
+          {current}
+        </button>
+        {pickerOpen ? (
+          <OptionSheet
+            title={param.label}
+            options={options}
+            selected={current}
+            onSelect={(option) => {
+              onChange(option);
+              setPickerOpen(false);
+            }}
+            onClose={() => setPickerOpen(false)}
+          />
+        ) : null}
+      </div>
+    );
+  }
 
   if (param.type === "artifact") {
     const label =
       typeof nodeParams.assetLabel === "string" && nodeParams.assetLabel
         ? nodeParams.assetLabel
         : "";
+    const artifactId = typeof value === "string" ? value : "";
     return (
       <div className="mobile-workflow-param">
         <span>
           {param.label}
           {param.required ? " *" : ""}
         </span>
+        {artifactId ? (
+          <AssetPreview
+            artifact={artifacts.byId.get(artifactId)}
+            loaded={artifacts.loaded}
+            className="mobile-workflow-asset"
+          />
+        ) : null}
         <button
           type="button"
           className="mobile-workflow-select mobile-workflow-picker"
@@ -483,12 +590,15 @@ function ParamField({
         {pickerOpen ? (
           <ArtifactSheet
             kinds={assetSheetKinds(nodeParams)}
-            onPick={(artifact) =>
+            onPick={(artifact) => {
+              // Filed straight into the index so the preview appears with the
+              // pick rather than after the next gallery listing.
+              artifacts.remember(artifact);
               onMerge({
                 [param.name]: artifact.id,
                 assetLabel: artifact.prompt || artifact.fileName,
-              })
-            }
+              });
+            }}
             onClose={() => setPickerOpen(false)}
           />
         ) : null}
@@ -546,7 +656,17 @@ function ParamField({
             entries={models.map((model) => ({ id: model.id, name: model.name }))}
             selectedId={current}
             onSelect={(id) => {
-              onChange(id);
+              // Through the shared patch, so the step records the model's
+              // direction and re-settles its option-driven params exactly as
+              // the desktop does.
+              onMerge(
+                modelParamPatch(
+                  stepSchema,
+                  nodeParams,
+                  param,
+                  models.find((model) => model.id === id),
+                ),
+              );
               setPickerOpen(false);
             }}
             onClose={() => setPickerOpen(false)}
@@ -623,6 +743,11 @@ function ParamField({
   }
 
   if (param.type === "text") {
+    const text = typeof value === "string" ? value : "";
+    // Offered only where the marker means something: the step above has to be
+    // feeding this one text for there to be an input to place.
+    const offerMarker = param.acceptsInputMarker === true && textSources.length > 0;
+    const placed = text.includes(INPUT_MARKER);
     return (
       <label className="mobile-workflow-param">
         <span>
@@ -630,12 +755,39 @@ function ParamField({
           {param.required ? " *" : ""}
         </span>
         <textarea
+          ref={promptRef}
           className="mobile-studio-prompt"
           rows={2}
-          value={typeof value === "string" ? value : ""}
+          value={text}
           placeholder={param.description}
           onChange={(event) => onChange(event.target.value)}
         />
+        {offerMarker ? (
+          <button
+            type="button"
+            className="mobile-chip-button mobile-workflow-marker"
+            disabled={placed}
+            // Keeps the caret where the user last was in the prompt.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              const field = promptRef.current;
+              const from = field?.selectionStart ?? text.length;
+              const to = field?.selectionEnd ?? from;
+              onChange(`${text.slice(0, from)}${INPUT_MARKER}${text.slice(to)}`);
+              const caret = from + INPUT_MARKER.length;
+              requestAnimationFrame(() => {
+                field?.focus();
+                field?.setSelectionRange(caret, caret);
+              });
+            }}
+          >
+            {placed
+              ? `${INPUT_MARKER} is placed`
+              : textSources.length === 1
+                ? `Insert ${INPUT_MARKER} (${textSources[0]})`
+                : `Insert ${INPUT_MARKER}`}
+          </button>
+        ) : null}
         {param.description ? (
           <span className="mobile-workflow-param-hint">{param.description}</span>
         ) : null}

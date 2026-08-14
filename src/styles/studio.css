@@ -948,9 +948,37 @@
   gap: var(--sp-2);
 }
 
+/* The node's name, editable in place. It reads as a title until it is
+   touched, so the field itself is invisible: the placeholder carries the
+   node's type at full strength (an unnamed node's type IS its title), and the
+   frame only appears under the pointer. */
 .studio-node-title {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
   font-weight: var(--fw-medium);
   color: var(--foreground);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  padding: 2px var(--sp-1);
+  margin-left: calc(var(--sp-1) * -1);
+}
+
+.studio-node-title::placeholder {
+  color: var(--foreground);
+  opacity: 1;
+}
+
+.studio-node-title:hover {
+  border-color: var(--border-subtle);
+}
+
+.studio-node-title:focus {
+  border-color: var(--border);
+  background: var(--surface-subtle);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .studio-node-kind {
@@ -1024,8 +1052,8 @@
   color: var(--muted-foreground);
 }
 
-/* Connection order: the badge an edge wears at its port end, and the
- * reorderable source list a multi port shows once it has two inputs. */
+/* Connection order: the badge an edge wears just outside the node it leaves,
+ * and the reorderable source list a multi port shows once it has two inputs. */
 .studio-edge-order {
   position: absolute;
   pointer-events: none;
@@ -1041,6 +1069,18 @@
   font-size: 10px;
   font-weight: var(--fw-medium);
   font-variant-numeric: tabular-nums;
+  transition: box-shadow var(--t-fast) var(--ease-out);
+}
+
+/* Pointed at from its list entry: the badge and its wire answer together, so
+ * "which photo is reference 2" stops being a guess on a busy canvas. */
+.studio-edge-order[data-lit] {
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.react-flow__edge-path.studio-edge-lit {
+  stroke: var(--brand);
+  stroke-width: 2.5;
 }
 
 .studio-port-order {
@@ -1133,6 +1173,39 @@
 
 .studio-port-order-chain {
   align-self: flex-start;
+}
+
+/* A prompt and the one action that belongs to it: placing the upstream text
+   where the user wants it rather than at the end. */
+.studio-node-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.studio-marker-button {
+  align-self: flex-start;
+  padding: 2px var(--sp-2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The gallery item an asset node points at. Sized to the node so a portrait
+   reference and a 16:9 still both read, without either dominating it. */
+.studio-node-asset {
+  width: 100%;
+  max-height: 96px;
+  object-fit: cover;
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+}
+
+.studio-node-asset-missing {
+  max-height: none;
+  margin: 0;
+  padding: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--destructive);
 }
 
 .studio-node-picker {
@@ -1235,6 +1308,21 @@
 
 .studio-workflow-name {
   max-width: 220px;
+}
+
+/* A connection the editor let go of when a model change closed its port.
+   Said out loud, once, rather than left to be noticed. */
+.studio-port-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--surface-subtle);
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
 }
 
 .studio-validation {

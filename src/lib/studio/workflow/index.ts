@@ -1,13 +1,17 @@
 // Public surface of the Studio workflow library.
 
 export {
+  closedInputPort,
   defaultParams,
   isIdealMatch,
   isInputCompatible,
+  isPortOpen,
   maybeNodeSchema,
   NODE_SCHEMAS,
   NODE_TYPES,
+  nodeLabel,
   nodeSchema,
+  openInputPorts,
   outputKindOf,
   portCapacity,
   resolveInputPort,
@@ -28,6 +32,7 @@ export {
 } from "./validator";
 export {
   awaitingGateIds,
+  INPUT_MARKER,
   resolvePrompt,
   runWorkflow,
   topoLevels,
@@ -54,12 +59,21 @@ export {
   type NodeCostKind,
   type WorkflowCostEstimate,
 } from "./cost";
-export { modelsForParam } from "./models";
+export {
+  effectiveParamValue,
+  modelParamPatch,
+  modelsForParam,
+  paramApplies,
+  paramOptions,
+} from "./models";
 export {
   applyPortOrder,
   chainOrderSuggestion,
   edgesOnPort,
   reorderPortEdge,
+  strandedEdges,
+  textSourceLabels,
+  type StrandedEdge,
 } from "./ordering";
 export { createWorkflow, deleteWorkflow, listWorkflows, saveWorkflow } from "./store";
 export { templateWorkflows } from "./templates";

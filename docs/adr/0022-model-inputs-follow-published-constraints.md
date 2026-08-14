@@ -104,3 +104,66 @@ false.
 learn-from-a-rejection path still applies on top of this. But a probe for
 "does this take a clip" is a billed render; the operator already publishes the
 answer for free.
+
+## Addendum, 2026-08-14: the workflow canvas closes the ports a model does not have
+
+The decision above was applied to the studios, where the user picks a *family*
+and the filled-in inputs resolve the variant. The workflow node is the other
+shape: it pins **one model**, so the same question has a sharper answer there,
+and the editor was not asking it. A video node drew five media inputs whatever
+model it held. Two of those were expensive to leave open:
+
+- Reference photos wired onto an image-to-video model. `videoRequestBody` fills
+  `reference_image_urls` for the reference direction and no other, so they were
+  **dropped at submit**, after a prompt had been written around them.
+- An opening frame wired onto a reference-to-video model. The operator
+  documents `image_url` as image-to-video only; the render comes back having
+  quietly ignored the frame, and is billed.
+
+**A port whose capacity is zero is closed**: not drawn, not connectable, and an
+error when an edge is left on it. That is one rule rather than a new predicate
+— `referenceClips` already answered zero on the variants that publish
+`video_input: false` — read everywhere through `openInputPorts` instead of
+`schema.inputs`.
+
+Three things make it safe rather than merely strict:
+
+- **Nothing closes on a guess.** The direction comes from the catalog's own
+  `carpe_diem_type`, and the id is only consulted when the catalog is out of
+  reach. An id that vouches for no direction leaves every port open — which
+  matters: nine of the operator's 101 video models carry no direction in their
+  id, and five of those are image-to-video, including
+  `flux-3-first-last-frame-to-video` and the two `pixverse-*-transition`
+  models, whose whole point is the frames. An id-only rule would have taken the
+  frames away from exactly the models that exist for them.
+- **The answer travels in the params.** The picker writes `modelDirection`
+  beside the model id, the way an asset node keeps `assetLabel` beside
+  `artifactId`. The validator and the engine hold no catalog (this ADR noted
+  that as its own compromise); carrying the answer is what lets them agree with
+  the picker without one.
+- **Affinity re-homes rather than breaks.** A portless edge — anything saved
+  before ports existed, and everything mobile's linear editor builds — now
+  resolves among the *open* ports, so an image feeding a reference model joins
+  the references instead of resolving to nothing. It does **not** fall through
+  to a text port: a node whose ports of that kind are all closed has nowhere
+  for that media to land, and saying so is better than chaining a photo as
+  "[generated image]" into a prompt.
+
+Connections that a model change strands are let go where the user can see it,
+with the port named, at both moments it can happen: picking the model, and
+*opening* a workflow saved before the model was understood (an edge pinned to a
+handle the node no longer draws would otherwise render as a dangling wire).
+This is the same handling the video studio already gives clips on a family
+switch.
+
+The same reasoning extends to **settings**, not just inputs: a param whose
+model publishes an empty option list is not shown at all (an image-to-video
+model has no aspect ratio — its validator answers "This model does not support
+aspect_ratio"), while a model nobody knows anything about keeps a free text
+field. Empty is a statement; absent is silence.
+
+Not settled by probing, and that is worth recording: the operator's pre-flight
+(`400 VIDEO_PARAM_REJECTED`, live on `/video/queue` since this ADR was written)
+enumerates every rejected **value** with its accepted list, and says nothing
+about unrecognised **keys**. So a frame sent to a reference model cannot be
+detected for free — which is itself the argument for closing the port.

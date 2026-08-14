@@ -6,9 +6,14 @@
 // changing by a line: reordering is reordering the array.
 
 import {
+  closedInputPort,
+  isPortOpen,
   maybeNodeSchema,
+  nodeLabel,
+  openInputPorts,
   outputKindOf,
   resolveInputPort,
+  type InputPort,
   type Workflow,
   type WorkflowEdge,
 } from "./schema";
@@ -28,14 +33,78 @@ function contextOf(workflow: Graph) {
 export function edgesOnPort(workflow: Graph, targetId: string, portId: string): WorkflowEdge[] {
   const context = contextOf(workflow);
   const target = context.nodeById.get(targetId);
-  const schema = target ? maybeNodeSchema(target.type) : undefined;
-  if (!schema) return [];
+  if (!target || !maybeNodeSchema(target.type)) return [];
   return workflow.edges.filter((edge) => {
     if (edge.target !== targetId) return false;
     const source = context.nodeById.get(edge.source);
     if (!source) return false;
-    return resolveInputPort(schema, edge, outputKindOf(source, context))?.id === portId;
+    return resolveInputPort(target, edge, outputKindOf(source, context))?.id === portId;
   });
+}
+
+/**
+ * The nodes feeding this node's text input, named.
+ *
+ * What an editor needs before offering to write `{{input}}`: the marker only
+ * means something when something upstream is actually talking to the node, and
+ * naming the source is what turns an opaque token into a sentence the user can
+ * check. Empty when the node has no text input, or nothing is wired to it.
+ */
+export function textSourceLabels(workflow: Graph, nodeId: string): string[] {
+  const node = workflow.nodes.find((candidate) => candidate.id === nodeId);
+  const schema = node ? maybeNodeSchema(node.type) : undefined;
+  if (!node || !schema) return [];
+  const port = openInputPorts(schema, node.params).find((candidate) => candidate.kind === "text");
+  if (!port) return [];
+  const byId = new Map(workflow.nodes.map((entry) => [entry.id, entry]));
+  return edgesOnPort(workflow, nodeId, port.id).flatMap((edge) => {
+    const source = byId.get(edge.source);
+    return source ? [nodeLabel(source)] : [];
+  });
+}
+
+/** A connection whose port the target node's model has closed. */
+export interface StrandedEdge {
+  edge: WorkflowEdge;
+  /** The closed port it was landing on, for naming it to the user. */
+  port: InputPort;
+  /** The node it came from, likewise. */
+  sourceId: string;
+}
+
+/**
+ * Connections with nowhere to land because the target's model closed the port.
+ *
+ * Two moments need this: picking a model that drops an input the node used to
+ * carry, and *opening* a workflow saved before that model was understood - an
+ * edge pinned to a handle the node no longer draws renders as a dangling wire.
+ * Both let the connection go rather than leave it, and say so.
+ *
+ * An edge naming a port the node type does not have **at all** is deliberately
+ * not one of these: that is stale data, and silently deleting it would repair
+ * a bug out of sight instead of letting the validator report it.
+ */
+export function strandedEdges(workflow: Graph): StrandedEdge[] {
+  const context = contextOf(workflow);
+  const stranded: StrandedEdge[] = [];
+  for (const edge of workflow.edges) {
+    const target = context.nodeById.get(edge.target);
+    const source = context.nodeById.get(edge.source);
+    const schema = target ? maybeNodeSchema(target.type) : undefined;
+    if (!target || !source || !schema) continue;
+    const kind = outputKindOf(source, context);
+    if (resolveInputPort(target, edge, kind)) continue;
+    // Which closed port to name: the one the edge points at, or - for a
+    // portless edge - the port its kind used to take.
+    const port =
+      edge.targetPort !== undefined
+        ? closedInputPort(schema, target.params, edge.targetPort)
+        : schema.inputs.find(
+            (candidate) => candidate.kind === kind && !isPortOpen(candidate, target.params),
+          );
+    if (port) stranded.push({ edge, port, sourceId: edge.source });
+  }
+  return stranded;
 }
 
 /**
@@ -51,10 +120,9 @@ export function reorderPortEdge(workflow: Graph, edgeId: string, delta: -1 | 1):
   if (!edge) return workflow.edges;
   const context = contextOf(workflow);
   const target = context.nodeById.get(edge.target);
-  const schema = target ? maybeNodeSchema(target.type) : undefined;
   const source = context.nodeById.get(edge.source);
-  if (!schema || !source) return workflow.edges;
-  const port = resolveInputPort(schema, edge, outputKindOf(source, context));
+  if (!target || !source) return workflow.edges;
+  const port = resolveInputPort(target, edge, outputKindOf(source, context));
   if (!port) return workflow.edges;
 
   const portEdges = edgesOnPort(workflow, edge.target, port.id);
@@ -105,9 +173,8 @@ export function chainOrderSuggestion(workflow: Graph, assembleId: string): strin
       if (edge.target !== sourceId) return false;
       const target = context.nodeById.get(edge.target);
       const source = context.nodeById.get(edge.source);
-      const schema = target ? maybeNodeSchema(target.type) : undefined;
-      if (!schema || !source) return false;
-      return resolveInputPort(schema, edge, outputKindOf(source, context))?.id === "openingFrame";
+      if (!target || !source) return false;
+      return resolveInputPort(target, edge, outputKindOf(source, context))?.id === "openingFrame";
     });
     const frameNode = opening ? context.nodeById.get(opening.source) : undefined;
     if (frameNode?.type !== "lastFrame") return undefined;

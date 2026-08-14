@@ -13,7 +13,13 @@ import { estimateCostCredits } from "../catalog";
 import { mediaJson } from "../client";
 import { supportsVideoQuote, VIDEO_QUOTE_PATH } from "../paths";
 import type { MediaCatalog, MediaModel } from "../types";
-import { maybeNodeSchema, type Workflow, type WorkflowNode, type WorkflowNodeType } from "./schema";
+import {
+  maybeNodeSchema,
+  nodeLabel,
+  type Workflow,
+  type WorkflowNode,
+  type WorkflowNodeType,
+} from "./schema";
 
 /** How a node spends: not at all, a known figure, or usage-priced. */
 export type NodeCostKind = "free" | "flat" | "metered";
@@ -60,7 +66,7 @@ export function estimateNodeCost(node: WorkflowNode, catalog: MediaCatalog): Nod
   const schema = maybeNodeSchema(node.type);
   // The node's own name ("First shot"), so two video nodes stay tellable
   // apart in a cost breakdown; the schema label is the fallback.
-  const label = node.label.trim() || schema?.label || String(node.type);
+  const label = nodeLabel(node);
   const base = { nodeId: node.id, type: node.type, label, quotable: false };
 
   switch (node.type) {
@@ -185,7 +191,7 @@ export async function fetchVideoQuotes(
           model: node.params.model,
           // The real prompt may come from an upstream node that has not run
           // yet; the quote prices duration and resolution, not words.
-          prompt: typeof prompt === "string" && prompt.trim() !== "" ? prompt : node.label,
+          prompt: typeof prompt === "string" && prompt.trim() !== "" ? prompt : nodeLabel(node),
         };
         for (const [param, field] of [
           ["duration", "duration"],

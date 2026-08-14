@@ -31,7 +31,13 @@ import { IconArrowDown } from "central-icons/IconArrowDown";
 import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useArtifactIndex } from "../../lib/artifact-media";
+import { artifactSrc } from "../../lib/studio/artifacts";
 import { formatCredits } from "../../lib/studio/catalog";
+import {
+  explainConstraintError,
+  rememberConstraintError,
+} from "../../lib/studio/model-constraints";
 import { referenceMention } from "../../lib/studio/seedance";
 import type { ArtifactKind, MediaCatalog } from "../../lib/studio/types";
 import {
@@ -49,26 +55,36 @@ import {
   defaultParams,
   deleteWorkflow,
   edgesOnPort,
+  effectiveParamValue,
+  INPUT_MARKER,
   estimateNodeCost,
   estimateWorkflowCost,
   fetchVideoQuotes,
   isInputCompatible,
   listWorkflows,
   maybeNodeSchema,
+  modelParamPatch,
   modelsForParam,
+  paramApplies,
   needsRunConfirmation,
   NODE_SCHEMAS,
   nodeCostMap,
+  nodeLabel,
   nodeSchema,
+  openInputPorts,
   outputKindOf,
+  paramOptions,
   portCapacity,
   reorderPortEdge,
   resolveInputPort,
   saveWorkflow,
+  strandedEdges,
   templateWorkflows,
+  textSourceLabels,
   validateWorkflow,
   WorkflowRunError,
   type NodeRunResult,
+  type StrandedEdge,
   type ParamSchema,
   type Workflow,
   type WorkflowCostEstimate,
@@ -79,6 +95,7 @@ import { Dialog } from "../ui/Dialog";
 import { Select } from "../ui/Select";
 import { Spinner } from "../ui/Spinner";
 import { Switch } from "../ui/Switch";
+import { AssetPreview } from "./AssetPreview";
 import { GalleryPicker } from "./GalleryPicker";
 import { NotePicker } from "./NotePicker";
 
@@ -91,11 +108,21 @@ interface PortSourceEntry {
   image?: string;
 }
 
+/** The editor's one gallery listing, shared by every node that shows an
+ * asset (see `useArtifactIndex`). */
+type ArtifactIndex = ReturnType<typeof useArtifactIndex>;
+
 interface StudioNodeData extends Record<string, unknown> {
   wfNode: WorkflowNode;
   catalog: MediaCatalog;
+  artifacts: ArtifactIndex;
+  /** Bumped when a failed render taught us what a model accepts, so the
+   * option lists under it re-derive. */
+  constraintEpoch: number;
   result?: NodeRunResult;
   onParamsChange: (id: string, params: Record<string, unknown>) => void;
+  /** Rename this node, so several of one type can be told apart. */
+  onRename: (id: string, label: string) => void;
   onRemove: (id: string) => void;
   /** Gate nodes only: the upstream candidates an approval can pick from. */
   gateSources?: Array<{ id: string; label: string }>;
@@ -103,8 +130,12 @@ interface StudioNodeData extends Record<string, unknown> {
   onApproveGate?: (gateId: string, choice: string | undefined) => void;
   /** Multi ports with two or more connections: their sources, in order. */
   portSources?: Record<string, PortSourceEntry[]>;
+  /** The nodes feeding this node's text input, named. */
+  textSources?: string[];
   /** Move one connection up or down within its port's order. */
   onReorderEdge?: (edgeId: string, delta: -1 | 1) => void;
+  /** Light up one connection on the canvas (hovering its list entry). */
+  onHighlightEdge?: (edgeId: string | undefined) => void;
   /** Assemble nodes only: apply the graph's chain order to the clips port. */
   chainSuggestion?: string[];
   onApplyChainOrder?: (nodeId: string, orderedEdgeIds: string[]) => void;
@@ -118,9 +149,33 @@ type StudioFlowNode = FlowNode<StudioNodeData, "studio">;
  * nodes themselves have shrunk past reading. */
 const EDGE_ORDER_MIN_ZOOM = 0.45;
 
-/** The default bezier edge plus a connection-order badge pinned at the port
- * end. The badge only exists on edges into a multi port with two or more
- * connections, and fades out when the canvas is zoomed too far to wire. */
+/** How far right of a source handle its order badge sits, and how far apart
+ * two badges leaving the same node stack. */
+const EDGE_ORDER_GAP = 18;
+
+/** What an edge carries beyond its endpoints: its 1-based position on the
+ * port it lands on, where to stack the badge when one node feeds several
+ * ordered connections, and whether the list is pointing at it right now. */
+interface StudioEdgeData extends Record<string, unknown> {
+  order?: number;
+  /** 0-based rank among the ordered edges leaving this same source. */
+  sourceRank?: number;
+  highlight?: boolean;
+}
+
+/**
+ * The default bezier edge plus a connection-order badge.
+ *
+ * The badge sits at the **source** end, just outside the node it belongs to.
+ * Pinned at the port end it answered the wrong question: a video node's five
+ * reference badges lined up in front of one "References" label, saying which
+ * position each wire held but never which photo was in it. On the source, "1"
+ * is physically on the asset that is first.
+ *
+ * Placed from the handle rather than sampled off the curve on purpose: the
+ * control points are the layout library's business and change with it, while
+ * the handle is where the wire visibly leaves the node.
+ */
 function StudioEdge(props: EdgeProps) {
   const [path] = getBezierPath({
     sourceX: props.sourceX,
@@ -131,22 +186,29 @@ function StudioEdge(props: EdgeProps) {
     targetPosition: props.targetPosition,
   });
   const zoom = useStore((state) => state.transform[2]);
-  const order = (props.data as { order?: number } | undefined)?.order;
+  const data = props.data as StudioEdgeData | undefined;
+  const order = data?.order;
   return (
     <>
-      <BaseEdge id={props.id} path={path} style={props.style} markerEnd={props.markerEnd} />
+      <BaseEdge
+        id={props.id}
+        path={path}
+        style={props.style}
+        markerEnd={props.markerEnd}
+        className={data?.highlight ? "studio-edge-lit" : undefined}
+      />
       {order !== undefined && zoom >= EDGE_ORDER_MIN_ZOOM ? (
         <EdgeLabelRenderer>
           <span
             className="studio-edge-order"
+            data-lit={data?.highlight ? "" : undefined}
             style={{
-              // Edges of one port share a handle, so a fixed offset would
-              // stack every badge on the same pixel. Stagger them along the
-              // arrival tangent instead: 1 sits closest to the port, 2 behind
-              // it — the row reads like the port's ordered list.
+              // One node can feed several ordered connections, and they all
+              // leave the same handle: stack them so two badges never land on
+              // the same pixel.
               transform: `translate(-50%, -50%) translate(${
-                props.targetX - 18 - (order - 1) * 18
-              }px, ${props.targetY}px)`,
+                props.sourceX + EDGE_ORDER_GAP
+              }px, ${props.sourceY + (data?.sourceRank ?? 0) * EDGE_ORDER_GAP}px)`,
             }}
           >
             {order}
@@ -164,8 +226,10 @@ const SAVE_DEBOUNCE_MS = 300;
 function toFlowNodes(
   workflow: Workflow,
   catalog: MediaCatalog,
+  artifacts: ArtifactIndex,
   results: Map<string, NodeRunResult>,
   onParamsChange: (id: string, params: Record<string, unknown>) => void,
+  onRename: (id: string, label: string) => void,
   onRemove: (id: string) => void,
   onApproveGate?: (gateId: string, choice: string | undefined) => void,
 ): StudioFlowNode[] {
@@ -177,8 +241,13 @@ function toFlowNodes(
     data: {
       wfNode: node,
       catalog,
+      artifacts,
+      // Nothing has been learned yet on a freshly opened workflow; the sync
+      // effect hands the live epoch down from there.
+      constraintEpoch: 0,
       result: results.get(node.id),
       onParamsChange,
+      onRename,
       onRemove,
       onApproveGate,
       gateSources:
@@ -187,7 +256,7 @@ function toFlowNodes(
               .filter((edge) => edge.target === node.id)
               .map((edge) => nodeById.get(edge.source))
               .filter((source): source is WorkflowNode => source !== undefined)
-              .map((source) => ({ id: source.id, label: source.label || source.type }))
+              .map((source) => ({ id: source.id, label: nodeLabel(source) }))
           : undefined,
     },
   }));
@@ -204,9 +273,8 @@ function toFlowEdges(workflow: Workflow): FlowEdge[] {
     if (port === undefined) {
       const source = nodeById.get(edge.source);
       const target = nodeById.get(edge.target);
-      const schema = target ? maybeNodeSchema(target.type) : undefined;
-      if (source && schema) {
-        port = resolveInputPort(schema, edge, outputKindOf(source, kindContext))?.id;
+      if (source && target) {
+        port = resolveInputPort(target, edge, outputKindOf(source, kindContext))?.id;
       }
     }
     return {
@@ -243,6 +311,20 @@ function stringOr(value: unknown, fallback: string): string {
   return typeof value === "string" && value !== "" ? value : fallback;
 }
 
+/** The closed inputs behind a set of dropped connections, named once each. */
+function strandedPorts(stranded: StrandedEdge[]): string {
+  const labels = [...new Set(stranded.map((entry) => entry.port.label.toLowerCase()))];
+  return labels.length > 1 ? `${labels.slice(0, -1).join(", ")} or ${labels.at(-1)}` : labels[0];
+}
+
+/** What was let go, named when there is one of it and counted when there are
+ * several - a list of five node names in a one-line notice reads as noise. */
+function strandedWhat(stranded: StrandedEdge[], nodes: StudioFlowNode[]): string {
+  if (stranded.length > 1) return `${stranded.length} connections were`;
+  const source = nodes.find((node) => node.id === stranded[0].sourceId)?.data.wfNode;
+  return `the connection from "${source ? nodeLabel(source) : "an upstream node"}" was`;
+}
+
 /** Gallery buckets an asset node's picker should offer for its chosen kind. */
 function assetPickerKinds(node: WorkflowNode): ArtifactKind[] {
   const kind = node.params.assetKind;
@@ -255,15 +337,36 @@ function ParamField({
   node,
   param,
   catalog,
+  artifacts,
+  textSources,
+  constraintEpoch,
   onMerge,
 }: {
   node: WorkflowNode;
   param: ParamSchema;
   catalog: MediaCatalog;
+  artifacts: ArtifactIndex;
+  /** The nodes feeding this node's text input, named. Empty when nothing is
+   * wired to it, which is when `{{input}}` means nothing. */
+  textSources: string[];
+  /** Bumped when a rejection taught us a model's options, so they re-derive. */
+  constraintEpoch: number;
   onMerge: (partial: Record<string, unknown>) => void;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  /** The prompt field, so the marker lands at the caret rather than the end. */
+  const promptRef = useRef<HTMLTextAreaElement>(null);
   const value = node.params[param.name];
+  const schema = nodeSchema(node.type);
+  const modelId = typeof node.params.model === "string" ? node.params.model : "";
+  const options = useMemo(
+    () => paramOptions(param, node.params, catalog),
+    // biome-ignore lint/correctness/useExhaustiveDependencies: the options
+    // depend on the model and on what a rejection has taught us since, which
+    // the epoch stands for; re-deriving on every params change would run a
+    // localStorage read per keystroke.
+    [param, modelId, catalog, constraintEpoch],
+  );
   if (param.type === "model") {
     const models = modelsForParam(catalog, param);
     return (
@@ -271,7 +374,16 @@ function ParamField({
         className="studio-native-select nodrag"
         value={typeof value === "string" ? value : ""}
         aria-label={param.label}
-        onChange={(event) => onMerge({ [param.name]: event.target.value })}
+        onChange={(event) =>
+          onMerge(
+            modelParamPatch(
+              schema,
+              node.params,
+              param,
+              models.find((model) => model.id === event.target.value),
+            ),
+          )
+        }
       >
         <option value="">Choose a model</option>
         {models.map((model) => (
@@ -282,10 +394,37 @@ function ParamField({
       </select>
     );
   }
+  if (param.modelOptions && options.length > 0) {
+    // The value shown is the one that will be sent: the request builder picks
+    // the first option when the stored one is not on offer, and an editor that
+    // showed something else would be lying about the render.
+    return (
+      <select
+        className="studio-native-select nodrag"
+        value={effectiveParamValue(options, value)}
+        aria-label={param.label}
+        onChange={(event) => onMerge({ [param.name]: event.target.value })}
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    );
+  }
   if (param.type === "artifact") {
     const label = stringOr(node.params.assetLabel, "");
+    const artifactId = stringOr(node.params[param.name], "");
     return (
       <>
+        {artifactId ? (
+          <AssetPreview
+            artifact={artifacts.byId.get(artifactId)}
+            loaded={artifacts.loaded}
+            className="studio-node-asset"
+          />
+        ) : null}
         <button
           type="button"
           className="studio-node-picker nodrag"
@@ -299,12 +438,15 @@ function ParamField({
             resolveData={false}
             title="Pick an asset"
             description="This item feeds every node the asset connects to."
-            onPick={(_, artifact) =>
+            onPick={(_, artifact) => {
+              // Filed straight into the index: the preview appears with the
+              // pick rather than after the next gallery listing.
+              artifacts.remember(artifact);
               onMerge({
                 [param.name]: artifact.id,
                 assetLabel: artifact.prompt || artifact.fileName,
-              })
-            }
+              });
+            }}
             onClose={() => setPickerOpen(false)}
           />
         ) : null}
@@ -334,15 +476,58 @@ function ParamField({
     );
   }
   if (param.type === "text") {
+    const text = typeof value === "string" ? value : "";
+    // Only where the marker means something: a node nothing upstream feeds has
+    // no input to place. Where it does, the engine appends that text after the
+    // prompt unless the marker says otherwise, so this is about *placing* it,
+    // which the tooltip says rather than leaving to be discovered.
+    const offerMarker = param.acceptsInputMarker === true && textSources.length > 0;
+    const placed = text.includes(INPUT_MARKER);
     return (
-      <textarea
-        className="studio-textarea nodrag nowheel"
-        rows={2}
-        value={typeof value === "string" ? value : ""}
-        placeholder={param.label}
-        aria-label={param.label}
-        onChange={(event) => onMerge({ [param.name]: event.target.value })}
-      />
+      <div className="studio-node-prompt">
+        <textarea
+          ref={promptRef}
+          className="studio-textarea nodrag nowheel"
+          rows={2}
+          value={text}
+          placeholder={param.label}
+          aria-label={param.label}
+          onChange={(event) => onMerge({ [param.name]: event.target.value })}
+        />
+        {offerMarker ? (
+          <button
+            type="button"
+            className="btn btn-secondary studio-marker-button nodrag"
+            disabled={placed}
+            title={
+              placed
+                ? "This prompt already says where its upstream text goes."
+                : `${
+                    textSources.length === 1
+                      ? `Puts the text from "${textSources[0]}" here`
+                      : `Puts the text from the ${textSources.length} connected inputs here`
+                  }. Without the marker it is added after the prompt.`
+            }
+            // Keeps the caret: the insertion point is wherever the user last
+            // was in the prompt, and a button that stole focus would lose it.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              const field = promptRef.current;
+              const from = field?.selectionStart ?? text.length;
+              const to = field?.selectionEnd ?? from;
+              const next = `${text.slice(0, from)}${INPUT_MARKER}${text.slice(to)}`;
+              onMerge({ [param.name]: next });
+              const caret = from + INPUT_MARKER.length;
+              requestAnimationFrame(() => {
+                field?.focus();
+                field?.setSelectionRange(caret, caret);
+              });
+            }}
+          >
+            Insert {INPUT_MARKER}
+          </button>
+        ) : null}
+      </div>
     );
   }
   if (param.type === "boolean") {
@@ -412,7 +597,10 @@ function ParamField({
 
 function NodeOutputView({ result }: { result: NodeRunResult }) {
   if (result.status === "error") {
-    return <p className="studio-node-error">{result.error}</p>;
+    // A schema rejection reads as a zod report; say what the model wanted
+    // instead, next to the pickers that have just been updated with it.
+    const explained = result.error ? explainConstraintError(result.error) : undefined;
+    return <p className="studio-node-error">{explained ?? result.error}</p>;
   }
   const output = result.output;
   if (!output) return null;
@@ -487,6 +675,9 @@ function GateApproval({ data }: { data: StudioNodeData }) {
 function StudioNode({ data }: NodeProps<StudioFlowNode>) {
   const { wfNode, catalog, result, onParamsChange, onRemove } = data;
   const schema = nodeSchema(wfNode.type);
+  // The inputs this node carries: its model can close some of them, and a
+  // port that is not drawn is a port nothing can be wired to.
+  const inputs = openInputPorts(schema, wfNode.params);
   const cost = estimateNodeCost(wfNode, catalog);
   const runState =
     result?.status === "running"
@@ -501,8 +692,22 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
   return (
     <div className="studio-node" data-run={runState}>
       <div className="studio-node-head">
-        <span className="studio-node-title">{schema.label}</span>
+        {/* The name is the node's own, and its type stands in as the
+            placeholder until it has one: three asset nodes all reading
+            "Asset" is exactly what naming them is for, and the connection
+            lists, the gate candidates and the cost breakdown all read it. */}
+        <input
+          className="studio-node-title nodrag"
+          value={wfNode.label}
+          placeholder={schema.label}
+          aria-label={`${schema.label} name`}
+          onChange={(event) => data.onRename(wfNode.id, event.target.value)}
+        />
         <span className="studio-card-actions">
+          {wfNode.label.trim() ? (
+            // Named, so the type no longer shows in the title. Keep it legible.
+            <span className="studio-node-kind">{schema.label}</span>
+          ) : null}
           {cost.kind === "flat" && cost.credits !== undefined && cost.credits > 0 ? (
             <span className="studio-node-kind">~{formatCredits(cost.credits)}</span>
           ) : null}
@@ -520,9 +725,9 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
           </button>
         </span>
       </div>
-      {schema.inputs.length > 0 ? (
+      {inputs.length > 0 ? (
         <div className="studio-node-ports">
-          {schema.inputs.map((port) => (
+          {inputs.map((port) => (
             <div key={port.id} className="studio-node-port">
               <Handle type="target" position={Position.Left} id={port.id} />
               <span className="studio-node-port-label">{port.label}</span>
@@ -530,7 +735,7 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
           ))}
         </div>
       ) : null}
-      {schema.inputs
+      {inputs
         .filter((port) => port.multi && (data.portSources?.[port.id]?.length ?? 0) > 1)
         .map((port) => {
           const sources = data.portSources?.[port.id] ?? [];
@@ -548,7 +753,13 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
               <span className="studio-port-order-head">{port.label} order</span>
               <ol className="studio-port-order-list">
                 {sources.map((source, index) => (
-                  <li key={source.edgeId}>
+                  <li
+                    key={source.edgeId}
+                    onMouseEnter={() => data.onHighlightEdge?.(source.edgeId)}
+                    onMouseLeave={() => data.onHighlightEdge?.(undefined)}
+                    onFocus={() => data.onHighlightEdge?.(source.edgeId)}
+                    onBlur={() => data.onHighlightEdge?.(undefined)}
+                  >
                     <button
                       type="button"
                       className="studio-port-order-entry"
@@ -604,15 +815,23 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
             </div>
           );
         })}
-      {schema.params.map((param) => (
-        <ParamField
-          key={param.name}
-          node={wfNode}
-          param={param}
-          catalog={catalog}
-          onMerge={(partial) => onParamsChange(wfNode.id, { ...wfNode.params, ...partial })}
-        />
-      ))}
+      {schema.params
+        // A setting the chosen model does not have is not shown: an
+        // image-to-video model takes its frame from the source image and has
+        // no aspect ratio, and a box for one could only fail the render.
+        .filter((param) => paramApplies(param, wfNode.params, catalog))
+        .map((param) => (
+          <ParamField
+            key={param.name}
+            node={wfNode}
+            param={param}
+            catalog={catalog}
+            artifacts={data.artifacts}
+            textSources={data.textSources ?? []}
+            constraintEpoch={data.constraintEpoch}
+            onMerge={(partial) => onParamsChange(wfNode.id, { ...wfNode.params, ...partial })}
+          />
+        ))}
       {result?.status === "awaiting" ? <GateApproval data={data} /> : null}
       {result ? <NodeOutputView result={result} /> : null}
       {schema.output !== "none" ? <Handle type="source" position={Position.Right} /> : null}
@@ -701,6 +920,24 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
   currentRef.current = current;
   const flowNodesRef = useRef<StudioFlowNode[]>([]);
   flowNodesRef.current = flowNodes;
+  const flowEdgesRef = useRef<FlowEdge[]>([]);
+  flowEdgesRef.current = flowEdges;
+  /** Read by handlers that must not re-identify when the catalog refreshes:
+   * `hydrate` depends on their identity and would re-open the workflow. */
+  const catalogRef = useRef(catalog);
+  catalogRef.current = catalog;
+  /** One gallery listing for the whole canvas, so an asset node can show what
+   * it points at without a listing per node. */
+  const artifacts = useArtifactIndex();
+  /** The connection the reference list is pointing at, lit on the canvas.
+   * Reading a list entry and finding its wire is otherwise a guess once a
+   * node has four references. */
+  const [highlightedEdge, setHighlightedEdge] = useState<string | undefined>(undefined);
+  /** What a model change dropped, said once next to the toolbar. */
+  const [portNotice, setPortNotice] = useState<string | undefined>(undefined);
+  /** Bumped when a failed render taught us what a model accepts, so every
+   * option list under it re-derives. */
+  const [constraintEpoch, setConstraintEpoch] = useState(0);
   /** The durable run this canvas is showing (started or resumed here), so a
    * gate approval knows which run to continue. */
   const runIdRef = useRef<string | undefined>(undefined);
@@ -716,6 +953,19 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
       next.set(result.nodeId, result);
       return next;
     });
+    // A rejected render carries the provider's own account of what the model
+    // wanted, and the operator now enumerates it in full on the queue itself
+    // (`400 VIDEO_PARAM_REJECTED`, every faulty field with its accepted list).
+    // Reading it here is what makes the pickers right for the families the
+    // catalog publishes nothing about - the video studio has always done this,
+    // and a workflow that fails the same way should teach the same lesson.
+    if (result.status !== "error" || !result.error) return;
+    const model = flowNodesRef.current.find((node) => node.id === result.nodeId)?.data.wfNode.params
+      .model;
+    if (typeof model !== "string" || model === "") return;
+    if (Object.keys(rememberConstraintError(model, result.error)).length > 0) {
+      setConstraintEpoch((epoch) => epoch + 1);
+    }
   }, []);
 
   const onParamsChange = useCallback((id: string, params: Record<string, unknown>) => {
@@ -723,6 +973,41 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
       nodes.map((node) =>
         node.id === id
           ? { ...node, data: { ...node.data, wfNode: { ...node.data.wfNode, params } } }
+          : node,
+      ),
+    );
+    const nodes = flowNodesRef.current;
+    const target = nodes.find((node) => node.id === id)?.data.wfNode;
+    // The model is the only param that closes a port, and comparing it is
+    // what keeps this off the path of every keystroke in a prompt.
+    if (!target || target.params.model === params.model) return;
+    // Changing the model can close an input the node no longer carries (a
+    // reference-to-video model has no opening frame). An edge left on a closed
+    // port would block the run with a validation error the user did not cause,
+    // so it is let go here, where it can be seen, rather than at submit - the
+    // way the video studio lets go of clips when the family changes.
+    const stranded = strandedEdges({
+      nodes: nodes.map((node) => (node.id === id ? { ...target, params } : node.data.wfNode)),
+      edges: flowEdgesRef.current.map(toWorkflowEdge),
+    });
+    if (stranded.length === 0) return;
+    const dropped = new Set(stranded.map((entry) => entry.edge.id));
+    setFlowEdges((edges) => edges.filter((edge) => !dropped.has(edge.id)));
+    const modelName =
+      catalogRef.current.models.find((model) => model.id === params.model)?.name ?? "This model";
+    setPortNotice(
+      `${modelName} takes no ${strandedPorts(stranded)}, so ${strandedWhat(stranded, nodes)} removed.`,
+    );
+  }, []);
+
+  /** Naming a node is naming it everywhere: the connection lists, the gate
+   * candidates, the cost breakdown and the assemble node's own artifact all
+   * read the same label. */
+  const onRename = useCallback((id: string, label: string) => {
+    setFlowNodes((nodes) =>
+      nodes.map((node) =>
+        node.id === id
+          ? { ...node, data: { ...node.data, wfNode: { ...node.data.wfNode, label } } }
           : node,
       ),
     );
@@ -739,14 +1024,44 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
       setCurrent(workflow);
       setResults(new Map());
       setRunError(undefined);
+      setPortNotice(undefined);
+      // A workflow saved before its models' inputs were understood can hold a
+      // connection on a port the node no longer draws, which would render as a
+      // wire pinned to a handle that is not there. Let it go on open, and say
+      // so - the same handling as a model change, at the other moment it can
+      // happen.
+      const stranded = workflow ? strandedEdges(workflow) : [];
+      const dropped = new Set(stranded.map((entry) => entry.edge.id));
+      const opened = workflow
+        ? { ...workflow, edges: workflow.edges.filter((edge) => !dropped.has(edge.id)) }
+        : undefined;
       setFlowNodes(
-        workflow
-          ? toFlowNodes(workflow, catalog, new Map(), onParamsChange, onRemove, onApproveGate)
+        opened
+          ? toFlowNodes(
+              opened,
+              catalog,
+              artifacts,
+              new Map(),
+              onParamsChange,
+              onRename,
+              onRemove,
+              onApproveGate,
+            )
           : [],
       );
-      setFlowEdges(workflow ? toFlowEdges(workflow) : []);
+      setFlowEdges(opened ? toFlowEdges(opened) : []);
+      if (stranded.length > 0) {
+        const ports = strandedPorts(stranded);
+        setPortNotice(
+          `${stranded.length === 1 ? "A connection" : `${stranded.length} connections`} landed on ${
+            stranded.length === 1 ? "an input" : "inputs"
+          } the chosen models do not have (${ports}), so ${
+            stranded.length === 1 ? "it was" : "they were"
+          } removed.`,
+        );
+      }
     },
-    [catalog, onParamsChange, onRemove, onApproveGate],
+    [catalog, artifacts, onParamsChange, onRename, onRemove, onApproveGate],
   );
 
   // First mount: open the most recent workflow, or seed from templates.
@@ -808,6 +1123,10 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
     });
   }, []);
 
+  const onHighlightEdge = useCallback((edgeId: string | undefined) => {
+    setHighlightedEdge(edgeId);
+  }, []);
+
   const onApplyChainOrder = useCallback((_nodeId: string, orderedEdgeIds: string[]) => {
     setFlowEdges((edges) => {
       const applied = applyPortOrder(edges.map(toWorkflowEdge), orderedEdgeIds);
@@ -825,20 +1144,27 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
         nodes: nodes.map((node) => node.data.wfNode),
         edges: flowEdges.map(toWorkflowEdge),
       };
-      const labelOf = new Map(
-        nodes.map((node) => [node.id, node.data.wfNode.label || node.data.wfNode.type]),
-      );
+      const labelOf = new Map(nodes.map((node) => [node.id, nodeLabel(node.data.wfNode)]));
       const imageOf = (nodeId: string): string | undefined => {
         const output = results.get(nodeId)?.output;
-        return output?.kind === "image"
-          ? `data:${output.mimeType};base64,${output.base64}`
-          : undefined;
+        if (output?.kind === "image") return `data:${output.mimeType};base64,${output.base64}`;
+        // Before any run, an asset node already knows what it points at, and
+        // a reference list of thumbnails is the only version of it that can be
+        // read at a glance. The asset protocol streams the file, so this costs
+        // nothing (the canvas is desktop-only; see `useArtifactPreview` for
+        // why iOS answers differently).
+        const source = nodes.find((entry) => entry.id === nodeId)?.data.wfNode;
+        if (source?.type !== "asset") return undefined;
+        const artifactId = source.params.artifactId;
+        const artifact =
+          typeof artifactId === "string" ? artifacts.byId.get(artifactId) : undefined;
+        return artifact?.kind === "image" ? artifactSrc(artifact) : undefined;
       };
       return nodes.map((node) => {
         const wfNode = node.data.wfNode;
         const schema = maybeNodeSchema(wfNode.type);
         let portSources: Record<string, PortSourceEntry[]> | undefined;
-        for (const port of schema?.inputs ?? []) {
+        for (const port of schema ? openInputPorts(schema, wfNode.params) : []) {
           if (!port.multi) continue;
           const portEdges = edgesOnPort(graph, node.id, port.id);
           if (portEdges.length < 2) continue;
@@ -856,9 +1182,13 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
             ...node.data,
             result: results.get(node.id),
             catalog,
+            artifacts,
+            constraintEpoch,
             onReorderEdge,
+            onHighlightEdge,
             onApplyChainOrder,
             portSources,
+            textSources: textSourceLabels(graph, node.id),
             chainSuggestion:
               wfNode.type === "assemble" ? chainOrderSuggestion(graph, node.id) : undefined,
             gateSources:
@@ -872,7 +1202,16 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
         };
       });
     });
-  }, [results, catalog, flowEdges, onReorderEdge, onApplyChainOrder]);
+  }, [
+    results,
+    catalog,
+    artifacts,
+    constraintEpoch,
+    flowEdges,
+    onReorderEdge,
+    onHighlightEdge,
+    onApplyChainOrder,
+  ]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<StudioFlowNode>[]) =>
@@ -896,7 +1235,7 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
       const target = flowNodes.find((node) => node.id === connection.target)?.data.wfNode;
       if (!source || !target || source.id === target.id) return false;
       const schema = maybeNodeSchema(target.type);
-      if (!schema || schema.inputs.length === 0) return false;
+      if (!schema || openInputPorts(schema, target.params).length === 0) return false;
       // Graph context so a gate's output resolves to what it passes through.
       const sourceKind = outputKindOf(source, {
         nodeById: new Map(flowNodes.map((node) => [node.id, node.data.wfNode])),
@@ -908,7 +1247,7 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
         })),
       });
       const port = resolveInputPort(
-        schema,
+        target,
         { targetPort: connection.targetHandle ?? undefined },
         sourceKind,
       );
@@ -930,7 +1269,9 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
       const wfNode: WorkflowNode = {
         id: crypto.randomUUID(),
         type,
-        label: nodeSchema(type).label,
+        // Unnamed: the type shows through as a placeholder until the user
+        // gives it one, which is what keeps "never named" tellable.
+        label: "",
         position: { x: 80 + (offset % 4) * 60, y: 80 + offset * 40 },
         params: defaultParams(type),
       };
@@ -940,11 +1281,29 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
           id: wfNode.id,
           type: "studio" as const,
           position: wfNode.position,
-          data: { wfNode, catalog, onParamsChange, onRemove, onApproveGate },
+          data: {
+            wfNode,
+            catalog,
+            artifacts,
+            constraintEpoch,
+            onParamsChange,
+            onRename,
+            onRemove,
+            onApproveGate,
+          },
         },
       ]);
     },
-    [flowNodes.length, catalog, onParamsChange, onRemove, onApproveGate],
+    [
+      flowNodes.length,
+      catalog,
+      artifacts,
+      constraintEpoch,
+      onParamsChange,
+      onRename,
+      onRemove,
+      onApproveGate,
+    ],
   );
 
   const applyTemplate = useCallback(
@@ -1000,7 +1359,8 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
     };
     const orders = new Map<string, number>();
     for (const node of graph.nodes) {
-      for (const port of maybeNodeSchema(node.type)?.inputs ?? []) {
+      const schema = maybeNodeSchema(node.type);
+      for (const port of schema ? openInputPorts(schema, node.params) : []) {
         if (!port.multi) continue;
         const portEdges = edgesOnPort(graph, node.id, port.id);
         if (portEdges.length < 2) continue;
@@ -1009,15 +1369,29 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
         });
       }
     }
+    // Where each badge stacks: one asset can be reference 1 of a shot and
+    // reference 3 of the next, and both badges leave the same handle.
+    const sourceRanks = new Map<string, number>();
+    const perSource = new Map<string, number>();
+    for (const edge of flowEdges) {
+      if (orders.get(edge.id) === undefined) continue;
+      const rank = perSource.get(edge.source) ?? 0;
+      sourceRanks.set(edge.id, rank);
+      perSource.set(edge.source, rank + 1);
+    }
     return flowEdges.map((edge) => ({
       ...edge,
       type: "studio" as const,
-      data: { order: orders.get(edge.id) },
+      data: {
+        order: orders.get(edge.id),
+        sourceRank: sourceRanks.get(edge.id),
+        highlight: edge.id === highlightedEdge,
+      } satisfies StudioEdgeData,
     }));
     // orderGraphKey stands in for the node list: order only depends on the
     // parts of it the key captures.
     // biome-ignore lint/correctness/useExhaustiveDependencies: see above
-  }, [flowEdges, orderGraphKey]);
+  }, [flowEdges, orderGraphKey, highlightedEdge]);
   const estimate = useMemo(
     () => (serialized ? estimateWorkflowCost(serialized, catalog) : undefined),
     [serialized, catalog],
@@ -1267,6 +1641,19 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
           }}
           onClose={() => setPendingRun(undefined)}
         />
+      ) : null}
+      {portNotice ? (
+        <div className="studio-port-notice">
+          <span>{portNotice}</span>
+          <button
+            type="button"
+            className="studio-icon-button"
+            aria-label="Dismiss"
+            onClick={() => setPortNotice(undefined)}
+          >
+            <IconCrossSmall size={14} />
+          </button>
+        </div>
       ) : null}
       {!running && liveProductions.length > 0 ? (
         <div className="studio-resume-banner">

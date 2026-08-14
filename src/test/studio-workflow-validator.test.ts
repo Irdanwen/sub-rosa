@@ -314,7 +314,9 @@ describe("validateWorkflow with named ports", () => {
 
     const basic = withModel("seedance-2-5-reference-to-video-basic");
     expect(basic.ok).toBe(false);
-    expect(basic.errors[0].message).toContain('"Reference clips" takes at most 0');
+    // Named for what it is - an input this model does not have - rather than
+    // as a capacity of zero, which reads like a bug in the editor.
+    expect(basic.errors[0].message).toContain('no "Reference clips" input');
     expect(withModel("seedance-2-0-reference-to-video").ok).toBe(true);
   });
 

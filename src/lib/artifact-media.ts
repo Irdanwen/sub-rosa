@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { readArtifactBase64 } from "./studio/artifacts";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { isMobilePlatform } from "./mobile";
+import { artifactSrc, listArtifacts, readArtifactBase64 } from "./studio/artifacts";
 import { makeThumbnail } from "./studio/downscale";
 import type { StudioArtifact } from "./studio/types";
 
@@ -155,6 +156,83 @@ export function useArtifactDataUrl(artifact: Pick<StudioArtifact, "path"> | null
     };
   }, [artifact?.path]);
   return url;
+}
+
+/**
+ * Every gallery item by id.
+ *
+ * The surfaces that only store an `artifactId` - a workflow's asset nodes, and
+ * the connection lists that describe them - need the item behind it to show
+ * anything at all. One listing serves the whole editor: a call per node would
+ * be a gallery scan per node, and the answer is the same for all of them.
+ *
+ * `loaded` is what separates "not back yet" from "gone", which is the
+ * difference between a quiet placeholder and telling the user their asset has
+ * been deleted. `remember` files an item the user has just picked, so the
+ * preview appears without waiting on a re-listing.
+ */
+export function useArtifactIndex(): {
+  byId: Map<string, StudioArtifact>;
+  loaded: boolean;
+  remember: (artifact: StudioArtifact) => void;
+} {
+  const [byId, setById] = useState<Map<string, StudioArtifact>>(() => new Map());
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    listArtifacts()
+      .then((entries) => {
+        if (cancelled) return;
+        // Merged rather than replaced: an item just picked must not vanish
+        // because the listing that was already in flight predates it.
+        setById((current) => {
+          const next = new Map(entries.map((entry) => [entry.id, entry]));
+          for (const [id, entry] of current) if (!next.has(id)) next.set(id, entry);
+          return next;
+        });
+        setLoaded(true);
+      })
+      .catch(() => {
+        // A gallery that cannot be listed leaves every asset unresolved, which
+        // shows as no preview - never as "your asset is gone".
+        if (!cancelled) setLoaded(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  // Not named `remember`: that is the cache's own evicting writer above, and
+  // shadowing it inside a hook that also touches caches invites the wrong one.
+  const rememberArtifact = useCallback((artifact: StudioArtifact) => {
+    setById((current) => new Map(current).set(artifact.id, artifact));
+  }, []);
+  // One identity per actual change. A fresh object every render would be a
+  // fresh dependency every render, and a caller that rebuilds its nodes when
+  // the index changes would rebuild them forever.
+  return useMemo(
+    () => ({ byId, loaded, remember: rememberArtifact }),
+    [byId, loaded, rememberArtifact],
+  );
+}
+
+/**
+ * A URL this shell can show a preview from, or null when there is none worth
+ * paying for.
+ *
+ * The two platforms answer differently and must: on the desktop the asset
+ * protocol streams the file, so an image or a clip previews for nothing. The
+ * iOS webview has no asset protocol and reads bytes over IPC, so only images
+ * are previewed (downscaled, and cached) - decoding a whole clip to preview it
+ * in a form is exactly what the thumbnail cache exists to avoid.
+ */
+export function useArtifactPreview(
+  artifact: Pick<StudioArtifact, "path" | "kind"> | null | undefined,
+): string | null {
+  const mobile = isMobilePlatform();
+  const thumbnail = useArtifactThumbnail(mobile && artifact?.kind === "image" ? artifact : null);
+  if (!artifact) return null;
+  if (!mobile) return artifactSrc(artifact);
+  return artifact.kind === "image" ? thumbnail : null;
 }
 
 /** Like {@link useArtifactDataUrl} but resolves to a downscaled thumbnail for

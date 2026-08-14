@@ -307,6 +307,35 @@ ports are binding (an image port only takes images); text ports take anything
 and degrade media to a description. Edges saved before ports existed resolve
 by kind affinity. _Avoid_: slot, socket, pin.
 
+**Closed port**:
+A port the node's chosen model does not carry, so it is not drawn, refuses
+connections, and makes any edge left on it an error (a reference-to-video
+model has no opening frame; an image-to-video model takes no reference
+photos). Expressed as a capacity of zero — one rule, read through
+`openInputPorts`, which every surface must use instead of `schema.inputs`. A
+port is only ever closed on a **positive** answer: an unknown model keeps all
+of them. _Avoid_: hidden port, disabled input; closed is not *absent* (an
+image whose ports are all closed lands nowhere rather than degrading into the
+prompt), and not *empty* (an open port with nothing wired to it).
+
+**Model direction**:
+Which inputs a video model's contract is built around — text, image (a
+supplied frame), reference (style/subject photos), or video (a source clip).
+It decides the node's ports, and only the catalog can say it: nine of the
+operator's video models name no direction in their id, five of them
+image-to-video. Recorded as `modelDirection` beside the model id when it is
+picked, so the validator and the engine reach the same answer without a
+catalog. _Avoid_: mode, variant type; distinct from **variant**, which is the
+concrete model a family resolves to in the studios.
+
+**Node name**:
+What the user calls one node, so several of a type can be told apart ("Hero
+sheet" and "Street plate", not two nodes reading "Asset"). Nodes are created
+*unnamed* and show their type in its place, which is what keeps "never named"
+tellable; read it through `nodeLabel`, never off `label`. The name is what the
+connection lists, the gate candidates and the cost breakdown all show.
+_Avoid_: title, caption.
+
 **Asset node**:
 The workflow node that pulls one gallery item (image, clip, or track) into a
 graph, typically fanned out to every scene that should reuse it. It reads the

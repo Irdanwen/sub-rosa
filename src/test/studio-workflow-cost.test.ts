@@ -17,6 +17,7 @@ import {
 } from "../lib/studio/workflow/cost";
 import {
   defaultParams,
+  nodeLabel,
   type WorkflowNode,
   type WorkflowNodeType,
 } from "../lib/studio/workflow/schema";
@@ -232,5 +233,32 @@ describe("fetchVideoQuotes", () => {
       CATALOG,
     );
     expect(shapeless.size).toBe(0);
+  });
+});
+
+describe("nodeLabel", () => {
+  // Nodes are created unnamed so "never named" stays tellable from "named
+  // after its own type". Everything that reports on a node - the cost
+  // breakdown, the connection lists, the assemble node's own artifact, the
+  // quote's stand-in prompt - has to read the name through here, or an
+  // unnamed node reports as an empty string.
+  it("falls back to the node type's own label", () => {
+    expect(nodeLabel({ type: "asset", label: "" })).toBe("Asset");
+    expect(nodeLabel({ type: "video", label: "   " })).toBe("Video");
+    expect(nodeLabel({ type: "asset", label: "Hero sheet" })).toBe("Hero sheet");
+  });
+
+  it("prices an unnamed node under its type, and a named one under its name", () => {
+    const unnamed: WorkflowNode = {
+      id: "a",
+      type: "video",
+      label: "",
+      position: { x: 0, y: 0 },
+      params: { ...defaultParams("video"), model: "vid-flat" },
+    };
+    expect(estimateWorkflowCost({ nodes: [unnamed] }, CATALOG).nodes[0].label).toBe("Video");
+    expect(
+      estimateWorkflowCost({ nodes: [{ ...unnamed, label: "Wide shot" }] }, CATALOG).nodes[0].label,
+    ).toBe("Wide shot");
   });
 });
