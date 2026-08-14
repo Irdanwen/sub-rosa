@@ -32,7 +32,7 @@ import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatCredits } from "../../lib/studio/catalog";
-import { maxVideoReferences, referenceMention } from "../../lib/studio/seedance";
+import { referenceMention } from "../../lib/studio/seedance";
 import type { ArtifactKind, MediaCatalog } from "../../lib/studio/types";
 import {
   activeWorkflowRuns,
