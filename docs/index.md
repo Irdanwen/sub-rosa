@@ -31,6 +31,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0019](adr/0019-shot-chains-are-parent-links.md) — a shot chain is never stored as a sequence: each clip records the one it continues (and where it took over) on its durable row, and the chain is derived, so it survives a render that outlives the session, a deleted clip, and a re-generation that forks
 - [adr/0020](adr/0020-the-gallery-is-the-studio-exchange-format.md) — Studio surfaces exchange images through the gallery rather than through each other: a captured frame is written as an ordinary artifact (so export, edit, and reuse come free) and every image input pulls from the gallery instead of waiting to be pushed at
 - [adr/0021](adr/0021-workflow-runs-are-durable-rows-stitched-by-the-webview.md) — a workflow production is durable rows (`workflow_runs` + per-node state), its long renders ride the existing `media_jobs` pollers, and the webview stitches between them: a resume replays finished nodes and re-attaches to in-flight renders by job id, never re-buying either
+- [adr/0022](adr/0022-model-inputs-follow-published-constraints.md) — which inputs a media model accepts is read from the constraints the operator publishes (`video_input`, `audio_input`) rather than inferred from its id, so a surface stops offering a reference-clip slot on the public-tier models that refuse clips and starts offering the reference audio they do take
 
 ## Enforceable rules (spec/)
 

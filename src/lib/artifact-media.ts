@@ -81,6 +81,20 @@ function base64ToBlob(base64: string, mime: string): Blob {
   return new Blob([bytes], { type: mime });
 }
 
+/**
+ * The artifact's bytes as a `data:` URI, on every platform.
+ *
+ * Deliberately not `artifactDataUrl`: that one hands back a blob: object URL
+ * for video and audio, because that is what an iOS media element can seek. An
+ * object URL is a handle into this process, so it is exactly the wrong thing to
+ * put in a request body - this is the one to reach for when the bytes have to
+ * travel. Uncached: the caller is about to send them, not to render them.
+ */
+export async function artifactDataUri(artifact: Pick<StudioArtifact, "path">): Promise<string> {
+  const base64 = await readArtifactBase64(artifact);
+  return `data:${mimeFor(artifact.path)};base64,${base64}`;
+}
+
 export async function artifactDataUrl(artifact: Pick<StudioArtifact, "path">): Promise<string> {
   const cached = cache.get(artifact.path);
   if (cached) return cached;

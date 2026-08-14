@@ -267,7 +267,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
     type: "video",
     label: "Video",
     description:
-      "Generate a short video. Feed an image to start from, an image to end on, reference images that keep a subject consistent, and (on seedance reference models) clips to edit, extend or stitch.",
+      "Generate a short video. Feed an image to start from, an image to end on, reference images that keep a subject consistent, and (on the seedance reference models that take video input) clips to edit, extend or stitch.",
     inputs: [
       PROMPT_PORT,
       { id: "openingFrame", label: "Opening frame", kind: "image" },
@@ -284,9 +284,12 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
           maxVideoReferences(typeof params.model === "string" ? { id: params.model } : undefined),
       },
       {
-        // Reference clips: what the seedance edit, extend and stitch
-        // workflows work from. Only those variants take them, so the cap is
-        // zero everywhere else and the validator refuses the connection.
+        // Reference clips: what the seedance edit, extend and stitch workflows
+        // work from. The cap is zero on every other model - including the
+        // public `-basic` reference variants, which publish no video input - so
+        // the validator refuses the connection rather than letting the engine
+        // drop the clips at submit, after the prompt was written around them.
+        // Only the id is in hand here; `takesReferenceClips` knows that tier.
         id: "referenceClips",
         label: "Reference clips",
         kind: "video",

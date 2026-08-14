@@ -29,13 +29,16 @@ export const SEEDANCE_CONSENT = {
 } as const;
 
 /** Whether a queued render must carry the seedance consent: a seedance model
- * driven by a reference photo (image- or reference-to-video). Text-to-video
- * has no face-bearing input, so it never needs it. */
+ * driven by media that could show a person - an opening frame, a reference
+ * photo, or a reference clip. A clip counts for the same reason a photo does,
+ * and forgetting it is how an "Extend <Video 1>" render earns a 409 the caller
+ * had already been asked about. Text-to-video has no such input, so it never
+ * needs the attestation. */
 export function needsSeedanceConsent(
   model: MediaModel | undefined,
-  hasReference: boolean,
+  hasFaceMedia: boolean,
 ): boolean {
-  return Boolean(model && hasReference && isSeedanceModel(model.id));
+  return Boolean(model && hasFaceMedia && isSeedanceModel(model.id));
 }
 
 /** Merges the consent attestation into a queue body without mutating it. */

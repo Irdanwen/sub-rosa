@@ -13,8 +13,10 @@ function model(id: string): MediaModel {
 }
 
 describe("seedance consent gating", () => {
-  it("only needs consent for a seedance model driven by a reference", () => {
-    // seedance + a reference photo (image- or reference-to-video)
+  it("only needs consent for a seedance model driven by face-bearing media", () => {
+    // seedance + media that could show a person: an opening frame, a reference
+    // photo, or the clip an edit or extend render works from. The caller
+    // decides which; the flag means "any of them".
     expect(needsSeedanceConsent(model("seedance-2-0-image-to-video"), true)).toBe(true);
     // seedance without a reference (text-to-video) never needs it
     expect(needsSeedanceConsent(model("seedance-2-0-text-to-video"), false)).toBe(false);

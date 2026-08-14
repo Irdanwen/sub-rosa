@@ -332,8 +332,30 @@ Which of four jobs a seedance reference-to-video request performs — reference,
 edit, extend or stitch — decided by how the *prompt opens* ("Refer to…",
 "Strictly edit <Video 1>…", "Extend <Video 1>…", "<Video 1> + …"), never by a
 parameter. A prompt matching none of them is misrouted, runs something else,
-and still bills. _Avoid_: mode, operation; and distinct from a Sub Rosa
-**workflow** (the node graph).
+and still bills. Only the workflows a model can honour are offered
+(`seedanceWorkflowsFor`): the three clip-driven ones need **reference clips**,
+which the public tier does not take. _Avoid_: mode, operation; and distinct
+from a Sub Rosa **workflow** (the node graph).
+
+**Reference media**:
+What a render *follows* rather than starts from: reference photos
+(`reference_image_urls`, style and subject), reference **clips**
+(`reference_video_urls`, what edit/extend/stitch work on) and reference
+**audio** (`reference_audio_urls`, a timbre or a voice). Distinct from the
+**opening frame**, which the clip starts on. Which of the three a model takes
+comes from its published constraints (`video_input`, `audio_input`), not from
+its id — see [adr/0022](docs/adr/0022-model-inputs-follow-published-constraints.md).
+Audio never travels alone; it rides with a photo or a clip.
+_Avoid_: input image (that is the opening frame), attachment, source clip
+(that is the video-to-video input).
+
+**Public tier** / **full tier** (of a model family):
+The backends publish some families twice: a `-basic` id, which the model
+catalog names and which the studio shows plainly ("Seedance 2.5"), and a
+sibling without the suffix, shown as "… (full)". They are different models: the
+public tier refuses media showing a recognisable person whatever the caller
+attests, and takes no reference clips. Some families ship only one of the two
+(seedance 2.5 is public-tier only). _Avoid_: free/paid, lite, downgraded.
 
 **Connection order**:
 The order of a multi port's inputs — assemble's cut list, a video node's

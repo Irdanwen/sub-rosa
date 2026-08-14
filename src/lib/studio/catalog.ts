@@ -137,7 +137,13 @@ const VIDEO_ID_SUFFIXES = [
 ];
 
 /** Family key: the Venice display name when present (it is identical across
- * the t2v/i2v variants), else the id minus its direction suffix. */
+ * the t2v/i2v variants), else the id minus its direction segment.
+ *
+ * Cut out rather than trimmed off the end, because the direction is not always
+ * last: the public tier appends `-basic` after it. That suffix has to stay in
+ * the key - the two tiers are different models with different limits and
+ * different person-media policies, and merging them would put a clip slot in
+ * front of the one that refuses clips. */
 export function videoFamilyKey(model: MediaModel): string {
   const name = model.name.trim();
   if (name && name !== model.id) {
@@ -145,13 +151,18 @@ export function videoFamilyKey(model: MediaModel): string {
   }
   let key = model.id;
   for (const suffix of VIDEO_ID_SUFFIXES) {
-    if (key.endsWith(suffix)) {
-      key = key.slice(0, -suffix.length);
+    const at = key.indexOf(suffix);
+    if (at >= 0) {
+      key = key.slice(0, at) + key.slice(at + suffix.length);
       break;
     }
   }
   return key.toLowerCase();
 }
+
+/** The public tier's id suffix. Venice names these models and documents them
+ * as the openly available ones; the sibling without it is the full model. */
+const BASIC_TIER_SUFFIX = "-basic";
 
 /** The shorthand the catalog appends to a variant's display name ("Kling O3 4K
  * R2V", "Wan 2.7 Reference", "Grok Imagine R2V"). It names the direction, not
@@ -219,11 +230,7 @@ export function videoFamilies(catalog: MediaCatalog): VideoFamily[] {
   ) => {
     const key = videoFamilyKey(model);
     const existing = families.get(key);
-    const family: VideoFamily = existing ?? {
-      key,
-      name: familyDisplayName(model),
-      modelSets: [],
-    };
+    const family: VideoFamily = existing ?? { key, name: key, modelSets: [] };
     if (!family[slot]) family[slot] = model;
     for (const set of model.modelSets ?? []) {
       if (!family.modelSets.includes(set)) family.modelSets.push(set);
@@ -239,16 +246,77 @@ export function videoFamilies(catalog: MediaCatalog): VideoFamily[] {
   for (const model of modelsOfType(catalog, "referenceToVideo")) {
     register(model, "referenceModel");
   }
+  // Named last, when every slot is filled and the whole catalog is in hand:
+  // whether a family needs its tier spelled out depends on whether the other
+  // tier is on offer at all.
+  const catalogIds = new Set(catalog.models.map((model) => model.id));
+  for (const family of families.values()) {
+    family.name = familyDisplayName(family, catalogIds);
+  }
   return [...families.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function familyDisplayName(model: MediaModel): string {
-  const name = model.name.trim();
-  if (name && name !== model.id) {
-    const stripped = stripDirectionWords(name);
+/** The models a family stands for, in slot order. */
+function slotModels(family: VideoFamily): MediaModel[] {
+  return [family.textModel, family.imageModel, family.referenceModel, family.videoModel].filter(
+    (model): model is MediaModel => Boolean(model),
+  );
+}
+
+/**
+ * What to call a family in a picker.
+ *
+ * Venice's display name when any variant has one. When none does - which is how
+ * the full (non-`-basic`) tier arrives, because Venice's public catalog lists
+ * only the public tier - the id is made readable instead of being shown raw.
+ * `seedance-2-0` next to `Seedance 2.0` reads as a leftover rather than as the
+ * more capable of the two, which is the wrong way round: the full tier is the
+ * one that takes reference clips and does not refuse people.
+ *
+ * The tier is spelled out only when both tiers are actually in the catalog.
+ * Tagging a family that has no sibling would invent a distinction, and every
+ * upscaler and one-off would carry a label that means nothing.
+ */
+function familyDisplayName(family: VideoFamily, catalogIds: ReadonlySet<string>): string {
+  const models = slotModels(family);
+  const named = models.find((model) => model.name.trim() && model.name.trim() !== model.id);
+  if (named) {
+    const stripped = stripDirectionWords(named.name.trim());
     if (stripped) return stripped;
   }
-  return videoFamilyKey(model);
+  const isBasic = family.key.endsWith(BASIC_TIER_SUFFIX);
+  const base = humanizeModelId(
+    isBasic ? family.key.slice(0, -BASIC_TIER_SUFFIX.length) : family.key,
+  );
+  const hasSibling = models.some((model) =>
+    isBasic
+      ? catalogIds.has(model.id.slice(0, -BASIC_TIER_SUFFIX.length))
+      : catalogIds.has(`${model.id}${BASIC_TIER_SUFFIX}`),
+  );
+  if (!hasSibling) return base;
+  return isBasic ? `${base} (basic)` : `${base} (full)`;
+}
+
+/**
+ * A hyphenated model id, made readable: `seedance-2-0-fast` reads as
+ * "Seedance 2.0 Fast".
+ *
+ * Deliberately conservative - it only changes case and separators, and rejoins
+ * the digit runs that spell a version. Anything cleverer would be guessing at
+ * names the catalogs never gave us.
+ */
+function humanizeModelId(id: string): string {
+  const words: string[] = [];
+  for (const token of id.split("-").filter(Boolean)) {
+    const previous = words.at(-1);
+    // "2" then "0" is a version, not two words.
+    if (/^\d+$/.test(token) && previous && /\d$/.test(previous)) {
+      words[words.length - 1] = `${previous}.${token}`;
+      continue;
+    }
+    words.push(/^[a-z]/.test(token) ? token[0].toUpperCase() + token.slice(1) : token);
+  }
+  return words.join(" ");
 }
 
 /** Which slot a set of inputs resolves to. Reference wins whenever photos are
@@ -271,6 +339,66 @@ export function variantLabel(modelId: string): string {
   if (modelId.includes("image-to-video")) return "image to video";
   if (modelId.includes("video-to-video")) return "video to video";
   return "text to video";
+}
+
+/**
+ * What to say about the variant the inputs resolved to, or undefined when it is
+ * the family's plain text-to-video and there is nothing to add.
+ *
+ * The variant is not a setting the user picked: it follows from which inputs are
+ * filled in, and it changes both the contract and the price. So it is named
+ * rather than left to be inferred. The backend's own name for the variant is
+ * appended whenever it differs from the family name, because that is the string
+ * the user goes looking for ("Seedance 2.5 R2V") and it appears nowhere else.
+ */
+export function variantHint(
+  family: VideoFamily | undefined,
+  model: MediaModel | undefined,
+): string | undefined {
+  if (!model) return undefined;
+  if (model.id === family?.textModel?.id) return undefined;
+  const label = variantLabel(model.id);
+  const name = model.name.trim();
+  return name && name !== model.id && name !== family?.name ? `${label} · ${name}` : label;
+}
+
+/** Direction shorthands people type into a search box, per family slot. The
+ * long forms come from `variantLabel`; these are the spellings it does not
+ * produce, including the ones only ever seen in a model's own display name. */
+const DIRECTION_ALIASES = {
+  textModel: ["t2v"],
+  imageModel: ["i2v"],
+  // "rtv" is not a real spelling anywhere upstream, and is exactly what people
+  // type: the direction is read aloud as "reference to video".
+  referenceModel: ["r2v", "rtv", "reference"],
+  videoModel: ["v2v", "restyle"],
+} as const;
+
+/**
+ * Everything a family should be findable by.
+ *
+ * A video family is one picker row standing in for up to four backend models,
+ * and the row shows only the family name. Searching the visible text therefore
+ * cannot find a variant: "Seedance 2.5 R2V" is a real model with a real name,
+ * but the list says "Seedance 2.5" and its key is `seedance 2.5`, so neither
+ * `r2v` nor `seedance-2-5` matches anything. These terms put every variant's id
+ * and name back into the search, with the shorthands, and compose the family
+ * name with each shorthand so "seedance 2.5 r2v" matches families whose backend
+ * name carries no shorthand of its own.
+ */
+export function videoFamilySearchTerms(family: VideoFamily): string[] {
+  const terms = new Set<string>([family.name, family.key]);
+  for (const [slot, aliases] of Object.entries(DIRECTION_ALIASES)) {
+    const model = family[slot as keyof typeof DIRECTION_ALIASES];
+    if (!model) continue;
+    terms.add(model.id);
+    terms.add(model.name);
+    for (const alias of [...aliases, variantLabel(model.id)]) {
+      terms.add(alias);
+      terms.add(`${family.name} ${alias}`);
+    }
+  }
+  return [...terms].filter((term) => term.trim().length > 0);
 }
 
 /** The "Automatic" edit model: a capable, reasonably priced default so the

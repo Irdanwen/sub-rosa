@@ -62,6 +62,35 @@ describe("video family grouping", () => {
     );
   });
 
+  it("cuts the direction out of the middle and keeps the tier suffix", () => {
+    // The public tier appends `-basic` after the direction, so trimming the end
+    // left every unnamed public model in a family of its own. Keeping `-basic`
+    // in the key is what stops the two tiers merging: they have different
+    // limits and different person-media policies.
+    expect(
+      videoFamilyKey(model({ id: "seedance-2-0-image-to-video-basic", mediaType: "imageToVideo" })),
+    ).toBe("seedance-2-0-basic");
+    expect(
+      videoFamilyKey(model({ id: "seedance-2-0-image-to-video", mediaType: "imageToVideo" })),
+    ).toBe("seedance-2-0");
+  });
+
+  it("names an unnamed family readably, and its tier only when both are offered", () => {
+    const grouped = videoFamilies(
+      catalog([
+        // Two tiers of one family, neither named by Venice.
+        model({ id: "seedance-2-0-fast-text-to-video", mediaType: "video" }),
+        model({ id: "seedance-2-0-fast-text-to-video-basic", mediaType: "video" }),
+        // A one-off with no sibling: a tier label would mean nothing on it.
+        model({ id: "topaz-video-upscale", mediaType: "video" }),
+      ]),
+    );
+    const names = grouped.map((entry) => entry.name);
+    expect(names).toContain("Seedance 2.0 Fast (full)");
+    expect(names).toContain("Seedance 2.0 Fast (basic)");
+    expect(names).toContain("Topaz Video Upscale");
+  });
+
   it("routes video-to-video and upscalers to their own slot instead of shadowing text", () => {
     const grouped = videoFamilies(
       catalog([

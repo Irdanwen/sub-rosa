@@ -6,6 +6,7 @@ import { IconChevronDownSmall } from "central-icons/IconChevronDownSmall";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  artifactDataUri,
   artifactDataUrl,
   evictArtifactDataUrl,
   useArtifactDataUrl,
@@ -36,7 +37,9 @@ import {
   soundEffectsModels,
   supportsBackgroundRemoval,
   variantFor,
+  variantHint,
   videoFamilies,
+  videoFamilySearchTerms,
 } from "../../../lib/studio/catalog";
 import {
   hasSeedanceConsent,
@@ -44,14 +47,28 @@ import {
   rememberSeedanceConsent,
 } from "../../../lib/studio/consent";
 import {
+  maxReferenceAudio,
+  maxReferenceVideos,
   maxVideoReferences,
   referenceMention,
   seedancePersonMediaCaveat,
   seedancePromptAdvice,
+  seedanceImageProblem,
+  seedanceWorkflowsFor,
+  requestSizeProblem,
+  takesReferenceAudio,
+  takesReferenceClips,
 } from "../../../lib/studio/seedance";
+import {
+  mediaSeconds,
+  type ReferenceMedia,
+  referenceAudioProblem,
+  referenceClipProblem,
+  referenceFileTooBig,
+} from "../../../lib/studio/reference-media";
 import { JobFailureNotice } from "../../studio/JobFailureNotice";
 import { continuationPrompt, extractHandoffFrame } from "../../../lib/studio/frames";
-import { videoRequestBody } from "../../../lib/studio/video-request";
+import { inlineMediaInputs, videoRequestBody } from "../../../lib/studio/video-request";
 import {
   effectiveVideoConstraints,
   rememberConstraintError,
@@ -71,7 +88,7 @@ import {
   removeBackground,
   upscaleImage,
 } from "../../../lib/studio/edit-image";
-import { prepareEditReference } from "../../../lib/studio/downscale";
+import { imageSize, prepareEditReference } from "../../../lib/studio/downscale";
 import { compareBodies, generateImages } from "../../../lib/studio/generate-image";
 import { useMediaJob } from "../../../lib/studio/async-job";
 import {
@@ -107,6 +124,9 @@ const VIDEO_URL_FIELDS = ["video_url", "url"];
 // Carpe Diem streams the finished track as the retrieve body (one shot);
 // Venice answers JSON with an `audio_url`. Both shapes must be accepted.
 const AUDIO_URL_FIELDS = ["audio_url", "url"];
+
+/** Gallery buckets that hold something reference audio can come from. */
+const AUDIO_ARTIFACT_KINDS: ArtifactKind[] = ["music", "speech", "sfx"];
 
 /**
  * Mobile Studio: image, video, music, and guided flows over the shared studio
@@ -161,6 +181,17 @@ export function StudioScreen() {
   );
   const galleryImages = useMemo(
     () => artifacts.filter((artifact) => artifact.kind === "image"),
+    [artifacts],
+  );
+  /** Rendered clips, offered as reference clips to the video panel. */
+  const galleryClips = useMemo(
+    () => artifacts.filter((artifact) => artifact.kind === "video"),
+    [artifacts],
+  );
+  /** Everything the studio renders as sound, whether it was written as a track,
+   * spoken, or generated as an effect: all of it can be reference audio. */
+  const galleryTracks = useMemo(
+    () => artifacts.filter((artifact) => AUDIO_ARTIFACT_KINDS.includes(artifact.kind)),
     [artifacts],
   );
 
@@ -277,6 +308,8 @@ export function StudioScreen() {
               <VideoPanel
                 catalog={catalog}
                 galleryImages={galleryImages}
+                galleryClips={galleryClips}
+                galleryTracks={galleryTracks}
                 onGenerated={refreshGallery}
                 handoff={videoHandoff}
                 onHandoffApplied={clearVideoHandoff}
@@ -328,16 +361,31 @@ export function StudioScreen() {
 function ModelPickerButton({
   label,
   value,
+  hint,
   onOpen,
 }: {
   label: string;
   value: string;
+  /** What the choice resolved to, when the row's value does not say it all
+   * (a video family is one row for up to four backend models). */
+  hint?: string;
   onOpen: () => void;
 }) {
+  const chosen = value || "Choose";
   return (
-    <button type="button" className="mobile-model-select" onClick={onOpen} aria-label={label}>
+    <button
+      type="button"
+      className="mobile-model-select"
+      onClick={onOpen}
+      // The hint is the part that changes under the user without a tap, so it
+      // has to reach a screen reader too.
+      aria-label={hint ? `${label}, ${chosen}, ${hint}` : label}
+    >
       <span className="mobile-model-select-label">{label}</span>
-      <span className="mobile-model-select-value">{value || "Choose"}</span>
+      <span className="mobile-model-select-choice">
+        <span className="mobile-model-select-value">{chosen}</span>
+        {hint ? <span className="mobile-model-select-hint">{hint}</span> : null}
+      </span>
     </button>
   );
 }
@@ -1044,12 +1092,18 @@ interface VideoHandoff {
 function VideoPanel({
   catalog,
   galleryImages,
+  galleryClips,
+  galleryTracks,
   onGenerated,
   handoff,
   onHandoffApplied,
 }: {
   catalog: MediaCatalog;
   galleryImages: StudioArtifact[];
+  /** Rendered clips, for the reference-clip slot. */
+  galleryClips: StudioArtifact[];
+  /** Rendered music, speech and sound effects, for the reference-audio slot. */
+  galleryTracks: StudioArtifact[];
   onGenerated: () => void;
   /** Pending handoff to load into the form; cleared once applied. */
   handoff?: VideoHandoff;
@@ -1068,18 +1122,39 @@ function VideoPanel({
   // as the desktop studio).
   const [openingFrame, setOpeningFrame] = useState<string[]>([]);
   const [references, setReferences] = useState<string[]>([]);
+  /** Why the last reference photo was refused, if it was. */
+  const [referenceError, setReferenceError] = useState<string | undefined>(undefined);
+  /** Reference clips: what the seedance edit, extend and stitch workflows work
+   * from. Only the variants that declare a video input take them. */
+  const [referenceClips, setReferenceClips] = useState<ReferenceMedia[]>([]);
+  const [clipError, setClipError] = useState<string | undefined>(undefined);
+  /** Reference audio: a timbre or a voice for the render to follow. Never sent
+   * alone - the contract forbids it - so it rides with a photo or a clip. */
+  const [referenceAudio, setReferenceAudio] = useState<ReferenceMedia[]>([]);
+  const [audioError, setAudioError] = useState<string | undefined>(undefined);
   const model = variantFor(family, {
     hasFrame: openingFrame.length > 0,
-    hasReferences: references.length > 0,
+    // A clip resolves the variant exactly like a photo does: edit, extend and
+    // stitch all live on reference-to-video.
+    hasReferences: references.length > 0 || referenceClips.length > 0,
   });
-  const buildsFromPhoto = openingFrame.length > 0 || references.length > 0;
+  /** Any media showing a person can drive the render: an opening frame, a
+   * reference photo, or the clip being edited or extended. */
+  const buildsFromFaceMedia =
+    openingFrame.length > 0 || references.length > 0 || referenceClips.length > 0;
   /** How many reference photos this family takes. Read off the reference
    * variant, which holds while the first photo is still being added. */
   const referenceCap = maxVideoReferences(family?.referenceModel ?? model);
+  /** Whether this family's reference variant takes clips and audio at all. The
+   * public `-basic` variants publish no video input and do publish audio. */
+  const clipsAllowed = takesReferenceClips(family?.referenceModel);
+  const audioAllowed = takesReferenceAudio(family?.referenceModel);
+  /** The prompt openings this model can actually be routed with. */
+  const workflows = seedanceWorkflowsFor(family?.referenceModel);
   // Seedance needs a face-media attestation for any clip built from a photo;
   // remembered so the box stays ticked across sessions.
   const [consent, setConsent] = useState(hasSeedanceConsent);
-  const needsConsent = needsSeedanceConsent(model, buildsFromPhoto);
+  const needsConsent = needsSeedanceConsent(model, buildsFromFaceMedia);
   const [constraintEpoch, setConstraintEpoch] = useState(0);
   const constraints = useMemo(
     () => effectiveVideoConstraints(model),
@@ -1128,6 +1203,68 @@ function VideoPanel({
     }
   }, [job.state, model]);
 
+  // Switching family can land on a variant that takes no clips (or no audio).
+  // What is already picked would then be dropped by `videoRequestBody` at
+  // submit, after the prompt had been written around it, so it is let go here
+  // while the slot it was in is still on screen.
+  useEffect(() => {
+    if (clipsAllowed) return;
+    setReferenceClips((current) => (current.length > 0 ? [] : current));
+    setClipError(undefined);
+  }, [clipsAllowed]);
+  useEffect(() => {
+    if (audioAllowed) return;
+    setReferenceAudio((current) => (current.length > 0 ? [] : current));
+    setAudioError(undefined);
+  }, [audioAllowed]);
+
+  // Both checks live in `reference-media`, so the phone refuses exactly what
+  // the desktop refuses - and refuses it before the render is queued and billed.
+  const addClip = useCallback(
+    (candidate: ReferenceMedia) => {
+      const problem = referenceClipProblem(family?.referenceModel, referenceClips, candidate);
+      setClipError(problem);
+      if (!problem) setReferenceClips((current) => [...current, candidate]);
+    },
+    [family?.referenceModel, referenceClips],
+  );
+  const addTrack = useCallback(
+    (candidate: ReferenceMedia) => {
+      const problem = referenceAudioProblem(referenceAudio, candidate);
+      setAudioError(problem);
+      if (!problem) setReferenceAudio((current) => [...current, candidate]);
+    },
+    [referenceAudio],
+  );
+  const removeClip = useCallback(
+    (id: string) => setReferenceClips((current) => current.filter((entry) => entry.id !== id)),
+    [],
+  );
+  const removeTrack = useCallback(
+    (id: string) => setReferenceAudio((current) => current.filter((entry) => entry.id !== id)),
+    [],
+  );
+
+  /** Take reference photos, refusing the shapes this model is known to reject
+   * before the render is queued rather than after it has been billed. The
+   * provider reports them only once the job is running, which on the durable
+   * path is a failure read minutes later. */
+  const applyReferences = useCallback(
+    async (next: string[]) => {
+      const added = next.filter((entry) => !references.includes(entry));
+      for (const dataUri of added) {
+        const problem = seedanceImageProblem(family?.referenceModel, await imageSize(dataUri));
+        if (problem) {
+          setReferenceError(problem);
+          return;
+        }
+      }
+      setReferenceError(undefined);
+      setReferences(next.slice(0, referenceCap));
+    },
+    [references, referenceCap, family?.referenceModel],
+  );
+
   const durationOptions = constraints?.durations ?? [];
   const effectiveDuration = duration || durationOptions[0] || "";
   const videoAspectOptions = constraints?.aspect_ratios ?? [];
@@ -1152,7 +1289,11 @@ function VideoPanel({
         (candidate) => candidate?.id === handoff.model,
       ),
     );
-    if (source?.imageModel) setFamilyKey(source.key);
+    // Reselect the source family whenever it can start from a frame at all.
+    // Requiring an image-to-video slot dropped the reference-only families,
+    // which take an opening frame too - continuing one of their shots silently
+    // fell back to whichever family happened to be first.
+    if (source?.imageModel || source?.referenceModel) setFamilyKey(source.key);
     setHandoffFrom({
       artifactId: handoff.artifactId,
       fileName: handoff.fileName,
@@ -1171,6 +1312,11 @@ function VideoPanel({
       negativePrompt,
       openingFrame: openingFrame[0],
       references,
+      referenceVideos: referenceClips.map((clip) => clip.dataUri),
+      // The quote only matches what the queue bills when it is told the
+      // combined length, so the two go out together.
+      referenceVideoSeconds: referenceClips.map((clip) => clip.seconds),
+      referenceAudio: referenceAudio.map((track) => track.dataUri),
       duration: effectiveDuration,
       aspectRatio: effectiveVideoAspect,
       resolution: effectiveVideoResolution,
@@ -1185,6 +1331,8 @@ function VideoPanel({
     effectiveVideoResolution,
     openingFrame,
     references,
+    referenceClips,
+    referenceAudio,
     consent,
   ]);
 
@@ -1211,6 +1359,15 @@ function VideoPanel({
     job.state.phase === "queued" ||
     job.state.phase === "processing";
 
+  /** Whether everything together still fits in one request. Each input can be
+   * fine on its own and the body still be over the cap, and the backend only
+   * says so with a 413 once the render has been queued - so it is measured on
+   * the finished body, before the button is offered. */
+  const oversize = useMemo(() => {
+    const body = queueBody();
+    return body ? requestSizeProblem(inlineMediaInputs(body)) : undefined;
+  }, [queueBody]);
+
   const start = useCallback(() => {
     const body = queueBody();
     if (!body || !model) return;
@@ -1236,6 +1393,7 @@ function VideoPanel({
       <ModelPickerButton
         label="Video model"
         value={family?.name ?? ""}
+        hint={variantHint(family, model)}
         onOpen={() => setPickerOpen(true)}
       />
       {durationOptions.length > 0 ? (
@@ -1301,8 +1459,9 @@ function VideoPanel({
       {family?.referenceModel ? (
         <ReferencePicker
           references={references}
-          onChange={(refs) => setReferences(refs.slice(0, referenceCap))}
+          onChange={(refs) => void applyReferences(refs)}
           galleryImages={galleryImages}
+          error={referenceError}
           hint={
             references.length > 0
               ? // Seedance routes its workflow from the prompt and only reads
@@ -1313,6 +1472,42 @@ function VideoPanel({
                     .join(", ")}.`
                 : "These photos steer the style and subject, alongside the opening frame."
               : "Optional reference photos: they steer style and subject while the prompt drives the action."
+          }
+        />
+      ) : null}
+      {clipsAllowed ? (
+        <MediaReferencePicker
+          kind="video"
+          items={referenceClips}
+          cap={maxReferenceVideos(family?.referenceModel)}
+          gallery={galleryClips}
+          error={clipError}
+          onAdd={addClip}
+          onReject={setClipError}
+          onRemove={removeClip}
+          mentionOf={(index) => referenceMention(family?.referenceModel, "video", index)}
+          hint={
+            referenceClips.length > 0
+              ? "Name them in the prompt in this order, and start it with what you want done."
+              : "Optional clips to edit, extend or stitch. They travel with the request, so keep them short."
+          }
+        />
+      ) : null}
+      {audioAllowed ? (
+        <MediaReferencePicker
+          kind="audio"
+          items={referenceAudio}
+          cap={maxReferenceAudio(family?.referenceModel)}
+          gallery={galleryTracks}
+          error={audioError}
+          onAdd={addTrack}
+          onReject={setAudioError}
+          onRemove={removeTrack}
+          mentionOf={(index) => referenceMention(family?.referenceModel, "audio", index)}
+          hint={
+            referenceAudio.length > 0
+              ? "A track never travels alone, so keep a photo or a clip in play."
+              : "Optional audio for the render to follow, alongside a photo or a clip."
           }
         />
       ) : null}
@@ -1329,6 +1524,29 @@ function VideoPanel({
         }
         onChange={(event) => setPrompt(event.target.value)}
       />
+      {/* Seedance routes from the prompt's opening words, and a wrong opening
+          does not fail: it runs another workflow and bills for it. So the
+          openings are buttons that write themselves, and only the ones this
+          model can honour are offered. */}
+      {workflows.length > 0 ? (
+        <div className="mobile-reference-actions">
+          {workflows.map((recipe) => (
+            <button
+              key={recipe.id}
+              type="button"
+              className="mobile-chip-button"
+              title={recipe.description}
+              onClick={() =>
+                setPrompt((current) =>
+                  current.startsWith(recipe.prefix) ? current : recipe.prefix,
+                )
+              }
+            >
+              {recipe.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {promptAdvice ? <p className="mobile-workflow-param-hint">{promptAdvice}</p> : null}
       <textarea
         className="mobile-studio-prompt"
@@ -1342,14 +1560,14 @@ function VideoPanel({
         <div className="mobile-toggle-row mobile-studio-consent">
           <Switch
             checked={consent}
-            aria-label="I have the right to use this photo"
+            aria-label="I have the right to use this media"
             onCheckedChange={(next) => {
               setConsent(next);
               rememberSeedanceConsent(next);
             }}
           />
           <span>
-            I have the right to use this photo and accept this model's face-media policy for anyone
+            I have the right to use this media and accept this model's face-media policy for anyone
             shown in it.
             {personMediaCaveat ? (
               <span className="mobile-workflow-param-hint">{personMediaCaveat}</span>
@@ -1357,10 +1575,13 @@ function VideoPanel({
           </span>
         </div>
       ) : null}
+      {oversize ? <p className="mobile-dictation-error">{oversize}</p> : null}
       <button
         type="button"
         className="mobile-studio-generate"
-        disabled={!model || !prompt.trim() || (needsConsent && !consent) || busy}
+        disabled={
+          !model || !prompt.trim() || (needsConsent && !consent) || busy || Boolean(oversize)
+        }
         onClick={start}
       >
         {busy ? <Spinner /> : "Generate"}
@@ -1400,6 +1621,9 @@ function VideoPanel({
             ]
               .filter(Boolean)
               .join(" · "),
+            // One row stands for up to four backend models, so searching what
+            // the row shows cannot find a variant by its own name or id.
+            keywords: videoFamilySearchTerms(entry),
           }))}
           selectedId={family?.key ?? ""}
           onSelect={(id) => {
@@ -2713,17 +2937,226 @@ function Lightbox({
 /** Multi-reference input: photos from the native picker (the hidden file
  * input opens Photos/camera/Files with no plugin) or images from the app's
  * own gallery. Thumbnails render as removable chips. */
+/**
+ * Picks reference *clips* or reference *audio*: media the render follows rather
+ * than starts from.
+ *
+ * Separate from `ReferencePicker` (photos) because none of that component's
+ * shape survives the change of medium: there is no thumbnail worth rendering,
+ * no camera to offer, and the iOS webview will not load a `data:` URI into a
+ * media element at all. So this one shows a numbered list of names, and the two
+ * URLs it needs are kept apart on purpose - an object URL to measure the length
+ * with, and the data URI that actually travels in the request.
+ */
+function MediaReferencePicker({
+  kind,
+  items,
+  cap,
+  gallery,
+  hint,
+  error,
+  onAdd,
+  onReject,
+  onRemove,
+  mentionOf,
+}: {
+  kind: "video" | "audio";
+  items: ReferenceMedia[];
+  /** How many this model takes; the add actions go away at the ceiling. */
+  cap: number;
+  /** Gallery artifacts of the matching kinds, newest first. */
+  gallery: StudioArtifact[];
+  hint?: string;
+  error?: string;
+  /** Hands over a measured candidate; the caller decides whether it fits. */
+  onAdd: (candidate: ReferenceMedia) => void;
+  /** Refused before it was ever read, on byte count alone. */
+  onReject: (message: string) => void;
+  onRemove: (id: string) => void;
+  /** What to call the entry at this position in the prompt. */
+  mentionOf: (index: number) => string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [reading, setReading] = useState(false);
+  const noun = kind === "video" ? "clip" : "track";
+
+  const addFile = useCallback(
+    async (file: File | undefined) => {
+      if (!file) return;
+      // Byte count first: a file past the request ceiling is refused before a
+      // phone spends time and memory encoding it into a string.
+      const tooBig = referenceFileTooBig(file.size, noun);
+      if (tooBig) {
+        onReject(tooBig);
+        return;
+      }
+      setReading(true);
+      // Measured off an object URL, which is the only source an iOS media
+      // element will load, and revoked as soon as the length is known. Created
+      // inside the try: a webview under memory pressure can refuse, and a throw
+      // outside it would leave the button spinning with nothing coming.
+      let objectUrl: string | undefined;
+      try {
+        objectUrl = URL.createObjectURL(file);
+        const seconds = await mediaSeconds(objectUrl, kind);
+        const dataUri = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () =>
+            typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("read"));
+          reader.onerror = () => reject(reader.error ?? new Error("read"));
+          reader.readAsDataURL(file);
+        });
+        // A device file has no gallery id; its name and size stand in, so the
+        // same file picked twice is still caught as a duplicate.
+        onAdd({ id: `file:${file.name}:${file.size}`, label: file.name, dataUri, seconds });
+      } catch {
+        // A file the webview cannot read adds nothing; the picker stays open.
+      } finally {
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        setReading(false);
+      }
+    },
+    [kind, noun, onAdd, onReject],
+  );
+
+  const addFromGallery = useCallback(
+    async (artifact: StudioArtifact) => {
+      setGalleryOpen(false);
+      const tooBig = referenceFileTooBig(artifact.bytes, noun);
+      if (tooBig) {
+        onReject(tooBig);
+        return;
+      }
+      setReading(true);
+      try {
+        const [dataUri, playable] = await Promise.all([
+          artifactDataUri(artifact),
+          artifactDataUrl(artifact),
+        ]);
+        onAdd({
+          id: artifact.id,
+          label: artifact.prompt || artifact.fileName,
+          dataUri,
+          seconds: await mediaSeconds(playable, kind),
+        });
+      } catch {
+        // Same as above: nothing is added, nothing is lost.
+      } finally {
+        setReading(false);
+      }
+    },
+    [kind, noun, onAdd, onReject],
+  );
+
+  return (
+    <div className="mobile-reference">
+      <input
+        ref={inputRef}
+        type="file"
+        accept={kind === "video" ? "video/*" : "audio/*"}
+        hidden
+        onChange={(event) => {
+          void addFile(event.target.files?.[0]);
+          event.target.value = "";
+        }}
+      />
+      {items.length > 0 ? (
+        <ul className="mobile-media-ref-list">
+          {items.map((item, index) => (
+            <li key={item.id}>
+              <span className="mobile-media-ref-index" aria-hidden>
+                {mentionOf(index + 1)}
+              </span>
+              <span className="mobile-media-ref-label">{item.label}</span>
+              {item.seconds > 0 ? (
+                <span className="mobile-media-ref-seconds">{Math.round(item.seconds)}s</span>
+              ) : null}
+              <button
+                type="button"
+                className="mobile-icon-button"
+                aria-label={`Remove ${noun} ${index + 1}`}
+                onClick={() => onRemove(item.id)}
+              >
+                <span aria-hidden>x</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {error ? <p className="mobile-dictation-error">{error}</p> : null}
+      {items.length < cap ? (
+        <div className="mobile-reference-actions">
+          <button
+            type="button"
+            className="mobile-chip-button"
+            disabled={reading}
+            onClick={() => inputRef.current?.click()}
+          >
+            {reading ? <Spinner /> : items.length > 0 ? `Add another ${noun}` : `Add a ${noun}`}
+          </button>
+          {gallery.length > 0 ? (
+            <button
+              type="button"
+              className="mobile-chip-button"
+              disabled={reading}
+              onClick={() => setGalleryOpen(true)}
+            >
+              From gallery
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {hint ? <p className="mobile-reference-hint">{hint}</p> : null}
+      {galleryOpen ? (
+        <div className="mobile-sheet-backdrop" onClick={() => setGalleryOpen(false)}>
+          <div
+            className="mobile-sheet"
+            role="dialog"
+            aria-label={`Pick a ${noun}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 className="mobile-sheet-title">From your gallery</h2>
+            <ul className="mobile-sheet-list">
+              {gallery.map((artifact) => (
+                <li key={artifact.path}>
+                  <button
+                    type="button"
+                    className="mobile-sheet-item"
+                    onClick={() => void addFromGallery(artifact)}
+                  >
+                    <span>
+                      <span className="mobile-sheet-item-title">
+                        {artifact.prompt || artifact.fileName}
+                      </span>
+                      <span className="mobile-sheet-item-subtitle">{artifact.fileName}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ReferencePicker({
   references,
   onChange,
   galleryImages,
   hint,
+  error,
   prepare,
 }: {
   references: string[];
   onChange: (refs: string[]) => void;
   galleryImages: StudioArtifact[];
   hint?: string;
+  /** Why the last photo was refused. Sits with the input rather than in a
+   * failure message after the render was billed. */
+  error?: string;
   /** Transform a picked photo before it enters the reference list (e.g.
    * downscale below the backend's size cap). Defaults to identity. */
   prepare?: (dataUrl: string) => Promise<string>;
@@ -2827,6 +3260,7 @@ function ReferencePicker({
           </button>
         ) : null}
       </div>
+      {error ? <p className="mobile-dictation-error">{error}</p> : null}
       {hint ? <p className="mobile-reference-hint">{hint}</p> : null}
       {galleryOpen ? (
         <div className="mobile-sheet-backdrop" onClick={() => setGalleryOpen(false)}>

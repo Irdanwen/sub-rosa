@@ -297,6 +297,27 @@ describe("validateWorkflow with named ports", () => {
     expect(result.warnings).toEqual([]);
   });
 
+  it("refuses a reference clip on a model that declares no video input", () => {
+    // Only the model id reaches port validation, so the tier has to be legible
+    // from it. Letting the wire through and dropping the clips at submit would
+    // mean a prompt written around "<Video 1>" running as something else.
+    const withModel = (model: string) =>
+      validateWorkflow(
+        workflow(
+          [
+            node("source", "asset", { assetKind: "video", artifactId: "a" }),
+            node("clip", "video", { model, prompt: "Extend <Video 1>, generate a chase" }),
+          ],
+          [edge("source", "clip", "referenceClips")],
+        ),
+      );
+
+    const basic = withModel("seedance-2-5-reference-to-video-basic");
+    expect(basic.ok).toBe(false);
+    expect(basic.errors[0].message).toContain('"Reference clips" takes at most 0');
+    expect(withModel("seedance-2-0-reference-to-video").ok).toBe(true);
+  });
+
   it("resolves kinds through a gate: an approved image still lands on a media port", () => {
     const result = validateWorkflow(
       workflow(

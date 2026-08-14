@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { forgetLearnedConstraints } from "../lib/studio/model-constraints";
 import type { MediaModel } from "../lib/studio/types";
-import { videoRequestBody } from "../lib/studio/video-request";
+import { inlineMediaInputs, videoRequestBody } from "../lib/studio/video-request";
 
 function m(id: string, constraints?: MediaModel["constraints"]): MediaModel {
   return { id, name: id, mediaType: "video", offline: false, constraints };
@@ -246,5 +246,72 @@ describe("reference clips and audio (the seedance edit/extend/stitch inputs)", (
     });
     expect(body).toBeDefined();
     expect(body?.reference_image_urls).toBeUndefined();
+  });
+
+  it("lists every inline input a body carries, so the size cap sees all of them", () => {
+    // Each input can be within its own limit and the body still be over the
+    // shared cap. Measuring one field at a time misses exactly that case.
+    const body = videoRequestBody({
+      target: REF2V,
+      prompt: "Refer to <Subject 1> in <Image 1>, following <Audio 1>",
+      openingFrame: FRAME,
+      references: [REF_A, REF_B],
+      referenceVideos: [CLIP_A],
+      referenceAudio: [VOICE],
+    });
+    expect(inlineMediaInputs(body ?? {}).sort()).toEqual(
+      [FRAME, REF_A, REF_B, CLIP_A, VOICE].sort(),
+    );
+  });
+
+  it("finds nothing to measure in a text-to-video body", () => {
+    const body = videoRequestBody({ target: T2V, prompt: "a fox in the rain" });
+    expect(inlineMediaInputs(body ?? {})).toEqual([]);
+  });
+
+  it("attests for a clip-driven render, not only a photo-driven one", () => {
+    // A clip shows a person as readily as a photo does. Leaving the attestation
+    // off an "Extend <Video 1>" render earned a 409 for consent the user had
+    // already given.
+    const body = videoRequestBody({
+      target: REF2V,
+      prompt: "Extend <Video 1>, generate a chase",
+      referenceVideos: [CLIP_A],
+      consent: true,
+    });
+    expect(body?.consents).toBeDefined();
+  });
+
+  it("drops clips a model declares it does not take, and keeps its audio", () => {
+    // The public tier publishes `video_input: false` while its family's guide
+    // describes the clip workflows at length. Whatever a surface offered, the
+    // body is what the model will actually be billed for, so it decides here.
+    const basic = m("seedance-2-5-reference-to-video-basic", {
+      video_input: false,
+      audio_input: true,
+    });
+    const body = videoRequestBody({
+      target: basic,
+      prompt: "Refer to <Subject 1> in <Image 1> to generate a chase",
+      references: [REF_A],
+      referenceVideos: [CLIP_A],
+      referenceAudio: [VOICE],
+    });
+    expect(body?.reference_video_urls).toBeUndefined();
+    expect(body?.reference_video_total_duration).toBeUndefined();
+    expect(body?.reference_audio_urls).toEqual([VOICE]);
+  });
+
+  it("will not build a clip-only render for a model that takes no clips", () => {
+    // Nothing visual left once the clips are dropped, so there is no render to
+    // make - better an inert button than a queued request that cannot work.
+    const basic = m("seedance-2-5-reference-to-video-basic", { video_input: false });
+    expect(
+      videoRequestBody({
+        target: basic,
+        prompt: "Extend <Video 1>, generate a chase",
+        referenceVideos: [CLIP_A],
+      }),
+    ).toBeUndefined();
   });
 });

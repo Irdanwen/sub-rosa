@@ -17,7 +17,7 @@
 import { isReferenceToVideoModel, isSeedanceModel, isVideoUpscaleModel } from "./catalog";
 import { withSeedanceConsent } from "./consent";
 import { effectiveVideoConstraints } from "./model-constraints";
-import { maxReferenceVideos, maxVideoReferences, supportsReferenceMedia } from "./seedance";
+import { maxReferenceAudio, maxReferenceVideos, maxVideoReferences } from "./seedance";
 import type { MediaModel } from "./types";
 
 /** Keeps a chosen value valid against the options a model actually offers,
@@ -125,11 +125,12 @@ export function videoRequestBody(inputs: VideoRequestInputs): Record<string, unk
     body.reference_image_urls = references.slice(0, maxVideoReferences(target));
   }
 
-  // Reference clips and audio: the seedance reference variants only, capped
-  // at what that version documents. Audio may never be the only reference,
-  // so it is dropped rather than sent alone - the request would be refused.
-  const takesMedia = supportsReferenceMedia(target);
-  const clips = takesMedia ? referenceVideos.slice(0, maxReferenceVideos(target)) : [];
+  // Reference clips and audio, capped at what this model publishes: both caps
+  // are zero on a model that declares no such input, so an input a surface
+  // should not have offered is dropped here rather than queued and refused.
+  // Audio may never be the only reference, so it is dropped rather than sent
+  // alone - the request would be refused.
+  const clips = referenceVideos.slice(0, maxReferenceVideos(target));
   if (clips.length > 0) {
     body.reference_video_urls = clips;
     const seconds = referenceVideoSeconds.slice(0, clips.length);
@@ -142,8 +143,9 @@ export function videoRequestBody(inputs: VideoRequestInputs): Record<string, unk
     }
   }
   const hasOtherReference = clips.length > 0 || (takesReferences && references.length > 0);
-  if (takesMedia && referenceAudio.length > 0 && hasOtherReference) {
-    body.reference_audio_urls = referenceAudio.slice(0, maxReferenceVideos(target));
+  const audioCap = maxReferenceAudio(target);
+  if (audioCap > 0 && referenceAudio.length > 0 && hasOtherReference) {
+    body.reference_audio_urls = referenceAudio.slice(0, audioCap);
   }
 
   // A variant that exists to work from a photo cannot run without one.
@@ -152,9 +154,42 @@ export function videoRequestBody(inputs: VideoRequestInputs): Record<string, unk
   if (!hasVisualInput && (takesReferences || isImageToVideoModel(target.id))) return undefined;
 
   // Only the seedance targets carry the face-media attestation, and only for a
-  // render actually built from a photo.
-  const fromPhoto = Boolean(openingFrame) || references.length > 0;
-  return fromPhoto && consent && isSeedanceModel(target.id) ? withSeedanceConsent(body) : body;
+  // render actually built from media that could show a person - a clip as much
+  // as a photo.
+  const fromFaceMedia = Boolean(openingFrame) || references.length > 0 || clips.length > 0;
+  return fromFaceMedia && consent && isSeedanceModel(target.id) ? withSeedanceConsent(body) : body;
+}
+
+/** Every field of a queue body that carries media inline. */
+const INLINE_MEDIA_FIELDS = [
+  "image_url",
+  "end_image_url",
+  "video_url",
+  "reference_image_urls",
+  "reference_video_urls",
+  "reference_audio_urls",
+] as const;
+
+/**
+ * The inline media a body is about to carry, ready to be measured.
+ *
+ * Sub Rosa has nowhere to host media, so every input travels as a data URI in
+ * the request itself and the whole body shares one size ceiling. Checking any
+ * single input against it misses the case that actually happens: a frame, five
+ * references and a track that are each fine and together are not. Reading the
+ * finished body is the only way to see all of them, which is why this lives
+ * next to the builder rather than in each surface.
+ */
+export function inlineMediaInputs(body: Record<string, unknown>): string[] {
+  const inputs: string[] = [];
+  for (const field of INLINE_MEDIA_FIELDS) {
+    const value = body[field];
+    if (typeof value === "string") inputs.push(value);
+    else if (Array.isArray(value)) {
+      for (const entry of value) if (typeof entry === "string") inputs.push(entry);
+    }
+  }
+  return inputs;
 }
 
 function isImageToVideoModel(modelId: string): boolean {

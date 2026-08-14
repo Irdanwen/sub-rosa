@@ -5,7 +5,9 @@ import { describe, expect, it } from "vitest";
 import {
   canonicalizeMentions,
   detectSeedanceWorkflow,
+  isSeedanceReferenceModel,
   looseMentions,
+  maxReferenceAudio,
   maxReferenceVideos,
   maxReferenceVideoSeconds,
   maxVideoReferences,
@@ -14,10 +16,13 @@ import {
   seedanceImageProblem,
   seedancePersonMediaCaveat,
   seedancePromptAdvice,
-  supportsReferenceMedia,
+  seedanceWorkflowsFor,
+  takesReferenceAudio,
+  takesReferenceClips,
 } from "../lib/studio/seedance";
+import type { VideoConstraints } from "../lib/studio/types";
 
-const model = (id: string) => ({ id });
+const model = (id: string, constraints?: VideoConstraints) => ({ id, constraints });
 
 describe("reference caps per family", () => {
   it("follows the documented figures per seedance version", () => {
@@ -31,16 +36,76 @@ describe("reference caps per family", () => {
   });
 
   it("only offers reference clips where the contract has them", () => {
-    expect(supportsReferenceMedia(model("seedance-2-0-reference-to-video-basic"))).toBe(true);
+    // The full tier: the id is all there is to go on, and it does take clips.
+    expect(takesReferenceClips(model("seedance-2-0-reference-to-video"))).toBe(true);
     // Image-to-video seedance takes frames, not reference media.
-    expect(supportsReferenceMedia(model("seedance-2-0-image-to-video-basic"))).toBe(false);
-    expect(supportsReferenceMedia(model("wan-2-7-reference-to-video"))).toBe(false);
+    expect(takesReferenceClips(model("seedance-2-0-image-to-video"))).toBe(false);
+    expect(takesReferenceClips(model("wan-2-7-reference-to-video"))).toBe(false);
 
-    expect(maxReferenceVideos(model("seedance-2-0-reference-to-video-basic"))).toBe(3);
+    expect(maxReferenceVideos(model("seedance-2-0-reference-to-video"))).toBe(3);
     expect(maxReferenceVideos(model("seedance-2-5-reference-to-video"))).toBe(10);
-    expect(maxReferenceVideos(model("seedance-2-0-image-to-video-basic"))).toBe(0);
+    expect(maxReferenceVideos(model("seedance-2-0-image-to-video"))).toBe(0);
     expect(maxReferenceVideoSeconds(model("seedance-2-0-reference-to-video-basic"))).toBe(15);
     expect(maxReferenceVideoSeconds(model("seedance-2-5-reference-to-video"))).toBe(30);
+  });
+});
+
+describe("what a reference variant will actually accept", () => {
+  // The clip workflows are the family's headline feature and the public tier
+  // does not have them. Reading the id alone put a clip slot in front of every
+  // model whose name said "reference", and the render was billed and wrong.
+  const basic = "seedance-2-5-reference-to-video-basic";
+  const full = "seedance-2-0-reference-to-video";
+
+  it("believes the published flags over the id, in both directions", () => {
+    expect(takesReferenceClips(model(basic, { video_input: false }))).toBe(false);
+    expect(takesReferenceAudio(model(basic, { audio_input: true }))).toBe(true);
+    // A model nobody would guess takes clips, saying it does.
+    expect(takesReferenceClips(model("wan-2-7-video-to-video", { video_input: true }))).toBe(true);
+    // And one whose id says reference, saying it takes no audio.
+    expect(
+      takesReferenceAudio(model("kling-o3-4k-reference-to-video", { audio_input: false })),
+    ).toBe(false);
+  });
+
+  it("falls back to the id when a flag is absent, minus the -basic tier", () => {
+    // "Nobody said" is not "no": the full ids publish only their option lists.
+    expect(takesReferenceClips(model(full, { durations: ["5s"] }))).toBe(true);
+    expect(takesReferenceAudio(model(full, { durations: ["5s"] }))).toBe(true);
+    // The `-basic` tier is measured, so the fallback knows it takes no clips
+    // even where the caller has no constraints to hand (workflow port limits).
+    expect(takesReferenceClips(model(basic))).toBe(false);
+    expect(takesReferenceAudio(model(basic))).toBe(true);
+    expect(takesReferenceClips(undefined)).toBe(false);
+    expect(takesReferenceAudio(undefined)).toBe(false);
+  });
+
+  it("caps each kind of reference media on its own", () => {
+    // Sharing one cap meant a model with no clips also accepted no audio.
+    expect(maxReferenceVideos(model(basic))).toBe(0);
+    expect(maxReferenceAudio(model(basic))).toBe(10);
+    expect(maxReferenceAudio(model("seedance-2-0-reference-to-video-basic"))).toBe(3);
+    expect(maxReferenceAudio(model("seedance-2-0-image-to-video-basic"))).toBe(0);
+  });
+
+  it("withholds the clip workflows from a model that takes no clips", () => {
+    // The prompt routes, so an opening the model cannot honour still runs and
+    // still bills. Only "Refer to..." survives on the public tier.
+    expect(seedanceWorkflowsFor(model(basic)).map((recipe) => recipe.id)).toEqual(["reference"]);
+    expect(seedanceWorkflowsFor(model(full)).map((recipe) => recipe.id)).toEqual([
+      "reference",
+      "edit",
+      "extend",
+      "stitch",
+    ]);
+    expect(seedanceWorkflowsFor(model("wan-2-7-reference-to-video"))).toEqual([]);
+  });
+
+  it("keeps the prompt contract keyed on the family, not on the media", () => {
+    // Mentions and routing read the same on a variant that takes no clips.
+    expect(isSeedanceReferenceModel(model(basic))).toBe(true);
+    expect(isSeedanceReferenceModel(model("seedance-2-5-image-to-video-basic"))).toBe(false);
+    expect(seedancePromptAdvice(model(basic), "a fox in the rain")).toContain("Refer to <Image 1>");
   });
 });
 

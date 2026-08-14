@@ -2513,7 +2513,9 @@
   justify-content: space-between;
   gap: var(--sp-2);
   min-height: 48px;
-  padding: 0 var(--sp-3);
+  /* Vertical padding so the row breathes once the resolved-variant hint adds a
+     second line; the min-height keeps the single-line case exactly as it was. */
+  padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--card);
@@ -2527,11 +2529,31 @@
   flex-shrink: 0;
 }
 
+/* The chosen model and, under it, what the inputs resolved it to. Right-aligned
+   as one block so the value stays where it has always been when there is no
+   hint. `min-width: 0` lets both lines ellipsize instead of pushing the label. */
+.mobile-model-select-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
 .mobile-model-select-value {
   font-size: var(--fs-md);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mobile-model-select-hint {
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .mobile-sheet-search {
@@ -2627,12 +2649,60 @@
 .mobile-reference-actions {
   display: flex;
   gap: var(--sp-2);
+  /* The prompt-opening buttons live here too, and there are four of them. */
+  flex-wrap: wrap;
 }
 
 .mobile-reference-hint {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
+}
+
+/* Reference clips and audio: a numbered list of names rather than thumbnails.
+   The number is the mention the prompt has to use, so it reads as a label
+   rather than as an ordinal. */
+.mobile-media-ref-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mobile-media-ref-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 40px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+}
+
+.mobile-media-ref-index {
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.mobile-media-ref-label {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-media-ref-seconds {
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Flow outputs. */

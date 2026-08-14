@@ -18,28 +18,36 @@ import {
   formatCredits,
   isReferenceToVideoModel,
   variantFor,
-  variantLabel,
+  variantHint,
   isSeedanceModel,
   isVideoUpscaleModel,
   type VideoFamily,
   videoFamilies,
 } from "../../lib/studio/catalog";
 import { mediaJson } from "../../lib/studio/client";
-import { videoRequestBody } from "../../lib/studio/video-request";
+import { inlineMediaInputs, videoRequestBody } from "../../lib/studio/video-request";
 import { hasSeedanceConsent, rememberSeedanceConsent } from "../../lib/studio/consent";
 import { imageSize } from "../../lib/studio/downscale";
 import {
+  maxReferenceAudio,
   maxReferenceVideos,
-  maxReferenceVideoSeconds,
   maxVideoReferences,
   referenceMention,
-  requestSizeProblem,
-  SEEDANCE_WORKFLOWS,
   seedanceImageProblem,
   seedancePersonMediaCaveat,
   seedancePromptAdvice,
-  supportsReferenceMedia,
+  requestSizeProblem,
+  seedanceWorkflowsFor,
+  takesReferenceAudio,
+  takesReferenceClips,
 } from "../../lib/studio/seedance";
+import {
+  dataUriSeconds,
+  mediaSeconds,
+  type ReferenceMedia,
+  referenceAudioProblem,
+  referenceClipProblem,
+} from "../../lib/studio/reference-media";
 import {
   alternativeCount,
   anchorOf,
@@ -55,7 +63,6 @@ import {
   extractFrameAt,
   extractHandoffFrame,
   HANDOFF_ADJUST_WINDOW_SECONDS,
-  loadVideoElement,
 } from "../../lib/studio/frames";
 import { describeJobFailure } from "../../lib/studio/job-errors";
 import {
@@ -131,27 +138,9 @@ const MAX_VIDEO_INPUT_BYTES = 15 * 1024 * 1024;
 /** Which gallery buckets hold something a reference clip can come from. */
 const CLIP_KINDS: ArtifactKind[] = ["video"];
 
-/** Longest a single reference clip may run (seedance 2.0 and 2.5 alike). */
-const MAX_CLIP_SECONDS = 15;
-
-/** A clip's length, or 0 when it cannot be measured - bounded so an
- * unplayable source cannot hang the form. */
-async function clipDuration(src: string): Promise<number> {
-  try {
-    const video = await Promise.race([
-      loadVideoElement(src),
-      new Promise<undefined>((resolve) => {
-        setTimeout(() => resolve(undefined), 4_000);
-      }),
-    ]);
-    if (!video) return 0;
-    const seconds = Number.isFinite(video.duration) ? video.duration : 0;
-    video.src = "";
-    return seconds;
-  } catch {
-    return 0;
-  }
-}
+/** Which ones hold something reference audio can come from: everything the
+ * studio renders as sound, whether it was written as a track or spoken. */
+const AUDIO_KINDS: ArtifactKind[] = ["music", "speech", "sfx"];
 
 export function VideoStudio({
   catalog,
@@ -217,16 +206,18 @@ export function VideoStudio({
   /** Reference clips: what the seedance edit, extend and stitch workflows work
    * from. Each carries its gallery id (the bytes are read at submit) and its
    * length, which the quote needs to match what the queue bills. */
-  const [referenceClips, setReferenceClips] = useState<
-    Array<{ id: string; label: string; dataUri: string; seconds: number }>
-  >([]);
+  const [referenceClips, setReferenceClips] = useState<ReferenceMedia[]>([]);
   /** Why the last clip was refused (too long, or the request got too big). */
   const [clipError, setClipError] = useState<string | undefined>(undefined);
+  /** Reference audio: a timbre or a voice for the render to follow. Never sent
+   * alone - the contract forbids it - so it rides with the photos or clips. */
+  const [referenceAudio, setReferenceAudio] = useState<ReferenceMedia[]>([]);
+  const [audioError, setAudioError] = useState<string | undefined>(undefined);
   // Which image slot the gallery picker is filling, if any. One picker serves
   // all three: they differ only in what they do with what comes back.
-  const [picking, setPicking] = useState<"opening" | "end" | "reference" | "clip" | undefined>(
-    undefined,
-  );
+  const [picking, setPicking] = useState<
+    "opening" | "end" | "reference" | "clip" | "audio" | undefined
+  >(undefined);
   // Video direction: one source clip (upload or gallery) + the upscale factor
   // for the upscaler models.
   const [sourceVideo, setSourceVideo] = useState("");
@@ -256,6 +247,7 @@ export function VideoStudio({
   const endInputRef = useRef<HTMLInputElement>(null);
   const referenceInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
 
   /**
    * The chain's anchor frame is one more reference photo, offered when a chain
@@ -286,6 +278,11 @@ export function VideoStudio({
    * is still adding the first photo, when `model` is not the reference
    * variant yet. */
   const referenceCap = maxVideoReferences(family?.referenceModel ?? model);
+  /** Whether this family's reference variant takes clips at all. Most do not:
+   * the public `-basic` variants publish `video_input: false`. */
+  const clipsAllowed = takesReferenceClips(family?.referenceModel);
+  /** Reference audio lands the other way round: the public variants do take it. */
+  const audioAllowed = takesReferenceAudio(family?.referenceModel);
   /** Seedance reference renders route from the prompt: a wrong opening or a
    * loose mention silently runs the wrong workflow (and bills for it), so the
    * advice sits under the prompt rather than in a failure message after. */
@@ -318,9 +315,11 @@ export function VideoStudio({
   // remembered so it is asked once. A comparison render can target several
   // models at once, so any seedance target in a reference direction pulls it in.
   const [consent, setConsent] = useState(hasSeedanceConsent);
-  /** Any photo of a person can drive the clip, whether it opens it or steers
-   * it, so the attestation follows the presence of a photo, not a mode. */
-  const buildsFromPhoto = Boolean(openingFrame) || outgoingReferences.length > 0;
+  /** Any media showing a person can drive the render, whether it opens it,
+   * steers it, or is the clip being extended - so the attestation follows the
+   * presence of face-bearing media, not a mode. */
+  const buildsFromFaceMedia =
+    Boolean(openingFrame) || outgoingReferences.length > 0 || referenceClips.length > 0;
   const consentTargets = useMemo(
     () =>
       [
@@ -337,7 +336,24 @@ export function VideoStudio({
     [model, alsoFamilies, effectiveSurface, openingFrame, outgoingReferences.length],
   );
   const needsConsent =
-    buildsFromPhoto && consentTargets.some((target) => isSeedanceModel(target.id));
+    buildsFromFaceMedia && consentTargets.some((target) => isSeedanceModel(target.id));
+
+  // Switching family can land on a reference variant that takes no clips. Clips
+  // already picked would then be dropped by `videoRequestBody` at submit, after
+  // the prompt had been written around them - so they are let go here, while the
+  // slot they were in is still on screen.
+  useEffect(() => {
+    if (clipsAllowed) return;
+    setReferenceClips((current) => (current.length > 0 ? [] : current));
+    setClipError(undefined);
+  }, [clipsAllowed]);
+
+  // Same for the audio, which most families do not take either.
+  useEffect(() => {
+    if (audioAllowed) return;
+    setReferenceAudio((current) => (current.length > 0 ? [] : current));
+    setAudioError(undefined);
+  }, [audioAllowed]);
 
   // The gallery's own clips are the natural v2v sources; refresh the list as
   // finished renders land.
@@ -406,6 +422,8 @@ export function VideoStudio({
           effectiveSurface === "shot" ? referenceClips.map((clip) => clip.dataUri) : undefined,
         referenceVideoSeconds:
           effectiveSurface === "shot" ? referenceClips.map((clip) => clip.seconds) : undefined,
+        referenceAudio:
+          effectiveSurface === "shot" ? referenceAudio.map((track) => track.dataUri) : undefined,
         sourceVideo: effectiveSurface === "video" ? sourceVideo : undefined,
         upscaleFactor: Number(upscaleFactor),
         duration,
@@ -421,6 +439,7 @@ export function VideoStudio({
       endFrame,
       outgoingReferences,
       referenceClips,
+      referenceAudio,
       sourceVideo,
       upscaleFactor,
       duration,
@@ -504,41 +523,47 @@ export function VideoStudio({
 
   /**
    * Add a reference clip: measure it, check it against what this version
-   * documents (per-clip length, combined length, request size), and only then
-   * keep it. Every one of those limits is reported by the provider *after* a
-   * render is queued and billed, so they are checked here instead.
+   * documents, and only then keep it. Every one of those limits is reported by
+   * the provider *after* a render is queued and billed, so they are checked
+   * here instead - and in `reference-media`, so the phone checks the same ones.
    */
   const addReferenceClip = useCallback(
     async (dataUri: string, artifact: StudioArtifact) => {
       setClipError(undefined);
-      if (referenceClips.some((clip) => clip.id === artifact.id)) return;
-      const seconds = await clipDuration(artifactSrc(artifact));
-      if (seconds > 0 && (seconds < 2 || seconds > MAX_CLIP_SECONDS)) {
-        setClipError(
-          `That clip is ${Math.round(seconds)}s. Reference clips run 2 to ${MAX_CLIP_SECONDS}s.`,
-        );
+      const candidate: ReferenceMedia = {
+        id: artifact.id,
+        label: artifact.prompt || artifact.fileName,
+        dataUri,
+        seconds: await mediaSeconds(artifactSrc(artifact), "video"),
+      };
+      const problem = referenceClipProblem(family?.referenceModel, referenceClips, candidate);
+      if (problem) {
+        setClipError(problem);
         return;
       }
-      const next = [
-        ...referenceClips,
-        { id: artifact.id, label: artifact.prompt || artifact.fileName, dataUri, seconds },
-      ];
-      const combined = next.reduce((total, clip) => total + clip.seconds, 0);
-      const combinedCap = maxReferenceVideoSeconds(family?.referenceModel);
-      if (combined > combinedCap) {
-        setClipError(
-          `Together these clips run ${Math.round(combined)}s, over the ${combinedCap}s a request allows.`,
-        );
-        return;
-      }
-      const oversize = requestSizeProblem(next.map((clip) => clip.dataUri));
-      if (oversize) {
-        setClipError(oversize);
-        return;
-      }
-      setReferenceClips(next);
+      setReferenceClips((current) => [...current, candidate]);
     },
     [referenceClips, family?.referenceModel],
+  );
+
+  /** Add a reference audio track, off the device. The gallery's own music and
+   * speech are offered too, through the same picker as the clips. */
+  const addReferenceAudio = useCallback(
+    async (dataUri: string, entry: { id: string; label: string }) => {
+      setAudioError(undefined);
+      const candidate: ReferenceMedia = {
+        ...entry,
+        dataUri,
+        seconds: await dataUriSeconds(dataUri, "audio"),
+      };
+      const problem = referenceAudioProblem(referenceAudio, candidate);
+      if (problem) {
+        setAudioError(problem);
+        return;
+      }
+      setReferenceAudio((current) => [...current, candidate]);
+    },
+    [referenceAudio],
   );
 
   /** Add a reference photo, refusing the shapes the model is known to reject
@@ -719,8 +744,15 @@ export function VideoStudio({
     // biome-ignore lint/correctness/useExhaustiveDependencies: the epoch tracks
     // what the last rejection taught us.
   }, [model, queueBody, constraintEpoch]);
+  /** Whether everything together still fits in one request. Each input can be
+   * within its own limit and the body still be over the shared cap, and the
+   * backend only says so with a 413 once the render has been queued. */
+  const oversize = useMemo(() => {
+    const body = queueBody();
+    return body ? requestSizeProblem(inlineMediaInputs(body)) : undefined;
+  }, [queueBody]);
   const canSubmit =
-    Boolean(queueBody()) && (!needsConsent || consent) && missingFields.length === 0;
+    Boolean(queueBody()) && (!needsConsent || consent) && missingFields.length === 0 && !oversize;
   /** Photos were supplied but the resolved variant cannot carry them. */
   const droppedReferences = Boolean(
     effectiveSurface === "shot" &&
@@ -747,11 +779,10 @@ export function VideoStudio({
       ) : null}
       <StudioField
         label="Model"
-        hint={
-          // The variant follows the inputs, and it changes the price, so it is
-          // named rather than left to be inferred from a checkbox label.
-          model && model.id !== family?.textModel?.id ? variantLabel(model.id) : undefined
-        }
+        // The variant follows the inputs, and it changes the price, so it is
+        // named rather than left to be inferred from a checkbox label. Shared
+        // with the mobile picker so both shells name it identically.
+        hint={variantHint(family, model)}
       >
         <Select
           value={family?.key ?? null}
@@ -973,12 +1004,37 @@ export function VideoStudio({
                   const mentions = references.map((_, index) =>
                     referenceMention(family.referenceModel, "image", index + 1),
                   );
-                  return isSeedanceModel(family.referenceModel.id) ? (
-                    <p className="studio-hint">
-                      Name them in the prompt as {mentions.join(", ")} - for example "Refer to{" "}
-                      {mentions[0]} to generate...".
-                    </p>
-                  ) : null;
+                  const recipe = seedanceWorkflowsFor(family.referenceModel).find(
+                    (entry) => entry.id === "reference",
+                  );
+                  if (!isSeedanceModel(family.referenceModel.id)) return null;
+                  return (
+                    <>
+                      <p className="studio-hint">
+                        Name them in the prompt as {mentions.join(", ")}, and start it with what you
+                        want done:
+                      </p>
+                      {/* Describing the opening was not enough: a prompt that
+                          does not carry it verbatim routes to another workflow,
+                          renders, and bills. So the button writes it. */}
+                      {recipe ? (
+                        <div className="studio-upload-actions">
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            title={recipe.description}
+                            onClick={() =>
+                              setPrompt((current) =>
+                                current.startsWith(recipe.prefix) ? current : recipe.prefix,
+                              )
+                            }
+                          >
+                            {recipe.label}
+                          </button>
+                        </div>
+                      ) : null}
+                    </>
+                  );
                 })()
               : null}
             {referenceError ? <p className="studio-error">{referenceError}</p> : null}
@@ -1013,7 +1069,7 @@ export function VideoStudio({
           </div>
         </StudioField>
       ) : null}
-      {effectiveSurface === "shot" && supportsReferenceMedia(family?.referenceModel) ? (
+      {effectiveSurface === "shot" && clipsAllowed ? (
         <StudioField
           label="Reference clips"
           hint={`${referenceClips.length} / ${maxReferenceVideos(family?.referenceModel)}`}
@@ -1063,23 +1119,104 @@ export function VideoStudio({
                   , and start it with what you want done:
                 </p>
                 <div className="studio-upload-actions">
-                  {SEEDANCE_WORKFLOWS.filter((recipe) => recipe.needsClip).map((recipe) => (
+                  {seedanceWorkflowsFor(family?.referenceModel)
+                    .filter((recipe) => recipe.needsClip)
+                    .map((recipe) => (
+                      <button
+                        key={recipe.id}
+                        type="button"
+                        className="btn btn-secondary"
+                        title={recipe.description}
+                        onClick={() =>
+                          setPrompt((current) =>
+                            current.startsWith(recipe.prefix) ? current : recipe.prefix,
+                          )
+                        }
+                      >
+                        {recipe.label}
+                      </button>
+                    ))}
+                </div>
+              </>
+            ) : null}
+          </div>
+        </StudioField>
+      ) : null}
+      {effectiveSurface === "shot" && audioAllowed ? (
+        <StudioField
+          label="Reference audio"
+          hint={`${referenceAudio.length} / ${maxReferenceAudio(family?.referenceModel)}`}
+        >
+          <div className="studio-upload">
+            {referenceAudio.length > 0 ? (
+              <ul className="studio-clip-list">
+                {referenceAudio.map((track, index) => (
+                  <li key={track.id}>
+                    <span className="studio-port-order-index">{index + 1}</span>
+                    <span className="studio-port-order-label">{track.label}</span>
                     <button
-                      key={recipe.id}
                       type="button"
-                      className="btn btn-secondary"
-                      title={recipe.description}
+                      className="studio-icon-button"
+                      aria-label={`Remove track ${index + 1}`}
                       onClick={() =>
-                        setPrompt((current) =>
-                          current.startsWith(recipe.prefix) ? current : recipe.prefix,
+                        setReferenceAudio((current) =>
+                          current.filter((entry) => entry.id !== track.id),
                         )
                       }
                     >
-                      {recipe.label}
+                      <span aria-hidden>x</span>
                     </button>
-                  ))}
-                </div>
-              </>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {audioError ? <p className="studio-error">{audioError}</p> : null}
+            {referenceAudio.length < maxReferenceAudio(family?.referenceModel) ? (
+              <div className="studio-upload-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => audioInputRef.current?.click()}
+                >
+                  {referenceAudio.length > 0 ? "Add another track" : "Choose a track"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setPicking("audio")}
+                >
+                  From the gallery
+                </button>
+              </div>
+            ) : null}
+            <input
+              ref={audioInputRef}
+              type="file"
+              accept="audio/*"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  readInto(file, (dataUri) => {
+                    // A device file has no gallery id; its name and size stand
+                    // in, so picking the same track twice is still caught.
+                    void addReferenceAudio(dataUri, {
+                      id: `file:${file.name}:${file.size}`,
+                      label: file.name,
+                    });
+                  });
+                }
+                event.target.value = "";
+              }}
+            />
+            {referenceAudio.length > 0 ? (
+              <p className="studio-hint">
+                Name them in the prompt as{" "}
+                {referenceAudio
+                  .map((_, index) => referenceMention(family?.referenceModel, "audio", index + 1))
+                  .join(", ")}
+                . A track never travels alone, so keep a photo or a clip in play.
+              </p>
             ) : null}
           </div>
         </StudioField>
@@ -1154,7 +1291,7 @@ export function VideoStudio({
             }}
           />
           <span>
-            I have the right to use this photo and accept the model's face-media policy for anyone
+            I have the right to use this media and accept the model's face-media policy for anyone
             shown in it.
             <span className="studio-consent-meta">
               {personMediaCaveat ??
@@ -1240,6 +1377,7 @@ export function VideoStudio({
           {`This model needs ${missingFields.map((field) => field.replace(/_/g, " ")).join(" and ")} before it will render.`}
         </p>
       ) : null}
+      {oversize ? <p className="studio-error">{oversize}</p> : null}
       <button type="button" className="studio-primary-button" disabled={!canSubmit} onClick={start}>
         Generate video
       </button>
@@ -1258,18 +1396,29 @@ export function VideoStudio({
       {picking ? (
         <GalleryPicker
           onClose={() => setPicking(undefined)}
-          kinds={picking === "clip" ? CLIP_KINDS : undefined}
-          title={picking === "clip" ? "Pick a clip" : undefined}
+          kinds={picking === "clip" ? CLIP_KINDS : picking === "audio" ? AUDIO_KINDS : undefined}
+          title={
+            picking === "clip" ? "Pick a clip" : picking === "audio" ? "Pick a track" : undefined
+          }
           description={
             picking === "clip"
               ? "Pick a clip to edit, extend or stitch. It travels with the request, so keep it short."
-              : picking === "reference"
-                ? "Pick an image you have already produced. It steers style and subject, alongside the opening frame."
-                : "Pick an image you have already produced."
+              : picking === "audio"
+                ? "Pick a track for the render to follow. It travels with the request, so keep it short."
+                : picking === "reference"
+                  ? "Pick an image you have already produced. It steers style and subject, alongside the opening frame."
+                  : "Pick an image you have already produced."
           }
           onPick={(dataUri, artifact) => {
             if (picking === "clip") {
               void addReferenceClip(dataUri, artifact);
+              return;
+            }
+            if (picking === "audio") {
+              void addReferenceAudio(dataUri, {
+                id: artifact.id,
+                label: artifact.prompt || artifact.fileName,
+              });
               return;
             }
             if (picking === "opening") {

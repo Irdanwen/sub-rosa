@@ -11,6 +11,11 @@ export type ModelSheetEntry = {
   id: string;
   name?: string;
   subtitle?: string;
+  /** Extra spellings this entry should be findable by, beyond what the row
+   * displays. A row can stand for several backend models (a video family is one
+   * row for up to four), and those models' own ids and names are then the very
+   * thing a user searches for while nothing on screen contains them. */
+  keywords?: string[];
 };
 
 const FAVORITES_STORAGE_KEY = "subrosa:mobile:model-favorites";
@@ -133,11 +138,13 @@ export function ModelSheet({
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
+    // Each term is matched whole rather than concatenated into one haystack, so
+    // a needle can never straddle two of them and match nothing real.
     const matches = needle
-      ? entries.filter(
-          (entry) =>
-            entry.id.toLowerCase().includes(needle) ||
-            (entry.name ?? "").toLowerCase().includes(needle),
+      ? entries.filter((entry) =>
+          [entry.id, entry.name ?? "", entry.subtitle ?? "", ...(entry.keywords ?? [])].some(
+            (term) => term.toLowerCase().includes(needle),
+          ),
         )
       : entries;
     return [...matches].sort((a, b) => {

@@ -500,7 +500,9 @@ describe("named ports", () => {
         [
           node("clip", "asset", { assetKind: "video", artifactId: "alley-intro" }),
           node("extended", "video", {
-            model: "seedance-2-0-reference-to-video-basic",
+            // The full tier, not `-basic`: only it declares a video input, and
+            // the port's cap is zero on the models that do not.
+            model: "seedance-2-0-reference-to-video",
             prompt: "Extend <Video 1>, generate a chase through the alleys",
             duration: "5s",
           }),

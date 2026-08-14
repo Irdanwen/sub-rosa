@@ -37,25 +37,85 @@ export function maxVideoReferences(model: Pick<MediaModel, "id"> | undefined): n
   return 4;
 }
 
+/** A model reference media is decided for: the id is always needed, the
+ * published constraints are used when the caller has them. */
+type ReferenceMediaModel = Pick<MediaModel, "id"> & Partial<Pick<MediaModel, "constraints">>;
+
+/**
+ * A seedance reference-to-video variant.
+ *
+ * This is what the family's *prompt* contract keys off: the canonical mentions
+ * and the four prompt-routed workflows apply to these variants and to no others,
+ * whatever media they happen to accept.
+ */
+export function isSeedanceReferenceModel(model: ReferenceMediaModel | undefined): boolean {
+  return Boolean(model && isSeedanceModel(model.id) && isReferenceToVideoModel(model.id));
+}
+
+/**
+ * Whether this model takes reference *clips* (`reference_video_urls`) — the
+ * input the edit, extend and stitch workflows work from.
+ *
+ * Answered from the operator's published constraints first, and only then from
+ * the id. That order matters: reading the id alone is what put a clip slot in
+ * front of models that refuse clips outright. Every public `-basic` reference
+ * variant publishes `video_input: false` while its family's guide describes the
+ * clip workflows at length, so the guide is about the full tier and the id says
+ * nothing about which tier is in hand.
+ *
+ * A published flag is an answer, in both directions. An *absent* flag means
+ * nobody said - the full seedance ids publish only their option lists - and
+ * then the id decides, minus the `-basic` variants we have measured.
+ */
+export function takesReferenceClips(model: ReferenceMediaModel | undefined): boolean {
+  const published = model?.constraints?.video_input;
+  if (typeof published === "boolean") return published;
+  return isSeedanceReferenceModel(model) && !isBasicVariant(model);
+}
+
+/**
+ * Whether this model takes reference *audio* (`reference_audio_urls`) — a
+ * timbre or a voice for the render to follow.
+ *
+ * Same rule as the clips, and it lands the other way round: the `-basic`
+ * reference variants publish `audio_input: true`. Audio may never be the only
+ * reference (see `videoRequestBody`), so this permits an input, it does not
+ * make one sufficient.
+ */
+export function takesReferenceAudio(model: ReferenceMediaModel | undefined): boolean {
+  const published = model?.constraints?.audio_input;
+  if (typeof published === "boolean") return published;
+  return isSeedanceReferenceModel(model);
+}
+
+/** The public tier. Its ids end in `-basic`, and what separates it from the
+ * full tier is exactly what the surfaces get wrong: no reference clips, and no
+ * person-bearing media whatever is attested (see `seedancePersonMediaCaveat`). */
+function isBasicVariant(model: ReferenceMediaModel | undefined): boolean {
+  return Boolean(model?.id.toLowerCase().endsWith("-basic"));
+}
+
+/** How many reference media of one kind a version documents. Not one number:
+ * seedance 2.5 raised every reference ceiling its predecessors set. */
+function perVersionCap(model: ReferenceMediaModel | undefined): number {
+  return model?.id.toLowerCase().includes("seedance-2-5") ? 10 : 3;
+}
+
 /** Reference clips (`reference_video_urls`), for the models that take them. */
-export function maxReferenceVideos(model: Pick<MediaModel, "id"> | undefined): number {
-  const id = model?.id.toLowerCase() ?? "";
-  if (!supportsReferenceMedia(model)) return 0;
-  return id.includes("seedance-2-5") ? 10 : 3;
+export function maxReferenceVideos(model: ReferenceMediaModel | undefined): number {
+  return takesReferenceClips(model) ? perVersionCap(model) : 0;
+}
+
+/** Reference audio (`reference_audio_urls`), for the models that take it. No
+ * figure is published for audio specifically, so it keeps the clip ceiling:
+ * conservative, and the mention syntax (`<Audio 1>`, `<Audio 2>`) is the same. */
+export function maxReferenceAudio(model: ReferenceMediaModel | undefined): number {
+  return takesReferenceAudio(model) ? perVersionCap(model) : 0;
 }
 
 /** Combined duration of the reference clips, in seconds. */
 export function maxReferenceVideoSeconds(model: Pick<MediaModel, "id"> | undefined): number {
   return model?.id.toLowerCase().includes("seedance-2-5") ? 30 : 15;
-}
-
-/**
- * Whether this model takes reference *clips* and *audio* on top of photos —
- * the seedance reference-to-video variants, and only those. It is what makes
- * the edit / extend / stitch workflows possible at all.
- */
-export function supportsReferenceMedia(model: Pick<MediaModel, "id"> | undefined): boolean {
-  return Boolean(model && isSeedanceModel(model.id) && isReferenceToVideoModel(model.id));
 }
 
 /**
@@ -159,6 +219,23 @@ export const SEEDANCE_WORKFLOWS: SeedanceWorkflowRecipe[] = [
 ];
 
 /**
+ * The workflows this model can actually run.
+ *
+ * Offering an opening a model cannot honour is worse than offering none: the
+ * prompt is what routes, so "Extend <Video 1>" on a variant that takes no clips
+ * does not fail, it renders something else and bills for it. So the three
+ * clip-driven recipes are withheld from the variants that publish no video
+ * input, and only "Refer to..." is left.
+ */
+export function seedanceWorkflowsFor(
+  model: ReferenceMediaModel | undefined,
+): SeedanceWorkflowRecipe[] {
+  if (!isSeedanceReferenceModel(model)) return [];
+  if (takesReferenceClips(model)) return SEEDANCE_WORKFLOWS;
+  return SEEDANCE_WORKFLOWS.filter((recipe) => !recipe.needsClip);
+}
+
+/**
  * Which workflow a prompt reads as, or undefined when nothing matches — which
  * is itself the useful answer: a reference-to-video request whose prompt opens
  * with none of the canonical forms is the misrouting case, and a surface can
@@ -208,7 +285,9 @@ export function seedancePromptAdvice(
   model: Pick<MediaModel, "id"> | undefined,
   prompt: string,
 ): string | undefined {
-  if (!supportsReferenceMedia(model) || !prompt.trim()) return undefined;
+  // Keyed on the prompt contract, not on which media the variant accepts: the
+  // routing and the mention syntax are the same on a model that takes no clips.
+  if (!isSeedanceReferenceModel(model) || !prompt.trim()) return undefined;
   const loose = looseMentions(prompt);
   if (loose.length > 0) {
     return `Write ${loose.join(" and ")} as ${loose
