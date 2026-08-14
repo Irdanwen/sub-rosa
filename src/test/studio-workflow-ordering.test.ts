@@ -88,6 +88,7 @@ function imageStorage(): WorkflowStorage {
       artifactId,
     })),
     loadNote: vi.fn(async () => ({ title: "", text: "" })),
+    readMedia: vi.fn(async (artifactId: string) => `data:video/mp4;base64,${artifactId}`),
   };
 }
 
@@ -103,7 +104,7 @@ describe("edgesOnPort", () => {
       node("a", "asset", { assetKind: "image", artifactId: "a" }),
       node("b", "asset", { assetKind: "image", artifactId: "b" }),
       node("still", "asset", { assetKind: "image", artifactId: "s" }),
-      node("clip", "video", { model: "m", prompt: "p" }),
+      node("clip", "video", { model: "seedance-2-0-reference-to-video-basic", prompt: "p" }),
     ],
     [
       edge("a", "clip", "references"),
@@ -131,7 +132,7 @@ describe("reorderPortEdge", () => {
         node("a", "asset", { assetKind: "image", artifactId: "a" }),
         node("b", "asset", { assetKind: "image", artifactId: "b" }),
         node("still", "asset", { assetKind: "image", artifactId: "s" }),
-        node("clip", "video", { model: "m", prompt: "p" }),
+        node("clip", "video", { model: "seedance-2-0-reference-to-video-basic", prompt: "p" }),
       ],
       [
         edge("a", "clip", "references"),
@@ -159,7 +160,7 @@ describe("reorderPortEdge", () => {
     const graph = workflow(
       [
         node("a", "asset", { assetKind: "image", artifactId: "a" }),
-        node("clip", "video", { model: "m", prompt: "p" }),
+        node("clip", "video", { model: "seedance-2-0-reference-to-video-basic", prompt: "p" }),
       ],
       [edge("a", "clip", "references")],
     );
@@ -188,9 +189,9 @@ describe("chainOrderSuggestion", () => {
   function chainGraph(clipEdges: WorkflowEdge[]): Workflow {
     return workflow(
       [
-        node("first", "video", { model: "m", prompt: "one" }),
+        node("first", "video", { model: "seedance-2-0-text-to-video-basic", prompt: "one" }),
         node("frame", "lastFrame"),
-        node("second", "video", { model: "m", prompt: "two" }),
+        node("second", "video", { model: "seedance-2-0-image-to-video-basic", prompt: "two" }),
         node("film", "assemble"),
       ],
       [edge("first", "frame", "video"), edge("frame", "second", "openingFrame"), ...clipEdges],
@@ -208,8 +209,8 @@ describe("chainOrderSuggestion", () => {
 
     const unlinked = workflow(
       [
-        node("a", "video", { model: "m", prompt: "a" }),
-        node("b", "video", { model: "m", prompt: "b" }),
+        node("a", "video", { model: "seedance-2-0-text-to-video-basic", prompt: "a" }),
+        node("b", "video", { model: "seedance-2-0-text-to-video-basic", prompt: "b" }),
         node("film", "assemble"),
       ],
       [edge("a", "film", "clips"), edge("b", "film", "clips")],
@@ -234,7 +235,7 @@ describe("the engine honors connection order (the wire contract)", () => {
       [
         node("a", "asset", { assetKind: "image", artifactId: "AAA" }),
         node("b", "asset", { assetKind: "image", artifactId: "BBB" }),
-        node("clip", "video", { model: "m", prompt: "p" }),
+        node("clip", "video", { model: "seedance-2-0-reference-to-video-basic", prompt: "p" }),
       ],
       [edge("a", "clip", "references"), edge("b", "clip", "references")],
     );
@@ -304,6 +305,7 @@ describe("the engine honors connection order (the wire contract)", () => {
         artifactId,
       })),
       loadNote: vi.fn(async () => ({ title: "", text: "" })),
+      readMedia: vi.fn(async (artifactId: string) => `data:video/mp4;base64,${artifactId}`),
     };
     const graph = workflow(
       [

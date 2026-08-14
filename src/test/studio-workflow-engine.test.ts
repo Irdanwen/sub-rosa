@@ -97,7 +97,8 @@ function fakeStorage(overrides: Partial<WorkflowStorage> = {}) {
   const loadNote = vi.fn(async () => {
     throw new Error("no notes in this test");
   });
-  return { save, loadAsset, loadNote, ...overrides } as WorkflowStorage & {
+  const readMedia = vi.fn(async (artifactId: string) => `data:video/mp4;base64,${artifactId}`);
+  return { save, loadAsset, loadNote, readMedia, ...overrides } as WorkflowStorage & {
     save: ReturnType<typeof vi.fn>;
     loadAsset: ReturnType<typeof vi.fn>;
     loadNote: ReturnType<typeof vi.fn>;
@@ -263,8 +264,10 @@ describe("runWorkflow", () => {
       workflow(
         [
           node("in", "textInput", { text: "neon city flyover" }),
+          // A model whose accepted values are known (probed), so the picked
+          // duration and ratio survive into the body.
           node("clip", "video", {
-            model: "kling-2.5-turbo-pro-text-to-video",
+            model: "seedance-2-0-text-to-video-basic",
             duration: "5s",
             aspectRatio: "16:9",
           }),
@@ -284,7 +287,7 @@ describe("runWorkflow", () => {
     expect(retrieveBody).toEqual({
       id: "vid-1",
       queue_id: "vid-1",
-      model: "kling-2.5-turbo-pro-text-to-video",
+      model: "seedance-2-0-text-to-video-basic",
     });
 
     expect(results.get("out")?.output).toEqual({
@@ -390,7 +393,7 @@ describe("named ports", () => {
         [
           node("prompt", "textInput", { text: "she turns around" }),
           node("hero", "asset", { assetKind: "image", artifactId: "hero-1" }),
-          node("clip", "video", { model: "m-i2v" }),
+          node("clip", "video", { model: "seedance-2-0-reference-to-video-basic" }),
           node("out", "output"),
         ],
         [edge("prompt", "clip", "prompt"), edge("hero", "clip", "references"), edge("clip", "out")],
@@ -420,7 +423,7 @@ describe("named ports", () => {
       workflow(
         [
           node("still", "asset", { assetKind: "image", artifactId: "still-1" }),
-          node("clip", "video", { model: "m-i2v", prompt: "walk on" }),
+          node("clip", "video", { model: "seedance-2-0-image-to-video-basic", prompt: "walk on" }),
           node("out", "output"),
         ],
         // No targetPort: an edge saved before ports existed.
@@ -433,6 +436,87 @@ describe("named ports", () => {
     expect(queueBody.image_url).toBe("data:image/jpeg;base64,U1RJTEw=");
     // The image is not narrated into the prompt.
     expect(queueBody.prompt).toBe("walk on");
+  });
+
+  it("builds the video body through the shared contract, not by hand", async () => {
+    mockVideoRender();
+    const storage = fakeStorage({
+      loadAsset: vi.fn(async () => ({
+        kind: "image" as const,
+        src: "data:image/jpeg;base64,U1RJTEw=",
+        base64: "U1RJTEw=",
+        mimeType: "image/jpeg",
+        artifactId: "still-1",
+      })),
+    });
+
+    await runWorkflow(
+      workflow(
+        [
+          node("still", "asset", { assetKind: "image", artifactId: "still-1" }),
+          node("clip", "video", {
+            // Image-to-video derives its frame from the source image, so the
+            // provider rejects `aspect_ratio` outright - the node must not
+            // send one even though its form carries the field.
+            model: "seedance-2-0-image-to-video-basic",
+            prompt: "the keeper turns",
+            aspectRatio: "16:9",
+            duration: "5s",
+          }),
+        ],
+        [edge("still", "clip", "openingFrame")],
+      ),
+      { storage },
+    );
+
+    const body = callsTo("/video/queue")[0]?.[1] as Record<string, unknown>;
+    expect(body.aspect_ratio).toBeUndefined();
+    expect(body.duration).toBe("5s");
+    expect(body.image_url).toBe("data:image/jpeg;base64,U1RJTEw=");
+    // Built from a photo on a seedance target: the face-media attestation
+    // rides along, exactly as the studios send it.
+    expect(body.consents).toEqual({
+      seedance: {
+        confirmed_terms_and_privacy: true,
+        confirmed_legal_right: true,
+        confirmed_screening_acknowledged: true,
+      },
+    });
+  });
+
+  it("carries a gallery clip into a seedance extend render", async () => {
+    mockVideoRender();
+    const storage = fakeStorage({
+      loadAsset: vi.fn(async (artifactId: string) => ({
+        kind: "video" as const,
+        src: `blob:${artifactId}`,
+        artifactId,
+      })),
+      readMedia: vi.fn(async (artifactId: string) => `data:video/mp4;base64,${artifactId}`),
+    });
+
+    await runWorkflow(
+      workflow(
+        [
+          node("clip", "asset", { assetKind: "video", artifactId: "alley-intro" }),
+          node("extended", "video", {
+            model: "seedance-2-0-reference-to-video-basic",
+            prompt: "Extend <Video 1>, generate a chase through the alleys",
+            duration: "5s",
+          }),
+        ],
+        [edge("clip", "extended", "referenceClips")],
+      ),
+      { storage },
+    );
+
+    const body = callsTo("/video/queue")[0]?.[1] as Record<string, unknown>;
+    // The clip travels inline (nothing hosts it) on the documented field.
+    expect(body.reference_video_urls).toEqual(["data:video/mp4;base64,alley-intro"]);
+    expect(body.prompt).toBe("Extend <Video 1>, generate a chase through the alleys");
+    // No photo anywhere: an extend needs none, and the request still stands.
+    expect(body.reference_image_urls).toBeUndefined();
+    expect(body.image_url).toBeUndefined();
   });
 
   it("reads a note through the document node into a chat prompt", async () => {
@@ -539,9 +623,12 @@ describe("frame-from-video node", () => {
     const finished = await runWorkflow(
       workflow(
         [
-          node("first", "video", { model: "m-t2v", prompt: "shot one" }),
+          node("first", "video", { model: "seedance-2-0-text-to-video-basic", prompt: "shot one" }),
           node("frame", "lastFrame"),
-          node("second", "video", { model: "m-i2v", prompt: "shot two" }),
+          node("second", "video", {
+            model: "seedance-2-0-image-to-video-basic",
+            prompt: "shot two",
+          }),
           node("out", "output"),
         ],
         [
@@ -556,7 +643,7 @@ describe("frame-from-video node", () => {
     // Second save carries the chain: parent is the first clip's artifact.
     expect(storage.save).toHaveBeenCalledWith({ url: "https://example.test/clip.mp4" }, "mp4", {
       kind: "video",
-      model: "m-i2v",
+      model: "seedance-2-0-image-to-video-basic",
       prompt: "shot two",
       parentId: "art-1",
       parentHandoffSeconds: 4.5,
@@ -576,7 +663,10 @@ describe("frame-from-video node", () => {
     const storage = fakeStorage();
     await runWorkflow(
       workflow(
-        [node("clip", "video", { model: "m-t2v", prompt: "a shot" }), node("out", "output")],
+        [
+          node("clip", "video", { model: "seedance-2-0-text-to-video-basic", prompt: "a shot" }),
+          node("out", "output"),
+        ],
         [edge("clip", "out")],
       ),
       { storage, nodeCosts: { clip: 42.5 } },

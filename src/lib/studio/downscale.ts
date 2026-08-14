@@ -20,6 +20,18 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement> {
   });
 }
 
+/** An image's pixel dimensions, for the contracts that constrain them (a
+ * seedance reference has a minimum side and an allowed shape). Zeroes when the
+ * image cannot be decoded, which callers read as "nothing to check". */
+export async function imageSize(dataUrl: string): Promise<{ width: number; height: number }> {
+  try {
+    const img = await loadImage(dataUrl);
+    return { width: img.naturalWidth, height: img.naturalHeight };
+  } catch {
+    return { width: 0, height: 0 };
+  }
+}
+
 /** Decoded byte count behind a `data:...;base64,...` URL (base64 is ~4/3 the
  * size of the bytes it encodes). */
 function approxBytes(dataUrl: string): number {

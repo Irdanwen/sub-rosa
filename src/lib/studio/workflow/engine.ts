@@ -15,9 +15,11 @@ import { fetchMediaCatalog } from "../catalog";
 import { mediaBinary, mediaJson } from "../client";
 import { composeImages } from "../edit-image";
 import { generateImages } from "../generate-image";
-import { extractFrameAt, extractHandoffFrame } from "../frames";
+import { extractFrameAt, extractHandoffFrame, loadVideoElement } from "../frames";
 import { musicPaths, retrieveBody } from "../paths";
-import type { ArtifactKind } from "../types";
+import { maxVideoReferences, requestSizeProblem } from "../seedance";
+import type { ArtifactKind, MediaModel } from "../types";
+import { videoRequestBody } from "../video-request";
 import {
   maybeNodeSchema,
   outputKindOf,
@@ -139,6 +141,13 @@ export interface WorkflowStorage {
   ): Promise<SavedMedia>;
   loadAsset(artifactId: string): Promise<LoadedAsset>;
   loadNote(noteId: string): Promise<{ title: string; text: string }>;
+  /**
+   * A gallery item as a data URI, for the requests that must carry the bytes
+   * inline (reference clips: there is nowhere to host them). Separate from
+   * `loadAsset` because reading a whole clip is expensive and almost never
+   * what a node needs.
+   */
+  readMedia(artifactId: string): Promise<string>;
 }
 
 /** What a durable render needs queued: everything Rust's job runner asks for,
@@ -355,6 +364,51 @@ function audioExtension(mimeType: string): string {
   if (mimeType.includes("wav")) return "wav";
   if (mimeType.includes("flac")) return "flac";
   return "mp3";
+}
+
+/** How long to wait for a clip's metadata before giving up on measuring it. */
+const DURATION_PROBE_TIMEOUT_MS = 4_000;
+
+/**
+ * A clip's length in seconds, or 0 when the webview cannot decode it.
+ *
+ * Bounded on purpose: a source the media loader never resolves (an unplayable
+ * container, a revoked blob) would otherwise hang the whole render, and the
+ * duration is only ever a nicety — it refines a quote, it does not gate the
+ * request.
+ */
+async function videoDuration(src: string): Promise<number> {
+  try {
+    const video = await Promise.race([
+      loadVideoElement(src),
+      new Promise<undefined>((resolve) => {
+        setTimeout(() => resolve(undefined), DURATION_PROBE_TIMEOUT_MS);
+      }),
+    ]);
+    if (!video) return 0;
+    const seconds = Number.isFinite(video.duration) ? video.duration : 0;
+    video.src = "";
+    return seconds;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * The catalog's own entry for a model id, so request building sees everything
+ * the operator published about it (durations, ratios, resolutions). Falls back
+ * to a bare stand-in when the catalog is unreachable or the id is unknown: the
+ * probed table still answers by id, which is better than refusing to render.
+ */
+async function catalogModel(modelId: string): Promise<MediaModel> {
+  try {
+    const catalog = await fetchMediaCatalog();
+    const found = catalog.models.find((entry) => entry.id === modelId);
+    if (found) return found;
+  } catch {
+    // Offline or early boot: fall through to the stand-in.
+  }
+  return { id: modelId, name: modelId, mediaType: "video", offline: false };
 }
 
 interface NodeContext {
@@ -619,21 +673,60 @@ async function executeNode(
         stringParam(params, "prompt") ?? "",
         textInputOf(ports, "prompt"),
       );
-      const body: Record<string, unknown> = { model, prompt };
-      const duration = stringParam(params, "duration");
-      if (duration) body.duration = duration;
-      const aspectRatio = stringParam(params, "aspectRatio");
-      if (aspectRatio) body.aspect_ratio = aspectRatio;
-      const resolution = stringParam(params, "resolution");
-      if (resolution) body.resolution = resolution;
-
       const opening = imagesOn(ports, "openingFrame")[0];
-      if (opening) body.image_url = imageDataUri(opening);
       const end = imagesOn(ports, "endFrame")[0];
-      if (end) body.end_image_url = imageDataUri(end);
-      const references = imagesOn(ports, "references").slice(0, 4);
-      if (references.length > 0) {
-        body.reference_image_urls = references.map(imageDataUri);
+      const references = imagesOn(ports, "references");
+
+      // Reference clips travel inline, so they are read out of the gallery
+      // here rather than passed around as URLs no backend could fetch.
+      const clipInputs = (ports.get("referenceClips") ?? []).filter(
+        (output): output is Extract<NodeOutput, { kind: "video" }> => output.kind === "video",
+      );
+      const referenceVideos: string[] = [];
+      const referenceVideoSeconds: number[] = [];
+      if (clipInputs.length > 0) {
+        const clipStorage = requireStorage(context, "read reference clips");
+        for (const clip of clipInputs) {
+          if (!clip.artifactId) {
+            throw new Error("A reference clip must come from the gallery.");
+          }
+          referenceVideos.push(await clipStorage.readMedia(clip.artifactId));
+          // The quote only matches the queue charge when it knows the
+          // combined length; an unreadable duration simply goes unreported.
+          if (clip.src) referenceVideoSeconds.push(await videoDuration(clip.src));
+        }
+        const oversize = requestSizeProblem(referenceVideos);
+        if (oversize) throw new Error(oversize);
+      }
+
+      // The body comes from the one place that knows each variant's contract
+      // (which fields exist, which enums are valid, that image-to-video
+      // rejects aspect_ratio, when the seedance attestation rides along).
+      // Building it here by hand is how the canvas and the studios drift.
+      //
+      // The catalog entry matters as much as the id: half of what a variant
+      // accepts is published there rather than probed, and a stand-in model
+      // object would quietly drop those constraints.
+      const target = await catalogModel(model);
+      const body = videoRequestBody({
+        target,
+        prompt,
+        openingFrame: opening ? imageDataUri(opening) : undefined,
+        endFrame: end ? imageDataUri(end) : undefined,
+        references: references.slice(0, maxVideoReferences({ id: model })).map(imageDataUri),
+        referenceVideos,
+        referenceVideoSeconds,
+        duration: stringParam(params, "duration"),
+        aspectRatio: stringParam(params, "aspectRatio"),
+        resolution: stringParam(params, "resolution"),
+        // A workflow runs unattended: the attestation rides on any seedance
+        // render built from a photo, exactly as the studios send it.
+        consent: true,
+      });
+      if (!body) {
+        throw new Error(
+          "This video node has nothing to render from. Give it a prompt, and a frame or references if its model needs them.",
+        );
       }
 
       // A shot rendered from a handoff frame continues that clip: record the
@@ -667,16 +760,18 @@ async function executeNode(
       }
 
       const queued = await mediaJson<Record<string, unknown>>("/video/queue", body, signal);
-      const url = await pollUntilDone<string>({
+      // A finished render comes back either as a URL in the JSON or as the
+      // mp4 bytes themselves (the retrieve switches content type once done),
+      // so accept both rather than polling forever past a binary delivery.
+      const result = await pollUntilDone<MediaFileResult>({
         retrievePath: "/video/retrieve",
         // The video retrieve endpoint requires the model alongside the id.
         retrieveBody: retrieveBody(queueId(queued), model),
-        getResult: (response) =>
-          typeof response.video_url === "string" ? response.video_url : undefined,
+        getResult: fileResultFrom("video_url", "url"),
         signal,
       });
       const saved = storage
-        ? await storage.save({ url }, "mp4", {
+        ? await storage.save(result, "mp4", {
             kind: "video",
             model,
             prompt,
@@ -687,7 +782,7 @@ async function executeNode(
         : undefined;
       return {
         kind: "video",
-        url,
+        url: "url" in result ? result.url : undefined,
         artifactId: saved?.artifactId,
         src: saved?.src,
         parentId: openingChain?.artifactId,

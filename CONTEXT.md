@@ -320,6 +320,21 @@ input it is a checkpoint; with several, approving picks which *candidate*
 run, never to the saved workflow. _Avoid_: breakpoint, review step; and it is
 distinct from Videomaker's server-side phase gates (`decideGate`).
 
+**Canonical mention** (seedance):
+How a seedance reference prompt names its inputs: `<Image 1>`, `<Video 1>`,
+`<Audio 1>` — case-sensitive, angle brackets included. Plain prose ("image 1")
+is not a mention: the model reads it as description and ignores the reference.
+Distinct from **connection order**, which is what decides the number.
+_Avoid_: placeholder, token, variable.
+
+**Seedance workflow**:
+Which of four jobs a seedance reference-to-video request performs — reference,
+edit, extend or stitch — decided by how the *prompt opens* ("Refer to…",
+"Strictly edit <Video 1>…", "Extend <Video 1>…", "<Video 1> + …"), never by a
+parameter. A prompt matching none of them is misrouted, runs something else,
+and still bills. _Avoid_: mode, operation; and distinct from a Sub Rosa
+**workflow** (the node graph).
+
 **Connection order**:
 The order of a multi port's inputs — assemble's cut list, a video node's
 references, an image edit's sources, a gate's candidates. It IS the order of

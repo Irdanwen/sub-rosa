@@ -11,6 +11,7 @@ import {
   isInputCompatible,
   maybeNodeSchema,
   outputKindOf,
+  portCapacity,
   resolveInputPort,
   type InputPort,
   type Workflow,
@@ -168,7 +169,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
           message: `${schema.label}: connect the "${port.label}" input.`,
         });
       }
-      const capacity = port.multi ? port.max : 1;
+      const capacity = portCapacity(port, node.params);
       if (capacity !== undefined && landing.length > capacity) {
         errors.push({
           severity: "error",

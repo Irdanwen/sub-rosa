@@ -171,3 +171,80 @@ describe("the face-media attestation", () => {
     expect(JSON.stringify(withoutConsent)).not.toContain("consent");
   });
 });
+
+describe("reference clips and audio (the seedance edit/extend/stitch inputs)", () => {
+  const CLIP_A = "data:video/mp4;base64,QUFB";
+  const CLIP_B = "data:video/mp4;base64,QkJC";
+  const VOICE = "data:audio/mpeg;base64,Vk9JQ0U=";
+
+  it("sends clips in order with the combined duration the quote needs", () => {
+    const body = videoRequestBody({
+      target: REF2V,
+      prompt: "Extend <Video 1>, generate a chase",
+      referenceVideos: [CLIP_A, CLIP_B],
+      referenceVideoSeconds: [5, 7.4],
+    });
+    expect(body?.reference_video_urls).toEqual([CLIP_A, CLIP_B]);
+    // Rounded: the field is an integer count of seconds.
+    expect(body?.reference_video_total_duration).toBe(12);
+  });
+
+  it("caps clips at what the version documents", () => {
+    const many = [CLIP_A, CLIP_B, CLIP_A, CLIP_B];
+    const body = videoRequestBody({
+      target: REF2V,
+      prompt: "<Video 1> + a transition + followed by <Video 2>",
+      referenceVideos: many,
+    });
+    // Seedance 2.0 takes three clips, not four.
+    expect((body?.reference_video_urls as string[]).length).toBe(3);
+  });
+
+  it("refuses to send audio as the only reference, which the contract forbids", () => {
+    const alone = videoRequestBody({
+      target: REF2V,
+      prompt: "Refer to the timbre in <Audio 1>",
+      referenceAudio: [VOICE],
+    });
+    // Nothing visual: not a runnable reference request at all.
+    expect(alone).toBeUndefined();
+
+    const paired = videoRequestBody({
+      target: REF2V,
+      prompt: "Refer to <Subject 1> in <Image 1>, and the timbre in <Audio 1>",
+      references: [REF_A],
+      referenceAudio: [VOICE],
+    });
+    expect(paired?.reference_audio_urls).toEqual([VOICE]);
+  });
+
+  it("keeps reference media off the variants that have no such contract", () => {
+    const imageToVideo = videoRequestBody({
+      target: I2V,
+      prompt: "the keeper turns",
+      openingFrame: FRAME,
+      referenceVideos: [CLIP_A],
+      referenceAudio: [VOICE],
+    });
+    expect(imageToVideo?.reference_video_urls).toBeUndefined();
+    expect(imageToVideo?.reference_audio_urls).toBeUndefined();
+
+    const otherFamily = videoRequestBody({
+      target: m("wan-2-7-reference-to-video"),
+      prompt: "a scene",
+      references: [REF_A],
+      referenceVideos: [CLIP_A],
+    });
+    expect(otherFamily?.reference_video_urls).toBeUndefined();
+  });
+
+  it("lets a clip alone drive a reference render (extend needs no photo)", () => {
+    const body = videoRequestBody({
+      target: REF2V,
+      prompt: "Extend <Video 1>, generate a chase",
+      referenceVideos: [CLIP_A],
+    });
+    expect(body).toBeDefined();
+    expect(body?.reference_image_urls).toBeUndefined();
+  });
+});

@@ -9,6 +9,7 @@ export {
   NODE_TYPES,
   nodeSchema,
   outputKindOf,
+  portCapacity,
   resolveInputPort,
   type InputPort,
   type IOKind,

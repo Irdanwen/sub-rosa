@@ -24,6 +24,7 @@ import { getNote } from "../tauri";
 import {
   artifactSrc,
   listArtifacts,
+  readArtifactBase64,
   registerDownloadedArtifact,
   saveArtifactFromBase64,
   saveArtifactFromUrl,
@@ -107,9 +108,33 @@ async function loadNote(noteId: string): Promise<{ title: string; text: string }
   };
 }
 
+/** A gallery item as a data URI: the form an inline media input travels in
+ * (reference clips). Read on demand — a clip is heavy and almost no node
+ * needs its bytes. */
+async function readMedia(artifactId: string): Promise<string> {
+  const artifact = (await listArtifacts()).find((entry) => entry.id === artifactId);
+  if (!artifact) {
+    throw new Error("That gallery item is gone. Pick another one.");
+  }
+  const base64 = await readArtifactBase64(artifact);
+  return `data:${mimeForFile(artifact.fileName)};base64,${base64}`;
+}
+
+/** Mime from a gallery file name, for the data URIs the backends parse. */
+function mimeForFile(fileName: string): string {
+  const extension = fileName.split(".").pop()?.toLowerCase() ?? "";
+  if (extension === "webm") return "video/webm";
+  if (extension === "mov") return "video/quicktime";
+  if (extension === "mp3") return "audio/mpeg";
+  if (extension === "wav") return "audio/wav";
+  if (extension === "png") return "image/png";
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+  return "video/mp4";
+}
+
 /** The gallery-backed storage the engine persists through on both shells. */
 export function workflowStorage(): WorkflowStorage {
-  return { save, loadAsset, loadNote };
+  return { save, loadAsset, loadNote, readMedia };
 }
 
 // --- durable runs (ADR-0021) ---------------------------------------------------

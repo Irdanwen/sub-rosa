@@ -222,6 +222,31 @@
   color: var(--muted-foreground);
 }
 
+/* Inline guidance inside a field (how to name references in a prompt). */
+.studio-hint {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+
+/* Reference clips: an ordered list, numbered the way the prompt names them. */
+.studio-clip-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.studio-clip-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--foreground);
+}
+
 .studio-textarea,
 .studio-input,
 .studio-native-select {

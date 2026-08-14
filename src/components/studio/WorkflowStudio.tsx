@@ -32,6 +32,7 @@ import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatCredits } from "../../lib/studio/catalog";
+import { maxVideoReferences, referenceMention } from "../../lib/studio/seedance";
 import type { ArtifactKind, MediaCatalog } from "../../lib/studio/types";
 import {
   activeWorkflowRuns,
@@ -60,6 +61,7 @@ import {
   nodeCostMap,
   nodeSchema,
   outputKindOf,
+  portCapacity,
   reorderPortEdge,
   resolveInputPort,
   saveWorkflow,
@@ -533,9 +535,14 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
         .map((port) => {
           const sources = data.portSources?.[port.id] ?? [];
           // Image inputs of a prompted node can be talked about by position:
-          // clicking an entry drops "image N" into the prompt.
+          // clicking an entry drops the mention into the prompt, spelled the
+          // way the target model reads it (seedance wants `<Image 1>`, and
+          // gets the wrong workflow when handed plain prose).
           const mentionable =
             port.kind === "image" && schema.params.some((param) => param.name === "prompt");
+          const modelId = typeof wfNode.params.model === "string" ? wfNode.params.model : "";
+          const mentionFor = (index: number) =>
+            referenceMention(modelId ? { id: modelId } : undefined, "image", index + 1);
           return (
             <div key={port.id} className="studio-port-order nodrag">
               <span className="studio-port-order-head">{port.label} order</span>
@@ -546,11 +553,11 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
                       type="button"
                       className="studio-port-order-entry"
                       disabled={!mentionable}
-                      title={mentionable ? `Add "image ${index + 1}" to the prompt` : undefined}
+                      title={mentionable ? `Add "${mentionFor(index)}" to the prompt` : undefined}
                       onClick={() => {
                         const prompt =
                           typeof wfNode.params.prompt === "string" ? wfNode.params.prompt : "";
-                        const mention = `image ${index + 1}`;
+                        const mention = mentionFor(index);
                         onParamsChange(wfNode.id, {
                           ...wfNode.params,
                           prompt: prompt ? `${prompt.trimEnd()} ${mention}` : mention,
@@ -909,7 +916,9 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
       const landing = flowEdges.filter(
         (edge) => edge.target === target.id && (edge.targetHandle ?? undefined) === port.id,
       ).length;
-      const capacity = port.multi ? (port.max ?? Number.POSITIVE_INFINITY) : 1;
+      // The cap can be per model (seedance 2.0 takes 9 reference photos,
+      // 2.5 takes 30), so ask the port with the node's own params.
+      const capacity = portCapacity(port, target.params) ?? Number.POSITIVE_INFINITY;
       return landing < capacity;
     },
     [flowNodes, flowEdges],

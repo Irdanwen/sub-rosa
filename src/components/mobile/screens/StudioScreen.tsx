@@ -31,6 +31,7 @@ import {
   modelsOfType,
   musicCapabilities,
   isReferenceToVideoModel,
+  isSeedanceModel,
   musicModels,
   soundEffectsModels,
   supportsBackgroundRemoval,
@@ -42,6 +43,12 @@ import {
   needsSeedanceConsent,
   rememberSeedanceConsent,
 } from "../../../lib/studio/consent";
+import {
+  maxVideoReferences,
+  referenceMention,
+  seedancePersonMediaCaveat,
+  seedancePromptAdvice,
+} from "../../../lib/studio/seedance";
 import { JobFailureNotice } from "../../studio/JobFailureNotice";
 import { continuationPrompt, extractHandoffFrame } from "../../../lib/studio/frames";
 import { videoRequestBody } from "../../../lib/studio/video-request";
@@ -1017,8 +1024,9 @@ function ImagePanel({
 
 // --- Video ------------------------------------------------------------------
 
-/** Cap on the user's own reference photos, matching the desktop studio. */
-const MAX_VIDEO_REFERENCES = 4;
+// How many reference photos are allowed is per family (`maxVideoReferences`):
+// seedance 2.0 documents 9 and 2.5 documents 30, everything else keeps a low
+// default. Same rule as the desktop studio.
 
 /** A frame handed off from a finished clip, waiting to open the next shot. */
 interface VideoHandoff {
@@ -1065,6 +1073,9 @@ function VideoPanel({
     hasReferences: references.length > 0,
   });
   const buildsFromPhoto = openingFrame.length > 0 || references.length > 0;
+  /** How many reference photos this family takes. Read off the reference
+   * variant, which holds while the first photo is still being added. */
+  const referenceCap = maxVideoReferences(family?.referenceModel ?? model);
   // Seedance needs a face-media attestation for any clip built from a photo;
   // remembered so the box stays ticked across sessions.
   const [consent, setConsent] = useState(hasSeedanceConsent);
@@ -1077,6 +1088,12 @@ function VideoPanel({
     [model, constraintEpoch],
   );
   const [prompt, setPrompt] = useState("");
+  /** Seedance reference renders route from the prompt: a wrong opening or a
+   * loose mention silently runs the wrong workflow, and bills for it. */
+  const promptAdvice = seedancePromptAdvice(model, prompt);
+  /** The public seedance variants refuse person-bearing media whatever is
+   * attested, so the toggle says what it actually buys. */
+  const personMediaCaveat = seedancePersonMediaCaveat(model);
   const [negativePrompt, setNegativePrompt] = useState("");
   const [duration, setDuration] = useState("");
   const [aspectRatio, setAspectRatio] = useState("");
@@ -1284,11 +1301,17 @@ function VideoPanel({
       {family?.referenceModel ? (
         <ReferencePicker
           references={references}
-          onChange={(refs) => setReferences(refs.slice(0, MAX_VIDEO_REFERENCES))}
+          onChange={(refs) => setReferences(refs.slice(0, referenceCap))}
           galleryImages={galleryImages}
           hint={
             references.length > 0
-              ? "These photos steer the style and subject, alongside the opening frame."
+              ? // Seedance routes its workflow from the prompt and only reads
+                // its own mention syntax, so naming them is part of the input.
+                isSeedanceModel(family.referenceModel.id)
+                ? `These photos steer style and subject. Name them in the prompt as ${references
+                    .map((_, index) => referenceMention(family.referenceModel, "image", index + 1))
+                    .join(", ")}.`
+                : "These photos steer the style and subject, alongside the opening frame."
               : "Optional reference photos: they steer style and subject while the prompt drives the action."
           }
         />
@@ -1306,6 +1329,7 @@ function VideoPanel({
         }
         onChange={(event) => setPrompt(event.target.value)}
       />
+      {promptAdvice ? <p className="mobile-workflow-param-hint">{promptAdvice}</p> : null}
       <textarea
         className="mobile-studio-prompt"
         value={negativePrompt}
@@ -1327,6 +1351,9 @@ function VideoPanel({
           <span>
             I have the right to use this photo and accept this model's face-media policy for anyone
             shown in it.
+            {personMediaCaveat ? (
+              <span className="mobile-workflow-param-hint">{personMediaCaveat}</span>
+            ) : null}
           </span>
         </div>
       ) : null}

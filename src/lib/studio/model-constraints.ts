@@ -49,6 +49,13 @@ function secondsRange(min: number, max: number): string[] {
  * provider's own rejection). */
 const SEEDANCE_RATIOS = ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
 
+/** The reference variants also take "adaptive", which is what the edit, extend
+ * and stitch workflows want: the output keeps the source clip's shape rather
+ * than being reframed (Venice's Seedance guide uses it in every such example).
+ * Last on purpose — the first entry is what an unset field falls back to, and
+ * a plain reference render should keep its explicit shape. */
+const SEEDANCE_REFERENCE_RATIOS = [...SEEDANCE_RATIOS, "adaptive"];
+
 /**
  * Image-to-video models take their frame from the source image, so
  * `aspect_ratio` is not a parameter there at all - the validator answers
@@ -75,6 +82,15 @@ export const PROBED_VIDEO_CONSTRAINTS: ProbedConstraints[] = [
     durations: secondsRange(4, 12),
     aspectRatios: SEEDANCE_RATIOS,
     resolutions: ["480p", "720p", "1080p"],
+  },
+  {
+    // 2.5 doubles the output range and drops 1080p/4k (Venice's Seedance
+    // guide, read 2026-08-14). Ahead of the generic seedance entry, which
+    // would otherwise cap it at 15s.
+    match: "seedance-2-5",
+    durations: secondsRange(4, 30),
+    aspectRatios: SEEDANCE_RATIOS,
+    resolutions: ["480p", "720p"],
   },
   {
     match: "seedance-2-0-fast",
@@ -105,7 +121,13 @@ export function probedConstraints(modelId: string): ProbedConstraints | undefine
   const entry = PROBED_VIDEO_CONSTRAINTS.find((probe) => id.includes(probe.match));
   if (!entry) return undefined;
   // The ratios in the table belong to the variants that take one.
-  return takesAspectRatio(modelId) ? entry : { ...entry, aspectRatios: undefined };
+  if (!takesAspectRatio(modelId)) return { ...entry, aspectRatios: undefined };
+  // Seedance reference variants also take "adaptive" (keep the source clip's
+  // shape), which the edit/extend/stitch workflows are written around.
+  if (id.includes("seedance") && id.includes("reference-to-video")) {
+    return { ...entry, aspectRatios: SEEDANCE_REFERENCE_RATIOS };
+  }
+  return entry;
 }
 
 // --- learning from the provider's own rejection -----------------------------

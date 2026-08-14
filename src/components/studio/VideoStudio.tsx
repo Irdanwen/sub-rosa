@@ -27,6 +27,19 @@ import {
 import { mediaJson } from "../../lib/studio/client";
 import { videoRequestBody } from "../../lib/studio/video-request";
 import { hasSeedanceConsent, rememberSeedanceConsent } from "../../lib/studio/consent";
+import { imageSize } from "../../lib/studio/downscale";
+import {
+  maxReferenceVideos,
+  maxReferenceVideoSeconds,
+  maxVideoReferences,
+  referenceMention,
+  requestSizeProblem,
+  SEEDANCE_WORKFLOWS,
+  seedanceImageProblem,
+  seedancePersonMediaCaveat,
+  seedancePromptAdvice,
+  supportsReferenceMedia,
+} from "../../lib/studio/seedance";
 import {
   alternativeCount,
   anchorOf,
@@ -42,6 +55,7 @@ import {
   extractFrameAt,
   extractHandoffFrame,
   HANDOFF_ADJUST_WINDOW_SECONDS,
+  loadVideoElement,
 } from "../../lib/studio/frames";
 import { describeJobFailure } from "../../lib/studio/job-errors";
 import {
@@ -57,7 +71,12 @@ import {
   VIDEO_QUOTE_PATH,
   VIDEO_RETRIEVE_PATH,
 } from "../../lib/studio/paths";
-import type { MediaCatalog, MediaModel, StudioArtifact } from "../../lib/studio/types";
+import type {
+  ArtifactKind,
+  MediaCatalog,
+  MediaModel,
+  StudioArtifact,
+} from "../../lib/studio/types";
 import { EmptyState } from "../ui/EmptyState";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { Select } from "../ui/Select";
@@ -85,10 +104,11 @@ const VIDEO_URL_FIELDS = ["video_url", "url"];
  */
 type VideoSurface = "shot" | "video";
 
-/** Style/subject references the user supplies. The schema accepts more (8 was
- * still fine when probed), but every one inflates the request and their
- * influence thins out; the chain's own anchor frame rides on top of this. */
-const MAX_VIDEO_REFERENCES = 4;
+/** Style/subject references the user supplies. How many a model actually takes
+ * is per family (`maxVideoReferences`): seedance 2.0 documents 9, 2.5 documents
+ * 30, and everything else keeps a low default because each reference inflates
+ * the request and their influence thins out. The chain's own anchor frame rides
+ * on top of this. */
 
 /** The clip the opening frame was handed off from, and where in it. */
 interface Handoff {
@@ -107,6 +127,31 @@ const ANCHOR_AT_FRACTION = 0.15;
 /** Source-clip ceiling: the backends cap media inputs around this size, and a
  * bigger clip would also stall the IPC bridge. */
 const MAX_VIDEO_INPUT_BYTES = 15 * 1024 * 1024;
+
+/** Which gallery buckets hold something a reference clip can come from. */
+const CLIP_KINDS: ArtifactKind[] = ["video"];
+
+/** Longest a single reference clip may run (seedance 2.0 and 2.5 alike). */
+const MAX_CLIP_SECONDS = 15;
+
+/** A clip's length, or 0 when it cannot be measured - bounded so an
+ * unplayable source cannot hang the form. */
+async function clipDuration(src: string): Promise<number> {
+  try {
+    const video = await Promise.race([
+      loadVideoElement(src),
+      new Promise<undefined>((resolve) => {
+        setTimeout(() => resolve(undefined), 4_000);
+      }),
+    ]);
+    if (!video) return 0;
+    const seconds = Number.isFinite(video.duration) ? video.duration : 0;
+    video.src = "";
+    return seconds;
+  } catch {
+    return 0;
+  }
+}
 
 export function VideoStudio({
   catalog,
@@ -167,9 +212,21 @@ export function VideoStudio({
   const [openingFrame, setOpeningFrame] = useState("");
   const [endFrame, setEndFrame] = useState("");
   const [references, setReferences] = useState<string[]>([]);
+  /** Why the last reference photo was refused, if it was. */
+  const [referenceError, setReferenceError] = useState<string | undefined>(undefined);
+  /** Reference clips: what the seedance edit, extend and stitch workflows work
+   * from. Each carries its gallery id (the bytes are read at submit) and its
+   * length, which the quote needs to match what the queue bills. */
+  const [referenceClips, setReferenceClips] = useState<
+    Array<{ id: string; label: string; dataUri: string; seconds: number }>
+  >([]);
+  /** Why the last clip was refused (too long, or the request got too big). */
+  const [clipError, setClipError] = useState<string | undefined>(undefined);
   // Which image slot the gallery picker is filling, if any. One picker serves
   // all three: they differ only in what they do with what comes back.
-  const [picking, setPicking] = useState<"opening" | "end" | "reference" | undefined>(undefined);
+  const [picking, setPicking] = useState<"opening" | "end" | "reference" | "clip" | undefined>(
+    undefined,
+  );
   // Video direction: one source clip (upload or gallery) + the upscale factor
   // for the upscaler models.
   const [sourceVideo, setSourceVideo] = useState("");
@@ -220,8 +277,22 @@ export function VideoStudio({
       ? family?.videoModel
       : variantFor(family, {
           hasFrame: Boolean(openingFrame),
-          hasReferences: outgoingReferences.length > 0,
+          // A reference clip resolves the variant just like a photo does:
+          // edit, extend and stitch all live on reference-to-video.
+          hasReferences: outgoingReferences.length > 0 || referenceClips.length > 0,
         });
+  /** How many reference photos this family takes. Read off the reference
+   * variant rather than the resolved one: the cap has to hold while the user
+   * is still adding the first photo, when `model` is not the reference
+   * variant yet. */
+  const referenceCap = maxVideoReferences(family?.referenceModel ?? model);
+  /** Seedance reference renders route from the prompt: a wrong opening or a
+   * loose mention silently runs the wrong workflow (and bills for it), so the
+   * advice sits under the prompt rather than in a failure message after. */
+  const promptAdvice = seedancePromptAdvice(model, prompt);
+  /** The public seedance variants refuse person-bearing media whatever is
+   * attested, so the checkbox says what it actually buys. */
+  const personMediaCaveat = seedancePersonMediaCaveat(model);
   // Bumped when a rejection teaches us something, so the pickers re-derive.
   const [constraintEpoch, setConstraintEpoch] = useState(0);
   const constraints = useMemo(
@@ -331,6 +402,10 @@ export function VideoStudio({
         openingFrame: effectiveSurface === "shot" ? openingFrame : undefined,
         endFrame: effectiveSurface === "shot" ? endFrame : undefined,
         references: effectiveSurface === "shot" ? outgoingReferences : undefined,
+        referenceVideos:
+          effectiveSurface === "shot" ? referenceClips.map((clip) => clip.dataUri) : undefined,
+        referenceVideoSeconds:
+          effectiveSurface === "shot" ? referenceClips.map((clip) => clip.seconds) : undefined,
         sourceVideo: effectiveSurface === "video" ? sourceVideo : undefined,
         upscaleFactor: Number(upscaleFactor),
         duration,
@@ -345,6 +420,7 @@ export function VideoStudio({
       openingFrame,
       endFrame,
       outgoingReferences,
+      referenceClips,
       sourceVideo,
       upscaleFactor,
       duration,
@@ -425,6 +501,60 @@ export function VideoStudio({
     quote,
     catalog.priceMultiplier,
   ]);
+
+  /**
+   * Add a reference clip: measure it, check it against what this version
+   * documents (per-clip length, combined length, request size), and only then
+   * keep it. Every one of those limits is reported by the provider *after* a
+   * render is queued and billed, so they are checked here instead.
+   */
+  const addReferenceClip = useCallback(
+    async (dataUri: string, artifact: StudioArtifact) => {
+      setClipError(undefined);
+      if (referenceClips.some((clip) => clip.id === artifact.id)) return;
+      const seconds = await clipDuration(artifactSrc(artifact));
+      if (seconds > 0 && (seconds < 2 || seconds > MAX_CLIP_SECONDS)) {
+        setClipError(
+          `That clip is ${Math.round(seconds)}s. Reference clips run 2 to ${MAX_CLIP_SECONDS}s.`,
+        );
+        return;
+      }
+      const next = [
+        ...referenceClips,
+        { id: artifact.id, label: artifact.prompt || artifact.fileName, dataUri, seconds },
+      ];
+      const combined = next.reduce((total, clip) => total + clip.seconds, 0);
+      const combinedCap = maxReferenceVideoSeconds(family?.referenceModel);
+      if (combined > combinedCap) {
+        setClipError(
+          `Together these clips run ${Math.round(combined)}s, over the ${combinedCap}s a request allows.`,
+        );
+        return;
+      }
+      const oversize = requestSizeProblem(next.map((clip) => clip.dataUri));
+      if (oversize) {
+        setClipError(oversize);
+        return;
+      }
+      setReferenceClips(next);
+    },
+    [referenceClips, family?.referenceModel],
+  );
+
+  /** Add a reference photo, refusing the shapes the model is known to reject
+   * before the render is queued rather than after it has been billed. */
+  const addReference = useCallback(
+    async (dataUri: string) => {
+      setReferenceError(undefined);
+      const problem = seedanceImageProblem(family?.referenceModel, await imageSize(dataUri));
+      if (problem) {
+        setReferenceError(problem);
+        return;
+      }
+      setReferences((current) => [...current, dataUri].slice(0, referenceCap));
+    },
+    [family?.referenceModel, referenceCap],
+  );
 
   const readInto = useCallback((file: File | undefined, set: (dataUri: string) => void) => {
     if (!file) return;
@@ -806,10 +936,7 @@ export function VideoStudio({
         </>
       ) : null}
       {effectiveSurface === "shot" && family?.referenceModel ? (
-        <StudioField
-          label="Reference photos"
-          hint={`${references.length} / ${MAX_VIDEO_REFERENCES}`}
-        >
+        <StudioField label="Reference photos" hint={`${references.length} / ${referenceCap}`}>
           <div className="studio-upload">
             {references.length > 0 ? (
               <div className="studio-edit-sources">
@@ -817,7 +944,12 @@ export function VideoStudio({
                   <div key={`${index}-${reference.slice(-24)}`} className="studio-edit-source">
                     <img src={reference} alt={`Reference ${index + 1}`} />
                     {references.length > 1 ? (
-                      <span className="studio-edit-source-index">Photo {index + 1}</span>
+                      // The label is the name the prompt must use, so a
+                      // seedance render reads "<Image 2>" here rather than a
+                      // count the model would not recognise.
+                      <span className="studio-edit-source-index">
+                        {referenceMention(family?.referenceModel, "image", index + 1)}
+                      </span>
                     ) : null}
                     <button
                       type="button"
@@ -833,7 +965,24 @@ export function VideoStudio({
                 ))}
               </div>
             ) : null}
-            {references.length < MAX_VIDEO_REFERENCES ? (
+            {references.length > 0 && family.referenceModel
+              ? (() => {
+                  // Seedance routes its workflow from the prompt and only
+                  // recognises its own mention syntax, so how to name these
+                  // photos is part of the input, not a nicety.
+                  const mentions = references.map((_, index) =>
+                    referenceMention(family.referenceModel, "image", index + 1),
+                  );
+                  return isSeedanceModel(family.referenceModel.id) ? (
+                    <p className="studio-hint">
+                      Name them in the prompt as {mentions.join(", ")} - for example "Refer to{" "}
+                      {mentions[0]} to generate...".
+                    </p>
+                  ) : null;
+                })()
+              : null}
+            {referenceError ? <p className="studio-error">{referenceError}</p> : null}
+            {references.length < referenceCap ? (
               <div className="studio-upload-actions">
                 <button
                   type="button"
@@ -857,12 +1006,81 @@ export function VideoStudio({
               accept="image/png,image/jpeg,image/webp"
               hidden
               onChange={(event) => {
-                readInto(event.target.files?.[0], (dataUri) =>
-                  setReferences((current) => [...current, dataUri].slice(0, MAX_VIDEO_REFERENCES)),
-                );
+                readInto(event.target.files?.[0], (dataUri) => void addReference(dataUri));
                 event.target.value = "";
               }}
             />
+          </div>
+        </StudioField>
+      ) : null}
+      {effectiveSurface === "shot" && supportsReferenceMedia(family?.referenceModel) ? (
+        <StudioField
+          label="Reference clips"
+          hint={`${referenceClips.length} / ${maxReferenceVideos(family?.referenceModel)}`}
+        >
+          <div className="studio-upload">
+            {referenceClips.length > 0 ? (
+              <ul className="studio-clip-list">
+                {referenceClips.map((clip, index) => (
+                  <li key={clip.id}>
+                    <span className="studio-port-order-index">{index + 1}</span>
+                    <span className="studio-port-order-label">{clip.label}</span>
+                    <button
+                      type="button"
+                      className="studio-icon-button"
+                      aria-label={`Remove clip ${index + 1}`}
+                      onClick={() =>
+                        setReferenceClips((current) =>
+                          current.filter((entry) => entry.id !== clip.id),
+                        )
+                      }
+                    >
+                      <span aria-hidden>x</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {clipError ? <p className="studio-error">{clipError}</p> : null}
+            <div className="studio-upload-actions">
+              {referenceClips.length < maxReferenceVideos(family?.referenceModel) ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setPicking("clip")}
+                >
+                  {referenceClips.length > 0 ? "Add another clip" : "Choose a clip"}
+                </button>
+              ) : null}
+            </div>
+            {referenceClips.length > 0 ? (
+              <>
+                <p className="studio-hint">
+                  Name them in the prompt as{" "}
+                  {referenceClips
+                    .map((_, index) => referenceMention(family?.referenceModel, "video", index + 1))
+                    .join(", ")}
+                  , and start it with what you want done:
+                </p>
+                <div className="studio-upload-actions">
+                  {SEEDANCE_WORKFLOWS.filter((recipe) => recipe.needsClip).map((recipe) => (
+                    <button
+                      key={recipe.id}
+                      type="button"
+                      className="btn btn-secondary"
+                      title={recipe.description}
+                      onClick={() =>
+                        setPrompt((current) =>
+                          current.startsWith(recipe.prefix) ? current : recipe.prefix,
+                        )
+                      }
+                    >
+                      {recipe.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
           </div>
         </StudioField>
       ) : null}
@@ -939,7 +1157,8 @@ export function VideoStudio({
             I have the right to use this photo and accept the model's face-media policy for anyone
             shown in it.
             <span className="studio-consent-meta">
-              Seedance requires this before it will build a clip from a photo of a person.
+              {personMediaCaveat ??
+                "Seedance requires this before it will build a clip from a photo of a person."}
             </span>
           </span>
         </label>
@@ -962,6 +1181,7 @@ export function VideoStudio({
           }
           onChange={(event) => setPrompt(event.target.value)}
         />
+        {promptAdvice ? <p className="studio-hint">{promptAdvice}</p> : null}
       </StudioField>
       <StudioField label="Negative prompt">
         <textarea
@@ -1038,12 +1258,20 @@ export function VideoStudio({
       {picking ? (
         <GalleryPicker
           onClose={() => setPicking(undefined)}
+          kinds={picking === "clip" ? CLIP_KINDS : undefined}
+          title={picking === "clip" ? "Pick a clip" : undefined}
           description={
-            picking === "reference"
-              ? "Pick an image you have already produced. It steers style and subject, alongside the opening frame."
-              : "Pick an image you have already produced."
+            picking === "clip"
+              ? "Pick a clip to edit, extend or stitch. It travels with the request, so keep it short."
+              : picking === "reference"
+                ? "Pick an image you have already produced. It steers style and subject, alongside the opening frame."
+                : "Pick an image you have already produced."
           }
-          onPick={(dataUri) => {
+          onPick={(dataUri, artifact) => {
+            if (picking === "clip") {
+              void addReferenceClip(dataUri, artifact);
+              return;
+            }
             if (picking === "opening") {
               // Same reset the file input does: the handoff describes a frame
               // read out of a clip, and it would otherwise keep captioning a
@@ -1054,7 +1282,7 @@ export function VideoStudio({
             } else if (picking === "end") {
               setEndFrame(dataUri);
             } else {
-              setReferences((current) => [...current, dataUri].slice(0, MAX_VIDEO_REFERENCES));
+              void addReference(dataUri);
             }
           }}
         />

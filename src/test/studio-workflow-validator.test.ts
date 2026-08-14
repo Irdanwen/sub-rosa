@@ -192,6 +192,32 @@ describe("validateWorkflow with named ports", () => {
     expect(result.errors.some((issue) => issue.message.includes("ghostPort"))).toBe(true);
   });
 
+  it("caps references per model: seedance 2.0 takes nine, others four", () => {
+    const stills = Array.from({ length: 5 }, (_, index) =>
+      node(`r${index}`, "asset", { assetKind: "image", artifactId: `a${index}` }),
+    );
+    const edges = stills.map((still) => edge(still.id, "clip", "references"));
+
+    // Five references is over the default cap...
+    const capped = validateWorkflow(
+      workflow([...stills, node("clip", "video", { model: "kling-x", prompt: "p" })], edges),
+    );
+    expect(capped.ok).toBe(false);
+    expect(capped.errors.some((issue) => issue.message.includes("at most 4"))).toBe(true);
+
+    // ...but well inside what seedance 2.0 documents.
+    const seedance = validateWorkflow(
+      workflow(
+        [
+          ...stills,
+          node("clip", "video", { model: "seedance-2-0-reference-to-video-basic", prompt: "p" }),
+        ],
+        edges,
+      ),
+    );
+    expect(seedance.ok).toBe(true);
+  });
+
   it("caps a single port at one connection and references at four", () => {
     const stills = ["s1", "s2"].map((id) =>
       node(id, "asset", { assetKind: "image", artifactId: id }),

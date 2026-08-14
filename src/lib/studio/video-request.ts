@@ -17,6 +17,7 @@
 import { isReferenceToVideoModel, isSeedanceModel, isVideoUpscaleModel } from "./catalog";
 import { withSeedanceConsent } from "./consent";
 import { effectiveVideoConstraints } from "./model-constraints";
+import { maxReferenceVideos, maxVideoReferences, supportsReferenceMedia } from "./seedance";
 import type { MediaModel } from "./types";
 
 /** Keeps a chosen value valid against the options a model actually offers,
@@ -37,6 +38,17 @@ export interface VideoRequestInputs {
   endFrame?: string;
   /** Style/subject photos, the chain's anchor frame included. */
   references?: string[];
+  /**
+   * Reference *clips* — what the seedance edit, extend and stitch workflows
+   * work from. Data URIs like every other media input here; the prompt names
+   * them `<Video 1>`, `<Video 2>` in this order.
+   */
+  referenceVideos?: string[];
+  /** Their durations in seconds, so a quote matches what the queue bills. */
+  referenceVideoSeconds?: number[];
+  /** Reference audio (timbre, voice), which the contract forbids as the only
+   * reference — it must ride with an image or a clip. */
+  referenceAudio?: string[];
   /** Source clip, for the restyle/upscale surface. */
   sourceVideo?: string;
   upscaleFactor?: number;
@@ -60,6 +72,9 @@ export function videoRequestBody(inputs: VideoRequestInputs): Record<string, unk
     openingFrame,
     endFrame,
     references = [],
+    referenceVideos = [],
+    referenceVideoSeconds = [],
+    referenceAudio = [],
     sourceVideo,
     upscaleFactor,
     duration,
@@ -106,10 +121,34 @@ export function videoRequestBody(inputs: VideoRequestInputs): Record<string, unk
   const takesReferences = isReferenceToVideoModel(target.id);
   if (openingFrame) body.image_url = openingFrame;
   if (endFrame) body.end_image_url = endFrame;
-  if (takesReferences && references.length > 0) body.reference_image_urls = references;
+  if (takesReferences && references.length > 0) {
+    body.reference_image_urls = references.slice(0, maxVideoReferences(target));
+  }
+
+  // Reference clips and audio: the seedance reference variants only, capped
+  // at what that version documents. Audio may never be the only reference,
+  // so it is dropped rather than sent alone - the request would be refused.
+  const takesMedia = supportsReferenceMedia(target);
+  const clips = takesMedia ? referenceVideos.slice(0, maxReferenceVideos(target)) : [];
+  if (clips.length > 0) {
+    body.reference_video_urls = clips;
+    const seconds = referenceVideoSeconds.slice(0, clips.length);
+    // The quote only matches the queue charge when it is told the combined
+    // length; sending it on the queue body too keeps the two in step.
+    if (seconds.length === clips.length && seconds.every((value) => Number.isFinite(value))) {
+      body.reference_video_total_duration = Math.round(
+        seconds.reduce((total, value) => total + value, 0),
+      );
+    }
+  }
+  const hasOtherReference = clips.length > 0 || (takesReferences && references.length > 0);
+  if (takesMedia && referenceAudio.length > 0 && hasOtherReference) {
+    body.reference_audio_urls = referenceAudio.slice(0, maxReferenceVideos(target));
+  }
 
   // A variant that exists to work from a photo cannot run without one.
-  const hasVisualInput = Boolean(openingFrame) || (takesReferences && references.length > 0);
+  const hasVisualInput =
+    Boolean(openingFrame) || (takesReferences && references.length > 0) || clips.length > 0;
   if (!hasVisualInput && (takesReferences || isImageToVideoModel(target.id))) return undefined;
 
   // Only the seedance targets carry the face-media attestation, and only for a

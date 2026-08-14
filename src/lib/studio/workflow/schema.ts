@@ -10,6 +10,8 @@
 // resolve by kind affinity (see `resolveInputPort`), which preserves the old
 // behavior — an image feeding a video node still becomes its start frame.
 
+import { maxReferenceVideos, maxVideoReferences } from "../seedance";
+
 export type WorkflowNodeType =
   | "textInput"
   | "asset"
@@ -62,10 +64,25 @@ export interface InputPort {
   kind: PortKind;
   /** Accepts several inbound edges (an assemble node's clips, references). */
   multi?: boolean;
-  /** Cap on inbound edges when `multi` (backend limits, e.g. 4 references). */
+  /**
+   * Cap on inbound edges when `multi`, as the schema knows it. Some caps are
+   * really per model (seedance 2.0 takes 9 reference photos, 2.5 takes 30),
+   * so `maxFor` refines this one against the node's chosen model; the schema
+   * value stays the ceiling any model may reach.
+   */
   max?: number;
+  /** Refines `max` from the node's params (its model, chiefly). */
+  maxFor?: (params: Record<string, unknown>) => number;
   /** The node cannot run without this port connected. */
   required?: boolean;
+}
+
+/** The effective cap of a port for one node: the schema's, refined per model. */
+export function portCapacity(port: InputPort, params: Record<string, unknown>): number | undefined {
+  if (!port.multi) return 1;
+  const refined = port.maxFor?.(params);
+  if (refined !== undefined) return refined;
+  return port.max;
 }
 
 export interface ParamSchema {
@@ -250,12 +267,34 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
     type: "video",
     label: "Video",
     description:
-      "Generate a short video. Feed an image to start from, an image to end on, and reference images that keep a subject consistent.",
+      "Generate a short video. Feed an image to start from, an image to end on, reference images that keep a subject consistent, and (on seedance reference models) clips to edit, extend or stitch.",
     inputs: [
       PROMPT_PORT,
       { id: "openingFrame", label: "Opening frame", kind: "image" },
       { id: "endFrame", label: "End frame", kind: "image" },
-      { id: "references", label: "References", kind: "image", multi: true, max: 4 },
+      {
+        id: "references",
+        label: "References",
+        kind: "image",
+        multi: true,
+        // The ceiling is the most generous family's (seedance 2.5); what the
+        // chosen model actually takes comes from `maxVideoReferences`.
+        max: 30,
+        maxFor: (params) =>
+          maxVideoReferences(typeof params.model === "string" ? { id: params.model } : undefined),
+      },
+      {
+        // Reference clips: what the seedance edit, extend and stitch
+        // workflows work from. Only those variants take them, so the cap is
+        // zero everywhere else and the validator refuses the connection.
+        id: "referenceClips",
+        label: "Reference clips",
+        kind: "video",
+        multi: true,
+        max: 10,
+        maxFor: (params) =>
+          maxReferenceVideos(typeof params.model === "string" ? { id: params.model } : undefined),
+      },
     ],
     output: "video",
     params: [
