@@ -129,6 +129,7 @@ export function NotesScreen({
       <PullToRefresh className="mobile-list-scroll" onRefresh={onRefresh}>
         {visibleNotes.length === 0 ? (
           <EmptyState
+            icon={query ? <IconMagnifyingGlass size={28} /> : <IconMicrophone size={28} />}
             title={query ? "No matches" : "No notes yet"}
             description={
               query

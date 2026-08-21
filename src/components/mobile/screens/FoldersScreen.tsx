@@ -1,3 +1,5 @@
+import { IconArrowInbox } from "central-icons/IconArrowInbox";
+import { IconFolder2 } from "central-icons/IconFolder2";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { useState } from "react";
 import type { FolderDto, NoteListItemDto } from "../../../lib/tauri";
@@ -54,6 +56,7 @@ export function FolderScreen({
       <div className="mobile-list-scroll">
         {notes.length === 0 ? (
           <EmptyState
+            icon={isArchiveFolder ? <IconArrowInbox size={28} /> : <IconFolder2 size={28} />}
             title={isArchiveFolder ? "Nothing archived" : "No notes in this folder"}
             description={
               isArchiveFolder

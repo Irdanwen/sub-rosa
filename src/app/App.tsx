@@ -223,13 +223,22 @@ function tabMeta(
   notes: NoteListItemDto[],
   folders: FolderDto[],
   sessions: HermesSessionInfo[],
-): { title: string; icon: ReactNode } {
+  activity: {
+    workingSessionIds: ReadonlySet<string>;
+    waitingSessionIds: ReadonlySet<string>;
+  },
+): { title: string; icon: ReactNode; status?: TabItem["status"] } {
   switch (nav.view) {
     case "meetings": {
       const note = nav.noteId ? notes.find((n) => n.id === nav.noteId) : undefined;
+      const processing =
+        note?.processingStatus === "validating" ||
+        note?.processingStatus === "transcribing" ||
+        note?.processingStatus === "generating";
       return {
         title: note?.title?.trim() || "New note",
         icon: <IconNoteText size={TAB_ICON_SIZE} />,
+        status: processing ? "working" : undefined,
       };
     }
     case "folders": {
@@ -243,9 +252,17 @@ function tabMeta(
       const session = nav.agentSessionId
         ? sessions.find((s) => s.id === nav.agentSessionId)
         : undefined;
+      const sessionId = nav.agentSessionId;
       return {
         title: agentSessionTabTitle(session) || nav.agentSessionTitle?.trim() || "New session",
         icon: <IconBubble3 size={TAB_ICON_SIZE} />,
+        status: !sessionId
+          ? undefined
+          : activity.waitingSessionIds.has(sessionId)
+            ? "waitingForUser"
+            : activity.workingSessionIds.has(sessionId)
+              ? "working"
+              : undefined,
       };
     }
     case "agent-sessions":
@@ -934,9 +951,19 @@ export function App() {
     () =>
       tabs.map((tab) => ({
         id: tab.id,
-        ...tabMeta(tab.nav, state.notes, state.folders, agentSessions),
+        ...tabMeta(tab.nav, state.notes, state.folders, agentSessions, {
+          workingSessionIds: agentWorkingSessionIds,
+          waitingSessionIds: agentWaitingSessionIds,
+        }),
       })),
-    [tabs, state.notes, state.folders, agentSessions],
+    [
+      tabs,
+      state.notes,
+      state.folders,
+      agentSessions,
+      agentWorkingSessionIds,
+      agentWaitingSessionIds,
+    ],
   );
 
   function handleRecovery(sessionId: string, action: "validate" | "discard") {

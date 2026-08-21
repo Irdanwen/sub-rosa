@@ -9,6 +9,10 @@ import type { MobileTab } from "../../app/mobile/nav";
 type TabBarProps = {
   active: MobileTab;
   onSelect: (tab: MobileTab) => void;
+  /** Tabs with work in flight (a reply being written, a render running):
+   * they carry a small breathing dot so background work stays visible from
+   * any tab. */
+  busy?: Partial<Record<MobileTab, boolean>>;
 };
 
 const TABS: Array<{ id: MobileTab; label: string; icon: ReactNode }> = [
@@ -19,7 +23,7 @@ const TABS: Array<{ id: MobileTab; label: string; icon: ReactNode }> = [
   { id: "settings", label: "Settings", icon: <IconSettingsGear4 size={22} /> },
 ];
 
-export function TabBar({ active, onSelect }: TabBarProps) {
+export function TabBar({ active, onSelect, busy }: TabBarProps) {
   return (
     <nav className="mobile-tab-bar" aria-label="Main">
       {TABS.map((tab) => (
@@ -29,10 +33,12 @@ export function TabBar({ active, onSelect }: TabBarProps) {
           className="mobile-tab-bar-item"
           data-active={active === tab.id ? "true" : undefined}
           aria-current={active === tab.id ? "page" : undefined}
+          aria-busy={busy?.[tab.id] || undefined}
           onClick={() => onSelect(tab.id)}
         >
           <span className="mobile-tab-bar-icon" aria-hidden>
             {tab.icon}
+            {busy?.[tab.id] ? <span className="mobile-tab-bar-dot" /> : null}
           </span>
           <span className="mobile-tab-bar-label">{tab.label}</span>
         </button>

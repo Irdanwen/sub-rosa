@@ -1,5 +1,6 @@
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconAudio } from "central-icons/IconAudio";
+import { IconCameraSparkle } from "central-icons/IconCameraSparkle";
 import { IconPlay } from "central-icons-filled/IconPlay";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconChevronDownSmall } from "central-icons/IconChevronDownSmall";
@@ -287,7 +288,11 @@ export function StudioScreen() {
       </div>
       <div className="mobile-settings-scroll">
         {catalogError ? (
-          <EmptyState title="Studio is unavailable" description={catalogError} />
+          <EmptyState
+            icon={<IconCameraSparkle size={28} />}
+            title="Studio is unavailable"
+            description={catalogError}
+          />
         ) : !catalog ? (
           <div className="mobile-studio-loading">
             <Spinner />
@@ -2268,6 +2273,7 @@ function Library({
   if (items.length === 0) {
     return (
       <EmptyState
+        icon={<IconCameraSparkle size={28} />}
         title="Nothing generated yet"
         description="Images, videos and audio you make in Studio collect here, on this device."
       />
@@ -2473,6 +2479,13 @@ function Gallery({
   if (items.length === 0) {
     return (
       <EmptyState
+        icon={
+          kind === "music" || kind === "speech" || kind === "sfx" ? (
+            <IconAudio size={28} />
+          ) : (
+            <IconCameraSparkle size={28} />
+          )
+        }
         title={
           kind === "image"
             ? "No images yet"

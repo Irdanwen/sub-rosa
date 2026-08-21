@@ -9,6 +9,7 @@ fn icon_bytes(brand: &str) -> &'static [u8] {
     match brand {
         "clay" => include_bytes!("../icons/themed/icon-clay.png"),
         "amber" => include_bytes!("../icons/themed/icon-amber.png"),
+        "gold" => include_bytes!("../icons/themed/icon-gold.png"),
         "sage" => include_bytes!("../icons/themed/icon-sage.png"),
         "blue" => include_bytes!("../icons/themed/icon-blue.png"),
         "plum" => include_bytes!("../icons/themed/icon-plum.png"),

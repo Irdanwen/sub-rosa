@@ -3,6 +3,7 @@ import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent, PointerEvent, ReactNode } from "react";
+import { DotSpinner } from "../DotSpinner";
 import { HoverTip } from "../ui/HoverTip";
 import { primaryShortcutLabel } from "../../lib/platform";
 
@@ -10,6 +11,11 @@ export type TabItem = {
   id: string;
   title: string;
   icon: ReactNode;
+  /** Ambient work state, mirroring the sidebar's language: "working" swaps
+   * the identity glyph for the canonical dot spinner (Safari-style), and
+   * "waitingForUser" pins a needs-you dot to the icon's corner — so a busy
+   * or blocked session stays visible from any view. */
+  status?: "working" | "waitingForUser";
 };
 
 type TabBarProps = {
@@ -203,15 +209,17 @@ export function TabBar({
         role="tab"
         tabIndex={0}
         aria-selected={active}
+        aria-busy={tab.status === "working" || undefined}
         data-active={active || undefined}
-        title={tab.title}
+        title={tab.status === "waitingForUser" ? `${tab.title} (needs you)` : tab.title}
         onClick={() => onActivate(tab.id)}
         onAuxClick={(event) => handleAuxClick(event, tab.id)}
         onContextMenu={(event) => handleContextMenu(event, tab.id)}
         onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
       >
         <span className="tab-icon" aria-hidden>
-          {tab.icon}
+          {tab.status === "working" ? <DotSpinner /> : tab.icon}
+          {tab.status === "waitingForUser" ? <span className="tab-status-dot" /> : null}
         </span>
         <span className="tab-label">{tab.title}</span>
         {showClose ? (
@@ -313,7 +321,8 @@ export function TabBar({
                 }}
               >
                 <span className="tab-overflow-icon" aria-hidden>
-                  {tab.icon}
+                  {tab.status === "working" ? <DotSpinner /> : tab.icon}
+                  {tab.status === "waitingForUser" ? <span className="tab-status-dot" /> : null}
                 </span>
                 <span className="tab-overflow-title">{tab.title}</span>
                 {showClose ? (

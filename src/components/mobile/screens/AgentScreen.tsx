@@ -1,6 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconArrowDown } from "central-icons/IconArrowDown";
+import { IconBubble3 } from "central-icons/IconBubble3";
 import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
@@ -196,6 +197,7 @@ export function AgentScreen({
           </ul>
         ) : loadError && active.length === 0 && archived.length === 0 ? (
           <EmptyState
+            icon={<IconBubble3 size={28} />}
             title="Couldn't load your chats"
             description={loadError}
             action={
@@ -206,6 +208,7 @@ export function AgentScreen({
           />
         ) : active.length === 0 && archived.length === 0 ? (
           <EmptyState
+            icon={<IconBubble3 size={28} />}
             title="Ask about your notes"
             description="Start a chat to search your meetings and the web."
             action={

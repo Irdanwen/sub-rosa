@@ -291,10 +291,34 @@ input:focus-visible,
   opacity: 1;
 }
 
+/* The hero's warm pool breathes — a glacial tide, felt rather than seen, so
+ * the resting screen reads as alive instead of frozen. Transform-only
+ * (compositor-friendly) and anchored at the bottom so the wash deepens and
+ * relaxes without moving its bottom edge; the rim (::after) stays put. */
+.agent-workspace[data-hero="true"]::before {
+  transform-origin: bottom;
+  animation: hero-wash-tide 14s var(--ease-in-out) infinite;
+}
+
+@keyframes hero-wash-tide {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(1.06);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .agent-workspace::before,
   .agent-workspace::after {
     transition: none;
+  }
+
+  /* The wash rests at its base height; presence, not motion, carries it. */
+  .agent-workspace[data-hero="true"]::before {
+    animation: none;
   }
 }
 
@@ -7319,10 +7343,30 @@ input:focus-visible,
 }
 
 .tab-icon {
+  position: relative;
   display: inline-grid;
   place-items: center;
   flex: 0 0 auto;
+  /* Matches TAB_ICON_SIZE so swapping the glyph for the 6px dot spinner
+   * (the "working" state) never shifts the tab's width. */
+  min-width: 14px;
+  min-height: 14px;
   opacity: 0.65;
+}
+
+/* Needs-you dot pinned to the icon's corner — same warm accent and the same
+ * "filled dot = needs you" semantics as the sidebar session rows, sized for
+ * the titlebar's density. Anchored to the icon (not the label) so it stays
+ * visible when tabs collapse to icon-only. */
+.tab-icon .tab-status-dot,
+.tab-overflow-icon .tab-status-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--r-pill);
+  background: var(--warm-strong);
 }
 
 .tab-label {
@@ -7502,9 +7546,12 @@ input:focus-visible,
 }
 
 .tab-overflow-icon {
+  position: relative;
   display: inline-grid;
   place-items: center;
   flex: 0 0 auto;
+  min-width: 14px;
+  min-height: 14px;
   opacity: 0.65;
 }
 

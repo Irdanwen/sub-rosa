@@ -1,7 +1,7 @@
 // Brand accent preference. The whole UI derives from the --brand token
 // (src/styles/tokens.css) via var(--brand) and color-mix, so overriding that
 // one custom property at runtime recolors buttons, washes, hovers, and the
-// recorder accent in one shot. Six curated "dusty" presets, each pre-checked
+// recorder accent in one shot. Seven curated "dusty" presets, each pre-checked
 // for white-text contrast (>= 4.5:1) so the send glyph stays legible on every
 // one. The in-app logo mark stays fixed dusty rose so the brand identity is
 // constant while the accent varies; the native dock icon swaps to the selected
@@ -12,12 +12,14 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
-export type BrandId = "rose" | "clay" | "amber" | "sage" | "blue" | "plum";
+export type BrandId = "rose" | "clay" | "amber" | "gold" | "sage" | "blue" | "plum";
 
 export const BRAND_PRESETS: { id: BrandId; label: string; value: string }[] = [
   { id: "rose", label: "Rose", value: "#936862" },
   { id: "clay", label: "Clay", value: "#9d5728" },
   { id: "amber", label: "Amber", value: "#8b6e4d" },
+  // Champagne gold — the most chromatic preset, still 4.87:1 against white.
+  { id: "gold", label: "Gold", value: "#8f6b2e" },
   { id: "sage", label: "Sage", value: "#607d65" },
   { id: "blue", label: "Blue", value: "#597893" },
   { id: "plum", label: "Plum", value: "#886885" },

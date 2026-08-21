@@ -4,6 +4,7 @@ import { CarpeDiemGate } from "../../components/carpe-diem/CarpeDiemGate";
 import { RailSwitchBanner } from "../../components/carpe-diem/RailSwitchBanner";
 import { SIDECAR_STATUS_EVENT } from "../../components/settings/CarpeDiemSettings";
 import { TabBar } from "../../components/mobile/TabBar";
+import { useAmbientActivity } from "./useAmbientActivity";
 import { AgentScreen, AgentSessionScreen } from "../../components/mobile/screens/AgentScreen";
 import { DictationScreen } from "../../components/mobile/screens/DictationScreen";
 import { FolderScreen } from "../../components/mobile/screens/FoldersScreen";
@@ -93,6 +94,7 @@ function MobileErrorBanner({ error, onDismiss }: { error: string | null; onDismi
 export function MobileApp() {
   const [state, dispatch] = useReducer(notesReducer, undefined, createInitialState);
   const [error, setError] = useState<string | null>(null);
+  const { chatBusy, studioBusy } = useAmbientActivity();
 
   // Errors slide in at the top and clear themselves; lingering red banners
   // read as a broken app and can sit over the header forever.
@@ -741,7 +743,13 @@ export function MobileApp() {
       >
         {screen}
       </div>
-      {showTabBar ? <TabBar active={nav.tab} onSelect={nav.switchTab} /> : null}
+      {showTabBar ? (
+        <TabBar
+          active={nav.tab}
+          onSelect={nav.switchTab}
+          busy={{ agent: chatBusy, studio: studioBusy }}
+        />
+      ) : null}
     </div>
   );
 }

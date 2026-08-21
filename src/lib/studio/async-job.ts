@@ -26,7 +26,7 @@ export const POLL_INTERVAL_MS = 3_000;
 export const MAX_POLL_ATTEMPTS = 300;
 
 /** Rust emits this whenever a job changes state. */
-const MEDIA_JOB_EVENT = "june://media-job";
+export const MEDIA_JOB_EVENT = "june://media-job";
 /** Backstop for the window where the webview was frozen and missed events. */
 const RECONCILE_INTERVAL_MS = 5_000;
 /** Same backstop with nothing in flight, where it is only a safety net. */
