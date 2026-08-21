@@ -208,6 +208,9 @@ export type VeniceModelDto = {
   creditsPerMillionSeconds?: number;
   inputCreditsPerMillionTokens?: number;
   outputCreditsPerMillionTokens?: number;
+  /** Rate for prompt tokens the provider serves from its cache. Absent for the
+   * models that publish none, which means they bill cached tokens like input. */
+  cacheInputCreditsPerMillionTokens?: number;
 };
 
 export type VeniceModelsResponse = {

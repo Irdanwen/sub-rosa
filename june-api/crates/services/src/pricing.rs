@@ -5,6 +5,28 @@ use thiserror::Error;
 
 const RATE_SCALE: u64 = 1_000_000;
 
+/// The catalogue of models this backend will route to, and their rates.
+///
+/// The name says pricing, but in the Sub Rosa distribution its two LIVE roles
+/// are neither of them a bill:
+///
+/// 1. **An allowlist.** `ensure_model_kind` runs from `require_priced_model` in
+///    the API layer BEFORE any upstream call, and a model missing from this
+///    table is refused `model_not_priced`. That is the rejection a user
+///    actually meets, and it is why a catalogue model with no published rate
+///    disappears from the app rather than merely costing an unknown amount.
+/// 2. **The price line in the model picker.** `/v1/models` renders these rates
+///    into the string the picker shows, which is the one place a user reads a
+///    rate before choosing a model.
+///
+/// What it does NOT do here is settle money. The desktop runs the backend as a
+/// local sidecar with `JUNE__LOCAL_DEV__ENABLED`, so `charge` always returns a
+/// receipt of zero credits, and no frontend component reads `credits_charged`.
+/// The user's real balance comes from the operator (`GET /v1/credits`), and the
+/// authoritative per-request cost is the operator's own
+/// `X-Carpe-Cost-Usdc-Micro`. Keep `price_token_usage` correct — it is the
+/// upstream metering contract and costs nothing to keep right — but do not
+/// mistake its result for something a user sees.
 #[derive(Clone, Debug)]
 pub struct PricingTable {
     models: BTreeMap<String, ModelPriceConfig>,
@@ -30,6 +52,12 @@ impl PricingTable {
         Self::price_scaled([(seconds, rate)])
     }
 
+    /// Prices one settled turn.
+    ///
+    /// In this distribution the result is metered into a receipt that is always
+    /// zero and that nothing reads (see the type docs). It is kept exact
+    /// anyway: it is the upstream contract, and a wrong number here would be
+    /// wrong the day something does read it.
     pub fn price_token_usage(
         &self,
         model_id: &str,

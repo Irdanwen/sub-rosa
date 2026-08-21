@@ -216,6 +216,18 @@ pub(crate) fn required(value: Option<String>, message: &str) -> Result<String, A
         .ok_or_else(|| ApiError::bad_request(message))
 }
 
+/// The model allowlist gate.
+///
+/// It reads as a pricing pre-check, and it is the reason an unknown or
+/// unpriced model is refused — but note WHERE it runs: before the upstream
+/// call, on every metered endpoint. That ordering is what makes it a gate
+/// rather than a billing step, and it is why a pricing failure after a
+/// completion cannot happen (the model was already proven priced).
+///
+/// The user-facing consequence is `model_not_priced`: a model the operator
+/// lists but does not publish a rate for is unusable in the app, not merely
+/// unbilled. Anything that changes which models carry rates changes which
+/// models exist for the user.
 pub(crate) fn require_priced_model(
     state: &ApiState,
     model_id: &str,

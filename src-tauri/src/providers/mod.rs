@@ -129,6 +129,8 @@ pub struct VeniceModelDto {
     pub input_credits_per_million_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_credits_per_million_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_input_credits_per_million_tokens: Option<u64>,
 }
 
 impl From<crate::june_api::ModelDto> for VeniceModelDto {
@@ -150,6 +152,7 @@ impl From<crate::june_api::ModelDto> for VeniceModelDto {
             credits_per_million_seconds: value.credits_per_million_seconds,
             input_credits_per_million_tokens: value.input_credits_per_million_tokens,
             output_credits_per_million_tokens: value.output_credits_per_million_tokens,
+            cache_input_credits_per_million_tokens: value.cache_input_credits_per_million_tokens,
         }
     }
 }

@@ -173,6 +173,14 @@ async fn settle_charge(params: AsyncChargeParams) {
 /// Callers that price BEFORE dispatching upstream must keep propagating the
 /// error — nothing has run yet, and failing fast is what stops a hold from
 /// being stranded on the user's wallet.
+///
+/// To be clear about what this is: defense in depth, not a live bug fix. Every
+/// caller runs `ensure_model_kind` (and the API layer runs `require_priced_model`)
+/// before dispatching, so by the time work has settled the model is already
+/// proven to carry its rates, and the only remaining failure is a `u64`
+/// overflow on absurd counts. This exists so that the ordering stays a choice
+/// rather than a load-bearing accident: reorder a pre-check, add a rate the
+/// pre-check does not cover, and the rule still holds.
 pub(crate) fn price_settled_work(
     priced: Result<Credits, PricingError>,
     action: ActionSlug,

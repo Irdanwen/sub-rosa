@@ -202,6 +202,10 @@ pub struct ModelDto {
     pub credits_per_million_seconds: Option<u64>,
     pub input_credits_per_million_tokens: Option<u64>,
     pub output_credits_per_million_tokens: Option<u64>,
+    /// Rate for prompt tokens served from the operator's cache. `None` for the
+    /// models that publish none, which means "bills like input".
+    #[serde(default)]
+    pub cache_input_credits_per_million_tokens: Option<u64>,
 }
 
 #[derive(Deserialize)]

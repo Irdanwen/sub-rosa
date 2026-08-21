@@ -120,6 +120,54 @@ rather than as tool instructions. `the_soul_is_byte_stable_across_runs_with_the_
 now holds the invariant that actually matters. Reopen only if the ledger shows
 hit rate collapsing after restarts.
 
+## Addendum, 2026-08-21 — what the price table is actually for
+
+A second pass over the billing path corrected two readings in this decision's
+context. Both were verified against the code, not inferred.
+
+**The inherited pricing path settles nothing here.** The desktop runs the
+backend as a local sidecar with `JUNE__LOCAL_DEV__ENABLED=true`, which wires
+`LocalDevOsAccountsClient`: `authorize` always allows, and `charge` always
+returns a receipt of `Credits(0)`. The receipt does travel back in the HTTP
+response, and no component under `src/` reads `credits_charged`. The number is
+computed, serialized and dropped. What the user actually sees is the operator's
+own balance (`GET /v1/credits`, polled by `useCarpeDiemCredits`), and the
+authoritative per-request cost is the operator's `X-Carpe-Cost-Usdc-Micro`.
+
+So the table's two LIVE roles are neither of them a bill, and both are now named
+where someone will read them (`PricingTable`, `require_priced_model`):
+
+1. **A model allowlist.** `require_priced_model` runs before every upstream
+   call and refuses an unlisted model `model_not_priced`. A catalogue model with
+   no published rate is *unusable in the app*, not merely unbilled — which is
+   why `cache_input_credits_per_million_tokens` had to be `Option` all the way
+   down, and why a test holds that a missing cache rate never costs a model its
+   place.
+2. **The price line in the model picker.** `/v1/models` renders these rates into
+   the string the picker shows. That makes it the one real reader of the cache
+   rate, so the rate is now on that line: `$1.40 input / $5.50 output per 1M
+   tokens ($0.26 cached input)`, with sub-cent rates kept legible so a cheap
+   model does not appear to cache for free.
+
+**The post-completion pricing guard is defense in depth, not a bug fix.** The
+first reading held that a `NotPriced` could fail a turn the model had already
+answered and billed. That is wrong: `ensure_model_kind` runs in every service
+and `require_priced_model` runs in the API layer, both before dispatch, so by
+the time work has settled the model is proven priced and only a `u64` overflow
+remains. `price_settled_work` stays — it is fifteen lines, it is the same rule
+`complete_raw_once` already follows for a 200 it cannot fully parse, and it
+keeps the ordering a choice rather than a load-bearing accident. Its
+documentation now says so plainly rather than implying a live failure.
+
+**Rejected: deleting `price_token_usage` from the call path.** Tempting once the
+result is known to be unread, and it would stop the name from misleading. But
+`june-api` is tracked against upstream June, where that path does settle real
+money, and the metering flow (authorize, charge, receipt, `log_settled`) is one
+coherent upstream mechanism; removing the amount from the middle of it buys a
+fork divergence on every future sync in exchange for no user-visible change. The
+cheaper fix for a misleading name is to say what the thing does, which is what
+the type docs now do.
+
 ## Related
 
 - ADR-0015 — normalizing `/router` responses, and the `stream_options` addendum
