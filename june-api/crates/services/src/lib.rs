@@ -7,6 +7,7 @@ mod error;
 mod image;
 mod note_generate;
 mod note_transcribe;
+mod places;
 mod pricing;
 mod prompts;
 mod util;
@@ -26,6 +27,7 @@ pub use note_generate::{
 pub use note_transcribe::{
     NoteTranscribeOutput, NoteTranscribeParams, NoteTranscribeService, NoteTranscribeServiceDeps,
 };
+pub use places::{PlacesSearchParams, PlacesService};
 pub use pricing::{PricingError, PricingTable};
 pub use web_augment::{
     WebAugmentService, WebAugmentServiceDeps, WebFetchOutput, WebFetchParams, WebSearchOutput,

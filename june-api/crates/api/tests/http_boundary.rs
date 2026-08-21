@@ -10,15 +10,16 @@ use june_domain::{
     AgentChatCompleter, AgentChatCompletion, AgentChatRequest, AudioDurationProbe, AuthError,
     Authorization, AuthorizeRequest, CleanedText, Cleaner, CleanupRequest, Credits, DomainError,
     GeneratedImage, GeneratedNote, GenerationRequest, Generator, ImageGenerationRequest,
-    ImageGenerator, IssueReport, IssueReportSink, OsAccountsClient, Receipt, TokenUsage,
-    Transcriber, Transcript, TranscriptionRequest, UserId, WebFetchRequest, WebFetchResult,
-    WebFetcher, WebSearchRequest, WebSearchResult, WebSearchResults, WebSearcher,
+    ImageGenerator, IssueReport, IssueReportSink, OsAccountsClient, PlaceResult,
+    PlacesSearchRequest, PlacesSearchResults, PlacesSearcher, Receipt, TokenUsage, Transcriber,
+    Transcript, TranscriptionRequest, UserId, WebFetchRequest, WebFetchResult, WebFetcher,
+    WebSearchRequest, WebSearchResult, WebSearchResults, WebSearcher,
 };
 use june_services::{
     AgentChatService, AgentChatServiceDeps, DictateService, DictateServiceDeps, ImageService,
     ImageServiceDeps, NOTE_GENERATE_PROMPT_VERSION, NoteGenerateService, NoteGenerateServiceDeps,
-    NoteTranscribeService, NoteTranscribeServiceDeps, PricingTable, WebAugmentService,
-    WebAugmentServiceDeps,
+    NoteTranscribeService, NoteTranscribeServiceDeps, PlacesService, PricingTable,
+    WebAugmentService, WebAugmentServiceDeps,
 };
 use pretty_assertions::assert_eq;
 use std::{
@@ -335,6 +336,61 @@ async fn integration_web_search_rejects_blank_query() -> Result<(), Box<dyn Erro
     let body = response_json(response).await?;
     assert_eq!(body["success"], false);
     assert_eq!(body["message"], "query_required");
+    Ok(())
+}
+
+#[tokio::test]
+async fn integration_places_search_returns_enveloped_places() -> Result<(), Box<dyn Error>> {
+    let response = send(json_request(
+        "/v1/web/places",
+        &serde_json::json!({ "query": "expert comptable annemasse", "limit": 6 }),
+        Some(AUTHORIZATION),
+    )?)
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_json(response).await?;
+    assert_eq!(body["success"], true);
+    assert_eq!(body["data"]["provider"], "osm");
+    assert_eq!(body["data"]["places"][0]["name"], "Sogeca Experts");
+    assert_eq!(body["data"]["places"][0]["lat"], 46.19);
+    Ok(())
+}
+
+#[tokio::test]
+async fn integration_places_search_requires_auth_and_a_query() -> Result<(), Box<dyn Error>> {
+    let unauthorized = send(json_request(
+        "/v1/web/places",
+        &serde_json::json!({ "query": "cafe" }),
+        None,
+    )?)
+    .await;
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+    let blank = send(json_request(
+        "/v1/web/places",
+        &serde_json::json!({ "query": "   " }),
+        Some(AUTHORIZATION),
+    )?)
+    .await;
+    assert_eq!(blank.status(), StatusCode::BAD_REQUEST);
+    let body = response_json(blank).await?;
+    assert_eq!(body["message"], "query_required");
+    Ok(())
+}
+
+#[tokio::test]
+async fn integration_places_search_rejects_an_out_of_range_near() -> Result<(), Box<dyn Error>> {
+    let response = send(json_request(
+        "/v1/web/places",
+        &serde_json::json!({ "query": "cafe", "near": { "lat": 200.0, "lng": 6.2 } }),
+        Some(AUTHORIZATION),
+    )?)
+    .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = response_json(response).await?;
+    assert_eq!(body["message"], "near_out_of_range");
     Ok(())
 }
 
@@ -679,6 +735,7 @@ fn test_state_with_sinks(
             fetch_credits: 20,
             hold_ttl_seconds: 30,
         })),
+        places: Arc::new(PlacesService::new(Arc::new(FakePlacesSearcher))),
         image,
         issue_reports,
         limits: ApiLimits {
@@ -1052,6 +1109,31 @@ impl WebSearcher for FakeWebSearcher {
                 url: "https://example.com/one".to_string(),
                 snippet: Some("A snippet.".to_string()),
                 published_at: Some("2026-01-01".to_string()),
+            }],
+        })
+    }
+}
+
+struct FakePlacesSearcher;
+
+#[async_trait]
+impl PlacesSearcher for FakePlacesSearcher {
+    async fn search_places(
+        &self,
+        request: PlacesSearchRequest,
+    ) -> Result<PlacesSearchResults, DomainError> {
+        Ok(PlacesSearchResults {
+            query: request.query,
+            provider: "osm".to_string(),
+            places: vec![PlaceResult {
+                name: "Sogeca Experts".to_string(),
+                lat: 46.19,
+                lng: 6.23,
+                address: Some("Rue de la Gare, Annemasse".to_string()),
+                category: Some("Accountant".to_string()),
+                url: None,
+                rating: None,
+                reviews: None,
             }],
         })
     }

@@ -314,6 +314,54 @@ pub struct WebSearchResult {
     pub published_at: Option<String>,
 }
 
+/// A point of interest returned by a places provider. Ratings and reviews are
+/// optional on purpose: the keyless OSM provider has none, richer providers
+/// fill them in.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaceResult {
+    pub name: String,
+    pub lat: f64,
+    pub lng: f64,
+    pub address: Option<String>,
+    pub category: Option<String>,
+    pub url: Option<String>,
+    pub rating: Option<f32>,
+    pub reviews: Option<u32>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlacesSearchResults {
+    pub query: String,
+    /// Attribution id the client must display: `osm` or `google`.
+    pub provider: String,
+    pub places: Vec<PlaceResult>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeoPoint {
+    pub lat: f64,
+    pub lng: f64,
+}
+
+#[derive(Clone, Debug)]
+pub struct PlacesSearchRequest {
+    pub query: String,
+    pub limit: Option<u32>,
+    /// Bias results toward this point when the provider supports it.
+    pub near: Option<GeoPoint>,
+}
+
+#[async_trait]
+pub trait PlacesSearcher: Send + Sync {
+    async fn search_places(
+        &self,
+        request: PlacesSearchRequest,
+    ) -> Result<PlacesSearchResults, DomainError>;
+}
+
 #[derive(Clone, Debug)]
 pub struct WebFetchRequest {
     pub url: String,

@@ -16,14 +16,15 @@ use june_config::{
 };
 use june_providers::{
     JwksTokenVerifier, LocalDevOsAccountsClient, LocalDevTokenVerifier, LogIssueReportSink,
-    MultiFormatDurationProbe, OsAccountsHttpClient, OsPlatformIssueReportSink, RoutingTranscriber,
-    VeniceAgentChat, VeniceAugment, VeniceCleaner, VeniceGenerator, VeniceImageGenerator,
-    VeniceModelCatalog, client_with_timeout, default_client, jwks_client,
+    MultiFormatDurationProbe, NominatimPlaces, OsAccountsHttpClient, OsPlatformIssueReportSink,
+    RoutingTranscriber, VeniceAgentChat, VeniceAugment, VeniceCleaner, VeniceGenerator,
+    VeniceImageGenerator, VeniceModelCatalog, client_with_timeout, default_client, jwks_client,
 };
 use june_services::{
     AgentChatService, AgentChatServiceDeps, DictateService, DictateServiceDeps, ImageService,
     ImageServiceDeps, NoteGenerateService, NoteGenerateServiceDeps, NoteTranscribeService,
-    NoteTranscribeServiceDeps, PricingTable, WebAugmentService, WebAugmentServiceDeps,
+    NoteTranscribeServiceDeps, PlacesService, PricingTable, WebAugmentService,
+    WebAugmentServiceDeps,
 };
 use std::{collections::BTreeMap, future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
@@ -223,6 +224,13 @@ pub fn build_router(
         fetch_credits: config.os_accounts.web_fetch_credits,
         hold_ttl_seconds: config.os_accounts.authorize_hold_ttl_web_secs,
     }));
+    // Keyless places search (OSM/Nominatim): no metering, no key — the
+    // provider enforces the public instance's UA + rate-limit obligations
+    // itself. The UA identifies the app per Nominatim's usage policy.
+    let places = Arc::new(PlacesService::new(Arc::new(NominatimPlaces::new(
+        None,
+        "SubRosa-june-api/1.0 (+https://github.com/Irdanwen/sub-rosa)",
+    ))));
     let image = Arc::new(ImageService::new(ImageServiceDeps {
         os_accounts: os_accounts.clone(),
         generator: build_image_generator(upstream_http, &config.upstreams.venice),
@@ -250,6 +258,7 @@ pub fn build_router(
         agent_chat,
         dictate,
         web,
+        places,
         image,
         issue_reports,
         limits: ApiLimits {

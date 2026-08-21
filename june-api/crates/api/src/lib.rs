@@ -85,6 +85,10 @@ pub fn router(state: ApiState) -> Router {
             post(handlers::web::fetch).layer(DefaultBodyLimit::max(limits.max_json_bytes)),
         )
         .route(
+            "/v1/web/places",
+            post(handlers::web::places).layer(DefaultBodyLimit::max(limits.max_json_bytes)),
+        )
+        .route(
             "/v1/issue-reports",
             // Reports carry screenshot uploads, so they get the audio-sized
             // body budget rather than the JSON one.

@@ -138,6 +138,44 @@ export function buildAgentChatGallery(): AgentChatGallerySection[] {
             status: "complete",
           },
         ]),
+        assistantTurn("chat-block-places", [
+          {
+            type: "text",
+            text: `Voici les principales adresses du secteur :\n\n\`\`\`subrosa:places\n${JSON.stringify(
+              {
+                v: 1,
+                title: "Experts-comptables du bassin annemassien",
+                attribution: "osm",
+                places: [
+                  {
+                    name: "Sogeca Experts",
+                    lat: 46.1934,
+                    lng: 6.2356,
+                    category: "Accountant",
+                    address: "Rue de la Gare, Annemasse",
+                    note: "Le mieux noté d'Annemasse.",
+                    url: "https://sogeca.example.com",
+                  },
+                  {
+                    name: "Majexperts",
+                    lat: 46.1972,
+                    lng: 6.2411,
+                    category: "Accountant",
+                    address: "Avenue de Verdun, Annemasse",
+                  },
+                  {
+                    name: "Groupement frontaliers",
+                    lat: 46.1898,
+                    lng: 6.2287,
+                    category: "Association",
+                    address: "Ville-la-Grand",
+                  },
+                ],
+              },
+            )}\n\`\`\``,
+            status: "complete",
+          },
+        ]),
         assistantTurn(
           "chat-block-skeleton",
           [

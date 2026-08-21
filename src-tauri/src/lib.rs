@@ -27,6 +27,7 @@ pub mod june_api;
 pub mod keyboard_ios;
 #[cfg(desktop)]
 pub mod macos_menu_icons;
+pub mod map_render;
 #[cfg(desktop)]
 pub mod meeting_detection;
 #[cfg(desktop)]
@@ -299,6 +300,7 @@ pub fn run() {
             commands::june_open_verify_page,
             commands::june_open_community_page,
             open_url::open_external_url,
+            map_render::render_map_card,
             commands::start_recording,
             commands::pause_recording,
             commands::resume_recording,
@@ -464,6 +466,7 @@ pub fn run() {
         commands::june_open_verify_page,
         commands::june_open_community_page,
         open_url::open_external_url,
+        map_render::render_map_card,
         commands::start_recording,
         commands::pause_recording,
         commands::resume_recording,

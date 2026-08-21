@@ -32,15 +32,41 @@ export type LinksChatBlock = {
   links: ChatBlockLink[];
 };
 
-export type ChatBlock = LinksChatBlock;
+export type ChatBlockPlace = {
+  name: string;
+  lat: number;
+  lng: number;
+  address?: string;
+  category?: string;
+  url?: string;
+  rating?: number;
+  reviews?: number;
+  /** One short model-authored sentence; everything else comes from the tool. */
+  note?: string;
+};
+
+export type PlacesChatBlock = {
+  kind: "places";
+  title?: string;
+  /** Which provider's data this is — rendered as the card's attribution. */
+  attribution: "osm" | "google";
+  places: ChatBlockPlace[];
+};
+
+export type ChatBlock = LinksChatBlock | PlacesChatBlock;
 
 /** Display caps. Clamping (not rejecting) keeps a slightly-over payload
  * useful; a payload with nothing valid inside still returns null. */
 const MAX_LINKS = 6;
+const MAX_PLACES = 8;
 const MAX_TITLE = 120;
 const MAX_LINK_TITLE = 160;
 const MAX_SNIPPET = 280;
 const MAX_URL = 2048;
+const MAX_PLACE_NAME = 120;
+const MAX_PLACE_ADDRESS = 160;
+const MAX_PLACE_CATEGORY = 60;
+const MAX_PLACE_NOTE = 200;
 
 /** The `<kind>` of a `subrosa:<kind>` fence info string, or null. */
 export function chatBlockKindOf(info: string): string | null {
@@ -97,6 +123,46 @@ function parseLinks(payload: Record<string, unknown>): LinksChatBlock | null {
   }
   if (links.length === 0) return null;
   return { kind: "links", title: cappedString(payload.title, MAX_TITLE), links };
+}
+
+function finiteInRange(value: unknown, min: number, max: number): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return value >= min && value <= max ? value : undefined;
+}
+
+function parsePlaces(payload: Record<string, unknown>): PlacesChatBlock | null {
+  const raw = payload.places;
+  if (!Array.isArray(raw)) return null;
+  const places: ChatBlockPlace[] = [];
+  for (const entry of raw) {
+    if (places.length >= MAX_PLACES) break;
+    const item = asObject(entry);
+    if (!item) continue;
+    const name = cappedString(item.name, MAX_PLACE_NAME);
+    const lat = finiteInRange(item.lat, -90, 90);
+    const lng = finiteInRange(item.lng, -180, 180);
+    if (!name || lat === undefined || lng === undefined) continue;
+    const rating = finiteInRange(item.rating, 0, 5);
+    const reviews = finiteInRange(item.reviews, 0, 10_000_000);
+    places.push({
+      name,
+      lat,
+      lng,
+      address: cappedString(item.address, MAX_PLACE_ADDRESS),
+      category: cappedString(item.category, MAX_PLACE_CATEGORY),
+      url: safeHttpsUrl(item.url)?.url,
+      rating: rating === undefined ? undefined : Math.round(rating * 10) / 10,
+      reviews: reviews === undefined ? undefined : Math.round(reviews),
+      note: cappedString(item.note, MAX_PLACE_NOTE),
+    });
+  }
+  if (places.length === 0) return null;
+  return {
+    kind: "places",
+    title: cappedString(payload.title, MAX_TITLE),
+    attribution: payload.attribution === "google" ? "google" : "osm",
+    places,
+  };
 }
 
 /**
@@ -166,6 +232,20 @@ function chatBlockPlainText(block: ChatBlock): string[] {
         block.title || "Sources",
         ...block.links.map((link) => `- ${link.title}: ${link.url}`),
       ];
+    case "places":
+      return [
+        block.title || "Places",
+        ...block.places.map((place) => {
+          const details = [
+            place.category,
+            place.rating !== undefined ? `${place.rating}/5` : undefined,
+            place.address,
+          ]
+            .filter(Boolean)
+            .join(", ");
+          return details ? `- ${place.name} (${details})` : `- ${place.name}`;
+        }),
+      ];
     default:
       return [];
   }
@@ -190,6 +270,8 @@ export function parseChatBlock(info: string, body: string): ChatBlock | null {
   switch (kind) {
     case "links":
       return parseLinks(payload);
+    case "places":
+      return parsePlaces(payload);
     default:
       return null;
   }

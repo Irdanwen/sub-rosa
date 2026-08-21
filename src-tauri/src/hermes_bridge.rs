@@ -166,6 +166,8 @@ Web tools: you have a `june_web` MCP toolset with `web_search` and `web_fetch`. 
 /// the two can't drift apart.
 const JUNE_SOUL_BLOCKS_MD: &str = r#"
 Link cards: when your answer draws on web results, you may end it with one fenced code block whose info string is `subrosa:links` and whose body is a single JSON object shaped {"v":1,"title":"Sources","links":[{"title":"…","url":"https://…","snippet":"…"}]}. The app renders it as a clickable card. Copy titles, urls and snippets verbatim from `web_search` results — never invent or edit a URL — keep it to the links you actually used (6 at most, https only), and write your prose normally around the block.
+
+Place cards: when you answer with `places_search` results (a `june_web` tool), embed them as one fenced block whose info string is `subrosa:places` and whose body is {"v":1,"title":"…","attribution":"<the tool result's provider>","places":[{"name","lat","lng","address"?,"category"?,"rating"?,"reviews"?,"url"?,"note"?}]}. The app draws the map and the list. Copy name, lat, lng, address, category, rating, reviews and url verbatim from the tool result; "note" is yours — one short helpful sentence per place at most. Never invent a place or a coordinate.
 "#;
 
 /// Appended to `SOUL.md` for every runtime. The media tools are discovered
@@ -7960,6 +7962,9 @@ async fn handle_june_provider_connection(
         }
         ("POST", "/v1/web/fetch") => {
             forward_web_tool(&mut stream, "/v1/web/fetch", &request.body).await?;
+        }
+        ("POST", "/v1/web/places") => {
+            forward_web_tool(&mut stream, "/v1/web/places", &request.body).await?;
         }
         ("GET", "/v1/media/catalog") => {
             forward_media_catalog(&mut stream).await?;

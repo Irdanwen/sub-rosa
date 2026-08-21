@@ -12,6 +12,8 @@
 //! - `list_recent_notes` — the newest notes, for questions about a period;
 //! - `search_memories`   — hybrid recall over remembered facts (memory on only);
 //! - `web_search`        — the June API `/v1/web/search` passthrough;
+//! - `places_search`     — `/v1/web/places`, real-world places for the
+//!   `subrosa:places` chat block (ADR-0024);
 //! - `fetch_page`        — `/v1/web/fetch`, the text of one page.
 //!
 //! Writing:
@@ -57,6 +59,8 @@ Acting: create_note when the user asks you to write something down or save a sum
 
 Link cards: when your answer draws on web results, you may end it with one fenced code block whose info string is subrosa:links and whose body is a single JSON object shaped {\"v\":1,\"title\":\"Sources\",\"links\":[{\"title\":\"…\",\"url\":\"https://…\",\"snippet\":\"…\"}]}. The app renders it as a tappable card. Copy titles, urls and snippets verbatim from web_search results — never invent or edit a URL — keep it to the links you actually used (6 at most, https only), and write your prose normally around the block.
 
+Place cards: when you answer with places_search results, embed them as one fenced block whose info string is subrosa:places and whose body is {\"v\":1,\"title\":\"…\",\"attribution\":\"<the tool result's provider>\",\"places\":[{\"name\",\"lat\",\"lng\",\"address\"?,\"category\"?,\"rating\"?,\"reviews\"?,\"url\"?,\"note\"?}]}. The app draws the map and the list. Copy name, lat, lng, address, category, rating, reviews and url verbatim from the tool result; \"note\" is yours — one short helpful sentence per place at most. Never invent a place or a coordinate.
+
 Answer in the user's language, concisely, in plain prose or simple markdown. If a search comes back empty, say what you looked for.";
 
 #[derive(Debug, Clone, Serialize)]
@@ -64,7 +68,8 @@ Answer in the user's language, concisely, in plain prose or simple markdown. If 
 pub struct AgentLiteStatusDto {
     pub task_id: String,
     /// "thinking" | "searching-notes" | "searching-web" | "searching-memory"
-    /// | "reading-note" | "writing-note" | "remembering" | "reading-page"
+    /// | "searching-places" | "reading-note" | "writing-note" | "remembering"
+    /// | "reading-page"
     pub stage: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
@@ -463,6 +468,8 @@ async fn run_turn(
 /// How many web results to ask for. The upstream snippets run to a couple of
 /// thousand characters each, so this is a context budget, not a preference.
 const WEB_SEARCH_RESULTS: u32 = 5;
+/// Matches the chat-block places card cap (see MAX_PLACES in chat-blocks.ts).
+const PLACES_SEARCH_RESULTS: u32 = 6;
 /// Per-result snippet budget after cleaning.
 const WEB_SNIPPET_CHARS: usize = 400;
 /// A fetched page is the one tool output worth a large slice of context.
@@ -498,6 +505,33 @@ fn clean_snippet(raw: &str) -> String {
 /// results at ~2000 characters of marked-up, duplicated snippet each, that cut
 /// the JSON mid-string: the model saw a broken fragment and silently lost most
 /// of the results.
+/// Reshapes `/v1/web/places` into the string the model reads: the provider id
+/// (it becomes the block's attribution) plus the places as-is. The server
+/// already curated and capped the rows, so nothing is trimmed here.
+fn summarize_places_results(body: &[u8]) -> String {
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return "The places search returned an unreadable response.".to_string();
+    };
+    let places = value
+        .pointer("/data/places")
+        .and_then(serde_json::Value::as_array);
+    let Some(places) = places else {
+        return "The places search returned no results.".to_string();
+    };
+    if places.is_empty() {
+        return "The places search returned no results.".to_string();
+    }
+    let provider = value
+        .pointer("/data/provider")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("osm");
+    serde_json::to_string(&serde_json::json!({
+        "provider": provider,
+        "places": places,
+    }))
+    .unwrap_or_else(|_| "Places search failed to serialize.".to_string())
+}
+
 fn summarize_web_results(body: &[u8]) -> String {
     let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
         return "The web search returned an unreadable response.".to_string();
@@ -767,6 +801,29 @@ async fn execute_tool(
                 Err(error) => format!("Web search failed: {}", error.message),
             }
         }
+        "places_search" => {
+            emit_status(app, task_id, "searching-places", Some(query.clone()));
+            // No requestId: the places surface is unmetered (see the June API
+            // handler), so there is no idempotency key to scope.
+            let mut body = serde_json::json!({
+                "query": query,
+                "limit": PLACES_SEARCH_RESULTS,
+            });
+            if let Some(near) = args.get("near") {
+                let lat = near.get("lat").and_then(serde_json::Value::as_f64);
+                let lng = near.get("lng").and_then(serde_json::Value::as_f64);
+                if let (Some(lat), Some(lng)) = (lat, lng) {
+                    body["near"] = serde_json::json!({ "lat": lat, "lng": lng });
+                }
+            }
+            match june_api::forward_web_request("/v1/web/places", &body).await {
+                Ok(response) if (200..300).contains(&response.status) => {
+                    summarize_places_results(&response.body)
+                }
+                Ok(response) => format!("Places search failed with status {}.", response.status),
+                Err(error) => format!("Places search failed: {}", error.message),
+            }
+        }
         // Searching without being able to open anything is half a capability:
         // the snippets are a few sentences, so anything that needs the actual
         // page (a doc, an article, a changelog) was previously unreachable.
@@ -984,6 +1041,32 @@ fn tool_definitions(memory_enabled: bool) -> serde_json::Value {
             }
         }),
     ];
+    tools.push(serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": "places_search",
+            "description": "Find real-world places (businesses, offices, restaurants, landmarks) by name or kind, optionally near a point. Returns names, coordinates, addresses and categories. When you answer with these results, embed them as a subrosa:places chat block, copying the JSON fields verbatim.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "What to look for, including the area when known (e.g. 'expert comptable Annemasse')."
+                    },
+                    "near": {
+                        "type": "object",
+                        "properties": {
+                            "lat": { "type": "number" },
+                            "lng": { "type": "number" }
+                        },
+                        "required": ["lat", "lng"],
+                        "description": "Bias results toward this point."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    }));
     tools.push(serde_json::json!({
         "type": "function",
         "function": {
@@ -1408,6 +1491,47 @@ mod tests {
     }
 
     #[test]
+    fn places_results_keep_the_provider_and_the_rows_verbatim() {
+        let body = serde_json::json!({
+            "success": true,
+            "data": {
+                "query": "expert comptable annemasse",
+                "provider": "osm",
+                "places": [{
+                    "name": "Sogeca Experts",
+                    "lat": 46.19,
+                    "lng": 6.23,
+                    "address": "Rue de la Gare, Annemasse",
+                    "category": "Accountant"
+                }]
+            }
+        });
+        let summary = summarize_places_results(body.to_string().as_bytes());
+        let parsed: serde_json::Value = serde_json::from_str(&summary).unwrap();
+        assert_eq!(parsed["provider"], "osm");
+        assert_eq!(parsed["places"][0]["name"], "Sogeca Experts");
+        assert_eq!(parsed["places"][0]["lat"], 46.19);
+
+        let empty = serde_json::json!({ "data": { "provider": "osm", "places": [] } });
+        assert_eq!(
+            summarize_places_results(empty.to_string().as_bytes()),
+            "The places search returned no results."
+        );
+        assert_eq!(
+            summarize_places_results(b"not json"),
+            "The places search returned an unreadable response."
+        );
+    }
+
+    #[test]
+    fn the_system_prompt_teaches_both_chat_block_kinds() {
+        let prompt = build_system_prompt(None);
+        assert!(prompt.contains("subrosa:links"));
+        assert!(prompt.contains("subrosa:places"));
+        assert!(prompt.contains("Never invent a place or a coordinate."));
+    }
+
+    #[test]
     fn reading_and_writing_tools_are_advertised() {
         let names = tool_names(&tool_definitions(true));
         for expected in [
@@ -1417,6 +1541,7 @@ mod tests {
             "create_note",
             "append_to_note",
             "web_search",
+            "places_search",
         ] {
             assert!(names.contains(&expected.to_string()), "missing {expected}");
         }

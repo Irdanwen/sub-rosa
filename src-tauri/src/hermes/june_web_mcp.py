@@ -75,6 +75,45 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "places_search",
+        "description": (
+            "Search for real-world places (businesses, offices, restaurants, "
+            "landmarks) by name or kind, optionally near a point. Returns "
+            "names, coordinates, addresses and categories as JSON. When you "
+            "answer with these results, embed them for the user as a "
+            "subrosa:places chat block, copying the JSON fields verbatim."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "What to look for, including the area when known "
+                        "(e.g. 'expert comptable Annemasse')."
+                    ),
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 8,
+                    "default": 6,
+                    "description": "How many places to return.",
+                },
+                "near": {
+                    "type": "object",
+                    "properties": {
+                        "lat": {"type": "number"},
+                        "lng": {"type": "number"},
+                    },
+                    "required": ["lat", "lng"],
+                    "description": "Bias results toward this point.",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
         "name": "web_fetch",
         "description": (
             "Fetch a single web page and return its content as markdown. Use "
@@ -211,6 +250,8 @@ def call_tool(target: str, request_id: Any, params: dict[str, Any]) -> dict[str,
         base_url, token = resolve_coordinates(target)
         if name == "web_search":
             result = web_search(base_url, token, arguments)
+        elif name == "places_search":
+            result = places_search(base_url, token, arguments)
         elif name == "web_fetch":
             result = web_fetch(base_url, token, arguments)
         else:
@@ -257,6 +298,24 @@ def web_search(base_url: str, token: str, arguments: dict[str, Any]) -> dict[str
     if provider in ("brave", "google"):
         payload["provider"] = provider
     return call_proxy(base_url, token, "/web/search", payload)
+
+
+def places_search(base_url: str, token: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    query = str(arguments.get("query") or "").strip()
+    if not query:
+        raise ValueError("query is required")
+    payload: dict[str, Any] = {"query": query}
+    limit = arguments.get("limit")
+    if isinstance(limit, int):
+        payload["limit"] = max(1, min(8, limit))
+    near = arguments.get("near")
+    if (
+        isinstance(near, dict)
+        and isinstance(near.get("lat"), (int, float))
+        and isinstance(near.get("lng"), (int, float))
+    ):
+        payload["near"] = {"lat": near["lat"], "lng": near["lng"]}
+    return call_proxy(base_url, token, "/web/places", payload)
 
 
 def web_fetch(base_url: str, token: str, arguments: dict[str, Any]) -> dict[str, Any]:

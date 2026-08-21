@@ -33,6 +33,52 @@ pub struct WebSearchRequest {
     pub request_id: String,
 }
 
+/// `/v1/web/places`. Unlike its siblings there is no `request_id`: nothing is
+/// metered on this surface (see `PlacesService`), so there is no idempotency
+/// key to scope. Accepting one anyway would suggest a guarantee we don't give.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PlacesSearchRequest {
+    pub query: String,
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// Bias results toward this point when the provider supports it.
+    #[serde(default)]
+    pub near: Option<june_domain::GeoPoint>,
+}
+
+/// Mirrors the chat-block card cap: more rows than a card shows would only
+/// spend provider quota to be dropped client-side.
+const MAX_PLACES_LIMIT: u32 = 8;
+
+pub(crate) async fn places(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Json(request): Json<PlacesSearchRequest>,
+) -> Result<Json<ApiResponse<june_domain::PlacesSearchResults>>, ApiError> {
+    let user_id = authenticated_user(&state, &headers).await?;
+    let query = request.query.trim().to_string();
+    if query.is_empty() {
+        return Err(ApiError::bad_request("query_required"));
+    }
+    validation::validate_text_len("query", &query, validation::MAX_WEB_QUERY_CHARS)?;
+    if let Some(near) = request.near
+        && (!(-90.0..=90.0).contains(&near.lat) || !(-180.0..=180.0).contains(&near.lng))
+    {
+        return Err(ApiError::bad_request("near_out_of_range"));
+    }
+    let output = state
+        .places()
+        .search(june_services::PlacesSearchParams {
+            user_id,
+            query,
+            limit: request.limit.map(|limit| limit.clamp(1, MAX_PLACES_LIMIT)),
+            near: request.near,
+        })
+        .await?;
+    Ok(Json(ApiResponse::ok(output)))
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebFetchRequest {

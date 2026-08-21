@@ -1,8 +1,14 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+const invokeMock = vi.fn(async (command: string, _args?: unknown) => {
+  if (command === "render_map_card") {
+    return { dataUrl: "data:image/png;base64,iVBORw0KGgo=" };
+  }
+  return undefined;
+});
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(async () => undefined),
+  invoke: (command: string, args?: unknown) => invokeMock(command, args),
   convertFileSrc: (path: string) => path,
 }));
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText: vi.fn() }));
@@ -39,11 +45,10 @@ describe("chat block parsing", () => {
 
   it("parses a valid links block and derives domains itself", () => {
     const block = parseChatBlock("subrosa:links", LINKS_BODY);
-    expect(block).not.toBeNull();
-    expect(block?.kind).toBe("links");
-    expect(block?.links).toHaveLength(2);
-    expect(block?.links[0].domain).toBe("example.com");
-    expect(block?.links[1].domain).toBe("beta.example.org");
+    if (block?.kind !== "links") throw new Error("expected links");
+    expect(block.links).toHaveLength(2);
+    expect(block.links[0].domain).toBe("example.com");
+    expect(block.links[1].domain).toBe("beta.example.org");
   });
 
   it("drops non-https and title-less links, and rejects an all-invalid payload", () => {
@@ -56,7 +61,9 @@ describe("chat block parsing", () => {
         { title: "Kept", url: "https://example.com/ok" },
       ],
     });
-    expect(parseChatBlock("subrosa:links", mixed)?.links.map((l) => l.title)).toEqual(["Kept"]);
+    const mixedBlock = parseChatBlock("subrosa:links", mixed);
+    if (mixedBlock?.kind !== "links") throw new Error("expected links");
+    expect(mixedBlock.links.map((l) => l.title)).toEqual(["Kept"]);
     const allBad = JSON.stringify({ v: 1, links: [{ title: "x", url: "http://example.com" }] });
     expect(parseChatBlock("subrosa:links", allBad)).toBeNull();
   });
@@ -71,9 +78,10 @@ describe("chat block parsing", () => {
       })),
     });
     const block = parseChatBlock("subrosa:links", many);
-    expect(block?.links).toHaveLength(6);
-    expect(block?.links[0].snippet?.length).toBeLessThanOrEqual(280);
-    expect(block?.links[0].snippet?.endsWith("…")).toBe(true);
+    if (block?.kind !== "links") throw new Error("expected links");
+    expect(block.links).toHaveLength(6);
+    expect(block.links[0].snippet?.length).toBeLessThanOrEqual(280);
+    expect(block.links[0].snippet?.endsWith("…")).toBe(true);
   });
 
   it("rejects malformed JSON, wrong versions, and unknown kinds", () => {
@@ -111,6 +119,84 @@ describe("chatBlocksToClipboardText", () => {
   it("keeps an invalid block fence verbatim (it is what the user saw)", () => {
     const reply = "```subrosa:links\n{broken\n```";
     expect(chatBlocksToClipboardText(reply)).toBe(reply);
+  });
+});
+
+const PLACES_BODY = JSON.stringify({
+  v: 1,
+  title: "Experts-comptables",
+  attribution: "osm",
+  places: [
+    {
+      name: "Sogeca Experts",
+      lat: 46.19,
+      lng: 6.23,
+      category: "Accountant",
+      rating: 4.96,
+      reviews: 8,
+      url: "https://sogeca.example.com",
+      note: "Le mieux noté d'Annemasse.",
+    },
+    { name: "Off the globe", lat: 200, lng: 6.2 },
+    { name: "", lat: 46.2, lng: 6.24 },
+  ],
+});
+
+describe("places block parsing", () => {
+  it("keeps valid places, rounds ratings, and defaults attribution to osm", () => {
+    const block = parseChatBlock("subrosa:places", PLACES_BODY);
+    expect(block?.kind).toBe("places");
+    if (block?.kind !== "places") throw new Error("expected places");
+    expect(block.places).toHaveLength(1);
+    expect(block.places[0].rating).toBe(5);
+    expect(block.places[0].url).toBe("https://sogeca.example.com/");
+    expect(block.attribution).toBe("osm");
+    const unattributed = parseChatBlock(
+      "subrosa:places",
+      JSON.stringify({ v: 1, places: [{ name: "X", lat: 1, lng: 1 }], attribution: "bing" }),
+    );
+    if (unattributed?.kind !== "places") throw new Error("expected places");
+    expect(unattributed.attribution).toBe("osm");
+  });
+
+  it("turns a places block into a readable clipboard list", () => {
+    const copied = chatBlocksToClipboardText(`\`\`\`subrosa:places\n${PLACES_BODY}\n\`\`\``);
+    expect(copied).toContain("Experts-comptables");
+    expect(copied).toContain("- Sogeca Experts (Accountant, 5/5");
+    expect(copied).not.toContain("subrosa:places");
+  });
+});
+
+describe("PlacesCard rendering", () => {
+  it("renders the list immediately and the map with its pins once Rust answers", async () => {
+    const { container } = render(<SimpleMarkdown text={fenced("subrosa:places", PLACES_BODY)} />);
+    expect(screen.getByRole("region", { name: "Experts-comptables" })).toBeInTheDocument();
+    expect(screen.getByText("Sogeca Experts")).toBeInTheDocument();
+    expect(screen.getByText(/★ 5/)).toBeInTheDocument();
+    expect(screen.getByText("Le mieux noté d'Annemasse.")).toBeInTheDocument();
+    await vi.waitFor(() => {
+      expect(container.querySelector(".chat-block-map img")).not.toBeNull();
+    });
+    expect(container.querySelector(".chat-block-pin")).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "© OpenStreetMap contributors" }),
+    ).toBeInTheDocument();
+    expect(invokeMock).toHaveBeenCalledWith(
+      "render_map_card",
+      expect.objectContaining({
+        request: expect.objectContaining({ height: 200 }),
+      }),
+    );
+  });
+
+  it("keeps the card usable when the map render fails", async () => {
+    invokeMock.mockRejectedValueOnce(new Error("offline"));
+    const { container } = render(<SimpleMarkdown text={fenced("subrosa:places", PLACES_BODY)} />);
+    await vi.waitFor(() => {
+      expect(screen.getByText(/Data: © OpenStreetMap contributors/)).toBeInTheDocument();
+    });
+    expect(container.querySelector(".chat-block-map")).toBeNull();
+    expect(screen.getByText("Sogeca Experts")).toBeInTheDocument();
   });
 });
 

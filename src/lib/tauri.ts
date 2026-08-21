@@ -712,6 +712,19 @@ export async function juneOpenCommunityPage() {
   return invoke<void>("june_open_community_page");
 }
 
+/** Static map image for the places chat block: Rust stitches OSM tiles and
+ * returns a data URL (the CSP allows no third-party fetch from the webview).
+ * Pins are overlaid in DOM by the card from the same projection math. */
+export async function renderMapCard(request: {
+  centerLat: number;
+  centerLng: number;
+  zoom: number;
+  width: number;
+  height: number;
+}) {
+  return invoke<{ dataUrl: string }>("render_map_card", { request });
+}
+
 /**
  * Opens an https link outside the app: default browser on desktop, Safari on
  * iOS. Routed through Rust because neither webview honors target="_blank";
@@ -1711,7 +1724,16 @@ export const AGENT_LITE_NOTES_CHANGED_EVENT = "agent-lite://notes-changed";
 
 export type AgentLiteStatusDto = {
   taskId: string;
-  stage: "thinking" | "searching-notes" | "searching-web" | "searching-memory";
+  stage:
+    | "thinking"
+    | "searching-notes"
+    | "searching-web"
+    | "searching-memory"
+    | "searching-places"
+    | "reading-note"
+    | "writing-note"
+    | "remembering"
+    | "reading-page";
   detail?: string;
 };
 

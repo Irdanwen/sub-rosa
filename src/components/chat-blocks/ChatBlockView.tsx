@@ -2,6 +2,7 @@ import { IconArrowUpRight } from "central-icons/IconArrowUpRight";
 import { IconGlobe } from "central-icons/IconGlobe";
 import type { ChatBlock, LinksChatBlock } from "../../lib/chat-blocks";
 import { openExternalUrl } from "../../lib/tauri";
+import { PlacesCard } from "./PlacesCard";
 
 /**
  * Renders one parsed chat block (see src/lib/chat-blocks.ts). Shared by the
@@ -12,6 +13,8 @@ export function ChatBlockView({ block }: { block: ChatBlock }) {
   switch (block.kind) {
     case "links":
       return <LinkPreviewCard block={block} />;
+    case "places":
+      return <PlacesCard block={block} />;
     default:
       return null;
   }
