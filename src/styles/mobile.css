@@ -1297,17 +1297,35 @@
    * frame as a poster, and a cell with no background simply vanishes when it
    * does not. The tile stays visible and tappable either way. */
   background: var(--muted);
-  aspect-ratio: 1;
   border-radius: var(--r-sm);
-  overflow: hidden;
+  /* NO overflow: hidden here. Clipping the button zeroes its automatic
+   * minimum size as a grid item, and inside the gallery sheet (a definite-
+   * height scroll child) the rows then split the container height instead
+   * of overflowing into scroll — every tile collapsed to an unreadable
+   * sliver of the image. Corner clipping lives on the media instead. */
 }
 
+/* The square is in-flow content (a percentage padding, which resolves
+ * against the width in every engine), so the row's minimum size is the
+ * square and the sheet scrolls rather than squeezing the tiles. */
+.mobile-studio-cell::after {
+  content: "";
+  display: block;
+  padding-top: 100%;
+}
+
+/* Media fills the padding square from the absolute layer and carries the
+ * cell's rounding itself (see the overflow note above). */
 .mobile-studio-cell > img,
-.mobile-studio-cell > video {
+.mobile-studio-cell > video,
+.mobile-studio-cell > .mobile-studio-cell-loading {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+  border-radius: inherit;
 }
 
 .mobile-studio-cell[data-selected="true"] {
