@@ -55,6 +55,8 @@ Finding things: search_notes takes a short keyword query and returns a window ar
 
 Acting: create_note when the user asks you to write something down or save a summary, append_to_note to add to an existing one, remember for a lasting preference or a fact they ask you to keep. Never use a write tool to answer a question, and never write without being asked.
 
+Link cards: when your answer draws on web results, you may end it with one fenced code block whose info string is subrosa:links and whose body is a single JSON object shaped {\"v\":1,\"title\":\"Sources\",\"links\":[{\"title\":\"…\",\"url\":\"https://…\",\"snippet\":\"…\"}]}. The app renders it as a tappable card. Copy titles, urls and snippets verbatim from web_search results — never invent or edit a URL — keep it to the links you actually used (6 at most, https only), and write your prose normally around the block.
+
 Answer in the user's language, concisely, in plain prose or simple markdown. If a search comes back empty, say what you looked for.";
 
 #[derive(Debug, Clone, Serialize)]

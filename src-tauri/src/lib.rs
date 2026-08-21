@@ -34,6 +34,7 @@ pub mod meeting_hud;
 pub mod memory;
 #[cfg(desktop)]
 pub mod menu_bar;
+pub mod open_url;
 pub mod os_accounts;
 #[cfg(target_os = "ios")]
 pub mod photos_ios;
@@ -297,6 +298,7 @@ pub fn run() {
             commands::open_privacy_settings,
             commands::june_open_verify_page,
             commands::june_open_community_page,
+            open_url::open_external_url,
             commands::start_recording,
             commands::pause_recording,
             commands::resume_recording,
@@ -461,6 +463,7 @@ pub fn run() {
         commands::open_privacy_settings,
         commands::june_open_verify_page,
         commands::june_open_community_page,
+        open_url::open_external_url,
         commands::start_recording,
         commands::pause_recording,
         commands::resume_recording,

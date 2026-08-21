@@ -22211,3 +22211,154 @@ input:focus-visible,
     caret-color: transparent;
   }
 }
+
+/* --- Chat blocks (ADR-0024) ------------------------------------------------
+ * Rich inline cards inside assistant replies, parsed from `subrosa:*` fences
+ * by both markdown renderers (AgentWorkspace + SimpleMarkdown). Shared by the
+ * desktop thread and the mobile chat bubbles, so everything here is tokens
+ * only and assumes nothing about its container beyond "inline in a reply". */
+
+.chat-block {
+  margin: var(--sp-4) 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-xl);
+  background: var(--surface-subtle);
+  overflow: hidden;
+}
+
+.chat-block-title {
+  margin: 0;
+  padding: var(--sp-4) var(--sp-5) 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
+}
+
+.chat-block-rows {
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-block-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  border: none;
+  background: none;
+  border-radius: var(--r-md);
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  transition: background-color var(--t-fast) var(--ease-out);
+}
+
+.chat-block-row:hover {
+  background: color-mix(in oklch, var(--muted) 60%, transparent);
+}
+
+.chat-block-row:active {
+  background: color-mix(in oklch, var(--muted) 85%, transparent);
+}
+
+.chat-block-row-icon {
+  display: inline-flex;
+  margin-top: 1px;
+  color: var(--muted-foreground);
+  flex: 0 0 auto;
+}
+
+.chat-block-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.chat-block-row-title {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-block-row-meta {
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* The open glyph only surfaces on intent (hover/focus); touch screens have
+ * no hover, so it rests half-visible there as the tap affordance. */
+.chat-block-row-open {
+  display: inline-flex;
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease-out);
+  flex: 0 0 auto;
+}
+
+.chat-block-row:hover .chat-block-row-open,
+.chat-block-row:focus-visible .chat-block-row-open {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .chat-block-row-open {
+    opacity: 0.5;
+  }
+}
+
+/* Streaming placeholder: the card's silhouette, pulsing until the fence
+ * closes. Same cadence as the skeleton language elsewhere. */
+.chat-block-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+}
+
+.chat-block-skeleton-bar {
+  height: 10px;
+  border-radius: var(--r-pill);
+  background: var(--muted);
+  animation: chat-block-pulse 1.2s ease-in-out infinite;
+}
+
+.chat-block-skeleton-bar:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.chat-block-skeleton-bar:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+@keyframes chat-block-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* A steady silhouette still reads as "loading". */
+  .chat-block-skeleton-bar {
+    animation: none;
+  }
+}

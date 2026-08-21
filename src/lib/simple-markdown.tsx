@@ -2,6 +2,9 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { type ReactNode, useState } from "react";
+import { ChatBlockSkeleton, ChatBlockView } from "../components/chat-blocks/ChatBlockView";
+import { resolveChatBlockFence } from "./chat-blocks";
+import { openExternalUrl } from "./tauri";
 
 /**
  * Small markdown renderer for mobile chat bubbles: bold, italic, inline code,
@@ -10,11 +13,20 @@ import { type ReactNode, useState } from "react";
  * The desktop agent has a full renderer coupled to Hermes event shapes
  * (AgentWorkspace); chat answers only need this well-understood subset.
  */
-export function SimpleMarkdown({ text }: { text: string }) {
-  return <div className="simple-markdown">{renderBlocks(text)}</div>;
+export function SimpleMarkdown({
+  text,
+  streaming = false,
+}: {
+  text: string;
+  /** True while the reply is still arriving (live stream or typewriter
+   * reveal): an unterminated `subrosa:*` fence then renders as a card
+   * skeleton instead of flashing half-written JSON. */
+  streaming?: boolean;
+}) {
+  return <div className="simple-markdown">{renderBlocks(text, streaming)}</div>;
 }
 
-function renderBlocks(text: string): ReactNode[] {
+function renderBlocks(text: string, streaming = false): ReactNode[] {
   const blocks: ReactNode[] = [];
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   let index = 0;
@@ -31,8 +43,22 @@ function renderBlocks(text: string): ReactNode[] {
         code.push(lines[index]);
         index += 1;
       }
+      const terminated = index < lines.length;
       index += 1;
-      blocks.push(<CodeBlock key={key++} code={code.join("\n")} lang={lang} />);
+      const body = code.join("\n");
+      // Chat blocks (ADR-0024): a `subrosa:*` fence renders as a card when
+      // its payload validates, as a skeleton while it is still streaming in,
+      // and degrades to the plain code block below otherwise.
+      const chatBlock = resolveChatBlockFence(lang, body, terminated, streaming);
+      if (chatBlock?.type === "card") {
+        blocks.push(<ChatBlockView key={key++} block={chatBlock.block} />);
+        continue;
+      }
+      if (chatBlock?.type === "skeleton") {
+        blocks.push(<ChatBlockSkeleton key={key++} />);
+        continue;
+      }
+      blocks.push(<CodeBlock key={key++} code={body} lang={lang} />);
       continue;
     }
 
@@ -324,8 +350,26 @@ function renderInline(text: string): ReactNode[] {
     } else if (token.startsWith("[")) {
       const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token);
       if (link) {
+        const href = link[2];
+        // The webview drops target="_blank", so https taps route through the
+        // Rust open command (Safari on iOS, browser on desktop). Anything
+        // else keeps the anchor's default behavior.
+        const external = /^https:\/\//i.test(href);
         nodes.push(
-          <a key={key++} href={link[2]} target="_blank" rel="noreferrer">
+          <a
+            key={key++}
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            onClick={
+              external
+                ? (event) => {
+                    event.preventDefault();
+                    void openExternalUrl(href);
+                  }
+                : undefined
+            }
+          >
             {link[1]}
           </a>,
         );

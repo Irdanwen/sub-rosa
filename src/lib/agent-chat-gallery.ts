@@ -112,6 +112,46 @@ export function buildAgentChatGallery(): AgentChatGallerySection[] {
       turns: [assistantTurn("text", [{ type: "text", text: MARKDOWN_SAMPLE, status: "complete" }])],
     },
     {
+      label: "Chat block: link card",
+      description:
+        "A subrosa:links fence rendered as the sources card (ADR-0024), followed by the skeleton an unterminated fence shows while streaming.",
+      turns: [
+        assistantTurn("chat-block-links", [
+          {
+            type: "text",
+            text: `Here is what the coverage says.\n\n\`\`\`subrosa:links\n${JSON.stringify({
+              v: 1,
+              title: "Sources",
+              links: [
+                {
+                  title: "Swiss cross-border tax rules, 2026 update",
+                  url: "https://www.example.com/frontalier-2026",
+                  snippet: "The canton of Geneva confirmed the withholding changes.",
+                },
+                {
+                  title: "CE 883/2004 explained",
+                  url: "https://europa.example.org/ce-883-2004",
+                  snippet: "Which country insures a cross-border worker with a side activity.",
+                },
+              ],
+            })}\n\`\`\``,
+            status: "complete",
+          },
+        ]),
+        assistantTurn(
+          "chat-block-skeleton",
+          [
+            {
+              type: "text",
+              text: 'Checking the latest coverage.\n\n```subrosa:links\n{"v":1,"links":[{"ti',
+              status: "running",
+            },
+          ],
+          "running",
+        ),
+      ],
+    },
+    {
       label: "Generated files",
       description:
         "Download cards for files the agent produced. The icon is keyed off the file extension; the download button only shows on hover.",

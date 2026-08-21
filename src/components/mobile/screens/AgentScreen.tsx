@@ -11,6 +11,7 @@ import { IconPaperclip1 } from "central-icons/IconPaperclip1";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
+import { chatBlocksToClipboardText } from "../../../lib/chat-blocks";
 import { friendlyErrorMessage, messageFromError } from "../../../lib/errors";
 import { hapticImpact, hapticNotify, hapticSelection } from "../../../lib/haptics";
 import { useKeyboardInset } from "../../../lib/keyboard-inset";
@@ -741,7 +742,7 @@ export function AgentSessionScreen({
         ))}
         {running && streamed ? (
           <div className="mobile-chat-bubble" data-role="assistant">
-            <SimpleMarkdown text={streamed} />
+            <SimpleMarkdown text={streamed} streaming />
           </div>
         ) : null}
         {running && !streamed ? (
@@ -954,7 +955,8 @@ function CopyReplyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const copy = useCallback(async () => {
     try {
-      await writeText(text);
+      // Chat blocks paste as readable link lists, not JSON fences.
+      await writeText(chatBlocksToClipboardText(text));
       hapticImpact("light");
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
@@ -1070,5 +1072,7 @@ function TypewriterMarkdown({
     return () => window.clearInterval(interval);
   }, [text]);
 
-  return <SimpleMarkdown text={text.slice(0, visible)} />;
+  // streaming while the reveal runs: a subrosa fence cut mid-payload renders
+  // as a card skeleton instead of a flash of half-written JSON.
+  return <SimpleMarkdown text={text.slice(0, visible)} streaming={visible < text.length} />;
 }

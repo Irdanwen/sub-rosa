@@ -712,6 +712,21 @@ export async function juneOpenCommunityPage() {
   return invoke<void>("june_open_community_page");
 }
 
+/**
+ * Opens an https link outside the app: default browser on desktop, Safari on
+ * iOS. Routed through Rust because neither webview honors target="_blank";
+ * the browser preview (no Tauri bridge) falls back to window.open. Non-https
+ * URLs are dropped here and re-checked in Rust.
+ */
+export async function openExternalUrl(url: string) {
+  if (!/^https:\/\//i.test(url)) return;
+  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+    await invoke<void>("open_external_url", { url }).catch(() => {});
+  } else {
+    window.open(url, "_blank", "noopener");
+  }
+}
+
 export async function createNote(folderId?: string) {
   return invoke<NoteDto>("create_note", { request: { folderId } });
 }

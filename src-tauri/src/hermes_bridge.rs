@@ -159,6 +159,15 @@ const JUNE_SOUL_WEB_MD: &str = r#"
 Web tools: you have a `june_web` MCP toolset with `web_search` and `web_fetch`. Use `web_search` for current information, recent events, or facts you are not sure of, then `web_fetch` to read a specific result or URL in full as markdown. Reach for these instead of guessing when an answer may have changed since your training, and base your reply only on what the results actually say. Some sites block automated fetching; if a fetch is refused, search for another source.
 "#;
 
+/// Appended to `SOUL.md` for every runtime. Chat blocks (ADR-0024) are
+/// `subrosa:*` fenced JSON the app renders as interactive cards inside the
+/// reply; this note teaches the shape and the one hard rule (copy tool data,
+/// never invent it). The renderer ships in the same build as this prompt, so
+/// the two can't drift apart.
+const JUNE_SOUL_BLOCKS_MD: &str = r#"
+Link cards: when your answer draws on web results, you may end it with one fenced code block whose info string is `subrosa:links` and whose body is a single JSON object shaped {"v":1,"title":"Sources","links":[{"title":"…","url":"https://…","snippet":"…"}]}. The app renders it as a clickable card. Copy titles, urls and snippets verbatim from `web_search` results — never invent or edit a URL — keep it to the links you actually used (6 at most, https only), and write your prose normally around the block.
+"#;
+
 /// Appended to `SOUL.md` for every runtime. The media tools are discovered
 /// through the `june_media` MCP server configured below; this note teaches the
 /// model to reach for them instead of hand-rolling API calls (the agent
@@ -7654,10 +7663,10 @@ fn sync_june_soul(
             JUNE_SOUL_CLI_BLOCKED_MD
         };
         format!(
-            "{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_LONG_TASKS_MD}{JUNE_SOUL_FILMS_MD}{JUNE_SOUL_SANDBOX_MD}{cli_section}"
+            "{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_BLOCKS_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_LONG_TASKS_MD}{JUNE_SOUL_FILMS_MD}{JUNE_SOUL_SANDBOX_MD}{cli_section}"
         )
     } else {
-        format!("{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_LONG_TASKS_MD}{JUNE_SOUL_FILMS_MD}")
+        format!("{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_BLOCKS_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_LONG_TASKS_MD}{JUNE_SOUL_FILMS_MD}")
     };
     std::fs::write(hermes_home.join("SOUL.md"), soul)
         .map_err(|error| AppError::new("hermes_bridge_soul_failed", error.to_string()))

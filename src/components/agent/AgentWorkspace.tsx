@@ -64,6 +64,8 @@ import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { IconShieldCrossed } from "central-icons/IconShieldCrossed";
 import { IconStop } from "central-icons/IconStop";
 import { DotSpinner } from "../DotSpinner";
+import { ChatBlockSkeleton, ChatBlockView } from "../chat-blocks/ChatBlockView";
+import { chatBlocksToClipboardText, resolveChatBlockFence } from "../../lib/chat-blocks";
 import {
   type CSSProperties,
   type ClipboardEvent,
@@ -112,6 +114,7 @@ import {
   listAgentTasks,
   saveHermesBridgeFile,
   copyHermesBridgeFileToClipboard,
+  openExternalUrl,
   openHermesTuiDebug,
   carpeDiemCacheStats,
   carpeDiemOpenDashboard,
@@ -9983,13 +9986,21 @@ export function AgentChatTurnRow({
               // as text.
               <div key={`${turn.id}:text:${index}`}>
                 {stripAgentCliAccessRequest(part.text) ? (
-                  <MarkdownContent markdown={stripAgentCliAccessRequest(part.text)} repairProse />
+                  <MarkdownContent
+                    markdown={stripAgentCliAccessRequest(part.text)}
+                    repairProse
+                    streaming={turn.status === "running"}
+                  />
                 ) : null}
                 <AgentCliAccessCard cliAccess={cliAccess} />
               </div>
             ) : (
               <div key={`${turn.id}:text:${index}`}>
-                <MarkdownContent markdown={part.text} repairProse />
+                <MarkdownContent
+                  markdown={part.text}
+                  repairProse
+                  streaming={turn.status === "running"}
+                />
               </div>
             )
           ) : part.type === "context" ? (
@@ -10096,7 +10107,8 @@ function copyableTextForTurn(turn: AgentChatTurn): string {
   if (turn.role !== "assistant") return "";
   return turn.parts
     .filter((part): part is Extract<AgentChatPart, { type: "text" }> => part.type === "text")
-    .map((part) => stripAgentCliAccessRequest(part.text).trim())
+    // Chat blocks paste as readable link lists, not JSON fences.
+    .map((part) => chatBlocksToClipboardText(stripAgentCliAccessRequest(part.text)).trim())
     .filter(Boolean)
     .join("\n\n")
     .trim();
@@ -11942,13 +11954,19 @@ function MarkdownContent({
   // -> "it's not"). Only set for assistant prose: it must never touch code or
   // a user's own text. See repairContractionSpacing.
   repairProse = false,
+  // True while the turn is still running: an unterminated subrosa fence then
+  // renders as a card skeleton instead of a flash of half-written JSON.
+  streaming = false,
 }: {
   markdown: string;
   highlight?: string;
   repairProse?: boolean;
+  streaming?: boolean;
 }) {
   return (
-    <div className="agent-markdown">{renderMarkdownBlocks(markdown, highlight, repairProse)}</div>
+    <div className="agent-markdown">
+      {renderMarkdownBlocks(markdown, highlight, repairProse, streaming)}
+    </div>
   );
 }
 
@@ -11974,7 +11992,12 @@ function highlightText(text: string, highlight: string | undefined, keySeed: str
   return nodes;
 }
 
-function renderMarkdownBlocks(markdown: string, highlight?: string, repairProse = false) {
+function renderMarkdownBlocks(
+  markdown: string,
+  highlight?: string,
+  repairProse = false,
+  streaming = false,
+) {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const blocks: ReactNode[] = [];
   let paragraph: string[] = [];
@@ -11999,15 +12022,29 @@ function renderMarkdownBlocks(markdown: string, highlight?: string, repairProse 
 
     if (trimmed.startsWith("```")) {
       flushParagraph();
+      const info = trimmed.slice(3).trim();
       const code: string[] = [];
       index += 1;
       while (index < lines.length && !lines[index].trim().startsWith("```")) {
         code.push(lines[index]);
         index += 1;
       }
+      const terminated = index < lines.length;
+      const body = code.join("\n");
+      // Chat blocks (ADR-0024): a `subrosa:*` fence renders as a card when
+      // its payload validates, as a skeleton while it is still streaming in,
+      // and degrades to the plain code block below otherwise.
+      const chatBlock = resolveChatBlockFence(info, body, terminated, streaming);
+      if (chatBlock?.type === "card") {
+        blocks.push(<ChatBlockView key={`block-${key++}`} block={chatBlock.block} />);
+        continue;
+      }
+      if (chatBlock?.type === "skeleton") {
+        blocks.push(<ChatBlockSkeleton key={`block-${key++}`} />);
+        continue;
+      }
       // Skip empty fences — including a stray trailing ``` while streaming —
       // so we don't flash an empty code block (a bare padded gray bar).
-      const body = code.join("\n");
       if (body.trim()) {
         blocks.push(
           <pre key={`code-${key++}`}>
@@ -12037,7 +12074,7 @@ function renderMarkdownBlocks(markdown: string, highlight?: string, repairProse 
       index -= 1;
       blocks.push(
         <blockquote key={`quote-${key++}`}>
-          {renderMarkdownBlocks(quoted.join("\n"), highlight, repairProse)}
+          {renderMarkdownBlocks(quoted.join("\n"), highlight, repairProse, streaming)}
         </blockquote>,
       );
       continue;
@@ -12175,9 +12212,28 @@ function renderInlineMarkdown(
       nodes.push(<code key={`code-${keySeed}-${index}`}>{mark(match[5], `c${index}`)}</code>);
     } else if (match[6] && match[7]) {
       nodes.push(
-        <a key={`link-${keySeed}-${index}`} href={match[7]} rel="noreferrer" target="_blank">
-          {markProse(match[6], `a${index}`)}
-        </a>,
+        // The webview drops target="_blank", so https clicks route through
+        // the Rust open command (see open_url.rs); other schemes keep the
+        // anchor's default behavior. `match` is reassigned by the loop, so
+        // the closure must capture the href by value.
+        ((href: string) => (
+          <a
+            key={`link-${keySeed}-${index}`}
+            href={href}
+            rel="noreferrer"
+            target="_blank"
+            onClick={
+              /^https:\/\//i.test(href)
+                ? (event) => {
+                    event.preventDefault();
+                    void openExternalUrl(href);
+                  }
+                : undefined
+            }
+          >
+            {markProse(match[6], `a${index}`)}
+          </a>
+        ))(match[7]),
       );
     }
     lastIndex = pattern.lastIndex;

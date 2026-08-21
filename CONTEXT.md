@@ -122,6 +122,15 @@ _Avoid_: system driver, in-process capture.
 
 ### Agent runtime (Hermes)
 
+**Chat block**:
+A rich inline card inside an assistant reply — a fenced code block whose info
+string is `subrosa:<kind>` and whose body is one versioned JSON object,
+intercepted by both markdown renderers and mounted as a component (link
+previews, places). The payload travels in the message text so it persists in
+transcripts and `agent_messages` unchanged, and degrades to a readable code
+block anywhere the parser is absent (ADR-0024).
+_Avoid_: widget, embed, rich message (unqualified).
+
 **Hermes**:
 The embedded upstream (Nous Research) agent runtime June bundles, pinned to a
 commit and SHA-verified. June drives it as the chat/agent brain but presents
