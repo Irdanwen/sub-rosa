@@ -67,6 +67,12 @@ pub(crate) async fn places(
     {
         return Err(ApiError::bad_request("near_out_of_range"));
     }
+    let google_key = headers
+        .get("x-places-google-key")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|key| !key.is_empty() && key.len() <= 256)
+        .map(str::to_string);
     let output = state
         .places()
         .search(june_services::PlacesSearchParams {
@@ -74,6 +80,7 @@ pub(crate) async fn places(
             query,
             limit: request.limit.map(|limit| limit.clamp(1, MAX_PLACES_LIMIT)),
             near: request.near,
+            google_key,
         })
         .await?;
     Ok(Json(ApiResponse::ok(output)))

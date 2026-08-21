@@ -380,6 +380,30 @@ async fn integration_places_search_requires_auth_and_a_query() -> Result<(), Box
 }
 
 #[tokio::test]
+async fn integration_places_search_routes_to_google_when_the_key_header_is_present()
+-> Result<(), Box<dyn Error>> {
+    let mut request = json_request(
+        "/v1/web/places",
+        &serde_json::json!({ "query": "expert comptable annemasse" }),
+        Some(AUTHORIZATION),
+    )?;
+    request
+        .headers_mut()
+        .insert("x-places-google-key", "user-key-123".parse()?);
+    let response = send(request).await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_json(response).await?;
+    assert_eq!(body["data"]["provider"], "google");
+    assert_eq!(body["data"]["places"][0]["rating"], 5.0);
+    assert_eq!(
+        body["data"]["places"][0]["photoRef"],
+        "places/abc/photos/one"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn integration_places_search_rejects_an_out_of_range_near() -> Result<(), Box<dyn Error>> {
     let response = send(json_request(
         "/v1/web/places",
@@ -735,7 +759,10 @@ fn test_state_with_sinks(
             fetch_credits: 20,
             hold_ttl_seconds: 30,
         })),
-        places: Arc::new(PlacesService::new(Arc::new(FakePlacesSearcher))),
+        places: Arc::new(PlacesService::new(
+            Arc::new(FakePlacesSearcher),
+            Arc::new(FakeKeyedPlacesSearcher),
+        )),
         image,
         issue_reports,
         limits: ApiLimits {
@@ -1134,6 +1161,34 @@ impl PlacesSearcher for FakePlacesSearcher {
                 url: None,
                 rating: None,
                 reviews: None,
+                photo_ref: None,
+            }],
+        })
+    }
+}
+
+struct FakeKeyedPlacesSearcher;
+
+#[async_trait]
+impl PlacesSearcher for FakeKeyedPlacesSearcher {
+    async fn search_places(
+        &self,
+        request: PlacesSearchRequest,
+    ) -> Result<PlacesSearchResults, DomainError> {
+        assert!(request.google_key.is_some(), "keyed provider without a key");
+        Ok(PlacesSearchResults {
+            query: request.query,
+            provider: "google".to_string(),
+            places: vec![PlaceResult {
+                name: "Sogeca Experts".to_string(),
+                lat: 46.19,
+                lng: 6.23,
+                address: Some("Rue de la Gare, Annemasse".to_string()),
+                category: Some("Accountant".to_string()),
+                url: Some("https://sogeca.example.com".to_string()),
+                rating: Some(5.0),
+                reviews: Some(8),
+                photo_ref: Some("places/abc/photos/one".to_string()),
             }],
         })
     }

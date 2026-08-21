@@ -22501,3 +22501,39 @@ input:focus-visible,
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
 }
+
+/* Place photo thumb (keyed provider): replaces the numbered badge, which
+ * moves onto the photo's corner so the pin pairing survives. */
+.chat-block-place-thumb {
+  position: relative;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--muted);
+}
+
+.chat-block-place-thumb > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.chat-block-place-thumb-index {
+  position: absolute;
+  left: 3px;
+  bottom: 3px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: var(--r-pill);
+  background: oklch(0% 0 none / 55%);
+  color: #fff;
+  display: inline-grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+}

@@ -1,6 +1,7 @@
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used, clippy::panic))]
 
 pub mod audio_probe;
+pub mod google_places;
 pub mod http;
 pub mod issue_reports;
 pub mod jwks;
@@ -19,6 +20,7 @@ mod retry;
 mod transcription;
 
 pub use audio_probe::MultiFormatDurationProbe;
+pub use google_places::GooglePlaces;
 pub use http::{client_with_timeout, default_client, jwks_client};
 pub use issue_reports::{LogIssueReportSink, OsPlatformIssueReportSink};
 pub use jwks::{JwksTokenVerifier, JwksTokenVerifierParams};

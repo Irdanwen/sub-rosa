@@ -62,6 +62,7 @@ import { getStoredTheme, setStoredTheme, type ThemePreference } from "../../lib/
 import { DEFAULT_BRAND, getStoredBrand, setStoredBrand, type BrandId } from "../../lib/brand";
 import { AccentWheel } from "./AccentWheel";
 import { CarpeDiemSettings } from "./CarpeDiemSettings";
+import { PlacesSettingsSection } from "./PlacesSettingsSection";
 import { VideomakerSettings } from "./VideomakerSettings";
 import {
   getReleaseChannel,
@@ -912,7 +913,12 @@ export function AppSettings({
         id={`settings-panel-${activeTab}`}
         aria-labelledby={`settings-tab-${activeTab}`}
       >
-        {activeTab === "carpe-diem" ? <CarpeDiemSettings /> : null}
+        {activeTab === "carpe-diem" ? (
+          <>
+            <CarpeDiemSettings />
+            <PlacesSettingsSection />
+          </>
+        ) : null}
         {activeTab === "film-studio" ? <VideomakerSettings /> : null}
         {activeTab === "general" ? (
           <>

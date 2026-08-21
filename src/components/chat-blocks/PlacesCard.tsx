@@ -2,7 +2,7 @@ import { IconGlobe } from "central-icons/IconGlobe";
 import { useEffect, useRef, useState } from "react";
 import type { ChatBlockPlace, PlacesChatBlock } from "../../lib/chat-blocks";
 import { fitBounds, pixelOffset } from "../../lib/map-projection";
-import { openExternalUrl, renderMapCard } from "../../lib/tauri";
+import { openExternalUrl, placesPhotoDataUrl, renderMapCard } from "../../lib/tauri";
 
 /** Logical map banner height; width follows the card. */
 const MAP_HEIGHT = 200;
@@ -132,9 +132,7 @@ export function PlacesCard({ block }: { block: PlacesChatBlock }) {
                 onBlur={() => setHot((current) => (current === index ? null : current))}
                 onClick={() => void openExternalUrl(mapsUrl(place))}
               >
-                <span className="chat-block-pin-index" aria-hidden>
-                  {index + 1}
-                </span>
+                <PlaceThumb place={place} index={index} />
                 <span className="chat-block-row-body">
                   <span className="chat-block-row-title">{place.name}</span>
                   <span className="chat-block-row-meta">{placeMeta(place)}</span>
@@ -160,6 +158,43 @@ export function PlacesCard({ block }: { block: PlacesChatBlock }) {
         <p className="chat-block-footer-attribution">Data: {attribution}</p>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * The row's leading visual: the place's photo when the provider gave one and
+ * Rust can resolve it (Google key present), the numbered badge otherwise.
+ * Failure is silent — the badge is a complete design, not an error state.
+ */
+function PlaceThumb({ place, index }: { place: ChatBlockPlace; index: number }) {
+  const [photo, setPhoto] = useState<string | null>(null);
+  const photoRef = place.photoRef;
+
+  useEffect(() => {
+    if (!photoRef) return;
+    let cancelled = false;
+    placesPhotoDataUrl(photoRef)
+      .then((response) => {
+        if (!cancelled) setPhoto(response.dataUrl);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [photoRef]);
+
+  if (photo) {
+    return (
+      <span className="chat-block-place-thumb" aria-hidden>
+        <img src={photo} alt="" />
+        <span className="chat-block-place-thumb-index">{index + 1}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="chat-block-pin-index" aria-hidden>
+      {index + 1}
+    </span>
   );
 }
 

@@ -132,6 +132,7 @@ fn map_entries(query: &str, entries: Vec<NominatimEntry>) -> PlacesSearchResults
                 url: None,
                 rating: None,
                 reviews: None,
+                photo_ref: None,
             })
         })
         .collect();

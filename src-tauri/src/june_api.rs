@@ -510,6 +510,29 @@ pub async fn forward_web_request(
         client.post(url).bearer_auth(token).json(body)
     })
     .await?;
+    shape_web_response(response).await
+}
+
+/// `/v1/web/places`, with the user's Google key (when stored) riding along as
+/// the `x-places-google-key` header — the june-api routes to the keyed
+/// provider on its presence. Read from the keychain per call, so a key change
+/// in Settings is effective on the next search with nothing restarted.
+pub async fn forward_places_request(
+    body: &serde_json::Value,
+) -> Result<WebProxyResponse, AppError> {
+    let google_key = crate::places::google_places_key_async().await;
+    let response = authed_send("/v1/web/places", true, |client, url, token| {
+        let mut request = client.post(url).bearer_auth(token).json(body);
+        if let Some(key) = &google_key {
+            request = request.header("x-places-google-key", key);
+        }
+        request
+    })
+    .await?;
+    shape_web_response(response).await
+}
+
+async fn shape_web_response(response: reqwest::Response) -> Result<WebProxyResponse, AppError> {
     let status = response.status().as_u16();
     let content_type = response
         .headers()

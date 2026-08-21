@@ -13,7 +13,10 @@ use june_domain::{GeoPoint, PlacesSearchRequest, PlacesSearchResults, PlacesSear
 use std::sync::Arc;
 
 pub struct PlacesService {
-    searcher: Arc<dyn PlacesSearcher>,
+    /// The no-key default (OSM).
+    keyless: Arc<dyn PlacesSearcher>,
+    /// The provider a per-request key routes to (Google).
+    keyed: Arc<dyn PlacesSearcher>,
 }
 
 pub struct PlacesSearchParams {
@@ -21,23 +24,31 @@ pub struct PlacesSearchParams {
     pub query: String,
     pub limit: Option<u32>,
     pub near: Option<GeoPoint>,
+    /// The user's own Google key, forwarded per request from the app's
+    /// keychain. Presence selects the keyed provider.
+    pub google_key: Option<String>,
 }
 
 impl PlacesService {
-    pub fn new(searcher: Arc<dyn PlacesSearcher>) -> Self {
-        Self { searcher }
+    pub fn new(keyless: Arc<dyn PlacesSearcher>, keyed: Arc<dyn PlacesSearcher>) -> Self {
+        Self { keyless, keyed }
     }
 
     pub async fn search(
         &self,
         params: PlacesSearchParams,
     ) -> Result<PlacesSearchResults, ServiceError> {
-        let results = self
-            .searcher
+        let searcher = if params.google_key.is_some() {
+            &self.keyed
+        } else {
+            &self.keyless
+        };
+        let results = searcher
             .search_places(PlacesSearchRequest {
                 query: params.query,
                 limit: params.limit,
                 near: params.near,
+                google_key: params.google_key,
             })
             .await?;
         tracing::info!(

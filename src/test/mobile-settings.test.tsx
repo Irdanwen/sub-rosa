@@ -4,7 +4,7 @@
 // that the detail screens use the platform's controls (switches, swipe rows)
 // rather than the desktop grid they used to inherit.
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConnectionScreen } from "../components/mobile/screens/ConnectionScreen";
@@ -26,6 +26,9 @@ const tauriMocks = vi.hoisted(() => ({
   carpeDiemSetBaseUrl: vi.fn(),
   carpeDiemSetApiKey: vi.fn(),
   carpeDiemClearApiKey: vi.fn(),
+  placesGetSettings: vi.fn(),
+  placesSetGoogleKey: vi.fn(),
+  placesClearGoogleKey: vi.fn(),
   carpeDiemTestConnection: vi.fn(),
   carpeDiemSetRail: vi.fn(),
   carpeDiemRestartSidecar: vi.fn(),
@@ -70,6 +73,7 @@ const SETTINGS = {
 
 beforeEach(() => {
   for (const mock of Object.values(tauriMocks)) mock.mockReset();
+  tauriMocks.placesGetSettings.mockResolvedValue({ googleKeyPresent: false });
   tauriMocks.memoryList.mockResolvedValue({
     items: [memory("a"), memory("b"), memory("c", { disabled: true })],
     settings: { enabled: true, autoExtract: true },
@@ -160,10 +164,32 @@ describe("mobile connection screen", () => {
 
     const field = await screen.findByLabelText("Carpe Diem API key");
     await userEvent.type(field, "cdm_test");
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    // Two key forms live on this screen now (Carpe Diem + Place search):
+    // submit the one this field belongs to.
+    const form = field.closest("form");
+    if (!form) throw new Error("expected the key form");
+    await userEvent.click(within(form).getByRole("button", { name: "Save" }));
     expect(tauriMocks.carpeDiemSetApiKey).toHaveBeenCalledWith("cdm_test");
 
     expect(screen.getByRole("button", { name: "Remove key" })).toBeInTheDocument();
+  });
+
+  it("saves and removes the Google Places key from its own group", async () => {
+    tauriMocks.placesSetGoogleKey.mockResolvedValue({ googleKeyPresent: true });
+    tauriMocks.placesClearGoogleKey.mockResolvedValue({ googleKeyPresent: false });
+    render(<ConnectionScreen onBack={vi.fn()} />);
+
+    const field = await screen.findByLabelText("Google Places API key");
+    await userEvent.type(field, "AIzaExample");
+    const form = field.closest("form");
+    if (!form) throw new Error("expected the places key form");
+    await userEvent.click(within(form).getByRole("button", { name: "Save" }));
+    expect(tauriMocks.placesSetGoogleKey).toHaveBeenCalledWith("AIzaExample");
+
+    // With a key present the group offers its own destructive remove row.
+    const removeButtons = await screen.findAllByRole("button", { name: "Remove key" });
+    await userEvent.click(removeButtons[removeButtons.length - 1]);
+    expect(tauriMocks.placesClearGoogleKey).toHaveBeenCalled();
   });
 
   it("switches the endpoint rail through the segmented control", async () => {

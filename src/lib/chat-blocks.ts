@@ -43,6 +43,8 @@ export type ChatBlockPlace = {
   reviews?: number;
   /** One short model-authored sentence; everything else comes from the tool. */
   note?: string;
+  /** Opaque Google photo reference; resolved to bytes by the Rust side. */
+  photoRef?: string;
 };
 
 export type PlacesChatBlock = {
@@ -67,6 +69,7 @@ const MAX_PLACE_NAME = 120;
 const MAX_PLACE_ADDRESS = 160;
 const MAX_PLACE_CATEGORY = 60;
 const MAX_PLACE_NOTE = 200;
+const MAX_PHOTO_REF = 512;
 
 /** The `<kind>` of a `subrosa:<kind>` fence info string, or null. */
 export function chatBlockKindOf(info: string): string | null {
@@ -125,6 +128,15 @@ function parseLinks(payload: Record<string, unknown>): LinksChatBlock | null {
   return { kind: "links", title: cappedString(payload.title, MAX_TITLE), links };
 }
 
+/** Google photo references only: `places/<id>/photos/<id>`, tight charset. */
+function safePhotoRef(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const ref = value.trim();
+  if (!ref || ref.length > MAX_PHOTO_REF) return undefined;
+  if (!ref.startsWith("places/") || !ref.includes("/photos/")) return undefined;
+  return /^[\w/-]+$/.test(ref) ? ref : undefined;
+}
+
 function finiteInRange(value: unknown, min: number, max: number): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
   return value >= min && value <= max ? value : undefined;
@@ -154,6 +166,7 @@ function parsePlaces(payload: Record<string, unknown>): PlacesChatBlock | null {
       rating: rating === undefined ? undefined : Math.round(rating * 10) / 10,
       reviews: reviews === undefined ? undefined : Math.round(reviews),
       note: cappedString(item.note, MAX_PLACE_NOTE),
+      photoRef: safePhotoRef(item.photoRef),
     });
   }
   if (places.length === 0) return null;

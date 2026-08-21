@@ -15,6 +15,9 @@ import {
   carpeDiemSetBaseUrl,
   carpeDiemSetRail,
   carpeDiemTestConnection,
+  placesClearGoogleKey,
+  placesGetSettings,
+  placesSetGoogleKey,
 } from "../../../lib/tauri";
 import { CarpeDiemStatusPill, useCarpeDiem } from "../../settings/CarpeDiemSettings";
 import { SettingsActionRow, SettingsGroup, SettingsRow } from "../SettingsList";
@@ -209,6 +212,8 @@ export function ConnectionScreen({ onBack }: { onBack: () => void }) {
           </SettingsRow>
         </SettingsGroup>
 
+        <PlacesKeyGroup />
+
         <PaymentGroup hasApiKey={hasApiKey} />
 
         {notice ? (
@@ -311,6 +316,82 @@ function PaymentGroup({ hasApiKey }: { hasApiKey: boolean }) {
         </span>
       </SettingsRow>
       {error ? <SettingsRow label="Could not switch rails" detail={error} /> : null}
+    </SettingsGroup>
+  );
+}
+
+/**
+ * The optional Google Places key behind the chat's place cards: without it
+ * they run on OpenStreetMap data; with it they gain ratings, reviews and
+ * photos. Same keychain discipline as the Carpe Diem key above.
+ */
+function PlacesKeyGroup() {
+  const [keyPresent, setKeyPresent] = useState(false);
+  const [keyDraft, setKeyDraft] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    placesGetSettings()
+      .then((settings) => {
+        if (!cancelled) setKeyPresent(settings.googleKeyPresent);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const saveKey = async () => {
+    try {
+      const settings = await placesSetGoogleKey(keyDraft.trim());
+      setKeyPresent(settings.googleKeyPresent);
+      setKeyDraft("");
+      hapticSelection();
+    } catch {
+      // The field keeps the draft; the user can correct and retry.
+    }
+  };
+
+  const removeKey = async () => {
+    try {
+      const settings = await placesClearGoogleKey();
+      setKeyPresent(settings.googleKeyPresent);
+      hapticSelection();
+    } catch {
+      // Best-effort; the row re-reads on next visit.
+    }
+  };
+
+  return (
+    <SettingsGroup
+      title="Place search"
+      footer="Place cards work without any key, using OpenStreetMap data. Your own Google Places key adds ratings, reviews and photos; it stays in the keychain and is only sent with place searches."
+    >
+      <SettingsRow label={keyPresent ? "Replace your key" : "Google Places key"} align="stack">
+        <form
+          className="mobile-memory-add"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (keyDraft.trim()) void saveKey();
+          }}
+        >
+          <input
+            type="password"
+            value={keyDraft}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={keyPresent ? "Saved key hidden" : "AIza…"}
+            aria-label="Google Places API key"
+            onChange={(event) => setKeyDraft(event.currentTarget.value)}
+          />
+          <button type="submit" disabled={keyDraft.trim().length === 0}>
+            Save
+          </button>
+        </form>
+      </SettingsRow>
+      {keyPresent ? (
+        <SettingsActionRow label="Remove key" tone="destructive" onClick={() => void removeKey()} />
+      ) : null}
     </SettingsGroup>
   );
 }

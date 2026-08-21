@@ -15,10 +15,11 @@ use june_config::{
     VENICE_API_KEY_PLACEHOLDER,
 };
 use june_providers::{
-    JwksTokenVerifier, LocalDevOsAccountsClient, LocalDevTokenVerifier, LogIssueReportSink,
-    MultiFormatDurationProbe, NominatimPlaces, OsAccountsHttpClient, OsPlatformIssueReportSink,
-    RoutingTranscriber, VeniceAgentChat, VeniceAugment, VeniceCleaner, VeniceGenerator,
-    VeniceImageGenerator, VeniceModelCatalog, client_with_timeout, default_client, jwks_client,
+    GooglePlaces, JwksTokenVerifier, LocalDevOsAccountsClient, LocalDevTokenVerifier,
+    LogIssueReportSink, MultiFormatDurationProbe, NominatimPlaces, OsAccountsHttpClient,
+    OsPlatformIssueReportSink, RoutingTranscriber, VeniceAgentChat, VeniceAugment, VeniceCleaner,
+    VeniceGenerator, VeniceImageGenerator, VeniceModelCatalog, client_with_timeout, default_client,
+    jwks_client,
 };
 use june_services::{
     AgentChatService, AgentChatServiceDeps, DictateService, DictateServiceDeps, ImageService,
@@ -227,10 +228,15 @@ pub fn build_router(
     // Keyless places search (OSM/Nominatim): no metering, no key — the
     // provider enforces the public instance's UA + rate-limit obligations
     // itself. The UA identifies the app per Nominatim's usage policy.
-    let places = Arc::new(PlacesService::new(Arc::new(NominatimPlaces::new(
-        None,
-        "SubRosa-june-api/1.0 (+https://github.com/Irdanwen/sub-rosa)",
-    ))));
+    let places = Arc::new(PlacesService::new(
+        Arc::new(NominatimPlaces::new(
+            None,
+            "SubRosa-june-api/1.0 (+https://github.com/Irdanwen/sub-rosa)",
+        )),
+        // Keyed provider: only reached when a request carries the user's own
+        // Google key (see PlacesService); holds no key of its own.
+        Arc::new(GooglePlaces::new(None)),
+    ));
     let image = Arc::new(ImageService::new(ImageServiceDeps {
         os_accounts: os_accounts.clone(),
         generator: build_image_generator(upstream_http, &config.upstreams.venice),

@@ -59,7 +59,7 @@ Acting: create_note when the user asks you to write something down or save a sum
 
 Link cards: when your answer draws on web results, you may end it with one fenced code block whose info string is subrosa:links and whose body is a single JSON object shaped {\"v\":1,\"title\":\"Sources\",\"links\":[{\"title\":\"…\",\"url\":\"https://…\",\"snippet\":\"…\"}]}. The app renders it as a tappable card. Copy titles, urls and snippets verbatim from web_search results — never invent or edit a URL — keep it to the links you actually used (6 at most, https only), and write your prose normally around the block.
 
-Place cards: when you answer with places_search results, embed them as one fenced block whose info string is subrosa:places and whose body is {\"v\":1,\"title\":\"…\",\"attribution\":\"<the tool result's provider>\",\"places\":[{\"name\",\"lat\",\"lng\",\"address\"?,\"category\"?,\"rating\"?,\"reviews\"?,\"url\"?,\"note\"?}]}. The app draws the map and the list. Copy name, lat, lng, address, category, rating, reviews and url verbatim from the tool result; \"note\" is yours — one short helpful sentence per place at most. Never invent a place or a coordinate.
+Place cards: when you answer with places_search results, embed them as one fenced block whose info string is subrosa:places and whose body is {\"v\":1,\"title\":\"…\",\"attribution\":\"<the tool result's provider>\",\"places\":[{\"name\",\"lat\",\"lng\",\"address\"?,\"category\"?,\"rating\"?,\"reviews\"?,\"url\"?,\"photoRef\"?,\"note\"?}]}. The app draws the map and the list. Copy name, lat, lng, address, category, rating, reviews, url and photoRef verbatim from the tool result; \"note\" is yours — one short helpful sentence per place at most. Never invent a place or a coordinate.
 
 Answer in the user's language, concisely, in plain prose or simple markdown. If a search comes back empty, say what you looked for.";
 
@@ -816,7 +816,7 @@ async fn execute_tool(
                     body["near"] = serde_json::json!({ "lat": lat, "lng": lng });
                 }
             }
-            match june_api::forward_web_request("/v1/web/places", &body).await {
+            match june_api::forward_places_request(&body).await {
                 Ok(response) if (200..300).contains(&response.status) => {
                     summarize_places_results(&response.body)
                 }

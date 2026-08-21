@@ -39,6 +39,7 @@ pub mod open_url;
 pub mod os_accounts;
 #[cfg(target_os = "ios")]
 pub mod photos_ios;
+pub mod places;
 pub mod providers;
 #[cfg(target_os = "ios")]
 pub mod share_ios;
@@ -301,6 +302,10 @@ pub fn run() {
             commands::june_open_community_page,
             open_url::open_external_url,
             map_render::render_map_card,
+            places::places_get_settings,
+            places::places_set_google_key,
+            places::places_clear_google_key,
+            places::places_photo_data_url,
             commands::start_recording,
             commands::pause_recording,
             commands::resume_recording,
@@ -467,6 +472,10 @@ pub fn run() {
         commands::june_open_community_page,
         open_url::open_external_url,
         map_render::render_map_card,
+        places::places_get_settings,
+        places::places_set_google_key,
+        places::places_clear_google_key,
+        places::places_photo_data_url,
         commands::start_recording,
         commands::pause_recording,
         commands::resume_recording,

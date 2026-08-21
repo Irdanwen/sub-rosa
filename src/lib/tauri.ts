@@ -712,6 +712,31 @@ export async function juneOpenCommunityPage() {
   return invoke<void>("june_open_community_page");
 }
 
+export type PlacesSettingsDto = {
+  googleKeyPresent: boolean;
+};
+
+/** Places settings: only key PRESENCE crosses IPC, never the key itself. */
+export async function placesGetSettings() {
+  return invoke<PlacesSettingsDto>("places_get_settings");
+}
+
+export async function placesSetGoogleKey(apiKey: string) {
+  return invoke<PlacesSettingsDto>("places_set_google_key", { request: { apiKey } });
+}
+
+export async function placesClearGoogleKey() {
+  return invoke<PlacesSettingsDto>("places_clear_google_key");
+}
+
+/** One place photo as a cached data URL, fetched by Rust with the user's own
+ * Google key (the webview can neither reach Google nor hold the key). */
+export async function placesPhotoDataUrl(photoRef: string, maxWidth = 96) {
+  return invoke<{ dataUrl: string }>("places_photo_data_url", {
+    request: { photoRef, maxWidth },
+  });
+}
+
 /** Static map image for the places chat block: Rust stitches OSM tiles and
  * returns a data URL (the CSP allows no third-party fetch from the webview).
  * Pins are overlaid in DOM by the card from the same projection math. */

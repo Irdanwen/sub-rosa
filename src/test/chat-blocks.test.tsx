@@ -5,6 +5,9 @@ const invokeMock = vi.fn(async (command: string, _args?: unknown) => {
   if (command === "render_map_card") {
     return { dataUrl: "data:image/png;base64,iVBORw0KGgo=" };
   }
+  if (command === "places_photo_data_url") {
+    return { dataUrl: "data:image/jpeg;base64,/9j/photo" };
+  }
   return undefined;
 });
 vi.mock("@tauri-apps/api/core", () => ({
@@ -167,6 +170,25 @@ describe("places block parsing", () => {
   });
 });
 
+describe("photoRef validation", () => {
+  it("keeps well-shaped Google refs and drops everything else", () => {
+    const body = (photoRef: unknown) =>
+      JSON.stringify({
+        v: 1,
+        attribution: "google",
+        places: [{ name: "X", lat: 1, lng: 1, photoRef }],
+      });
+    const good = parseChatBlock("subrosa:places", body("places/abc-1/photos/def_2"));
+    if (good?.kind !== "places") throw new Error("expected places");
+    expect(good.places[0].photoRef).toBe("places/abc-1/photos/def_2");
+    for (const bad of ["photos/def", "places/abc/photos/../x", "places/a photos/b", 42]) {
+      const block = parseChatBlock("subrosa:places", body(bad));
+      if (block?.kind !== "places") throw new Error("expected places");
+      expect(block.places[0].photoRef).toBeUndefined();
+    }
+  });
+});
+
 describe("PlacesCard rendering", () => {
   it("renders the list immediately and the map with its pins once Rust answers", async () => {
     const { container } = render(<SimpleMarkdown text={fenced("subrosa:places", PLACES_BODY)} />);
@@ -185,6 +207,33 @@ describe("PlacesCard rendering", () => {
       "render_map_card",
       expect.objectContaining({
         request: expect.objectContaining({ height: 200 }),
+      }),
+    );
+  });
+
+  it("shows the place photo once Rust resolves it, with the index on its corner", async () => {
+    const withPhoto = JSON.stringify({
+      v: 1,
+      attribution: "google",
+      places: [
+        {
+          name: "Sogeca Experts",
+          lat: 46.19,
+          lng: 6.23,
+          rating: 5,
+          photoRef: "places/abc/photos/one",
+        },
+      ],
+    });
+    const { container } = render(<SimpleMarkdown text={fenced("subrosa:places", withPhoto)} />);
+    await vi.waitFor(() => {
+      expect(container.querySelector(".chat-block-place-thumb img")).not.toBeNull();
+    });
+    expect(container.querySelector(".chat-block-place-thumb-index")?.textContent).toBe("1");
+    expect(invokeMock).toHaveBeenCalledWith(
+      "places_photo_data_url",
+      expect.objectContaining({
+        request: expect.objectContaining({ photoRef: "places/abc/photos/one" }),
       }),
     );
   });
