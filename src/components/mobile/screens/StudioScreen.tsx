@@ -2572,9 +2572,13 @@ function LibraryCell({
   selecting?: boolean;
   selected?: boolean;
 }) {
-  const src = useArtifactThumbnail(artifact);
-  const [duration, setDuration] = useState<string | null>(null);
+  const thumbnail = useArtifactThumbnail(artifact);
+  // Only a clip that failed to decode reaches a media element, and that is the
+  // one case where its own metadata is the only place a length can come from.
+  const [measured, setMeasured] = useState<number | null>(null);
   const isVideo = artifact.kind === "video";
+  const seconds = thumbnail?.durationSeconds ?? measured;
+  const duration = seconds && seconds > 0 ? formatClipLength(seconds) : "";
 
   return (
     <div className="mobile-library-item">
@@ -2584,24 +2588,23 @@ function LibraryCell({
         data-selected={selected ? "true" : undefined}
         onClick={onOpen}
       >
-        {src ? (
-          isVideo ? (
-            // `#t=0.1` nudges WKWebView to decode and paint the first frame as
-            // a poster; without it the tile stays black until played.
+        {thumbnail ? (
+          thumbnail.kind === "media" ? (
+            // A clip whose poster could not be read. `#t=0.1` asks WKWebView to
+            // paint the first frame; it often refuses, and the tile then shows
+            // its own background rather than nothing at all.
             <video
-              src={`${src}#t=0.1`}
+              src={`${thumbnail.src}#t=0.1`}
               muted
               playsInline
               preload="metadata"
               onLoadedMetadata={(event) => {
-                const seconds = event.currentTarget.duration;
-                if (Number.isFinite(seconds) && seconds > 0) {
-                  setDuration(formatClipLength(seconds));
-                }
+                const length = event.currentTarget.duration;
+                if (Number.isFinite(length) && length > 0) setMeasured(length);
               }}
             />
           ) : (
-            <img src={src} alt={artifact.prompt || "Generated image"} />
+            <img src={thumbnail.src} alt={artifact.prompt || "Generated image"} />
           )
         ) : (
           <span className="mobile-studio-cell-loading" aria-hidden />
@@ -2609,7 +2612,7 @@ function LibraryCell({
         {isVideo ? (
           <span className="mobile-library-badge" aria-hidden>
             <IconPlay size={11} />
-            {duration ?? ""}
+            {duration}
           </span>
         ) : null}
         {selecting ? (
@@ -2654,7 +2657,7 @@ function GalleryCell({
   selecting?: boolean;
   selected?: boolean;
 }) {
-  const src = useArtifactThumbnail(artifact);
+  const thumbnail = useArtifactThumbnail(artifact);
   return (
     <button
       type="button"
@@ -2662,13 +2665,12 @@ function GalleryCell({
       data-selected={selected ? "true" : undefined}
       onClick={onOpen}
     >
-      {src ? (
-        artifact.kind === "video" ? (
-          // `#t=0.1` nudges WKWebView to decode and paint the first frame as a
-          // poster; without it the grid tile stays black until played.
-          <video src={`${src}#t=0.1`} muted playsInline preload="metadata" />
+      {thumbnail ? (
+        thumbnail.kind === "media" ? (
+          // Only a clip that decoded no picture lands here; see `LibraryCell`.
+          <video src={`${thumbnail.src}#t=0.1`} muted playsInline preload="metadata" />
         ) : (
-          <img src={src} alt={artifact.prompt ?? "Generated image"} />
+          <img src={thumbnail.src} alt={artifact.prompt ?? "Generated image"} />
         )
       ) : (
         <span className="mobile-studio-cell-loading" aria-hidden />

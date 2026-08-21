@@ -886,9 +886,9 @@ function ArtifactSheet({
  * whole video for a list row is what the thumbnail cache is protecting the
  * webview from. */
 function ArtifactRowThumb({ artifact }: { artifact: StudioArtifact }) {
-  const src = useArtifactThumbnail(artifact.kind === "image" ? artifact : null);
-  if (artifact.kind !== "image" || !src) return null;
-  return <img className="mobile-workflow-thumb" src={src} alt="" />;
+  const thumbnail = useArtifactThumbnail(artifact.kind === "image" ? artifact : null);
+  if (artifact.kind !== "image" || !thumbnail) return null;
+  return <img className="mobile-workflow-thumb" src={thumbnail.src} alt="" />;
 }
 
 /** Bottom sheet picking the note a document step reads from. */

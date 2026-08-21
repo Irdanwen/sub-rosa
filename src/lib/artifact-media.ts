@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { isMobilePlatform } from "./mobile";
 import { artifactSrc, listArtifacts, readArtifactBase64 } from "./studio/artifacts";
 import { makeThumbnail } from "./studio/downscale";
+import { extractFrameAt } from "./studio/frames";
 import type { StudioArtifact } from "./studio/types";
 
 /**
@@ -12,6 +13,10 @@ import type { StudioArtifact } from "./studio/types";
  * media loader byte-range-requests the source and `data:` URLs can't answer one
  * (the <video>/<audio> element just stays blank). A small cache keeps gallery
  * scrolling from re-reading files; the blob URLs in it are revoked when evicted.
+ *
+ * Grid tiles never hold a media element for a clip: WKWebView paints no first
+ * frame without a `poster`, so a clip's tile is a still decoded here (see
+ * `clipPoster`) and rendered as an `<img>`.
  */
 const cache = new Map<string, string>();
 const thumbCache = new Map<string, string>();
@@ -109,21 +114,120 @@ export async function artifactDataUrl(artifact: Pick<StudioArtifact, "path">): P
 }
 
 /**
- * A small thumbnail data URL for gallery grid tiles. Full-resolution base64
- * images make the iOS webview downsample them under memory pressure (blurry
- * tiles), so grid cells render this instead and keep the full image for the
- * lightbox. Non-image artifacts fall back to the full data URL.
+ * What a gallery tile paints, and what it has to paint it with.
+ *
+ * The distinction is not cosmetic: a `still` belongs in an `<img>`, and that is
+ * the only thing that shows a clip on iOS. A `media` source is the file itself,
+ * which the tile can only render with a `<video>` - the fallback for a clip
+ * whose picture could not be read.
  */
-export async function artifactThumbnail(
+export interface ArtifactThumbnail {
+  src: string;
+  kind: "still" | "media";
+  /** The clip's length, learned while its poster was decoded. */
+  durationSeconds?: number;
+}
+
+/**
+ * Where a clip's poster frame is taken from, in seconds.
+ *
+ * Not zero: a generated clip often opens on a fade or a held frame, and a
+ * decoder handed a fresh element is least likely to have a picture at the very
+ * first position. A fifth of a second in is past both and is still the opening
+ * shot the user asked for.
+ */
+const POSTER_TIME_SECONDS = 0.2;
+
+/** Clip lengths learned while decoding a poster, so a tile can label a video
+ * without a media element having to load the whole thing again. */
+const clipLengths = new Map<string, number>();
+
+/**
+ * One clip decoded at a time.
+ *
+ * A grid mounts every tile at once, and a video poster costs the clip's whole
+ * bytes over IPC plus a decoder to hold them. Ten of those in parallel is how a
+ * phone runs out of memory mid-scroll; in series it is a few hundred
+ * milliseconds each, once, and the answer is cached from then on.
+ */
+let posterTurn: Promise<unknown> = Promise.resolve();
+function inTurn<T>(task: () => Promise<T>): Promise<T> {
+  const run = posterTurn.then(task, task);
+  posterTurn = run.catch(() => undefined);
+  return run;
+}
+
+/**
+ * A still decoded out of a clip, to stand in for it in the grid.
+ *
+ * iOS is why this exists at all. WKWebView never paints a `<video>`'s first
+ * frame on its own - no `poster` attribute, no picture - so a clip tile stayed
+ * an empty grey square however the element was coaxed (`preload="metadata"`, a
+ * `#t=` media fragment: neither is honoured before playback). Decoding the
+ * frame ourselves and handing over an `<img>` is the one thing that does not
+ * depend on the media element's goodwill.
+ */
+async function clipPoster(artifact: Pick<StudioArtifact, "path">): Promise<string> {
+  const base64 = await readArtifactBase64(artifact);
+  // A throwaway object URL, not the cached one: `cache` evicts by revoking, and
+  // reading a poster has no business invalidating the URL the lightbox may be
+  // playing from. Revoked as soon as the frame is out.
+  const url = URL.createObjectURL(base64ToBlob(base64, mimeFor(artifact.path)));
+  try {
+    const frame = await extractFrameAt(url, POSTER_TIME_SECONDS);
+    if (frame.durationSeconds > 0) clipLengths.set(artifact.path, frame.durationSeconds);
+    return makeThumbnail(frame.dataUrl);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function still(path: string, src: string): ArtifactThumbnail {
+  return { src, kind: "still", durationSeconds: clipLengths.get(path) };
+}
+
+/** In-flight reads, so two tiles for the same file decode it once. Cheap for an
+ * image, the difference between one clip read and two for a video. */
+const pendingThumbnails = new Map<string, Promise<ArtifactThumbnail>>();
+
+/**
+ * A small thumbnail for a gallery grid tile. Full-resolution base64 images make
+ * the iOS webview downsample them under memory pressure (blurry tiles), so grid
+ * cells render this instead and keep the full image for the lightbox. Videos
+ * resolve to a poster frame; audio, which has no picture, to the file itself.
+ */
+export function artifactThumbnail(
   artifact: Pick<StudioArtifact, "path" | "kind">,
-): Promise<string> {
+): Promise<ArtifactThumbnail> {
   const cached = thumbCache.get(artifact.path);
-  if (cached) return cached;
+  if (cached) return Promise.resolve(still(artifact.path, cached));
+  const running = pendingThumbnails.get(artifact.path);
+  if (running) return running;
+  const read = loadThumbnail(artifact).finally(() => {
+    pendingThumbnails.delete(artifact.path);
+  });
+  pendingThumbnails.set(artifact.path, read);
+  return read;
+}
+
+async function loadThumbnail(
+  artifact: Pick<StudioArtifact, "path" | "kind">,
+): Promise<ArtifactThumbnail> {
+  if (artifact.kind === "video") {
+    try {
+      const poster = await inTurn(() => clipPoster(artifact));
+      remember(thumbCache, artifact.path, poster, THUMB_CACHE_MAX);
+      return still(artifact.path, poster);
+    } catch {
+      // A clip that will not decode still has to be reachable and deletable:
+      // fall through to the media itself, which is all the tile ever had.
+    }
+  }
   const full = await artifactDataUrl(artifact);
-  if (artifact.kind !== "image") return full;
+  if (artifact.kind !== "image") return { src: full, kind: "media" };
   const thumb = await makeThumbnail(full);
   remember(thumbCache, artifact.path, thumb, THUMB_CACHE_MAX);
-  return thumb;
+  return still(artifact.path, thumb);
 }
 
 export function evictArtifactDataUrl(path: string) {
@@ -131,6 +235,7 @@ export function evictArtifactDataUrl(path: string) {
   cache.delete(path);
   releaseUrl(thumbCache.get(path));
   thumbCache.delete(path);
+  clipLengths.delete(path);
 }
 
 /** Resolve an artifact to a data URL; null while loading or on failure. */
@@ -232,31 +337,45 @@ export function useArtifactPreview(
   const thumbnail = useArtifactThumbnail(mobile && artifact?.kind === "image" ? artifact : null);
   if (!artifact) return null;
   if (!mobile) return artifactSrc(artifact);
-  return artifact.kind === "image" ? thumbnail : null;
+  return artifact.kind === "image" ? (thumbnail?.src ?? null) : null;
 }
 
-/** Like {@link useArtifactDataUrl} but resolves to a downscaled thumbnail for
- * images (grid tiles); null while loading or on failure. */
+/** What already sits in the caches for this artifact, so a tile that has been
+ * seen before paints on its first render instead of after a round trip. */
+function cachedThumbnail(
+  artifact: Pick<StudioArtifact, "path" | "kind">,
+): ArtifactThumbnail | null {
+  const thumb = thumbCache.get(artifact.path);
+  if (thumb) return still(artifact.path, thumb);
+  // Only for images: for a clip the cached entry is the media itself, and the
+  // poster this is about to resolve is the thing worth waiting a beat for.
+  const full = artifact.kind === "image" ? cache.get(artifact.path) : undefined;
+  return full ? { src: full, kind: "still" } : null;
+}
+
+/** Like {@link useArtifactDataUrl} but resolves to a grid tile: a downscaled
+ * still for images, a decoded poster frame for clips; null while loading or on
+ * failure. */
 export function useArtifactThumbnail(artifact: Pick<StudioArtifact, "path" | "kind"> | null) {
-  const [url, setUrl] = useState<string | null>(() =>
-    artifact ? (thumbCache.get(artifact.path) ?? cache.get(artifact.path) ?? null) : null,
+  const [thumbnail, setThumbnail] = useState<ArtifactThumbnail | null>(() =>
+    artifact ? cachedThumbnail(artifact) : null,
   );
   useEffect(() => {
     if (!artifact) {
-      setUrl(null);
+      setThumbnail(null);
       return;
     }
     let cancelled = false;
     artifactThumbnail(artifact)
       .then((value) => {
-        if (!cancelled) setUrl(value);
+        if (!cancelled) setThumbnail(value);
       })
       .catch(() => {
-        if (!cancelled) setUrl(null);
+        if (!cancelled) setThumbnail(null);
       });
     return () => {
       cancelled = true;
     };
   }, [artifact?.path, artifact?.kind]);
-  return url;
+  return thumbnail;
 }
