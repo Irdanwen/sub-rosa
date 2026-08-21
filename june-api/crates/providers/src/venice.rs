@@ -2844,3 +2844,65 @@ mod tests {
         assert_eq!(completion.usage.completion_tokens, 3);
     }
 }
+
+#[cfg(test)]
+mod carpe_diem_cache_compat_tests {
+    use super::{usage_from_chat_body, token_usage_from_value};
+
+    /// Carpe Diem's 2026-08-21 prompt-cache work adds fields to the `usage`
+    /// object it returns: `prompt_tokens_details` (OpenAI-canonical) plus its
+    /// own `carpe_cache_saved_usdc_micro`. Metering must ignore what it does
+    /// not know rather than collapse a valid 200 into `upstream_provider_failed`.
+    #[test]
+    fn tolerates_carpe_diem_cache_fields_in_usage() {
+        let value = serde_json::json!({
+            "prompt_tokens": 100_000,
+            "completion_tokens": 500,
+            "total_tokens": 100_500,
+            "prompt_tokens_details": {
+                "cached_tokens": 95_000,
+                "cache_creation_input_tokens": 0
+            },
+            "carpe_cost_usdc_micro": 101_997,
+            "carpe_cache_saved_usdc_micro": 98_000,
+            "carpe_credits": 0.0102
+        });
+        let usage = token_usage_from_value(&value).expect("usage parses");
+        // prompt_tokens stays the TOTAL, cached included — Carpe Diem keeps the
+        // OpenAI meaning on this rail (only its Anthropic rail splits them out).
+        assert_eq!(usage.prompt_tokens, 100_000);
+        assert_eq!(usage.completion_tokens, 500);
+    }
+
+    #[test]
+    fn tolerates_cache_fields_on_a_whole_chat_body() {
+        let body = serde_json::json!({
+            "id": "chatcmpl-1",
+            "choices": [{ "message": { "role": "assistant", "content": "hi" } }],
+            "usage": {
+                "prompt_tokens": 8_000,
+                "completion_tokens": 20,
+                "prompt_tokens_details": { "cached_tokens": 7_500, "cache_creation_input_tokens": 0 }
+            }
+        })
+        .to_string();
+        let usage = usage_from_chat_body(body.as_bytes(), "application/json").expect("parses");
+        assert_eq!(usage.prompt_tokens, 8_000);
+    }
+
+    #[test]
+    fn tolerates_cache_fields_in_the_streaming_billing_frame() {
+        // The final chunk Carpe Diem emits on a streamed /v1 completion.
+        let sse = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+            "data: {\"id\":\"chatcmpl-carpe-x\",\"object\":\"chat.completion.chunk\",\"choices\":[],",
+            "\"usage\":{\"prompt_tokens\":8000,\"completion_tokens\":20,\"total_tokens\":8020,",
+            "\"prompt_tokens_details\":{\"cached_tokens\":7500,\"cache_creation_input_tokens\":0},",
+            "\"carpe_cache_saved_usdc_micro\":41000,\"carpe_cost_usdc_micro\":9100,\"carpe_credits\":0.0091}}\n\n",
+            "data: [DONE]\n\n"
+        );
+        let usage = usage_from_chat_body(sse.as_bytes(), "text/event-stream").expect("parses");
+        assert_eq!(usage.prompt_tokens, 8_000);
+        assert_eq!(usage.completion_tokens, 20);
+    }
+}
