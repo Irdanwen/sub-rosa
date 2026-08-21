@@ -1,6 +1,7 @@
 use crate::{
     charge_flow::{
         AuthorizeParams, ChargeParams, authorize_or_deny, charge, clamp_to_cap, log_settled,
+        price_settled_work,
     },
     error::ServiceError,
     pricing::PricingTable,
@@ -72,9 +73,15 @@ impl NoteGenerateService {
                 provider_credentials: params.provider_credentials.clone(),
             })
             .await?;
-        let actual = self
-            .pricing
-            .price_token_usage(&params.model_id.0, generated.usage)?;
+        // The note was already generated (and billed) upstream — a pricing
+        // failure must not throw it away. See `price_settled_work`.
+        let actual = price_settled_work(
+            self.pricing
+                .price_token_usage(&params.model_id.0, generated.usage),
+            ActionSlug::NoteGenerate,
+            &params.model_id.0,
+            generated.usage.total().unwrap_or(u64::MAX),
+        );
         let charge_credits = clamp_to_cap(actual, authorization.cap_credits);
         let idempotency_key = format!(
             "note_generate:{}:{}:{}",

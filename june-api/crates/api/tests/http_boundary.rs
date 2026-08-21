@@ -699,6 +699,7 @@ fn models() -> BTreeMap<String, ModelPriceConfig> {
                 credits_per_million_seconds: Some(250_000),
                 input_credits_per_million_tokens: None,
                 output_credits_per_million_tokens: None,
+                cache_input_credits_per_million_tokens: None,
                 provider: ModelProvider::Openai,
                 model_type: ModelType::Asr,
                 display_name: "ASR Model".to_string(),
@@ -717,6 +718,7 @@ fn models() -> BTreeMap<String, ModelPriceConfig> {
                 credits_per_million_seconds: None,
                 input_credits_per_million_tokens: Some(500),
                 output_credits_per_million_tokens: Some(500),
+                cache_input_credits_per_million_tokens: None,
                 provider: ModelProvider::Openai,
                 model_type: ModelType::Text,
                 display_name: "Text Model".to_string(),
@@ -973,6 +975,7 @@ impl Generator for FakeGenerator {
             usage: TokenUsage {
                 prompt_tokens: 500,
                 completion_tokens: 500,
+                ..TokenUsage::default()
             },
         })
     }
@@ -989,6 +992,7 @@ impl Cleaner for FakeCleaner {
             usage: TokenUsage {
                 prompt_tokens: 100,
                 completion_tokens: 100,
+                ..TokenUsage::default()
             },
         })
     }
@@ -1009,6 +1013,7 @@ impl AgentChatCompleter for FakeChatCompleter {
             usage: TokenUsage {
                 prompt_tokens: 100,
                 completion_tokens: 100,
+                ..TokenUsage::default()
             },
         })
     }

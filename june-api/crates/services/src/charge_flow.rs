@@ -1,4 +1,5 @@
 use crate::error::ServiceError;
+use crate::pricing::PricingError;
 use june_domain::{
     ActionSlug, Authorization, AuthorizeRequest, ChargeRequest, Credits, OsAccountsClient, Receipt,
     UserId,
@@ -155,6 +156,47 @@ async fn settle_charge(params: AsyncChargeParams) {
         idempotent_replay = receipt.idempotent_replay,
         "settled async metered request"
     );
+}
+
+/// Prices work that has ALREADY run upstream.
+///
+/// A pricing failure at this point must never surface as a request error: the
+/// provider has generated the answer and billed us for it, so returning an
+/// error here would throw away something the user has already paid for. That is
+/// the same rule the Venice provider follows for a 200 it cannot fully parse.
+///
+/// The turn is metered as free and the failure is logged at `error` instead, so
+/// it is loud in the logs without being fatal to the request. `units` is the
+/// quantity being priced (tokens or seconds), which makes an `Overflow` verdict
+/// self-explanatory.
+///
+/// Callers that price BEFORE dispatching upstream must keep propagating the
+/// error — nothing has run yet, and failing fast is what stops a hold from
+/// being stranded on the user's wallet.
+///
+/// To be clear about what this is: defense in depth, not a live bug fix. Every
+/// caller runs `ensure_model_kind` (and the API layer runs `require_priced_model`)
+/// before dispatching, so by the time work has settled the model is already
+/// proven to carry its rates, and the only remaining failure is a `u64`
+/// overflow on absurd counts. This exists so that the ordering stays a choice
+/// rather than a load-bearing accident: reorder a pre-check, add a rate the
+/// pre-check does not cover, and the rule still holds.
+pub(crate) fn price_settled_work(
+    priced: Result<Credits, PricingError>,
+    action: ActionSlug,
+    model_id: &str,
+    units: u64,
+) -> Credits {
+    priced.unwrap_or_else(|error| {
+        tracing::error!(
+            action = action.as_str(),
+            model = model_id,
+            units,
+            error = %error,
+            "pricing failed after upstream work completed, metering as free"
+        );
+        Credits(0)
+    })
 }
 
 pub(crate) fn log_settled(action: ActionSlug, user_id: &UserId, model_id: &str, receipt: &Receipt) {

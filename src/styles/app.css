@@ -2997,13 +2997,15 @@ input:focus-visible,
   font-style: italic;
 }
 
-.agent-usage-context {
+.agent-usage-context,
+.agent-usage-cache {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
 }
 
 .agent-usage-context-head,
+.agent-usage-cache-head,
 .agent-usage-cost-head {
   display: flex;
   align-items: baseline;
@@ -3012,6 +3014,7 @@ input:focus-visible,
 }
 
 .agent-usage-context-label,
+.agent-usage-cache-label,
 .agent-usage-cost-label {
   display: inline-flex;
   align-items: center;
@@ -3021,6 +3024,7 @@ input:focus-visible,
 }
 
 .agent-usage-context-reading,
+.agent-usage-cache-reading,
 .agent-usage-cost-value {
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
@@ -3037,6 +3041,18 @@ input:focus-visible,
   height: 100%;
   border-radius: inherit;
   background: var(--primary);
+}
+
+/* The context bar fills as a budget is consumed; the cache bar fills as
+   something goes right. Different meaning, different colour. */
+.agent-usage-bar-fill-cache {
+  background: var(--success);
+}
+
+.agent-usage-cache-note {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
 }
 
 .agent-usage-cost {

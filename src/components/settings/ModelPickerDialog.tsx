@@ -264,7 +264,16 @@ export function pricingLabel(model: VeniceModelDto) {
     typeof model.inputCreditsPerMillionTokens === "number" &&
     typeof model.outputCreditsPerMillionTokens === "number"
   ) {
-    return `${formatCreditsAsUsd(model.inputCreditsPerMillionTokens)} input / ${formatCreditsAsUsd(model.outputCreditsPerMillionTokens)} output per 1M tokens`;
+    // A warm conversation re-sends the same standing instructions every turn,
+    // and the provider serves most of that from its cache at a lower rate. On
+    // the shipped default that is $0.26 against $1.40, so it belongs next to
+    // the input rate rather than nowhere. Models that publish no cache rate
+    // bill cached tokens like input, and say nothing.
+    const cached =
+      typeof model.cacheInputCreditsPerMillionTokens === "number"
+        ? ` (${formatSmallCreditsAsUsd(model.cacheInputCreditsPerMillionTokens)} cached input)`
+        : "";
+    return `${formatCreditsAsUsd(model.inputCreditsPerMillionTokens)} input / ${formatCreditsAsUsd(model.outputCreditsPerMillionTokens)} output per 1M tokens${cached}`;
   }
   return undefined;
 }
@@ -295,6 +304,16 @@ function formatUsd(value: number) {
 function formatCreditsAsUsd(credits: number) {
   const cents = Math.round(credits / 10);
   return `$${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}`;
+}
+
+/** Like {@link formatCreditsAsUsd}, but keeps sub-cent rates legible. A cache
+ * rate is up to ten times smaller than the input rate it discounts, so two
+ * decimals would tell the user the cheapest models cache for nothing. */
+function formatSmallCreditsAsUsd(credits: number) {
+  if (credits >= 10) return formatCreditsAsUsd(credits);
+  // 1 credit is $0.001, so micro-dollars are credits x 1000.
+  const micro = Math.round(credits * 1_000);
+  return `$0.${String(micro).padStart(6, "0").replace(/0+$/, "")}`;
 }
 
 function formatCreditsAsUsdPerUnit(credits: number, units: number) {

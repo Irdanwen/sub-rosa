@@ -208,6 +208,9 @@ export type VeniceModelDto = {
   creditsPerMillionSeconds?: number;
   inputCreditsPerMillionTokens?: number;
   outputCreditsPerMillionTokens?: number;
+  /** Rate for prompt tokens the provider serves from its cache. Absent for the
+   * models that publish none, which means they bill cached tokens like input. */
+  cacheInputCreditsPerMillionTokens?: number;
 };
 
 export type VeniceModelsResponse = {
@@ -1870,6 +1873,32 @@ export async function carpeDiemSetRail(rail: CarpeDiemRail) {
  * Rust because the webview swallows target="_blank" anchors. */
 export async function carpeDiemOpenDashboard() {
   return invoke<void>("carpe_diem_open_dashboard");
+}
+
+/** What the operator's prompt cache did for this run of the app.
+ *
+ * Counted in Rust from the metering the sidecar publishes on every completion,
+ * so it covers both shells: the desktop agent, the mobile chat, memory
+ * extraction, session titles and the Studio briefs all land in the same
+ * totals. Resets when the app restarts - it answers "is the cache working",
+ * not "what did I spend this month". */
+export type CarpeDiemCacheStatsDto = {
+  turns: number;
+  turnsWithCacheHit: number;
+  promptTokens: number;
+  cachedTokens: number;
+  cacheCreationTokens: number;
+  completionTokens: number;
+  cacheSavedUsdcMicro: number;
+  costUsdcMicro: number;
+  /** 0 to 1, or null when no turn has been measured yet. Null is "unknown",
+   * not "zero percent" - the UI must not show a 0 % hit rate for a session
+   * that has not talked to the model yet. */
+  hitRatio: number | null;
+};
+
+export async function carpeDiemCacheStats() {
+  return invoke<CarpeDiemCacheStatsDto>("carpe_diem_cache_stats");
 }
 
 export async function carpeDiemSidecarStatus() {

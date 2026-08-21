@@ -87,16 +87,62 @@ pub struct AgentChatCompletion {
     pub usage: TokenUsage,
 }
 
+/// What one metered turn consumed.
+///
+/// `prompt_tokens` is the TOTAL prompt size, cached tokens included — that is
+/// the `OpenAI` meaning, and the one Carpe Diem keeps on the chat-completions
+/// rail it serves us. The cache fields describe how that total splits and what
+/// the operator says the split saved; they are all zero when the upstream does
+/// not report a cache, which is indistinguishable from a cold turn and priced
+/// the same way.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenUsage {
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
+    /// Prompt tokens served from the operator's prompt cache. A subset of
+    /// `prompt_tokens`, never an addition to it.
+    #[serde(default)]
+    pub cached_tokens: u64,
+    /// Prompt tokens written INTO the cache on this turn. Some models bill a
+    /// write premium for these; most do not.
+    #[serde(default)]
+    pub cache_creation_input_tokens: u64,
+    /// What the operator says the cache saved on this turn, in micro-USDC.
+    /// Reported by Carpe Diem, never computed here.
+    #[serde(default)]
+    pub cache_saved_usdc_micro: u64,
+    /// What the operator says the turn cost, in micro-USDC. This is the number
+    /// that makes the bill, not our own estimate.
+    #[serde(default)]
+    pub cost_usdc_micro: u64,
 }
 
 impl TokenUsage {
     pub fn total(self) -> Option<u64> {
         self.prompt_tokens.checked_add(self.completion_tokens)
+    }
+
+    /// Prompt tokens billed at the full input rate: the total minus whatever
+    /// came from the cache. Saturating, because a malformed upstream that
+    /// reported more cached tokens than prompt tokens must not underflow into
+    /// an enormous bill.
+    pub fn uncached_prompt_tokens(self) -> u64 {
+        self.prompt_tokens.saturating_sub(self.cached_tokens)
+    }
+
+    /// Cached prompt tokens, clamped to the prompt total.
+    ///
+    /// Together with [`Self::uncached_prompt_tokens`] this holds the invariant
+    /// pricing depends on: the two halves sum to exactly `prompt_tokens`, so a
+    /// nonsensical upstream split can neither over-bill nor under-bill a turn.
+    pub fn billable_cached_tokens(self) -> u64 {
+        self.cached_tokens.min(self.prompt_tokens)
+    }
+
+    /// True when the upstream actually reported a cache read on this turn.
+    pub fn has_cache_hit(self) -> bool {
+        self.cached_tokens > 0
     }
 }
 
@@ -432,7 +478,27 @@ pub trait AudioDurationProbe: Send + Sync {
 
 #[cfg(test)]
 mod tests {
-    use super::AudioFormat;
+    use super::{AudioFormat, TokenUsage};
+
+    /// Pricing splits the prompt in two and bills each half at its own rate, so
+    /// the halves must always add back up to the whole — including when the
+    /// upstream reports a split that makes no sense.
+    #[test]
+    fn the_prompt_split_always_sums_back_to_the_prompt_total() {
+        for (prompt, cached) in [(0, 0), (100, 0), (100, 40), (100, 100), (100, 500)] {
+            let usage = TokenUsage {
+                prompt_tokens: prompt,
+                cached_tokens: cached,
+                ..TokenUsage::default()
+            };
+
+            assert_eq!(
+                usage.uncached_prompt_tokens() + usage.billable_cached_tokens(),
+                usage.prompt_tokens,
+                "split must be exact for prompt={prompt} cached={cached}"
+            );
+        }
+    }
 
     #[test]
     fn audio_format_detects_mp4_containers_case_insensitively() {

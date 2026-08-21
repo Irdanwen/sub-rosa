@@ -1,9 +1,11 @@
 import { IconAiTokens } from "central-icons/IconAiTokens";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
+import { IconBolt } from "central-icons/IconBolt";
 import { IconCoins } from "central-icons/IconCoins";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { IconGauge } from "central-icons/IconGauge";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { type CacheUsage, hasMeasuredTurns } from "../../lib/carpe-diem-cache";
 import type { SessionUsage } from "../../lib/hermes-session-usage";
 
 /**
@@ -17,17 +19,27 @@ import type { SessionUsage } from "../../lib/hermes-session-usage";
  * {@link SessionUsage} (see `parseSessionUsage`). That keeps the panel trivially
  * testable and lets feature 11's activity drawer reuse it as a tab by passing
  * the same fetcher. Missing fields degrade to "Unavailable" rather than break.
+ *
+ * The prompt-cache block has a SECOND source. The gateway reports the runtime's
+ * own accounting, which knows nothing about the operator serving the tokens, so
+ * the cache read can only come from the app's own ledger (`fetchCacheStats`).
+ * It is optional: without it the panel renders exactly as it did before, and a
+ * failure to read it never takes the rest of the panel down, because a cache
+ * reading is nice to have and the token counts are the point.
  */
 export function SessionUsagePanel({
   sessionId,
   fetchUsage,
+  fetchCacheStats,
   onClose,
 }: {
   sessionId: string;
   fetchUsage: (sessionId: string) => Promise<SessionUsage>;
+  fetchCacheStats?: () => Promise<CacheUsage>;
   onClose: () => void;
 }) {
   const [usage, setUsage] = useState<SessionUsage | null>(null);
+  const [cache, setCache] = useState<CacheUsage | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   // The reason the fetch rejected, surfaced so the failure is honest about
   // whether the session ended, the gateway is down, or usage is unsupported —
@@ -39,6 +51,17 @@ export function SessionUsagePanel({
   const load = useCallback(() => {
     const seq = ++requestSeq.current;
     setStatus("loading");
+    // Best-effort and independent: the cache ledger is a local read that cannot
+    // fail the way a gateway round-trip can, and if it does, the panel simply
+    // has no cache reading to show.
+    fetchCacheStats?.().then(
+      (next) => {
+        if (seq === requestSeq.current) setCache(next);
+      },
+      () => {
+        if (seq === requestSeq.current) setCache(null);
+      },
+    );
     fetchUsage(sessionId).then(
       (next) => {
         if (seq !== requestSeq.current) return;
@@ -51,7 +74,7 @@ export function SessionUsagePanel({
         setStatus("error");
       },
     );
-  }, [fetchUsage, sessionId]);
+  }, [fetchCacheStats, fetchUsage, sessionId]);
 
   // Fetch once on mount (and whenever the target session changes). Refresh is
   // an explicit user action — we do not poll.
@@ -113,7 +136,13 @@ export function SessionUsagePanel({
 
           <ContextMeter used={usage?.contextUsed} limit={usage?.contextLimit} />
 
-          <CostSection estimatedCostUsd={usage?.estimatedCostUsd} toolCosts={usage?.toolCosts} />
+          <CacheMeter cache={cache} />
+
+          <CostSection
+            estimatedCostUsd={usage?.estimatedCostUsd}
+            toolCosts={usage?.toolCosts}
+            cacheSavedUsd={cache?.savedUsd}
+          />
         </div>
       )}
     </section>
@@ -168,14 +197,62 @@ function ContextMeter({ used, limit }: { used?: number; limit?: number }) {
   );
 }
 
+/** Prompt-cache block. Reads across the whole run of the app, not just this
+ * session, because that is what the ledger counts and pretending otherwise
+ * would be a lie about the number. Renders nothing at all when no turn has been
+ * measured yet: an empty panel is honest, a "0%" hit rate is not. */
+function CacheMeter({ cache }: { cache: CacheUsage | null }) {
+  if (!cache || !hasMeasuredTurns(cache)) return null;
+
+  const cached = cache.cachedTokens ?? 0;
+  const prompt = cache.promptTokens ?? 0;
+  const pct = cache.hitRatio === undefined ? null : Math.round(cache.hitRatio * 100);
+
+  return (
+    <div className="agent-usage-cache">
+      <div className="agent-usage-cache-head">
+        <span className="agent-usage-cache-label">
+          <IconBolt size={14} ariaHidden />
+          From cache
+        </span>
+        <span className="agent-usage-cache-reading">
+          {formatCount(cached)} / {formatCount(prompt)}
+          {pct !== null ? ` (${pct}%)` : ""}
+        </span>
+      </div>
+      {pct !== null ? (
+        <div
+          className="agent-usage-bar"
+          role="progressbar"
+          aria-label="Prompt tokens from cache"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={pct}
+        >
+          <div
+            className="agent-usage-bar-fill agent-usage-bar-fill-cache"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      ) : null}
+      <p className="agent-usage-cache-note">
+        Prompt tokens the provider served from its cache, across every request this app has made
+        since it started.
+      </p>
+    </div>
+  );
+}
+
 /** Cost block. The dollar figure is ALWAYS framed as an estimate, never exact,
  * and the per-tool breakdown (if any) is listed beneath it. */
 function CostSection({
   estimatedCostUsd,
   toolCosts,
+  cacheSavedUsd,
 }: {
   estimatedCostUsd?: number;
   toolCosts?: SessionUsage["toolCosts"];
+  cacheSavedUsd?: number;
 }) {
   const hasTotal = estimatedCostUsd !== undefined;
   return (
@@ -192,6 +269,13 @@ function CostSection({
       <p className="agent-usage-cost-note">
         Estimate only, based on reported token usage. Actual billing may differ.
       </p>
+      {cacheSavedUsd !== undefined && cacheSavedUsd > 0 ? (
+        // The one number here that is NOT an estimate: the provider reports it.
+        <div className="agent-usage-cost-head">
+          <span className="agent-usage-cost-label">Saved by the cache</span>
+          <span className="agent-usage-cache-reading">{formatUsd(cacheSavedUsd)}</span>
+        </div>
+      ) : null}
       {toolCosts && toolCosts.length > 0 ? (
         <ul className="agent-usage-tool-costs" aria-label="Tool and subagent costs">
           {toolCosts.map((cost) => (

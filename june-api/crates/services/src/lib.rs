@@ -860,6 +860,7 @@ mod tests {
                             .then_some(credits_per_unit.saturating_mul(1_000_000)),
                         output_credits_per_million_tokens: (unit == PriceUnit::Tokens)
                             .then_some(credits_per_unit.saturating_mul(1_000_000)),
+                        cache_input_credits_per_million_tokens: None,
                         provider: ModelProvider::Openai,
                         model_type,
                         display_name: id.to_string(),
@@ -966,6 +967,7 @@ mod tests {
                 usage: TokenUsage {
                     prompt_tokens: 10,
                     completion_tokens: 20,
+                    ..TokenUsage::default()
                 },
             })
         }
@@ -998,6 +1000,7 @@ mod tests {
                 usage: TokenUsage {
                     prompt_tokens: 10,
                     completion_tokens: 20,
+                    ..TokenUsage::default()
                 },
             })
         }
@@ -1014,6 +1017,7 @@ mod tests {
                 usage: TokenUsage {
                     prompt_tokens: 5,
                     completion_tokens: 6,
+                    ..TokenUsage::default()
                 },
             })
         }

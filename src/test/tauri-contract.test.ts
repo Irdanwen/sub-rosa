@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  carpeDiemCacheStats,
   checkRecordingSourceReadiness,
   createAgentTask,
   ensureHermesBridgeGateway,
@@ -114,5 +115,14 @@ describe("Tauri command contracts", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("fork_agent_task", {
       request: { sourceTaskId: "task-1", model: "venice-uncensored" },
     });
+  });
+
+  // The Rust side pins that this command is registered on BOTH shells; this
+  // pins the name the webview actually sends. A drift between the two is a
+  // runtime-only failure, so neither half is enough on its own.
+  it("reads the prompt-cache ledger by its registered command name", async () => {
+    await carpeDiemCacheStats();
+
+    expect(mocks.invoke).toHaveBeenCalledWith("carpe_diem_cache_stats");
   });
 });
