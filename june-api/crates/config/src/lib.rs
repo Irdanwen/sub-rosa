@@ -422,6 +422,14 @@ pub struct ModelPriceConfig {
     pub input_credits_per_million_tokens: Option<u64>,
     #[serde(default)]
     pub output_credits_per_million_tokens: Option<u64>,
+    /// Rate for prompt tokens the operator served from its prompt cache.
+    ///
+    /// `None` means "this model publishes no cache rate", which is NOT the same
+    /// as a rate of zero: cached tokens then bill at the plain input rate, and
+    /// the model stays fully priced. Most models in the catalogue have no cache
+    /// rate, so a missing value must never disqualify one.
+    #[serde(default)]
+    pub cache_input_credits_per_million_tokens: Option<u64>,
     pub provider: ModelProvider,
     pub model_type: ModelType,
     pub display_name: String,
@@ -462,6 +470,7 @@ fn default_pricing() -> BTreeMap<String, ModelPriceConfig> {
             credits_per_million_seconds: Some(1_000_000),
             input_credits_per_million_tokens: None,
             output_credits_per_million_tokens: None,
+            cache_input_credits_per_million_tokens: None,
             provider: ModelProvider::Openai,
             model_type: ModelType::Asr,
             display_name: "GPT-4o mini transcribe".to_string(),
@@ -480,6 +489,7 @@ fn default_pricing() -> BTreeMap<String, ModelPriceConfig> {
             credits_per_million_seconds: Some(100_000),
             input_credits_per_million_tokens: None,
             output_credits_per_million_tokens: None,
+            cache_input_credits_per_million_tokens: None,
             provider: ModelProvider::Venice,
             model_type: ModelType::Asr,
             display_name: "Parakeet TDT 0.6B v3".to_string(),
@@ -579,6 +589,7 @@ fn text_model_config(model: TextModelFallback) -> ModelPriceConfig {
         credits_per_million_seconds: None,
         input_credits_per_million_tokens: Some(model.input_credits_per_million_tokens),
         output_credits_per_million_tokens: Some(model.output_credits_per_million_tokens),
+        cache_input_credits_per_million_tokens: None,
         provider: ModelProvider::Venice,
         model_type: ModelType::Text,
         display_name: model.display_name.to_string(),
@@ -1013,6 +1024,7 @@ mod tests {
                 credits_per_million_seconds: None,
                 input_credits_per_million_tokens: Some(1),
                 output_credits_per_million_tokens: Some(1),
+                cache_input_credits_per_million_tokens: None,
                 provider: ModelProvider::Venice,
                 model_type: ModelType::Asr,
                 display_name: "bad".to_string(),
@@ -1044,6 +1056,7 @@ mod tests {
                 credits_per_million_seconds: Some(0),
                 input_credits_per_million_tokens: None,
                 output_credits_per_million_tokens: None,
+                cache_input_credits_per_million_tokens: None,
                 provider: ModelProvider::Openai,
                 model_type: ModelType::Asr,
                 display_name: "free".to_string(),

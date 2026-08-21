@@ -1,6 +1,7 @@
 use crate::{
     charge_flow::{
         AuthorizeParams, ChargeParams, authorize_or_deny, charge, clamp_to_cap, log_settled,
+        price_settled_work,
     },
     error::ServiceError,
     pricing::PricingTable,
@@ -60,9 +61,18 @@ impl AgentChatService {
                 provider_credentials: params.provider_credentials.clone(),
             })
             .await?;
-        let actual = self
-            .pricing
-            .price_token_usage(&params.model_id.0, completion.usage)?;
+        // The completion already ran upstream: `price_settled_work` keeps a
+        // pricing failure from throwing away an answer the user has paid for.
+        // `ensure_model_kind` above proved the model carries both token rates,
+        // so what remains is an overflow on absurd counts, or a rate the
+        // pre-check cannot cover (the cache rate is optional by design).
+        let actual = price_settled_work(
+            self.pricing
+                .price_token_usage(&params.model_id.0, completion.usage),
+            ActionSlug::AgentChat,
+            &params.model_id.0,
+            completion.usage.total().unwrap_or(u64::MAX),
+        );
         let charge_credits = clamp_to_cap(actual, authorization.cap_credits);
         let receipt = charge(ChargeParams {
             os_accounts: self.os_accounts.as_ref(),
@@ -107,9 +117,19 @@ fn body_digest(body: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::body_digest;
+    use super::{AgentChatParams, AgentChatService, AgentChatServiceDeps, body_digest};
+    use crate::pricing::PricingTable;
+    use async_trait::async_trait;
+    use june_config::{ModelPriceConfig, ModelProvider, ModelType, PriceUnit};
+    use june_domain::{
+        AgentChatCompleter, AgentChatCompletion, AgentChatRequest, Authorization, AuthorizeRequest,
+        ChargeRequest, Credits, DomainError, ModelId, OsAccountsClient, ProviderCredentials,
+        Receipt, TokenUsage, UserId,
+    };
     use pretty_assertions::assert_eq;
     use serde_json::json;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
 
     #[test]
     fn body_digest_is_stable_full_sha256_hex() {
@@ -126,5 +146,127 @@ mod tests {
         );
         assert_eq!(digest.len(), 64);
         assert!(digest.chars().all(|ch| ch.is_ascii_hexdigit()));
+    }
+
+    /// An OS Accounts double that always allows and charges what it is asked.
+    struct AllowingOsAccounts;
+
+    #[async_trait]
+    impl OsAccountsClient for AllowingOsAccounts {
+        async fn authorize(
+            &self,
+            _request: AuthorizeRequest,
+        ) -> Result<Authorization, DomainError> {
+            Ok(Authorization {
+                allowed: true,
+                action_token: Some("agt_test".to_string()),
+                cap_credits: None,
+                reason: None,
+            })
+        }
+
+        async fn charge(&self, request: ChargeRequest) -> Result<Receipt, DomainError> {
+            Ok(Receipt {
+                credits_charged: request.credits,
+                idempotent_replay: false,
+            })
+        }
+    }
+
+    /// A completer that succeeds while reporting the usage it is handed, so a
+    /// test can drive the pricing step into a specific failure.
+    struct CompleterReporting(TokenUsage);
+
+    #[async_trait]
+    impl AgentChatCompleter for CompleterReporting {
+        async fn complete(
+            &self,
+            _request: AgentChatRequest,
+        ) -> Result<AgentChatCompletion, DomainError> {
+            Ok(AgentChatCompletion {
+                body: b"{\"choices\":[]}".to_vec(),
+                content_type: "application/json".to_string(),
+                provider: "test".to_string(),
+                usage: self.0,
+            })
+        }
+    }
+
+    fn text_model_table() -> PricingTable {
+        let mut models = BTreeMap::new();
+        models.insert(
+            "priced-text".to_string(),
+            ModelPriceConfig {
+                unit: PriceUnit::Tokens,
+                credits_per_million_seconds: None,
+                input_credits_per_million_tokens: Some(70),
+                output_credits_per_million_tokens: Some(300),
+                cache_input_credits_per_million_tokens: None,
+                provider: ModelProvider::Openai,
+                model_type: ModelType::Text,
+                display_name: "priced-text".to_string(),
+                description: None,
+                privacy: None,
+                pricing: None,
+                context_tokens: None,
+                traits: Vec::new(),
+                capabilities: Vec::new(),
+            },
+        );
+        PricingTable::new(models)
+    }
+
+    fn service(usage: TokenUsage) -> AgentChatService {
+        AgentChatService::new(AgentChatServiceDeps {
+            pricing: Arc::new(text_model_table()),
+            os_accounts: Arc::new(AllowingOsAccounts),
+            chat_completer: Arc::new(CompleterReporting(usage)),
+            hold_ttl_seconds: 60,
+            flat_estimate_credits: 1,
+        })
+    }
+
+    fn params() -> AgentChatParams {
+        AgentChatParams {
+            user_id: UserId("user_1".to_string()),
+            model_id: ModelId("priced-text".to_string()),
+            body: json!({ "model": "priced-text", "messages": [] }),
+            provider_credentials: ProviderCredentials::default(),
+        }
+    }
+
+    /// The completion already ran and billed upstream, so a pricing failure
+    /// must not take the answer down with it. `u64::MAX` prompt tokens overflow
+    /// `price_scaled`, which is the one pricing failure `ensure_model_kind`
+    /// cannot rule out ahead of the call.
+    #[tokio::test]
+    async fn a_successful_completion_survives_a_pricing_failure() {
+        let usage = TokenUsage {
+            prompt_tokens: u64::MAX,
+            completion_tokens: 10,
+            ..TokenUsage::default()
+        };
+
+        let output = service(usage)
+            .complete(params())
+            .await
+            .expect("a completed turn is returned even when it cannot be priced");
+
+        assert_eq!(output.completion.body, b"{\"choices\":[]}".to_vec());
+        assert_eq!(output.receipt.credits_charged, Credits(0));
+    }
+
+    /// The guard must not swallow real prices: a normal turn still settles.
+    #[tokio::test]
+    async fn a_priced_turn_still_charges_what_it_costs() {
+        let usage = TokenUsage {
+            prompt_tokens: 1_000_000,
+            completion_tokens: 1_000_000,
+            ..TokenUsage::default()
+        };
+
+        let output = service(usage).complete(params()).await.expect("completes");
+
+        assert_eq!(output.receipt.credits_charged, Credits(370));
     }
 }

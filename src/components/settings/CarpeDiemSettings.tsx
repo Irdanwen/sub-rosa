@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   type CarpeDiemBillingDto,
+  carpeDiemCacheStats,
   carpeDiemClearApiKey,
   carpeDiemGetBilling,
   carpeDiemGetSettings,
@@ -17,6 +18,7 @@ import {
   carpeDiemTestConnection,
 } from "../../lib/tauri";
 import { deriveBilling, formatUsd } from "../../lib/carpe-diem-billing";
+import { type CacheUsage, hasMeasuredTurns, parseCacheUsage } from "../../lib/carpe-diem-cache";
 import { messageFromError } from "../../lib/errors";
 import { CARPE_DIEM_DASHBOARD_URL, CARPE_DIEM_KEY_PREFIX } from "../../lib/branding";
 import { SegmentedControl } from "../ui/SegmentedControl";
@@ -200,6 +202,64 @@ function CarpeDiemPayment({ hasApiKey }: { hasApiKey: boolean }) {
                 {busy === rail ? "…" : RAIL_LABELS[rail]}
               </button>
             ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** What the provider's prompt cache did for this run of the app.
+ *
+ * Sub Rosa sends the same standing instructions on every turn, so most of a
+ * warm conversation's prompt is served from the provider's cache and billed at
+ * a lower rate. This is the only place either shell says so. It counts every
+ * request the app makes, not one conversation, and it resets when the app
+ * restarts, so the copy says exactly that rather than implying a lifetime
+ * total. Renders nothing until a turn has actually been measured: an empty card
+ * is honest, a 0 % hit rate on a fresh launch is not. */
+function CarpeDiemCache({ hasApiKey }: { hasApiKey: boolean }) {
+  const [cache, setCache] = useState<CacheUsage | null>(null);
+
+  useEffect(() => {
+    if (!hasApiKey) {
+      setCache(null);
+      return;
+    }
+    let live = true;
+    // Best effort: a ledger read that fails leaves the card hidden. It is
+    // telemetry, and it must never be the reason Settings shows an error.
+    carpeDiemCacheStats().then(
+      (stats) => {
+        if (live) setCache(parseCacheUsage(stats));
+      },
+      () => {
+        if (live) setCache(null);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [hasApiKey]);
+
+  if (!cache || !hasMeasuredTurns(cache)) return null;
+  const pct = cache.hitRatio === undefined ? null : Math.round(cache.hitRatio * 100);
+
+  return (
+    <div className="settings-card">
+      <div className="settings-rows">
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <h3 className="settings-row-title">Prompt cache</h3>
+            <p className="settings-row-description">
+              {(cache.cachedTokens ?? 0).toLocaleString()} of{" "}
+              {(cache.promptTokens ?? 0).toLocaleString()} prompt tokens came from the provider's
+              cache{pct === null ? "" : ` (${pct}%)`} across {(cache.turns ?? 0).toLocaleString()}{" "}
+              requests since the app started.
+              {cache.savedUsd !== undefined && cache.savedUsd > 0
+                ? ` The provider reports that saved ${formatUsd(cache.savedUsd)}.`
+                : ""}
+            </p>
           </div>
         </div>
       </div>
@@ -404,6 +464,7 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
         </div>
       </div>
       <CarpeDiemPayment hasApiKey={hasApiKey} />
+      <CarpeDiemCache hasApiKey={hasApiKey} />
       {notice ? <p className="settings-row-description settings-row-substatus">{notice}</p> : null}
     </div>
   );

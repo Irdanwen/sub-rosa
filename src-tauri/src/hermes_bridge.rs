@@ -10444,6 +10444,74 @@ mod tests {
         assert!(!soul.contains("User memory:"));
     }
 
+    /// The whole benefit of the provider's prompt cache rests on one thing:
+    /// the standing instructions being BYTE-identical from one run to the next.
+    /// The provider matches a prefix, not a meaning, so a single reordered
+    /// section or a stray timestamp would quietly turn every conversation cold
+    /// and nothing else in the suite would notice.
+    #[test]
+    fn the_soul_is_byte_stable_across_runs_with_the_same_inputs() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let block = "User memory: durable facts.\n- Prefers French.\n";
+
+        let mut renders = Vec::new();
+        for _ in 0..3 {
+            sync_june_soul(home.path(), true, true, Some(block)).expect("sync soul");
+            renders.push(std::fs::read(home.path().join("SOUL.md")).expect("read soul"));
+        }
+
+        assert_eq!(
+            renders[0], renders[1],
+            "the SOUL must not drift between runs"
+        );
+        assert_eq!(renders[1], renders[2]);
+        assert!(!renders[0].is_empty());
+
+        // Every input that changes the SOUL must change it in a stable way too:
+        // same inputs, same bytes; different inputs, different bytes.
+        for (sandbox, cli, memory) in [
+            (true, true, None),
+            (true, false, Some(block)),
+            (false, false, Some(block)),
+            (false, false, None),
+        ] {
+            sync_june_soul(home.path(), sandbox, cli, memory).expect("sync soul");
+            let first = std::fs::read(home.path().join("SOUL.md")).expect("read soul");
+            sync_june_soul(home.path(), sandbox, cli, memory).expect("sync soul");
+            let second = std::fs::read(home.path().join("SOUL.md")).expect("read soul");
+            assert_eq!(
+                first,
+                second,
+                "sandbox={sandbox} cli={cli} memory={} must render identically twice",
+                memory.is_some()
+            );
+        }
+    }
+
+    /// An unchanged memory block must not move the prefix. This is what makes a
+    /// mid-session extraction free: the facts land in the store now and in the
+    /// SOUL at the next spawn, and if nothing was learned, that next spawn
+    /// re-sends a prefix the provider already holds.
+    #[test]
+    fn an_unchanged_memory_block_leaves_the_soul_untouched() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let block = "User memory: durable facts.\n- Prefers French.\n";
+
+        sync_june_soul(home.path(), false, false, Some(block)).expect("sync soul");
+        let before = std::fs::read(home.path().join("SOUL.md")).expect("read soul");
+        sync_june_soul(home.path(), false, false, Some(block)).expect("sync soul");
+        let after = std::fs::read(home.path().join("SOUL.md")).expect("read soul");
+
+        assert_eq!(before, after);
+
+        // And a block that DID change must change the file, or the cache would
+        // be reused for a prompt that no longer matches what the agent knows.
+        let grown = "User memory: durable facts.\n- Prefers French.\n- Ships on Fridays.\n";
+        sync_june_soul(home.path(), false, false, Some(grown)).expect("sync soul");
+        let changed = std::fs::read(home.path().join("SOUL.md")).expect("read soul");
+        assert_ne!(before, changed);
+    }
+
     #[test]
     fn context_mcp_entry_disables_memory_recall_when_toggled_off() {
         let enabled = render_context_mcp_entry(&test_june_context_mcp_config());

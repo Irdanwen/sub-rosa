@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   carpeDiemRestartSidecar: vi.fn(),
   carpeDiemGetBilling: vi.fn(),
   carpeDiemSetRail: vi.fn(),
+  carpeDiemCacheStats: vi.fn(),
   listen: vi.fn(),
 }));
 
@@ -24,6 +25,7 @@ vi.mock("../lib/tauri", () => ({
   carpeDiemRestartSidecar: mocks.carpeDiemRestartSidecar,
   carpeDiemGetBilling: mocks.carpeDiemGetBilling,
   carpeDiemSetRail: mocks.carpeDiemSetRail,
+  carpeDiemCacheStats: mocks.carpeDiemCacheStats,
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
@@ -46,6 +48,8 @@ beforeEach(() => {
   mocks.carpeDiemSidecarStatus.mockResolvedValue({ status: "unconfigured", hasApiKey: false });
   // Default: no billing (Venice key / unreachable) → the Payment panel hides.
   mocks.carpeDiemGetBilling.mockRejectedValue(new Error("unsupported"));
+  // Default: nothing measured yet → the Prompt cache card hides.
+  mocks.carpeDiemCacheStats.mockResolvedValue({ turns: 0, promptTokens: 0, cachedTokens: 0 });
 });
 
 const billingDto = (over: Record<string, unknown> = {}) => ({
@@ -153,5 +157,36 @@ describe("CarpeDiemSettings", () => {
     render(<CarpeDiemSettings />);
     await screen.findByRole("button", { name: "Test connection" });
     expect(screen.queryByText("Payment")).not.toBeInTheDocument();
+  });
+
+  it("shows what the prompt cache did once turns have been measured", async () => {
+    mocks.carpeDiemGetSettings.mockResolvedValue(settingsDto({ hasApiKey: true }));
+    mocks.carpeDiemCacheStats.mockResolvedValue({
+      turns: 12,
+      turnsWithCacheHit: 11,
+      promptTokens: 96_000,
+      cachedTokens: 90_000,
+      cacheSavedUsdcMicro: 410_000,
+      costUsdcMicro: 91_000,
+      hitRatio: 0.9375,
+    });
+
+    render(<CarpeDiemSettings />);
+
+    expect(await screen.findByText("Prompt cache")).toBeInTheDocument();
+    expect(screen.getByText(/90,000 of 96,000 prompt tokens/)).toBeInTheDocument();
+    expect(screen.getByText(/\(94%\)/)).toBeInTheDocument();
+    expect(screen.getByText(/saved \$0\.41/)).toBeInTheDocument();
+  });
+
+  // A fresh launch has no denominator. Showing "0%" would read as a broken
+  // cache rather than as a session that has not talked to the model yet.
+  it("hides the prompt cache card until something has been measured", async () => {
+    mocks.carpeDiemGetSettings.mockResolvedValue(settingsDto({ hasApiKey: true }));
+
+    render(<CarpeDiemSettings />);
+
+    await waitFor(() => expect(mocks.carpeDiemCacheStats).toHaveBeenCalled());
+    expect(screen.queryByText("Prompt cache")).not.toBeInTheDocument();
   });
 });

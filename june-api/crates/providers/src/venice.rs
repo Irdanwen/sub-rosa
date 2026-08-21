@@ -776,9 +776,15 @@ impl ChatCompletionResponse {
 
     fn usage_or_error(&self) -> Result<TokenUsage, DomainError> {
         let usage = self.usage.as_ref().ok_or(DomainError::UpstreamProvider)?;
+        let details = usage.prompt_tokens_details.as_ref();
         Ok(TokenUsage {
             prompt_tokens: usage.prompt_tokens,
             completion_tokens: usage.completion_tokens,
+            cached_tokens: details.map_or(0, |details| details.cached_tokens),
+            cache_creation_input_tokens: details
+                .map_or(0, |details| details.cache_creation_input_tokens),
+            cache_saved_usdc_micro: usage.carpe_cache_saved_usdc_micro,
+            cost_usdc_micro: usage.carpe_cost_usdc_micro,
         })
     }
 }
@@ -802,6 +808,22 @@ struct ChatCompletionMessage {
 struct ChatCompletionUsage {
     prompt_tokens: u64,
     completion_tokens: u64,
+    // Never `deny_unknown_fields`: the upstream adds fields (it just did) and a
+    // strict struct would collapse a valid 200 into `upstream_provider_failed`.
+    #[serde(default)]
+    prompt_tokens_details: Option<ChatCompletionPromptDetails>,
+    #[serde(default)]
+    carpe_cache_saved_usdc_micro: u64,
+    #[serde(default)]
+    carpe_cost_usdc_micro: u64,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ChatCompletionPromptDetails {
+    #[serde(default)]
+    cached_tokens: u64,
+    #[serde(default)]
+    cache_creation_input_tokens: u64,
 }
 
 /// Prepends the standing safety policy to a raw (client-supplied) chat
@@ -855,11 +877,36 @@ fn usage_from_sse(body: &[u8]) -> Result<TokenUsage, DomainError> {
     usage.ok_or(DomainError::UpstreamProvider)
 }
 
+/// Reads a `usage` object leniently. `prompt_tokens` and `completion_tokens`
+/// are required (no usage, no metering); everything else is best-effort and
+/// defaults to zero, so an upstream that stops reporting a field degrades to
+/// "no cache observed" instead of failing a 200 that already cost money.
+///
+/// Carpe Diem reports the cache split two ways on this rail: the
+/// OpenAI-canonical `prompt_tokens_details` sub-object, and its own
+/// `carpe_*_usdc_micro` siblings. Both live inside `usage`, on the buffered
+/// JSON body and in the final SSE billing frame alike, so nothing here needs
+/// to read response headers.
 fn token_usage_from_value(value: &serde_json::Value) -> Option<TokenUsage> {
+    let details = value.get("prompt_tokens_details");
     Some(TokenUsage {
         prompt_tokens: value.get("prompt_tokens")?.as_u64()?,
         completion_tokens: value.get("completion_tokens")?.as_u64()?,
+        cached_tokens: nested_u64(details, "cached_tokens"),
+        cache_creation_input_tokens: nested_u64(details, "cache_creation_input_tokens"),
+        cache_saved_usdc_micro: nested_u64(Some(value), "carpe_cache_saved_usdc_micro"),
+        cost_usdc_micro: nested_u64(Some(value), "carpe_cost_usdc_micro"),
     })
+}
+
+/// A `u64` from an optional object, or 0 when the object, the key, or the
+/// number's shape is missing. Negative and fractional values read as absent
+/// rather than as a panic or a wrapped integer.
+fn nested_u64(value: Option<&serde_json::Value>, key: &str) -> u64 {
+    value
+        .and_then(|value| value.get(key))
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0)
 }
 
 /// Content type for a Server-Sent Events stream.
@@ -1069,6 +1116,15 @@ struct CarpeDiemPricingRow {
     input_price: Option<f64>,
     #[serde(rename = "outputPrice")]
     output_price: Option<f64>,
+    /// What the operator charges for prompt tokens it served from its cache,
+    /// already through the same multiplier as `inputPrice` so no client has to
+    /// reproduce a model of the operator's own margin.
+    ///
+    /// OMITTED, not zeroed, when the model has no cache rate — which is most of
+    /// the catalogue. `None` therefore means "bills like input", and must never
+    /// be read as "free" or as a reason to drop the model.
+    #[serde(rename = "cacheInputPrice")]
+    cache_input_price: Option<f64>,
 }
 
 fn generation_source_text(
@@ -1281,6 +1337,7 @@ fn venice_model_config(
         credits_per_million_seconds,
         input_credits_per_million_tokens,
         output_credits_per_million_tokens,
+        cache_input_credits_per_million_tokens: None,
         provider: ModelProvider::Venice,
         model_type: expected_type,
         display_name,
@@ -1355,6 +1412,12 @@ fn carpe_diem_model_config(
             positive_usd(pricing.output_price).and_then(credits_per_million_units),
         ),
     };
+    // Deliberately NOT part of the "is this model priced?" test below: the
+    // operator omits this field for the models that have no cache rate, and
+    // treating an omission as unpriced would drop most of the catalogue.
+    let cache_input_credits_per_million_tokens = (model_type == ModelType::Text)
+        .then(|| positive_usd(pricing.cache_input_price).and_then(credits_per_million_units))
+        .flatten();
     if model_type == ModelType::Asr && credits_per_million_seconds.is_none() {
         return None;
     }
@@ -1369,6 +1432,7 @@ fn carpe_diem_model_config(
         credits_per_million_seconds,
         input_credits_per_million_tokens,
         output_credits_per_million_tokens,
+        cache_input_credits_per_million_tokens,
         provider: ModelProvider::Venice,
         model_type,
         display_name: item.id.clone(),
@@ -2525,6 +2589,54 @@ mod tests {
         let asr = models.get("asr-model").expect("asr model");
         assert_eq!(asr.model_type, ModelType::Asr);
         assert_eq!(asr.credits_per_million_seconds, Some(100_000));
+        // No `cacheInputPrice` in this row: the model is still fully priced,
+        // and the absent rate means "bills like input".
+        assert_eq!(text.cache_input_credits_per_million_tokens, None);
+    }
+
+    /// `/pricing` OMITS the cache rate for the models that have none, so the
+    /// two shapes have to coexist in one catalogue: the model that publishes a
+    /// rate gets it, and the model that does not stays priced. Dropping the
+    /// second would silently shrink the model picker.
+    #[test]
+    fn a_missing_cache_rate_never_costs_a_model_its_place_in_the_catalogue() {
+        let response = serde_json::from_value::<CarpeDiemModelsApiResponse>(serde_json::json!({
+            "object": "list",
+            "data": [
+                { "id": "cache-priced", "carpe_diem_type": "text", "context_length": 200_000 },
+                { "id": "no-cache-rate", "carpe_diem_type": "text", "context_length": 128_000 }
+            ]
+        }))
+        .expect("models response");
+        let pricing = serde_json::from_value::<CarpeDiemPricingResponse>(serde_json::json!({
+            "models": [
+                {
+                    "model": "cache-priced",
+                    "inputPrice": 1.40,
+                    "outputPrice": 5.50,
+                    "cacheInputPrice": 0.26
+                },
+                { "model": "no-cache-rate", "inputPrice": 0.07, "outputPrice": 0.30 }
+            ]
+        }))
+        .expect("pricing response")
+        .models
+        .into_iter()
+        .map(|row| (row.model.clone(), row))
+        .collect();
+
+        let models = carpe_diem_priced_model_items(response, &pricing);
+
+        assert_eq!(
+            models.keys().collect::<Vec<_>>(),
+            vec!["cache-priced", "no-cache-rate"]
+        );
+        let cached = models.get("cache-priced").expect("cache-priced model");
+        assert_eq!(cached.input_credits_per_million_tokens, Some(1_400));
+        assert_eq!(cached.cache_input_credits_per_million_tokens, Some(260));
+        let plain = models.get("no-cache-rate").expect("no-cache-rate model");
+        assert_eq!(plain.input_credits_per_million_tokens, Some(70));
+        assert_eq!(plain.cache_input_credits_per_million_tokens, None);
     }
 
     #[tokio::test]
@@ -2846,36 +2958,96 @@ mod tests {
 }
 
 #[cfg(test)]
-mod carpe_diem_cache_compat_tests {
-    use super::{usage_from_chat_body, token_usage_from_value};
+mod carpe_diem_cache_tests {
+    use super::{synthesize_sse_stream, token_usage_from_value, usage_from_chat_body};
 
-    /// Carpe Diem's 2026-08-21 prompt-cache work adds fields to the `usage`
-    /// object it returns: `prompt_tokens_details` (OpenAI-canonical) plus its
-    /// own `carpe_cache_saved_usdc_micro`. Metering must ignore what it does
-    /// not know rather than collapse a valid 200 into `upstream_provider_failed`.
+    /// Carpe Diem's prompt-cache work adds fields to the `usage` object it
+    /// returns: `prompt_tokens_details` (OpenAI-canonical) plus its own
+    /// `carpe_*_usdc_micro` siblings. Two things must hold at once — metering
+    /// must never collapse a valid 200 into `upstream_provider_failed`, and the
+    /// fields must be KEPT, because nothing downstream re-reads the body.
     #[test]
-    fn tolerates_carpe_diem_cache_fields_in_usage() {
+    fn reads_the_cache_split_and_the_operator_numbers_from_usage() {
         let value = serde_json::json!({
             "prompt_tokens": 100_000,
             "completion_tokens": 500,
             "total_tokens": 100_500,
             "prompt_tokens_details": {
                 "cached_tokens": 95_000,
-                "cache_creation_input_tokens": 0
+                "cache_creation_input_tokens": 1_200
             },
             "carpe_cost_usdc_micro": 101_997,
             "carpe_cache_saved_usdc_micro": 98_000,
             "carpe_credits": 0.0102
         });
+
         let usage = token_usage_from_value(&value).expect("usage parses");
+
         // prompt_tokens stays the TOTAL, cached included — Carpe Diem keeps the
         // OpenAI meaning on this rail (only its Anthropic rail splits them out).
         assert_eq!(usage.prompt_tokens, 100_000);
         assert_eq!(usage.completion_tokens, 500);
+        assert_eq!(usage.cached_tokens, 95_000);
+        assert_eq!(usage.cache_creation_input_tokens, 1_200);
+        assert_eq!(usage.cache_saved_usdc_micro, 98_000);
+        assert_eq!(usage.cost_usdc_micro, 101_997);
+        // The billable share is what the full input rate applies to.
+        assert_eq!(usage.uncached_prompt_tokens(), 5_000);
+        assert!(usage.has_cache_hit());
+    }
+
+    /// The pre-cache shape must keep working unchanged: no details object, no
+    /// operator numbers, and metering that reads exactly as it did before.
+    #[test]
+    fn a_usage_object_without_cache_fields_reads_as_a_cold_turn() {
+        let value = serde_json::json!({ "prompt_tokens": 1_200, "completion_tokens": 40 });
+
+        let usage = token_usage_from_value(&value).expect("usage parses");
+
+        assert_eq!(usage.prompt_tokens, 1_200);
+        assert_eq!(usage.cached_tokens, 0);
+        assert_eq!(usage.uncached_prompt_tokens(), 1_200);
+        assert!(!usage.has_cache_hit());
+    }
+
+    /// Defensive read: a field of the wrong shape must degrade to "not
+    /// reported", never panic and never wrap into a huge number that would
+    /// under-bill the turn.
+    #[test]
+    fn malformed_cache_fields_degrade_to_zero() {
+        let value = serde_json::json!({
+            "prompt_tokens": 900,
+            "completion_tokens": 10,
+            "prompt_tokens_details": "unexpected",
+            "carpe_cache_saved_usdc_micro": -5,
+            "carpe_cost_usdc_micro": 1.5
+        });
+
+        let usage = token_usage_from_value(&value).expect("usage parses");
+
+        assert_eq!(usage.cached_tokens, 0);
+        assert_eq!(usage.cache_saved_usdc_micro, 0);
+        assert_eq!(usage.cost_usdc_micro, 0);
+    }
+
+    /// An upstream that reports more cached tokens than prompt tokens is
+    /// nonsense, but it must saturate rather than underflow into a bill for
+    /// eighteen quintillion tokens.
+    #[test]
+    fn more_cached_than_prompt_tokens_saturates_instead_of_underflowing() {
+        let value = serde_json::json!({
+            "prompt_tokens": 100,
+            "completion_tokens": 10,
+            "prompt_tokens_details": { "cached_tokens": 500 }
+        });
+
+        let usage = token_usage_from_value(&value).expect("usage parses");
+
+        assert_eq!(usage.uncached_prompt_tokens(), 0);
     }
 
     #[test]
-    fn tolerates_cache_fields_on_a_whole_chat_body() {
+    fn reads_cache_fields_off_a_whole_chat_body() {
         let body = serde_json::json!({
             "id": "chatcmpl-1",
             "choices": [{ "message": { "role": "assistant", "content": "hi" } }],
@@ -2886,12 +3058,15 @@ mod carpe_diem_cache_compat_tests {
             }
         })
         .to_string();
+
         let usage = usage_from_chat_body(body.as_bytes(), "application/json").expect("parses");
+
         assert_eq!(usage.prompt_tokens, 8_000);
+        assert_eq!(usage.cached_tokens, 7_500);
     }
 
     #[test]
-    fn tolerates_cache_fields_in_the_streaming_billing_frame() {
+    fn reads_cache_fields_from_the_streaming_billing_frame() {
         // The final chunk Carpe Diem emits on a streamed /v1 completion.
         let sse = concat!(
             "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
@@ -2901,8 +3076,40 @@ mod carpe_diem_cache_compat_tests {
             "\"carpe_cache_saved_usdc_micro\":41000,\"carpe_cost_usdc_micro\":9100,\"carpe_credits\":0.0091}}\n\n",
             "data: [DONE]\n\n"
         );
+
         let usage = usage_from_chat_body(sse.as_bytes(), "text/event-stream").expect("parses");
+
         assert_eq!(usage.prompt_tokens, 8_000);
         assert_eq!(usage.completion_tokens, 20);
+        assert_eq!(usage.cached_tokens, 7_500);
+        assert_eq!(usage.cache_saved_usdc_micro, 41_000);
+        assert_eq!(usage.cost_usdc_micro, 9_100);
+    }
+
+    /// The `/router` rail answers a streaming request with a buffered JSON
+    /// body, which we rebuild into SSE. Both halves of that rebuild must carry
+    /// the cache through: the metered `TokenUsage` we return, and the `usage`
+    /// object we copy into the synthesized frame for the client.
+    #[test]
+    fn the_router_rebuild_carries_the_cache_both_ways() {
+        let body = serde_json::json!({
+            "id": "chatcmpl-router",
+            "choices": [{ "message": { "role": "assistant", "content": "hi" }, "finish_reason": "stop" }],
+            "usage": {
+                "prompt_tokens": 30_000,
+                "completion_tokens": 11,
+                "prompt_tokens_details": { "cached_tokens": 28_000 },
+                "carpe_cache_saved_usdc_micro": 12_500
+            }
+        })
+        .to_string();
+
+        let (sse, usage) = synthesize_sse_stream(body.as_bytes()).expect("synthesized");
+
+        assert_eq!(usage.cached_tokens, 28_000);
+        assert_eq!(usage.cache_saved_usdc_micro, 12_500);
+        let text = String::from_utf8(sse).expect("utf8");
+        assert!(text.contains("\"cached_tokens\":28000"));
+        assert!(text.contains("\"carpe_cache_saved_usdc_micro\":12500"));
     }
 }

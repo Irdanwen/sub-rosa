@@ -1,7 +1,10 @@
 //! June API client. The Tauri side calls the backend for every metered
 //! action; provider keys live there, never here.
 
-use crate::{domain::types::AppError, providers::PROVIDER_OPENAI};
+use crate::{
+    carpe_diem::cache_stats::TurnUsage as CacheTurnUsage, domain::types::AppError,
+    providers::PROVIDER_OPENAI,
+};
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -13,8 +16,23 @@ use std::{
 const DEFAULT_DICTATION_CLEANUP_MODEL: &str = "nvidia-nemotron-3-nano-30b-a3b";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(600);
 const AGENT_HTTP_TIMEOUT: Duration = Duration::from_secs(600);
+// The conversation window the proxy sends upstream. Two marks, not one, so the
+// prompt prefix stays byte-stable across turns: a window that slides by one
+// message per turn rewrites the request just after the instruction block every
+// single turn, and the provider's prompt cache can only reuse a prefix it has
+// seen before. Truncating in blocks instead means one cold turn followed by
+// roughly `MAX - KEEP` warm ones.
 const AGENT_PROXY_MAX_MESSAGES: usize = 64;
+const AGENT_PROXY_KEEP_MESSAGES: usize = 48;
 const AGENT_PROXY_MAX_INSTRUCTION_MESSAGES: usize = 4;
+// The two marks are only worth having if they leave real headroom: 64 down to
+// 48 buys roughly fifteen untrimmed turns for each trimmed one. Tightening the
+// gap, or inverting the marks, would put the sliding window back and quietly
+// cost every conversation its warm prefix — so it is a compile error, not a
+// test that someone can decide to update.
+const _: () = assert!(AGENT_PROXY_KEEP_MESSAGES < AGENT_PROXY_MAX_MESSAGES);
+const _: () = assert!(AGENT_PROXY_MAX_MESSAGES - AGENT_PROXY_KEEP_MESSAGES >= 8);
+const _: () = assert!(AGENT_PROXY_KEEP_MESSAGES > AGENT_PROXY_MAX_INSTRUCTION_MESSAGES);
 // Mirrors the public June API validation cap. Hermes may request a larger
 // per-call output budget than the backend accepts, which otherwise trips a
 // validation error that it misclassifies as prompt context overflow.
@@ -118,6 +136,33 @@ pub struct AgentChatCompletionsResponse {
     pub status: u16,
     pub content_type: String,
     upstream: reqwest::Response,
+}
+
+/// Reads one `x-june-*` metering header. Absent, unparsable or negative reads
+/// as 0: the ledger is telemetry, and a malformed header must never cost a
+/// reply.
+fn metering_header(headers: &reqwest::header::HeaderMap, name: &str) -> u64 {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(0)
+}
+
+/// The per-turn metering the sidecar publishes alongside a completion.
+///
+/// The same numbers are inside the body, but the desktop forwards that body to
+/// the agent runtime as a stream and must not buffer or re-parse it to learn
+/// what a turn cost. Reading headers keeps the stream untouched.
+fn turn_usage_from_headers(headers: &reqwest::header::HeaderMap) -> CacheTurnUsage {
+    CacheTurnUsage {
+        prompt_tokens: metering_header(headers, "x-june-prompt-tokens"),
+        completion_tokens: metering_header(headers, "x-june-completion-tokens"),
+        cached_tokens: metering_header(headers, "x-june-cached-tokens"),
+        cache_creation_tokens: metering_header(headers, "x-june-cache-creation-tokens"),
+        cache_saved_usdc_micro: metering_header(headers, "x-june-cache-saved-usdc-micro"),
+        cost_usdc_micro: metering_header(headers, "x-june-cost-usdc-micro"),
+    }
 }
 
 impl AgentChatCompletionsResponse {
@@ -427,6 +472,11 @@ pub async fn proxy_agent_chat_completions(
             .and_then(|value| value.to_str().ok())
             .unwrap_or("application/json")
             .to_string();
+        // Every completion on both shells passes through here — the desktop
+        // agent, the mobile chat, memory extraction, session titles, Studio
+        // briefs — so this is the one place the prompt cache can be counted
+        // once for all of them.
+        crate::carpe_diem::cache_stats::record(turn_usage_from_headers(response.headers()));
         return Ok(AgentChatCompletionsResponse {
             status,
             content_type,
@@ -472,7 +522,7 @@ pub async fn forward_web_request(
 }
 
 fn limit_agent_chat_messages_for_proxy(body: &mut serde_json::Value) {
-    limit_agent_chat_messages(body, AGENT_PROXY_MAX_MESSAGES);
+    limit_agent_chat_messages(body, AGENT_PROXY_MAX_MESSAGES, AGENT_PROXY_KEEP_MESSAGES);
 }
 
 fn normalize_agent_chat_request_for_proxy(body: &mut serde_json::Value) {
@@ -521,7 +571,23 @@ fn output_tokens_exceeds_proxy_cap(value: &serde_json::Value) -> bool {
     false
 }
 
-fn limit_agent_chat_messages(body: &mut serde_json::Value, max_messages: usize) {
+/// Trims the conversation to fit the upstream window.
+///
+/// `max_messages` is when to act; `keep_messages` is what to cut down to. They
+/// differ on purpose. With a single mark, every turn past the limit drops the
+/// oldest message, so the bytes after the instruction block differ on every
+/// request and the provider's prompt cache never gets a prefix it has seen
+/// before. Cutting to a lower mark makes truncation a rare event: the window
+/// then grows untouched for another `max - keep` turns, and every one of those
+/// turns re-sends a prefix the provider already holds.
+///
+/// The leading instruction messages are kept either way — they are the region
+/// the cache key is derived from, and they are what makes the agent itself.
+fn limit_agent_chat_messages(
+    body: &mut serde_json::Value,
+    max_messages: usize,
+    keep_messages: usize,
+) {
     let Some(messages) = body
         .as_object_mut()
         .and_then(|object| object.get_mut("messages"))
@@ -532,6 +598,10 @@ fn limit_agent_chat_messages(body: &mut serde_json::Value, max_messages: usize) 
     if max_messages == 0 || messages.len() <= max_messages {
         return;
     }
+    // A `keep` above `max` would trim to more than it takes to trigger, which
+    // would truncate on every turn — the very thing the two marks exist to
+    // avoid. Clamp rather than trust the caller.
+    let keep_messages = keep_messages.clamp(1, max_messages);
 
     let instruction_count = messages
         .iter()
@@ -542,7 +612,7 @@ fn limit_agent_chat_messages(body: &mut serde_json::Value, max_messages: usize) 
         .take(instruction_count.min(AGENT_PROXY_MAX_INSTRUCTION_MESSAGES))
         .cloned()
         .collect::<Vec<_>>();
-    let remaining_capacity = max_messages.saturating_sub(next_messages.len());
+    let remaining_capacity = keep_messages.saturating_sub(next_messages.len());
 
     let tail = agent_message_chunks(&messages[instruction_count..]);
     let mut suffix = Vec::new();
@@ -1552,7 +1622,7 @@ mod tests {
             .collect::<Vec<_>>()
         });
 
-        limit_agent_chat_messages(&mut body, 5);
+        limit_agent_chat_messages(&mut body, 5, 5);
 
         let messages = body["messages"].as_array().expect("messages array");
         assert_eq!(messages.len(), 5);
@@ -1581,7 +1651,7 @@ mod tests {
             ]
         });
 
-        limit_agent_chat_messages(&mut body, 4);
+        limit_agent_chat_messages(&mut body, 4, 4);
 
         let messages = body["messages"].as_array().expect("messages array");
         assert_eq!(messages.len(), 4);
@@ -1624,7 +1694,7 @@ mod tests {
         // The most recent chunk (assistant turn + 6 tool results) alone
         // exceeds the budget; it must still be kept rather than stripping
         // the conversation down to the system prompt.
-        limit_agent_chat_messages(&mut body, 4);
+        limit_agent_chat_messages(&mut body, 4, 4);
 
         let messages = body["messages"].as_array().expect("messages array");
         assert_eq!(messages.len(), 8);
@@ -1632,5 +1702,161 @@ mod tests {
         assert_eq!(messages[1]["role"], "assistant");
         assert_eq!(messages[2]["role"], "tool");
         assert_eq!(messages[7]["content"], "result 5");
+    }
+
+    fn header_map(pairs: &[(&str, &str)]) -> reqwest::header::HeaderMap {
+        let mut headers = reqwest::header::HeaderMap::new();
+        for (name, value) in pairs {
+            headers.insert(
+                reqwest::header::HeaderName::from_bytes(name.as_bytes()).expect("header name"),
+                reqwest::header::HeaderValue::from_str(value).expect("header value"),
+            );
+        }
+        headers
+    }
+
+    #[test]
+    fn reads_the_sidecar_metering_headers() {
+        let usage = turn_usage_from_headers(&header_map(&[
+            ("x-june-prompt-tokens", "8000"),
+            ("x-june-completion-tokens", "20"),
+            ("x-june-cached-tokens", "7500"),
+            ("x-june-cache-creation-tokens", "0"),
+            ("x-june-cache-saved-usdc-micro", "41000"),
+            ("x-june-cost-usdc-micro", "9100"),
+        ]));
+
+        assert_eq!(usage.prompt_tokens, 8_000);
+        assert_eq!(usage.cached_tokens, 7_500);
+        assert_eq!(usage.cache_saved_usdc_micro, 41_000);
+        assert_eq!(usage.cost_usdc_micro, 9_100);
+        assert!(usage.is_measured());
+    }
+
+    /// A response without the headers (an error, or a sidecar that predates
+    /// them) must read as unmeasured, not as a cold turn: counting it would
+    /// invent a cache miss out of a turn nobody metered.
+    #[test]
+    fn a_response_without_metering_headers_is_unmeasured() {
+        let usage = turn_usage_from_headers(&header_map(&[("content-type", "application/json")]));
+
+        assert_eq!(usage, CacheTurnUsage::default());
+        assert!(!usage.is_measured());
+    }
+
+    /// Telemetry must never cost a reply: a header the sidecar could not have
+    /// written still parses to zero rather than panicking.
+    #[test]
+    fn malformed_metering_headers_read_as_zero() {
+        let usage = turn_usage_from_headers(&header_map(&[
+            ("x-june-prompt-tokens", "not-a-number"),
+            ("x-june-completion-tokens", "-4"),
+            ("x-june-cached-tokens", ""),
+        ]));
+
+        assert_eq!(usage, CacheTurnUsage::default());
+    }
+
+    /// Builds a conversation of `turns` user messages behind one system prompt.
+    fn conversation(turns: usize) -> serde_json::Value {
+        serde_json::json!({
+            "messages": std::iter::once(serde_json::json!({
+                "role": "system",
+                "content": "system prompt"
+            }))
+            .chain((0..turns).map(|index| serde_json::json!({
+                "role": "user",
+                "content": format!("message {index}")
+            })))
+            .collect::<Vec<_>>()
+        })
+    }
+
+    fn message_contents(body: &serde_json::Value) -> Vec<String> {
+        body["messages"]
+            .as_array()
+            .expect("messages array")
+            .iter()
+            .map(|message| message["content"].as_str().unwrap_or_default().to_string())
+            .collect()
+    }
+
+    /// The point of the two marks: once it trims, the window has room to grow
+    /// again, so the following turns go out untouched and re-send a prefix the
+    /// provider has already cached. With a single mark every one of these turns
+    /// would shift by one message and start cold.
+    #[test]
+    fn trimming_leaves_room_so_the_next_turns_are_not_trimmed_again() {
+        let mut trimmed = conversation(12);
+        limit_agent_chat_messages(&mut trimmed, 10, 6);
+        let after_trim = message_contents(&trimmed);
+        assert_eq!(after_trim.len(), 6);
+
+        // Three more turns arrive on top of the trimmed window.
+        let mut grown = trimmed.clone();
+        for index in 0..3 {
+            grown["messages"]
+                .as_array_mut()
+                .expect("messages array")
+                .push(serde_json::json!({
+                    "role": "user",
+                    "content": format!("later {index}")
+                }));
+            let before = message_contents(&grown);
+            limit_agent_chat_messages(&mut grown, 10, 6);
+            assert_eq!(
+                message_contents(&grown),
+                before,
+                "turn {index} must go out untouched"
+            );
+        }
+
+        // And the prefix those turns re-sent is byte-identical to the one the
+        // trim produced, which is what the provider's cache matches on.
+        assert_eq!(&message_contents(&grown)[..6], &after_trim[..]);
+    }
+
+    /// A single mark is the failure this replaces: with `keep == max`, every
+    /// turn past the limit rewrites the window.
+    #[test]
+    fn a_single_mark_would_re_trim_every_turn() {
+        let mut body = conversation(12);
+        limit_agent_chat_messages(&mut body, 10, 10);
+        let after_trim = message_contents(&body);
+
+        body["messages"]
+            .as_array_mut()
+            .expect("messages array")
+            .push(serde_json::json!({ "role": "user", "content": "later" }));
+        limit_agent_chat_messages(&mut body, 10, 10);
+
+        assert_ne!(message_contents(&body)[..], after_trim[..]);
+    }
+
+    /// The instruction block survives the deeper cut: it is the region the
+    /// provider derives its cache key from.
+    #[test]
+    fn trimming_to_the_lower_mark_still_keeps_the_instructions() {
+        let mut body = conversation(40);
+        limit_agent_chat_messages(&mut body, 10, 6);
+
+        let messages = body["messages"].as_array().expect("messages array");
+        assert_eq!(messages.len(), 6);
+        assert_eq!(messages[0]["role"], "system");
+        assert_eq!(messages[0]["content"], "system prompt");
+        assert_eq!(messages[5]["content"], "message 39");
+    }
+
+    /// A caller that asks to keep more than it takes to trigger would truncate
+    /// on every turn. Clamped, not trusted.
+    #[test]
+    fn a_keep_mark_above_the_max_is_clamped() {
+        let mut body = conversation(20);
+        limit_agent_chat_messages(&mut body, 10, 999);
+
+        assert_eq!(
+            body["messages"].as_array().expect("messages array").len(),
+            10
+        );
     }
 }

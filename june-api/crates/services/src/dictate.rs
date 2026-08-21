@@ -1,6 +1,7 @@
 use crate::{
     charge_flow::{
-        AsyncChargeParams, AuthorizeParams, authorize_or_deny, clamp_to_cap, spawn_charge,
+        AsyncChargeParams, AuthorizeParams, authorize_or_deny, clamp_to_cap, price_settled_work,
+        spawn_charge,
     },
     error::ServiceError,
     pricing::PricingTable,
@@ -129,9 +130,17 @@ impl DictateService {
                 provider_credentials: params.provider_credentials.clone(),
             })
             .await?;
-        let actual = self
-            .pricing
-            .price_token_usage(&params.model_id.0, cleaned.usage)?;
+        // The cleanup already ran (and billed) upstream — a pricing failure
+        // must not throw the cleaned text away. See `price_settled_work`. The
+        // transcribe path above deliberately keeps its `?`: it prices before
+        // dispatching, so failing fast there costs nothing and strands no hold.
+        let actual = price_settled_work(
+            self.pricing
+                .price_token_usage(&params.model_id.0, cleaned.usage),
+            ActionSlug::DictateCleanup,
+            &params.model_id.0,
+            cleaned.usage.total().unwrap_or(u64::MAX),
+        );
         let receipt = pending_receipt();
         spawn_charge(AsyncChargeParams {
             os_accounts: self.os_accounts.clone(),

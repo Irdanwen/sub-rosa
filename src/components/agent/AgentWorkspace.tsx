@@ -113,6 +113,7 @@ import {
   saveHermesBridgeFile,
   copyHermesBridgeFileToClipboard,
   openHermesTuiDebug,
+  carpeDiemCacheStats,
   carpeDiemOpenDashboard,
   providerModelSettings,
   retryAgentTask,
@@ -189,6 +190,7 @@ import {
   pendingImageAttachments,
   type HermesAttachmentState,
 } from "../../lib/hermes-image-attach";
+import { parseCacheUsage } from "../../lib/carpe-diem-cache";
 import { parseSessionUsage, type SessionUsage } from "../../lib/hermes-session-usage";
 import {
   parseCompressSessionResult,
@@ -5184,6 +5186,12 @@ export function AgentWorkspace({
     [],
   );
 
+  // The prompt-cache ledger the Rust side keeps for this run of the app. A
+  // second usage source: the gateway reports the runtime's own accounting,
+  // which cannot know how much of a prompt the provider served from its cache.
+  // Local read, no gateway involved, so it needs no session resolution.
+  const fetchCacheStats = useCallback(async () => parseCacheUsage(await carpeDiemCacheStats()), []);
+
   // Compacts one session's context (feature 08). Routes through the gateway
   // matching the session's recorded write-access mode, calls the typed
   // session.compress wrapper, and parses the raw result defensively so the
@@ -7923,6 +7931,7 @@ export function AgentWorkspace({
                   <SessionUsagePanel
                     sessionId={usagePanelSessionId}
                     fetchUsage={fetchSessionUsage}
+                    fetchCacheStats={fetchCacheStats}
                     onClose={() => setUsagePanelSessionId(null)}
                   />
                 </div>,

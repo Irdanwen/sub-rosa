@@ -45,8 +45,25 @@ impl PricingTable {
         let output_rate = model
             .output_credits_per_million_tokens
             .ok_or(PricingError::MissingRate)?;
+        // Cached prompt tokens bill at the operator's cache rate when the model
+        // publishes one. Most models do not, and for those the cached share is
+        // simply worth the plain input rate — which reproduces the old
+        // two-component price exactly, so an un-cached deployment is unaffected.
+        // The two prompt halves sum to `prompt_tokens` by construction
+        // (`TokenUsage` guarantees it), so nothing is billed twice or dropped.
+        //
+        // The cache WRITE premium is deliberately not modelled. Whether
+        // `cache_creation_input_tokens` is a subset of `prompt_tokens` or an
+        // addition to it is not pinned down on this rail, so pricing it would
+        // risk billing the same tokens twice; the field is captured and carried
+        // so the premium can be added once the operator states the semantics.
+        // Most models publish no write premium at all.
+        let cache_rate = model
+            .cache_input_credits_per_million_tokens
+            .unwrap_or(input_rate);
         Self::price_scaled([
-            (usage.prompt_tokens, input_rate),
+            (usage.uncached_prompt_tokens(), input_rate),
+            (usage.billable_cached_tokens(), cache_rate),
             (usage.completion_tokens, output_rate),
         ])
     }
@@ -159,6 +176,7 @@ mod tests {
                             .then_some(input_rate),
                         output_credits_per_million_tokens: (unit == PriceUnit::Tokens)
                             .then_some(output_rate),
+                        cache_input_credits_per_million_tokens: None,
                         provider: ModelProvider::Openai,
                         model_type,
                         display_name: id.to_string(),
@@ -172,6 +190,25 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    /// One text model whose cache rate is the thing under test.
+    fn cached_model(
+        input_rate: u64,
+        output_rate: u64,
+        cache_rate: Option<u64>,
+    ) -> BTreeMap<String, ModelPriceConfig> {
+        let mut models = models([(
+            "cache-priced",
+            PriceUnit::Tokens,
+            input_rate,
+            output_rate,
+            ModelType::Text,
+        )]);
+        if let Some(model) = models.get_mut("cache-priced") {
+            model.cache_input_credits_per_million_tokens = cache_rate;
+        }
+        models
     }
 
     #[test]
@@ -194,11 +231,100 @@ mod tests {
                     TokenUsage {
                         prompt_tokens: 1_600,
                         completion_tokens: 50,
+                        ..TokenUsage::default()
                     },
                 )
                 .map(|credits| credits.0),
             Ok(1)
         );
+    }
+
+    /// A model that publishes a cache rate bills its cached share at that rate.
+    /// The numbers mirror the shipped default model: $1.40 input against $0.26
+    /// cache input, a 0.19x ratio, on a prompt that is 94 % cache hit.
+    #[test]
+    fn a_cached_prompt_bills_its_cached_share_at_the_cache_rate() {
+        let table = PricingTable::new(cached_model(1_400, 5_500, Some(260)));
+
+        let cold = table
+            .price_token_usage(
+                "cache-priced",
+                TokenUsage {
+                    prompt_tokens: 100_000,
+                    completion_tokens: 500,
+                    ..TokenUsage::default()
+                },
+            )
+            .map(|credits| credits.0);
+        let warm = table
+            .price_token_usage(
+                "cache-priced",
+                TokenUsage {
+                    prompt_tokens: 100_000,
+                    completion_tokens: 500,
+                    cached_tokens: 94_000,
+                    ..TokenUsage::default()
+                },
+            )
+            .map(|credits| credits.0);
+
+        // 100_000 * 1_400 + 500 * 5_500 = 142_750_000 -> 143 credits.
+        assert_eq!(cold, Ok(143));
+        // 6_000 * 1_400 + 94_000 * 260 + 500 * 5_500 = 35_540_000 -> 36 credits.
+        assert_eq!(warm, Ok(36));
+    }
+
+    /// The catalogue is mostly models with no published cache rate. Those must
+    /// keep pricing exactly as they did before the cache existed, whether or not
+    /// the upstream reports a hit — otherwise a cache hit would silently make a
+    /// turn cheaper than the operator actually charges for it.
+    #[test]
+    fn a_model_without_a_cache_rate_prices_a_hit_like_a_miss() {
+        let table = PricingTable::new(cached_model(1_400, 5_500, None));
+
+        let with_hit = table.price_token_usage(
+            "cache-priced",
+            TokenUsage {
+                prompt_tokens: 100_000,
+                completion_tokens: 500,
+                cached_tokens: 94_000,
+                ..TokenUsage::default()
+            },
+        );
+        let without_hit = table.price_token_usage(
+            "cache-priced",
+            TokenUsage {
+                prompt_tokens: 100_000,
+                completion_tokens: 500,
+                ..TokenUsage::default()
+            },
+        );
+
+        assert_eq!(with_hit, without_hit);
+        assert_eq!(with_hit.map(|credits| credits.0), Ok(143));
+    }
+
+    /// An upstream reporting more cached tokens than prompt tokens is nonsense,
+    /// and the cheaper rate makes it the profitable kind of nonsense. The split
+    /// clamps, so the turn can never be billed for more than its prompt.
+    #[test]
+    fn a_nonsensical_split_cannot_bill_more_than_the_prompt() {
+        let table = PricingTable::new(cached_model(1_400, 5_500, Some(260)));
+
+        let priced = table
+            .price_token_usage(
+                "cache-priced",
+                TokenUsage {
+                    prompt_tokens: 1_000,
+                    completion_tokens: 0,
+                    cached_tokens: 9_999_999,
+                    ..TokenUsage::default()
+                },
+            )
+            .map(|credits| credits.0);
+
+        // 1_000 tokens, all of them at the cache rate: 260_000 -> 1 credit.
+        assert_eq!(priced, Ok(1));
     }
 
     #[test]
@@ -225,6 +351,7 @@ mod tests {
                 TokenUsage {
                     prompt_tokens: 2,
                     completion_tokens: 0,
+                    ..TokenUsage::default()
                 },
             ),
             Err(PricingError::Overflow)
@@ -261,6 +388,7 @@ mod tests {
                 TokenUsage {
                     prompt_tokens: 1,
                     completion_tokens: 0,
+                    ..TokenUsage::default()
                 },
             ),
             Err(PricingError::WrongUnit)
