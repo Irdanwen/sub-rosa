@@ -8,8 +8,16 @@ const invokeMock = vi.fn(async (command: string, _args?: unknown) => {
   if (command === "places_photo_data_url") {
     return { dataUrl: "data:image/jpeg;base64,/9j/photo" };
   }
+  if (command === "action_states") return actionStateRows;
+  if (command === "action_execute") {
+    if (actionExecuteFails) throw new Error("Sub Rosa needs access to your reminders.");
+    return { actionId: "a1", status: "done", detail: "Added to your reminders" };
+  }
   return undefined;
 });
+/** What the durable rows say this proposal already did. */
+let actionStateRows: Array<{ actionId: string; status: string; detail?: string }> = [];
+let actionExecuteFails = false;
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (command: string, args?: unknown) => invokeMock(command, args),
   convertFileSrc: (path: string) => path,
@@ -331,6 +339,90 @@ describe("PlacesCard rendering", () => {
     });
     expect(container.querySelector(".chat-block-map")).toBeNull();
     expect(screen.getByText("Sogeca Experts")).toBeInTheDocument();
+  });
+});
+
+const PROPOSAL_BODY = JSON.stringify({
+  v: 1,
+  proposalId: "prop-1",
+  title: "Follow-ups",
+  actions: [
+    { kind: "reminder", id: "a1", label: "Send Ana the numbers", due: "2026-08-25T09:00:00Z" },
+    { kind: "event", id: "a2", label: "Follow-up with Marie", start: "2026-08-26T09:00:00Z" },
+    { kind: "note", id: "a3", label: "Add to the note", noteId: "note-1", text: "Ana owns it." },
+    { kind: "reminder", id: "", label: "No id" },
+    { kind: "event", id: "a5", label: "No date" },
+  ],
+});
+
+describe("proposal blocks", () => {
+  beforeEach(() => {
+    actionStateRows = [];
+    actionExecuteFails = false;
+  });
+
+  it("keeps only actions it can actually carry out", () => {
+    const block = parseChatBlock("subrosa:proposal", PROPOSAL_BODY);
+    if (block?.kind !== "proposal") throw new Error("expected a proposal");
+    // The id-less one and the dateless event cannot be executed, so they are
+    // not offered.
+    expect(block.actions.map((action) => action.id)).toEqual(["a1", "a2", "a3"]);
+  });
+
+  it("refuses a proposal with no id, because 'done' would have nowhere to live", () => {
+    const noId = JSON.stringify({
+      v: 1,
+      actions: [{ kind: "reminder", id: "a1", label: "x" }],
+    });
+    expect(parseChatBlock("subrosa:proposal", noId)).toBeNull();
+  });
+
+  it("offers a button, does the thing on a tap, and never on its own", async () => {
+    render(<SimpleMarkdown text={fenced("subrosa:proposal", PROPOSAL_BODY)} />);
+    const add = await screen.findAllByRole("button", { name: "Add" });
+    expect(add).toHaveLength(3);
+    // Mounting alone must never execute anything.
+    expect(invokeMock).not.toHaveBeenCalledWith("action_execute", expect.anything());
+
+    fireEvent.click(add[0]);
+    await vi.waitFor(() => {
+      expect(screen.getByText("Added to your reminders")).toBeInTheDocument();
+    });
+    expect(invokeMock).toHaveBeenCalledWith(
+      "action_execute",
+      expect.objectContaining({
+        request: expect.objectContaining({ proposalId: "prop-1" }),
+      }),
+    );
+  });
+
+  it("shows what was already done instead of offering to do it twice", async () => {
+    // This is the whole point of the durable row: the message is immutable,
+    // so a reopened conversation would otherwise re-offer a done action.
+    actionStateRows = [{ actionId: "a1", status: "done", detail: "Added to your reminders" }];
+    render(<SimpleMarkdown text={fenced("subrosa:proposal", PROPOSAL_BODY)} />);
+    await vi.waitFor(() => {
+      expect(screen.getByLabelText("Done")).toBeInTheDocument();
+    });
+    expect(screen.getAllByRole("button", { name: "Add" })).toHaveLength(2);
+  });
+
+  it("keeps the button when the action failed, and says why", async () => {
+    actionExecuteFails = true;
+    render(<SimpleMarkdown text={fenced("subrosa:proposal", PROPOSAL_BODY)} />);
+    const add = await screen.findAllByRole("button", { name: "Add" });
+    fireEvent.click(add[0]);
+    await vi.waitFor(() => {
+      expect(screen.getByText(/needs access to your reminders/)).toBeInTheDocument();
+    });
+    // Nothing happened, so the button is still there.
+    expect(screen.getAllByRole("button", { name: "Add" })).toHaveLength(3);
+  });
+
+  it("copies as a readable list", () => {
+    const copied = chatBlocksToClipboardText(`\`\`\`subrosa:proposal\n${PROPOSAL_BODY}\n\`\`\``);
+    expect(copied).toContain("Follow-ups");
+    expect(copied).toContain("- Send Ana the numbers");
   });
 });
 

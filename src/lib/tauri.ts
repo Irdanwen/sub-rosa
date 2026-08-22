@@ -720,6 +720,28 @@ export async function juneOpenCommunityPage() {
   return invoke<void>("june_open_community_page");
 }
 
+// --- Proposed actions (crate::actions) ------------------------------------
+
+export type ActionStateDto = {
+  actionId: string;
+  status: string;
+  detail?: string;
+};
+
+/** Performs one proposed action. Only ever called from an explicit tap. */
+export async function actionExecute(
+  proposalId: string,
+  action: import("./chat-blocks").ProposedAction,
+) {
+  return invoke<ActionStateDto>("action_execute", { request: { proposalId, action } });
+}
+
+/** What has already been done for a proposal — a message is immutable, so
+ * this is where "done" actually lives. */
+export async function actionStates(proposalId: string) {
+  return invoke<ActionStateDto[]>("action_states", { proposalId });
+}
+
 // --- The moments the app speaks first (crate::moments) --------------------
 
 export type MomentSettingsDto = {

@@ -68,7 +68,22 @@ export type NotesChatBlock = {
   notes: ChatBlockNote[];
 };
 
-export type ChatBlock = LinksChatBlock | PlacesChatBlock | NotesChatBlock;
+/** One thing the assistant offers to do. Nothing runs without a tap. */
+export type ProposedAction =
+  | { kind: "reminder"; id: string; label: string; due?: string }
+  | { kind: "event"; id: string; label: string; start: string; end?: string }
+  | { kind: "note"; id: string; label: string; noteId: string; text: string };
+
+export type ProposalChatBlock = {
+  kind: "proposal";
+  title?: string;
+  /** Identifies the proposal so its "done" state can live outside the text
+   * (a message is immutable — see ADR-0024 and crate::actions). */
+  proposalId: string;
+  actions: ProposedAction[];
+};
+
+export type ChatBlock = LinksChatBlock | PlacesChatBlock | NotesChatBlock | ProposalChatBlock;
 
 /** Display caps. Clamping (not rejecting) keeps a slightly-over payload
  * useful; a payload with nothing valid inside still returns null. */
@@ -85,6 +100,7 @@ const MAX_PLACE_NOTE = 200;
 const MAX_PHOTO_REF = 512;
 const MAX_NOTES = 6;
 const MAX_NOTE_ID = 64;
+const MAX_ACTIONS = 5;
 
 /** The `<kind>` of a `subrosa:<kind>` fence info string, or null. */
 export function chatBlockKindOf(info: string): string | null {
@@ -211,6 +227,51 @@ function parseNotes(payload: Record<string, unknown>): NotesChatBlock | null {
   return { kind: "notes", title: cappedString(payload.title, MAX_TITLE), notes };
 }
 
+function parseProposal(payload: Record<string, unknown>): ProposalChatBlock | null {
+  const raw = payload.actions;
+  const proposalId = typeof payload.proposalId === "string" ? payload.proposalId.trim() : "";
+  // Without a stable id there is nowhere to record what was done, so the
+  // card could only ever offer to do it again. Refuse it.
+  if (!Array.isArray(raw) || !proposalId || !/^[\w-]{1,64}$/.test(proposalId)) return null;
+  const actions: ProposedAction[] = [];
+  for (const entry of raw) {
+    if (actions.length >= MAX_ACTIONS) break;
+    const item = asObject(entry);
+    if (!item) continue;
+    const id = typeof item.id === "string" ? item.id.trim() : "";
+    const label = cappedString(item.label, MAX_LINK_TITLE);
+    if (!label || !id || !/^[\w-]{1,64}$/.test(id)) continue;
+    if (item.kind === "reminder") {
+      actions.push({ kind: "reminder", id, label, due: isoDate(item.due) });
+    } else if (item.kind === "event") {
+      const start = isoDate(item.start);
+      if (!start) continue;
+      actions.push({ kind: "event", id, label, start, end: isoDate(item.end) });
+    } else if (item.kind === "note") {
+      const noteId = typeof item.noteId === "string" ? item.noteId.trim() : "";
+      const text = cappedString(item.text, 2_000);
+      if (!noteId || !/^[\w-]{1,64}$/.test(noteId) || !text) continue;
+      actions.push({ kind: "note", id, label, noteId, text });
+    }
+  }
+  if (actions.length === 0) return null;
+  return {
+    kind: "proposal",
+    title: cappedString(payload.title, MAX_TITLE),
+    proposalId,
+    actions,
+  };
+}
+
+/** A date we can actually read, or nothing — never a guess. */
+function isoDate(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+}
+
 /**
  * The one fence-dispatch decision, shared by both markdown renderers so they
  * can never disagree: `card` for a valid payload, `skeleton` for a fence
@@ -294,6 +355,11 @@ function chatBlockPlainText(block: ChatBlock): string[] {
       ];
     case "notes":
       return [block.title || "Notes", ...block.notes.map((note) => `- ${note.title}`)];
+    case "proposal":
+      return [
+        block.title || "Suggested follow-ups",
+        ...block.actions.map((action) => `- ${action.label}`),
+      ];
     default:
       return [];
   }
@@ -322,6 +388,8 @@ export function parseChatBlock(info: string, body: string): ChatBlock | null {
       return parsePlaces(payload);
     case "notes":
       return parseNotes(payload);
+    case "proposal":
+      return parseProposal(payload);
     default:
       return null;
   }

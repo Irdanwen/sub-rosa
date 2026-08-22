@@ -8,6 +8,10 @@
   <string>Sub Rosa reads your calendar on this device so a recording can know which meeting it belongs to. Nothing is sent anywhere.</string>
   <key>NSCalendarsFullAccessUsageDescription</key>
   <string>Sub Rosa reads your calendar on this device so a recording can know which meeting it belongs to. Nothing is sent anywhere.</string>
+  <key>NSRemindersUsageDescription</key>
+  <string>Sub Rosa adds a reminder to your list when you tap to accept one it suggested. It never reads or changes anything else.</string>
+  <key>NSRemindersFullAccessUsageDescription</key>
+  <string>Sub Rosa adds a reminder to your list when you tap to accept one it suggested. It never reads or changes anything else.</string>
   <key>NSAudioCaptureUsageDescription</key>
   <string>Sub Rosa records system audio locally when you choose microphone plus system audio for a note.</string>
 </dict>

@@ -2,6 +2,7 @@
 // runtime (spawned as a subprocess — forbidden on iOS), the dictation
 // helper, meeting detection, and the Tauri updater. The mobile (iOS) build
 // compiles only the shared core below.
+pub mod actions;
 #[cfg(desktop)]
 pub mod agent_hud;
 pub mod agent_lite;
@@ -314,6 +315,8 @@ pub fn run() {
             calendar::calendar_attach_note,
             moments::moments_get_settings,
             moments::moments_set_settings,
+            actions::action_execute,
+            actions::action_states,
             places::places_get_settings,
             places::places_set_google_key,
             places::places_clear_google_key,
@@ -493,6 +496,8 @@ pub fn run() {
         calendar::calendar_attach_note,
         moments::moments_get_settings,
         moments::moments_set_settings,
+        actions::action_execute,
+        actions::action_states,
         places::places_get_settings,
         places::places_set_google_key,
         places::places_clear_google_key,

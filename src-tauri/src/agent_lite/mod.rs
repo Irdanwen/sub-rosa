@@ -63,6 +63,8 @@ Place cards: when you answer with places_search results, embed them as one fence
 
 Note cards: when your answer rests on the user's own notes, you may end it with one fenced block whose info string is subrosa:notes and whose body is {\"v\":1,\"title\":\"From your notes\",\"notes\":[{\"id\":\"…\",\"title\":\"…\",\"snippet\":\"…\"}]}. The app opens the note when the user taps the card. Use the ids and titles exactly as search_notes, read_note or list_recent_notes returned them — never invent a note id — and list only the notes your answer actually used.
 
+Follow-up cards: after a meeting note, or when the user agrees to something, you may end your reply with one fenced block whose info string is subrosa:proposal and whose body is {\"v\":1,\"proposalId\":\"<a new short id>\",\"title\":\"Follow-ups\",\"actions\":[{\"kind\":\"reminder\",\"id\":\"a1\",\"label\":\"…\",\"due\":\"<RFC3339>\"},{\"kind\":\"event\",\"id\":\"a2\",\"label\":\"…\",\"start\":\"<RFC3339>\"},{\"kind\":\"note\",\"id\":\"a3\",\"label\":\"…\",\"noteId\":\"<a real note id>\",\"text\":\"…\"}]}. Nothing happens until the user taps a card, so propose rather than announce: never write as if the reminder already exists. Five actions at most, only ones the conversation actually calls for, and never invent a note id.
+
 Answer in the user's language, concisely, in plain prose or simple markdown. If a search comes back empty, say what you looked for.";
 
 #[derive(Debug, Clone, Serialize)]

@@ -22731,3 +22731,63 @@ input:focus-visible,
   color: var(--muted-foreground);
   opacity: 0.7;
 }
+
+/* Proposed actions. One surface for every kind of action, and the button is
+ * the only thing that ever makes one happen. A row that has been acted on
+ * shows a mark instead — its "done" lives in a durable row, not in the
+ * message text, so it survives a reload (crate::actions). */
+.proposal-row {
+  cursor: default;
+  align-items: center;
+}
+
+.proposal-row[data-done="true"] .chat-block-row-title {
+  color: var(--muted-foreground);
+}
+
+.proposal-do {
+  flex: 0 0 auto;
+  min-width: 52px;
+  min-height: var(--control-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition:
+    border-color var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out),
+    transform var(--t-med) var(--ease-out);
+}
+
+.proposal-do:hover:not(:disabled) {
+  border-color: var(--warm-strong);
+  color: var(--warm-strong);
+}
+
+.proposal-do:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.proposal-do:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.proposal-done {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  border-radius: var(--r-pill);
+  background: color-mix(in oklch, var(--success) 16%, transparent);
+  color: var(--success);
+}

@@ -5,6 +5,7 @@ import type { ChatBlock, LinksChatBlock, NotesChatBlock } from "../../lib/chat-b
 import { requestOpenNoteFromChat } from "../../lib/chat-blocks-nav";
 import { openExternalUrl } from "../../lib/tauri";
 import { PlacesCard } from "./PlacesCard";
+import { ProposalCard } from "./ProposalCard";
 
 /**
  * Renders one parsed chat block (see src/lib/chat-blocks.ts). Shared by the
@@ -19,6 +20,8 @@ export function ChatBlockView({ block }: { block: ChatBlock }) {
       return <PlacesCard block={block} />;
     case "notes":
       return <NotesCard block={block} />;
+    case "proposal":
+      return <ProposalCard block={block} />;
     default:
       return null;
   }

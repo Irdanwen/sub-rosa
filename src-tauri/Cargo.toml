@@ -97,6 +97,7 @@ objc2-event-kit = { version = "0.3", default-features = false, features = [
     "EKEventStore",
     "EKObject",
     "EKParticipant",
+    "EKReminder",
     "EKTypes",
 ] }
 objc2-foundation = { version = "0.3", default-features = false, features = [

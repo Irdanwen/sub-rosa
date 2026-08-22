@@ -137,6 +137,81 @@ impl Repositories {
         self.get_note(&id).await
     }
 
+    // --- Proposed actions (crate::actions) ---------------------------------
+
+    /// Records that a proposed action was carried out. Idempotent: accepting
+    /// the same action twice (two windows, a double tap) leaves one row.
+    pub async fn record_action(
+        &self,
+        proposal_id: &str,
+        action_id: &str,
+        kind: &str,
+        status: &str,
+        detail: Option<&str>,
+    ) -> Result<(), sqlx::error::Error> {
+        query(
+            "INSERT INTO agent_actions (id, proposal_id, action_id, kind, status, detail, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(proposal_id, action_id) DO UPDATE SET status = excluded.status, detail = excluded.detail",
+        )
+        .bind(uuid::Uuid::new_v4().to_string())
+        .bind(proposal_id)
+        .bind(action_id)
+        .bind(kind)
+        .bind(status)
+        .bind(detail)
+        .bind(timestamp())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// What has already been done for one proposal — what turns a reopened
+    /// card from a button into a receipt.
+    pub async fn action_states(
+        &self,
+        proposal_id: &str,
+    ) -> Result<Vec<crate::actions::ActionState>, sqlx::error::Error> {
+        let rows =
+            query("SELECT action_id, status, detail FROM agent_actions WHERE proposal_id = ?")
+                .bind(proposal_id)
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| crate::actions::ActionState {
+                action_id: row.get("action_id"),
+                status: row.get("status"),
+                detail: row.try_get("detail").ok().flatten(),
+            })
+            .collect())
+    }
+
+    /// Appends a line to a note's own content, the way the user would.
+    pub async fn append_to_note_content(
+        &self,
+        note_id: &str,
+        text: &str,
+    ) -> Result<(), sqlx::error::Error> {
+        let note = self.get_note(note_id).await?;
+        let current = note
+            .edited_content
+            .or(note.generated_content)
+            .unwrap_or_default();
+        let next = if current.trim().is_empty() {
+            text.to_string()
+        } else {
+            format!("{}\n\n{}", current.trim_end(), text)
+        };
+        query("UPDATE notes SET edited_content = ?, updated_at = ? WHERE id = ?")
+            .bind(next)
+            .bind(timestamp())
+            .bind(note_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     // --- Briefs (crate::moments) -------------------------------------------
 
     /// Schedules a brief, unless this meeting already has one. The unique

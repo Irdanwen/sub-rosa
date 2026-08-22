@@ -122,6 +122,14 @@ _Avoid_: system driver, in-process capture.
 
 ### Agent runtime (Hermes)
 
+**Proposed action**:
+Something the assistant offers to do — a reminder, a calendar follow-up, a
+line added to a note — rendered as a `subrosa:proposal` chat block. Nothing
+runs without an explicit tap, and because a message is immutable the "done"
+state lives in an `agent_actions` row rather than in the text that proposed
+it. One confirmation surface for every kind.
+_Avoid_: automation, auto-apply, agent action (unqualified).
+
 **Moment**:
 One of the two times the app speaks first: the **brief** (ten minutes before
 a meeting with other people, what was last decided with them) and the

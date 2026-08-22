@@ -37,6 +37,13 @@ const REQUIRED_USAGE_KEYS: Array<{ key: string; reachedBy: string }> = [
     key: "NSCalendarsFullAccessUsageDescription",
     reachedBy: "the same read on iOS 17+, which renamed the key",
   },
+  // Same two-key dance for reminders, reached only when the user taps to
+  // accept a follow-up the assistant proposed (crate::actions).
+  { key: "NSRemindersUsageDescription", reachedBy: "accepting a proposed reminder" },
+  {
+    key: "NSRemindersFullAccessUsageDescription",
+    reachedBy: "the same write on iOS 17+, which renamed the key",
+  },
 ];
 
 describe("iOS privacy usage descriptions", () => {
