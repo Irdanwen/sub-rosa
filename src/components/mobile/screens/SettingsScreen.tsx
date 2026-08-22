@@ -4,10 +4,16 @@ import { PRODUCT_NAME } from "../../../lib/branding";
 import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
 import { hapticSelection } from "../../../lib/haptics";
 import { formatCredits } from "../../../lib/studio/catalog";
-import { carpeDiemOpenDashboard, memoryList } from "../../../lib/tauri";
+import {
+  type MomentSettingsDto,
+  carpeDiemOpenDashboard,
+  memoryList,
+  momentsGetSettings,
+  momentsSetSettings,
+} from "../../../lib/tauri";
 import { type ThemePreference, getStoredTheme, setStoredTheme } from "../../../lib/theme";
 import { useCarpeDiem } from "../../settings/CarpeDiemSettings";
-import { SettingsGroup, SettingsLinkRow, SettingsRow } from "../SettingsList";
+import { SettingsGroup, SettingsLinkRow, SettingsRow, SettingsToggleRow } from "../SettingsList";
 import { StackHeader } from "../StackHeader";
 import type { SettingsSection } from "../../../app/mobile/nav";
 
@@ -61,6 +67,24 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
       })
       .catch(() => setMemorySummary(null));
   }, []);
+
+  const [moments, setMoments] = useState<MomentSettingsDto | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    momentsGetSettings()
+      .then((value) => {
+        if (!cancelled) setMoments(value);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const updateMoments = async (next: MomentSettingsDto) => {
+    // Keep the last known-good state on failure rather than showing a
+    // half-applied toggle.
+    setMoments(await momentsSetSettings(next).catch(() => moments));
+  };
 
   const selectTheme = (next: ThemePreference) => {
     hapticSelection();
@@ -118,6 +142,35 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
               ))}
             </div>
           </SettingsRow>
+        </SettingsGroup>
+
+        <SettingsGroup
+          title="When the app speaks first"
+          footer="Briefs read your calendar on this device and stay quiet when your notes have nothing to say about the people you are meeting."
+        >
+          <SettingsToggleRow
+            label="Meeting briefs"
+            detail="Ten minutes before, what you last decided"
+            checked={moments?.briefEnabled === true}
+            disabled={moments === null}
+            onChange={(next) =>
+              void updateMoments({
+                briefEnabled: next,
+                recapEnabled: moments?.recapEnabled ?? true,
+              })
+            }
+          />
+          <SettingsToggleRow
+            label="Tell me when a note is ready"
+            checked={moments?.recapEnabled === true}
+            disabled={moments === null}
+            onChange={(next) =>
+              void updateMoments({
+                briefEnabled: moments?.briefEnabled ?? false,
+                recapEnabled: next,
+              })
+            }
+          />
         </SettingsGroup>
 
         <SettingsGroup>

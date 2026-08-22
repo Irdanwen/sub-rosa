@@ -40,6 +40,10 @@ pub async fn sweep(app: &AppHandle) {
     // A chat turn cut off between the user's message and the reply.
     #[cfg(mobile)]
     crate::agent_lite::resume_interrupted_turns(app).await;
+    // The moments the app speaks first: schedule the briefs for the meetings
+    // ahead, deliver the ones that came due while we were away. A row, never
+    // a timer — which is exactly why it belongs in this sweep.
+    crate::moments::tick(app).await;
 }
 
 /// Fire-and-forget [`sweep`], for call sites that are not async (app setup, the

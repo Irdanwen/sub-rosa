@@ -38,6 +38,7 @@ import {
 } from "./NoteFailureBanner";
 import { NotePreview } from "./NotePreview";
 import { MeetingBadge } from "../calendar/MeetingContext";
+import { ListenButton } from "./ListenButton";
 
 type NoteEditorProps = {
   note: NoteDto;
@@ -325,6 +326,11 @@ export function NoteEditor({
             invited. Absent on every note without an event, which is the
             behaviour the app has always had. */}
         <MeetingBadge scheduledStart={note.scheduledStart} attendees={note.attendees} />
+        {/* The spoken recap: the note, read out loud, for the walk home. */}
+        <ListenButton
+          noteId={note.id}
+          content={note.editedContent ?? note.generatedContent ?? ""}
+        />
         <SegmentedControl
           aria-label="Note views"
           value={activeTab}

@@ -289,6 +289,20 @@ mod eventkit {
     }
 }
 
+/// Read access to the day, for other modules (the brief scheduler). Kept as
+/// thin wrappers so `eventkit` itself stays private.
+pub fn access_state() -> CalendarAccess {
+    eventkit::access()
+}
+
+pub fn events_in_window(start: i64, end: i64) -> Vec<CalendarEventDto> {
+    eventkit::events_between(start, end)
+}
+
+pub fn event_by_id(id: &str) -> Option<CalendarEventDto> {
+    eventkit::event_by_id(id)
+}
+
 // --- Commands ---------------------------------------------------------------
 
 #[tauri::command]

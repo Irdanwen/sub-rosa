@@ -122,6 +122,15 @@ _Avoid_: system driver, in-process capture.
 
 ### Agent runtime (Hermes)
 
+**Moment**:
+One of the two times the app speaks first: the **brief** (ten minutes before
+a meeting with other people, what was last decided with them) and the
+**recap** ("your note is ready", when a recording has become one). Both are
+durable rows re-driven by the sweep, never timers, and both obey the rule
+that silence is a feature — nothing to say means nothing is said. The brief
+is off until asked for; the recap is on.
+_Avoid_: reminder, alert, digest, push.
+
 **Calendar context**:
 What the day says about a note: the event it was recorded inside, when that
 was scheduled, and who was invited. It lands ON a note as three nullable

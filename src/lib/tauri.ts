@@ -720,6 +720,23 @@ export async function juneOpenCommunityPage() {
   return invoke<void>("june_open_community_page");
 }
 
+// --- The moments the app speaks first (crate::moments) --------------------
+
+export type MomentSettingsDto = {
+  /** The ten-minutes-before brief. Off until asked for. */
+  briefEnabled: boolean;
+  /** "Your note is ready", after a recording becomes one. */
+  recapEnabled: boolean;
+};
+
+export async function momentsGetSettings() {
+  return invoke<MomentSettingsDto>("moments_get_settings");
+}
+
+export async function momentsSetSettings(request: MomentSettingsDto) {
+  return invoke<MomentSettingsDto>("moments_set_settings", { request });
+}
+
 // --- Calendar context (crate::calendar) -----------------------------------
 // The app reads the day so a NOTE can know what it is called, when it was
 // scheduled and who was invited. There is no calendar screen and no meeting

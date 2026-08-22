@@ -34,6 +34,12 @@ pub fn studio() -> String {
     format!("{SCHEME}studio")
 }
 
+/// Start a recording. This is what a brief's tap does: the one thing you
+/// were about to do anyway.
+pub fn record() -> String {
+    format!("{SCHEME}record")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -46,5 +52,6 @@ mod tests {
         assert_eq!(chat(Some("")), "subrosa://chat");
         assert_eq!(dictation(), "subrosa://dictation");
         assert_eq!(studio(), "subrosa://studio");
+        assert_eq!(record(), "subrosa://record");
     }
 }

@@ -706,7 +706,7 @@ pub async fn start_recording(
             .unwrap_or_else(|| "The selected recording sources are not ready.".to_string());
         return Err(AppError::new("source_not_ready", message));
     }
-    finish_active_capture_before_start(&repos).await?;
+    finish_active_capture_before_start(&app, &repos).await?;
     let capture_paths = paths.clone();
     let capture_note_id = note.id.clone();
     let started = tokio::task::spawn_blocking(move || {
@@ -827,18 +827,22 @@ pub async fn finish_recording(
     let repos = repositories(&app).await?;
     let finalization_started = Instant::now();
     let finished = finish_capture(&request.session_id)?;
-    finish_recording_session(&repos, finished, finalization_started).await
+    finish_recording_session(&app, &repos, finished, finalization_started).await
 }
 
-async fn finish_active_capture_before_start(repos: &Repositories) -> Result<(), AppError> {
+async fn finish_active_capture_before_start(
+    app: &AppHandle,
+    repos: &Repositories,
+) -> Result<(), AppError> {
     let finalization_started = Instant::now();
     if let Some(finished) = finish_active_capture()? {
-        finish_recording_session(repos, finished, finalization_started).await?;
+        finish_recording_session(app, repos, finished, finalization_started).await?;
     }
     Ok(())
 }
 
 async fn finish_recording_session(
+    app: &AppHandle,
     repos: &Repositories,
     finished: crate::audio::capture::FinishedRecording,
     finalization_started: Instant,
@@ -1062,6 +1066,9 @@ async fn finish_recording_session(
     let task_note_id = finished.note_id.clone();
     let task_session_id = finished.session_id.clone();
     let task_source_mode = finished.source_mode;
+    // The recap is posted from this task because it lands whenever the
+    // pipeline finishes — often with the app in the background.
+    let task_app = app.clone();
     tokio::spawn(async move {
         let queue_lock = ticket.lock();
         let _guard = queue_lock.lock().await;
@@ -1108,14 +1115,32 @@ async fn finish_recording_session(
             )
             .await
         };
-        if let Err(error) = result {
-            let _ = task_repos
-                .set_note_status(
-                    &task_note_id,
-                    crate::domain::types::ProcessingStatus::Failed,
-                    Some(error.message),
-                )
-                .await;
+        match result {
+            Err(error) => {
+                let _ = task_repos
+                    .set_note_status(
+                        &task_note_id,
+                        crate::domain::types::ProcessingStatus::Failed,
+                        Some(error.message),
+                    )
+                    .await;
+            }
+            // A long transcription usually finishes while the app is in the
+            // background — which is exactly when the webview is frozen and
+            // cannot tell anyone. Rust says it instead, and the tap opens the
+            // note (crate::moments).
+            Ok(ready) => {
+                crate::moments::announce_note_ready(
+                    &task_app,
+                    &ready.id,
+                    &ready.title,
+                    ready
+                        .edited_content
+                        .as_deref()
+                        .or(ready.generated_content.as_deref())
+                        .unwrap_or_default(),
+                );
+            }
         }
         ticket.finish();
     });

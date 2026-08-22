@@ -37,6 +37,7 @@ pub mod meeting_hud;
 pub mod memory;
 #[cfg(desktop)]
 pub mod menu_bar;
+pub mod moments;
 pub mod open_url;
 pub mod os_accounts;
 #[cfg(target_os = "ios")]
@@ -311,6 +312,8 @@ pub fn run() {
             calendar::calendar_event,
             calendar::calendar_link_note,
             calendar::calendar_attach_note,
+            moments::moments_get_settings,
+            moments::moments_set_settings,
             places::places_get_settings,
             places::places_set_google_key,
             places::places_clear_google_key,
@@ -488,6 +491,8 @@ pub fn run() {
         calendar::calendar_event,
         calendar::calendar_link_note,
         calendar::calendar_attach_note,
+        moments::moments_get_settings,
+        moments::moments_set_settings,
         places::places_get_settings,
         places::places_set_google_key,
         places::places_clear_google_key,
@@ -598,6 +603,7 @@ pub fn run() {
             carpe_diem::settings::setup(app);
             carpe_diem::sidecar::setup(app);
             memory::setup(app);
+            moments::setup(app);
             #[cfg(desktop)]
             videomaker::setup(app);
             #[cfg(desktop)]

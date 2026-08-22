@@ -22690,3 +22690,44 @@ input:focus-visible,
 .meeting-prompt-dismiss:hover:not(:disabled) {
   color: var(--foreground);
 }
+
+/* The spoken recap. One button, no player chrome: the system's own controls
+ * (lock screen, headphones, car) drive the audio, which is the point of
+ * listening to a note while doing something else. */
+.note-listen {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  align-self: flex-start;
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition:
+    color var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out),
+    transform var(--t-med) var(--ease-out);
+}
+
+.note-listen:hover:not(:disabled) {
+  color: var(--foreground);
+  border-color: var(--border);
+}
+
+.note-listen:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.note-listen[data-state="playing"] {
+  color: var(--warm-strong);
+  border-color: color-mix(in oklch, var(--warm-strong) 40%, transparent);
+}
+
+.note-listen[data-state="failed"] {
+  color: var(--muted-foreground);
+  opacity: 0.7;
+}

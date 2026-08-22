@@ -62,6 +62,7 @@ import { getStoredTheme, setStoredTheme, type ThemePreference } from "../../lib/
 import { DEFAULT_BRAND, getStoredBrand, setStoredBrand, type BrandId } from "../../lib/brand";
 import { AccentWheel } from "./AccentWheel";
 import { CarpeDiemSettings } from "./CarpeDiemSettings";
+import { MomentsSettingsSection } from "./MomentsSettingsSection";
 import { PlacesSettingsSection } from "./PlacesSettingsSection";
 import { VideomakerSettings } from "./VideomakerSettings";
 import {
@@ -1321,7 +1322,12 @@ export function AppSettings({
         ) : null}
 
         {activeTab === "agent" ? <AgentSettingsSection /> : null}
-        {activeTab === "memory" ? <MemorySettingsSection /> : null}
+        {activeTab === "memory" ? (
+          <>
+            <MemorySettingsSection />
+            <MomentsSettingsSection />
+          </>
+        ) : null}
 
         {activeTab === "skills" ? <InstalledSkillsSection /> : null}
         {activeTab === "external-dirs" ? <ExternalDirsSection /> : null}

@@ -137,6 +137,82 @@ impl Repositories {
         self.get_note(&id).await
     }
 
+    // --- Briefs (crate::moments) -------------------------------------------
+
+    /// Schedules a brief, unless this meeting already has one. The unique
+    /// index does the deciding, so two sweeps racing produce one row.
+    pub async fn insert_pending_brief(
+        &self,
+        calendar_event_id: &str,
+        event_title: &str,
+        scheduled_for: &str,
+    ) -> Result<(), sqlx::error::Error> {
+        let now = timestamp();
+        query(
+            "INSERT OR IGNORE INTO briefs (id, calendar_event_id, event_title, scheduled_for, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, 'pending', ?, ?)",
+        )
+        .bind(uuid::Uuid::new_v4().to_string())
+        .bind(calendar_event_id)
+        .bind(event_title)
+        .bind(scheduled_for)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Every pending brief whose moment has arrived.
+    pub async fn due_briefs(&self, now: &str) -> Result<Vec<BriefRow>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT id, calendar_event_id, event_title, scheduled_for FROM briefs
+             WHERE status = 'pending' AND scheduled_for <= ? ORDER BY scheduled_for ASC LIMIT 20",
+        )
+        .bind(now)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| BriefRow {
+                id: row.get("id"),
+                calendar_event_id: row.get("calendar_event_id"),
+                event_title: row.get("event_title"),
+                scheduled_for: row.get("scheduled_for"),
+            })
+            .collect())
+    }
+
+    /// How many briefs actually reached the user recently — the daily cap
+    /// counts deliveries, never the ones we chose to stay silent about.
+    pub async fn briefs_delivered_since(&self, since: &str) -> Result<i64, sqlx::error::Error> {
+        let row = query(
+            "SELECT COUNT(*) AS total FROM briefs WHERE status = 'delivered' AND updated_at >= ?",
+        )
+        .bind(since)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row.get::<i64, _>("total"))
+    }
+
+    /// Closes a brief: delivered (with what was said) or skipped. Either way
+    /// it never comes back — one brief per meeting, ever.
+    pub async fn settle_brief(
+        &self,
+        brief_id: &str,
+        status: &str,
+        body: Option<&str>,
+    ) -> Result<(), sqlx::error::Error> {
+        query("UPDATE briefs SET status = ?, body = ?, updated_at = ? WHERE id = ?")
+            .bind(status)
+            .bind(body)
+            .bind(timestamp())
+            .bind(brief_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     /// Names a note that has none. Never renames: a title the user (or note
     /// generation) already chose outranks the invitation's.
     pub async fn set_note_title_if_empty(
@@ -3647,6 +3723,15 @@ pub struct MemoryEmbeddingRow {
     pub memory: MemoryDto,
     /// Little-endian f32 bytes; `None` while the backfill hasn't reached it.
     pub embedding: Option<Vec<u8>>,
+}
+
+/// A scheduled brief, as the sweep reads it.
+#[derive(Debug, Clone)]
+pub struct BriefRow {
+    pub id: String,
+    pub calendar_event_id: String,
+    pub event_title: String,
+    pub scheduled_for: String,
 }
 
 /// One retrieval hit for the agent-lite chat: which note it came from, and a
