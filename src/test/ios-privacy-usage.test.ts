@@ -56,4 +56,18 @@ describe("iOS privacy usage descriptions", () => {
     expect(infoPlist).toContain("<string>subrosa</string>");
     expect(projectSpec).toContain("CFBundleURLTypes:");
   });
+
+  it("keeps the two files from disagreeing about the version", () => {
+    // Neither value ships — `tauri ios build` stamps the real one from
+    // tauri.conf.json — but they drifted thirty minor versions apart, which
+    // is how a regeneration silently hands a build the wrong era. Pin them
+    // to each other: cheap, and it never needs touching at bump time.
+    const plistVersion = /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/.exec(
+      infoPlist,
+    )?.[1];
+    const specVersion = /CFBundleShortVersionString:\s*([^\s]+)/.exec(projectSpec)?.[1];
+    expect(plistVersion).toBeDefined();
+    expect(specVersion).toBeDefined();
+    expect(plistVersion).toBe(specVersion);
+  });
 });

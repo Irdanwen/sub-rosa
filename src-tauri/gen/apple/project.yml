@@ -85,8 +85,13 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: 1.0.5
-        CFBundleVersion: "1.0.5"
+        # Placeholders. `tauri ios build` stamps the real version into the
+        # generated Info.plist from tauri.conf.json, so these are never what
+        # ships - but they must not contradict the plist either, or a reader
+        # (and a regeneration) inherits a version from another era. A test
+        # pins the two files to each other; keep them equal.
+        CFBundleShortVersionString: 1.43.0
+        CFBundleVersion: "1.43.0"
     entitlements:
       path: os-june_iOS/os-june_iOS.entitlements
     scheme:

@@ -241,6 +241,10 @@ pub async fn resume_interrupted_turns(app: &AppHandle) {
                     .builder()
                     .title("Your assistant replied")
                     .body(answer.chars().take(120).collect::<String>())
+                    .extra(
+                        crate::destinations::EXTRA_KEY,
+                        crate::destinations::chat(Some(&task_id)),
+                    )
                     .show();
             }
             // Still failing: leave the task running so a later sweep retries

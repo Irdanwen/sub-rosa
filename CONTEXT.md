@@ -122,6 +122,15 @@ _Avoid_: system driver, in-process capture.
 
 ### Agent runtime (Hermes)
 
+**Destination**:
+A `subrosa://…` address naming a place in the app (a note, the chat, the
+dictation surface, Studio, "start recording"). One vocabulary, three ways in:
+a cold-launch deep link, a link that arrives while the app runs, and the tap
+on a notification — which carries its address in the notification's `extra`.
+Parsed by `src/lib/destinations.ts`, built by `src-tauri/src/destinations.rs`;
+an address the parser does not recognise is ignored, never guessed at.
+_Avoid_: route, deep link (for the address itself), URL scheme.
+
 **Chat block**:
 A rich inline card inside an assistant reply — a fenced code block whose info
 string is `subrosa:<kind>` and whose body is one versioned JSON object,

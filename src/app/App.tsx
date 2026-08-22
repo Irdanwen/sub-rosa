@@ -14,6 +14,7 @@ import { RailSwitchBanner } from "../components/carpe-diem/RailSwitchBanner";
 import { SIDECAR_STATUS_EVENT } from "../components/settings/CarpeDiemSettings";
 import { OnboardingFlow } from "../components/onboarding/OnboardingFlow";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../lib/chat-blocks-nav";
+import { type Destination, subscribeToDestinations } from "../lib/destinations";
 import {
   AGENT_DELETE_SESSION_EVENT,
   AGENT_NEW_SESSION_EVENT,
@@ -1526,6 +1527,41 @@ export function App() {
       unlisten?.();
     };
   }, []);
+
+  // Destinations (subrosa://…): a deep link, or the tap on a notification
+  // that carried one. The subscription is mount-once on purpose — every
+  // resubscribe re-reads the launch URL and would re-navigate — so the
+  // handler lives in a ref that render keeps fresh.
+  const handleDestinationRef = useRef<(destination: Destination) => void>(() => {});
+  handleDestinationRef.current = (destination: Destination) => {
+    switch (destination.kind) {
+      case "note":
+        setActiveView("meetings");
+        void handleSelectNote(destination.noteId);
+        break;
+      case "chat": {
+        const session = destination.sessionId
+          ? agentMenuBarSessionsRef.current.find((entry) => entry.id === destination.sessionId)
+          : undefined;
+        if (session) {
+          setAgentOrigin(undefined);
+          setActiveAgentSession(session);
+        }
+        setActiveView("agent");
+        break;
+      }
+      case "dictation":
+        setActiveView("dictation");
+        break;
+      case "studio":
+        setActiveView("studio");
+        break;
+      case "record":
+        void handleStartMeetingDetectedRecording();
+        break;
+    }
+  };
+  useEffect(() => subscribeToDestinations((d) => handleDestinationRef.current(d)), []);
 
   // Notes cited in a chat reply (the subrosa:notes block) open through one
   // window event: the card lives deep in the markdown tree, the note-opening

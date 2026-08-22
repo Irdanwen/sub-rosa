@@ -187,5 +187,14 @@ fn notify(app: &AppHandle, name: &str, title: &str) {
     } else {
         name.trim().chars().take(120).collect::<String>()
     };
-    let _ = app.notification().builder().title(title).body(body).show();
+    let _ = app
+        .notification()
+        .builder()
+        .title(title)
+        .body(body)
+        .extra(
+            crate::destinations::EXTRA_KEY,
+            crate::destinations::studio(),
+        )
+        .show();
 }

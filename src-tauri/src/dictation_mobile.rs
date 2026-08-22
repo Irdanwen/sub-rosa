@@ -413,6 +413,10 @@ pub async fn resume_pending(app: &AppHandle) {
                     .builder()
                     .title("Your dictation is ready")
                     .body(result.text.chars().take(120).collect::<String>())
+                    .extra(
+                        crate::destinations::EXTRA_KEY,
+                        crate::destinations::dictation(),
+                    )
                     .show();
             }
             Err(error) if error.code == "dictation_empty" => {

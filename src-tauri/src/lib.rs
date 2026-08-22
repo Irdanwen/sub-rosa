@@ -11,6 +11,7 @@ pub mod background;
 pub mod carpe_diem;
 pub mod commands;
 pub mod db;
+pub mod destinations;
 #[cfg(desktop)]
 pub mod dictation;
 #[cfg(mobile)]

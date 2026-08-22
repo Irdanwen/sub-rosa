@@ -466,7 +466,18 @@ fn notify(app: &AppHandle, job: &MediaJobDto, success: bool) {
     } else {
         body
     };
-    let _ = app.notification().builder().title(title).body(body).show();
+    let _ = app
+        .notification()
+        .builder()
+        .title(title)
+        .body(body)
+        // Tapping it lands in Studio, where the artifact is (see
+        // crate::destinations).
+        .extra(
+            crate::destinations::EXTRA_KEY,
+            crate::destinations::studio(),
+        )
+        .show();
 }
 
 /// Backends spell statuses differently (and in both cases): normalize.

@@ -5,6 +5,7 @@ import { RailSwitchBanner } from "../../components/carpe-diem/RailSwitchBanner";
 import { SIDECAR_STATUS_EVENT } from "../../components/settings/CarpeDiemSettings";
 import { TabBar } from "../../components/mobile/TabBar";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../../lib/chat-blocks-nav";
+import { type Destination, subscribeToDestinations } from "../../lib/destinations";
 import { useAmbientActivity } from "./useAmbientActivity";
 import { AgentScreen, AgentSessionScreen } from "../../components/mobile/screens/AgentScreen";
 import { DictationScreen } from "../../components/mobile/screens/DictationScreen";
@@ -364,6 +365,34 @@ export function MobileApp() {
     },
     [nav],
   );
+
+  // Destinations (subrosa://…): a deep link, or the tap on a notification
+  // that carried one — the phone's four notifications each name where they
+  // belong. Mount-once (a resubscribe would re-read the launch URL), so the
+  // handler rides a ref that render keeps fresh.
+  const handleDestinationRef = useRef<(destination: Destination) => void>(() => {});
+  handleDestinationRef.current = (destination: Destination) => {
+    switch (destination.kind) {
+      case "note":
+        nav.switchTab("notes");
+        openNote(destination.noteId);
+        break;
+      case "chat":
+        nav.switchTab("agent");
+        if (destination.sessionId) openChatSession(destination.sessionId);
+        break;
+      case "dictation":
+        nav.switchTab("dictation");
+        break;
+      case "studio":
+        nav.switchTab("studio");
+        break;
+      case "record":
+        void handleCreateNote({ record: true });
+        break;
+    }
+  };
+  useEffect(() => subscribeToDestinations((d) => handleDestinationRef.current(d)), []);
 
   // Notes cited in a chat reply (the subrosa:notes block): the card
   // dispatches one window event, and the shell answers with its own opener —
