@@ -22537,3 +22537,55 @@ input:focus-visible,
   font-weight: var(--fw-medium);
   font-variant-numeric: tabular-nums;
 }
+
+/* Interactive map lite: the layer carries the drag translation (image and
+ * pins together), the zoom stack sits top-right. Mouse-only drag; touch
+ * keeps scrolling the conversation. */
+.chat-block-map {
+  cursor: grab;
+}
+
+.chat-block-map[data-dragging] {
+  cursor: grabbing;
+}
+
+.chat-block-map-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.chat-block-map-layer > img {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.chat-block-map-zoom {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-block-map-zoom > button {
+  width: var(--control-sm);
+  height: var(--control-sm);
+  display: inline-grid;
+  place-items: center;
+  border: none;
+  cursor: pointer;
+  background: color-mix(in oklch, var(--card) 88%, transparent);
+  color: var(--foreground);
+  transition: background-color var(--t-fast) var(--ease-out);
+}
+
+.chat-block-map-zoom > button + button {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.chat-block-map-zoom > button:hover {
+  background: var(--card);
+}

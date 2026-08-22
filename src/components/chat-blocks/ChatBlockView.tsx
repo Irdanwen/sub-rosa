@@ -1,6 +1,8 @@
 import { IconArrowUpRight } from "central-icons/IconArrowUpRight";
 import { IconGlobe } from "central-icons/IconGlobe";
-import type { ChatBlock, LinksChatBlock } from "../../lib/chat-blocks";
+import { IconNoteText } from "central-icons/IconNoteText";
+import type { ChatBlock, LinksChatBlock, NotesChatBlock } from "../../lib/chat-blocks";
+import { requestOpenNoteFromChat } from "../../lib/chat-blocks-nav";
 import { openExternalUrl } from "../../lib/tauri";
 import { PlacesCard } from "./PlacesCard";
 
@@ -15,9 +17,43 @@ export function ChatBlockView({ block }: { block: ChatBlock }) {
       return <LinkPreviewCard block={block} />;
     case "places":
       return <PlacesCard block={block} />;
+    case "notes":
+      return <NotesCard block={block} />;
     default:
       return null;
   }
+}
+
+/** The user's own notes, cited as rows that open the note in the app. */
+function NotesCard({ block }: { block: NotesChatBlock }) {
+  return (
+    <section className="chat-block" aria-label={block.title || "From your notes"}>
+      {block.title ? <h4 className="chat-block-title">{block.title}</h4> : null}
+      <ul className="chat-block-rows">
+        {block.notes.map((note) => (
+          <li key={note.id}>
+            <button
+              type="button"
+              className="chat-block-row"
+              title={`Open ${note.title}`}
+              onClick={() => requestOpenNoteFromChat(note.id)}
+            >
+              <span className="chat-block-row-icon" aria-hidden>
+                <IconNoteText size={16} />
+              </span>
+              <span className="chat-block-row-body">
+                <span className="chat-block-row-title">{note.title}</span>
+                {note.snippet ? <span className="chat-block-row-meta">{note.snippet}</span> : null}
+              </span>
+              <span className="chat-block-row-open" aria-hidden>
+                <IconArrowUpRight size={14} />
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 /**

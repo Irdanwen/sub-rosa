@@ -55,7 +55,20 @@ export type PlacesChatBlock = {
   places: ChatBlockPlace[];
 };
 
-export type ChatBlock = LinksChatBlock | PlacesChatBlock;
+export type ChatBlockNote = {
+  id: string;
+  title: string;
+  snippet?: string;
+};
+
+/** The user's own notes, cited as tappable cards that open in the app. */
+export type NotesChatBlock = {
+  kind: "notes";
+  title?: string;
+  notes: ChatBlockNote[];
+};
+
+export type ChatBlock = LinksChatBlock | PlacesChatBlock | NotesChatBlock;
 
 /** Display caps. Clamping (not rejecting) keeps a slightly-over payload
  * useful; a payload with nothing valid inside still returns null. */
@@ -70,6 +83,8 @@ const MAX_PLACE_ADDRESS = 160;
 const MAX_PLACE_CATEGORY = 60;
 const MAX_PLACE_NOTE = 200;
 const MAX_PHOTO_REF = 512;
+const MAX_NOTES = 6;
+const MAX_NOTE_ID = 64;
 
 /** The `<kind>` of a `subrosa:<kind>` fence info string, or null. */
 export function chatBlockKindOf(info: string): string | null {
@@ -178,6 +193,24 @@ function parsePlaces(payload: Record<string, unknown>): PlacesChatBlock | null {
   };
 }
 
+function parseNotes(payload: Record<string, unknown>): NotesChatBlock | null {
+  const raw = payload.notes;
+  if (!Array.isArray(raw)) return null;
+  const notes: ChatBlockNote[] = [];
+  for (const entry of raw) {
+    if (notes.length >= MAX_NOTES) break;
+    const item = asObject(entry);
+    if (!item) continue;
+    const title = cappedString(item.title, MAX_LINK_TITLE);
+    const id = typeof item.id === "string" ? item.id.trim() : "";
+    // Note ids are app-generated tokens; anything looser than this is not one.
+    if (!title || !id || id.length > MAX_NOTE_ID || !/^[\w-]+$/.test(id)) continue;
+    notes.push({ id, title, snippet: cappedString(item.snippet, MAX_SNIPPET) });
+  }
+  if (notes.length === 0) return null;
+  return { kind: "notes", title: cappedString(payload.title, MAX_TITLE), notes };
+}
+
 /**
  * The one fence-dispatch decision, shared by both markdown renderers so they
  * can never disagree: `card` for a valid payload, `skeleton` for a fence
@@ -259,6 +292,8 @@ function chatBlockPlainText(block: ChatBlock): string[] {
           return details ? `- ${place.name} (${details})` : `- ${place.name}`;
         }),
       ];
+    case "notes":
+      return [block.title || "Notes", ...block.notes.map((note) => `- ${note.title}`)];
     default:
       return [];
   }
@@ -285,6 +320,8 @@ export function parseChatBlock(info: string, body: string): ChatBlock | null {
       return parseLinks(payload);
     case "places":
       return parsePlaces(payload);
+    case "notes":
+      return parseNotes(payload);
     default:
       return null;
   }

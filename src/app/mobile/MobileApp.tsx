@@ -4,6 +4,7 @@ import { CarpeDiemGate } from "../../components/carpe-diem/CarpeDiemGate";
 import { RailSwitchBanner } from "../../components/carpe-diem/RailSwitchBanner";
 import { SIDECAR_STATUS_EVENT } from "../../components/settings/CarpeDiemSettings";
 import { TabBar } from "../../components/mobile/TabBar";
+import { OPEN_NOTE_FROM_CHAT_EVENT } from "../../lib/chat-blocks-nav";
 import { useAmbientActivity } from "./useAmbientActivity";
 import { AgentScreen, AgentSessionScreen } from "../../components/mobile/screens/AgentScreen";
 import { DictationScreen } from "../../components/mobile/screens/DictationScreen";
@@ -363,6 +364,18 @@ export function MobileApp() {
     },
     [nav],
   );
+
+  // Notes cited in a chat reply (the subrosa:notes block): the card
+  // dispatches one window event, and the shell answers with its own opener —
+  // the note detail pushes over whatever tab is active, chat included.
+  useEffect(() => {
+    function handleOpenNoteFromChat(event: Event) {
+      const noteId = (event as CustomEvent<{ noteId?: string }>).detail?.noteId;
+      if (noteId) openNote(noteId);
+    }
+    window.addEventListener(OPEN_NOTE_FROM_CHAT_EVENT, handleOpenNoteFromChat);
+    return () => window.removeEventListener(OPEN_NOTE_FROM_CHAT_EVENT, handleOpenNoteFromChat);
+  }, [openNote]);
 
   const handleCreateNote = useCallback(
     async (options?: { folderId?: string; record?: boolean }) => {

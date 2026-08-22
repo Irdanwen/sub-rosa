@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitBounds, pixelOffset, project } from "../lib/map-projection";
+import { fitBounds, panCenter, pixelOffset, project, unproject } from "../lib/map-projection";
 
 describe("map projection", () => {
   it("projects the known world anchors", () => {
@@ -45,5 +45,22 @@ describe("map projection", () => {
       200,
     );
     expect(wide.zoom).toBeLessThanOrEqual(4);
+  });
+
+  it("unprojects back to where it projected from, and panning moves the center against the drag", () => {
+    const point = { lat: 46.19, lng: 6.23 };
+    const projected = project(point, 14);
+    const roundTrip = unproject(projected.x, projected.y, 14);
+    expect(roundTrip.lat).toBeCloseTo(point.lat, 6);
+    expect(roundTrip.lng).toBeCloseTo(point.lng, 6);
+
+    // Dragging the content east (positive dx) shows what lies west: the
+    // center's longitude must decrease.
+    const panned = panCenter(point, 14, 120, 0);
+    expect(panned.lng).toBeLessThan(point.lng);
+    expect(panned.lat).toBeCloseTo(point.lat, 6);
+    // And the pan must be exactly invertible.
+    const back = panCenter(panned, 14, -120, 0);
+    expect(back.lng).toBeCloseTo(point.lng, 6);
   });
 });

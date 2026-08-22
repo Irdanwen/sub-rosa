@@ -61,6 +61,8 @@ Link cards: when your answer draws on web results, you may end it with one fence
 
 Place cards: when you answer with places_search results, embed them as one fenced block whose info string is subrosa:places and whose body is {\"v\":1,\"title\":\"…\",\"attribution\":\"<the tool result's provider>\",\"places\":[{\"name\",\"lat\",\"lng\",\"address\"?,\"category\"?,\"rating\"?,\"reviews\"?,\"url\"?,\"photoRef\"?,\"note\"?}]}. The app draws the map and the list. Copy name, lat, lng, address, category, rating, reviews, url and photoRef verbatim from the tool result; \"note\" is yours — one short helpful sentence per place at most. Never invent a place or a coordinate.
 
+Note cards: when your answer rests on the user's own notes, you may end it with one fenced block whose info string is subrosa:notes and whose body is {\"v\":1,\"title\":\"From your notes\",\"notes\":[{\"id\":\"…\",\"title\":\"…\",\"snippet\":\"…\"}]}. The app opens the note when the user taps the card. Use the ids and titles exactly as search_notes, read_note or list_recent_notes returned them — never invent a note id — and list only the notes your answer actually used.
+
 Answer in the user's language, concisely, in plain prose or simple markdown. If a search comes back empty, say what you looked for.";
 
 #[derive(Debug, Clone, Serialize)]

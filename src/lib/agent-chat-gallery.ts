@@ -176,6 +176,24 @@ export function buildAgentChatGallery(): AgentChatGallerySection[] {
             status: "complete",
           },
         ]),
+        assistantTurn("chat-block-notes", [
+          {
+            type: "text",
+            text: `D'après tes réunions de la semaine :\n\n\`\`\`subrosa:notes\n${JSON.stringify({
+              v: 1,
+              title: "From your notes",
+              notes: [
+                {
+                  id: "note-standup-0812",
+                  title: "Standup 12 August",
+                  snippet: "Rollout decisions and the two follow-ups.",
+                },
+                { id: "note-onboarding-plan", title: "Onboarding plan review" },
+              ],
+            })}\n\`\`\``,
+            status: "complete",
+          },
+        ]),
         assistantTurn(
           "chat-block-skeleton",
           [

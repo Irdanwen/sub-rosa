@@ -13,6 +13,7 @@ import { CarpeDiemGate } from "../components/carpe-diem/CarpeDiemGate";
 import { RailSwitchBanner } from "../components/carpe-diem/RailSwitchBanner";
 import { SIDECAR_STATUS_EVENT } from "../components/settings/CarpeDiemSettings";
 import { OnboardingFlow } from "../components/onboarding/OnboardingFlow";
+import { OPEN_NOTE_FROM_CHAT_EVENT } from "../lib/chat-blocks-nav";
 import {
   AGENT_DELETE_SESSION_EVENT,
   AGENT_NEW_SESSION_EVENT,
@@ -1524,6 +1525,21 @@ export function App() {
       aborted = true;
       unlisten?.();
     };
+  }, []);
+
+  // Notes cited in a chat reply (the subrosa:notes block) open through one
+  // window event: the card lives deep in the markdown tree, the note-opening
+  // path lives here. Mount-once is deliberate — the handler only reaches
+  // stable setters and module-level commands through handleSelectNote.
+  useEffect(() => {
+    function handleOpenNoteFromChat(event: Event) {
+      const noteId = (event as CustomEvent<{ noteId?: string }>).detail?.noteId;
+      if (!noteId) return;
+      setActiveView("meetings");
+      void handleSelectNote(noteId);
+    }
+    window.addEventListener(OPEN_NOTE_FROM_CHAT_EVENT, handleOpenNoteFromChat);
+    return () => window.removeEventListener(OPEN_NOTE_FROM_CHAT_EVENT, handleOpenNoteFromChat);
   }, []);
 
   // The detached meeting HUD (shown when June is backgrounded, minimized, or

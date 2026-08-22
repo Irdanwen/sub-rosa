@@ -59,6 +59,29 @@ export function fitBounds(
   return { center, zoom: MIN_MAP_ZOOM };
 }
 
+/** Inverse of {@link project}: world pixels at `zoom` back to lat/lng. */
+export function unproject(x: number, y: number, zoom: number): LatLng {
+  const world = TILE_SIZE * 2 ** zoom;
+  const lng = (x / world) * 360 - 180;
+  const n = Math.PI - (2 * Math.PI * y) / world;
+  const lat = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+  return { lat, lng };
+}
+
+/**
+ * The center after dragging the viewport content by (dxPx, dyPx): the map
+ * follows the pointer, so the center moves the opposite way. Latitude clamps
+ * to the renderable Mercator band, longitude wraps.
+ */
+export function panCenter(center: LatLng, zoom: number, dxPx: number, dyPx: number): LatLng {
+  const origin = project(center, zoom);
+  const next = unproject(origin.x - dxPx, origin.y - dyPx, zoom);
+  return {
+    lat: Math.max(-85, Math.min(85, next.lat)),
+    lng: ((next.lng + 540) % 360) - 180,
+  };
+}
+
 /**
  * CSS offset of `point` inside a `width`×`height` viewport whose middle shows
  * `center` at `zoom`. Values can fall outside [0, width/height] for a point

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.fn(async (command: string, _args?: unknown) => {
   if (command === "render_map_card") {
@@ -16,12 +16,16 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText: vi.fn() }));
 
+// Call history is per-test: several tests count render_map_card invocations.
+beforeEach(() => invokeMock.mockClear());
+
 import {
   chatBlockKindOf,
   chatBlocksToClipboardText,
   parseChatBlock,
   resolveChatBlockFence,
 } from "../lib/chat-blocks";
+import { OPEN_NOTE_FROM_CHAT_EVENT } from "../lib/chat-blocks-nav";
 import { SimpleMarkdown } from "../lib/simple-markdown";
 
 const LINKS_BODY = JSON.stringify({
@@ -189,6 +193,43 @@ describe("photoRef validation", () => {
   });
 });
 
+describe("notes block", () => {
+  const NOTES_BODY = JSON.stringify({
+    v: 1,
+    title: "From your notes",
+    notes: [
+      { id: "note-abc_1", title: "Standup 12 August", snippet: "Decisions on the rollout." },
+      { id: "../etc", title: "Path trickery" },
+      { id: "", title: "No id" },
+    ],
+  });
+
+  it("keeps well-formed note ids only", () => {
+    const block = parseChatBlock("subrosa:notes", NOTES_BODY);
+    if (block?.kind !== "notes") throw new Error("expected notes");
+    expect(block.notes).toHaveLength(1);
+    expect(block.notes[0].id).toBe("note-abc_1");
+  });
+
+  it("renders rows that dispatch the open-note event", () => {
+    const seen: string[] = [];
+    const listener = (event: Event) => {
+      seen.push((event as CustomEvent<{ noteId: string }>).detail.noteId);
+    };
+    window.addEventListener(OPEN_NOTE_FROM_CHAT_EVENT, listener);
+    render(<SimpleMarkdown text={fenced("subrosa:notes", NOTES_BODY)} />);
+    fireEvent.click(screen.getByRole("button", { name: /Standup 12 August/ }));
+    window.removeEventListener(OPEN_NOTE_FROM_CHAT_EVENT, listener);
+    expect(seen).toEqual(["note-abc_1"]);
+  });
+
+  it("copies as a readable list", () => {
+    const copied = chatBlocksToClipboardText(`\`\`\`subrosa:notes\n${NOTES_BODY}\n\`\`\``);
+    expect(copied).toContain("From your notes");
+    expect(copied).toContain("- Standup 12 August");
+  });
+});
+
 describe("PlacesCard rendering", () => {
   it("renders the list immediately and the map with its pins once Rust answers", async () => {
     const { container } = render(<SimpleMarkdown text={fenced("subrosa:places", PLACES_BODY)} />);
@@ -236,6 +277,50 @@ describe("PlacesCard rendering", () => {
         request: expect.objectContaining({ photoRef: "places/abc/photos/one" }),
       }),
     );
+  });
+
+  it("re-renders one zoom step in when the zoom control is pressed", async () => {
+    const { container } = render(<SimpleMarkdown text={fenced("subrosa:places", PLACES_BODY)} />);
+    await vi.waitFor(() => {
+      expect(container.querySelector(".chat-block-map img")).not.toBeNull();
+    });
+    const firstRequest = invokeMock.mock.calls.find(([cmd]) => cmd === "render_map_card")?.[1] as {
+      request: { zoom: number };
+    };
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    await vi.waitFor(() => {
+      const calls = invokeMock.mock.calls.filter(([cmd]) => cmd === "render_map_card");
+      expect(calls.length).toBeGreaterThan(1);
+      const last = calls[calls.length - 1][1] as { request: { zoom: number } };
+      expect(last.request.zoom).toBe(firstRequest.request.zoom + 1);
+    });
+  });
+
+  it("pans west when the map is dragged east, re-rendering at the settled center", async () => {
+    const { container } = render(<SimpleMarkdown text={fenced("subrosa:places", PLACES_BODY)} />);
+    await vi.waitFor(() => {
+      expect(container.querySelector(".chat-block-map img")).not.toBeNull();
+    });
+    const first = invokeMock.mock.calls.find(([cmd]) => cmd === "render_map_card")?.[1] as {
+      request: { centerLng: number };
+    };
+    const map = container.querySelector(".chat-block-map");
+    if (!map) throw new Error("expected the map");
+    // jsdom has no PointerEvent and its generic events carry no coordinates;
+    // MouseEvent with a pointer* type reaches React's pointer handlers with
+    // real clientX/button values.
+    const pointer = (type: string, clientX: number) =>
+      new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX, clientY: 100 });
+    fireEvent(map, pointer("pointerdown", 200));
+    fireEvent(map, pointer("pointermove", 320));
+    fireEvent(map, pointer("pointerup", 320));
+    await vi.waitFor(() => {
+      const calls = invokeMock.mock.calls.filter(([cmd]) => cmd === "render_map_card");
+      expect(calls.length).toBeGreaterThan(1);
+      const last = calls[calls.length - 1][1] as { request: { centerLng: number } };
+      // Content dragged east shows what lies west of the old center.
+      expect(last.request.centerLng).toBeLessThan(first.request.centerLng);
+    });
   });
 
   it("keeps the card usable when the map render fails", async () => {
