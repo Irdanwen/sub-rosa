@@ -941,6 +941,7 @@ const STAGE_TEXT: Record<string, string> = {
   "searching-web": "Searching the web",
   "searching-memory": "Recalling your memories",
   "searching-places": "Finding places",
+  "searching-calendar": "Checking your calendar",
   "reading-note": "Reading a note",
   "writing-note": "Writing to your notes",
   remembering: "Remembering that",

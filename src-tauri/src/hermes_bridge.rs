@@ -140,7 +140,7 @@ You are helpful, knowledgeable, and direct. Communicate clearly, admit uncertain
 /// discovered through the `june_context` MCP server configured below; this
 /// prompt note teaches the model when to spend tool calls on that local data.
 const JUNE_SOUL_CONTEXT_MD: &str = r#"
-Local context tools: you have access to a local `june_context` MCP toolset for searching the user's meeting notes, saved note transcripts, dictation history, and stored user memories. Use it when the user asks about prior meetings, calls, recordings, notes, decisions, follow-ups, or dictated text — and use `search_user_memories` when the user references something from an earlier conversation that is not in your injected memory block. Query it on demand instead of assuming you already know those entries, and summarize only what the retrieved results support.
+Local context tools: you have access to a local `june_context` MCP toolset for searching the user's meeting notes, saved note transcripts, dictation history, stored user memories, and their calendar (`search_calendar`, which reads the day on this device — reach for it when the question is about their schedule, a meeting, or who they are seeing, and to work out which meeting a note belongs to). Use it when the user asks about prior meetings, calls, recordings, notes, decisions, follow-ups, or dictated text — and use `search_user_memories` when the user references something from an earlier conversation that is not in your injected memory block. Query it on demand instead of assuming you already know those entries, and summarize only what the retrieved results support.
 "#;
 
 /// Appended to `SOUL.md` for every runtime. This calibrates June's first-turn
@@ -1105,9 +1105,12 @@ async fn start_hermes_bridge_inner(
     let cwd = custom_working_dir.clone().unwrap_or(default_cwd);
     let cwd_display = Some(cwd.to_string_lossy().into_owned());
     let provider_proxy = ensure_provider_proxy(app, bridge).await?;
-    let june_context_mcp = sync_june_context_mcp(app, &command)?;
     let june_web_mcp =
         sync_june_web_mcp(app, &command, provider_proxy.port, &provider_proxy.token)?;
+    // After the web MCP: the context server now also takes the proxy
+    // coordinates, because one of its tools (the calendar) lives in EventKit
+    // rather than in the notes database.
+    let june_context_mcp = sync_june_context_mcp(app, &command, &june_web_mcp.coordinates_path)?;
     let june_media_mcp = sync_june_media_mcp(app, &command, &june_web_mcp.coordinates_path)?;
     let june_films_mcp = sync_june_films_mcp(app, &command, &june_web_mcp.coordinates_path)?;
     sync_hermes_config(
@@ -1364,6 +1367,10 @@ struct JuneContextMcpConfig {
     /// the MCP is launched with `--memory=off` so the recall tool is not even
     /// advertised to the agent.
     memory_enabled: bool,
+    /// The provider-proxy coordinates file. The calendar is local data like
+    /// the notes, but it lives in EventKit rather than SQLite, so that one
+    /// tool round-trips through the app instead of reading the database.
+    coordinates_path: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -7204,6 +7211,7 @@ const CRON_SANDBOXED_TOOLSETS: &[&str] = &[
 fn sync_june_context_mcp(
     app: &AppHandle,
     hermes_command: &str,
+    coordinates_path: &std::path::Path,
 ) -> Result<JuneContextMcpConfig, AppError> {
     let data_dir = crate::app_paths::app_data_dir(app)
         .map_err(|error| AppError::new("june_context_mcp_failed", error.to_string()))?;
@@ -7222,6 +7230,7 @@ fn sync_june_context_mcp(
         script_path,
         database_path: paths.database_path,
         memory_enabled: crate::memory::settings().enabled,
+        coordinates_path: coordinates_path.to_path_buf(),
     })
 }
 
@@ -7508,7 +7517,8 @@ fn render_context_mcp_entry(config: &JuneContextMcpConfig) -> String {
     args:
       - {script_path}
       - {database_path}
-{memory_arg}    env:
+{memory_arg}      - "--proxy={proxy_path}"
+    env:
       PYTHONUNBUFFERED: "1"
     timeout: 30
     connect_timeout: 10
@@ -7517,6 +7527,7 @@ fn render_context_mcp_entry(config: &JuneContextMcpConfig) -> String {
         command = yaml_string(&config.command),
         script_path = yaml_string(&config.script_path.to_string_lossy()),
         database_path = yaml_string(&config.database_path.to_string_lossy()),
+        proxy_path = config.coordinates_path.to_string_lossy(),
     )
 }
 
@@ -7968,6 +7979,9 @@ async fn handle_june_provider_connection(
         ("POST", "/v1/web/places") => {
             forward_places_tool(&mut stream, &request.body).await?;
         }
+        ("POST", "/v1/calendar/search") => {
+            forward_calendar_search(&mut stream, &request.body).await?;
+        }
         ("GET", "/v1/media/catalog") => {
             forward_media_catalog(&mut stream).await?;
         }
@@ -8277,6 +8291,66 @@ async fn forward_places_tool(
             .await
         }
     }
+}
+
+/// The day, for the agent: a window of the user's own calendar, read on this
+/// device and answered here. Deliberately a retrieval route — the model asks
+/// about a day and gets that day, and the planning is never injected into a
+/// prompt (see `crate::calendar`).
+async fn forward_calendar_search(
+    stream: &mut tokio::net::TcpStream,
+    request_body: &[u8],
+) -> io::Result<()> {
+    let body = serde_json::from_slice::<serde_json::Value>(request_body)
+        .unwrap_or_else(|_| serde_json::json!({}));
+    let days = body
+        .get("days")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(1)
+        .clamp(-7, 7);
+    let query = body
+        .get("query")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .to_lowercase();
+    let now = chrono::Utc::now().timestamp();
+    let (start, end) = if days >= 0 {
+        (now - 12 * 3600, now + days.max(1) * 86_400)
+    } else {
+        (now + days * 86_400, now + 12 * 3600)
+    };
+    let events = crate::calendar::calendar_events_between(crate::calendar::CalendarWindowRequest {
+        start,
+        end,
+    })
+    .unwrap_or_default();
+    let matching: Vec<serde_json::Value> = events
+        .iter()
+        .filter(|event| {
+            query.is_empty()
+                || event.title.to_lowercase().contains(&query)
+                || event
+                    .attendees
+                    .iter()
+                    .any(|name| name.to_lowercase().contains(&query))
+        })
+        .take(20)
+        .map(|event| {
+            serde_json::json!({
+                "title": event.title,
+                "start": crate::domain::types::rfc3339_from_epoch_secs(event.start),
+                "end": crate::domain::types::rfc3339_from_epoch_secs(event.end),
+                "allDay": event.all_day,
+                "attendees": event.attendees,
+            })
+        })
+        .collect();
+    write_json_response(
+        stream,
+        200,
+        serde_json::json!({ "success": true, "data": { "events": matching } }),
+    )
+    .await
 }
 
 /// Relays the Studio's merged model catalog ([`crate::carpe_diem::media`]) to
@@ -9492,6 +9566,7 @@ mod tests {
             script_path: PathBuf::from("/tmp/june/hermes-mcp/june_context_mcp.py"),
             database_path: PathBuf::from("/tmp/june/notes.sqlite3"),
             memory_enabled: true,
+            coordinates_path: PathBuf::from("/tmp/june/hermes-mcp/june_web_proxy.json"),
         }
     }
 

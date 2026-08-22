@@ -53,7 +53,7 @@ pub const AGENT_LITE_DELTA_EVENT: &str = "agent-lite://delta";
 const MAX_TOOL_ITERATIONS: usize = 8;
 const SYSTEM_PROMPT: &str = "You are Sub Rosa's assistant on the user's device, and you can both read and write the user's notes.
 
-Finding things: search_notes takes a short keyword query and returns a window around each match, with note ids. list_recent_notes answers questions about a period rather than a keyword. Neither gives you a note's full text: when the question is about what a note actually says (summarising it, listing its decisions, quoting it), call read_note with the id. Prefer looking in the notes before answering anything about the user's meetings, decisions, or plans. Call web_search when the question needs current or public information, then fetch_page on the most promising result when the snippets do not settle it. Cite the pages you used by name.
+Finding things: search_notes takes a short keyword query and returns a window around each match, with note ids. list_recent_notes answers questions about a period rather than a keyword. Neither gives you a note's full text: when the question is about what a note actually says (summarising it, listing its decisions, quoting it), call read_note with the id. Prefer looking in the notes before answering anything about the user's meetings, decisions, or plans. Call search_calendar when the question is about the user's day, a meeting, or who they are seeing. Call web_search when the question needs current or public information, then fetch_page on the most promising result when the snippets do not settle it. Cite the pages you used by name.
 
 Acting: create_note when the user asks you to write something down or save a summary, append_to_note to add to an existing one, remember for a lasting preference or a fact they ask you to keep. Never use a write tool to answer a question, and never write without being asked.
 
@@ -70,7 +70,8 @@ Answer in the user's language, concisely, in plain prose or simple markdown. If 
 pub struct AgentLiteStatusDto {
     pub task_id: String,
     /// "thinking" | "searching-notes" | "searching-web" | "searching-memory"
-    /// | "searching-places" | "reading-note" | "writing-note" | "remembering"
+    /// | "searching-places" | "searching-calendar" | "reading-note"
+    /// | "writing-note" | "remembering"
     /// | "reading-page"
     pub stage: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -511,6 +512,43 @@ fn clean_snippet(raw: &str) -> String {
 /// results at ~2000 characters of marked-up, duplicated snippet each, that cut
 /// the JSON mid-string: the model saw a broken fragment and silently lost most
 /// of the results.
+/// The calendar as the model reads it: one line per event, filtered by the
+/// query when there is one. Deliberately terse — this is retrieval output,
+/// not a planning dump, and it is the only shape a calendar ever takes
+/// inside a prompt.
+fn summarize_calendar_events(events: &[crate::calendar::CalendarEventDto], query: &str) -> String {
+    let needle = query.trim().to_lowercase();
+    let matching: Vec<&crate::calendar::CalendarEventDto> = events
+        .iter()
+        .filter(|event| {
+            needle.is_empty()
+                || event.title.to_lowercase().contains(&needle)
+                || event
+                    .attendees
+                    .iter()
+                    .any(|name| name.to_lowercase().contains(&needle))
+        })
+        .take(20)
+        .collect();
+    if matching.is_empty() {
+        return "Nothing in the calendar matches that.".to_string();
+    }
+    let items: Vec<serde_json::Value> = matching
+        .iter()
+        .map(|event| {
+            serde_json::json!({
+                "title": event.title,
+                "start": crate::domain::types::rfc3339_from_epoch_secs(event.start),
+                "end": crate::domain::types::rfc3339_from_epoch_secs(event.end),
+                "allDay": event.all_day,
+                "attendees": event.attendees,
+            })
+        })
+        .collect();
+    serde_json::to_string(&items)
+        .unwrap_or_else(|_| "Calendar lookup failed to serialize.".to_string())
+}
+
 /// Reshapes `/v1/web/places` into the string the model reads: the provider id
 /// (it becomes the block's attribution) plus the places as-is. The server
 /// already curated and capped the rows, so nothing is trimmed here.
@@ -807,6 +845,29 @@ async fn execute_tool(
                 Err(error) => format!("Web search failed: {}", error.message),
             }
         }
+        "search_calendar" => {
+            emit_status(app, task_id, "searching-calendar", Some(query.clone()));
+            // Retrieval, never injection: the model asks about a day, it is
+            // never handed the planning. Window defaults to today and is
+            // clamped to a week by the command itself.
+            let days = arg_i64(args, "days").unwrap_or(1).clamp(-7, 7);
+            let now = chrono::Utc::now().timestamp();
+            let (start, end) = if days >= 0 {
+                (now - 12 * 3600, now + days.max(1) * 86_400)
+            } else {
+                (now + days * 86_400, now + 12 * 3600)
+            };
+            match crate::calendar::calendar_events_between(crate::calendar::CalendarWindowRequest {
+                start,
+                end,
+            }) {
+                Ok(events) if events.is_empty() => {
+                    "Nothing in the calendar for that window.".to_string()
+                }
+                Ok(events) => summarize_calendar_events(&events, &query),
+                Err(error) => format!("Calendar lookup failed: {}", error.message),
+            }
+        }
         "places_search" => {
             emit_status(app, task_id, "searching-places", Some(query.clone()));
             // No requestId: the places surface is unmetered (see the June API
@@ -1047,6 +1108,27 @@ fn tool_definitions(memory_enabled: bool) -> serde_json::Value {
             }
         }),
     ];
+    tools.push(serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": "search_calendar",
+            "description": "Look at the user's calendar for a day: what meetings there are, when, and who is invited. Use it when the question is about their schedule, or to find which meeting a note belongs to. It reads the device's calendar and returns only the window you ask for.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Optional words to filter on (a title or an attendee). Leave empty for the whole window."
+                    },
+                    "days": {
+                        "type": "integer",
+                        "description": "Days ahead (positive) or back (negative), at most 7. 0 or 1 means today."
+                    }
+                },
+                "required": []
+            }
+        }
+    }));
     tools.push(serde_json::json!({
         "type": "function",
         "function": {

@@ -81,6 +81,31 @@ sha3 = "0.10"
 # iOS keychains.
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
+# Calendar context (crate::calendar). EventKit is the same framework on both
+# platforms, so one module serves the desktop and the phone; typed bindings
+# beat hand-rolled msg_send! for an API this shaped (dates, predicates,
+# participants). Minimal features: the defaults drag in AppKit, MapKit and
+# CoreLocation for surfaces we never touch.
+block2 = "0.6"
+objc2 = "0.6"
+objc2-event-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "block2",
+    "EKCalendar",
+    "EKCalendarItem",
+    "EKEvent",
+    "EKEventStore",
+    "EKObject",
+    "EKParticipant",
+    "EKTypes",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSArray",
+    "NSDate",
+    "NSString",
+    "NSError",
+] }
 
 # Mobile cannot spawn the june-api sidecar binary (no subprocesses on iOS);
 # the same server runs in-process instead. Desktop keeps the external binary,
@@ -88,17 +113,8 @@ keyring = { version = "3", features = ["apple-native"] }
 # AVAudioSession plumbing required before cpal can record on iOS.
 [target.'cfg(target_os = "ios")'.dependencies]
 june-embed = { path = "../june-api/crates/embed" }
-block2 = "0.6"
-objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = [
-    "std",
-    "NSArray",
-    "NSString",
-    "NSError",
-] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = [
     "std",
     "NSApplication",
@@ -110,8 +126,6 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
 ] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "std",
-    "NSArray",
-    "NSString",
     "NSURL",
     "NSValue",
     "NSData",

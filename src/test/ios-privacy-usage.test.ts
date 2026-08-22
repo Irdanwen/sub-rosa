@@ -29,6 +29,14 @@ const REQUIRED_USAGE_KEYS: Array<{ key: string; reachedBy: string }> = [
     key: "NSPhotoLibraryAddUsageDescription",
     reachedBy: "saving a Studio generation to the photo library",
   },
+  // Two keys, one resource: iOS 17 renamed it, the deployment target is 15,
+  // so the app has to satisfy both systems (crate::calendar asks with
+  // whichever selector the OS answers to).
+  { key: "NSCalendarsUsageDescription", reachedBy: "reading the day a recording belongs to" },
+  {
+    key: "NSCalendarsFullAccessUsageDescription",
+    reachedBy: "the same read on iOS 17+, which renamed the key",
+  },
 ];
 
 describe("iOS privacy usage descriptions", () => {

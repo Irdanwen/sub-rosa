@@ -37,6 +37,7 @@ import {
   userFacingFailureMessage,
 } from "./NoteFailureBanner";
 import { NotePreview } from "./NotePreview";
+import { MeetingBadge } from "../calendar/MeetingContext";
 
 type NoteEditorProps = {
   note: NoteDto;
@@ -320,6 +321,10 @@ export function NoteEditor({
           value={note.title}
           onChange={(event) => onTitleChange(event.currentTarget.value)}
         />
+        {/* When the day said what this is: scheduled time and who was
+            invited. Absent on every note without an event, which is the
+            behaviour the app has always had. */}
+        <MeetingBadge scheduledStart={note.scheduledStart} attendees={note.attendees} />
         <SegmentedControl
           aria-label="Note views"
           value={activeTab}

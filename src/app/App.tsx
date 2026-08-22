@@ -14,6 +14,9 @@ import { RailSwitchBanner } from "../components/carpe-diem/RailSwitchBanner";
 import { SIDECAR_STATUS_EVENT } from "../components/settings/CarpeDiemSettings";
 import { OnboardingFlow } from "../components/onboarding/OnboardingFlow";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../lib/chat-blocks-nav";
+import { MeetingAmbiguityPrompt } from "../components/calendar/MeetingContext";
+import { linkRecordingToMeeting } from "../lib/calendar-link";
+import type { CalendarEventDto } from "../lib/tauri";
 import { type Destination, subscribeToDestinations } from "../lib/destinations";
 import {
   AGENT_DELETE_SESSION_EVENT,
@@ -1528,6 +1531,20 @@ export function App() {
     };
   }, []);
 
+  // Two meetings overlapped a recording: ask, once, rather than guess. Null
+  // whenever there is nothing to ask, which is almost always.
+  const [calendarAmbiguity, setCalendarAmbiguity] = useState<{
+    noteId: string;
+    events: CalendarEventDto[];
+  } | null>(null);
+  const refreshNoteAfterCalendarLink = useCallback(async (noteId: string) => {
+    // The note just gained a title and attendees; re-read so the open editor
+    // shows them without waiting for anything else to touch it.
+    await getNote(noteId)
+      .then((note) => dispatch({ type: "noteLoaded", note }))
+      .catch(() => {});
+  }, []);
+
   // Destinations (subrosa://…): a deep link, or the tap on a notification
   // that carried one. The subscription is mount-once on purpose — every
   // resubscribe re-reads the launch URL and would re-navigate — so the
@@ -2331,6 +2348,17 @@ export function App() {
           status,
         });
         playRecordingSound("start");
+        // The day says what this is. Fire-and-forget: a calendar we cannot
+        // read (no permission, no event, no EventKit) must never cost a
+        // recording, and a single match names the note by the time the user
+        // looks at it.
+        void linkRecordingToMeeting(noteId).then((match) => {
+          if (match.kind === "one") {
+            void refreshNoteAfterCalendarLink(noteId);
+          } else if (match.kind === "ambiguous") {
+            setCalendarAmbiguity({ noteId, events: match.events });
+          }
+        });
         return true;
       } catch (err) {
         // The ref was set optimistically above; a failed start must not leave
@@ -2852,6 +2880,16 @@ export function App() {
             />
           ) : null}
           <RailSwitchBanner />
+          {calendarAmbiguity ? (
+            <MeetingAmbiguityPrompt
+              noteId={calendarAmbiguity.noteId}
+              events={calendarAmbiguity.events}
+              onResolved={(event) => {
+                setCalendarAmbiguity(null);
+                if (event) void refreshNoteAfterCalendarLink(calendarAmbiguity.noteId);
+              }}
+            />
+          ) : null}
           <div
             ref={mainPanelBodyRef}
             className="main-panel-body"

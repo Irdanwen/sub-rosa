@@ -5,6 +5,9 @@ import { RailSwitchBanner } from "../../components/carpe-diem/RailSwitchBanner";
 import { SIDECAR_STATUS_EVENT } from "../../components/settings/CarpeDiemSettings";
 import { TabBar } from "../../components/mobile/TabBar";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../../lib/chat-blocks-nav";
+import { MeetingAmbiguityPrompt } from "../../components/calendar/MeetingContext";
+import { linkRecordingToMeeting } from "../../lib/calendar-link";
+import type { CalendarEventDto } from "../../lib/tauri";
 import { type Destination, subscribeToDestinations } from "../../lib/destinations";
 import { useAmbientActivity } from "./useAmbientActivity";
 import { AgentScreen, AgentSessionScreen } from "../../components/mobile/screens/AgentScreen";
@@ -366,6 +369,12 @@ export function MobileApp() {
     [nav],
   );
 
+  // Two meetings overlapped a recording: ask, once, rather than guess.
+  const [calendarAmbiguity, setCalendarAmbiguity] = useState<{
+    noteId: string;
+    events: CalendarEventDto[];
+  } | null>(null);
+
   // Destinations (subrosa://…): a deep link, or the tap on a notification
   // that carried one — the phone's four notifications each name where they
   // belong. Mount-once (a resubscribe would re-read the launch URL), so the
@@ -415,6 +424,7 @@ export function MobileApp() {
         if (options?.record) {
           const recording = await startRecording(note.id, "microphoneOnly");
           dispatch({ type: "recordingStatusChanged", status: recordingToStatus(recording) });
+          void linkMeeting(note.id);
         }
       } catch (err) {
         setError(messageFromError(err));
@@ -423,15 +433,40 @@ export function MobileApp() {
     [nav],
   );
 
-  const handleStartRecording = useCallback(async (noteId: string) => {
-    try {
-      const recording = await startRecording(noteId, "microphoneOnly");
-      dispatch({ type: "recordingStatusChanged", status: recordingToStatus(recording) });
-      hapticImpact("medium");
-    } catch (err) {
-      setError(messageFromError(err));
+  const linkMeetingRefresh = useCallback(async (noteId: string) => {
+    await getNote(noteId)
+      .then((note) => dispatch({ type: "noteLoaded", note }))
+      .catch(() => {});
+  }, []);
+
+  /** The day says what a recording is. Silent on every failure: no calendar
+   * access, no event, or no EventKit at all must never cost a recording. */
+  const linkMeeting = useCallback(async (noteId: string) => {
+    const match = await linkRecordingToMeeting(noteId);
+    if (match.kind === "one") {
+      // The note just gained a title and attendees; re-read it so the open
+      // screen shows them.
+      await getNote(noteId)
+        .then((note) => dispatch({ type: "noteLoaded", note }))
+        .catch(() => {});
+    } else if (match.kind === "ambiguous") {
+      setCalendarAmbiguity({ noteId, events: match.events });
     }
   }, []);
+
+  const handleStartRecording = useCallback(
+    async (noteId: string) => {
+      try {
+        const recording = await startRecording(noteId, "microphoneOnly");
+        dispatch({ type: "recordingStatusChanged", status: recordingToStatus(recording) });
+        hapticImpact("medium");
+        void linkMeeting(noteId);
+      } catch (err) {
+        setError(messageFromError(err));
+      }
+    },
+    [linkMeeting],
+  );
 
   const handlePauseRecording = useCallback(async (sessionId: string) => {
     try {
@@ -773,6 +808,16 @@ export function MobileApp() {
     <div className="mobile-shell">
       <MobileErrorBanner error={error} onDismiss={() => setError(null)} />
       <RailSwitchBanner compact />
+      {calendarAmbiguity ? (
+        <MeetingAmbiguityPrompt
+          noteId={calendarAmbiguity.noteId}
+          events={calendarAmbiguity.events}
+          onResolved={(event) => {
+            setCalendarAmbiguity(null);
+            if (event) void linkMeetingRefresh(calendarAmbiguity.noteId);
+          }}
+        />
+      ) : null}
       <div
         className="mobile-screen"
         data-nav={navMotion}

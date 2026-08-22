@@ -122,6 +122,14 @@ _Avoid_: system driver, in-process capture.
 
 ### Agent runtime (Hermes)
 
+**Calendar context**:
+What the day says about a note: the event it was recorded inside, when that
+was scheduled, and who was invited. It lands ON a note as three nullable
+columns — there is no calendar screen, no meetings list, and deliberately no
+"meeting" noun in this language (ADR-0025, honouring the specs' exclusion).
+A note with no event behaves exactly as every note did before this existed.
+_Avoid_: meeting (as an object), event object, calendar surface.
+
 **Destination**:
 A `subrosa://…` address naming a place in the app (a note, the chat, the
 dictation surface, Studio, "start recording"). One vocabulary, three ways in:

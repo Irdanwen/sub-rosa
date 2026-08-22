@@ -59,6 +59,10 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Sub Rosa reads your calendar on this device so a recording can know which meeting it belongs to. Nothing is sent anywhere.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Sub Rosa reads your calendar on this device so a recording can know which meeting it belongs to. Nothing is sent anywhere.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Sub Rosa records system audio locally when you choose microphone plus system audio for a note.</string>
 	<key>CFBundleURLTypes</key>

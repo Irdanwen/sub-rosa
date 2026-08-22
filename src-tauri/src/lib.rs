@@ -8,6 +8,7 @@ pub mod agent_lite;
 pub mod app_paths;
 pub mod audio;
 pub mod background;
+pub mod calendar;
 pub mod carpe_diem;
 pub mod commands;
 pub mod db;
@@ -303,6 +304,13 @@ pub fn run() {
             commands::june_open_community_page,
             open_url::open_external_url,
             map_render::render_map_card,
+            calendar::calendar_access_state,
+            calendar::calendar_request_access,
+            calendar::calendar_events_between,
+            calendar::calendar_match_recording,
+            calendar::calendar_event,
+            calendar::calendar_link_note,
+            calendar::calendar_attach_note,
             places::places_get_settings,
             places::places_set_google_key,
             places::places_clear_google_key,
@@ -473,6 +481,13 @@ pub fn run() {
         commands::june_open_community_page,
         open_url::open_external_url,
         map_render::render_map_card,
+        calendar::calendar_access_state,
+        calendar::calendar_request_access,
+        calendar::calendar_events_between,
+        calendar::calendar_match_recording,
+        calendar::calendar_event,
+        calendar::calendar_link_note,
+        calendar::calendar_attach_note,
         places::places_get_settings,
         places::places_set_google_key,
         places::places_clear_google_key,

@@ -66,6 +66,13 @@ pub struct NoteListItemDto {
     pub duration_ms: Option<i64>,
 }
 
+/// Epoch seconds to the RFC3339 the database stores everywhere else.
+pub fn rfc3339_from_epoch_secs(seconds: i64) -> String {
+    chrono::DateTime::from_timestamp(seconds, 0)
+        .unwrap_or_else(chrono::Utc::now)
+        .to_rfc3339()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NoteDto {
@@ -95,6 +102,20 @@ pub struct NoteDto {
     /// processing queue at the command layer, not persisted.
     #[serde(default)]
     pub queued_recordings: i64,
+    /// Calendar context (crate::calendar), when a recording matched an event.
+    /// Every field is None for a note with no event, which is every note the
+    /// app made before this existed — and any note the user records outside a
+    /// meeting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calendar_event_id: Option<String>,
+    /// When the meeting was scheduled to start (RFC3339), as opposed to when
+    /// the recording actually did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduled_start: Option<String>,
+    /// Who was invited, from the invitation. Display metadata on the note —
+    /// not a directory, and never an attribution of who said what.
+    #[serde(default)]
+    pub attendees: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

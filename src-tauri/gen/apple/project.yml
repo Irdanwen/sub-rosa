@@ -53,6 +53,8 @@ targets:
         NSMicrophoneUsageDescription:
           Sub Rosa records microphone audio locally so it can transcribe and generate your notes.
         # The system-audio source of a note (microphone plus system audio).
+        NSCalendarsUsageDescription: Sub Rosa reads your calendar on this device so a recording can know which meeting it belongs to. Nothing is sent anywhere.
+        NSCalendarsFullAccessUsageDescription: Sub Rosa reads your calendar on this device so a recording can know which meeting it belongs to. Nothing is sent anywhere.
         NSAudioCaptureUsageDescription:
           Sub Rosa records system audio locally when you choose microphone plus system audio for a note.
         # Taking a photo to attach to a chat, and the Studio reference picker's

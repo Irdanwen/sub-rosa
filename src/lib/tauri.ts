@@ -297,6 +297,14 @@ export type AudioArtifactDto = {
 };
 
 export type NoteDto = NoteListItemDto & {
+  /** Calendar context, when a recording matched an event (crate::calendar).
+   * Absent on every note without one — which is every note the app made
+   * before this existed, and every recording outside a meeting. */
+  calendarEventId?: string;
+  /** When the meeting was scheduled (RFC3339), not when recording started. */
+  scheduledStart?: string;
+  /** Who was invited, from the invitation. Never an attribution of speech. */
+  attendees?: string[];
   generatedContent?: string;
   editedContent?: string;
   transcript?: TranscriptDto;
@@ -710,6 +718,63 @@ export async function juneOpenVerifyPage() {
  * the same target="_blank" reliability reason as the verify page. */
 export async function juneOpenCommunityPage() {
   return invoke<void>("june_open_community_page");
+}
+
+// --- Calendar context (crate::calendar) -----------------------------------
+// The app reads the day so a NOTE can know what it is called, when it was
+// scheduled and who was invited. There is no calendar screen and no meeting
+// object: the product specs forbid both, and the note stays the only noun.
+
+export type CalendarAccess = "granted" | "denied" | "notDetermined" | "unsupported";
+
+export type CalendarEventDto = {
+  id: string;
+  title: string;
+  /** Epoch seconds. */
+  start: number;
+  end: number;
+  allDay: boolean;
+  location?: string;
+  /** The invitation's own notes. */
+  agenda?: string;
+  attendees: string[];
+};
+
+/** What a recording belongs to: nothing, exactly one, or a question. */
+export type CalendarMatch =
+  | { kind: "none" }
+  | { kind: "one"; events: CalendarEventDto }
+  | { kind: "ambiguous"; events: CalendarEventDto[] };
+
+export async function calendarAccessState() {
+  return invoke<CalendarAccess>("calendar_access_state");
+}
+
+/** Asks the system, once. Called at the first recording — the moment it pays
+ * off — never at launch. */
+export async function calendarRequestAccess() {
+  return invoke<CalendarAccess>("calendar_request_access");
+}
+
+export async function calendarEventsBetween(start: number, end: number) {
+  return invoke<CalendarEventDto[]>("calendar_events_between", { request: { start, end } });
+}
+
+export async function calendarEvent(id: string) {
+  return invoke<CalendarEventDto | null>("calendar_event", { id });
+}
+
+/** Attaches the event a recording belongs to. One match attaches silently and
+ * names an untitled note; several come back for the shell to ask about. */
+export async function calendarLinkNote(noteId: string, startedAt: number) {
+  return invoke<CalendarMatch>("calendar_link_note", { request: { noteId, startedAt } });
+}
+
+/** The answer to that question — or, with no event id, the undo. */
+export async function calendarAttachNote(noteId: string, eventId: string | null) {
+  return invoke<CalendarEventDto | null>("calendar_attach_note", {
+    request: { noteId, eventId },
+  });
 }
 
 export type PlacesSettingsDto = {
@@ -1755,6 +1820,7 @@ export type AgentLiteStatusDto = {
     | "searching-web"
     | "searching-memory"
     | "searching-places"
+    | "searching-calendar"
     | "reading-note"
     | "writing-note"
     | "remembering"

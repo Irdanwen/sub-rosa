@@ -137,9 +137,55 @@ impl Repositories {
         self.get_note(&id).await
     }
 
+    /// Names a note that has none. Never renames: a title the user (or note
+    /// generation) already chose outranks the invitation's.
+    pub async fn set_note_title_if_empty(
+        &self,
+        note_id: &str,
+        title: &str,
+    ) -> Result<(), sqlx::error::Error> {
+        query("UPDATE notes SET title = ?, updated_at = ? WHERE id = ? AND TRIM(COALESCE(title, '')) = ''")
+            .bind(title)
+            .bind(timestamp())
+            .bind(note_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Attaches (or clears, with `None`) the calendar context of a note.
+    ///
+    /// Idempotent and additive: it never touches the note's own content, so
+    /// re-linking after the user answers an ambiguity question is a single
+    /// call with no read-modify-write.
+    pub async fn set_note_calendar_context(
+        &self,
+        note_id: &str,
+        event_id: Option<&str>,
+        scheduled_start: Option<&str>,
+        attendees: &[String],
+    ) -> Result<(), sqlx::error::Error> {
+        let attendees_json = if attendees.is_empty() {
+            None
+        } else {
+            serde_json::to_string(attendees).ok()
+        };
+        query(
+            "UPDATE notes SET calendar_event_id = ?, scheduled_start = ?, attendees_json = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(event_id)
+        .bind(scheduled_start)
+        .bind(attendees_json)
+        .bind(timestamp())
+        .bind(note_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn get_note(&self, note_id: &str) -> Result<NoteDto, sqlx::error::Error> {
         let row = query(
-            "SELECT id, title, generated_content, edited_content, active_tab, processing_status, created_at, updated_at, last_error FROM notes WHERE id = ?",
+            "SELECT id, title, generated_content, edited_content, active_tab, processing_status, created_at, updated_at, last_error, calendar_event_id, scheduled_start, attendees_json FROM notes WHERE id = ?",
         )
         .bind(note_id)
         .fetch_one(&self.pool)
@@ -178,6 +224,16 @@ impl Repositories {
             active_tab: row.get("active_tab"),
             last_error: row.get("last_error"),
             queued_recordings: 0,
+            calendar_event_id: row.try_get("calendar_event_id").ok().flatten(),
+            scheduled_start: row.try_get("scheduled_start").ok().flatten(),
+            // Stored as JSON because attendees are a note field, not a table:
+            // a malformed blob degrades to "no attendees", never to an error.
+            attendees: row
+                .try_get::<Option<String>, _>("attendees_json")
+                .ok()
+                .flatten()
+                .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
+                .unwrap_or_default(),
         })
     }
 

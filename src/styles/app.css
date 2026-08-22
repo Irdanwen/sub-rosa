@@ -22589,3 +22589,104 @@ input:focus-visible,
 .chat-block-map-zoom > button:hover {
   background: var(--card);
 }
+
+/* --- Calendar context on a note --------------------------------------------
+ * Two surfaces, and deliberately only two: a line saying when the meeting was
+ * scheduled and who was invited, and one question when two meetings overlap.
+ * There is no calendar screen — the specs forbid one, and a note that knows
+ * its own day needs none. */
+
+.meeting-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.meeting-badge-icon {
+  display: inline-flex;
+  color: var(--warm-strong);
+  flex: 0 0 auto;
+}
+
+.meeting-badge-who {
+  color: var(--muted-foreground);
+}
+
+.meeting-prompt {
+  margin: var(--sp-4) 0;
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-xl);
+  background: var(--surface-subtle);
+}
+
+.meeting-prompt-question {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
+}
+
+.meeting-prompt-options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.meeting-prompt-option {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  border: none;
+  background: none;
+  border-radius: var(--r-md);
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  transition: background-color var(--t-fast) var(--ease-out);
+}
+
+.meeting-prompt-option:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--muted) 60%, transparent);
+}
+
+.meeting-prompt-option:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.meeting-prompt-title {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.meeting-prompt-meta {
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+/* "Neither" is a real answer: a note with no event behaves exactly as every
+ * note the app made before it could read a calendar. */
+.meeting-prompt-dismiss {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: none;
+  background: none;
+  border-radius: var(--r-sm);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.meeting-prompt-dismiss:hover:not(:disabled) {
+  color: var(--foreground);
+}

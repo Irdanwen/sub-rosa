@@ -54,6 +54,30 @@ MEMORY_TOOL: dict[str, Any] = {
     },
 }
 
+CALENDAR_TOOL: dict[str, Any] = {
+    "name": "search_calendar",
+    "description": (
+        "Look at the user's calendar for a day: what meetings there are, when, "
+        "and who is invited. Use it when the question is about their schedule "
+        "or about a meeting. It reads the calendar on this device and returns "
+        "only the window you ask for."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Optional words to filter on (a title or an attendee).",
+            },
+            "days": {
+                "type": "integer",
+                "description": "Days ahead (positive) or back (negative), at most 7. 0 or 1 is today.",
+            },
+        },
+        "required": [],
+    },
+}
+
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_meeting_notes",
@@ -122,17 +146,86 @@ TOOLS: list[dict[str, Any]] = [
 ]
 
 
+def search_calendar(coords_path: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """The day, read by the app (EventKit) and answered over the local proxy.
+
+    Retrieval, never injection: the agent asks about a window and gets that
+    window. The planning is never poured into a prompt.
+    """
+    payload: dict[str, Any] = {}
+    query = str(arguments.get("query") or "").strip()
+    if query:
+        payload["query"] = query
+    days = arguments.get("days")
+    if isinstance(days, int):
+        payload["days"] = max(-7, min(7, days))
+    return call_proxy(coords_path, "/calendar/search", payload)
+
+
+def call_proxy(coords_path: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """POSTs to the app's local provider proxy.
+
+    The coordinates file is re-read per call, so a gateway-hosted server keeps
+    working after the app relaunches on a new ephemeral port.
+    """
+    import urllib.error
+    import urllib.request
+
+    try:
+        with open(coords_path, encoding="utf-8") as handle:
+            coordinates = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            f"Could not read the Sub Rosa proxy coordinates ({coords_path}): {exc}. "
+            "The app rewrites this file at startup; is it running?"
+        )
+    base_url = str(coordinates.get("base_url") or "").rstrip("/")
+    token = str(coordinates.get("token") or "")
+    if not base_url:
+        raise RuntimeError("The proxy coordinates file has no base_url.")
+
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(f"{base_url}{path}", data=data, method="POST")
+    request.add_header("Content-Type", "application/json")
+    request.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(request, timeout=20) as resp:
+            body = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", "replace")
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"The Sub Rosa proxy is unreachable: {exc}")
+    try:
+        envelope = json.loads(body)
+    except json.JSONDecodeError:
+        raise RuntimeError("The proxy returned a response that is not JSON.")
+    if isinstance(envelope, dict) and envelope.get("success") is False:
+        raise RuntimeError(str(envelope.get("message") or "The proxy refused the call."))
+    if isinstance(envelope, dict) and "data" in envelope:
+        return envelope["data"]
+    return envelope
+
+
 def main() -> None:
     if len(sys.argv) < 2:
-        raise SystemExit("Usage: june_context_mcp.py <notes.sqlite3> [--memory=off]")
+        raise SystemExit(
+            "Usage: june_context_mcp.py <notes.sqlite3> [--memory=off] [--proxy=<coords.json>]"
+        )
 
     db_path = Path(sys.argv[1]).expanduser()
     memory_enabled = "--memory=off" not in sys.argv[2:]
+    # The calendar is local data like the notes, but it lives in EventKit, not
+    # in SQLite — so that one tool round-trips through the app's proxy. Absent
+    # coordinates simply mean the tool is not advertised.
+    proxy_coords = next(
+        (arg[len("--proxy=") :] for arg in sys.argv[2:] if arg.startswith("--proxy=")),
+        "",
+    )
     while True:
         message = read_message()
         if message is None:
             return
-        response = handle_message(db_path, message, memory_enabled)
+        response = handle_message(db_path, message, memory_enabled, proxy_coords)
         if response is not None:
             write_message(response)
 
@@ -174,7 +267,10 @@ def write_message(payload: dict[str, Any]) -> None:
 
 
 def handle_message(
-    db_path: Path, message: dict[str, Any], memory_enabled: bool = True
+    db_path: Path,
+    message: dict[str, Any],
+    memory_enabled: bool = True,
+    proxy_coords: str = "",
 ) -> dict[str, Any] | None:
     method = message.get("method")
     request_id = message.get("id")
@@ -193,10 +289,18 @@ def handle_message(
     if method == "ping":
         return response(request_id, {})
     if method == "tools/list":
-        tools = TOOLS + [MEMORY_TOOL] if memory_enabled else TOOLS
+        tools = list(TOOLS)
+        if memory_enabled:
+            tools.append(MEMORY_TOOL)
+        # Only advertised when the app handed us proxy coordinates: a tool the
+        # agent cannot actually reach is worse than one it does not know.
+        if proxy_coords:
+            tools.append(CALENDAR_TOOL)
         return response(request_id, {"tools": tools})
     if method == "tools/call":
-        return call_tool(db_path, request_id, message.get("params") or {}, memory_enabled)
+        return call_tool(
+            db_path, request_id, message.get("params") or {}, memory_enabled, proxy_coords
+        )
 
     if request_id is None:
         return None
@@ -208,6 +312,7 @@ def call_tool(
     request_id: Any,
     params: dict[str, Any],
     memory_enabled: bool = True,
+    proxy_coords: str = "",
 ) -> dict[str, Any]:
     name = params.get("name")
     arguments = params.get("arguments") or {}
@@ -220,6 +325,8 @@ def call_tool(
             result = search_dictation_history(db_path, arguments)
         elif name == "search_user_memories" and memory_enabled:
             result = search_user_memories(db_path, arguments)
+        elif name == "search_calendar" and proxy_coords:
+            result = search_calendar(proxy_coords, arguments)
         else:
             return error_response(request_id, -32602, f"Unknown tool: {name}")
     except Exception as exc:

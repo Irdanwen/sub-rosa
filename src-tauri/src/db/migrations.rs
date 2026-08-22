@@ -161,6 +161,15 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
     // workflow run's renders say "workflow" so the Studio surfaces do not
     // file and dismiss a row the run is still waiting on (ADR-0021).
     ensure_column(_pool, "media_jobs", "source", "TEXT").await?;
+    // Calendar context lands ON the note, as columns — deliberately not a
+    // `meetings` table. The product specs forbid a meeting object and a
+    // calendar surface; a table would be exactly that second noun. These
+    // three say what a note is called, when it was scheduled, and who was
+    // invited. All NULL for every note that has no event, which is what "the
+    // app behaves as it always has" means.
+    ensure_column(_pool, "notes", "calendar_event_id", "TEXT").await?;
+    ensure_column(_pool, "notes", "scheduled_start", "TEXT").await?;
+    ensure_column(_pool, "notes", "attendees_json", "TEXT").await?;
     for statement in include_str!("../../migrations/012_workflow_runs.sql").split(';') {
         let statement = statement.trim();
         if !statement.is_empty() {
