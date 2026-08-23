@@ -356,7 +356,7 @@ pub struct PlacesSearchRequest {
     /// Bias results toward this point when the provider supports it.
     pub near: Option<GeoPoint>,
     /// The user's own Google Places key, forwarded per request (the
-    /// provider_credentials pattern): present routes to the keyed provider,
+    /// `provider_credentials` pattern): present routes to the keyed provider,
     /// absent stays on the keyless default.
     pub google_key: Option<String>,
 }

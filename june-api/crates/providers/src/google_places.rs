@@ -2,7 +2,7 @@
 //!
 //! The premium provider behind `/v1/web/places`: ratings, review counts and
 //! photo references, paid for with the USER'S OWN key. The key never lives in
-//! this process's config — it arrives per request (the provider_credentials
+//! this process's config — it arrives per request (the `provider_credentials`
 //! pattern), straight from the app's keychain, so a rotated or removed key is
 //! effective on the very next call and nothing has to restart.
 

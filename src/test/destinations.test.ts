@@ -103,7 +103,6 @@ describe("destination addresses", () => {
     expect(destinationUrl({ kind: "dictation" })).toBe("subrosa://dictation");
     expect(destinationUrl({ kind: "studio" })).toBe("subrosa://studio");
   });
-
 });
 
 describe("subscribeToDestinations", () => {

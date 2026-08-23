@@ -10105,13 +10105,15 @@ export function AgentChatTurnRow({
 function copyableTextForTurn(turn: AgentChatTurn): string {
   if (turn.role === "user") return userPromptTextForTurn(turn);
   if (turn.role !== "assistant") return "";
-  return turn.parts
-    .filter((part): part is Extract<AgentChatPart, { type: "text" }> => part.type === "text")
-    // Chat blocks paste as readable link lists, not JSON fences.
-    .map((part) => chatBlocksToClipboardText(stripAgentCliAccessRequest(part.text)).trim())
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
+  return (
+    turn.parts
+      .filter((part): part is Extract<AgentChatPart, { type: "text" }> => part.type === "text")
+      // Chat blocks paste as readable link lists, not JSON fences.
+      .map((part) => chatBlocksToClipboardText(stripAgentCliAccessRequest(part.text)).trim())
+      .filter(Boolean)
+      .join("\n\n")
+      .trim()
+  );
 }
 
 function userPromptTextForTurn(turn: AgentChatTurn): string {
