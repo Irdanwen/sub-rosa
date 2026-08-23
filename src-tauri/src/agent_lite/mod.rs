@@ -12,6 +12,8 @@
 //! - `list_recent_notes` — the newest notes, for questions about a period;
 //! - `search_memories`   — hybrid recall over remembered facts (memory on only);
 //! - `web_search`        — the June API `/v1/web/search` passthrough;
+//! - `summarize_note`    — starts a long-form reading of a recording (ADR-0027);
+//! - `import_link`       — starts fetching a link into a note (ADR-0028);
 //! - `places_search`     — `/v1/web/places`, real-world places for the
 //!   `subrosa:places` chat block (ADR-0024);
 //! - `fetch_page`        — `/v1/web/fetch`, the text of one page.
@@ -53,7 +55,7 @@ pub const AGENT_LITE_DELTA_EVENT: &str = "agent-lite://delta";
 const MAX_TOOL_ITERATIONS: usize = 8;
 const SYSTEM_PROMPT: &str = "You are Sub Rosa's assistant on the user's device, and you can both read and write the user's notes.
 
-Finding things: search_notes takes a short keyword query and returns a window around each match, with note ids. list_recent_notes answers questions about a period rather than a keyword. Neither gives you a note's full text: when the question is about what a note actually says (summarising it, listing its decisions, quoting it), call read_note with the id. Prefer looking in the notes before answering anything about the user's meetings, decisions, or plans. Call search_calendar when the question is about the user's day, a meeting, or who they are seeing. Call web_search when the question needs current or public information, then fetch_page on the most promising result when the snippets do not settle it. Cite the pages you used by name.
+Finding things: search_notes takes a short keyword query and returns a window around each match, with note ids. list_recent_notes answers questions about a period rather than a keyword. Neither gives you a note's full text: when the question is about what a note actually says (summarising it, listing its decisions, quoting it), call read_note with the id. Prefer looking in the notes before answering anything about the user's meetings, decisions, or plans. Call search_calendar when the question is about the user's day, a meeting, or who they are seeing. Call web_search when the question needs current or public information, then fetch_page on the most promising result when the snippets do not settle it. Cite the pages you used by name.\n\nTwo tools start work rather than answering: summarize_note reads one long recording end to end (a talk, a lecture, a podcast — not a meeting, which read_note already covers) and import_link fetches a podcast feed, a podcast episode or a direct audio or video URL. Both cost several model calls and take minutes, so ask before starting one, and when you do start one say that it has started rather than describing a result you have not seen. Streaming platform pages such as YouTube or Spotify cannot be fetched, and import_link will say so.
 
 Acting: create_note when the user asks you to write something down or save a summary, append_to_note to add to an existing one, remember for a lasting preference or a fact they ask you to keep. Never use a write tool to answer a question, and never write without being asked.
 
@@ -964,19 +966,29 @@ async fn execute_tool(
                         .transcript
                         .map(|transcript| transcript.text)
                         .unwrap_or_default();
-                    truncate(
-                        serde_json::json!({
-                            "noteId": note.id,
-                            "title": note.title,
-                            "createdAt": note.created_at,
-                            "updatedAt": note.updated_at,
-                            "status": note.processing_status.as_db(),
-                            "note": content,
-                            "transcript": transcript,
-                        })
-                        .to_string(),
-                        24_000,
-                    )
+                    // A long-form summary is the substance of a long recording
+                    // (ADR-0027). Withholding it would leave the model reading
+                    // meeting-shaped notes about a two-hour talk.
+                    let summary = repos
+                        .note_summary(&note_id)
+                        .await
+                        .ok()
+                        .flatten()
+                        .filter(|summary| summary.status == "ready")
+                        .and_then(|summary| summary.detailed_summary);
+                    let mut payload = serde_json::json!({
+                        "noteId": note.id,
+                        "title": note.title,
+                        "createdAt": note.created_at,
+                        "updatedAt": note.updated_at,
+                        "status": note.processing_status.as_db(),
+                        "note": content,
+                        "transcript": transcript,
+                    });
+                    if let Some(summary) = summary {
+                        payload["longFormSummary"] = serde_json::Value::String(summary);
+                    }
+                    truncate(payload.to_string(), 24_000)
                 }
                 Err(error) => format!("No note with that id ({error})."),
             }
@@ -1083,6 +1095,60 @@ async fn execute_tool(
                 },
             }
         }
+        // A long-form reading of a recording (ADR-0027). Started, not awaited:
+        // it is a dozen model calls over minutes, and the row reports itself.
+        "summarize_note" => {
+            let Some(note_id) = arg_str(args, "note_id") else {
+                return "summarize_note needs a note_id from search_notes or list_recent_notes."
+                    .to_string();
+            };
+            // Already read? Hand it over instead of buying it twice.
+            if let Ok(Some(summary)) = repos.note_summary(&note_id).await {
+                if summary.status == "ready" {
+                    if let Some(detailed) = summary.detailed_summary {
+                        return truncate(
+                            serde_json::json!({
+                                "noteId": note_id,
+                                "status": "ready",
+                                "shortSummary": summary.short_summary,
+                                "summary": detailed,
+                            })
+                            .to_string(),
+                            24_000,
+                        );
+                    }
+                }
+                if summary.status == "running" || summary.status == "pending" {
+                    return format!(
+                        "A reading of this recording is already running ({} of {} parts done). Tell the user it is in progress.",
+                        summary.chunks_done, summary.chunk_count
+                    );
+                }
+            }
+            emit_status(app, task_id, "reading-note", None);
+            match crate::longform::start(app, &note_id).await {
+                Ok(summary) => format!(
+                    "Started reading this recording in {} parts. It takes a few minutes and appears in the note's Summary tab. Tell the user it has started rather than describing a summary you have not seen.",
+                    summary.chunk_count
+                ),
+                Err(error) => format!("That recording could not be summarized: {}", error.message),
+            }
+        }
+        // Fetching a link (ADR-0028). Also started rather than awaited: a
+        // two-hour talk is a long download and a longer transcription.
+        "import_link" => {
+            let Some(url) = arg_str(args, "url") else {
+                return "import_link needs a url.".to_string();
+            };
+            emit_status(app, task_id, "reading-note", None);
+            match crate::ingest::start_link_ingest(app.clone(), url, None).await {
+                Ok(ingest) => format!(
+                    "Started fetching {}. It will appear as a note once it has been downloaded and transcribed, which takes a few minutes. Tell the user it has started rather than describing a note that does not exist yet.",
+                    ingest.url
+                ),
+                Err(error) => error.message,
+            }
+        }
         other => format!("Unknown tool: {other}."),
     }
 }
@@ -1179,6 +1245,40 @@ fn tool_definitions(memory_enabled: bool) -> serde_json::Value {
                     "url": {
                         "type": "string",
                         "description": "Full URL, normally taken from a web_search result."
+                    }
+                },
+                "required": ["url"]
+            }
+        }
+    }));
+    tools.push(serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": "summarize_note",
+            "description": "Read a long recording end to end and write a faithful account of it, with timestamped chapters. Use this for a talk, a lecture, an interview or a podcast, where the value is the argument rather than the decisions. It costs several model calls and takes minutes, so ask the user before starting one, and never start one just to answer a question read_note could answer.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "note_id": {
+                        "type": "string",
+                        "description": "The noteId from a previous search_notes, list_recent_notes or import result."
+                    }
+                },
+                "required": ["note_id"]
+            }
+        }
+    }));
+    tools.push(serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": "import_link",
+            "description": "Turn a link into a note: fetch a podcast feed, a podcast episode or a direct audio or video URL, transcribe it, and write a note. Streaming platform pages (YouTube, Spotify, Vimeo and the like) do not work and will say so. The download happens on the user's machine, so say that it is starting rather than promising the result immediately.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "A podcast feed URL, a podcast episode URL, or a direct link to an audio or video file."
                     }
                 },
                 "required": ["url"]
@@ -1643,9 +1743,61 @@ mod tests {
             "append_to_note",
             "web_search",
             "places_search",
+            "summarize_note",
+            "import_link",
         ] {
             assert!(names.contains(&expected.to_string()), "missing {expected}");
         }
+    }
+
+    /// These two are the only tools that spend money and take minutes rather
+    /// than answering. A model that describes their result instead of saying
+    /// they started is the failure mode, so the description has to say so.
+    #[test]
+    fn the_tools_that_start_work_say_they_start_work() {
+        let tools = tool_definitions(false);
+        let describe = |name: &str| -> String {
+            tools
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tool| tool["function"]["name"] == name)
+                .unwrap_or_else(|| panic!("{name} is not advertised"))["function"]["description"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string()
+        };
+
+        let summarize = describe("summarize_note");
+        assert!(
+            summarize.contains("ask the user before starting"),
+            "summarize_note must tell the model to ask first: {summarize}"
+        );
+        assert!(
+            summarize.contains("read_note could answer"),
+            "summarize_note must steer cheap questions to read_note: {summarize}"
+        );
+
+        let import = describe("import_link");
+        assert!(
+            import.contains("do not work"),
+            "import_link must name the rail that cannot work: {import}"
+        );
+        assert!(
+            import.contains("rather than promising the result"),
+            "import_link must stop the model describing a note that does not exist: {import}"
+        );
+    }
+
+    #[test]
+    fn the_system_prompt_tells_the_model_what_the_slow_tools_cost() {
+        let prompt = build_system_prompt(None);
+
+        assert!(prompt.contains("summarize_note"));
+        assert!(prompt.contains("import_link"));
+        // The two rules that keep a model from lying about work in flight.
+        assert!(prompt.contains("ask before starting one"));
+        assert!(prompt.contains("has started rather than describing a result you have not seen"));
     }
 
     #[test]

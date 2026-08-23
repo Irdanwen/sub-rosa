@@ -26,8 +26,18 @@ use tauri::AppHandle;
 const MAX_LABEL: usize = 200;
 const MAX_BODY: usize = 4_000;
 
+/// `rename_all` renames the *variants*; `rename_all_fields` renames what is
+/// inside them. Both are needed, and the second was missing: the card has
+/// always written `noteId` (so does the prompt in `hermes_bridge.rs`), while
+/// this expected `note_id`, so tapping a note-append card failed at the IPC
+/// boundary rather than doing anything. `reminder` and `event` were unaffected
+/// only because every one of their fields is a single word.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
 pub enum ProposedAction {
     /// A reminder in the system list.
     Reminder {
@@ -52,12 +62,32 @@ pub enum ProposedAction {
         note_id: String,
         text: String,
     },
+    /// A long-form reading of one of the user's recordings (ADR-0027).
+    ///
+    /// Here rather than as a tool because it costs several model calls: a tap
+    /// is the right gate for spending the user's money, and this module is
+    /// already the place where nothing runs without one.
+    Summarize {
+        id: String,
+        label: String,
+        note_id: String,
+    },
+    /// A link fetched and turned into a note (ADR-0028).
+    ImportLink {
+        id: String,
+        label: String,
+        url: String,
+    },
 }
 
 impl ProposedAction {
     pub fn id(&self) -> &str {
         match self {
-            Self::Reminder { id, .. } | Self::Event { id, .. } | Self::Note { id, .. } => id,
+            Self::Reminder { id, .. }
+            | Self::Event { id, .. }
+            | Self::Note { id, .. }
+            | Self::Summarize { id, .. }
+            | Self::ImportLink { id, .. } => id,
         }
     }
 
@@ -66,14 +96,18 @@ impl ProposedAction {
             Self::Reminder { .. } => "reminder",
             Self::Event { .. } => "event",
             Self::Note { .. } => "note",
+            Self::Summarize { .. } => "summarize",
+            Self::ImportLink { .. } => "importLink",
         }
     }
 
     fn label(&self) -> &str {
         match self {
-            Self::Reminder { label, .. } | Self::Event { label, .. } | Self::Note { label, .. } => {
-                label
-            }
+            Self::Reminder { label, .. }
+            | Self::Event { label, .. }
+            | Self::Note { label, .. }
+            | Self::Summarize { label, .. }
+            | Self::ImportLink { label, .. } => label,
         }
     }
 }
@@ -156,6 +190,18 @@ pub async fn action_execute(
                 .await
                 .map_err(|error| AppError::new("action_note_failed", error.to_string()))?;
             None
+        }
+        ProposedAction::Summarize { note_id, .. } => {
+            let summary = crate::longform::start(&app, note_id).await?;
+            Some(if summary.chunk_count > 1 {
+                format!("Reading it in {} parts", summary.chunk_count)
+            } else {
+                "Reading it".to_string()
+            })
+        }
+        ProposedAction::ImportLink { url, .. } => {
+            crate::ingest::start_link_ingest(app.clone(), url.clone(), None).await?;
+            Some("Fetching it".to_string())
         }
     };
 
@@ -381,5 +427,80 @@ mod tests {
         .expect("event parses");
         assert_eq!(action.kind(), "event");
         assert_eq!(action.id(), "a3");
+    }
+
+    /// Every kind, exactly as `src/lib/chat-blocks.ts` writes it and as the
+    /// prompt in `hermes_bridge.rs` teaches it.
+    ///
+    /// This is the seam nothing else covers: the frontend tests mock `invoke`,
+    /// so they prove the card sends something, never that this side can read
+    /// it. `note` was broken from the day it shipped for exactly that reason.
+    #[test]
+    fn every_kind_parses_from_the_json_the_card_actually_sends() {
+        for payload in [
+            serde_json::json!({ "kind": "reminder", "id": "a1", "label": "Call Marie", "due": "2026-08-25T09:00:00Z" }),
+            serde_json::json!({ "kind": "event", "id": "a2", "label": "Follow up", "start": "2026-08-25T09:00:00Z" }),
+            serde_json::json!({ "kind": "note", "id": "a3", "label": "Add a line", "noteId": "note-1", "text": "Ana owns it." }),
+            serde_json::json!({ "kind": "summarize", "id": "a4", "label": "Read it", "noteId": "note-1" }),
+            serde_json::json!({ "kind": "importLink", "id": "a5", "label": "Fetch it", "url": "https://cdn.example.com/a.mp3" }),
+        ] {
+            let kind = payload["kind"].as_str().unwrap_or_default().to_string();
+            let action: ProposedAction = serde_json::from_value(payload)
+                .unwrap_or_else(|error| panic!("the card's {kind} payload must parse: {error}"));
+            assert_eq!(action.kind(), kind);
+            assert!(!action.id().is_empty());
+        }
+    }
+
+    /// The two kinds that spend the user's money. Their wire names are shared
+    /// with `src/lib/chat-blocks.ts` and with the prompt in `hermes_bridge.rs`,
+    /// so a rename here silently stops every card the model writes from
+    /// parsing.
+    #[test]
+    fn the_kinds_that_spend_money_keep_the_names_the_card_and_the_prompt_use() {
+        let summarize: ProposedAction = serde_json::from_value(serde_json::json!({
+            "kind": "summarize",
+            "id": "a4",
+            "label": "Read the whole talk",
+            "noteId": "note-7"
+        }))
+        .expect("summarize parses");
+        assert_eq!(summarize.kind(), "summarize");
+        assert_eq!(summarize.id(), "a4");
+
+        let import: ProposedAction = serde_json::from_value(serde_json::json!({
+            "kind": "importLink",
+            "id": "a5",
+            "label": "Fetch the episode",
+            "url": "https://cdn.example.com/a.mp3"
+        }))
+        .expect("importLink parses");
+        assert_eq!(import.kind(), "importLink");
+
+        // camelCase on the wire, snake_case in Rust. Getting that wrong is how
+        // a card renders and then does nothing at all.
+        assert!(
+            serde_json::from_value::<ProposedAction>(serde_json::json!({
+                "kind": "summarize",
+                "id": "a6",
+                "label": "x",
+                "note_id": "note-7"
+            }))
+            .is_err(),
+            "the wire field is noteId, not note_id"
+        );
+    }
+
+    /// The prompt that teaches the model these cards, and the card that renders
+    /// them, both live elsewhere. This is the one place all three names meet.
+    #[test]
+    fn the_desktop_prompt_advertises_exactly_the_kinds_this_module_executes() {
+        let prompt = crate::hermes_bridge::JUNE_SOUL_BLOCKS_MD;
+        for kind in ["reminder", "event", "note", "summarize", "importLink"] {
+            assert!(
+                prompt.contains(&format!("\"kind\":\"{kind}\"")),
+                "the desktop prompt does not offer {kind}"
+            );
+        }
     }
 }

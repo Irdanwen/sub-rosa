@@ -15,6 +15,7 @@ import { IconFolderAddRight } from "central-icons/IconFolderAddRight";
 import { IconFolderDelete } from "central-icons/IconFolderDelete";
 import { IconLayersThree } from "central-icons/IconLayersThree";
 import { IconMagicWand } from "central-icons/IconMagicWand";
+import { IconImport } from "central-icons/IconImport";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconMicrophoneSparkle } from "central-icons/IconMicrophoneSparkle";
@@ -116,6 +117,9 @@ type SidebarProps = {
   onOpenMoveDialog: (noteId: string) => void;
   onRemoveNoteFromFolder: (noteId: string, folderId: string) => void;
   onNewAgentSession: () => void;
+  /** Open the file picker to import a recording. Absent on shells that have
+   * no picker, in which case the command is simply not offered. */
+  onImportMedia?: () => void;
   onSelectAgentSession: (session: HermesSessionInfo) => void;
   recoverableNoteIds?: ReadonlySet<string>;
   recordingStatus?: RecordingStatusDto | null;
@@ -348,6 +352,7 @@ export function Sidebar({
   onOpenMoveDialog,
   onRemoveNoteFromFolder,
   onNewAgentSession,
+  onImportMedia,
   onSelectAgentSession,
   recoverableNoteIds,
   recordingStatus,
@@ -507,6 +512,19 @@ export function Sidebar({
         searchText: normalizeCommandQuery("new session agent"),
         action: handleNewAgentSession,
       },
+      ...(onImportMedia
+        ? [
+            {
+              id: "quick:import-media",
+              label: "Import audio or video",
+              icon: <IconImport size={15} />,
+              searchText: normalizeCommandQuery(
+                "import audio video file recording podcast talk mp3 mp4 open",
+              ),
+              action: onImportMedia,
+            },
+          ]
+        : []),
       {
         id: "quick:meetings",
         label: "Go to Meeting notes",
@@ -563,6 +581,7 @@ export function Sidebar({
     commandQuery,
     notes,
     onChangeView,
+    onImportMedia,
     onSelectAgentSession,
     onSelectNote,
     onSettingsTabChange,

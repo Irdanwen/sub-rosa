@@ -6,8 +6,11 @@ import { IconMoveFolder } from "central-icons/IconMoveFolder";
 import { IconNoteText } from "central-icons/IconNoteText";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { IconTrashCan } from "central-icons/IconTrashCan";
+import { IconImport } from "central-icons/IconImport";
 import {
+  type DragEvent,
   forwardRef,
+  type ReactNode,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -15,6 +18,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { importableFilesFrom } from "../../lib/import-media";
 import type { NoteListItemDto } from "../../lib/tauri";
 import { useForcedEmptyStates } from "../../lib/empty-states-demo";
 import { primaryShiftShortcutLabel } from "../../lib/platform";
@@ -32,6 +36,17 @@ type NotesListProps = {
   onOpenMoveNotes: (noteIds: string[]) => void;
   onDeleteNote: (noteId: string) => void;
   onDeleteNotes: (noteIds: string[]) => void | Promise<unknown>;
+  /** Files dropped on the list. Already filtered to importable media. */
+  onImportFiles?: (files: File[]) => void;
+  /** Open the system file picker. Desktop hands Rust a path, which costs
+   * nothing at all, so it is the better route when it exists. */
+  onPickImportFile?: () => void;
+  /** Set while an import is being handed over, so the list can say so. */
+  importing?: { fileName: string; fraction: number } | null;
+  /** Rendered under the header. The link bar lives here rather than inside
+   * this component so the list stays presentational: every other consumer of
+   * NotesList would otherwise depend on the ingest API to render at all. */
+  headerAccessory?: ReactNode;
 };
 
 export type NotesListHandle = {
@@ -62,6 +77,10 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
     onOpenMoveNotes,
     onDeleteNote,
     onDeleteNotes,
+    onImportFiles,
+    onPickImportFile,
+    importing = null,
+    headerAccessory,
   },
   ref,
 ) {
@@ -70,6 +89,9 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
   const notes = useForcedEmptyStates() ? NO_NOTES : allNotes;
   const [query, setQuery] = useState("");
   const [openMenu, setOpenMenu] = useState<OpenMenu | null>(null);
+  // Depth-counted: dragging across a child fires dragleave on the parent, so
+  // a boolean would flicker the overlay off mid-drag.
+  const [dragDepth, setDragDepth] = useState(0);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   // The bar plays one of two exits when the selection ends. A deliberate
@@ -195,8 +217,45 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedCount, confirmBulkDelete]);
 
+  const importEnabled = Boolean(onImportFiles);
+
+  function dragCarriesFiles(event: DragEvent<HTMLElement>) {
+    return Array.from(event.dataTransfer?.types ?? []).includes("Files");
+  }
+
   return (
-    <section className="all-notes-workspace" aria-label="Meeting notes">
+    <section
+      className="all-notes-workspace"
+      aria-label="Meeting notes"
+      data-drop-active={importEnabled && dragDepth > 0 ? "true" : undefined}
+      onDragEnter={(event) => {
+        if (!importEnabled || !dragCarriesFiles(event)) return;
+        event.preventDefault();
+        setDragDepth((depth) => depth + 1);
+      }}
+      onDragOver={(event) => {
+        if (!importEnabled || !dragCarriesFiles(event)) return;
+        event.preventDefault();
+      }}
+      onDragLeave={(event) => {
+        if (!importEnabled || !dragCarriesFiles(event)) return;
+        setDragDepth((depth) => Math.max(depth - 1, 0));
+      }}
+      onDrop={(event) => {
+        if (!importEnabled) return;
+        event.preventDefault();
+        setDragDepth(0);
+        const files = importableFilesFrom(event.dataTransfer);
+        if (files.length) onImportFiles?.(files);
+      }}
+    >
+      {importEnabled && dragDepth > 0 ? (
+        <div className="notes-drop-overlay" aria-hidden>
+          <IconImport size={22} />
+          <p>Drop audio or video to make a note</p>
+        </div>
+      ) : null}
+
       <header className="folders-header">
         <div className="folders-heading">
           <h1>
@@ -205,18 +264,35 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
           </h1>
           <p className="folders-subtitle">Everything across your workspace.</p>
         </div>
-        <button
-          type="button"
-          className="primary-action primary-solid folders-create"
-          onClick={onCreateNote}
-        >
-          <IconPlusMedium size={13} />
-          New note
-          <kbd className="primary-action-kbd" aria-hidden>
-            {createNoteShortcut}
-          </kbd>
-        </button>
+        <div className="folders-header-actions">
+          {onPickImportFile ? (
+            <button type="button" className="primary-action" onClick={onPickImportFile}>
+              <IconImport size={13} />
+              Import
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="primary-action primary-solid folders-create"
+            onClick={onCreateNote}
+          >
+            <IconPlusMedium size={13} />
+            New note
+            <kbd className="primary-action-kbd" aria-hidden>
+              {createNoteShortcut}
+            </kbd>
+          </button>
+        </div>
       </header>
+
+      {headerAccessory}
+
+      {importing ? (
+        <p className="notes-import-progress" role="status">
+          Importing {importing.fileName}
+          {importing.fraction < 1 ? ` — ${Math.round(importing.fraction * 100)}%` : null}
+        </p>
+      ) : null}
 
       {notes.length > 0 ? (
         <div className="folders-controls">
@@ -239,10 +315,18 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
           title="Capture your first meeting"
           description="Record a meeting, a phone call, or a half-formed thought. Sub Rosa transcribes it and writes the note for you."
           action={
-            <button type="button" className="primary-action primary-solid" onClick={onCreateNote}>
-              <IconPlusMedium size={13} />
-              Create your first note
-            </button>
+            <div className="folders-header-actions">
+              <button type="button" className="primary-action primary-solid" onClick={onCreateNote}>
+                <IconPlusMedium size={13} />
+                Create your first note
+              </button>
+              {onPickImportFile ? (
+                <button type="button" className="primary-action" onClick={onPickImportFile}>
+                  <IconImport size={13} />
+                  Import a recording
+                </button>
+              ) : null}
+            </div>
           }
         />
       ) : filteredNotes.length === 0 ? (

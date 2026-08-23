@@ -67,6 +67,12 @@ vi.mock("../lib/recording-sounds", () => ({
 }));
 
 vi.mock("../lib/tauri", () => ({
+  // The notes list carries a link bar (ADR-0028); the App under test mounts it.
+  INGEST_EVENT: "june://ingest",
+  previewIngestLink: vi.fn().mockResolvedValue(null),
+  startLinkIngest: vi.fn(),
+  listActiveIngests: vi.fn().mockResolvedValue([]),
+  discardIngest: vi.fn(),
   // Sub Rosa fork: App gates on the Carpe Diem sidecar; report it configured.
   carpeDiemSidecarStatus: vi.fn(async () => ({ status: "ready", hasApiKey: true })),
   LIVE_TRANSCRIPT_EVENT: "live-transcript-event",

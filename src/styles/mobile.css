@@ -3261,3 +3261,13 @@
     opacity: 0.6;
   }
 }
+
+/* The link bar on the notes screen (ADR-0028): rails A and B reach the phone,
+ * so the field sits with the search box rather than behind a menu. */
+.mobile-link-import {
+  padding: 0 var(--sp-4) var(--sp-3);
+}
+
+.mobile-link-import .import-link-field {
+  height: 36px;
+}

@@ -434,6 +434,14 @@ def search_meeting_notes(db_path: Path, arguments: dict[str, Any]) -> dict[str, 
     return {"query": query, "count": len(items), "items": items}
 
 
+def row_value(row: Any, column: str) -> Any:
+    """Read a column that may not exist on an older database file."""
+    try:
+        return row[column]
+    except (IndexError, KeyError):
+        return None
+
+
 def get_note(db_path: Path, arguments: dict[str, Any]) -> dict[str, Any]:
     """Read one note whole, by id.
 
@@ -462,7 +470,12 @@ def get_note(db_path: Path, arguments: dict[str, Any]) -> dict[str, Any]:
                 FROM transcripts t
                 WHERE t.note_id = n.id
                   AND trim(coalesce(t.text, '')) != ''
-            ) AS transcript_text
+            ) AS transcript_text,
+            (
+                SELECT s.detailed_summary
+                FROM note_summaries s
+                WHERE s.note_id = n.id AND s.status = 'ready'
+            ) AS long_form_summary
         FROM notes n
         WHERE n.id = ?
         LIMIT 1
@@ -472,7 +485,7 @@ def get_note(db_path: Path, arguments: dict[str, Any]) -> dict[str, Any]:
 
     if row is None:
         return {"error": f"No note with id {note_id}."}
-    return {
+    payload = {
         "id": row["id"],
         "title": row["title"] or "Untitled note",
         "processingStatus": row["processing_status"],
@@ -481,6 +494,13 @@ def get_note(db_path: Path, arguments: dict[str, Any]) -> dict[str, Any]:
         "content": first_text(row["edited_content"], row["generated_content"]),
         "transcript": row["transcript_text"] or "",
     }
+    # A long-form summary is where a long recording's substance actually lives
+    # (ADR-0027). The column is absent on databases older than that migration,
+    # so the read is defensive rather than assumed.
+    long_form = row_value(row, "long_form_summary")
+    if long_form:
+        payload["longFormSummary"] = long_form
+    return payload
 
 
 def search_dictation_history(db_path: Path, arguments: dict[str, Any]) -> dict[str, Any]:

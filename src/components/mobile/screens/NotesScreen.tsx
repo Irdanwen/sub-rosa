@@ -1,3 +1,5 @@
+import { IMPORTABLE_MEDIA_ACCEPT } from "../../../lib/import-media";
+import { ImportLinkBar } from "../../notes-list/ImportLinkBar";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { IconFolder2 } from "central-icons/IconFolder2";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
@@ -73,7 +75,10 @@ export function NotesScreen({
             <input
               ref={importInputRef}
               type="file"
-              accept="audio/*,.m4a,.mp3,.wav,.aac,.flac,.ogg"
+              // Video too: a video file is an audio track the app reads.
+              // The extension list is shared so it cannot drift from the one
+              // the Rust boundary accepts.
+              accept={`audio/*,video/*,${IMPORTABLE_MEDIA_ACCEPT}`}
               hidden
               onChange={(event) => {
                 const file = event.target.files?.[0];
@@ -84,7 +89,7 @@ export function NotesScreen({
             <button
               type="button"
               className="mobile-icon-button"
-              aria-label="Import audio"
+              aria-label="Import audio or video"
               onClick={() => importInputRef.current?.click()}
             >
               <IconArrowInbox size={20} />
@@ -126,6 +131,11 @@ export function NotesScreen({
           ))}
         </div>
       ) : null}
+      {/* ADR-0028 gives the phone rails A and B in full: a picked file and a
+          published URL. Only the extractor rail is desktop-bound. */}
+      <div className="mobile-link-import">
+        <ImportLinkBar onCompleted={() => void onRefresh()} />
+      </div>
       <PullToRefresh className="mobile-list-scroll" onRefresh={onRefresh}>
         {visibleNotes.length === 0 ? (
           <EmptyState

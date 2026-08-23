@@ -72,7 +72,12 @@ export type NotesChatBlock = {
 export type ProposedAction =
   | { kind: "reminder"; id: string; label: string; due?: string }
   | { kind: "event"; id: string; label: string; start: string; end?: string }
-  | { kind: "note"; id: string; label: string; noteId: string; text: string };
+  | { kind: "note"; id: string; label: string; noteId: string; text: string }
+  /** Read one of the user's recordings end to end (ADR-0027). Behind a tap
+   * because it costs several model calls. */
+  | { kind: "summarize"; id: string; label: string; noteId: string }
+  /** Fetch a link and turn it into a note (ADR-0028). */
+  | { kind: "importLink"; id: string; label: string; url: string };
 
 export type ProposalChatBlock = {
   kind: "proposal";
@@ -252,6 +257,16 @@ function parseProposal(payload: Record<string, unknown>): ProposalChatBlock | nu
       const text = cappedString(item.text, 2_000);
       if (!noteId || !/^[\w-]{1,64}$/.test(noteId) || !text) continue;
       actions.push({ kind: "note", id, label, noteId, text });
+    } else if (item.kind === "summarize") {
+      const noteId = typeof item.noteId === "string" ? item.noteId.trim() : "";
+      if (!noteId || !/^[\w-]{1,64}$/.test(noteId)) continue;
+      actions.push({ kind: "summarize", id, label, noteId });
+    } else if (item.kind === "importLink") {
+      const url = cappedString(item.url, MAX_URL);
+      // Only web links: the Rust side refuses the rest anyway, and refusing
+      // here keeps a nonsense card from ever rendering.
+      if (!url || !/^https?:\/\//i.test(url)) continue;
+      actions.push({ kind: "importLink", id, label, url });
     }
   }
   if (actions.length === 0) return null;

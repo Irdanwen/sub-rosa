@@ -369,6 +369,54 @@ describe("proposal blocks", () => {
     expect(block.actions.map((action) => action.id)).toEqual(["a1", "a2", "a3"]);
   });
 
+  it("carries the two kinds that start work, and says what they cost", () => {
+    const body = JSON.stringify({
+      v: 1,
+      proposalId: "prop-2",
+      actions: [
+        { kind: "summarize", id: "s1", label: "Read the whole talk", noteId: "note-7" },
+        {
+          kind: "importLink",
+          id: "s2",
+          label: "Fetch the episode",
+          url: "https://cdn.x.com/a.mp3",
+        },
+      ],
+    });
+
+    const block = parseChatBlock("subrosa:proposal", body);
+    if (block?.kind !== "proposal") throw new Error("expected a proposal");
+
+    expect(block.actions).toEqual([
+      { kind: "summarize", id: "s1", label: "Read the whole talk", noteId: "note-7" },
+      {
+        kind: "importLink",
+        id: "s2",
+        label: "Fetch the episode",
+        url: "https://cdn.x.com/a.mp3",
+      },
+    ]);
+
+    render(<SimpleMarkdown text={fenced("subrosa:proposal", body)} />);
+    // The hint names the cost before the tap, since both spend money, and the
+    // link one names the host the bytes will come from.
+    expect(screen.getByText("Reads the whole recording · takes a few minutes")).toBeInTheDocument();
+    expect(screen.getByText("Fetches cdn.x.com · takes a few minutes")).toBeInTheDocument();
+  });
+
+  it("drops a link action whose url is not a web link", () => {
+    const body = JSON.stringify({
+      v: 1,
+      proposalId: "prop-3",
+      actions: [
+        { kind: "importLink", id: "s1", label: "Nope", url: "file:///etc/passwd" },
+        { kind: "summarize", id: "s2", label: "No note", noteId: "" },
+      ],
+    });
+
+    expect(parseChatBlock("subrosa:proposal", body)).toBeNull();
+  });
+
   it("refuses a proposal with no id, because 'done' would have nowhere to live", () => {
     const noId = JSON.stringify({
       v: 1,

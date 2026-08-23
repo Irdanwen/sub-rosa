@@ -120,6 +120,65 @@ system audio via CoreAudio process taps and reports over a `status.json` file
 (see [ADR-0004](docs/adr/0004-out-of-process-system-audio-helper.md)).
 _Avoid_: system driver, in-process capture.
 
+### Imports (fork)
+
+**Import**:
+A note whose audio did not come from the recorder — a file the user dropped,
+picked or shared in, or media fetched from an **import link**. It becomes an
+ordinary note the moment it has a transcript, and every downstream surface
+(search, agent, memory, folders, export) treats it as one. The noun names the
+note, never the work that made it (that is an **ingest**).
+_Avoid_: upload (nothing is uploaded), source (that is an audio lane),
+attachment (that is the Hermes workspace copy), media (that is Studio's).
+
+**Import link**:
+The URL an import is fetched from. Three kinds, and the difference is load
+bearing: a **direct media URL**, a **feed URL** (RSS/Atom, whose enclosure is
+a direct media URL), and a **platform page**, reachable only through an
+extractor the user installed themselves
+(see [ADR-0028](docs/adr/0028-import-links-are-fetched-never-scraped.md)).
+_Avoid_: video URL (audio counts too), scraping (the app does not scrape).
+
+**Ingest**:
+The work that produces an import, and the durable row that records it:
+resolve the link, fetch the bytes, decode to WAV. Everything *before*
+transcription, swept like every other long-running row; once the WAV exists
+the note pipeline owns the rest.
+_Avoid_: download (that is one of its steps), job (that is `media_jobs`,
+Studio's renders), import (that is the note it produces).
+
+**Audio decoding**:
+Reading an audio or video container in-process and emitting the 16 kHz mono
+WAV transcription wants. A video file is an audio track the app reads and a
+container it skips. Distinct from **normalization**, which is the gain and
+rate work decoding reuses
+(see [ADR-0026](docs/adr/0026-imported-media-is-decoded-in-process.md)).
+_Avoid_: transcoding, conversion, extraction (that is the platform-page tool).
+
+**Long-form summary**:
+The map-reduce reading of a long transcript: a short summary, a detailed
+summary, and timestamped **chapters**. Editorially the opposite of a generated
+note — faithful to the material rather than filtered for decisions and owners
+— and a separate row (`note_summaries`), so a note can hold both
+(see [ADR-0027](docs/adr/0027-long-form-summaries-are-a-fork-side-map-reduce-over-turns.md)).
+_Avoid_: summary (unqualified — a generated note is not one), recap (that is
+the day's spoken recap), transcript summary.
+
+**Map pass / merge pass**:
+The two halves of a long-form summary: one model call per chunk, then one call
+that fuses the chunk summaries into a single document. A chunk always ends on
+a turn boundary and overlaps the previous one.
+_Avoid_: reduce, pass (unqualified), chunking (that is the audio-splitting
+sense).
+
+**Chapter**:
+A titled section of a long-form summary anchored to a real time in the
+recording. The model tags it with a **turn index** it was handed; the app
+resolves that index to `start_ms` and renders the time. The model never
+produces a timestamp.
+_Avoid_: section, segment (that is a live-preview chunk), turn (that is the
+audio interval a chapter is anchored to), bookmark.
+
 ### Agent runtime (Hermes)
 
 **Automation address**:
@@ -589,6 +648,10 @@ _Avoid_: entitlement (that is the code-signing sense).
 - **"video"** is overloaded between Studio **video generation** (one clip, one
   Carpe Diem call) and a **film project** (a full Videomaker production of many
   shots). Say which.
+- **"media"** in fork code means Studio's generated media (`media_jobs`, the
+  media proxy of [ADR-0008](docs/adr/0008-studio-media-proxy-in-tauri.md)),
+  never an **import**. An imported file is media in English and an import in
+  this codebase.
 - **"wallet"** in fork code means the **Studio wallet** (SIWE identity for
   Videomaker), never a funds-holding crypto wallet and never the OS Accounts
   wallet.

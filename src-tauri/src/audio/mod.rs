@@ -1,4 +1,5 @@
 pub mod capture;
+pub mod decode;
 pub mod echo;
 #[cfg(target_os = "ios")]
 pub mod ios_session;

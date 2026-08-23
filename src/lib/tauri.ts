@@ -296,6 +296,10 @@ export type AudioArtifactDto = {
   createdAt: string;
 };
 
+/** Which view of a note is open. "summary" is the long-form reading
+ * (ADR-0027); it only exists once there is a transcript to read. */
+export type NoteTab = "notes" | "transcription" | "summary";
+
 export type NoteDto = NoteListItemDto & {
   /** Calendar context, when a recording matched an event (crate::calendar).
    * Absent on every note without one — which is every note the app made
@@ -313,7 +317,7 @@ export type NoteDto = NoteListItemDto & {
   recording?: RecordingSessionDto;
   audio?: AudioArtifactDto;
   audioSources?: AudioArtifactDto[];
-  activeTab?: "notes" | "transcription";
+  activeTab?: NoteTab;
   lastError?: string;
   /** Recordings queued behind the one currently processing (0 when none). */
   queuedRecordings?: number;
@@ -1738,7 +1742,7 @@ export async function updateNote(input: {
   noteId: string;
   title?: string;
   editedContent?: string;
-  activeTab?: "notes" | "transcription";
+  activeTab?: NoteTab;
 }) {
   return invoke<NoteDto>("update_note", { request: input });
 }
@@ -1807,17 +1811,157 @@ export async function recoverRecording(sessionId: string, action: "validate" | "
   });
 }
 
-/** Import an existing audio file (Files, Voice Memos, ...) as a new note and
- * start the transcription/generation pipeline. Mobile sends the bytes (the
- * picked file lives in a security-scoped location Rust cannot open); desktop
- * can pass a path. */
+/** Import an existing audio or video file as a new note and start the
+ * transcription pipeline. Three ways in, in decreasing order of preference:
+ * `stagedPath` (written slice by slice by {@link stageImportedFile}, no size
+ * limit, works everywhere), `sourcePath` (a path Rust can already open),
+ * `base64` (the whole file through a JavaScript string — kept for small
+ * payloads only). */
 export async function importAudioNote(input: {
   sourcePath?: string;
+  stagedPath?: string;
   base64?: string;
   fileName?: string;
   folderId?: string;
 }) {
   return invoke<NoteDto>("import_audio_note", { request: input });
+}
+
+/** Append one slice of a file to a staging file Rust owns. Returns the staged
+ * path on the final slice and `null` before that. */
+export async function stageImportedFile(input: {
+  uploadId: string;
+  fileName: string;
+  base64: string;
+  done: boolean;
+}) {
+  return invoke<string | null>("stage_imported_file", { request: input });
+}
+
+// --- Link ingests (ADR-0028) ----------------------------------------------
+
+/** Emitted whenever an ingest row changes, so a download is followed rather
+ * than polled. */
+export const INGEST_EVENT = "june://ingest";
+
+export type IngestDto = {
+  id: string;
+  url: string;
+  kind: "direct" | "feed" | "platform";
+  status: "pending" | "fetching" | "done" | "failed";
+  title: string | null;
+  mediaUrl: string | null;
+  noteId: string | null;
+  folderId: string | null;
+  bytesDone: number;
+  bytesTotal: number | null;
+  attempts: number;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type LinkPreview = {
+  url: string;
+  kind: "directMedia" | "feed" | "platformPage";
+  host: string;
+  /** Whether the app can fetch it as things stand. */
+  fetchable: boolean;
+  /** Why not, when it cannot. */
+  reason: string | null;
+};
+
+/** Whether the extractor rail is on, and whether the tool it needs exists.
+ * Desktop only: iOS cannot run a binary the user installed (ADR-0028). */
+export type ExtractorStatus = {
+  enabled: boolean;
+  available: boolean;
+  path: string | null;
+  version: string | null;
+};
+
+export async function ingestExtractorStatus() {
+  return invoke<ExtractorStatus>("ingest_extractor_status");
+}
+
+export async function ingestSetExtractorEnabled(enabled: boolean) {
+  return invoke<ExtractorStatus>("ingest_set_extractor_enabled", { enabled });
+}
+
+/** What a link is, answered without fetching anything. */
+export async function previewIngestLink(url: string) {
+  return invoke<LinkPreview>("preview_ingest_link", { url });
+}
+
+/** Start fetching a link. Returns as soon as the row exists; progress arrives
+ * on {@link INGEST_EVENT}. */
+export async function startLinkIngest(url: string, folderId?: string) {
+  return invoke<IngestDto>("start_link_ingest", { url, folderId });
+}
+
+export async function listActiveIngests() {
+  return invoke<IngestDto[]>("list_active_ingests");
+}
+
+/** Drop an ingest. Also the cancel: a fetch in flight notices the row is gone. */
+export async function discardIngest(id: string) {
+  return invoke<void>("discard_ingest", { id });
+}
+
+// --- Long-form summaries (ADR-0027) ---------------------------------------
+
+/** Emitted whenever a summary row changes, so the UI follows a run instead of
+ * polling it. */
+export const NOTE_SUMMARY_EVENT = "june://note-summary";
+
+export type NoteSummaryDto = {
+  noteId: string;
+  status: "pending" | "running" | "ready" | "failed";
+  shortSummary: string | null;
+  /** Markdown, with timestamps already resolved into the headings. */
+  detailedSummary: string | null;
+  transcriptChars: number;
+  chunkCount: number;
+  chunksDone: number;
+  model: string;
+  promptVersion: string;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NoteSummaryPlan = {
+  noteId: string;
+  transcriptChars: number;
+  chunkCount: number;
+  /** Model calls the run will make. What the user is being asked to spend. */
+  modelCalls: number;
+  summarizable: boolean;
+  reason: string | null;
+};
+
+export async function noteSummary(noteId: string) {
+  return invoke<NoteSummaryDto | null>("note_summary", { noteId });
+}
+
+/** What a run would cost, before spending anything. */
+export async function noteSummaryPlan(noteId: string) {
+  return invoke<NoteSummaryPlan>("note_summary_plan", { noteId });
+}
+
+/** Start (or restart) the long-form summary. Returns as soon as the row is
+ * claimed; progress arrives on {@link NOTE_SUMMARY_EVENT}. */
+export async function summarizeNoteLongform(noteId: string) {
+  return invoke<NoteSummaryDto>("summarize_note_longform", { noteId });
+}
+
+export async function forgetNoteSummary(noteId: string) {
+  return invoke<void>("forget_note_summary", { noteId });
+}
+
+/** Drop a staged file that will not be imported after all. */
+export async function discardStagedImport(uploadId: string, fileName: string) {
+  return invoke<void>("discard_staged_import", { uploadId, fileName });
 }
 
 // --- Mobile dictation (in-app mode; desktop dictation uses the helper) ---

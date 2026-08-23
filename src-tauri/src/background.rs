@@ -40,6 +40,13 @@ pub async fn sweep(app: &AppHandle) {
     // A chat turn cut off between the user's message and the reply.
     #[cfg(mobile)]
     crate::agent_lite::resume_interrupted_turns(app).await;
+    // A link the user pasted whose download never finished. Cross-platform:
+    // the desktop gets killed mid-download too.
+    crate::ingest::resume_unfinished(app).await;
+    // A long-form summary is a dozen model calls over several minutes, which
+    // on iOS is several lifetimes of a foreground session. Cross-platform on
+    // purpose: the desktop gets killed too.
+    crate::longform::resume_unfinished(app).await;
     // The moments the app speaks first: schedule the briefs for the meetings
     // ahead, deliver the ones that came due while we were away. A row, never
     // a timer — which is exactly why it belongs in this sweep.

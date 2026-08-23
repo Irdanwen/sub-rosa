@@ -1,3 +1,5 @@
+import { turnIdForTime } from "../../lib/chapters";
+import { NoteSummaryPanel } from "./NoteSummaryPanel";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
 import { IconArrowDownWall } from "central-icons/IconArrowDownWall";
@@ -12,7 +14,7 @@ import { IconChevronBottom } from "central-icons-filled/IconChevronBottom";
 import { IconMicrophone } from "central-icons-filled/IconMicrophone";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { EASE_OUT } from "../../lib/motion";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Switch } from "../ui/Switch";
 import type {
   FolderDto,
@@ -69,13 +71,19 @@ type NoteEditorProps = {
   onRemoveFolder: (folderId: string) => void;
   onCreateAndAssignFolder: (name: string) => void;
   onNavigateToFolder?: (folderId: string) => void;
-  onTabChange: (tab: "notes" | "transcription") => void;
+  onTabChange: (tab: NoteTab) => void;
 };
 
-const TABS = [
+export type NoteTab = "notes" | "transcription" | "summary";
+
+const BASE_TABS = [
   { value: "notes", label: "Notes" },
   { value: "transcription", label: "Transcription" },
 ] as const;
+
+/** The long-form reading (ADR-0027). Offered only once there is a transcript
+ * to read: a tab that can never do anything is noise on every short note. */
+const SUMMARY_TAB = { value: "summary", label: "Summary" } as const;
 
 function sourceLabel(source?: string) {
   return source === "system" ? "System" : "Microphone";
@@ -152,7 +160,17 @@ export function NoteEditor({
   onTabChange,
 }: NoteEditorProps) {
   const content = note.editedContent ?? note.generatedContent ?? "";
-  const activeTab = note.activeTab ?? "notes";
+  const hasTranscript = Boolean(note.transcript?.text?.trim());
+  const tabs = useMemo(
+    () => (hasTranscript ? [...BASE_TABS, SUMMARY_TAB] : [...BASE_TABS]),
+    [hasTranscript],
+  );
+  const storedTab = (note.activeTab ?? "notes") as NoteTab;
+  // A note whose transcript was deleted must not be stuck on a tab that is no
+  // longer offered.
+  const activeTab: NoteTab = tabs.some((tab) => tab.value === storedTab) ? storedTab : "notes";
+  const activeTabRef = useRef<NoteTab>(activeTab);
+  activeTabRef.current = activeTab;
   const sourceTranscripts = orderedVisibleSourceTranscripts(note);
   const liveTranscriptTurns = useMemo(
     () => liveTranscript.map(liveTranscriptEventToTurn),
@@ -166,6 +184,35 @@ export function NoteEditor({
         .map(({ turn }) => turn),
     [sourceTranscripts, liveTranscriptTurns],
   );
+  // A chapter is a way into the transcript (ADR-0026 keeps this module out of
+  // the media-player business). Switching tabs unmounts the summary, so the
+  // turn to scroll to is remembered and honoured once the transcript renders.
+  const [pendingJumpTurnId, setPendingJumpTurnId] = useState<string | null>(null);
+  const jumpToTime = useCallback(
+    (startMs: number) => {
+      const turnId = turnIdForTime(transcriptTurns, startMs);
+      if (!turnId) return;
+      setPendingJumpTurnId(turnId);
+      onTabChange("transcription");
+    },
+    [onTabChange, transcriptTurns],
+  );
+
+  useEffect(() => {
+    if (!pendingJumpTurnId || activeTabRef.current !== "transcription") return;
+    const element = document.querySelector<HTMLElement>(
+      `[data-turn-id="${CSS.escape(pendingJumpTurnId)}"]`,
+    );
+    setPendingJumpTurnId(null);
+    if (!element) return;
+    element.scrollIntoView({ behavior: "smooth", block: "center" });
+    // A brief highlight, so the eye lands on the right turn rather than on
+    // whatever happens to be in the middle of the viewport.
+    element.setAttribute("data-jumped", "true");
+    const timer = window.setTimeout(() => element.removeAttribute("data-jumped"), 1600);
+    return () => window.clearTimeout(timer);
+  }, [pendingJumpTurnId]);
+
   const recordingForNote = recordingStatus;
   const recordingActive = Boolean(recordingForNote);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -334,8 +381,8 @@ export function NoteEditor({
         <SegmentedControl
           aria-label="Note views"
           value={activeTab}
-          options={TABS}
-          onValueChange={onTabChange}
+          options={tabs}
+          onValueChange={(value) => onTabChange(value as NoteTab)}
         />
         {onExportPdf ? (
           <button
@@ -368,7 +415,9 @@ export function NoteEditor({
             topUpLabel={topUpLabel}
           />
         ) : null}
-        {activeTab === "transcription" ? (
+        {activeTab === "summary" ? (
+          <NoteSummaryPanel noteId={note.id} onJumpToTime={jumpToTime} />
+        ) : activeTab === "transcription" ? (
           <div className="transcript-view">
             {transcriptText ? (
               <div className="transcript-toolbar">
@@ -1028,7 +1077,11 @@ function TranscriptTurn({
   }
 
   return (
-    <article className="transcript-turn" data-source={isSystem ? "system" : "microphone"}>
+    <article
+      className="transcript-turn"
+      data-source={isSystem ? "system" : "microphone"}
+      data-turn-id={transcript.id}
+    >
       <span className="transcript-turn-icon" aria-hidden>
         {isSystem ? <IconVolumeFull size={14} /> : <IconMicrophoneLine size={14} />}
       </span>

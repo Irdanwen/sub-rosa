@@ -59,6 +59,11 @@ vi.mock("../app/build-info", () => ({
 }));
 
 vi.mock("../lib/tauri", () => ({
+  // The Audio tab carries the extractor rail toggle (ADR-0028).
+  ingestExtractorStatus: vi
+    .fn()
+    .mockResolvedValue({ enabled: false, available: false, path: null, version: null }),
+  ingestSetExtractorEnabled: vi.fn(),
   JUNE_COMMUNITY_URL: "https://t.me/CarpeDiemCommu",
   dictationSettings: mocks.dictationSettings,
   dictationHelperCommand: mocks.dictationHelperCommand,

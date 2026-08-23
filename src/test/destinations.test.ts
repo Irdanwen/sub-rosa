@@ -169,3 +169,36 @@ describe("subscribeToDestinations", () => {
     stop();
   });
 });
+
+describe("the import destination (ADR-0028)", () => {
+  it("carries the link it was shared", () => {
+    expect(parseDestination("subrosa://import?url=https%3A%2F%2Fcdn.x.com%2Fa.mp3")).toEqual({
+      kind: "import",
+      url: "https://cdn.x.com/a.mp3",
+    });
+  });
+
+  it("round-trips through destinationUrl", () => {
+    const destination = { kind: "import", url: "https://x.com/a b.mp3?t=1" } as const;
+    expect(parseDestination(destinationUrl(destination))).toEqual(destination);
+  });
+
+  it("refuses anything that is not a web link", () => {
+    // This address arrives from outside the app, so it is the one place a
+    // pasted scheme could reach the fetcher.
+    for (const target of [
+      "file:///etc/passwd",
+      "javascript:alert(1)",
+      "data:audio/mp3;base64,AA",
+      "",
+    ]) {
+      expect(parseDestination(`subrosa://import?url=${encodeURIComponent(target)}`)).toBeNull();
+    }
+  });
+
+  it("refuses a missing url and an absurdly long one", () => {
+    expect(parseDestination("subrosa://import")).toBeNull();
+    const long = `https://x.com/${"a".repeat(4000)}`;
+    expect(parseDestination(`subrosa://import?url=${encodeURIComponent(long)}`)).toBeNull();
+  });
+});

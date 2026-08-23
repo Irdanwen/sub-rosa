@@ -1,11 +1,11 @@
 use crate::domain::types::{
     AgentMessageDto, AgentMessageRole, AgentSafetyProfile, AgentTaskDto, AgentTaskListResponse,
     AgentTaskStatus, AgentToolEventDto, AgentToolEventStatus, AppError, AudioArtifactDto,
-    DictationHistoryItemDto, DictionaryEntryDto, FolderDto, ListDictationHistoryResponse,
-    ListNotesResponse, MediaJobDto, MediaJobStatus, MemoryDto, MemorySource, NoteDto,
-    NoteListItemDto, PendingDictationDto, ProcessingStatus, RecordingSourceMode, RecordingState,
-    SessionFolderDto, TranscriptCoverageDto, TranscriptDto, WorkflowRunDto, WorkflowRunNodeDto,
-    WorkflowRunStatus,
+    DictationHistoryItemDto, DictionaryEntryDto, FolderDto, IngestDto,
+    ListDictationHistoryResponse, ListNotesResponse, MediaJobDto, MediaJobStatus, MemoryDto,
+    MemorySource, NoteDto, NoteListItemDto, NoteSummaryDto, PendingDictationDto, ProcessingStatus,
+    RecordingSourceMode, RecordingState, SessionFolderDto, TranscriptCoverageDto, TranscriptDto,
+    WorkflowRunDto, WorkflowRunNodeDto, WorkflowRunStatus,
 };
 use chrono::{Duration, SecondsFormat, Utc};
 use sqlx::query::query;
@@ -618,6 +618,39 @@ impl Repositories {
                 }
             })
             .collect();
+        // Long-form summaries are a note's content as much as its generated
+        // note is, and they are where a two-hour talk's substance actually
+        // lives. Leaving them out would make the best material in the app the
+        // one thing search cannot find (ADR-0027).
+        let remaining = limit - snippets.len() as i64;
+        if remaining > 0 {
+            let rows = query(
+                "SELECT s.note_id AS note_id, n.title AS title,
+                        COALESCE(s.detailed_summary, s.short_summary, '') AS content,
+                        s.updated_at AS updated_at
+                 FROM note_summaries s
+                 JOIN notes n ON n.id = s.note_id
+                 WHERE s.status = 'ready'
+                   AND (s.detailed_summary LIKE ? ESCAPE '\\' OR s.short_summary LIKE ? ESCAPE '\\')
+                 ORDER BY s.updated_at DESC
+                 LIMIT ?",
+            )
+            .bind(&pattern)
+            .bind(&pattern)
+            .bind(remaining)
+            .fetch_all(&self.pool)
+            .await?;
+            snippets.extend(rows.into_iter().map(|row| {
+                let content: String = row.get("content");
+                NoteContextSnippet {
+                    note_id: row.get("note_id"),
+                    title: row.get("title"),
+                    kind: "summary".to_string(),
+                    snippet: snippet_around_match(&content, search, 700),
+                    updated_at: row.get("updated_at"),
+                }
+            }));
+        }
         let remaining = limit - snippets.len() as i64;
         if remaining > 0 {
             let rows = query(
@@ -2278,6 +2311,319 @@ impl Repositories {
         Ok(())
     }
 
+    /// Record the real duration of an imported artifact.
+    ///
+    /// An import registers its artifact before anything has opened the file,
+    /// so its duration starts as a guess; decoding is the first moment the
+    /// truth is known. `expected_duration_ms` moves with it — for an import
+    /// they are the same number, and leaving the two disagreeing would make
+    /// the recording validator report a phantom shortfall.
+    pub async fn set_audio_artifact_duration(
+        &self,
+        artifact_id: &str,
+        duration_ms: i64,
+    ) -> Result<(), sqlx::error::Error> {
+        query("UPDATE audio_artifacts SET duration_ms = ?, expected_duration_ms = ? WHERE id = ?")
+            .bind(duration_ms)
+            .bind(duration_ms)
+            .bind(artifact_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    // --- Link ingests (ADR-0028) -------------------------------------------
+
+    pub async fn create_ingest(
+        &self,
+        id: &str,
+        url: &str,
+        kind: &str,
+        folder_id: Option<&str>,
+    ) -> Result<IngestDto, sqlx::error::Error> {
+        let now = timestamp();
+        query(
+            "INSERT INTO ingests (id, url, kind, status, folder_id, created_at, updated_at)
+             VALUES (?, ?, ?, 'pending', ?, ?, ?)",
+        )
+        .bind(id)
+        .bind(url)
+        .bind(kind)
+        .bind(folder_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await?;
+        Ok(self.ingest(id).await?.expect("the row was just written"))
+    }
+
+    pub async fn ingest(&self, id: &str) -> Result<Option<IngestDto>, sqlx::error::Error> {
+        let row = query("SELECT * FROM ingests WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(ingest_from_row))
+    }
+
+    /// Ingests still working, newest first. What the notes list shows while a
+    /// download is in flight.
+    ///
+    /// Failures are included so the user learns why nothing arrived, but only
+    /// recent ones: a link that failed last month is history, not a notice,
+    /// and leaving it in the bar forever turns a useful strip into clutter.
+    pub async fn active_ingests(&self) -> Result<Vec<IngestDto>, sqlx::error::Error> {
+        let failure_cutoff = (Utc::now() - Duration::days(1)).to_rfc3339();
+        let rows = query(
+            "SELECT * FROM ingests
+             WHERE status IN ('pending', 'fetching')
+                OR (status = 'failed' AND updated_at >= ?)
+             ORDER BY created_at DESC LIMIT 20",
+        )
+        .bind(failure_cutoff)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(ingest_from_row).collect())
+    }
+
+    /// Ingests the sweep should re-drive. A failed one is left alone: the user
+    /// asks again, because retrying a bad link forever helps nobody.
+    pub async fn unfinished_ingests(&self) -> Result<Vec<IngestDto>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT * FROM ingests WHERE status IN ('pending', 'fetching') ORDER BY created_at ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(ingest_from_row).collect())
+    }
+
+    pub async fn set_ingest_resolved(
+        &self,
+        id: &str,
+        media_url: &str,
+        title: Option<&str>,
+    ) -> Result<Option<IngestDto>, sqlx::error::Error> {
+        query(
+            "UPDATE ingests
+             SET status = 'fetching', media_url = ?, title = COALESCE(?, title),
+                 attempts = attempts + 1, last_error = NULL, updated_at = ?
+             WHERE id = ?",
+        )
+        .bind(media_url)
+        .bind(title)
+        .bind(timestamp())
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        self.ingest(id).await
+    }
+
+    pub async fn set_ingest_progress(
+        &self,
+        id: &str,
+        bytes_done: i64,
+        bytes_total: Option<i64>,
+    ) -> Result<Option<IngestDto>, sqlx::error::Error> {
+        query(
+            "UPDATE ingests SET bytes_done = ?, bytes_total = COALESCE(?, bytes_total), updated_at = ? WHERE id = ?",
+        )
+        .bind(bytes_done)
+        .bind(bytes_total)
+        .bind(timestamp())
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        self.ingest(id).await
+    }
+
+    pub async fn set_ingest_done(
+        &self,
+        id: &str,
+        note_id: &str,
+    ) -> Result<Option<IngestDto>, sqlx::error::Error> {
+        query(
+            "UPDATE ingests SET status = 'done', note_id = ?, last_error = NULL, updated_at = ? WHERE id = ?",
+        )
+        .bind(note_id)
+        .bind(timestamp())
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        self.ingest(id).await
+    }
+
+    pub async fn set_ingest_failed(
+        &self,
+        id: &str,
+        error: &str,
+    ) -> Result<Option<IngestDto>, sqlx::error::Error> {
+        query("UPDATE ingests SET status = 'failed', last_error = ?, updated_at = ? WHERE id = ?")
+            .bind(error)
+            .bind(timestamp())
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        self.ingest(id).await
+    }
+
+    pub async fn delete_ingest(&self, id: &str) -> Result<(), sqlx::error::Error> {
+        query("DELETE FROM ingests WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    // --- Long-form summaries (ADR-0027) ------------------------------------
+
+    pub async fn note_summary(
+        &self,
+        note_id: &str,
+    ) -> Result<Option<NoteSummaryDto>, sqlx::error::Error> {
+        let row = query("SELECT * FROM note_summaries WHERE note_id = ?")
+            .bind(note_id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(note_summary_from_row))
+    }
+
+    /// Claim a note for summarizing: create or reset its row to `pending`.
+    ///
+    /// The row is written before any model call, so a run cut short by a lock
+    /// screen is something the sweep can find. Re-running over an existing
+    /// summary keeps the old text visible until the new one replaces it —
+    /// there is no moment where the note shows nothing.
+    pub async fn begin_note_summary(
+        &self,
+        note_id: &str,
+        transcript_chars: i64,
+        chunk_count: i64,
+        model: &str,
+        prompt_version: &str,
+    ) -> Result<NoteSummaryDto, sqlx::error::Error> {
+        let now = timestamp();
+        query(
+            "INSERT INTO note_summaries
+               (note_id, status, transcript_chars, chunk_count, chunks_done, model, prompt_version, last_error, created_at, updated_at)
+             VALUES (?, 'pending', ?, ?, 0, ?, ?, NULL, ?, ?)
+             ON CONFLICT(note_id) DO UPDATE SET
+               status = 'pending',
+               transcript_chars = excluded.transcript_chars,
+               chunk_count = excluded.chunk_count,
+               chunks_done = 0,
+               parts_json = NULL,
+               model = excluded.model,
+               prompt_version = excluded.prompt_version,
+               last_error = NULL,
+               updated_at = excluded.updated_at",
+        )
+        .bind(note_id)
+        .bind(transcript_chars)
+        .bind(chunk_count)
+        .bind(model)
+        .bind(prompt_version)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await?;
+        Ok(self
+            .note_summary(note_id)
+            .await?
+            .expect("the row was just written"))
+    }
+
+    /// Record a finished map pass.
+    ///
+    /// `parts_json` is what a resume reads back, so it is written in the same
+    /// statement as the count it must agree with. A sweep that re-drives this
+    /// run picks up where the parts stop instead of re-buying them (ADR-0018:
+    /// sweeping twice must never duplicate work).
+    pub async fn set_note_summary_progress(
+        &self,
+        note_id: &str,
+        chunks_done: i64,
+        parts_json: &str,
+        short_summary: Option<&str>,
+    ) -> Result<Option<NoteSummaryDto>, sqlx::error::Error> {
+        query(
+            "UPDATE note_summaries
+             SET status = 'running',
+                 chunks_done = ?,
+                 parts_json = ?,
+                 short_summary = COALESCE(?, short_summary),
+                 updated_at = ?
+             WHERE note_id = ?",
+        )
+        .bind(chunks_done)
+        .bind(parts_json)
+        .bind(short_summary)
+        .bind(timestamp())
+        .bind(note_id)
+        .execute(&self.pool)
+        .await?;
+        self.note_summary(note_id).await
+    }
+
+    pub async fn set_note_summary_ready(
+        &self,
+        note_id: &str,
+        short_summary: &str,
+        detailed_summary: &str,
+    ) -> Result<Option<NoteSummaryDto>, sqlx::error::Error> {
+        query(
+            "UPDATE note_summaries
+             SET status = 'ready',
+                 short_summary = ?,
+                 detailed_summary = ?,
+                 chunks_done = chunk_count,
+                 parts_json = NULL,
+                 last_error = NULL,
+                 updated_at = ?
+             WHERE note_id = ?",
+        )
+        .bind(short_summary)
+        .bind(detailed_summary)
+        .bind(timestamp())
+        .bind(note_id)
+        .execute(&self.pool)
+        .await?;
+        self.note_summary(note_id).await
+    }
+
+    pub async fn set_note_summary_failed(
+        &self,
+        note_id: &str,
+        error: &str,
+    ) -> Result<Option<NoteSummaryDto>, sqlx::error::Error> {
+        query(
+            "UPDATE note_summaries SET status = 'failed', last_error = ?, updated_at = ? WHERE note_id = ?",
+        )
+        .bind(error)
+        .bind(timestamp())
+        .bind(note_id)
+        .execute(&self.pool)
+        .await?;
+        self.note_summary(note_id).await
+    }
+
+    pub async fn delete_note_summary(&self, note_id: &str) -> Result<(), sqlx::error::Error> {
+        query("DELETE FROM note_summaries WHERE note_id = ?")
+            .bind(note_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Summaries the sweep should re-drive: everything that was asked for and
+    /// never finished. A failed row is left alone — the user asks again.
+    pub async fn unfinished_note_summaries(&self) -> Result<Vec<String>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT note_id FROM note_summaries WHERE status IN ('pending', 'running') ORDER BY updated_at ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|row| row.get("note_id")).collect())
+    }
+
     pub async fn create_audio_artifact(
         &self,
         note_id: &str,
@@ -3747,6 +4093,46 @@ pub struct SourceArtifactPath {
 
 pub fn timestamp() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+}
+
+fn ingest_from_row(row: sqlx_sqlite::SqliteRow) -> IngestDto {
+    IngestDto {
+        id: row.get("id"),
+        url: row.get("url"),
+        kind: row.get("kind"),
+        status: row.get("status"),
+        title: row.get("title"),
+        media_url: row.get("media_url"),
+        note_id: row.get("note_id"),
+        folder_id: row.get("folder_id"),
+        bytes_done: row.get("bytes_done"),
+        bytes_total: row.get("bytes_total"),
+        attempts: row.get("attempts"),
+        last_error: row.get("last_error"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    }
+}
+
+fn note_summary_from_row(row: sqlx_sqlite::SqliteRow) -> NoteSummaryDto {
+    NoteSummaryDto {
+        note_id: row.get("note_id"),
+        status: row.get("status"),
+        short_summary: row.get("short_summary"),
+        detailed_summary: row.get("detailed_summary"),
+        transcript_chars: row.get("transcript_chars"),
+        chunk_count: row.get("chunk_count"),
+        chunks_done: row.get("chunks_done"),
+        parts: row
+            .get::<Option<String>, _>("parts_json")
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default(),
+        model: row.get("model"),
+        prompt_version: row.get("prompt_version"),
+        last_error: row.get("last_error"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    }
 }
 
 fn folder_from_row(row: sqlx_sqlite::SqliteRow) -> FolderDto {

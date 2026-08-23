@@ -15075,6 +15075,305 @@ input:focus-visible,
 
 /* Search sits with the list it filters: a touch of air after the header,
  * tucked close to the rows below — same treatment as the dictation view. */
+/* Paste a link, get a note (ADR-0028). The bar sits under the notes header and
+ * carries its own in-flight downloads, which are rows and not promises. */
+.import-link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.import-link-form {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.import-link-field {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 1;
+  min-width: 0;
+  padding: 0 var(--sp-3);
+  height: 30px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+}
+
+.import-link-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  outline: none;
+}
+
+.import-link-hint {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+.import-link-blocked {
+  color: var(--destructive);
+}
+
+.import-link-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+  font-size: var(--fs-sm);
+}
+
+.import-link-row[data-failed="true"] {
+  border-color: color-mix(in srgb, var(--destructive) 35%, transparent);
+}
+
+.import-link-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--foreground);
+}
+
+.import-link-status {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.import-link-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-1);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.import-link-dismiss:hover {
+  color: var(--foreground);
+  background: var(--muted);
+}
+
+/* The long-form reading of a recording (ADR-0027): a short paragraph, then a
+ * detailed account whose headings carry timestamps the app computed. */
+.note-summary-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  padding-block: var(--sp-4);
+}
+
+.note-summary-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.note-summary-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.note-summary-short {
+  margin: 0;
+  color: var(--body-copy);
+  font-family: var(--font-serif);
+  font-size: var(--fs-xl);
+  line-height: 1.55;
+}
+
+/* Chapters, read back out of the summary's headings (ADR-0027). A way into
+ * the transcript, never a media player. */
+.note-chapters {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--surface-subtle);
+}
+
+.note-chapter {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--body-copy);
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.note-chapter:disabled {
+  cursor: default;
+}
+
+.note-chapter:not(:disabled):hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.note-chapter[data-level="3"] {
+  padding-left: var(--sp-6);
+}
+
+.note-chapter[data-level="4"] {
+  padding-left: var(--sp-8);
+}
+
+.note-chapter-time {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-sm);
+}
+
+.note-chapter-title {
+  min-width: 0;
+}
+
+/* Where a chapter jump landed. Brief on purpose: it points, it does not
+ * decorate. */
+.transcript-turn[data-jumped="true"] {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: var(--r-md);
+  transition: background 480ms ease-out;
+}
+
+.note-summary-detailed {
+  color: var(--body-copy);
+  font-size: var(--fs-lg);
+  line-height: 1.65;
+}
+
+.note-summary-error {
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  background: var(--destructive-soft);
+  color: var(--destructive);
+  font-size: var(--fs-sm);
+}
+
+.note-summary-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-6);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  max-width: 44rem;
+}
+
+.note-summary-empty h2 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
+  font-weight: 400;
+  color: var(--foreground);
+}
+
+.note-summary-empty p {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+
+.note-summary-cost {
+  font-variant-numeric: tabular-nums;
+}
+
+.note-summary-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.note-summary-confirm {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+/* Importing a recording (ADR-0026). The notes list is a drop target for audio
+ * and video; the overlay only appears once a drag actually carries files, so
+ * dragging a note row inside the app never triggers it. */
+.all-notes-workspace {
+  position: relative;
+}
+
+.all-notes-workspace[data-drop-active="true"] {
+  outline: 1.5px dashed var(--border);
+  outline-offset: var(--sp-3);
+  border-radius: var(--r-lg);
+}
+
+.notes-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--background) 82%, transparent);
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+.notes-drop-overlay p {
+  margin: 0;
+  font-size: var(--fs-md);
+}
+
+.folders-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.notes-import-progress {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
 .all-notes-workspace .folders-controls {
   margin-top: var(--sp-2);
   margin-bottom: var(--sp-3);

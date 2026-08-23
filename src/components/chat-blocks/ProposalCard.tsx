@@ -1,3 +1,5 @@
+import { IconBookSimple } from "central-icons/IconBookSimple";
+import { IconChainLink1 } from "central-icons/IconChainLink1";
 import { IconBell } from "central-icons/IconBell";
 import { IconCalendar1 } from "central-icons/IconCalendar1";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
@@ -109,6 +111,8 @@ export function ProposalCard({ block }: { block: ProposalChatBlock }) {
 function ActionIcon({ kind }: { kind: ProposedAction["kind"] }) {
   if (kind === "reminder") return <IconBell size={16} />;
   if (kind === "event") return <IconCalendar1 size={16} />;
+  if (kind === "summarize") return <IconBookSimple size={16} />;
+  if (kind === "importLink") return <IconChainLink1 size={16} />;
   return <IconNoteText size={16} />;
 }
 
@@ -127,7 +131,21 @@ function actionHint(action: ProposedAction): string {
         dateStyle: "medium",
         timeStyle: "short",
       })}`;
+    case "summarize":
+      // These two take minutes and cost model calls, so the hint says what it
+      // starts rather than what it produces.
+      return "Reads the whole recording · takes a few minutes";
+    case "importLink":
+      return `Fetches ${hostOf(action.url)} · takes a few minutes`;
     default:
       return "Adds a line to your note";
+  }
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "the link";
   }
 }

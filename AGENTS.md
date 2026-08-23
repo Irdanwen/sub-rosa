@@ -155,6 +155,57 @@ essentials for anyone touching chat, prompts, or the DB:
   Hermes' own memory *directory*. Memory commands are shared commands: any new
   one goes in **both** `generate_handler!` lists.
 
+## Imports and long-form summaries (fork addition, 2026-08-23)
+
+Sub Rosa can turn something it did not record — a dropped file, a podcast, a
+conference video — into an ordinary note, and read a long transcript the way a
+reader wants rather than the way a meeting note-taker does. Three ADRs carry
+the decisions; read them before touching any of it:
+[ADR-0026](docs/adr/0026-imported-media-is-decoded-in-process.md) (decoding),
+[ADR-0027](docs/adr/0027-long-form-summaries-are-a-fork-side-map-reduce-over-turns.md)
+(summarizing), [ADR-0028](docs/adr/0028-import-links-are-fetched-never-scraped.md)
+(fetching). The essentials:
+
+- **No ffmpeg, ever, and no bundled downloader.** `src-tauri/src/audio/decode.rs`
+  decodes containers in-process with Symphonia and writes the 16 kHz mono WAV
+  the pipeline already wants, streaming, so a three-hour file costs the same
+  memory as a three-minute one. Opus and HE-AAC are genuinely unsupported —
+  say so, do not paper over it. Anything undecodable falls back to the
+  pre-existing whole-file transcription route.
+- **An import is a note.** No new product noun, no second surface. The moment
+  it has a transcript it is searchable, readable by the agent, and eligible for
+  memory extraction like any other note. `ingests` is the durable row for the
+  steps *before* transcription only (ADR-0018 applies); `ProcessingStatus`
+  gains nothing.
+- **Vocabulary is tight and already collided once.** "media" means Studio's
+  generated media (`media_jobs`, `carpe_diem/media.rs`), never an import;
+  "source" is an audio lane, never a thing you imported. The nouns are
+  **import** (the note), **ingest** (the work), **import link** (the URL),
+  **long-form summary**, **chapter**. See the "Imports (fork)" section of
+  [CONTEXT.md](CONTEXT.md).
+- **The long-form summary is fork-side.** `src-tauri/src/longform/` talks to
+  `/v1/chat/completions` through the sidecar with its own prompt and its own
+  prompt version. **Do not add a route or a prompt to `june-api/` for it** —
+  every line there is a line `upstream-sync.yml` re-merges forever. It applies
+  to any long transcript, not only to imports. It lives on its own
+  `note_summaries` row, resumes part by part, and is cancelled by deleting that
+  row.
+- **Published captions beat paid transcription.** When the extractor rail finds
+  captions, `ingest/vtt.rs` turns their cues into turn rows and
+  `process_captioned_import` skips transcription entirely — free, and the
+  chapters keep their timings. The rail picks an M4A/MP3 stream with a
+  **format selector**, never `-x --audio-format`: Symphonia cannot decode Opus
+  (which these platforms serve by default), and converting would need an
+  ffmpeg this app does not ship and the user may not have.
+- **The app owns the clock.** A map pass returns chapter headings tagged with a
+  turn index it was handed; the app resolves the index to `start_ms`. Never ask
+  the model for a timestamp, and clamp an out-of-range index rather than
+  trusting it.
+- Import and long-form commands are shared commands: every new one goes in
+  **both** `generate_handler!` lists in `lib.rs`. `src-tauri/tests/shared_commands.rs`
+  now fails the build when a command lands in only one of them, so a
+  genuinely platform-bound command has to say so there.
+
 ---
 
 # June — Agent Instructions

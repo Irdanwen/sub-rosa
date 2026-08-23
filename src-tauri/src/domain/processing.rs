@@ -1,8 +1,9 @@
 use crate::{
     audio::turns::{
         coalesce_turns_for_transcription_avoiding_echo, detect_turns_with_report,
-        normalize_wav_for_transcription, split_wav_for_transcription, write_turn_wav, AudioTurn,
-        DetectionSource, EchoRejectionReport,
+        normalize_wav_for_transcription, split_wav_for_transcription_with_limit, write_turn_wav,
+        AudioTurn, DetectionSource, EchoRejectionReport, MAX_IMPORT_CHUNK_MS,
+        MAX_TRANSCRIPTION_CHUNK_MS,
     },
     db::repositories::Repositories,
     domain::types::{
@@ -337,6 +338,50 @@ pub async fn process_saved_audio(
         &audio_path,
         &temp_dir.join(format!("{audio_artifact_id}-normalized.wav")),
     )?;
+    transcribe_prepared_wav_and_generate(
+        repos,
+        note_id,
+        session_id,
+        audio_artifact_id,
+        PreparedWavRun {
+            prepared_path: normalized_audio_path,
+            temp_dir,
+            max_chunk_ms: MAX_TRANSCRIPTION_CHUNK_MS,
+        },
+        title,
+        existing_generated_note,
+        manual_notes,
+    )
+    .await
+}
+
+/// One prepared 16 kHz mono WAV, ready to be chunked and transcribed.
+struct PreparedWavRun {
+    prepared_path: PathBuf,
+    /// Scratch directory for the chunks, removed once transcription is done.
+    temp_dir: PathBuf,
+    /// Chunk ceiling. A turn wants [`MAX_TRANSCRIPTION_CHUNK_MS`]; a prepared
+    /// import wants [`MAX_IMPORT_CHUNK_MS`] (ADR-0026).
+    max_chunk_ms: i64,
+}
+
+/// The shared tail of every single-source pipeline that already holds a
+/// prepared WAV: chunk it, transcribe it, clean up, then persist and generate.
+///
+/// Split out of [`process_saved_audio`] so a decoded import can reach exactly
+/// the same code with a different chunk ceiling, rather than reimplementing
+/// the transcription loop next to it.
+#[allow(clippy::too_many_arguments)]
+async fn transcribe_prepared_wav_and_generate(
+    repos: &Repositories,
+    note_id: &str,
+    session_id: &str,
+    audio_artifact_id: &str,
+    run: PreparedWavRun,
+    title: String,
+    existing_generated_note: Option<String>,
+    manual_notes: Option<String>,
+) -> Result<NoteDto, AppError> {
     let transcription_provider = crate::providers::configured_transcription_provider();
     let dictionary_entries = repos.list_dictionary_entries().await?;
     let dictionary_context = build_dictionary_context(&dictionary_entries);
@@ -344,8 +389,8 @@ pub async fn process_saved_audio(
         default_turn_transcriber(),
         TranscribePreparedAudioRequest {
             provider: transcription_provider.clone(),
-            audio_path: normalized_audio_path,
-            temp_dir: temp_dir.clone(),
+            audio_path: run.prepared_path,
+            temp_dir: run.temp_dir.clone(),
             chunk_stem: audio_artifact_id.to_string(),
             title: title.clone(),
             base_context: dictionary_context.clone(),
@@ -354,6 +399,7 @@ pub async fn process_saved_audio(
             start_ms: None,
             end_ms: None,
             turn_index: None,
+            max_chunk_ms: run.max_chunk_ms,
         },
     )
     .await
@@ -370,7 +416,7 @@ pub async fn process_saved_audio(
             return Err(error);
         }
     };
-    let _ = std::fs::remove_dir_all(&temp_dir);
+    let _ = std::fs::remove_dir_all(&run.temp_dir);
     let transcript = maybe_post_process_note_transcript(
         &transcription_provider,
         transcript,
@@ -395,6 +441,84 @@ pub async fn process_saved_audio(
 /// ready. Used by the recorded path (`process_saved_audio`) and the imported
 /// path (`process_imported_audio`).
 #[allow(clippy::too_many_arguments)]
+/// Process an import whose transcript already exists: published captions
+/// (ADR-0028).
+///
+/// Nothing is decoded and nothing is transcribed, because somebody already
+/// did that work and published it. The cues become turn rows exactly like
+/// detected turns do, which is what lets a recording nobody paid a
+/// transcription credit for still have timestamped chapters.
+pub async fn process_captioned_import(
+    repos: &Repositories,
+    note_id: &str,
+    session_id: &str,
+    audio_artifact_id: &str,
+    cues: Vec<crate::ingest::vtt::Cue>,
+    language: Option<String>,
+    title: String,
+) -> Result<NoteDto, AppError> {
+    let _background = crate::ios_background::BackgroundTask::begin("note-processing");
+    let _claim = ProcessingClaim::hold(note_id);
+    if cues.is_empty() {
+        return Err(AppError::new(
+            "captions_empty",
+            "Those captions had nothing readable in them.",
+        ));
+    }
+    repos
+        .set_note_status(note_id, ProcessingStatus::Transcribing, None)
+        .await?;
+
+    // The last cue's end is the recording's length, and it is the only place
+    // this path learns it: nothing decoded the audio, so the artifact's
+    // duration would otherwise stay at the zero it was registered with.
+    if let Some(duration_ms) = cues.iter().map(|cue| cue.end_ms).max().filter(|ms| *ms > 0) {
+        if let Err(error) = repos
+            .set_audio_artifact_duration(audio_artifact_id, duration_ms)
+            .await
+        {
+            tracing::warn!(note_id = %note_id, error = %error, "could not record the captioned import's duration");
+        }
+    }
+
+    let mut first_transcript_id: Option<String> = None;
+    for (index, cue) in cues.iter().enumerate() {
+        let row = repos
+            .create_source_transcript(
+                note_id,
+                session_id,
+                audio_artifact_id,
+                RecordingSourceMode::MicrophoneOnly,
+                "microphone",
+                &cue.text,
+                language.clone(),
+                "captions",
+                Some(cue.start_ms),
+                Some(cue.end_ms),
+                Some(index as i64),
+            )
+            .await?;
+        first_transcript_id.get_or_insert(row.id);
+    }
+
+    let text = crate::ingest::vtt::joined_text(&cues);
+    persist_generation_for_transcript(
+        repos,
+        note_id,
+        session_id,
+        first_transcript_id.expect("at least one cue was persisted"),
+        TranscriptionProviderResult {
+            text,
+            language,
+            provider: "captions".to_string(),
+        },
+        title,
+        None,
+        None,
+    )
+    .await
+}
+
 async fn persist_transcript_and_generate(
     repos: &Repositories,
     note_id: &str,
@@ -414,7 +538,36 @@ async fn persist_transcript_and_generate(
             &transcript.provider,
         )
         .await?;
+    persist_generation_for_transcript(
+        repos,
+        note_id,
+        session_id,
+        transcript_row.id,
+        transcript,
+        title,
+        existing_generated_note,
+        manual_notes,
+    )
+    .await
+}
 
+/// Generate the note from a transcript that is already persisted, and file the
+/// result against it.
+///
+/// Split out of [`persist_transcript_and_generate`] so the captioned path can
+/// reach it with rows it wrote itself, rather than growing a second copy of
+/// the generation tail.
+#[allow(clippy::too_many_arguments)]
+async fn persist_generation_for_transcript(
+    repos: &Repositories,
+    note_id: &str,
+    session_id: &str,
+    transcript_id: String,
+    transcript: TranscriptionProviderResult,
+    title: String,
+    existing_generated_note: Option<String>,
+    manual_notes: Option<String>,
+) -> Result<NoteDto, AppError> {
     repos
         .set_note_status(note_id, ProcessingStatus::Generating, None)
         .await?;
@@ -445,7 +598,7 @@ async fn persist_transcript_and_generate(
     let generation_result_id = repos
         .create_generation_result(
             note_id,
-            &transcript_row.id,
+            &transcript_id,
             &generated.content,
             generated.title_suggestion.clone(),
             &generated.provider,
@@ -464,11 +617,20 @@ async fn persist_transcript_and_generate(
     Ok(note)
 }
 
-/// Process an audio file imported from outside the recorder (Files, Voice
-/// Memos, ...). WAV files reuse the recorded-audio pipeline (turn detection,
-/// chunked transcription); compressed formats (m4a, mp3, ...) are sent whole
-/// to the transcription endpoint, which accepts them natively — there is no
-/// local decoder for them, and the upstream models handle long files.
+/// Bytes past which sending a file whole to the transcription endpoint is
+/// pointless: the route caps the body at 25 MB and the upstream model refuses
+/// more. Only the fallback path cares — a decoded import is chunked and has no
+/// ceiling at all.
+const WHOLE_FILE_TRANSCRIPTION_LIMIT_BYTES: u64 = 25 * 1024 * 1024;
+
+/// Process an audio or video file imported from outside the recorder (Files,
+/// Voice Memos, a downloaded talk, ...).
+///
+/// Everything the app can decode becomes a 16 kHz mono WAV first and then
+/// takes the recorded-audio path — chunked, silence-skipped, retried, with no
+/// size ceiling (ADR-0026). Only what Symphonia cannot read falls back to
+/// shipping the file whole to the transcription endpoint, which is correct
+/// under 25 MB and honest about it past that.
 #[allow(clippy::too_many_arguments)]
 pub async fn process_imported_audio(
     repos: &Repositories,
@@ -477,14 +639,12 @@ pub async fn process_imported_audio(
     audio_artifact_id: &str,
     audio_path: PathBuf,
     title: String,
+    existing_generated_note: Option<String>,
+    manual_notes: Option<String>,
 ) -> Result<NoteDto, AppError> {
     let _background = crate::ios_background::BackgroundTask::begin("note-processing");
     let _claim = ProcessingClaim::hold(note_id);
-    let is_wav = audio_path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("wav"));
-    if is_wav {
+    if is_wav_path(&audio_path) {
         return process_saved_audio(
             repos,
             note_id,
@@ -492,8 +652,8 @@ pub async fn process_imported_audio(
             audio_artifact_id,
             audio_path,
             title,
-            None,
-            None,
+            existing_generated_note,
+            manual_notes,
         )
         .await;
     }
@@ -501,6 +661,82 @@ pub async fn process_imported_audio(
     repos
         .set_note_status(note_id, ProcessingStatus::Transcribing, None)
         .await?;
+
+    // Decoding is what lifts the size ceiling, so it is tried first and its
+    // failure is only a fallback signal, never the user's error.
+    let temp_dir = session_temp_dir("os-june-import", session_id);
+    let _ = std::fs::remove_dir_all(&temp_dir);
+    let decode_target = temp_dir.join(format!("{audio_artifact_id}-decoded.wav"));
+    match crate::audio::decode::decode_to_transcription_wav(&audio_path, &decode_target) {
+        Ok(decoded) => {
+            // The artifact was registered before anything could read the file,
+            // so its duration was a guess. Now it is known.
+            if decoded.duration_ms > 0 {
+                if let Err(error) = repos
+                    .set_audio_artifact_duration(audio_artifact_id, decoded.duration_ms)
+                    .await
+                {
+                    tracing::warn!(
+                        note_id = %note_id,
+                        error = %error,
+                        "could not record the decoded import's duration"
+                    );
+                }
+            }
+            tracing::info!(
+                note_id = %note_id,
+                codec = %decoded.codec,
+                duration_ms = decoded.duration_ms,
+                "imported media decoded for transcription"
+            );
+            return transcribe_prepared_wav_and_generate(
+                repos,
+                note_id,
+                session_id,
+                audio_artifact_id,
+                PreparedWavRun {
+                    prepared_path: decoded.path,
+                    temp_dir,
+                    max_chunk_ms: MAX_IMPORT_CHUNK_MS,
+                },
+                title,
+                existing_generated_note,
+                manual_notes,
+            )
+            .await;
+        }
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&temp_dir);
+            tracing::info!(
+                note_id = %note_id,
+                code = %error.code,
+                "imported media could not be decoded locally; falling back to whole-file transcription"
+            );
+            // Past the request ceiling the fallback cannot work either, and
+            // saying "25 MB" is less useful than saying which file and why.
+            let size_bytes = std::fs::metadata(&audio_path)
+                .map(|metadata| metadata.len())
+                .unwrap_or_default();
+            if size_bytes > WHOLE_FILE_TRANSCRIPTION_LIMIT_BYTES {
+                let failure = AppError::new(
+                    "import_format_unsupported",
+                    format!(
+                        "This file is too long to import in a format the app cannot open ({}).                          Convert it to WAV, MP3 or M4A and import it again.",
+                        describe_import_format(&audio_path)
+                    ),
+                );
+                repos
+                    .set_note_status(
+                        note_id,
+                        ProcessingStatus::Failed,
+                        Some(failure.message.clone()),
+                    )
+                    .await?;
+                return Err(failure);
+            }
+        }
+    }
+
     let transcription_provider = crate::providers::configured_transcription_provider();
     let dictionary_entries = repos.list_dictionary_entries().await?;
     let dictionary_context = build_dictionary_context(&dictionary_entries);
@@ -540,10 +776,29 @@ pub async fn process_imported_audio(
         audio_artifact_id,
         transcript,
         title,
-        None,
-        None,
+        existing_generated_note,
+        manual_notes,
     )
     .await
+}
+
+/// Whether a path is a WAV, and therefore already what the pipeline wants.
+///
+/// The retry path needs this too: a note whose audio is an MP4 must be re-run
+/// through [`process_imported_audio`], not through [`process_saved_audio`],
+/// which would try to open the container with a WAV reader.
+pub fn is_wav_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("wav"))
+}
+
+/// How to name a file the decoder refused, in a sentence a user can act on.
+fn describe_import_format(path: &Path) -> String {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| format!("a .{} file", extension.to_lowercase()))
+        .unwrap_or_else(|| "this format".to_string())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1241,6 +1496,8 @@ struct TranscribePreparedAudioRequest {
     start_ms: Option<i64>,
     end_ms: Option<i64>,
     turn_index: Option<i64>,
+    /// Chunk ceiling for [`split_wav_for_transcription_with_limit`].
+    max_chunk_ms: i64,
 }
 
 /// Full-source normalized audio, prepared once per source. The per-turn job
@@ -1276,7 +1533,12 @@ async fn transcribe_prepared_audio(
     let request_language = crate::providers::configured_transcription_language();
     let chunk_dir = request.temp_dir.join("chunks");
     let audio_paths = if request.audio_path.exists() {
-        split_wav_for_transcription(&request.audio_path, &chunk_dir, &request.chunk_stem)?
+        split_wav_for_transcription_with_limit(
+            &request.audio_path,
+            &chunk_dir,
+            &request.chunk_stem,
+            request.max_chunk_ms,
+        )?
     } else {
         vec![request.audio_path.clone()]
     };
@@ -1649,6 +1911,7 @@ async fn transcribe_one_turn_job(
             start_ms: Some(job.start_ms),
             end_ms: Some(job.end_ms),
             turn_index: Some(job.turn_index),
+            max_chunk_ms: MAX_TRANSCRIPTION_CHUNK_MS,
         },
     )
     .await
@@ -3342,6 +3605,7 @@ mod tests {
                 start_ms: Some(0),
                 end_ms: Some(31_000),
                 turn_index: Some(0),
+                max_chunk_ms: MAX_TRANSCRIPTION_CHUNK_MS,
             },
         )
         .await
@@ -3380,6 +3644,7 @@ mod tests {
                 start_ms: Some(0),
                 end_ms: Some(31_000),
                 turn_index: Some(0),
+                max_chunk_ms: MAX_TRANSCRIPTION_CHUNK_MS,
             },
         )
         .await
@@ -3443,6 +3708,7 @@ mod tests {
                 start_ms: Some(0),
                 end_ms: Some(62_000),
                 turn_index: Some(0),
+                max_chunk_ms: MAX_TRANSCRIPTION_CHUNK_MS,
             },
         )
         .await

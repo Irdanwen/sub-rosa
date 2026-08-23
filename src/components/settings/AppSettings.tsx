@@ -99,6 +99,7 @@ import { SkillsHubSection } from "./SkillsHubSection";
 import { TeamTapsSection } from "./TeamTapsSection";
 import { ToolsetsSection } from "./ToolsetsSection";
 import { DictionarySettingsSection } from "./DictionarySettingsSection";
+import { ImportSettingsSection } from "./ImportSettingsSection";
 import { MemorySettingsSection } from "./MemorySettingsSection";
 import { MicTestControl, type MicTestState } from "./MicTestControl";
 import { StyleSettingsSection } from "./StyleSettingsSection";
@@ -1231,6 +1232,7 @@ export function AppSettings({
             </div>
           </section>
         ) : null}
+        {activeTab === "audio" ? <ImportSettingsSection /> : null}
 
         {activeTab === "models" ? (
           <>

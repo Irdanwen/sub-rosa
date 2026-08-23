@@ -15,7 +15,7 @@ use crate::{
     db::{migrations::run_migrations, repositories::Repositories},
     domain::{
         processing::{
-            manual_notes_for_generation, process_imported_audio, process_saved_audio,
+            is_wav_path, manual_notes_for_generation, process_imported_audio, process_saved_audio,
             process_saved_source_audio,
         },
         processing_queue,
@@ -1171,10 +1171,139 @@ pub async fn delete_agent_task(
         .map_err(AppError::from)
 }
 
-/// Audio formats accepted by `import_audio_note`. WAV goes through the local
-/// pipeline; the rest are transcribed whole by the backend, which accepts
-/// these container formats natively.
-const IMPORTABLE_AUDIO_EXTENSIONS: &[&str] = &["wav", "m4a", "mp3", "aac", "mp4", "flac", "ogg"];
+/// Containers accepted by `import_audio_note`.
+///
+/// Almost all of these are decoded in-process into the WAV the transcription
+/// pipeline wants (ADR-0026), which is what lets an import be hours long. A
+/// few — Opus above all — Symphonia cannot read, and they are still listed
+/// because the whole-file fallback handles them under the request ceiling; the
+/// pipeline says so by name when it cannot.
+///
+/// Video extensions are here on purpose: a video file is an audio track the
+/// app reads and a container it skips.
+const IMPORTABLE_AUDIO_EXTENSIONS: &[&str] = &[
+    "aac", "aif", "aiff", "caf", "flac", "m4a", "m4b", "m4v", "mka", "mov", "mp3", "mp4", "mpga",
+    "oga", "ogg", "ogv", "opus", "wav", "webm",
+];
+
+/// Ceiling on the bytes-in-the-payload import variant.
+///
+/// The desktop hands over a path and pays nothing for size. iOS cannot: the
+/// picked file lives in a security-scoped location Rust cannot open, so the
+/// webview reads it and base64 inflates it by a third on the way through a
+/// JavaScript string. A two-hour film would take the tab down before Rust saw
+/// a byte, so the boundary refuses it with something actionable instead.
+const MAX_IMPORT_PAYLOAD_BYTES: usize = 300 * 1024 * 1024;
+
+/// Largest single chunk the staging command accepts, as base64 characters.
+/// The webview slices a file into pieces this size so neither side ever holds
+/// a whole recording in memory.
+const MAX_STAGED_CHUNK_CHARS: usize = 24 * 1024 * 1024;
+/// Total bytes one staged file may reach. Generous — a three-hour 1080p talk
+/// is a few gigabytes — but not unbounded: this writes to the user's disk.
+const MAX_STAGED_FILE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StageImportChunkRequest {
+    /// Groups the chunks of one file. Sanitized before it reaches a path.
+    pub upload_id: String,
+    /// Only its extension is used, and only after sanitizing.
+    pub file_name: String,
+    pub base64: String,
+    /// Set on the final chunk; the staged path comes back with it.
+    pub done: bool,
+}
+
+/// Append one chunk of a file the webview is handing over, and return the
+/// staged path once the last chunk lands.
+///
+/// A file dropped onto the window arrives as a `File` with no path — the
+/// window runs with `dragDropEnabled: false` so the agent composer can handle
+/// its own drops — and on iOS a picked file lives somewhere Rust cannot open
+/// at all. Both used to mean base64-ing the whole thing through a JavaScript
+/// string, which caps an import at whatever the webview can hold. Streaming it
+/// in slices removes the cap on every platform.
+#[tauri::command]
+pub async fn stage_imported_file(
+    request: StageImportChunkRequest,
+) -> Result<Option<String>, AppError> {
+    use base64::Engine as _;
+    if request.base64.len() > MAX_STAGED_CHUNK_CHARS {
+        return Err(AppError::new(
+            "import_chunk_too_large",
+            "That upload chunk is too large.",
+        ));
+    }
+    let path = staged_import_path(&request.upload_id, &request.file_name)?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&request.base64)
+        .map_err(|error| AppError::new("import_invalid_payload", error.to_string()))?;
+    let existing = std::fs::metadata(&path)
+        .map(|metadata| metadata.len())
+        .unwrap_or_default();
+    if existing.saturating_add(bytes.len() as u64) > MAX_STAGED_FILE_BYTES {
+        let _ = std::fs::remove_file(&path);
+        return Err(AppError::new(
+            "import_too_large",
+            "This file is too large to import.",
+        ));
+    }
+    if !bytes.is_empty() {
+        use std::io::Write as _;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(|error| AppError::new("import_copy_failed", error.to_string()))?;
+        file.write_all(&bytes)
+            .map_err(|error| AppError::new("import_copy_failed", error.to_string()))?;
+    }
+    if !request.done {
+        return Ok(None);
+    }
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+/// Drop a staged file the webview decided not to import after all.
+#[tauri::command]
+pub async fn discard_staged_import(upload_id: String, file_name: String) -> Result<(), AppError> {
+    let path = staged_import_path(&upload_id, &file_name)?;
+    let _ = std::fs::remove_file(path);
+    Ok(())
+}
+
+/// Build the staging path from values the webview supplied, trusting neither.
+/// The id becomes the file name and the extension is rebuilt from scratch, so
+/// nothing a caller sends can escape the temp directory.
+fn staged_import_path(upload_id: &str, file_name: &str) -> Result<std::path::PathBuf, AppError> {
+    let id: String = upload_id
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric() || *character == '-')
+        .take(64)
+        .collect();
+    if id.len() < 8 {
+        return Err(AppError::new(
+            "import_invalid_payload",
+            "Invalid upload identifier.",
+        ));
+    }
+    let extension: String = std::path::Path::new(file_name)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("bin")
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .take(8)
+        .collect::<String>()
+        .to_lowercase();
+    let extension = if extension.is_empty() {
+        "bin".to_string()
+    } else {
+        extension
+    };
+    Ok(std::env::temp_dir().join(format!("subrosa-staging-{id}.{extension}")))
+}
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1184,8 +1313,11 @@ pub struct ImportAudioNoteRequest {
     /// sends the bytes instead.
     pub source_path: Option<String>,
     /// Bytes variant: base64 payload + original file name (for the extension
-    /// and the note title).
+    /// and the note title). Superseded by `staged_path` for anything large.
     pub base64: Option<String>,
+    /// A file `stage_imported_file` wrote and this app owns: used like
+    /// `source_path`, then deleted once it has been copied into the note.
+    pub staged_path: Option<String>,
     pub file_name: Option<String>,
     pub folder_id: Option<String>,
 }
@@ -1205,6 +1337,7 @@ pub async fn import_audio_note(
             request
                 .source_path
                 .as_deref()
+                .or(request.staged_path.as_deref())
                 .map(std::path::PathBuf::from)
                 .and_then(|path| path.file_name().map(|n| n.to_string_lossy().into_owned()))
         })
@@ -1228,6 +1361,13 @@ pub async fn import_audio_note(
     let mut temp_source: Option<std::path::PathBuf> = None;
     let source = if let Some(base64_payload) = request.base64.as_deref() {
         use base64::Engine as _;
+        if base64_payload.len() > MAX_IMPORT_PAYLOAD_BYTES {
+            return Err(AppError::new(
+                "import_too_large",
+                "This file is too large to import from the file picker. Save it to Files and \
+                 import it from there, or import a smaller file.",
+            ));
+        }
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(base64_payload)
             .map_err(|error| AppError::new("import_invalid_payload", error.to_string()))?;
@@ -1239,6 +1379,10 @@ pub async fn import_audio_note(
             .map_err(|error| AppError::new("import_copy_failed", error.to_string()))?;
         temp_source = Some(path.clone());
         path
+    } else if let Some(staged) = request.staged_path.as_deref() {
+        let path = std::path::PathBuf::from(staged);
+        temp_source = Some(path.clone());
+        path
     } else {
         std::path::PathBuf::from(request.source_path.clone().unwrap_or_default())
     };
@@ -1248,13 +1392,64 @@ pub async fn import_audio_note(
             "The selected audio file could not be read.",
         ));
     }
+    import_media_from_path(
+        &app,
+        &source,
+        &source_name,
+        request.folder_id.clone(),
+        temp_source.take().is_some(),
+    )
+    .await
+}
+
+/// Turn a file already on disk into a note and start the pipeline.
+///
+/// Split out of [`import_audio_note`] so a fetched link reaches exactly the
+/// same code (ADR-0028): an ingest that has produced its file is an import
+/// like any other, and the two must not drift.
+///
+/// `consume_source` deletes the file once it has been copied into the note —
+/// true for anything the app staged or downloaded itself, false for a file the
+/// user picked, which is theirs.
+pub(crate) async fn import_media_from_path(
+    app: &AppHandle,
+    source: &std::path::Path,
+    source_name: &str,
+    folder_id: Option<String>,
+    consume_source: bool,
+) -> Result<NoteDto, AppError> {
+    import_media_from_path_with_captions(app, source, source_name, folder_id, consume_source, None)
+        .await
+}
+
+/// [`import_media_from_path`], with a transcript the source already published.
+///
+/// When `cues` is present nothing is decoded and nothing is transcribed: the
+/// cues become turn rows and the note is generated from them (ADR-0028).
+pub(crate) async fn import_media_from_path_with_captions(
+    app: &AppHandle,
+    source: &std::path::Path,
+    source_name: &str,
+    folder_id: Option<String>,
+    consume_source: bool,
+    cues: Option<Vec<crate::ingest::vtt::Cue>>,
+) -> Result<NoteDto, AppError> {
+    let app = app.clone();
+    let extension = std::path::Path::new(source_name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_lowercase)
+        .unwrap_or_default();
+    let source = source.to_path_buf();
+    let mut consumable = if consume_source {
+        Some(source.clone())
+    } else {
+        None
+    };
 
     let paths = app_paths(&app)?;
     let repos = repositories(&app).await?;
-    let note = repos
-        .create_note(request.folder_id.clone())
-        .await
-        .map_err(AppError::from)?;
+    let note = repos.create_note(folder_id).await.map_err(AppError::from)?;
     let session_id = uuid::Uuid::new_v4().to_string();
     let session_dir = paths
         .recording_session_dir(&note.id, &session_id)
@@ -1264,8 +1459,8 @@ pub async fn import_audio_note(
     let dest = session_dir.join(format!("imported.{extension}"));
     std::fs::copy(&source, &dest)
         .map_err(|error| AppError::new("import_copy_failed", error.to_string()))?;
-    if let Some(temp) = temp_source.take() {
-        let _ = std::fs::remove_file(temp);
+    if let Some(consumed) = consumable.take() {
+        let _ = std::fs::remove_file(consumed);
     }
     let dest_str = dest.to_string_lossy().into_owned();
     let size_bytes = std::fs::metadata(&dest)
@@ -1328,16 +1523,34 @@ pub async fn import_audio_note(
     tokio::spawn(async move {
         let queue_lock = ticket.lock();
         let _guard = queue_lock.lock().await;
-        if let Err(error) = process_imported_audio(
-            &task_repos,
-            &task_note_id,
-            &task_session_id,
-            &task_artifact_id,
-            dest,
-            title,
-        )
-        .await
-        {
+        let outcome = match cues {
+            Some(cues) => {
+                crate::domain::processing::process_captioned_import(
+                    &task_repos,
+                    &task_note_id,
+                    &task_session_id,
+                    &task_artifact_id,
+                    cues,
+                    None,
+                    title,
+                )
+                .await
+            }
+            None => {
+                process_imported_audio(
+                    &task_repos,
+                    &task_note_id,
+                    &task_session_id,
+                    &task_artifact_id,
+                    dest,
+                    title,
+                    None,
+                    None,
+                )
+                .await
+            }
+        };
+        if let Err(error) = outcome {
             let _ = task_repos
                 .set_note_status(&task_note_id, ProcessingStatus::Failed, Some(error.message))
                 .await;
@@ -1505,17 +1718,34 @@ pub async fn retry_processing(
                 .into_iter()
                 .next()
                 .expect("retry sources were checked before starting processing");
-            process_saved_audio(
-                &task_repos,
-                &task_note_id,
-                &session_id,
-                &audio_artifact_id,
-                audio_path,
-                title,
-                existing_generated_note,
-                manual_notes,
-            )
-            .await
+            // An import's audio is whatever container the user had. Sending it
+            // through the recorded path would open an MP4 with a WAV reader
+            // and fail every retry, which is exactly what used to happen.
+            if is_wav_path(&audio_path) {
+                process_saved_audio(
+                    &task_repos,
+                    &task_note_id,
+                    &session_id,
+                    &audio_artifact_id,
+                    audio_path,
+                    title,
+                    existing_generated_note,
+                    manual_notes,
+                )
+                .await
+            } else {
+                process_imported_audio(
+                    &task_repos,
+                    &task_note_id,
+                    &session_id,
+                    &audio_artifact_id,
+                    audio_path,
+                    title,
+                    existing_generated_note,
+                    manual_notes,
+                )
+                .await
+            }
         } else {
             let session_id = sources
                 .first()

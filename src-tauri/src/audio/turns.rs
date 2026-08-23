@@ -8,9 +8,24 @@ const TRANSCRIPTION_COHERENCE_GAP_MS: i64 = 2_500;
 const NORMALIZE_TARGET_PEAK: f32 = 0.75;
 const NORMALIZE_MIN_GAIN: f32 = 1.25;
 const NORMALIZE_MAX_GAIN: f32 = 32.0;
-const TRANSCRIPTION_SAMPLE_RATE: u32 = 16_000;
-const TRANSCRIPTION_CHANNELS: u16 = 1;
+pub(crate) const TRANSCRIPTION_SAMPLE_RATE: u32 = 16_000;
+pub(crate) const TRANSCRIPTION_CHANNELS: u16 = 1;
 pub const MAX_TRANSCRIPTION_CHUNK_MS: i64 = 30 * 1000;
+/// Chunk length used for a prepared import rather than a turn.
+///
+/// Thirty seconds is the right size for a *turn*, which is short by
+/// definition. An import is one continuous source, and ten minutes of 16 kHz
+/// mono is 19.2 MB — inside the 25 MB request ceiling — so a two-hour lecture
+/// becomes twelve requests instead of two hundred and forty, each carrying far
+/// more context than a half-minute sliver. See ADR-0026.
+pub const MAX_IMPORT_CHUNK_MS: i64 = 10 * 60 * 1000;
+/// An import chunk exists to be bigger than a turn chunk. Enforced at compile
+/// time rather than in a test, because getting this backwards would make every
+/// import slower for no reason and nothing else would notice.
+const _: () = assert!(MAX_IMPORT_CHUNK_MS > MAX_TRANSCRIPTION_CHUNK_MS);
+/// Frames read per block by the streaming passes. Bounded on purpose: memory
+/// must be a function of this constant, never of a recording's duration.
+const STREAM_BLOCK_FRAMES: usize = 16_384;
 /// Pre-roll backfilled ahead of a detected turn onset when extracting its WAV,
 /// so the first phonemes that fall below the VAD activity threshold (or before
 /// the sustained-activity run) are still transcribed. See JUN-110.
@@ -311,66 +326,287 @@ pub fn write_turn_wav(turn: &AudioTurn, output_path: &Path) -> Result<(), AppErr
     Ok(())
 }
 
+/// The gain that brings `peak` to [`NORMALIZE_TARGET_PEAK`], bounded by
+/// [`NORMALIZE_MAX_GAIN`]. Shared with [`super::decode`] so a decoded import
+/// is normalized by exactly the same policy as a recorded WAV.
+pub(crate) fn transcription_gain(peak: f32) -> f32 {
+    if peak <= f32::EPSILON {
+        return 1.0;
+    }
+    (NORMALIZE_TARGET_PEAK / peak).min(NORMALIZE_MAX_GAIN)
+}
+
+/// Whether a gain is large enough to be worth rewriting a file for.
+pub(crate) fn gain_is_worth_applying(gain: f32) -> bool {
+    gain >= NORMALIZE_MIN_GAIN
+}
+
+/// A sample's amplitude as a fraction of full scale.
+pub(crate) fn sample_peak(sample: i16) -> f32 {
+    sample.unsigned_abs() as f32 / i16::MAX as f32
+}
+
+fn amplify(sample: i16, gain: f32) -> i16 {
+    if gain == 1.0 {
+        return sample;
+    }
+    (sample as f32 * gain)
+        .round()
+        .clamp(i16::MIN as f32, i16::MAX as f32) as i16
+}
+
+/// Linear resampler that survives being fed one block at a time.
+///
+/// [`resample_linear`] interpolates across a whole buffer, which is correct
+/// when the entire recording is in memory and wrong when it arrives in blocks:
+/// the sample straddling a block boundary has no right-hand neighbour yet.
+/// This keeps an absolute output index and a sliding window of input, so the
+/// result is identical to resampling the concatenated input in one pass while
+/// holding only one block at a time.
+pub(crate) struct LinearResampler {
+    ratio: f64,
+    next_output: u64,
+    window: std::collections::VecDeque<i16>,
+    window_start: u64,
+}
+
+impl LinearResampler {
+    pub(crate) fn new(input_rate: u32, output_rate: u32) -> Self {
+        Self {
+            ratio: input_rate.max(1) as f64 / output_rate.max(1) as f64,
+            next_output: 0,
+            window: std::collections::VecDeque::new(),
+            window_start: 0,
+        }
+    }
+
+    fn sample(&self, index: u64) -> f64 {
+        let offset = index.saturating_sub(self.window_start) as usize;
+        self.window
+            .get(offset)
+            .copied()
+            .unwrap_or_else(|| self.window.back().copied().unwrap_or(0)) as f64
+    }
+
+    /// Emit every output sample whose two input neighbours have arrived.
+    pub(crate) fn push(&mut self, input: &[i16], output: &mut Vec<i16>) {
+        if input.is_empty() {
+            return;
+        }
+        self.window.extend(input.iter().copied());
+        let input_end = self.window_start + self.window.len() as u64;
+        loop {
+            let position = self.next_output as f64 * self.ratio;
+            let left_index = position.floor() as u64;
+            if left_index + 1 >= input_end {
+                break;
+            }
+            let fraction = position - left_index as f64;
+            let left = self.sample(left_index);
+            let right = self.sample(left_index + 1);
+            output.push(
+                (left + (right - left) * fraction)
+                    .round()
+                    .clamp(i16::MIN as f64, i16::MAX as f64) as i16,
+            );
+            self.next_output += 1;
+        }
+        let keep_from = (self.next_output as f64 * self.ratio).floor().max(0.0) as u64;
+        while self.window_start < keep_from && self.window.pop_front().is_some() {
+            self.window_start += 1;
+        }
+    }
+
+    /// Emit the tail, holding the last input sample as its own right-hand
+    /// neighbour. Called once, after the last block.
+    pub(crate) fn flush(&mut self, output: &mut Vec<i16>) {
+        let input_end = self.window_start + self.window.len() as u64;
+        loop {
+            let position = self.next_output as f64 * self.ratio;
+            let left_index = position.floor() as u64;
+            if left_index >= input_end {
+                break;
+            }
+            let fraction = position - left_index as f64;
+            let left = self.sample(left_index);
+            let right = if left_index + 1 < input_end {
+                self.sample(left_index + 1)
+            } else {
+                left
+            };
+            output.push(
+                (left + (right - left) * fraction)
+                    .round()
+                    .clamp(i16::MIN as f64, i16::MAX as f64) as i16,
+            );
+            self.next_output += 1;
+        }
+        self.window.clear();
+    }
+}
+
+/// Writes 16 kHz mono 16-bit PCM — the exact shape transcription wants —
+/// from mono blocks at some other rate, applying a fixed gain on the way
+/// through. Shared by normalization and by the media decoder.
+pub(crate) struct TranscriptionWavWriter {
+    writer: WavWriter<std::io::BufWriter<std::fs::File>>,
+    resampler: LinearResampler,
+    gain: f32,
+    frames: u64,
+}
+
+impl TranscriptionWavWriter {
+    pub(crate) fn create(path: &Path, input_rate: u32, gain: f32) -> Result<Self, AppError> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| AppError::new("audio_normalize_failed", error.to_string()))?;
+        }
+        let spec = WavSpec {
+            channels: TRANSCRIPTION_CHANNELS,
+            sample_rate: TRANSCRIPTION_SAMPLE_RATE,
+            bits_per_sample: 16,
+            sample_format: SampleFormat::Int,
+        };
+        let writer = WavWriter::create(path, spec)
+            .map_err(|error| AppError::new("audio_normalize_failed", error.to_string()))?;
+        Ok(Self {
+            writer,
+            resampler: LinearResampler::new(input_rate, TRANSCRIPTION_SAMPLE_RATE),
+            gain,
+            frames: 0,
+        })
+    }
+
+    pub(crate) fn push_mono(&mut self, mono: &[i16]) -> Result<(), AppError> {
+        let mut resampled = Vec::new();
+        self.resampler.push(mono, &mut resampled);
+        self.write(&resampled)
+    }
+
+    fn write(&mut self, samples: &[i16]) -> Result<(), AppError> {
+        for sample in samples {
+            self.writer
+                .write_sample(amplify(*sample, self.gain))
+                .map_err(|error| AppError::new("audio_normalize_failed", error.to_string()))?;
+            self.frames += 1;
+        }
+        Ok(())
+    }
+
+    /// Flush the resampler tail and close the file. Returns the frame count.
+    pub(crate) fn finish(mut self) -> Result<u64, AppError> {
+        let mut tail = Vec::new();
+        self.resampler.flush(&mut tail);
+        self.write(&tail)?;
+        let frames = self.frames;
+        self.writer
+            .finalize()
+            .map_err(|error| AppError::new("audio_normalize_failed", error.to_string()))?;
+        Ok(frames)
+    }
+}
+
+/// Loudest downmixed sample in a WAV, read in bounded blocks.
+fn wav_mono_peak(path: &Path, spec: WavSpec) -> Result<f32, AppError> {
+    let mut reader = WavReader::open(path)
+        .map_err(|error| AppError::new("audio_normalize_failed", error.to_string()))?;
+    let channels = spec.channels.max(1) as usize;
+    let mut block: Vec<i16> = Vec::with_capacity(STREAM_BLOCK_FRAMES * channels);
+    let mut peak = 0.0_f32;
+    let absorb = |block: &mut Vec<i16>, peak: &mut f32| {
+        let frames = block.len() / channels;
+        if frames == 0 {
+            return;
+        }
+        let take = frames * channels;
+        for sample in downmix_to_mono(&block[..take], channels as u16) {
+            *peak = peak.max(sample_peak(sample));
+        }
+        block.drain(..take);
+    };
+    for sample in reader.samples::<i16>() {
+        block.push(sample.unwrap_or(0));
+        if block.len() >= STREAM_BLOCK_FRAMES * channels {
+            absorb(&mut block, &mut peak);
+        }
+    }
+    absorb(&mut block, &mut peak);
+    Ok(peak)
+}
+
+/// Prepare a WAV for transcription: downmix to mono, resample to 16 kHz, apply
+/// bounded gain toward a target peak. Returns the input path untouched when it
+/// is already exactly what transcription wants and loud enough to leave alone.
+///
+/// Both passes stream. This used to `collect()` every sample of a recording
+/// into a `Vec<i16>` before it could even decide it had nothing to do, which
+/// put a hard ceiling on how long a note could be; see ADR-0026.
 pub fn normalize_wav_for_transcription(
     input_path: &Path,
     output_path: &Path,
 ) -> Result<PathBuf, AppError> {
-    let mut reader = WavReader::open(input_path)
-        .map_err(|error| AppError::new("audio_normalize_failed", error.to_string()))?;
-    let spec = reader.spec();
+    let spec = WavReader::open(input_path)
+        .map_err(|error| AppError::new("audio_normalize_failed", error.to_string()))?
+        .spec();
     ensure_normalizable_spec(spec)?;
-    let input_samples = reader
-        .samples::<i16>()
-        .map(|sample| sample.unwrap_or(0))
-        .collect::<Vec<_>>();
-    let mono_samples = downmix_to_mono(&input_samples, spec.channels.max(1));
-    let peak = mono_samples
-        .iter()
-        .map(|sample| sample.unsigned_abs() as f32 / i16::MAX as f32)
-        .fold(0.0_f32, f32::max);
-    let output_spec = WavSpec {
-        channels: TRANSCRIPTION_CHANNELS,
-        sample_rate: TRANSCRIPTION_SAMPLE_RATE,
-        bits_per_sample: 16,
-        sample_format: SampleFormat::Int,
-    };
     let already_transcription_ready =
         spec.channels == TRANSCRIPTION_CHANNELS && spec.sample_rate == TRANSCRIPTION_SAMPLE_RATE;
+    let peak = wav_mono_peak(input_path, spec)?;
     if peak <= f32::EPSILON && already_transcription_ready {
         return Ok(input_path.to_path_buf());
     }
-    let gain = if peak <= f32::EPSILON {
-        1.0
-    } else {
-        (NORMALIZE_TARGET_PEAK / peak).min(NORMALIZE_MAX_GAIN)
-    };
-    if gain < NORMALIZE_MIN_GAIN && already_transcription_ready {
+    let gain = transcription_gain(peak);
+    if !gain_is_worth_applying(gain) && already_transcription_ready {
         return Ok(input_path.to_path_buf());
     }
-    if let Some(parent) = output_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|error| AppError::new("audio_normalize_failed", error.to_string()))?;
-    }
-    let prepared_samples =
-        resample_linear(&mono_samples, spec.sample_rate, TRANSCRIPTION_SAMPLE_RATE);
-    let mut writer = WavWriter::create(output_path, output_spec)
+
+    let mut reader = WavReader::open(input_path)
         .map_err(|error| AppError::new("audio_normalize_failed", error.to_string()))?;
-    for sample in prepared_samples {
-        let amplified = (sample as f32 * gain).round();
-        writer
-            .write_sample(amplified.clamp(i16::MIN as f32, i16::MAX as f32) as i16)
-            .map_err(|error| AppError::new("audio_normalize_failed", error.to_string()))?;
+    let channels = spec.channels.max(1) as usize;
+    let mut writer = TranscriptionWavWriter::create(output_path, spec.sample_rate, gain)?;
+    let mut block: Vec<i16> = Vec::with_capacity(STREAM_BLOCK_FRAMES * channels);
+    for sample in reader.samples::<i16>() {
+        block.push(sample.unwrap_or(0));
+        if block.len() >= STREAM_BLOCK_FRAMES * channels {
+            push_whole_frames(&mut block, channels, &mut writer)?;
+        }
     }
-    writer
-        .finalize()
-        .map_err(|error| AppError::new("audio_normalize_failed", error.to_string()))?;
+    push_whole_frames(&mut block, channels, &mut writer)?;
+    writer.finish()?;
     Ok(output_path.to_path_buf())
+}
+
+fn push_whole_frames(
+    block: &mut Vec<i16>,
+    channels: usize,
+    writer: &mut TranscriptionWavWriter,
+) -> Result<(), AppError> {
+    let frames = block.len() / channels;
+    if frames == 0 {
+        return Ok(());
+    }
+    let take = frames * channels;
+    let mono = downmix_to_mono(&block[..take], channels as u16);
+    block.drain(..take);
+    writer.push_mono(&mono)
 }
 
 pub fn split_wav_for_transcription(
     input_path: &Path,
     output_dir: &Path,
     stem: &str,
+) -> Result<Vec<PathBuf>, AppError> {
+    split_wav_for_transcription_with_limit(input_path, output_dir, stem, MAX_TRANSCRIPTION_CHUNK_MS)
+}
+
+/// [`split_wav_for_transcription`] with an explicit chunk ceiling. The turn
+/// path wants [`MAX_TRANSCRIPTION_CHUNK_MS`]; a prepared import wants
+/// [`MAX_IMPORT_CHUNK_MS`].
+pub fn split_wav_for_transcription_with_limit(
+    input_path: &Path,
+    output_dir: &Path,
+    stem: &str,
+    max_chunk_ms: i64,
 ) -> Result<Vec<PathBuf>, AppError> {
     let mut reader = WavReader::open(input_path)
         .map_err(|error| AppError::new("audio_chunk_failed", error.to_string()))?;
@@ -380,13 +616,14 @@ pub fn split_wav_for_transcription(
     let sample_rate = spec.sample_rate.max(1) as i64;
     let total_frames = reader.duration() as i64;
     let duration_ms = (total_frames * 1000) / sample_rate;
-    if duration_ms <= MAX_TRANSCRIPTION_CHUNK_MS {
+    let max_chunk_ms = max_chunk_ms.max(1);
+    if duration_ms <= max_chunk_ms {
         return Ok(vec![input_path.to_path_buf()]);
     }
 
     std::fs::create_dir_all(output_dir)
         .map_err(|error| AppError::new("audio_chunk_failed", error.to_string()))?;
-    let frames_per_chunk = ((sample_rate * MAX_TRANSCRIPTION_CHUNK_MS) / 1000).max(1) as usize;
+    let frames_per_chunk = ((sample_rate * max_chunk_ms) / 1000).max(1) as usize;
     let mut chunks = Vec::new();
     let mut writer: Option<WavWriter<std::io::BufWriter<std::fs::File>>> = None;
     let mut chunk_index = 0_usize;
@@ -430,7 +667,7 @@ pub fn split_wav_for_transcription(
 
     debug_assert!(
         !chunks.is_empty(),
-        "split_wav_for_transcription: no chunks produced for audio longer than MAX_TRANSCRIPTION_CHUNK_MS"
+        "split_wav_for_transcription: no chunks produced for audio longer than max_chunk_ms"
     );
     Ok(chunks)
 }
@@ -457,26 +694,6 @@ fn downmix_to_mono(samples: &[i16], channels: u16) -> Vec<i16> {
             (sum / frame.len().max(1) as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16
         })
         .collect()
-}
-
-fn resample_linear(samples: &[i16], input_rate: u32, output_rate: u32) -> Vec<i16> {
-    if samples.is_empty() || input_rate == output_rate {
-        return samples.to_vec();
-    }
-    let ratio = input_rate as f64 / output_rate as f64;
-    let output_len = ((samples.len() as f64) / ratio).ceil().max(1.0) as usize;
-    let mut output = Vec::with_capacity(output_len);
-    for index in 0..output_len {
-        let source_pos = index as f64 * ratio;
-        let left_index = source_pos.floor() as usize;
-        let right_index = (left_index + 1).min(samples.len() - 1);
-        let fraction = source_pos - left_index as f64;
-        let left = samples[left_index.min(samples.len() - 1)] as f64;
-        let right = samples[right_index] as f64;
-        let sample = left + ((right - left) * fraction);
-        output.push(sample.round().clamp(i16::MIN as f64, i16::MAX as f64) as i16);
-    }
-    output
 }
 
 fn detect_source_turns(
@@ -1235,6 +1452,120 @@ fn source_order(source: &str) -> i32 {
 mod tests {
     use super::*;
     use hound::WavSpec;
+
+    /// The whole-buffer resampler this module used before
+    /// [`LinearResampler`]. Kept as the oracle the incremental one is pinned
+    /// against, so a block-fed resample can never silently drift from a
+    /// one-shot resample of the same input.
+    fn resample_linear(samples: &[i16], input_rate: u32, output_rate: u32) -> Vec<i16> {
+        if samples.is_empty() || input_rate == output_rate {
+            return samples.to_vec();
+        }
+        let ratio = input_rate as f64 / output_rate as f64;
+        let output_len = ((samples.len() as f64) / ratio).ceil().max(1.0) as usize;
+        let mut output = Vec::with_capacity(output_len);
+        for index in 0..output_len {
+            let source_pos = index as f64 * ratio;
+            let left_index = source_pos.floor() as usize;
+            let right_index = (left_index + 1).min(samples.len() - 1);
+            let fraction = source_pos - left_index as f64;
+            let left = samples[left_index.min(samples.len() - 1)] as f64;
+            let right = samples[right_index] as f64;
+            let sample = left + ((right - left) * fraction);
+            output.push(sample.round().clamp(i16::MIN as f64, i16::MAX as f64) as i16);
+        }
+        output
+    }
+
+    /// Ten minutes was not picked for feel. It is the largest round chunk that
+    /// still fits the transcription route's 25 MB body limit once the audio is
+    /// 16 kHz mono 16-bit, and the reason a two-hour import costs twelve
+    /// requests instead of two hundred and forty. Raising the constant without
+    /// checking this would start failing every long import at the boundary.
+    #[test]
+    fn an_import_chunk_still_fits_the_transcription_request() {
+        const REQUEST_LIMIT_BYTES: u64 = 25 * 1024 * 1024;
+        const WAV_HEADER_BYTES: u64 = 44;
+        let bytes = (MAX_IMPORT_CHUNK_MS as u64 * u64::from(TRANSCRIPTION_SAMPLE_RATE) * 2) / 1_000
+            + WAV_HEADER_BYTES;
+
+        assert!(
+            bytes < REQUEST_LIMIT_BYTES,
+            "a {MAX_IMPORT_CHUNK_MS} ms chunk is {bytes} bytes, past the {REQUEST_LIMIT_BYTES} byte request limit"
+        );
+    }
+
+    #[test]
+    fn incremental_resampling_matches_whole_buffer_resampling() {
+        // Same input, one shot versus fed in awkward block sizes that never
+        // divide evenly into the resample ratio.
+        let samples: Vec<i16> = (0..4_096)
+            .map(|index| ((index as f32 * 0.031).sin() * 12_000.0) as i16)
+            .collect();
+        for (input_rate, output_rate) in [
+            (48_000_u32, 16_000_u32),
+            (44_100, 16_000),
+            (16_000, 16_000),
+            (8_000, 16_000),
+        ] {
+            let expected = resample_linear(&samples, input_rate, output_rate);
+            for block in [1_usize, 7, 63, 512, 4_096] {
+                let mut resampler = LinearResampler::new(input_rate, output_rate);
+                let mut actual = Vec::new();
+                for chunk in samples.chunks(block) {
+                    resampler.push(chunk, &mut actual);
+                }
+                resampler.flush(&mut actual);
+                // The oracle extrapolates one sample past the last input pair;
+                // the incremental one holds it. Compare the shared prefix and
+                // require the lengths to agree within that single sample.
+                let shared = expected.len().min(actual.len());
+                assert!(
+                    expected.len().abs_diff(actual.len()) <= 1,
+                    "{input_rate}->{output_rate} block {block}: {} vs {}",
+                    expected.len(),
+                    actual.len()
+                );
+                assert_eq!(
+                    expected[..shared],
+                    actual[..shared],
+                    "{input_rate}->{output_rate} block {block}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn incremental_resampling_is_lossless_at_the_same_rate() {
+        let samples: Vec<i16> = (0..1_000).map(|index| (index * 17) as i16).collect();
+        let mut resampler = LinearResampler::new(16_000, 16_000);
+        let mut actual = Vec::new();
+        for chunk in samples.chunks(37) {
+            resampler.push(chunk, &mut actual);
+        }
+        resampler.flush(&mut actual);
+        assert_eq!(samples, actual);
+    }
+
+    #[test]
+    fn splitting_honours_an_explicit_chunk_limit() {
+        let dir = std::env::temp_dir().join(format!("os-june-split-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("long.wav");
+        // 90 seconds of 16 kHz mono.
+        write_samples(&input, &vec![1_000_i16; 16_000 * 90]);
+
+        let turn_chunks =
+            split_wav_for_transcription_with_limit(&input, &dir.join("turn"), "s", 30_000).unwrap();
+        let import_chunks =
+            split_wav_for_transcription_with_limit(&input, &dir.join("import"), "s", 600_000)
+                .unwrap();
+
+        assert_eq!(turn_chunks.len(), 3);
+        // 90s fits inside one ten-minute import chunk, so the file is reused.
+        assert_eq!(import_chunks, vec![input.clone()]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn normalization_boosts_quiet_wav_without_touching_original() {

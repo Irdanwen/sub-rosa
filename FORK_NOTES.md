@@ -351,6 +351,92 @@ sorties déshydratées et se ré-attache aux rendus en vol — jamais de double 
 entre rendus reste WebView (lastFrame/assemble exigent WebKit, décision no-ffmpeg) : un run
 interrompu reprend au premier plan suivant, exactement le contrat ADR-0018.
 
+## Imports et résumés longs (2026-08-23)
+
+Sub Rosa transforme désormais en note ce qu'il n'a **pas** enregistré : un fichier
+déposé, un podcast, une conférence. Trois ADR portent les décisions —
+[0026](docs/adr/0026-imported-media-is-decoded-in-process.md) (décodage),
+[0027](docs/adr/0027-long-form-summaries-are-a-fork-side-map-reduce-over-turns.md)
+(résumé long), [0028](docs/adr/0028-import-links-are-fetched-never-scraped.md)
+(ingestion par lien) — et la section « Imports (fork) » de `CONTEXT.md` porte le
+vocabulaire. **Aucune ligne n'a été écrite dans `june-api/`** : c'est délibéré
+(ADR-0027), et c'est ce qui rend ce lot sans coût de re-merge côté backend.
+
+### Fichiers ajoutés
+
+| Fichier | Rôle |
+|---|---|
+| `src-tauri/src/audio/decode.rs` | Décodage in-process (Symphonia) d'un conteneur audio/vidéo vers le WAV 16 kHz mono que la transcription veut. En flux : la mémoire dépend du paquet, jamais de la durée. Un fichier vidéo est une piste audio qu'on lit et un conteneur qu'on saute |
+| `src-tauri/src/longform/{mod,chunk,prompts}.rs`, `migrations/015_note_summaries.sql` | Le résumé long : découpage sur frontières de tours avec recouvrement, passes map/merge/short vers `/v1/chat/completions` **par le sidecar**, résolution des marqueurs `[t:N]` en horodatages *côté app*, ligne durable reprise partie par partie |
+| `src-tauri/src/ingest/{mod,link,feed,fetch,vtt,extractor}.rs`, `migrations/016_ingests.sql` | L'ingestion par lien : classification pure d'une URL, lecture RSS/Atom, téléchargement borné (plafond sur ce qui arrive, pas sur `Content-Length`), lecture des sous-titres publiés, rail extracteur opt-in |
+| `src/lib/{import-media,chapters}.ts` | Dépôt d'un fichier par tranches (aucun plafond de taille, sur les 2 shells) ; relecture des chapitres depuis les titres du résumé |
+| `src/components/note-editor/NoteSummaryPanel.tsx`, `src/components/notes-list/ImportLinkBar.tsx`, `src/components/settings/ImportSettingsSection.tsx` | L'onglet Summary (invitation chiffrée, progression, chapitres, copie), la barre de lien (prévisualisation hors ligne + téléchargements en cours), le réglage du rail extracteur |
+| `src-tauri/tests/{media_decode,shared_commands}.rs`, `src-tauri/tests/fixtures/media/` | 4 tests de décodage sur de vraies fixtures MP3/AAC/H.264 (~35 ko) + **le garde de parité des deux `generate_handler!`** |
+| `src/test/{import-media,note-summary-panel,import-link-bar,chapters}.test.ts(x)` | 37 tests front |
+
+### Fichiers upstream modifiés
+
+| Fichier(s) | Raison | Re-merge |
+|---|---|---|
+| `src-tauri/src/audio/turns.rs` | `normalize_wav_for_transcription` **réécrit en flux** (il chargeait tout l'enregistrement en `Vec<i16>` avant même de décider qu'il n'avait rien à faire) ; ajout de `LinearResampler` (rééchantillonnage incrémental, épinglé contre l'ancien oracle whole-buffer), `TranscriptionWavWriter`, `split_wav_for_transcription_with_limit`, `MAX_IMPORT_CHUNK_MS` | Garder la version fork : elle lève un plafond de durée réel. L'ancien `resample_linear` vit maintenant dans le module de test comme oracle |
+| `src-tauri/src/domain/processing.rs` | `process_imported_audio` décode d'abord et ne retombe sur l'envoi du fichier entier que si Symphonia ne sait pas le lire ; `PreparedWavRun`/`transcribe_prepared_wav_and_generate` extraits pour partager le chemin ; `process_captioned_import` (sous-titres au lieu de transcription) ; `persist_generation_for_transcript` extrait ; `is_wav_path` | Réappliquer ; le découpage en helpers est la partie à garder |
+| `src-tauri/src/commands.rs` | `IMPORTABLE_AUDIO_EXTENSIONS` élargi (vidéo incluse), `stage_imported_file`/`discard_staged_import` (dépôt par tranches), variante `staged_path`, `import_media_from_path[_with_captions]` extraits, **`retry_processing` route les imports compressés vers `process_imported_audio`** (un réessai les envoyait à un lecteur WAV : cassé depuis toujours) | Le fix de `retry_processing` est un correctif de bug, pas une préférence |
+| `src-tauri/src/lib.rs` | 12 commandes dans les **deux** `generate_handler!` (2 desktop-only : le rail extracteur) ; `pub mod {ingest,longform}` ; suppression d'un doublon préexistant `commands::delete_agent_task` | `tests/shared_commands.rs` refuse maintenant toute dérive entre les deux listes |
+| `src-tauri/src/background.rs` | Deux entrées de balayage : résumés longs inachevés, téléchargements inachevés | Additif |
+| `src-tauri/src/db/repositories.rs` | Méthodes `note_summary*`/`ingest*`, `set_audio_artifact_duration`, et **`search_note_context` couvre les résumés** (sans ça le meilleur contenu de l'app serait le seul que la recherche ne trouve pas) | Additif |
+| `src-tauri/src/agent_lite/mod.rs` | Outils `summarize_note` + `import_link` (ils *démarrent* un travail et le disent), `read_note` transmet le résumé long, prompt système étendu | Additif |
+| `src-tauri/src/actions.rs`, `src/lib/chat-blocks.ts`, `src/components/chat-blocks/ProposalCard.tsx`, `src-tauri/src/hermes_bridge.rs` | Deux nouvelles actions proposées (`summarize`, `importLink`) : c'est la parité desktop, et c'est le bon garde-fou puisque les deux dépensent de l'argent | Une branche par fichier, comme le dit la doc d'`actions.rs` |
+| `src-tauri/src/hermes/june_context_mcp.py` | `get_note` renvoie `longFormSummary` (lecture défensive : la colonne n'existe pas sur une base antérieure) | Additif |
+| `src/components/note-editor/NoteEditor.tsx` | 3ᵉ onglet « Summary » (offert seulement s'il y a un transcript), saut de chapitre vers le tour du transcript, `data-turn-id` | Réappliquer |
+| `src/components/notes-list/NotesList.tsx`, `src/app/App.tsx`, `src/app/mobile/MobileApp.tsx`, `src/components/mobile/screens/NotesScreen.tsx` | Zone de dépôt + bouton Import + `headerAccessory` (la barre de lien est passée en `ReactNode` : `NotesList` doit rester présentationnel), destination `import`, sélecteur mobile élargi à la vidéo | Réappliquer |
+| `src/lib/destinations.ts` | Destination `subrosa://import?url=…`, validée deux fois | Additif |
+| `src-tauri/Cargo.toml` | `symphonia` 0.5.5, `quick-xml` 0.39 (déjà transitif), feature `process` de tokio **par cible desktop** | Garder le ciblage : iOS ne doit pas embarquer de machinerie de sous-processus |
+| `src/test/setup.ts` | Polyfill `Blob.arrayBuffer` (jsdom ne l'a pas ; tous les moteurs de l'app l'ont depuis 2019) | Additif |
+| `THIRD_PARTY_NOTICES.md` | Symphonia (MPL-2.0) | Obligatoire |
+
+### Pièges
+
+- **Opus et HE-AAC ne sont pas décodables** (Symphonia ne les implémente pas), et
+  Opus est le codec audio par défaut de YouTube. C'est pour ça que le rail
+  extracteur **sélectionne** un flux m4a/mp3 (`-f bestaudio[ext=m4a]/…`) au
+  lieu de demander une conversion `-x --audio-format`, qui exigerait un ffmpeg
+  que l'app n'embarque pas. Ne pas prétendre le contraire :
+  un fichier indécodable retombe sur l'envoi entier, et le dit par son nom.
+- **Le modèle ne produit jamais d'horodatage.** Il rend un marqueur `[t:N]`
+  qu'on lui a donné, et l'app résout N en `start_ms`. Un marqueur hors plage
+  est borné, pas cru.
+- **Une reprise ne rachète pas les parties déjà payées** (`parts_json`), et ne
+  les réutilise que si `chunk_count` correspond encore — une note
+  re-transcrite se découpe autrement.
+- **Supprimer la ligne, c'est annuler** : le résumé long comme le
+  téléchargement vérifient l'existence de leur ligne entre deux étapes.
+- **Aucun téléchargeur n'est embarqué.** Le rail extracteur cherche un
+  `yt-dlp` que l'utilisateur a installé, et seulement si le réglage est activé.
+- **Le sidecar embarqué n'est reconstruit par aucun flux local.**
+  `scripts/build-sidecar.mjs` n'est appelé que par `release.yml` ; `pnpm
+  tauri:dev` lance l'app contre le binaire déjà présent dans
+  `src-tauri/binaries/` (gitignoré). Un correctif dans `june-api/` peut donc
+  être écrit, testé, mergé — et rester **sans effet dans l'app qui tourne**.
+  C'est ce qui a fait qu'un modèle gratuit (`stealth-ox-alpha`, `inputPrice: 0`)
+  est resté invisible dans le sélecteur desktop bien après le correctif de prix.
+  `make sidecar` reconstruit, `make sidecar-check` avertit, et `pnpm tauri:dev`
+  lance l'avertissement au démarrage (sans bloquer).
+- **`ProposedAction` a besoin de `rename_all_fields`, pas seulement de
+  `rename_all`.** Le premier renomme les *variantes*, le second les champs
+  qu'elles contiennent. Il manquait, et le type `note` était donc cassé depuis
+  le jour de sa livraison : la carte écrit `noteId`, Rust attendait `note_id`,
+  et taper la carte échouait à la frontière IPC. `reminder` et `event` n'étaient
+  épargnés que parce que tous leurs champs sont des mots simples. Les
+  *arguments* de commande, eux, sont convertis par Tauri (`ArgumentCase::Camel`)
+  — le piège ne concerne que les corps désérialisés par serde.
+- **Une note créée par une tâche de fond n'apparaît pas toute seule.** La liste
+  ne se recharge que sur action explicite, d'où le `onCompleted` de
+  `ImportLinkBar`. Toute future création de note hors UI a le même besoin.
+- **L'extension de partage iOS n'existe pas** : la destination
+  `subrosa://import?url=…` est le contrat qu'elle utiliserait, et elle est déjà
+  utilisable via Raccourcis. Ajouter la cible demande un second bundle id et un
+  second profil dans `ios-release.yml` — chantier Xcode à part.
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.

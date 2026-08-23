@@ -8,6 +8,8 @@ import { OPEN_NOTE_FROM_CHAT_EVENT } from "../../lib/chat-blocks-nav";
 import { MeetingAmbiguityPrompt } from "../../components/calendar/MeetingContext";
 import { linkRecordingToMeeting } from "../../lib/calendar-link";
 import type { CalendarEventDto } from "../../lib/tauri";
+import { importMediaFile } from "../../lib/import-media";
+import { startLinkIngest } from "../../lib/tauri";
 import { type Destination, subscribeToDestinations } from "../../lib/destinations";
 import { useAmbientActivity } from "./useAmbientActivity";
 import { AgentScreen, AgentSessionScreen } from "../../components/mobile/screens/AgentScreen";
@@ -40,7 +42,6 @@ import {
   finishRecording,
   getNote,
   getRecordingStatus,
-  importAudioNote,
   pauseRecording,
   removeNoteFromFolder,
   resumeRecording,
@@ -399,6 +400,12 @@ export function MobileApp() {
       case "record":
         void handleCreateNote({ record: true });
         break;
+      // Shared in from another app. The notes tab is where the download shows
+      // itself, so land there rather than starting something invisible.
+      case "import":
+        nav.switchTab("notes");
+        void startLinkIngest(destination.url).catch((err) => setError(messageFromError(err)));
+        break;
     }
   };
   useEffect(() => subscribeToDestinations((d) => handleDestinationRef.current(d)), []);
@@ -584,19 +591,14 @@ export function MobileApp() {
     [archiveFolder?.id],
   );
 
-  // The webview file input hands us bytes (iOS grants IT access to the
-  // picked file; the Rust process cannot open that security-scoped path).
+  // The webview file input hands us bytes: iOS grants IT access to the picked
+  // file, and the Rust process cannot open that security-scoped path. The file
+  // is streamed across in slices rather than read whole, so importing an
+  // hour-long recording does not take the tab down with it.
   const handleImportAudio = useCallback(
     async (file: File) => {
       try {
-        const buffer = await file.arrayBuffer();
-        const bytes = new Uint8Array(buffer);
-        let binary = "";
-        const chunk = 0x8000;
-        for (let index = 0; index < bytes.length; index += chunk) {
-          binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
-        }
-        const note = await importAudioNote({ base64: btoa(binary), fileName: file.name });
+        const note = await importMediaFile(file);
         dispatch({ type: "noteLoaded", note });
         nav.push({ view: "note", noteId: note.id });
         hapticNotify("success");

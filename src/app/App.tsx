@@ -1,6 +1,7 @@
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -13,6 +14,9 @@ import { CarpeDiemGate } from "../components/carpe-diem/CarpeDiemGate";
 import { RailSwitchBanner } from "../components/carpe-diem/RailSwitchBanner";
 import { SIDECAR_STATUS_EVENT } from "../components/settings/CarpeDiemSettings";
 import { OnboardingFlow } from "../components/onboarding/OnboardingFlow";
+import { IMPORTABLE_MEDIA_EXTENSIONS, importMediaFile, importMediaPath } from "../lib/import-media";
+import { ImportLinkBar } from "../components/notes-list/ImportLinkBar";
+import { startLinkIngest } from "../lib/tauri";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../lib/chat-blocks-nav";
 import { MeetingAmbiguityPrompt } from "../components/calendar/MeetingContext";
 import { linkRecordingToMeeting } from "../lib/calendar-link";
@@ -1576,6 +1580,12 @@ export function App() {
       case "record":
         void handleStartMeetingDetectedRecording();
         break;
+      // Shared in from outside the app. Land on the notes list, where the
+      // download is visible, rather than starting something invisible.
+      case "import":
+        setActiveView("notes");
+        void startLinkIngest(destination.url).catch((err) => setError(messageFromError(err)));
+        break;
     }
   };
   useEffect(() => subscribeToDestinations((d) => handleDestinationRef.current(d)), []);
@@ -1925,6 +1935,78 @@ export function App() {
     },
     [state.selectedFolderId],
   );
+
+  /** Reload the notes list. A fetched link creates its note in Rust, on a task
+   * that outlives the click, so nothing else would ever tell the list. */
+  const refreshNotesList = useCallback(async () => {
+    try {
+      const response = await listNotes();
+      dispatch({ type: "notesLoaded", notes: response.items });
+    } catch {
+      // A stale list is not worth an error banner; the next action reloads it.
+    }
+  }, []);
+
+  // --- Importing media as a note (ADR-0026) --------------------------------
+  const [importing, setImporting] = useState<{ fileName: string; fraction: number } | null>(null);
+
+  const openImportedNote = useCallback((note: NoteDto) => {
+    dispatch({ type: "noteLoaded", note });
+    setOriginFolderId(undefined);
+    setOriginAllNotes(true);
+    setActiveView("meetings");
+  }, []);
+
+  /** Files dropped on the notes list. Handed over one at a time so at most one
+   * slice is ever in memory, and the note opened is the last one imported. */
+  const handleImportFiles = useCallback(
+    async (files: File[]) => {
+      if (!files.length) return;
+      let opened: NoteDto | null = null;
+      try {
+        for (const file of files) {
+          setImporting({ fileName: file.name, fraction: 0 });
+          opened = await importMediaFile(file, {
+            folderId: state.selectedFolderId ?? undefined,
+            onProgress: ({ transferred, total }) =>
+              setImporting({
+                fileName: file.name,
+                fraction: total > 0 ? Math.min(transferred / total, 1) : 1,
+              }),
+          });
+        }
+      } catch (err) {
+        setError(messageFromError(err));
+      } finally {
+        setImporting(null);
+      }
+      if (opened) openImportedNote(opened);
+    },
+    [openImportedNote, state.selectedFolderId],
+  );
+
+  /** The picker route: Rust opens the file by path, so nothing crosses the
+   * webview and there is no size ceiling to speak of. */
+  const handlePickImportFile = useCallback(async () => {
+    try {
+      const selected = await openFileDialog({
+        multiple: false,
+        title: "Import audio or video",
+        filters: [{ name: "Audio and video", extensions: [...IMPORTABLE_MEDIA_EXTENSIONS] }],
+      });
+      const path = Array.isArray(selected) ? selected[0] : selected;
+      if (!path) return;
+      setImporting({ fileName: path.split(/[\\/]/).pop() ?? path, fraction: 1 });
+      const note = await importMediaPath(path, {
+        folderId: state.selectedFolderId ?? undefined,
+      });
+      openImportedNote(note);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setImporting(null);
+    }
+  }, [openImportedNote, state.selectedFolderId]);
 
   // Mirrors the sidebar's "New session" button so the agent sessions list
   // can start a fresh chat with the same pending-session handshake. Memoized
@@ -2798,6 +2880,7 @@ export function App() {
           setActiveAgentSession(undefined);
           setActiveView("agent");
         }}
+        onImportMedia={() => void handlePickImportFile()}
         onSelectAgentSession={(session) => {
           if (takeNewTabIntent()) {
             openTab({ view: "agent", agentSessionId: session.id });
@@ -3059,6 +3142,10 @@ export function App() {
                   onOpenMoveNotes={(noteIds) => setMoveDialogNoteIds(noteIds)}
                   onDeleteNote={(noteId) => void handleDeleteNote(noteId)}
                   onDeleteNotes={(noteIds) => void handleDeleteNotes(noteIds)}
+                  onImportFiles={(files) => void handleImportFiles(files)}
+                  onPickImportFile={() => void handlePickImportFile()}
+                  importing={importing}
+                  headerAccessory={<ImportLinkBar folderId={state.selectedFolderId ?? undefined} />}
                 />
               ) : activeView === "folders" ? (
                 <FoldersWorkspace

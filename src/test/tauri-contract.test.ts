@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  actionExecute,
   carpeDiemCacheStats,
   checkRecordingSourceReadiness,
   createAgentTask,
@@ -8,10 +9,14 @@ import {
   forkAgentTask,
   getNote,
   juneOpenCommunityPage,
+  noteSummary,
   recoverRecording,
   retryProcessing,
   setAgentTaskModel,
+  stageImportedFile,
+  startLinkIngest,
   startRecording,
+  summarizeNoteLongform,
   updateNote,
 } from "../lib/tauri";
 
@@ -48,6 +53,71 @@ describe("Tauri command contracts", () => {
         editedContent: "Manual notes",
         activeTab: "transcription",
       },
+    });
+  });
+
+  /// A proposed action crosses the boundary as a serde-tagged enum, which
+  /// Tauri does not rename for us: whatever this sends is exactly what
+  /// `crate::actions::ProposedAction` has to read. The `note` kind shipped
+  /// broken for precisely this reason, so the shape is pinned on both sides.
+  it("sends a proposed action exactly as Rust deserializes it", async () => {
+    await actionExecute("prop-1", {
+      kind: "note",
+      id: "a1",
+      label: "Add a line",
+      noteId: "note-1",
+      text: "Ana owns it.",
+    });
+    await actionExecute("prop-1", {
+      kind: "summarize",
+      id: "a2",
+      label: "Read it",
+      noteId: "note-1",
+    });
+
+    expect(mocks.invoke).toHaveBeenNthCalledWith(1, "action_execute", {
+      request: {
+        proposalId: "prop-1",
+        action: {
+          kind: "note",
+          id: "a1",
+          label: "Add a line",
+          noteId: "note-1",
+          text: "Ana owns it.",
+        },
+      },
+    });
+    expect(mocks.invoke).toHaveBeenNthCalledWith(2, "action_execute", {
+      request: {
+        proposalId: "prop-1",
+        action: { kind: "summarize", id: "a2", label: "Read it", noteId: "note-1" },
+      },
+    });
+  });
+
+  it("sends import and long-form commands with the argument names Rust expects", async () => {
+    await stageImportedFile({
+      uploadId: "upload-1",
+      fileName: "talk.mp3",
+      base64: "AA==",
+      done: true,
+    });
+    await startLinkIngest("https://cdn.example.com/a.mp3", "folder-1");
+    await noteSummary("note-1");
+    await summarizeNoteLongform("note-1");
+
+    expect(mocks.invoke).toHaveBeenNthCalledWith(1, "stage_imported_file", {
+      request: { uploadId: "upload-1", fileName: "talk.mp3", base64: "AA==", done: true },
+    });
+    // Loose arguments, not a request wrapper: Tauri lowerCamelCases the Rust
+    // parameter names, so `folder_id` is looked up as `folderId`.
+    expect(mocks.invoke).toHaveBeenNthCalledWith(2, "start_link_ingest", {
+      url: "https://cdn.example.com/a.mp3",
+      folderId: "folder-1",
+    });
+    expect(mocks.invoke).toHaveBeenNthCalledWith(3, "note_summary", { noteId: "note-1" });
+    expect(mocks.invoke).toHaveBeenNthCalledWith(4, "summarize_note_longform", {
+      noteId: "note-1",
     });
   });
 

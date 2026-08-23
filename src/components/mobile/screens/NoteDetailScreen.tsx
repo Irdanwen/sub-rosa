@@ -5,6 +5,7 @@ import type {
   FolderDto,
   LiveTranscriptEventDto,
   NoteDto,
+  NoteTab,
   RecordingSourceReadinessDto,
   RecordingStatusDto,
 } from "../../../lib/tauri";
@@ -34,7 +35,7 @@ type NoteDetailScreenProps = {
   onAssignFolder: (folderId: string) => void;
   onRemoveFolder: (folderId: string) => void;
   onCreateAndAssignFolder: (name: string) => void;
-  onTabChange: (tab: "notes" | "transcription") => void;
+  onTabChange: (tab: NoteTab) => void;
 };
 
 /**

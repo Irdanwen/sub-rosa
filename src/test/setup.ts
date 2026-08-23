@@ -86,6 +86,21 @@ if (!HTMLElement.prototype.getBoundingClientRect) {
   HTMLElement.prototype.getBoundingClientRect = () => new DOMRect();
 }
 
+// jsdom ships Blob without `arrayBuffer()`, which every browser engine the app
+// actually runs in has had since 2019. Sliced-file uploads (import staging)
+// depend on it, so fill the gap rather than making production code work around
+// a test environment.
+if (typeof Blob !== "undefined" && !Blob.prototype.arrayBuffer) {
+  Blob.prototype.arrayBuffer = function readAsArrayBuffer(this: Blob): Promise<ArrayBuffer> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(this);
+    });
+  };
+}
+
 function setNavigatorPlatform(platform: string, userAgent: string) {
   Object.defineProperty(navigator, "platform", {
     configurable: true,

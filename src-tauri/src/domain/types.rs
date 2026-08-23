@@ -370,6 +370,62 @@ pub struct TranscriptDto {
     pub last_error: Option<String>,
 }
 
+/// A link being turned into a note (ADR-0028).
+///
+/// Covers only the steps before transcription: resolve, fetch, hand over. Once
+/// `note_id` is set the note carries its own status and this row is history.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct IngestDto {
+    pub id: String,
+    pub url: String,
+    /// direct | feed | platform
+    pub kind: String,
+    /// pending | fetching | done | failed
+    pub status: String,
+    pub title: Option<String>,
+    pub media_url: Option<String>,
+    pub note_id: Option<String>,
+    pub folder_id: Option<String>,
+    pub bytes_done: i64,
+    pub bytes_total: Option<i64>,
+    pub attempts: i64,
+    pub last_error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A long-form summary of a note's transcript (ADR-0027).
+///
+/// The row exists from the moment the work is asked for, so a summary
+/// interrupted by a lock screen or a crash is a row to re-drive rather than a
+/// lost task. `shortSummary` lands before `detailedSummary` on a multi-chunk
+/// run: a provisional paragraph is worth more in ten seconds than a perfect
+/// one in three minutes, and it is replaced by the final one at the end.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteSummaryDto {
+    pub note_id: String,
+    /// pending | running | ready | failed
+    pub status: String,
+    pub short_summary: Option<String>,
+    /// Markdown, with resolved timestamps in the `##` headings.
+    pub detailed_summary: Option<String>,
+    pub transcript_chars: i64,
+    pub chunk_count: i64,
+    pub chunks_done: i64,
+    /// Finished map passes, so an interrupted run resumes where it stopped
+    /// rather than re-buying what already landed. Scaffolding, not content:
+    /// cleared the moment the summary is ready, and never shown.
+    #[serde(skip)]
+    pub parts: Vec<String>,
+    pub model: String,
+    pub prompt_version: String,
+    pub last_error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingSessionDto {

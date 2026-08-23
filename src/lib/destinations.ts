@@ -35,11 +35,16 @@ export type Destination =
   /** Open Studio. */
   | { kind: "studio" }
   /** Start a recording. */
-  | { kind: "record" };
+  | { kind: "record" }
+  /** Fetch a link and turn it into a note (ADR-0028). The one destination
+   * that carries a payload from outside the app, so its URL is validated
+   * here and again by the Rust side before a single byte is fetched. */
+  | { kind: "import"; url: string };
 
 /** App-generated ids (notes, sessions) are opaque tokens, never paths. */
 const ID_RE = /^[\w-]{1,64}$/;
 const MAX_QUERY = 200;
+const MAX_IMPORT_URL = 2048;
 
 /**
  * Parses a `subrosa://…` address. Returns null for anything else, including
@@ -82,6 +87,13 @@ export function parseDestination(raw: string): Destination | null {
       return { kind: "studio" };
     case "record":
       return { kind: "record" };
+    case "import": {
+      const target = url.searchParams.get("url")?.trim();
+      // Only web links, and only ones short enough to be real. The Rust side
+      // refuses loopback and private addresses on top of this.
+      if (!target || target.length > MAX_IMPORT_URL || !/^https?:\/\//i.test(target)) return null;
+      return { kind: "import", url: target };
+    }
     default:
       return null;
   }
@@ -93,6 +105,8 @@ export function destinationUrl(destination: Destination): string {
   switch (destination.kind) {
     case "note":
       return `${DESTINATION_SCHEME}note/${destination.noteId}`;
+    case "import":
+      return `${DESTINATION_SCHEME}import?url=${encodeURIComponent(destination.url)}`;
     case "chat": {
       const path = destination.sessionId ? `chat/${destination.sessionId}` : "chat";
       const query = destination.query ? `?q=${encodeURIComponent(destination.query)}` : "";

@@ -33,6 +33,9 @@ hound = "3.5"
 # in for a dependency tauri already resolves.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "tiff"] }
 rand = "0.8"
+# Parses podcast feeds so an enclosure can be fetched (ADR-0028). Already in
+# the tree transitively, so pinning it here adds no new crate to the lockfile.
+quick-xml = "0.39"
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "cookies"] }
 # Pure-Rust FFT for the echo-rejection similarity gate (GCC-PHAT lag estimation).
 rustfft = "6.2"
@@ -46,6 +49,13 @@ sha2 = "0.10"
 # put unused MySQL/Postgres packages into Cargo.lock and cargo-audit.
 # sqlx-sqlite does not expose a public runtime-tokio feature in SQLx 0.8.x, so
 # the direct sqlx-core dependency intentionally enables its runtime hook.
+# Decodes imported audio and video containers in-process (ADR-0026): pure
+# Rust, no subprocess, no bundled ffmpeg to sign or notarize, and it builds for
+# iOS like everything else. Pinned to 0.5 rather than the ten-day-old 0.6:
+# 0.5.5 is the documented, widely-deployed API and needs no MSRV bump.
+# Defaults already cover FLAC/Vorbis/PCM/ADPCM in OGG, MKV/WebM and WAV; the
+# rest are the containers and codecs an import actually arrives in.
+symphonia = { version = "0.5.5", features = ["aac", "aiff", "alac", "caf", "isomp4", "mp3"] }
 sqlx = { package = "sqlx-core", version = "0.8", default-features = false, features = ["_rt-tokio", "chrono", "uuid"] }
 sqlx-sqlite = { version = "0.8", default-features = false, features = ["bundled", "chrono", "uuid"] }
 tauri = { version = "2.8.0", features = ["protocol-asset", "macos-private-api", "tray-icon", "image-png"] }
@@ -66,6 +76,10 @@ tauri-plugin-haptics = "2.3.2"
 # process plugin (relaunch) is desktop-shaped, and autostart (launch at login)
 # is a desktop concept. The iOS build must not pull them in.
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+# Spawning the user's own yt-dlp (ADR-0028, desktop rail). Declared per-target
+# rather than in the shared dependency so the iOS build carries no
+# process-spawning machinery it can never use.
+tokio = { version = "1.42", features = ["process"] }
 tauri-plugin-process = "2.3.1"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-updater = "2.10.1"

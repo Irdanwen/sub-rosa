@@ -24,10 +24,12 @@ pub mod hermes_bridge;
 pub mod hermes_image_fit;
 #[cfg(desktop)]
 pub mod hermes_working_dir;
+pub mod ingest;
 pub mod ios_background;
 pub mod june_api;
 #[cfg(target_os = "ios")]
 pub mod keyboard_ios;
+pub mod longform;
 #[cfg(desktop)]
 pub mod macos_menu_icons;
 pub mod map_render;
@@ -250,7 +252,6 @@ pub fn run() {
             commands::fork_agent_task,
             commands::list_agent_tool_events,
             commands::delete_agent_task,
-            commands::delete_agent_task,
             hermes_bridge::hermes_bridge_status,
             hermes_bridge::ensure_hermes_bridge_gateway,
             hermes_bridge::hermes_admin_request,
@@ -333,6 +334,18 @@ pub fn run() {
             commands::retry_processing,
             commands::recover_recording,
             commands::import_audio_note,
+            commands::stage_imported_file,
+            commands::discard_staged_import,
+            longform::note_summary,
+            longform::note_summary_plan,
+            longform::summarize_note_longform,
+            longform::forget_note_summary,
+            ingest::preview_ingest_link,
+            ingest::start_link_ingest,
+            ingest::list_active_ingests,
+            ingest::discard_ingest,
+            ingest::extractor::ingest_extractor_status,
+            ingest::extractor::ingest_set_extractor_enabled,
             dictation::dictation_settings,
             dictation::list_dictation_history,
             dictation::delete_dictation_history_item,
@@ -515,6 +528,16 @@ pub fn run() {
         commands::retry_processing,
         commands::recover_recording,
         commands::import_audio_note,
+        commands::stage_imported_file,
+        commands::discard_staged_import,
+        longform::note_summary,
+        longform::note_summary_plan,
+        longform::summarize_note_longform,
+        longform::forget_note_summary,
+        ingest::preview_ingest_link,
+        ingest::start_link_ingest,
+        ingest::list_active_ingests,
+        ingest::discard_ingest,
         dictation_mobile::mobile_dictation_start,
         dictation_mobile::mobile_dictation_status,
         dictation_mobile::mobile_dictation_stop,
