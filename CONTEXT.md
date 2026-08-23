@@ -122,6 +122,13 @@ _Avoid_: system driver, in-process capture.
 
 ### Agent runtime (Hermes)
 
+**Automation address**:
+A `subrosa://…` destination shown to the user so a Shortcut can open it.
+Every destination the router understands is automatable this way — the Action
+button, Siri, a scheduled shortcut — which is what App Intents would buy for
+these verbs without Swift, an app group, or a provisioning change.
+_Avoid_: API, integration endpoint.
+
 **Proposed action**:
 Something the assistant offers to do — a reminder, a calendar follow-up, a
 line added to a note — rendered as a `subrosa:proposal` chat block. Nothing

@@ -100,12 +100,25 @@ objc2-event-kit = { version = "0.3", default-features = false, features = [
     "EKReminder",
     "EKTypes",
 ] }
+# Spotlight (crate::spotlight): notes findable from the system's own search,
+# reachable from objc2 exactly like the other native bridges — no Swift, no
+# extension target. Only what the index needs.
+objc2-core-spotlight = { version = "0.3", default-features = false, features = [
+    "std",
+    "block2",
+    "CSSearchableIndex",
+    "CSSearchableItem",
+    "CSSearchableItemAttributeSet",
+    "CSSearchableItemAttributeSet_General",
+    "CSSearchableItemAttributeSet_Documents",
+] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "std",
     "NSArray",
     "NSDate",
     "NSString",
     "NSError",
+    "NSURL",
 ] }
 
 # Mobile cannot spawn the june-api sidecar binary (no subprocesses on iOS);

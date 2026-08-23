@@ -1,19 +1,30 @@
 import { getVersion } from "@tauri-apps/api/app";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useEffect, useState } from "react";
 import { PRODUCT_NAME } from "../../../lib/branding";
 import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
+import { AUTOMATION_ADDRESSES } from "../../../lib/automations";
 import { hapticSelection } from "../../../lib/haptics";
 import { formatCredits } from "../../../lib/studio/catalog";
 import {
   type MomentSettingsDto,
+  type SpotlightSettingsDto,
   carpeDiemOpenDashboard,
   memoryList,
   momentsGetSettings,
   momentsSetSettings,
+  spotlightGetSettings,
+  spotlightSetSettings,
 } from "../../../lib/tauri";
 import { type ThemePreference, getStoredTheme, setStoredTheme } from "../../../lib/theme";
 import { useCarpeDiem } from "../../settings/CarpeDiemSettings";
-import { SettingsGroup, SettingsLinkRow, SettingsRow, SettingsToggleRow } from "../SettingsList";
+import {
+  SettingsActionRow,
+  SettingsGroup,
+  SettingsLinkRow,
+  SettingsRow,
+  SettingsToggleRow,
+} from "../SettingsList";
 import { StackHeader } from "../StackHeader";
 import type { SettingsSection } from "../../../app/mobile/nav";
 
@@ -80,6 +91,29 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
       cancelled = true;
     };
   }, []);
+  // The router already makes every destination automatable; the only thing
+  // missing is that nobody can guess a URL scheme. Tapping copies one.
+  const copyAutomation = async (url: string) => {
+    await writeText(url).catch(() => {});
+    hapticSelection();
+  };
+
+  const [spotlight, setSpotlight] = useState<SpotlightSettingsDto | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    spotlightGetSettings()
+      .then((value) => {
+        if (!cancelled) setSpotlight(value);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const updateSpotlight = async (next: SpotlightSettingsDto) => {
+    setSpotlight(await spotlightSetSettings(next).catch(() => spotlight));
+  };
+
   const updateMoments = async (next: MomentSettingsDto) => {
     // Keep the last known-good state on failure rather than showing a
     // half-applied toggle.
@@ -171,6 +205,44 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
               })
             }
           />
+        </SettingsGroup>
+
+        <SettingsGroup
+          title="System search"
+          footer="Titles and dates go in this device's search index so Spotlight finds your notes. The index is not Sub Rosa's storage, so what the notes say stays out of it until you ask."
+        >
+          <SettingsToggleRow
+            label="Find notes in Spotlight"
+            checked={spotlight?.enabled === true}
+            disabled={spotlight === null}
+            onChange={(next) =>
+              void updateSpotlight({
+                enabled: next,
+                includeContent: spotlight?.includeContent ?? false,
+              })
+            }
+          />
+          <SettingsToggleRow
+            label="Include what the notes say"
+            checked={spotlight?.includeContent === true}
+            disabled={spotlight === null || spotlight?.enabled !== true}
+            onChange={(next) =>
+              void updateSpotlight({ enabled: spotlight?.enabled ?? true, includeContent: next })
+            }
+          />
+        </SettingsGroup>
+
+        <SettingsGroup
+          title="Shortcuts and Siri"
+          footer="Put one of these in a Shortcuts &quot;Open URL&quot; action to start a recording from the Action button, from Siri, or from any shortcut you already use."
+        >
+          {AUTOMATION_ADDRESSES.map((automation) => (
+            <SettingsActionRow
+              key={automation.url}
+              label={automation.label}
+              onClick={() => void copyAutomation(automation.url)}
+            />
+          ))}
         </SettingsGroup>
 
         <SettingsGroup>

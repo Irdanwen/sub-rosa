@@ -44,6 +44,9 @@ pub async fn sweep(app: &AppHandle) {
     // ahead, deliver the ones that came due while we were away. A row, never
     // a timer — which is exactly why it belongs in this sweep.
     crate::moments::tick(app).await;
+    // Keep the system index honest about what exists. Cheap (titles and
+    // dates unless the user opted the body in) and idempotent.
+    crate::spotlight::reindex_all(app).await;
 }
 
 /// Fire-and-forget [`sweep`], for call sites that are not async (app setup, the

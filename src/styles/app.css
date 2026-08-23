@@ -22791,3 +22791,21 @@ input:focus-visible,
   background: color-mix(in oklch, var(--success) 16%, transparent);
   color: var(--success);
 }
+
+/* An address you can put in a shortcut. Shown, not hidden behind a copy
+ * button: nobody can guess a URL scheme, and the whole point is that it is
+ * knowable. */
+.automation-url {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.automation-url code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+  background: var(--surface-subtle);
+  border-radius: var(--r-xs);
+  padding: 2px var(--sp-2);
+}

@@ -720,6 +720,24 @@ export async function juneOpenCommunityPage() {
   return invoke<void>("june_open_community_page");
 }
 
+// --- Spotlight (crate::spotlight) -----------------------------------------
+
+export type SpotlightSettingsDto = {
+  /** Titles and dates in the system index. On by default. */
+  enabled: boolean;
+  /** The note's own text. Off until asked for. */
+  includeContent: boolean;
+};
+
+export async function spotlightGetSettings() {
+  return invoke<SpotlightSettingsDto>("spotlight_get_settings");
+}
+
+/** Saving also makes the index match: turning it off removes what is there. */
+export async function spotlightSetSettings(request: SpotlightSettingsDto) {
+  return invoke<SpotlightSettingsDto>("spotlight_set_settings", { request });
+}
+
 // --- Proposed actions (crate::actions) ------------------------------------
 
 export type ActionStateDto = {

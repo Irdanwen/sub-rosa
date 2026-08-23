@@ -62,6 +62,7 @@ import { getStoredTheme, setStoredTheme, type ThemePreference } from "../../lib/
 import { DEFAULT_BRAND, getStoredBrand, setStoredBrand, type BrandId } from "../../lib/brand";
 import { AccentWheel } from "./AccentWheel";
 import { CarpeDiemSettings } from "./CarpeDiemSettings";
+import { AutomationsSection } from "./AutomationsSection";
 import { MomentsSettingsSection } from "./MomentsSettingsSection";
 import { PlacesSettingsSection } from "./PlacesSettingsSection";
 import { VideomakerSettings } from "./VideomakerSettings";
@@ -1326,6 +1327,7 @@ export function AppSettings({
           <>
             <MemorySettingsSection />
             <MomentsSettingsSection />
+            <AutomationsSection />
           </>
         ) : null}
 

@@ -139,6 +139,8 @@ pub async fn delete_note(app: AppHandle, request: DeleteNoteRequest) -> Result<(
         .audio_artifact_paths_for_note(&request.note_id)
         .await?;
     repos.delete_note(&request.note_id).await?;
+    // A search result must never outlive the note it points at.
+    crate::spotlight::forget(std::slice::from_ref(&request.note_id));
     for path in audio_paths {
         if path.trim().is_empty() {
             continue;
@@ -170,6 +172,7 @@ pub async fn delete_notes(app: AppHandle, request: DeleteNotesRequest) -> Result
     let repos = repositories(&app).await?;
     let audio_paths = repos.audio_artifact_paths_for_notes(&note_ids).await?;
     repos.delete_notes(&note_ids).await?;
+    crate::spotlight::forget(&note_ids);
     for path in audio_paths {
         if path.trim().is_empty() {
             continue;
@@ -1130,6 +1133,8 @@ async fn finish_recording_session(
             // cannot tell anyone. Rust says it instead, and the tap opens the
             // note (crate::moments).
             Ok(ready) => {
+                // It has a real title now, which is what makes it findable.
+                crate::spotlight::reindex_detached(&task_app);
                 crate::moments::announce_note_ready(
                     &task_app,
                     &ready.id,

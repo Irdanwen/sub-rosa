@@ -47,6 +47,7 @@ pub mod places;
 pub mod providers;
 #[cfg(target_os = "ios")]
 pub mod share_ios;
+pub mod spotlight;
 #[cfg(desktop)]
 pub mod theme_icon;
 #[cfg(desktop)]
@@ -317,6 +318,8 @@ pub fn run() {
             moments::moments_set_settings,
             actions::action_execute,
             actions::action_states,
+            spotlight::spotlight_get_settings,
+            spotlight::spotlight_set_settings,
             places::places_get_settings,
             places::places_set_google_key,
             places::places_clear_google_key,
@@ -498,6 +501,8 @@ pub fn run() {
         moments::moments_set_settings,
         actions::action_execute,
         actions::action_states,
+        spotlight::spotlight_get_settings,
+        spotlight::spotlight_set_settings,
         places::places_get_settings,
         places::places_set_google_key,
         places::places_clear_google_key,
@@ -609,6 +614,7 @@ pub fn run() {
             carpe_diem::sidecar::setup(app);
             memory::setup(app);
             moments::setup(app);
+            spotlight::setup(app);
             #[cfg(desktop)]
             videomaker::setup(app);
             #[cfg(desktop)]
