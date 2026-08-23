@@ -3569,7 +3569,7 @@ dependencies = [
 
 [[package]]
 name = "os-june"
-version = "1.44.1"
+version = "1.45.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
