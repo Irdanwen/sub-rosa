@@ -155,9 +155,48 @@ fi
 [ -n "$uv_cmd" ] || die "uv is required: install it via 'brew install uv' or https://docs.astral.sh/uv/"
 log "uv: $($uv_cmd --version)"
 
+# Downloading the pinned source used to be a bare `curl -LsSf`, with neither
+# credentials nor retries. GitHub's anonymous rate limit is shared across the
+# whole hosted-runner IP pool, so a busy hour answers 429 -- which is exactly
+# what happened during the v1.44.1 release: three jobs pulled the same tarball
+# within seconds, Windows failed loudly and this leg failed silently, shipping
+# a macOS app with a placeholder where the runtime should be.
+#
+# Two fixes. Authenticate the first hop when a token exists (the 429 comes from
+# github.com's own anti-scraping response, and an authenticated request is
+# billed per token instead of per IP; the header is dropped across the redirect
+# to codeload, which is correct and irrelevant here). And retry regardless: a
+# rate limit is transient by definition.
+fetch_tarball() {
+  url="$1"
+  dest="$2"
+  token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+  auth_args=""
+  if [ -n "$token" ]; then
+    auth_args="--header"
+    log "downloading with an authenticated request"
+  else
+    log "no GITHUB_TOKEN in the environment: downloading anonymously, which is rate limited"
+  fi
+
+  attempt=1
+  for delay in 0 5 15 45 90; do
+    [ "$delay" -eq 0 ] || { log "retrying the download in ${delay}s (attempt $attempt)"; sleep "$delay"; }
+    if [ -n "$auth_args" ]; then
+      curl -LsSf --header "Authorization: Bearer $token" "$url" -o "$dest" && return 0
+    else
+      curl -LsSf "$url" -o "$dest" && return 0
+    fi
+    status=$?
+    log "download attempt $attempt failed (curl exit $status)"
+    attempt=$((attempt + 1))
+  done
+  die "could not download the Hermes tarball after $((attempt - 1)) attempts"
+}
+
 # ---- source checkout, integrity-pinned ---------------------------------------
 log "downloading hermes-agent@$commit"
-curl -LsSf "$tarball_url" -o "$work/hermes-agent.tar.gz"
+fetch_tarball "$tarball_url" "$work/hermes-agent.tar.gz"
 actual_sha256="$(shasum -a 256 "$work/hermes-agent.tar.gz" | awk '{print $1}')"
 [ "$actual_sha256" = "$tarball_sha256" ] || die "tarball sha256 mismatch: expected $tarball_sha256, got $actual_sha256"
 tar -xzf "$work/hermes-agent.tar.gz" -C "$work"

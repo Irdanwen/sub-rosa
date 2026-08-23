@@ -78,4 +78,10 @@ lint: check tauri-lint june-api-lint  ## Lint everything (biome + both clippy)
 
 test: test-web tauri-test june-api-test  ## Run all test suites
 
+sidecar:  ## Rebuild the bundled june-api sidecar for this machine
+	node scripts/build-sidecar.mjs
+
+sidecar-check:  ## Warn when the staged sidecar is older than june-api/
+	@node scripts/build-sidecar.mjs --check || true
+
 verify: check typecheck test-web tauri-fmt-check tauri-lint tauri-test june-api-fmt-check june-api-lint june-api-test  ## Full CI-parity gate

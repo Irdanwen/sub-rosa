@@ -159,6 +159,63 @@ function Read-Pin([string]$BridgePath, [string]$Name) {
   Fail "could not read $Name from $BridgePath."
 }
 
+function Get-Tarball {
+  # Downloading the pinned Hermes source used to be a bare Invoke-WebRequest,
+  # which is unauthenticated -- and GitHub's anonymous rate limit is shared
+  # across the whole hosted-runner IP pool. A busy hour therefore answers
+  # "429 Too Many Requests" and fails the release for reasons that have
+  # nothing to do with the release. Two fixes, both required:
+  #
+  #   * authenticate when a token exists. The 429 came from github.com's own
+  #     anti-scraping response on the FIRST hop, and an authenticated request
+  #     there gets the per-token limit instead of the per-IP one. The URL then
+  #     302s to codeload.github.com and PowerShell drops the header across
+  #     hosts, which is correct and does not matter: the first hop is the one
+  #     that refused us.
+  #   * retry anyway, because a rate limit is transient by definition and a
+  #     signed release is too expensive to throw away over one HTTP status.
+  param(
+    [Parameter(Mandatory = $true)][string] $Url,
+    [Parameter(Mandatory = $true)][string] $OutFile
+  )
+  $headers = @{ "User-Agent" = "sub-rosa-release" }
+  $token = $env:GITHUB_TOKEN
+  if ([string]::IsNullOrWhiteSpace($token)) { $token = $env:GH_TOKEN }
+  if (-not [string]::IsNullOrWhiteSpace($token)) {
+    $headers["Authorization"] = "Bearer $token"
+    Log "downloading with an authenticated request"
+  }
+  else {
+    Log "no GITHUB_TOKEN in the environment: downloading anonymously, which is rate limited"
+  }
+
+  $delays = @(0, 5, 15, 45, 90)
+  for ($attempt = 0; $attempt -lt $delays.Count; $attempt++) {
+    if ($delays[$attempt] -gt 0) {
+      Log "retrying the download in $($delays[$attempt])s (attempt $($attempt + 1) of $($delays.Count))"
+      Start-Sleep -Seconds $delays[$attempt]
+    }
+    try {
+      Invoke-WebRequest -Uri $Url -OutFile $OutFile -Headers $headers -MaximumRedirection 5
+      return
+    }
+    catch {
+      $status = $null
+      if ($null -ne $_.Exception.Response) {
+        $status = [int] $_.Exception.Response.StatusCode
+      }
+      # 4xx that is not a rate limit means the pin is wrong, and no amount of
+      # waiting fixes a wrong URL.
+      if ($null -ne $status -and $status -ge 400 -and $status -lt 500 -and $status -ne 429) {
+        Fail "downloading the Hermes tarball failed with HTTP $status. The pinned URL is probably wrong."
+      }
+      $where = if ($null -ne $status) { "HTTP $status" } else { "no response" }
+      Log "download attempt failed ($where): $($_.Exception.Message)"
+    }
+  }
+  Fail "could not download the Hermes tarball after $($delays.Count) attempts."
+}
+
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $outParent = Join-Path $root ".tauri-hermes"
 $out = Join-Path $outParent "hermes"
@@ -178,7 +235,7 @@ Log "uv: $(& $uv.Exe @($uv.Args + @('--version')))"
 
 Log "downloading hermes-agent@$commit"
 $archive = Join-Path $work "hermes-agent.tar.gz"
-Invoke-WebRequest -Uri $tarballUrl -OutFile $archive
+Get-Tarball -Url $tarballUrl -OutFile $archive
 $actualSha256 = (Get-FileHash -Algorithm SHA256 -Path $archive).Hash.ToLowerInvariant()
 if ($actualSha256 -ne $tarballSha256) {
   Fail "tarball sha256 mismatch: expected $tarballSha256, got $actualSha256."

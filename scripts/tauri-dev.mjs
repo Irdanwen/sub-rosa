@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPLAY_ONBOARDING_FLAG = "--replay-onboarding";
 const platformConfigs = {
   darwin: "src-tauri/tauri.macos.conf.json",
@@ -31,6 +32,16 @@ const hasConfigOverride = tauriArgs.some(
 if (config && !hasConfigOverride) {
   tauriArgs.unshift("--config", config);
 }
+
+// The app runs the sidecar that was last staged in `src-tauri/binaries/`, and
+// nothing in this loop rebuilds it. A june-api fix can therefore be written,
+// tested and merged while the running app still executes a months-old backend
+// — which is how a corrected model price stayed invisible in the desktop
+// picker long after it was fixed. Warn, never block: rebuilding costs minutes
+// and the choice is the developer's. Not knowing is what must not happen.
+spawnSync(process.execPath, [resolve(rootDir, "scripts/build-sidecar.mjs"), "--check"], {
+  stdio: "inherit",
+});
 
 const child = spawn(tauriCommand(), ["dev", ...tauriArgs], {
   env: {

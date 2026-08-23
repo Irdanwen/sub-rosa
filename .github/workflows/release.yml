@@ -107,19 +107,57 @@ jobs:
       - name: Build june-api sidecar (externalBin)
         run: node scripts/build-sidecar.mjs --target ${{ matrix.target }}
 
-      # Hermes is the agent runtime. On macOS a bundling failure is tolerable:
-      # the first-launch managed install works there (bash + curl bootstrap
-      # uv/python on their own). On Windows it is NOT: the managed fallback
-      # needs a preinstalled Python 3.11-3.13, which end-user machines don't
-      # have — shipping an NSIS without the bundled runtime ships a broken
-      # agent (v1.0.3 did exactly that when this step failed silently). So the
-      # Windows step is blocking, plus an explicit payload check below.
+      # Hermes is the agent runtime, and a build without it ships a placeholder
+      # where 130 MB of runtime should be.
+      #
+      # On Windows that is fatal: the managed fallback needs a preinstalled
+      # Python 3.11-3.13, which end-user machines do not have, so an NSIS with
+      # no bundled runtime ships a broken agent (v1.0.3 did exactly that when
+      # this step failed silently).
+      #
+      # On macOS the fallback does work — bash and curl bootstrap uv and python
+      # on first launch — which is why this step was `continue-on-error` for a
+      # long time. That tolerance was written to save a *build*, and it quietly
+      # did something else to a *release*: during v1.44.1 all three jobs pulled
+      # the same tarball within seconds, GitHub answered 429, and the Intel leg
+      # silently produced a 17 MB app while the ARM leg produced a 150 MB one.
+      # Same version, two different products, and nothing in the run said so.
+      # A release must not ship that, so the step is blocking here too and the
+      # payload is checked below on both platforms. The script itself now
+      # authenticates and retries, so the case this tolerated should not recur.
       - name: Build bundled Hermes runtime (macOS)
         if: runner.os == 'macOS'
-        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./scripts/bundle-hermes-runtime.sh
+      - name: Verify bundled Hermes runtime (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          for expected in \
+            ".tauri-hermes/hermes/bin/hermes" \
+            ".tauri-hermes/hermes/hermes-agent/pyproject.toml"; do
+            if [ ! -e "$expected" ]; then
+              echo "::error::the bundled Hermes runtime is missing $expected." \
+                   "This release would ship a placeholder instead of the agent runtime."
+              exit 1
+            fi
+          done
+          if [ -e ".tauri-hermes/hermes/PLACEHOLDER.md" ]; then
+            echo "::error::the bundled Hermes runtime is the placeholder, not the runtime."
+            exit 1
+          fi
+          echo "bundled Hermes runtime: $(du -sh .tauri-hermes/hermes | cut -f1)"
       - name: Build bundled Hermes runtime (Windows)
         if: runner.os == 'Windows'
+        # The script downloads the pinned Hermes source from github.com, whose
+        # anonymous rate limit is shared across the hosted-runner IP pool and
+        # answered 429 during the v1.44.1 release. The workflow token makes the
+        # first hop an authenticated request, which is billed per token instead
+        # of per IP. The script retries regardless: a rate limit is transient,
+        # and a signed release is too expensive to lose to one HTTP status.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pwsh scripts/bundle-hermes-runtime-windows.ps1
       - name: Verify bundled Hermes runtime (Windows)
         if: runner.os == 'Windows'
