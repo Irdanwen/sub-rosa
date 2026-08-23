@@ -29,6 +29,15 @@ describe("userFacingFailureMessage", () => {
     );
   });
 
+  it("tells the user to change the model when the saved one lost its price", () => {
+    // model_not_priced is structural: the pricing table doubles as the
+    // allowlist, so retrying with the same model fails identically. The
+    // guidance must point at Settings, not at the retry button.
+    expect(userFacingFailureMessage("model_not_priced")).toBe(
+      "The model selected in Settings is not available any more. Choose another one, then retry.",
+    );
+  });
+
   it("hides raw JSON parser failures from saved notes", () => {
     expect(userFacingFailureMessage("expected value at line 1 column 1")).toBe(
       "The processing service returned an invalid response.",

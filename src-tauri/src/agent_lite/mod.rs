@@ -378,6 +378,17 @@ async fn run_turn(
                     "The model provider could not answer this message. Send again, or switch to another model.",
                 ));
             }
+            // 422 `model_not_priced` is structural, not transient: the June
+            // API's pricing table doubles as its allowlist, and this picker
+            // reads Carpe Diem's own catalog instead, so it can offer a model
+            // the backend will refuse. Retrying never helps, so say the one
+            // thing that does.
+            if status == 422 && detail == "model_not_priced" {
+                return Err(AppError::new(
+                    "agent_lite_model_unavailable",
+                    "That model is not available right now. Open the model list and pick another one.",
+                ));
+            }
             return Err(AppError::new(
                 "agent_lite_failed",
                 format!("The assistant request failed with status {status}: {detail}"),

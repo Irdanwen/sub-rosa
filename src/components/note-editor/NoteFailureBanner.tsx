@@ -46,6 +46,11 @@ function friendlyFailureSegment(message: string) {
     friendly = "The transcription provider is busy right now. Please try again in a few seconds.";
   } else if (normalized.includes("upstream_provider_failed")) {
     friendly = "The transcription provider could not process this audio.";
+  } else if (normalized.includes("model_not_priced")) {
+    // Structural, not transient: the model saved in Settings is one the
+    // backend will no longer accept, so retrying as-is fails identically.
+    friendly =
+      "The model selected in Settings is not available any more. Choose another one, then retry.";
   }
   return source ? `${source}: ${friendly}` : friendly;
 }

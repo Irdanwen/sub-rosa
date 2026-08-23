@@ -1400,7 +1400,7 @@ fn carpe_diem_model_config(
         // second.
         ModelType::Asr => (
             PriceUnit::Seconds,
-            positive_usd(pricing.input_price)
+            published_usd(pricing.input_price)
                 .and_then(|usd_per_minute| credits_per_million_seconds(usd_per_minute / 60.0)),
             None,
             None,
@@ -1408,15 +1408,15 @@ fn carpe_diem_model_config(
         ModelType::Text => (
             PriceUnit::Tokens,
             None,
-            positive_usd(pricing.input_price).and_then(credits_per_million_units),
-            positive_usd(pricing.output_price).and_then(credits_per_million_units),
+            published_usd(pricing.input_price).and_then(credits_per_million_units),
+            published_usd(pricing.output_price).and_then(credits_per_million_units),
         ),
     };
     // Deliberately NOT part of the "is this model priced?" test below: the
     // operator omits this field for the models that have no cache rate, and
     // treating an omission as unpriced would drop most of the catalogue.
     let cache_input_credits_per_million_tokens = (model_type == ModelType::Text)
-        .then(|| positive_usd(pricing.cache_input_price).and_then(credits_per_million_units))
+        .then(|| published_usd(pricing.cache_input_price).and_then(credits_per_million_units))
         .flatten();
     if model_type == ModelType::Asr && credits_per_million_seconds.is_none() {
         return None;
@@ -1449,8 +1449,16 @@ fn carpe_diem_model_config(
     })
 }
 
-fn positive_usd(value: Option<f64>) -> Option<f64> {
-    value.filter(|value| value.is_finite() && *value > 0.0)
+/// A rate the operator actually published, which includes zero.
+///
+/// This is the difference between "no price" and "free", and conflating them
+/// is what made a temporarily-free model vanish: the pricing table doubles as
+/// the allowlist (see `PricingTable`), so a model whose rate we refuse to read
+/// disappears from the desktop picker and is refused `model_not_priced` on the
+/// way through. `None` still means the operator published nothing for this
+/// model, which is genuinely unpriced and still dropped.
+fn published_usd(value: Option<f64>) -> Option<f64> {
+    value.filter(|value| value.is_finite() && *value >= 0.0)
 }
 
 fn trimmed(value: Option<String>) -> Option<String> {
@@ -1470,16 +1478,19 @@ fn usd_at_path(value: &serde_json::Value, path: &[&str]) -> Option<f64> {
 }
 
 fn credits_per_million_units(usd_per_million_units: f64) -> Option<u64> {
-    ceil_positive_u64(usd_per_million_units * CREDITS_PER_USD)
+    ceil_non_negative_u64(usd_per_million_units * CREDITS_PER_USD)
 }
 
 fn credits_per_million_seconds(usd_per_second: f64) -> Option<u64> {
-    ceil_positive_u64(usd_per_second * CREDITS_PER_USD * RATE_SCALE)
+    ceil_non_negative_u64(usd_per_second * CREDITS_PER_USD * RATE_SCALE)
 }
 
-fn ceil_positive_u64(value: f64) -> Option<u64> {
+/// Zero is a rate. A free model prices every turn at zero credits, which is
+/// both true and harmless — and unlike `None`, it keeps the model in the
+/// allowlist the table doubles as.
+fn ceil_non_negative_u64(value: f64) -> Option<u64> {
     const MAX_EXACT_U64_AS_F64: f64 = 18_446_744_073_709_551_615.0;
-    if !value.is_finite() || value <= 0.0 || value > MAX_EXACT_U64_AS_F64 {
+    if !value.is_finite() || !(0.0..=MAX_EXACT_U64_AS_F64).contains(&value) {
         return None;
     }
     #[allow(
@@ -2505,6 +2516,71 @@ mod tests {
         let model = models.get("asr-model").expect("asr model");
 
         assert_eq!(model.credits_per_million_seconds, Some(100_000));
+    }
+
+    /// A model the operator is giving away publishes a price of zero, which is
+    /// a price. The table doubles as the allowlist, so dropping it would take
+    /// the model out of the desktop picker and earn a `model_not_priced` refusal
+    /// on mobile, where the picker reads the operator catalog instead. A model
+    /// with no pricing row at all is still genuinely unpriced and still drops.
+    #[test]
+    fn keeps_a_free_model_and_still_drops_an_unpriced_one() {
+        let response: CarpeDiemModelsApiResponse = serde_json::from_value(serde_json::json!({
+            "object": "list",
+            "data": [
+                {
+                    "id": "free-text-model",
+                    "object": "model",
+                    "carpe_diem_type": "text",
+                    "privacy": "private"
+                },
+                {
+                    "id": "free-asr-model",
+                    "object": "model",
+                    "carpe_diem_type": "asr",
+                    "privacy": "private"
+                },
+                {
+                    "id": "half-priced-text-model",
+                    "object": "model",
+                    "carpe_diem_type": "text",
+                    "privacy": "private"
+                },
+                {
+                    "id": "unpriced-text-model",
+                    "object": "model",
+                    "carpe_diem_type": "text",
+                    "privacy": "private"
+                }
+            ]
+        }))
+        .expect("models response");
+        let pricing = serde_json::from_value::<CarpeDiemPricingResponse>(serde_json::json!({
+            "models": [
+                { "model": "free-text-model", "inputPrice": 0, "outputPrice": 0 },
+                { "model": "free-asr-model", "inputPrice": 0, "outputPrice": 0 },
+                // Published one side only: still not a price we can meter with.
+                { "model": "half-priced-text-model", "inputPrice": 0.07 }
+            ]
+        }))
+        .expect("pricing response")
+        .models
+        .into_iter()
+        .map(|row| (row.model.clone(), row))
+        .collect();
+
+        let models = carpe_diem_priced_model_items(response, &pricing);
+
+        assert_eq!(
+            models.keys().collect::<Vec<_>>(),
+            vec!["free-asr-model", "free-text-model"],
+            "a free model belongs in the table; a partly or wholly unpriced one does not"
+        );
+        let free = models.get("free-text-model").expect("free text model");
+        assert_eq!(free.input_credits_per_million_tokens, Some(0));
+        assert_eq!(free.output_credits_per_million_tokens, Some(0));
+        let asr = models.get("free-asr-model").expect("free asr model");
+        assert_eq!(asr.credits_per_million_seconds, Some(0));
     }
 
     #[test]
