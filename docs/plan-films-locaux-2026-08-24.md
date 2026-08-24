@@ -342,6 +342,39 @@ courants sont suffixés (`seedance-2-0-text-to-video-basic`,
 `wan-2-7-text-to-video`, `kling-v3-standard-text-to-video`). Ne jamais coder un
 id en dur : passer par le catalogue, comme le fait déjà `catalog.ts`.
 
+## 9 bis. Trois coutures fermées après le retrait
+
+Une relecture du chemin de bout en bout, après R4, a trouvé trois choses qui
+manquaient entre « la machinerie existe » et « on peut faire un film ». La
+première était un défaut, pas un manque.
+
+**Un film compilé sortait sans ses dialogues.** Le compilateur rendait une
+réplique par plan et la branchait sur rien : le nœud de montage n'avait qu'une
+entrée audio. Les répliques étaient générées, facturées, et jamais entendues.
+Le nœud a maintenant trois pistes (dialogue, effets, musique), une réplique
+atterrit sur le plan auquel elle appartient — un temps de jeu après la coupe,
+pas sur l'image du raccord — et la position survit à une reprise (le
+`dehydrate` de la piste audio ne la portait pas).
+
+**Le montage du workflow n'utilisait pas le mix hors-ligne.** Un film produit
+par une production passait par l'ancien chemin temps réel : pas de ducking,
+pas de normalisation. Il passe désormais par le même mix que l'onglet Assemble.
+
+**Une production terminée ne pouvait pas être rouverte.** Un run rend un
+fichier aplati : très bien pour regarder, terminus si on veut l'étalonner ou
+déplacer une réplique d'une demi-seconde. Assemble sait maintenant rouvrir une
+production en ses parties — plans dans l'ordre, trimés à leurs raccords, son
+sur ses pistes — ce qui rend l'export timeline atteignable depuis un film
+compilé.
+
+**Et un quatrième, trouvé au passage** : le routage prenait le premier modèle
+par ordre alphabétique, par direction, indépendamment. Sur le vrai catalogue
+c'est une famille premium que personne n'a demandée, et surtout un plan chaîné
+pouvait venir d'un autre moteur que celui d'avant — auquel moment l'étalonnage
+et le mouvement changent en plein raccord. Les trois directions d'une famille
+sont désormais appariées par racine d'identifiant, et à défaut de choix c'est
+la moins chère qui gagne.
+
 ## 10. Écarts assumés en cours de route
 
 Consignés ici plutôt que passés sous silence : le plan est le registre.
