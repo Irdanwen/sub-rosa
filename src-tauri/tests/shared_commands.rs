@@ -23,7 +23,6 @@ fn platform_specific(name: &str) -> bool {
         "menu_bar::",
         "agent_hud::",
         "meeting_hud::",
-        "videomaker::",
         "win_console::",
         "autostart",
         "dictation::",

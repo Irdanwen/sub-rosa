@@ -11,7 +11,6 @@ import { Spinner } from "../ui/Spinner";
 import { AssembleStudio } from "./AssembleStudio";
 import { BibleStudio } from "./BibleStudio";
 import { AudioStudio } from "./AudioStudio";
-import { FilmStudio } from "./FilmStudio";
 import { ImageStudio } from "./ImageStudio";
 import { VideoStudio } from "./VideoStudio";
 import { useMediaCatalog } from "./useMediaCatalog";
@@ -22,7 +21,7 @@ const WorkflowStudio = lazy(() =>
   import("./WorkflowStudio").then((module) => ({ default: module.WorkflowStudio })),
 );
 
-type StudioTab = "image" | "video" | "audio" | "bible" | "assemble" | "films" | "workflows";
+type StudioTab = "image" | "video" | "audio" | "bible" | "assemble" | "workflows";
 
 const TAB_STORAGE_KEY = "os-june:studio-tab";
 
@@ -31,13 +30,16 @@ function initialTab(): StudioTab {
     const saved = window.localStorage.getItem(TAB_STORAGE_KEY);
     // "music" is the tab's pre-audio name; saved values must keep resolving.
     if (saved === "music") return "audio";
+    // "films" was the remote studio, which is gone. Somebody who was last on
+    // that tab lands where film production actually happens now, rather than
+    // on a blank panel or, worse, silently back on Image.
+    if (saved === "films") return "workflows";
     if (
       saved === "image" ||
       saved === "video" ||
       saved === "audio" ||
       saved === "assemble" ||
       saved === "bible" ||
-      saved === "films" ||
       saved === "workflows"
     ) {
       return saved;
@@ -87,16 +89,11 @@ export function StudioView() {
             { value: "audio", label: "Audio" },
             { value: "assemble", label: "Assemble" },
             { value: "bible", label: "Bible" },
-            { value: "films", label: "Films" },
             { value: "workflows", label: "Workflows" },
           ]}
         />
       </header>
-      {tab === "films" ? (
-        // Films drives Videomaker, not the Carpe Diem media catalog — it must
-        // render (and explain itself) even when the catalog is unavailable.
-        <FilmStudio />
-      ) : loading ? (
+      {loading ? (
         <div className="studio-loading">
           <Spinner aria-label="Loading models" />
         </div>

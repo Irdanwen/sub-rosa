@@ -65,7 +65,6 @@ import { CarpeDiemSettings } from "./CarpeDiemSettings";
 import { AutomationsSection } from "./AutomationsSection";
 import { MomentsSettingsSection } from "./MomentsSettingsSection";
 import { PlacesSettingsSection } from "./PlacesSettingsSection";
-import { VideomakerSettings } from "./VideomakerSettings";
 import {
   getReleaseChannel,
   reconcileToStable,
@@ -206,7 +205,6 @@ const MIC_TEST_DURATION_SECONDS = 5;
 export type SettingsTab =
   | "general"
   | "carpe-diem"
-  | "film-studio"
   | "shortcuts"
   | "dictation"
   | "audio"
@@ -232,7 +230,6 @@ export type SettingsTab =
 export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "carpe-diem", label: "Carpe Diem" },
-  { id: "film-studio", label: "Film studio" },
   { id: "shortcuts", label: "Shortcuts" },
   { id: "dictation", label: "Dictation" },
   { id: "audio", label: "Audio" },
@@ -922,7 +919,6 @@ export function AppSettings({
             <PlacesSettingsSection />
           </>
         ) : null}
-        {activeTab === "film-studio" ? <VideomakerSettings /> : null}
         {activeTab === "general" ? (
           <>
             <section className="settings-group" aria-labelledby="appearance-heading">

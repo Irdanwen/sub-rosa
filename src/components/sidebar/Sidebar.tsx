@@ -32,7 +32,6 @@ import { IconProjects } from "central-icons/IconProjects";
 import { IconHeartBeat } from "central-icons/IconHeartBeat";
 import { IconGauge } from "central-icons/IconGauge";
 import { IconServer1 } from "central-icons/IconServer1";
-import { IconClapboard } from "central-icons/IconClapboard";
 import { IconShield } from "central-icons/IconShield";
 import { IconShieldCheck } from "central-icons/IconShieldCheck";
 import { IconStore1 } from "central-icons/IconStore1";
@@ -207,11 +206,6 @@ const SETTINGS_SIDEBAR_GROUPS: {
         id: "carpe-diem",
         label: "Carpe Diem",
         icon: <IconServer1 size={16} />,
-      },
-      {
-        id: "film-studio",
-        label: "Film studio",
-        icon: <IconClapboard size={16} />,
       },
       {
         id: "shortcuts",

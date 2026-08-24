@@ -307,3 +307,10 @@ hard cap, and human phase gates per
   fix of 2026-07-14).
 - Fork chat/agent surface already present: the `june_films` MCP
   (`src-tauri/src/hermes/june_films_mcp.py`) and agent-lite.
+
+---
+
+**Addendum, 2026-08-24.** Superseded by
+[ADR-0029](0029-film-production-is-local.md). The transient-error tolerance
+this ADR argued for was carried across to the local run engine, which is the
+only part of it that still has something to supervise.

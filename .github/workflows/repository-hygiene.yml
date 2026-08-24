@@ -64,6 +64,41 @@ jobs:
       #   LICENSE, vendored agent skills, this file, and the two workflows that
       #   deliberately still reference upstream (the dispatch-only watchdog and
       #   the sync that fetches upstream's git remote).
+      # Film production moved into the app (ADR-0029). The remote studio is
+      # gone: its module, its wallet, its billing rail and its MCP were
+      # removed, and the CSP was narrowed once nothing needed a remote origin
+      # any more. A re-merge, or a well-meaning restoration, would put the
+      # dependency back with none of that visible in a diff review. This makes
+      # it visible.
+      #
+      # Scope: the studio's coordinates and its vocabulary. The word "film"
+      # itself is fine - the app makes films.
+      - name: Reject reintroduced remote film studio
+        run: |
+          set -euo pipefail
+          matches="$(
+            git grep -I -n -E -- 'furetier\.com|vmk_|[Vv]ideomaker|\bDIEM\b' -- . \
+              ':(exclude)docs/**' \
+              ':(exclude).agents/**' \
+              ':(exclude).claude/**' \
+              ':(exclude)FORK_NOTES.md' \
+              ':(exclude)AGENTS.md' \
+              ':(exclude)CLAUDE.md' \
+              ':(exclude)CONTEXT.md' \
+              ':(exclude)LICENSE*' \
+              ':(exclude).github/workflows/repository-hygiene.yml' \
+              || true
+          )"
+          if [[ -n "$matches" ]]; then
+            echo "$matches" >&2
+            echo >&2
+            echo "The remote film studio reappeared." >&2
+            echo "Sub Rosa produces films locally and contacts only Carpe Diem" >&2
+            echo "see docs/adr/0029-film-production-is-local.md." >&2
+            echo "If a re-merge brought this in, drop it rather than adopting it." >&2
+            exit 1
+          fi
+
       - name: Reject reintroduced June coordinates
         run: |
           set -euo pipefail

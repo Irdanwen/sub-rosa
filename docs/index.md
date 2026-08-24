@@ -39,6 +39,12 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0027](adr/0027-long-form-summaries-are-a-fork-side-map-reduce-over-turns.md) — a conference or podcast needs the opposite editorial line from `note_generate.md`, so the map-reduce lives in the fork (`src-tauri/src/longform/`) against chat completions rather than in june-api, chunks on turn boundaries with overlap, and has the model tag chapters with a turn index the app resolves to a timestamp — the app owns the clock, the model owns the prose; the result is markdown on its own `note_summaries` row (searchable, resumable part by part, cancellable by deleting the row)
 - [adr/0028](adr/0028-import-links-are-fetched-never-scraped.md) — files and published URLs (direct media, RSS enclosures) are fetched with the app's own HTTP client and work on every platform, while streaming-platform pages are reachable only through a `yt-dlp` the user already installed and switched on; no downloader is bundled or reimplemented, captions are preferred over paid transcription, and the fetch is a durable `ingests` row
 
+- [adr/0029-film-production-is-local.md](adr/0029-film-production-is-local.md) — films are produced by the app; the remote studio is removed (supersedes 0010, 0011)
+- [adr/0030-a-production-compiles-into-a-workflow.md](adr/0030-a-production-compiles-into-a-workflow.md) — a shot list compiles into the graph the canvas already runs
+- [adr/0031-the-timeline-export-is-the-finishing-path.md](adr/0031-the-timeline-export-is-the-finishing-path.md) — FCPXML and xmeml bundles; the recorder is a preview
+- [adr/0032-the-bible-is-local-rows-over-gallery-artifacts.md](adr/0032-the-bible-is-local-rows-over-gallery-artifacts.md) — persistent identities as pointers at gallery artifacts
+- [adr/0033-the-mix-is-rendered-offline.md](adr/0033-the-mix-is-rendered-offline.md) — deterministic Web Audio mix, BS.1770 loudness, ducking as automation
+
 ## Enforceable rules (spec/)
 
 Coding rules that should fail review if violated (distinct from the `specs/`

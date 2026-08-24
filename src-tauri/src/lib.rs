@@ -60,10 +60,6 @@ pub mod bible;
 pub mod shotlist;
 pub mod studio_actions;
 pub mod timeline;
-// Videomaker film production (ADR-0010): the Films surface targets macOS +
-// Windows; the module never compiles for mobile.
-#[cfg(desktop)]
-pub mod videomaker;
 pub mod win_console;
 
 #[cfg(desktop)]
@@ -438,40 +434,6 @@ pub fn run() {
             carpe_diem::workflow_runs::workflow_run_set_node,
             carpe_diem::workflow_runs::workflow_run_finish,
             carpe_diem::workflow_runs::workflow_run_dismiss,
-            videomaker::commands::videomaker_get_settings,
-            videomaker::commands::videomaker_set_base_url,
-            videomaker::commands::videomaker_activate,
-            videomaker::commands::videomaker_deactivate,
-            videomaker::commands::videomaker_account_status,
-            videomaker::projects::videomaker_list_projects,
-            videomaker::projects::videomaker_create_project,
-            videomaker::projects::videomaker_delete_project,
-            videomaker::projects::videomaker_project_overview,
-            videomaker::projects::videomaker_project_status,
-            videomaker::projects::videomaker_start_run,
-            videomaker::projects::videomaker_list_runs,
-            videomaker::projects::videomaker_cancel_run,
-            videomaker::projects::videomaker_produce,
-            videomaker::projects::videomaker_export_film,
-            videomaker::projects::videomaker_bring_home,
-            videomaker::projects::videomaker_watch_project,
-            videomaker::projects::videomaker_unwatch_project,
-            videomaker::projects::videomaker_upload_ref,
-            videomaker::projects::videomaker_update_budget,
-            videomaker::projects::videomaker_set_autonomous,
-            videomaker::brief::videomaker_improve_brief,
-            videomaker::director::videomaker_gates,
-            videomaker::director::videomaker_gate_approve,
-            videomaker::director::videomaker_gate_reject,
-            videomaker::director::videomaker_board,
-            videomaker::director::videomaker_failures,
-            videomaker::director::videomaker_transcript,
-            videomaker::director::videomaker_shot_takes,
-            videomaker::director::videomaker_take_select,
-            videomaker::director::videomaker_shot_retake,
-            videomaker::director::videomaker_shot_requeue,
-            videomaker::director::videomaker_shot_skip,
-            videomaker::director::videomaker_chat,
         ]);
 
     // Mobile invoke surface: the shared core (notes, folders, recording,
@@ -668,7 +630,6 @@ pub fn run() {
             moments::setup(app);
             spotlight::setup(app);
             #[cfg(desktop)]
-            videomaker::setup(app);
             #[cfg(desktop)]
             {
                 updates::setup(app);

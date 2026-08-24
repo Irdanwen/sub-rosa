@@ -92,3 +92,10 @@ structural choices:
 - Desktop-only (`#[cfg(desktop)]`): the surface targets macOS + Windows. The
   module avoids subprocesses and desktop-only APIs so a later mobile port is
   possible (it would need the mobile `generate_handler!` list + UI work).
+
+---
+
+**Addendum, 2026-08-24.** Superseded by
+[ADR-0029](0029-film-production-is-local.md): film production moved into the
+app and the remote studio was removed. The reasoning below is kept as the
+record of why it was built that way.

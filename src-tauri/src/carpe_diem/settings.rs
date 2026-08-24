@@ -174,8 +174,8 @@ pub fn catalog_base_url() -> String {
 }
 
 /// The catalog (`/v1`) form of the *default* base URL — the standard Carpe Diem
-/// endpoint every account has. Used to decide whether a customized base must be
-/// forwarded to side services that bill on `/v1` (Videomaker).
+/// endpoint every account has. Used to tell a customized base apart from the
+/// standard one, since only the catalog paths exist under `/v1`.
 pub fn default_catalog_base_url() -> String {
     catalog_base_url_of(&default_base_url())
 }
@@ -263,10 +263,6 @@ pub async fn carpe_diem_set_api_key(
     .map_err(|error| AppError::new("carpe_diem_keychain", error.to_string()))?
     .map_err(|error| AppError::new("carpe_diem_keychain", error.to_string()))?;
     super::sidecar::on_settings_changed(&app);
-    // Videomaker bills whatever key is registered server-side; keep it in
-    // sync with a rotated key (best-effort, desktop-only surface).
-    #[cfg(desktop)]
-    crate::videomaker::on_carpe_diem_key_changed(&app);
     Ok(dto())
 }
 
@@ -281,10 +277,7 @@ pub async fn carpe_diem_clear_api_key(app: AppHandle) -> Result<CarpeDiemSetting
     .await
     .map_err(|error| AppError::new("carpe_diem_keychain", error.to_string()))?;
     super::sidecar::on_settings_changed(&app);
-    // A removed key should stop billing entirely: delete Videomaker's
-    // server-side copy too (best-effort, desktop-only surface).
-    #[cfg(desktop)]
-    crate::videomaker::on_carpe_diem_key_cleared(&app);
+    // Nothing else to tell: the key is only ever used from this process now.
     Ok(dto())
 }
 

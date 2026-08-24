@@ -84,13 +84,6 @@ tauri-plugin-process = "2.3.1"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-updater = "2.10.1"
 tauri-plugin-autostart = "2.5.1"
-# Videomaker film production (ADR-0010, desktop-only surface): the Studio
-# wallet signs SIWE messages (EIP-191 keccak digest over secp256k1). Kept off
-# the mobile build — the Films surface is macOS + Windows.
-hex = "0.4"
-k256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
-sha3 = "0.10"
-
 # The apple-native keyring backend (security-framework) covers both macOS and
 # iOS keychains.
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]

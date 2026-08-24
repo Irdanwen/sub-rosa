@@ -34,6 +34,18 @@ describe("asset protocol CSP", () => {
     });
   }
 
+  // `https:` was in both directives for one reason: the remote film studio
+  // served its thumbnails and clips from signed URLs. That studio is gone
+  // (ADR-0029), every remaining loader goes through `asset:`, `data:` or the
+  // gallery, and a wildcard remote origin in a local-first app is exactly the
+  // kind of thing that survives because nobody remembers what put it there.
+  for (const name of ["img-src", "media-src"]) {
+    it(`does not let ${name} reach an arbitrary remote origin`, () => {
+      expect(directive(name)).not.toContain("https:");
+      expect(directive(name)).not.toContain("*");
+    });
+  }
+
   it("keeps the asset protocol enabled and scoped to what the app writes", () => {
     const { enable, scope } = config.app.security.assetProtocol;
     expect(enable).toBe(true);
@@ -45,8 +57,8 @@ describe("asset protocol CSP", () => {
   it("declares every directive the loaders in this app actually need", () => {
     // Anything not listed here falls back to `default-src`, which is `'self'` -
     // and `'self'` matches none of the schemes below.
-    expect(directive("img-src")).toEqual(expect.arrayContaining(["data:", "https:"]));
-    expect(directive("media-src")).toEqual(expect.arrayContaining(["data:", "https:"]));
+    expect(directive("img-src")).toEqual(expect.arrayContaining(["data:"]));
+    expect(directive("media-src")).toEqual(expect.arrayContaining(["data:"]));
     // The sidecar answers on a loopback port picked at launch, over both HTTP
     // and a websocket for the agent gateway.
     expect(directive("connect-src")).toEqual(

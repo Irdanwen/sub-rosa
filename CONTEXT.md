@@ -332,46 +332,43 @@ folder, not this store).
 
 ### Film production (fork)
 
-**Videomaker** (Videomaker Studio):
-The first-party film-production service (`studio.furetier.com`) Sub Rosa
-drives over REST to produce complete short films. Accounts are Ethereum
-wallets; all generation bills the user's Carpe Diem key in **DIEM**. See
-[ADR-0010](docs/adr/0010-videomaker-film-production.md).
-_Avoid_: Furetier (the domain, not the product), "the film API".
+Films are produced by the app, locally, out of the user's own notes, paid in
+Carpe Diem credits. The remote studio this fork used to drive is gone
+([ADR-0029](docs/adr/0029-film-production-is-local.md)).
+_Avoid_: Videomaker, DIEM, "asset pack", "studio wallet", "the film API" - all
+of them named the remote service, and none of them names anything now.
 
-**Film project**:
-One Videomaker production (a slug): brief, production bible, assets,
-shotlist, storyboard, shots, final cut. Purged server-side after 7 idle days.
-Distinct from Studio **video generation** (single clips via Carpe Diem).
-_Avoid_: video (unqualified — a film is many shots; a video is one clip).
+**Script**:
+A note the user wrote that a film is made from. Not a new kind of thing: the
+import doctrine again. _Avoid_: screenplay object, film project.
 
-**Run**:
-Videomaker's server-side one-shot driver: it advances a film project through
-every creative phase from a brief and optionally starts production under a
-cost cap. Re-POSTing a run *resumes* it (state-based).
-_Avoid_: job, pipeline.
+**Shot list**:
+One script read as the shots a film is made of - a derived row on that note,
+regenerable in place and resumable part by part. It is neither the script nor
+the graph: it is what compiles into the graph.
+_Avoid_: shotlist (one word, that was the remote studio's spelling), storyboard
+(that is pictures).
 
-**Phase gate**:
-A server-enforced approval checkpoint between film phases (`concept`,
-`bible`, `asset_pack`, `shotlist`, `storyboard`, `production`, `final`).
-Autonomous projects skip gates but then *require* a budget ceiling.
-_Avoid_: step, milestone.
+**Shot**:
+One continuous take of a few seconds. Carries a **motion class** (`low`,
+`medium`, `high`) and whether it **continues** the shot before it. Never a
+duration, a model or an aspect ratio - those are the app's to resolve.
+_Avoid_: scene (a scene groups shots), clip (that is the rendered file).
 
-**Shot** / **Take**:
-A shot is one planned 4-15 s unit of the shotlist; a take is one rendered
-attempt at a shot (selectable, retakeable). Selecting a take is free;
-retaking spends DIEM.
-_Avoid_: scene (a scene groups shots), clip.
+**Take**:
+One rendered attempt at a shot. Takes are branches of a shot chain
+([ADR-0019](docs/adr/0019-shot-chains-are-parent-links.md)), not rows.
 
-**DIEM**:
-The Carpe Diem credit unit all Videomaker costs are quoted in. Never convert
-to currency in UI copy, and never confuse with OS Accounts **credits**.
-_Avoid_: dollars, credits (that is OS Accounts).
+**Compiling**:
+Turning a shot list into a workflow. Free, local, instant, and repeatable with
+a different ceiling until the figure is one the user accepts
+([ADR-0030](docs/adr/0030-a-production-compiles-into-a-workflow.md)).
+_Avoid_: generating (that spends), planning (that is the reading).
 
-**Studio wallet**:
-The app-managed secp256k1 keypair that *is* the user's Videomaker account
-(SIWE identity only — holds no funds, never exported, keychain-stored).
-_Avoid_: crypto wallet, account key (ambiguous with the `cdm_` API key).
+**Spend ceiling**:
+The credit envelope a production may not exceed. A graph over it is *refused at
+compile time*, with the figure - in front of the confirmation handshake, not
+instead of it. _Avoid_: budget, cap (both were DIEM words).
 
 ### The bible (fork)
 
@@ -452,7 +449,8 @@ _Avoid_: last frame (it deliberately is not), thumbnail, poster.
 A sequence of Studio clips where each continues the previous one from its
 handoff frame — how a sequence outruns a single model's clip length. Never
 stored as a list: each clip records only its parent, and the chain is derived.
-Distinct from a Videomaker **shotlist**, which is planned up front server-side.
+Distinct from a **shot list**, which is planned up front and compiles into
+a graph: a chain is what the renders turned out to be.
 _Avoid_: sequence, timeline (that is Assemble's cut list), storyboard.
 
 **Anchor frame**:
@@ -520,8 +518,9 @@ one specific video port), import node.
 The workflow node that pauses a production until the user decides. With one
 input it is a checkpoint; with several, approving picks which *candidate*
 (alternative take, wired in as its own node) continues. Approvals belong to a
-run, never to the saved workflow. _Avoid_: breakpoint, review step; and it is
-distinct from Videomaker's server-side phase gates (`decideGate`).
+run, never to the saved workflow. A **judged** gate asks a model first and can
+let the work past on its own; a judge never blocks. _Avoid_: breakpoint, review
+step.
 
 **Canonical mention** (seedance):
 How a seedance reference prompt names its inputs: `<Image 1>`, `<Video 1>`,
@@ -711,15 +710,16 @@ _Avoid_: entitlement (that is the code-signing sense).
 - **"channel"** is overloaded: a **Source** lane (mic/system), a **release
   channel** (stable/rc), or a WAV interleave channel. Qualify.
 - **"video"** is overloaded between Studio **video generation** (one clip, one
-  Carpe Diem call) and a **film project** (a full Videomaker production of many
-  shots). Say which.
+  Carpe Diem call) and a **film** (a production of many shots, compiled from a
+  shot list). Say which.
 - **"media"** in fork code means Studio's generated media (`media_jobs`, the
   media proxy of [ADR-0008](docs/adr/0008-studio-media-proxy-in-tauri.md)),
   never an **import**. An imported file is media in English and an import in
   this codebase.
-- **"wallet"** in fork code means the **Studio wallet** (SIWE identity for
-  Videomaker), never a funds-holding crypto wallet and never the OS Accounts
-  wallet.
+- **"bible"** means the local rows of persistent identities
+  ([ADR-0032](docs/adr/0032-the-bible-is-local-rows-over-gallery-artifacts.md)).
+  The remote studio had a server-side "bible" of its own, and it is gone: if a
+  sentence needs to say which, the sentence is out of date.
 
 ## Example dialogue
 
