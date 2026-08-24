@@ -4,6 +4,10 @@
 > [plan-films-locaux-2026-08-24.md](plan-films-locaux-2026-08-24.md).
 > Lire le plan d'abord : ce document ne répète pas les « pourquoi ».
 >
+> **EXÉCUTÉ le 2026-08-24**, branche `feat/local-film-production`, en v1.46.0.
+> État de chaque DONE en fin de document. Le seul non atteint est celui de R0,
+> et la raison est écrite là où elle compte : dans le plan, en tête.
+>
 > **Seams vérifiés le 2026-08-24 sur `c956c0a5` (v1.45.0).** Les numéros de ligne
 > dérivent. Chaque seam est donné sous la forme `fichier:ligne` **plus le symbole**
 > — si la ligne ne correspond plus, re-localiser par le symbole, jamais par la
@@ -467,3 +471,19 @@ resserrée, hygiène verte, et **le binaire ne contacte plus que Carpe Diem**.
 Rappel : bumper la version **à la main** dans `tauri.conf.json`,
 `src-tauri/Cargo.toml` et `package.json` — `scripts/bump-version.mjs` casse sur
 l'espace du chemin « Sub Rosa ».
+
+---
+
+## Où en est chaque DONE
+
+| Vague | DONE | État |
+|---|---|---|
+| 0 | Les trois sondes ont un résultat écrit et daté | **Atteint.** Vision à N images : passe (kimi-k3, 4 images, dans l'ordre). `/video/quote` : passe, avec le piège `duration` en chaîne. MediaRecorder mp4 sur appareil : non testé, repli en place |
+| R0 | Tous les films ramenés une fois, sur données réelles | **Non atteint.** La lecture du PAT en keychain demande une autorisation interactive. Le code a été écrit et testé (rapatriement partiel, reprise forcée, action groupée), puis supprimé en R4. La dernière révision qui le porte est le commit précédant le retrait |
+| R1 | Une chaîne de 6 plans sort en `.fcpxml` **et** en mp4 normalisé à -14 LUFS | **Atteint au niveau où c'est vérifiable ici.** Le FCPXML est produit par un test bout en bout qui traverse le vrai générateur ; la loudness lit le signal de référence du standard à -20,0 LUFS. L'ouverture réelle dans Resolve et l'enregistrement mp4 en WKWebView restent à confirmer à la main |
+| R2 | Deux personnages et un lieu définis une fois, six plans qui gardent l'identité sur trois sessions | **Atteint structurellement** : les entrées persistent, chaque slot de référence offre la bible, et les traits invariants partent dans le prompt à chaque prise. La constance visuelle elle-même demande des rendus réels, donc des crédits |
+| R3 | Un paragraphe devient un film de 45 s en une confirmation, sans choix de modèle manuel | **Atteint jusqu'à la confirmation.** La chaîne note → shot list → graphe validé → devis est testée de bout en bout ; ce qui suit la confirmation dépense de l'argent |
+| R4 | Videomaker supprimé, CSP resserrée, hygiène verte, le binaire ne contacte plus que Carpe Diem | **Atteint.** 9 091 lignes supprimées, `https:` retiré de `img-src`/`media-src` avec un test qui l'affirme, garde-fou d'hygiène prouvé dans les deux sens, `make verify` vert |
+
+Ce qui reste demande soit un appareil, soit des crédits, soit les deux. Rien
+n'en dépend pour compiler, tester ou livrer.

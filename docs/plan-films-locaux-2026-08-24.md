@@ -3,7 +3,18 @@
 > Conception. La spec exécutable par vagues est dans
 > [IMPLEMENTATION-films-locaux-2026-08-24.md](IMPLEMENTATION-films-locaux-2026-08-24.md).
 >
-> Date : 2026-08-24. État : proposé, non commencé.
+> Date : 2026-08-24. **État : exécuté le 2026-08-24**, branche
+> `feat/local-film-production`, livré d'un bloc en v1.46.0 plutôt qu'étalé sur
+> v1.46 à v1.50 comme prévu — les cinq vagues ont abouti dans la même session.
+> Ce document est désormais le registre de ce qui a été fait, pas une
+> proposition. Les écarts assumés sont au § 10.
+>
+> **Un point non exécuté, et il compte** : le rapatriement R0 (« Ramener mes
+> films ») n'a pas pu être lancé sur données réelles — la lecture du PAT en
+> keychain demande une autorisation interactive. Le code du rapatriement a
+> ensuite été supprimé avec le reste en R4. La dernière révision qui le porte
+> est le commit précédant le retrait. Si des films restent sur le service, il
+> faut y revenir avant de fusionner.
 
 ## Résumé
 
@@ -27,6 +38,12 @@ Cinq livraisons, dans cet ordre, dont la dernière est la suppression :
 | R2 | La bible et les juges | Remplace l'asset pack serveur et la crew |
 | R3 | Du script au film | Remplace le run driver, par compilation vers un moteur existant |
 | R4 | Le retrait | Suppression, resserrement de la CSP, garde-fou d'hygiène, supersession d'ADR |
+
+**Résultat mesuré** : 9 091 lignes supprimées contre 594 ajoutées sur la seule
+vague de retrait ; 33 commandes et 3 dépendances en moins ; CSP resserrée ;
+`make verify` vert. Les ADR écrits sont
+[0029](adr/0029-film-production-is-local.md) à
+[0033](adr/0033-the-mix-is-rendered-offline.md).
 
 ## 1. Pourquoi
 
