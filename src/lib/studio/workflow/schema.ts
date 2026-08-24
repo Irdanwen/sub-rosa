@@ -510,7 +510,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
     type: "gate",
     label: "Approval gate",
     description:
-      "Pauses the production here until you approve. With several inputs connected, approving picks which one continues - wire alternative takes in and choose.",
+      "Pauses the production here until you approve. With several inputs connected, approving picks which one continues - wire alternative takes in and choose. A judged gate asks a model first.",
     inputs: [{ id: "in", label: "Candidates", kind: "any", multi: true }],
     // Dynamic in practice: a gate emits whatever it lets through. See
     // `outputKindOf`, which resolves it from the connected input.
@@ -520,7 +520,24 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         name: "note",
         type: "text",
         label: "What to check",
-        description: "Shown when the production pauses here.",
+        description: "Shown when the production pauses here, and told to the judge.",
+        default: "",
+      },
+      {
+        name: "mode",
+        type: "enum",
+        label: "Who decides",
+        description:
+          "Judged lets a model pass the work on its own, which is what lets a long production finish while nobody is watching. Judged then you always stops, but stops with an opinion attached. A judge that cannot answer degrades to you.",
+        enumValues: ["human", "judged", "judged-then-human"],
+        default: "human",
+      },
+      {
+        name: "judgeModel",
+        type: "model",
+        label: "Judge",
+        description: "A model that can look at pictures. Without one, the gate just waits for you.",
+        mediaType: "text",
         default: "",
       },
     ],

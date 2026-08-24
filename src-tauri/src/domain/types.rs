@@ -395,6 +395,45 @@ pub struct IngestDto {
     pub updated_at: String,
 }
 
+/// One persistent identity of a production: a character, a location, a prop or
+/// a look (see `migrations/017_bible.sql`).
+///
+/// `traits` is what must not drift between shots - the palette, the wardrobe,
+/// the relative height - restated on every prompt because that restating is
+/// what keeps a face the same face across separately generated clips.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BibleEntryDto {
+    pub id: String,
+    /// character | location | prop | look
+    pub kind: String,
+    pub name: String,
+    pub traits: String,
+    pub note: String,
+    pub refs: Vec<BibleRefDto>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A gallery artifact standing in for part of an entry.
+///
+/// `artifact_id` is the gallery id, which is the file name. Not a foreign key:
+/// the gallery index lives in the webview and its entries come and go
+/// legitimately, so a reference whose artifact has gone is reported rather
+/// than deleted behind the user's back.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BibleRefDto {
+    pub id: String,
+    pub entry_id: String,
+    pub artifact_id: String,
+    /// portrait | profile | wide | medium | detail | voice
+    pub role: String,
+    pub label: String,
+    pub ordinal: i64,
+    pub created_at: String,
+}
+
 /// A long-form summary of a note's transcript (ADR-0027).
 ///
 /// The row exists from the moment the work is asked for, so a summary

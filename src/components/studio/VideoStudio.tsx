@@ -88,6 +88,7 @@ import { EmptyState } from "../ui/EmptyState";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { Select } from "../ui/Select";
 import { Spinner } from "../ui/Spinner";
+import { withInvariant } from "../../lib/studio/bible";
 import { GalleryPicker } from "./GalleryPicker";
 import { GalleryStrip } from "./GalleryStrip";
 import { GenerationLayout } from "./GenerationLayout";
@@ -1409,7 +1410,13 @@ export function VideoStudio({
                   ? "Pick an image you have already produced. It steers style and subject, alongside the opening frame."
                   : "Pick an image you have already produced."
           }
-          onPick={(dataUri, artifact) => {
+          onPick={(dataUri, artifact, entry) => {
+            // A face picked out of the bible brings its traits with it. Nothing
+            // carries over between separately generated clips, so restating
+            // "green coat, scar over the left brow" on this shot is the whole
+            // difference between a character and a resemblance. Appended once:
+            // a prompt that already says it is left alone.
+            if (entry) setPrompt((current) => withInvariant(current, entry));
             if (picking === "clip") {
               void addReferenceClip(dataUri, artifact);
               return;

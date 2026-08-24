@@ -23,9 +23,12 @@ import {
   timelineSeconds,
 } from "../../lib/studio/assemble";
 import { formatElapsed } from "../../lib/studio/async-job";
+import { extractFrameAt } from "../../lib/studio/frames";
+import { judge, type JudgeVerdict, pickJudgeModel } from "../../lib/studio/judge";
+import { modelsOfType } from "../../lib/studio/catalog";
 import { DEFAULT_TARGET_LUFS } from "../../lib/studio/loudness";
 import { scheduleWithoutOverlap } from "../../lib/studio/mix";
-import type { StudioArtifact } from "../../lib/studio/types";
+import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { EmptyState } from "../ui/EmptyState";
 import { Select } from "../ui/Select";
 import { Spinner } from "../ui/Spinner";
@@ -76,7 +79,7 @@ let nextSoundKey = 0;
  */
 function placeSounds(sounds: readonly Sound[], newKey: string): Sound[] {
   const added = sounds.find((sound) => sound.key === newKey);
-  if (!added || added.lane !== "dialogue") return [...sounds];
+  if (added?.lane !== "dialogue") return [...sounds];
   const existing = sounds.filter((sound) => sound.lane === "dialogue" && sound.key !== newKey);
   const placed = scheduleWithoutOverlap([
     ...existing.map((sound) => ({
@@ -157,10 +160,13 @@ function probeClip(src: string): Promise<{ duration?: number; width?: number; he
 export function AssembleStudio({
   pendingCuts,
   onPendingCutsApplied,
+  catalog,
 }: {
   /** A shot chain handed over by the video studio, trims already resolved. */
   pendingCuts?: ChainShot[];
   onPendingCutsApplied?: () => void;
+  /** Only the review needs it, so a surface without one simply cannot review. */
+  catalog?: MediaCatalog;
 } = {}) {
   const [galleryVideos, setGalleryVideos] = useState<StudioArtifact[]>([]);
   const [galleryAudio, setGalleryAudio] = useState<StudioArtifact[]>([]);
@@ -176,6 +182,8 @@ export function AssembleStudio({
   const [frameRateKey, setFrameRateKey] = useState("30");
   const [writingTimeline, setWritingTimeline] = useState(false);
   const [notice, setNotice] = useState<string | undefined>(undefined);
+  const [verdict, setVerdict] = useState<JudgeVerdict | undefined>(undefined);
+  const [judging, setJudging] = useState(false);
   const previewRef = useRef<HTMLVideoElement>(null);
   const previewRun = useRef(0);
   const abortRef = useRef<AbortController | undefined>(undefined);
@@ -430,6 +438,60 @@ export function AssembleStudio({
     () => (cuts.length === 0 ? [] : timelineProblems(bundleCut(bundleInput).cut)),
     [bundleInput, cuts.length],
   );
+
+  /**
+   * Ask a model to watch the cut and say what is weak.
+   *
+   * The missing feedback loop, and the reason a pipeline plateaus without one:
+   * otherwise the only critic is the user, on the sixth shot, after paying for
+   * all six. One frame per shot rather than the film - a contact sheet is what
+   * a supervisor actually looks at, it costs a fraction of a video call, and
+   * the picture is what drifts.
+   *
+   * Best-effort like every judge: no vision model, a refusal or an unreadable
+   * answer all come back as "no opinion", never as an error.
+   */
+  const runJudge = useCallback(async () => {
+    if (cuts.length === 0 || judging) return;
+    const model = catalog ? pickJudgeModel(modelsOfType(catalog, "text")) : undefined;
+    if (!model) {
+      setError("No model on this account can look at pictures.");
+      return;
+    }
+    setJudging(true);
+    setError(undefined);
+    setVerdict(undefined);
+    try {
+      const subjects = [];
+      for (const [index, cut] of cuts.entries()) {
+        const window = clipWindow(cut, cut.durationSeconds ?? 0);
+        const middle = window.start + (window.end - window.start) / 2;
+        try {
+          const frame = await extractFrameAt(artifactSrc(cut.artifact), middle);
+          subjects.push({
+            label: `Shot ${index + 1}`,
+            intent: cut.artifact.prompt || undefined,
+            imageDataUri: frame.dataUrl,
+          });
+        } catch {
+          // A shot whose frame will not decode is left out rather than
+          // stopping the review of the ones that will.
+        }
+      }
+      const result = await judge(
+        {
+          subjects,
+          brief: filmName.trim() || undefined,
+          lens: "the cut as a whole: continuity, rhythm, and whether any shot lets the others down",
+        },
+        model,
+      );
+      setVerdict(result);
+      if (!result) setNotice("The judge had nothing to say this time.");
+    } finally {
+      setJudging(false);
+    }
+  }, [catalog, cuts, filmName, judging]);
 
   const runTimelineExport = useCallback(async () => {
     if (writingTimeline || cuts.length === 0) return;
@@ -752,6 +814,14 @@ export function AssembleStudio({
       >
         {writingTimeline ? "Writing the timeline..." : "Export timeline"}
       </button>
+      <button
+        type="button"
+        className="btn btn-ghost"
+        disabled={cuts.length === 0 || judging}
+        onClick={() => void runJudge()}
+      >
+        {judging ? "Watching it..." : "Review the cut"}
+      </button>
       {timelineBlockers.length > 0 ? (
         <p className="studio-queue-hint">{timelineBlockers.join(" ")}</p>
       ) : totalSeconds > 0 ? (
@@ -767,6 +837,22 @@ export function AssembleStudio({
     <GenerationLayout controls={controls} action={action}>
       {error ? <p className="studio-error">{error}</p> : null}
       {notice ? <p className="studio-queue-hint">{notice}</p> : null}
+      {verdict ? (
+        <div className="studio-verdict" data-passes={verdict.passes}>
+          <p className="studio-verdict-score">
+            {verdict.score}/10 {verdict.summary}
+          </p>
+          {verdict.weakest.length > 0 ? (
+            <ul className="studio-verdict-weak">
+              {verdict.weakest.map((weakness) => (
+                <li key={`${weakness.label}-${weakness.why}`}>
+                  <strong>{weakness.label}</strong> {weakness.why}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
       {cuts.length > 0 ? (
         <div className="studio-assemble-preview">
           {/* biome-ignore lint/a11y/useMediaCaption: generated clips have no track */}

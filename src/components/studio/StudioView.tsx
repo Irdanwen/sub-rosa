@@ -9,6 +9,7 @@ import { EmptyState } from "../ui/EmptyState";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { Spinner } from "../ui/Spinner";
 import { AssembleStudio } from "./AssembleStudio";
+import { BibleStudio } from "./BibleStudio";
 import { AudioStudio } from "./AudioStudio";
 import { FilmStudio } from "./FilmStudio";
 import { ImageStudio } from "./ImageStudio";
@@ -21,7 +22,7 @@ const WorkflowStudio = lazy(() =>
   import("./WorkflowStudio").then((module) => ({ default: module.WorkflowStudio })),
 );
 
-type StudioTab = "image" | "video" | "audio" | "assemble" | "films" | "workflows";
+type StudioTab = "image" | "video" | "audio" | "bible" | "assemble" | "films" | "workflows";
 
 const TAB_STORAGE_KEY = "os-june:studio-tab";
 
@@ -35,6 +36,7 @@ function initialTab(): StudioTab {
       saved === "video" ||
       saved === "audio" ||
       saved === "assemble" ||
+      saved === "bible" ||
       saved === "films" ||
       saved === "workflows"
     ) {
@@ -84,6 +86,7 @@ export function StudioView() {
             { value: "video", label: "Video" },
             { value: "audio", label: "Audio" },
             { value: "assemble", label: "Assemble" },
+            { value: "bible", label: "Bible" },
             { value: "films", label: "Films" },
             { value: "workflows", label: "Workflows" },
           ]}
@@ -113,8 +116,14 @@ export function StudioView() {
         <VideoStudio catalog={catalog} onAssembleChain={assembleChain} />
       ) : tab === "audio" ? (
         <AudioStudio catalog={catalog} />
+      ) : tab === "bible" ? (
+        <BibleStudio catalog={catalog} />
       ) : tab === "assemble" ? (
-        <AssembleStudio pendingCuts={pendingCuts} onPendingCutsApplied={clearPendingCuts} />
+        <AssembleStudio
+          pendingCuts={pendingCuts}
+          onPendingCutsApplied={clearPendingCuts}
+          catalog={catalog}
+        />
       ) : (
         <Suspense
           fallback={

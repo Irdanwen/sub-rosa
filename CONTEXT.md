@@ -373,6 +373,71 @@ The app-managed secp256k1 keypair that *is* the user's Videomaker account
 (SIWE identity only — holds no funds, never exported, keychain-stored).
 _Avoid_: crypto wallet, account key (ambiguous with the `cdm_` API key).
 
+### The bible (fork)
+
+**Bible**:
+the persistent identities of a production, kept on this install rather than on
+a project or a run: a character outlives every film it is in. Rows in
+`bible_entries` and `bible_refs` (migration 017), surfaced as Studio > Bible.
+_Avoid_: "cast" (a location is not cast), "asset pack" (that was the remote
+studio's server-side copy, and it is gone).
+
+**Bible entry**:
+one identity, of a **kind**: `character`, `location`, `prop` or `look`. Carries
+a name, **invariant traits**, and references.
+
+**Invariant traits**:
+what must not drift between shots - the palette, the wardrobe, the relative
+height. Restated on the prompt of *every* shot, because nothing carries over
+between separately generated clips. This restating is the difference between a
+character and a resemblance.
+
+**Bible reference**:
+a pointer at a gallery artifact standing in for part of an entry, in a **role**:
+`portrait`, `profile`, `wide`, `medium`, `detail` or `voice`. Never a copy of
+the file. Their **order** is load bearing: the first image is what a
+reference-to-video model treats as the identity to hold.
+
+**Voice donor**:
+the `voice` reference of a character - a speech artifact that rides as
+`reference_audio_urls` so a generated line keeps the same timbre. Chosen by
+**audition**: a few voices saying the same line, one kept.
+
+**Judge**:
+a model looking at work in progress and saying what is weak - a panel, a shot,
+or the assembled cut. Returns a score and at most three weaknesses; whether that
+clears the bar is decided by the app, not by the model. A judge never blocks: no
+vision model, a refusal or an unreadable answer all mean "no opinion", and the
+production carries on. _Avoid_: "QA", "critic".
+
+**Judged gate**:
+an approval gate that asks a judge first. `judged` lets the work past on its own
+when the verdict clears the bar; `judged-then-human` always stops, but stops
+with the verdict attached.
+
+### Studio finishing (fork)
+
+**Mix**:
+every sound in a film, placed and levelled, rendered *offline* into one buffer
+that the recording then plays. Deterministic, measurable, and the only way to
+duck music under dialogue properly. Distinct from the **lanes** it is made of:
+`clips`, `dialogue`, `sfx`, `music`.
+
+**Ducking**:
+writing the music down under the dialogue, as gain automation computed from the
+dialogue windows. Not a compressor: the windows are known before anything
+sounds.
+
+**Programme loudness**:
+the integrated LUFS of the whole film, to ITU-R BS.1770. One normalisation gain
+is applied from it. Distinct from a clip's own level.
+
+**Timeline**:
+the interchange file another editor opens - FCPXML or Premiere xmeml - written
+into a self-contained **bundle** with copies of the media beside it. The
+finishing path. Distinct from the **cut list** (the internal structure) and from
+the **film export** (the real-time recorder capture, which is a preview).
+
 ### Shot continuity (fork)
 
 **Handoff frame**:

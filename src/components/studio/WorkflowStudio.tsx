@@ -644,9 +644,13 @@ function GateApproval({ data }: { data: StudioNodeData }) {
   const sources = data.gateSources ?? [];
   const [choice, setChoice] = useState<string | undefined>(undefined);
   const note = typeof data.wfNode.params.note === "string" ? data.wfNode.params.note.trim() : "";
+  // A judged gate stopped with an opinion. Showing it is the whole reason the
+  // judge ran before holding rather than after being asked.
+  const verdict = data.result?.note;
   return (
     <div className="studio-gate-approval nodrag">
       <p className="studio-gate-note">{note || "The production is waiting for your approval."}</p>
+      {verdict ? <p className="studio-gate-verdict">{verdict}</p> : null}
       {sources.length > 1 ? (
         <select
           className="studio-native-select nodrag"

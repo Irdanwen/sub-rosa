@@ -1,7 +1,7 @@
 use crate::domain::types::{
     AgentMessageDto, AgentMessageRole, AgentSafetyProfile, AgentTaskDto, AgentTaskListResponse,
     AgentTaskStatus, AgentToolEventDto, AgentToolEventStatus, AppError, AudioArtifactDto,
-    DictationHistoryItemDto, DictionaryEntryDto, FolderDto, IngestDto,
+    BibleEntryDto, BibleRefDto, DictationHistoryItemDto, DictionaryEntryDto, FolderDto, IngestDto,
     ListDictationHistoryResponse, ListNotesResponse, MediaJobDto, MediaJobStatus, MemoryDto,
     MemorySource, NoteDto, NoteListItemDto, NoteSummaryDto, PendingDictationDto, ProcessingStatus,
     RecordingSourceMode, RecordingState, SessionFolderDto, TranscriptCoverageDto, TranscriptDto,
@@ -3730,6 +3730,178 @@ impl Repositories {
         .await?;
         Ok(rows.into_iter().map(|row| row.get("id")).collect())
     }
+
+    // --- the bible: persistent identities of a production -----------------
+
+    /// Every entry, with its references, newest kind grouping first by name.
+    ///
+    /// One query per table rather than a join: an entry with no references is
+    /// still an entry (a character you have named but not yet cast), and a
+    /// join would either drop it or need a left join plus deduplication for a
+    /// list that is never long.
+    pub async fn list_bible_entries(&self) -> Result<Vec<BibleEntryDto>, sqlx::error::Error> {
+        let entry_rows = query(
+            "SELECT id, kind, name, traits, note, created_at, updated_at FROM bible_entries ORDER BY kind ASC, lower(name) ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        let ref_rows = query(
+            "SELECT id, entry_id, artifact_id, role, label, ordinal, created_at FROM bible_refs ORDER BY ordinal ASC, created_at ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut refs: std::collections::HashMap<String, Vec<BibleRefDto>> =
+            std::collections::HashMap::new();
+        for row in ref_rows {
+            let reference = bible_ref_from_row(&row);
+            refs.entry(reference.entry_id.clone())
+                .or_default()
+                .push(reference);
+        }
+
+        Ok(entry_rows
+            .into_iter()
+            .map(|row| {
+                let id: String = row.get("id");
+                BibleEntryDto {
+                    refs: refs.remove(&id).unwrap_or_default(),
+                    id,
+                    kind: row.get("kind"),
+                    name: row.get("name"),
+                    traits: row.get("traits"),
+                    note: row.get("note"),
+                    created_at: row.get("created_at"),
+                    updated_at: row.get("updated_at"),
+                }
+            })
+            .collect())
+    }
+
+    pub async fn upsert_bible_entry(
+        &self,
+        id: Option<String>,
+        kind: &str,
+        name: &str,
+        traits: &str,
+        note: &str,
+    ) -> Result<String, sqlx::error::Error> {
+        let now = timestamp();
+        match id {
+            Some(id) => {
+                query(
+                    "UPDATE bible_entries SET kind = ?, name = ?, traits = ?, note = ?, updated_at = ? WHERE id = ?",
+                )
+                .bind(kind)
+                .bind(name)
+                .bind(traits)
+                .bind(note)
+                .bind(&now)
+                .bind(&id)
+                .execute(&self.pool)
+                .await?;
+                Ok(id)
+            }
+            None => {
+                let id = Uuid::new_v4().to_string();
+                query(
+                    "INSERT INTO bible_entries (id, kind, name, traits, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                )
+                .bind(&id)
+                .bind(kind)
+                .bind(name)
+                .bind(traits)
+                .bind(note)
+                .bind(&now)
+                .bind(&now)
+                .execute(&self.pool)
+                .await?;
+                Ok(id)
+            }
+        }
+    }
+
+    pub async fn delete_bible_entry(&self, id: &str) -> Result<(), sqlx::error::Error> {
+        // The refs go with it: they are parts of the entry, not files. The
+        // gallery artifacts they pointed at are untouched.
+        query("DELETE FROM bible_refs WHERE entry_id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        query("DELETE FROM bible_entries WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Add a reference, appended after whatever is already there.
+    ///
+    /// The same artifact in the same role twice is a duplicate, not a second
+    /// angle, and it would be sent to the model twice - so it replaces rather
+    /// than stacking.
+    pub async fn add_bible_ref(
+        &self,
+        entry_id: &str,
+        artifact_id: &str,
+        role: &str,
+        label: &str,
+    ) -> Result<String, sqlx::error::Error> {
+        query("DELETE FROM bible_refs WHERE entry_id = ? AND artifact_id = ? AND role = ?")
+            .bind(entry_id)
+            .bind(artifact_id)
+            .bind(role)
+            .execute(&self.pool)
+            .await?;
+        let next: i64 = query(
+            "SELECT COALESCE(MAX(ordinal), -1) + 1 AS next FROM bible_refs WHERE entry_id = ?",
+        )
+        .bind(entry_id)
+        .fetch_one(&self.pool)
+        .await?
+        .get("next");
+        let id = Uuid::new_v4().to_string();
+        query(
+            "INSERT INTO bible_refs (id, entry_id, artifact_id, role, label, ordinal, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(entry_id)
+        .bind(artifact_id)
+        .bind(role)
+        .bind(label)
+        .bind(next)
+        .bind(timestamp())
+        .execute(&self.pool)
+        .await?;
+        Ok(id)
+    }
+
+    pub async fn remove_bible_ref(&self, id: &str) -> Result<(), sqlx::error::Error> {
+        query("DELETE FROM bible_refs WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Reorder one entry's references. Order is load bearing: the first image
+    /// is the identity anchor for the reference-to-video families.
+    pub async fn reorder_bible_refs(
+        &self,
+        entry_id: &str,
+        ref_ids: &[String],
+    ) -> Result<(), sqlx::error::Error> {
+        let mut tx = self.pool.begin().await?;
+        for (ordinal, id) in ref_ids.iter().enumerate() {
+            query("UPDATE bible_refs SET ordinal = ? WHERE id = ? AND entry_id = ?")
+                .bind(ordinal as i64)
+                .bind(id)
+                .bind(entry_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await
+    }
 }
 
 fn workflow_run_from_row(row: sqlx_sqlite::SqliteRow) -> WorkflowRunDto {
@@ -4314,4 +4486,16 @@ fn preview_for(title: &str, content: &str) -> String {
         content
     };
     source.chars().take(140).collect()
+}
+
+fn bible_ref_from_row(row: &sqlx_sqlite::SqliteRow) -> BibleRefDto {
+    BibleRefDto {
+        id: row.get("id"),
+        entry_id: row.get("entry_id"),
+        artifact_id: row.get("artifact_id"),
+        role: row.get("role"),
+        label: row.get("label"),
+        ordinal: row.get("ordinal"),
+        created_at: row.get("created_at"),
+    }
 }

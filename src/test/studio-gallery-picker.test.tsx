@@ -44,7 +44,9 @@ describe("picking from the gallery", () => {
     await waitFor(() => expect(onPick).toHaveBeenCalled());
     // Read through the media loader, so a webp is not mislabelled as a PNG the
     // way a hand-built data URI prefix would.
-    expect(onPick).toHaveBeenCalledWith("data:image/webp;base64,bytes", IMAGE);
+    // The third argument is the bible entry a pick came from, and there is
+    // none here: this one came out of the plain gallery.
+    expect(onPick).toHaveBeenCalledWith("data:image/webp;base64,bytes", IMAGE, undefined);
     expect(onClose).toHaveBeenCalled();
   });
 

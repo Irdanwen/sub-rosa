@@ -11,8 +11,14 @@
 // none of them appears on the gallery card. Mobile already works this way (the
 // reference picker's "From gallery" sheet); this is that idea on desktop.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { artifactDataUrl } from "../../lib/artifact-media";
+import {
+  type BibleEntry,
+  BIBLE_KIND_LABELS,
+  BIBLE_ROLE_LABELS,
+  listBibleEntries,
+} from "../../lib/studio/bible";
 import { artifactSrc, listArtifacts } from "../../lib/studio/artifacts";
 import type { ArtifactKind, StudioArtifact } from "../../lib/studio/types";
 import { Dialog } from "../ui/Dialog";
@@ -27,10 +33,16 @@ export function GalleryPicker({
   description = "Pick an image you have already produced.",
   kinds = DEFAULT_KINDS,
   resolveData = true,
+  offerBible = true,
 }: {
-  /** The picked item as a data URI (empty when `resolveData` is off), plus
-   * the artifact it came from. */
-  onPick: (dataUri: string, artifact: StudioArtifact) => void;
+  /**
+   * The picked item as a data URI (empty when `resolveData` is off), plus the
+   * artifact it came from - and, when it was picked out of the bible, the
+   * entry it belongs to. That third argument is what lets a slot carry a
+   * character's invariant traits along with their face, which is the whole
+   * reason for having named them.
+   */
+  onPick: (dataUri: string, artifact: StudioArtifact, entry?: BibleEntry) => void;
   onClose: () => void;
   title?: string;
   description?: string;
@@ -40,8 +52,12 @@ export function GalleryPicker({
    * the artifact reference (the workflow asset node) turn this off — reading
    * a whole clip for its id would be waste. */
   resolveData?: boolean;
+  /** Offer the bible above the raw gallery. On by default: a slot filled from
+   * a named character is the whole point of having named one. */
+  offerBible?: boolean;
 }) {
   const [artifacts, setArtifacts] = useState<StudioArtifact[] | undefined>(undefined);
+  const [bible, setBible] = useState<BibleEntry[]>([]);
   const [busyId, setBusyId] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   // A value-stable key: callers pass fresh array literals on every render.
@@ -62,15 +78,53 @@ export function GalleryPicker({
     };
   }, [kindsKey]);
 
+  useEffect(() => {
+    if (!offerBible) return;
+    let cancelled = false;
+    listBibleEntries()
+      .then((entries) => {
+        if (!cancelled) setBible(entries);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [offerBible]);
+
+  /**
+   * The bible, reduced to what this slot can actually take.
+   *
+   * A reference is a pointer, and the gallery is reconciled against the disk,
+   * so an entry can legitimately have references to files that are no longer
+   * there. Those are simply not offered - the Bible tab is where a broken
+   * reference gets reported and dealt with, not a picker in the middle of
+   * somebody's shot.
+   */
+  const bibleSections = useMemo(() => {
+    if (artifacts === undefined) return [];
+    const byId = new Map(artifacts.map((artifact) => [artifact.id, artifact]));
+    return bible
+      .map((entry) => ({
+        entry,
+        items: entry.refs
+          .map((reference) => ({ reference, artifact: byId.get(reference.artifactId) }))
+          .filter(
+            (item): item is { reference: (typeof entry.refs)[number]; artifact: StudioArtifact } =>
+              item.artifact !== undefined,
+          ),
+      }))
+      .filter((section) => section.items.length > 0);
+  }, [bible, artifacts]);
+
   const pick = useCallback(
-    async (artifact: StudioArtifact) => {
+    async (artifact: StudioArtifact, entry?: BibleEntry) => {
       setBusyId(artifact.id);
       setError(undefined);
       try {
         // Read through the media loader rather than building the data URI by
         // hand: it derives the mime from the file rather than assuming PNG,
         // which a jpeg or webp source would otherwise be mislabelled as.
-        onPick(resolveData ? await artifactDataUrl(artifact) : "", artifact);
+        onPick(resolveData ? await artifactDataUrl(artifact) : "", artifact, entry);
         onClose();
       } catch {
         setError("Couldn't read that item from the gallery.");
@@ -93,25 +147,57 @@ export function GalleryPicker({
             Nothing here yet. Media you generate, edit, or capture lands in the gallery.
           </p>
         ) : (
-          <div className="studio-picker-grid">
-            {artifacts.map((artifact) => (
-              <button
-                key={artifact.id}
-                type="button"
-                className="studio-picker-cell"
-                disabled={busyId !== undefined}
-                title={artifact.prompt || artifact.fileName}
-                onClick={() => void pick(artifact)}
-              >
-                <PickerTile artifact={artifact} />
-                {busyId === artifact.id ? (
-                  <span className="studio-picker-busy">
-                    <Spinner aria-label="Loading" />
-                  </span>
-                ) : null}
-              </button>
+          <>
+            {bibleSections.map((section) => (
+              <div key={section.entry.id} className="studio-picker-section">
+                <p className="studio-picker-section-title">
+                  {section.entry.name}
+                  <span> {BIBLE_KIND_LABELS[section.entry.kind]?.toLowerCase()}</span>
+                </p>
+                <div className="studio-picker-grid">
+                  {section.items.map(({ reference, artifact }) => (
+                    <button
+                      key={reference.id}
+                      type="button"
+                      className="studio-picker-cell"
+                      disabled={busyId !== undefined}
+                      aria-label={`${section.entry.name}, ${BIBLE_ROLE_LABELS[
+                        reference.role
+                      ].toLowerCase()}`}
+                      onClick={() => void pick(artifact, section.entry)}
+                    >
+                      <PickerTile artifact={artifact} />
+                      <span className="studio-picker-role">
+                        {BIBLE_ROLE_LABELS[reference.role]}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
-          </div>
+            {bibleSections.length > 0 ? (
+              <p className="studio-picker-section-title">Everything else</p>
+            ) : null}
+            <div className="studio-picker-grid">
+              {artifacts.map((artifact) => (
+                <button
+                  key={artifact.id}
+                  type="button"
+                  className="studio-picker-cell"
+                  disabled={busyId !== undefined}
+                  title={artifact.prompt || artifact.fileName}
+                  onClick={() => void pick(artifact)}
+                >
+                  <PickerTile artifact={artifact} />
+                  {busyId === artifact.id ? (
+                    <span className="studio-picker-busy">
+                      <Spinner aria-label="Loading" />
+                    </span>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          </>
         )}
         {error ? <p className="studio-error">{error}</p> : null}
       </div>
