@@ -2350,6 +2350,36 @@ export async function videomakerExportFilm(slug: string) {
   return invoke<VideomakerFilmArtifactDto>("videomaker_export_film", { slug });
 }
 
+/** One downloaded piece of a film brought home before Videomaker is removed. */
+export type BroughtHomePieceDto = {
+  path: string;
+  fileName: string;
+  bytes: number;
+  kind: "master" | "clip" | "frame";
+  sceneTitle?: string | null;
+  shotId?: string | null;
+  prompt?: string | null;
+  durationSeconds?: number | null;
+};
+
+export type BroughtHomeFilmDto = {
+  slug: string;
+  title: string;
+  brief?: string | null;
+  state?: string | null;
+  createdAt?: string | null;
+  spentDiem?: number | null;
+  pieces: BroughtHomePieceDto[];
+  transcript: Array<[string, string]>;
+  problems: string[];
+};
+
+/** Pulls a film off the studio and into the gallery directory. The webview
+ * still has to index the files and write the note - see `lib/films/bring-home`. */
+export async function videomakerBringHome(slug: string) {
+  return invoke<BroughtHomeFilmDto>("videomaker_bring_home", { slug });
+}
+
 export async function videomakerUploadRef(request: {
   slug: string;
   fileName: string;

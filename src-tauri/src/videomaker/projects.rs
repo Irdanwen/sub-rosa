@@ -11,7 +11,7 @@ use crate::domain::types::AppError;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 use super::client::{send, Request};
 
@@ -388,25 +388,20 @@ fn watch_slug(app: &AppHandle, slug: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-/// `GET /export` → signed URL → stream into the artifacts gallery → remember
-/// the path in `exported_films`. The signed URL needs no bearer; it may be
-/// relative to the studio origin.
-pub async fn download_export(app: &AppHandle, slug: &str) -> Result<FilmArtifactDto, AppError> {
-    // No cache short-circuit: a finished film can be re-finalized server-side
-    // (reshoots, restored audio), so an explicit export must always fetch the
-    // CURRENT master — returning the stale local copy is exactly the "I still
-    // download the old version" bug. The watcher's auto-download stays
-    // once-per-project via its own `exported_films` guard (events.rs::maybe_export).
-    let previous = super::settings_snapshot().exported_films.get(slug).cloned();
-    let export = send(app, Request::get(format!("/projects/{slug}/export"))).await?;
-    let url = export
-        .get("url")
-        .and_then(Value::as_str)
-        .ok_or_else(|| AppError::new("videomaker_invalid", "The export response has no URL."))?;
-    let url = resolve_url(&super::base_url(), url);
-
+/// Stream a studio URL straight into the artifacts gallery directory.
+///
+/// Shared by the export path and by the bring-home rescue (R0): both pull
+/// signed URLs that need no bearer, both must survive a large file without
+/// buffering it, and both write where `listArtifacts` will find the file. The
+/// webview still has to index what lands here (`registerDownloadedArtifact`) —
+/// the gallery index is localStorage, and Rust cannot write it.
+async fn stream_into_gallery(
+    app: &AppHandle,
+    url: &str,
+    extension: &str,
+) -> Result<FilmArtifactDto, AppError> {
     let mut response = super::client::http_client()
-        .get(&url)
+        .get(url)
         .send()
         .await
         .map_err(|error| AppError::new("videomaker_download_failed", error.to_string()))?
@@ -414,7 +409,7 @@ pub async fn download_export(app: &AppHandle, slug: &str) -> Result<FilmArtifact
         .map_err(|error| AppError::new("videomaker_download_failed", error.to_string()))?;
 
     let dir = crate::carpe_diem::media::artifacts_dir(app)?;
-    let file_name = format!("{}.mp4", uuid::Uuid::new_v4());
+    let file_name = format!("{}.{extension}", uuid::Uuid::new_v4());
     let path = dir.join(&file_name);
     let mut file = tokio::fs::File::create(&path)
         .await
@@ -438,10 +433,37 @@ pub async fn download_export(app: &AppHandle, slug: &str) -> Result<FilmArtifact
         let _ = tokio::fs::remove_file(&path).await;
         return Err(AppError::new(
             "videomaker_download_failed",
-            "The downloaded film is empty.",
+            "The downloaded file is empty.",
         ));
     }
-    let absolute = path.to_string_lossy().to_string();
+    Ok(FilmArtifactDto {
+        path: path.to_string_lossy().to_string(),
+        file_name,
+        bytes: byte_count,
+    })
+}
+
+/// `GET /export` → signed URL → stream into the artifacts gallery → remember
+/// the path in `exported_films`. The signed URL needs no bearer; it may be
+/// relative to the studio origin.
+pub async fn download_export(app: &AppHandle, slug: &str) -> Result<FilmArtifactDto, AppError> {
+    // No cache short-circuit: a finished film can be re-finalized server-side
+    // (reshoots, restored audio), so an explicit export must always fetch the
+    // CURRENT master — returning the stale local copy is exactly the "I still
+    // download the old version" bug. The watcher's auto-download stays
+    // once-per-project via its own `exported_films` guard (events.rs::maybe_export).
+    let previous = super::settings_snapshot().exported_films.get(slug).cloned();
+    let export = send(app, Request::get(format!("/projects/{slug}/export"))).await?;
+    let url = export
+        .get("url")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::new("videomaker_invalid", "The export response has no URL."))?;
+    let url = resolve_url(&super::base_url(), url);
+
+    let artifact = stream_into_gallery(app, &url, "mp4").await?;
+    let file_name = artifact.file_name;
+    let byte_count = artifact.bytes;
+    let absolute = artifact.path;
     super::update_settings(app, |settings| {
         settings
             .exported_films
@@ -458,6 +480,244 @@ pub async fn download_export(app: &AppHandle, slug: &str) -> Result<FilmArtifact
         path: absolute,
         file_name,
         bytes: byte_count,
+    })
+}
+
+// --- bring home (R0: the rescue window before Videomaker is removed) ----------
+
+/// Webview event while a film is being pulled down: `{ slug, downloaded, label }`.
+///
+/// A large film is sixty downloads over several minutes. Without this the
+/// button says "Bringing it home..." and nothing else, which reads as hung -
+/// and a rescue the user kills half way through is a rescue that did not
+/// happen, with no second chance after the removal.
+pub const BRING_HOME_EVENT: &str = "june://videomaker-bring-home";
+
+fn emit_progress(app: &AppHandle, slug: &str, downloaded: usize, label: &str) {
+    let _ = app.emit(
+        BRING_HOME_EVENT,
+        json!({ "slug": slug, "downloaded": downloaded, "label": label }),
+    );
+}
+
+/// One downloaded piece of a film: the master, a rendered shot, or a
+/// storyboard frame. `path` is where Rust wrote it in the gallery directory —
+/// the webview still has to index it (`registerDownloadedArtifact`).
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BroughtHomePieceDto {
+    pub path: String,
+    pub file_name: String,
+    pub bytes: u64,
+    /// `master`, `clip` or `frame`.
+    pub kind: String,
+    pub scene_title: Option<String>,
+    pub shot_id: Option<String>,
+    pub prompt: Option<String>,
+    pub duration_seconds: Option<f64>,
+}
+
+/// Everything a film leaves behind, pulled off the studio in one call.
+///
+/// Nothing here fails the whole rescue: a film with no final cut, a shot whose
+/// signed URL has expired, a transcript the studio no longer keeps — each
+/// records its own error and the rest still comes home. A partial rescue is
+/// worth infinitely more than a clean failure, because after R4 there is no
+/// second attempt.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BroughtHomeFilmDto {
+    pub slug: String,
+    pub title: String,
+    pub brief: Option<String>,
+    pub state: Option<String>,
+    pub created_at: Option<String>,
+    pub spent_diem: Option<f64>,
+    pub pieces: Vec<BroughtHomePieceDto>,
+    /// Director-mode transcript, oldest first: `(role, content)`.
+    pub transcript: Vec<(String, String)>,
+    /// What could not be brought home, in the user's words.
+    pub problems: Vec<String>,
+}
+
+/// Read a string from any of several plausible keys. The studio's overview has
+/// grown organically and the brief has lived under more than one name.
+fn first_string(value: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        value
+            .get(*key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|found| !found.is_empty())
+            .map(str::to_string)
+    })
+}
+
+/// The file extension a signed URL implies, defaulted per kind. Studio URLs
+/// carry a query string, so the path has to be isolated first.
+fn extension_of(url: &str, fallback: &str) -> String {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    path.rsplit('/')
+        .next()
+        .and_then(|name| name.rsplit_once('.'))
+        .map(|(_, ext)| ext.to_ascii_lowercase())
+        .filter(|ext| {
+            !ext.is_empty() && ext.len() <= 5 && ext.chars().all(|c| c.is_ascii_alphanumeric())
+        })
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+/// Bring one film home: master, rendered shots, storyboard frames, brief and
+/// director transcript, all into the gallery directory and a returned DTO.
+///
+/// This is the R0 rescue window (see `docs/plan-films-locaux-2026-08-24.md`).
+/// It exists so that removing Videomaker in R4 costs the user nothing. It is
+/// deliberately best-effort and deliberately re-runnable.
+#[tauri::command]
+pub async fn videomaker_bring_home(
+    app: AppHandle,
+    slug: String,
+) -> Result<BroughtHomeFilmDto, AppError> {
+    let mut problems: Vec<String> = Vec::new();
+
+    let overview = send(&app, Request::get(format!("/projects/{slug}"))).await?;
+    let title = first_string(&overview, &["title"]).unwrap_or_else(|| slug.clone());
+    let brief = first_string(&overview, &["brief", "concept", "logline", "premise"]);
+    let state = first_string(&overview, &["state"]);
+    let created_at = first_string(&overview, &["created_at"]);
+
+    let mut pieces: Vec<BroughtHomePieceDto> = Vec::new();
+    let mut spent_diem: Option<f64> = None;
+
+    // The master. A project that never finished simply has none.
+    match download_export(&app, &slug).await {
+        Ok(artifact) => {
+            pieces.push(BroughtHomePieceDto {
+                path: artifact.path,
+                file_name: artifact.file_name,
+                bytes: artifact.bytes,
+                kind: "master".to_string(),
+                scene_title: None,
+                shot_id: None,
+                prompt: None,
+                duration_seconds: None,
+            });
+            emit_progress(&app, &slug, pieces.len(), "the final cut");
+        }
+        Err(error) => problems.push(format!(
+            "The final cut did not come home: {}",
+            error.message
+        )),
+    }
+
+    // The board: every rendered shot, and the storyboard frame behind it.
+    let base = super::base_url();
+    match send(&app, Request::get(format!("/projects/{slug}/board"))).await {
+        Ok(board) => {
+            spent_diem = board
+                .get("totals")
+                .and_then(|totals| totals.get("spent_diem"))
+                .and_then(Value::as_f64);
+            let scenes = board
+                .get("scenes")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            for scene in scenes {
+                let scene_title = first_string(&scene, &["title", "scene_id"]);
+                let shots = scene
+                    .get("shots")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                for shot in shots {
+                    let shot_id = first_string(&shot, &["shot_id"]);
+                    let prompt = first_string(&shot, &["prompt"]);
+                    let duration_seconds = shot.get("duration_sec").and_then(Value::as_f64);
+                    for (key, kind, fallback_ext) in
+                        [("clip_url", "clip", "mp4"), ("frame_url", "frame", "png")]
+                    {
+                        let Some(raw) = first_string(&shot, &[key]) else {
+                            continue;
+                        };
+                        let url = resolve_url(&base, &raw);
+                        let extension = extension_of(&url, fallback_ext);
+                        match stream_into_gallery(&app, &url, &extension).await {
+                            Ok(artifact) => {
+                                pieces.push(BroughtHomePieceDto {
+                                    path: artifact.path,
+                                    file_name: artifact.file_name,
+                                    bytes: artifact.bytes,
+                                    kind: kind.to_string(),
+                                    scene_title: scene_title.clone(),
+                                    shot_id: shot_id.clone(),
+                                    prompt: prompt.clone(),
+                                    duration_seconds,
+                                });
+                                let label = match shot_id.as_deref() {
+                                    Some(id) => format!("{kind} of shot {id}"),
+                                    None => kind.to_string(),
+                                };
+                                emit_progress(&app, &slug, pieces.len(), &label);
+                            }
+                            Err(error) => problems.push(format!(
+                                "{} of shot {} did not come home: {}",
+                                kind,
+                                shot_id.clone().unwrap_or_else(|| "?".to_string()),
+                                error.message
+                            )),
+                        }
+                    }
+                }
+            }
+        }
+        Err(error) => problems.push(format!(
+            "The shot board did not come home: {}",
+            error.message
+        )),
+    }
+
+    let transcript = match send(&app, Request::get(format!("/projects/{slug}/transcript"))).await {
+        Ok(value) => value
+            .get("messages")
+            .and_then(Value::as_array)
+            .map(|messages| {
+                messages
+                    .iter()
+                    .filter_map(|message| {
+                        let role = message.get("role").and_then(Value::as_str)?;
+                        if role != "user" && role != "assistant" {
+                            return None;
+                        }
+                        let content = message
+                            .get("content")
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|content| !content.is_empty())?;
+                        Some((role.to_string(), content.to_string()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        Err(error) => {
+            problems.push(format!(
+                "The director transcript did not come home: {}",
+                error.message
+            ));
+            Vec::new()
+        }
+    };
+
+    Ok(BroughtHomeFilmDto {
+        slug,
+        title,
+        brief,
+        state,
+        created_at,
+        spent_diem,
+        pieces,
+        transcript,
+        problems,
     })
 }
 
@@ -622,5 +882,42 @@ mod tests {
         );
         assert_eq!(sniff_image_mime(b"GIF89a000000"), None);
         assert_eq!(sniff_image_mime(b""), None);
+    }
+
+    #[test]
+    fn brings_home_reads_the_brief_wherever_it_lives() {
+        // The overview grew organically and the brief has had more than one
+        // name. A rescue that only knows the current one loses the older films,
+        // which are exactly the ones most at risk.
+        let concept = json!({ "concept": "a lighthouse keeper" });
+        assert_eq!(
+            first_string(&concept, &["brief", "concept"]).as_deref(),
+            Some("a lighthouse keeper")
+        );
+        // Blank is not a value: it must fall through to the next key.
+        let blank = json!({ "brief": "   ", "logline": "two sisters" });
+        assert_eq!(
+            first_string(&blank, &["brief", "logline"]).as_deref(),
+            Some("two sisters")
+        );
+        assert_eq!(first_string(&json!({}), &["brief"]), None);
+    }
+
+    #[test]
+    fn brings_home_names_files_from_the_url_not_the_query_string() {
+        // Studio URLs are signed, so the extension is followed by a query.
+        assert_eq!(
+            extension_of("https://s.example/a/b/shot-3.mp4?sig=abc&x=1", "bin"),
+            "mp4"
+        );
+        assert_eq!(extension_of("https://s.example/frame.PNG", "bin"), "png");
+        // No extension, a path segment that only looks like one, or something
+        // absurdly long: fall back rather than write a file nothing can open.
+        assert_eq!(extension_of("https://s.example/download", "mp4"), "mp4");
+        assert_eq!(
+            extension_of("https://s.example/f.superlongext", "png"),
+            "png"
+        );
+        assert_eq!(extension_of("https://s.example/f.m p4", "mp4"), "mp4");
     }
 }

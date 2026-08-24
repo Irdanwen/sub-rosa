@@ -436,6 +436,7 @@ pub fn run() {
             videomaker::projects::videomaker_cancel_run,
             videomaker::projects::videomaker_produce,
             videomaker::projects::videomaker_export_film,
+            videomaker::projects::videomaker_bring_home,
             videomaker::projects::videomaker_watch_project,
             videomaker::projects::videomaker_unwatch_project,
             videomaker::projects::videomaker_upload_ref,

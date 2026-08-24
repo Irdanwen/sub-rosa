@@ -1348,6 +1348,30 @@
   gap: var(--sp-4);
 }
 
+/* The freeze notice (R0): film production is moving into the app, and this
+   remote surface is on its way out. Deliberately calm rather than alarming -
+   nothing is broken, and the user has a task to do before it goes. */
+.film-frozen-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+}
+
+.film-frozen-banner p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.film-frozen-banner p:first-child {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
 .film-project-card {
   display: flex;
   flex-direction: column;

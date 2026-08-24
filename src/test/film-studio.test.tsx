@@ -16,6 +16,9 @@ const mocks = vi.hoisted(() => ({
   videomakerListRuns: vi.fn(),
   videomakerCancelRun: vi.fn(),
   videomakerProduce: vi.fn(),
+  videomakerBringHome: vi.fn(),
+  createNote: vi.fn(),
+  updateNote: vi.fn(),
 }));
 
 vi.mock("../lib/tauri", () => ({ ...mocks }));
@@ -24,6 +27,12 @@ vi.mock("../lib/tauri", () => ({ ...mocks }));
 // film flow.
 vi.mock("../components/studio/GalleryStrip", () => ({
   GalleryStrip: () => null,
+}));
+
+// The rescue indexes files Rust already wrote; the gallery index itself is not
+// what this suite is about.
+vi.mock("../lib/studio/artifacts", () => ({
+  registerDownloadedArtifact: vi.fn(),
 }));
 
 import { FilmStudio } from "../components/studio/FilmStudio";
@@ -59,6 +68,8 @@ beforeEach(() => {
   mocks.videomakerListProjects.mockResolvedValue({ projects: [] });
   mocks.videomakerProjectStatus.mockResolvedValue({});
   mocks.videomakerListRuns.mockResolvedValue({ runs: [] });
+  mocks.createNote.mockResolvedValue({ id: "note-1" });
+  mocks.updateNote.mockResolvedValue({ id: "note-1" });
 });
 
 describe("FilmStudio", () => {
@@ -74,11 +85,10 @@ describe("FilmStudio", () => {
     expect(mocks.videomakerListProjects).not.toHaveBeenCalled();
   });
 
-  it("creates an autonomous project and hands the brief to a run", async () => {
-    mocks.videomakerCreateProject.mockResolvedValue({
-      project: project({ state: "new" }),
-    });
-    mocks.videomakerStartRun.mockResolvedValue({ run: { id: "r1", status: "running" } });
+  it("refuses to start a new film, and says where film production went", async () => {
+    // R0 freeze: the remote studio is on its way out, so nothing new starts
+    // here. The old creation test is gone on purpose - asserting a path the
+    // product no longer offers is how a dead feature stays alive in CI.
     render(<FilmStudio />);
     fireEvent.change(await screen.findByLabelText("Film title"), {
       target: { value: "Neon alley duel" },
@@ -86,41 +96,63 @@ describe("FilmStudio", () => {
     fireEvent.change(screen.getByLabelText("Film brief"), {
       target: { value: "Two rivals in the rain." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Produce the film" }));
-    await waitFor(() => expect(mocks.videomakerStartRun).toHaveBeenCalledTimes(1));
-    expect(mocks.videomakerCreateProject).toHaveBeenCalledWith(
-      expect.objectContaining({ autonomous: true, budgetCeilingDiem: 300 }),
-    );
-    expect(mocks.videomakerStartRun).toHaveBeenCalledWith(
-      expect.objectContaining({
-        slug: "ab12cd34ef56-neon-alley-duel",
-        brief: "Two rivals in the rain.",
-        maxCostDiem: 300,
-        // The same figure bounds the run's own work, not just the render queue.
-        budgetDiem: 300,
-        produce: true,
-      }),
-    );
+    expect(screen.getByRole("button", { name: "Produce the film" })).toBeDisabled();
+    expect(screen.getByRole("status").textContent).toContain("No new film starts here");
+    expect(mocks.videomakerCreateProject).not.toHaveBeenCalled();
+    expect(mocks.videomakerStartRun).not.toHaveBeenCalled();
   });
 
-  it("produces on the uncensored model set when the user picks it", async () => {
-    mocks.videomakerCreateProject.mockResolvedValue({ project: project({ state: "new" }) });
-    mocks.videomakerStartRun.mockResolvedValue({ run: { id: "r1", status: "running" } });
+  it("brings an existing film home into a note before the surface goes", async () => {
+    mocks.videomakerListProjects.mockResolvedValue({ projects: [project()] });
+    mocks.videomakerBringHome.mockResolvedValue({
+      slug: "ab12cd34ef56-neon-alley-duel",
+      title: "Neon alley duel",
+      brief: "Two rivals in the rain.",
+      state: "production",
+      createdAt: "2026-07-12",
+      spentDiem: 40,
+      pieces: [{ path: "/g/a.mp4", fileName: "a.mp4", bytes: 12, kind: "master" }],
+      transcript: [],
+      problems: [],
+    });
     render(<FilmStudio />);
-    fireEvent.change(await screen.findByLabelText("Film title"), {
-      target: { value: "Neon alley duel" },
-    });
-    fireEvent.change(screen.getByLabelText("Film brief"), {
-      target: { value: "Two rivals in the rain." },
-    });
-    // The default set travels with every creation; the pill switches it.
-    fireEvent.click(screen.getByRole("radio", { name: "Uncensored" }));
-    fireEvent.click(screen.getByRole("button", { name: "Produce the film" }));
-    await waitFor(() =>
-      expect(mocks.videomakerCreateProject).toHaveBeenCalledWith(
-        expect.objectContaining({ modelSet: "uncensored" }),
-      ),
+    fireEvent.click(await screen.findByRole("button", { name: "Bring it home" }));
+    await waitFor(() => expect(mocks.createNote).toHaveBeenCalledTimes(1));
+    expect(mocks.videomakerBringHome).toHaveBeenCalledWith("ab12cd34ef56-neon-alley-duel");
+    expect(mocks.updateNote).toHaveBeenCalledWith(
+      expect.objectContaining({ noteId: "note-1", title: "Neon alley duel" }),
     );
+    // Once home, the action stays available so a partial rescue can be retried
+    // while the studio is still up.
+    expect(await screen.findByRole("button", { name: "Fetch it again" })).toBeEnabled();
+  });
+
+  it("empties the studio in one action, and does not stop at the first failure", async () => {
+    mocks.videomakerListProjects.mockResolvedValue({
+      projects: [project(), project({ slug: "zz99-second-film", title: "Second film" })],
+    });
+    mocks.videomakerBringHome.mockImplementation(async (slug: string) => {
+      if (slug === "zz99-second-film") throw new Error("the master has expired");
+      return {
+        slug,
+        title: "Neon alley duel",
+        brief: null,
+        state: null,
+        createdAt: null,
+        spentDiem: null,
+        pieces: [{ path: "/g/a.mp4", fileName: "a.mp4", bytes: 12, kind: "master" }],
+        transcript: [],
+        problems: [],
+      };
+    });
+    render(<FilmStudio />);
+    fireEvent.click(await screen.findByRole("button", { name: "Bring every film home" }));
+
+    // One film failing must not strand the other: after the removal there is
+    // no second attempt, so the rescue saves everything it can.
+    await waitFor(() => expect(mocks.videomakerBringHome).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/1 brought home/)).toBeInTheDocument();
+    expect(screen.getByText(/the master has expired/)).toBeInTheDocument();
   });
 
   it("surfaces a run that stopped and resumes it from the last saved phase", async () => {

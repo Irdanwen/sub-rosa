@@ -95,6 +95,11 @@ tasks / contracts / checklists`.
 - `specs/002-system-audio-source-mode` — audio source modes (shipped)
 - `specs/003-conversation-turns` — dual-source conversation turns (current; the tech + structure entrypoint)
 
+## Plans (dated, superseded by what ships)
+
+- [plan-films-locaux-2026-08-24.md](plan-films-locaux-2026-08-24.md) — design: film production becomes local, Videomaker is removed (finishes ADR-0017)
+- [IMPLEMENTATION-films-locaux-2026-08-24.md](IMPLEMENTATION-films-locaux-2026-08-24.md) — the executable spec for the above: five waves, verified seams, keyless smokes, DONE per wave
+
 ## Gaps (no doc yet — candidates for new docs/ADRs)
 
 - **Roadmap / MVP scope** — no single sequenced source of truth across the active tracks (admin surfaces, reliability).

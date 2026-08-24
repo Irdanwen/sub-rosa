@@ -15,6 +15,14 @@ argv[1] is the path to a JSON file the app rewrites on every runtime spawn,
 and this server re-reads it on every tool call (same contract as `june_web`
 and `june_media`).
 
+FROZEN (R0, see docs/plan-films-locaux-2026-08-24.md). Film production is
+moving into the app itself and this remote surface is being removed, so the two
+tools that start new work refuse. They stay listed rather than disappearing:
+an agent that is told why is an agent that can tell the user, whereas a tool
+that vanishes just produces "I do not have a way to make films". Everything
+that finishes, inspects or exports existing work is untouched, because a film
+already paid for still has to be finishable and still has to come home.
+
 Standard library only, so it runs inside the Hermes runtime venv untouched.
 """
 
@@ -409,8 +417,10 @@ def call_tool(target: str, request_id: Any, params: dict[str, Any]) -> dict[str,
     handlers = {
         "film_studio_status": film_studio_status,
         "list_film_projects": list_film_projects,
-        "create_film_project": create_film_project,
-        "start_film_run": start_film_run,
+        # Frozen: see FROZEN_MESSAGE. The implementations below are kept intact
+        # so the freeze is one line to lift and one commit to remove.
+        "create_film_project": frozen,
+        "start_film_run": frozen,
         "film_status": film_status,
         "film_gates": film_gates,
         "decide_film_gate": decide_film_gate,
@@ -474,6 +484,18 @@ def film_studio_status(base_url: str, token: str, arguments: dict[str, Any]) -> 
 
 def list_film_projects(base_url: str, token: str, arguments: dict[str, Any]) -> dict[str, Any]:
     return films_action(base_url, token, "list_projects", {})
+
+
+FROZEN_MESSAGE = (
+    "Film production is moving into the app and this remote studio no longer "
+    "accepts new work. Tell the user to build the film in the Studio instead, "
+    "and to bring any existing film home from Studio > Films before it goes."
+)
+
+
+def frozen(_base_url: str, _token: str, _arguments: dict[str, Any]) -> dict[str, Any]:
+    """Refuse a cost-moving starter, with a reason the agent can pass on."""
+    return {"error": FROZEN_MESSAGE, "frozen": True}
 
 
 def create_film_project(base_url: str, token: str, arguments: dict[str, Any]) -> dict[str, Any]:

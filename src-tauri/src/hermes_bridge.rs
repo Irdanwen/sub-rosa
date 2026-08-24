@@ -196,12 +196,17 @@ const JUNE_SOUL_LONG_TASKS_MD: &str = r#"
 Long-running work: never split a long task into small turns that wait for the user to tell you to continue - the user should not have to re-prompt you to keep going. When a command or script will run for more than a couple of minutes (large batches, long builds, repeated API calls, big downloads), start it with the terminal tool as a background process (`background=true`) with `notify_on_complete=true` (or `watch_patterns` for progress markers you want to react to), tell the user what is running, then end your turn. The app wakes you automatically with the output when the process finishes or a pattern matches: pick the work back up immediately and drive it to completion. Only end a turn with nothing pending when the task is actually done or you genuinely need input from the user. If a run fails or times out partway, relaunch the remainder the same way instead of reporting and stopping.
 "#;
 
-/// Appended to `SOUL.md` for every runtime. Film production is discovered
-/// through the `june_films` MCP server configured below; the note stresses
-/// that films move real money (DIEM) and that every launch needs an agreed
-/// budget cap. Same no-"sandbox"-wording constraint as the media note.
+/// Appended to `SOUL.md` for every runtime.
+///
+/// FROZEN (R0, docs/plan-films-locaux-2026-08-24.md): the remote studio no
+/// longer starts new films, so this note's job changed. It used to teach the
+/// agent to negotiate a DIEM budget; it now tells it the door is shut, where
+/// film production went, and that existing films have to be brought home. The
+/// two cost-moving starters refuse in `june_films_mcp.py`, and this note has
+/// to agree with them - an agent told to call a tool that refuses will simply
+/// keep trying. Same no-"sandbox"-wording constraint as the media note.
 const JUNE_SOUL_FILMS_MD: &str = r#"
-Film tools: you have a `june_films` MCP toolset that produces complete short films (brief to final cut) through the first-party Videomaker studio. Start with `film_studio_status`; if film production is not activated, ask the user to activate it in Settings > Film studio - you cannot. The standard flow is `create_film_project` then `start_film_run` with the user's brief. Films are the most expensive thing you can create (typically hundreds of DIEM): always agree a DIEM budget with the user first, pass it as the cap, and never raise a cap on your own - when a quote exceeds it, report the figure and let the user decide. Production runs server-side for tens of minutes; check `film_status` on demand rather than polling, and the finished film is downloaded into the app's Studio gallery automatically (or via `export_film`). Only approve or reject phase gates when the user explicitly told you their decision.
+Film tools: the `june_films` MCP toolset talks to a remote film studio that is being retired. It no longer starts new films - `create_film_project` and `start_film_run` refuse. If the user asks for a new film, say that film production is moving into the app and point them at the Studio. What still works is finishing and rescuing what already exists: `list_film_projects`, `film_status`, `film_board`, gates and takes, `start_film_production` to confirm a quote a run is already parked on, and `export_film`. Tell the user to bring each film home from Studio > Films, which turns it into a note plus files in their gallery that outlive this studio. Only approve or reject phase gates when the user explicitly told you their decision.
 A run can stop without the film being finished: it pauses on a phase gate, on a production quote above the cap, or when it has spent the envelope agreed for it, and a studio restart can interrupt it. `film_status` reports the latest run for exactly this reason - a queue that reads idle is often a run waiting on someone. Resuming is `start_film_run` again with an empty brief: the studio picks up at the last saved phase and does not re-pay for the phases already done. Resume on the user's say-so, at the budget they agreed; a stop that was about money is a question for them, not a number for you to raise.
 "#;
 
@@ -9943,6 +9948,22 @@ mod tests {
             script_path: PathBuf::from("/tmp/june/hermes-mcp/june_media_mcp.py"),
             coordinates_path: PathBuf::from("/tmp/june/hermes-mcp/june_web_proxy.json"),
         }
+    }
+
+    #[test]
+    fn the_retired_film_studio_starts_nothing_new() {
+        // R0 freeze. The invariant spans two artefacts that are edited apart -
+        // the embedded MCP script and the soul note - and a half-lifted freeze
+        // is the worst of both: the agent is told to create a film and the
+        // tool refuses, so it retries instead of explaining.
+        assert!(JUNE_FILMS_MCP_SCRIPT.contains("\"create_film_project\": frozen,"));
+        assert!(JUNE_FILMS_MCP_SCRIPT.contains("\"start_film_run\": frozen,"));
+        assert!(!JUNE_SOUL_FILMS_MD.contains("The standard flow is `create_film_project`"));
+        assert!(JUNE_SOUL_FILMS_MD.contains("It no longer starts new films"));
+        // Finishing and rescuing existing work must survive the freeze: a film
+        // whose creative phases were already paid for still has to come home.
+        assert!(JUNE_FILMS_MCP_SCRIPT.contains("\"export_film\": export_film,"));
+        assert!(JUNE_SOUL_FILMS_MD.contains("bring each film home"));
     }
 
     fn test_june_films_mcp_config() -> JuneFilmsMcpConfig {

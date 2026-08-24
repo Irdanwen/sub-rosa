@@ -2,6 +2,13 @@
 // through Videomaker Studio. Phase 2 ships the autonomous path — brief in,
 // finished film in the gallery — with live progress from the Rust SSE
 // watcher. Gated (director-style) reviews land in phase 3.
+//
+// FROZEN (R0, see docs/plan-films-locaux-2026-08-24.md). Film production is
+// moving into the app itself, and this remote surface is being removed. No new
+// film can start here. What already exists still finishes — stranding a run
+// whose creative phases were already paid for would be its own small cruelty —
+// and every film can be brought home into a note plus gallery artifacts, which
+// is what has to happen before the code goes.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -25,6 +32,8 @@ import {
   parseStatus,
   parseUploadedRef,
 } from "../../lib/films";
+import { bringFilmHome, broughtHomeNoteId, listenBringHome } from "../../lib/films/bring-home";
+import { requestOpenNoteFromChat } from "../../lib/chat-blocks-nav";
 import { buildFilmRef, readFilmRef } from "../../lib/films/refs";
 import { registerDownloadedArtifact } from "../../lib/studio/artifacts";
 import {
@@ -50,6 +59,9 @@ import { FilmProduceControl } from "./FilmProduceControl";
 import { GalleryPicker } from "./GalleryPicker";
 import { GalleryStrip } from "./GalleryStrip";
 import { PillGroup, StudioField } from "./controls";
+
+/** No new film starts through the remote studio. See the header. */
+const FILMS_FROZEN = true;
 
 const ASPECT_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
 const STATUS_REFRESH_DEBOUNCE_MS = 3_000;
@@ -127,6 +139,13 @@ export function FilmStudio() {
   const [budgetBusy, setBudgetBusy] = useState<string | null>(null);
   // Per-project directed/autonomous flip in flight.
   const [autonomyBusy, setAutonomyBusy] = useState<string | null>(null);
+  // Rescue bookkeeping (R0): which films are already home, and which one is
+  // being pulled down right now.
+  const [homeBusy, setHomeBusy] = useState<string | null>(null);
+  const [homedSlugs, setHomedSlugs] = useState<Record<string, string>>({});
+  const [homeProgress, setHomeProgress] = useState<string | null>(null);
+  const [homedNoteId, setHomedNoteId] = useState<string | null>(null);
+  const [homingAll, setHomingAll] = useState(false);
 
   const refreshTimers = useRef<Record<string, number>>({});
 
@@ -243,9 +262,95 @@ export function FilmStudio() {
   // autonomous path needs the brief upfront. A budget is always required for
   // autonomy; in directed mode the produce handshake guards the spend.
   const canCreate =
+    !FILMS_FROZEN &&
     title.trim().length > 0 &&
     (directed || (brief.trim().length > 0 && budgetDiem > 0)) &&
     !creating;
+
+  /**
+   * Pull one film off the studio and into a note plus gallery artifacts.
+   *
+   * Partial rescues are reported, not swallowed: after the removal there is no
+   * second attempt, so the user has to know a shot did not make it while the
+   * service is still up.
+   */
+  useEffect(
+    () =>
+      listenBringHome(({ downloaded, label }) => {
+        setHomeProgress(`${downloaded} file${downloaded === 1 ? "" : "s"} so far (${label})`);
+      }),
+    [],
+  );
+
+  const bringHome = useCallback(async (project: FilmProject, force: boolean) => {
+    setHomeBusy(project.slug);
+    setError(null);
+    setNotice(null);
+    setHomeProgress(null);
+    try {
+      const result = await bringFilmHome(project.slug, { force });
+      setHomedSlugs((current) => ({ ...current, [project.slug]: result.noteId }));
+      setHomedNoteId(result.noteId);
+      setGalleryEpoch((epoch) => epoch + 1);
+      if (result.alreadyHome) {
+        setNotice(`"${project.title}" is already in your notes.`);
+      } else if (result.problems.length > 0) {
+        setNotice(
+          `"${project.title}" is in your notes with ${result.artifactCount} file${
+            result.artifactCount === 1 ? "" : "s"
+          }. Some pieces did not come home: ${result.problems.join(" ")}`,
+        );
+      } else {
+        setNotice(
+          `"${project.title}" is in your notes with ${result.artifactCount} file${
+            result.artifactCount === 1 ? "" : "s"
+          }.`,
+        );
+      }
+    } catch (bringError) {
+      setError(errorMessage(bringError));
+    } finally {
+      setHomeBusy(null);
+      setHomeProgress(null);
+    }
+  }, []);
+
+  /**
+   * Empty the studio in one go.
+   *
+   * Sequential on purpose: these are large downloads over one connection, and
+   * a rescue that saturates the link and times out is worse than a slow one.
+   * A film that fails does not stop the others - the point is to save as much
+   * as possible while the service is still up.
+   */
+  const bringEverythingHome = useCallback(async () => {
+    setHomingAll(true);
+    setError(null);
+    setNotice(null);
+    const failures: string[] = [];
+    let rescued = 0;
+    try {
+      for (const [index, project] of projects.entries()) {
+        setNotice(`Bringing home ${index + 1} of ${projects.length}: "${project.title}".`);
+        try {
+          const result = await bringFilmHome(project.slug);
+          setHomedSlugs((current) => ({ ...current, [project.slug]: result.noteId }));
+          if (!result.alreadyHome) rescued += 1;
+        } catch (bringError) {
+          failures.push(`"${project.title}": ${errorMessage(bringError)}`);
+        }
+      }
+      setGalleryEpoch((epoch) => epoch + 1);
+      setNotice(
+        failures.length === 0
+          ? `Every film is in your notes (${rescued} newly brought home).`
+          : `${rescued} brought home. These did not make it: ${failures.join(" ")}`,
+      );
+    } finally {
+      setHomingAll(false);
+      setHomeProgress(null);
+    }
+  }, [projects]);
 
   const addRefs = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -592,6 +697,31 @@ export function FilmStudio() {
 
   return (
     <div className="studio-generation film-studio">
+      {FILMS_FROZEN ? (
+        <div className="film-frozen-banner" role="status">
+          <p>
+            Film production is moving into the app. No new film starts here, and this surface will
+            be removed in a future version.
+          </p>
+          <p>
+            Bring each film home first: its final cut, its shots and its direction become a note
+            plus files in your gallery, which stay after this goes.
+          </p>
+          {projects.length > 0 ? (
+            <div className="studio-card-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={homingAll || homeBusy !== null}
+                onClick={() => void bringEverythingHome()}
+              >
+                {homingAll ? "Bringing them home..." : "Bring every film home"}
+              </button>
+            </div>
+          ) : null}
+          {homeProgress ? <p>{homeProgress}</p> : null}
+        </div>
+      ) : null}
       {pickingRef ? (
         <GalleryPicker
           onClose={() => setPickingRef(false)}
@@ -814,7 +944,20 @@ export function FilmStudio() {
 
       <div className="studio-output">
         {error ? <p className="studio-error">{error}</p> : null}
-        {notice ? <p className="studio-quote">{notice}</p> : null}
+        {notice ? (
+          <div className="studio-quote">
+            <p>{notice}</p>
+            {homedNoteId ? (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => requestOpenNoteFromChat(homedNoteId)}
+              >
+                Open the note
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {sortedProjects.length === 0 ? (
           <EmptyState
             title="No films yet"
@@ -825,6 +968,9 @@ export function FilmStudio() {
             {sortedProjects.map((project) => {
               const status = statusBySlug[project.slug];
               const busy = busySlug === project.slug;
+              const alreadyHome = Boolean(
+                homedSlugs[project.slug] ?? broughtHomeNoteId(project.slug),
+              );
               // A delivered film has nothing left to resume; its last run
               // status is stale noise at that point.
               const run = project.finalMp4 ? null : runBySlug[project.slug];
@@ -866,6 +1012,18 @@ export function FilmStudio() {
                           {busy ? "Downloading..." : "Save to gallery"}
                         </button>
                       ) : null}
+                      <button
+                        type="button"
+                        className={alreadyHome ? "btn btn-secondary" : "btn btn-primary"}
+                        disabled={homeBusy === project.slug || homingAll}
+                        onClick={() => void bringHome(project, alreadyHome)}
+                      >
+                        {homeBusy === project.slug
+                          ? "Bringing it home..."
+                          : alreadyHome
+                            ? "Fetch it again"
+                            : "Bring it home"}
+                      </button>
                       <button
                         type="button"
                         className="btn btn-ghost"
