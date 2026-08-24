@@ -98,6 +98,7 @@ import { Switch } from "../ui/Switch";
 import { AssetPreview } from "./AssetPreview";
 import { GalleryPicker } from "./GalleryPicker";
 import { NotePicker } from "./NotePicker";
+import { ScriptToFilm } from "./ScriptToFilm";
 
 /** One connection into a multi port, as the ordering list shows it. */
 interface PortSourceEntry {
@@ -912,6 +913,7 @@ function RunCostDialog({
 
 export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
   const [workflows, setWorkflows] = useState<Workflow[]>(() => listWorkflows());
+  const [scripting, setScripting] = useState(false);
   const [current, setCurrent] = useState<Workflow | undefined>(() => listWorkflows()[0]);
   const [flowNodes, setFlowNodes] = useState<StudioFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<FlowEdge[]>([]);
@@ -1337,6 +1339,38 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
     [hydrate],
   );
 
+  /**
+   * Adopt a compiled production as a new workflow.
+   *
+   * Same shape as applying a template, on purpose: a compiled film is not a
+   * special kind of run, it is a graph somebody did not have to draw. From
+   * here on it is edited, priced, gated and resumed exactly like one that was.
+   */
+  const adoptCompiled = useCallback(
+    (compiled: Workflow) => {
+      const workflow = createWorkflow(compiled.name);
+      const idMap = new Map(compiled.nodes.map((node) => [node.id, crypto.randomUUID()]));
+      const cloned: Workflow = {
+        ...workflow,
+        nodes: compiled.nodes.map((node) => ({
+          ...node,
+          id: idMap.get(node.id) ?? node.id,
+          params: { ...node.params },
+        })),
+        edges: compiled.edges.map((edge) => ({
+          ...edge,
+          id: crypto.randomUUID(),
+          source: idMap.get(edge.source) ?? edge.source,
+          target: idMap.get(edge.target) ?? edge.target,
+        })),
+      };
+      saveWorkflow(cloned);
+      setWorkflows(listWorkflows());
+      hydrate(cloned);
+    },
+    [hydrate],
+  );
+
   const serialized = current ? fromFlow(current, flowNodes, flowEdges) : undefined;
   const validation = useMemo(
     () => (serialized ? validateWorkflow(serialized) : undefined),
@@ -1569,6 +1603,13 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
 
   return (
     <div className="studio-workflows">
+      {scripting ? (
+        <ScriptToFilm
+          catalog={catalog}
+          onCompiled={adoptCompiled}
+          onClose={() => setScripting(false)}
+        />
+      ) : null}
       <div className="studio-workflows-toolbar">
         <Select
           value={current?.id ?? null}
@@ -1590,6 +1631,9 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
         />
         <button type="button" className="btn btn-secondary" onClick={newWorkflow}>
           New
+        </button>
+        <button type="button" className="btn btn-secondary" onClick={() => setScripting(true)}>
+          From a script
         </button>
         <Select
           value={null}
@@ -1676,8 +1720,24 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
           {resumable.map((entry) => (
             <div key={entry.id} className="studio-resume-row">
               <span>
-                An interrupted production: <strong>{entry.name || "Untitled workflow"}</strong>.
-                Finished steps are kept; resuming only runs what is left.
+                {entry.status === "failed" ? (
+                  <>
+                    A production that stopped: <strong>{entry.name || "Untitled workflow"}</strong>.{" "}
+                    {entry.error || "A step failed."} Finished steps are kept; resuming retries the
+                    one that failed.
+                  </>
+                ) : entry.status === "awaitingGate" ? (
+                  <>
+                    A production waiting on you:{" "}
+                    <strong>{entry.name || "Untitled workflow"}</strong>. Resume it to reach the
+                    gate and decide.
+                  </>
+                ) : (
+                  <>
+                    An interrupted production: <strong>{entry.name || "Untitled workflow"}</strong>.
+                    Finished steps are kept; resuming only runs what is left.
+                  </>
+                )}
               </span>
               <span className="studio-resume-actions">
                 <button

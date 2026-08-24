@@ -264,6 +264,66 @@ describe("listResumableRuns", () => {
     const after = await listResumableRuns();
     expect(after).toHaveLength(1);
   });
+
+  it("offers a production that stopped on an error, and hides a finished one", async () => {
+    // A run that failed used to show nothing at all after a reload, so a
+    // production that was stuck looked exactly like one at rest. Resuming it
+    // retries the step that failed and keeps everything already paid for.
+    mocks.invoke.mockImplementation(async (command: string) =>
+      command === "workflow_run_list"
+        ? [
+            {
+              id: "a",
+              workflowId: "w",
+              name: "Stopped",
+              definition: "{}",
+              status: "failed",
+              error: "The rail said no.",
+              createdAt: "",
+              updatedAt: "",
+            },
+            {
+              id: "b",
+              workflowId: "w",
+              name: "Waiting",
+              definition: "{}",
+              status: "awaitingGate",
+              createdAt: "",
+              updatedAt: "",
+            },
+            {
+              id: "c",
+              workflowId: "w",
+              name: "Interrupted",
+              definition: "{}",
+              status: "running",
+              createdAt: "",
+              updatedAt: "",
+            },
+            {
+              id: "d",
+              workflowId: "w",
+              name: "Done",
+              definition: "{}",
+              status: "completed",
+              createdAt: "",
+              updatedAt: "",
+            },
+            {
+              id: "e",
+              workflowId: "w",
+              name: "Stopped by hand",
+              definition: "{}",
+              status: "cancelled",
+              createdAt: "",
+              updatedAt: "",
+            },
+          ]
+        : null,
+    );
+    const offered = await listResumableRuns();
+    expect(offered.map((run) => run.id)).toEqual(["a", "b", "c"]);
+  });
 });
 
 describe("resumeWorkflowRun", () => {

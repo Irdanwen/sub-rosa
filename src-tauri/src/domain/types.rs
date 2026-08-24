@@ -395,6 +395,31 @@ pub struct IngestDto {
     pub updated_at: String,
 }
 
+/// A note broken into the shots a film is made of (migration 018).
+///
+/// Derived from the note, regenerable in place, and resumable part by part.
+/// `shots_json` deliberately carries no model, duration or aspect ratio: the
+/// model returns a motion class and who is in the shot, and the app resolves
+/// the rest against a catalogue it can actually see.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ShotListDto {
+    pub note_id: String,
+    /// pending | running | ready | failed
+    pub status: String,
+    /// The finished list, as JSON, when there is one.
+    pub shots_json: Option<String>,
+    /// Finished map passes, so a resume does not re-buy them.
+    pub parts_json: Option<String>,
+    pub chunk_count: i64,
+    pub script_chars: i64,
+    pub model: String,
+    pub prompt_version: String,
+    pub last_error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 /// One persistent identity of a production: a character, a location, a prop or
 /// a look (see `migrations/017_bible.sql`).
 ///

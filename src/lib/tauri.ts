@@ -2350,6 +2350,49 @@ export async function videomakerExportFilm(slug: string) {
   return invoke<VideomakerFilmArtifactDto>("videomaker_export_film", { slug });
 }
 
+/** A note read as the shots a film is made of. See `src-tauri/src/shotlist`. */
+export type ShotListDto = {
+  noteId: string;
+  status: "pending" | "running" | "ready" | "failed";
+  shotsJson?: string | null;
+  partsJson?: string | null;
+  chunkCount: number;
+  scriptChars: number;
+  model: string;
+  promptVersion: string;
+  lastError?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ShotListPlanDto = {
+  noteId: string;
+  scriptChars: number;
+  chunkCount: number;
+  modelCalls: number;
+  breakable: boolean;
+  reason?: string | null;
+};
+
+export const SHOT_LIST_EVENT = "june://shot-list";
+
+export async function shotList(noteId: string) {
+  return invoke<ShotListDto | null>("shot_list", { noteId });
+}
+
+export async function shotListPlan(noteId: string) {
+  return invoke<ShotListPlanDto>("shot_list_plan", { noteId });
+}
+
+export async function buildShotList(noteId: string) {
+  return invoke<ShotListDto>("build_shot_list", { noteId });
+}
+
+/** Deleting the row is the cancel: there is nothing else to stop. */
+export async function forgetShotList(noteId: string) {
+  return invoke<void>("forget_shot_list", { noteId });
+}
+
 /** One downloaded piece of a film brought home before Videomaker is removed. */
 export type BroughtHomePieceDto = {
   path: string;

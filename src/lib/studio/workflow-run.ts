@@ -492,14 +492,27 @@ async function createRunRow(
   });
 }
 
-/** The interrupted or gate-held productions worth offering a resume for. A
- * run whose promise chain is still alive in this webview is running, not
- * interrupted — offering to "resume" it would double-run it. */
+/**
+ * The productions that are not finished and are not running: interrupted,
+ * held at a gate, or failed.
+ *
+ * `failed` belongs here, and its absence was a real bug on the remote studio
+ * this replaces: a run that stopped on an error showed nothing at all after a
+ * reload, so a project that was stuck looked exactly like a project at rest.
+ * Resuming a failed run is also the right thing to offer - the engine replays
+ * finished nodes from their cached outputs, so what it actually does is retry
+ * the step that failed and keep everything already paid for.
+ *
+ * A run whose promise chain is still alive in this webview is running, not
+ * interrupted: offering to "resume" it would double-run it.
+ */
 export async function listResumableRuns(): Promise<WorkflowRunSummary[]> {
   try {
     const runs = await invoke<WorkflowRunSummary[]>("workflow_run_list");
     return runs.filter(
-      (run) => (run.status === "running" || run.status === "awaitingGate") && !liveRuns.has(run.id),
+      (run) =>
+        (run.status === "running" || run.status === "awaitingGate" || run.status === "failed") &&
+        !liveRuns.has(run.id),
     );
   } catch {
     // No command surface (browser preview): nothing to resume.

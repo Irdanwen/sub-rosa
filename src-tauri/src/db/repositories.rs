@@ -4,8 +4,8 @@ use crate::domain::types::{
     BibleEntryDto, BibleRefDto, DictationHistoryItemDto, DictionaryEntryDto, FolderDto, IngestDto,
     ListDictationHistoryResponse, ListNotesResponse, MediaJobDto, MediaJobStatus, MemoryDto,
     MemorySource, NoteDto, NoteListItemDto, NoteSummaryDto, PendingDictationDto, ProcessingStatus,
-    RecordingSourceMode, RecordingState, SessionFolderDto, TranscriptCoverageDto, TranscriptDto,
-    WorkflowRunDto, WorkflowRunNodeDto, WorkflowRunStatus,
+    RecordingSourceMode, RecordingState, SessionFolderDto, ShotListDto, TranscriptCoverageDto,
+    TranscriptDto, WorkflowRunDto, WorkflowRunNodeDto, WorkflowRunStatus,
 };
 use chrono::{Duration, SecondsFormat, Utc};
 use sqlx::query::query;
@@ -3902,6 +3902,127 @@ impl Repositories {
         }
         tx.commit().await
     }
+
+    // --- shot lists: a note read as the shots a film is made of ------------
+
+    pub async fn shot_list(
+        &self,
+        note_id: &str,
+    ) -> Result<Option<ShotListDto>, sqlx::error::Error> {
+        let row = query(
+            "SELECT note_id, status, shots_json, parts_json, chunk_count, script_chars, model, prompt_version, last_error, created_at, updated_at FROM shot_lists WHERE note_id = ?",
+        )
+        .bind(note_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|row| shot_list_from_row(&row)))
+    }
+
+    /// Claim the row for a fresh run, keeping the parts already paid for when
+    /// the script still chunks the same way.
+    pub async fn begin_shot_list(
+        &self,
+        note_id: &str,
+        script_chars: i64,
+        chunk_count: i64,
+        model: &str,
+        prompt_version: &str,
+    ) -> Result<ShotListDto, sqlx::error::Error> {
+        let now = timestamp();
+        let reusable: Option<String> = query(
+            "SELECT parts_json FROM shot_lists WHERE note_id = ? AND chunk_count = ? AND prompt_version = ?",
+        )
+        .bind(note_id)
+        .bind(chunk_count)
+        .bind(prompt_version)
+        .fetch_optional(&self.pool)
+        .await?
+        .and_then(|row| row.get::<Option<String>, _>("parts_json"));
+
+        query(
+            "INSERT INTO shot_lists (note_id, status, shots_json, parts_json, chunk_count, script_chars, model, prompt_version, last_error, created_at, updated_at)
+             VALUES (?, 'running', NULL, ?, ?, ?, ?, ?, NULL, ?, ?)
+             ON CONFLICT(note_id) DO UPDATE SET
+               status = 'running', shots_json = NULL, parts_json = excluded.parts_json,
+               chunk_count = excluded.chunk_count, script_chars = excluded.script_chars,
+               model = excluded.model, prompt_version = excluded.prompt_version,
+               last_error = NULL, created_at = excluded.created_at, updated_at = excluded.updated_at",
+        )
+        .bind(note_id)
+        .bind(&reusable)
+        .bind(chunk_count)
+        .bind(script_chars)
+        .bind(model)
+        .bind(prompt_version)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await?;
+        Ok(self.shot_list(note_id).await?.expect("just written"))
+    }
+
+    pub async fn save_shot_list_parts(
+        &self,
+        note_id: &str,
+        parts: &[String],
+    ) -> Result<Option<ShotListDto>, sqlx::error::Error> {
+        let json = serde_json::to_string(parts).unwrap_or_else(|_| "[]".to_string());
+        query("UPDATE shot_lists SET parts_json = ?, updated_at = ? WHERE note_id = ?")
+            .bind(json)
+            .bind(timestamp())
+            .bind(note_id)
+            .execute(&self.pool)
+            .await?;
+        self.shot_list(note_id).await
+    }
+
+    pub async fn finish_shot_list<T: serde::Serialize>(
+        &self,
+        note_id: &str,
+        shots: &[T],
+    ) -> Result<Option<ShotListDto>, sqlx::error::Error> {
+        let json = serde_json::to_string(shots).unwrap_or_else(|_| "[]".to_string());
+        query("UPDATE shot_lists SET status = 'ready', shots_json = ?, last_error = NULL, updated_at = ? WHERE note_id = ?")
+            .bind(json)
+            .bind(timestamp())
+            .bind(note_id)
+            .execute(&self.pool)
+            .await?;
+        self.shot_list(note_id).await
+    }
+
+    pub async fn set_shot_list_failed(
+        &self,
+        note_id: &str,
+        message: &str,
+    ) -> Result<Option<ShotListDto>, sqlx::error::Error> {
+        query("UPDATE shot_lists SET status = 'failed', last_error = ?, updated_at = ? WHERE note_id = ?")
+            .bind(message)
+            .bind(timestamp())
+            .bind(note_id)
+            .execute(&self.pool)
+            .await?;
+        self.shot_list(note_id).await
+    }
+
+    /// Deleting the row is the cancel: there is nothing else to stop.
+    pub async fn delete_shot_list(&self, note_id: &str) -> Result<(), sqlx::error::Error> {
+        query("DELETE FROM shot_lists WHERE note_id = ?")
+            .bind(note_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Rows a crash or a suspension left mid-run.
+    pub async fn unfinished_shot_lists(&self) -> Result<Vec<ShotListDto>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT note_id, status, shots_json, parts_json, chunk_count, script_chars, model, prompt_version, last_error, created_at, updated_at FROM shot_lists WHERE status IN ('pending', 'running') ORDER BY created_at ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(shot_list_from_row).collect())
+    }
 }
 
 fn workflow_run_from_row(row: sqlx_sqlite::SqliteRow) -> WorkflowRunDto {
@@ -4497,5 +4618,21 @@ fn bible_ref_from_row(row: &sqlx_sqlite::SqliteRow) -> BibleRefDto {
         label: row.get("label"),
         ordinal: row.get("ordinal"),
         created_at: row.get("created_at"),
+    }
+}
+
+fn shot_list_from_row(row: &sqlx_sqlite::SqliteRow) -> ShotListDto {
+    ShotListDto {
+        note_id: row.get("note_id"),
+        status: row.get("status"),
+        shots_json: row.get("shots_json"),
+        parts_json: row.get("parts_json"),
+        chunk_count: row.get("chunk_count"),
+        script_chars: row.get("script_chars"),
+        model: row.get("model"),
+        prompt_version: row.get("prompt_version"),
+        last_error: row.get("last_error"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
     }
 }

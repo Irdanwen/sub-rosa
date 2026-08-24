@@ -860,6 +860,17 @@ async fn execute_tool(
                 Err(error) => format!("Web search failed: {}", error.message),
             }
         }
+        "bible" | "shots" => {
+            // One implementation for both shells: the same dispatch the
+            // desktop MCP reaches through the local proxy, called directly
+            // here because there is no proxy hop on the phone.
+            emit_status(app, task_id, "studio", None);
+            match crate::studio_actions::studio_action(app.clone(), name, args).await {
+                Ok(value) => serde_json::to_string(&value)
+                    .unwrap_or_else(|_| "That could not be serialized.".to_string()),
+                Err(error) => format!("{}: {}", error.code, error.message),
+            }
+        }
         "search_calendar" => {
             emit_status(app, task_id, "searching-calendar", Some(query.clone()));
             // Retrieval, never injection: the model asks about a day, it is
@@ -1187,6 +1198,42 @@ fn tool_definitions(memory_enabled: bool) -> serde_json::Value {
             }
         }),
     ];
+    // The production surface, kept to the same two tools the desktop MCP has.
+    // Deliberately no render tool: the phone's agent can describe and prepare a
+    // film, and the spending happens where the user sees the figure.
+    tools.push(serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": "bible",
+            "description": "The persistent identities of a production: characters, locations, props, the look. A character named here keeps their face and their described traits across every shot, which is what makes separately generated clips look like one film. Actions: list, save (name, kind, traits, id to update), delete (id).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["list", "save", "delete"] },
+                    "id": { "type": "string" },
+                    "kind": { "type": "string", "enum": ["character", "location", "prop", "look"] },
+                    "name": { "type": "string" },
+                    "traits": { "type": "string", "description": "What must not drift between shots." }
+                },
+                "required": ["action"]
+            }
+        }
+    }));
+    tools.push(serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": "shots",
+            "description": "Read one of the user's notes as the shots a film is made of. Actions: plan (what it would take, and whether it can be read at all), build (start reading - it runs in the background and survives the app closing), read (the current state and the shots). Always plan first and tell the user what it will take. Compiling the shots into a film and paying for it happens in the Studio, not here.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["plan", "build", "read"] },
+                    "noteId": { "type": "string" }
+                },
+                "required": ["action", "noteId"]
+            }
+        }
+    }));
     tools.push(serde_json::json!({
         "type": "function",
         "function": {
@@ -1745,9 +1792,15 @@ mod tests {
             "places_search",
             "summarize_note",
             "import_link",
+            // The production surface: the same two the desktop MCP has, and
+            // deliberately no render tool - the phone's agent prepares a film
+            // and the spending happens where the user sees the figure.
+            "bible",
+            "shots",
         ] {
             assert!(names.contains(&expected.to_string()), "missing {expected}");
         }
+        assert!(!names.contains(&"render".to_string()));
     }
 
     /// These two are the only tools that spend money and take minutes rather

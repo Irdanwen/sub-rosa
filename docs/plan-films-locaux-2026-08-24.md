@@ -362,6 +362,20 @@ c'est la forme que veulent les deux exports. L'ancien champ est parti plutôt
 que coexister : deux façons de faire la même chose, c'est la façon dont on
 oublie laquelle est branchée.
 
+**Deux outils agent-lite, pas trois** (R3). Le plan disait `bible`, `inspect`,
+`render`. `render` a été retiré : il ferait dépenser l'agent du téléphone, ce
+qui contredit ce que la note SOUL lui dit (« tu ne peux pas lancer de rendu »),
+et la dépense doit se faire là où l'utilisateur voit le chiffre. `inspect` a
+fusionné dans `shots read`. Résultat : la surface mobile est exactement celle du
+MCP desktop, ce qui est mieux que trois outils dont un diverge.
+
+**Le mode réalisateur n'a pas été « rapatrié »** (R3). Chaque pièce existe déjà
+et n'a rien demandé : les gates sont le nœud `gate`, les takes sont les branches
+de chaîne, le board est la galerie filtrée par run, le chat est l'agent avec
+`june_studio`. Construire un panneau réalisateur par-dessus, ce serait
+exactement la seconde surface que le fork passe son temps à refuser. Le canvas
+**est** la salle de montage.
+
 ## 11. Risques ouverts
 
 **La production vraiment sans surveillance.** Si, après R3, les retours au

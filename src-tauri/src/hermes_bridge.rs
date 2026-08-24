@@ -115,6 +115,9 @@ const JUNE_WEB_MCP_COORDS_NAME: &str = "june_web_proxy.json";
 const JUNE_MEDIA_MCP_SERVER_NAME: &str = "june_media";
 const JUNE_MEDIA_MCP_SCRIPT_NAME: &str = "june_media_mcp.py";
 const JUNE_MEDIA_MCP_SCRIPT: &str = include_str!("hermes/june_media_mcp.py");
+const JUNE_STUDIO_MCP_SERVER_NAME: &str = "june_studio";
+const JUNE_STUDIO_MCP_SCRIPT_NAME: &str = "june_studio_mcp.py";
+const JUNE_STUDIO_MCP_SCRIPT: &str = include_str!("hermes/june_studio_mcp.py");
 const JUNE_FILMS_MCP_SERVER_NAME: &str = "june_films";
 const JUNE_FILMS_MCP_SCRIPT_NAME: &str = "june_films_mcp.py";
 const JUNE_FILMS_MCP_SCRIPT: &str = include_str!("hermes/june_films_mcp.py");
@@ -194,6 +197,19 @@ Media tools: you have a `june_media` MCP toolset to create media. Use `generate_
 /// `unsandboxed_soul_makes_no_sandbox_claims`).
 const JUNE_SOUL_LONG_TASKS_MD: &str = r#"
 Long-running work: never split a long task into small turns that wait for the user to tell you to continue - the user should not have to re-prompt you to keep going. When a command or script will run for more than a couple of minutes (large batches, long builds, repeated API calls, big downloads), start it with the terminal tool as a background process (`background=true`) with `notify_on_complete=true` (or `watch_patterns` for progress markers you want to react to), tell the user what is running, then end your turn. The app wakes you automatically with the output when the process finishes or a pattern matches: pick the work back up immediately and drive it to completion. Only end a turn with nothing pending when the task is actually done or you genuinely need input from the user. If a run fails or times out partway, relaunch the remainder the same way instead of reporting and stopping.
+"#;
+
+/// Appended to `SOUL.md` for every runtime: how a film gets made in the app.
+///
+/// The remote studio note this replaces taught the agent to negotiate a DIEM
+/// budget with a service that is being retired. This one describes the local
+/// path, and its shape is deliberate: the detail lives in the
+/// `subrosa-production` skill, which costs nothing until it is read, so this
+/// note only has to be enough for the agent to know the skill exists and when
+/// to reach for it. Same no-"sandbox"-wording constraint as the media note.
+const JUNE_SOUL_STUDIO_MD: &str = r#"
+Making a film: the app produces films itself, locally, out of the user's own notes. The `june_studio` toolset is how you take part. `bible` holds the persistent identities of a production - characters, locations, props, the look - and a character named there keeps their face and their described traits across every shot, which is the single thing that makes separately generated clips look like one film. `shots` reads a note as the shots a film is made of: always `plan` first and tell the user what it will take, then `build`, which runs in the background and survives the app closing. Read the `subrosa-production` skill before your first film: it carries the prompt discipline these models need and the order references have to be sent in, and it is worth more than guessing.
+You cannot start a render or spend anything. Compiling the shots into a production, confirming the cost and running it happen in Studio > Workflows, where the user sees the figure first. Say that plainly rather than implying you are about to make the film yourself.
 "#;
 
 /// Appended to `SOUL.md` for every runtime.
@@ -1120,6 +1136,7 @@ async fn start_hermes_bridge_inner(
     let june_context_mcp = sync_june_context_mcp(app, &command, &june_web_mcp.coordinates_path)?;
     let june_media_mcp = sync_june_media_mcp(app, &command, &june_web_mcp.coordinates_path)?;
     let june_films_mcp = sync_june_films_mcp(app, &command, &june_web_mcp.coordinates_path)?;
+    let june_studio_mcp = sync_june_studio_mcp(app, &command, &june_web_mcp.coordinates_path)?;
     sync_hermes_config(
         &hermes_home,
         provider_proxy.port,
@@ -1129,6 +1146,7 @@ async fn start_hermes_bridge_inner(
         &june_web_mcp,
         &june_media_mcp,
         &june_films_mcp,
+        &june_studio_mcp,
     )
     .await?;
 
@@ -1399,6 +1417,12 @@ struct JuneMediaMcpConfig {
 }
 
 struct JuneFilmsMcpConfig {
+    command: String,
+    script_path: PathBuf,
+    coordinates_path: PathBuf,
+}
+
+struct JuneStudioMcpConfig {
     command: String,
     script_path: PathBuf,
     coordinates_path: PathBuf,
@@ -7294,6 +7318,28 @@ fn sync_june_media_mcp(
 
 /// Writes the `june_films` MCP script next to the other built-in MCP servers.
 /// Same coordinates-file contract as the web and media MCPs.
+/// Writes the `june_studio` MCP script next to the other built-in servers.
+fn sync_june_studio_mcp(
+    app: &AppHandle,
+    hermes_command: &str,
+    coordinates_path: &Path,
+) -> Result<JuneStudioMcpConfig, AppError> {
+    let data_dir = crate::app_paths::app_data_dir(app)
+        .map_err(|error| AppError::new("june_studio_mcp_failed", error.to_string()))?;
+    let mcp_dir = data_dir.join(JUNE_CONTEXT_MCP_DIR_NAME);
+    fs::create_dir_all(&mcp_dir)
+        .map_err(|error| AppError::new("june_studio_mcp_failed", error.to_string()))?;
+    let script_path = mcp_dir.join(JUNE_STUDIO_MCP_SCRIPT_NAME);
+    fs::write(&script_path, JUNE_STUDIO_MCP_SCRIPT)
+        .map_err(|error| AppError::new("june_studio_mcp_failed", error.to_string()))?;
+
+    Ok(JuneStudioMcpConfig {
+        command: hermes_python_command(hermes_command),
+        script_path,
+        coordinates_path: coordinates_path.to_path_buf(),
+    })
+}
+
 fn sync_june_films_mcp(
     app: &AppHandle,
     hermes_command: &str,
@@ -7376,6 +7422,7 @@ fn default_python_command() -> &'static str {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn sync_hermes_config(
     hermes_home: &std::path::Path,
     provider_proxy_port: u16,
@@ -7385,6 +7432,7 @@ async fn sync_hermes_config(
     june_web_mcp: &JuneWebMcpConfig,
     june_media_mcp: &JuneMediaMcpConfig,
     june_films_mcp: &JuneFilmsMcpConfig,
+    june_studio_mcp: &JuneStudioMcpConfig,
 ) -> Result<(), AppError> {
     let model = crate::providers::generation_model();
     let base_url = format!("http://127.0.0.1:{provider_proxy_port}/v1");
@@ -7401,6 +7449,7 @@ async fn sync_hermes_config(
         Some(june_web_mcp),
         Some(june_media_mcp),
         Some(june_films_mcp),
+        Some(june_studio_mcp),
     );
     std::fs::write(hermes_home.join("config.yaml"), config)
         .map_err(|error| AppError::new("hermes_bridge_config_failed", error.to_string()))
@@ -7422,6 +7471,7 @@ fn render_hermes_config(
     june_web_mcp: Option<&JuneWebMcpConfig>,
     june_media_mcp: Option<&JuneMediaMcpConfig>,
     june_films_mcp: Option<&JuneFilmsMcpConfig>,
+    june_studio_mcp: Option<&JuneStudioMcpConfig>,
 ) -> String {
     // Hermes resolves a model's vision capability through models.dev, which
     // knows neither our `custom` provider nor the operator's model ids, so it
@@ -7454,6 +7504,7 @@ fn render_hermes_config(
         june_web_mcp,
         june_media_mcp,
         june_films_mcp,
+        june_studio_mcp,
     );
     format!(
         r#"model:
@@ -7491,6 +7542,7 @@ fn render_mcp_servers_config(
     web: Option<&JuneWebMcpConfig>,
     media: Option<&JuneMediaMcpConfig>,
     films: Option<&JuneFilmsMcpConfig>,
+    studio: Option<&JuneStudioMcpConfig>,
 ) -> String {
     let mut entries = String::new();
     if let Some(config) = context {
@@ -7504,6 +7556,9 @@ fn render_mcp_servers_config(
     }
     if let Some(config) = films {
         entries.push_str(&render_films_mcp_entry(config));
+    }
+    if let Some(config) = studio {
+        entries.push_str(&render_studio_mcp_entry(config));
     }
     if entries.is_empty() {
         return "mcp_servers: {}\n".to_string();
@@ -7590,6 +7645,26 @@ fn render_media_mcp_entry(config: &JuneMediaMcpConfig) -> String {
 /// Same coordinates-file contract again. The timeout is the highest of the
 /// built-in servers: a studio chat turn legitimately runs for minutes when it
 /// generates assets, and the export downloads a whole film.
+fn render_studio_mcp_entry(config: &JuneStudioMcpConfig) -> String {
+    format!(
+        r#"  {server_name}:
+    enabled: true
+    command: {command}
+    args:
+      - {script_path}
+      - {coordinates_path}
+    env:
+      PYTHONUNBUFFERED: "1"
+    timeout: 300
+    connect_timeout: 10
+"#,
+        server_name = JUNE_STUDIO_MCP_SERVER_NAME,
+        command = yaml_string(&config.command),
+        script_path = yaml_string(&config.script_path.to_string_lossy()),
+        coordinates_path = yaml_string(&config.coordinates_path.to_string_lossy()),
+    )
+}
+
 fn render_films_mcp_entry(config: &JuneFilmsMcpConfig) -> String {
     format!(
         r#"  {server_name}:
@@ -7685,10 +7760,10 @@ fn sync_june_soul(
             JUNE_SOUL_CLI_BLOCKED_MD
         };
         format!(
-            "{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_BLOCKS_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_LONG_TASKS_MD}{JUNE_SOUL_FILMS_MD}{JUNE_SOUL_SANDBOX_MD}{cli_section}"
+            "{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_BLOCKS_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_LONG_TASKS_MD}{JUNE_SOUL_STUDIO_MD}{JUNE_SOUL_FILMS_MD}{JUNE_SOUL_SANDBOX_MD}{cli_section}"
         )
     } else {
-        format!("{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_BLOCKS_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_LONG_TASKS_MD}{JUNE_SOUL_FILMS_MD}")
+        format!("{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_BLOCKS_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_LONG_TASKS_MD}{JUNE_SOUL_STUDIO_MD}{JUNE_SOUL_FILMS_MD}")
     };
     std::fs::write(hermes_home.join("SOUL.md"), soul)
         .map_err(|error| AppError::new("hermes_bridge_soul_failed", error.to_string()))
@@ -7994,6 +8069,9 @@ async fn handle_june_provider_connection(
         }
         ("POST", "/v1/media/request") => {
             forward_media_request(&mut stream, &request.body).await?;
+        }
+        ("POST", "/v1/studio/request") => {
+            forward_studio_request(&app, &mut stream, &request.body).await?;
         }
         ("POST", "/v1/media/save") => {
             forward_media_save(&app, &mut stream, &request.body).await?;
@@ -8477,6 +8555,60 @@ async fn forward_media_save(
             write_json_response(stream, 200, body).await
         }
         Err(error) => write_media_proxy_error(stream, &error).await,
+    }
+}
+
+/// `/v1/studio/request` — typed local-production actions for the `june_studio`
+/// MCP. Cross-platform, unlike the films route it stands next to: the bible
+/// and the shot list are shared commands, and the agent on the phone gets the
+/// same surface as the one on the desktop.
+///
+/// The MCP names an action and passes JSON. It never sees a key, a path or a
+/// gallery file: everything it can reach is a command the app already exposes
+/// to its own webview.
+async fn forward_studio_request(
+    app: &AppHandle,
+    stream: &mut tokio::net::TcpStream,
+    request_body: &[u8],
+) -> io::Result<()> {
+    let payload = match serde_json::from_slice::<serde_json::Value>(request_body) {
+        Ok(payload) => payload,
+        Err(error) => {
+            return write_json_response(
+                stream,
+                400,
+                serde_json::json!({
+                    "error": { "message": format!("Invalid studio request: {error}") }
+                }),
+            )
+            .await;
+        }
+    };
+    let action = payload
+        .get("action")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let params = payload
+        .get("params")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    match crate::studio_actions::dispatch(app.clone(), &action, params).await {
+        Ok(value) => write_json_response(stream, 200, value).await,
+        Err(error) => {
+            let status = match error.code.as_str() {
+                "studio_unknown_action" | "studio_invalid_params" | "bible_invalid" => 400,
+                _ => 502,
+            };
+            write_json_response(
+                stream,
+                status,
+                serde_json::json!({
+                    "error": { "code": error.code, "message": error.message }
+                }),
+            )
+            .await
+        }
     }
 }
 
@@ -9744,6 +9876,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
 
         assert!(config.contains("model:\n  default: \"glm\""));
@@ -9791,6 +9924,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
 
         assert!(config.contains("skills:\n  external_dirs: []\n"));
@@ -9814,6 +9948,7 @@ mod tests {
             "tok",
             "web",
             &[],
+            None,
             None,
             None,
             None,
@@ -9854,6 +9989,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
 
         assert!(config.contains(
@@ -9882,6 +10018,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
 
         assert!(config.contains("  api_mode: chat_completions\n  supports_vision: true\nagent:\n"));
@@ -9904,6 +10041,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
 
         assert!(config.contains("  supports_vision: false\n"));
@@ -9921,6 +10059,7 @@ mod tests {
             "tok",
             "web",
             &[],
+            None,
             None,
             None,
             None,
@@ -9966,6 +10105,41 @@ mod tests {
         assert!(JUNE_SOUL_FILMS_MD.contains("bring each film home"));
     }
 
+    #[test]
+    fn the_agent_is_told_where_film_production_went_and_what_it_cannot_do() {
+        // The swap has to be atomic with the tool: an agent told to call a
+        // tool that refuses retries instead of explaining, and an agent given
+        // a tool nobody told it about never reaches for it.
+        assert!(JUNE_SOUL_STUDIO_MD.contains("june_studio"));
+        assert!(JUNE_SOUL_STUDIO_MD.contains("subrosa-production"));
+        assert!(JUNE_STUDIO_MCP_SCRIPT.contains("\"name\": \"bible\""));
+        assert!(JUNE_STUDIO_MCP_SCRIPT.contains("\"name\": \"shots\""));
+        // It must not promise to spend: compiling and confirming are the
+        // user's, in the Studio.
+        assert!(JUNE_SOUL_STUDIO_MD.contains("You cannot start a render"));
+    }
+
+    #[test]
+    fn the_studio_toolset_stays_small_enough_to_carry_on_every_turn() {
+        // The whole surface is in context on every turn of every conversation,
+        // so its size is a running cost. Action-discriminated is what keeps it
+        // to a few hundred tokens instead of a few thousand; this is the
+        // ratchet that stops it growing back into thirty granular tools.
+        let tool_names = JUNE_STUDIO_MCP_SCRIPT.matches("\"name\": \"").count();
+        assert!(
+            tool_names <= 4,
+            "the studio toolset grew to {tool_names} tools"
+        );
+    }
+
+    fn test_june_studio_mcp_config() -> JuneStudioMcpConfig {
+        JuneStudioMcpConfig {
+            command: "/tmp/hermes/venv/bin/python".to_string(),
+            script_path: PathBuf::from("/tmp/june/hermes-mcp/june_studio_mcp.py"),
+            coordinates_path: PathBuf::from("/tmp/june/hermes-mcp/june_web_proxy.json"),
+        }
+    }
+
     fn test_june_films_mcp_config() -> JuneFilmsMcpConfig {
         JuneFilmsMcpConfig {
             command: "/tmp/hermes/venv/bin/python".to_string(),
@@ -9991,6 +10165,7 @@ mod tests {
             Some(&web),
             Some(&media),
             Some(&films),
+            None,
         );
 
         // All built-in servers live under one mcp_servers map.
@@ -10055,6 +10230,7 @@ mod tests {
             "tok",
             "web",
             &[],
+            None,
             None,
             None,
             None,
@@ -10478,6 +10654,7 @@ mod tests {
         let web = test_june_web_mcp_config();
         let media = test_june_media_mcp_config();
         let films = test_june_films_mcp_config();
+        let studio = test_june_studio_mcp_config();
         sync_hermes_config(
             home.path(),
             4242,
@@ -10487,6 +10664,7 @@ mod tests {
             &web,
             &media,
             &films,
+            &studio,
         )
         .await
         .expect("sync config");

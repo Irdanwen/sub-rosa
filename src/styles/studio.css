@@ -1975,3 +1975,31 @@
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
 }
+
+/* The shot list, as it reads before anything is rendered. Plain and scannable:
+   this is the last moment the whole film is free to change. */
+.script-shots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-height: 320px;
+  margin: var(--sp-2) 0;
+  padding-inline-start: var(--sp-5);
+  overflow-y: auto;
+  font-size: var(--fs-sm);
+}
+
+.script-shots li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.script-shot-scene {
+  font-weight: 600;
+}
+
+.script-shot-motion {
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}

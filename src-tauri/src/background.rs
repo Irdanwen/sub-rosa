@@ -47,6 +47,7 @@ pub async fn sweep(app: &AppHandle) {
     // on iOS is several lifetimes of a foreground session. Cross-platform on
     // purpose: the desktop gets killed too.
     crate::longform::resume_unfinished(app).await;
+    crate::shotlist::resume_unfinished(app).await;
     // The moments the app speaks first: schedule the briefs for the meetings
     // ahead, deliver the ones that came due while we were away. A row, never
     // a timer — which is exactly why it belongs in this sweep.
