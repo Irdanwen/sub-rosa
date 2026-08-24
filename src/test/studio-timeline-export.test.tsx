@@ -110,7 +110,7 @@ describe("exporting a chain as a timeline", () => {
     expect(await screen.findByText(/Wrote \/out\/Neon alley.timeline/)).toBeInTheDocument();
   });
 
-  it("states a music track's real length, not the film's", async () => {
+  it("states a sound's real length, not the film's, and lands it on its lane", async () => {
     // A track shorter than the film must not be declared film-length: the NLE
     // would show a clip with a dead tail the editor has to find and trim.
     hoisted.list.mockImplementation(async (kind?: string) =>
@@ -132,7 +132,7 @@ describe("exporting a chain as a timeline", () => {
     render(<AssembleStudio pendingCuts={chainCuts([A, B])} />);
     await waitFor(() => expect(screen.getByText("1. prompt for a.mp4")).toBeInTheDocument());
     // The Select is a trigger plus a listbox popover, not a native <select>.
-    fireEvent.click(await screen.findByRole("button", { name: /Audio track/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Add a sound/ }));
     fireEvent.click(await screen.findByRole("option", { name: "a score" }));
 
     const button = screen.getByRole("button", { name: "Export timeline" });
@@ -149,6 +149,87 @@ describe("exporting a chain as a timeline", () => {
     expect(doc).toContain('name="a score"');
     expect(doc).toMatch(/<asset [^>]*name="a score"[^>]*duration="360\/30s"/);
     expect(payload.request.media).toContain("/gallery/score.mp3");
+  });
+
+  it("puts a generated line on the dialogue lane, with its own subtitle", async () => {
+    hoisted.list.mockResolvedValue([
+      {
+        id: "line.mp3",
+        kind: "speech",
+        path: "/gallery/line.mp3",
+        fileName: "line.mp3",
+        bytes: 10,
+        model: "tts",
+        prompt: "Get in the car.",
+        createdAt: 3,
+      },
+    ]);
+    render(<AssembleStudio pendingCuts={chainCuts([A, B])} />);
+    await waitFor(() => expect(screen.getByText("1. prompt for a.mp4")).toBeInTheDocument());
+    fireEvent.click(await screen.findByRole("button", { name: /Add a sound/ }));
+    fireEvent.click(await screen.findByRole("option", { name: "Get in the car." }));
+
+    const button = screen.getByRole("button", { name: "Export timeline" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(hoisted.invoke).toHaveBeenCalledTimes(1));
+
+    const [, payload] = hoisted.invoke.mock.calls[0] as [
+      string,
+      { request: Record<string, unknown> },
+    ];
+    const doc = String(payload.request.document);
+    // A speech artifact lands on dialogue by what produced it, not by a
+    // choice the user has to remember to make.
+    expect(doc).toMatch(/lane="-1"[^>]*audioRole="dialogue"|audioRole="dialogue"/);
+    expect(doc).toContain('lane="-1"');
+    // And the prompt of a generated line is the line, so the subtitle is free.
+    expect(String(payload.request.subtitles)).toContain("Get in the car.");
+    expect(String(payload.request.subtitles)).toContain("00:00:00,000 --> 00:00:12,000");
+  });
+
+  it("lands a second line after the first instead of on top of it", async () => {
+    hoisted.list.mockResolvedValue([
+      {
+        id: "one.mp3",
+        kind: "speech",
+        path: "/gallery/one.mp3",
+        fileName: "one.mp3",
+        bytes: 10,
+        model: "tts",
+        prompt: "Get in.",
+        createdAt: 3,
+      },
+      {
+        id: "two.mp3",
+        kind: "speech",
+        path: "/gallery/two.mp3",
+        fileName: "two.mp3",
+        bytes: 10,
+        model: "tts",
+        prompt: "Drive.",
+        createdAt: 4,
+      },
+    ]);
+    render(<AssembleStudio pendingCuts={chainCuts([A, B])} />);
+    await waitFor(() => expect(screen.getByText("1. prompt for a.mp4")).toBeInTheDocument());
+
+    fireEvent.click(await screen.findByRole("button", { name: /Add a sound/ }));
+    fireEvent.click(await screen.findByRole("option", { name: "Get in." }));
+    await waitFor(() =>
+      expect((screen.getByLabelText("Sound 1 start seconds") as HTMLInputElement).value).toBe("0"),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Add a sound/ }));
+    fireEvent.click(await screen.findByRole("option", { name: "Drive." }));
+
+    // Two voices talking over each other is never what was meant. The stubbed
+    // lines are 12 s long, and the gap is a quarter of a second.
+    await waitFor(() =>
+      expect((screen.getByLabelText("Sound 2 start seconds") as HTMLInputElement).value).toBe(
+        "12.25",
+      ),
+    );
   });
 
   it("writes nothing when the user closes the folder picker", async () => {

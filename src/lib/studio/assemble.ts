@@ -1,10 +1,18 @@
-// Clip assembly: play trimmed gallery clips onto a canvas in order, mix their
-// audio (plus an optional background track) through one AudioContext, and
-// record the whole thing with MediaRecorder. Real-time by design - no ffmpeg
-// to bundle, notarize, or license; the webview's own codecs do the work. The
-// cost is that an export takes as long as the film runs.
+// Clip assembly: play trimmed gallery clips onto a canvas in order and record
+// the whole thing with MediaRecorder. Real-time by design - no ffmpeg to
+// bundle, notarize, or license; the webview's own codecs do the work. The cost
+// is that an export takes as long as the film runs.
+//
+// The *picture* is necessarily real time. The *sound* no longer is. When the
+// caller asks for lanes or for a loudness target, everything audible is
+// rendered offline first (`./mix`) into one buffer, and the recording plays
+// that buffer while the muted clips supply the frames. It is deterministic, it
+// can be measured, and it is the only way to duck music under dialogue
+// properly. Without those options the old live path is used unchanged, so an
+// existing caller gets exactly what it always got.
 
 import { loadVideoElement, seekVideo } from "./frames";
+import { type MixLane, type MixSource, planMix, renderMix } from "./mix";
 
 export interface AssembleClip {
   /** Where the clip's bytes live (an `artifactSrc` URL). */
@@ -14,12 +22,35 @@ export interface AssembleClip {
   outSeconds?: number;
 }
 
+/** A sound placed on one of the mix lanes, at an absolute point in the film. */
+export interface AssembleSound {
+  src: string;
+  /** Where it starts on the timeline. */
+  atSeconds: number;
+  inSeconds?: number;
+  outSeconds?: number;
+  gain?: number;
+}
+
 export interface AssembleOptions {
   clips: AssembleClip[];
   /** Optional background track (music, narration...) under the whole film. */
   audioSrc?: string;
   /** Background track volume, 0..1 (clip audio always passes at full). */
   audioVolume?: number;
+  /**
+   * Dialogue, effects and music, placed. Supplying any of these switches the
+   * export to the offline mix: the clips are muted and the rendered buffer is
+   * what gets recorded.
+   */
+  lanes?: Partial<Record<Exclude<MixLane, "clips">, AssembleSound[]>>;
+  /**
+   * Programme loudness to normalise to, in LUFS. `null` leaves levels alone.
+   * Requires the offline mix, and requesting it is enough to switch to it.
+   */
+  normalizeToLufs?: number | null;
+  /** Told what could not be decoded, rather than losing it silently. */
+  onMixProblem?: (problem: string) => void;
   width?: number;
   height?: number;
   frameRate?: number;
@@ -81,6 +112,118 @@ const seek = seekVideo;
  * clip fails fast, before recording starts), then records the canvas +
  * mixed audio in real time.
  */
+/**
+ * Decode one media file's audio, or say why not.
+ *
+ * A clip whose audio the webview cannot decode (Opus in a container Safari
+ * refuses, a file that turned out to be silent) must not fail the export: the
+ * rest of the mix is still worth having, and the caller is told exactly which
+ * sound is missing rather than discovering it on playback.
+ */
+async function decodeAudio(
+  context: BaseAudioContext,
+  src: string,
+): Promise<AudioBuffer | undefined> {
+  try {
+    const response = await fetch(src);
+    const bytes = await response.arrayBuffer();
+    return await context.decodeAudioData(bytes);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether the caller asked for anything the live path cannot do. */
+function wantsOfflineMix(options: AssembleOptions): boolean {
+  if (options.normalizeToLufs !== undefined) return true;
+  return Object.values(options.lanes ?? {}).some((sounds) => (sounds?.length ?? 0) > 0);
+}
+
+/**
+ * Everything audible, rendered once, ahead of the recording.
+ *
+ * Returns `undefined` when there is nothing to play or the platform has no
+ * offline context, which puts the caller back on the live path rather than
+ * exporting a silent film.
+ */
+async function renderOfflineMix(
+  options: AssembleOptions,
+  windows: readonly { start: number; end: number }[],
+): Promise<AudioBuffer | undefined> {
+  if (typeof OfflineAudioContext === "undefined") return undefined;
+  const scratch = new OfflineAudioContext(1, 1, 48000);
+  const buffers = new Map<string, AudioBuffer>();
+  const sources: MixSource[] = [];
+
+  // The clips' own sound, laid end to end exactly as the picture will be.
+  let at = 0;
+  for (const [index, clip] of options.clips.entries()) {
+    const window = windows[index];
+    const length = window.end - window.start;
+    if (length <= 0) continue;
+    const id = `clip-${index}`;
+    const decoded = await decodeAudio(scratch, clip.src);
+    if (decoded) {
+      buffers.set(id, decoded);
+      sources.push({
+        id,
+        lane: "clips",
+        atSeconds: at,
+        inSeconds: window.start,
+        outSeconds: window.end,
+      });
+    }
+    // A clip that fails to decode is reported by nobody, deliberately: a clip
+    // with no audio track fails exactly the same way as one whose codec the
+    // webview refuses, and warning about every silent shot would train the
+    // user to ignore the one warning that matters. The lanes below are
+    // different - those files are audio by definition.
+    at += length;
+  }
+
+  const lanes: Array<[Exclude<MixLane, "clips">, AssembleSound[]]> = [
+    ["dialogue", options.lanes?.dialogue ?? []],
+    ["sfx", options.lanes?.sfx ?? []],
+    ["music", options.lanes?.music ?? []],
+  ];
+  // A background track supplied the old way is simply the music lane.
+  if (options.audioSrc) {
+    lanes[2][1] = [
+      ...lanes[2][1],
+      { src: options.audioSrc, atSeconds: 0, gain: options.audioVolume ?? 0.6 },
+    ];
+  }
+
+  for (const [lane, sounds] of lanes) {
+    for (const [index, sound] of sounds.entries()) {
+      const id = `${lane}-${index}`;
+      const decoded = await decodeAudio(scratch, sound.src);
+      if (!decoded) {
+        options.onMixProblem?.(`One ${lane} sound could not be read.`);
+        continue;
+      }
+      buffers.set(id, decoded);
+      sources.push({
+        id,
+        lane,
+        atSeconds: sound.atSeconds,
+        inSeconds: sound.inSeconds ?? 0,
+        outSeconds: sound.outSeconds ?? decoded.duration,
+        gain: sound.gain,
+      });
+    }
+  }
+
+  if (sources.length === 0) return undefined;
+  const durationSeconds = windows.reduce((sum, window) => sum + (window.end - window.start), 0);
+  const plan = planMix({ durationSeconds, sources });
+  const rendered = await renderMix(plan, {
+    buffers,
+    targetLufs: options.normalizeToLufs,
+  });
+  return rendered?.buffer;
+}
+
 export async function assembleClips(options: AssembleOptions): Promise<AssembleResult> {
   if (options.clips.length === 0) throw new Error("Add at least one clip.");
   const mime = pickRecorderMime();
@@ -97,20 +240,36 @@ export async function assembleClips(options: AssembleOptions): Promise<AssembleR
   const context = canvas.getContext("2d");
   if (!context) throw new Error("This system cannot compose video frames.");
 
-  // One AudioContext mixes every clip's sound plus the background track into
-  // the recording; the graph never touches the speakers.
+  const windows = videos.map((video, index) => clipWindow(options.clips[index], video.duration));
+  const totalSeconds = windows.reduce((sum, cut) => sum + (cut.end - cut.start), 0);
+  if (totalSeconds <= 0) throw new Error("The cut list is empty after trimming.");
+
+  // The mix, if the caller asked for one. Rendered before anything is recorded
+  // so that the recording only ever plays back a finished decision.
+  const mixed = wantsOfflineMix(options) ? await renderOfflineMix(options, windows) : undefined;
+
+  // One AudioContext feeds the recording; the graph never touches the speakers.
   const audioContext = new AudioContext();
   const mixOut = audioContext.createMediaStreamDestination();
-  for (const video of videos) {
-    audioContext.createMediaElementSource(video).connect(mixOut);
-  }
+  let mixSource: AudioBufferSourceNode | undefined;
   let backgroundAudio: HTMLAudioElement | undefined;
-  if (options.audioSrc) {
-    backgroundAudio = new Audio(options.audioSrc);
-    backgroundAudio.crossOrigin = "anonymous";
-    const gain = audioContext.createGain();
-    gain.gain.value = options.audioVolume ?? 0.6;
-    audioContext.createMediaElementSource(backgroundAudio).connect(gain).connect(mixOut);
+  if (mixed) {
+    // The clips supply frames only: their sound is already inside the buffer.
+    for (const video of videos) video.muted = true;
+    mixSource = audioContext.createBufferSource();
+    mixSource.buffer = mixed;
+    mixSource.connect(mixOut);
+  } else {
+    for (const video of videos) {
+      audioContext.createMediaElementSource(video).connect(mixOut);
+    }
+    if (options.audioSrc) {
+      backgroundAudio = new Audio(options.audioSrc);
+      backgroundAudio.crossOrigin = "anonymous";
+      const gain = audioContext.createGain();
+      gain.gain.value = options.audioVolume ?? 0.6;
+      audioContext.createMediaElementSource(backgroundAudio).connect(gain).connect(mixOut);
+    }
   }
 
   const stream = canvas.captureStream(frameRate);
@@ -127,14 +286,11 @@ export async function assembleClips(options: AssembleOptions): Promise<AssembleR
     });
   });
 
-  const windows = videos.map((video, index) => clipWindow(options.clips[index], video.duration));
-  const totalSeconds = windows.reduce((sum, cut) => sum + (cut.end - cut.start), 0);
-  if (totalSeconds <= 0) throw new Error("The cut list is empty after trimming.");
-
   // Fire and forget: a suspended context only silences the mix, it must not
   // hang the export (resume() can stay pending under strict autoplay rules).
   void audioContext.resume().catch(() => undefined);
   recorder.start(500);
+  mixSource?.start();
   void backgroundAudio?.play().catch(() => undefined);
 
   try {
@@ -174,6 +330,11 @@ export async function assembleClips(options: AssembleOptions): Promise<AssembleR
     }
   } finally {
     recorder.stop();
+    try {
+      mixSource?.stop();
+    } catch {
+      // Stopping a source that never started throws; nothing to do about it.
+    }
     backgroundAudio?.pause();
     for (const video of videos) video.pause();
     void audioContext.close().catch(() => undefined);

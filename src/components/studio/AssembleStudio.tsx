@@ -23,6 +23,8 @@ import {
   timelineSeconds,
 } from "../../lib/studio/assemble";
 import { formatElapsed } from "../../lib/studio/async-job";
+import { DEFAULT_TARGET_LUFS } from "../../lib/studio/loudness";
+import { scheduleWithoutOverlap } from "../../lib/studio/mix";
 import type { StudioArtifact } from "../../lib/studio/types";
 import { EmptyState } from "../ui/EmptyState";
 import { Select } from "../ui/Select";
@@ -32,6 +34,8 @@ import { GenerationLayout } from "./GenerationLayout";
 import type { ChainShot } from "../../lib/studio/chain";
 import { writeTimelineBundle } from "../../lib/studio/timeline/bundle";
 import {
+  AUDIO_LANES,
+  type AudioLane,
   FRAME_RATES,
   TIMELINE_FORMAT_LABELS,
   type TimelineFormat,
@@ -39,6 +43,64 @@ import {
 } from "../../lib/studio/timeline";
 import { bundleCut } from "../../lib/studio/timeline/bundle";
 import { formatSeconds, SliderField, StudioField } from "./controls";
+
+/**
+ * A sound placed under the film.
+ *
+ * Replaces the single background track this surface used to have. One track at
+ * one level is a monitor path, not a mix: there was nowhere to put a line of
+ * dialogue, and nothing could get out of its way. Three lanes is the smallest
+ * shape that is actually a mix, and it is the shape both exports want - the
+ * offline render ducks music under dialogue, and the timeline lays them on
+ * A1/A2/A3 for whoever finishes it.
+ */
+interface Sound {
+  key: string;
+  artifact: StudioArtifact;
+  lane: AudioLane;
+  /** Where it starts on the timeline. */
+  atSeconds: number;
+  gain: number;
+  /** Measured, not assumed. A timeline states how long a file IS. */
+  durationSeconds?: number;
+}
+
+let nextSoundKey = 0;
+
+/**
+ * Place a newly added sound so it does not collide with its own lane.
+ *
+ * Only dialogue is scheduled: music and effects are meant to sit under things,
+ * and moving them would be second-guessing. Only the new sound moves - the ones
+ * already there were placed on purpose.
+ */
+function placeSounds(sounds: readonly Sound[], newKey: string): Sound[] {
+  const added = sounds.find((sound) => sound.key === newKey);
+  if (!added || added.lane !== "dialogue") return [...sounds];
+  const existing = sounds.filter((sound) => sound.lane === "dialogue" && sound.key !== newKey);
+  const placed = scheduleWithoutOverlap([
+    ...existing.map((sound) => ({
+      durationSeconds: sound.durationSeconds ?? 0,
+      preferredAtSeconds: sound.atSeconds,
+    })),
+    { durationSeconds: added.durationSeconds ?? 0 },
+  ]);
+  const atSeconds = placed[placed.length - 1] ?? 0;
+  return sounds.map((sound) => (sound.key === newKey ? { ...sound, atSeconds } : sound));
+}
+
+/** Which lane a gallery sound belongs on, from what produced it. */
+function laneOf(artifact: StudioArtifact): AudioLane {
+  if (artifact.kind === "speech") return "dialogue";
+  if (artifact.kind === "sfx") return "sfx";
+  return "music";
+}
+
+const LANE_LABELS: Record<AudioLane, string> = {
+  dialogue: "Dialogue",
+  sfx: "Effects",
+  music: "Music",
+};
 
 interface Cut {
   key: string;
@@ -103,8 +165,7 @@ export function AssembleStudio({
   const [galleryVideos, setGalleryVideos] = useState<StudioArtifact[]>([]);
   const [galleryAudio, setGalleryAudio] = useState<StudioArtifact[]>([]);
   const [cuts, setCuts] = useState<Cut[]>([]);
-  const [audioPath, setAudioPath] = useState("");
-  const [audioVolume, setAudioVolume] = useState(0.6);
+  const [sounds, setSounds] = useState<Sound[]>([]);
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -115,7 +176,6 @@ export function AssembleStudio({
   const [frameRateKey, setFrameRateKey] = useState("30");
   const [writingTimeline, setWritingTimeline] = useState(false);
   const [notice, setNotice] = useState<string | undefined>(undefined);
-  const [audioDurationSeconds, setAudioDurationSeconds] = useState<number | undefined>(undefined);
   const previewRef = useRef<HTMLVideoElement>(null);
   const previewRun = useRef(0);
   const abortRef = useRef<AbortController | undefined>(undefined);
@@ -276,24 +336,36 @@ export function AssembleStudio({
    * always do. An editor shows an empty audio component for a silent file,
    * which is a smaller lie than dropping the sound of every clip that has some.
    */
-  useEffect(() => {
-    const track = galleryAudio.find((entry) => entry.path === audioPath);
-    if (!track) {
-      setAudioDurationSeconds(undefined);
-      return;
-    }
-    let cancelled = false;
-    void probeAudioDuration(artifactSrc(track)).then((duration) => {
-      if (!cancelled) setAudioDurationSeconds(duration);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [audioPath, galleryAudio]);
+  const addSound = useCallback(async (artifact: StudioArtifact) => {
+    const key = `sound-${nextSoundKey++}`;
+    const lane = laneOf(artifact);
+    setSounds((current) => [
+      ...current,
+      { key, artifact, lane, atSeconds: 0, gain: lane === "music" ? 0.6 : 1 },
+    ]);
+    const duration = await probeAudioDuration(artifactSrc(artifact));
+    setSounds((current) =>
+      // A line lands after the ones already there rather than on top of them.
+      // Two voices talking over each other is never what was meant, and the
+      // only way to know where a generated line ends is to have measured it,
+      // which is exactly now.
+      placeSounds(
+        current.map((sound) =>
+          sound.key === key ? { ...sound, durationSeconds: duration } : sound,
+        ),
+        key,
+      ),
+    );
+  }, []);
+
+  const patchSound = useCallback((key: string, patch: Partial<Sound>) => {
+    setSounds((current) =>
+      current.map((sound) => (sound.key === key ? { ...sound, ...patch } : sound)),
+    );
+  }, []);
 
   const bundleInput = useMemo(() => {
     const measured = cuts.find((cut) => cut.width && cut.height);
-    const audio = galleryAudio.find((entry) => entry.path === audioPath);
     return {
       name: filmName.trim() || "Assembly",
       frameRate: FRAME_RATES[frameRateKey] ?? FRAME_RATES["30"],
@@ -311,35 +383,47 @@ export function AssembleStudio({
           hasAudio: true,
         };
       }),
-      audio:
-        audio && audioDurationSeconds !== undefined
-          ? {
-              music: [
-                {
-                  artifact: audio,
-                  name: audio.prompt?.slice(0, 48) || audio.fileName,
-                  inSeconds: 0,
-                  // The track plays under the film until one of the two runs
-                  // out, so the shorter of the pair is the honest out point.
-                  outSeconds: Math.min(audioDurationSeconds, totalSeconds || audioDurationSeconds),
-                  sourceDurationSeconds: audioDurationSeconds,
-                  atSeconds: 0,
-                  gain: audioVolume,
-                },
-              ],
-            }
-          : undefined,
+      audio: Object.fromEntries(
+        AUDIO_LANES.map((lane) => [
+          lane,
+          sounds
+            .filter((sound) => sound.lane === lane && sound.durationSeconds !== undefined)
+            .map((sound) => {
+              const duration = sound.durationSeconds as number;
+              return {
+                artifact: sound.artifact,
+                name: sound.artifact.prompt?.slice(0, 48) || sound.artifact.fileName,
+                inSeconds: 0,
+                // A sound plays until it or the film runs out, whichever comes
+                // first. Claiming the film's length for a shorter file writes a
+                // clip with a dead tail the editor has to find by hand.
+                outSeconds: totalSeconds
+                  ? Math.min(duration, Math.max(0, totalSeconds - sound.atSeconds))
+                  : duration,
+                sourceDurationSeconds: duration,
+                atSeconds: sound.atSeconds,
+                gain: sound.gain,
+              };
+            }),
+        ]).filter(([, clips]) => (clips as unknown[]).length > 0),
+      ),
+      // Subtitles come free: the prompt of a generated speech artifact IS the
+      // line that was spoken, and the lane already says when it is heard. No
+      // second surface, no transcription, and a sidecar rather than a burn-in.
+      subtitles: sounds
+        .filter(
+          (sound) =>
+            sound.lane === "dialogue" &&
+            sound.durationSeconds !== undefined &&
+            Boolean(sound.artifact.prompt?.trim()),
+        )
+        .map((sound) => ({
+          atSeconds: sound.atSeconds,
+          untilSeconds: sound.atSeconds + (sound.durationSeconds as number),
+          text: sound.artifact.prompt as string,
+        })),
     };
-  }, [
-    cuts,
-    filmName,
-    frameRateKey,
-    galleryAudio,
-    audioPath,
-    audioVolume,
-    audioDurationSeconds,
-    totalSeconds,
-  ]);
+  }, [cuts, filmName, frameRateKey, sounds, totalSeconds]);
 
   /** Why the cut cannot be written yet, said before a folder is even picked. */
   const timelineBlockers = useMemo(
@@ -377,18 +461,34 @@ export function AssembleStudio({
     setProgress(0);
     setError(undefined);
     try {
-      const audio = galleryAudio.find((entry) => entry.path === audioPath);
+      const mixProblems: string[] = [];
+      const lane = (which: AudioLane) =>
+        sounds
+          .filter((sound) => sound.lane === which)
+          .map((sound) => ({
+            src: artifactSrc(sound.artifact),
+            atSeconds: sound.atSeconds,
+            gain: sound.gain,
+          }));
       const result = await assembleClips({
         clips: cuts.map((cut) => ({
           src: artifactSrc(cut.artifact),
           inSeconds: cut.inSeconds,
           outSeconds: cut.outSeconds,
         })),
-        audioSrc: audio ? artifactSrc(audio) : undefined,
-        audioVolume,
+        // Asking for a loudness target is what puts the export on the offline
+        // mix: deterministic levels, and music that gets out of the way.
+        normalizeToLufs: DEFAULT_TARGET_LUFS,
+        lanes: {
+          dialogue: lane("dialogue"),
+          sfx: lane("sfx"),
+          music: lane("music"),
+        },
+        onMixProblem: (problem) => mixProblems.push(problem),
         onProgress: setProgress,
         signal: controller.signal,
       });
+      if (mixProblems.length > 0) setNotice(mixProblems.join(" "));
       const base64 = await blobToBase64(result.blob);
       await saveArtifactFromBase64(base64, result.extension, {
         kind: "video",
@@ -404,7 +504,7 @@ export function AssembleStudio({
     } finally {
       setExporting(false);
     }
-  }, [cuts, exporting, stopPreview, galleryAudio, audioPath, audioVolume, reloadSources]);
+  }, [cuts, exporting, stopPreview, sounds, reloadSources]);
 
   const controls = (
     <>
@@ -512,32 +612,83 @@ export function AssembleStudio({
           />
         </div>
       </StudioField>
-      <StudioField label="Audio track" hint="Optional, under the whole film">
-        <Select
-          value={audioPath || null}
-          placeholder="None"
-          ariaLabel="Audio track"
-          onChange={setAudioPath}
-          options={[
-            { value: "", label: "None" },
-            ...galleryAudio.map((entry) => ({
+      <StudioField
+        label="Sound"
+        hint={sounds.length > 0 ? `${sounds.length} on 3 lanes` : "Dialogue, effects, music"}
+      >
+        <div className="studio-cutlist">
+          {sounds.map((sound, index) => (
+            <div key={sound.key} className="studio-cut">
+              <div className="studio-cut-head">
+                <span className="studio-cut-title" title={sound.artifact.prompt}>
+                  {sound.artifact.prompt || sound.artifact.fileName}
+                </span>
+                <span className="studio-card-actions">
+                  <button
+                    type="button"
+                    className="studio-icon-button"
+                    aria-label={`Remove sound ${index + 1}`}
+                    onClick={() =>
+                      setSounds((current) => current.filter((entry) => entry.key !== sound.key))
+                    }
+                  >
+                    <span aria-hidden>x</span>
+                  </button>
+                </span>
+              </div>
+              <div className="studio-cut-trim">
+                <div>
+                  <span>Lane</span>
+                  <Select
+                    value={sound.lane}
+                    placeholder="Music"
+                    ariaLabel={`Sound ${index + 1} lane`}
+                    onChange={(value) => patchSound(sound.key, { lane: value as AudioLane })}
+                    options={AUDIO_LANES.map((lane) => ({ value: lane, label: LANE_LABELS[lane] }))}
+                  />
+                </div>
+                <label>
+                  <span>Start</span>
+                  <input
+                    className="studio-input"
+                    inputMode="decimal"
+                    value={String(sound.atSeconds)}
+                    aria-label={`Sound ${index + 1} start seconds`}
+                    onChange={(event) => {
+                      const value = Number(event.target.value.replace(",", "."));
+                      patchSound(sound.key, {
+                        atSeconds: Number.isFinite(value) ? Math.max(0, value) : 0,
+                      });
+                    }}
+                  />
+                </label>
+              </div>
+              <SliderField
+                label={`Sound ${index + 1} level`}
+                min={0}
+                max={1}
+                step={0.05}
+                value={sound.gain}
+                onChange={(value) => patchSound(sound.key, { gain: value })}
+                format={(value) => `${Math.round(value * 100)}%`}
+              />
+            </div>
+          ))}
+          <Select
+            value={null}
+            placeholder={sounds.length > 0 ? "Add another sound" : "Add a sound from your gallery"}
+            ariaLabel="Add a sound"
+            onChange={(path) => {
+              const artifact = galleryAudio.find((entry) => entry.path === path);
+              if (artifact) void addSound(artifact);
+            }}
+            options={galleryAudio.map((entry) => ({
               value: entry.path,
               label: entry.prompt ? entry.prompt.slice(0, 48) : entry.fileName,
-            })),
-          ]}
-        />
+            }))}
+          />
+        </div>
       </StudioField>
-      {audioPath ? (
-        <SliderField
-          label="Audio volume"
-          min={0}
-          max={1}
-          step={0.05}
-          value={audioVolume}
-          onChange={setAudioVolume}
-          format={(value) => `${Math.round(value * 100)}%`}
-        />
-      ) : null}
       {cuts.length > 0 ? (
         <>
           <StudioField label="Film name" hint="Names the export">

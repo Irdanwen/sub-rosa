@@ -349,9 +349,18 @@ fichier d'échange sert à côté d'un banc de montage, et il n'y en a pas sur i
 production compilée (R3) se termine sur ce nœud ; aujourd'hui il faut repasser
 par l'onglet Assemble. À traiter en R3, où la question se pose vraiment.
 
-**Les sous-titres n'ont pas encore de source** (R1a). Le `.srt` est écrit si le
-cut en porte, et rien n'en produit tant que les répliques n'existent pas :
-elles arrivent avec la piste dialogue en R1b.
+**Les sous-titres n'ont pas encore de source** (R1a). *Résolu en R1b* : le
+prompt d'un artefact `speech` **est** la réplique prononcée, et la piste
+dialogue dit quand on l'entend. Les sous-titres se déduisent des deux, sans
+seconde surface ni transcription.
+
+**La piste audio unique a été remplacée, pas complétée** (R1b). L'onglet
+Assemble avait un « Audio track » avec un volume. Une piste à un niveau n'est
+pas un mix : il n'y avait nulle part où poser une réplique, et rien ne pouvait
+s'écarter pour elle. Trois pistes est la plus petite forme qui en soit un, et
+c'est la forme que veulent les deux exports. L'ancien champ est parti plutôt
+que coexister : deux façons de faire la même chose, c'est la façon dont on
+oublie laquelle est branchée.
 
 ## 11. Risques ouverts
 
