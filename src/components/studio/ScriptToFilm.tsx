@@ -25,11 +25,13 @@ import {
   type ShotListPlanDto,
   SHOT_LIST_EVENT,
 } from "../../lib/tauri";
-import { compileShotList, type Shot } from "../../lib/studio/workflow/compile";
+import { compileShotList, routeModels, type Shot } from "../../lib/studio/workflow/compile";
+import { modelsOfType } from "../../lib/studio/catalog";
 import type { Workflow } from "../../lib/studio/workflow/schema";
 import { validateWorkflow } from "../../lib/studio/workflow/validator";
 import type { MediaCatalog } from "../../lib/studio/types";
 import { Dialog } from "../ui/Dialog";
+import { Select } from "../ui/Select";
 import { Spinner } from "../ui/Spinner";
 import { Switch } from "../ui/Switch";
 import { NotePicker } from "./NotePicker";
@@ -70,6 +72,9 @@ export function ScriptToFilm({
   const [aspectRatio, setAspectRatio] = useState("16:9");
   const [withScore, setWithScore] = useState(true);
   const [gateBeforeAssemble, setGateBeforeAssemble] = useState(false);
+  // Empty means "whatever this account publishes cheapest", which is what
+  // `routeModels` decides. Choosing here pins the whole film to one family.
+  const [videoModelId, setVideoModelId] = useState("");
 
   useEffect(() => {
     listBibleEntries()
@@ -117,10 +122,21 @@ export function ScriptToFilm({
       catalog,
       envelopeCredits: envelope,
       aspectRatio,
+      videoModelId: videoModelId || undefined,
       withScore,
       gateBeforeAssemble,
     });
-  }, [shots, note, bible, catalog, envelope, aspectRatio, withScore, gateBeforeAssemble]);
+  }, [
+    shots,
+    note,
+    bible,
+    catalog,
+    envelope,
+    aspectRatio,
+    withScore,
+    gateBeforeAssemble,
+    videoModelId,
+  ]);
 
   const breakDown = useCallback(async () => {
     if (!note || busy) return;
@@ -206,6 +222,25 @@ export function ScriptToFilm({
                   ))}
                 </ol>
 
+                <StudioField
+                  label="Shoot on"
+                  hint="One family for the whole film, so the look holds across the cut"
+                >
+                  <Select
+                    value={videoModelId || null}
+                    placeholder={
+                      routeModels(catalog).text?.name
+                        ? `Cheapest (${routeModels(catalog).text?.name})`
+                        : "Cheapest"
+                    }
+                    ariaLabel="Video family"
+                    onChange={setVideoModelId}
+                    options={modelsOfType(catalog, "video").map((entry) => ({
+                      value: entry.id,
+                      label: entry.name,
+                    }))}
+                  />
+                </StudioField>
                 <StudioField label="Aspect ratio">
                   <input
                     className="studio-input"

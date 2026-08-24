@@ -82,6 +82,12 @@ export interface CompileInput {
   /** Named identities, so a character keeps their face and their traits. */
   bible?: readonly BibleEntry[];
   catalog: MediaCatalog;
+  /**
+   * The video family to shoot on. Its other directions are matched by stem, so
+   * a chained shot and a shot holding a face come from the same engine. Absent
+   * means the cheapest the account publishes.
+   */
+  videoModelId?: string;
   /** Hard ceiling in credits. Over it, nothing is built. */
   envelopeCredits?: number;
   aspectRatio?: string;
@@ -148,24 +154,61 @@ interface Routing {
 }
 
 /**
+ * A model id with its direction removed, so the three variants of one family
+ * collapse to the same string.
+ *
+ * `seedance-2-0-fast-text-to-video-basic` and
+ * `seedance-2-0-fast-reference-to-video-basic` are one family doing two
+ * different jobs, and a film should shoot on one family throughout: the moment
+ * a chained shot comes from a different engine than the one before it, the
+ * grade and the motion change mid-cut and it stops reading as one film.
+ */
+export function familyStem(id: string): string {
+  return id.toLowerCase().replace(/-(?:text|image|reference|video|first-last-frame)-to-video/g, "");
+}
+
+/**
  * The models this account can actually run, sorted into the three jobs a shot
  * can need.
  *
  * Nothing is hardcoded: ids change under us (the catalogue renamed every
- * seedance variant between two releases), so the families are recognised by
- * what the catalogue says they take, not by their name.
+ * seedance variant between two releases), so families are recognised by what
+ * the catalogue says they *take*, and the three directions of one family are
+ * matched by stem rather than by a table somebody has to maintain.
+ *
+ * With no preference, the cheapest published option wins. Sorting by name was
+ * picking whichever family happened to sort first, which on a real catalogue
+ * is a premium model nobody chose.
  */
-export function routeModels(catalog: MediaCatalog): Routing {
-  const video = modelsOfType(catalog, "video");
-  const fromImage = modelsOfType(catalog, "imageToVideo");
-  const reference = modelsOfType(catalog, "referenceToVideo");
-  // Seedance first among the reference models: it is the family whose whole
-  // contract is holding an identity across separate renders.
-  const preferredReference = reference.find((model) => isSeedanceModel(model.id)) ?? reference[0];
+export function routeModels(catalog: MediaCatalog, preferredId?: string): Routing {
+  const cheapestFirst = (models: MediaModel[]) =>
+    [...models].sort(
+      (left, right) =>
+        (estimateCostCredits(left, { multiplier: catalog.priceMultiplier }) ??
+          Number.POSITIVE_INFINITY) -
+        (estimateCostCredits(right, { multiplier: catalog.priceMultiplier }) ??
+          Number.POSITIVE_INFINITY),
+    );
+  const video = cheapestFirst(modelsOfType(catalog, "video"));
+  const fromImage = cheapestFirst(modelsOfType(catalog, "imageToVideo"));
+  const reference = cheapestFirst(modelsOfType(catalog, "referenceToVideo"));
+
+  const stem = preferredId ? familyStem(preferredId) : undefined;
+  const inFamily = (models: MediaModel[]) =>
+    stem ? models.find((model) => familyStem(model.id) === stem) : undefined;
+
+  const text = inFamily(video) ?? video[0];
   return {
-    text: video[0],
-    fromImage: fromImage[0] ?? video[0],
-    reference: preferredReference,
+    text,
+    // A family with no image-to-video arm falls back to its own text arm
+    // rather than to another family's: a chained shot losing its opening
+    // frame is a smaller break than a chained shot changing engine.
+    fromImage: inFamily(fromImage) ?? (stem ? text : undefined) ?? fromImage[0] ?? video[0],
+    // Seedance first among the reference models when nothing was asked for:
+    // it is the family whose whole contract is holding an identity across
+    // separate renders.
+    reference:
+      inFamily(reference) ?? reference.find((model) => isSeedanceModel(model.id)) ?? reference[0],
   };
 }
 
@@ -195,8 +238,9 @@ export function planShots(
   bible: readonly BibleEntry[],
   catalog: MediaCatalog,
   aspectRatio: string,
+  videoModelId?: string,
 ): { planned: PlannedShot[]; notes: string[] } {
-  const routing = routeModels(catalog);
+  const routing = routeModels(catalog, videoModelId);
   const notes: string[] = [];
   const byName = new Map(bible.map((entry) => [entry.name.toLowerCase(), entry]));
   const planned: PlannedShot[] = [];
@@ -284,6 +328,7 @@ export function compileShotList(input: CompileInput): CompileResult {
     input.bible ?? [],
     input.catalog,
     aspectRatio,
+    input.videoModelId,
   );
   notes.push(...routingNotes);
   if (planned.length === 0) {

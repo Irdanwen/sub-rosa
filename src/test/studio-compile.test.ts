@@ -3,6 +3,7 @@ import type { BibleEntry } from "../lib/studio/bible";
 import {
   compileShotList,
   DIALOGUE_LEAD_IN_SECONDS,
+  familyStem,
   MAX_COMPILED_SHOTS,
   nearestOption,
   planShots,
@@ -65,6 +66,55 @@ const nera: BibleEntry = {
 };
 
 describe("routing", () => {
+  it("keeps a film on one family across all three directions", () => {
+    // The moment a chained shot comes from a different engine than the one
+    // before it, the grade and the motion change mid-cut and it stops reading
+    // as one film. The directions are matched by stem, not by a table.
+    expect(familyStem("seedance-2-0-fast-reference-to-video-basic")).toBe(
+      familyStem("seedance-2-0-fast-text-to-video-basic"),
+    );
+    expect(familyStem("kling-v3-standard-text-to-video")).toBe("kling-v3-standard");
+    expect(familyStem("flux-3-first-last-frame-to-video")).toBe("flux-3");
+
+    const wide: MediaCatalog = {
+      backend: "carpe-diem",
+      models: [
+        model("cheap-text-to-video", "video", { costCredits: 1 }),
+        model("kling-v3-text-to-video", "video", { costCredits: 40 }),
+        model("kling-v3-image-to-video", "imageToVideo", { costCredits: 40 }),
+        model("other-image-to-video", "imageToVideo", { costCredits: 2 }),
+      ],
+    };
+    const routed = routeModels(wide, "kling-v3-text-to-video");
+    expect(routed.text?.id).toBe("kling-v3-text-to-video");
+    expect(routed.fromImage?.id).toBe("kling-v3-image-to-video");
+  });
+
+  it("stays in the family even when it has no image-to-video arm", () => {
+    // Losing the opening frame is a smaller break than changing engine.
+    const wide: MediaCatalog = {
+      backend: "carpe-diem",
+      models: [
+        model("lonely-text-to-video", "video", { costCredits: 40 }),
+        model("someone-else-image-to-video", "imageToVideo", { costCredits: 1 }),
+      ],
+    };
+    expect(routeModels(wide, "lonely-text-to-video").fromImage?.id).toBe("lonely-text-to-video");
+  });
+
+  it("picks the cheapest when nobody chose", () => {
+    // Sorting by name was picking whichever family happened to sort first,
+    // which on a real catalogue is a premium model nobody asked for.
+    const wide: MediaCatalog = {
+      backend: "carpe-diem",
+      models: [
+        model("aaa-premium-text-to-video", "video", { costCredits: 90 }),
+        model("zzz-cheap-text-to-video", "video", { costCredits: 3 }),
+      ],
+    };
+    expect(routeModels(wide).text?.id).toBe("zzz-cheap-text-to-video");
+  });
+
   it("recognises families by what they take, never by their name", () => {
     // Ids change under us: the catalogue renamed every seedance variant
     // between two releases, and a hardcoded id is a film that stops rendering.
