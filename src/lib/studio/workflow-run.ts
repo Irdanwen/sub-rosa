@@ -165,7 +165,15 @@ interface WorkflowRunNodeRow {
 type StoredOutput =
   | { kind: "text"; text: string }
   | { kind: "image"; artifactId?: string; base64?: string; mimeType: string; chainFrom?: ChainRef }
-  | { kind: "audio"; artifactId: string; mimeType: string; source?: "music" | "speech" }
+  | {
+      kind: "audio";
+      artifactId: string;
+      mimeType: string;
+      source?: "music" | "speech";
+      /** Where the sound is heard. Persisted, or a resumed run would place
+       * every line at the top of the film again. */
+      atSeconds?: number;
+    }
   | { kind: "video"; artifactId: string; parentId?: string; parentHandoffSeconds?: number };
 
 function dehydrate(output: NodeOutput): StoredOutput | undefined {
@@ -195,6 +203,7 @@ function dehydrate(output: NodeOutput): StoredOutput | undefined {
             artifactId: output.artifactId,
             mimeType: output.mimeType,
             source: output.source,
+            atSeconds: output.atSeconds,
           }
         : undefined;
     case "video":
@@ -243,6 +252,7 @@ async function rehydrate(stored: StoredOutput, storage: WorkflowStorage): Promis
         source: stored.source,
         artifactId: stored.artifactId,
         src: asset.src,
+        atSeconds: stored.atSeconds,
       };
     }
     case "video": {
@@ -683,4 +693,86 @@ export async function approveRunGates(
     }
   }
   return resumeWorkflowRun(runId, { ...options, approvedGates: approvals });
+}
+
+/** A finished production, opened up so it can be finished properly. */
+export interface ProductionCut {
+  runId: string;
+  name: string;
+  /** The shots, in the order the run cut them. */
+  shots: Array<{ artifactId: string; parentHandoffSeconds?: number }>;
+  /** Everything audible, by lane, with where it was heard. */
+  sounds: Array<{ artifactId: string; lane: "dialogue" | "sfx" | "music"; atSeconds: number }>;
+}
+
+/**
+ * Read a finished production back as a cut list.
+ *
+ * The film a run produces is one flattened file: fine to watch, and the end of
+ * the line if the user wants to grade it or move a line half a second. What
+ * they need for that is the *parts*, in order, with their lanes - which the run
+ * still has, on its node rows.
+ *
+ * Read from the frozen graph rather than from the node ids, because the graph
+ * is what says which sound was on which lane. A node whose artifact has since
+ * been deleted is skipped rather than failing the whole load: an incomplete cut
+ * list is still worth having.
+ */
+export async function productionCut(runId: string): Promise<ProductionCut | undefined> {
+  const detail = await invoke<{ run: WorkflowRunSummary; nodes: WorkflowRunNodeRow[] }>(
+    "workflow_run_get",
+    { id: runId },
+  ).catch(() => undefined);
+  if (!detail) return undefined;
+  const workflow = runDefinition(detail.run);
+  if (!workflow) return undefined;
+
+  const outputs = new Map<string, StoredOutput>();
+  for (const node of detail.nodes) {
+    if (node.status !== "done" || !node.output) continue;
+    try {
+      outputs.set(node.nodeId, JSON.parse(node.output) as StoredOutput);
+    } catch {
+      // An unreadable row is one missing shot, not a failed load.
+    }
+  }
+
+  const assemble = workflow.nodes.find((node) => node.type === "assemble");
+  if (!assemble) return undefined;
+  const into = (port: string) =>
+    workflow.edges.filter((edge) => edge.target === assemble.id && edge.targetPort === port);
+
+  const shots = into("clips").flatMap((edge) => {
+    const stored = outputs.get(edge.source);
+    if (stored?.kind !== "video") return [];
+    return [{ artifactId: stored.artifactId, parentHandoffSeconds: stored.parentHandoffSeconds }];
+  });
+
+  const lanes: Array<["dialogue" | "sfx" | "music", string]> = [
+    ["dialogue", "dialogue"],
+    ["sfx", "sfx"],
+    ["music", "music"],
+    // The single track this node started with was always the music.
+    ["music", "audio"],
+  ];
+  const sounds = lanes.flatMap(([lane, port]) =>
+    into(port).flatMap((edge) => {
+      const stored = outputs.get(edge.source);
+      if (stored?.kind !== "audio") return [];
+      return [{ artifactId: stored.artifactId, lane, atSeconds: stored.atSeconds ?? 0 }];
+    }),
+  );
+
+  if (shots.length === 0) return undefined;
+  return { runId, name: detail.run.name, shots, sounds };
+}
+
+/** Productions worth reopening: the ones that reached a cut. */
+export async function listFinishedProductions(): Promise<WorkflowRunSummary[]> {
+  try {
+    const runs = await invoke<WorkflowRunSummary[]>("workflow_run_list");
+    return runs.filter((run) => run.status === "completed");
+  } catch {
+    return [];
+  }
 }

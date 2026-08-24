@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BibleEntry } from "../lib/studio/bible";
 import {
   compileShotList,
+  DIALOGUE_LEAD_IN_SECONDS,
   MAX_COMPILED_SHOTS,
   nearestOption,
   planShots,
@@ -184,7 +185,7 @@ describe("compiling", () => {
     expect(workflow?.nodes.filter((entry) => entry.type === "asset").length).toBe(1);
   });
 
-  it("renders a spoken line in the speaker's own voice", () => {
+  it("renders a spoken line in the speaker's own voice, and lets it reach the film", () => {
     const { workflow } = compileShotList({
       name: "F",
       shots: [shot({ characters: ["Nera"], dialogue: "Get in.", speaker: "Nera" })],
@@ -195,6 +196,41 @@ describe("compiling", () => {
     expect(line?.params.text).toBe("Get in.");
     // The voice donor's label is the voice that was auditioned and kept.
     expect(line?.params.voice).toBe("ash");
+    // Without this edge the line renders, costs money, and is never heard.
+    expect(workflow?.edges).toContainEqual(
+      expect.objectContaining({ source: line?.id, target: "assemble", targetPort: "dialogue" }),
+    );
+  });
+
+  it("places each line on the shot it belongs to, just inside the cut", () => {
+    // Only the compiler knows which shot a line belongs to: the cut cannot
+    // work it out from a graph. A line landing on the cut frame reads as a
+    // mistake, so it starts a beat of picture later.
+    const { workflow } = compileShotList({
+      name: "F",
+      shots: [
+        shot({ motion: "low", dialogue: "First." }),
+        shot({ motion: "high", dialogue: "Second." }),
+      ],
+      catalog,
+    });
+    const lines = workflow?.nodes.filter((entry) => entry.type === "tts") ?? [];
+    // Three seconds for the low-motion shot, then the second line.
+    expect(lines[0]?.params.startAt).toBe(`${DIALOGUE_LEAD_IN_SECONDS.toFixed(2)}`);
+    expect(lines[1]?.params.startAt).toBe(`${(3 + DIALOGUE_LEAD_IN_SECONDS).toFixed(2)}`);
+  });
+
+  it("lays the score on the music lane, not on the legacy single track", () => {
+    const { workflow } = compileShotList({
+      name: "F",
+      shots: [shot()],
+      catalog,
+      withScore: true,
+    });
+    const score = workflow?.nodes.find((entry) => entry.type === "music");
+    expect(workflow?.edges).toContainEqual(
+      expect.objectContaining({ source: score?.id, target: "assemble", targetPort: "music" }),
+    );
   });
 
   it("refuses over the envelope instead of building something to confirm", () => {

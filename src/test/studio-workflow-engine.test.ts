@@ -879,8 +879,12 @@ describe("assemble node", () => {
       { src: "blob:clip-a", inSeconds: 0, outSeconds: 4.5 },
       { src: "blob:clip-b", inSeconds: 0, outSeconds: undefined },
     ]);
-    expect(options.audioSrc).toBe("blob:track");
-    expect(options.audioVolume).toBe(0.4);
+    // A track on the node's original single input reads as the music it
+    // always was, at the level the node calls "Music level".
+    expect(options.lanes?.music).toEqual([{ src: "blob:track", atSeconds: 0, gain: 0.4 }]);
+    expect(options.lanes?.dialogue).toEqual([]);
+    // Asking for a loudness target is what puts the cut on the offline mix.
+    expect(options.normalizeToLufs).toBe(-14);
 
     // The film persisted as a video artifact and reached the output.
     expect(storage.save).toHaveBeenCalledWith({ base64: "RklMTQ==" }, "mp4", {
@@ -889,6 +893,70 @@ describe("assemble node", () => {
       prompt: "film",
     });
     expect(finished.get("out")?.output).toMatchObject({ kind: "video", artifactId: "art-1" });
+  });
+
+  it("lets a spoken line reach the film, on its own lane and at its own moment", async () => {
+    // Before the lanes existed the compiler rendered dialogue that connected
+    // to nothing: it cost money and was never heard.
+    assembleClipsMock.mockClear();
+    const storage = fakeStorage({
+      save: vi.fn(async () => ({ artifactId: "film-1", src: "blob:film" })),
+      loadAsset: vi.fn(async (artifactId: string) =>
+        artifactId === "clip-a"
+          ? { kind: "video" as const, src: "blob:clip-a", artifactId }
+          : { kind: "audio" as const, src: `blob:${artifactId}`, artifactId },
+      ),
+    });
+
+    await runWorkflow(
+      workflow(
+        [
+          node("a", "asset", { assetKind: "video", artifactId: "clip-a" }),
+          node("line1", "asset", { assetKind: "audio", artifactId: "line-1" }),
+          node("line2", "asset", { assetKind: "audio", artifactId: "line-2" }),
+          node("score", "asset", { assetKind: "audio", artifactId: "score-1" }),
+          node("film", "assemble", { audioVolume: 0.3 }),
+        ],
+        [
+          edge("a", "film", "clips"),
+          edge("line1", "film", "dialogue"),
+          edge("line2", "film", "dialogue"),
+          edge("score", "film", "music"),
+        ],
+      ),
+      { storage },
+    );
+
+    const options = assembleClipsMock.mock.calls[0][0];
+    expect(options.lanes?.music).toEqual([{ src: "blob:score-1", atSeconds: 0, gain: 0.3 }]);
+    // Neither line said where it belonged, so they are laid end to end rather
+    // than stacked at the top of the film.
+    const spoken = options.lanes?.dialogue ?? [];
+    expect(spoken.map((line: { src: string }) => line.src)).toEqual(["blob:line-1", "blob:line-2"]);
+    expect(spoken[1].atSeconds).toBeGreaterThan(spoken[0].atSeconds);
+  });
+
+  it("can be told not to level the film", async () => {
+    assembleClipsMock.mockClear();
+    const storage = fakeStorage({
+      save: vi.fn(async () => ({ artifactId: "film-1", src: "blob:film" })),
+      loadAsset: vi.fn(async (artifactId: string) => ({
+        kind: "video" as const,
+        src: "blob:clip",
+        artifactId,
+      })),
+    });
+    await runWorkflow(
+      workflow(
+        [
+          node("a", "asset", { assetKind: "video", artifactId: "clip-a" }),
+          node("film", "assemble", { normalize: false }),
+        ],
+        [edge("a", "film", "clips")],
+      ),
+      { storage },
+    );
+    expect(assembleClipsMock.mock.calls[0][0].normalizeToLufs).toBeUndefined();
   });
 
   it("refuses to run without clips", async () => {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MediaError } from "../lib/studio/client";
 import {
   isTransientSpendFailure,
+  placeLines,
   TRANSIENT_WAIT_BUDGET_MS,
   transientDelays,
   withTransientTolerance,
@@ -110,5 +111,36 @@ describe("withTransientTolerance", () => {
       ),
     ).rejects.toThrow();
     expect(sleep).not.toHaveBeenCalled();
+  });
+});
+
+describe("placing dialogue in a cut", () => {
+  const line = (atSeconds?: number) => ({
+    kind: "audio" as const,
+    mimeType: "audio/mpeg",
+    src: `asset://line-${atSeconds ?? "auto"}`,
+    atSeconds,
+  });
+
+  it("leaves a line that says where it belongs", () => {
+    // Only the compiler knew which shot it was on. The cut does not overrule
+    // that.
+    expect(placeLines([line(3), line(9.4)]).map((entry) => entry.atSeconds)).toEqual([3, 9.4]);
+  });
+
+  it("lays unplaced lines end to end rather than stacking them at zero", () => {
+    const placed = placeLines([line(), line(), line()]).map((entry) => entry.atSeconds);
+    expect(placed[0]).toBe(0);
+    expect(placed[1]).toBeGreaterThan(placed[0]);
+    expect(placed[2]).toBeGreaterThan(placed[1]);
+  });
+
+  it("pushes an unplaced line past the placed one before it", () => {
+    const placed = placeLines([line(12), line()]).map((entry) => entry.atSeconds);
+    expect(placed[1]).toBeGreaterThan(12);
+  });
+
+  it("has nothing to place when nobody speaks", () => {
+    expect(placeLines([])).toEqual([]);
   });
 });

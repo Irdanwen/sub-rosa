@@ -28,6 +28,11 @@ import { judge, type JudgeVerdict, pickJudgeModel } from "../../lib/studio/judge
 import { modelsOfType } from "../../lib/studio/catalog";
 import { DEFAULT_TARGET_LUFS } from "../../lib/studio/loudness";
 import { scheduleWithoutOverlap } from "../../lib/studio/mix";
+import {
+  listFinishedProductions,
+  productionCut,
+  type WorkflowRunSummary,
+} from "../../lib/studio/workflow-run";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { EmptyState } from "../ui/EmptyState";
 import { Select } from "../ui/Select";
@@ -184,6 +189,8 @@ export function AssembleStudio({
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const [verdict, setVerdict] = useState<JudgeVerdict | undefined>(undefined);
   const [judging, setJudging] = useState(false);
+  const [productions, setProductions] = useState<WorkflowRunSummary[]>([]);
+  const [loadingProduction, setLoadingProduction] = useState(false);
   const previewRef = useRef<HTMLVideoElement>(null);
   const previewRun = useRef(0);
   const abortRef = useRef<AbortController | undefined>(undefined);
@@ -205,6 +212,107 @@ export function AssembleStudio({
   useEffect(() => {
     reloadSources();
   }, [reloadSources]);
+
+  useEffect(() => {
+    listFinishedProductions()
+      .then(setProductions)
+      .catch(() => undefined);
+  }, []);
+
+  /**
+   * Reopen a finished production as a cut list.
+   *
+   * A run hands back one flattened film: fine to watch, and the end of the
+   * line if the user wants to grade it or move a line half a second. This is
+   * the way back to the parts - in order, on their lanes - so everything this
+   * tab does applies to a film the compiler made.
+   */
+  const openProduction = useCallback(async (runId: string) => {
+    setLoadingProduction(true);
+    setError(undefined);
+    setNotice(undefined);
+    try {
+      const cut = await productionCut(runId);
+      if (!cut) {
+        setError("That production has nothing left to open. Its files may have been deleted.");
+        return;
+      }
+      const gallery = await listArtifacts();
+      const byId = new Map(gallery.map((artifact) => [artifact.id, artifact]));
+      const staged: Cut[] = [];
+      for (const shot of cut.shots) {
+        const artifact = byId.get(shot.artifactId);
+        if (!artifact) continue;
+        staged.push({
+          key: `cut-${nextCutKey++}`,
+          artifact,
+          inSeconds: 0,
+          // The chain's own trim: a shot ends where its successor took over.
+          outSeconds: shot.parentHandoffSeconds,
+        });
+      }
+      if (staged.length === 0) {
+        setError("None of that production's shots are still in your gallery.");
+        return;
+      }
+      setCuts(staged);
+      setFilmName(cut.name);
+      setSounds(
+        cut.sounds.flatMap((sound) => {
+          const artifact = byId.get(sound.artifactId);
+          if (!artifact) return [];
+          return [
+            {
+              key: `sound-${nextSoundKey++}`,
+              artifact,
+              lane: sound.lane,
+              atSeconds: sound.atSeconds,
+              gain: sound.lane === "music" ? 0.6 : 1,
+            },
+          ];
+        }),
+      );
+      for (const sound of cut.sounds) {
+        const artifact = byId.get(sound.artifactId);
+        if (!artifact) continue;
+        void probeAudioDuration(artifactSrc(artifact)).then((duration) => {
+          if (duration === undefined) return;
+          setSounds((current) =>
+            current.map((row) =>
+              row.artifact.id === artifact.id && row.durationSeconds === undefined
+                ? { ...row, durationSeconds: duration }
+                : row,
+            ),
+          );
+        });
+      }
+      const missing = cut.shots.length - staged.length;
+      if (missing > 0) {
+        setNotice(`${missing} shot${missing === 1 ? "" : "s"} are no longer in your gallery.`);
+      }
+      for (const entry of staged) {
+        void probeClip(artifactSrc(entry.artifact)).then((probed) => {
+          if (probed.duration === undefined) return;
+          setCuts((current) =>
+            current.map((row) =>
+              row.key === entry.key
+                ? {
+                    ...row,
+                    durationSeconds: probed.duration,
+                    width: probed.width,
+                    height: probed.height,
+                  }
+                : row,
+            ),
+          );
+        });
+      }
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : "That could not be opened.");
+    } finally {
+      setLoadingProduction(false);
+    }
+  }, []);
 
   const totalSeconds = useMemo(
     () =>
@@ -674,6 +782,20 @@ export function AssembleStudio({
           />
         </div>
       </StudioField>
+      {productions.length > 0 ? (
+        <StudioField label="A film you made" hint="Opens its shots and sound, to finish properly">
+          <Select
+            value={null}
+            placeholder={loadingProduction ? "Opening..." : "Open a production"}
+            ariaLabel="Open a production"
+            onChange={(runId) => void openProduction(runId)}
+            options={productions.map((run) => ({
+              value: run.id,
+              label: run.name || "Untitled production",
+            }))}
+          />
+        </StudioField>
+      ) : null}
       <StudioField
         label="Sound"
         hint={sounds.length > 0 ? `${sounds.length} on 3 lanes` : "Dialogue, effects, music"}

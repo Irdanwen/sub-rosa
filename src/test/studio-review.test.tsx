@@ -156,3 +156,165 @@ describe("reviewing the cut", () => {
     expect(hoisted.mediaJson).not.toHaveBeenCalled();
   });
 });
+
+describe("reopening a finished production", () => {
+  it("brings back its shots and its sound, so it can be finished properly", async () => {
+    // A run hands back one flattened film: fine to watch, and the end of the
+    // line if the user wants to grade it or move a line half a second.
+    hoisted.list.mockResolvedValue([
+      shot("a.mp4"),
+      shot("b.mp4"),
+      {
+        id: "line.mp3",
+        kind: "speech",
+        path: "/gallery/line.mp3",
+        fileName: "line.mp3",
+        bytes: 5,
+        model: "tts",
+        prompt: "Get in.",
+        createdAt: 3,
+      },
+    ]);
+    hoisted.invoke.mockImplementation(async (command: string) => {
+      if (command === "workflow_run_list") {
+        return [
+          {
+            id: "run-1",
+            workflowId: "w",
+            name: "Neon alley",
+            status: "completed",
+            definition: JSON.stringify({
+              nodes: [
+                { id: "s1", type: "video", params: {} },
+                { id: "s2", type: "video", params: {} },
+                { id: "l1", type: "tts", params: {} },
+                { id: "assemble", type: "assemble", params: {} },
+              ],
+              edges: [
+                { id: "e1", source: "s1", target: "assemble", targetPort: "clips" },
+                { id: "e2", source: "s2", target: "assemble", targetPort: "clips" },
+                { id: "e3", source: "l1", target: "assemble", targetPort: "dialogue" },
+              ],
+            }),
+            createdAt: "",
+            updatedAt: "",
+          },
+        ];
+      }
+      if (command === "workflow_run_get") {
+        return {
+          run: {
+            id: "run-1",
+            name: "Neon alley",
+            status: "completed",
+            definition: JSON.stringify({
+              nodes: [
+                { id: "s1", type: "video", params: {} },
+                { id: "s2", type: "video", params: {} },
+                { id: "l1", type: "tts", params: {} },
+                { id: "assemble", type: "assemble", params: {} },
+              ],
+              edges: [
+                { id: "e1", source: "s1", target: "assemble", targetPort: "clips" },
+                { id: "e2", source: "s2", target: "assemble", targetPort: "clips" },
+                { id: "e3", source: "l1", target: "assemble", targetPort: "dialogue" },
+              ],
+            }),
+          },
+          nodes: [
+            {
+              nodeId: "s1",
+              status: "done",
+              output: JSON.stringify({
+                kind: "video",
+                artifactId: "a.mp4",
+                parentHandoffSeconds: 4.5,
+              }),
+            },
+            {
+              nodeId: "s2",
+              status: "done",
+              output: JSON.stringify({ kind: "video", artifactId: "b.mp4" }),
+            },
+            {
+              nodeId: "l1",
+              status: "done",
+              output: JSON.stringify({
+                kind: "audio",
+                artifactId: "line.mp3",
+                mimeType: "audio/mpeg",
+                atSeconds: 2.4,
+              }),
+            },
+          ],
+        };
+      }
+      return null;
+    });
+
+    render(<AssembleStudio catalog={catalog} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open a production" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Neon alley" }));
+
+    // Both shots, in order, the first trimmed where its continuation took over.
+    await waitFor(() => expect(screen.getByText("1. prompt for a.mp4")).toBeInTheDocument());
+    expect(screen.getByText("2. prompt for b.mp4")).toBeInTheDocument();
+    expect((screen.getByLabelText("Clip 1 end seconds") as HTMLInputElement).value).toBe("4.5");
+    // And the line, on its lane, at the moment the production put it.
+    expect((screen.getByLabelText("Sound 1 start seconds") as HTMLInputElement).value).toBe("2.4");
+    expect((screen.getByLabelText("Film name") as HTMLInputElement).value).toBe("Neon alley");
+  });
+
+  it("says so when a production's files have been deleted since", async () => {
+    hoisted.list.mockResolvedValue([]);
+    hoisted.invoke.mockImplementation(async (command: string) => {
+      if (command === "workflow_run_list") {
+        return [
+          {
+            id: "run-1",
+            workflowId: "w",
+            name: "Gone",
+            status: "completed",
+            definition: JSON.stringify({
+              nodes: [
+                { id: "s1", type: "video", params: {} },
+                { id: "assemble", type: "assemble", params: {} },
+              ],
+              edges: [{ id: "e1", source: "s1", target: "assemble", targetPort: "clips" }],
+            }),
+            createdAt: "",
+            updatedAt: "",
+          },
+        ];
+      }
+      if (command === "workflow_run_get") {
+        return {
+          run: {
+            id: "run-1",
+            name: "Gone",
+            status: "completed",
+            definition: JSON.stringify({
+              nodes: [
+                { id: "s1", type: "video", params: {} },
+                { id: "assemble", type: "assemble", params: {} },
+              ],
+              edges: [{ id: "e1", source: "s1", target: "assemble", targetPort: "clips" }],
+            }),
+          },
+          nodes: [
+            {
+              nodeId: "s1",
+              status: "done",
+              output: JSON.stringify({ kind: "video", artifactId: "vanished.mp4" }),
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    render(<AssembleStudio catalog={catalog} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open a production" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Gone" }));
+    expect(await screen.findByText(/still in your gallery/)).toBeInTheDocument();
+  });
+});

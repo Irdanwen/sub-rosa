@@ -10,6 +10,8 @@
 // continuable by hand, and trimmed at its handoffs by the assemble node.
 
 import { assembleClips, blobToBase64, type AssembleClip } from "../assemble";
+import { DEFAULT_TARGET_LUFS } from "../loudness";
+import { DIALOGUE_GAP_SECONDS } from "../mix";
 import { MediaError } from "../client";
 import { judge, type JudgeVerdict, verdictLine } from "../judge";
 import { fileResultFrom, type MediaFileResult, pollUntilDone } from "../async-job";
@@ -61,6 +63,15 @@ export type NodeOutput =
       artifactId?: string;
       /** A URL this webview can decode (the saved gallery copy). */
       src?: string;
+      /**
+       * Where on the film this sound is heard, in seconds.
+       *
+       * Stamped by the node that knows: a line of dialogue belongs to a shot,
+       * and only the node that rendered it was told which. Absent means "the
+       * cut decides" - music starts at the top, dialogue is scheduled after
+       * whatever came before it.
+       */
+      atSeconds?: number;
     }
   | {
       kind: "video";
@@ -619,6 +630,9 @@ async function executeNode(
         source: "speech",
         artifactId: saved?.artifactId,
         src: saved?.src,
+        // Only the node that rendered the line was told which shot it belongs
+        // to. Stamping it here is what lets the cut place it.
+        atSeconds: secondsParam(params, "startAt"),
       };
     }
 
@@ -863,18 +877,45 @@ async function executeNode(
           outSeconds: linked ? next.parentHandoffSeconds : undefined,
         };
       });
-      const audio = (ports.get("audio") ?? []).find(
-        (output): output is Extract<NodeOutput, { kind: "audio" }> => output.kind === "audio",
-      );
-      if (audio && !audio.src) {
-        // Never drop a connected track silently: with storage present every
-        // audio-producing node saves and carries a src, so this is a bug net.
-        throw new Error("This runner cannot read the audio track.");
+      // Everything audible, by lane. A track on the node's original single
+      // input reads as music, which is what it always was.
+      const soundsOn = (portId: string): Array<Extract<NodeOutput, { kind: "audio" }>> =>
+        (ports.get(portId) ?? []).filter(
+          (output): output is Extract<NodeOutput, { kind: "audio" }> => output.kind === "audio",
+        );
+      const dialogue = soundsOn("dialogue");
+      const sfx = soundsOn("sfx");
+      const music = [...soundsOn("music"), ...soundsOn("audio")];
+      for (const sound of [...dialogue, ...sfx, ...music]) {
+        if (!sound.src) {
+          // Never drop a connected sound silently: with storage present every
+          // audio-producing node saves and carries a src, so this is a bug net.
+          throw new Error("This runner cannot read one of the connected sounds.");
+        }
       }
+
+      const musicLevel = numberParam(params, "audioVolume") ?? 0.6;
+      // Lines with no stated position are laid end to end rather than stacked
+      // at zero: two voices talking over each other is never what was meant.
+      const placedDialogue = placeLines(dialogue);
+      const lanes = {
+        dialogue: placedDialogue,
+        sfx: sfx.map((sound) => ({ src: sound.src as string, atSeconds: sound.atSeconds ?? 0 })),
+        music: music.map((sound) => ({
+          src: sound.src as string,
+          atSeconds: sound.atSeconds ?? 0,
+          gain: musicLevel,
+        })),
+      };
+      const hasSound = dialogue.length + sfx.length + music.length > 0;
+
       const { blob, extension } = await assembleClips({
         clips: sources,
-        audioSrc: audio?.src,
-        audioVolume: numberParam(params, "audioVolume") ?? 0.6,
+        lanes: hasSound ? lanes : undefined,
+        // Asking for a loudness target is what puts the export on the offline
+        // mix: deterministic levels, and music that gets out of the way.
+        normalizeToLufs:
+          booleanParam(params, "normalize") === false ? undefined : DEFAULT_TARGET_LUFS,
         signal,
         onProgress: context.onProgress,
       });
@@ -999,6 +1040,36 @@ export async function runWorkflow(
     if (held) return results;
   }
   return results;
+}
+
+/**
+ * Where each line of dialogue is heard.
+ *
+ * A line that says where it belongs is left there. One that does not is
+ * appended after the ones before it, which is the no-overlap scheduler's whole
+ * job - and the only moment a generated line's length is known is now, so the
+ * cut is where this has to happen rather than the compiler.
+ */
+export function placeLines(
+  lines: ReadonlyArray<Extract<NodeOutput, { kind: "audio" }>>,
+): Array<{ src: string; atSeconds: number }> {
+  let cursor = 0;
+  return lines.map((line) => {
+    const at = line.atSeconds ?? cursor;
+    // Without a measured duration the next line can only be pushed past this
+    // one's stated start, which is still better than stacking them.
+    cursor = Math.max(cursor, at) + DIALOGUE_GAP_SECONDS;
+    return { src: line.src as string, atSeconds: at };
+  });
+}
+
+/** A seconds value typed into a string field. Empty or nonsense is "unset",
+ * never zero: zero is a decision, and an empty field is not one. */
+function secondsParam(params: Record<string, unknown>, name: string): number | undefined {
+  const raw = stringParam(params, name);
+  if (!raw) return undefined;
+  const value = Number.parseFloat(raw.replace(",", "."));
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 // --- surviving a rail that flaps ---------------------------------------------

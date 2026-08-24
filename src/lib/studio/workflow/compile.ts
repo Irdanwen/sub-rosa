@@ -68,6 +68,14 @@ const SECONDS_BY_MOTION: Record<string, number> = { low: 4, medium: 5, high: 8 }
 /** The longest a compiled film runs before this refuses to build it blind. */
 export const MAX_COMPILED_SHOTS = 40;
 
+/** How far into its shot a line starts. A line landing on the cut frame reads
+ * as a mistake, and a beat of picture before someone speaks is what an editor
+ * would leave. */
+export const DIALOGUE_LEAD_IN_SECONDS = 0.4;
+
+/** Used when a model published no durations at all, so `duration` is empty. */
+const DEFAULT_SHOT_SECONDS = 5;
+
 export interface CompileInput {
   name: string;
   shots: readonly Shot[];
@@ -299,6 +307,7 @@ export function compileShotList(input: CompileInput): CompileResult {
   };
 
   let previousVideoId: string | undefined;
+  let shotStartSeconds = 0;
   const videoIds: string[] = [];
   const ttsIds: string[] = [];
   const tts = modelsOfType(input.catalog, "tts")[0];
@@ -337,8 +346,9 @@ export function compileShotList(input: CompileInput): CompileResult {
     videoIds.push(videoId);
     previousVideoId = videoId;
 
-    // A spoken line, and the voice it is spoken in. The mix places it; the
-    // scheduler keeps two lines from landing on top of each other.
+    // A spoken line, in the speaker's own voice, placed on the shot it belongs
+    // to. Only the compiler knows which shot that is, so it says so here - the
+    // cut cannot work it out from a graph.
     if (entry.shot.dialogue.trim() && tts) {
       const speaker = (input.bible ?? []).find(
         (candidate) => candidate.name.toLowerCase() === entry.shot.speaker.trim().toLowerCase(),
@@ -350,10 +360,18 @@ export function compileShotList(input: CompileInput): CompileResult {
           model: tts.id,
           text: entry.shot.dialogue.trim(),
           voice: donor?.label ?? "",
+          // Just inside the shot rather than exactly on the cut: a line that
+          // starts on the frame the shot does reads as a mistake.
+          startAt: (shotStartSeconds + DIALOGUE_LEAD_IN_SECONDS).toFixed(2),
         }),
       );
       ttsIds.push(ttsId);
     }
+
+    // The requested durations, accumulated. An estimate, because the real clip
+    // is only measured once it exists - but the shots are cut back to back, so
+    // it is the right estimate, and the user can move a line on the canvas.
+    shotStartSeconds += Number.parseFloat(entry.duration) || DEFAULT_SHOT_SECONDS;
   });
 
   const finalLevel = 2 + planned.length * 2;
@@ -373,6 +391,9 @@ export function compileShotList(input: CompileInput): CompileResult {
   const assembleId = "assemble";
   nodes.push(node(assembleId, "assemble", input.name, finalLevel, 0));
   for (const source of assembleSource) edges.push(edge(source, assembleId, "clips"));
+  // The lines reach the film. Without this they render, cost money, and are
+  // never heard - which is exactly what happened before this edge existed.
+  for (const ttsId of ttsIds) edges.push(edge(ttsId, assembleId, "dialogue"));
 
   if (input.withScore) {
     const music = modelsOfType(input.catalog, "music")[0];
@@ -384,7 +405,7 @@ export function compileShotList(input: CompileInput): CompileResult {
           prompt: `Score for ${input.name}.`,
         }),
       );
-      edges.push(edge(musicId, assembleId, "audio"));
+      edges.push(edge(musicId, assembleId, "music"));
     } else {
       notes.push("No music model on this account, so the film has no score.");
     }
@@ -430,7 +451,7 @@ export function compileShotList(input: CompileInput): CompileResult {
 
   if (ttsIds.length > 0) {
     notes.push(
-      `${ttsIds.length} spoken line${ttsIds.length === 1 ? "" : "s"} render alongside the shots. Place them in Assemble.`,
+      `${ttsIds.length} spoken line${ttsIds.length === 1 ? "" : "s"}, placed on the shots they belong to. Move one on the canvas if it lands wrong.`,
     );
   }
 

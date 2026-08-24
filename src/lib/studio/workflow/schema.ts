@@ -383,6 +383,14 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
       { name: "voice", type: "string", label: "Voice", default: "" },
       { name: "speed", type: "number", label: "Speed", default: 1, min: 0.25, max: 4, step: 0.25 },
       {
+        name: "startAt",
+        type: "string",
+        label: "Starts at",
+        description:
+          "Where this is heard in the finished film, in seconds. Leave it empty and the cut places it after whatever came before.",
+        default: "",
+      },
+      {
         name: "responseFormat",
         type: "enum",
         label: "Response format",
@@ -546,9 +554,14 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
     type: "assemble",
     label: "Assemble",
     description:
-      "Cut connected clips together into one film, in connection order, with an optional audio track under it. Chained shots are trimmed at their handoff automatically.",
+      "Cut connected clips together into one film, in connection order, and mix everything under it: dialogue, effects, a score. Chained shots are trimmed at their handoff automatically, the music gets out of the way of the dialogue, and the whole thing is levelled once.",
     inputs: [
       { id: "clips", label: "Clips", kind: "video", multi: true, required: true },
+      { id: "dialogue", label: "Dialogue", kind: "audio", multi: true },
+      { id: "sfx", label: "Effects", kind: "audio", multi: true },
+      { id: "music", label: "Music", kind: "audio", multi: true },
+      // The single track this node started with. Kept so a workflow saved
+      // before the lanes existed still runs, and reads as the music it was.
       { id: "audio", label: "Audio track", kind: "audio" },
     ],
     output: "video",
@@ -556,11 +569,19 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
       {
         name: "audioVolume",
         type: "number",
-        label: "Audio volume",
+        label: "Music level",
         default: 0.6,
         min: 0,
         max: 1,
         step: 0.1,
+      },
+      {
+        name: "normalize",
+        type: "boolean",
+        label: "Level the film",
+        description:
+          "Bring the whole film to a standard loudness, so it does not arrive quieter than everything else the viewer watched today.",
+        default: true,
       },
     ],
   },

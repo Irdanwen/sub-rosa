@@ -60,6 +60,12 @@ afterAll(() => {
   for (const key of ["videoWidth", "videoHeight"]) Reflect.deleteProperty(videoProto, key);
 });
 
+/** The bundle write, found by name: other commands share this mock. */
+function bundleCall() {
+  const call = hoisted.invoke.mock.calls.find(([command]) => command === "export_timeline_bundle");
+  return call?.[1] as { request: Record<string, unknown> } | undefined;
+}
+
 beforeEach(() => {
   hoisted.list.mockReset().mockResolvedValue([]);
   hoisted.invoke.mockReset().mockResolvedValue({
@@ -81,12 +87,8 @@ describe("exporting a chain as a timeline", () => {
     fireEvent.change(screen.getByLabelText("Film name"), { target: { value: "Neon alley" } });
     fireEvent.click(button);
 
-    await waitFor(() => expect(hoisted.invoke).toHaveBeenCalledTimes(1));
-    const [command, payload] = hoisted.invoke.mock.calls[0] as [
-      string,
-      { request: Record<string, unknown> },
-    ];
-    expect(command).toBe("export_timeline_bundle");
+    await waitFor(() => expect(bundleCall()).toBeDefined());
+    const payload = bundleCall() as { request: Record<string, unknown> };
     expect(payload.request).toMatchObject({
       directory: "/out",
       name: "Neon alley",
@@ -138,12 +140,8 @@ describe("exporting a chain as a timeline", () => {
     const button = screen.getByRole("button", { name: "Export timeline" });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
-    await waitFor(() => expect(hoisted.invoke).toHaveBeenCalledTimes(1));
-
-    const [, payload] = hoisted.invoke.mock.calls[0] as [
-      string,
-      { request: Record<string, unknown> },
-    ];
+    await waitFor(() => expect(bundleCall()).toBeDefined());
+    const payload = bundleCall() as { request: Record<string, unknown> };
     const doc = String(payload.request.document);
     // The stubbed media is 12 s long; the cut runs 21.5 s. The asset states 12.
     expect(doc).toContain('name="a score"');
@@ -172,12 +170,8 @@ describe("exporting a chain as a timeline", () => {
     const button = screen.getByRole("button", { name: "Export timeline" });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
-    await waitFor(() => expect(hoisted.invoke).toHaveBeenCalledTimes(1));
-
-    const [, payload] = hoisted.invoke.mock.calls[0] as [
-      string,
-      { request: Record<string, unknown> },
-    ];
+    await waitFor(() => expect(bundleCall()).toBeDefined());
+    const payload = bundleCall() as { request: Record<string, unknown> };
     const doc = String(payload.request.document);
     // A speech artifact lands on dialogue by what produced it, not by a
     // choice the user has to remember to make.
@@ -239,7 +233,7 @@ describe("exporting a chain as a timeline", () => {
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
     await waitFor(() => expect(hoisted.openDialog).toHaveBeenCalled());
-    expect(hoisted.invoke).not.toHaveBeenCalled();
+    expect(bundleCall()).toBeUndefined();
   });
 
   it("offers no timeline until there is something to put in it", async () => {
