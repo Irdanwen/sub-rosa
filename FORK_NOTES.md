@@ -179,7 +179,7 @@ Clé `cdm_` de test fournie par l'utilisateur (jamais commitée ; utilisée en e
 | `src-tauri/src/hermes/june_studio_mcp.py` + `hermes_bridge.rs` (`/v1/studio/request`, `JUNE_SOUL_STUDIO_MD`) | **Surface agent** : deux outils action-discriminés (`bible`, `shots`), ~700 tokens toujours chargés, avec un test qui cliquette la taille. Le détail vit dans le skill `subrosa-production`. Remplace `june_films_mcp.py` et `/v1/films/request`. |
 | `src/lib/studio/{timeline/,mix.ts,loudness.ts,judge.ts,bible/}` + `workflow/compile.ts` | **Finition et compilation fork-side** : export FCPXML/xmeml + `.srt`, mix hors-ligne déterministe avec loudness BS.1770 et ducking par automation, juge best-effort, discipline de prompt, et la compilation d'une shot list vers le graphe workflow existant. |
 | `src/components/studio/{BibleStudio,ScriptToFilm}.tsx` | Les deux surfaces neuves : nommer une identité une fois, et aller d'une note à un film. Remplacent `FilmStudio`, `FilmDirectorPanel`, `FilmProduceControl` et `VideomakerSettings`, tous supprimés. |
-| `.github/workflows/repository-hygiene.yml` (garde `furetier.com\|vmk_\|videomaker\|DIEM`) | Le retrait est **exécutoire**, pas seulement souhaité : une PR qui réintroduit le studio distant échoue, même via un sync amont. Même mécanique que les gardes June d'ADR-0017. |
+| `.github/workflows/repository-hygiene.yml` (garde `furetier.com\|vmk_\|videomaker`) | Le retrait est **exécutoire**, pas seulement souhaité : une PR qui réintroduit le studio distant échoue, même via un sync amont. Même mécanique que les gardes June d'ADR-0017. |
 
 ### Distribution (P5–P8)
 

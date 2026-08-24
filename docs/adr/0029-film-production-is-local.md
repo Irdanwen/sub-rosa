@@ -65,9 +65,11 @@ Concretely:
   ([ADR-0031](0031-the-timeline-export-is-the-finishing-path.md)).
 - Identities persist in a **bible**
   ([ADR-0032](0032-the-bible-is-local-rows-over-gallery-artifacts.md)).
-- `repository-hygiene.yml` fails any PR reintroducing `furetier.com`, `vmk_`,
-  `videomaker` or `DIEM` outside its allowlist. Without that, this decision
-  would be a preference rather than a property.
+- `repository-hygiene.yml` fails any PR reintroducing `furetier.com`, `vmk_`
+  or `videomaker` outside its allowlist. Without that, this decision would be a
+  preference rather than a property. Deliberately not `DIEM`: that is a Venice
+  balance bucket the credits reader still parses, and a guard that bans a word
+  the app legitimately uses is a guard people learn to work around.
 
 Before removal, a **rescue window** shipped: every film could be brought home
 as a note plus gallery artifacts, so nothing the user made depends on a service

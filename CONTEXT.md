@@ -335,8 +335,10 @@ folder, not this store).
 Films are produced by the app, locally, out of the user's own notes, paid in
 Carpe Diem credits. The remote studio this fork used to drive is gone
 ([ADR-0029](docs/adr/0029-film-production-is-local.md)).
-_Avoid_: Videomaker, DIEM, "asset pack", "studio wallet", "the film API" - all
-of them named the remote service, and none of them names anything now.
+_Avoid_: Videomaker, "asset pack", "studio wallet", "the film API" - all of
+them named the remote service, and none of them names anything now. **DIEM is
+not on that list**: it is a Venice balance bucket the credits reader still
+parses, and the studio merely quoted its prices in it.
 
 **Script**:
 A note the user wrote that a film is made from. Not a new kind of thing: the
@@ -368,7 +370,8 @@ _Avoid_: generating (that spends), planning (that is the reading).
 **Spend ceiling**:
 The credit envelope a production may not exceed. A graph over it is *refused at
 compile time*, with the figure - in front of the confirmation handshake, not
-instead of it. _Avoid_: budget, cap (both were DIEM words).
+instead of it. _Avoid_: budget ceiling (that was the remote studio's, and it
+guarded an enqueue rather than the work).
 
 ### The bible (fork)
 
