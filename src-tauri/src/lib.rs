@@ -54,6 +54,9 @@ pub mod spotlight;
 pub mod theme_icon;
 #[cfg(desktop)]
 pub mod updates;
+// Writing a timeline bundle to disk: plain file work, so it builds everywhere
+// even though only the desktop offers a folder picker to reach it.
+pub mod timeline;
 // Videomaker film production (ADR-0010): the Films surface targets macOS +
 // Windows; the module never compiles for mobile.
 #[cfg(desktop)]
@@ -340,6 +343,7 @@ pub fn run() {
             longform::note_summary_plan,
             longform::summarize_note_longform,
             longform::forget_note_summary,
+            timeline::export_timeline_bundle,
             ingest::preview_ingest_link,
             ingest::start_link_ingest,
             ingest::list_active_ingests,
@@ -535,6 +539,7 @@ pub fn run() {
         longform::note_summary_plan,
         longform::summarize_note_longform,
         longform::forget_note_summary,
+        timeline::export_timeline_bundle,
         ingest::preview_ingest_link,
         ingest::start_link_ingest,
         ingest::list_active_ingests,

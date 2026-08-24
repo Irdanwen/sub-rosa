@@ -325,7 +325,35 @@ courants sont suffixés (`seedance-2-0-text-to-video-basic`,
 `wan-2-7-text-to-video`, `kling-v3-standard-text-to-video`). Ne jamais coder un
 id en dur : passer par le catalogue, comme le fait déjà `catalog.ts`.
 
-## 10. Risques ouverts
+## 10. Écarts assumés en cours de route
+
+Consignés ici plutôt que passés sous silence : le plan est le registre.
+
+**Pas de variante Resolve de l'export FCPXML** (R1a). Le design de référence en
+livre une. Les différences pour lesquelles on « accorde » un FCPXML à Resolve
+sont du folklore qui bouge à chaque version de Resolve, et rien ici ne permet de
+tester le résultat. Un seul document conservateur - uniquement des constructions
+présentes depuis la 1.8, écrites en 1.10 - est défendable et testable. Deux
+documents dont un deviné, ce serait livrer un fichier qu'on ne saurait pas
+défendre, et laisser l'utilisateur découvrir lequel est lequel.
+
+**L'export timeline est desktop** (R1a). Le plan prévoyait un dossier plus la
+feuille de partage sur iOS. Vérifié le 2026-08-24 : la feuille de partage prend
+un fichier, pas un dossier ; le projet n'embarque pas de zip ; et l'Info.plist
+n'active pas `UIFileSharingEnabled`. Les trois chemins vers un bundle portable
+sur iPhone sont donc fermés, et un `.fcpxml` seul dont les médias ne résolvent
+pas n'est pas un export, c'est un piège. C'est aussi cohérent sur le fond : un
+fichier d'échange sert à côté d'un banc de montage, et il n'y en a pas sur iOS.
+
+**Le nœud `assemble` du workflow n'exporte pas encore de timeline** (R1a). Une
+production compilée (R3) se termine sur ce nœud ; aujourd'hui il faut repasser
+par l'onglet Assemble. À traiter en R3, où la question se pose vraiment.
+
+**Les sous-titres n'ont pas encore de source** (R1a). Le `.srt` est écrit si le
+cut en porte, et rien n'en produit tant que les répliques n'existent pas :
+elles arrivent avec la piste dialogue en R1b.
+
+## 11. Risques ouverts
 
 **La production vraiment sans surveillance.** Si, après R3, les retours au
 premier plan pour les raccords se révèlent pénibles à l'usage, l'escalade existe

@@ -790,6 +790,10 @@ pub(crate) fn artifacts_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
 /// Containment check without touching the filesystem: normalized component
 /// prefixes. Gallery file names are generated UUIDs, so symlink tricks inside
 /// the directory are not a concern; rejecting `..` keeps traversal out.
+pub(crate) fn is_within_gallery(dir: &std::path::Path, path: &std::path::Path) -> bool {
+    is_within(dir, path)
+}
+
 fn is_within(dir: &std::path::Path, path: &std::path::Path) -> bool {
     if path
         .components()

@@ -1,7 +1,18 @@
 // Assemble studio: order gallery clips into a cut list (with per-clip trims),
 // lay an optional gallery audio track underneath, preview the sequence, and
-// export everything as one file through the webview's own recorder.
+// export it - two ways.
+//
+// "Export film" records the canvas in real time through MediaRecorder. It is
+// the quick answer and it has a ceiling: it re-encodes, it takes as long as the
+// film runs, and it flattens everything into one track.
+//
+// "Export timeline" writes a self-contained folder an editor opens: the cut as
+// FCPXML or Premiere XML, next to copies of the clips. Nothing is re-encoded,
+// it is instant, and the grade and the fine mix happen in a tool built for
+// them. That is the finishing path, and the reason the app can keep refusing to
+// ship ffmpeg (see lib/studio/timeline/fcpxml.ts).
 
+import { open as openDirectoryDialog } from "@tauri-apps/plugin-dialog";
 import { IconVideo } from "central-icons/IconVideo";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { artifactSrc, listArtifacts, saveArtifactFromBase64 } from "../../lib/studio/artifacts";
@@ -19,30 +30,65 @@ import { Spinner } from "../ui/Spinner";
 import { GalleryStrip } from "./GalleryStrip";
 import { GenerationLayout } from "./GenerationLayout";
 import type { ChainShot } from "../../lib/studio/chain";
+import { writeTimelineBundle } from "../../lib/studio/timeline/bundle";
+import {
+  FRAME_RATES,
+  TIMELINE_FORMAT_LABELS,
+  type TimelineFormat,
+  timelineProblems,
+} from "../../lib/studio/timeline";
+import { bundleCut } from "../../lib/studio/timeline/bundle";
 import { formatSeconds, SliderField, StudioField } from "./controls";
 
 interface Cut {
   key: string;
   artifact: StudioArtifact;
   durationSeconds?: number;
+  /** Native frame size, measured. Only a timeline export needs it. */
+  width?: number;
+  height?: number;
   inSeconds: number;
   outSeconds?: number;
 }
 
 let nextCutKey = 0;
 
-/** Clip duration via a throwaway metadata load. */
-function probeDuration(src: string): Promise<number | undefined> {
+/** Duration of a sound file, measured the same way as a clip's. Needed
+ * because a timeline states how long a file IS, not how long it is used for:
+ * claiming the film's length for a shorter track writes a clip with a dead
+ * tail that the editor has to find and trim by hand. */
+function probeAudioDuration(src: string): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    const audio = document.createElement("audio");
+    audio.preload = "metadata";
+    audio.src = src;
+    audio.addEventListener(
+      "loadedmetadata",
+      () => resolve(Number.isFinite(audio.duration) ? audio.duration : undefined),
+      { once: true },
+    );
+    audio.addEventListener("error", () => resolve(undefined), { once: true });
+  });
+}
+
+/** Clip duration and frame size via a throwaway metadata load. The size is
+ * what a timeline export needs and what nothing else here ever asked for. */
+function probeClip(src: string): Promise<{ duration?: number; width?: number; height?: number }> {
   return new Promise((resolve) => {
     const video = document.createElement("video");
     video.preload = "metadata";
     video.src = src;
     video.addEventListener(
       "loadedmetadata",
-      () => resolve(Number.isFinite(video.duration) ? video.duration : undefined),
+      () =>
+        resolve({
+          duration: Number.isFinite(video.duration) ? video.duration : undefined,
+          width: video.videoWidth || undefined,
+          height: video.videoHeight || undefined,
+        }),
       { once: true },
     );
-    video.addEventListener("error", () => resolve(undefined), { once: true });
+    video.addEventListener("error", () => resolve({}), { once: true });
   });
 }
 
@@ -64,6 +110,12 @@ export function AssembleStudio({
   const [error, setError] = useState<string | undefined>(undefined);
   const [galleryEpoch, setGalleryEpoch] = useState(0);
   const [previewing, setPreviewing] = useState(false);
+  const [filmName, setFilmName] = useState("Assembly");
+  const [timelineFormat, setTimelineFormat] = useState<TimelineFormat>("fcpxml");
+  const [frameRateKey, setFrameRateKey] = useState("30");
+  const [writingTimeline, setWritingTimeline] = useState(false);
+  const [notice, setNotice] = useState<string | undefined>(undefined);
+  const [audioDurationSeconds, setAudioDurationSeconds] = useState<number | undefined>(undefined);
   const previewRef = useRef<HTMLVideoElement>(null);
   const previewRun = useRef(0);
   const abortRef = useRef<AbortController | undefined>(undefined);
@@ -103,10 +155,19 @@ export function AssembleStudio({
   const addCut = useCallback(async (artifact: StudioArtifact) => {
     const key = `cut-${nextCutKey++}`;
     setCuts((current) => [...current, { key, artifact, inSeconds: 0 }]);
-    const duration = await probeDuration(artifactSrc(artifact));
-    if (duration !== undefined) {
+    const probed = await probeClip(artifactSrc(artifact));
+    if (probed.duration !== undefined) {
       setCuts((current) =>
-        current.map((cut) => (cut.key === key ? { ...cut, durationSeconds: duration } : cut)),
+        current.map((cut) =>
+          cut.key === key
+            ? {
+                ...cut,
+                durationSeconds: probed.duration,
+                width: probed.width,
+                height: probed.height,
+              }
+            : cut,
+        ),
       );
     }
   }, []);
@@ -127,11 +188,18 @@ export function AssembleStudio({
     // Durations are only needed for the timeline read-out, so they fill in
     // behind the list rather than holding it up.
     for (const cut of staged) {
-      void probeDuration(artifactSrc(cut.artifact)).then((duration) => {
-        if (duration === undefined) return;
+      void probeClip(artifactSrc(cut.artifact)).then((probed) => {
+        if (probed.duration === undefined) return;
         setCuts((current) =>
           current.map((entry) =>
-            entry.key === cut.key ? { ...entry, durationSeconds: duration } : entry,
+            entry.key === cut.key
+              ? {
+                  ...entry,
+                  durationSeconds: probed.duration,
+                  width: probed.width,
+                  height: probed.height,
+                }
+              : entry,
           ),
         );
       });
@@ -199,6 +267,106 @@ export function AssembleStudio({
       }
     }
   }, [cuts]);
+
+  /**
+   * What the timeline export is handed.
+   *
+   * `hasAudio` is declared rather than detected: no webview API reports whether
+   * a file carries an audio track before it plays, and generated clips almost
+   * always do. An editor shows an empty audio component for a silent file,
+   * which is a smaller lie than dropping the sound of every clip that has some.
+   */
+  useEffect(() => {
+    const track = galleryAudio.find((entry) => entry.path === audioPath);
+    if (!track) {
+      setAudioDurationSeconds(undefined);
+      return;
+    }
+    let cancelled = false;
+    void probeAudioDuration(artifactSrc(track)).then((duration) => {
+      if (!cancelled) setAudioDurationSeconds(duration);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [audioPath, galleryAudio]);
+
+  const bundleInput = useMemo(() => {
+    const measured = cuts.find((cut) => cut.width && cut.height);
+    const audio = galleryAudio.find((entry) => entry.path === audioPath);
+    return {
+      name: filmName.trim() || "Assembly",
+      frameRate: FRAME_RATES[frameRateKey] ?? FRAME_RATES["30"],
+      width: measured?.width ?? 1920,
+      height: measured?.height ?? 1080,
+      clips: cuts.map((cut, index) => {
+        const duration = cut.durationSeconds ?? Number.NaN;
+        const window = clipWindow(cut, Number.isFinite(duration) ? duration : 0);
+        return {
+          artifact: cut.artifact,
+          name: cut.artifact.prompt?.slice(0, 48) || `Shot ${index + 1}`,
+          inSeconds: window.start,
+          outSeconds: window.end,
+          sourceDurationSeconds: duration,
+          hasAudio: true,
+        };
+      }),
+      audio:
+        audio && audioDurationSeconds !== undefined
+          ? {
+              music: [
+                {
+                  artifact: audio,
+                  name: audio.prompt?.slice(0, 48) || audio.fileName,
+                  inSeconds: 0,
+                  // The track plays under the film until one of the two runs
+                  // out, so the shorter of the pair is the honest out point.
+                  outSeconds: Math.min(audioDurationSeconds, totalSeconds || audioDurationSeconds),
+                  sourceDurationSeconds: audioDurationSeconds,
+                  atSeconds: 0,
+                  gain: audioVolume,
+                },
+              ],
+            }
+          : undefined,
+    };
+  }, [
+    cuts,
+    filmName,
+    frameRateKey,
+    galleryAudio,
+    audioPath,
+    audioVolume,
+    audioDurationSeconds,
+    totalSeconds,
+  ]);
+
+  /** Why the cut cannot be written yet, said before a folder is even picked. */
+  const timelineBlockers = useMemo(
+    () => (cuts.length === 0 ? [] : timelineProblems(bundleCut(bundleInput).cut)),
+    [bundleInput, cuts.length],
+  );
+
+  const runTimelineExport = useCallback(async () => {
+    if (writingTimeline || cuts.length === 0) return;
+    setError(undefined);
+    setNotice(undefined);
+    const directory = await openDirectoryDialog({ directory: true, multiple: false });
+    if (typeof directory !== "string") return;
+    setWritingTimeline(true);
+    try {
+      const written = await writeTimelineBundle(bundleInput, timelineFormat, directory);
+      setNotice(
+        `Wrote ${written.directory} with ${written.mediaCount} file${
+          written.mediaCount === 1 ? "" : "s"
+        } next to the timeline.`,
+      );
+    } catch (writeError) {
+      setError(writeError instanceof Error ? writeError.message : "The timeline export failed.");
+    } finally {
+      setWritingTimeline(false);
+    }
+  }, [bundleInput, cuts.length, timelineFormat, writingTimeline]);
 
   const runExport = useCallback(async () => {
     if (cuts.length === 0 || exporting) return;
@@ -370,6 +538,40 @@ export function AssembleStudio({
           format={(value) => `${Math.round(value * 100)}%`}
         />
       ) : null}
+      {cuts.length > 0 ? (
+        <>
+          <StudioField label="Film name" hint="Names the export">
+            <input
+              className="studio-input"
+              type="text"
+              value={filmName}
+              aria-label="Film name"
+              onChange={(event) => setFilmName(event.target.value)}
+            />
+          </StudioField>
+          <StudioField label="Timeline for" hint="Used by the timeline export">
+            <Select
+              value={timelineFormat}
+              placeholder="Final Cut Pro and Resolve"
+              ariaLabel="Timeline format"
+              onChange={(value) => setTimelineFormat(value as TimelineFormat)}
+              options={Object.entries(TIMELINE_FORMAT_LABELS).map(([value, label]) => ({
+                value,
+                label,
+              }))}
+            />
+          </StudioField>
+          <StudioField label="Frame rate" hint="Frames per second in the timeline">
+            <Select
+              value={frameRateKey}
+              placeholder="30"
+              ariaLabel="Frame rate"
+              onChange={setFrameRateKey}
+              options={Object.keys(FRAME_RATES).map((key) => ({ value: key, label: key }))}
+            />
+          </StudioField>
+        </>
+      ) : null}
     </>
   );
 
@@ -391,9 +593,20 @@ export function AssembleStudio({
       >
         Export film
       </button>
-      {totalSeconds > 0 ? (
+      <button
+        type="button"
+        className="btn btn-secondary"
+        disabled={cuts.length === 0 || writingTimeline || timelineBlockers.length > 0}
+        onClick={() => void runTimelineExport()}
+      >
+        {writingTimeline ? "Writing the timeline..." : "Export timeline"}
+      </button>
+      {timelineBlockers.length > 0 ? (
+        <p className="studio-queue-hint">{timelineBlockers.join(" ")}</p>
+      ) : totalSeconds > 0 ? (
         <p className="studio-queue-hint">
-          Exports run in real time: about {formatElapsed(totalSeconds * 1000)} for this cut.
+          Exporting the film runs in real time: about {formatElapsed(totalSeconds * 1000)} for this
+          cut. The timeline is written instantly and keeps every clip untouched.
         </p>
       ) : null}
     </>
@@ -402,6 +615,7 @@ export function AssembleStudio({
   return (
     <GenerationLayout controls={controls} action={action}>
       {error ? <p className="studio-error">{error}</p> : null}
+      {notice ? <p className="studio-queue-hint">{notice}</p> : null}
       {cuts.length > 0 ? (
         <div className="studio-assemble-preview">
           {/* biome-ignore lint/a11y/useMediaCaption: generated clips have no track */}
