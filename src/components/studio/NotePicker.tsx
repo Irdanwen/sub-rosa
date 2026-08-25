@@ -62,7 +62,13 @@ export function NotePicker({
             <Spinner aria-label="Loading notes" />
           </div>
         ) : visible.length === 0 ? (
-          <p className="studio-picker-empty">No notes match.</p>
+          <p className="studio-picker-empty">
+            {query.trim()
+              ? "No notes match."
+              : // Distinguishing the two matters here: somebody sent to this
+                // dialog to pick a script has quite possibly not written one.
+                "You have no notes yet. Write one first - a note is where a film starts."}
+          </p>
         ) : (
           <ul className="studio-note-picker-list">
             {visible.map((note) => (

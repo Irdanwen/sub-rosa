@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { StudioView } from "../components/studio/StudioView";
 
@@ -17,9 +17,17 @@ vi.mock("../components/studio/AudioStudio", () => ({ AudioStudio: () => <p>audio
 vi.mock("../components/studio/AssembleStudio", () => ({
   AssembleStudio: () => <p>assemble tab</p>,
 }));
-vi.mock("../components/studio/BibleStudio", () => ({ BibleStudio: () => <p>bible tab</p> }));
+vi.mock("../components/studio/BibleStudio", () => ({
+  BibleStudio: ({ onMakeAFilm }: { onMakeAFilm?: () => void }) => (
+    <button type="button" onClick={onMakeAFilm}>
+      make a film
+    </button>
+  ),
+}));
 vi.mock("../components/studio/WorkflowStudio", () => ({
-  WorkflowStudio: () => <p>workflows tab</p>,
+  WorkflowStudio: ({ scriptRequested }: { scriptRequested?: boolean }) => (
+    <p>{scriptRequested ? "workflows tab, script asked for" : "workflows tab"}</p>
+  ),
 }));
 
 beforeEach(() => window.localStorage.clear());
@@ -37,6 +45,17 @@ describe("the studio's tabs", () => {
     window.localStorage.setItem("os-june:studio-tab", "films");
     render(<StudioView />);
     await waitFor(() => expect(screen.getByText("workflows tab")).toBeInTheDocument());
+  });
+
+  it("carries somebody from the bible to where a film is made", async () => {
+    // The two live on different tabs and nothing joined them: a user who had
+    // just built a bible was left staring at a list.
+    window.localStorage.setItem("os-june:studio-tab", "bible");
+    render(<StudioView />);
+    fireEvent.click(await screen.findByRole("button", { name: "make a film" }));
+    await waitFor(() =>
+      expect(screen.getByText("workflows tab, script asked for")).toBeInTheDocument(),
+    );
   });
 
   it("still resolves the pre-audio name of the audio tab", async () => {

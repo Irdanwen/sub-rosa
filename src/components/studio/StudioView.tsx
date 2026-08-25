@@ -62,6 +62,21 @@ export function StudioView() {
   }, []);
   const clearPendingCuts = useCallback(() => setPendingCuts(undefined), []);
 
+  /**
+   * The hand-over from naming a cast to making a film with it.
+   *
+   * The two live on different tabs, and nothing joined them: somebody who had
+   * just built a bible had no way of knowing that the next step is a note and
+   * a button three tabs away. Same shape as the chain hand-over above - a
+   * request the receiving tab consumes once.
+   */
+  const [scriptRequested, setScriptRequested] = useState(false);
+  const requestScript = useCallback(() => {
+    setScriptRequested(true);
+    setTab("workflows");
+  }, []);
+  const clearScriptRequest = useCallback(() => setScriptRequested(false), []);
+
   useEffect(() => {
     try {
       window.localStorage.setItem(TAB_STORAGE_KEY, tab);
@@ -114,7 +129,7 @@ export function StudioView() {
       ) : tab === "audio" ? (
         <AudioStudio catalog={catalog} />
       ) : tab === "bible" ? (
-        <BibleStudio catalog={catalog} />
+        <BibleStudio catalog={catalog} onMakeAFilm={requestScript} />
       ) : tab === "assemble" ? (
         <AssembleStudio
           pendingCuts={pendingCuts}
@@ -129,7 +144,11 @@ export function StudioView() {
             </div>
           }
         >
-          <WorkflowStudio catalog={catalog} />
+          <WorkflowStudio
+            catalog={catalog}
+            scriptRequested={scriptRequested}
+            onScriptRequestApplied={clearScriptRequest}
+          />
         </Suspense>
       )}
     </div>

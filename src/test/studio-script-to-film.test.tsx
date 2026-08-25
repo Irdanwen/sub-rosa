@@ -114,6 +114,50 @@ describe("from a script to a film", () => {
     expect(workflow.nodes.some((entry: { type: string }) => entry.type === "assemble")).toBe(true);
   });
 
+  it("says which names the bible recognised, and which it never heard of", async () => {
+    // A script calling her "Nera" and a bible entry called "Nera" hold the
+    // same face. A script calling her "Nera Vex" holds nothing, renders every
+    // shot from scratch, and used to say nothing about it - which is only
+    // visible once the shots are paid for.
+    hoisted.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_notes") return { items: [NOTE] };
+      if (command === "list_bible_entries")
+        return [
+          {
+            id: "e1",
+            kind: "character",
+            name: "Nera",
+            traits: "green coat",
+            note: "",
+            refs: [],
+            createdAt: "",
+            updatedAt: "",
+          },
+        ];
+      if (command === "shot_list_plan")
+        return { noteId: "n1", scriptChars: 900, chunkCount: 1, modelCalls: 1, breakable: true };
+      if (command === "shot_list")
+        return {
+          noteId: "n1",
+          status: "ready",
+          shotsJson: JSON.stringify([{ ...SHOTS[0], characters: ["Nera"], location: "The alley" }]),
+          chunkCount: 1,
+          scriptChars: 900,
+          model: "opus",
+          promptVersion: "shotlist-v1",
+          createdAt: "",
+          updatedAt: "",
+        };
+      return null;
+    });
+    render(<ScriptToFilm catalog={catalog} onCompiled={vi.fn()} onClose={vi.fn()} />);
+    await pickTheNote();
+
+    expect(await screen.findByText(/From your bible: Nera\./)).toBeInTheDocument();
+    expect(screen.getByText(/Not in your bible: The alley\./)).toBeInTheDocument();
+    expect(screen.getByText(/will not look the same twice/)).toBeInTheDocument();
+  });
+
   it("refuses to compile over the ceiling, and hands nothing over", async () => {
     // The confirmation handshake is for deciding. It is not for catching a
     // production that was never affordable.

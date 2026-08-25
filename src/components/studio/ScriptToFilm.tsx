@@ -113,6 +113,31 @@ export function ScriptToFilm({
 
   const shots = useMemo(() => parseShots(row), [row]);
 
+  /**
+   * Which bible entries the script actually reached, and which names it used
+   * that the bible has never heard of.
+   *
+   * The matching is by name, so a script calling her "Nera" and a bible entry
+   * called "Nera" hold the same face - and a script calling her "Néra" holds
+   * nothing at all, renders every shot from scratch, and says nothing about
+   * it. That silence is the single most expensive thing this surface can do,
+   * because it is only visible once the shots are paid for.
+   */
+  const casting = useMemo(() => {
+    const known = new Map(bible.map((entry) => [entry.name.trim().toLowerCase(), entry]));
+    const used = new Set<string>();
+    const unknown = new Set<string>();
+    for (const shot of shots) {
+      for (const name of [...shot.characters, shot.location]) {
+        const key = name.trim().toLowerCase();
+        if (!key) continue;
+        if (known.has(key)) used.add(known.get(key)?.name ?? key);
+        else unknown.add(name.trim());
+      }
+    }
+    return { used: [...used], unknown: [...unknown] };
+  }, [shots, bible]);
+
   const compiled = useMemo(() => {
     if (shots.length === 0) return undefined;
     return compileShotList({
@@ -208,6 +233,19 @@ export function ScriptToFilm({
                   {shots.length} shot{shots.length === 1 ? "" : "s"}.{" "}
                   {shots.filter((shot) => shot.dialogue.trim()).length} spoken.
                 </p>
+                {casting.used.length > 0 ? (
+                  <p className="studio-queue-hint">
+                    From your bible: {casting.used.join(", ")}. Their references and their described
+                    traits travel with every shot they are in.
+                  </p>
+                ) : null}
+                {casting.unknown.length > 0 ? (
+                  <p className="studio-error">
+                    Not in your bible: {casting.unknown.join(", ")}. Those are rendered from scratch
+                    each time, so they will not look the same twice. Add them to the bible, or spell
+                    them in the note the way the bible does, and read it again.
+                  </p>
+                ) : null}
                 <ol className="script-shots">
                   {shots.map((shot, index) => (
                     <li key={`${shot.scene}-${index}-${shot.action.slice(0, 24)}`}>

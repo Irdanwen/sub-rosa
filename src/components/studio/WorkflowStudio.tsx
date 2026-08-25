@@ -911,9 +911,24 @@ function RunCostDialog({
   );
 }
 
-export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
+export function WorkflowStudio({
+  catalog,
+  scriptRequested,
+  onScriptRequestApplied,
+}: {
+  catalog: MediaCatalog;
+  /** The Bible tab asked to start a film. Consumed once, like a chain. */
+  scriptRequested?: boolean;
+  onScriptRequestApplied?: () => void;
+}) {
   const [workflows, setWorkflows] = useState<Workflow[]>(() => listWorkflows());
   const [scripting, setScripting] = useState(false);
+
+  useEffect(() => {
+    if (!scriptRequested) return;
+    setScripting(true);
+    onScriptRequestApplied?.();
+  }, [scriptRequested, onScriptRequestApplied]);
   const [current, setCurrent] = useState<Workflow | undefined>(() => listWorkflows()[0]);
   const [flowNodes, setFlowNodes] = useState<StudioFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<FlowEdge[]>([]);

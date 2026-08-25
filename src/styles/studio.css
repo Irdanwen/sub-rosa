@@ -2003,3 +2003,28 @@
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
 }
+
+/* The next step, on the tab where the question gets asked. Somebody who has
+   just named a cast has no reason to know the button that uses it is three
+   tabs away. */
+.bible-next {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  margin-bottom: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+}
+
+.bible-next p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.bible-next strong {
+  color: var(--foreground);
+}

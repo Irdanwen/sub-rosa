@@ -66,7 +66,20 @@ interface Draft {
 
 const EMPTY_DRAFT: Draft = { kind: "character", name: "", traits: "", note: "" };
 
-export function BibleStudio({ catalog }: { catalog: MediaCatalog }) {
+export function BibleStudio({
+  catalog,
+  onMakeAFilm,
+}: {
+  catalog: MediaCatalog;
+  /**
+   * Take the user to where a film actually gets made.
+   *
+   * A bible is not a thing you make for its own sake, and nothing on this tab
+   * said what it was for or where to go next - so somebody who had just named
+   * a cast was left staring at a list.
+   */
+  onMakeAFilm?: () => void;
+}) {
   const [entries, setEntries] = useState<BibleEntry[]>([]);
   const [artifacts, setArtifacts] = useState<StudioArtifact[]>([]);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
@@ -284,141 +297,160 @@ export function BibleStudio({ catalog }: { catalog: MediaCatalog }) {
         <EmptyState
           icon={<IconCirclePerson size={22} />}
           title="Nothing in the bible yet"
-          description="Name a character or a location once, attach a few references, and every shot you make afterwards can hold on to it."
+          description="Name a character or a location once and attach a few references. Then write your film as a note, and the Studio turns it into shots that hold on to the faces you named."
         />
       ) : (
-        <ul className="bible-list">
-          {entries.map((entry) => {
-            const missing = missingRefs(entry, artifacts);
-            return (
-              <li key={entry.id} className="bible-entry">
-                <div className="bible-entry-head">
-                  <div>
-                    <h3 className="bible-entry-name">{entry.name}</h3>
-                    <p className="bible-entry-kind">{BIBLE_KIND_LABELS[entry.kind]}</p>
-                    {entry.traits ? <p className="bible-entry-traits">{entry.traits}</p> : null}
-                  </div>
-                  <div className="studio-card-actions">
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() =>
-                        setDraft({
-                          id: entry.id,
-                          kind: entry.kind,
-                          name: entry.name,
-                          traits: entry.traits,
-                          note: entry.note,
-                        })
-                      }
-                    >
-                      Edit
-                    </button>
-                    {entry.kind === "character" ? (
+        <>
+          {/* The next step, said on the tab where the question is asked. A
+              bible is not a thing you make for its own sake, and the button
+              that uses it lives three tabs away. */}
+          <div className="bible-next">
+            <p>
+              <strong>Now write the film as a note.</strong> Call your characters and places exactly
+              what you called them here - the names are how they get recognised - then bring the
+              note back and it becomes shots.
+            </p>
+            {onMakeAFilm ? (
+              <button type="button" className="studio-primary-button" onClick={onMakeAFilm}>
+                Make a film from a note
+              </button>
+            ) : null}
+          </div>
+          <ul className="bible-list">
+            {entries.map((entry) => {
+              const missing = missingRefs(entry, artifacts);
+              return (
+                <li key={entry.id} className="bible-entry">
+                  <div className="bible-entry-head">
+                    <div>
+                      <h3 className="bible-entry-name">{entry.name}</h3>
+                      <p className="bible-entry-kind">{BIBLE_KIND_LABELS[entry.kind]}</p>
+                      {entry.traits ? <p className="bible-entry-traits">{entry.traits}</p> : null}
+                    </div>
+                    <div className="studio-card-actions">
                       <button
                         type="button"
                         className="btn btn-secondary"
-                        disabled={auditioning !== undefined}
-                        onClick={() => void audition(entry)}
+                        onClick={() =>
+                          setDraft({
+                            id: entry.id,
+                            kind: entry.kind,
+                            name: entry.name,
+                            traits: entry.traits,
+                            note: entry.note,
+                          })
+                        }
                       >
-                        {auditioning === entry.id ? "Auditioning..." : "Audition voices"}
+                        Edit
                       </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      onClick={async () => {
-                        await deleteBibleEntry(entry.id);
-                        await reload();
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-
-                {auditioning === entry.id || (auditions.length > 0 && draft.id !== entry.id) ? (
-                  <div className="bible-auditions">
-                    {auditioning === entry.id ? <Spinner aria-label="Auditioning" /> : null}
-                    {auditions.map((take) => (
-                      <div key={take.artifact.id} className="bible-audition">
-                        <span>{take.voice}</span>
-                        {/* biome-ignore lint/a11y/useMediaCaption: a voice take has no track */}
-                        <audio controls src={artifactSrc(take.artifact)} />
+                      {entry.kind === "character" ? (
                         <button
                           type="button"
                           className="btn btn-secondary"
-                          onClick={() => void keepVoice(entry.id, take.artifact, take.voice)}
+                          disabled={auditioning !== undefined}
+                          onClick={() => void audition(entry)}
                         >
-                          Keep this voice
+                          {auditioning === entry.id ? "Auditioning..." : "Audition voices"}
                         </button>
-                      </div>
-                    ))}
+                      ) : null}
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={async () => {
+                          await deleteBibleEntry(entry.id);
+                          await reload();
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                ) : null}
 
-                <div className="bible-refs">
-                  {entry.refs.map((reference, index) => {
-                    const artifact = resolveRef(reference, artifacts);
-                    return (
-                      <div key={reference.id} className="bible-ref" data-missing={!artifact}>
-                        {artifact && artifact.kind === "image" ? (
-                          <img src={artifactSrc(artifact)} alt={reference.label || entry.name} />
-                        ) : (
-                          <span className="bible-ref-file">
-                            {artifact ? artifact.fileName : "missing"}
+                  {auditioning === entry.id || (auditions.length > 0 && draft.id !== entry.id) ? (
+                    <div className="bible-auditions">
+                      {auditioning === entry.id ? <Spinner aria-label="Auditioning" /> : null}
+                      {auditions.map((take) => (
+                        <div key={take.artifact.id} className="bible-audition">
+                          <span>{take.voice}</span>
+                          {/* biome-ignore lint/a11y/useMediaCaption: a voice take has no track */}
+                          <audio controls src={artifactSrc(take.artifact)} />
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => void keepVoice(entry.id, take.artifact, take.voice)}
+                          >
+                            Keep this voice
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="bible-refs">
+                    {entry.refs.map((reference, index) => {
+                      const artifact = resolveRef(reference, artifacts);
+                      return (
+                        <div key={reference.id} className="bible-ref" data-missing={!artifact}>
+                          {artifact && artifact.kind === "image" ? (
+                            <img src={artifactSrc(artifact)} alt={reference.label || entry.name} />
+                          ) : (
+                            <span className="bible-ref-file">
+                              {artifact ? artifact.fileName : "missing"}
+                            </span>
+                          )}
+                          <span className="bible-ref-role">
+                            {BIBLE_ROLE_LABELS[reference.role]}
                           </span>
-                        )}
-                        <span className="bible-ref-role">{BIBLE_ROLE_LABELS[reference.role]}</span>
-                        <span className="studio-card-actions">
-                          <button
-                            type="button"
-                            className="studio-icon-button"
-                            aria-label={`Move ${entry.name} reference ${index + 1} earlier`}
-                            disabled={index === 0}
-                            onClick={() => void move(entry, reference.id, -1)}
-                          >
-                            <span aria-hidden>↑</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="studio-icon-button"
-                            aria-label={`Remove ${entry.name} reference ${index + 1}`}
-                            onClick={async () => {
-                              await removeBibleRef(reference.id);
-                              await reload();
-                            }}
-                          >
-                            <span aria-hidden>x</span>
-                          </button>
-                        </span>
-                      </div>
-                    );
-                  })}
-                  <Select
-                    value={null}
-                    placeholder="Attach a reference"
-                    ariaLabel={`Attach a reference to ${entry.name}`}
-                    onChange={(role) =>
-                      setAttaching({ entryId: entry.id, role: role as BibleRole })
-                    }
-                    options={ROLES_BY_KIND[entry.kind].map((role) => ({
-                      value: role,
-                      label: BIBLE_ROLE_LABELS[role],
-                    }))}
-                  />
-                </div>
+                          <span className="studio-card-actions">
+                            <button
+                              type="button"
+                              className="studio-icon-button"
+                              aria-label={`Move ${entry.name} reference ${index + 1} earlier`}
+                              disabled={index === 0}
+                              onClick={() => void move(entry, reference.id, -1)}
+                            >
+                              <span aria-hidden>↑</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="studio-icon-button"
+                              aria-label={`Remove ${entry.name} reference ${index + 1}`}
+                              onClick={async () => {
+                                await removeBibleRef(reference.id);
+                                await reload();
+                              }}
+                            >
+                              <span aria-hidden>x</span>
+                            </button>
+                          </span>
+                        </div>
+                      );
+                    })}
+                    <Select
+                      value={null}
+                      placeholder="Attach a reference"
+                      ariaLabel={`Attach a reference to ${entry.name}`}
+                      onChange={(role) =>
+                        setAttaching({ entryId: entry.id, role: role as BibleRole })
+                      }
+                      options={ROLES_BY_KIND[entry.kind].map((role) => ({
+                        value: role,
+                        label: BIBLE_ROLE_LABELS[role],
+                      }))}
+                    />
+                  </div>
 
-                {missing.length > 0 ? (
-                  <p className="studio-queue-hint">
-                    {missing.length} reference{missing.length === 1 ? "" : "s"} point at files that
-                    are no longer in your gallery. Attach them again, or remove them.
-                  </p>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
+                  {missing.length > 0 ? (
+                    <p className="studio-queue-hint">
+                      {missing.length} reference{missing.length === 1 ? "" : "s"} point at files
+                      that are no longer in your gallery. Attach them again, or remove them.
+                    </p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
     </GenerationLayout>
   );

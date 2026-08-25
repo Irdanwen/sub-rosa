@@ -102,6 +102,22 @@ describe("the bible panel", () => {
     ).toBeInTheDocument();
   });
 
+  it("says what a bible is for, and where a film actually gets made", async () => {
+    // Somebody who has just named a cast has no reason to know that the next
+    // step is a note, or that the button using it lives three tabs away.
+    const onMakeAFilm = vi.fn();
+    hoisted.invoke.mockImplementation(async (command: string) =>
+      command === "list_bible_entries" ? [entry()] : undefined,
+    );
+    render(<BibleStudio catalog={catalog} onMakeAFilm={onMakeAFilm} />);
+
+    expect(await screen.findByText(/Now write the film as a note/)).toBeInTheDocument();
+    // And the reason the names matter, said before it costs anything.
+    expect(screen.getByText(/exactly what you called them here/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Make a film from a note" }));
+    expect(onMakeAFilm).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses to save something with no name", async () => {
     hoisted.invoke.mockResolvedValue([]);
     render(<BibleStudio catalog={catalog} />);
