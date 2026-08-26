@@ -166,12 +166,17 @@ export function AssembleStudio({
   pendingCuts,
   onPendingCutsApplied,
   catalog,
+  pendingProductionRunId,
+  onPendingProductionApplied,
 }: {
   /** A shot chain handed over by the video studio, trims already resolved. */
   pendingCuts?: ChainShot[];
   onPendingCutsApplied?: () => void;
   /** Only the review needs it, so a surface without one simply cannot review. */
   catalog?: MediaCatalog;
+  /** A film just made on the Film tab, handed over to be finished. */
+  pendingProductionRunId?: string;
+  onPendingProductionApplied?: () => void;
 } = {}) {
   const [galleryVideos, setGalleryVideos] = useState<StudioArtifact[]>([]);
   const [galleryAudio, setGalleryAudio] = useState<StudioArtifact[]>([]);
@@ -212,6 +217,15 @@ export function AssembleStudio({
   useEffect(() => {
     reloadSources();
   }, [reloadSources]);
+
+  // A film handed over from the Film tab opens itself: the user pressed
+  // "Finish it" there, and being dropped in front of a picker would be the
+  // app forgetting what they just asked for.
+  useEffect(() => {
+    if (!pendingProductionRunId) return;
+    void openProduction(pendingProductionRunId);
+    onPendingProductionApplied?.();
+  }, [pendingProductionRunId, onPendingProductionApplied]);
 
   useEffect(() => {
     listFinishedProductions()

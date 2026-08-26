@@ -2085,3 +2085,40 @@
   font-style: normal;
   font-size: var(--fs-xs);
 }
+
+/* The Film tab: one screen, one order. Describe, review, make, finish. */
+.film-describe,
+.film-making,
+.film-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-6) var(--sp-4);
+  text-align: center;
+}
+
+.film-describe .studio-textarea {
+  width: min(100%, 640px);
+  text-align: start;
+}
+
+.film-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+}
+
+/* Behind a disclosure on purpose: every one of these has a defensible default,
+   and asking five questions before showing any work is what made the old path
+   unusable. */
+.film-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+}

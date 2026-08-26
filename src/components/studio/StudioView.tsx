@@ -10,6 +10,7 @@ import { SegmentedControl } from "../ui/SegmentedControl";
 import { Spinner } from "../ui/Spinner";
 import { AssembleStudio } from "./AssembleStudio";
 import { BibleStudio } from "./BibleStudio";
+import { FilmStudio } from "./FilmStudio";
 import { AudioStudio } from "./AudioStudio";
 import { ImageStudio } from "./ImageStudio";
 import { VideoStudio } from "./VideoStudio";
@@ -21,7 +22,7 @@ const WorkflowStudio = lazy(() =>
   import("./WorkflowStudio").then((module) => ({ default: module.WorkflowStudio })),
 );
 
-type StudioTab = "image" | "video" | "audio" | "bible" | "assemble" | "workflows";
+type StudioTab = "film" | "image" | "video" | "audio" | "bible" | "assemble" | "workflows";
 
 const TAB_STORAGE_KEY = "os-june:studio-tab";
 
@@ -33,8 +34,10 @@ function initialTab(): StudioTab {
     // "films" was the remote studio, which is gone. Somebody who was last on
     // that tab lands where film production actually happens now, rather than
     // on a blank panel or, worse, silently back on Image.
-    if (saved === "films") return "workflows";
+    // "films" was the remote studio. What replaced it is the Film tab.
+    if (saved === "films") return "film";
     if (
+      saved === "film" ||
       saved === "image" ||
       saved === "video" ||
       saved === "audio" ||
@@ -47,7 +50,7 @@ function initialTab(): StudioTab {
   } catch {
     // Fall through to the default.
   }
-  return "image";
+  return "film";
 }
 
 export function StudioView() {
@@ -70,12 +73,16 @@ export function StudioView() {
    * a button three tabs away. Same shape as the chain hand-over above - a
    * request the receiving tab consumes once.
    */
-  const [scriptRequested, setScriptRequested] = useState(false);
-  const requestScript = useCallback(() => {
-    setScriptRequested(true);
-    setTab("workflows");
+  /**
+   * A finished film handed to Assemble, which is where a cut gets finished.
+   * Same shape as the chain hand-over: a request the receiving tab consumes.
+   */
+  const [pendingProduction, setPendingProduction] = useState<string | undefined>(undefined);
+  const openProduction = useCallback((runId: string) => {
+    setPendingProduction(runId);
+    setTab("assemble");
   }, []);
-  const clearScriptRequest = useCallback(() => setScriptRequested(false), []);
+  const clearPendingProduction = useCallback(() => setPendingProduction(undefined), []);
 
   useEffect(() => {
     try {
@@ -99,6 +106,8 @@ export function StudioView() {
           onValueChange={setTab}
           aria-label="Studio section"
           options={[
+            // Film first: it is what the other tabs are for.
+            { value: "film", label: "Film" },
             { value: "image", label: "Image" },
             { value: "video", label: "Video" },
             { value: "audio", label: "Audio" },
@@ -128,13 +137,17 @@ export function StudioView() {
         <VideoStudio catalog={catalog} onAssembleChain={assembleChain} />
       ) : tab === "audio" ? (
         <AudioStudio catalog={catalog} />
+      ) : tab === "film" ? (
+        <FilmStudio catalog={catalog} onOpenProduction={openProduction} />
       ) : tab === "bible" ? (
-        <BibleStudio catalog={catalog} onMakeAFilm={requestScript} />
+        <BibleStudio catalog={catalog} onMakeAFilm={() => setTab("film")} />
       ) : tab === "assemble" ? (
         <AssembleStudio
           pendingCuts={pendingCuts}
           onPendingCutsApplied={clearPendingCuts}
           catalog={catalog}
+          pendingProductionRunId={pendingProduction}
+          onPendingProductionApplied={clearPendingProduction}
         />
       ) : (
         <Suspense
@@ -144,11 +157,7 @@ export function StudioView() {
             </div>
           }
         >
-          <WorkflowStudio
-            catalog={catalog}
-            scriptRequested={scriptRequested}
-            onScriptRequestApplied={clearScriptRequest}
-          />
+          <WorkflowStudio catalog={catalog} />
         </Suspense>
       )}
     </div>

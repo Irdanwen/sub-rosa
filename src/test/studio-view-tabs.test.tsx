@@ -17,6 +17,9 @@ vi.mock("../components/studio/AudioStudio", () => ({ AudioStudio: () => <p>audio
 vi.mock("../components/studio/AssembleStudio", () => ({
   AssembleStudio: () => <p>assemble tab</p>,
 }));
+vi.mock("../components/studio/FilmStudio", () => ({
+  FilmStudio: () => <p>film tab</p>,
+}));
 vi.mock("../components/studio/BibleStudio", () => ({
   BibleStudio: ({ onMakeAFilm }: { onMakeAFilm?: () => void }) => (
     <button type="button" onClick={onMakeAFilm}>
@@ -33,18 +36,19 @@ vi.mock("../components/studio/WorkflowStudio", () => ({
 beforeEach(() => window.localStorage.clear());
 
 describe("the studio's tabs", () => {
-  it("offers no Films tab: the remote studio is gone", () => {
+  it("puts Film first, because it is what the other tabs are for", () => {
     render(<StudioView />);
     expect(screen.queryByText("Films")).not.toBeInTheDocument();
+    expect(screen.getByText("Film")).toBeInTheDocument();
     expect(screen.getByText("Bible")).toBeInTheDocument();
+    // And it is where somebody with no saved choice lands.
+    expect(screen.getByText("film tab")).toBeInTheDocument();
   });
 
-  it("lands somebody who was last on Films where films are made now", async () => {
-    // Not on a blank panel, and not silently back on Image either: the tab
-    // they wanted still exists, it just moved.
+  it("lands somebody who was last on the old Films tab where films are made now", async () => {
     window.localStorage.setItem("os-june:studio-tab", "films");
     render(<StudioView />);
-    await waitFor(() => expect(screen.getByText("workflows tab")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("film tab")).toBeInTheDocument());
   });
 
   it("carries somebody from the bible to where a film is made", async () => {
@@ -53,9 +57,7 @@ describe("the studio's tabs", () => {
     window.localStorage.setItem("os-june:studio-tab", "bible");
     render(<StudioView />);
     fireEvent.click(await screen.findByRole("button", { name: "make a film" }));
-    await waitFor(() =>
-      expect(screen.getByText("workflows tab, script asked for")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("film tab")).toBeInTheDocument());
   });
 
   it("still resolves the pre-audio name of the audio tab", async () => {

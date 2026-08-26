@@ -98,7 +98,6 @@ import { Switch } from "../ui/Switch";
 import { AssetPreview } from "./AssetPreview";
 import { GalleryPicker } from "./GalleryPicker";
 import { NotePicker } from "./NotePicker";
-import { ScriptToFilm } from "./ScriptToFilm";
 
 /** One connection into a multi port, as the ordering list shows it. */
 interface PortSourceEntry {
@@ -911,24 +910,9 @@ function RunCostDialog({
   );
 }
 
-export function WorkflowStudio({
-  catalog,
-  scriptRequested,
-  onScriptRequestApplied,
-}: {
-  catalog: MediaCatalog;
-  /** The Bible tab asked to start a film. Consumed once, like a chain. */
-  scriptRequested?: boolean;
-  onScriptRequestApplied?: () => void;
-}) {
+export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
   const [workflows, setWorkflows] = useState<Workflow[]>(() => listWorkflows());
-  const [scripting, setScripting] = useState(false);
 
-  useEffect(() => {
-    if (!scriptRequested) return;
-    setScripting(true);
-    onScriptRequestApplied?.();
-  }, [scriptRequested, onScriptRequestApplied]);
   const [current, setCurrent] = useState<Workflow | undefined>(() => listWorkflows()[0]);
   const [flowNodes, setFlowNodes] = useState<StudioFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<FlowEdge[]>([]);
@@ -1361,31 +1345,6 @@ export function WorkflowStudio({
    * special kind of run, it is a graph somebody did not have to draw. From
    * here on it is edited, priced, gated and resumed exactly like one that was.
    */
-  const adoptCompiled = useCallback(
-    (compiled: Workflow) => {
-      const workflow = createWorkflow(compiled.name);
-      const idMap = new Map(compiled.nodes.map((node) => [node.id, crypto.randomUUID()]));
-      const cloned: Workflow = {
-        ...workflow,
-        nodes: compiled.nodes.map((node) => ({
-          ...node,
-          id: idMap.get(node.id) ?? node.id,
-          params: { ...node.params },
-        })),
-        edges: compiled.edges.map((edge) => ({
-          ...edge,
-          id: crypto.randomUUID(),
-          source: idMap.get(edge.source) ?? edge.source,
-          target: idMap.get(edge.target) ?? edge.target,
-        })),
-      };
-      saveWorkflow(cloned);
-      setWorkflows(listWorkflows());
-      hydrate(cloned);
-    },
-    [hydrate],
-  );
-
   const serialized = current ? fromFlow(current, flowNodes, flowEdges) : undefined;
   const validation = useMemo(
     () => (serialized ? validateWorkflow(serialized) : undefined),
@@ -1618,13 +1577,6 @@ export function WorkflowStudio({
 
   return (
     <div className="studio-workflows">
-      {scripting ? (
-        <ScriptToFilm
-          catalog={catalog}
-          onCompiled={adoptCompiled}
-          onClose={() => setScripting(false)}
-        />
-      ) : null}
       <div className="studio-workflows-toolbar">
         <Select
           value={current?.id ?? null}
@@ -1646,9 +1598,6 @@ export function WorkflowStudio({
         />
         <button type="button" className="btn btn-secondary" onClick={newWorkflow}>
           New
-        </button>
-        <button type="button" className="btn btn-secondary" onClick={() => setScripting(true)}>
-          From a script
         </button>
         <Select
           value={null}
