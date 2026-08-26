@@ -375,6 +375,39 @@ et le mouvement changent en plein raccord. Les trois directions d'une famille
 sont désormais appariées par racine d'identifiant, et à défaut de choix c'est
 la moins chère qui gagne.
 
+## 9 ter. Le parcours utilisateur, refait (2026-08-26)
+
+Signalé à l'usage : « j'ai fait une bible, et ensuite ? ». Le parcours mesuré
+faisait **~35 interactions sur 8 surfaces**, dont trois générations d'images que
+personne n'annonçait — la bible savait *piocher* une image, jamais en fabriquer
+une — et cinq décisions demandées avant d'avoir montré le moindre travail. Le
+mot « film » n'apparaissait nulle part dans la navigation. Noté **4/10**.
+
+Cinq vagues, dans cet ordre :
+
+- **A. Fermer le départ à froid.** Une entrée de bible dessine ses propres
+  références, à partir de la phrase même que les plans porteront. Et le script
+  propose son casting : les noms qu'il emploie et que la bible ne connaît pas,
+  chacun avec un bouton qui crée l'entrée et dessine le visage. La lecture rend
+  désormais ces noms **décrits**, sinon un casting en un clic produisait une
+  entrée sans traits, c'est-à-dire une demi-entrée.
+- **B. Une seule surface, appelée Film.** Premier onglet, et celui où le Studio
+  s'ouvre. Décrire → l'app propose → corriger → fabriquer → finir. Ce qu'on
+  tape devient une note ; la production est un workflow ordinaire, sauvegardé
+  avant de tourner, donc visible et reprenable sur le canvas.
+- **C. Des défauts, pas des questions.** Les cinq réglages passent derrière
+  « Options ». Le plafond de dépense **est le solde** — un défaut fixe se
+  trompe dans les deux sens — et l'app prévient quand le devis, qui est un
+  minimum, s'approche du solde.
+- **D. Réagir à ce qu'on voit.** Les plans apparaissent pendant qu'ils se font.
+  Un plan peut être refait sans toucher au graphe, et le juge colle sa remarque
+  sur le plan concerné, à côté du bouton qui le corrige.
+- **E. Le film est la note.** Les films déjà commencés sont listés (une lecture
+  est payée), et une note lue comme des plans le dit dans son propre en-tête.
+
+**Résultat mesuré** : **~5 interactions sur 1 surface**, zéro image à générer
+soi-même, zéro décision avant d'avoir vu le travail.
+
 ## 10. Écarts assumés en cours de route
 
 Consignés ici plutôt que passés sous silence : le plan est le registre.

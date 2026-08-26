@@ -340,6 +340,26 @@ them named the remote service, and none of them names anything now. **DIEM is
 not on that list**: it is a Venice balance bucket the credits reader still
 parses, and the studio merely quoted its prices in it.
 
+**Film (the surface)**:
+The Studio tab where a film is made, first in the list and where the Studio
+opens. One screen and one order: describe, review, make, finish. It composes
+what the other tabs hold in detail and owns nothing of its own.
+_Avoid_: wizard, project.
+
+**Reading**:
+One pass of a script, producing the **shot list** and the **cast**. Paid for,
+durable, and resumable - never re-run to get back to it.
+
+**Cast**:
+Everyone and everywhere a script names, described. A cast member the bible has
+never met can be given a face in one gesture, which creates the bible entry and
+draws its reference. _Avoid_: characters (a location is cast too), roles.
+
+**Retake**:
+Making one shot again. The resume machinery pointed the other way: everything
+else replays from cache, so a retake costs one shot and the cut, not the film.
+_Avoid_: regenerate, rerun (both read as the whole thing).
+
 **Script**:
 A note the user wrote that a film is made from. Not a new kind of thing: the
 import doctrine again. _Avoid_: screenplay object, film project.
