@@ -7,6 +7,8 @@ const hoisted = vi.hoisted(() => ({
   invoke: vi.fn(),
   generateImages: vi.fn(),
   runWorkflow: vi.fn(),
+  resumeRun: vi.fn(),
+  mediaJson: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: hoisted.invoke }));
@@ -17,9 +19,15 @@ vi.mock("../lib/studio/artifacts", async (importOriginal) => ({
 }));
 vi.mock("../lib/studio/workflow-run", () => ({
   runAndSaveWorkflow: hoisted.runWorkflow,
+  resumeWorkflowRun: hoisted.resumeRun,
   listFinishedProductions: vi.fn(async () => []),
   productionCut: vi.fn(),
 }));
+vi.mock("../lib/studio/frames", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/studio/frames")>()),
+  extractFrameAt: vi.fn(async () => ({ dataUrl: "data:image/jpeg;base64,AA", timeSeconds: 1 })),
+}));
+vi.mock("../lib/studio/client", () => ({ mediaJson: hoisted.mediaJson, mediaBinary: vi.fn() }));
 
 function model(id: string, mediaType: string, over: Partial<MediaModel> = {}): MediaModel {
   return {
@@ -39,6 +47,7 @@ const catalog: MediaCatalog = {
     model("kling-text-to-video", "video"),
     model("kling-image-to-video", "imageToVideo"),
     model("draws", "image", { constraints: undefined, costCredits: 2 }),
+    model("sees", "text", { constraints: undefined, supportsVision: true }),
   ],
 };
 
@@ -77,6 +86,8 @@ function reading(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   hoisted.generateImages.mockReset().mockResolvedValue(["AAAA"]);
   hoisted.runWorkflow.mockReset().mockResolvedValue(new Map());
+  hoisted.resumeRun.mockReset().mockResolvedValue(new Map());
+  hoisted.mediaJson.mockReset();
   hoisted.invoke.mockReset().mockImplementation(async (command: string) => {
     if (command === "list_notes") return { items: [{ id: "n1", title: "Neon alley" }] };
     if (command === "list_bible_entries") return [];
@@ -302,5 +313,82 @@ describe("saying when a film is close to the edge", () => {
   it("says nothing when the balance is unknown, rather than guessing", () => {
     expect(isTight(1000, undefined)).toBe(false);
     expect(isTight(1000, Number.NaN)).toBe(false);
+  });
+});
+
+describe("reacting to what you see", () => {
+  /** Run a film through to the point where its shots exist. */
+  async function makeAFilm() {
+    hoisted.runWorkflow.mockImplementation(async (workflow, options) => {
+      options.onRunRecorded?.("run-9");
+      const shot = workflow.nodes.find((node: { type: string }) => node.type === "video");
+      const assemble = workflow.nodes.find((node: { type: string }) => node.type === "assemble");
+      options.onUpdate?.({
+        nodeId: shot.id,
+        status: "done",
+        output: { kind: "video", artifactId: "s1.mp4", src: "asset:///s1.mp4" },
+      });
+      options.onUpdate?.({
+        nodeId: assemble.id,
+        status: "done",
+        output: { kind: "video", artifactId: "film.mp4", src: "asset:///film.mp4" },
+      });
+      return new Map();
+    });
+    hoisted.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_notes") return { items: [{ id: "n1", title: "Neon alley" }] };
+      if (command === "list_bible_entries") return [];
+      if (command === "shot_list") return reading();
+      if (command === "shot_list_plan")
+        return { noteId: "n1", scriptChars: 900, chunkCount: 1, modelCalls: 1, breakable: true };
+      return null;
+    });
+    render(<FilmStudio catalog={catalog} onOpenProduction={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Use a note I wrote" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Neon/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Make it" }));
+    await screen.findByText(/is ready/);
+  }
+
+  it("redoes one shot, and only what was built from it", async () => {
+    await makeAFilm();
+    // The figure is on the button: a retake spends, and nothing in this app
+    // spends without saying what it costs.
+    fireEvent.click(screen.getAllByRole("button", { name: /Do it again \(\d+ cr\)/ })[0]);
+
+    await waitFor(() => expect(hoisted.resumeRun).toHaveBeenCalledTimes(1));
+    const [runId, options] = hoisted.resumeRun.mock.calls[0] as [string, { redoNodeIds: string[] }];
+    expect(runId).toBe("run-9");
+    // The shot, not the film: everything else replays from cache.
+    expect(options.redoNodeIds).toHaveLength(1);
+    expect(options.redoNodeIds[0]).toMatch(/shot/);
+  });
+
+  it("points the retake at the shot the judge named", async () => {
+    hoisted.mediaJson.mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content:
+              // Numbered: several shots share a scene name, and a remark
+              // matched back by scene would land on whichever came first.
+              '{"score": 4, "summary": "The middle sags.", "weakest": [{"label": "Shot 1, The alley", "why": "the coat reads blue"}]}',
+          },
+        },
+      ],
+    });
+    await makeAFilm();
+    fireEvent.click(screen.getByRole("button", { name: "Review the cut" }));
+
+    expect(await screen.findByText(/4\/10 The middle sags\./)).toBeInTheDocument();
+    // The reason is on the shot it is about, next to the button that fixes it.
+    expect(screen.getByText("the coat reads blue")).toBeInTheDocument();
+  });
+
+  it("says it has nothing to say rather than failing", async () => {
+    hoisted.mediaJson.mockRejectedValue(new Error("502"));
+    await makeAFilm();
+    fireEvent.click(screen.getByRole("button", { name: "Review the cut" }));
+    expect(await screen.findByText(/nothing to say/)).toBeInTheDocument();
   });
 });

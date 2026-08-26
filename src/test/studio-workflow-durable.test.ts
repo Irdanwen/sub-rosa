@@ -326,6 +326,44 @@ describe("listResumableRuns", () => {
   });
 });
 
+describe("descendantsOf", () => {
+  it("marks a node and everything built from it", async () => {
+    const { descendantsOf } = await import("../lib/studio/workflow-run");
+    // Redoing shot 2 has to drop the cut as well: keeping the cut made from
+    // the old shot would hand back a film that does not contain the shot the
+    // user just paid to replace.
+    const graph = {
+      edges: [
+        { id: "e1", source: "shot-1", target: "assemble" },
+        { id: "e2", source: "shot-2", target: "frame" },
+        { id: "e3", source: "frame", target: "shot-3" },
+        { id: "e4", source: "shot-3", target: "assemble" },
+        { id: "e5", source: "assemble", target: "out" },
+      ],
+    };
+    expect([...descendantsOf(graph, ["shot-2"])].sort()).toEqual([
+      "assemble",
+      "frame",
+      "out",
+      "shot-2",
+      "shot-3",
+    ]);
+    // And leaves the shots it did not touch alone.
+    expect(descendantsOf(graph, ["shot-2"]).has("shot-1")).toBe(false);
+  });
+
+  it("survives a graph that loops back on itself", async () => {
+    const { descendantsOf } = await import("../lib/studio/workflow-run");
+    const graph = {
+      edges: [
+        { id: "e1", source: "a", target: "b" },
+        { id: "e2", source: "b", target: "a" },
+      ],
+    };
+    expect([...descendantsOf(graph, ["a"])].sort()).toEqual(["a", "b"]);
+  });
+});
+
 describe("resumeWorkflowRun", () => {
   it("re-attaches to a pending render instead of buying it twice", async () => {
     const definition = workflow(

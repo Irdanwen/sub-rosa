@@ -29,7 +29,7 @@ import {
 } from "../../lib/studio/bible";
 import { generateReference, portraitCostCredits } from "../../lib/studio/bible/portrait";
 import { compileShotList, routeModels, type Shot } from "../../lib/studio/workflow/compile";
-import { modelsOfType } from "../../lib/studio/catalog";
+import { estimateCostCredits, modelsOfType } from "../../lib/studio/catalog";
 import {
   estimateWorkflowCost,
   fetchVideoQuotes,
@@ -40,7 +40,9 @@ import type { Workflow } from "../../lib/studio/workflow/schema";
 import { createWorkflow, saveWorkflow } from "../../lib/studio/workflow/store";
 import { validateWorkflow } from "../../lib/studio/workflow/validator";
 import { type NodeRunResult, WorkflowRunError } from "../../lib/studio/workflow/engine";
-import { runAndSaveWorkflow } from "../../lib/studio/workflow-run";
+import { resumeWorkflowRun, runAndSaveWorkflow } from "../../lib/studio/workflow-run";
+import { extractFrameAt } from "../../lib/studio/frames";
+import { judge, type JudgeVerdict, pickJudgeModel } from "../../lib/studio/judge";
 import type { MediaCatalog } from "../../lib/studio/types";
 import {
   buildShotList,
@@ -156,6 +158,9 @@ export function FilmStudio({
   const [runId, setRunId] = useState<string | undefined>(undefined);
   const [runError, setRunError] = useState<string | undefined>(undefined);
   const abortRef = useRef<AbortController | undefined>(undefined);
+  const workflowRef = useRef<Workflow | undefined>(undefined);
+  const [verdict, setVerdict] = useState<JudgeVerdict | undefined>(undefined);
+  const [judging, setJudging] = useState(false);
 
   useEffect(() => {
     listBibleEntries()
@@ -350,6 +355,7 @@ export function FilmStudio({
       edges: workflow.edges,
     };
     saveWorkflow(saved);
+    workflowRef.current = saved;
 
     const controller = new AbortController();
     abortRef.current?.abort();
@@ -380,6 +386,113 @@ export function FilmStudio({
       setRunning(false);
     }
   }, [compiled, running, catalog]);
+
+  /** The shot nodes of the film that ran, with what each one produced. */
+  /** What one shot and the cut it feeds cost to make again. */
+  const retakeCost = useMemo(() => {
+    const workflow = workflowRef.current ?? compiled?.workflow;
+    if (!workflow) return undefined;
+    const shot = workflow.nodes.find((node) => node.type === "video");
+    const modelId = typeof shot?.params.model === "string" ? shot.params.model : "";
+    const model = catalog.models.find((entry) => entry.id === modelId);
+    return model ? estimateCostCredits(model, { multiplier: catalog.priceMultiplier }) : undefined;
+  }, [compiled, catalog]);
+
+  const madeShots = useMemo(() => {
+    const workflow = workflowRef.current ?? compiled?.workflow;
+    if (!workflow) return [];
+    return workflow.nodes
+      .filter((node) => node.type === "video")
+      .map((node, index) => {
+        const result = progress.get(node.id);
+        return {
+          nodeId: node.id,
+          // Numbered, because several shots share a scene name and the judge
+          // is asked to point at one of them. Matching a remark back by scene
+          // would attach it to whichever shot happened to be first.
+          label: node.label ? `Shot ${index + 1}, ${node.label}` : `Shot ${index + 1}`,
+          index,
+          status: result?.status ?? "pending",
+          src: result?.output?.kind === "video" ? result.output.src : undefined,
+        };
+      });
+  }, [progress, compiled]);
+
+  /**
+   * Make one shot again, and only what was built from it.
+   *
+   * The same resume machinery that makes a restart cheap, pointed the other
+   * way: everything else replays from cache, so a retake costs one shot and
+   * the cut - not the film.
+   */
+  const redoShot = useCallback(
+    async (nodeId: string) => {
+      if (!runId || running) return;
+      const controller = new AbortController();
+      abortRef.current?.abort();
+      abortRef.current = controller;
+      setRunning(true);
+      setRunError(undefined);
+      setVerdict(undefined);
+      try {
+        await resumeWorkflowRun(runId, {
+          signal: controller.signal,
+          redoNodeIds: [nodeId],
+          onUpdate: (result) =>
+            setProgress((current) => new Map(current).set(result.nodeId, result)),
+        });
+      } catch (redoError) {
+        if (!(redoError instanceof DOMException && redoError.name === "AbortError")) {
+          setRunError(redoError instanceof Error ? redoError.message : "That retake failed.");
+        }
+      } finally {
+        setRunning(false);
+      }
+    },
+    [runId, running],
+  );
+
+  /**
+   * Ask a model to watch the cut and say which shots let the others down.
+   *
+   * One frame per shot rather than the film: it is what a supervisor actually
+   * looks at, it costs a fraction of a video call, and the picture is what
+   * drifts. Best-effort, like every judge: no opinion is not an error.
+   */
+  const review = useCallback(async () => {
+    const model = pickJudgeModel(modelsOfType(catalog, "text"));
+    if (!model || judging) {
+      if (!model) setError("No model on this account can look at pictures.");
+      return;
+    }
+    setJudging(true);
+    setError(undefined);
+    try {
+      const subjects = [];
+      for (const shot of madeShots) {
+        if (!shot.src) continue;
+        try {
+          const frame = await extractFrameAt(shot.src, 1);
+          subjects.push({ label: shot.label, imageDataUri: frame.dataUrl });
+        } catch {
+          // A shot whose frame will not decode is left out rather than
+          // stopping the review of the ones that will.
+        }
+      }
+      const result = await judge(
+        {
+          subjects,
+          brief: note?.title?.trim() || undefined,
+          lens: "the cut as a whole: continuity, rhythm, and whether any shot lets the others down",
+        },
+        model,
+      );
+      setVerdict(result);
+      if (!result) setError("The judge had nothing to say this time.");
+    } finally {
+      setJudging(false);
+    }
+  }, [catalog, judging, madeShots, note]);
 
   const startOver = useCallback(async () => {
     if (note) await forgetShotList(note.id).catch(() => undefined);
@@ -665,6 +778,51 @@ export function FilmStudio({
             "Finish it" opens the cut in Assemble: play it, move a line, or export a timeline for a
             real editor.
           </p>
+
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={judging || running}
+            onClick={() => void review()}
+          >
+            {judging ? "Watching it..." : "Review the cut"}
+          </button>
+          {verdict ? (
+            <div className="studio-verdict" data-passes={verdict.passes}>
+              <p className="studio-verdict-score">
+                {verdict.score}/10 {verdict.summary}
+              </p>
+            </div>
+          ) : null}
+
+          <ul className="film-shot-strip">
+            {madeShots.map((shot) => {
+              const weak = verdict?.weakest.find((item) => item.label === shot.label);
+              return (
+                <li key={shot.nodeId} data-weak={Boolean(weak)}>
+                  {shot.src ? (
+                    // biome-ignore lint/a11y/useMediaCaption: a generated shot has no track
+                    <video src={shot.src} muted playsInline preload="metadata" controls />
+                  ) : (
+                    <span className="film-shot-placeholder">{shot.index + 1}</span>
+                  )}
+                  {weak ? <span className="film-shot-why">{weak.why}</span> : null}
+                  <button
+                    type="button"
+                    className={weak ? "btn btn-secondary" : "btn btn-ghost"}
+                    disabled={running}
+                    onClick={() => void redoShot(shot.nodeId)}
+                  >
+                    {running
+                      ? "Working..."
+                      : retakeCost === undefined
+                        ? "Do it again"
+                        : `Do it again (${retakeCost.toFixed(0)} cr)`}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       ) : null}
     </div>

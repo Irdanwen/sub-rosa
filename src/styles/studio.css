@@ -2122,3 +2122,55 @@
   border-radius: var(--r-md);
   background: var(--surface-subtle);
 }
+
+/* The shots, as they land and once they are there. A row of pictures is a
+   progress bar that means something, and it is where a retake belongs: the
+   judge points at a shot, and the button to redo it is on that shot. */
+.film-shot-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.film-shot-strip li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  width: 176px;
+  padding: var(--sp-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+}
+
+.film-shot-strip li[data-weak="true"] {
+  border-color: var(--border);
+}
+
+.film-shot-strip video {
+  width: 100%;
+  border-radius: var(--r-sm);
+  background: var(--muted);
+}
+
+.film-shot-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 96px;
+  border-radius: var(--r-sm);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.film-shot-why {
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+  text-align: center;
+}

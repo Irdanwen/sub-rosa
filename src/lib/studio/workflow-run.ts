@@ -424,6 +424,40 @@ interface DurableRunOptions {
   /** Hands back the run id as soon as the row exists, so the caller can
    * approve this run's gates later without re-listing. */
   onRunRecorded?: (runId: string) => void;
+  /**
+   * Nodes to make again, with everything that was built from them.
+   *
+   * A resume replays finished nodes from their cached outputs, which is what
+   * makes it cheap. Redoing one shot is the same machinery pointed the other
+   * way: drop that node from the cache, and drop whatever depended on it -
+   * keeping the cut that was made from the old shot would hand back a film
+   * that does not contain the shot the user just paid to replace.
+   */
+  redoNodeIds?: string[];
+}
+
+/**
+ * A node and everything downstream of it.
+ *
+ * Walked rather than stored, like a shot chain (ADR-0019): the graph is the
+ * record, and a list would be one more thing to keep in step with it.
+ */
+export function descendantsOf(
+  workflow: Pick<Workflow, "edges">,
+  nodeIds: readonly string[],
+): Set<string> {
+  const marked = new Set(nodeIds);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const edge of workflow.edges) {
+      if (marked.has(edge.source) && !marked.has(edge.target)) {
+        marked.add(edge.target);
+        grew = true;
+      }
+    }
+  }
+  return marked;
 }
 
 /**
@@ -564,7 +598,12 @@ export async function resumeWorkflowRun(
   const storage = workflowStorage();
   const completed = new Map<string, NodeOutput>();
   const pendingJobs = new Map<string, string>();
+  // What the caller asked to make again, plus what was built from it.
+  const stale = options.redoNodeIds?.length
+    ? descendantsOf(workflow, options.redoNodeIds)
+    : undefined;
   for (const node of detail.nodes) {
+    if (stale?.has(node.nodeId)) continue;
     if (!node.output) continue;
     let stored: unknown;
     try {
