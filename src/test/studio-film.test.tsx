@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ceilingFor, FilmStudio } from "../components/studio/FilmStudio";
+import { ceilingFor, FilmStudio, isTight } from "../components/studio/FilmStudio";
 import type { MediaCatalog, MediaModel } from "../lib/studio/types";
 
 const hoisted = vi.hoisted(() => ({
@@ -287,5 +287,20 @@ describe("the spend ceiling", () => {
     const ceiling = (await screen.findByLabelText("Spend ceiling")) as HTMLInputElement;
     await waitFor(() => expect(ceiling.value).toBe("37"));
     expect(screen.getByText(/You have 37/)).toBeInTheDocument();
+  });
+});
+
+describe("saying when a film is close to the edge", () => {
+  it("warns above four fifths, because the figure is a minimum", () => {
+    // Metered renders publish no price and count zero, so a film estimated at
+    // most of the balance can still run out part way.
+    expect(isTight(85, 100)).toBe(true);
+    expect(isTight(50, 100)).toBe(false);
+    expect(isTight(80, 100)).toBe(false);
+  });
+
+  it("says nothing when the balance is unknown, rather than guessing", () => {
+    expect(isTight(1000, undefined)).toBe(false);
+    expect(isTight(1000, Number.NaN)).toBe(false);
   });
 });

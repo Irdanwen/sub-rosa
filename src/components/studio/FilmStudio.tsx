@@ -75,6 +75,21 @@ const FALLBACK_ENVELOPE_CREDITS = 200;
  * number that is right, so the ceiling is the balance - the ceiling is there
  * to stop a runaway, not to be a budget the user has to guess.
  */
+/**
+ * When a film is close enough to the balance to be worth saying so.
+ *
+ * The estimate is a *minimum*: metered renders publish no price and count
+ * zero. So a film estimated at most of the balance can still run out half way,
+ * and the honest thing is to say that before it is started rather than after.
+ * Four fifths is a warning threshold, not a gate - nothing is refused here.
+ */
+export const TIGHT_BUDGET_FRACTION = 0.8;
+
+export function isTight(estimateCredits: number, availableCredits: number | undefined): boolean {
+  if (availableCredits === undefined || !Number.isFinite(availableCredits)) return false;
+  return estimateCredits > availableCredits * TIGHT_BUDGET_FRACTION;
+}
+
 export function ceilingFor(availableCredits: number | undefined): number {
   if (availableCredits === undefined || !Number.isFinite(availableCredits)) {
     return FALLBACK_ENVELOPE_CREDITS;
@@ -508,8 +523,18 @@ export function FilmStudio({
           {compiled?.refusal ? (
             <p className="studio-error">{compiled.refusal}</p>
           ) : (
-            <p className="studio-queue-hint">
-              About {compiled?.estimateCredits.toFixed(0)} credits, at least.
+            <p
+              className={
+                isTight(compiled?.estimateCredits ?? 0, balance)
+                  ? "studio-error"
+                  : "studio-queue-hint"
+              }
+            >
+              About {compiled?.estimateCredits.toFixed(0)} credits, at least
+              {balance === undefined ? "" : ` of the ${Math.floor(balance)} you have`}.
+              {isTight(compiled?.estimateCredits ?? 0, balance)
+                ? " Renders with no published price are not in that figure, so this one could run out part way. Fewer shots would be safer."
+                : ""}
             </p>
           )}
           {compiled?.notes.map((line) => (
