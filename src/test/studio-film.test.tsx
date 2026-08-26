@@ -84,6 +84,7 @@ function reading(over: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
   hoisted.generateImages.mockReset().mockResolvedValue(["AAAA"]);
   hoisted.runWorkflow.mockReset().mockResolvedValue(new Map());
   hoisted.resumeRun.mockReset().mockResolvedValue(new Map());
@@ -390,5 +391,91 @@ describe("reacting to what you see", () => {
     await makeAFilm();
     fireEvent.click(screen.getByRole("button", { name: "Review the cut" }));
     expect(await screen.findByText(/nothing to say/)).toBeInTheDocument();
+  });
+});
+
+describe("coming back to a film", () => {
+  it("lists the films already started, because a reading is paid for", async () => {
+    // Leaving this tab used to lose the way back to a reading, which meant
+    // paying for it twice.
+    hoisted.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_films")
+        return [
+          { noteId: "n1", title: "Neon alley", status: "ready", shotCount: 6, updatedAt: "" },
+          { noteId: "n2", title: "Half read", status: "running", shotCount: 0, updatedAt: "" },
+        ];
+      if (command === "list_bible_entries") return [];
+      if (command === "shot_list") return null;
+      if (command === "shot_list_plan")
+        return { noteId: "n1", scriptChars: 900, chunkCount: 1, modelCalls: 1, breakable: true };
+      return null;
+    });
+    render(<FilmStudio catalog={catalog} />);
+
+    expect(await screen.findByText("Films you started")).toBeInTheDocument();
+    expect(screen.getByText("6 shots")).toBeInTheDocument();
+    expect(screen.getByText("still reading")).toBeInTheDocument();
+  });
+
+  it("forgets a reading that went badly, without touching the note", async () => {
+    // A script read badly should not sit in this list forever, and the note
+    // itself is the user's own writing.
+    hoisted.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_films")
+        return [
+          { noteId: "n1", title: "Neon alley", status: "failed", shotCount: 0, updatedAt: "" },
+        ];
+      if (command === "list_bible_entries") return [];
+      if (command === "shot_list") return null;
+      return null;
+    });
+    render(<FilmStudio catalog={catalog} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Forget the reading/ }));
+
+    await waitFor(() =>
+      expect(hoisted.invoke).toHaveBeenCalledWith("forget_shot_list", { noteId: "n1" }),
+    );
+    // The note is not deleted, only its reading.
+    expect(hoisted.invoke).not.toHaveBeenCalledWith("delete_note", expect.anything());
+    await waitFor(() => expect(screen.queryByText("Neon alley")).not.toBeInTheDocument());
+  });
+
+  it("opens the film the shell asked for, once", async () => {
+    // The note editor dispatches, the shell writes the key, this reads it and
+    // clears it: coming back later must not silently reopen last week's film.
+    window.localStorage.setItem("os-june:studio-film-note", "n1");
+    hoisted.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_films") return [];
+      if (command === "list_bible_entries") return [];
+      if (command === "shot_list") return reading();
+      if (command === "shot_list_plan")
+        return { noteId: "n1", scriptChars: 900, chunkCount: 1, modelCalls: 1, breakable: true };
+      return null;
+    });
+    render(<FilmStudio catalog={catalog} />);
+    expect(await screen.findByText("Nera turns towards the sound")).toBeInTheDocument();
+    expect(window.localStorage.getItem("os-june:studio-film-note")).toBeNull();
+  });
+
+  it("reopens one without paying to read it again", async () => {
+    hoisted.invoke.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "list_films")
+        return [
+          { noteId: "n1", title: "Neon alley", status: "ready", shotCount: 1, updatedAt: "" },
+        ];
+      if (command === "list_bible_entries") return [];
+      if (command === "shot_list")
+        return (args as { noteId: string }).noteId === "n1" ? reading() : null;
+      if (command === "shot_list_plan")
+        return { noteId: "n1", scriptChars: 900, chunkCount: 1, modelCalls: 1, breakable: true };
+      return null;
+    });
+    render(<FilmStudio catalog={catalog} />);
+    // The row itself, not the button that forgets it.
+    fireEvent.click(await screen.findByRole("button", { name: /Neon alley 1 shot/ }));
+
+    // Straight back to its shots, with nothing re-read.
+    expect(await screen.findByText("Nera turns towards the sound")).toBeInTheDocument();
+    expect(hoisted.invoke).not.toHaveBeenCalledWith("build_shot_list", expect.anything());
   });
 });

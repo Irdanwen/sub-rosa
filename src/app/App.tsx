@@ -18,6 +18,8 @@ import { IMPORTABLE_MEDIA_EXTENSIONS, importMediaFile, importMediaPath } from ".
 import { ImportLinkBar } from "../components/notes-list/ImportLinkBar";
 import { startLinkIngest } from "../lib/tauri";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../lib/chat-blocks-nav";
+import { FILM_FROM_NOTE_EVENT } from "../lib/film-from-note";
+import { STUDIO_FILM_NOTE_KEY, STUDIO_TAB_STORAGE_KEY } from "../components/studio/StudioView";
 import { MeetingAmbiguityPrompt } from "../components/calendar/MeetingContext";
 import { linkRecordingToMeeting } from "../lib/calendar-link";
 import type { CalendarEventDto } from "../lib/tauri";
@@ -1603,6 +1605,20 @@ export function App() {
     }
     window.addEventListener(OPEN_NOTE_FROM_CHAT_EVENT, handleOpenNoteFromChat);
     return () => window.removeEventListener(OPEN_NOTE_FROM_CHAT_EVENT, handleOpenNoteFromChat);
+  }, []);
+
+  // A note that has been read as shots is a film, and the way to it is the
+  // Studio. Same decoupling: the note editor dispatches, this answers.
+  useEffect(() => {
+    function handleFilmFromNote(event: Event) {
+      const noteId = (event as CustomEvent<{ noteId?: string }>).detail?.noteId;
+      if (!noteId) return;
+      window.localStorage.setItem(STUDIO_TAB_STORAGE_KEY, "film");
+      window.localStorage.setItem(STUDIO_FILM_NOTE_KEY, noteId);
+      setActiveView("studio");
+    }
+    window.addEventListener(FILM_FROM_NOTE_EVENT, handleFilmFromNote);
+    return () => window.removeEventListener(FILM_FROM_NOTE_EVENT, handleFilmFromNote);
   }, []);
 
   // The detached meeting HUD (shown when June is backgrounded, minimized, or

@@ -134,6 +134,8 @@ vi.mock("../app/update-decision", async () => {
 });
 
 vi.mock("../lib/tauri", () => ({
+  // The note editor asks whether a note has been read as shots.
+  listFilms: vi.fn(async () => []),
   // The notes list carries a link bar (ADR-0028); the App under test mounts it.
   INGEST_EVENT: "june://ingest",
   previewIngestLink: vi.fn().mockResolvedValue(null),

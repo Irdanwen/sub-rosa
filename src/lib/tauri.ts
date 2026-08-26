@@ -2264,6 +2264,19 @@ export type ShotListPlanDto = {
   reason?: string | null;
 };
 
+/** A film, which is to say a note that has been read as shots. */
+export type FilmListItemDto = {
+  noteId: string;
+  title: string;
+  status: "pending" | "running" | "ready" | "failed";
+  shotCount: number;
+  updatedAt: string;
+};
+
+export async function listFilms() {
+  return invoke<FilmListItemDto[]>("list_films");
+}
+
 export const SHOT_LIST_EVENT = "june://shot-list";
 
 export async function shotList(noteId: string) {

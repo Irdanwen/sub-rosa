@@ -1,11 +1,12 @@
 use crate::domain::types::{
     AgentMessageDto, AgentMessageRole, AgentSafetyProfile, AgentTaskDto, AgentTaskListResponse,
     AgentTaskStatus, AgentToolEventDto, AgentToolEventStatus, AppError, AudioArtifactDto,
-    BibleEntryDto, BibleRefDto, DictationHistoryItemDto, DictionaryEntryDto, FolderDto, IngestDto,
-    ListDictationHistoryResponse, ListNotesResponse, MediaJobDto, MediaJobStatus, MemoryDto,
-    MemorySource, NoteDto, NoteListItemDto, NoteSummaryDto, PendingDictationDto, ProcessingStatus,
-    RecordingSourceMode, RecordingState, SessionFolderDto, ShotListDto, TranscriptCoverageDto,
-    TranscriptDto, WorkflowRunDto, WorkflowRunNodeDto, WorkflowRunStatus,
+    BibleEntryDto, BibleRefDto, DictationHistoryItemDto, DictionaryEntryDto, FilmListItemDto,
+    FolderDto, IngestDto, ListDictationHistoryResponse, ListNotesResponse, MediaJobDto,
+    MediaJobStatus, MemoryDto, MemorySource, NoteDto, NoteListItemDto, NoteSummaryDto,
+    PendingDictationDto, ProcessingStatus, RecordingSourceMode, RecordingState, SessionFolderDto,
+    ShotListDto, TranscriptCoverageDto, TranscriptDto, WorkflowRunDto, WorkflowRunNodeDto,
+    WorkflowRunStatus,
 };
 use chrono::{Duration, SecondsFormat, Utc};
 use sqlx::query::query;
@@ -4019,6 +4020,34 @@ impl Repositories {
         Ok(())
     }
 
+    /// Every film, which is to say every note that has been read as shots.
+    ///
+    /// Joined to the note rather than storing a title, because a note renamed
+    /// after its reading is still the same film and a copied title would go
+    /// stale the moment it happened.
+    pub async fn list_films(&self) -> Result<Vec<FilmListItemDto>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT s.note_id, n.title, s.status, s.shots_json, s.updated_at
+             FROM shot_lists s JOIN notes n ON n.id = s.note_id
+             ORDER BY s.updated_at DESC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                let shots_json: Option<String> = row.get("shots_json");
+                FilmListItemDto {
+                    note_id: row.get("note_id"),
+                    title: row.get("title"),
+                    status: row.get("status"),
+                    shot_count: shot_count_of(shots_json.as_deref()),
+                    updated_at: row.get("updated_at"),
+                }
+            })
+            .collect())
+    }
+
     /// Rows a crash or a suspension left mid-run.
     pub async fn unfinished_shot_lists(&self) -> Result<Vec<ShotListDto>, sqlx::error::Error> {
         let rows = query(
@@ -4640,4 +4669,21 @@ fn shot_list_from_row(row: &sqlx_sqlite::SqliteRow) -> ShotListDto {
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
     }
+}
+
+/// How many shots a stored reading holds, in either shape it can have.
+///
+/// Counted here rather than stored: a column would be a second copy of
+/// something the reading already says, and the two would disagree the first
+/// time one was written without the other.
+fn shot_count_of(shots_json: Option<&str>) -> i64 {
+    let Some(json) = shots_json else { return 0 };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return 0;
+    };
+    let shots = value
+        .get("shots")
+        .and_then(serde_json::Value::as_array)
+        .or_else(|| value.as_array());
+    shots.map(|shots| shots.len() as i64).unwrap_or(0)
 }

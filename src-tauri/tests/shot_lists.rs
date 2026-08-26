@@ -142,3 +142,68 @@ async fn deleting_the_row_is_the_cancel() {
     repos.delete_shot_list(&note_id).await.expect("delete");
     assert!(repos.shot_list(&note_id).await.expect("read").is_none());
 }
+
+#[tokio::test]
+async fn a_film_is_a_note_that_has_been_read() {
+    // No new row and no new noun: listing films is listing the notes with a
+    // reading on them, joined to their current title.
+    let repos = repos().await;
+    let read = note(&repos).await;
+    let unread = note(&repos).await;
+    repos
+        .update_note(&read, Some("Neon alley".to_string()), None, None)
+        .await
+        .expect("title");
+    repos
+        .begin_shot_list(&read, 4000, 1, "opus", "shotlist-v2")
+        .await
+        .expect("begin");
+    repos
+        .finish_shot_list(
+            &read,
+            &serde_json::json!({
+                "cast": [{ "name": "Nera" }],
+                "shots": [{ "action": "a" }, { "action": "b" }],
+            }),
+        )
+        .await
+        .expect("finish");
+
+    let films = repos.list_films().await.expect("list");
+    assert_eq!(films.len(), 1);
+    assert_eq!(films[0].note_id, read);
+    // The title is joined, not copied: a note renamed after its reading is
+    // still the same film.
+    assert_eq!(films[0].title, "Neon alley");
+    assert_eq!(films[0].status, "ready");
+    assert_eq!(films[0].shot_count, 2);
+    assert!(films.iter().all(|film| film.note_id != unread));
+}
+
+#[tokio::test]
+async fn a_reading_stored_before_the_cast_existed_still_counts_its_shots() {
+    let repos = repos().await;
+    let note_id = note(&repos).await;
+    repos
+        .begin_shot_list(&note_id, 4000, 1, "opus", "shotlist-v1")
+        .await
+        .expect("begin");
+    repos
+        .finish_shot_list(&note_id, &[serde_json::json!({ "action": "a" })])
+        .await
+        .expect("finish");
+    assert_eq!(repos.list_films().await.expect("list")[0].shot_count, 1);
+}
+
+#[tokio::test]
+async fn a_film_still_being_read_is_listed_with_nothing_in_it_yet() {
+    let repos = repos().await;
+    let note_id = note(&repos).await;
+    repos
+        .begin_shot_list(&note_id, 4000, 3, "opus", "shotlist-v2")
+        .await
+        .expect("begin");
+    let films = repos.list_films().await.expect("list");
+    assert_eq!(films[0].status, "running");
+    assert_eq!(films[0].shot_count, 0);
+}

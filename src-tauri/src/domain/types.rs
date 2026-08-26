@@ -395,6 +395,21 @@ pub struct IngestDto {
     pub updated_at: String,
 }
 
+/// A film, which is to say a note that has been read as shots.
+///
+/// No new row and no new noun: the film IS the note, and this is the note's
+/// title next to the state of its reading. Listing films is listing these.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FilmListItemDto {
+    pub note_id: String,
+    pub title: String,
+    /// pending | running | ready | failed
+    pub status: String,
+    pub shot_count: i64,
+    pub updated_at: String,
+}
+
 /// A note broken into the shots a film is made of (migration 018).
 ///
 /// Derived from the note, regenerable in place, and resumable part by part.

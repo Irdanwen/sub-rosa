@@ -1,4 +1,7 @@
 import { turnIdForTime } from "../../lib/chapters";
+import { IconClapboard } from "central-icons/IconClapboard";
+import { requestFilmFromNote } from "../../lib/film-from-note";
+import { listFilms } from "../../lib/tauri";
 import { NoteSummaryPanel } from "./NoteSummaryPanel";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
@@ -160,6 +163,25 @@ export function NoteEditor({
   onTabChange,
 }: NoteEditorProps) {
   const content = note.editedContent ?? note.generatedContent ?? "";
+  // Whether this note has been read as shots, and how many. Undefined means
+  // it has not - the affordance is absent rather than disabled, because
+  // "this is not a film" is not an error the user can act on.
+  const [filmShotCount, setFilmShotCount] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    listFilms()
+      .then((films) => {
+        if (cancelled) return;
+        const found = Array.isArray(films)
+          ? films.find((film) => film.noteId === note.id)
+          : undefined;
+        setFilmShotCount(found ? found.shotCount : undefined);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [note.id]);
   const hasTranscript = Boolean(note.transcript?.text?.trim());
   const tabs = useMemo(
     () => (hasTranscript ? [...BASE_TABS, SUMMARY_TAB] : [...BASE_TABS]),
@@ -384,6 +406,21 @@ export function NoteEditor({
           options={tabs}
           onValueChange={(value) => onTabChange(value as NoteTab)}
         />
+        {/* A note that has been read as shots is a film. The way back to it
+            belongs here, on the note, rather than only in the Studio - a
+            script is an ordinary note and this is where the user is looking
+            at it. */}
+        {filmShotCount !== undefined ? (
+          <button
+            type="button"
+            className="note-header-actions"
+            onClick={() => requestFilmFromNote(note.id)}
+            aria-label="Open this note's film"
+            title={`This note is a film: ${filmShotCount} shot${filmShotCount === 1 ? "" : "s"}`}
+          >
+            <IconClapboard aria-hidden="true" />
+          </button>
+        ) : null}
         {onExportPdf ? (
           <button
             type="button"

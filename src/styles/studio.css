@@ -2174,3 +2174,32 @@
   color: var(--muted-foreground);
   text-align: center;
 }
+
+/* The films you already started. A reading is paid for, and leaving this tab
+   used to lose the way back to one. */
+.film-previous {
+  width: min(100%, 640px);
+  text-align: start;
+}
+
+.film-previous ul {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.film-previous li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-1);
+}
+
+.film-previous em {
+  color: var(--muted-foreground);
+  font-style: normal;
+  font-size: var(--fs-xs);
+}

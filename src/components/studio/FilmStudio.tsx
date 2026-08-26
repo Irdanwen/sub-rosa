@@ -48,6 +48,8 @@ import {
   buildShotList,
   carpeDiemGetCredits,
   createNote,
+  type FilmListItemDto,
+  listFilms,
   forgetShotList,
   type NoteListItemDto,
   shotList,
@@ -63,6 +65,7 @@ import { Spinner } from "../ui/Spinner";
 import { Switch } from "../ui/Switch";
 import { NotePicker } from "./NotePicker";
 import { StudioField } from "./controls";
+import { STUDIO_FILM_NOTE_KEY } from "./StudioView";
 
 /** What a production may spend when the balance cannot be read at all. */
 const FALLBACK_ENVELOPE_CREDITS = 200;
@@ -149,6 +152,7 @@ export function FilmStudio({
   const [aspectRatio, setAspectRatio] = useState("16:9");
   const [envelope, setEnvelope] = useState(FALLBACK_ENVELOPE_CREDITS);
   const [balance, setBalance] = useState<number | undefined>(undefined);
+  const [films, setFilms] = useState<FilmListItemDto[]>([]);
   // The user has not overruled the ceiling, so it keeps following the balance.
   const ceilingTouched = useRef(false);
   const [withScore, setWithScore] = useState(true);
@@ -165,6 +169,22 @@ export function FilmStudio({
   useEffect(() => {
     listBibleEntries()
       .then(setBible)
+      .catch(() => undefined);
+    // A note the shell asked for, read once and cleared: coming back to the
+    // tab later should not silently reopen a film from last week.
+    try {
+      const asked = window.localStorage.getItem(STUDIO_FILM_NOTE_KEY);
+      if (asked) {
+        window.localStorage.removeItem(STUDIO_FILM_NOTE_KEY);
+        setNote({ id: asked, title: "" } as NoteListItemDto);
+      }
+    } catch {
+      // No storage: the tab simply opens on its own empty state.
+    }
+    listFilms()
+      // Defensive: this list is a convenience, and a command surface that
+      // answers oddly must not take the whole tab down with it.
+      .then((list) => setFilms(Array.isArray(list) ? list : []))
       .catch(() => undefined);
     carpeDiemGetCredits()
       .then((credits) => {
@@ -560,6 +580,51 @@ export function FilmStudio({
             </button>
           </div>
           {note ? <p className="studio-queue-hint">From "{note.title || "Untitled"}".</p> : null}
+          {films.length > 0 ? (
+            <div className="film-previous">
+              {/* A reading is paid for. Leaving this tab used to lose the way
+                  back to one, which meant paying for it twice. */}
+              <p className="studio-picker-section-title">Films you started</p>
+              <ul>
+                {films.map((film) => (
+                  <li key={film.noteId}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() =>
+                        setNote({ id: film.noteId, title: film.title } as NoteListItemDto)
+                      }
+                    >
+                      {film.title || "Untitled film"}
+                      <em>
+                        {film.status === "ready"
+                          ? ` ${film.shotCount} shot${film.shotCount === 1 ? "" : "s"}`
+                          : film.status === "failed"
+                            ? " stopped"
+                            : " still reading"}
+                      </em>
+                    </button>
+                    {/* Forgetting a reading, not the note: a script that was
+                        read badly should not sit in this list forever, and
+                        the note itself is the user's writing. */}
+                    <button
+                      type="button"
+                      className="studio-icon-button"
+                      aria-label={`Forget the reading of ${film.title || "this film"}`}
+                      onClick={async () => {
+                        await forgetShotList(film.noteId).catch(() => undefined);
+                        setFilms((current) =>
+                          current.filter((entry) => entry.noteId !== film.noteId),
+                        );
+                      }}
+                    >
+                      <span aria-hidden>x</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

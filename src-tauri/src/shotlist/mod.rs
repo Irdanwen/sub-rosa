@@ -22,7 +22,7 @@ pub mod chunk;
 pub mod prompts;
 
 use crate::db::repositories::Repositories;
-use crate::domain::types::{AppError, ShotListDto};
+use crate::domain::types::{AppError, FilmListItemDto, ShotListDto};
 use crate::june_api;
 use prompts::SHOTLIST_PROMPT_VERSION;
 use serde::{Deserialize, Serialize};
@@ -448,6 +448,13 @@ pub async fn resume_unfinished(app: &AppHandle) {
 }
 
 // --- Commands ---------------------------------------------------------------
+
+/// Every film: every note that has been read as shots.
+#[tauri::command]
+pub async fn list_films(app: AppHandle) -> Result<Vec<FilmListItemDto>, AppError> {
+    let repos = crate::commands::repositories(&app).await?;
+    Ok(repos.list_films().await?)
+}
 
 #[tauri::command]
 pub async fn shot_list(app: AppHandle, note_id: String) -> Result<Option<ShotListDto>, AppError> {
