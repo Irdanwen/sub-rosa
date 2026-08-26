@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FilmStudio } from "../components/studio/FilmStudio";
+import { ceilingFor, FilmStudio } from "../components/studio/FilmStudio";
 import type { MediaCatalog, MediaModel } from "../lib/studio/types";
 
 const hoisted = vi.hoisted(() => ({
@@ -250,5 +250,42 @@ describe("the film tab", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Use a note I wrote" }));
     fireEvent.click(await screen.findByRole("button", { name: /Neon/ }));
     expect(await screen.findByText(/not enough here/)).toBeInTheDocument();
+  });
+});
+
+describe("the spend ceiling", () => {
+  it("is the balance, because a fixed default is wrong in both directions", () => {
+    // Above the balance, the compile builds a film the run cannot pay for and
+    // fails half way having spent the first half. Below it, it refuses a film
+    // the user could easily afford.
+    expect(ceilingFor(511.7)).toBe(511);
+    expect(ceilingFor(12)).toBe(12);
+    expect(ceilingFor(0)).toBe(0);
+    expect(ceilingFor(-4)).toBe(0);
+  });
+
+  it("falls back rather than blocking a film on a number nobody asked about", () => {
+    expect(ceilingFor(undefined)).toBe(200);
+    expect(ceilingFor(Number.NaN)).toBe(200);
+  });
+
+  it("follows the balance until the user overrules it", async () => {
+    hoisted.invoke.mockImplementation(async (command: string) => {
+      if (command === "carpe_diem_get_credits") return { availableCredits: 37, escrowCredits: 0 };
+      if (command === "list_notes") return { items: [{ id: "n1", title: "Neon alley" }] };
+      if (command === "list_bible_entries") return [];
+      if (command === "shot_list") return reading();
+      if (command === "shot_list_plan")
+        return { noteId: "n1", scriptChars: 900, chunkCount: 1, modelCalls: 1, breakable: true };
+      return null;
+    });
+    render(<FilmStudio catalog={catalog} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Use a note I wrote" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Neon/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Options" }));
+
+    const ceiling = (await screen.findByLabelText("Spend ceiling")) as HTMLInputElement;
+    await waitFor(() => expect(ceiling.value).toBe("37"));
+    expect(screen.getByText(/You have 37/)).toBeInTheDocument();
   });
 });

@@ -44,6 +44,7 @@ import { runAndSaveWorkflow } from "../../lib/studio/workflow-run";
 import type { MediaCatalog } from "../../lib/studio/types";
 import {
   buildShotList,
+  carpeDiemGetCredits,
   createNote,
   forgetShotList,
   type NoteListItemDto,
@@ -61,8 +62,25 @@ import { Switch } from "../ui/Switch";
 import { NotePicker } from "./NotePicker";
 import { StudioField } from "./controls";
 
-/** What a production may spend unless the user says otherwise. */
-const DEFAULT_ENVELOPE_CREDITS = 200;
+/** What a production may spend when the balance cannot be read at all. */
+const FALLBACK_ENVELOPE_CREDITS = 200;
+
+/**
+ * The ceiling to start from, given what the account actually holds.
+ *
+ * Not a round number: a fixed default is wrong in both directions. Set it
+ * above the balance and the compile happily builds a film the run cannot pay
+ * for, which fails half way through having spent the first half. Set it below
+ * and it refuses a film the user could easily afford. The balance is the only
+ * number that is right, so the ceiling is the balance - the ceiling is there
+ * to stop a runaway, not to be a budget the user has to guess.
+ */
+export function ceilingFor(availableCredits: number | undefined): number {
+  if (availableCredits === undefined || !Number.isFinite(availableCredits)) {
+    return FALLBACK_ENVELOPE_CREDITS;
+  }
+  return Math.max(0, Math.floor(availableCredits));
+}
 
 interface CastMember {
   name: string;
@@ -112,7 +130,10 @@ export function FilmStudio({
   const [showOptions, setShowOptions] = useState(false);
   const [videoModelId, setVideoModelId] = useState("");
   const [aspectRatio, setAspectRatio] = useState("16:9");
-  const [envelope, setEnvelope] = useState(DEFAULT_ENVELOPE_CREDITS);
+  const [envelope, setEnvelope] = useState(FALLBACK_ENVELOPE_CREDITS);
+  const [balance, setBalance] = useState<number | undefined>(undefined);
+  // The user has not overruled the ceiling, so it keeps following the balance.
+  const ceilingTouched = useRef(false);
   const [withScore, setWithScore] = useState(true);
 
   const [running, setRunning] = useState(false);
@@ -124,6 +145,14 @@ export function FilmStudio({
   useEffect(() => {
     listBibleEntries()
       .then(setBible)
+      .catch(() => undefined);
+    carpeDiemGetCredits()
+      .then((credits) => {
+        setBalance(credits.availableCredits);
+        if (!ceilingTouched.current) setEnvelope(ceilingFor(credits.availableCredits));
+      })
+      // A balance that cannot be read leaves the fallback in place rather than
+      // blocking a film on a number nobody asked about.
       .catch(() => undefined);
   }, []);
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -536,13 +565,21 @@ export function FilmStudio({
                   onChange={(event) => setAspectRatio(event.target.value)}
                 />
               </StudioField>
-              <StudioField label="Spend ceiling" hint="Nothing is made above this">
+              <StudioField
+                label="Spend ceiling"
+                hint={
+                  balance === undefined
+                    ? "Nothing is made above this"
+                    : `Nothing is made above this. You have ${Math.floor(balance)}.`
+                }
+              >
                 <input
                   className="studio-input"
                   inputMode="decimal"
                   value={String(envelope)}
                   aria-label="Spend ceiling"
                   onChange={(event) => {
+                    ceilingTouched.current = true;
                     const value = Number(event.target.value.replace(",", "."));
                     setEnvelope(Number.isFinite(value) ? Math.max(0, value) : 0);
                   }}
