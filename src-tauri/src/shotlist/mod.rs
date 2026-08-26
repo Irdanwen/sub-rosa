@@ -63,6 +63,48 @@ pub struct Shot {
     pub continues: bool,
 }
 
+/// Somebody or somewhere the script names, described.
+///
+/// The description is the point. A bible entry with a face and no traits is
+/// half an entry: the traits are what every shot restates, and restating them
+/// is the whole difference between a character and a resemblance. Asking for
+/// them here means a one-click cast produces a whole entry rather than a
+/// hollow one.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CastMember {
+    #[serde(default)]
+    pub name: String,
+    /// character | location | prop. Anything else is read as a character.
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub traits: String,
+}
+
+/// What one reading returns: who is in the film, and the shots.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Reading {
+    #[serde(default)]
+    pub cast: Vec<CastMember>,
+    #[serde(default)]
+    pub shots: Vec<Shot>,
+}
+
+/// The kinds a cast member can be. A model inventing a fourth gets the one
+/// that costs least to be wrong about.
+pub const CAST_KINDS: [&str; 3] = ["character", "location", "prop"];
+
+fn normalized_kind(raw: &str) -> String {
+    let value = raw.trim().to_ascii_lowercase();
+    if CAST_KINDS.contains(&value.as_str()) {
+        value
+    } else {
+        "character".to_string()
+    }
+}
+
 /// The motion classes the compiler routes on. A model that invents a fourth
 /// gets the middle one rather than an error: a wrong-but-sane render beats a
 /// refused script.
@@ -273,14 +315,30 @@ async fn run(app: &AppHandle, note_id: &str) -> Result<(), AppError> {
         }
     }
 
-    let shots: Vec<Shot> = parts.iter().flat_map(|part| parse_shots(part)).collect();
+    let mut shots: Vec<Shot> = Vec::new();
+    let mut cast: Vec<CastMember> = Vec::new();
+    for part in &parts {
+        let reading = parse_reading(part);
+        shots.extend(reading.shots);
+        // A later part naming somebody an earlier one already described does
+        // not get to redescribe them: the first description is the one every
+        // shot before it was written against.
+        for member in reading.cast {
+            let key = member.name.to_lowercase();
+            if !cast.iter().any(|seen| seen.name.to_lowercase() == key) {
+                cast.push(member);
+            }
+        }
+    }
     if shots.is_empty() {
         return Err(AppError::new(
             "shotlist_empty",
             "Nothing in this note reads as something to film.",
         ));
     }
-    let row = repos.finish_shot_list(note_id, &shots).await?;
+    let row = repos
+        .finish_shot_list(note_id, &Reading { cast, shots })
+        .await?;
     if !still_ours(row.as_ref()) {
         return Ok(());
     }
@@ -297,28 +355,54 @@ async fn run(app: &AppHandle, note_id: &str) -> Result<(), AppError> {
 /// parts that landed are worth more than a run that refused because the fifth
 /// was chatty.
 pub fn parse_shots(raw: &str) -> Vec<Shot> {
-    let Some(start) = raw.find('[') else {
-        return Vec::new();
+    parse_reading(raw).shots
+}
+
+/// Read a whole reading out of whatever the model wrapped its JSON in.
+///
+/// Two shapes are accepted, and both are the normal case rather than an
+/// exception: the object this asks for, and a bare array of shots - which is
+/// what a model returns when it ignores half the instruction, and what every
+/// reading stored before the cast existed looks like. A reading with no cast
+/// is a reading, not a failure.
+pub fn parse_reading(raw: &str) -> Reading {
+    let object = slice_between(raw, '{', '}')
+        .and_then(|slice| serde_json::from_str::<Reading>(slice).ok())
+        .filter(|reading| !reading.shots.is_empty());
+    let mut reading = match object {
+        Some(reading) => reading,
+        None => Reading {
+            cast: Vec::new(),
+            shots: slice_between(raw, '[', ']')
+                .and_then(|slice| serde_json::from_str::<Vec<Shot>>(slice).ok())
+                .unwrap_or_default(),
+        },
     };
-    let Some(end) = raw.rfind(']') else {
-        return Vec::new();
-    };
-    if end <= start {
-        return Vec::new();
+
+    reading.shots.retain(|shot| !shot.action.trim().is_empty());
+    for shot in &mut reading.shots {
+        shot.motion = normalized_motion(&shot.motion);
+        shot.characters.retain(|name| !name.trim().is_empty());
     }
-    let parsed: Vec<Shot> = match serde_json::from_str(&raw[start..=end]) {
-        Ok(shots) => shots,
-        Err(_) => return Vec::new(),
-    };
-    parsed
-        .into_iter()
-        .filter(|shot| !shot.action.trim().is_empty())
-        .map(|mut shot| {
-            shot.motion = normalized_motion(&shot.motion);
-            shot.characters.retain(|name| !name.trim().is_empty());
-            shot
-        })
-        .collect()
+    reading.cast.retain(|member| !member.name.trim().is_empty());
+    for member in &mut reading.cast {
+        member.kind = normalized_kind(&member.kind);
+        member.name = member.name.trim().to_string();
+        // Bounded for the same reason the bible bounds its own: traits are
+        // restated on every shot of every film.
+        member.traits = member.traits.trim().chars().take(300).collect();
+    }
+    reading
+}
+
+/// The outermost balanced-looking slice between two delimiters, or nothing.
+fn slice_between(raw: &str, open: char, close: char) -> Option<&str> {
+    let start = raw.find(open)?;
+    let end = raw.rfind(close)?;
+    if end <= start {
+        return None;
+    }
+    Some(&raw[start..=end])
 }
 
 async fn completion(system: &str, user: &str, error_code: &str) -> Result<String, AppError> {
@@ -391,6 +475,55 @@ pub async fn forget_shot_list(app: AppHandle, note_id: String) -> Result<(), App
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_reading_carries_who_is_in_it_and_how_they_look() {
+        // A bible entry with a face and no traits is half an entry: the traits
+        // are what every shot restates, and restating them is the whole
+        // difference between a character and a resemblance.
+        let raw = r#"Here you go:
+```json
+{"cast": [{"name": " Nera ", "kind": "CHARACTER", "traits": "green wool coat, scar over the left brow"},
+          {"name": "The alley", "kind": "location", "traits": "wet asphalt, sodium light"},
+          {"name": "  ", "kind": "character", "traits": "nobody"}],
+ "shots": [{"scene": "Alley", "action": "Nera turns", "motion": "low"}]}
+```"#;
+        let reading = parse_reading(raw);
+        assert_eq!(reading.shots.len(), 1);
+        assert_eq!(reading.cast.len(), 2);
+        assert_eq!(reading.cast[0].name, "Nera");
+        assert_eq!(reading.cast[0].kind, "character");
+        assert_eq!(
+            reading.cast[0].traits,
+            "green wool coat, scar over the left brow"
+        );
+    }
+
+    #[test]
+    fn a_bare_array_of_shots_is_still_a_reading() {
+        // What a model returns when it ignores half the instruction, and what
+        // every reading stored before the cast existed looks like.
+        let reading = parse_reading("[{\"action\":\"Nera turns\",\"motion\":\"low\"}]");
+        assert_eq!(reading.shots.len(), 1);
+        assert!(reading.cast.is_empty());
+    }
+
+    #[test]
+    fn an_invented_kind_becomes_the_one_that_costs_least_to_be_wrong_about() {
+        let reading = parse_reading(
+            "{\"cast\":[{\"name\":\"X\",\"kind\":\"vehicle\"}],\"shots\":[{\"action\":\"a\"}]}",
+        );
+        assert_eq!(reading.cast[0].kind, "character");
+    }
+
+    #[test]
+    fn traits_are_bounded_like_the_bible_bounds_its_own() {
+        let long = "x".repeat(900);
+        let raw = format!(
+            "{{\"cast\":[{{\"name\":\"X\",\"kind\":\"character\",\"traits\":\"{long}\"}}],\"shots\":[{{\"action\":\"a\"}}]}}"
+        );
+        assert_eq!(parse_reading(&raw).cast[0].traits.chars().count(), 300);
+    }
 
     #[test]
     fn shots_are_read_out_of_whatever_the_model_wrapped_them_in() {

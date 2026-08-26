@@ -3,8 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ScriptToFilm } from "../components/studio/ScriptToFilm";
 import type { MediaCatalog, MediaModel } from "../lib/studio/types";
 
-const hoisted = vi.hoisted(() => ({ invoke: vi.fn() }));
+const hoisted = vi.hoisted(() => ({ invoke: vi.fn(), generateImages: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: hoisted.invoke }));
+vi.mock("../lib/studio/generate-image", () => ({ generateImages: hoisted.generateImages }));
+vi.mock("../lib/studio/artifacts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/studio/artifacts")>()),
+  saveArtifactFromBase64: vi.fn(async () => ({ id: "drawn.png", fileName: "drawn.png" })),
+}));
 
 function model(id: string, mediaType: string, over: Partial<MediaModel> = {}): MediaModel {
   return {
@@ -20,7 +25,11 @@ function model(id: string, mediaType: string, over: Partial<MediaModel> = {}): M
 
 const catalog: MediaCatalog = {
   backend: "carpe-diem",
-  models: [model("kling-text", "video"), model("kling-image", "imageToVideo")],
+  models: [
+    model("kling-text", "video"),
+    model("kling-image", "imageToVideo"),
+    model("draws", "image", { constraints: undefined }),
+  ],
 };
 
 const NOTE = { id: "n1", title: "Neon alley", updatedAt: "", createdAt: "" };
@@ -88,6 +97,7 @@ async function pickTheNote() {
 
 beforeEach(() => {
   hoisted.invoke.mockReset();
+  hoisted.generateImages.mockReset().mockResolvedValue(["AAAA"]);
   respond();
 });
 
@@ -154,8 +164,55 @@ describe("from a script to a film", () => {
     await pickTheNote();
 
     expect(await screen.findByText(/From your bible: Nera\./)).toBeInTheDocument();
-    expect(screen.getByText(/Not in your bible: The alley\./)).toBeInTheDocument();
+    // And the one it never heard of is not a warning to act on elsewhere: it
+    // is offered a face, right here, where the user is already looking.
+    // "The alley" is also the scene name on every shot, so the button is what
+    // proves it was offered a look rather than merely mentioned.
     expect(screen.getByText(/will not look the same twice/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Give it a look" })).toBeEnabled();
+  });
+
+  it("gives a name from the script a face in one gesture", async () => {
+    // The cold start, closed where it actually bites: the alternative was to
+    // go and invent three prompts in another tab and come back.
+    hoisted.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_notes") return { items: [NOTE] };
+      if (command === "list_bible_entries") return [];
+      if (command === "save_bible_entry") return "new-entry";
+      if (command === "shot_list_plan")
+        return { noteId: "n1", scriptChars: 900, chunkCount: 1, modelCalls: 1, breakable: true };
+      if (command === "shot_list")
+        return {
+          noteId: "n1",
+          status: "ready",
+          shotsJson: JSON.stringify([{ ...SHOTS[0], characters: ["Nera"], location: "" }]),
+          chunkCount: 1,
+          scriptChars: 900,
+          model: "opus",
+          promptVersion: "shotlist-v1",
+          createdAt: "",
+          updatedAt: "",
+        };
+      return null;
+    });
+    render(<ScriptToFilm catalog={catalog} onCompiled={vi.fn()} onClose={vi.fn()} />);
+    await pickTheNote();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Give them a face" }));
+    await waitFor(() =>
+      expect(hoisted.invoke).toHaveBeenCalledWith(
+        "save_bible_entry",
+        expect.objectContaining({
+          request: expect.objectContaining({ name: "Nera", kind: "character" }),
+        }),
+      ),
+    );
+    // The picture is drawn and attached: an ordinary gallery image on an
+    // ordinary bible row, which the Bible tab shows in detail.
+    await waitFor(() => expect(hoisted.generateImages).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(hoisted.invoke).toHaveBeenCalledWith("add_bible_ref", expect.anything()),
+    );
   });
 
   it("refuses to compile over the ceiling, and hands nothing over", async () => {

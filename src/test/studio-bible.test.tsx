@@ -7,17 +7,19 @@ import type { MediaCatalog, StudioArtifact } from "../lib/studio/types";
 
 const hoisted = vi.hoisted(() => ({
   invoke: vi.fn(),
+  generateImages: vi.fn(),
   listArtifacts: vi.fn(),
   artifactDataUrl: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: hoisted.invoke }));
+vi.mock("../lib/studio/generate-image", () => ({ generateImages: hoisted.generateImages }));
 vi.mock("../lib/artifact-media", () => ({ artifactDataUrl: hoisted.artifactDataUrl }));
 vi.mock("../lib/studio/artifacts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/studio/artifacts")>()),
   artifactSrc: (artifact: { path: string }) => `asset://${artifact.path}`,
   listArtifacts: hoisted.listArtifacts,
-  saveArtifactFromBase64: vi.fn(),
+  saveArtifactFromBase64: vi.fn(async () => ({ id: "drawn.png", fileName: "drawn.png" })),
 }));
 
 function artifact(id: string, kind: StudioArtifact["kind"] = "image"): StudioArtifact {
@@ -64,7 +66,10 @@ function entry(over: Partial<BibleEntry> = {}): BibleEntry {
   };
 }
 
-const catalog = { models: [] } as unknown as MediaCatalog;
+const catalog = {
+  backend: "carpe-diem",
+  models: [{ id: "draws", name: "Draws", mediaType: "image", offline: false, costCredits: 2 }],
+} as unknown as MediaCatalog;
 
 beforeEach(() => {
   hoisted.invoke.mockReset();
@@ -72,6 +77,7 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue([artifact("nera.png"), artifact("other.png")]);
   hoisted.artifactDataUrl.mockReset().mockResolvedValue("data:image/png;base64,AA");
+  hoisted.generateImages.mockReset().mockResolvedValue(["AAAA"]);
 });
 
 describe("the bible panel", () => {
@@ -116,6 +122,48 @@ describe("the bible panel", () => {
     expect(screen.getByText(/exactly what you called them here/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Make a film from a note" }));
     expect(onMakeAFilm).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws a reference instead of sending the user to find one", async () => {
+    // The cold start: a character's face used to have to exist before the
+    // character did, and nothing said so.
+    hoisted.invoke.mockImplementation(async (command: string) =>
+      command === "list_bible_entries" ? [entry({ refs: [] })] : "ref-1",
+    );
+    render(<BibleStudio catalog={catalog} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Draw a reference for Nera/ }));
+    fireEvent.click(await screen.findByRole("option", { name: "Portrait" }));
+
+    await waitFor(() => expect(hoisted.generateImages).toHaveBeenCalledTimes(1));
+    // Drawn from the same sentence the shots will carry.
+    const [, body] = hoisted.generateImages.mock.calls[0] as [string, { prompt: string }];
+    expect(body.prompt).toContain("green coat");
+    await waitFor(() =>
+      expect(hoisted.invoke).toHaveBeenCalledWith(
+        "add_bible_ref",
+        expect.objectContaining({
+          request: expect.objectContaining({ artifactId: "drawn.png", role: "portrait" }),
+        }),
+      ),
+    );
+  });
+
+  it("redrawing replaces the one you did not like, and only once the new one exists", async () => {
+    // "I do not like this" is a different gesture from "here is another
+    // angle", and drawing twice used to be read as the second.
+    hoisted.invoke.mockImplementation(async (command: string) =>
+      command === "list_bible_entries" ? [entry()] : "ref-new",
+    );
+    render(<BibleStudio catalog={catalog} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Redraw Nera reference 1/ }));
+
+    await waitFor(() => expect(hoisted.generateImages).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(hoisted.invoke).toHaveBeenCalledWith("remove_bible_ref", { id: "r1" }),
+    );
+    const order = hoisted.invoke.mock.calls.map(([command]) => command);
+    expect(order.indexOf("add_bible_ref")).toBeLessThan(order.indexOf("remove_bible_ref"));
   });
 
   it("refuses to save something with no name", async () => {

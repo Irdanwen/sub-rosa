@@ -14,7 +14,13 @@
 // confirmation handshake stands between that graph and the money.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { listBibleEntries, type BibleEntry } from "../../lib/studio/bible";
+import {
+  type BibleEntry,
+  type BibleKind,
+  listBibleEntries,
+  saveBibleEntry,
+} from "../../lib/studio/bible";
+import { generateReference, portraitCostCredits } from "../../lib/studio/bible/portrait";
 import {
   buildShotList,
   forgetShotList,
@@ -40,13 +46,35 @@ import { StudioField } from "./controls";
 /** What a production may spend before this refuses to build it. */
 const DEFAULT_ENVELOPE_CREDITS = 100;
 
-function parseShots(row: ShotListDto | null | undefined): Shot[] {
-  if (!row?.shotsJson) return [];
+/** Somebody or somewhere the script names, described by the reading. */
+interface CastMember {
+  name: string;
+  kind: BibleKind;
+  traits: string;
+}
+
+/**
+ * A reading, in either shape it can have on disk.
+ *
+ * The object carrying a cast is what the current prompt produces; a bare array
+ * of shots is what every reading stored before the cast existed looks like,
+ * and what a model returns when it ignores half the instruction.
+ */
+function parseReading(row: ShotListDto | null | undefined): {
+  shots: Shot[];
+  cast: CastMember[];
+} {
+  if (!row?.shotsJson) return { shots: [], cast: [] };
   try {
     const parsed: unknown = JSON.parse(row.shotsJson);
-    return Array.isArray(parsed) ? (parsed as Shot[]) : [];
+    if (Array.isArray(parsed)) return { shots: parsed as Shot[], cast: [] };
+    const body = (parsed ?? {}) as { shots?: unknown; cast?: unknown };
+    return {
+      shots: Array.isArray(body.shots) ? (body.shots as Shot[]) : [],
+      cast: Array.isArray(body.cast) ? (body.cast as CastMember[]) : [],
+    };
   } catch {
-    return [];
+    return { shots: [], cast: [] };
   }
 }
 
@@ -67,6 +95,8 @@ export function ScriptToFilm({
   const [bible, setBible] = useState<BibleEntry[]>([]);
   const [error, setError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  // Which name is being given a face right now.
+  const [castingName, setCastingName] = useState<string | undefined>(undefined);
 
   const [envelope, setEnvelope] = useState(DEFAULT_ENVELOPE_CREDITS);
   const [aspectRatio, setAspectRatio] = useState("16:9");
@@ -111,7 +141,9 @@ export function ScriptToFilm({
     };
   }, [note]);
 
-  const shots = useMemo(() => parseShots(row), [row]);
+  const reading = useMemo(() => parseReading(row), [row]);
+  const shots = reading.shots;
+  const referenceCost = useMemo(() => portraitCostCredits(catalog), [catalog]);
 
   /**
    * Which bible entries the script actually reached, and which names it used
@@ -126,17 +158,41 @@ export function ScriptToFilm({
   const casting = useMemo(() => {
     const known = new Map(bible.map((entry) => [entry.name.trim().toLowerCase(), entry]));
     const used = new Set<string>();
-    const unknown = new Set<string>();
+    // A name the bible has never heard of, with what the script used it as -
+    // which is what decides whether it gets a face or an establishing shot.
+    const unknown = new Map<string, BibleKind>();
     for (const shot of shots) {
-      for (const name of [...shot.characters, shot.location]) {
+      for (const [name, kind] of [
+        ...shot.characters.map((who) => [who, "character" as BibleKind] as const),
+        [shot.location, "location" as BibleKind] as const,
+      ]) {
         const key = name.trim().toLowerCase();
         if (!key) continue;
         if (known.has(key)) used.add(known.get(key)?.name ?? key);
-        else unknown.add(name.trim());
+        else if (!unknown.has(key)) unknown.set(key, kind);
       }
     }
-    return { used: [...used], unknown: [...unknown] };
-  }, [shots, bible]);
+    const described = new Map(
+      reading.cast.map((member) => [member.name.trim().toLowerCase(), member]),
+    );
+    const names = new Map<string, CastMember>();
+    for (const shot of shots) {
+      for (const name of [...shot.characters, shot.location]) {
+        const key = name.trim().toLowerCase();
+        const kind = unknown.get(key);
+        if (!kind || names.has(key)) continue;
+        // The reading's own description wins: it read the whole script, and
+        // an entry with a face and no traits is half an entry.
+        const known = described.get(key);
+        names.set(key, {
+          name: known?.name?.trim() || name.trim(),
+          kind: known?.kind ?? kind,
+          traits: known?.traits ?? "",
+        });
+      }
+    }
+    return { used: [...used], unknown: [...names.values()] };
+  }, [shots, reading.cast, bible]);
 
   const compiled = useMemo(() => {
     if (shots.length === 0) return undefined;
@@ -162,6 +218,51 @@ export function ScriptToFilm({
     gateBeforeAssemble,
     videoModelId,
   ]);
+
+  /**
+   * Give a name from the script a face, in one gesture.
+   *
+   * This is the cold start closed at the place it actually bites: the user is
+   * looking at their own shot list, the app already knows who is in it, and
+   * the alternative was to go and invent three prompts in another tab and come
+   * back. The entry and its reference are ordinary rows and an ordinary
+   * gallery image - the Bible tab is the same objects, in detail.
+   */
+  const castOne = useCallback(
+    async (member: CastMember) => {
+      const { name, kind, traits } = member;
+      setCastingName(name);
+      setError(undefined);
+      try {
+        const id = await saveBibleEntry({ kind, name, traits });
+        const entry: BibleEntry = {
+          id,
+          kind,
+          name,
+          traits,
+          note: "",
+          refs: [],
+          createdAt: "",
+          updatedAt: "",
+        };
+        await generateReference(entry, kind === "location" ? "wide" : "portrait", catalog);
+        setBible(await listBibleEntries());
+      } catch (castError) {
+        setError(castError instanceof Error ? castError.message : "That could not be drawn.");
+      } finally {
+        setCastingName(undefined);
+      }
+    },
+    [catalog],
+  );
+
+  const castEveryone = useCallback(async () => {
+    // Sequentially: each one costs, and a failure half way through should
+    // leave the ones that worked rather than an unclear partial state.
+    for (const person of casting.unknown) {
+      await castOne(person);
+    }
+  }, [casting.unknown, castOne]);
 
   const breakDown = useCallback(async () => {
     if (!note || busy) return;
@@ -240,11 +341,52 @@ export function ScriptToFilm({
                   </p>
                 ) : null}
                 {casting.unknown.length > 0 ? (
-                  <p className="studio-error">
-                    Not in your bible: {casting.unknown.join(", ")}. Those are rendered from scratch
-                    each time, so they will not look the same twice. Add them to the bible, or spell
-                    them in the note the way the bible does, and read it again.
-                  </p>
+                  <div className="script-casting">
+                    <p>
+                      <strong>
+                        {casting.unknown.length} name
+                        {casting.unknown.length === 1 ? "" : "s"} in this script
+                      </strong>{" "}
+                      {casting.unknown.length === 1 ? "has" : "have"} no face yet, so{" "}
+                      {casting.unknown.length === 1 ? "it is" : "they are"} rendered from scratch in
+                      every shot and will not look the same twice.
+                    </p>
+                    <ul className="script-cast-list">
+                      {casting.unknown.map((person) => (
+                        <li key={person.name}>
+                          <span>
+                            {person.name}
+                            <em> {person.traits || person.kind}</em>
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            disabled={castingName !== undefined}
+                            onClick={() => void castOne(person)}
+                          >
+                            {castingName === person.name
+                              ? "Drawing..."
+                              : person.kind === "location"
+                                ? "Give it a look"
+                                : "Give them a face"}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {casting.unknown.length > 1 ? (
+                      <button
+                        type="button"
+                        className="studio-primary-button"
+                        disabled={castingName !== undefined}
+                        onClick={() => void castEveryone()}
+                      >
+                        Cast all {casting.unknown.length}
+                        {referenceCost === undefined
+                          ? ""
+                          : ` (${(referenceCost * casting.unknown.length).toFixed(0)} cr)`}
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
                 <ol className="script-shots">
                   {shots.map((shot, index) => (

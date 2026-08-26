@@ -9,11 +9,25 @@
 
 /// Bumped whenever the prompt or the shape changes, so a stored list says
 /// which reading produced it.
-pub const SHOTLIST_PROMPT_VERSION: &str = "shotlist-v1";
+pub const SHOTLIST_PROMPT_VERSION: &str = "shotlist-v2";
 
 pub const MAP_SYSTEM: &str = "You break a script into the shots a short film is made of.
 
-Return JSON only. No prose, no code fence. An array of shot objects, in order:
+Return JSON only. No prose, no code fence. An object with two keys:
+
+{\"cast\": [{\"name\": \"<exactly as the script spells it>\",
+          \"kind\": \"character\" | \"location\" | \"prop\",
+          \"traits\": \"<what must not change between shots>\"}],
+ \"shots\": [ ... ]}
+
+cast lists everyone and everywhere the script names. traits is appearance only,
+and only what has to stay the same: build, age, hair, wardrobe, distinguishing
+marks for a person - materials, light, time of day for a place. Never their
+history, their feelings or their role in the story: those cost words on every
+shot and change nothing on screen. Ten to twenty words. If the script does not
+describe them, invent something plain and specific and stick to it.
+
+shots is an array of shot objects, in order:
 
 [{\"scene\": \"<short scene name, repeated for every shot in it>\",
   \"action\": \"<what happens, one sentence, present tense>\",

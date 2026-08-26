@@ -2028,3 +2028,60 @@
 .bible-next strong {
   color: var(--foreground);
 }
+
+/* Two ways to fill a reference slot, side by side: draw one, or use a picture
+   you already have. Drawing is first because it is the one that does not send
+   the user to another tab. */
+.bible-ref-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 180px;
+}
+
+/* The cast a script implies but the bible has never met. Shown where the
+   question arises - looking at your own shot list - rather than as a warning
+   to act on somewhere else. */
+.script-casting {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  margin: var(--sp-2) 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+}
+
+.script-casting p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.script-casting strong {
+  color: var(--foreground);
+}
+
+.script-cast-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+
+.script-cast-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.script-cast-list em {
+  color: var(--muted-foreground);
+  font-style: normal;
+  font-size: var(--fs-xs);
+}

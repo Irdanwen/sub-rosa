@@ -36,6 +36,11 @@ import {
   saveBibleEntry,
 } from "../../lib/studio/bible";
 import { modelsOfType } from "../../lib/studio/catalog";
+import {
+  canGenerate,
+  generateReference,
+  portraitCostCredits,
+} from "../../lib/studio/bible/portrait";
 import { generateSpeech } from "../../lib/studio/speech";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { EmptyState } from "../ui/EmptyState";
@@ -90,6 +95,7 @@ export function BibleStudio({
     undefined,
   );
   const [auditioning, setAuditioning] = useState<string | undefined>(undefined);
+  const [drawing, setDrawing] = useState<string | undefined>(undefined);
   const [auditions, setAuditions] = useState<Array<{ voice: string; artifact: StudioArtifact }>>(
     [],
   );
@@ -110,6 +116,8 @@ export function BibleStudio({
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const ttsModel = useMemo(() => modelsOfType(catalog, "tts")[0], [catalog]);
+  // Said on the button rather than after the fact: drawing spends.
+  const referenceCost = useMemo(() => portraitCostCredits(catalog), [catalog]);
 
   const save = useCallback(async () => {
     if (!draft.name.trim() || busy) return;
@@ -146,6 +154,35 @@ export function BibleStudio({
       }
     },
     [attaching, reload],
+  );
+
+  /**
+   * Draw a reference rather than sending the user to find one.
+   *
+   * This is the cold start closed: a character's face used to have to exist
+   * before the character did, and nothing said so, so the honest first step of
+   * making a film was three prompts in another tab.
+   */
+  const draw = useCallback(
+    async (entry: BibleEntry, role: BibleRole, replacing?: string) => {
+      if (!catalog) return;
+      setDrawing(`${entry.id}:${role}`);
+      setError(undefined);
+      setNotice(undefined);
+      try {
+        await generateReference(entry, role, catalog);
+        // Replacing, not stacking: "I do not like this one" is a different
+        // gesture from "here is another angle", and drawing twice used to be
+        // read as the second. The old one goes only once the new one exists.
+        if (replacing) await removeBibleRef(replacing);
+        await reload();
+      } catch (drawError) {
+        setError(drawError instanceof Error ? drawError.message : "That could not be drawn.");
+      } finally {
+        setDrawing(undefined);
+      }
+    },
+    [catalog, reload],
   );
 
   const move = useCallback(
@@ -411,6 +448,17 @@ export function BibleStudio({
                             >
                               <span aria-hidden>↑</span>
                             </button>
+                            {canGenerate(reference.role) ? (
+                              <button
+                                type="button"
+                                className="studio-icon-button"
+                                aria-label={`Redraw ${entry.name} reference ${index + 1}`}
+                                disabled={drawing !== undefined}
+                                onClick={() => void draw(entry, reference.role, reference.id)}
+                              >
+                                <span aria-hidden>↻</span>
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               className="studio-icon-button"
@@ -426,18 +474,35 @@ export function BibleStudio({
                         </div>
                       );
                     })}
-                    <Select
-                      value={null}
-                      placeholder="Attach a reference"
-                      ariaLabel={`Attach a reference to ${entry.name}`}
-                      onChange={(role) =>
-                        setAttaching({ entryId: entry.id, role: role as BibleRole })
-                      }
-                      options={ROLES_BY_KIND[entry.kind].map((role) => ({
-                        value: role,
-                        label: BIBLE_ROLE_LABELS[role],
-                      }))}
-                    />
+                    <div className="bible-ref-actions">
+                      <Select
+                        value={null}
+                        placeholder={
+                          drawing?.startsWith(`${entry.id}:`)
+                            ? "Drawing..."
+                            : referenceCost === undefined
+                              ? "Draw a reference"
+                              : `Draw a reference (${referenceCost} cr)`
+                        }
+                        ariaLabel={`Draw a reference for ${entry.name}`}
+                        onChange={(role) => void draw(entry, role as BibleRole)}
+                        options={ROLES_BY_KIND[entry.kind]
+                          .filter(canGenerate)
+                          .map((role) => ({ value: role, label: BIBLE_ROLE_LABELS[role] }))}
+                      />
+                      <Select
+                        value={null}
+                        placeholder="Use one I have"
+                        ariaLabel={`Attach a reference to ${entry.name}`}
+                        onChange={(role) =>
+                          setAttaching({ entryId: entry.id, role: role as BibleRole })
+                        }
+                        options={ROLES_BY_KIND[entry.kind].map((role) => ({
+                          value: role,
+                          label: BIBLE_ROLE_LABELS[role],
+                        }))}
+                      />
+                    </div>
                   </div>
 
                   {missing.length > 0 ? (

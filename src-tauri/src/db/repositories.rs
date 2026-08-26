@@ -3976,12 +3976,17 @@ impl Repositories {
         self.shot_list(note_id).await
     }
 
-    pub async fn finish_shot_list<T: serde::Serialize>(
+    /// Store the finished reading.
+    ///
+    /// Takes anything serializable rather than a slice: the reading grew from
+    /// an array of shots into an object carrying the cast too, and the column
+    /// holds whatever shape the current prompt version produces.
+    pub async fn finish_shot_list<T: serde::Serialize + ?Sized>(
         &self,
         note_id: &str,
-        shots: &[T],
+        reading: &T,
     ) -> Result<Option<ShotListDto>, sqlx::error::Error> {
-        let json = serde_json::to_string(shots).unwrap_or_else(|_| "[]".to_string());
+        let json = serde_json::to_string(reading).unwrap_or_else(|_| "[]".to_string());
         query("UPDATE shot_lists SET status = 'ready', shots_json = ?, last_error = NULL, updated_at = ? WHERE note_id = ?")
             .bind(json)
             .bind(timestamp())
