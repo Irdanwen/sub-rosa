@@ -3602,6 +3602,25 @@ impl Repositories {
         Ok(())
     }
 
+    /// Replace a run's stored graph.
+    ///
+    /// Retaking a shot on a different engine changes the graph, and the graph
+    /// is the record (ADR-0021): patching it only in the webview would work
+    /// once, then quietly revert the next time the run resumed from its row.
+    pub async fn set_workflow_run_definition(
+        &self,
+        id: &str,
+        definition: &str,
+    ) -> Result<(), sqlx::error::Error> {
+        query("UPDATE workflow_runs SET definition = ?, updated_at = ? WHERE id = ?")
+            .bind(definition)
+            .bind(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true))
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     pub async fn set_workflow_run_status(
         &self,
         id: &str,

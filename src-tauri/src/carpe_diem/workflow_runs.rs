@@ -97,6 +97,28 @@ pub async fn workflow_run_create(
     Ok(stored)
 }
 
+/// Point a recorded run at a new graph.
+///
+/// The one caller is a retake on another engine: the node keeps its place in
+/// the film and changes the model it is made with. Only the definition moves,
+/// so every finished node's cached output stays valid and the resume is still
+/// cheap.
+#[tauri::command]
+pub async fn workflow_run_set_definition(
+    app: AppHandle,
+    id: String,
+    definition: serde_json::Value,
+) -> Result<(), AppError> {
+    if id.trim().is_empty() {
+        return Err(AppError::new("workflow_run_invalid", "A run needs an id."));
+    }
+    crate::commands::repositories(&app)
+        .await?
+        .set_workflow_run_definition(&id, &definition.to_string())
+        .await?;
+    Ok(())
+}
+
 /// Every run the UI should know about, newest first.
 #[tauri::command]
 pub async fn workflow_run_list(app: AppHandle) -> Result<Vec<WorkflowRunDto>, AppError> {

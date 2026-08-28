@@ -78,6 +78,7 @@ export function Select({
   onChange,
   ariaLabel,
   className,
+  disabled,
 }: {
   value: string | null;
   options: SelectOption[];
@@ -86,6 +87,8 @@ export function Select({
   onChange: (value: string) => void;
   ariaLabel: string;
   className?: string;
+  /** Greys the trigger and refuses to open. */
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [placement, setPlacement] = useState<SelectPopoverPlacement>("align-selected");
@@ -134,6 +137,7 @@ export function Select({
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
+        disabled={disabled}
         onClick={toggle}
       >
         <span>{selected?.label ?? placeholder}</span>

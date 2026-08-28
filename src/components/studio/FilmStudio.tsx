@@ -28,7 +28,15 @@ import {
   saveBibleEntry,
 } from "../../lib/studio/bible";
 import { generateReference, portraitCostCredits } from "../../lib/studio/bible/portrait";
-import { compileShotList, routeModels, type Shot } from "../../lib/studio/workflow/compile";
+import {
+  compileShotList,
+  familyOf,
+  retargetShotModel,
+  pickMusicModel,
+  pickTtsModel,
+  type Shot,
+  videoFamilies,
+} from "../../lib/studio/workflow/compile";
 import { estimateCostCredits, modelsOfType } from "../../lib/studio/catalog";
 import {
   estimateWorkflowCost,
@@ -40,7 +48,11 @@ import type { Workflow } from "../../lib/studio/workflow/schema";
 import { createWorkflow, saveWorkflow } from "../../lib/studio/workflow/store";
 import { validateWorkflow } from "../../lib/studio/workflow/validator";
 import { type NodeRunResult, WorkflowRunError } from "../../lib/studio/workflow/engine";
-import { resumeWorkflowRun, runAndSaveWorkflow } from "../../lib/studio/workflow-run";
+import {
+  resumeWorkflowRun,
+  runAndSaveWorkflow,
+  setWorkflowRunDefinition,
+} from "../../lib/studio/workflow-run";
 import { extractFrameAt } from "../../lib/studio/frames";
 import { judge, type JudgeVerdict, pickJudgeModel } from "../../lib/studio/judge";
 import type { MediaCatalog } from "../../lib/studio/types";
@@ -66,6 +78,9 @@ import { Switch } from "../ui/Switch";
 import { NotePicker } from "./NotePicker";
 import { StudioField } from "./controls";
 import { STUDIO_FILM_NOTE_KEY } from "./StudioView";
+
+/** Which engines this user likes to shoot on. See the effect that reads it. */
+const FILM_MODELS_KEY = "os-june:film-models";
 
 /** What a production may spend when the balance cannot be read at all. */
 const FALLBACK_ENVELOPE_CREDITS = 200;
@@ -149,6 +164,8 @@ export function FilmStudio({
 
   const [showOptions, setShowOptions] = useState(false);
   const [videoModelId, setVideoModelId] = useState("");
+  const [ttsModelId, setTtsModelId] = useState("");
+  const [musicModelId, setMusicModelId] = useState("");
   const [aspectRatio, setAspectRatio] = useState("16:9");
   const [envelope, setEnvelope] = useState(FALLBACK_ENVELOPE_CREDITS);
   const [balance, setBalance] = useState<number | undefined>(undefined);
@@ -165,6 +182,32 @@ export function FilmStudio({
   const workflowRef = useRef<Workflow | undefined>(undefined);
   const [verdict, setVerdict] = useState<JudgeVerdict | undefined>(undefined);
   const [judging, setJudging] = useState(false);
+
+  // Remembered across films, because it is a taste, not a per-film decision:
+  // somebody who found an engine they like should not re-find it every time.
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(FILM_MODELS_KEY);
+      if (!saved) return;
+      const parsed = JSON.parse(saved) as Record<string, unknown>;
+      if (typeof parsed.video === "string") setVideoModelId(parsed.video);
+      if (typeof parsed.tts === "string") setTtsModelId(parsed.tts);
+      if (typeof parsed.music === "string") setMusicModelId(parsed.music);
+    } catch {
+      // Unreadable or absent: the defaults below are perfectly good.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        FILM_MODELS_KEY,
+        JSON.stringify({ video: videoModelId, tts: ttsModelId, music: musicModelId }),
+      );
+    } catch {
+      // No storage: the choice simply lasts as long as the tab does.
+    }
+  }, [videoModelId, ttsModelId, musicModelId]);
 
   useEffect(() => {
     listBibleEntries()
@@ -228,6 +271,18 @@ export function FilmStudio({
   const reading = useMemo(() => parseReading(row), [row]);
   const shots = reading.shots;
   const referenceCost = useMemo(() => portraitCostCredits(catalog), [catalog]);
+  const families = useMemo(() => videoFamilies(catalog), [catalog]);
+  const voiceModels = useMemo(() => modelsOfType(catalog, "tts"), [catalog]);
+  const musicModels = useMemo(() => modelsOfType(catalog, "music"), [catalog]);
+  /** What is actually going to be used, chosen or defaulted, for the summary line. */
+  const chosen = useMemo(
+    () => ({
+      family: familyOf(catalog, videoModelId) ?? families[0],
+      voice: pickTtsModel(catalog, ttsModelId || undefined),
+      music: pickMusicModel(catalog, musicModelId || undefined),
+    }),
+    [catalog, families, videoModelId, ttsModelId, musicModelId],
+  );
 
   /** Who the script names that the bible has never met, described. */
   const uncast = useMemo(() => {
@@ -264,9 +319,22 @@ export function FilmStudio({
       envelopeCredits: envelope,
       aspectRatio,
       videoModelId: videoModelId || undefined,
+      ttsModelId: ttsModelId || undefined,
+      musicModelId: musicModelId || undefined,
       withScore,
     });
-  }, [shots, note, bible, catalog, envelope, aspectRatio, videoModelId, withScore]);
+  }, [
+    shots,
+    note,
+    bible,
+    catalog,
+    envelope,
+    aspectRatio,
+    videoModelId,
+    ttsModelId,
+    musicModelId,
+    withScore,
+  ]);
 
   /**
    * The film itself, once there is one.
@@ -445,9 +513,31 @@ export function FilmStudio({
    * way: everything else replays from cache, so a retake costs one shot and
    * the cut - not the film.
    */
+  /**
+   * Make one shot again, optionally on a different engine.
+   *
+   * The engine is offered here rather than up front because this is the
+   * informed moment: the user has seen what this one produced, which is the
+   * only thing that makes the choice mean anything.
+   */
   const redoShot = useCallback(
-    async (nodeId: string) => {
+    async (nodeId: string, familyId?: string) => {
       if (!runId || running) return;
+      if (familyId) {
+        const current = workflowRef.current;
+        const patched = current ? retargetShotModel(current, nodeId, catalog, familyId) : undefined;
+        if (patched) {
+          workflowRef.current = patched;
+          // Persisted before the resume, which reads the graph back from the
+          // row: an in-memory patch would be forgotten by the next resume.
+          try {
+            await setWorkflowRunDefinition(runId, patched);
+          } catch {
+            setRunError("That engine could not be recorded for this shot.");
+            return;
+          }
+        }
+      }
       const controller = new AbortController();
       abortRef.current?.abort();
       abortRef.current = controller;
@@ -469,7 +559,7 @@ export function FilmStudio({
         setRunning(false);
       }
     },
-    [runId, running],
+    [runId, running, catalog],
   );
 
   /**
@@ -715,6 +805,37 @@ export function FilmStudio({
                 : ""}
             </p>
           )}
+          <p className="film-crew">
+            Shot on{" "}
+            <button type="button" onClick={() => setShowOptions(true)}>
+              {chosen.family?.label ?? "no video model"}
+            </button>
+            {chosen.family?.costCredits === undefined
+              ? ""
+              : ` (${chosen.family.costCredits.toFixed(0)} cr a shot)`}
+            {chosen.voice ? (
+              <>
+                , spoken by{" "}
+                <button type="button" onClick={() => setShowOptions(true)}>
+                  {chosen.voice.name}
+                </button>
+              </>
+            ) : null}
+            {withScore && chosen.music ? (
+              <>
+                , scored by{" "}
+                <button type="button" onClick={() => setShowOptions(true)}>
+                  {chosen.music.name}
+                </button>
+              </>
+            ) : null}
+            .
+          </p>
+          {compiled?.warnings.map((line) => (
+            <p key={line} className="film-warning">
+              {line}
+            </p>
+          ))}
           {compiled?.notes.map((line) => (
             <p key={line} className="studio-queue-hint">
               {line}
@@ -744,22 +865,55 @@ export function FilmStudio({
 
           {showOptions ? (
             <div className="film-options">
-              <StudioField label="Shoot on" hint="One family for the whole film">
+              <StudioField
+                label="Shoot on"
+                hint="One engine for the whole film. Only some can carry a face between shots."
+              >
                 <Select
                   value={videoModelId || null}
-                  placeholder={
-                    routeModels(catalog).text?.name
-                      ? `Cheapest (${routeModels(catalog).text?.name})`
-                      : "Cheapest"
-                  }
+                  placeholder={families[0] ? `Cheapest (${families[0].label})` : "Cheapest"}
                   ariaLabel="Video family"
                   onChange={setVideoModelId}
-                  options={modelsOfType(catalog, "video").map((entry) => ({
-                    value: entry.id,
-                    label: entry.name,
+                  options={families.map((family) => ({
+                    value: family.representativeId,
+                    label: `${family.label}${
+                      family.costCredits === undefined
+                        ? ""
+                        : ` (${family.costCredits.toFixed(0)} cr a shot)`
+                    }${family.holdsFaces ? ", holds faces" : ""}`,
                   }))}
                 />
               </StudioField>
+              <StudioField label="Voices" hint="Who speaks the dialogue">
+                <Select
+                  value={ttsModelId || null}
+                  placeholder={
+                    chosen.voice ? `Most voices (${chosen.voice.name})` : "No voice model"
+                  }
+                  ariaLabel="Voice model"
+                  onChange={setTtsModelId}
+                  options={voiceModels.map((entry) => ({
+                    value: entry.id,
+                    label: entry.voices?.length
+                      ? `${entry.name} (${entry.voices.length} voices)`
+                      : entry.name,
+                  }))}
+                />
+              </StudioField>
+              {withScore ? (
+                <StudioField label="Score" hint="Who writes the music">
+                  <Select
+                    value={musicModelId || null}
+                    placeholder={chosen.music ? chosen.music.name : "No music model"}
+                    ariaLabel="Music model"
+                    onChange={setMusicModelId}
+                    options={musicModels.map((entry) => ({
+                      value: entry.id,
+                      label: entry.name,
+                    }))}
+                  />
+                </StudioField>
+              ) : null}
               <StudioField label="Aspect ratio">
                 <input
                   className="studio-input"
@@ -884,6 +1038,23 @@ export function FilmStudio({
                         ? "Do it again"
                         : `Do it again (${retakeCost.toFixed(0)} cr)`}
                   </button>
+                  <Select
+                    value={null}
+                    placeholder="On another engine"
+                    ariaLabel={`Remake shot ${shot.index + 1} on another engine`}
+                    disabled={running}
+                    onChange={(value) => void redoShot(shot.nodeId, value)}
+                    options={families
+                      .filter((family) => family.stem !== chosen.family?.stem)
+                      .map((family) => ({
+                        value: family.representativeId,
+                        label: `${family.label}${
+                          family.costCredits === undefined
+                            ? ""
+                            : ` (${family.costCredits.toFixed(0)} cr)`
+                        }`,
+                      }))}
+                  />
                 </li>
               );
             })}

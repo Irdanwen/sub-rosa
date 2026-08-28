@@ -32,7 +32,7 @@ import {
   shotPrompt,
   voiceReference,
 } from "../bible";
-import { estimateCostCredits, isSeedanceModel, modelsOfType } from "../catalog";
+import { estimateCostCredits, humanizeModelId, isSeedanceModel, modelsOfType } from "../catalog";
 import { effectiveVideoConstraints } from "../model-constraints";
 import type { MediaCatalog, MediaModel } from "../types";
 import { defaultParams, type Workflow, type WorkflowEdge, type WorkflowNode } from "./schema";
@@ -88,6 +88,10 @@ export interface CompileInput {
    * means the cheapest the account publishes.
    */
   videoModelId?: string;
+  /** Which voice engine speaks the dialogue. Absent picks the default below. */
+  ttsModelId?: string;
+  /** Which engine writes the score. */
+  musicModelId?: string;
   /** Hard ceiling in credits. Over it, nothing is built. */
   envelopeCredits?: number;
   aspectRatio?: string;
@@ -99,6 +103,13 @@ export interface CompileInput {
 
 export interface CompileResult {
   workflow?: Workflow;
+  /**
+   * Things that will cost the user something if left alone.
+   *
+   * Kept apart from `notes`, which are choices made on their behalf. A note is
+   * "this is what I did"; a warning is "this is going to disappoint you".
+   */
+  warnings: string[];
   /** Sum of the flat prices this account publishes. Metered nodes count zero. */
   estimateCredits: number;
   /** Why nothing was built. */
@@ -165,6 +176,125 @@ interface Routing {
  */
 export function familyStem(id: string): string {
   return id.toLowerCase().replace(/-(?:text|image|reference|video|first-last-frame)-to-video/g, "");
+}
+
+/**
+ * A video family: one engine, and the jobs it can do.
+ *
+ * Families rather than ids, because a picker of a hundred and twenty-four
+ * model names is a list, not a choice - and because the three directions of
+ * one family are the same engine and belong together (see `familyStem`).
+ *
+ * `holdsFaces` is the one that costs money to get wrong. Only a minority of
+ * families publish a reference-to-video arm, and choosing one that does not
+ * means every character is drawn from scratch on every shot: the bible is
+ * still built, still paid for, and does nothing.
+ */
+export interface VideoFamily {
+  stem: string;
+  label: string;
+  /** An id from the family, for showing a price and for pinning the choice. */
+  representativeId: string;
+  holdsFaces: boolean;
+  /** Can start a shot from the previous one's handoff frame. */
+  continuesShots: boolean;
+  costCredits?: number;
+}
+
+/** Every video family this account can run, cheapest first. */
+export function videoFamilies(catalog: MediaCatalog): VideoFamily[] {
+  const byStem = new Map<string, VideoFamily>();
+  for (const type of ["video", "imageToVideo", "referenceToVideo"] as const) {
+    for (const model of modelsOfType(catalog, type)) {
+      const stem = familyStem(model.id);
+      const existing = byStem.get(stem);
+      const cost = estimateCostCredits(model, { multiplier: catalog.priceMultiplier });
+      const entry: VideoFamily = existing ?? {
+        stem,
+        label: humanizeModelId(stem),
+        representativeId: model.id,
+        holdsFaces: false,
+        continuesShots: false,
+        costCredits: undefined,
+      };
+      if (type === "referenceToVideo") entry.holdsFaces = true;
+      if (type === "imageToVideo") entry.continuesShots = true;
+      // The text-to-video arm is what a plain shot costs, so it is the one
+      // whose price and id represent the family.
+      if (type === "video") {
+        entry.representativeId = model.id;
+        entry.costCredits = cost;
+      }
+      if (entry.costCredits === undefined) entry.costCredits = cost;
+      byStem.set(stem, entry);
+    }
+  }
+  return [...byStem.values()].sort(
+    (left, right) =>
+      (left.costCredits ?? Number.POSITIVE_INFINITY) -
+      (right.costCredits ?? Number.POSITIVE_INFINITY),
+  );
+}
+
+/**
+ * Point one shot at a different engine, keeping its place in the film.
+ *
+ * Which arm of the new family it lands on is not the user's problem: a shot
+ * that was holding a face still needs to hold it, and a shot continuing the
+ * previous one still needs its opening frame. So the arm is re-derived from
+ * what the graph already feeds that node, and the duration is snapped to what
+ * the new engine actually offers - families do not agree on lengths, and
+ * sending the old one is how a retake fails on submit.
+ *
+ * Returns a new graph. The caller persists it before resuming, because the
+ * row is the record (ADR-0021).
+ */
+export function retargetShotModel(
+  workflow: Workflow,
+  nodeId: string,
+  catalog: MediaCatalog,
+  familyId: string,
+): Workflow | undefined {
+  const target = workflow.nodes.find((entry) => entry.id === nodeId);
+  if (!target || target.type !== "video") return undefined;
+  const inputs = workflow.edges.filter((entry) => entry.target === nodeId);
+  const routing = routeModels(catalog, familyId);
+  const model = inputs.some((entry) => entry.targetPort === "references")
+    ? routing.reference
+    : inputs.some((entry) => entry.targetPort === "openingFrame")
+      ? routing.fromImage
+      : routing.text;
+  if (!model) return undefined;
+
+  const wanted = Number(target.params?.duration) || SECONDS_BY_MOTION.medium;
+  const constraints = effectiveVideoConstraints(model);
+  const params: Record<string, unknown> = {
+    ...target.params,
+    model: model.id,
+    duration: nearestOption(constraints.durations, wanted),
+  };
+  const ratio = target.params?.aspectRatio;
+  if (
+    typeof ratio === "string" &&
+    constraints.aspect_ratios &&
+    !constraints.aspect_ratios.includes(ratio)
+  ) {
+    params.aspectRatio = nearestOptionExact(constraints.aspect_ratios, ratio) ?? ratio;
+  }
+  return {
+    ...workflow,
+    nodes: workflow.nodes.map((entry) => (entry.id === nodeId ? { ...entry, params } : entry)),
+  };
+}
+
+/** The family a chosen id belongs to. */
+export function familyOf(
+  catalog: MediaCatalog,
+  modelId: string | undefined,
+): VideoFamily | undefined {
+  if (!modelId) return undefined;
+  const stem = familyStem(modelId);
+  return videoFamilies(catalog).find((family) => family.stem === stem);
 }
 
 /**
@@ -297,6 +427,51 @@ export function planShots(
   return { planned, notes };
 }
 
+/**
+ * Which engine speaks.
+ *
+ * Not by price: nothing in this catalogue publishes one for speech, so
+ * "cheapest" would sort nothing and quietly mean "first alphabetically" -
+ * which is what it did. The signal that exists is the voice list, and a model
+ * offering more voices is more likely to have one that fits a character.
+ */
+export function pickTtsModel(catalog: MediaCatalog, preferredId?: string): MediaModel | undefined {
+  const models = modelsOfType(catalog, "tts");
+  const chosen = preferredId ? models.find((model) => model.id === preferredId) : undefined;
+  if (chosen) return chosen;
+  return [...models].sort(
+    (left, right) => (right.voices?.length ?? 0) - (left.voices?.length ?? 0),
+  )[0];
+}
+
+/**
+ * Which engine writes the score.
+ *
+ * Not by price either - nothing publishes one. The signal that does exist is
+ * length: a film wants one piece of music over the whole cut, and a model
+ * capped at thirty seconds forces a loop that a viewer hears. So the longest
+ * published duration wins, and models that publish nothing keep their order
+ * rather than being pushed to the back for saying less about themselves.
+ */
+export function pickMusicModel(
+  catalog: MediaCatalog,
+  preferredId?: string,
+): MediaModel | undefined {
+  const models = modelsOfType(catalog, "music");
+  const chosen = preferredId ? models.find((model) => model.id === preferredId) : undefined;
+  if (chosen) return chosen;
+  return [...models].sort((left, right) => longestDuration(right) - longestDuration(left))[0];
+}
+
+/** The longest score a model says it can write, in seconds. */
+function longestDuration(model: MediaModel): number {
+  const published = effectiveVideoConstraints(model).durations ?? [];
+  return published.reduce((longest, option) => {
+    const value = Number.parseFloat(option);
+    return Number.isFinite(value) && value > longest ? value : longest;
+  }, 0);
+}
+
 /** An exact match if the list has one, otherwise its first entry. */
 function nearestOptionExact(options: readonly string[], wanted: string): string | undefined {
   return options.includes(wanted) ? wanted : options[0];
@@ -310,14 +485,16 @@ function nearestOptionExact(options: readonly string[], wanted: string): string 
  */
 export function compileShotList(input: CompileInput): CompileResult {
   const notes: string[] = [];
+  const warnings: string[] = [];
   const shots = input.shots.filter((shot) => shot.action.trim().length > 0);
   if (shots.length === 0) {
-    return { estimateCredits: 0, notes, refusal: "There are no shots to film." };
+    return { estimateCredits: 0, notes, warnings, refusal: "There are no shots to film." };
   }
   if (shots.length > MAX_COMPILED_SHOTS) {
     return {
       estimateCredits: 0,
       notes,
+      warnings,
       refusal: `That is ${shots.length} shots, past the ${MAX_COMPILED_SHOTS} this will build in one go. Split the script.`,
     };
   }
@@ -331,10 +508,27 @@ export function compileShotList(input: CompileInput): CompileResult {
     input.videoModelId,
   );
   notes.push(...routingNotes);
+
+  // A family that cannot hold a face does not lose the bible - the router
+  // sends those shots to a family that can. What it loses is the one look:
+  // half the film comes off a different engine. Worth a word before paying.
+  if (input.videoModelId) {
+    const family = familyOf(input.catalog, input.videoModelId);
+    const withFaces = planned.filter((entry) => entry.references.length > 0).length;
+    const elsewhere = routeModels(input.catalog, input.videoModelId).reference;
+    if (family && !family.holdsFaces && withFaces > 0 && elsewhere) {
+      warnings.push(
+        `${family.label} cannot carry a face from one shot to the next, so the ${withFaces} shot${
+          withFaces === 1 ? "" : "s"
+        } with someone from your bible are made on ${elsewhere.name} instead. The film will change look partway. A family that holds faces keeps it in one.`,
+      );
+    }
+  }
   if (planned.length === 0) {
     return {
       estimateCredits: 0,
       notes,
+      warnings,
       refusal: "This account has no video model to render these shots with.",
     };
   }
@@ -355,7 +549,7 @@ export function compileShotList(input: CompileInput): CompileResult {
   let shotStartSeconds = 0;
   const videoIds: string[] = [];
   const ttsIds: string[] = [];
-  const tts = modelsOfType(input.catalog, "tts")[0];
+  const tts = pickTtsModel(input.catalog, input.ttsModelId);
 
   planned.forEach((entry, index) => {
     const level = 1 + index * 2;
@@ -441,7 +635,7 @@ export function compileShotList(input: CompileInput): CompileResult {
   for (const ttsId of ttsIds) edges.push(edge(ttsId, assembleId, "dialogue"));
 
   if (input.withScore) {
-    const music = modelsOfType(input.catalog, "music")[0];
+    const music = pickMusicModel(input.catalog, input.musicModelId);
     if (music) {
       const musicId = "score";
       nodes.push(
@@ -488,6 +682,7 @@ export function compileShotList(input: CompileInput): CompileResult {
     return {
       estimateCredits,
       notes,
+      warnings,
       refusal: `This would cost about ${estimateCredits.toFixed(2)} credits, past the ${input.envelopeCredits.toFixed(
         2,
       )} agreed. About ${fewer} shot${fewer === 1 ? "" : "s"} fits, or raise the ceiling.`,
@@ -501,6 +696,7 @@ export function compileShotList(input: CompileInput): CompileResult {
   }
 
   return {
+    warnings,
     workflow: {
       id: `compiled-${input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
       name: input.name,

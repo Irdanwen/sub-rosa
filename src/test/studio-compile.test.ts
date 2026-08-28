@@ -3,11 +3,16 @@ import type { BibleEntry } from "../lib/studio/bible";
 import {
   compileShotList,
   DIALOGUE_LEAD_IN_SECONDS,
+  familyOf,
   familyStem,
   MAX_COMPILED_SHOTS,
   nearestOption,
+  pickMusicModel,
+  pickTtsModel,
   planShots,
+  retargetShotModel,
   routeModels,
+  videoFamilies,
   type Shot,
 } from "../lib/studio/workflow/compile";
 import { validateWorkflow } from "../lib/studio/workflow/validator";
@@ -348,5 +353,168 @@ describe("compiling", () => {
     // Everything reaches the cut through the gate, not around it.
     const toAssemble = workflow?.edges.filter((entry) => entry.target === "assemble") ?? [];
     expect(toAssemble.map((entry) => entry.source)).toEqual([gate?.id]);
+  });
+});
+
+describe("choosing the engines", () => {
+  it("folds the catalogue into families, priced, saying which hold a face", () => {
+    // A picker of a hundred model ids is a list, not a choice. Families are
+    // what the user is actually choosing between, and the two facts that
+    // change the film are what a shot costs and whether a face survives it.
+    const wide: MediaCatalog = {
+      backend: "carpe-diem",
+      models: [
+        model("kling-v3-standard-text-to-video", "video", { costCredits: 40 }),
+        model("kling-v3-standard-image-to-video", "imageToVideo", { costCredits: 40 }),
+        model("seedance-2-0-text-to-video", "video", { costCredits: 12 }),
+        model("seedance-2-0-reference-to-video", "referenceToVideo", { costCredits: 15 }),
+      ],
+    };
+    const families = videoFamilies(wide);
+    expect(families.map((entry) => entry.stem)).toEqual(["seedance-2-0", "kling-v3-standard"]);
+    expect(families[0].holdsFaces).toBe(true);
+    expect(families[1].holdsFaces).toBe(false);
+    expect(families[1].continuesShots).toBe(true);
+    // Cheapest first, and the price shown is the plain shot's, not the
+    // reference arm's: it is what most of the film is made of.
+    expect(families[0].costCredits).toBe(12);
+    expect(familyOf(wide, "kling-v3-standard-image-to-video")?.stem).toBe("kling-v3-standard");
+  });
+
+  it("warns that a family which cannot hold a face will break the look", () => {
+    // The bible is not lost - the router sends those shots to a family that
+    // can hold the face. What is lost is the single look, and that is worth
+    // saying before the user pays for it.
+    const result = compileShotList({
+      shots: [shot({ characters: ["Nera"], location: "" })],
+      bible: [nera],
+      catalog,
+      name: "Look",
+      videoModelId: "kling-v3-standard-text-to-video",
+    });
+    expect(result.warnings.join(" ")).toMatch(/cannot carry a face/);
+    expect(result.warnings.join(" ")).toMatch(/change look/);
+    // Still compiled: a warning is a cost, not a refusal.
+    expect(result.workflow).toBeDefined();
+  });
+
+  it("says nothing when the chosen family holds faces itself", () => {
+    const result = compileShotList({
+      shots: [shot({ characters: ["Nera"] })],
+      bible: [nera],
+      catalog,
+      name: "Look",
+      videoModelId: "seedance-2-0-reference-to-video",
+    });
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("picks the voice with the most voices, not the first alphabetically", () => {
+    // Nothing in this catalogue publishes a price for speech, so "cheapest"
+    // sorted nothing and quietly meant "first by name". The voice list is the
+    // only signal there is.
+    const voices: MediaCatalog = {
+      backend: "carpe-diem",
+      models: [
+        model("kling-v3-standard-text-to-video", "video"),
+        model("aaa-tts", "tts", { constraints: undefined, voices: ["one"] }),
+        model("zzz-tts", "tts", {
+          constraints: undefined,
+          voices: ["one", "two", "three"],
+        }),
+      ],
+    };
+    expect(pickTtsModel(voices)?.id).toBe("zzz-tts");
+    // An explicit choice always wins over the default.
+    expect(pickTtsModel(voices, "aaa-tts")?.id).toBe("aaa-tts");
+    // An id this account cannot run falls back rather than failing.
+    expect(pickTtsModel(voices, "gone")?.id).toBe("zzz-tts");
+  });
+
+  it("scores with the model that can write the longest piece", () => {
+    // A film wants one piece over the whole cut. A model capped at thirty
+    // seconds forces a loop, and a viewer hears a loop.
+    const scores: MediaCatalog = {
+      backend: "carpe-diem",
+      models: [
+        model("kling-v3-standard-text-to-video", "video"),
+        model("aaa-music", "music", { constraints: { durations: ["30s"] } }),
+        model("zzz-music", "music", { constraints: { durations: ["30s", "180s"] } }),
+      ],
+    };
+    expect(pickMusicModel(scores)?.id).toBe("zzz-music");
+    expect(pickMusicModel(scores, "aaa-music")?.id).toBe("aaa-music");
+  });
+
+  it("speaks the dialogue with the chosen voice model", () => {
+    const voices: MediaCatalog = {
+      backend: "carpe-diem",
+      models: [...catalog.models, model("other-tts", "tts", { constraints: undefined })],
+    };
+    const result = compileShotList({
+      shots: [shot({ dialogue: "It is time.", speaker: "Nera" })],
+      bible: [nera],
+      catalog: voices,
+      name: "Voice",
+      ttsModelId: "other-tts",
+    });
+    const spoken = result.workflow?.nodes.find((node) => node.type === "tts");
+    expect(spoken?.params?.model).toBe("other-tts");
+  });
+});
+
+describe("retaking a shot on another engine", () => {
+  it("keeps the arm the shot needs and snaps the duration to the new engine", () => {
+    // The user picks a family; which of its three arms the shot lands on is
+    // not their problem. A shot that was holding a face still has to.
+    const wide: MediaCatalog = {
+      backend: "carpe-diem",
+      models: [
+        ...catalog.models,
+        model("wan-2-text-to-video", "video", {
+          constraints: { durations: ["4s"], aspect_ratios: ["16:9"] },
+        }),
+        model("wan-2-reference-to-video", "referenceToVideo", {
+          constraints: { durations: ["4s"], aspect_ratios: ["16:9"] },
+        }),
+      ],
+    };
+    const built = compileShotList({
+      shots: [shot({ characters: ["Nera"] })],
+      bible: [nera],
+      catalog: wide,
+      name: "Retake",
+    });
+    const workflow = built.workflow;
+    expect(workflow).toBeDefined();
+    if (!workflow) return;
+    const video = workflow.nodes.find((node) => node.type === "video");
+    expect(video).toBeDefined();
+    if (!video) return;
+
+    const patched = retargetShotModel(workflow, video.id, wide, "wan-2-text-to-video");
+    const moved = patched?.nodes.find((node) => node.id === video.id);
+    // It had references, so it lands on the new family's reference arm.
+    expect(moved?.params?.model).toBe("wan-2-reference-to-video");
+    // 5s is not on offer over there, so it is snapped rather than sent.
+    expect(moved?.params?.duration).toBe("4s");
+    // Nothing else in the film moved.
+    expect(patched?.nodes.length).toBe(workflow.nodes.length);
+  });
+
+  it("refuses a node that is not a shot", () => {
+    const built = compileShotList({
+      shots: [shot()],
+      catalog,
+      name: "Retake",
+    });
+    const workflow = built.workflow;
+    if (!workflow) throw new Error("no workflow");
+    const assemble = workflow.nodes.find((node) => node.type !== "video");
+    expect(assemble).toBeDefined();
+    if (!assemble) return;
+    expect(
+      retargetShotModel(workflow, assemble.id, catalog, "kling-v3-standard-text-to-video"),
+    ).toBeUndefined();
   });
 });

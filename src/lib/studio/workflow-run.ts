@@ -632,6 +632,17 @@ export async function resumeWorkflowRun(
   );
 }
 
+/**
+ * Point a recorded run at a new graph.
+ *
+ * Used by a retake on another engine. The row is the record (ADR-0021), and a
+ * resume reads the graph back from it, so the change has to land there before
+ * the resume rather than only in the caller's copy.
+ */
+export async function setWorkflowRunDefinition(runId: string, definition: Workflow): Promise<void> {
+  await invoke("workflow_run_set_definition", { id: runId, definition });
+}
+
 /** Forget a run. Delivered render jobs it still owns are filed into the
  * gallery first, so dismissing an interrupted production cannot lose a paid
  * render that finished in the background. */

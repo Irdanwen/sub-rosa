@@ -356,7 +356,7 @@ function familyDisplayName(family: VideoFamily, catalogIds: ReadonlySet<string>)
  * the digit runs that spell a version. Anything cleverer would be guessing at
  * names the catalogs never gave us.
  */
-function humanizeModelId(id: string): string {
+export function humanizeModelId(id: string): string {
   const words: string[] = [];
   for (const token of id.split("-").filter(Boolean)) {
     const previous = words.at(-1);

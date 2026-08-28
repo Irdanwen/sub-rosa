@@ -8,6 +8,7 @@ const hoisted = vi.hoisted(() => ({
   generateImages: vi.fn(),
   runWorkflow: vi.fn(),
   resumeRun: vi.fn(),
+  setDefinition: vi.fn(),
   mediaJson: vi.fn(),
 }));
 
@@ -20,6 +21,7 @@ vi.mock("../lib/studio/artifacts", async (importOriginal) => ({
 vi.mock("../lib/studio/workflow-run", () => ({
   runAndSaveWorkflow: hoisted.runWorkflow,
   resumeWorkflowRun: hoisted.resumeRun,
+  setWorkflowRunDefinition: hoisted.setDefinition,
   listFinishedProductions: vi.fn(async () => []),
   productionCut: vi.fn(),
 }));
@@ -477,5 +479,138 @@ describe("coming back to a film", () => {
     // Straight back to its shots, with nothing re-read.
     expect(await screen.findByText("Nera turns towards the sound")).toBeInTheDocument();
     expect(hoisted.invoke).not.toHaveBeenCalledWith("build_shot_list", expect.anything());
+  });
+});
+
+describe("choosing the engines", () => {
+  // A catalogue with two families and a voice, so there is something to choose
+  // between: with one of each, a picker would be furniture.
+  const wide: MediaCatalog = {
+    backend: "carpe-diem",
+    models: [
+      ...catalog.models,
+      model("seedance-2-0-text-to-video", "video", { costCredits: 9 }),
+      model("seedance-2-0-reference-to-video", "referenceToVideo", { costCredits: 9 }),
+      model("speaks", "tts", { constraints: undefined, voices: ["ash", "sol"] }),
+    ],
+  };
+
+  async function toReview(withCatalog: MediaCatalog = wide) {
+    hoisted.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_notes") return { items: [{ id: "n1", title: "Neon alley" }] };
+      if (command === "list_bible_entries") return [];
+      if (command === "shot_list") return reading();
+      if (command === "shot_list_plan")
+        return { noteId: "n1", scriptChars: 900, chunkCount: 1, modelCalls: 1, breakable: true };
+      return null;
+    });
+    render(<FilmStudio catalog={withCatalog} onOpenProduction={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Use a note I wrote" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Neon/ }));
+    await screen.findByText("Nera turns towards the sound");
+  }
+
+  it("says which engines are about to be used, before anything is paid for", async () => {
+    await toReview();
+    // Named on the review screen rather than buried in options: a choice made
+    // silently on the user's behalf is one they cannot disagree with.
+    expect(await screen.findByRole("button", { name: "Kling" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "speaks" })).toBeInTheDocument();
+  });
+
+  it("makes each name in that line the way to change it", async () => {
+    await toReview();
+    expect(screen.queryByLabelText("Video family")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Kling" }));
+    // Reading the choice and changing it are the same gesture.
+    expect(await screen.findByLabelText("Video family")).toBeInTheDocument();
+  });
+
+  it("offers families rather than ids, and says which hold a face", async () => {
+    await toReview();
+    fireEvent.click(await screen.findByRole("button", { name: "Options" }));
+    fireEvent.click(await screen.findByLabelText("Video family"));
+    // The two facts that change the film: what a shot costs, and whether a
+    // face survives from one shot to the next.
+    expect(
+      await screen.findByRole("option", { name: /Seedance 2\.0.*holds faces/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /^Kling \(\d+ cr a shot\)$/ })).toBeInTheDocument();
+  });
+
+  it("keeps the engines it was given, so a taste is chosen once", async () => {
+    window.localStorage.setItem(
+      "os-june:film-models",
+      JSON.stringify({ video: "seedance-2-0-text-to-video", tts: "", music: "" }),
+    );
+    await toReview();
+    // Not the cheapest, which is what an unremembered tab would have shown.
+    expect(await screen.findByRole("button", { name: "Seedance 2.0" })).toBeInTheDocument();
+    window.localStorage.removeItem("os-june:film-models");
+  });
+
+  async function makeAFilm() {
+    hoisted.runWorkflow.mockImplementation(async (workflow, options) => {
+      options.onRunRecorded?.("run-9");
+      const shot = workflow.nodes.find((node: { type: string }) => node.type === "video");
+      const assemble = workflow.nodes.find((node: { type: string }) => node.type === "assemble");
+      options.onUpdate?.({
+        nodeId: shot.id,
+        status: "done",
+        output: { kind: "video", artifactId: "s1.mp4", src: "asset:///s1.mp4" },
+      });
+      options.onUpdate?.({
+        nodeId: assemble.id,
+        status: "done",
+        output: { kind: "video", artifactId: "film.mp4", src: "asset:///film.mp4" },
+      });
+      return new Map();
+    });
+    await toReview();
+    fireEvent.click(await screen.findByRole("button", { name: "Make it" }));
+    await screen.findByText(/is ready/);
+  }
+
+  it("falls back rather than naming an engine this account cannot run", async () => {
+    // Catalogues change under us: a family remembered last month can be gone,
+    // and a film must not be blocked on a name nobody can honour.
+    window.localStorage.setItem(
+      "os-june:film-models",
+      JSON.stringify({ video: "retired-text-to-video", tts: "gone", music: "" }),
+    );
+    await toReview();
+    // The cheapest, which is what the compiler will actually route to.
+    expect(await screen.findByRole("button", { name: "Kling" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "speaks" })).toBeInTheDocument();
+    window.localStorage.removeItem("os-june:film-models");
+  });
+
+  it("remakes one shot on another engine, recording it before resuming", async () => {
+    await makeAFilm();
+    fireEvent.click(screen.getByLabelText("Remake shot 1 on another engine"));
+    fireEvent.click(await screen.findByRole("option", { name: /Seedance/ }));
+
+    // Written to the row first: a resume reads the graph back from there, so
+    // an in-memory patch would be forgotten the next time this run continued.
+    await waitFor(() => expect(hoisted.setDefinition).toHaveBeenCalledTimes(1));
+    const [runId, patched] = hoisted.setDefinition.mock.calls[0] as [
+      string,
+      { nodes: Array<{ type: string; params?: Record<string, unknown> }> },
+    ];
+    expect(runId).toBe("run-9");
+    expect(patched.nodes.find((node) => node.type === "video")?.params?.model).toMatch(/seedance/);
+    expect(hoisted.resumeRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not resume when the new engine could not be recorded", async () => {
+    hoisted.setDefinition.mockRejectedValueOnce(new Error("disk full"));
+    await makeAFilm();
+    fireEvent.click(screen.getByLabelText("Remake shot 1 on another engine"));
+    fireEvent.click(await screen.findByRole("option", { name: /Seedance/ }));
+
+    // Better to say nothing happened than to spend on a shot whose engine the
+    // next resume would silently undo.
+    expect(await screen.findByText(/could not be recorded/)).toBeInTheDocument();
+    expect(hoisted.resumeRun).not.toHaveBeenCalled();
   });
 });

@@ -482,3 +482,57 @@ mesuré en local. Premier point à évaluer après R3.
 **Des films encore sur le VPS au moment de R4.** R0 existe pour ça, mais elle
 dépend d'un service qui doit être debout. Ne pas planifier R4 tant que R0 n'a pas
 été exécutée avec succès au moins une fois sur des données réelles.
+
+---
+
+## §9quater — Le choix des moteurs (2026-08-28)
+
+Après la passe parcours (§9ter), six modèles étaient encore choisis en silence
+et l'utilisateur n'en pilotait qu'un. Deux d'entre eux — la voix et la musique —
+étaient pris **par ordre alphabétique** : `modelsOfType(catalog, "tts")[0]`.
+Personne ne l'avait décidé ; c'était la conséquence d'un tri par prix sur un
+catalogue qui n'en publie aucun pour la parole (0 sur 11) ni pour la musique
+(0 sur 12).
+
+Ce qui a été fait, et pourquoi ainsi :
+
+- **Des familles, pas des identifiants.** 124 modèles vidéo se replient en 58
+  familles via `familyStem`, qui existait déjà. `videoFamilies()` les étiquette
+  avec les deux faits qui changent le film : le prix d'un plan, et si la famille
+  **sait tenir un visage** (`holdsFaces`, c'est-à-dire publie un bras
+  `referenceToVideo`). 19 familles seulement le savent.
+- **L'avertissement dit la vérité, pas une approximation.** Vérification faite,
+  choisir une famille sans bras référence **ne perd pas la bible** : le routeur
+  envoie ces plans vers une famille qui sait les tenir. Ce qui est perdu, c'est
+  le **look unique** — une partie du film sort d'un autre moteur. C'est ça que
+  dit l'avertissement. `warnings` est un canal distinct de `notes` : une note
+  dit « voilà ce que j'ai choisi pour toi », un avertissement dit « ça va te
+  décevoir ».
+- **Défauts défendables.** La voix va au modèle qui publie **le plus de voix**
+  (le seul signal existant). La musique va au modèle qui sait écrire **le plus
+  long morceau** : un film veut une pièce sur tout le montage, et un modèle
+  plafonné à trente secondes impose une boucle qu'un spectateur entend.
+- **Montrer, puis laisser changer.** Une ligne à l'étape de relecture nomme les
+  trois moteurs, et chaque nom est le bouton qui l'ouvre.
+- **Le choix se garde** (`os-june:film-models`) : c'est un goût, pas une
+  décision par film.
+- **Le moment informé.** « Refaire » gagne « sur un autre moteur », après avoir
+  vu le plan — seul moment où le choix veut dire quelque chose.
+  `retargetShotModel` re-dérive le bon bras depuis ce que le graphe alimente
+  déjà (un plan qui tenait un visage doit continuer) et **recale la durée** sur
+  ce que le nouveau moteur offre. Le graphe patché est **écrit dans la ligne
+  avant la reprise** (nouvelle commande `workflow_run_set_definition`) : une
+  reprise relit le graphe depuis la base, un patch en mémoire seule aurait
+  marché une fois puis serait revenu en arrière — exactement le piège
+  qu'ADR-0021 nomme.
+
+Un catalogue bouge sous nous : une famille mémorisée le mois dernier peut avoir
+disparu. `modelsOfType` filtre déjà les modèles hors-ligne, donc `familyOf`
+rend `undefined` et la ligne d'équipage retombe sur la moins chère — celle vers
+laquelle le compilateur route réellement. Testé, parce que c'est le genre de
+divergence qui ne se voit qu'en production.
+
+**Écarté volontairement** : un onglet Modèles (une deuxième surface pour un
+réglage), et le choix du modèle par plan *avant* le tournage (c'est cinq
+questions de plus devant un utilisateur qui n'a encore rien vu). Le modèle de
+lecture du script reste en arrière-plan, côté Rust.

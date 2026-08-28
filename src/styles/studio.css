@@ -2110,6 +2110,42 @@
   padding: var(--sp-4);
 }
 
+/* The line that says which engines are about to be used. Each name in it is a
+   button, because reading the choice and changing it should be the same
+   gesture: the informed moment is the moment you are told. */
+.film-crew {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.film-crew button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.film-crew button:hover {
+  color: var(--accent);
+}
+
+/* Not an error: nothing is broken and the film will be made. It is the cost of
+   a choice, said before it is paid for. */
+.film-warning {
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 2px solid var(--brand);
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-size: var(--fs-sm);
+}
+
 /* Behind a disclosure on purpose: every one of these has a defensible default,
    and asking five questions before showing any work is what made the old path
    unusable. */
