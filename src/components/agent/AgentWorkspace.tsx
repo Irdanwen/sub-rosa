@@ -2192,8 +2192,16 @@ export function AgentWorkspace({
   // whenever nothing is selected — the same condition as the conversation
   // fall-through in the render, minus the dev gallery. Computed up here
   // because the composer auto-grow effect below needs it as a dependency.
+  //
+  // A council sitting ends it. `detailContent` is drawn only in the branch
+  // this one replaces, so while the hero held, `/council` cleared the composer
+  // and changed nothing on screen — and a council is convened before the work
+  // starts, which is a new session every time. The feature was unreachable
+  // exactly where it is meant to be used.
   const heroMode =
-    !gallerySections && (newSessionMode || (!selectedHermesSessionId && !selectedTask));
+    !gallerySections &&
+    !councilRequest &&
+    (newSessionMode || (!selectedHermesSessionId && !selectedTask));
   const visibleError = visibleAgentWorkspaceError(errorState, selectedHermesSessionId);
   const visibleIssueReportNotice =
     issueReportNotice && issueReportNotice.sessionId === selectedHermesSessionId

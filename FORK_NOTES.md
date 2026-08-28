@@ -504,6 +504,15 @@ Vocabulaire : la section « The council (fork) » de [CONTEXT.md](CONTEXT.md).
   le panneau.
 - Ajouter une commande partagée oblige à toucher les **deux**
   `generate_handler!` ; celles-ci sont desktop-only et n'en touchent qu'une.
+- **La séance met fin au hero.** `detailContent` (donc `CouncilSitting`) n'est
+  rendu que dans la branche non-hero d'`AgentWorkspace` ; `heroMode` doit donc
+  inclure `!councilRequest`. Sans ça, `/council` sur une session neuve vidait
+  le composer et ne changeait rien à l'écran — et un conseil se convoque
+  justement avant que le travail commence, donc toujours sur une session
+  neuve. Livré cassé en v1.50.0, corrigé en v1.51.0 ; le test de
+  non-régression est `puts a new request to the council instead of doing
+  nothing` dans `agent-workspace.test.tsx`. `council-sitting.test.tsx` teste
+  le composant isolé et ne pouvait pas voir ce trajet.
 
 ## L'agent desktop écrit des notes (2026-08-28)
 

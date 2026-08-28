@@ -33,6 +33,7 @@ const HERO_GREETING = new RegExp(
 
 const mocks = vi.hoisted(() => ({
   cancelAgentTask: vi.fn(),
+  councilPlan: vi.fn(),
   createAgentTask: vi.fn(),
   ensureHermesBridgeSession: vi.fn(),
   generateImage: vi.fn(),
@@ -139,6 +140,14 @@ vi.mock("../lib/tauri", () => ({
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: mocks.listen,
+}));
+
+// A council sitting prices its plan on mount. Only that one call is stubbed:
+// what this suite checks is that `/council` reaches the screen at all, not how
+// the council deliberates (see council-sitting.test.tsx for that).
+vi.mock("../lib/council", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/council")>()),
+  councilPlan: (...args: unknown[]) => mocks.councilPlan(...(args as [])),
 }));
 
 // jsdom has no Tauri IPC: the artifact download flow opens a native save
@@ -6520,6 +6529,61 @@ describe("AgentWorkspace", () => {
       expect.any(Uint8Array),
     );
     expect(mocks.importHermesBridgeFile).not.toHaveBeenCalled();
+  });
+
+  it("puts a new request to the council instead of doing nothing", async () => {
+    mocks.councilPlan.mockResolvedValue({
+      councilId: "c1",
+      seats: [
+        {
+          id: "shape",
+          name: "Shape",
+          role: "position",
+          charge: "What is actually being asked for.",
+          model: "glm",
+          modelFamily: "glm",
+        },
+      ],
+      minModelCalls: 5,
+      maxModelCalls: 9,
+      reusedFamilies: [],
+      calls: [
+        {
+          phase: "blind",
+          seatId: "shape",
+          model: "glm",
+          promptTokens: 900,
+          completionTokens: 600,
+          certain: true,
+        },
+      ],
+    });
+    // The regression: /council sets the sitting, but the sitting was rendered
+    // only in the branch that draws a conversation. On a new session the hero
+    // branch is drawn instead, so the composer cleared and the screen did not
+    // change -- and a council is convened before the work starts, which is a
+    // new session every time. The feature was unreachable where it is meant to
+    // be used.
+    window.sessionStorage.setItem(
+      AGENT_NEW_SESSION_PENDING_KEY,
+      JSON.stringify({ createdAt: Date.now() }),
+    );
+    const user = userEvent.setup();
+    render(<AgentWorkspace />);
+    expect(await screen.findByText(HERO_GREETING)).toBeInTheDocument();
+
+    await user.type(await screen.findByRole("textbox"), "/council rewrite the recorder");
+    const form = document.querySelector(".agent-composer");
+    expect(form).not.toBeNull();
+    fireEvent.submit(form as HTMLFormElement);
+
+    expect(await screen.findByLabelText("Council")).toBeInTheDocument();
+    expect(await screen.findByText("Put this to the council")).toBeInTheDocument();
+    // And the hero is gone: the sitting replaces it rather than hiding behind
+    // it.
+    expect(screen.queryByText(HERO_GREETING)).toBeNull();
+    // Nothing was sent to the runtime: a council convenes before any work.
+    expect(mocks.gatewayRequest).not.toHaveBeenCalledWith("prompt.submit", expect.anything());
   });
 
   it("does not intercept /image while image generation is hidden", async () => {
