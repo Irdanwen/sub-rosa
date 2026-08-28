@@ -253,6 +253,73 @@ pub struct MediaCatalogDto {
     pub models: Vec<MediaModelDto>,
 }
 
+/// What one text model costs, as the operator prices it today.
+///
+/// Per million tokens, and already multiplied: `inputPrice` in the operator's
+/// table is `inputBase * multiplier`, the same multiplier the sidebar shows
+/// next to the credit balance. Nothing here needs to reapply it.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextPriceDto {
+    pub model: String,
+    pub input_usd_per_mtok: f64,
+    pub output_usd_per_mtok: f64,
+    /// Prompt tokens the operator served from its own cache are cheaper, and
+    /// priced separately. Absent for a model that publishes no cache price.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cached_input_usd_per_mtok: Option<f64>,
+}
+
+/// The operator's per-token prices for text models.
+///
+/// The catalog fetch above already downloads this table and keeps only the
+/// multiplier and the media fixed costs. The per-token prices were being
+/// thrown away, which is why the usage panel had no way to price a chat turn
+/// once the operator stopped returning `carpe_cost_usdc_micro` per request -
+/// the field the whole cost readout was totalled from.
+#[tauri::command]
+pub async fn carpe_diem_text_pricing() -> Result<Vec<TextPriceDto>, AppError> {
+    let Some(key) = settings::api_key() else {
+        return Err(AppError::new(
+            "media_no_api_key",
+            "No API key is stored yet.",
+        ));
+    };
+    if !key.starts_with("cdm_") {
+        // A Venice-direct key has no operator pricing table to read.
+        return Ok(Vec::new());
+    }
+    let client = media_http_client();
+    let operator_root = settings::operator_root();
+    let pricing = fetch_json(client, &format!("{operator_root}/pricing"), None).await?;
+    Ok(text_prices(&pricing))
+}
+
+/// Read the `models` section into typed rows, skipping anything that does not
+/// carry both prices: half a price is worse than none, since it would silently
+/// under-count every turn it was applied to.
+fn text_prices(pricing: &serde_json::Value) -> Vec<TextPriceDto> {
+    let Some(models) = pricing.get("models").and_then(serde_json::Value::as_array) else {
+        return Vec::new();
+    };
+    models
+        .iter()
+        .filter_map(|entry| {
+            let model = entry.get("model")?.as_str()?.to_string();
+            let input = entry.get("inputPrice")?.as_f64()?;
+            let output = entry.get("outputPrice")?.as_f64()?;
+            Some(TextPriceDto {
+                model,
+                input_usd_per_mtok: input,
+                output_usd_per_mtok: output,
+                cached_input_usd_per_mtok: entry
+                    .get("cacheInputPrice")
+                    .and_then(serde_json::Value::as_f64),
+            })
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub async fn carpe_diem_media_catalog() -> Result<MediaCatalogDto, AppError> {
     let Some(key) = settings::api_key() else {

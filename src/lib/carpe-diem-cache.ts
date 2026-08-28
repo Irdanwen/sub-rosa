@@ -29,6 +29,9 @@ export type CacheUsage = {
   promptTokens?: number;
   /** Prompt tokens the operator served from its cache. */
   cachedTokens?: number;
+  /** Completion tokens seen. Rust has always sent it; nothing read it until
+   * the cost had to be priced from tokens rather than read off the response. */
+  completionTokens?: number;
   /** 0 to 1. Undefined when nothing has been measured, which is "unknown"
    * rather than "zero percent". */
   hitRatio?: number;
@@ -58,6 +61,7 @@ export function parseCacheUsage(raw: unknown): CacheUsage {
 
   const promptTokens = pickNumber(containers, ["promptTokens", "prompt_tokens"]);
   const cachedTokens = pickNumber(containers, ["cachedTokens", "cached_tokens"]);
+  const completionTokens = pickNumber(containers, ["completionTokens", "completion_tokens"]);
   const reportedRatio = pickNumber(containers, ["hitRatio", "hit_ratio"]);
   const derivedRatio =
     promptTokens !== undefined && promptTokens > 0 && cachedTokens !== undefined
@@ -70,6 +74,7 @@ export function parseCacheUsage(raw: unknown): CacheUsage {
     turnsWithCacheHit: pickNumber(containers, ["turnsWithCacheHit", "turns_with_cache_hit"]),
     promptTokens,
     cachedTokens,
+    completionTokens,
     hitRatio: ratio === undefined ? undefined : Math.min(1, Math.max(0, ratio)),
     savedUsd: usdFromMicro(
       pickNumber(containers, ["cacheSavedUsdcMicro", "cache_saved_usdc_micro"]),

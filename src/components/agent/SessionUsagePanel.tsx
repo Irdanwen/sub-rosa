@@ -6,6 +6,7 @@ import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { IconGauge } from "central-icons/IconGauge";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PROVIDER_NAME } from "../../lib/branding";
+import { estimateCostUsd, priceFor, textPricing } from "../../lib/carpe-diem-text-pricing";
 import { type CacheUsage, hasMeasuredTurns } from "../../lib/carpe-diem-cache";
 import { hasAnyReading, type SessionUsage } from "../../lib/hermes-session-usage";
 
@@ -43,6 +44,7 @@ export function SessionUsagePanel({
   /** The runtime answered, but with nothing in it: it no longer holds this
    * session. What is on screen is the last real reading, and saying when it
    * was taken is the difference between stale data and a lie. */
+  const [prices, setPrices] = useState<Awaited<ReturnType<typeof textPricing>>>([]);
   const [stale, setStale] = useState(false);
   const [readAt, setReadAt] = useState<number | null>(null);
   const [cache, setCache] = useState<CacheUsage | null>(null);
@@ -53,6 +55,21 @@ export function SessionUsagePanel({
   const [errorReason, setErrorReason] = useState<string | null>(null);
   // Guards against a resolve landing after unmount or after a newer refresh.
   const requestSeq = useRef(0);
+
+  // The operator's price table, once per panel. Best-effort like the cache
+  // ledger: no table, no estimate, and the panel already renders that.
+  useEffect(() => {
+    let cancelled = false;
+    textPricing().then(
+      (next) => {
+        if (!cancelled) setPrices(next);
+      },
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const load = useCallback(() => {
     const seq = ++requestSeq.current;
@@ -165,10 +182,20 @@ export function SessionUsagePanel({
           <CacheMeter cache={cache} />
 
           <CostSection
-            estimatedCostUsd={usage?.estimatedCostUsd}
+            estimatedCostUsd={
+              usage?.estimatedCostUsd ??
+              estimateCostUsd(
+                {
+                  promptTokens: usage?.promptTokens,
+                  completionTokens: usage?.completionTokens,
+                },
+                priceFor(usage?.model, prices),
+              )
+            }
             toolCosts={usage?.toolCosts}
             cacheSavedUsd={cache?.savedUsd}
             spentUsd={cache?.costUsd}
+            measured={cache ? hasMeasuredTurns(cache) : false}
           />
         </div>
       )}
@@ -283,6 +310,7 @@ function CostSection({
   toolCosts,
   cacheSavedUsd,
   spentUsd,
+  measured,
 }: {
   estimatedCostUsd?: number;
   toolCosts?: SessionUsage["toolCosts"];
@@ -290,8 +318,17 @@ function CostSection({
   /** What the operator actually billed, totalled from the per-turn metering
    * headers it returns. */
   spentUsd?: number;
+  /** Whether any turn has been metered at all this run. */
+  measured?: boolean;
 }) {
   const hasTotal = estimatedCostUsd !== undefined;
+  // Zero after real turns is not a bill of nothing: the operator stopped
+  // publishing the per-turn price this figure is totalled from (`usage` now
+  // carries only the OpenAI-standard token counts), so the sum of a field that
+  // is never there is zero. Printing "$0.00" over 400,000 spent tokens states
+  // something false with more confidence than the "Unavailable" it replaced.
+  const billed = spentUsd !== undefined && spentUsd > 0;
+  const silentlyZero = spentUsd === 0 && Boolean(measured);
   return (
     <div className="agent-usage-cost">
       {/* What was charged, not a reconstruction of it: the operator prices each
@@ -302,7 +339,7 @@ function CostSection({
        * the session above it, and the note says so. The alternative was the
        * runtime's own estimate, which this runtime does not send and never
        * will, so the line read "Unavailable" forever. */}
-      {spentUsd !== undefined ? (
+      {billed ? (
         <>
           <div className="agent-usage-cost-head">
             <span className="agent-usage-cost-label">
@@ -317,6 +354,23 @@ function CostSection({
           </p>
         </>
       ) : null}
+      {silentlyZero ? (
+        <>
+          <div className="agent-usage-cost-head">
+            <span className="agent-usage-cost-label">
+              <IconCoins size={14} ariaHidden />
+              Spent since launch
+            </span>
+            <span className="agent-usage-cost-value" data-unavailable="true">
+              Not reported
+            </span>
+          </div>
+          <p className="agent-usage-cost-note">
+            The provider stopped returning a price per turn, so there is nothing to total. Your
+            balance is what to read instead.
+          </p>
+        </>
+      ) : null}
       {hasTotal ? (
         <>
           <div className="agent-usage-cost-head">
@@ -327,11 +381,12 @@ function CostSection({
             <span className="agent-usage-cost-value">{formatUsd(estimatedCostUsd)}</span>
           </div>
           <p className="agent-usage-cost-note">
-            Estimate only, based on reported token usage. Actual billing may differ.
+            At most: priced from this session's tokens at the provider's rates. Prompt tokens served
+            from the cache cost less and are not counted apart here, so the real charge is lower.
           </p>
         </>
       ) : null}
-      {spentUsd === undefined && !hasTotal ? (
+      {!billed && !silentlyZero && !hasTotal ? (
         <div className="agent-usage-cost-head">
           <span className="agent-usage-cost-label">
             <IconCoins size={14} ariaHidden />

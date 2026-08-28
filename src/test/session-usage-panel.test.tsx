@@ -41,6 +41,36 @@ describe("what the runtime does not report", () => {
     expect(screen.queryByText("Estimated cost, this session")).not.toBeInTheDocument();
   });
 
+  it("does not print a bill of nothing over real spending", async () => {
+    // The operator stopped returning a per-turn price, so the total of a field
+    // that is never there is zero. Printing "$0.00" over 400,000 spent tokens
+    // is more confidently wrong than the "Unavailable" it replaced.
+    render(
+      <SessionUsagePanel
+        sessionId="s1"
+        fetchUsage={EMPTY}
+        fetchCacheStats={() =>
+          Promise.resolve({ turns: 12, promptTokens: 293_056, costUsd: 0, savedUsd: 0 })
+        }
+        onClose={() => {}}
+      />,
+    );
+    expect(await screen.findByText("Not reported")).toBeInTheDocument();
+    expect(screen.queryByText("$0.00")).not.toBeInTheDocument();
+  });
+
+  it("still shows a real charge when the provider reports one", async () => {
+    render(
+      <SessionUsagePanel
+        sessionId="s1"
+        fetchUsage={EMPTY}
+        fetchCacheStats={() => Promise.resolve({ turns: 3, costUsd: 1.25 })}
+        onClose={() => {}}
+      />,
+    );
+    expect(await screen.findByText("$1.25")).toBeInTheDocument();
+  });
+
   it("keeps the last real reading when the runtime forgets the session", async () => {
     let first = true;
     const fetchUsage = () => {
