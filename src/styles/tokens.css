@@ -152,6 +152,20 @@
     var(--sp-7) +
     var(--sp-3)
   );
+  /* The studio's controls column is sticky, so it must never be taller than
+   * the room it is stuck in: a sticky box taller than its scrollport freezes
+   * until the END of its containing block, which here is the gallery. With a
+   * long gallery that meant scrolling past every clip to reach the bottom of
+   * the form. Bounded instead, the fields scroll inside the card.
+   * = the tab strip, the card's bottom margin, and the sticky offset top and
+   * bottom. */
+  --studio-controls-viewport-offset: calc(
+    var(--card-top) +
+    var(--sp-3) +
+    var(--sp-6) +
+    var(--sp-6)
+  );
+
   --settings-skill-editor-min-h: 360px;
   --settings-skill-editor-ideal-h: 52dvh;
   --settings-skill-editor-max-h: 620px;

@@ -168,6 +168,18 @@
   .studio-generation {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  /* Stacked, the controls are the page's first screen rather than a column
+   * beside it: sticking and scrolling them inside a viewport-tall card would
+   * trap a second scroll inside the first. */
+  .studio-controls {
+    position: static;
+    max-height: none;
+  }
+
+  .studio-controls-fields {
+    overflow-y: visible;
+  }
 }
 
 .studio-controls {
@@ -181,12 +193,25 @@
   box-shadow: var(--shadow-sm);
   position: sticky;
   top: var(--sp-6);
+  /* A sticky box taller than the scrollport is stuck until the END of its
+   * containing block, and this one's containing block is as tall as the
+   * gallery next to it: with a dozen clips rendered, the bottom of the form
+   * only came back into reach after scrolling past every one of them. Bound
+   * the card to the room it has, and let the fields scroll inside it. */
+  max-height: calc(100dvh - var(--studio-controls-viewport-offset));
 }
 
 .studio-controls-fields {
   display: flex;
   flex-direction: column;
   gap: var(--sp-5);
+  /* This is what actually scrolls. min-height:0 because a flex item refuses to
+   * shrink below its content otherwise, which would push the card past the
+   * max-height it was just given. */
+  min-height: 0;
+  overflow-y: auto;
+  /* Reaching the end of the fields must not start scrolling the gallery. */
+  overscroll-behavior: contain;
 }
 
 .studio-output {
@@ -311,6 +336,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
+  /* Never scrolls away with the fields: on a model with every option open,
+   * "generate" used to sit below the fold of its own card. */
+  flex: 0 0 auto;
 }
 
 .studio-primary-button {
