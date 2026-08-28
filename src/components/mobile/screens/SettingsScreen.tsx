@@ -251,6 +251,7 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
             value={memorySummary ?? undefined}
             onClick={() => onOpen("memory")}
           />
+          <SettingsLinkRow label="Usage" onClick={() => onOpen("usage")} />
           <SettingsLinkRow
             label="Connection"
             value={STATUS_SUMMARY[status?.status ?? "unconfigured"]}

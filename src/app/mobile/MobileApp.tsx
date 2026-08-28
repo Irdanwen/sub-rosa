@@ -19,6 +19,7 @@ import { NoteDetailScreen } from "../../components/mobile/screens/NoteDetailScre
 import { NotesScreen } from "../../components/mobile/screens/NotesScreen";
 import { ConnectionScreen } from "../../components/mobile/screens/ConnectionScreen";
 import { MemoryScreen } from "../../components/mobile/screens/MemoryScreen";
+import { UsageScreen } from "../../components/mobile/screens/UsageScreen";
 import { SettingsScreen } from "../../components/mobile/screens/SettingsScreen";
 import { StudioScreen } from "../../components/mobile/screens/StudioScreen";
 import { errorCode, messageFromError } from "../../lib/errors";
@@ -734,6 +735,8 @@ export function MobileApp() {
     screen =
       top.section === "memory" ? (
         <MemoryScreen onBack={nav.pop} />
+      ) : top.section === "usage" ? (
+        <UsageScreen onBack={nav.pop} />
       ) : (
         <ConnectionScreen onBack={nav.pop} />
       );

@@ -53,7 +53,7 @@ import { SwipeableRow } from "../SwipeableRow";
 
 const CHAT_MODEL_STORAGE_KEY = "subrosa:mobile:chat-model";
 
-function storedChatModel(): string {
+export function storedChatModel(): string {
   try {
     return localStorage.getItem(CHAT_MODEL_STORAGE_KEY) ?? "";
   } catch {
