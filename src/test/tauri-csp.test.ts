@@ -54,6 +54,17 @@ describe("asset protocol CSP", () => {
     expect(scope).toContain("$APPDATA/studio-media/*");
   });
 
+  // Every media element in the mobile shell is fed an object URL, and three
+  // separate modules say so in their own comments: WKWebView's media loader
+  // byte-range-requests its source and a `data:` URL cannot answer one. The
+  // directive still listed only `data:`, so the webview refused every blob it
+  // was handed - clips would not play, posters decoded to nothing, and a note
+  // would not read itself aloud. The file it all lands in is the gallery, and
+  // the failure is silent in all three places.
+  it("lets media-src load the object URLs iOS requires", () => {
+    expect(directive("media-src")).toContain("blob:");
+  });
+
   it("declares every directive the loaders in this app actually need", () => {
     // Anything not listed here falls back to `default-src`, which is `'self'` -
     // and `'self'` matches none of the schemes below.
