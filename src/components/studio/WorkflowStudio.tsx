@@ -40,6 +40,7 @@ import {
 } from "../../lib/studio/model-constraints";
 import { referenceMention } from "../../lib/studio/seedance";
 import type { ArtifactKind, MediaCatalog } from "../../lib/studio/types";
+import { Darkroom } from "./Darkroom";
 import {
   activeWorkflowRuns,
   dismissWorkflowRun,
@@ -595,7 +596,32 @@ function ParamField({
   );
 }
 
-function NodeOutputView({ result }: { result: NodeRunResult }) {
+/** The media node types whose wait is long enough to be worth a frame. A chat
+ * node answers in seconds; a video node holds the canvas for minutes. */
+const DARKROOM_NODES = new Set<WorkflowNodeType>(["image", "imageEdit", "tts", "music", "video"]);
+
+function NodeOutputView({ result, node }: { result: NodeRunResult; node: WorkflowNode }) {
+  if (result.status === "running") {
+    if (!DARKROOM_NODES.has(node.type)) return null;
+    // A node that is making something waits the same way the studios do, in
+    // the same frame - at the shape of what this node makes, with the run's
+    // own progress when the runner reports any.
+    const audio = node.type === "music" || node.type === "tts";
+    const aspect = typeof node.params.aspect_ratio === "string" ? node.params.aspect_ratio : "1/1";
+    const prompt = typeof node.params.prompt === "string" ? node.params.prompt : "";
+    return (
+      <div className="studio-node-output nodrag">
+        <Darkroom
+          compact
+          variant={audio ? "audio" : "video"}
+          seed={node.id + prompt}
+          phase="processing"
+          progress={typeof result.progress === "number" ? result.progress : undefined}
+          aspectRatio={audio ? undefined : aspect}
+        />
+      </div>
+    );
+  }
   if (result.status === "error") {
     // A schema rejection reads as a zod report; say what the model wanted
     // instead, next to the pickers that have just been updated with it.
@@ -837,7 +863,7 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
           />
         ))}
       {result?.status === "awaiting" ? <GateApproval data={data} /> : null}
-      {result ? <NodeOutputView result={result} /> : null}
+      {result ? <NodeOutputView result={result} node={wfNode} /> : null}
       {schema.output !== "none" ? <Handle type="source" position={Position.Right} /> : null}
     </div>
   );

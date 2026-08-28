@@ -2239,3 +2239,405 @@
   font-style: normal;
   font-size: var(--fs-xs);
 }
+
+/* --- the darkroom --------------------------------------------------------- */
+/* What a generation looks like while it is being made: the result's own shape,
+ * in the result's own place, holding a slow field of light and film grain.
+ * See lib/studio/darkroom.ts for the reasoning, components/studio/Darkroom.tsx
+ * for the markup.
+ *
+ * The frame is dark in both themes on purpose. It is standing in for a video
+ * or a track, both of which land on black anyway, so a light-theme darkroom
+ * would flash to dark the moment the render arrived - and the caption over it
+ * would need two contrast stories instead of one. */
+.darkroom {
+  --darkroom-l: 66%;
+  --darkroom-c: 0.13;
+  /* How much of the seeded hue survives the mix into the brand accent. The
+   * darkroom is meant to vary per render AND to look like this app; this is
+   * where those two pull against each other. */
+  --darkroom-tint: 62%;
+
+  display: grid;
+  gap: var(--sp-3);
+  margin: 0;
+  min-width: 0;
+  /* The wait fades up rather than appearing. Queueing a second render while a
+   * first one is going should not make the page jump. */
+  animation: darkroom-in 320ms var(--ease-out) both;
+}
+
+.darkroom-frame {
+  position: relative;
+  aspect-ratio: var(--darkroom-aspect, 16 / 9);
+  /* Cap the height through the width: aspect-ratio does not survive a
+   * max-height in normal flow - the box keeps its width and is squashed - so
+   * a portrait render is bounded by multiplying the ceiling by its own ratio. */
+  /* Explicit, because the auto margins below opt the frame out of the grid's
+   * stretch, and an empty box's own width is zero. */
+  width: 100%;
+  max-width: calc(var(--darkroom-ceiling, 46vh) * var(--darkroom-ratio, 1.778));
+  margin-inline: auto;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border-subtle);
+  background: oklch(15.5% 0.02 var(--darkroom-hue-a, 0));
+  overflow: hidden;
+  /* The lights blend in screen mode; without a stacking context of its own the
+   * frame would blend against whatever is painted behind the card. */
+  isolation: isolate;
+}
+
+/* An audio render has no shape to hold, so its frame is a fixed band. */
+.darkroom[data-variant="audio"] .darkroom-frame {
+  aspect-ratio: 5 / 2;
+}
+
+/* Narrow surfaces - a phone panel, a workflow node - keep the shape but cap
+ * the height, so the wait never pushes the controls off screen. */
+.darkroom[data-compact="true"] {
+  --darkroom-ceiling: 200px;
+}
+
+.darkroom-field {
+  position: absolute;
+  inset: 0;
+  /* A projector's own unsteadiness. Irregular stops on purpose: an evenly
+   * spaced flicker reads as a broken animation, not as light. */
+  animation: darkroom-flicker 3.7s linear infinite;
+}
+
+/* The lights are tilted as a set, so the field has an axis rather than three
+ * unrelated drifts. Nothing with a right way up is inside this. */
+.darkroom-lights {
+  position: absolute;
+  /* Overshoots the frame so the rotation never brings its own corner into
+   * view - a straight black diagonal is the one thing that would give the
+   * whole effect away as a box. */
+  inset: -30%;
+  transform: rotate(var(--darkroom-tilt, 0deg));
+}
+
+.darkroom-light {
+  position: absolute;
+  inset: 0;
+  /* Each light is struck somewhere else in the room. Concentric ones stack
+   * into a single blob in the middle, which is what a placeholder gradient
+   * looks like and what this is trying not to be. */
+  background: radial-gradient(
+    circle at var(--darkroom-x, 50%) var(--darkroom-y, 50%),
+    var(--darkroom-light),
+    transparent 46%
+  );
+  mix-blend-mode: screen;
+  will-change: transform;
+}
+
+.darkroom-light-a {
+  --darkroom-x: 32%;
+  --darkroom-y: 36%;
+  --darkroom-light: color-mix(
+    in oklch,
+    oklch(var(--darkroom-l) var(--darkroom-c) var(--darkroom-hue-a, 0)) var(--darkroom-tint),
+    var(--brand)
+  );
+  opacity: 0.8;
+  animation: darkroom-drift-a var(--darkroom-drift, 22s) var(--ease-in-out) infinite alternate;
+}
+
+.darkroom-light-b {
+  --darkroom-x: 74%;
+  --darkroom-y: 30%;
+  --darkroom-light: color-mix(
+    in oklch,
+    oklch(var(--darkroom-l) var(--darkroom-c) var(--darkroom-hue-b, 40)) var(--darkroom-tint),
+    var(--brand)
+  );
+  opacity: 0.62;
+  animation: darkroom-drift-b calc(var(--darkroom-drift, 22s) * 1.37) var(--ease-in-out) infinite
+    alternate;
+}
+
+.darkroom-light-c {
+  --darkroom-x: 48%;
+  --darkroom-y: 78%;
+  --darkroom-light: color-mix(
+    in oklch,
+    oklch(var(--darkroom-l) var(--darkroom-c) var(--darkroom-hue-c, 320)) var(--darkroom-tint),
+    var(--brand)
+  );
+  opacity: 0.5;
+  animation: darkroom-drift-c calc(var(--darkroom-drift, 22s) * 0.83) var(--ease-in-out) infinite
+    alternate;
+}
+
+/* Film grain. The texture is a static SVG turbulence; the movement is a
+ * transform on an oversized tile, which composites - animating the background
+ * position instead repaints the whole frame 24 times a second. */
+.darkroom-grain {
+  position: absolute;
+  inset: -50%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.17;
+  /* Screened, not overlaid: overlay on a near-black frame changes almost
+   * nothing, and the grain is the whole reason this reads as film. */
+  mix-blend-mode: screen;
+  pointer-events: none;
+  will-change: transform;
+  /* Twelve stops over half a second: 24 changes a second, the rate the thing
+   * being waited for will be played back at. */
+  animation: darkroom-grain 500ms steps(1, end) infinite;
+}
+
+/* Vignette, and the ground the caption sits on. */
+.darkroom-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 var(--sp-12) rgba(0, 0, 0, 0.45);
+}
+
+.darkroom-wave {
+  position: absolute;
+  inset: auto var(--sp-5) 38%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-px);
+  height: 34%;
+}
+
+.darkroom-wave > span {
+  flex: 1;
+  max-width: 2px;
+  border-radius: 1px;
+  background: oklch(97% 0 none);
+  opacity: 0.55;
+  height: calc(var(--darkroom-bar, 0.5) * 100%);
+  transform-origin: center;
+  animation: darkroom-breathe 2.6s var(--ease-in-out) infinite alternate;
+  /* Each bar picks up the breath a little after its neighbour, so the wave
+   * travels instead of pulsing as one block. */
+  animation-delay: calc(var(--i, 0) * -137ms);
+}
+
+.darkroom-caption {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-8) var(--sp-4) var(--sp-4);
+  font-size: var(--fs-xs);
+  color: oklch(98% 0 none);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.6), transparent);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  z-index: 1;
+}
+
+.darkroom-status {
+  font-weight: var(--fw-medium);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.darkroom-clock {
+  /* The clock reads a new number every second; proportional digits would make
+   * the whole line twitch as the glyphs change width. */
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.darkroom-bar {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+  z-index: 2;
+}
+
+.darkroom-bar > span {
+  display: block;
+  height: 100%;
+  /* The accent, lifted: --brand alone is a dark colour and this sits on an
+   * even darker frame. */
+  background: color-mix(in oklch, var(--brand), oklch(97% 0 none) 34%);
+  transform: scaleX(0);
+  transform-origin: left center;
+  /* Slow, because the value behind it moves once a second and a snappier
+   * tween would make an estimate look like a measurement. */
+  transition: transform 900ms var(--ease-out);
+}
+
+/* Nothing is known about the pace: sweep rather than fill, which says "working"
+ * without claiming a position. */
+.darkroom-bar[data-indeterminate="true"] > span {
+  width: 32%;
+  transform: none;
+  transition: none;
+  animation: darkroom-sweep 2.4s var(--ease-in-out) infinite;
+}
+
+.darkroom-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+  min-width: 0;
+}
+
+.darkroom-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes darkroom-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes darkroom-drift-a {
+  from {
+    transform: translate3d(-9%, -7%, 0) scale(calc(var(--darkroom-bloom, 1) * 0.9));
+  }
+  to {
+    transform: translate3d(8%, 9%, 0) scale(calc(var(--darkroom-bloom, 1) * 1.18));
+  }
+}
+
+@keyframes darkroom-drift-b {
+  from {
+    transform: translate3d(11%, 6%, 0) scale(calc(var(--darkroom-bloom, 1) * 1.1));
+  }
+  to {
+    transform: translate3d(-7%, -10%, 0) scale(calc(var(--darkroom-bloom, 1) * 0.86));
+  }
+}
+
+@keyframes darkroom-drift-c {
+  from {
+    transform: translate3d(6%, -11%, 0) scale(calc(var(--darkroom-bloom, 1) * 0.95));
+  }
+  to {
+    transform: translate3d(-10%, 7%, 0) scale(calc(var(--darkroom-bloom, 1) * 1.24));
+  }
+}
+
+@keyframes darkroom-grain {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  8.33% {
+    transform: translate3d(-2%, 3%, 0);
+  }
+  16.66% {
+    transform: translate3d(3%, -1%, 0);
+  }
+  25% {
+    transform: translate3d(-3%, -2%, 0);
+  }
+  33.33% {
+    transform: translate3d(1%, 3%, 0);
+  }
+  41.66% {
+    transform: translate3d(2%, -3%, 0);
+  }
+  50% {
+    transform: translate3d(-1%, 1%, 0);
+  }
+  58.33% {
+    transform: translate3d(3%, 2%, 0);
+  }
+  66.66% {
+    transform: translate3d(-2%, -3%, 0);
+  }
+  75% {
+    transform: translate3d(1%, -2%, 0);
+  }
+  83.33% {
+    transform: translate3d(-3%, 1%, 0);
+  }
+  91.66% {
+    transform: translate3d(2%, 2%, 0);
+  }
+}
+
+@keyframes darkroom-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  46% {
+    opacity: 0.95;
+  }
+  49% {
+    opacity: 1;
+  }
+  72% {
+    opacity: 0.97;
+  }
+  74% {
+    opacity: 1;
+  }
+}
+
+@keyframes darkroom-breathe {
+  from {
+    transform: scaleY(0.55);
+    opacity: 0.4;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 0.72;
+  }
+}
+
+@keyframes darkroom-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(312%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The darkroom rests: the light stays lit where it was, the grain stops
+   * moving, and the bar keeps its position. Everything the wait has to say is
+   * still on screen - the phase, the clock, and how far along it is. */
+  .darkroom,
+  .darkroom-field,
+  .darkroom-light,
+  .darkroom-grain,
+  .darkroom-wave > span,
+  .darkroom-bar[data-indeterminate="true"] > span {
+    animation: none;
+  }
+
+  .darkroom-bar[data-indeterminate="true"] > span {
+    width: 100%;
+    opacity: 0.4;
+  }
+}
+
+/* The film's darkroom carries the whole production, so it is given the room a
+ * single shot's frame does not need. */
+.film-darkroom {
+  width: min(100%, 640px);
+  text-align: start;
+}

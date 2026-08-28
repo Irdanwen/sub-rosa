@@ -5,17 +5,18 @@
 import { IconSoundFx } from "central-icons/IconSoundFx";
 import { useCallback, useMemo, useState } from "react";
 import { registerDownloadedArtifact } from "../../lib/studio/artifacts";
-import { formatElapsed, useMediaJob } from "../../lib/studio/async-job";
+import { useMediaJob } from "../../lib/studio/async-job";
 import {
   estimateCostCredits,
   musicCapabilities,
   soundEffectsModels,
 } from "../../lib/studio/catalog";
 import { musicPaths, retrieveBody } from "../../lib/studio/paths";
+import { estimateRenderMs, renderEtaKey } from "../../lib/studio/render-eta";
 import type { MediaCatalog } from "../../lib/studio/types";
 import { EmptyState } from "../ui/EmptyState";
-import { Spinner } from "../ui/Spinner";
 import { Switch } from "../ui/Switch";
+import { Darkroom } from "./Darkroom";
 import { GalleryStrip } from "./GalleryStrip";
 import { JobFailureNotice } from "./JobFailureNotice";
 import { GenerationLayout } from "./GenerationLayout";
@@ -66,6 +67,15 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
     job.state.phase === "queueing" ||
     job.state.phase === "queued" ||
     job.state.phase === "processing";
+  /** The same three phases, narrowed, so the darkroom can read the clock off
+   * the ones that have one. */
+  const waiting =
+    job.state.phase === "queueing" ||
+    job.state.phase === "queued" ||
+    job.state.phase === "processing"
+      ? job.state
+      : undefined;
+  const estimate = useMemo(() => estimateRenderMs(renderEtaKey("sfx", modelId)), [modelId]);
   const canSubmit = Boolean(model && prompt.trim()) && !busy;
 
   const start = useCallback(() => {
@@ -134,23 +144,12 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
     </>
   );
 
+  // While a render is in flight the wait itself is on the output side, in the
+  // darkroom, so the controls column keeps only the thing there is left to do.
   const action = busy ? (
-    <div className="studio-progress">
-      <Spinner aria-hidden />
-      <span>
-        {job.state.phase === "queued"
-          ? "Queued, waiting for a slot"
-          : job.state.phase === "processing"
-            ? "Rendering your effect"
-            : "Submitting"}
-        {job.state.phase === "queued" || job.state.phase === "processing"
-          ? ` - ${formatElapsed(job.state.elapsedMs)}`
-          : ""}
-      </span>
-      <button type="button" className="btn btn-secondary" onClick={job.cancel}>
-        Stop waiting
-      </button>
-    </div>
+    <button type="button" className="btn btn-secondary" onClick={job.cancel}>
+      Stop waiting
+    </button>
   ) : (
     <button type="button" className="studio-primary-button" disabled={!canSubmit} onClick={start}>
       <span>Generate effect</span>
@@ -160,6 +159,17 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
 
   return (
     <GenerationLayout controls={controls} action={action}>
+      {waiting ? (
+        <Darkroom
+          variant="audio"
+          seed={modelId + prompt}
+          phase={waiting.phase}
+          elapsedMs={waiting.phase === "queueing" ? undefined : waiting.elapsedMs}
+          estimateMs={estimate}
+          label={waiting.phase === "processing" ? "Rendering your effect" : undefined}
+          meta={modelId}
+        />
+      ) : null}
       {job.state.phase === "failed" ? (
         <JobFailureNotice
           message={job.state.message}

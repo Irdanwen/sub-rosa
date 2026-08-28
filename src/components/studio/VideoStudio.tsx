@@ -13,7 +13,7 @@ import {
   readArtifactBase64,
   registerDownloadedArtifact,
 } from "../../lib/studio/artifacts";
-import { formatElapsed, useMediaJobQueue } from "../../lib/studio/async-job";
+import { useMediaJobQueue } from "../../lib/studio/async-job";
 import {
   formatCredits,
   isReferenceToVideoModel,
@@ -65,6 +65,7 @@ import {
   HANDOFF_ADJUST_WINDOW_SECONDS,
 } from "../../lib/studio/frames";
 import { describeJobFailure } from "../../lib/studio/job-errors";
+import { estimateRenderMs, renderEtaKey } from "../../lib/studio/render-eta";
 import {
   effectiveVideoConstraints,
   explainConstraintError,
@@ -87,8 +88,8 @@ import type {
 import { EmptyState } from "../ui/EmptyState";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { Select } from "../ui/Select";
-import { Spinner } from "../ui/Spinner";
 import { withInvariant } from "../../lib/studio/bible";
+import { Darkroom } from "./Darkroom";
 import { GalleryPicker } from "./GalleryPicker";
 import { GalleryStrip } from "./GalleryStrip";
 import { GenerationLayout } from "./GenerationLayout";
@@ -388,6 +389,20 @@ export function VideoStudio({
     });
     setGalleryEpoch((epoch) => epoch + 1);
   });
+  /** How long each model in the queue has taken here before. Keyed off the
+   * model list rather than the jobs: the entries are rebuilt every second by
+   * the shared clock, and re-reading the store at 1 Hz for a number that
+   * changes once per finished render is waste. */
+  const queuedModels = queue.jobs.map((entry) => entry.job.model).join("|");
+  const estimates = useMemo(() => {
+    const known = new Map<string, number>();
+    for (const model of queuedModels.split("|")) {
+      if (!model || known.has(model)) continue;
+      const estimate = estimateRenderMs(renderEtaKey("video", model));
+      if (estimate !== undefined) known.set(model, estimate);
+    }
+    return known;
+  }, [queuedModels]);
 
   // A rejected render carries the provider's own account of what the model
   // wanted. Read it once per job: the pickers then offer the right values, so
@@ -1454,52 +1469,61 @@ export function VideoStudio({
           entry.phase === "failed" && !constraint
             ? describeJobFailure({ message: entry.message, status: entry.status })
             : undefined;
+        if (entry.phase !== "failed") {
+          // The wait is given the shape of the clip it will become, in the
+          // place the clip will appear. The ratio is read off the form rather
+          // than the job - the durable row does not carry one - so changing
+          // the picker mid-render reshapes the frame. That is the right kind
+          // of wrong: the frame is a reservation, and the reservation should
+          // follow what the next render is being set up to be.
+          return (
+            <Darkroom
+              key={entry.job.id}
+              seed={entry.job.id + entry.job.prompt}
+              phase={entry.phase}
+              elapsedMs={entry.elapsedMs}
+              estimateMs={estimates.get(entry.job.model)}
+              aspectRatio={effectiveAspect}
+              meta={`${entry.job.model}${entry.job.prompt ? ` · "${entry.job.prompt.slice(0, 60)}"` : ""}`}
+              actions={
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => queue.stop(entry.job.id)}
+                >
+                  Stop waiting
+                </button>
+              }
+            />
+          );
+        }
         return (
           <div key={entry.job.id} className="studio-resume" data-phase={entry.phase}>
             {/* The backend's own words stay reachable on hover: the summary is
              * for acting on, the detail is for reporting. */}
             <span title={failure?.detail}>
-              {entry.phase === "failed"
-                ? (constraint ?? failure?.text ?? "The render failed.")
-                : entry.phase === "processing"
-                  ? `Rendering - ${formatElapsed(entry.elapsedMs)}`
-                  : `Queued - ${formatElapsed(entry.elapsedMs)}`}
+              {constraint ?? failure?.text ?? "The render failed."}
               {" · "}
               {entry.job.model}
               {entry.job.prompt ? ` · "${entry.job.prompt.slice(0, 60)}"` : ""}
             </span>
             <span className="studio-card-actions">
-              {entry.phase === "failed" ? (
-                <>
-                  {failure?.retryable && entry.canRetry ? (
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={() => void queue.retry(entry.job.id)}
-                    >
-                      Start again
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => queue.dismiss(entry.job.id)}
-                  >
-                    Dismiss
-                  </button>
-                </>
-              ) : (
-                <>
-                  <Spinner aria-hidden />
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => queue.stop(entry.job.id)}
-                  >
-                    Stop waiting
-                  </button>
-                </>
-              )}
+              {failure?.retryable && entry.canRetry ? (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => void queue.retry(entry.job.id)}
+                >
+                  Start again
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => queue.dismiss(entry.job.id)}
+              >
+                Dismiss
+              </button>
             </span>
           </div>
         );

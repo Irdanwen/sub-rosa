@@ -92,6 +92,8 @@ import {
 import { imageSize, prepareEditReference } from "../../../lib/studio/downscale";
 import { compareBodies, generateImages } from "../../../lib/studio/generate-image";
 import { useMediaJob } from "../../../lib/studio/async-job";
+import { Darkroom } from "../../studio/Darkroom";
+import { estimateRenderMs, renderEtaKey } from "../../../lib/studio/render-eta";
 import {
   VIDEO_QUEUE_PATH,
   VIDEO_QUOTE_PATH,
@@ -1363,6 +1365,15 @@ function VideoPanel({
     job.state.phase === "queueing" ||
     job.state.phase === "queued" ||
     job.state.phase === "processing";
+  /** The same three phases, narrowed, so the darkroom can read the clock off
+   * the ones that have one. */
+  const waiting =
+    job.state.phase === "queueing" ||
+    job.state.phase === "queued" ||
+    job.state.phase === "processing"
+      ? job.state
+      : undefined;
+  const estimate = useMemo(() => estimateRenderMs(renderEtaKey("video", model?.id)), [model?.id]);
 
   /** Whether everything together still fits in one request. Each input can be
    * fine on its own and the body still be over the cap, and the backend only
@@ -1599,10 +1610,16 @@ function VideoPanel({
           {`${family?.name ?? "This model"} cannot take reference photos, so only the opening frame will be used.`}
         </p>
       ) : null}
-      {busy ? (
-        <p className="mobile-studio-progress" data-shimmer="true">
-          Rendering video. You can leave this tab; the job resumes.
-        </p>
+      {waiting ? (
+        <Darkroom
+          compact
+          seed={`${model?.id ?? ""}${prompt}`}
+          phase={waiting.phase}
+          elapsedMs={waiting.phase === "queueing" ? undefined : waiting.elapsedMs}
+          estimateMs={estimate}
+          aspectRatio={effectiveVideoAspect}
+          meta="You can leave this tab; the job resumes."
+        />
       ) : null}
       {job.state.phase === "failed" ? (
         <JobFailureNotice
@@ -1937,6 +1954,15 @@ function SfxPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerated
     job.state.phase === "queueing" ||
     job.state.phase === "queued" ||
     job.state.phase === "processing";
+  /** The same three phases, narrowed, so the darkroom can read the clock off
+   * the ones that have one. */
+  const waiting =
+    job.state.phase === "queueing" ||
+    job.state.phase === "queued" ||
+    job.state.phase === "processing"
+      ? job.state
+      : undefined;
+  const estimate = useMemo(() => estimateRenderMs(renderEtaKey("sfx", model?.id)), [model?.id]);
 
   const start = useCallback(() => {
     if (!model || !prompt.trim()) return;
@@ -2005,10 +2031,16 @@ function SfxPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerated
           <span className="mobile-studio-cost">{formatCredits(cost)}</span>
         ) : null}
       </button>
-      {busy ? (
-        <p className="mobile-studio-progress" data-shimmer="true">
-          Rendering. You can leave this tab; the job resumes.
-        </p>
+      {waiting ? (
+        <Darkroom
+          compact
+          variant="audio"
+          seed={`${model?.id ?? ""}${prompt}`}
+          phase={waiting.phase}
+          elapsedMs={waiting.phase === "queueing" ? undefined : waiting.elapsedMs}
+          estimateMs={estimate}
+          meta="You can leave this tab; the job resumes."
+        />
       ) : null}
       {job.state.phase === "failed" ? (
         <JobFailureNotice
@@ -2073,6 +2105,15 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
     job.state.phase === "queueing" ||
     job.state.phase === "queued" ||
     job.state.phase === "processing";
+  /** The same three phases, narrowed, so the darkroom can read the clock off
+   * the ones that have one. */
+  const waiting =
+    job.state.phase === "queueing" ||
+    job.state.phase === "queued" ||
+    job.state.phase === "processing"
+      ? job.state
+      : undefined;
+  const estimate = useMemo(() => estimateRenderMs(renderEtaKey("music", model?.id)), [model?.id]);
 
   const start = useCallback(() => {
     if (!model || !prompt.trim()) return;
@@ -2144,10 +2185,17 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
           <span className="mobile-studio-cost">{formatCredits(cost)}</span>
         ) : null}
       </button>
-      {busy ? (
-        <p className="mobile-studio-progress" data-shimmer="true">
-          Composing. You can leave this tab; the job resumes.
-        </p>
+      {waiting ? (
+        <Darkroom
+          compact
+          variant="audio"
+          seed={`${model?.id ?? ""}${prompt}`}
+          phase={waiting.phase}
+          elapsedMs={waiting.phase === "queueing" ? undefined : waiting.elapsedMs}
+          estimateMs={estimate}
+          label={waiting.phase === "processing" ? "Composing your track" : undefined}
+          meta="You can leave this tab; the job resumes."
+        />
       ) : null}
       {job.state.phase === "failed" ? (
         <JobFailureNotice

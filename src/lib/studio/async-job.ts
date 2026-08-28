@@ -18,6 +18,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MediaError, mediaJson, mediaRaw } from "./client";
+import { rememberRenderMs, renderEtaKey } from "./render-eta";
 import { ensureNotificationPermission } from "../notifications";
 import type { ArtifactFile } from "./types";
 
@@ -231,6 +232,15 @@ function startedAtOf(job: MediaJob): number {
   return Number.isNaN(parsed) ? Date.now() : parsed;
 }
 
+/** How long a finished job actually took, measured on the row rather than on
+ * the clock: a render that landed overnight is ingested hours after it
+ * finished, and `Date.now()` would file that whole night as its duration. */
+function completedDurationMs(job: MediaJob): number | undefined {
+  const finished = Date.parse(job.updatedAt);
+  if (Number.isNaN(finished)) return undefined;
+  return finished - startedAtOf(job);
+}
+
 function artifactOf(job: MediaJob): ArtifactFile | undefined {
   if (!job.artifactPath || !job.artifactFileName) return undefined;
   return {
@@ -305,6 +315,10 @@ function useDurableJobs(
       });
       for (const job of mine) {
         if (job.status !== "completed" || settling.current.has(job.id)) continue;
+        // A finished render is the only measurement anyone has of how long
+        // this model takes; every wait after it borrows from this one.
+        const took = completedDurationMs(job);
+        if (took !== undefined) rememberRenderMs(renderEtaKey(job.kind, job.model), took);
         const artifact = artifactOf(job);
         if (!artifact) continue;
         settling.current.add(job.id);

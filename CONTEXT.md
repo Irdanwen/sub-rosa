@@ -482,6 +482,27 @@ subject and lighting do not drift over generations that each only ever see
 their immediate predecessor. Rides the reference-to-video contract.
 _Avoid_: keyframe, style reference (too generic).
 
+### Waiting on a render (fork)
+
+**Darkroom**:
+What a generation looks like while it is being made: a frame at the render's
+own aspect ratio, in the place the result will occupy, holding a slow field of
+seeded light and film grain. It is abstract on purpose - it never shows the
+opening frame or anything else derived from the request, because a placeholder
+that looks like a preview is a promise the arriving render breaks. One
+component, every surface: the desktop queue, the mobile panels, a running
+workflow node, a film being made.
+_Avoid_: loader, spinner, skeleton, placeholder (the frame is not a stand-in
+for a layout, it is the reserved shape of the result); "preview" above all.
+
+**Render estimate**:
+The median wall time this machine has seen for a model, over the last few
+finished renders of that kind. Two samples minimum, and the bar it drives
+eases toward a ceiling it never reaches - only a finished render may say a
+render is finished. Local, best-effort, and absent by default: with no
+estimate the darkroom sweeps rather than fills.
+_Avoid_: ETA, progress (the backend reports none), percentage complete.
+
 ### Studio gallery (fork)
 
 **Gallery**:

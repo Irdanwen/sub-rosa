@@ -74,6 +74,7 @@ import {
 import { EmptyState } from "../ui/EmptyState";
 import { Select } from "../ui/Select";
 import { Spinner } from "../ui/Spinner";
+import { Darkroom } from "./Darkroom";
 import { Switch } from "../ui/Switch";
 import { NotePicker } from "./NotePicker";
 import { StudioField } from "./controls";
@@ -952,21 +953,30 @@ export function FilmStudio({
 
       {stage === "making" ? (
         <div className="film-making">
-          <Spinner aria-label="Making the film" />
-          <p className="studio-picker-section-title">
-            {shotProgress.done} of {shotProgress.total} steps
-            {shotProgress.failed > 0 ? `, ${shotProgress.failed} failed` : ""}
-          </p>
+          {/* The one wait in the app with a real denominator: a film knows how
+           * many steps it has, so the bar is measured rather than estimated. */}
+          <Darkroom
+            className="film-darkroom"
+            seed={note?.id ?? "film"}
+            phase="processing"
+            label="Making your film"
+            progress={shotProgress.total > 0 ? shotProgress.done / shotProgress.total : undefined}
+            meta={`${shotProgress.done} of ${shotProgress.total} steps${
+              shotProgress.failed > 0 ? `, ${shotProgress.failed} failed` : ""
+            }`}
+            actions={
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => abortRef.current?.abort()}
+              >
+                Stop
+              </button>
+            }
+          />
           <p className="studio-queue-hint">
             Renders keep going if you close the app. Come back and it picks up.
           </p>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => abortRef.current?.abort()}
-          >
-            Stop
-          </button>
         </div>
       ) : null}
 
