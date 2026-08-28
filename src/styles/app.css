@@ -3752,6 +3752,16 @@ input:focus-visible,
   font-weight: 500;
 }
 
+/* The clock beside "Thinking". Quieter than the label it follows: it is there
+ * to be checked, not read, and tabular figures keep the row from twitching as
+ * the seconds tick. */
+.agent-reasoning-elapsed {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+  opacity: 0.85;
+}
+
 .agent-reasoning[open] > summary p {
   display: none;
 }

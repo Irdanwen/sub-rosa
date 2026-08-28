@@ -11327,6 +11327,28 @@ function AgentThinkingGroup({
   reasoning: Extract<AgentChatPart, { type: "reasoning" }>[];
   running: boolean;
 }) {
+  // How long this has been working, counted from when this view first saw it
+  // run. A shimmering word is all there was, and it says "working" identically
+  // at four seconds and at six minutes - which is exactly the span where a
+  // provider is failing and retrying behind the scenes, with nothing on screen
+  // to suggest anything is wrong. The clock is what tells those apart.
+  const runningSince = useRef<number | null>(null);
+  const [runningFor, setRunningFor] = useState(0);
+  useEffect(() => {
+    if (!running) {
+      runningSince.current = null;
+      setRunningFor(0);
+      return;
+    }
+    if (runningSince.current === null) runningSince.current = Date.now();
+    const tick = window.setInterval(() => {
+      setRunningFor(Date.now() - (runningSince.current ?? Date.now()));
+    }, 1000);
+    return () => window.clearInterval(tick);
+  }, [running]);
+  // Held back for the first few seconds: most turns answer inside it, and a
+  // counter that appears and vanishes on every one of them is noise.
+  const elapsedLabel = runningFor >= 5000 ? formatThinkingElapsed(runningFor) : "";
   // Collapsed by default to a short label — "Thinking" while it works, "Thought"
   // once done (terracotta while live). Expanding reveals only the reasoning
   // prose; tool/action rows render outside this disclosure.
@@ -11342,9 +11364,13 @@ function AgentThinkingGroup({
       onToggle={(event) => onOpenChange(event.currentTarget.open)}
     >
       <summary>
+        {/* The app's own activity mark, next to the label. The shimmer alone
+         * reads as styling; a spinner reads as something happening. */}
+        {running ? <Spinner aria-hidden /> : null}
         <span className={running ? "text-shimmer" : undefined}>
           {running ? "Thinking" : "Thought"}
         </span>
+        {elapsedLabel ? <span className="agent-reasoning-elapsed">{elapsedLabel}</span> : null}
         <IconChevronDownSmall size={14} className="agent-disclosure-chevron" />
       </summary>
       <div className="agent-reasoning-body">
@@ -13004,9 +13030,21 @@ function ActivityIndicator({
 function AgentThinking() {
   return (
     <div className="agent-thinking" role="status" aria-live="polite">
+      <Spinner aria-hidden />
       <span className="text-shimmer agent-thinking-label">Thinking…</span>
     </div>
   );
+}
+
+/** How long the current step has been running, for the label beside
+ * "Thinking". Seconds while they still mean something, then minutes: the point
+ * is to make a six-minute wait look like six minutes. */
+export function formatThinkingElapsed(elapsedMs: number): string {
+  const seconds = Math.floor(elapsedMs / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")}`;
 }
 
 /** Rounded, single-unit elapsed time — "12 min", "2 h 40". Long jobs are the
