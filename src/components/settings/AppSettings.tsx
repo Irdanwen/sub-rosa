@@ -99,6 +99,7 @@ import { TeamTapsSection } from "./TeamTapsSection";
 import { ToolsetsSection } from "./ToolsetsSection";
 import { DictionarySettingsSection } from "./DictionarySettingsSection";
 import { ImportSettingsSection } from "./ImportSettingsSection";
+import { CouncilSettingsSection } from "./CouncilSettingsSection";
 import { MemorySettingsSection } from "./MemorySettingsSection";
 import { MicTestControl, type MicTestState } from "./MicTestControl";
 import { StyleSettingsSection } from "./StyleSettingsSection";
@@ -211,6 +212,7 @@ export type SettingsTab =
   | "models"
   | "agent"
   | "memory"
+  | "council"
   | "skills"
   | "external-dirs"
   | "skill-review"
@@ -236,6 +238,7 @@ export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "models", label: "Models" },
   { id: "agent", label: "Agent" },
   { id: "memory", label: "Memory" },
+  { id: "council", label: "Council" },
   { id: "skills", label: "Installed skills" },
   { id: "external-dirs", label: "External skill directories" },
   { id: "skill-review", label: "Pending skill changes" },
@@ -1328,6 +1331,8 @@ export function AppSettings({
             <AutomationsSection />
           </>
         ) : null}
+
+        {activeTab === "council" ? <CouncilSettingsSection /> : null}
 
         {activeTab === "skills" ? <InstalledSkillsSection /> : null}
         {activeTab === "external-dirs" ? <ExternalDirsSection /> : null}

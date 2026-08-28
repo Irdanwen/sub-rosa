@@ -11,6 +11,7 @@ import { initBrand } from "./lib/brand";
 import "./styles/app.css";
 import "./styles/carpe-diem.css";
 import "./styles/studio.css";
+import "./styles/council.css";
 import "./styles/mobile.css";
 
 declare global {

@@ -12,6 +12,8 @@ pub mod background;
 pub mod calendar;
 pub mod carpe_diem;
 pub mod commands;
+#[cfg(desktop)]
+pub mod council;
 pub mod db;
 pub mod destinations;
 #[cfg(desktop)]
@@ -342,6 +344,20 @@ pub fn run() {
             longform::note_summary_plan,
             longform::summarize_note_longform,
             longform::forget_note_summary,
+            council::council_plan,
+            council::council_convene,
+            council::council_cycle,
+            council::council_cycles,
+            council::council_cycle_for_session,
+            council::council_drafts,
+            council::council_answer_questions,
+            council::council_update_mandate,
+            council::council_bind_session,
+            council::council_request_verdict,
+            council::council_retake,
+            council::council_verdicts,
+            council::council_cycle_awaiting_verdict,
+            council::council_forget,
             timeline::export_timeline_bundle,
             bible::list_bible_entries,
             bible::save_bible_entry,

@@ -28,6 +28,9 @@ fn platform_specific(name: &str) -> bool {
         "dictation::",
         "os_accounts::",
         "theme_icon::",
+        // A council issues a mandate for one agent to execute, and there is
+        // no agent runtime on iOS to hand it to (ADR-0034).
+        "council::",
         // The extractor rail runs a binary the user installed; iOS cannot
         // execute one at all (ADR-0028).
         "ingest::extractor::",

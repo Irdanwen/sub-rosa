@@ -330,6 +330,79 @@ content.
 _Avoid_: history, context (unqualified), Hermes memory (that is the runtime's
 folder, not this store).
 
+### The council (fork)
+
+**Council**:
+A named, saved group of **seats** convened on one request. It deliberates and
+issues a **mandate**; it never executes anything and no seat of it holds a tool
+that changes state. Desktop only: there is no Hermes on iOS, so there is
+nothing for a mandate to be handed to (ADR-0034).
+_Avoid_: bot, multi-agent, swarm, room, channel, member (all of these describe
+a chat product this is not).
+
+**Seat**:
+One specialist at the table: a name, its instructions, **its own model**, and a
+**role** -- what it is there to do (hold a position, object, judge conformance,
+hunt collateral damage, hunt satisfaction in the letter only). Two seats of one
+council never run on the same model family: the diversity being bought is
+diversity of weights, not of personas. A seat reads and argues; it cannot
+write, run a command, or touch the disk.
+_Avoid_: agent, persona, role, participant, expert.
+
+**Sitting**:
+One run of a council over one request: the **blind round**, the questions, the
+contradiction round, and the issuing of the mandate. A durable row, resumable
+part by part, and a finished seat is never re-bought.
+_Avoid_: session (that is a Hermes chat session), run (that is a workflow run),
+conversation, thread.
+
+**The chair**:
+Sub Rosa itself. It puts the request to the seats, intersects their questions,
+compares their answers mechanically, decides who speaks in the contradiction
+round, holds the budget, and renders the mandate. It is never a seat and it
+never has an opinion of its own.
+_Avoid_: orchestrator, moderator, supervisor, lead agent.
+
+**Blind round**:
+The first round, in which every seat answers without seeing any other seat's
+answer, in parallel. It is what prevents the anchoring that makes free
+discussion converge -- and, because it is one independent answer per model, it
+doubles as the single-model baseline the council is measured against.
+_Avoid_: first pass, round one (say which round it is), fan-out.
+
+**Mandate**:
+What a sitting produces: a fixed structure of capped slots -- objective,
+deliverable, constraints, **acceptance criteria**, out of scope, first step --
+that the app renders deterministically into the prompt handed to the agent. The
+council fills the fields; the app owns the prompt, and no model is ever asked
+for the final string. Editable by the user before it is issued, and writable by
+hand without a council at all.
+_Avoid_: brief (that is a **moment**, ten minutes before a meeting), spec,
+prompt (that is the rendered string, not the structure), plan.
+
+**Acceptance criterion**:
+One checkable statement in a mandate, carrying **how it is verified** -- a
+command, a file, a rendered page, a reading. Seven at most. A criterion that
+names no means of verification is not one, and "it looks good" is not one. The
+agent is given them all: the defence against satisfying the letter is the
+**verdict**, not secrecy.
+_Avoid_: requirement, goal, test (a test is one way of verifying, not the
+criterion).
+
+**Verdict**:
+The council's judgement of finished work against the mandate that asked for it:
+each criterion satisfied, not satisfied or not verifiable, with the evidence
+that settled it, plus what was changed without being asked and what was
+quietly skipped. It never runs on the model the session ran on.
+_Avoid_: review, report, audit, score.
+
+**Retake**:
+A corrective mandate issued after a verdict that found something unsatisfied.
+Two at most per cycle: when they run out the app states what remains rather
+than looping. A bounded cycle that reports its residue beats an unbounded one
+that reports success.
+_Avoid_: retry, iteration, loop.
+
 ### Film production (fork)
 
 Films are produced by the app, locally, out of the user's own notes, paid in

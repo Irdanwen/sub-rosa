@@ -1,6 +1,6 @@
 import { IMAGE_GENERATION_ENABLED } from "./feature-flags";
 
-export type BuiltinComposerSlashCommandName = "model" | "file" | "image" | "goal";
+export type BuiltinComposerSlashCommandName = "model" | "file" | "image" | "goal" | "council";
 
 export type BuiltinComposerSlashCommandDef = {
   name: BuiltinComposerSlashCommandName;
@@ -46,6 +46,12 @@ const BASE_BUILTIN_COMPOSER_SLASH_COMMANDS: BuiltinComposerSlashCommandDef[] = [
     label: "Goal",
     description: "Work autonomously until a goal is done.",
     insertText: "/goal ",
+  },
+  {
+    name: "council",
+    label: "Council",
+    description: "Several models turn your request into a mandate first.",
+    insertText: "/council ",
   },
 ];
 
@@ -221,7 +227,9 @@ export function slashModelResolutionError(
 }
 
 function isBuiltinComposerSlashCommandName(name: string): name is BuiltinComposerSlashCommandName {
-  return name === "model" || name === "file" || name === "image" || name === "goal";
+  return (
+    name === "model" || name === "file" || name === "image" || name === "goal" || name === "council"
+  );
 }
 
 function normalizeSlashCommandQuery(value: string) {

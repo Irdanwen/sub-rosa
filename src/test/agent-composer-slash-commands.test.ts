@@ -40,8 +40,22 @@ describe("agent composer built-in slash commands", () => {
       expect.objectContaining({ name: "model" }),
       expect.objectContaining({ name: "file" }),
       expect.objectContaining({ name: "goal" }),
+      expect.objectContaining({ name: "council" }),
     ]);
     expect(matchBuiltinComposerSlashCommands("image")).toEqual([]);
+  });
+
+  it("parses the council command", () => {
+    expect(parseBuiltinComposerSlashCommand("/council make the settings page faster")).toEqual({
+      name: "council",
+      argument: "make the settings page faster",
+    });
+  });
+
+  it("does not confuse council with the other c-less commands", () => {
+    expect(matchBuiltinComposerSlashCommands("co")).toEqual([
+      expect.objectContaining({ name: "council" }),
+    ]);
   });
 
   it("maps goal arguments to the runtime's subcommands", () => {

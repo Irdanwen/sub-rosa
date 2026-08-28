@@ -1344,3 +1344,203 @@ pub struct PendingDictationDto {
     pub attempts: i64,
     pub created_at: String,
 }
+
+// --- The council (ADR-0034) ------------------------------------------------
+//
+// These live here rather than in `council/` because the repository writes them
+// and the repository is compiled on both platforms. The module itself, and
+// every command it exposes, is desktop-only: there is no Hermes on iOS, so
+// there is nothing for a mandate to be handed to.
+
+/// One seat of a council, frozen at convocation together with the model it
+/// will run on.
+///
+/// The model is recorded rather than looked up later because the whole point
+/// of the roster is that two seats never share a family: a verdict read months
+/// afterwards has to be able to show which weights said what.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CouncilSeatDto {
+    pub id: String,
+    pub name: String,
+    /// position | objection | conformance | collateral | letter
+    pub role: String,
+    /// What this seat is for, in one line. Shown to the user, so it is prose,
+    /// not the seat's system prompt.
+    pub charge: String,
+    pub model: String,
+    /// Derived from the id (see `council::seats::model_family`). Stored so the
+    /// no-two-seats-share-a-family rule can be audited after the fact.
+    pub model_family: String,
+}
+
+/// One checkable statement in a mandate, carrying how it is verified.
+///
+/// `verified_by` is not decoration. A criterion whose verification is empty is
+/// rejected by the validator, because the verdict has nothing to do with it
+/// and "it looks good" would otherwise pass as a criterion.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AcceptanceCriterionDto {
+    pub statement: String,
+    pub verified_by: String,
+}
+
+/// The mandate itself: capped slots, never prose.
+///
+/// The app renders these into the string handed to the agent
+/// (`council::mandate::render`). No model is ever asked for that string.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MandateDto {
+    pub objective: String,
+    pub deliverable: Vec<String>,
+    pub constraints: Vec<String>,
+    pub acceptance: Vec<AcceptanceCriterionDto>,
+    pub out_of_scope: Vec<String>,
+    pub first_step: String,
+}
+
+/// A question the seats want answered before the mandate is issued.
+///
+/// `raised_by` is how many seats asked it independently in the blind round.
+/// One is an idiosyncrasy and never reaches the user, two or more is a real
+/// ambiguity in the request -- which is the whole reason for having several
+/// seats ask.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CouncilQuestionDto {
+    pub id: String,
+    pub question: String,
+    pub raised_by: i64,
+    pub answer: Option<String>,
+}
+
+/// One cycle: a request, the seats convened on it, the mandate they issued,
+/// and the session that executed it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CouncilMandateDto {
+    pub id: String,
+    pub council_id: String,
+    /// The user's words, verbatim. Never rewritten -- the mandate is the
+    /// interpretation, and being able to compare the two is the point.
+    pub request: String,
+    /// deliberating | questions | ready | executing | reviewing | settled | failed
+    pub status: String,
+    pub seats: Vec<CouncilSeatDto>,
+    /// The ground the seats were handed: the working folder and what is in it,
+    /// the runtime mode, what the agent can actually do.
+    pub situation: Option<String>,
+    pub questions: Vec<CouncilQuestionDto>,
+    pub mandate: Option<MandateDto>,
+    /// Where the seats disagreed and the chair had to choose. A property of the
+    /// sitting, not of the mandate: the mandate is the contract with the agent
+    /// and this is not part of it. Shown to the user before they accept,
+    /// because they are the person who can settle it.
+    pub dissent: Vec<String>,
+    /// What the caps had to cut. Empty is the good case. Never swallowed: a
+    /// truncation nobody is told about reads as "everything you asked for is in
+    /// there".
+    pub cuts: Vec<String>,
+    /// Exactly the string the agent was handed. Stored rather than recomputed:
+    /// the feature rests on being able to say what was asked, without trusting
+    /// that the renderer has not changed since.
+    pub rendered_prompt: Option<String>,
+    pub session_id: Option<String>,
+    pub working_dir: Option<String>,
+    /// The folder's HEAD when the agent took the mandate. What the verdict
+    /// diffs against, so work the session committed is visible to it.
+    pub base_commit: Option<String>,
+    /// The model the work was done on. The verdict stays off its family.
+    pub session_model: Option<String>,
+    /// Retake count. Zero is the first pass.
+    pub round: i64,
+    pub model_calls: i64,
+    pub prompt_version: String,
+    pub last_error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// What one seat produced in one phase of one round. The resume unit: a
+/// sitting interrupted at the fourth of five seats restarts at the fifth.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CouncilTurnDto {
+    pub mandate_id: String,
+    pub round: i64,
+    /// blind | contradiction | verdict
+    pub phase: String,
+    pub seat_id: String,
+    pub model: String,
+    pub content: String,
+    /// A seat that failed is recorded, not retried forever. A council of five
+    /// that loses one still deliberates -- and the verdict says it did.
+    pub failed: bool,
+    pub created_at: String,
+}
+
+/// One criterion, judged.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CriterionVerdictDto {
+    pub statement: String,
+    /// satisfied | unsatisfied | unverifiable
+    pub status: String,
+    /// What settled it: a path, a line, a command's output, a reading. Empty
+    /// evidence downgrades a "satisfied" to "unverifiable" in the chair's
+    /// merge -- an unevidenced pass is an opinion.
+    pub evidence: String,
+    pub seat: String,
+}
+
+/// Something the mandate did not ask about: a change nobody requested, work
+/// that was quietly skipped, a criterion satisfied in the letter only.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct VerdictFindingDto {
+    /// collateral | skipped | letter
+    pub kind: String,
+    pub summary: String,
+    pub evidence: String,
+    pub seat: String,
+}
+
+/// The council's judgement of finished work against the mandate that asked for
+/// it. One per round, because a retake produces another and the first must
+/// survive it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CouncilVerdictDto {
+    pub mandate_id: String,
+    pub round: i64,
+    /// running | ready | failed
+    pub status: String,
+    pub session_id: Option<String>,
+    pub criteria: Vec<CriterionVerdictDto>,
+    pub findings: Vec<VerdictFindingDto>,
+    /// The chair's short reading. Never a score: a number would invite tuning
+    /// the number.
+    pub summary: Option<String>,
+    /// The prompts that produced this verdict, not the ones that produced the
+    /// mandate: a retake can land after an app update.
+    pub prompt_version: String,
+    pub last_error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// The parsed contents of `council_verdicts.verdict_json`, kept as a type so
+/// the row mapper and the module agree on the shape without a `Value` in
+/// between.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CouncilVerdictBody {
+    #[serde(default)]
+    pub criteria: Vec<CriterionVerdictDto>,
+    #[serde(default)]
+    pub findings: Vec<VerdictFindingDto>,
+    #[serde(default)]
+    pub summary: Option<String>,
+}

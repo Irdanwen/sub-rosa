@@ -1,12 +1,12 @@
 use crate::domain::types::{
     AgentMessageDto, AgentMessageRole, AgentSafetyProfile, AgentTaskDto, AgentTaskListResponse,
     AgentTaskStatus, AgentToolEventDto, AgentToolEventStatus, AppError, AudioArtifactDto,
-    BibleEntryDto, BibleRefDto, DictationHistoryItemDto, DictionaryEntryDto, FilmListItemDto,
-    FolderDto, IngestDto, ListDictationHistoryResponse, ListNotesResponse, MediaJobDto,
-    MediaJobStatus, MemoryDto, MemorySource, NoteDto, NoteListItemDto, NoteSummaryDto,
-    PendingDictationDto, ProcessingStatus, RecordingSourceMode, RecordingState, SessionFolderDto,
-    ShotListDto, TranscriptCoverageDto, TranscriptDto, WorkflowRunDto, WorkflowRunNodeDto,
-    WorkflowRunStatus,
+    BibleEntryDto, BibleRefDto, CouncilMandateDto, CouncilTurnDto, CouncilVerdictBody,
+    CouncilVerdictDto, DictationHistoryItemDto, DictionaryEntryDto, FilmListItemDto, FolderDto,
+    IngestDto, ListDictationHistoryResponse, ListNotesResponse, MediaJobDto, MediaJobStatus,
+    MemoryDto, MemorySource, NoteDto, NoteListItemDto, NoteSummaryDto, PendingDictationDto,
+    ProcessingStatus, RecordingSourceMode, RecordingState, SessionFolderDto, ShotListDto,
+    TranscriptCoverageDto, TranscriptDto, WorkflowRunDto, WorkflowRunNodeDto, WorkflowRunStatus,
 };
 use chrono::{Duration, SecondsFormat, Utc};
 use sqlx::query::query;
@@ -4705,4 +4705,489 @@ fn shot_count_of(shots_json: Option<&str>) -> i64 {
         .and_then(serde_json::Value::as_array)
         .or_else(|| value.as_array());
     shots.map(|shots| shots.len() as i64).unwrap_or(0)
+}
+
+// --- The council (ADR-0034) ------------------------------------------------
+//
+// Compiled on both platforms because the repository is, even though the module
+// that drives these rows is desktop-only. Dead weight on iOS, and cheaper than
+// threading `cfg` through a file this size.
+
+impl Repositories {
+    /// Open a cycle: the row exists before any model call, so a deliberation
+    /// cut short by a crash is something the sweep can find.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn begin_council_mandate(
+        &self,
+        id: &str,
+        council_id: &str,
+        request: &str,
+        seats_json: &str,
+        situation: Option<&str>,
+        working_dir: Option<&str>,
+        prompt_version: &str,
+    ) -> Result<CouncilMandateDto, sqlx::error::Error> {
+        let now = timestamp();
+        query(
+            "INSERT INTO council_mandates
+               (id, council_id, request, status, seats_json, situation, working_dir,
+                round, model_calls, prompt_version, created_at, updated_at)
+             VALUES (?, ?, ?, 'deliberating', ?, ?, ?, 0, 0, ?, ?, ?)",
+        )
+        .bind(id)
+        .bind(council_id)
+        .bind(request)
+        .bind(seats_json)
+        .bind(situation)
+        .bind(working_dir)
+        .bind(prompt_version)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await?;
+        Ok(self
+            .council_mandate(id)
+            .await?
+            .expect("the row was just written"))
+    }
+
+    pub async fn council_mandate(
+        &self,
+        id: &str,
+    ) -> Result<Option<CouncilMandateDto>, sqlx::error::Error> {
+        let row = query("SELECT * FROM council_mandates WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(council_mandate_from_row))
+    }
+
+    /// The cycle a session is executing, if any. This is the lookup the verdict
+    /// makes when a session reports it is done.
+    pub async fn council_mandate_for_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<CouncilMandateDto>, sqlx::error::Error> {
+        let row = query(
+            "SELECT * FROM council_mandates WHERE session_id = ? ORDER BY updated_at DESC LIMIT 1",
+        )
+        .bind(session_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(council_mandate_from_row))
+    }
+
+    pub async fn list_council_mandates(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<CouncilMandateDto>, sqlx::error::Error> {
+        let rows = query("SELECT * FROM council_mandates ORDER BY updated_at DESC LIMIT ?")
+            .bind(limit.clamp(1, 200))
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.into_iter().map(council_mandate_from_row).collect())
+    }
+
+    pub async fn set_council_mandate_status(
+        &self,
+        id: &str,
+        status: &str,
+    ) -> Result<Option<CouncilMandateDto>, sqlx::error::Error> {
+        query("UPDATE council_mandates SET status = ?, updated_at = ? WHERE id = ?")
+            .bind(status)
+            .bind(timestamp())
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        self.council_mandate(id).await
+    }
+
+    /// Write the questions the seats agreed to ask, and park the cycle on the
+    /// user. Also used to write them back with their answers.
+    pub async fn set_council_questions(
+        &self,
+        id: &str,
+        questions_json: &str,
+        status: &str,
+    ) -> Result<Option<CouncilMandateDto>, sqlx::error::Error> {
+        query(
+            "UPDATE council_mandates SET questions_json = ?, status = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(questions_json)
+        .bind(status)
+        .bind(timestamp())
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        self.council_mandate(id).await
+    }
+
+    /// The mandate is issued: slots, the exact string they render to, and the
+    /// two things the sitting owes the user before they accept it.
+    pub async fn set_council_mandate_issued(
+        &self,
+        id: &str,
+        mandate_json: &str,
+        rendered_prompt: &str,
+        dissent_json: &str,
+        cuts_json: &str,
+    ) -> Result<Option<CouncilMandateDto>, sqlx::error::Error> {
+        query(
+            "UPDATE council_mandates
+             SET mandate_json = ?, rendered_prompt = ?, dissent_json = ?, cuts_json = ?,
+                 status = 'ready', last_error = NULL, updated_at = ?
+             WHERE id = ?",
+        )
+        .bind(mandate_json)
+        .bind(rendered_prompt)
+        .bind(dissent_json)
+        .bind(cuts_json)
+        .bind(timestamp())
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        self.council_mandate(id).await
+    }
+
+    /// Bind the cycle to the session executing it.
+    pub async fn set_council_mandate_session(
+        &self,
+        id: &str,
+        session_id: &str,
+        working_dir: Option<&str>,
+        base_commit: Option<&str>,
+        session_model: Option<&str>,
+    ) -> Result<Option<CouncilMandateDto>, sqlx::error::Error> {
+        query(
+            "UPDATE council_mandates
+             SET session_id = ?,
+                 working_dir = COALESCE(?, working_dir),
+                 base_commit = COALESCE(?, base_commit),
+                 session_model = COALESCE(?, session_model),
+                 status = 'executing',
+                 updated_at = ?
+             WHERE id = ?",
+        )
+        .bind(session_id)
+        .bind(working_dir)
+        .bind(base_commit)
+        .bind(session_model)
+        .bind(timestamp())
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        self.council_mandate(id).await
+    }
+
+    pub async fn set_council_mandate_failed(
+        &self,
+        id: &str,
+        error: &str,
+    ) -> Result<Option<CouncilMandateDto>, sqlx::error::Error> {
+        query(
+            "UPDATE council_mandates SET status = 'failed', last_error = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(error)
+        .bind(timestamp())
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        self.council_mandate(id).await
+    }
+
+    /// What the cycle has spent, in model calls. Counted in the same statement
+    /// that records the turn it paid for, so a crash cannot lose the count of
+    /// something already bought.
+    pub async fn add_council_model_calls(
+        &self,
+        id: &str,
+        calls: i64,
+    ) -> Result<(), sqlx::error::Error> {
+        query(
+            "UPDATE council_mandates SET model_calls = model_calls + ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(calls)
+        .bind(timestamp())
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Open a retake: the round advances and the cycle goes back to
+    /// deliberating over the verdict it just received.
+    pub async fn set_council_mandate_round(
+        &self,
+        id: &str,
+        round: i64,
+        status: &str,
+    ) -> Result<Option<CouncilMandateDto>, sqlx::error::Error> {
+        query("UPDATE council_mandates SET round = ?, status = ?, updated_at = ? WHERE id = ?")
+            .bind(round)
+            .bind(status)
+            .bind(timestamp())
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        self.council_mandate(id).await
+    }
+
+    /// Deleting the row is the cancel. Turns and verdicts cascade.
+    pub async fn delete_council_mandate(&self, id: &str) -> Result<(), sqlx::error::Error> {
+        query("DELETE FROM council_mandates WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Cycles the sweep should re-drive: a deliberation that never finished.
+    ///
+    /// Two statuses are deliberately absent. `executing` is waiting on a Hermes
+    /// session, not on us. `reviewing` is owned by its own row in
+    /// `council_verdicts`, which the sweep drives through
+    /// [`Self::unfinished_council_verdicts`] -- re-driving it from here too
+    /// would run one verdict twice and bill for both.
+    pub async fn unfinished_council_mandates(&self) -> Result<Vec<String>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT id FROM council_mandates WHERE status = 'deliberating' ORDER BY updated_at ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|row| row.get("id")).collect())
+    }
+
+    pub async fn council_turns(
+        &self,
+        mandate_id: &str,
+        round: i64,
+        phase: &str,
+    ) -> Result<Vec<CouncilTurnDto>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT * FROM council_turns WHERE mandate_id = ? AND round = ? AND phase = ? ORDER BY created_at ASC",
+        )
+        .bind(mandate_id)
+        .bind(round)
+        .bind(phase)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(council_turn_from_row).collect())
+    }
+
+    /// Record what a seat said, and charge the cycle for it in the same breath.
+    ///
+    /// `INSERT OR REPLACE` rather than `INSERT`: re-driving a sitting must be
+    /// idempotent, and the primary key is what makes it so.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn record_council_turn(
+        &self,
+        mandate_id: &str,
+        round: i64,
+        phase: &str,
+        seat_id: &str,
+        model: &str,
+        content: &str,
+        failed: bool,
+    ) -> Result<(), sqlx::error::Error> {
+        query(
+            "INSERT OR REPLACE INTO council_turns
+               (mandate_id, round, phase, seat_id, model, content, failed, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(mandate_id)
+        .bind(round)
+        .bind(phase)
+        .bind(seat_id)
+        .bind(model)
+        .bind(content)
+        .bind(i64::from(failed))
+        .bind(timestamp())
+        .execute(&self.pool)
+        .await?;
+        self.add_council_model_calls(mandate_id, 1).await
+    }
+
+    pub async fn begin_council_verdict(
+        &self,
+        mandate_id: &str,
+        round: i64,
+        session_id: Option<&str>,
+        prompt_version: &str,
+    ) -> Result<CouncilVerdictDto, sqlx::error::Error> {
+        let now = timestamp();
+        query(
+            "INSERT INTO council_verdicts
+               (mandate_id, round, status, session_id, prompt_version, created_at, updated_at)
+             VALUES (?, ?, 'running', ?, ?, ?, ?)
+             ON CONFLICT(mandate_id, round) DO UPDATE SET
+               status = 'running',
+               session_id = excluded.session_id,
+               prompt_version = excluded.prompt_version,
+               last_error = NULL,
+               updated_at = excluded.updated_at",
+        )
+        .bind(mandate_id)
+        .bind(round)
+        .bind(session_id)
+        .bind(prompt_version)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await?;
+        Ok(self
+            .council_verdict(mandate_id, round)
+            .await?
+            .expect("the row was just written"))
+    }
+
+    pub async fn council_verdict(
+        &self,
+        mandate_id: &str,
+        round: i64,
+    ) -> Result<Option<CouncilVerdictDto>, sqlx::error::Error> {
+        let row = query("SELECT * FROM council_verdicts WHERE mandate_id = ? AND round = ?")
+            .bind(mandate_id)
+            .bind(round)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(council_verdict_from_row))
+    }
+
+    /// Every verdict of a cycle, oldest first: a retake's verdict is only
+    /// meaningful next to the one that prompted it.
+    pub async fn council_verdicts(
+        &self,
+        mandate_id: &str,
+    ) -> Result<Vec<CouncilVerdictDto>, sqlx::error::Error> {
+        let rows = query("SELECT * FROM council_verdicts WHERE mandate_id = ? ORDER BY round ASC")
+            .bind(mandate_id)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.into_iter().map(council_verdict_from_row).collect())
+    }
+
+    pub async fn set_council_verdict_ready(
+        &self,
+        mandate_id: &str,
+        round: i64,
+        verdict_json: &str,
+    ) -> Result<Option<CouncilVerdictDto>, sqlx::error::Error> {
+        query(
+            "UPDATE council_verdicts
+             SET status = 'ready', verdict_json = ?, last_error = NULL, updated_at = ?
+             WHERE mandate_id = ? AND round = ?",
+        )
+        .bind(verdict_json)
+        .bind(timestamp())
+        .bind(mandate_id)
+        .bind(round)
+        .execute(&self.pool)
+        .await?;
+        self.council_verdict(mandate_id, round).await
+    }
+
+    pub async fn set_council_verdict_failed(
+        &self,
+        mandate_id: &str,
+        round: i64,
+        error: &str,
+    ) -> Result<Option<CouncilVerdictDto>, sqlx::error::Error> {
+        query(
+            "UPDATE council_verdicts
+             SET status = 'failed', last_error = ?, updated_at = ?
+             WHERE mandate_id = ? AND round = ?",
+        )
+        .bind(error)
+        .bind(timestamp())
+        .bind(mandate_id)
+        .bind(round)
+        .execute(&self.pool)
+        .await?;
+        self.council_verdict(mandate_id, round).await
+    }
+
+    pub async fn unfinished_council_verdicts(
+        &self,
+    ) -> Result<Vec<(String, i64)>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT mandate_id, round FROM council_verdicts WHERE status = 'running' ORDER BY updated_at ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| (row.get("mandate_id"), row.get("round")))
+            .collect())
+    }
+}
+
+fn council_mandate_from_row(row: sqlx_sqlite::SqliteRow) -> CouncilMandateDto {
+    CouncilMandateDto {
+        id: row.get("id"),
+        council_id: row.get("council_id"),
+        request: row.get("request"),
+        status: row.get("status"),
+        seats: parse_json_column(row.get::<Option<String>, _>("seats_json")),
+        situation: row.get("situation"),
+        questions: parse_json_column(row.get::<Option<String>, _>("questions_json")),
+        mandate: row
+            .get::<Option<String>, _>("mandate_json")
+            .and_then(|json| serde_json::from_str(&json).ok()),
+        dissent: parse_json_column(row.get::<Option<String>, _>("dissent_json")),
+        cuts: parse_json_column(row.get::<Option<String>, _>("cuts_json")),
+        rendered_prompt: row.get("rendered_prompt"),
+        session_id: row.get("session_id"),
+        working_dir: row.get("working_dir"),
+        base_commit: row.get("base_commit"),
+        session_model: row.get("session_model"),
+        round: row.get("round"),
+        model_calls: row.get("model_calls"),
+        prompt_version: row.get("prompt_version"),
+        last_error: row.get("last_error"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    }
+}
+
+fn council_turn_from_row(row: sqlx_sqlite::SqliteRow) -> CouncilTurnDto {
+    CouncilTurnDto {
+        mandate_id: row.get("mandate_id"),
+        round: row.get("round"),
+        phase: row.get("phase"),
+        seat_id: row.get("seat_id"),
+        model: row.get("model"),
+        content: row.get("content"),
+        failed: row.get::<i64, _>("failed") != 0,
+        created_at: row.get("created_at"),
+    }
+}
+
+fn council_verdict_from_row(row: sqlx_sqlite::SqliteRow) -> CouncilVerdictDto {
+    let body: CouncilVerdictBody = row
+        .get::<Option<String>, _>("verdict_json")
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default();
+    CouncilVerdictDto {
+        mandate_id: row.get("mandate_id"),
+        round: row.get("round"),
+        status: row.get("status"),
+        session_id: row.get("session_id"),
+        criteria: body.criteria,
+        findings: body.findings,
+        summary: body.summary,
+        prompt_version: row.get("prompt_version"),
+        last_error: row.get("last_error"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    }
+}
+
+/// A JSON column that must never be able to break a read.
+///
+/// A malformed blob degrades to "empty" rather than to an error: the cycle it
+/// belongs to is still worth showing, and every caller here treats an empty
+/// list as "nothing yet", which is the safe reading.
+fn parse_json_column<T: serde::de::DeserializeOwned + Default>(raw: Option<String>) -> T {
+    raw.and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default()
 }

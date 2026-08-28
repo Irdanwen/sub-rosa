@@ -170,6 +170,12 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
     ensure_column(_pool, "notes", "calendar_event_id", "TEXT").await?;
     ensure_column(_pool, "notes", "scheduled_start", "TEXT").await?;
     ensure_column(_pool, "notes", "attendees_json", "TEXT").await?;
+    for statement in include_str!("../../migrations/019_council.sql").split(';') {
+        let statement = statement.trim();
+        if !statement.is_empty() {
+            query(statement).execute(_pool).await?;
+        }
+    }
     for statement in include_str!("../../migrations/018_shot_lists.sql").split(';') {
         let statement = statement.trim();
         if !statement.is_empty() {

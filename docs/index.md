@@ -44,6 +44,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0031-the-timeline-export-is-the-finishing-path.md](adr/0031-the-timeline-export-is-the-finishing-path.md) — FCPXML and xmeml bundles; the recorder is a preview
 - [adr/0032-the-bible-is-local-rows-over-gallery-artifacts.md](adr/0032-the-bible-is-local-rows-over-gallery-artifacts.md) — persistent identities as pointers at gallery artifacts
 - [adr/0033-the-mix-is-rendered-offline.md](adr/0033-the-mix-is-rendered-offline.md) — deterministic Web Audio mix, BS.1770 loudness, ducking as automation
+- [adr/0034-the-council-issues-a-verifiable-mandate.md](adr/0034-the-council-issues-a-verifiable-mandate.md) — several model families read a request blind, the chair issues capped slots with acceptance criteria, one agent executes, the council judges the result
 
 ## Enforceable rules (spec/)
 

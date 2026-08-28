@@ -6,6 +6,7 @@ import { IconChevronLeftSmall } from "central-icons/IconChevronLeftSmall";
 import { IconAudio } from "central-icons/IconAudio";
 import { IconBox2 } from "central-icons/IconBox2";
 import { IconBookmark } from "central-icons/IconBookmark";
+import { IconCirclesThree } from "central-icons/IconCirclesThree";
 import { IconBrain2 } from "central-icons/IconBrain2";
 import { IconCircleInfo } from "central-icons/IconCircleInfo";
 import { IconFolderShared } from "central-icons/IconFolderShared";
@@ -236,6 +237,7 @@ const SETTINGS_SIDEBAR_GROUPS: {
       { id: "models", label: "Models", icon: <IconBrain2 size={16} /> },
       { id: "agent", label: "Agent", icon: <IconRobot2 size={16} /> },
       { id: "memory", label: "Memory", icon: <IconBookmark size={16} /> },
+      { id: "council", label: "Council", icon: <IconCirclesThree size={16} /> },
       {
         id: "skills",
         label: "Installed skills",

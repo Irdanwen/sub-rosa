@@ -84,6 +84,9 @@ import {
   useSyncExternalStore,
 } from "react";
 import { BackButton } from "../ui/BackButton";
+import { councilCycleAwaitingVerdict } from "../../lib/council";
+import { CouncilSitting } from "./council/CouncilSitting";
+import { VerdictPanel } from "./council/VerdictPanel";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Dialog } from "../ui/Dialog";
 import { EmptyState } from "../ui/EmptyState";
@@ -1409,6 +1412,29 @@ export function AgentWorkspace({
     running: false,
   });
   const [bridgeStarting, setBridgeStarting] = useState(false);
+  // The sitting that is deliberating over a request, if any. It takes over the
+  // main region until the mandate is handed to a session or discarded
+  // (ADR-0034), which is why it is one id rather than a panel toggle: there is
+  // never more than one, and closing it is deleting its row.
+  // A session under mandate has just reported it is done, so its cycle can be
+  // read against what it was asked for. Offered rather than run: accepting a
+  // mandate bought a deliberation, not a reading of whatever arrived hours
+  // later, and this is the moment the user knows whether they want one.
+  const [verdictMandateId, setVerdictMandateId] = useState<string | null>(null);
+  // Rounds whose verdict the user has already been offered and waved away. An
+  // agent under mandate stops many times before it is finished (a question, a
+  // handover, a pause), and re-opening the same offer at every one of them is
+  // how a useful prompt becomes an interruption.
+  const declinedVerdictsRef = useRef<Set<string>>(new Set());
+  const [councilRequest, setCouncilRequest] = useState<string | null>(null);
+  const [councilMandateId, setCouncilMandateId] = useState<string | null>(null);
+  // Frozen when the request is put to the council, not read live: the seats
+  // are told what ground the agent will work on, and that answer must not
+  // change under them while they are drafting against it.
+  const [councilGround, setCouncilGround] = useState<{
+    workingDir?: string;
+    unrestricted: boolean;
+  }>({ unrestricted: false });
   // Opt-in for the session being composed in the hero: start the runtime
   // without the OS sandbox. Read through a ref inside the async submit path.
   const [fullModeDraft, setFullModeDraft] = useState(false);
@@ -3293,8 +3319,41 @@ export function AgentWorkspace({
       return true;
     }
 
+    if (parsed.name === "council") {
+      await runCouncilSlashCommand(parsed.argument, commandText);
+      return true;
+    }
+
     await runFileSlashCommand(parsed.argument, commandText);
     return true;
+  }
+
+  /**
+   * `/council <request>` convenes a council on the request instead of sending
+   * it (ADR-0034). Several models read it independently, the chair issues a
+   * mandate, and only once the user accepts that mandate does a session start
+   * with it.
+   *
+   * The working folder and the runtime mode are read from the hero's own
+   * drafts, because those are what the seats need to know: a mandate written
+   * without knowing what the agent can reach asks for impossible things.
+   */
+  async function runCouncilSlashCommand(argument: string, commandText: string) {
+    const request = argument.trim();
+    if (!request) {
+      setError("Type what you want done after /council.");
+      return;
+    }
+    clearComposerCommandDraft(commandText);
+    setError(null);
+    setCouncilGround({
+      workingDir: workingDirDraftRef.current ?? undefined,
+      unrestricted: fullModeDraftRef.current,
+    });
+    setCouncilMandateId(null);
+    // Nothing is spent yet. The surface shows who would sit, on what, and what
+    // the range would cost, and the user convenes with a tap.
+    setCouncilRequest(request);
   }
 
   // `/image <prompt>` renders the generated image inline in the chat as an
@@ -4511,6 +4570,20 @@ export function AgentWorkspace({
           // feeds the recent window to the extraction model (fire-and-forget;
           // the helper checks the user's memory settings first).
           noteAssistantTurnCompleted(storedSessionId);
+          // A session working under a mandate has just said it is finished.
+          // Rust owns the rule for which statuses mean that, so this asks
+          // rather than deciding, and a session with no mandate answers null
+          // and costs one cheap query (ADR-0034).
+          void councilCycleAwaitingVerdict(storedSessionId)
+            .then((cycle) => {
+              if (!cycle) return;
+              if (declinedVerdictsRef.current.has(`${cycle.id}#${cycle.round}`)) return;
+              setVerdictMandateId(cycle.id);
+            })
+            .catch(() => {
+              // Best-effort like the memory hook above: the verdict is an
+              // offer, and failing to offer it must never break a turn.
+            });
         }
         // Delivery guarantee: any steer not consumed by a tool result this turn
         // (Hermes only injects steers into tool output) would otherwise be lost.
@@ -6824,7 +6897,7 @@ export function AgentWorkspace({
   });
 
   const composer =
-    activePanel === "chat" ? (
+    activePanel === "chat" && !councilRequest ? (
       <form
         className="agent-composer"
         data-hero={heroMode ? "true" : undefined}
@@ -7446,7 +7519,26 @@ export function AgentWorkspace({
       </form>
     ) : null;
 
-  const detailContent = gallerySections ? (
+  const detailContent = councilRequest ? (
+    <CouncilSitting
+      request={councilRequest}
+      mandateId={councilMandateId}
+      workingDir={councilGround.workingDir}
+      unrestricted={councilGround.unrestricted}
+      onConvened={setCouncilMandateId}
+      onHandOff={async (prompt) => {
+        // The council does not know how a session is made. It hands over the
+        // rendered mandate and takes back the id, which is what binds the two
+        // so a verdict can find the work later.
+        newSessionModeRef.current = true;
+        return await submitHermesSession(prompt);
+      }}
+      onClose={() => {
+        setCouncilMandateId(null);
+        setCouncilRequest(null);
+      }}
+    />
+  ) : gallerySections ? (
     <AgentResponseGallery
       sections={gallerySections}
       errors={galleryErrors}
@@ -7918,6 +8010,47 @@ export function AgentWorkspace({
                   onCopyFile={copyArtifactFile}
                   onClose={() => setArtifactPanel(null)}
                 />,
+                document.querySelector(".app-shell") ?? document.body,
+              )
+            : null}
+          {verdictMandateId
+            ? createPortal(
+                <div
+                  className="council-verdict-overlay"
+                  role="presentation"
+                  onClick={(event) => {
+                    if (event.target === event.currentTarget) {
+                      setVerdictMandateId(null);
+                    }
+                  }}
+                >
+                  <VerdictPanel
+                    mandateId={verdictMandateId}
+                    onRetake={async (prompt, sessionId) => {
+                      // Back into the session that did the work: it holds the
+                      // tree and the reasoning behind it. Addressed explicitly
+                      // rather than through the selection, which by now may be
+                      // pointing at another conversation entirely.
+                      const target = sessionId
+                        ? hermesSessionItemsRef.current.find((session) => session.id === sessionId)
+                        : undefined;
+                      if (!target) {
+                        setError(
+                          "The session that did this work is no longer here, so the correction was not sent.",
+                        );
+                        return;
+                      }
+                      newSessionModeRef.current = false;
+                      await submitHermesSession(prompt, target);
+                    }}
+                    onClose={(round) => {
+                      if (typeof round === "number") {
+                        declinedVerdictsRef.current.add(`${verdictMandateId}#${round}`);
+                      }
+                      setVerdictMandateId(null);
+                    }}
+                  />
+                </div>,
                 document.querySelector(".app-shell") ?? document.body,
               )
             : null}

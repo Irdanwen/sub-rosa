@@ -48,6 +48,16 @@ pub async fn sweep(app: &AppHandle) {
     // purpose: the desktop gets killed too.
     crate::longform::resume_unfinished(app).await;
     crate::shotlist::resume_unfinished(app).await;
+    // A sitting spans several model calls and a cycle spans an agent run that
+    // can last an hour. Desktop-only, because a mandate has nothing to be
+    // handed to on iOS (ADR-0034).
+    #[cfg(desktop)]
+    crate::council::resume_unfinished(app).await;
+    // A verdict is its own unit of work, owned by its own row: a cycle parked
+    // in `reviewing` is driven from here and from nowhere else, or one verdict
+    // runs twice and bills for both.
+    #[cfg(desktop)]
+    crate::council::verdict::resume_unfinished(app).await;
     // The moments the app speaks first: schedule the briefs for the meetings
     // ahead, deliver the ones that came due while we were away. A row, never
     // a timer — which is exactly why it belongs in this sweep.

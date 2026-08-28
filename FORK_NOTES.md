@@ -436,6 +436,75 @@ vocabulaire. **Aucune ligne n'a été écrite dans `june-api/`** : c'est délib�
   utilisable via Raccourcis. Ajouter la cible demande un second bundle id et un
   second profil dans `ios-release.yml` — chantier Xcode à part.
 
+## Le conseil (2026-08-28)
+
+Plusieurs modèles lisent une demande **en aveugle**, chacun sur une famille de
+poids différente, et la présidence (l'app) en tire un **mandat** : des cases
+plafonnées dont le centre est une liste de **critères d'acceptation**, chacun
+nommant comment il se vérifie. Un seul agent l'exécute. Le conseil relit
+ensuite le travail contre ce même mandat et rend un **verdict**, critère par
+critère, avec les preuves.
+
+Décision et alternatives rejetées :
+[ADR-0034](docs/adr/0034-the-council-issues-a-verifiable-mandate.md).
+Vocabulaire : la section « The council (fork) » de [CONTEXT.md](CONTEXT.md).
+
+### Fichiers ajoutés
+
+| Fichier | Rôle |
+| --- | --- |
+| `src-tauri/migrations/019_council.sql` | `council_mandates`, `council_turns` (unité de reprise), `council_verdicts` (un par tour) |
+| `src-tauri/src/council/mod.rs` | racine : plan chiffré, convocation, situation du terrain, commandes, reprise |
+| `src-tauri/src/council/seats.rs` | rosters intégrés, `model_family`, attribution un modèle par famille |
+| `src-tauri/src/council/prompts.rs` | tous les prompts + `COUNCIL_PROMPT_VERSION` |
+| `src-tauri/src/council/mandate.rs` | plafonds, validation, **rendu déterministe** du prompt et de la reprise |
+| `src-tauri/src/council/merge.rs` | routage sans appel modèle : intersection des questions, détection de dissensus |
+| `src-tauri/src/council/parse.rs` | extraction du premier objet JSON équilibré |
+| `src-tauri/src/council/deliberate.rs` | la séance : aveugle → questions → second tour → présidence → objection |
+| `src-tauri/src/council/evidence.rs` | ce que le verdict a le droit de lire (diff git, sinon mtime) |
+| `src-tauri/src/council/verdict.rs` | trois lentilles, réconciliation mécanique, résumé |
+| `src/lib/council.ts` | types, bindings, estimation de coût par appel |
+| `src/components/agent/council/` | `CouncilSitting`, `MandateEditor`, `VerdictPanel` |
+| `src/components/settings/CouncilSettingsSection.tsx` | Réglages › Conseil |
+| `src/styles/council.css` | styles (importé par `main.tsx`) |
+
+### Fichiers upstream modifiés
+
+| Fichier | Modification |
+| --- | --- |
+| `src-tauri/src/lib.rs` | `#[cfg(desktop)] pub mod council` + 13 commandes dans la **seule** liste desktop |
+| `src-tauri/src/background.rs` | `council::resume_unfinished` et `council::verdict::resume_unfinished` dans le sweep |
+| `src-tauri/src/db/migrations.rs` | enregistrement de `019_council.sql` |
+| `src-tauri/src/db/repositories.rs` | bloc `impl Repositories` + 3 mappeurs de ligne |
+| `src-tauri/src/domain/types.rs` | DTO du conseil (compilés sur les deux plateformes, pilotés seulement sur desktop) |
+| `src-tauri/tests/shared_commands.rs` | préfixe `council::` déclaré platform-specific |
+| `src/components/agent/AgentWorkspace.tsx` | `/council`, la séance dans la région principale, le verdict au tour terminal |
+| `src/lib/agent-composer-slash-commands.ts` | commande `/council` (**et** la garde `isBuiltinComposerSlashCommandName`) |
+| `src/components/settings/AppSettings.tsx`, `src/components/sidebar/Sidebar.tsx` | onglet Conseil dans les **deux** endroits |
+
+### Pièges
+
+- **Desktop uniquement.** Pas de Hermes sur iOS, donc rien à qui remettre un
+  mandat. `council::` est déclaré dans `tests/shared_commands.rs` ; c'est le
+  seul endroit autorisé à le dire.
+- **L'app possède le prompt.** Les sièges remplissent des champs,
+  `mandate::render` fabrique la chaîne. Ne jamais demander la chaîne finale à
+  un modèle, ni pour le mandat ni pour une reprise (une paraphrase de verdict
+  l'adoucit).
+- **Un siège parle au plus deux fois.** Une fois en aveugle, puis soit pour
+  absorber les réponses de l'utilisateur, soit pour affronter la table, jamais
+  les deux. C'est cet invariant qui borne la facture (5 à 9 appels).
+- **Le routage ne s'achète pas.** Quelles questions atteignent l'utilisateur et
+  qui reprend la parole sont calculés dans `merge.rs`, sans appel modèle.
+- **Le verdict ne tourne pas sur les poids de l'auteur** (`session_model` est
+  enregistré à la remise, exprès) et **diffe contre `base_commit`**, capturé au
+  même moment : sans lui, un travail commité est invisible.
+- **Une pause n'est pas une fin.** Le tour terminal propose le verdict ; une
+  offre déclinée est mémorisée par tour, sinon chaque pause de l'agent rouvre
+  le panneau.
+- Ajouter une commande partagée oblige à toucher les **deux**
+  `generate_handler!` ; celles-ci sont desktop-only et n'en touchent qu'une.
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.
