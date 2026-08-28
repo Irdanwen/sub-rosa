@@ -1467,7 +1467,11 @@ export function VideoStudio({
           entry.phase === "failed" ? explainConstraintError(entry.message ?? "") : undefined;
         const failure =
           entry.phase === "failed" && !constraint
-            ? describeJobFailure({ message: entry.message, status: entry.status })
+            ? describeJobFailure({
+                message: entry.message,
+                status: entry.status,
+                model: entry.job.model,
+              })
             : undefined;
         if (entry.phase !== "failed") {
           // The wait is given the shape of the clip it will become, in the

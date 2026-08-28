@@ -16,6 +16,7 @@ import { explainConstraintError } from "../../lib/studio/model-constraints";
 export function JobFailureNotice({
   message,
   status,
+  model,
   className = "studio-error",
   retryClassName = "btn btn-secondary",
   onRetry,
@@ -23,6 +24,9 @@ export function JobFailureNotice({
   message?: string;
   /** HTTP status behind the failure, when the backend gave one. */
   status?: number;
+  /** The model that refused, for the failures that only read correctly once
+   * you know which one it was. */
+  model?: string;
   className?: string;
   retryClassName?: string;
   /**
@@ -33,7 +37,7 @@ export function JobFailureNotice({
   onRetry?: () => void;
 }) {
   const constraint = explainConstraintError(message ?? "");
-  const failure = constraint ? undefined : describeJobFailure({ message, status });
+  const failure = constraint ? undefined : describeJobFailure({ message, status, model });
   return (
     // The backend's own words stay reachable on hover: the summary is for
     // acting on, the detail is for reporting a bug against.

@@ -56,6 +56,50 @@ describe("reading a failed generation", () => {
     expect(failure.retryable).toBe(false);
   });
 
+  it("names the input at fault when the public tier refuses a face", () => {
+    // The real incident, twice over: a reference sheet of portraits queued
+    // against seedance 2.5 with the attestation ticked. The backend's own
+    // sentence names no input, so the user is left to reword a prompt that
+    // was never the problem - and the checkbox they ticked reads as broken.
+    const failure = describeJobFailure({
+      message: "The request was refused by the model's content moderation.",
+      status: 400,
+      model: "seedance-2-5-reference-to-video-basic",
+    });
+    expect(failure.text).toMatch(/recognisable person/i);
+    expect(failure.text).toMatch(/whatever you attest/i);
+    // Same request, same refusal: a retry button here only spends the user's
+    // time.
+    expect(failure.retryable).toBe(false);
+    expect(failure.detail).toBe("The request was refused by the model's content moderation.");
+  });
+
+  it("keeps the claim honest on a model that has no such rule", () => {
+    // Only the public `-basic` tier refuses people whatever is attested.
+    // Telling a wan or a kling user to blame their reference photo would be
+    // inventing a cause.
+    const failure = describeJobFailure({
+      message: "The request was refused by the model's content moderation.",
+      model: "wan-3-0-reference-to-video",
+    });
+    expect(failure.text).not.toMatch(/recognisable person/i);
+    expect(failure.text).toMatch(/content filter/i);
+    expect(failure.retryable).toBe(false);
+  });
+
+  it("reads a moderation refusal even with no model to hand", () => {
+    const failure = describeJobFailure({ message: "Blocked by content policy." });
+    expect(failure.text).toMatch(/content filter/i);
+    expect(failure.retryable).toBe(false);
+  });
+
+  it("does not mistake a lost job for a moderated one", () => {
+    // Ordering: "queue_id" wins, and it is the retryable one of the two.
+    expect(
+      describeJobFailure({ message: "Unknown or expired queue_id", status: 404 }).retryable,
+    ).toBe(true);
+  });
+
   it("still says something when the backend said nothing at all", () => {
     expect(describeJobFailure({}).text).toBeTruthy();
     expect(describeJobFailure({ message: "   " }).text).toBeTruthy();

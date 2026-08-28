@@ -11,6 +11,8 @@
 // That is what the HTTP status is for - which is why the durable row now
 // carries it.
 
+import { seedancePersonMediaCaveat } from "./seedance";
+
 export interface JobFailure {
   /** What to show in place of the backend's own words. */
   text: string;
@@ -39,6 +41,19 @@ function looksMissing(message: string): boolean {
 }
 
 /**
+ * A refusal by the model's own content filter, rather than a failure to render.
+ *
+ * Worth separating from every other 4xx for one reason: nothing about the
+ * request was malformed, so there is no field to fix and no point in sending
+ * it again. What has to change is an input the user chose - and on the models
+ * this app ships, which input it is can usually be named.
+ */
+function looksModerated(message: string): boolean {
+  const text = message.toLowerCase();
+  return text.includes("moderation") || text.includes("content policy");
+}
+
+/**
  * What to tell the user about a failed generation.
  *
  * Falls back to the backend's own message rather than inventing one: an
@@ -48,9 +63,13 @@ function looksMissing(message: string): boolean {
 export function describeJobFailure({
   message,
   status,
+  model,
 }: {
   message?: string;
   status?: number;
+  /** The model the render was queued against, where the surface knows it. Some
+   * refusals only make sense once you know which model refused. */
+  model?: string;
 }): JobFailure {
   const detail = message?.trim() || undefined;
   const raw = detail ?? "";
@@ -62,6 +81,23 @@ export function describeJobFailure({
     return {
       text: "The backend lost this job before it finished. Nothing was delivered, so starting it again is safe.",
       retryable: true,
+      detail,
+    };
+  }
+  if (looksModerated(raw)) {
+    // The public seedance tier refuses media showing a recognisable person
+    // whatever the caller attests, and in this app that is far and away the
+    // most common way to meet a moderation refusal: the surfaces offer a
+    // consent checkbox right next to a reference picker, so a user who has
+    // ticked it reasonably reads a refusal as a bug. Name the input at fault
+    // rather than leaving them to reword a prompt that was never the problem.
+    const publicTier = Boolean(seedancePersonMediaCaveat(model ? { id: model } : undefined));
+    return {
+      text: publicTier
+        ? "This public model refuses reference media with a recognisable person, whatever you attest. Use a place, an object or a scene as the reference and describe the person in the prompt, or pick a model outside the public tier."
+        : "The model's content filter refused this request. Sending it again unchanged will be refused again: change the reference media, or reword the prompt.",
+      // Same request, same refusal. The only way through is a different one.
+      retryable: false,
       detail,
     };
   }

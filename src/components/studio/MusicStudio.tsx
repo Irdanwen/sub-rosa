@@ -186,6 +186,7 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
         <JobFailureNotice
           message={job.state.message}
           status={job.state.status}
+          model={modelId}
           onRetry={job.canRetry ? job.retry : undefined}
         />
       ) : null}

@@ -1625,6 +1625,7 @@ function VideoPanel({
         <JobFailureNotice
           message={job.state.message}
           status={job.state.status}
+          model={model?.id}
           className="mobile-dictation-error"
           retryClassName="mobile-chip-button"
           onRetry={job.canRetry ? job.retry : undefined}
@@ -2046,6 +2047,7 @@ function SfxPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerated
         <JobFailureNotice
           message={job.state.message}
           status={job.state.status}
+          model={model?.id}
           className="mobile-dictation-error"
           retryClassName="mobile-chip-button"
           onRetry={job.canRetry ? job.retry : undefined}
@@ -2201,6 +2203,7 @@ function MusicPanel({ catalog, onGenerated }: { catalog: MediaCatalog; onGenerat
         <JobFailureNotice
           message={job.state.message}
           status={job.state.status}
+          model={model?.id}
           className="mobile-dictation-error"
           retryClassName="mobile-chip-button"
           onRetry={job.canRetry ? job.retry : undefined}
