@@ -60,6 +60,7 @@ vi.mock("../lib/tauri", () => ({
   // Sub Rosa fork: App gates on the Carpe Diem sidecar; report it configured.
   carpeDiemSidecarStatus: vi.fn(async () => ({ status: "ready", hasApiKey: true })),
   LIVE_TRANSCRIPT_EVENT: "live-transcript-event",
+  NOTES_CHANGED_EVENT: "june://notes-changed",
   bootstrapApp: mocks.bootstrapApp,
   createNote: mocks.createNote,
   createFolder: mocks.createFolder,

@@ -2010,8 +2010,10 @@ export const AGENT_LITE_DONE_EVENT = "agent-lite://done";
  * fragment to append to what has arrived so far. */
 export const AGENT_LITE_DELTA_EVENT = "agent-lite://delta";
 /** The assistant wrote to the notes (create_note / append_to_note), so any
- * list showing them is stale. */
-export const AGENT_LITE_NOTES_CHANGED_EVENT = "agent-lite://notes-changed";
+ * list showing them is stale. Not agent-lite's alone since the desktop agent
+ * got the same two tools: both shells write through `crate::agent_notes`, and
+ * both emit this. */
+export const NOTES_CHANGED_EVENT = "june://notes-changed";
 
 export type AgentLiteStatusDto = {
   taskId: string;

@@ -145,6 +145,7 @@ vi.mock("../lib/tauri", () => ({
   // Sub Rosa fork: App gates on the Carpe Diem sidecar; report it configured.
   carpeDiemSidecarStatus: mocks.carpeDiemSidecarStatus,
   LIVE_TRANSCRIPT_EVENT: "live-transcript-event",
+  NOTES_CHANGED_EVENT: "june://notes-changed",
   // The agent workspace mounts the pending skill-writes tray, whose loader
   // reaches the Rust bridge through this named `invoke`. A quiet stub keeps
   // these shortcut tests focused on the meetings surfaces.

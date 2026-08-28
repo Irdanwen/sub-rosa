@@ -35,6 +35,9 @@ export type SessionUsage = {
   contextUsed?: number;
   contextLimit?: number;
   estimatedCostUsd?: number;
+  /** API calls the live agent has made in this session. The one field that
+   * says whether the counters beside it describe any work at all. */
+  apiCalls?: number;
   /** Per-tool / per-subagent cost breakdown, when returned. */
   toolCosts?: SessionToolCost[];
   /** The untouched gateway result, kept for the trace panel / debugging. */
@@ -42,25 +45,99 @@ export type SessionUsage = {
 };
 
 /**
- * Whether this reading carries anything at all.
+ * Whether this reading describes any work.
  *
- * The runtime keeps a session's counters in memory on its agent, and answers
- * `session.usage` with an empty object once that agent is gone - a gateway
- * restart, or a session it has unloaded. Parsed, that is a `SessionUsage` with
- * every field undefined, which the panel used to render as a wall of
- * "Unavailable" over counters it had been showing a minute earlier. Telling
- * the two apart is what lets it keep the last real reading instead.
+ * The runtime keeps a session's counters in memory on its agent, and builds a
+ * fresh agent every time it loads a session it had dropped. So the counters
+ * restart at zero on every reload, and the runtime never says so: it answers
+ * `session.usage` with `{"calls": 0, "input": 0, "output": 0, "total": 0}` when
+ * the agent is gone, and with the model plus the same zeros when the agent is
+ * new (`tui_gateway/server.py`, `_get_usage`). Both used to pass as readings
+ * and overwrite counters the panel had been showing a minute earlier, which is
+ * what "the numbers vanish after a while" was.
+ *
+ * `calls` is the field that settles it: an agent that has made no API call has
+ * counted nothing, whatever else it reports about itself. Older or unknown
+ * shapes that omit `calls` fall back to "any counter above zero", which reaches
+ * the same verdict without it.
  */
 export function hasAnyReading(usage: SessionUsage): boolean {
+  if (usage.apiCalls !== undefined) return usage.apiCalls > 0;
   return (
-    usage.model !== undefined ||
-    usage.provider !== undefined ||
-    usage.promptTokens !== undefined ||
-    usage.completionTokens !== undefined ||
-    usage.totalTokens !== undefined ||
-    usage.contextUsed !== undefined ||
-    usage.estimatedCostUsd !== undefined
+    positive(usage.promptTokens) ||
+    positive(usage.completionTokens) ||
+    positive(usage.totalTokens) ||
+    positive(usage.contextUsed) ||
+    positive(usage.estimatedCostUsd)
   );
+}
+
+/** A counter that counted something. Zero is not a reading here: it is what
+ * every field of a reloaded session reports. */
+function positive(value?: number): boolean {
+  return value !== undefined && value > 0;
+}
+
+/** A reading and the moment it was taken. */
+export type DatedReading = { usage: SessionUsage; readAt: number };
+
+/**
+ * The last reading that counted something, per session, for this run of the
+ * app.
+ *
+ * Refusing to overwrite counters with a reloaded session's zeros only holds
+ * while the panel stays open: its state dies with it, so closing and reopening
+ * used to lose the reading all over again. The runtime cannot help here, since
+ * the number is gone from the runtime too. Somebody has to remember it, and
+ * the honest scope for that memory is this process: it is not persisted, and
+ * nothing pretends it survives a relaunch.
+ */
+const readings = new Map<string, DatedReading>();
+
+/** Enough sessions for any run, and a ceiling so a long-lived window cannot
+ * accumulate readings forever. Oldest inserted goes first. */
+const MAX_REMEMBERED = 64;
+
+/** Files a reading that counted something. Callers check {@link hasAnyReading}
+ * first; this stores whatever it is given. */
+export function rememberReading(usage: SessionUsage, readAt: number): void {
+  readings.delete(usage.sessionId);
+  readings.set(usage.sessionId, { usage, readAt });
+  while (readings.size > MAX_REMEMBERED) {
+    const oldest = readings.keys().next();
+    if (oldest.done) break;
+    readings.delete(oldest.value);
+  }
+}
+
+/** The last reading that counted something for this session, if one was taken
+ * since the app started. */
+export function lastReading(sessionId: string): DatedReading | undefined {
+  return readings.get(sessionId);
+}
+
+/** Test seam. Nothing in the app clears these: a reading stays until the
+ * process ends or the ceiling evicts it. */
+export function forgetReadings(): void {
+  readings.clear();
+}
+
+/**
+ * The same reading with its counters removed.
+ *
+ * What the runtime reports about a session it has just reloaded is a model and
+ * a row of zeros. The model is true and worth showing; the zeros are not a
+ * count of anything, and rendering them as "0" states that the session spent
+ * nothing. Stripped, each counter renders as "Unavailable", which is what is
+ * actually known.
+ */
+export function withoutCounters(usage: SessionUsage): SessionUsage {
+  return {
+    sessionId: usage.sessionId,
+    provider: usage.provider,
+    model: usage.model,
+    raw: usage.raw,
+  };
 }
 
 function parseToolCosts(value: unknown): SessionToolCost[] | undefined {
@@ -139,6 +216,7 @@ export function parseSessionUsage(sessionId: string, raw: unknown): SessionUsage
       [root],
       ["estimated_cost_usd", "estimatedCostUsd", "cost_usd", "costUsd"],
     ),
+    apiCalls: pickNumber(tokenContainers, ["calls", "api_calls", "apiCalls", "requests"]),
     toolCosts: parseToolCosts(root?.tool_costs ?? root?.toolCosts ?? root?.tools),
     raw,
   };

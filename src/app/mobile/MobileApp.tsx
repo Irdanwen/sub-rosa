@@ -32,8 +32,8 @@ import {
   type CarpeDiemSidecarStatusDto,
   type LiveTranscriptEventDto,
   type RecordingSourceReadinessDto,
+  NOTES_CHANGED_EVENT,
   assignNoteToFolder,
-  AGENT_LITE_NOTES_CHANGED_EVENT,
   bootstrapApp,
   carpeDiemSidecarStatus,
   checkRecordingSourceReadiness,
@@ -621,7 +621,7 @@ export function MobileApp() {
   // created stays invisible until the user pulls to refresh, which reads as
   // the tool having failed.
   useEffect(() => {
-    const unlisten = listen(AGENT_LITE_NOTES_CHANGED_EVENT, () => {
+    const unlisten = listen(NOTES_CHANGED_EVENT, () => {
       void handleRefreshNotes().catch(() => undefined);
     });
     return () => {

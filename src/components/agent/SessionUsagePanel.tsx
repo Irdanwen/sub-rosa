@@ -8,7 +8,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { PROVIDER_NAME } from "../../lib/branding";
 import { estimateCostUsd, priceFor, textPricing } from "../../lib/carpe-diem-text-pricing";
 import { type CacheUsage, hasMeasuredTurns } from "../../lib/carpe-diem-cache";
-import { hasAnyReading, type SessionUsage } from "../../lib/hermes-session-usage";
+import {
+  hasAnyReading,
+  lastReading,
+  rememberReading,
+  type SessionUsage,
+  withoutCounters,
+} from "../../lib/hermes-session-usage";
 
 /**
  * Self-contained session usage / context / cost panel (feature 09). Renders the
@@ -40,13 +46,19 @@ export function SessionUsagePanel({
   fetchCacheStats?: () => Promise<CacheUsage>;
   onClose: () => void;
 }) {
-  const [usage, setUsage] = useState<SessionUsage | null>(null);
-  /** The runtime answered, but with nothing in it: it no longer holds this
-   * session. What is on screen is the last real reading, and saying when it
-   * was taken is the difference between stale data and a lie. */
+  /** Seeded from what this run of the app already read for this session, so
+   * closing the panel and reopening it does not lose the reading a reloaded
+   * runtime can no longer produce. */
+  const [usage, setUsage] = useState<SessionUsage | null>(
+    () => lastReading(sessionId)?.usage ?? null,
+  );
   const [prices, setPrices] = useState<Awaited<ReturnType<typeof textPricing>>>([]);
+  /** The runtime answered with counters that count nothing: it rebuilt this
+   * session's agent, or dropped it. What is on screen is the last real
+   * reading, and saying when it was taken is the difference between stale
+   * data and a lie. */
   const [stale, setStale] = useState(false);
-  const [readAt, setReadAt] = useState<number | null>(null);
+  const [readAt, setReadAt] = useState<number | null>(() => lastReading(sessionId)?.readAt ?? null);
   const [cache, setCache] = useState<CacheUsage | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   // The reason the fetch rejected, surfaced so the failure is honest about
@@ -89,15 +101,37 @@ export function SessionUsagePanel({
       (next) => {
         if (seq !== requestSeq.current) return;
         if (hasAnyReading(next)) {
+          const at = Date.now();
+          rememberReading(next, at);
           setUsage(next);
-          setReadAt(Date.now());
+          setReadAt(at);
           setStale(false);
         } else {
-          // Counters live on the agent, so an unloaded session reports nothing.
-          // Blanking the panel loses the only reading anyone has of that
-          // session; keeping it, and dating it, does not.
+          // Counters live on the agent, and the runtime builds a new one every
+          // time it reloads a session, so they restart at zero without warning.
+          // Three things follow. Keep the last reading and date it, rather than
+          // blanking the only numbers anyone has. Take it from `lastReading`
+          // rather than from state, which may still describe a session this
+          // panel was showing a moment ago, and which a reopened panel does not
+          // have at all. And keep the model live: the counters are what went
+          // stale, while the runtime is reporting the model the session runs on
+          // now, so a user who switched models must not read the old name.
+          //
+          // With nothing remembered, the model is still worth showing and its
+          // zeros are not: "0 tokens" claims this session spent nothing, when
+          // what is true is that nobody knows what it spent.
+          const remembered = lastReading(sessionId);
           setStale(true);
-          setUsage((previous) => previous ?? next);
+          setUsage(
+            remembered
+              ? {
+                  ...remembered.usage,
+                  model: next.model ?? remembered.usage.model,
+                  provider: next.provider ?? remembered.usage.provider,
+                }
+              : withoutCounters(next),
+          );
+          setReadAt(remembered?.readAt ?? null);
         }
         setStatus("ready");
       },
@@ -162,8 +196,8 @@ export function SessionUsagePanel({
           {stale ? (
             <p className="agent-usage-stale" role="status">
               {readAt
-                ? `The runtime no longer holds this session's counters. Showing the last reading, taken at ${formatClock(readAt)}.`
-                : "The runtime is not reporting counters for this session."}
+                ? `The runtime has run no turn in this session since it loaded it, so its counters restarted at zero. Showing the last reading, taken at ${formatClock(readAt)}.`
+                : "The runtime has run no turn in this session since it loaded it, so it has no counters to report yet."}
             </p>
           ) : null}
           <dl className="agent-usage-grid">

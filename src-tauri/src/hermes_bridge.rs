@@ -139,8 +139,15 @@ You are helpful, knowledgeable, and direct. Communicate clearly, admit uncertain
 /// Appended to `SOUL.md` for every runtime. The tools themselves are
 /// discovered through the `june_context` MCP server configured below; this
 /// prompt note teaches the model when to spend tool calls on that local data.
+///
+/// The second paragraph is the one that stops "write this up as a note" from
+/// becoming a markdown file in the workspace: the model has no way to know
+/// that the app's own notes are reachable unless it is told, and no reason to
+/// prefer them over the filesystem it can see.
 const JUNE_SOUL_CONTEXT_MD: &str = r#"
 Local context tools: you have access to a local `june_context` MCP toolset for searching the user's meeting notes, saved note transcripts, dictation history, stored user memories, and their calendar (`search_calendar`, which reads the day on this device — reach for it when the question is about their schedule, a meeting, or who they are seeing, and to work out which meeting a note belongs to). Use it when the user asks about prior meetings, calls, recordings, notes, decisions, follow-ups, or dictated text — and use `search_user_memories` when the user references something from an earlier conversation that is not in your injected memory block. Query it on demand instead of assuming you already know those entries, and summarize only what the retrieved results support.
+
+Writing a note: the same toolset has `create_note` and `append_to_note`, which write into the app's own notes — the list the user reads in Sub Rosa. When they ask you to write something down, take a note, draft or save a summary or a report, that is where it goes. Never write it to a file in your workspace instead, and never reach for another notes app on the machine: a file in your workspace is not a note the user has. `create_note` returns the new note's id, which `append_to_note` takes and a `subrosa:notes` card can cite. Never use a write tool to answer a question — answer in the conversation — and never write a note the user did not ask for.
 "#;
 
 /// Appended to `SOUL.md` for every runtime. This calibrates June's first-turn
@@ -7988,6 +7995,12 @@ async fn handle_june_provider_connection(
         ("POST", "/v1/calendar/search") => {
             forward_calendar_search(&mut stream, &request.body).await?;
         }
+        ("POST", "/v1/notes/create") => {
+            forward_note_write(&app, &mut stream, &request.body, NoteWrite::Create).await?;
+        }
+        ("POST", "/v1/notes/append") => {
+            forward_note_write(&app, &mut stream, &request.body, NoteWrite::Append).await?;
+        }
         ("GET", "/v1/media/catalog") => {
             forward_media_catalog(&mut stream).await?;
         }
@@ -8357,6 +8370,86 @@ async fn forward_calendar_search(
         serde_json::json!({ "success": true, "data": { "events": matching } }),
     )
     .await
+}
+
+/// Which write the `june_context` MCP asked for.
+#[derive(Clone, Copy)]
+enum NoteWrite {
+    Create,
+    Append,
+}
+
+/// What the `june_context` MCP posts to write a note.
+///
+/// `rename_all` is the whole point of declaring this rather than reading the
+/// JSON field by field: the MCP writes `noteId`, and a Rust side that expected
+/// `note_id` is exactly how tapping a follow-up card silently did nothing for
+/// a release (see `crate::actions`). The alias accepts the snake_case
+/// spelling too, so the same mistake in the other direction is not a bug
+/// either, and `note_write_reads_the_key_the_mcp_actually_sends` pins both
+/// halves against a rename.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct NoteWriteBody {
+    title: Option<String>,
+    #[serde(alias = "note_id")]
+    note_id: Option<String>,
+    content: String,
+}
+
+/// `/v1/notes/create` and `/v1/notes/append` — the desktop agent's only way to
+/// put something in the user's notes.
+///
+/// The MCP reads the notes database read-only and cannot write to it, by
+/// design, so a write round-trips through here and lands in
+/// [`crate::agent_notes`], the same module the phone's assistant writes
+/// through. What comes back is the note's id and title, because the id is what
+/// lets the model append to what it just wrote, and cite it in a `subrosa:notes`
+/// card, without guessing.
+async fn forward_note_write(
+    app: &AppHandle,
+    stream: &mut tokio::net::TcpStream,
+    request_body: &[u8],
+    write: NoteWrite,
+) -> io::Result<()> {
+    let body = serde_json::from_slice::<NoteWriteBody>(request_body).unwrap_or_default();
+    let saved = match write {
+        NoteWrite::Create => {
+            crate::agent_notes::create(app, body.title.as_deref(), &body.content).await
+        }
+        NoteWrite::Append => {
+            crate::agent_notes::append(
+                app,
+                body.note_id.as_deref().unwrap_or_default(),
+                &body.content,
+            )
+            .await
+        }
+    };
+    match saved {
+        Ok(note) => {
+            write_json_response(
+                stream,
+                200,
+                serde_json::json!({
+                    "success": true,
+                    "data": { "noteId": note.id, "title": note.title },
+                }),
+            )
+            .await
+        }
+        // `success: false` is the envelope the MCP's `call_proxy` turns into a
+        // tool error the model can read and act on, rather than a transport
+        // failure it can only report.
+        Err(error) => {
+            write_json_response(
+                stream,
+                200,
+                serde_json::json!({ "success": false, "message": error.message }),
+            )
+            .await
+        }
+    }
 }
 
 /// Relays the Studio's merged model catalog ([`crate::carpe_diem::media`]) to
@@ -10431,6 +10524,86 @@ mod tests {
         assert!(soul.contains("dictation history"));
         assert!(soul.contains("search_user_memories"));
         assert!(soul.contains("Query it on demand"));
+    }
+
+    /// The desktop agent asked to "write this up as a note" wrote a markdown
+    /// file into its workspace and pointed the user at it, because writing a
+    /// note was not something it knew it could do. The tools alone do not fix
+    /// that: a model that can see a filesystem will use the filesystem unless
+    /// the soul says where a note belongs.
+    #[test]
+    fn june_soul_sends_a_written_note_to_the_app_rather_than_the_workspace() {
+        let home = tempfile::tempdir().expect("tempdir");
+
+        sync_june_soul(home.path(), false, false, None).expect("sync soul");
+
+        let soul = std::fs::read_to_string(home.path().join("SOUL.md")).expect("read soul");
+        assert!(soul.contains("create_note"));
+        assert!(soul.contains("append_to_note"));
+        assert!(soul.contains("Never write it to a file in your workspace"));
+        // And it must not invite itself to write: a note nobody asked for is
+        // the failure mode on the other side of this one.
+        assert!(soul.contains("never write a note the user did not ask for"));
+    }
+
+    /// The write tools live behind the local proxy, not behind the database
+    /// handle this server opens. `connect_readonly` is the whole reason: a
+    /// write from Python would have to reopen the file read-write, behind the
+    /// back of the process that owns it.
+    #[test]
+    fn the_context_mcp_writes_notes_through_the_app_and_never_through_sqlite() {
+        let script = JUNE_CONTEXT_MCP_SCRIPT;
+        assert!(script.contains("\"name\": \"create_note\""));
+        assert!(script.contains("\"name\": \"append_to_note\""));
+        // Routed to the proxy, which is what reaches `crate::agent_notes`.
+        assert!(script.contains("call_proxy(coords_path, \"/notes/create\""));
+        assert!(script.contains("\"/notes/append\""));
+        // Advertised only with proxy coordinates: a tool the agent cannot
+        // reach is worse than one it does not know about.
+        assert!(script.contains("tools.extend(WRITE_TOOLS)"));
+        // No INSERT/UPDATE anywhere in the server.
+        assert!(!script.to_uppercase().contains("INSERT INTO"));
+        assert!(!script.to_uppercase().contains("UPDATE NOTES"));
+        assert!(script.contains("mode=ro"));
+    }
+
+    /// The two sides of the note-write payload, pinned together. A rename on
+    /// either one turns a working tool into one that reports success and
+    /// writes nothing, which is the failure `crate::actions` already shipped
+    /// once with the very same field.
+    #[test]
+    fn note_write_reads_the_key_the_mcp_actually_sends() {
+        let sent = br#"{"noteId": "abc-123", "content": "Verdict: 32/32."}"#;
+        let body = serde_json::from_slice::<NoteWriteBody>(sent).expect("parse append body");
+        assert_eq!(body.note_id.as_deref(), Some("abc-123"));
+        assert_eq!(body.content, "Verdict: 32/32.");
+
+        // And that is the spelling the embedded MCP writes.
+        assert!(JUNE_CONTEXT_MCP_SCRIPT.contains(r#""noteId": note_id, "content": content"#));
+
+        // A create carries a title and no id.
+        let created =
+            serde_json::from_slice::<NoteWriteBody>(br#"{"title": "Audit", "content": "Body."}"#)
+                .expect("parse create body");
+        assert_eq!(created.title.as_deref(), Some("Audit"));
+        assert!(created.note_id.is_none());
+
+        // The snake_case spelling parses too, so the same mistake mirrored is
+        // not a silent no-op either.
+        let snake = serde_json::from_slice::<NoteWriteBody>(
+            br#"{"note_id": "abc-123", "content": "More."}"#,
+        )
+        .expect("parse snake_case body");
+        assert_eq!(snake.note_id.as_deref(), Some("abc-123"));
+
+        // Junk must not panic the proxy: it degrades to an empty write, which
+        // `agent_notes` refuses with a message the model can read.
+        assert_eq!(
+            serde_json::from_slice::<NoteWriteBody>(b"not json")
+                .unwrap_or_default()
+                .content,
+            ""
+        );
     }
 
     #[test]

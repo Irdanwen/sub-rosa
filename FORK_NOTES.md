@@ -505,6 +505,72 @@ Vocabulaire : la section « The council (fork) » de [CONTEXT.md](CONTEXT.md).
 - Ajouter une commande partagée oblige à toucher les **deux**
   `generate_handler!` ; celles-ci sont desktop-only et n'en touchent qu'une.
 
+## L'agent desktop écrit des notes (2026-08-28)
+
+Deux corrections d'un même symptôme : **ce que l'app dit avoir, elle l'a
+vraiment**.
+
+**L'agent desktop peut écrire une note.** Son seul outillage local, le MCP
+`june_context`, ne savait que lire ; à qui lui demandait « fais-en une note »,
+il écrivait un `.md` dans son workspace Hermes et tentait AppleScript vers
+Notes.app. Le MCP déclare désormais `create_note` / `append_to_note` et les
+fait exécuter **par l'app** via le proxy local (`POST /v1/notes/{create,append}`),
+jamais par Python : la base est ouverte `mode=ro` là-bas, exprès. Décision et
+alternatives rejetées :
+[ADR-0035](docs/adr/0035-the-desktop-agent-writes-notes-through-the-app.md).
+
+**Le panneau Usage ne perd plus ses compteurs.** Hermes garde les compteurs
+d'une session en mémoire sur son agent et en reconstruit un à chaque
+rechargement : `session.usage` répond alors le modèle et une rangée de zéros
+(`tui_gateway/server.py`, `_get_usage`). Le garde-fou existant cherchait un
+objet **vide**, que le runtime ne renvoie jamais, donc les zéros passaient pour
+une lecture et écrasaient les vrais chiffres.
+
+### Fichiers ajoutés
+
+| Fichier | Rôle |
+| --- | --- |
+| `src-tauri/src/agent_notes.rs` | le seul endroit où un assistant écrit une note, sur les deux shells : bornes, `create` / `append`, `june://notes-changed` + réindexation Spotlight |
+| `docs/adr/0035-…md` | pourquoi l'écriture passe par le proxy et jamais par Python |
+
+### Fichiers upstream modifiés
+
+| Fichier | Modification |
+| --- | --- |
+| `src-tauri/src/hermes/june_context_mcp.py` | `WRITE_TOOLS` (annoncés seulement avec les coordonnées du proxy) + `create_note` / `append_to_note` qui appellent `call_proxy` |
+| `src-tauri/src/hermes_bridge.rs` | routes `/v1/notes/create` et `/v1/notes/append`, `NoteWriteBody`, et le paragraphe « Writing a note » de `JUNE_SOUL_CONTEXT_MD` |
+| `src-tauri/src/agent_lite/mod.rs` | les deux outils passent par `crate::agent_notes` (la logique d'append dupliquée est supprimée) |
+| `src-tauri/src/lib.rs` | `pub mod agent_notes` |
+| `src/lib/hermes-session-usage.ts` | `apiCalls`, `hasAnyReading` refait, mémoire des dernières lectures par session |
+| `src/components/agent/SessionUsagePanel.tsx` | repli sur la lecture mémorisée, compteurs inconnus rendus « Unavailable » |
+| `src/lib/tauri.ts`, `src/app/mobile/MobileApp.tsx` | `AGENT_LITE_NOTES_CHANGED_EVENT` → `NOTES_CHANGED_EVENT` (`june://notes-changed`) |
+| `src/app/App.tsx` | écoute `NOTES_CHANGED_EVENT` et rafraîchit la liste (`refreshNotesList`, jusque-là mort) |
+
+### Pièges
+
+- **Ne jamais écrire dans le SQLite depuis Python.** `connect_readonly` est un
+  contrat, pas une commodité. Tout nouvel outil d'écriture suit le chemin de
+  l'ADR-0035 : déclaré dans le MCP, routé par le proxy, implémenté une fois en
+  Rust.
+- **La clé est `noteId`, en camelCase.** `crate::actions` a déjà livré ce bug
+  exact une fois. `note_write_reads_the_key_the_mcp_actually_sends` épingle les
+  deux côtés ; ne pas le contourner en lisant le JSON champ par champ.
+- **Les outils seuls ne suffisent pas.** Sans le paragraphe du SOUL, un modèle
+  qui voit un système de fichiers écrit dans le système de fichiers. Le test
+  `june_soul_sends_a_written_note_to_the_app_rather_than_the_workspace` garde
+  la phrase, y compris le « never write a note the user did not ask for ».
+- **Une note écrite est une note**, pas une *meeting note* : celle-ci naît d'un
+  enregistrement transcrit. Voir CONTEXT.md.
+- **Le compteur qui compte est `calls`.** Un agent frais annonce son modèle
+  avec des compteurs à zéro ; ne jamais traiter la présence de `model` comme la
+  preuve d'une lecture. Les zéros ne s'affichent pas non plus : un compteur
+  inconnu est « Unavailable », pas « 0 ».
+- **Les dernières lectures vivent dans un `Map` de module** (`hermes-session-usage.ts`),
+  donc elles survivent à un composant et à un test : `forgetReadings()` dans un
+  `beforeEach`.
+- L'éditeur ouvert sur une note que l'agent complète ne se recharge pas ; seule
+  la liste le fait. Connu, non résolu.
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.

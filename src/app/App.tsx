@@ -78,6 +78,7 @@ import {
   getRecordingStatus,
   getNote,
   LIVE_TRANSCRIPT_EVENT,
+  NOTES_CHANGED_EVENT,
   listNotes,
   listSessionFolders,
   openPrivacySettings,
@@ -1962,6 +1963,24 @@ export function App() {
       // A stale list is not worth an error banner; the next action reloads it.
     }
   }, []);
+
+  // The agent can write a note now, and it writes it in Rust, mid-turn. With
+  // nothing listening, the note it just confirmed to the user would be missing
+  // from the list until the next reload, which reads as the tool having lied.
+  useEffect(() => {
+    let aborted = false;
+    let unlisten: (() => void) | undefined;
+    void listen(NOTES_CHANGED_EVENT, () => {
+      void refreshNotesList();
+    }).then((cleanup) => {
+      if (aborted) cleanup();
+      else unlisten = cleanup;
+    });
+    return () => {
+      aborted = true;
+      unlisten?.();
+    };
+  }, [refreshNotesList]);
 
   // --- Importing media as a note (ADR-0026) --------------------------------
   const [importing, setImporting] = useState<{ fileName: string; fraction: number } | null>(null);

@@ -20,8 +20,9 @@
 //!
 //! Writing:
 //! - `create_note`, `append_to_note` — the assistant can put something in the
-//!   user's notes when asked, and the shell refreshes on
-//!   [`AGENT_LITE_NOTES_CHANGED_EVENT`];
+//!   user's notes when asked. Both go through [`crate::agent_notes`], which
+//!   the desktop's `june_context` MCP writes through too, so the same sentence
+//!   produces the same note on either shell;
 //! - `remember`          — store a durable fact on request (memory on only).
 //!
 //! Search returns a keyword window, never a whole note, so anything about what
@@ -656,8 +657,10 @@ fn truncate(text: String, limit: usize) -> String {
 }
 
 /// The webview refreshes its note list on this, so a note the assistant just
-/// wrote shows up without a manual pull to refresh.
-pub const AGENT_LITE_NOTES_CHANGED_EVENT: &str = "agent-lite://notes-changed";
+/// wrote shows up without a manual pull to refresh. Re-exported from
+/// [`crate::agent_notes`], which is what emits it: both shells' assistants
+/// write notes through that one module.
+pub use crate::agent_notes::NOTES_CHANGED_EVENT as AGENT_LITE_NOTES_CHANGED_EVENT;
 
 /// An assistant message rebuilt from a stream of deltas.
 #[derive(Default)]
@@ -1037,20 +1040,11 @@ async fn execute_tool(
             let Some(content) = arg_str(args, "content") else {
                 return "create_note needs content.".to_string();
             };
-            let title = arg_str(args, "title").unwrap_or_else(|| "Untitled note".to_string());
-            emit_status(app, task_id, "writing-note", Some(title.clone()));
-            match repos.create_note(None).await {
-                Ok(note) => match repos
-                    .update_note(&note.id, Some(title.clone()), Some(content), None)
-                    .await
-                {
-                    Ok(saved) => {
-                        let _ = app.emit(AGENT_LITE_NOTES_CHANGED_EVENT, ());
-                        format!("Created note \"{}\" (noteId {}).", saved.title, saved.id)
-                    }
-                    Err(error) => format!("Creating the note failed: {error}"),
-                },
-                Err(error) => format!("Creating the note failed: {error}"),
+            let title = arg_str(args, "title");
+            emit_status(app, task_id, "writing-note", title.clone());
+            match crate::agent_notes::create(app, title.as_deref(), &content).await {
+                Ok(saved) => format!("Created note \"{}\" (noteId {}).", saved.title, saved.id),
+                Err(error) => format!("Creating the note failed: {}", error.message),
             }
         }
         "append_to_note" => {
@@ -1060,29 +1054,9 @@ async fn execute_tool(
                 return "append_to_note needs a note_id and content.".to_string();
             };
             emit_status(app, task_id, "writing-note", None);
-            match repos.get_note(&note_id).await {
-                Ok(note) => {
-                    // Append to what the user would see: their own edits when
-                    // they have any, the generated note otherwise. Writing to
-                    // `edited_content` is what the note editor reads back.
-                    let existing = note
-                        .edited_content
-                        .or(note.generated_content)
-                        .unwrap_or_default();
-                    let merged = if existing.trim().is_empty() {
-                        addition
-                    } else {
-                        format!("{}\n\n{}", existing.trim_end(), addition)
-                    };
-                    match repos.update_note(&note_id, None, Some(merged), None).await {
-                        Ok(saved) => {
-                            let _ = app.emit(AGENT_LITE_NOTES_CHANGED_EVENT, ());
-                            format!("Appended to \"{}\".", saved.title)
-                        }
-                        Err(error) => format!("Updating the note failed: {error}"),
-                    }
-                }
-                Err(error) => format!("No note with that id ({error})."),
+            match crate::agent_notes::append(app, &note_id, &addition).await {
+                Ok(saved) => format!("Appended to \"{}\".", saved.title),
+                Err(error) => format!("Updating the note failed: {}", error.message),
             }
         }
         // "Remember that I…" only worked by accident before, when the periodic

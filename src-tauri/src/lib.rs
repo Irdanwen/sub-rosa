@@ -6,6 +6,7 @@ pub mod actions;
 #[cfg(desktop)]
 pub mod agent_hud;
 pub mod agent_lite;
+pub mod agent_notes;
 pub mod app_paths;
 pub mod audio;
 pub mod background;

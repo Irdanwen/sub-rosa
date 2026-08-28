@@ -45,6 +45,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0032-the-bible-is-local-rows-over-gallery-artifacts.md](adr/0032-the-bible-is-local-rows-over-gallery-artifacts.md) — persistent identities as pointers at gallery artifacts
 - [adr/0033-the-mix-is-rendered-offline.md](adr/0033-the-mix-is-rendered-offline.md) — deterministic Web Audio mix, BS.1770 loudness, ducking as automation
 - [adr/0034-the-council-issues-a-verifiable-mandate.md](adr/0034-the-council-issues-a-verifiable-mandate.md) — several model families read a request blind, the chair issues capped slots with acceptance criteria, one agent executes, the council judges the result
+- [adr/0035-the-desktop-agent-writes-notes-through-the-app.md](adr/0035-the-desktop-agent-writes-notes-through-the-app.md) — the read-only context MCP asks the app to write a note over the local proxy, so one process owns the database and both shells write the same way
 
 ## Enforceable rules (spec/)
 

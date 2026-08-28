@@ -1,7 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import { parseSessionUsage, type SessionUsage } from "../lib/hermes-session-usage";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { forgetReadings, parseSessionUsage, type SessionUsage } from "../lib/hermes-session-usage";
 import { SessionUsagePanel } from "../components/agent/SessionUsagePanel";
+
+/** A reading is remembered for the run of the process so a reopened panel can
+ * recover it, which means it also outlives a test. Cases here reuse session
+ * ids, so each one starts from nothing. */
+beforeEach(() => forgetReadings());
 
 // A full usage payload as the gateway might return it. Mixes snake_case and a
 // nested tool-cost breakdown so the parser is exercised on realistic wire data.
@@ -180,5 +185,26 @@ describe("SessionUsagePanel", () => {
     render(<SessionUsagePanel sessionId="sess-1" fetchUsage={fetchUsage} onClose={() => {}} />);
     expect(await screen.findByText("opus")).toBeInTheDocument();
     expect(screen.getByText("anthropic")).toBeInTheDocument();
+  });
+
+  it("dates the counters it kept, not the model it can still read", async () => {
+    // Counters are what went stale. The model is whatever the session runs on
+    // now, and after switching models the remembered name would be wrong under
+    // a banner that only vouches for the numbers.
+    let reloaded = false;
+    const fetchUsage = () => {
+      const raw = reloaded
+        ? { model: "glm-5", calls: 0, input: 0, total: 0 }
+        : { model: "opus", calls: 4, total: 900 };
+      reloaded = true;
+      return Promise.resolve(parseSessionUsage("sess-9", raw));
+    };
+    render(<SessionUsagePanel sessionId="sess-9" fetchUsage={fetchUsage} onClose={() => {}} />);
+    expect(await screen.findByText("opus")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
+    expect(await screen.findByText("glm-5")).toBeInTheDocument();
+    expect(screen.getByText((900).toLocaleString())).toBeInTheDocument();
+    expect(screen.queryByText("opus")).not.toBeInTheDocument();
   });
 });

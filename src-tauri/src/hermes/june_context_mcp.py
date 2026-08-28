@@ -78,6 +78,59 @@ CALENDAR_TOOL: dict[str, Any] = {
     },
 }
 
+# Writing a note goes through the app, never through this process: the
+# database is opened read-only here on purpose. Advertised only alongside the
+# proxy coordinates, like the calendar.
+WRITE_TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "create_note",
+        "description": (
+            "Create a new note in the user's notes. Use it when they ask you "
+            "to write something down, draft something, or save a summary or a "
+            "report. Do not use it to answer a question: answer in the "
+            "conversation. Returns the new note's id, which append_to_note "
+            "takes and a subrosa:notes card can cite."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Short title, in the user's language.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The note body, in markdown.",
+                },
+            },
+            "required": ["content"],
+        },
+    },
+    {
+        "name": "append_to_note",
+        "description": (
+            "Add text to the end of one of the user's existing notes. Use it "
+            "when they ask you to add to a note that already exists. The "
+            "note_id comes from create_note, search_meeting_notes or get_note "
+            "— never invent one."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "note_id": {
+                    "type": "string",
+                    "description": "The id of the note to append to.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The text to add, in markdown.",
+                },
+            },
+            "required": ["note_id", "content"],
+        },
+    },
+]
+
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_meeting_notes",
@@ -160,6 +213,34 @@ def search_calendar(coords_path: str, arguments: dict[str, Any]) -> dict[str, An
     if isinstance(days, int):
         payload["days"] = max(-7, min(7, days))
     return call_proxy(coords_path, "/calendar/search", payload)
+
+
+def create_note(coords_path: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """A note written by the assistant, saved by the app.
+
+    The write itself belongs to the Rust process: this server holds the notes
+    database open read-only, and the app is what knows how to tell an open
+    window that its list changed.
+    """
+    content = str(arguments.get("content") or "").strip()
+    if not content:
+        raise RuntimeError("create_note needs content.")
+    payload: dict[str, Any] = {"content": content}
+    title = str(arguments.get("title") or "").strip()
+    if title:
+        payload["title"] = title
+    return call_proxy(coords_path, "/notes/create", payload)
+
+
+def append_to_note(coords_path: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Adds to an existing note, below whatever the user already has in it."""
+    note_id = str(arguments.get("note_id") or "").strip()
+    content = str(arguments.get("content") or "").strip()
+    if not note_id:
+        raise RuntimeError("append_to_note needs the note_id to add to.")
+    if not content:
+        raise RuntimeError("append_to_note needs content.")
+    return call_proxy(coords_path, "/notes/append", {"noteId": note_id, "content": content})
 
 
 def call_proxy(coords_path: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -296,6 +377,7 @@ def handle_message(
         # agent cannot actually reach is worse than one it does not know.
         if proxy_coords:
             tools.append(CALENDAR_TOOL)
+            tools.extend(WRITE_TOOLS)
         return response(request_id, {"tools": tools})
     if method == "tools/call":
         return call_tool(
@@ -327,6 +409,10 @@ def call_tool(
             result = search_user_memories(db_path, arguments)
         elif name == "search_calendar" and proxy_coords:
             result = search_calendar(proxy_coords, arguments)
+        elif name == "create_note" and proxy_coords:
+            result = create_note(proxy_coords, arguments)
+        elif name == "append_to_note" and proxy_coords:
+            result = append_to_note(proxy_coords, arguments)
         else:
             return error_response(request_id, -32602, f"Unknown tool: {name}")
     except Exception as exc:
