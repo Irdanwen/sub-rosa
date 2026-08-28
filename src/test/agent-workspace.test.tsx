@@ -6547,6 +6547,7 @@ describe("AgentWorkspace", () => {
       minModelCalls: 5,
       maxModelCalls: 9,
       reusedFamilies: [],
+      reusedByChoice: false,
       calls: [
         {
           phase: "blind",

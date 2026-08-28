@@ -40,6 +40,7 @@ function plan(calls: PlannedCall[]): SittingPlan {
     minModelCalls: calls.filter((entry) => entry.certain).length,
     maxModelCalls: calls.length,
     reusedFamilies: [],
+    reusedByChoice: false,
     calls,
   };
 }

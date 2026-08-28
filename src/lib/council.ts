@@ -154,6 +154,10 @@ export type SittingPlan = {
   minModelCalls: number;
   maxModelCalls: number;
   reusedFamilies: string[];
+  /** Whether the doubled-up family is the user's own pinning rather than a
+   * catalog with fewer families than seats. The two call for different
+   * sentences, and blaming the catalog for a choice is a small lie. */
+  reusedByChoice: boolean;
   situation?: string | null;
   calls: PlannedCall[];
 };
@@ -184,6 +188,19 @@ export const EMPTY_MANDATE: Mandate = {
 };
 
 // --- Bindings --------------------------------------------------------------
+
+/** Seat id to model id: only the seats the user has fixed. Everything absent
+ * is assigned automatically, which is what keeps this from becoming a form. */
+export type CouncilSeatModels = { seats: Record<string, string> };
+
+export async function councilSeatModels() {
+  return invoke<CouncilSeatModels>("council_get_seat_models");
+}
+
+/** Pins a seat to a model, or frees it when `model` is empty. */
+export async function setCouncilSeatModel(seatId: string, model: string) {
+  return invoke<CouncilSeatModels>("council_set_seat_model", { seatId, model });
+}
 
 export async function councilPlan(input: {
   request: string;

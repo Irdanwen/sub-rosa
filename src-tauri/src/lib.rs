@@ -364,6 +364,8 @@ pub fn run() {
             council::council_verdicts,
             council::council_cycle_awaiting_verdict,
             council::council_forget,
+            council::seat_models::council_get_seat_models,
+            council::seat_models::council_set_seat_model,
             timeline::export_timeline_bundle,
             bible::list_bible_entries,
             bible::save_bible_entry,
@@ -665,6 +667,7 @@ pub fn run() {
             #[cfg(desktop)]
             #[cfg(desktop)]
             {
+                council::seat_models::setup(app);
                 updates::setup(app);
                 dictation::setup(app);
                 agent_hud::setup(app);

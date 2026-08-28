@@ -1,20 +1,27 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   councilCycles,
   councilPlan,
+  councilSeatModels,
   councilVerdicts,
+  setCouncilSeatModel,
   verdictTally,
   type CouncilCycle,
+  type CouncilSeatModels,
   type CouncilVerdict,
   type SittingPlan,
 } from "../../lib/council";
+import { listVeniceModels, type VeniceModelDto } from "../../lib/tauri";
 
 /**
  * Settings › Council (ADR-0034).
  *
- * Two things, and deliberately not a builder. The councils are built in: a
- * screen offering twenty of them is a screen nobody reads, and a seat is only
- * worth what its model can see, which is not something a text field improves.
+ * Three things, and deliberately not a builder. The councils themselves are
+ * built in: a screen offering twenty of them is a screen nobody reads. What
+ * each seat runs on is not built in, because someone who knows that one model
+ * argues well and another flatters should be able to say so. Pinning is per
+ * seat and optional; anything left alone is assigned automatically, so this
+ * stays a page you can ignore.
  *
  * The second half is the part that earns the feature its keep. Every sitting's
  * blind round is one independent answer per model family, which is exactly
@@ -29,6 +36,27 @@ export function CouncilSettingsSection() {
   const [verdictPlan, setVerdictPlan] = useState<SittingPlan | null>(null);
   const [cycles, setCycles] = useState<CouncilCycle[]>([]);
   const [verdicts, setVerdicts] = useState<Record<string, CouncilVerdict[]>>({});
+  const [pins, setPins] = useState<CouncilSeatModels>({ seats: {} });
+  const [models, setModels] = useState<VeniceModelDto[]>([]);
+
+  /** Both rosters are re-read after a pin: changing one seat can move another,
+   * because the automatic assignment fills around what is now taken. */
+  const reloadPlans = useCallback(async () => {
+    const [mandate, verdict] = await Promise.all([
+      councilPlan({ request: "" }),
+      councilPlan({ request: "", councilId: "verdict" }),
+    ]);
+    setPlan(mandate);
+    setVerdictPlan(verdict);
+  }, []);
+
+  const pinSeat = useCallback(
+    async (seatId: string, model: string) => {
+      setPins(await setCouncilSeatModel(seatId, model));
+      await reloadPlans();
+    },
+    [reloadPlans],
+  );
 
   useEffect(() => {
     let live = true;
@@ -38,6 +66,18 @@ export function CouncilSettingsSection() {
     void councilPlan({ request: "", councilId: "verdict" }).then((next) => {
       if (live) setVerdictPlan(next);
     });
+    void councilSeatModels().then((next) => {
+      if (live) setPins(next);
+    });
+    // The catalog the seats can actually be pointed at. Best-effort: without
+    // it the rows still show what each seat runs on, they just cannot be
+    // changed, which is exactly how this screen behaved before.
+    void listVeniceModels("generation").then(
+      (response) => {
+        if (live) setModels(response.models ?? []);
+      },
+      () => {},
+    );
     void councilCycles(20).then(async (rows) => {
       if (!live) return;
       setCycles(rows);
@@ -62,11 +102,14 @@ export function CouncilSettingsSection() {
         When the work is done they read it back against that mandate.
       </p>
 
-      <Roster title="Issuing a mandate" plan={plan} />
+      <Roster title="Issuing a mandate" plan={plan} pins={pins} models={models} onPin={pinSeat} />
       <Roster
         title="Judging finished work"
         plan={verdictPlan}
-        note="These never run on the model the work was written on. A reviewer sharing weights with the author shares its blind spots."
+        pins={pins}
+        models={models}
+        onPin={pinSeat}
+        note="These never run on the model the work was written on. A reviewer sharing weights with the author shares its blind spots, so a seat pinned to that model is passed over for that sitting."
       />
 
       <div className="settings-card">
@@ -96,7 +139,21 @@ export function CouncilSettingsSection() {
   );
 }
 
-function Roster({ title, plan, note }: { title: string; plan: SittingPlan | null; note?: string }) {
+function Roster({
+  title,
+  plan,
+  pins,
+  models,
+  note,
+  onPin,
+}: {
+  title: string;
+  plan: SittingPlan | null;
+  pins: CouncilSeatModels;
+  models: VeniceModelDto[];
+  note?: string;
+  onPin: (seatId: string, model: string) => Promise<void>;
+}) {
   return (
     <div className="settings-card">
       <h3 className="settings-row-title">{title}</h3>
@@ -104,22 +161,44 @@ function Roster({ title, plan, note }: { title: string; plan: SittingPlan | null
       {plan ? (
         <>
           <ul className="council-seats">
-            {plan.seats.map((seat) => (
-              <li className="council-seat" key={seat.id} data-state="idle">
-                <span className="council-seat-text">
-                  <span className="council-seat-name">{seat.name}</span>
-                  <span className="council-seat-charge">{seat.charge}</span>
-                </span>
-                <span className="council-seat-model" title={seat.model}>
-                  {seat.model}
-                </span>
-              </li>
-            ))}
+            {plan.seats.map((seat) => {
+              const pinned = pins.seats[seat.id] ?? "";
+              return (
+                <li className="council-seat" key={seat.id} data-state="idle">
+                  <span className="council-seat-text">
+                    <span className="council-seat-name">{seat.name}</span>
+                    <span className="council-seat-charge">{seat.charge}</span>
+                  </span>
+                  {models.length > 0 ? (
+                    <select
+                      className="council-seat-picker"
+                      aria-label={`Model for ${seat.name}`}
+                      value={pinned}
+                      onChange={(event) => void onPin(seat.id, event.target.value)}
+                    >
+                      {/* Left alone by default, and named by what it does
+                          rather than by the absence of a choice. */}
+                      <option value="">Chosen for me ({seat.model})</option>
+                      {models.map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {model.id}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="council-seat-model" title={seat.model}>
+                      {seat.model}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
           {plan.reusedFamilies.length > 0 ? (
             <p className="settings-group-description">
-              The catalog offers fewer model families than there are seats, so some of them are
-              sharing weights. This council is less independent than it looks.
+              {plan.reusedByChoice
+                ? "Two of these seats are pinned to the same model family, so they will tend to agree. A council is only worth its cost when its seats can disagree."
+                : "The catalog offers fewer model families than there are seats, so some of them are sharing weights. This council is less independent than it looks."}
             </p>
           ) : null}
         </>

@@ -114,6 +114,28 @@
   white-space: nowrap;
 }
 
+/* The settings roster's seat picker. Wears the same pill as the read-only
+   badge it replaces, so choosing a model does not turn a calm list into a
+   form: the row looks the same until you click it. */
+.council-seat-picker {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  padding: var(--sp-px) var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border: 1px solid transparent;
+  max-width: 18rem;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease-out);
+}
+
+.council-seat-picker:hover,
+.council-seat-picker:focus-visible {
+  border-color: var(--border);
+  color: var(--foreground);
+}
+
 .council-status {
   margin: 0;
   font-size: var(--fs-md);

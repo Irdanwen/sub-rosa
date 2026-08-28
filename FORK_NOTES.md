@@ -504,6 +504,17 @@ Vocabulaire : la section « The council (fork) » de [CONTEXT.md](CONTEXT.md).
   le panneau.
 - Ajouter une commande partagée oblige à toucher les **deux**
   `generate_handler!` ; celles-ci sont desktop-only et n'en touchent qu'une.
+- **Choisir le modèle d'un siège** : `council/seat_models.rs` (`council.json`,
+  miroir en mémoire comme `memory.json`, donc lisible sans `AppHandle` depuis
+  `build_roster`). Un choix est **par siège et optionnel** ; les sièges libres
+  restent attribués automatiquement. `assign_models` reçoit
+  `held_families` pour ne pas redonner une famille qu'un siège épinglé occupe
+  déjà. Deux règles survivent à l'utilisateur : un modèle absent du catalogue
+  est ignoré (sinon la séance meurt au premier appel), et un juge n'est
+  **jamais** mis sur les poids de l'auteur (ADR-0034) — le choix est écarté
+  pour cette séance-là, pas supprimé. `reusedByChoice` dit laquelle des deux
+  raisons explique un doublon de famille : accuser le catalogue d'un choix de
+  l'utilisateur serait faux.
 - **La séance met fin au hero.** `detailContent` (donc `CouncilSitting`) n'est
   rendu que dans la branche non-hero d'`AgentWorkspace` ; `heroMode` doit donc
   inclure `!councilRequest`. Sans ça, `/council` sur une session neuve vidait

@@ -186,11 +186,16 @@ pub fn model_family(model_id: &str) -> String {
 ///
 /// Returns one id per seat plus the families that had to be reused, which is
 /// what the caller reports instead of quietly pretending the roster is diverse.
+/// `held_families` are families already spoken for by seats this call is not
+/// filling -- the ones the user pinned. Without it the automatic pass would
+/// happily hand an unpinned seat the family a pinned one already holds, and
+/// duplicate a family while a fresh one was still on the shelf.
 pub fn assign_models(
     catalog: &[String],
     preferred: &[String],
     seats: usize,
     avoid_family: Option<&str>,
+    held_families: &[String],
 ) -> (Vec<String>, Vec<String>) {
     let mut ordered: Vec<String> = Vec::new();
     for candidate in preferred.iter().chain(catalog.iter()) {
@@ -200,7 +205,7 @@ pub fn assign_models(
     }
 
     let mut chosen: Vec<String> = Vec::new();
-    let mut taken_families: Vec<String> = Vec::new();
+    let mut taken_families: Vec<String> = held_families.to_vec();
     let avoided = avoid_family.map(str::to_lowercase);
 
     // First pass: one model per fresh family, skipping the family the caller
@@ -313,7 +318,7 @@ mod tests {
             "kimi-k2-6".to_string(),
             "qwen3-235b".to_string(),
         ];
-        let (models, reused) = assign_models(&catalog, &[], 3, None);
+        let (models, reused) = assign_models(&catalog, &[], 3, None, &[]);
         assert_eq!(models, vec!["zai-org-glm-5-2", "kimi-k2-6", "qwen3-235b"]);
         assert!(reused.is_empty());
     }
@@ -321,7 +326,7 @@ mod tests {
     #[test]
     fn the_preferred_model_leads_the_roster() {
         let catalog = vec!["kimi-k2-6".to_string(), "zai-org-glm-5-2".to_string()];
-        let (models, _) = assign_models(&catalog, &["zai-org-glm-5-2".to_string()], 2, None);
+        let (models, _) = assign_models(&catalog, &["zai-org-glm-5-2".to_string()], 2, None, &[]);
         assert_eq!(models[0], "zai-org-glm-5-2");
         assert_eq!(models[1], "kimi-k2-6");
     }
@@ -329,7 +334,7 @@ mod tests {
     #[test]
     fn a_thin_catalog_reuses_a_family_and_says_which() {
         let catalog = vec!["zai-org-glm-5-2".to_string(), "zai-org-glm-5-1".to_string()];
-        let (models, reused) = assign_models(&catalog, &[], 3, None);
+        let (models, reused) = assign_models(&catalog, &[], 3, None, &[]);
         assert_eq!(models.len(), 3);
         assert_eq!(
             reused.len(),
@@ -347,7 +352,7 @@ mod tests {
             "qwen3-235b".to_string(),
             "deepseek-r1".to_string(),
         ];
-        let (models, reused) = assign_models(&catalog, &[], 3, Some("glm"));
+        let (models, reused) = assign_models(&catalog, &[], 3, Some("glm"), &[]);
         assert!(reused.is_empty());
         assert!(
             models.iter().all(|model| model_family(model) != "glm"),
@@ -361,16 +366,37 @@ mod tests {
         // worse than a different one and better than none -- and the roster
         // records the reuse, so the verdict can say so.
         let catalog = vec!["zai-org-glm-5-2".to_string()];
-        let (models, reused) = assign_models(&catalog, &[], 3, Some("glm"));
+        let (models, reused) = assign_models(&catalog, &[], 3, Some("glm"), &[]);
         assert_eq!(models.len(), 3);
         assert_eq!(reused.len(), 3);
     }
 
     #[test]
     fn an_empty_catalog_seats_nobody_rather_than_inventing_a_model() {
-        let (models, reused) = assign_models(&[], &[], 3, None);
+        let (models, reused) = assign_models(&[], &[], 3, None, &[]);
         assert!(models.is_empty());
         assert!(reused.is_empty());
+    }
+
+    #[test]
+    fn the_automatic_pass_leaves_a_pinned_family_alone() {
+        // Seat one is pinned to glm elsewhere; the two seats filled here must
+        // reach for other families first. Without `held_families` the assigner
+        // would happily hand glm to a second seat while kimi sat unused, and
+        // the council would be less independent than the catalog allowed.
+        let catalog = vec![
+            "zai-org-glm-5-2".to_string(),
+            "zai-org-glm-5-1".to_string(),
+            "kimi-k2-6".to_string(),
+            "deepseek-ai/deepseek-r1".to_string(),
+        ];
+        let (models, reused) = assign_models(&catalog, &[], 2, None, &["glm".to_string()]);
+        assert_eq!(models.len(), 2);
+        assert!(reused.is_empty());
+        assert!(
+            !models.iter().any(|model| model_family(model) == "glm"),
+            "a family a pinned seat already holds is not free: {models:?}"
+        );
     }
 
     #[test]

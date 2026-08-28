@@ -128,7 +128,11 @@ pub async fn run(app: &tauri::AppHandle, mandate_id: &str, round: i64) -> Result
         .as_deref()
         .map(seats::model_family)
         .unwrap_or_else(|| seats::model_family(&crate::providers::generation_model()));
-    let (roster, reused) = super::build_roster(seats::VERDICT_COUNCIL, Some(&avoid)).await;
+    let super::Roster {
+        seats: roster,
+        reused_families: reused,
+        ..
+    } = super::build_roster(seats::VERDICT_COUNCIL, Some(&avoid)).await;
 
     let rendered = cycle
         .rendered_prompt

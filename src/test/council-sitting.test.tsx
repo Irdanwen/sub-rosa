@@ -63,6 +63,7 @@ function plan(overrides: Partial<SittingPlan> = {}): SittingPlan {
     minModelCalls: 3,
     maxModelCalls: 6,
     reusedFamilies: [],
+    reusedByChoice: false,
     situation: "Working folder: /tmp/app",
     calls: [
       {

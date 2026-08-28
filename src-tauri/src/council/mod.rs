@@ -31,6 +31,7 @@ pub mod mandate;
 pub mod merge;
 pub mod parse;
 pub mod prompts;
+pub mod seat_models;
 pub mod seats;
 pub mod verdict;
 
@@ -92,33 +93,94 @@ pub(crate) fn emit(app: &AppHandle, cycle: &CouncilMandateDto) {
 ///
 /// `avoid_family` is what the verdict passes: a reviewer sharing weights with
 /// the author shares its blind spots.
-async fn build_roster(
-    council_id: &str,
-    avoid_family: Option<&str>,
-) -> (Vec<crate::domain::types::CouncilSeatDto>, Vec<String>) {
-    let wanted = seats::seats_for(council_id).len();
+/// A roster and what is honest to say about it.
+pub(crate) struct Roster {
+    pub seats: Vec<crate::domain::types::CouncilSeatDto>,
+    pub reused_families: Vec<String>,
+    /// The user pinned two seats onto one family. See `reused_by_choice` on
+    /// [`SittingPlan`].
+    pub reused_by_choice: bool,
+}
+
+async fn build_roster(council_id: &str, avoid_family: Option<&str>) -> Roster {
+    let templates = seats::seats_for(council_id);
     let configured = crate::providers::generation_model();
     let catalog: Vec<String> = crate::june_api::list_models("text")
         .await
         .map(|models| models.into_iter().map(|model| model.id).collect())
         .unwrap_or_default();
 
-    // Offline or signed out: seat everyone on the configured model and say so
-    // through `reused`. A council of one family is a worse council, not a
-    // broken one, and pretending otherwise would be the actual failure.
-    let (models, reused) = if catalog.is_empty() {
-        let models = vec![configured.clone(); wanted];
-        let reused = vec![seats::model_family(&configured); wanted.saturating_sub(1)];
-        (models, reused)
+    // What the user fixed, seat by seat. A pin that this catalog or this
+    // sitting cannot honour comes back None and the seat is filled as if it
+    // had never been pinned (see `seat_models`).
+    let pins = seat_models::pins();
+    let pinned: Vec<Option<String>> = templates
+        .iter()
+        .map(|template| seat_models::pinned_model(&pins, template.id, &catalog, avoid_family))
+        .collect();
+    let held: Vec<String> = pinned
+        .iter()
+        .flatten()
+        .map(|model| seats::model_family(model))
+        .collect();
+    let wanted = pinned.iter().filter(|model| model.is_none()).count();
+
+    // Offline or signed out: seat everyone on the configured model. A council
+    // of one family is a worse council, not a broken one, and pretending
+    // otherwise would be the actual failure.
+    let (assigned, _) = if catalog.is_empty() {
+        (vec![configured.clone(); wanted], Vec::new())
     } else {
         seats::assign_models(
             &catalog,
             std::slice::from_ref(&configured),
             wanted,
             avoid_family,
+            &held,
         )
     };
-    (seats::roster(council_id, &models), reused)
+
+    // Weave the two back into seat order.
+    let mut assigned = assigned.into_iter();
+    let models: Vec<String> = pinned
+        .into_iter()
+        .map(|model| model.unwrap_or_else(|| assigned.next().unwrap_or_else(|| configured.clone())))
+        .collect();
+
+    // Computed from the roster that exists rather than from how it was built,
+    // so a family the user doubled up on is reported exactly like one the
+    // catalog could not avoid. Which of the two it was is `reused_by_choice`,
+    // because the sentence shown to the user differs.
+    let reused = duplicate_families(&models);
+    // Two seats the user pinned onto one family is a choice. A pin that
+    // collides with an automatic pick is not: that only happens when the
+    // catalog had no other family left, which is the catalog's doing.
+    let pinned_families: Vec<String> = held;
+    let reused_by_choice = pinned_families
+        .iter()
+        .enumerate()
+        .any(|(index, family)| pinned_families[..index].contains(family));
+    Roster {
+        seats: seats::roster(council_id, &models),
+        reused_families: reused,
+        reused_by_choice,
+    }
+}
+
+/// One entry per seat beyond the first that shares a family, so an empty list
+/// means every seat is on its own weights.
+fn duplicate_families(models: &[String]) -> Vec<String> {
+    let mut seen: Vec<String> = Vec::new();
+    let mut duplicates: Vec<String> = Vec::new();
+    for model in models {
+        let family = seats::model_family(model);
+        if seen.contains(&family) {
+            duplicates.push(family);
+        } else {
+            seen.push(family);
+        }
+    }
+    duplicates
 }
 
 /// One model call a sitting would make.
@@ -152,10 +214,14 @@ pub struct SittingPlan {
     pub min_model_calls: i64,
     /// One that asks, and then answers an objection.
     pub max_model_calls: i64,
-    /// Families that had to be reused because the catalog offered no more.
-    /// Empty is the good case, and a non-empty one is shown rather than
-    /// letting the roster imply a diversity it does not have.
+    /// Families held by more than one seat. Empty is the good case, and a
+    /// non-empty one is shown rather than letting the roster imply a diversity
+    /// it does not have.
     pub reused_families: Vec<String>,
+    /// Whether that doubling up is the user's own doing: they pinned two seats
+    /// onto one family. Blaming a thin catalog for a choice someone made is
+    /// the kind of small lie this surface exists to avoid.
+    pub reused_by_choice: bool,
     /// The ground the seats would be handed, so it can be shown before anyone
     /// commits to a sitting.
     pub situation: Option<String>,
@@ -180,13 +246,14 @@ pub async fn plan(
     working_dir: Option<&str>,
     unrestricted: bool,
 ) -> SittingPlan {
-    let (roster, reused) = build_roster(council_id, None).await;
+    let roster = build_roster(council_id, None).await;
+    let seats_of = &roster.seats;
     let situation = situation(working_dir, unrestricted).await;
-    let positions: Vec<&crate::domain::types::CouncilSeatDto> = roster
+    let positions: Vec<&crate::domain::types::CouncilSeatDto> = seats_of
         .iter()
         .filter(|seat| seat.role == seats::SeatRole::Position.as_str())
         .collect();
-    let objection = roster
+    let objection = seats_of
         .iter()
         .find(|seat| seat.role == seats::SeatRole::Objection.as_str());
 
@@ -209,7 +276,7 @@ pub async fn plan(
         });
     }
     // The chair reads every draft, so its prompt carries the table.
-    let chair_model = roster
+    let chair_model = seats_of
         .first()
         .map(|seat| seat.model.clone())
         .unwrap_or_else(crate::providers::generation_model);
@@ -256,10 +323,11 @@ pub async fn plan(
     let min_model_calls = calls.iter().filter(|call| call.certain).count() as i64;
     SittingPlan {
         council_id: council_id.to_string(),
-        seats: roster,
+        seats: roster.seats.clone(),
         min_model_calls,
         max_model_calls: calls.len() as i64,
-        reused_families: reused,
+        reused_families: roster.reused_families,
+        reused_by_choice: roster.reused_by_choice,
         situation,
         calls,
     }
@@ -336,7 +404,7 @@ pub async fn convene(
         ));
     }
     let repos = crate::commands::repositories(app).await?;
-    let (roster, _) = build_roster(seats::MANDATE_COUNCIL, None).await;
+    let roster = build_roster(seats::MANDATE_COUNCIL, None).await.seats;
     let situation = situation(working_dir, unrestricted).await;
     let id = Uuid::new_v4().to_string();
     let cycle = repos
@@ -784,6 +852,35 @@ mod tests {
             "a mandate written without knowing that asks for criteria nobody can check"
         );
         let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[test]
+    fn duplicate_families_describes_the_roster_that_exists() {
+        // Computed from the final roster rather than from how it was built, so
+        // a family the user doubled up on reports exactly like one the catalog
+        // could not avoid. What differs is the sentence, not the count.
+        let none = duplicate_families(&[
+            "zai-org-glm-5-2".to_string(),
+            "kimi-k2-6".to_string(),
+            "deepseek-ai/deepseek-r1".to_string(),
+        ]);
+        assert!(none.is_empty());
+
+        let doubled = duplicate_families(&[
+            "zai-org-glm-5-2".to_string(),
+            "zai-org-glm-5-1".to_string(),
+            "kimi-k2-6".to_string(),
+        ]);
+        assert_eq!(doubled, vec!["glm".to_string()]);
+
+        // One entry per seat beyond the first, so three seats on one family
+        // reads as two seats too many rather than as one.
+        let tripled = duplicate_families(&[
+            "zai-org-glm-5-2".to_string(),
+            "zai-org-glm-5-1".to_string(),
+            "zai-org-glm-5-3".to_string(),
+        ]);
+        assert_eq!(tripled.len(), 2);
     }
 
     #[tokio::test]
