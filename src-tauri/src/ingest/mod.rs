@@ -92,7 +92,7 @@ pub async fn preview_ingest_link(app: AppHandle, url: String) -> Result<LinkPrev
     let (fetchable, reason) = match resolved.kind {
         LinkKind::DirectMedia | LinkKind::Feed => (true, None),
         LinkKind::PlatformPage if extractor_usable(&app) => (true, None),
-        LinkKind::PlatformPage => (false, Some(platform_refusal(&resolved.host))),
+        LinkKind::PlatformPage => (false, Some(platform_refusal(&app, &resolved.host))),
     };
     Ok(LinkPreview {
         url: resolved.url,
@@ -119,10 +119,46 @@ fn extractor_usable(app: &AppHandle) -> bool {
     }
 }
 
-fn platform_refusal(host: &str) -> String {
-    format!(
-        "{host} does not publish a file this app can fetch. Download the audio yourself and drop the file here, or paste a podcast feed or a direct media link."
-    )
+/// Why a platform page cannot be fetched, and what would change that.
+///
+/// `rail` is the extractor's state as (switched on, installed), or `None`
+/// where there is no rail at all.
+///
+/// Three different situations were being answered with one sentence, and the
+/// one it described was the least useful of the three: it listed the ways
+/// around the rail without ever mentioning that the rail exists. A user with
+/// yt-dlp already installed had no way to learn that a switch two screens away
+/// would have read their link.
+fn platform_refusal_text(host: &str, rail: Option<(bool, bool)>) -> String {
+    let fallbacks = "Download the audio yourself and drop the file here, or paste a podcast feed or a direct media link.";
+    match rail {
+        // No rail to point at, and no switch to turn on (ADR-0028): the phone.
+        None => format!("{host} does not publish a file this app can fetch. {fallbacks}"),
+        // Switched on and installed: this should not have been reached, so say
+        // the plain thing rather than a confident wrong instruction.
+        Some((true, true)) => format!("{host} could not be read. {fallbacks}"),
+        Some((true, false)) => format!(
+            "{host} needs yt-dlp to be read. It is switched on here but not installed. Install it, or: {fallbacks}"
+        ),
+        Some((false, true)) => format!(
+            "{host} needs yt-dlp to be read, and you have it. Turn on \"Use yt-dlp for streaming platform pages\" in Settings, Import. Or: {fallbacks}"
+        ),
+        Some((false, false)) => format!(
+            "{host} needs yt-dlp to be read, and this app never installs one. Install yt-dlp, then turn it on in Settings, Import. Or: {fallbacks}"
+        ),
+    }
+}
+
+fn platform_refusal(app: &AppHandle, host: &str) -> String {
+    #[cfg(desktop)]
+    {
+        platform_refusal_text(host, Some(extractor::state(app)))
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = app;
+        platform_refusal_text(host, None)
+    }
 }
 
 /// Start fetching a link. Returns as soon as the row exists; the work runs on
@@ -137,7 +173,7 @@ pub async fn start_link_ingest(
     if resolved.kind == LinkKind::PlatformPage && !extractor_usable(&app) {
         return Err(AppError::new(
             "ingest_needs_extractor",
-            platform_refusal(&resolved.host),
+            platform_refusal(&app, &resolved.host),
         ));
     }
     let repos = crate::commands::repositories(&app).await?;
@@ -413,6 +449,45 @@ pub async fn resume_unfinished(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_refusal_names_the_one_thing_that_would_change_it() {
+        // Installed but switched off: the user is one toggle away and the old
+        // wording never said so.
+        let has_it = platform_refusal_text("m.youtube.com", Some((false, true)));
+        assert!(has_it.contains("you have it"), "{has_it}");
+        assert!(has_it.contains("Settings, Import"), "{has_it}");
+
+        // Switched on but missing: pointing at the toggle would be wrong, the
+        // toggle is already on.
+        let missing = platform_refusal_text("m.youtube.com", Some((true, false)));
+        assert!(missing.contains("not installed"), "{missing}");
+        assert!(!missing.contains("Turn on"), "{missing}");
+
+        // Neither: both steps, in the order they have to happen.
+        let neither = platform_refusal_text("m.youtube.com", Some((false, false)));
+        let install = neither.find("Install yt-dlp").expect("install step");
+        let turn_on = neither.find("turn it on").expect("enable step");
+        assert!(install < turn_on, "{neither}");
+
+        // Every branch keeps the ways round the rail, which are what a user
+        // who wants nothing to do with yt-dlp is reading for.
+        for text in [&has_it, &missing, &neither] {
+            assert!(text.contains("podcast feed"), "{text}");
+        }
+    }
+
+    #[test]
+    fn the_phone_is_not_told_to_install_anything() {
+        // There is no rail on iOS and no switch to point at, so the offer
+        // would be a dead end (ADR-0028).
+        let text = platform_refusal_text("m.youtube.com", None);
+        assert!(!text.contains("yt-dlp"), "{text}");
+        assert!(
+            text.contains("does not publish a file this app can fetch"),
+            "{text}"
+        );
+    }
 
     #[test]
     fn a_note_is_named_after_the_episode_not_the_cdn() {

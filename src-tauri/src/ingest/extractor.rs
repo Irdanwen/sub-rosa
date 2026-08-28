@@ -146,9 +146,19 @@ fn extractor_version(path: &Path) -> Option<String> {
     (!version.is_empty()).then_some(version)
 }
 
+/// Whether the rail is switched on, and whether an extractor is installed.
+///
+/// Deliberately cheaper than [`ingest_extractor_status`]: no `--version`
+/// probe, which spawns a process. A refusal needs the two booleans and
+/// nothing else.
+pub fn state(app: &tauri::AppHandle) -> (bool, bool) {
+    (settings(app).enabled, find_extractor().is_some())
+}
+
 /// Whether the rail can be used right now: switched on *and* installed.
 pub fn is_usable(app: &tauri::AppHandle) -> bool {
-    settings(app).enabled && find_extractor().is_some()
+    let (enabled, available) = state(app);
+    enabled && available
 }
 
 /// What an extraction produced.
