@@ -21,6 +21,7 @@ import {
   variantHint,
   isSeedanceModel,
   isVideoUpscaleModel,
+  requiresOpeningFrame,
   type VideoFamily,
   videoFamilies,
 } from "../../lib/studio/catalog";
@@ -769,6 +770,12 @@ export function VideoStudio({
   }, [queueBody]);
   const canSubmit =
     Boolean(queueBody()) && (!needsConsent || consent) && missingFields.length === 0 && !oversize;
+  /** This family wants the frame the clip starts from, on top of the photos.
+   * The body refuses to build without it, so the button is already disabled;
+   * this is what says why. */
+  const needsOpeningFrame = Boolean(
+    effectiveSurface === "shot" && requiresOpeningFrame(model?.id) && !openingFrame,
+  );
   /** Photos were supplied but the resolved variant cannot carry them. */
   const droppedReferences = Boolean(
     effectiveSurface === "shot" &&
@@ -1386,6 +1393,11 @@ export function VideoStudio({
       {droppedReferences ? (
         <p className="studio-field-note">
           {`${family?.name ?? "This model"} cannot take reference photos, so only the opening frame will be used.`}
+        </p>
+      ) : null}
+      {needsOpeningFrame ? (
+        <p className="studio-error">
+          {`${family?.name ?? "This model"} starts from a frame, so it needs an opening frame as well as its reference photos. The photos steer the look from there.`}
         </p>
       ) : null}
       {missingFields.length > 0 ? (

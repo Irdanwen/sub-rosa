@@ -21,6 +21,48 @@ beforeEach(() => {
   forgetLearnedConstraints();
 });
 
+describe("families that will not start from references alone", () => {
+  const KLING = m("kling-o3-pro-reference-to-video");
+
+  it("refuses to build a kling reference render with no opening frame", () => {
+    // Measured 2026-08-28: this provider takes the queue call, answers 202
+    // with a queue id, then fails the render with "Invalid request
+    // parameters" and no field named. Six renders differing only in this
+    // field failed that way. The user had already been billed by then, so the
+    // request must not leave without the frame.
+    expect(
+      videoRequestBody({
+        target: KLING,
+        prompt: "she walks through the fog",
+        references: [REF_A],
+      }),
+    ).toBeUndefined();
+  });
+
+  it("builds it once the frame is there, references included", () => {
+    const body = videoRequestBody({
+      target: KLING,
+      prompt: "she walks through the fog",
+      openingFrame: FRAME,
+      references: [REF_A],
+    });
+    expect(body?.image_url).toBe(FRAME);
+    expect(body?.reference_image_urls).toEqual([REF_A]);
+  });
+
+  it("leaves seedance able to run on references alone", () => {
+    // The counter-example the rule exists for: the shot chain is built on
+    // seedance rendering from a character sheet with no frame at all.
+    expect(
+      videoRequestBody({
+        target: REF2V,
+        prompt: "she walks through the fog",
+        references: [REF_A],
+      }),
+    ).toBeDefined();
+  });
+});
+
 describe("a shot built from cumulative inputs", () => {
   it("carries the opening frame AND the references together", () => {
     // The whole point of the change: continuing a shot while keeping a

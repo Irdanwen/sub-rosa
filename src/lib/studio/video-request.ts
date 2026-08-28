@@ -19,6 +19,7 @@ import {
   isReferenceToVideoModel,
   isSeedanceModel,
   isVideoUpscaleModel,
+  requiresOpeningFrame,
 } from "./catalog";
 import { withSeedanceConsent } from "./consent";
 import { effectiveVideoConstraints } from "./model-constraints";
@@ -157,6 +158,11 @@ export function videoRequestBody(inputs: VideoRequestInputs): Record<string, unk
   const hasVisualInput =
     Boolean(openingFrame) || (takesReferences && references.length > 0) || clips.length > 0;
   if (!hasVisualInput && (takesReferences || isImageToVideoModel(target.id))) return undefined;
+  // Some reference families want the opening frame on top of the references,
+  // and say so only by failing a render that has already been queued and
+  // billed. Refusing to build the body is what turns that into a disabled
+  // button (`canSubmit` reads this on both shells).
+  if (requiresOpeningFrame(target.id) && !openingFrame) return undefined;
 
   // Only the seedance targets carry the face-media attestation, and only for a
   // render actually built from media that could show a person - a clip as much

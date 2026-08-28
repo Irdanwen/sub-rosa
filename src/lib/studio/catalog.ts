@@ -195,6 +195,40 @@ export function isReferenceToVideoModel(modelId: string): boolean {
   return modelId.toLowerCase().includes("reference-to-video");
 }
 
+/**
+ * Reference-to-video families that refuse a render built from reference photos
+ * alone: they want the frame the clip starts from as well.
+ *
+ * Measured against the live API on 2026-08-28, not published: the catalog says
+ * nothing about it, and neither does the failure. Carpe Diem accepts the
+ * request, answers 202 with a queue id and files the job; the provider rejects
+ * it while rendering, with "Invalid request parameters" and no field named. Six
+ * renders differing only in this field failed that way; the one carrying an
+ * opening frame rendered.
+ *
+ * Matched by family stem rather than by full id: the four kling reference
+ * variants share one provider contract, and being wrong the careful way costs
+ * a user one extra picked image, while being wrong the other way costs them a
+ * render they paid for.
+ *
+ * Seedance is the counter-example this list exists for. Its reference contract
+ * runs on references alone, which is what the whole shot chain is built on.
+ */
+const OPENING_FRAME_REQUIRED = ["kling-"];
+
+/**
+ * Whether this model refuses to start from reference photos alone.
+ *
+ * The check that keeps a doomed render from being queued and billed: the
+ * refusal arrives too late and too vaguely to act on, so it is answered here,
+ * before the request leaves.
+ */
+export function requiresOpeningFrame(modelId: string | undefined): boolean {
+  const id = modelId?.toLowerCase() ?? "";
+  if (!isReferenceToVideoModel(id)) return false;
+  return OPENING_FRAME_REQUIRED.some((stem) => id.startsWith(stem));
+}
+
 /** True for a model whose contract opens on a supplied frame (`image_url`,
  * and `end_image_url` where the family takes one). Reference-to-video ids do
  * not match: they carry `reference_image_urls` and are told apart above. */

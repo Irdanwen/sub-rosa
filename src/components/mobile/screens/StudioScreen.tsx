@@ -35,6 +35,7 @@ import {
   isReferenceToVideoModel,
   isSeedanceModel,
   musicModels,
+  requiresOpeningFrame,
   soundEffectsModels,
   supportsBackgroundRemoval,
   variantFor,
@@ -1608,6 +1609,13 @@ function VideoPanel({
       {references.length > 0 && model && !isReferenceToVideoModel(model.id) ? (
         <p className="mobile-reference-hint">
           {`${family?.name ?? "This model"} cannot take reference photos, so only the opening frame will be used.`}
+        </p>
+      ) : null}
+      {requiresOpeningFrame(model?.id) && !openingFrame ? (
+        // The body refuses to build without it, so Generate is already
+        // disabled; this says why rather than leaving a dead button.
+        <p className="mobile-dictation-error">
+          {`${family?.name ?? "This model"} starts from a frame, so it needs an opening frame as well as its reference photos.`}
         </p>
       ) : null}
       {waiting ? (
