@@ -1098,12 +1098,59 @@ export type SubmitIssueReportRequest = {
   sessionId?: string;
 };
 
+/** What became of a report. `received` only ever meant "the call did not
+ * throw", which is how the app came to thank people for reports that reached a
+ * log file; `delivery` is the part that says where it actually went. */
+export type IssueReportDelivery =
+  /** Filed on the tracker from the app, with the token. */
+  | { filed: { urls: string[] } }
+  /** GitHub's new issue form is open in the browser, filled in, not yet
+   * submitted. Copy must not call this "sent". */
+  | "browser"
+  /** Nowhere but this machine, and why. */
+  | { logged: { reason: string } };
+
 export type SubmitIssueReportResponse = {
   received: boolean;
+  delivery?: IssueReportDelivery | null;
 };
 
 export async function submitIssueReport(request: SubmitIssueReportRequest) {
   return invoke<SubmitIssueReportResponse>("submit_issue_report", { request });
+}
+
+/** Where reports go, and whether the app can file them itself. The GitHub
+ * token never crosses IPC once saved, only whether one exists. */
+export type IssueReportSettingsDto = {
+  repo: string;
+  repoUrl: string;
+  hasToken: boolean;
+  /** A logged-in GitHub CLI is sitting there to take a token from, so the
+   * import button is worth showing. */
+  hasCliToken: boolean;
+  canOpenBrowser: boolean;
+};
+
+export async function issueReportsGetSettings() {
+  return invoke<IssueReportSettingsDto>("issue_reports_get_settings");
+}
+
+export async function issueReportsSetGithubToken(token: string) {
+  return invoke<IssueReportSettingsDto>("issue_reports_set_github_token", {
+    request: { token },
+  });
+}
+
+export async function issueReportsImportCliToken() {
+  return invoke<IssueReportSettingsDto>("issue_reports_import_cli_token");
+}
+
+export async function issueReportsClearGithubToken() {
+  return invoke<IssueReportSettingsDto>("issue_reports_clear_github_token");
+}
+
+export async function issueReportsTestToken() {
+  return invoke<{ ok: boolean; message: string }>("issue_reports_test_token");
 }
 
 export type ExplainAgentApprovalResponse = {

@@ -571,6 +571,67 @@ une lecture et écrasaient les vrais chiffres.
 - L'éditeur ouvert sur une note que l'agent complète ne se recharge pas ; seule
   la liste le fait. Connu, non résolu.
 
+## Les rapports deviennent des issues GitHub (2026-08-28)
+
+Le sink upstream vise le tracker os-platform de June via une clé de bot tenue
+par le backend hébergé. Ce fork n'a ni backend hébergé ni clé, donc
+`june-api/config.toml` laisse la destination vide, le sidecar construit son
+`LogIssueReportSink`, et **chaque rapport jamais envoyé est devenu une ligne de
+`june-api.log`** pendant que l'app affichait « Your report was sent to the Sub
+Rosa team ». C'est la phrase qui était le bug.
+
+Les rapports ouvrent désormais des issues sur `Irdanwen/sub-rosa`, avec une
+**identité que l'utilisateur possède** : token GitHub dans le trousseau (l'app
+dépose l'issue et rend son URL), sinon le formulaire GitHub pré-rempli dans le
+navigateur (l'utilisateur valide). Décision et alternatives rejetées :
+[ADR-0036](docs/adr/0036-reports-are-github-issues-filed-with-the-users-own-credential.md).
+
+### Fichiers ajoutés
+
+| Fichier | Rôle |
+| --- | --- |
+| `src-tauri/src/carpe_diem/issue_reports.rs` | destination : token (trousseau + import depuis le CLI `gh`), découpage `Issue N:`, corps, POST GitHub, URL pré-remplie, `Delivery` |
+| `src/lib/issue-report-outcome.ts` | la phrase montrée, dérivée de ce qui s'est réellement passé |
+| `src/components/settings/ReportsSettingsSection.tsx` | Réglages › Reports |
+| `docs/adr/0036-…md` | pourquoi c'est le token de l'utilisateur et pas une clé embarquée |
+
+### Fichiers upstream modifiés
+
+| Fichier | Modification |
+| --- | --- |
+| `src-tauri/src/commands.rs` | `submit_issue_report` passe par `carpe_diem::issue_reports::deliver` et renvoie le `Delivery` |
+| `src-tauri/src/domain/types.rs` | `SubmitIssueReportResponse.delivery` (optionnel, rétrocompatible) |
+| `src-tauri/src/lib.rs` | 5 commandes `issue_reports_*` dans les **deux** listes |
+| `src/components/agent/AgentWorkspace.tsx` | la notice vient de `issueReportOutcomeMessage`, plus d'une phrase fixe |
+| `src/components/settings/AppSettings.tsx`, `src/components/sidebar/Sidebar.tsx` | onglet Reports dans les **deux** endroits |
+| `src/lib/tauri.ts` | `IssueReportDelivery`, `IssueReportSettingsDto`, bindings |
+
+### Pièges
+
+- **Jamais de token dans le binaire.** Le repo source et les builds sont
+  publics. C'est la raison d'être de tout le module ; ne pas « simplifier » en
+  embarquant une clé de bot, ni en ajoutant un relais (ADR-0017).
+- **Le chemin navigateur n'est pas un envoi.** Rien n'existe sur le tracker
+  tant que l'utilisateur n'a pas cliqué Submit. `issue-report-outcome.test.ts`
+  interdit explicitement le mot « sent » dans cette branche.
+- **Un échec avec token ne déclenche pas le navigateur.** Un souci réseau n'est
+  pas une raison d'ouvrir une fenêtre à quelqu'un ; ça retombe sur le journal
+  local, et l'UI le dit.
+- **Les pièces jointes sont nommées, jamais téléversées** : l'API REST GitHub
+  ne sait pas attacher un fichier à une issue. Ne pas laisser la copie
+  suggérer le contraire.
+- **`open_external_url` n'est pas le bon chemin** pour l'URL pré-remplie : il
+  plafonne à 2 Ko parce qu'il garde des URL écrites par un modèle. Celle-ci est
+  composée par l'app, vers un hôte constant.
+- **Le corps navigateur est coupé à ~5 000 caractères** et le dit dans le
+  texte. Le chemin token porte le rapport entier.
+- **Un en-tête `Issue N:` est un titre**, qu'il y en ait un ou six : le prompt
+  le dit explicitement. Un seul en-tête titre l'issue (ne pas « simplifier »
+  en `sections.len() < 2` → titre depuis la description : ça jette le titre
+  rédigé dans le cas le plus courant). Sans aucun en-tête, la première ligne
+  de l'utilisateur fait le titre. Un en-tête sans contenu n'est pas une issue,
+  et un en-tête devenu titre ne se répète pas dans le corps.
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.

@@ -101,6 +101,7 @@ import { DictionarySettingsSection } from "./DictionarySettingsSection";
 import { ImportSettingsSection } from "./ImportSettingsSection";
 import { CouncilSettingsSection } from "./CouncilSettingsSection";
 import { MemorySettingsSection } from "./MemorySettingsSection";
+import { ReportsSettingsSection } from "./ReportsSettingsSection";
 import { MicTestControl, type MicTestState } from "./MicTestControl";
 import { StyleSettingsSection } from "./StyleSettingsSection";
 
@@ -227,6 +228,7 @@ export type SettingsTab =
   | "profile-builder"
   | "integrations-health"
   | "import-export"
+  | "reports"
   | "about";
 
 export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
@@ -253,6 +255,7 @@ export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "profile-builder", label: "Profile builder" },
   { id: "integrations-health", label: "Integrations health" },
   { id: "import-export", label: "Import / export" },
+  { id: "reports", label: "Reports" },
   { id: "about", label: "About" },
 ];
 
@@ -1333,6 +1336,8 @@ export function AppSettings({
         ) : null}
 
         {activeTab === "council" ? <CouncilSettingsSection /> : null}
+
+        {activeTab === "reports" ? <ReportsSettingsSection /> : null}
 
         {activeTab === "skills" ? <InstalledSkillsSection /> : null}
         {activeTab === "external-dirs" ? <ExternalDirsSection /> : null}

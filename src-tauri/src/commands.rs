@@ -469,7 +469,13 @@ pub async fn submit_issue_report(
     request: SubmitIssueReportRequest,
 ) -> Result<SubmitIssueReportResponse, AppError> {
     let app_version = app.package_info().version.to_string();
-    crate::june_api::submit_issue_report(&request, &app_version).await
+    let delivery = crate::carpe_diem::issue_reports::deliver(&app, &request, &app_version).await;
+    Ok(SubmitIssueReportResponse {
+        // The report is out of the user's hands either way; `delivery` is what
+        // says whether it reached the tracker, and the UI reads that.
+        received: true,
+        delivery: Some(delivery),
+    })
 }
 
 #[tauri::command]

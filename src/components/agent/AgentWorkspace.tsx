@@ -250,6 +250,7 @@ import {
   MESSAGING_PLATFORMS_LOAD_TIMEOUT_MESSAGE,
   MESSAGING_PLATFORMS_LOAD_TIMEOUT_MS,
 } from "../../lib/hermes-messaging";
+import { issueReportOutcomeMessage } from "../../lib/issue-report-outcome";
 import { categoryPrompt } from "../../lib/issue-report-prompt";
 import {
   explicitSkillInvocationPrompt,
@@ -4121,7 +4122,7 @@ export function AgentWorkspace({
       // Best-effort; the report ships without the diagnosis.
     }
     try {
-      await submitIssueReport({
+      const response = await submitIssueReport({
         category: report.category,
         description: issueReportDescription(report),
         agentDiagnosis,
@@ -4132,8 +4133,7 @@ export function AgentWorkspace({
       clearErrorForSession(sessionId);
       if (selectedHermesSessionIdRef.current === sessionId) {
         setIssueReportNotice({
-          message:
-            "Your report was sent to the Sub Rosa team. Thank you for helping improve Sub Rosa.",
+          message: issueReportOutcomeMessage(response.delivery),
           sessionId,
         });
       }

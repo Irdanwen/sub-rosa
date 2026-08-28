@@ -46,6 +46,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0033-the-mix-is-rendered-offline.md](adr/0033-the-mix-is-rendered-offline.md) — deterministic Web Audio mix, BS.1770 loudness, ducking as automation
 - [adr/0034-the-council-issues-a-verifiable-mandate.md](adr/0034-the-council-issues-a-verifiable-mandate.md) — several model families read a request blind, the chair issues capped slots with acceptance criteria, one agent executes, the council judges the result
 - [adr/0035-the-desktop-agent-writes-notes-through-the-app.md](adr/0035-the-desktop-agent-writes-notes-through-the-app.md) — the read-only context MCP asks the app to write a note over the local proxy, so one process owns the database and both shells write the same way
+- [adr/0036-reports-are-github-issues-filed-with-the-users-own-credential.md](adr/0036-reports-are-github-issues-filed-with-the-users-own-credential.md) — in-app reports open Issues on the fork's own tracker, with a keychain token or through GitHub's pre-filled form, and the UI names which happened
 
 ## Enforceable rules (spec/)
 

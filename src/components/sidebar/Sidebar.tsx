@@ -8,6 +8,7 @@ import { IconBox2 } from "central-icons/IconBox2";
 import { IconBookmark } from "central-icons/IconBookmark";
 import { IconCirclesThree } from "central-icons/IconCirclesThree";
 import { IconBrain2 } from "central-icons/IconBrain2";
+import { IconBug } from "central-icons/IconBug";
 import { IconCircleInfo } from "central-icons/IconCircleInfo";
 import { IconFolderShared } from "central-icons/IconFolderShared";
 import { IconCreditCard1 } from "central-icons/IconCreditCard1";
@@ -307,7 +308,10 @@ const SETTINGS_SIDEBAR_GROUPS: {
   },
   {
     title: "App",
-    items: [{ id: "about", label: "About", icon: <IconCircleInfo size={16} /> }],
+    items: [
+      { id: "reports", label: "Reports", icon: <IconBug size={16} /> },
+      { id: "about", label: "About", icon: <IconCircleInfo size={16} /> },
+    ],
   },
 ];
 

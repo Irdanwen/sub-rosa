@@ -772,7 +772,10 @@ describe("AgentWorkspace", () => {
       AGENT_NEW_SESSION_PENDING_KEY,
       JSON.stringify({ createdAt: Date.now(), category: "bug" }),
     );
-    mocks.submitIssueReport.mockResolvedValue({ received: true });
+    mocks.submitIssueReport.mockResolvedValue({
+      received: true,
+      delivery: { filed: { urls: ["https://github.com/Irdanwen/sub-rosa/issues/12"] } },
+    });
 
     render(<AgentWorkspace />);
 
@@ -854,7 +857,7 @@ describe("AgentWorkspace", () => {
       }),
     );
     expect(
-      await screen.findByText(/Your report was sent to the Sub Rosa team/),
+      await screen.findByText(/filed at https:\/\/github.com\/Irdanwen\/sub-rosa\/issues\/12/),
     ).toBeInTheDocument();
     // Drain the post-terminal refresh timer before the test ends so its
     // session refetch cannot land inside a later test's render.
@@ -863,7 +866,10 @@ describe("AgentWorkspace", () => {
 
   it("does not use an old assistant reply as an existing-session report diagnosis", async () => {
     const user = userEvent.setup();
-    mocks.submitIssueReport.mockResolvedValue({ received: true });
+    mocks.submitIssueReport.mockResolvedValue({
+      received: true,
+      delivery: { filed: { urls: ["https://github.com/Irdanwen/sub-rosa/issues/12"] } },
+    });
     mocks.listHermesSessionMessages.mockResolvedValue([
       {
         id: "m1",
@@ -924,7 +930,10 @@ describe("AgentWorkspace", () => {
 
   it("uses created_at for existing-session report diagnosis filtering", async () => {
     const user = userEvent.setup();
-    mocks.submitIssueReport.mockResolvedValue({ received: true });
+    mocks.submitIssueReport.mockResolvedValue({
+      received: true,
+      delivery: { filed: { urls: ["https://github.com/Irdanwen/sub-rosa/issues/12"] } },
+    });
     mocks.listHermesSessionMessages.mockResolvedValue([
       {
         id: "m1",
@@ -992,7 +1001,10 @@ describe("AgentWorkspace", () => {
 
   it("keeps chunk boundary spaces in issue report agent diagnosis", async () => {
     const user = userEvent.setup();
-    mocks.submitIssueReport.mockResolvedValue({ received: true });
+    mocks.submitIssueReport.mockResolvedValue({
+      received: true,
+      delivery: { filed: { urls: ["https://github.com/Irdanwen/sub-rosa/issues/12"] } },
+    });
     mocks.listHermesSessionMessages.mockResolvedValue([]);
 
     render(<AgentWorkspace initialSession={existingSession} />);
@@ -1052,7 +1064,10 @@ describe("AgentWorkspace", () => {
 
   it("allows second-precision diagnosis timestamps near the report boundary", async () => {
     const user = userEvent.setup();
-    mocks.submitIssueReport.mockResolvedValue({ received: true });
+    mocks.submitIssueReport.mockResolvedValue({
+      received: true,
+      delivery: { filed: { urls: ["https://github.com/Irdanwen/sub-rosa/issues/12"] } },
+    });
     mocks.listHermesSessionMessages.mockResolvedValue([
       {
         id: "m1",
@@ -1109,7 +1124,10 @@ describe("AgentWorkspace", () => {
       AGENT_NEW_SESSION_PENDING_KEY,
       JSON.stringify({ createdAt: Date.now(), category: "bug" }),
     );
-    mocks.submitIssueReport.mockResolvedValue({ received: true });
+    mocks.submitIssueReport.mockResolvedValue({
+      received: true,
+      delivery: { filed: { urls: ["https://github.com/Irdanwen/sub-rosa/issues/12"] } },
+    });
     let stalledRefreshStarted = false;
 
     render(<AgentWorkspace />);
@@ -1167,7 +1185,10 @@ describe("AgentWorkspace", () => {
       AGENT_NEW_SESSION_PENDING_KEY,
       JSON.stringify({ createdAt: Date.now(), category: "bug" }),
     );
-    mocks.submitIssueReport.mockResolvedValue({ received: true });
+    mocks.submitIssueReport.mockResolvedValue({
+      received: true,
+      delivery: { filed: { urls: ["https://github.com/Irdanwen/sub-rosa/issues/12"] } },
+    });
 
     render(<AgentWorkspace />);
 
@@ -1239,7 +1260,7 @@ describe("AgentWorkspace", () => {
       }),
     );
     expect(
-      await screen.findByText(/Your report was sent to the Sub Rosa team/),
+      await screen.findByText(/filed at https:\/\/github.com\/Irdanwen\/sub-rosa\/issues\/12/),
     ).toBeInTheDocument();
     await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
   });
@@ -1250,7 +1271,10 @@ describe("AgentWorkspace", () => {
       AGENT_NEW_SESSION_PENDING_KEY,
       JSON.stringify({ createdAt: Date.now(), category: "bug" }),
     );
-    mocks.submitIssueReport.mockResolvedValue({ received: true });
+    mocks.submitIssueReport.mockResolvedValue({
+      received: true,
+      delivery: { filed: { urls: ["https://github.com/Irdanwen/sub-rosa/issues/12"] } },
+    });
     const first = render(<AgentWorkspace />);
 
     expect(await screen.findByText("Bug report")).toBeInTheDocument();
@@ -1302,7 +1326,10 @@ describe("AgentWorkspace", () => {
       AGENT_NEW_SESSION_PENDING_KEY,
       JSON.stringify({ createdAt: Date.now(), category: "bug" }),
     );
-    mocks.submitIssueReport.mockResolvedValue({ received: true });
+    mocks.submitIssueReport.mockResolvedValue({
+      received: true,
+      delivery: { filed: { urls: ["https://github.com/Irdanwen/sub-rosa/issues/12"] } },
+    });
     const first = render(<AgentWorkspace />);
 
     expect(await screen.findByText("Bug report")).toBeInTheDocument();
@@ -1375,7 +1402,10 @@ describe("AgentWorkspace", () => {
       AGENT_NEW_SESSION_PENDING_KEY,
       JSON.stringify({ createdAt: Date.now(), category: "bug" }),
     );
-    mocks.submitIssueReport.mockResolvedValue({ received: true });
+    mocks.submitIssueReport.mockResolvedValue({
+      received: true,
+      delivery: { filed: { urls: ["https://github.com/Irdanwen/sub-rosa/issues/12"] } },
+    });
     const first = render(<AgentWorkspace />);
 
     expect(await screen.findByText("Bug report")).toBeInTheDocument();
@@ -2233,7 +2263,10 @@ describe("AgentWorkspace", () => {
     );
     mocks.submitIssueReport
       .mockRejectedValueOnce(new Error("upstream_provider_failed"))
-      .mockResolvedValue({ received: true });
+      .mockResolvedValue({
+        received: true,
+        delivery: { filed: { urls: ["https://github.com/Irdanwen/sub-rosa/issues/12"] } },
+      });
     mocks.listHermesSessionMessages.mockResolvedValue([
       {
         id: "m1",
@@ -2270,7 +2303,7 @@ describe("AgentWorkspace", () => {
     await user.click(screen.getByRole("button", { name: "Send report" }));
 
     expect(
-      await screen.findByText(/Your report was sent to the Sub Rosa team/),
+      await screen.findByText(/filed at https:\/\/github.com\/Irdanwen\/sub-rosa\/issues\/12/),
     ).toBeInTheDocument();
     expect(screen.queryByText(/The issue report could not be sent/)).toBeNull();
     expect(screen.queryByText(/upstream_provider_failed/)).toBeNull();
@@ -2303,7 +2336,10 @@ describe("AgentWorkspace", () => {
         previewDataUrl: null,
       })),
     );
-    mocks.submitIssueReport.mockResolvedValue({ received: true });
+    mocks.submitIssueReport.mockResolvedValue({
+      received: true,
+      delivery: { filed: { urls: ["https://github.com/Irdanwen/sub-rosa/issues/12"] } },
+    });
 
     render(<AgentWorkspace />);
 

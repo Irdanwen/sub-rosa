@@ -847,6 +847,11 @@ pub struct SubmitIssueReportRequest {
 #[serde(rename_all = "camelCase")]
 pub struct SubmitIssueReportResponse {
     pub received: bool,
+    /// What actually happened to the report. `received: true` only ever meant
+    /// "the request did not error", which is why the UI could thank the user
+    /// for a report that reached a log file and nothing else.
+    #[serde(default)]
+    pub delivery: Option<crate::carpe_diem::issue_reports::Delivery>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
