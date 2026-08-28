@@ -5,8 +5,9 @@ import { IconCoins } from "central-icons/IconCoins";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { IconGauge } from "central-icons/IconGauge";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PROVIDER_NAME } from "../../lib/branding";
 import { type CacheUsage, hasMeasuredTurns } from "../../lib/carpe-diem-cache";
-import type { SessionUsage } from "../../lib/hermes-session-usage";
+import { hasAnyReading, type SessionUsage } from "../../lib/hermes-session-usage";
 
 /**
  * Self-contained session usage / context / cost panel (feature 09). Renders the
@@ -39,6 +40,11 @@ export function SessionUsagePanel({
   onClose: () => void;
 }) {
   const [usage, setUsage] = useState<SessionUsage | null>(null);
+  /** The runtime answered, but with nothing in it: it no longer holds this
+   * session. What is on screen is the last real reading, and saying when it
+   * was taken is the difference between stale data and a lie. */
+  const [stale, setStale] = useState(false);
+  const [readAt, setReadAt] = useState<number | null>(null);
   const [cache, setCache] = useState<CacheUsage | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   // The reason the fetch rejected, surfaced so the failure is honest about
@@ -65,7 +71,17 @@ export function SessionUsagePanel({
     fetchUsage(sessionId).then(
       (next) => {
         if (seq !== requestSeq.current) return;
-        setUsage(next);
+        if (hasAnyReading(next)) {
+          setUsage(next);
+          setReadAt(Date.now());
+          setStale(false);
+        } else {
+          // Counters live on the agent, so an unloaded session reports nothing.
+          // Blanking the panel loses the only reading anyone has of that
+          // session; keeping it, and dating it, does not.
+          setStale(true);
+          setUsage((previous) => previous ?? next);
+        }
         setStatus("ready");
       },
       (err: unknown) => {
@@ -126,9 +142,19 @@ export function SessionUsagePanel({
         </div>
       ) : (
         <div className="agent-usage-body" aria-busy={status === "loading"}>
+          {stale ? (
+            <p className="agent-usage-stale" role="status">
+              {readAt
+                ? `The runtime no longer holds this session's counters. Showing the last reading, taken at ${formatClock(readAt)}.`
+                : "The runtime is not reporting counters for this session."}
+            </p>
+          ) : null}
           <dl className="agent-usage-grid">
             <Metric label="Model" value={usage?.model} />
-            <Metric label="Provider" value={usage?.provider} />
+            {/* The runtime reports no provider, and never will: it talks to the
+             * local sidecar. This binary reaches one operator (ADR-0017), so
+             * naming it is a fact rather than a guess. */}
+            <Metric label="Provider" value={usage?.provider ?? PROVIDER_NAME} />
             <Metric label="Prompt tokens" value={formatCount(usage?.promptTokens)} />
             <Metric label="Completion tokens" value={formatCount(usage?.completionTokens)} />
             <Metric label="Total tokens" value={formatCount(usage?.totalTokens)} />
@@ -142,11 +168,18 @@ export function SessionUsagePanel({
             estimatedCostUsd={usage?.estimatedCostUsd}
             toolCosts={usage?.toolCosts}
             cacheSavedUsd={cache?.savedUsd}
+            spentUsd={cache?.costUsd}
           />
         </div>
       )}
     </section>
   );
+}
+
+/** Hours and minutes, local. The stale notice says when the reading was taken,
+ * not how long ago: a duration would go stale itself between renders. */
+function formatClock(at: number): string {
+  return new Date(at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 /** A label/value row. Empty/absent values render the sentence-case
@@ -249,26 +282,66 @@ function CostSection({
   estimatedCostUsd,
   toolCosts,
   cacheSavedUsd,
+  spentUsd,
 }: {
   estimatedCostUsd?: number;
   toolCosts?: SessionUsage["toolCosts"];
   cacheSavedUsd?: number;
+  /** What the operator actually billed, totalled from the per-turn metering
+   * headers it returns. */
+  spentUsd?: number;
 }) {
   const hasTotal = estimatedCostUsd !== undefined;
   return (
     <div className="agent-usage-cost">
-      <div className="agent-usage-cost-head">
-        <span className="agent-usage-cost-label">
-          <IconCoins size={14} ariaHidden />
-          Estimated cost
-        </span>
-        <span className="agent-usage-cost-value" data-unavailable={hasTotal ? undefined : "true"}>
-          {hasTotal ? formatUsd(estimatedCostUsd) : "Unavailable"}
-        </span>
-      </div>
-      <p className="agent-usage-cost-note">
-        Estimate only, based on reported token usage. Actual billing may differ.
-      </p>
+      {/* What was charged, not a reconstruction of it: the operator prices each
+       * settled turn in a response header and Rust adds them up. It leads
+       * because it is the only money figure here that is measured.
+       *
+       * It spans every request this app has made since it started, which is not
+       * the session above it, and the note says so. The alternative was the
+       * runtime's own estimate, which this runtime does not send and never
+       * will, so the line read "Unavailable" forever. */}
+      {spentUsd !== undefined ? (
+        <>
+          <div className="agent-usage-cost-head">
+            <span className="agent-usage-cost-label">
+              <IconCoins size={14} ariaHidden />
+              Spent since launch
+            </span>
+            <span className="agent-usage-cache-reading">{formatUsd(spentUsd)}</span>
+          </div>
+          <p className="agent-usage-cost-note">
+            Charged by the provider, across every request this app has made since it started, not
+            this session alone.
+          </p>
+        </>
+      ) : null}
+      {hasTotal ? (
+        <>
+          <div className="agent-usage-cost-head">
+            <span className="agent-usage-cost-label">
+              {spentUsd === undefined ? <IconCoins size={14} ariaHidden /> : null}
+              Estimated cost, this session
+            </span>
+            <span className="agent-usage-cost-value">{formatUsd(estimatedCostUsd)}</span>
+          </div>
+          <p className="agent-usage-cost-note">
+            Estimate only, based on reported token usage. Actual billing may differ.
+          </p>
+        </>
+      ) : null}
+      {spentUsd === undefined && !hasTotal ? (
+        <div className="agent-usage-cost-head">
+          <span className="agent-usage-cost-label">
+            <IconCoins size={14} ariaHidden />
+            Cost
+          </span>
+          <span className="agent-usage-cost-value" data-unavailable="true">
+            Not reported yet
+          </span>
+        </div>
+      ) : null}
       {cacheSavedUsd !== undefined && cacheSavedUsd > 0 ? (
         // The one number here that is NOT an estimate: the provider reports it.
         <div className="agent-usage-cost-head">

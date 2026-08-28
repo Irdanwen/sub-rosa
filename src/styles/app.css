@@ -3079,6 +3079,18 @@ input:focus-visible,
   color: var(--muted-foreground);
 }
 
+/* The reading on screen is older than this panel opening: the runtime dropped
+ * the session's counters. Muted rather than alarming, because nothing is
+ * broken and the numbers below were true when they were taken. */
+.agent-usage-stale {
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border-radius: var(--r-md);
+}
+
 .agent-usage-cost {
   display: flex;
   flex-direction: column;

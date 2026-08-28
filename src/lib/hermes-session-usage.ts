@@ -41,6 +41,28 @@ export type SessionUsage = {
   raw?: unknown;
 };
 
+/**
+ * Whether this reading carries anything at all.
+ *
+ * The runtime keeps a session's counters in memory on its agent, and answers
+ * `session.usage` with an empty object once that agent is gone - a gateway
+ * restart, or a session it has unloaded. Parsed, that is a `SessionUsage` with
+ * every field undefined, which the panel used to render as a wall of
+ * "Unavailable" over counters it had been showing a minute earlier. Telling
+ * the two apart is what lets it keep the last real reading instead.
+ */
+export function hasAnyReading(usage: SessionUsage): boolean {
+  return (
+    usage.model !== undefined ||
+    usage.provider !== undefined ||
+    usage.promptTokens !== undefined ||
+    usage.completionTokens !== undefined ||
+    usage.totalTokens !== undefined ||
+    usage.contextUsed !== undefined ||
+    usage.estimatedCostUsd !== undefined
+  );
+}
+
 function parseToolCosts(value: unknown): SessionToolCost[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const costs: SessionToolCost[] = [];

@@ -33,5 +33,14 @@ export const CARPE_DIEM_DEFAULT_BASE_URL = "https://carpe-diem.xyz/api/operator/
 /** Where a user creates a key and buys credits. Linked from onboarding. */
 export const CARPE_DIEM_DASHBOARD_URL = "https://carpe-diem.xyz";
 
+/**
+ * The provider, for the surfaces that report one.
+ *
+ * Safe to state rather than read back: this binary contacts Carpe Diem and
+ * nothing else (ADR-0017), so a surface with no provider in its payload is
+ * missing a field, not looking at a different operator.
+ */
+export const PROVIDER_NAME = "Carpe Diem";
+
 /** Prefix every Carpe Diem API key carries (`cdm_…`); used for light UI hints. */
 export const CARPE_DIEM_KEY_PREFIX = "cdm_";
