@@ -73,6 +73,45 @@ export function toolActivityKind(label: string): ToolActivityKind {
   return ACTIVITY_KIND_BY_LABEL[label] ?? "tool";
 }
 
+/**
+ * The same activity, once it is over.
+ *
+ * These labels are written in the present because they are minted while the
+ * step runs - and then kept, unchanged, for as long as the transcript exists.
+ * A finished session read as a wall of twenty identical "Running command"
+ * rows, all claiming to be happening now, with nothing to separate the one
+ * that actually was.
+ *
+ * Only the labels this module mints are rewritten. Anything else is a tool
+ * name humanized from the wire (`humanizeToolName`), and there is no safe way
+ * to put an arbitrary name into the past - "Fetch data" would become nonsense.
+ * Those are left exactly as they are.
+ */
+const SETTLED_LABELS: Record<string, string> = {
+  "Running command": "Ran command",
+  Browsing: "Browsed",
+  "Searching web": "Searched the web",
+  Searching: "Searched",
+  "Searching files": "Searched files",
+  "Searching images": "Searched images",
+  "Editing files": "Edited files",
+  "Reading files": "Read files",
+  "Working with images": "Worked with images",
+  "Using GitHub": "Used GitHub",
+  "Inspecting repository": "Inspected the repository",
+  "Running tests": "Ran tests",
+  Building: "Built",
+  "Checking code": "Checked code",
+};
+
+export function settledToolLabel(label: string): string {
+  const known = SETTLED_LABELS[label];
+  if (known) return known;
+  // `labelFromCommand` mints "Running <something>" for commands it recognises
+  // by name, so the same rewrite has to reach those too.
+  return label.startsWith("Running ") ? `Ran ${label.slice("Running ".length)}` : label;
+}
+
 export function humanizeToolName(value: string) {
   const cleaned = value
     .replace(/^tools?[._-]/i, "")

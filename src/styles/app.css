@@ -2196,6 +2196,57 @@ input:focus-visible,
   background: var(--border);
 }
 
+/* A light travelling down the spine while any step is live.
+ *
+ * The rows themselves already shimmer their own name and carry a spinner, but
+ * a long run is read as a column, not as rows: twenty finished steps and
+ * twenty steps with one still working looked the same from a metre away. This
+ * is the one mark that belongs to the whole group.
+ *
+ * The segment is a share of the rail's height and travels by transform, so it
+ * composites and costs nothing to run for minutes: 100/28 - 1 = 257% of its
+ * own height carries it exactly from top to bottom. */
+.agent-activity-rail[data-connected="true"][data-running="true"]::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 6px;
+  width: 1.5px;
+  height: 28%;
+  border-radius: var(--r-pill);
+  background: linear-gradient(to bottom, transparent, var(--brand), transparent);
+  animation: agent-activity-rail-travel 2.6s var(--ease-in-out) infinite;
+  will-change: transform;
+  pointer-events: none;
+}
+
+@keyframes agent-activity-rail-travel {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.9;
+  }
+  88% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(257%);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Rests as a steady tint on the spine: still "this group is working", with
+   * nothing moving. */
+  .agent-activity-rail[data-connected="true"][data-running="true"]::after {
+    animation: none;
+    height: 100%;
+    opacity: 0.35;
+  }
+}
+
 .agent-tool-stack {
   display: flex;
   flex-direction: column;

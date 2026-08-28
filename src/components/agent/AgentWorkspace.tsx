@@ -319,6 +319,7 @@ import {
 } from "../../lib/agent-chat-runtime";
 import {
   type ToolActivityKind,
+  settledToolLabel,
   toolActivityKind,
   toolActivitySentence,
 } from "../../lib/agent-tool-labels";
@@ -9960,6 +9961,16 @@ export function AgentChatTurnRow({
             data-connected={
               (reasoningParts.length > 0 ? 1 : 0) + toolParts.length >= 2 ? "true" : undefined
             }
+            // The spine carries the work, so it is the spine that shows the
+            // work is live: a glow travels down it while any step runs. A
+            // column of twenty finished rows and a column of twenty with one
+            // running looked identical, which is what made a stalled turn
+            // indistinguishable from a busy one.
+            data-running={
+              thinkingRunning || toolParts.some((part) => part.status === "running")
+                ? "true"
+                : undefined
+            }
           >
             {reasoningParts.length > 0 ? (
               <AgentThinkingGroup
@@ -11458,7 +11469,11 @@ function AgentToolDisclosure({
       </span>
       {/* The live row shimmers its name (same sweep as "Thinking") so the eye
        * lands on what's happening now; done rows read as quiet muted text. */}
-      <span className={running ? "agent-tool-name text-shimmer" : "agent-tool-name"}>{name}</span>
+      {/* Past tense once it is over: the label was minted while the step ran
+       * and kept saying "now" forever after. */}
+      <span className={running ? "agent-tool-name text-shimmer" : "agent-tool-name"}>
+        {running ? name : settledToolLabel(name)}
+      </span>
       {elapsed ? <span className="agent-tool-elapsed">{elapsed}</span> : null}
       {statusNode}
       {redacted ? <span className="agent-redacted">Redacted</span> : null}
