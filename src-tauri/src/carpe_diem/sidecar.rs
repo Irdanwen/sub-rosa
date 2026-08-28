@@ -21,7 +21,7 @@ use serde::Serialize;
 #[cfg(desktop)]
 use std::path::PathBuf;
 #[cfg(desktop)]
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::{
     net::TcpListener,
     sync::{Mutex, OnceLock},
@@ -418,9 +418,73 @@ fn start_backend(
 #[cfg(desktop)]
 const MAX_JSON_BYTES: usize = 16 * 1024 * 1024;
 
+/// The sidecar's own log, next to the app's other logs.
+///
+/// It is the only component that sees what the operator actually answered: it
+/// classifies every upstream response, and a status that is neither 402 nor
+/// 429/503 becomes one opaque `502 upstream_provider_failed` by the time the
+/// agent runtime reports it. The detail behind that - the real status, the
+/// body size, the model - is logged here (`june_providers` at info) and was
+/// then thrown away: a `Command` inherits the app's own stdout, which is
+/// nowhere at all when the app was launched from the Finder.
+///
+/// So a provider failure was undiagnosable after the fact, which is exactly
+/// when anyone looks. Now it survives.
+#[cfg(desktop)]
+const SIDECAR_LOG_FILE: &str = "june-api.log";
+
+/// Truncate rather than grow without end. One run of a long agent session is a
+/// few hundred KB of JSON lines; this keeps roughly the last few sessions,
+/// which is the window anyone debugging a failure cares about.
+#[cfg(desktop)]
+const SIDECAR_LOG_MAX_BYTES: u64 = 4 * 1024 * 1024;
+
+/// Point the child's stdout and stderr at that log.
+///
+/// Best-effort throughout: a log that cannot be opened must never stop the
+/// backend from starting. Failing here would trade a diagnosable app for one
+/// that does not run.
+#[cfg(desktop)]
+fn attach_sidecar_log(app: &AppHandle, command: &mut Command) {
+    let Ok(dir) = app.path().app_log_dir() else {
+        return;
+    };
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let path = dir.join(SIDECAR_LOG_FILE);
+    let oversize = std::fs::metadata(&path)
+        .map(|meta| meta.len() > SIDECAR_LOG_MAX_BYTES)
+        .unwrap_or(false);
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).write(true);
+    // `truncate` and `append` cannot both be set; a restart past the cap
+    // starts the file over, every other restart adds to it.
+    if oversize {
+        options.truncate(true);
+    } else {
+        options.append(true);
+    }
+    let Ok(out) = options.open(&path) else {
+        return;
+    };
+    let Ok(err) = out.try_clone() else {
+        return;
+    };
+    command.stdout(Stdio::from(out)).stderr(Stdio::from(err));
+}
+
 /// Common `JUNE__…` env for the child: local mode + Carpe Diem upstream.
 #[cfg(desktop)]
-fn apply_june_api_env(command: &mut Command, port: u16, token: &str, base_url: &str, key: &str) {
+fn apply_june_api_env(
+    app: &AppHandle,
+    command: &mut Command,
+    port: u16,
+    token: &str,
+    base_url: &str,
+    key: &str,
+) {
+    attach_sidecar_log(app, command);
     command
         .env("JUNE__SERVER__HOST", "127.0.0.1")
         .env("JUNE__SERVER__PORT", port.to_string())
@@ -451,7 +515,7 @@ fn build_command(_app: &AppHandle, port: u16, token: &str, base_url: &str, key: 
     };
     // CWD = june-api so Figment finds `config.toml` (pricing fallback catalog).
     command.current_dir(&api_dir);
-    apply_june_api_env(&mut command, port, token, base_url, key);
+    apply_june_api_env(_app, &mut command, port, token, base_url, key);
     command
 }
 
@@ -466,7 +530,7 @@ fn build_command(app: &AppHandle, port: u16, token: &str, base_url: &str, key: &
     if let Some(dir) = bundled_sidecar_cwd(app) {
         command.current_dir(dir);
     }
-    apply_june_api_env(&mut command, port, token, base_url, key);
+    apply_june_api_env(app, &mut command, port, token, base_url, key);
     command
 }
 
