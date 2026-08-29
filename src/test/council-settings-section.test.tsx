@@ -98,6 +98,22 @@ describe("choosing what a seat runs on", () => {
     await waitFor(() => expect(councilPlan.mock.calls.length).toBeGreaterThanOrEqual(4));
   });
 
+  it("hands a seat back to the automatic assignment", async () => {
+    // The undo. A picker you cannot clear is a decision you cannot take back,
+    // and the empty option is the only way back to the default.
+    const user = userEvent.setup();
+    councilSeatModels.mockResolvedValue({ seats: { shape: "kimi-k2-6" } });
+    setCouncilSeatModel.mockResolvedValue({ seats: {} });
+    render(<CouncilSettingsSection />);
+
+    const picker = (await screen.findByLabelText("Model for Shape")) as HTMLSelectElement;
+    expect(picker.value).toBe("kimi-k2-6");
+
+    await user.selectOptions(picker, "");
+    await waitFor(() => expect(setCouncilSeatModel).toHaveBeenCalledWith("shape", ""));
+    await waitFor(() => expect(picker.value).toBe(""));
+  });
+
   it("blames the right thing when two seats share a family", async () => {
     // The catalog running thin and the user pinning two seats onto one family
     // produce the same roster and call for different sentences. Blaming the

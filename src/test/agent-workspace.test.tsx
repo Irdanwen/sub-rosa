@@ -33,6 +33,9 @@ const HERO_GREETING = new RegExp(
 
 const mocks = vi.hoisted(() => ({
   cancelAgentTask: vi.fn(),
+  councilBindSession: vi.fn(),
+  councilConvene: vi.fn(),
+  councilCycle: vi.fn(),
   councilPlan: vi.fn(),
   createAgentTask: vi.fn(),
   ensureHermesBridgeSession: vi.fn(),
@@ -148,6 +151,10 @@ vi.mock("@tauri-apps/api/event", () => ({
 vi.mock("../lib/council", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/council")>()),
   councilPlan: (...args: unknown[]) => mocks.councilPlan(...(args as [])),
+  councilConvene: (...args: unknown[]) => mocks.councilConvene(...(args as [])),
+  councilCycle: (...args: unknown[]) => mocks.councilCycle(...(args as [])),
+  councilDrafts: () => Promise.resolve([]),
+  councilBindSession: (...args: unknown[]) => mocks.councilBindSession(...(args as [])),
 }));
 
 // jsdom has no Tauri IPC: the artifact download flow opens a native save
@@ -6585,6 +6592,99 @@ describe("AgentWorkspace", () => {
     expect(screen.queryByText(HERO_GREETING)).toBeNull();
     // Nothing was sent to the runtime: a council convenes before any work.
     expect(mocks.gatewayRequest).not.toHaveBeenCalledWith("prompt.submit", expect.anything());
+  });
+
+  it("binds the session the mandate was handed to", async () => {
+    // `submitHermesSession` returned the new session id only on the /image
+    // path; every successful send resolved to undefined. The council reads
+    // that value, so a hand-off that worked reported "the session could not be
+    // started", left the sitting open on an error, and -- the part that
+    // actually costs something -- never bound the session, so the verdict had
+    // no way to find the work it was supposed to judge.
+    //
+    // council-sitting.test.tsx could not catch this: it hands the component an
+    // `onHandOff` that resolves to a session id, which is exactly the thing
+    // that was not true.
+    const seats = [
+      {
+        id: "shape",
+        name: "Shape",
+        role: "position" as const,
+        charge: "What is being asked for.",
+        model: "glm",
+        modelFamily: "glm",
+      },
+    ];
+    mocks.councilPlan.mockResolvedValue({
+      councilId: "mandate",
+      seats,
+      minModelCalls: 3,
+      maxModelCalls: 6,
+      reusedFamilies: [],
+      reusedByChoice: false,
+      calls: [],
+    });
+    const convened = {
+      id: "m1",
+      councilId: "mandate",
+      request: "make the settings page faster",
+      status: "ready",
+      seats,
+      questions: [],
+      dissent: [],
+      cuts: [],
+      round: 0,
+      modelCalls: 5,
+      promptVersion: "council-v1",
+      createdAt: "",
+      updatedAt: "2026-08-29T00:00:00.000Z",
+      mandate: {
+        objective: "Cut settings load below 300ms",
+        deliverable: [],
+        constraints: [],
+        acceptance: [{ statement: "It paints under 300ms", verifiedBy: "performance.now()" }],
+        outOfScope: [],
+        firstStep: "",
+      },
+      renderedPrompt: "THE RENDERED MANDATE",
+    };
+    mocks.councilConvene.mockResolvedValue(convened);
+    mocks.councilCycle.mockResolvedValue(convened);
+    mocks.councilBindSession.mockResolvedValue(convened);
+
+    window.sessionStorage.setItem(
+      AGENT_NEW_SESSION_PENDING_KEY,
+      JSON.stringify({ createdAt: Date.now() }),
+    );
+    const user = userEvent.setup();
+    render(<AgentWorkspace />);
+    expect(await screen.findByText(HERO_GREETING)).toBeInTheDocument();
+
+    await user.type(await screen.findByRole("textbox"), "/council make the settings page faster");
+    const form = document.querySelector(".agent-composer");
+    fireEvent.submit(form as HTMLFormElement);
+    await screen.findByLabelText("Council");
+
+    await user.click(await screen.findByRole("button", { name: "Convene" }));
+    await user.click(await screen.findByRole("button", { name: "Hand to the agent" }));
+
+    // The mandate reached the runtime...
+    await waitFor(() =>
+      expect(mocks.gatewayRequest).toHaveBeenCalledWith("prompt.submit", {
+        session_id: expect.any(String),
+        text: "THE RENDERED MANDATE",
+      }),
+    );
+    // ...and the sitting was bound to the session it created, which is what a
+    // verdict later looks the work up by.
+    await waitFor(() =>
+      expect(mocks.councilBindSession).toHaveBeenCalledWith(
+        expect.objectContaining({ mandateId: "m1", sessionId: expect.any(String) }),
+      ),
+    );
+    expect(
+      screen.queryByText("The session could not be started, so the mandate was not handed over."),
+    ).toBeNull();
   });
 
   it("does not intercept /image while image generation is hidden", async () => {

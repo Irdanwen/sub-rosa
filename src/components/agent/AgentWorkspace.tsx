@@ -5044,6 +5044,14 @@ export function AgentWorkspace({
       await loadHermesSessions({
         suppressStartupRequestError: !hermesSessionsHydratedRef.current,
       });
+      // The turn went in. Handing the id back is what lets a caller bind
+      // something to the session it just created: without it this resolved to
+      // `undefined` on every successful send, and the only caller that reads
+      // the value -- the council's hand-off -- concluded the session had
+      // failed to start. It then skipped `councilBindSession`, so the sitting
+      // stayed open on an error while the agent worked, and the verdict had
+      // nothing to find the work by.
+      return storedSessionId;
     } catch (err) {
       // Record the rejection so the trace panel shows failed outbound calls
       // alongside the inbound stream. messageFromError yields a user-safe string.

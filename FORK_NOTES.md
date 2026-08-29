@@ -515,6 +515,15 @@ Vocabulaire : la section « The council (fork) » de [CONTEXT.md](CONTEXT.md).
   pour cette séance-là, pas supprimé. `reusedByChoice` dit laquelle des deux
   raisons explique un doublon de famille : accuser le catalogue d'un choix de
   l'utilisateur serait faux.
+- **`submitHermesSession` rend l'id de session sur le chemin de succès.** Il
+  ne le rendait que sur `skipPrompt` (`/image`) ; tout envoi réussi résolvait
+  `undefined`. Le seul appelant qui lit cette valeur est la remise du conseil,
+  qui en concluait « session could not be started », laissait la séance ouverte
+  sur une erreur et **n'appelait jamais `councilBindSession`** — donc le
+  verdict n'avait plus rien pour retrouver le travail. Livré cassé en v1.50.0,
+  corrigé en v1.52.0. `council-sitting.test.tsx` ne pouvait pas le voir : il
+  passe au composant un `onHandOff` mocké qui retourne un id, précisément ce
+  qui était faux. Test : `binds the session the mandate was handed to`.
 - **La séance met fin au hero.** `detailContent` (donc `CouncilSitting`) n'est
   rendu que dans la branche non-hero d'`AgentWorkspace` ; `heroMode` doit donc
   inclure `!councilRequest`. Sans ça, `/council` sur une session neuve vidait
