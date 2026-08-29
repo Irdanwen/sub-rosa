@@ -4,6 +4,7 @@ import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise
 import { IconArrowsRepeat } from "central-icons/IconArrowsRepeat";
 import { IconBolt } from "central-icons/IconBolt";
 import { IconBranchSimple } from "central-icons/IconBranchSimple";
+import { IconCirclesThree } from "central-icons/IconCirclesThree";
 import { IconBubble3 } from "central-icons/IconBubble3";
 import { IconBubbleWide } from "central-icons/IconBubbleWide";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
@@ -84,7 +85,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { BackButton } from "../ui/BackButton";
-import { councilCycleAwaitingVerdict } from "../../lib/council";
+import { councilCycleAwaitingVerdict, councilCycles, isUnfinished } from "../../lib/council";
 import { CouncilSitting } from "./council/CouncilSitting";
 import { VerdictPanel } from "./council/VerdictPanel";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
@@ -1429,6 +1430,14 @@ export function AgentWorkspace({
   const declinedVerdictsRef = useRef<Set<string>>(new Set());
   const [councilRequest, setCouncilRequest] = useState<string | null>(null);
   const [councilMandateId, setCouncilMandateId] = useState<string | null>(null);
+  /** A sitting that outlived the screen showing it. The mandate is a durable
+   * row and the view is React state, so a relaunch (or anything else that
+   * unmounts this) left a sitting that had already cost model calls alive in
+   * the database with no way back to it. This is the way back. */
+  const [strandedSitting, setStrandedSitting] = useState<{
+    id: string;
+    request: string;
+  } | null>(null);
   // Frozen when the request is put to the council, not read live: the seats
   // are told what ground the agent will work on, and that answer must not
   // change under them while they are drafting against it.
@@ -3337,6 +3346,39 @@ export function AgentWorkspace({
     return true;
   }
 
+  /** Puts a sitting back on screen, exactly where it was. The mandate id is
+   * what makes this a resume rather than a second sitting: handing it to
+   * `CouncilSitting` skips planning and reads the cycle that already exists. */
+  const reopenSitting = useCallback((sitting: { id: string; request: string }) => {
+    setCouncilGround({
+      workingDir: workingDirDraftRef.current ?? undefined,
+      unrestricted: fullModeDraftRef.current,
+    });
+    setCouncilMandateId(sitting.id);
+    setCouncilRequest(sitting.request);
+    setStrandedSitting(null);
+  }, []);
+
+  // A sitting with no surface is money already spent and invisible, so the
+  // workspace looks for one on mount. It is offered, never forced: landing in
+  // a council you left is as wrong as losing it.
+  useEffect(() => {
+    let live = true;
+    void councilCycles(10)
+      .then((rows) => {
+        if (!live) return;
+        const open = rows.find(isUnfinished);
+        if (open) setStrandedSitting({ id: open.id, request: open.request });
+      })
+      .catch(() => {
+        // Best-effort: failing to offer a resume must never take the
+        // workspace down with it.
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
   /**
    * `/council <request>` convenes a council on the request instead of sending
    * it (ADR-0034). Several models read it independently, the chair issues a
@@ -3350,6 +3392,15 @@ export function AgentWorkspace({
   async function runCouncilSlashCommand(argument: string, commandText: string) {
     const request = argument.trim();
     if (!request) {
+      // Bare `/council` reopens rather than scolding: someone typing it with
+      // a sitting already open is asking for that sitting, and starting a
+      // second one would bill them twice for the same question.
+      if (strandedSitting) {
+        clearComposerCommandDraft(commandText);
+        setError(null);
+        reopenSitting(strandedSitting);
+        return;
+      }
       setError("Type what you want done after /council.");
       return;
     }
@@ -7921,6 +7972,13 @@ export function AgentWorkspace({
               onDismiss={() => setError(null)}
             />
           ) : null}
+          {strandedSitting ? (
+            <AgentStrandedSittingBanner
+              request={strandedSitting.request}
+              onReopen={() => reopenSitting(strandedSitting)}
+              onDismiss={() => setStrandedSitting(null)}
+            />
+          ) : null}
           <div className="agent-hero-heading">
             <h2 className="agent-hero-title">{heroGreeting}</h2>
           </div>
@@ -7987,6 +8045,13 @@ export function AgentWorkspace({
                 <AgentBranchedBanner
                   sourceTitle={branchedNotice.sourceTitle}
                   onDismiss={() => setBranchedNotice(null)}
+                />
+              ) : null}
+              {strandedSitting && !councilRequest ? (
+                <AgentStrandedSittingBanner
+                  request={strandedSitting.request}
+                  onReopen={() => reopenSitting(strandedSitting)}
+                  onDismiss={() => setStrandedSitting(null)}
                 />
               ) : null}
               {workingDirNotice ? (
@@ -10543,6 +10608,34 @@ function AgentErrorBanner({
 // Feature 07: confirms the freshly-opened session was forked from another, so
 // the user understands why they're suddenly in a new (but pre-populated)
 // thread. role="status" (not "alert") — this is reassurance, not an error.
+/** A sitting that exists in the database with nothing on screen holding it.
+ * Offered rather than restored: landing in a council you deliberately left is
+ * as wrong as losing one you did not. Dismissing hides the offer for this
+ * visit and leaves the mandate alone -- forgetting a sitting is the X inside
+ * it, which deletes the row on purpose. */
+function AgentStrandedSittingBanner({
+  request,
+  onReopen,
+  onDismiss,
+}: {
+  request: string;
+  onReopen: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="agent-branched-banner" role="status">
+      <IconCirclesThree size={14} aria-hidden />
+      <p>A council sitting is still open on "{request}".</p>
+      <button type="button" className="btn btn-secondary" onClick={onReopen}>
+        Reopen it
+      </button>
+      <button type="button" aria-label="Dismiss" onClick={onDismiss}>
+        <IconCrossMedium size={14} />
+      </button>
+    </div>
+  );
+}
+
 function AgentBranchedBanner({
   sourceTitle,
   onDismiss,

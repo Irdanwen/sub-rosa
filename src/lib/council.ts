@@ -301,6 +301,20 @@ export function awaitsUser(cycle: CouncilCycle): boolean {
   return cycle.status === "questions" || cycle.status === "ready";
 }
 
+/** A sitting nobody has handed to the agent yet, and that no longer has a
+ * surface unless one is given back to it.
+ *
+ * The mandate is a durable row; the view holding it is React state. So a
+ * relaunch used to leave a sitting that had already cost real model calls
+ * alive in the database and unreachable on screen: `/council` only ever
+ * started a new one. Everything from `executing` on has a session to be found
+ * through, and `failed` is not worth reopening. */
+export function isUnfinished(cycle: CouncilCycle): boolean {
+  return (
+    cycle.status === "deliberating" || cycle.status === "questions" || cycle.status === "ready"
+  );
+}
+
 /** A sitting is spending money right now. */
 export function isSitting(cycle: CouncilCycle): boolean {
   return cycle.status === "deliberating" || cycle.status === "reviewing";

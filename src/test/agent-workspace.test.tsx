@@ -34,6 +34,7 @@ const HERO_GREETING = new RegExp(
 const mocks = vi.hoisted(() => ({
   cancelAgentTask: vi.fn(),
   councilBindSession: vi.fn(),
+  councilCycles: vi.fn(),
   councilConvene: vi.fn(),
   councilCycle: vi.fn(),
   councilPlan: vi.fn(),
@@ -153,6 +154,7 @@ vi.mock("../lib/council", async (importOriginal) => ({
   councilPlan: (...args: unknown[]) => mocks.councilPlan(...(args as [])),
   councilConvene: (...args: unknown[]) => mocks.councilConvene(...(args as [])),
   councilCycle: (...args: unknown[]) => mocks.councilCycle(...(args as [])),
+  councilCycles: (...args: unknown[]) => mocks.councilCycles(...(args as [])),
   councilDrafts: () => Promise.resolve([]),
   councilBindSession: (...args: unknown[]) => mocks.councilBindSession(...(args as [])),
 }));
@@ -323,6 +325,9 @@ describe("AgentWorkspace", () => {
     );
     mocks.openDialog.mockResolvedValue(null);
     mocks.revealAgentWorkingDir.mockResolvedValue(undefined);
+    // No stranded sitting unless a case says so: the workspace asks on
+    // mount, and an unmocked answer would reject inside that effect.
+    mocks.councilCycles.mockResolvedValue([]);
     mocks.listHermesSessions.mockResolvedValue([existingSession]);
     mocks.listHermesSessionMessages.mockResolvedValue([]);
     mocks.hermesAgentCliAccess.mockResolvedValue({ enabled: false });
@@ -6592,6 +6597,71 @@ describe("AgentWorkspace", () => {
     expect(screen.queryByText(HERO_GREETING)).toBeNull();
     // Nothing was sent to the runtime: a council convenes before any work.
     expect(mocks.gatewayRequest).not.toHaveBeenCalledWith("prompt.submit", expect.anything());
+  });
+
+  it("offers a way back into a sitting that outlived its screen", async () => {
+    // The mandate is a durable row; the view holding it is React state. So a
+    // relaunch left a sitting that had already spent model calls alive in the
+    // database and unreachable: /council only ever started a new one, billing
+    // the same question twice.
+    mocks.councilCycles.mockResolvedValue([
+      { id: "m1", request: "make the settings page faster", status: "ready" },
+    ]);
+    mocks.councilCycle.mockResolvedValue({
+      id: "m1",
+      councilId: "mandate",
+      request: "make the settings page faster",
+      status: "ready",
+      seats: [],
+      questions: [],
+      dissent: [],
+      cuts: [],
+      round: 0,
+      modelCalls: 9,
+      promptVersion: "council-v1",
+      createdAt: "",
+      updatedAt: "2026-08-29T06:47:44.000Z",
+      mandate: {
+        objective: "Cut settings load below 300ms",
+        deliverable: [],
+        constraints: [],
+        acceptance: [],
+        outOfScope: [],
+        firstStep: "",
+      },
+      renderedPrompt: "THE RENDERED MANDATE",
+    });
+    window.sessionStorage.setItem(
+      AGENT_NEW_SESSION_PENDING_KEY,
+      JSON.stringify({ createdAt: Date.now() }),
+    );
+    const user = userEvent.setup();
+    render(<AgentWorkspace />);
+
+    expect(
+      await screen.findByText(/A council sitting is still open on "make the settings page faster"/),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Reopen it" }));
+    expect(await screen.findByLabelText("Council")).toBeInTheDocument();
+    // Reopened, not re-run: a resume reads the mandate that exists instead of
+    // planning and paying for a second sitting.
+    expect(mocks.councilPlan).not.toHaveBeenCalled();
+    expect(mocks.councilConvene).not.toHaveBeenCalled();
+  });
+
+  it("leaves a settled sitting alone", async () => {
+    // Everything from `executing` on is reachable through its session, and a
+    // failed one is not worth reopening. Offering those would turn the banner
+    // into noise that appears forever.
+    mocks.councilCycles.mockResolvedValue([
+      { id: "m0", request: "already handed over", status: "executing" },
+      { id: "m2", request: "gave up", status: "failed" },
+    ]);
+    render(<AgentWorkspace />);
+    expect(await screen.findByText("Existing session")).toBeInTheDocument();
+    await waitFor(() => expect(mocks.councilCycles).toHaveBeenCalled());
+    expect(screen.queryByText(/A council sitting is still open/)).toBeNull();
   });
 
   it("binds the session the mandate was handed to", async () => {

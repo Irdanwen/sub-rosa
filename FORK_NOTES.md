@@ -524,6 +524,18 @@ Vocabulaire : la section « The council (fork) » de [CONTEXT.md](CONTEXT.md).
   corrigé en v1.52.0. `council-sitting.test.tsx` ne pouvait pas le voir : il
   passe au composant un `onHandOff` mocké qui retourne un id, précisément ce
   qui était faux. Test : `binds the session the mandate was handed to`.
+- **Une séance survit à l'écran qui la portait.** Le mandat est une ligne
+  durable, `councilRequest` est un état React : un relancement laissait une
+  séance déjà payée (9 appels modèle) vivante en base et injoignable, et
+  `/council` n'ouvrait jamais que la suivante. Le workspace cherche donc au
+  montage une séance `deliberating|questions|ready` (`isUnfinished`) et
+  **propose** de la rouvrir dans un bandeau — jamais ne l'impose : atterrir
+  dans un conseil qu'on a quitté exprès est aussi faux que le perdre.
+  `/council` sans argument reprend au lieu de gronder. Rouvrir passe le
+  `mandateId`, donc lit le cycle existant au lieu de replanifier (et de
+  facturer deux fois). ⚠️ Le X **à l'intérieur** de la séance reste un
+  `councilForget` : il supprime la ligne, c'est l'annulation ; le X du bandeau
+  ne fait que masquer l'offre.
 - **La séance met fin au hero.** `detailContent` (donc `CouncilSitting`) n'est
   rendu que dans la branche non-hero d'`AgentWorkspace` ; `heroMode` doit donc
   inclure `!councilRequest`. Sans ça, `/council` sur une session neuve vidait
