@@ -142,3 +142,61 @@ by a model — the two properties a chat block assumes (ADR-0024). The mandate
 ritual takes over the main region, which is where a new session already
 begins, and the verdict opens as an overlay in the same place the session
 usage panel does.
+
+---
+
+## Addendum, 2026-08-29: evidence is not only a folder
+
+The first sitting to reach a verdict in the wild answered `unverifiable` seven
+times out of seven. Nothing had failed. The request was "analyse this
+screenplay, rate it, improve it": the deliverable was prose, the sitting had no
+working folder, and `evidence.rs` knew how to read a git diff and a folder's
+mtimes and nothing else. Three seats each spent a call to report that they
+could not see anything.
+
+The original decision said a verdict without evidence is an opinion. It held.
+What it got wrong is what counts as evidence, by assuming that finished work
+leaves a trace on a filesystem. Much of what this app is asked for does not.
+
+**The agent's reply is a second evidence source**, used when the folder yields
+nothing. Three properties keep it from weakening the original rule:
+
+- **The folder still wins.** A diff is what a filesystem observed; a reply is
+  what the agent says about itself. The reply is the fallback, never the
+  preference.
+- **The seats are told which they hold.** The conformance seat is still
+  instructed that an agent reporting it did something is not evidence that it
+  did. The `reply` provenance draws the line explicitly rather than softening
+  it: when the mandate asked for a text, the text is the artefact and can be
+  read; it remains no evidence at all for a file written or a command run
+  elsewhere, and those stay unverifiable however confidently they are claimed.
+- **It is stored, not passed.** Only the shell can reach the transcript, so it
+  hands the reply in; Rust writes it to the verdict row, because a verdict
+  re-driven after a relaunch must still hold the thing it is judging
+  (ADR-0018).
+
+Two consequences follow upstream of the verdict, and they matter more than the
+verdict change itself:
+
+- **A sitting with no folder tells its seats so**, and they are barred from
+  writing a criterion that depends on a file, a diff, a command or a passing
+  test. The sitting above asked for durations summed to 300 seconds and a text
+  search for a pendant, in a document nobody was going to write.
+- **A verdict with nothing to read is refused before it is paid for.** No
+  folder and no reply is checked before a row exists. Answering
+  "unverifiable" once per criterion is not a hard verdict; it is the absence of
+  one at the price of a real one.
+
+Two smaller amendments from the same sitting, which lost two of its seven seats
+to empty answers, one of them the objection:
+
+- **A seat that returns nothing is asked once more.** Only emptiness: a refusal
+  or a 500 is the operator saying something, and asking again is how one failed
+  sitting becomes two. This does not breach the bound this record puts on the
+  bill — a seat speaks at most twice — because a seat that returned nothing has
+  not spoken. It is still a billed call, so the proposal card names it rather
+  than inflating every estimate to cover a rare failure.
+- **A mandate nobody attacked says so where it is handed over.** Losing the
+  objection seat still issues a mandate, deliberately; but the seat row's X is
+  not the same as saying, at the moment of decision, that what is about to be
+  handed over is what the other seats agreed on, unchallenged.

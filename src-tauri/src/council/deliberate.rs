@@ -698,6 +698,10 @@ async fn still_ours(
 ///
 /// Only emptiness is retried. A refusal, a rate limit or a 500 is the operator
 /// saying something, and asking again is how one failed sitting becomes two.
+/// What a seat that produced nothing says. The retry predicate reads this, so
+/// it lives in one place.
+const EMPTY_ANSWER: &str = "The model returned no text.";
+
 pub async fn completion(
     model: &str,
     system: &str,
@@ -705,7 +709,7 @@ pub async fn completion(
     error_code: &str,
 ) -> Result<String, AppError> {
     match completion_once(model, system, user, error_code).await {
-        Err(error) if error.message.contains("returned no text") => {
+        Err(error) if is_empty_answer(&error) => {
             tracing::warn!(model, "a seat came back empty; asking once more");
             completion_once(model, system, user, error_code).await
         }
@@ -745,12 +749,38 @@ async fn completion_once(
     june_api::extract_chat_completion_text(&value)
         .map(|text| text.trim().to_string())
         .filter(|text| !text.is_empty())
-        .ok_or_else(|| AppError::new(error_code, "The model returned no text."))
+        .ok_or_else(|| AppError::new(error_code, EMPTY_ANSWER))
+}
+
+/// The one failure worth asking again about. Compared against the constant
+/// rather than a literal, so renaming the message cannot quietly disable the
+/// retry: both sides move together or neither does.
+fn is_empty_answer(error: &AppError) -> bool {
+    error.message == EMPTY_ANSWER
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_an_empty_answer_is_worth_asking_again_about() {
+        // A refusal, a rate limit or a 500 is the operator saying something,
+        // and asking again is how one failed sitting becomes two. Emptiness is
+        // the one case where the seat has not spoken at all.
+        assert!(is_empty_answer(&AppError::new(
+            "council_seat_failed",
+            EMPTY_ANSWER
+        )));
+        assert!(!is_empty_answer(&AppError::new(
+            "council_seat_failed",
+            "The model returned status 429."
+        )));
+        assert!(!is_empty_answer(&AppError::new(
+            "council_seat_failed",
+            "expected value at line 1"
+        )));
+    }
 
     #[test]
     fn a_draft_survives_a_fenced_answer_with_a_preamble() {

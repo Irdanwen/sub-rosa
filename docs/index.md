@@ -44,7 +44,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0031-the-timeline-export-is-the-finishing-path.md](adr/0031-the-timeline-export-is-the-finishing-path.md) — FCPXML and xmeml bundles; the recorder is a preview
 - [adr/0032-the-bible-is-local-rows-over-gallery-artifacts.md](adr/0032-the-bible-is-local-rows-over-gallery-artifacts.md) — persistent identities as pointers at gallery artifacts
 - [adr/0033-the-mix-is-rendered-offline.md](adr/0033-the-mix-is-rendered-offline.md) — deterministic Web Audio mix, BS.1770 loudness, ducking as automation
-- [adr/0034-the-council-issues-a-verifiable-mandate.md](adr/0034-the-council-issues-a-verifiable-mandate.md) — several model families read a request blind, the chair issues capped slots with acceptance criteria, one agent executes, the council judges the result
+- [adr/0034-the-council-issues-a-verifiable-mandate.md](adr/0034-the-council-issues-a-verifiable-mandate.md) — several model families read a request blind, the chair issues capped slots with acceptance criteria, one agent executes, the council judges the result (addendum 2026-08-29: the agent's reply is evidence when the work left no files)
 - [adr/0035-the-desktop-agent-writes-notes-through-the-app.md](adr/0035-the-desktop-agent-writes-notes-through-the-app.md) — the read-only context MCP asks the app to write a note over the local proxy, so one process owns the database and both shells write the same way
 - [adr/0036-reports-are-github-issues-filed-with-the-users-own-credential.md](adr/0036-reports-are-github-issues-filed-with-the-users-own-credential.md) — in-app reports open Issues on the fork's own tracker, with a keychain token or through GitHub's pre-filled form, and the UI names which happened
 

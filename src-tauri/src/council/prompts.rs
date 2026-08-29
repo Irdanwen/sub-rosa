@@ -250,3 +250,25 @@ pub const FINDINGS_CONTRACT: &str = r#"Return one JSON object and nothing else:
 pub const VERDICT_CHAIR_SYSTEM: &str = "You are the chair of a council that has just judged finished work. You are given the settled criteria and the findings, already reconciled. Write the reading a person gets before the detail.
 
 Two or three sentences. Say whether the work satisfies what was asked, what is missing if anything is, and the one thing worth doing next. No score, no praise, no restating the list underneath you. Write in the language of the mandate, and return only the paragraph.";
+
+#[cfg(test)]
+mod tests {
+    use super::blind_user_message;
+
+    #[test]
+    fn a_sitting_with_no_ground_is_told_not_to_ask_for_files() {
+        // The failure this exists for: a folderless sitting produced criteria
+        // like "the durations sum to 300 s" and "search the text for pendant",
+        // about files nobody was ever going to write, and the verdict then
+        // answered "unverifiable" seven times.
+        let without = blind_user_message("seat", "rewrite it", None, "");
+        assert!(without.contains("no working folder"));
+        assert!(without.contains("settleable by reading that reply"));
+        assert!(without.contains("Do not write a criterion that depends on a file"));
+
+        // With ground, the seats get the ground and none of that.
+        let with = blind_user_message("seat", "rewrite it", Some("Working folder: /tmp/app"), "");
+        assert!(with.contains("<situation>"));
+        assert!(!with.contains("no working folder"));
+    }
+}
