@@ -687,7 +687,33 @@ async fn still_ours(
 /// One non-streaming completion on a named model, through the sidecar -- the
 /// seam `agent_lite`, memory extraction and long-form summaries all use, so
 /// rail handling and cache accounting stay in one place.
+/// One model call for one seat, retried once when it comes back with nothing.
+///
+/// An empty answer is the failure mode this council actually hits: a sitting
+/// lost its ground seat AND its objection seat that way, so its mandate was
+/// written by two seats and never attacked, and nothing about that was worth
+/// the models it paid for. A retry here is not a seat speaking twice -- the
+/// bound ADR-0034 puts on the bill -- because a seat that returned nothing has
+/// not spoken at all. It is the same turn, completed.
+///
+/// Only emptiness is retried. A refusal, a rate limit or a 500 is the operator
+/// saying something, and asking again is how one failed sitting becomes two.
 pub async fn completion(
+    model: &str,
+    system: &str,
+    user: &str,
+    error_code: &str,
+) -> Result<String, AppError> {
+    match completion_once(model, system, user, error_code).await {
+        Err(error) if error.message.contains("returned no text") => {
+            tracing::warn!(model, "a seat came back empty; asking once more");
+            completion_once(model, system, user, error_code).await
+        }
+        other => other,
+    }
+}
+
+async fn completion_once(
     model: &str,
     system: &str,
     user: &str,

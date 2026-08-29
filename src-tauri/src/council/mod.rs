@@ -545,10 +545,15 @@ pub async fn council_drafts(
     let repos = crate::commands::repositories(&app).await?;
     let round = round.unwrap_or(0);
     let mut out = Vec::new();
+    // The objection rides along so a surface can tell "nobody attacked this
+    // mandate" from "nobody had anything to say about it". Its seat can fail
+    // like any other, and that failure is the one worth knowing about before
+    // handing the mandate over.
     for phase in [
         deliberate::PHASE_BLIND,
         deliberate::PHASE_REVISION,
         deliberate::PHASE_CONTRADICTION,
+        deliberate::PHASE_OBJECTION,
     ] {
         for turn in repos.council_turns(&mandate_id, round, phase).await? {
             let parsed = if turn.failed {
@@ -768,8 +773,9 @@ pub async fn council_retake(app: AppHandle, mandate_id: String) -> Result<Retake
 pub async fn council_request_verdict(
     app: AppHandle,
     mandate_id: String,
+    reply: Option<String>,
 ) -> Result<crate::domain::types::CouncilVerdictDto, AppError> {
-    verdict::request(&app, &mandate_id).await
+    verdict::request(&app, &mandate_id, reply.as_deref()).await
 }
 
 #[tauri::command]

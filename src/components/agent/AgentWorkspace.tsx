@@ -4160,6 +4160,19 @@ export function AgentWorkspace({
     setWorkingDirNotice(null);
   }, [selectedHermesSessionId]);
 
+  /** The agent's last visible answer in a session, which is the deliverable
+   * whenever the mandate asked for prose rather than files. Same walk as the
+   * issue report's diagnosis: newest assistant message with text in it. */
+  const readFinishedReply = useCallback(async (sessionId: string) => {
+    const messages = await listHermesSessionMessages(sessionId);
+    return messages
+      .slice()
+      .reverse()
+      .map((message) => (message.role === "assistant" ? visibleHermesMessageText(message) : ""))
+      .find((text) => text.trim())
+      ?.trim();
+  }, []);
+
   /** Sends the captured report plus June's diagnostic reply (the last
    * assistant message of the turn) to the June team. The diagnosis fetch is
    * best-effort: a report without June's assessment still beats no report. */
@@ -8107,6 +8120,7 @@ export function AgentWorkspace({
                 >
                   <VerdictPanel
                     mandateId={verdictMandateId}
+                    readReply={readFinishedReply}
                     onRetake={async (prompt, sessionId) => {
                       // Back into the session that did the work: it holds the
                       // tree and the reasoning behind it. Addressed explicitly

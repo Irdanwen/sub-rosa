@@ -39,9 +39,13 @@ pub const PHASE_VERDICT: &str = "verdict";
 /// The row is written before any model call, so a verdict cut short by a crash
 /// is something the sweep can find, and the seats that already answered are not
 /// bought again.
+/// `reply` is what the agent said when it reported finished, which only the
+/// shell can reach: the transcript lives in the runtime, not in this process.
+/// It is the evidence when the work left no trace on disk.
 pub async fn request(
     app: &tauri::AppHandle,
     mandate_id: &str,
+    reply: Option<&str>,
 ) -> Result<CouncilVerdictDto, AppError> {
     let repos = crate::commands::repositories(app).await?;
     let Some(cycle) = repos.council_mandate(mandate_id).await? else {
@@ -56,12 +60,31 @@ pub async fn request(
             "There is no mandate to judge this work against.",
         ));
     }
+    // The cheap, decisive case, checked before a row exists or a seat is paid:
+    // no folder to read and nothing said. Three seats would each spend a call
+    // to write "unverifiable" once per criterion, which is not a hard verdict
+    // but the absence of one, at the price of a real one. A folder that exists
+    // and is empty is NOT this case: "you set a folder and nothing changed" is
+    // a finding, and the run below reports it.
+    let reply = reply.map(str::trim).filter(|value| !value.is_empty());
+    let has_folder = cycle
+        .working_dir
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|dir| !dir.is_empty());
+    if !has_folder && reply.is_none() {
+        return Err(AppError::new(
+            "council_no_evidence",
+            "There is nothing to judge this work against: this sitting has no working folder, and the agent's reply could not be read.",
+        ));
+    }
     let row = repos
         .begin_council_verdict(
             mandate_id,
             cycle.round,
             cycle.session_id.as_deref(),
             COUNCIL_PROMPT_VERSION,
+            reply,
         )
         .await?;
     if let Some(updated) = repos
@@ -111,7 +134,10 @@ pub async fn run(app: &tauri::AppHandle, mandate_id: &str, round: i64) -> Result
         ));
     };
 
-    let gathered = match cycle.working_dir.as_deref() {
+    // The folder first: a diff is what a filesystem observed, and it beats
+    // what the agent says about itself. The reply is the fallback, not the
+    // preference.
+    let mut gathered = match cycle.working_dir.as_deref() {
         Some(dir) => evidence::gather(dir, cycle.base_commit.as_deref(), &cycle.created_at).await,
         None => evidence::Evidence {
             text: String::new(),
@@ -119,6 +145,14 @@ pub async fn run(app: &tauri::AppHandle, mandate_id: &str, round: i64) -> Result
             truncated: false,
         },
     };
+    if gathered.text.trim().is_empty() {
+        // Read from the row rather than carried in: a verdict re-driven after
+        // a relaunch (`resume_unfinished`) arrives here with no arguments but
+        // the same work to judge.
+        if let Some(reply) = repos.council_verdict_reply(mandate_id, round).await? {
+            gathered = evidence::from_reply(&reply);
+        }
+    }
 
     // The roster is built here rather than at convocation, because the fact it
     // depends on -- the model the work ran on -- is not known until the work

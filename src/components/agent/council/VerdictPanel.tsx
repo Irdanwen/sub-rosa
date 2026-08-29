@@ -30,10 +30,17 @@ import {
  */
 export function VerdictPanel({
   mandateId,
+  readReply,
   onRetake,
   onClose,
 }: {
   mandateId: string;
+  /** What the agent said when it reported finished, for a sitting that left
+   * nothing on disk. Injected rather than read here, like SessionUsagePanel's
+   * fetcher: the transcript lives behind the gateway and this panel has no
+   * business knowing that. Returning nothing is fine -- Rust prefers the
+   * working folder anyway and refuses when neither exists. */
+  readReply: (sessionId: string) => Promise<string | undefined>;
   /** Sends the corrective instructions as a follow-up turn in the session that
    * did the work. The id is passed explicitly: by the time a verdict is read
    * the user may well be looking at a different session, and a correction
@@ -73,13 +80,19 @@ export function VerdictPanel({
     setBusy(true);
     setError(null);
     try {
-      await councilRequestVerdict(mandateId);
+      // The work may have left nothing on disk -- an analysis, a rating, a
+      // rewritten text lives in the reply and nowhere else. Rust prefers a
+      // diff when there is a folder and falls back to this, so handing it over
+      // costs nothing when the folder is the real evidence.
+      const sessionId = cycle?.sessionId ?? undefined;
+      const reply = sessionId ? await readReply(sessionId).catch(() => undefined) : undefined;
+      await councilRequestVerdict(mandateId, reply);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
-  }, [mandateId]);
+  }, [cycle?.sessionId, mandateId, readReply]);
 
   const correct = useCallback(async () => {
     setBusy(true);

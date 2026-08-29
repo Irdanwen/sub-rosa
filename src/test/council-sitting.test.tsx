@@ -127,6 +127,75 @@ function renderSitting(props: Partial<Parameters<typeof CouncilSitting>[0]> = {}
   );
 }
 
+describe("what the user is told before spending", () => {
+  it("says when there is no ground, so the mandate is not written for files", async () => {
+    // The line that would have saved a real sitting: with no folder the
+    // deliverable is the reply, and criteria like "sum exactly to 300 s" ask
+    // for a file nobody was ever going to write.
+    councilPlan.mockResolvedValue(plan({ situation: null }));
+    renderSitting();
+    expect(await screen.findByText("No working folder")).toBeInTheDocument();
+  });
+
+  it("stays quiet about the ground when there is one", async () => {
+    councilPlan.mockResolvedValue(plan({ situation: "Working folder: /tmp/app" }));
+    renderSitting();
+    expect(await screen.findByRole("button", { name: "Convene" })).toBeInTheDocument();
+    expect(screen.queryByText("No working folder")).toBeNull();
+  });
+
+  it("names the retry the estimate does not contain", async () => {
+    renderSitting();
+    expect(await screen.findByText(/plus one if a seat comes back empty/)).toBeInTheDocument();
+  });
+});
+
+describe("an unattacked mandate", () => {
+  it("says so where the decision is made", async () => {
+    // The seat row already carries an X. This is the moment somebody hands the
+    // mandate to an agent, which is the moment it matters.
+    councilCycle.mockResolvedValue(cycle({ status: "ready" }));
+    councilDrafts.mockResolvedValue([]);
+    renderSitting({ mandateId: "m1" });
+    expect(await screen.findByText("Nobody attacked this mandate")).toBeInTheDocument();
+  });
+
+  it("stays quiet when the objection answered", async () => {
+    councilCycle.mockResolvedValue(cycle({ status: "ready" }));
+    councilDrafts.mockResolvedValue([
+      {
+        seatId: "objection",
+        model: "kimi",
+        phase: "objection" as const,
+        failed: false,
+        openQuestions: [],
+        whatWouldChangeMyMind: "",
+        createdAt: "",
+      },
+    ]);
+    renderSitting({ mandateId: "m1" });
+    expect(await screen.findByText("Hand to the agent")).toBeInTheDocument();
+    expect(screen.queryByText("Nobody attacked this mandate")).toBeNull();
+  });
+
+  it("treats a failed objection as no objection", async () => {
+    councilCycle.mockResolvedValue(cycle({ status: "ready" }));
+    councilDrafts.mockResolvedValue([
+      {
+        seatId: "objection",
+        model: "kimi",
+        phase: "objection" as const,
+        failed: true,
+        openQuestions: [],
+        whatWouldChangeMyMind: "",
+        createdAt: "",
+      },
+    ]);
+    renderSitting({ mandateId: "m1" });
+    expect(await screen.findByText("Nobody attacked this mandate")).toBeInTheDocument();
+  });
+});
+
 describe("before anything is spent", () => {
   it("shows who would sit, on which weights, and what it would cost", async () => {
     renderSitting();

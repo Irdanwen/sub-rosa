@@ -524,6 +524,32 @@ Vocabulaire : la section « The council (fork) » de [CONTEXT.md](CONTEXT.md).
   corrigé en v1.52.0. `council-sitting.test.tsx` ne pouvait pas le voir : il
   passe au composant un `onHandOff` mocké qui retourne un id, précisément ce
   qui était faux. Test : `binds the session the mandate was handed to`.
+- **Le verdict lit la réponse quand le travail n'a pas touché de fichier.**
+  `evidence.rs::from_reply` (kind `reply`) : toutes les demandes ne produisent
+  pas de fichiers, et un verdict sans preuve dépensait 3 appels pour écrire
+  « unverifiable » une fois par critère. Le transcript vit dans le runtime,
+  donc **le shell passe la réponse** (`councilRequestVerdict(id, reply)`,
+  prop `readReply` injectée comme le fetcher de `SessionUsagePanel`) et Rust la
+  **stocke** (colonne `council_verdicts.reply` via `ensure_column`) — un
+  verdict re-piloté après relance doit encore tenir ce qu'il juge (ADR-0018).
+  ⚠️ `ensure_column` doit venir **après** les blocs qui créent les tables,
+  sinon `run_migrations` panique au lancement. Le dossier de travail reste
+  prioritaire : un diff est ce qu'un système de fichiers a observé, la réponse
+  est ce que l'agent dit de lui-même — et l'arme `reply` du prompt trace
+  explicitement la limite (le texte est le livrable, pas la preuve de ce qu'il
+  prétend avoir fait ailleurs).
+- **Sans dossier, on ne demande pas l'invérifiable.** `blind_user_message`
+  dit aux sièges d'écrire des critères réglables en lisant la réponse. La
+  carte de proposition le dit aussi (« No working folder ») **avant** de
+  dépenser, et `request` refuse tôt quand il n'y a ni dossier ni réponse.
+- **Un siège vide est rejoué une fois** (`completion` → `completion_once`).
+  Seule la réponse vide est rejouée : un refus ou un 500 est l'opérateur qui
+  parle. Ce n'est pas un siège qui parle deux fois (la borne de l'ADR-0034) —
+  un siège qui n'a rien rendu n'a pas parlé. L'appel supplémentaire est
+  **annoncé sur la carte** au lieu de gonfler l'estimation.
+- **L'objection est visible.** `council_drafts` renvoie aussi
+  `PHASE_OBJECTION`, `wasContested()` en dérive, et la vue du mandat dit
+  « Nobody attacked this mandate » **là où on décide de le remettre**.
 - **Une séance survit à l'écran qui la portait.** Le mandat est une ligne
   durable, `councilRequest` est un état React : un relancement laissait une
   séance déjà payée (9 appels modèle) vivante en base et injoignable, et

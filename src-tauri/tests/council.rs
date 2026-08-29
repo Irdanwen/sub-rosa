@@ -271,7 +271,7 @@ async fn each_round_keeps_its_own_verdict() {
 
     for round in 0..2 {
         repos
-            .begin_council_verdict("m1", round, Some("sess-9"), "council-v1")
+            .begin_council_verdict("m1", round, Some("sess-9"), "council-v1", None)
             .await
             .expect("begin verdict");
         let body = CouncilVerdictBody {
@@ -338,7 +338,7 @@ async fn a_cycle_under_review_is_driven_by_its_verdict_row_alone() {
     let repos = repos().await;
     open(&repos, "m1").await;
     repos
-        .begin_council_verdict("m1", 0, Some("sess-9"), "council-v1")
+        .begin_council_verdict("m1", 0, Some("sess-9"), "council-v1", None)
         .await
         .expect("verdict");
     repos
@@ -364,12 +364,12 @@ async fn a_verdict_records_the_prompts_that_produced_it() {
     let repos = repos().await;
     open(&repos, "m1").await;
     repos
-        .begin_council_verdict("m1", 0, None, "council-v1")
+        .begin_council_verdict("m1", 0, None, "council-v1", None)
         .await
         .expect("first");
     // A retake landing after an app update carries the newer version.
     repos
-        .begin_council_verdict("m1", 1, None, "council-v2")
+        .begin_council_verdict("m1", 1, None, "council-v2", None)
         .await
         .expect("retake");
 
@@ -387,7 +387,7 @@ async fn deleting_a_cycle_takes_its_turns_and_verdicts_with_it() {
         .await
         .expect("record");
     repos
-        .begin_council_verdict("m1", 0, None, "council-v1")
+        .begin_council_verdict("m1", 0, None, "council-v1", None)
         .await
         .expect("verdict");
 
@@ -404,6 +404,43 @@ async fn deleting_a_cycle_takes_its_turns_and_verdicts_with_it() {
         .await
         .expect("verdicts")
         .is_empty());
+}
+
+/// A verdict re-driven after a relaunch arrives with no arguments. The reply
+/// it was judging has to be waiting for it in the row, or a folderless sitting
+/// loses its only evidence to a restart -- which is the whole reason it is
+/// stored rather than passed along (ADR-0018).
+#[tokio::test]
+async fn a_verdict_keeps_the_reply_it_was_asked_to_judge() {
+    let repos = repos().await;
+    open(&repos, "m1").await;
+
+    repos
+        .begin_council_verdict(
+            "m1",
+            0,
+            None,
+            "council-v1",
+            Some("Voici le scénario révisé."),
+        )
+        .await
+        .expect("begin");
+    assert_eq!(
+        repos.council_verdict_reply("m1", 0).await.expect("read"),
+        Some("Voici le scénario révisé.".to_string())
+    );
+
+    // Re-requesting the same round must not wipe it: `resume_unfinished` and a
+    // second tap both land on the same upsert, and neither carries the reply.
+    repos
+        .begin_council_verdict("m1", 0, None, "council-v1", None)
+        .await
+        .expect("begin again");
+    assert_eq!(
+        repos.council_verdict_reply("m1", 0).await.expect("read"),
+        Some("Voici le scénario révisé.".to_string()),
+        "a re-request must not throw away the evidence the first one stored"
+    );
 }
 
 #[tokio::test]

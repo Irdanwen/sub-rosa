@@ -9,6 +9,7 @@ import { textPricing, type TextPrice } from "../../../lib/carpe-diem-text-pricin
 import {
   awaitsUser,
   baselineDrafts,
+  wasContested,
   councilAnswerQuestions,
   councilBindSession,
   councilConvene,
@@ -284,7 +285,7 @@ export function CouncilSitting({
           {waiting.length > 0
             ? `Reading it independently. ${waiting.length} of ${
                 cycle.seats.filter((seat) => seat.role === "position").length
-              } still to answer.`
+              } still to answer. They run at once, so the round takes as long as the slowest of them.`
             : "Merging what they said."}
         </p>
       ) : null}
@@ -338,6 +339,19 @@ export function CouncilSitting({
 
       {cycle.status === "ready" ? (
         <>
+          {!wasContested(drafts) ? (
+            // The objection seat is the one that stops the table agreeing with
+            // itself. Losing it still produces a mandate, and the seat row
+            // already carries its X -- but this is the moment somebody decides
+            // to hand the thing over, and it is the moment worth saying it at.
+            <div className="council-notice" role="status">
+              <h3 className="council-notice-title">Nobody attacked this mandate</h3>
+              <p>
+                The objection seat did not answer, so what you are about to hand over is what the
+                other seats agreed on, unchallenged.
+              </p>
+            </div>
+          ) : null}
           {cycle.dissent.length > 0 ? (
             <div className="council-notice council-dissent">
               <h3 className="council-notice-title">Where they disagreed</h3>
@@ -502,6 +516,21 @@ function CouncilProposal({
               <SeatRow key={seat.id} seat={seat} state="idle" />
             ))}
           </ol>
+          {!plan.situation?.trim() ? (
+            // The single line that would have saved a real sitting: no folder
+            // means the deliverable is the reply, so the seats are told to
+            // write criteria a reader can settle, and the verdict reads that
+            // reply instead of finding nothing and calling everything
+            // unverifiable.
+            <div className="council-notice" role="status">
+              <h3 className="council-notice-title">No working folder</h3>
+              <p>
+                The agent will answer in the conversation rather than change files, so the mandate
+                will only ask for what can be settled by reading that answer, and the reading at the
+                end will judge the answer itself.
+              </p>
+            </div>
+          ) : null}
           {plan.reusedFamilies.length > 0 ? (
             <div className="council-notice">
               <h3 className="council-notice-title">Two seats are sharing weights</h3>
@@ -516,6 +545,11 @@ function CouncilProposal({
               <dt>Model calls</dt>
               <dd>
                 {plan.minModelCalls} to {plan.maxModelCalls}
+                {/* A seat that answers with nothing is asked once more, which
+                    is a billed call the range above does not contain. Saying
+                    so is cheaper than inflating every estimate to cover a
+                    failure that is rare. */}
+                <span className="council-plan-note">, plus one if a seat comes back empty</span>
               </dd>
             </div>
             {cost ? (

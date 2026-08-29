@@ -168,7 +168,7 @@ export type SittingPlan = {
 export type SeatDraft = {
   seatId: string;
   model: string;
-  phase: "blind" | "revision" | "contradiction";
+  phase: "blind" | "revision" | "contradiction" | "objection";
   /** True for a seat that failed, and for one whose answer could not be read:
    * an unreadable draft is not an opinion. */
   failed: boolean;
@@ -268,8 +268,16 @@ export async function councilBindSession(input: {
 }
 
 /** Judge the finished work against the mandate that asked for it. */
-export async function councilRequestVerdict(mandateId: string) {
-  return invoke<CouncilVerdict>("council_request_verdict", { mandateId });
+/** `reply` is what the agent said when it reported finished.
+ *
+ * It only matters for a sitting with no working folder, where it becomes the
+ * evidence: not every mandate produces files, and a verdict with nothing to
+ * read spends three model calls writing "unverifiable" once per criterion.
+ * Only the shell can reach it -- the transcript lives in the runtime, not in
+ * the database Rust owns. Rust stores it, so a verdict re-driven after a
+ * relaunch still holds the thing it is judging. */
+export async function councilRequestVerdict(mandateId: string, reply?: string) {
+  return invoke<CouncilVerdict>("council_request_verdict", { mandateId, reply });
 }
 
 export async function councilVerdicts(mandateId: string) {
@@ -337,6 +345,17 @@ export function pendingSeats(cycle: CouncilCycle, drafts: SeatDraft[]): CouncilS
  * uncontaminated answer and nothing else. */
 export function baselineDrafts(drafts: SeatDraft[]): SeatDraft[] {
   return drafts.filter((draft) => draft.phase === "blind" && !draft.failed);
+}
+
+/** Whether anybody actually attacked this mandate.
+ *
+ * The objection seat is the one that stops the table agreeing with itself, and
+ * it can fail like any other. A sitting that lost it still issues a mandate --
+ * a worse one, unchallenged -- and the moment that matters is the moment
+ * somebody is about to hand it to an agent. `false` means either the seat
+ * failed or it never ran. */
+export function wasContested(drafts: SeatDraft[]): boolean {
+  return drafts.some((draft) => draft.phase === "objection" && !draft.failed);
 }
 
 /** Whether a mandate could be handed to an agent at all. Mirrors the Rust

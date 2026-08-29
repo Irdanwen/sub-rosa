@@ -33,7 +33,7 @@ vi.mock("../lib/council", async (importOriginal) => {
 
 const { VerdictPanel } = await import("../components/agent/council/VerdictPanel");
 
-function cycle(round = 0): CouncilCycle {
+function cycle(overrides: Partial<CouncilCycle> = {}): CouncilCycle {
   return {
     id: "m1",
     councilId: "mandate",
@@ -43,11 +43,12 @@ function cycle(round = 0): CouncilCycle {
     questions: [],
     dissent: [],
     cuts: [],
-    round,
+    round: 0,
     modelCalls: 9,
     promptVersion: "council-v1",
     createdAt: "",
     updatedAt: "",
+    ...overrides,
   };
 }
 
@@ -73,14 +74,26 @@ function verdict(overrides: Partial<CouncilVerdict> = {}): CouncilVerdict {
   };
 }
 
+/** What the shell hands the panel as evidence for a folderless sitting. */
+const readReply = vi.fn<(sessionId: string) => Promise<string | undefined>>();
+
 beforeEach(() => {
   vi.clearAllMocks();
+  readReply.mockResolvedValue(undefined);
   councilCycle.mockResolvedValue(cycle());
   councilVerdicts.mockResolvedValue([]);
 });
 
 function renderPanel(props: Partial<Parameters<typeof VerdictPanel>[0]> = {}) {
-  return render(<VerdictPanel mandateId="m1" onRetake={vi.fn()} onClose={vi.fn()} {...props} />);
+  return render(
+    <VerdictPanel
+      mandateId="m1"
+      readReply={readReply}
+      onRetake={vi.fn()}
+      onClose={vi.fn()}
+      {...props}
+    />,
+  );
 }
 
 describe("offering the reading", () => {
@@ -90,11 +103,43 @@ describe("offering the reading", () => {
     expect(councilRequestVerdict).not.toHaveBeenCalled();
   });
 
+  it("hands over what the agent said, for work that left no files", async () => {
+    // A mandate asking for an analysis, a rating or a rewritten text produces
+    // prose and nothing on disk. Without this the verdict had nothing to read
+    // and spent three model calls writing "unverifiable" once per criterion.
+    councilCycle.mockResolvedValue(cycle({ sessionId: "sess-7" }));
+    readReply.mockResolvedValue("Here is the revised screenplay, scene by scene.");
+    councilRequestVerdict.mockResolvedValue(verdict({ status: "running" }));
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Have it read" }));
+    await waitFor(() => expect(readReply).toHaveBeenCalledWith("sess-7"));
+    await waitFor(() =>
+      expect(councilRequestVerdict).toHaveBeenCalledWith(
+        "m1",
+        "Here is the revised screenplay, scene by scene.",
+      ),
+    );
+  });
+
+  it("asks anyway when the transcript cannot be read", async () => {
+    // Reading it is best-effort: a sitting WITH a working folder does not need
+    // it, and refusing to ask because the transcript hiccupped would withhold
+    // a verdict that had real evidence waiting.
+    councilCycle.mockResolvedValue(cycle({ sessionId: "sess-7" }));
+    readReply.mockRejectedValue(new Error("gateway is down"));
+    councilRequestVerdict.mockResolvedValue(verdict({ status: "running" }));
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Have it read" }));
+    await waitFor(() => expect(councilRequestVerdict).toHaveBeenCalledWith("m1", undefined));
+  });
+
   it("runs it on the tap", async () => {
     councilRequestVerdict.mockResolvedValue(verdict({ status: "running" }));
     renderPanel();
     await userEvent.click(await screen.findByRole("button", { name: "Have it read" }));
-    await waitFor(() => expect(councilRequestVerdict).toHaveBeenCalledWith("m1"));
+    await waitFor(() => expect(councilRequestVerdict).toHaveBeenCalledWith("m1", undefined));
   });
 
   it("lets the user decline without spending anything", async () => {
@@ -172,7 +217,7 @@ describe("corrections", () => {
       verdict({ criteria: [{ statement: "a", status: "unsatisfied", evidence: "x", seat: "" }] }),
     ]);
     councilRetake.mockResolvedValue({
-      cycle: { ...cycle(1), sessionId: "sess-9" },
+      cycle: { ...cycle({ round: 1 }), sessionId: "sess-9" },
       prompt: "FIX THESE",
     });
     const onRetake = vi.fn().mockResolvedValue(undefined);
@@ -187,7 +232,7 @@ describe("corrections", () => {
 
   it("remembers a declined offer for that round, so it is not asked again", async () => {
     const onClose = vi.fn();
-    councilCycle.mockResolvedValue(cycle(1));
+    councilCycle.mockResolvedValue(cycle({ round: 1 }));
     renderPanel({ onClose });
     await userEvent.click(await screen.findByRole("button", { name: "Not now" }));
     expect(onClose).toHaveBeenCalledWith(1);
@@ -198,7 +243,7 @@ describe("corrections", () => {
       verdict({ criteria: [{ statement: "a", status: "unsatisfied", evidence: "x", seat: "" }] }),
     ]);
     councilRetake.mockResolvedValue({
-      cycle: { ...cycle(1), sessionId: "sess-9" },
+      cycle: { ...cycle({ round: 1 }), sessionId: "sess-9" },
       prompt: "FIX THESE",
     });
     const onClose = vi.fn();
@@ -208,7 +253,7 @@ describe("corrections", () => {
   });
 
   it("stops after the corrections run out and says what remains", async () => {
-    councilCycle.mockResolvedValue(cycle(MAX_RETAKES));
+    councilCycle.mockResolvedValue(cycle({ round: MAX_RETAKES }));
     councilVerdicts.mockResolvedValue([
       verdict({
         round: MAX_RETAKES,
@@ -248,9 +293,9 @@ describe("the retake rules", () => {
   });
 
   it("counts corrections down and never below zero", () => {
-    expect(retakesLeft(cycle(0))).toBe(MAX_RETAKES);
-    expect(retakesLeft(cycle(MAX_RETAKES))).toBe(0);
-    expect(retakesLeft(cycle(MAX_RETAKES + 5))).toBe(0);
+    expect(retakesLeft(cycle({ round: 0 }))).toBe(MAX_RETAKES);
+    expect(retakesLeft(cycle({ round: MAX_RETAKES }))).toBe(0);
+    expect(retakesLeft(cycle({ round: MAX_RETAKES + 5 }))).toBe(0);
   });
 
   it("tallies what holds apart from what could not be checked", () => {

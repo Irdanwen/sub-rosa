@@ -68,6 +68,40 @@ impl Evidence {
     }
 }
 
+/// The cap on a reply used as evidence. Generous: a reply IS the deliverable
+/// on this path, so cutting it is cutting the work itself, and the seats are
+/// told when it happened.
+const REPLY_MAX_CHARS: usize = 40_000;
+
+/// What the agent said, as the thing to be judged.
+///
+/// Not every mandate produces files. Ask for an analysis, a rating, a rewritten
+/// screenplay, and the deliverable is the reply itself -- yet the only evidence
+/// this module knew how to gather was a working folder. A sitting like that
+/// spent three verdict calls to write "unverifiable" once per criterion, which
+/// is not a hard verdict, it is no verdict at all.
+///
+/// The reply is a weaker source than a diff and is labelled as such: it is
+/// what the agent says it did, not what a filesystem observed. The seats are
+/// told which one they are holding.
+pub fn from_reply(reply: &str) -> Evidence {
+    let trimmed = reply.trim();
+    if trimmed.is_empty() {
+        return Evidence::empty("missing");
+    }
+    let truncated = trimmed.chars().count() > REPLY_MAX_CHARS;
+    let body: String = if truncated {
+        trimmed.chars().take(REPLY_MAX_CHARS).collect()
+    } else {
+        trimmed.to_string()
+    };
+    Evidence {
+        text: format!("<agent_reply>\n{body}\n</agent_reply>"),
+        kind: "reply",
+        truncated,
+    }
+}
+
 /// Gather what changed in `working_dir`.
 pub async fn gather(working_dir: &str, base_commit: Option<&str>, since_rfc3339: &str) -> Evidence {
     let path = Path::new(working_dir);
@@ -273,6 +307,42 @@ pub async fn head_commit(working_dir: &str) -> Option<String> {
         return None;
     }
     Some(head)
+}
+
+#[cfg(test)]
+mod reply_tests {
+    use super::{from_reply, REPLY_MAX_CHARS};
+
+    #[test]
+    fn a_reply_is_evidence_and_says_which_kind_it_is() {
+        // The kind is what picks the provenance sentence the seats read, and
+        // that sentence is the only thing stopping a seat treating a claim
+        // about a written file as proof the file exists.
+        let e = from_reply("  Voici le scénario révisé, scène par scène.  ");
+        assert_eq!(e.kind, "reply");
+        assert!(e.text.contains("<agent_reply>"));
+        assert!(e.text.contains("Voici le scénario révisé"));
+        assert!(!e.truncated);
+    }
+
+    #[test]
+    fn an_empty_reply_is_not_evidence() {
+        // Otherwise a blank answer would look like a source and the verdict
+        // would judge seven criteria against an empty tag.
+        assert_eq!(from_reply("   \n  ").kind, "missing");
+        assert!(from_reply("").text.is_empty());
+    }
+
+    #[test]
+    fn a_long_reply_is_cut_on_characters_and_says_so() {
+        // The cut has to be reported: a reviewer who does not know it read
+        // half the work reports on half as though it were all of it. And it
+        // cuts on characters, because a byte cut inside an accent panics.
+        let long = "é".repeat(REPLY_MAX_CHARS + 100);
+        let e = from_reply(&long);
+        assert!(e.truncated);
+        assert_eq!(e.kind, "reply");
+    }
 }
 
 #[cfg(test)]

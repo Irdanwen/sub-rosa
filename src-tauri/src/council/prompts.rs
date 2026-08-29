@@ -57,11 +57,18 @@ pub fn blind_user_message(
         "Your seat:\n{seat_instructions}\n\n<request>\n{}\n</request>\n\n",
         request.trim()
     );
-    if let Some(situation) = situation.filter(|value| !value.trim().is_empty()) {
-        message.push_str(&format!(
+    match situation.filter(|value| !value.trim().is_empty()) {
+        Some(situation) => message.push_str(&format!(
             "This is the ground the agent will work on. What it does not contain, the agent does not have.\n\n<situation>\n{}\n</situation>\n\n",
             situation.trim()
-        ));
+        )),
+        // Without a folder the deliverable is the reply itself, and a
+        // criterion checked by reading a file is a criterion nobody can
+        // settle. A sitting that wrote seven of those spent three verdict
+        // calls answering "unverifiable" seven times.
+        None => message.push_str(
+            "There is no working folder for this work: the agent answers in the conversation, and its reply is the whole deliverable. Every acceptance criterion must therefore be settleable by reading that reply. Do not write a criterion that depends on a file existing, on a diff, on a command being run, or on a test passing.\n\n",
+        ),
     }
     if !answers.trim().is_empty() {
         message.push_str(&format!(
@@ -190,6 +197,13 @@ pub fn verdict_user_message(
     let provenance = match evidence_kind {
         "git" => "The evidence below is a git diff against the commit the folder was on when the work started, plus the contents of files git had not yet heard of. It is complete: anything changed in this folder is in it.",
         "mtime" => "The folder is not a git repository, so the evidence below is the files whose contents changed since the work was commissioned, with their current contents. It shows what a file says now, not what it said before, so judge presence and substance rather than differences.",
+        // The conformance seat is told, correctly, that an agent reporting it
+        // did something is not evidence that it did. That rule holds here and
+        // this arm does not soften it: when the deliverable IS the text, the
+        // text is the artefact rather than a report about one, and the line
+        // between the two is drawn explicitly so a seat cannot use it to
+        // accept a claim about the world.
+        "reply" => "This sitting had no working folder, so the evidence below is the agent's own reply. Judge that reply as the deliverable itself: where a criterion asks for an analysis, a rating, a passage, a revised text, the reply either contains it or it does not, and you can settle that by reading it. It is NOT evidence of anything the reply only claims to have done elsewhere -- a file written, a command run, a check that passed. Those remain unverifiable no matter how confidently they are stated.",
         _ => "No evidence could be gathered from the working folder at all. Say so rather than guessing: every criterion you cannot settle is unverifiable.",
     };
     let truncation = if evidence_truncated {

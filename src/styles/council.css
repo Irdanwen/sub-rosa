@@ -503,3 +503,10 @@
   font-size: var(--fs-sm);
   color: var(--muted-foreground);
 }
+
+/* The retry allowance, said rather than folded into the headline range: a rare
+   extra call must not make every estimate look twice as expensive. */
+.council-plan-note {
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}

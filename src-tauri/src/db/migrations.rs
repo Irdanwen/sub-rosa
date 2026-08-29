@@ -218,6 +218,14 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
             query(statement).execute(_pool).await?;
         }
     }
+    // What a verdict reads when the work left no trace on disk. Not every
+    // mandate produces files: ask for an analysis or a rewrite and the
+    // deliverable is what the agent said. The transcript lives in the runtime,
+    // so the shell hands the reply in and it is stored here for the reason
+    // every long job stores its inputs (ADR-0018) -- a verdict re-driven after
+    // a relaunch must still hold the thing it was judging.
+    ensure_column(_pool, "council_verdicts", "reply", "TEXT").await?;
+
     Ok(())
 }
 

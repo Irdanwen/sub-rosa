@@ -5007,22 +5007,27 @@ impl Repositories {
         self.add_council_model_calls(mandate_id, 1).await
     }
 
+    /// `reply` is what the agent said when it reported finished. Stored rather
+    /// than passed along, so a verdict re-driven after a relaunch still holds
+    /// the thing it is judging (ADR-0018).
     pub async fn begin_council_verdict(
         &self,
         mandate_id: &str,
         round: i64,
         session_id: Option<&str>,
         prompt_version: &str,
+        reply: Option<&str>,
     ) -> Result<CouncilVerdictDto, sqlx::error::Error> {
         let now = timestamp();
         query(
             "INSERT INTO council_verdicts
-               (mandate_id, round, status, session_id, prompt_version, created_at, updated_at)
-             VALUES (?, ?, 'running', ?, ?, ?, ?)
+               (mandate_id, round, status, session_id, prompt_version, reply, created_at, updated_at)
+             VALUES (?, ?, 'running', ?, ?, ?, ?, ?)
              ON CONFLICT(mandate_id, round) DO UPDATE SET
                status = 'running',
                session_id = excluded.session_id,
                prompt_version = excluded.prompt_version,
+               reply = coalesce(excluded.reply, council_verdicts.reply),
                last_error = NULL,
                updated_at = excluded.updated_at",
         )
@@ -5030,6 +5035,7 @@ impl Repositories {
         .bind(round)
         .bind(session_id)
         .bind(prompt_version)
+        .bind(reply)
         .bind(&now)
         .bind(&now)
         .execute(&self.pool)
@@ -5038,6 +5044,22 @@ impl Repositories {
             .council_verdict(mandate_id, round)
             .await?
             .expect("the row was just written"))
+    }
+
+    /// What the shell handed in as evidence for this verdict, if anything. Read
+    /// separately from the DTO: it is an input to the run, not something a
+    /// surface displays.
+    pub async fn council_verdict_reply(
+        &self,
+        mandate_id: &str,
+        round: i64,
+    ) -> Result<Option<String>, sqlx::error::Error> {
+        let row = query("SELECT reply FROM council_verdicts WHERE mandate_id = ? AND round = ?")
+            .bind(mandate_id)
+            .bind(round)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.and_then(|row| row.try_get::<Option<String>, _>("reply").ok().flatten()))
     }
 
     pub async fn council_verdict(
