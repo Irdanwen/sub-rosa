@@ -399,6 +399,23 @@ export function CouncilSitting({
         </>
       ) : null}
 
+      {cycle.status === "executing" ||
+      cycle.status === "reviewing" ||
+      cycle.status === "settled" ? (
+        // Handed over. The mandate is read-only from here -- editing it would
+        // change what the work is judged against after the work started -- but
+        // it is the thing worth coming back for: the agent is running under it
+        // right now, and the verdict will answer it criterion by criterion.
+        <>
+          <p className="council-status" role="status">
+            {cycle.status === "settled"
+              ? "This mandate has been judged. It is what the reading answered."
+              : "The agent is working under this mandate. It is what the reading at the end will answer."}
+          </p>
+          <MandateEditor mandate={mandate} disabled onChange={() => {}} />
+        </>
+      ) : null}
+
       {cycle.status === "failed" ? (
         <div className="council-notice council-failed" role="alert">
           <h3 className="council-notice-title">The sitting stopped</h3>

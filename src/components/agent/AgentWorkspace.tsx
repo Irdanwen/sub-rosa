@@ -85,7 +85,12 @@ import {
   useSyncExternalStore,
 } from "react";
 import { BackButton } from "../ui/BackButton";
-import { councilCycleAwaitingVerdict, councilCycles, isUnfinished } from "../../lib/council";
+import {
+  councilCycleAwaitingVerdict,
+  councilCycleForSession,
+  councilCycles,
+  isUnfinished,
+} from "../../lib/council";
 import { CouncilSitting } from "./council/CouncilSitting";
 import { VerdictPanel } from "./council/VerdictPanel";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
@@ -1435,6 +1440,13 @@ export function AgentWorkspace({
    * unmounts this) left a sitting that had already cost model calls alive in
    * the database with no way back to it. This is the way back. */
   const [strandedSitting, setStrandedSitting] = useState<{
+    id: string;
+    request: string;
+  } | null>(null);
+  /** The sitting the selected session is working under, if any. Separate from
+   * `strandedSitting`: that one is a sitting nobody handed over, this one is
+   * the mandate behind the conversation on screen. */
+  const [sessionSitting, setSessionSitting] = useState<{
     id: string;
     request: string;
   } | null>(null);
@@ -3378,6 +3390,31 @@ export function AgentWorkspace({
       live = false;
     };
   }, []);
+
+  // The mandate a session is working under. Excluding handed-over sittings
+  // from the offer above was justified by "those are reachable through their
+  // session", which was not true of anything: the lookup existed and no
+  // surface called it. This is that surface. Scoped to the selected session,
+  // so it names the mandate governing what is on screen rather than any
+  // sitting anywhere.
+  useEffect(() => {
+    if (!selectedHermesSessionId) {
+      setSessionSitting(null);
+      return;
+    }
+    let live = true;
+    void councilCycleForSession(selectedHermesSessionId)
+      .then((cycle) => {
+        if (!live) return;
+        setSessionSitting(cycle ? { id: cycle.id, request: cycle.request } : null);
+      })
+      .catch(() => {
+        if (live) setSessionSitting(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [selectedHermesSessionId]);
 
   /**
    * `/council <request>` convenes a council on the request instead of sending
@@ -8067,6 +8104,12 @@ export function AgentWorkspace({
                   onDismiss={() => setStrandedSitting(null)}
                 />
               ) : null}
+              {sessionSitting && !councilRequest ? (
+                <AgentSessionSittingBanner
+                  onOpen={() => reopenSitting(sessionSitting)}
+                  onDismiss={() => setSessionSitting(null)}
+                />
+              ) : null}
               {workingDirNotice ? (
                 // Reassurance, not an error: the send went through, just in
                 // the default workspace instead of the missing folder.
@@ -10627,6 +10670,31 @@ function AgentErrorBanner({
  * as wrong as losing one you did not. Dismissing hides the offer for this
  * visit and leaves the mandate alone -- forgetting a sitting is the X inside
  * it, which deletes the row on purpose. */
+/** The mandate the conversation on screen is working under. The way back from
+ * a session to its council, which did not exist: the lookup was written and
+ * never called, and the resume offer excluded handed-over sittings on the
+ * strength of a reachability that was not real. */
+function AgentSessionSittingBanner({
+  onOpen,
+  onDismiss,
+}: {
+  onOpen: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="agent-branched-banner" role="status">
+      <IconCirclesThree size={14} aria-hidden />
+      <p>This session is working under a council mandate.</p>
+      <button type="button" className="btn btn-secondary" onClick={onOpen}>
+        Open the sitting
+      </button>
+      <button type="button" aria-label="Dismiss" onClick={onDismiss}>
+        <IconCrossMedium size={14} />
+      </button>
+    </div>
+  );
+}
+
 function AgentStrandedSittingBanner({
   request,
   onReopen,

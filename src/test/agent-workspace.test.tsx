@@ -34,6 +34,7 @@ const HERO_GREETING = new RegExp(
 const mocks = vi.hoisted(() => ({
   cancelAgentTask: vi.fn(),
   councilBindSession: vi.fn(),
+  councilCycleForSession: vi.fn(),
   councilCycles: vi.fn(),
   councilConvene: vi.fn(),
   councilCycle: vi.fn(),
@@ -155,6 +156,7 @@ vi.mock("../lib/council", async (importOriginal) => ({
   councilConvene: (...args: unknown[]) => mocks.councilConvene(...(args as [])),
   councilCycle: (...args: unknown[]) => mocks.councilCycle(...(args as [])),
   councilCycles: (...args: unknown[]) => mocks.councilCycles(...(args as [])),
+  councilCycleForSession: (...args: unknown[]) => mocks.councilCycleForSession(...(args as [])),
   councilDrafts: () => Promise.resolve([]),
   councilBindSession: (...args: unknown[]) => mocks.councilBindSession(...(args as [])),
 }));
@@ -328,6 +330,7 @@ describe("AgentWorkspace", () => {
     // No stranded sitting unless a case says so: the workspace asks on
     // mount, and an unmocked answer would reject inside that effect.
     mocks.councilCycles.mockResolvedValue([]);
+    mocks.councilCycleForSession.mockResolvedValue(null);
     mocks.listHermesSessions.mockResolvedValue([existingSession]);
     mocks.listHermesSessionMessages.mockResolvedValue([]);
     mocks.hermesAgentCliAccess.mockResolvedValue({ enabled: false });
@@ -6597,6 +6600,61 @@ describe("AgentWorkspace", () => {
     expect(screen.queryByText(HERO_GREETING)).toBeNull();
     // Nothing was sent to the runtime: a council convenes before any work.
     expect(mocks.gatewayRequest).not.toHaveBeenCalledWith("prompt.submit", expect.anything());
+  });
+
+  it("opens the sitting a session is working under", async () => {
+    // The way back from a session to its council did not exist. The lookup was
+    // written and never called by anything, and the resume offer excluded
+    // handed-over sittings because "those are reachable through their
+    // session" -- which was true of nothing.
+    mocks.councilCycleForSession.mockResolvedValue({
+      id: "m1",
+      request: "make the settings page faster",
+      status: "executing",
+    });
+    mocks.councilCycle.mockResolvedValue({
+      id: "m1",
+      councilId: "mandate",
+      request: "make the settings page faster",
+      status: "executing",
+      seats: [],
+      questions: [],
+      dissent: [],
+      cuts: [],
+      round: 0,
+      modelCalls: 9,
+      promptVersion: "council-v1",
+      createdAt: "",
+      updatedAt: "",
+      mandate: {
+        objective: "Cut settings load below 300ms",
+        deliverable: [],
+        constraints: [],
+        acceptance: [],
+        outOfScope: [],
+        firstStep: "",
+      },
+      renderedPrompt: "THE RENDERED MANDATE",
+    });
+    const user = userEvent.setup();
+    render(<AgentWorkspace />);
+    expect(await screen.findByText("Existing session")).toBeInTheDocument();
+
+    expect(
+      await screen.findByText("This session is working under a council mandate."),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Open the sitting" }));
+
+    expect(await screen.findByLabelText("Council")).toBeInTheDocument();
+    // Reopened, not re-run: it reads the mandate that exists.
+    expect(mocks.councilConvene).not.toHaveBeenCalled();
+  });
+
+  it("says nothing when a session has no mandate behind it", async () => {
+    render(<AgentWorkspace />);
+    expect(await screen.findByText("Existing session")).toBeInTheDocument();
+    await waitFor(() => expect(mocks.councilCycleForSession).toHaveBeenCalled());
+    expect(screen.queryByText("This session is working under a council mandate.")).toBeNull();
   });
 
   it("offers a way back into a sitting that outlived its screen", async () => {

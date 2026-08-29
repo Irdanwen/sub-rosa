@@ -550,6 +550,15 @@ Vocabulaire : la section « The council (fork) » de [CONTEXT.md](CONTEXT.md).
 - **L'objection est visible.** `council_drafts` renvoie aussi
   `PHASE_OBJECTION`, `wasContested()` en dérive, et la vue du mandat dit
   « Nobody attacked this mandate » **là où on décide de le remettre**.
+- **Une session ramène à son conseil.** `councilCycleForSession` existait et
+  n'était appelé par **aucune** UI ; le bandeau de reprise excluait pourtant
+  les séances `executing` au motif qu'« elles sont joignables par leur
+  session », ce qui n'était vrai de rien. Un second bandeau, porté par la
+  session sélectionnée, ouvre la séance — et `CouncilSitting` affiche
+  désormais le mandat **en lecture seule** pour `executing|reviewing|settled`,
+  sinon on revenait sur une page sans la seule chose qu'on venait y chercher.
+  Le mandat n'est jamais éditable après remise : changer ce contre quoi le
+  travail est jugé une fois le travail commencé viderait le verdict de sens.
 - **Une séance survit à l'écran qui la portait.** Le mandat est une ligne
   durable, `councilRequest` est un état React : un relancement laissait une
   séance déjà payée (9 appels modèle) vivante en base et injoignable, et
