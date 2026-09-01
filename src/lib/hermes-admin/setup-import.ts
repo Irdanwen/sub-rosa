@@ -33,6 +33,7 @@
  */
 
 import type { HermesAddMcpServerPayload, HermesAdminClient } from "./client";
+import { messageFromError } from "../errors";
 import type { HermesActionStatus } from "./schemas";
 import type {
   SetupSnapshot,
@@ -101,7 +102,7 @@ export type ApplyOptions = {
 };
 
 function errMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return messageFromError(error);
 }
 
 /** Drives a backgrounded action to completion when the mutation returned an

@@ -1,4 +1,5 @@
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
+import { messageFromError } from "../../lib/errors";
 import { IconArrowOutOfBox } from "central-icons/IconArrowOutOfBox";
 import { IconBox2 } from "central-icons/IconBox2";
 import { IconCircleCheck } from "central-icons/IconCircleCheck";
@@ -49,7 +50,7 @@ export function SetupSnapshotSection({ mode = "sandboxed" }: SetupSnapshotSectio
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setBridgeError(error instanceof Error ? error.message : String(error));
+          setBridgeError(messageFromError(error));
         }
       });
     return () => {

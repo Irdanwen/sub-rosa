@@ -21,6 +21,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { messageFromError } from "../errors";
 import {
   hermesBridgeStatus,
   hermesSkillTapAdd,
@@ -639,7 +640,7 @@ export function useSkillTaps(
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setBridgeError(error instanceof Error ? error.message : String(error));
+          setBridgeError(messageFromError(error));
           loaded.current = true;
         }
       });

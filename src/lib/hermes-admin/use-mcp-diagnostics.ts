@@ -18,6 +18,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { messageFromError } from "../errors";
 import { hermesBridgeStatus, type HermesBridgeStatus } from "../tauri";
 import type { GatewayLifecycleSnapshot } from "./gateway-lifecycle";
 import type { HermesAdminMode } from "./target";
@@ -261,7 +262,7 @@ export function useMcpDiagnostics(
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setBridgeError(error instanceof Error ? error.message : String(error));
+          setBridgeError(messageFromError(error));
           loaded.current = true;
         }
       });

@@ -22,6 +22,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { messageFromError } from "../errors";
 import {
   hermesBridgeStatus,
   hermesDeleteSkillBundle,
@@ -391,7 +392,7 @@ export function useSkillBundles(
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setBridgeError(error instanceof Error ? error.message : String(error));
+          setBridgeError(messageFromError(error));
           loaded.current = true;
         }
       });

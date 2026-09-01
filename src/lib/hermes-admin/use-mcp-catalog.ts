@@ -34,6 +34,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { messageFromError } from "../errors";
 import { hermesBridgeStatus, type HermesBridgeStatus } from "../tauri";
 import { AdminStateCache, type AdminNotification } from "./cache";
 import {
@@ -483,7 +484,7 @@ export function useMcpCatalog(
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setBridgeError(error instanceof Error ? error.message : String(error));
+          setBridgeError(messageFromError(error));
           loaded.current = true;
         }
       });

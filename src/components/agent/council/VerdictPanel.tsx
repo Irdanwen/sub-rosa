@@ -1,4 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
+import { messageFromError } from "../../../lib/errors";
 import { IconCircleCheck } from "central-icons/IconCircleCheck";
 import { IconCircleQuestionmark } from "central-icons/IconCircleQuestionmark";
 import { IconCircleX } from "central-icons/IconCircleX";
@@ -88,7 +89,7 @@ export function VerdictPanel({
       const reply = sessionId ? await readReply(sessionId).catch(() => undefined) : undefined;
       await councilRequestVerdict(mandateId, reply);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(messageFromError(err));
     } finally {
       setBusy(false);
     }
@@ -104,7 +105,7 @@ export function VerdictPanel({
       // verdict belongs to the round that just opened.
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(messageFromError(err));
     } finally {
       setBusy(false);
     }

@@ -1,4 +1,5 @@
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
+import { messageFromError } from "../../lib/errors";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconCircleCheck } from "central-icons/IconCircleCheck";
 import { IconCircleInfo } from "central-icons/IconCircleInfo";
@@ -56,7 +57,7 @@ export function McpDiagnosticsSection({ mode = "sandboxed" }: McpDiagnosticsSect
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setBridgeError(error instanceof Error ? error.message : String(error));
+          setBridgeError(messageFromError(error));
         }
       });
     return () => {

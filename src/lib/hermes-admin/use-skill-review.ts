@@ -22,6 +22,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { messageFromError } from "../errors";
 import { invoke as tauriInvoke, hermesBridgeStatus } from "../tauri";
 import type { HermesBridgeStatus } from "../tauri";
 import { AdminStateCache, type AdminNotification } from "./cache";
@@ -430,7 +431,7 @@ export function useSkillReview(
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setBridgeError(error instanceof Error ? error.message : String(error));
+          setBridgeError(messageFromError(error));
           loaded.current = true;
         }
       });

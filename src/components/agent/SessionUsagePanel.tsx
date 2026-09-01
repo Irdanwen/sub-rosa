@@ -1,4 +1,5 @@
 import { IconAiTokens } from "central-icons/IconAiTokens";
+import { messageFromError } from "../../lib/errors";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconBolt } from "central-icons/IconBolt";
 import { IconCoins } from "central-icons/IconCoins";
@@ -137,7 +138,7 @@ export function SessionUsagePanel({
       },
       (err: unknown) => {
         if (seq !== requestSeq.current) return;
-        setErrorReason(err instanceof Error ? err.message : String(err));
+        setErrorReason(messageFromError(err));
         setStatus("error");
       },
     );

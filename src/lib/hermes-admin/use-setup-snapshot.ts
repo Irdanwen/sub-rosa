@@ -23,6 +23,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { messageFromError } from "../errors";
 import { hermesBridgeStatus, type HermesBridgeStatus } from "../tauri";
 import type { GatewayLifecycleSnapshot } from "./gateway-lifecycle";
 import type {
@@ -206,7 +207,7 @@ export function useSetupSnapshotController(
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : String(err));
+        setError(messageFromError(err));
         setRetryable(true);
         setStatus("error");
       });
@@ -293,7 +294,7 @@ export function useSetupSnapshotController(
         // Refresh the live data so a subsequent export reflects the import.
         refresh();
       } catch (err: unknown) {
-        setImportError(err instanceof Error ? err.message : String(err));
+        setImportError(messageFromError(err));
         setImportPhase("error");
       }
     },
@@ -375,7 +376,7 @@ export function useSetupSnapshot(
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setBridgeError(err instanceof Error ? err.message : String(err));
+          setBridgeError(messageFromError(err));
         }
       });
     return () => {
