@@ -1,6 +1,3 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { messageFromError } from "../lib/errors";
 
@@ -14,31 +11,39 @@ import { messageFromError } from "../lib/errors";
  * moment they needed a sentence. It was in twenty-three call sites before
  * anybody noticed, because each one only shows itself when something fails.
  *
- * `messageFromError` is the one that knows the shape. This test is here
- * because the wrong version is the one that comes to mind first.
+ * `messageFromError` is the one that knows the shape. This test exists because
+ * the wrong version is the one that comes to mind first.
+ *
+ * The sources are read through `import.meta.glob` rather than `node:fs`: the
+ * frontend tsconfig has no Node types, and this is the seam Vite gives a test
+ * that needs to look at the code rather than run it.
  */
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const BAD_PATTERN = /(\w+)\s+instanceof\s+Error\s*\?\s*\1\.message\s*:\s*String\(\1\)/;
+const SOURCES = import.meta.glob("../**/*.{ts,tsx}", {
+  query: "?raw",
+  eager: true,
+  import: "default",
+}) as Record<string, string>;
 
-function sourceFiles(dir: string): string[] {
-  return readdirSync(dir).flatMap((entry) => {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) return entry === "test" ? [] : sourceFiles(full);
-    return /\.tsx?$/.test(entry) ? [full] : [];
-  });
-}
+const BAD_PATTERN = /(\w+)\s+instanceof\s+Error\s*\?\s*\1\.message\s*:\s*String\(\1\)/;
 
 describe("errors reaching the user", () => {
   it("never stringifies a rejected command straight into the UI", () => {
-    const offenders = sourceFiles(ROOT)
-      .filter((file) => BAD_PATTERN.test(readFileSync(file, "utf8")))
-      .map((file) => file.slice(ROOT.length + 1));
+    const offenders = Object.entries(SOURCES)
+      .filter(([path]) => !path.startsWith("../test/"))
+      .filter(([, source]) => BAD_PATTERN.test(source))
+      .map(([path]) => path.replace("../", "src/"));
 
     expect(
       offenders,
       "use messageFromError from lib/errors: a rejected invoke is a plain object, so `instanceof Error` is false and String() gives [object Object]",
     ).toEqual([]);
+  });
+
+  it("sees enough of the source to be worth anything", () => {
+    // A glob that silently matched nothing would make the guard above pass
+    // forever, which is the one way a test like this fails quietly.
+    expect(Object.keys(SOURCES).length).toBeGreaterThan(200);
   });
 
   it("reads the message off the object Tauri actually rejects with", () => {
