@@ -17,3 +17,7 @@ authoritative, reviewable version.
 
 - [icons-central-only](icons-central-only.md) — icons from `central-icons` / `central-icons-filled` only
 - [design-tokens](design-tokens.md) — use the variables in `src/styles/tokens.css`
+
+## Frontend — the note body
+
+- [note-controls-must-serialize](note-controls-must-serialize.md) — no editor control without a markdown representation and a round-trip test

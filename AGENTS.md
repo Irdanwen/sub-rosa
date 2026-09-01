@@ -206,6 +206,46 @@ the decisions; read them before touching any of it:
   now fails the build when a command lands in only one of them, so a
   genuinely platform-bound command has to say so there.
 
+## Writing a note, and having it rewritten (fork addition, 2026-09-01)
+
+The note body is a real writing surface now, and a model can rewrite a passage
+of it without leaving the note. Three ADRs carry the decisions; read them
+before touching any of it:
+[ADR-0037](docs/adr/0037-the-note-body-round-trips-through-a-document-not-the-dom.md)
+(the markdown seam), [ADR-0038](docs/adr/0038-a-note-rewrite-is-proposed-never-applied.md)
+(the rewrites), and the "Writing a note (fork)" section of
+[CONTEXT.md](CONTEXT.md) for the nouns. Re-merge checklist: the matching
+section of [FORK_NOTES.md](FORK_NOTES.md). The essentials:
+
+- **The file decides what the surface may offer.** `src/lib/note-markdown.ts`
+  serializes the ProseMirror *document* (never the rendered DOM) and escapes
+  what it writes. A control may exist only if `docToMarkdown` can write what it
+  produces — which is why `underline` is switched off in StarterKit, and why
+  adding a node means a converter row and a corpus entry *first*.
+- **One vocabulary, one schema.** `noteSchemaExtensions()` builds the editor
+  and the round-trip test derives its schema from the same call. Never restate
+  the extension list.
+- **The gate is a property, not examples.** `src/test/note-markdown.test.ts`
+  asserts a document survives being written and read back, over a hand corpus
+  and a thousand generated documents, and it reimplements the six
+  normalizations from the module's prose rather than importing them.
+- **A rewrite is proposed, never applied.** `src-tauri/src/note_ai/` returns
+  replacement text and touches neither the document nor the database; the user
+  accepts it or discards it. That is `crate::actions`' rule, applied to the
+  editor. What replaces text you wrote is reviewed; what adds text you did not
+  is inserted, because undo is enough.
+- **A rewrite is transient on purpose**, against ADR-0018: durability there
+  protects work a person cannot recreate, and resurrecting a revision onto a
+  paragraph edited since would be a silent corruption. Live-ness is an
+  in-process question (a `Notify` registry), never a database one.
+- **Nothing goes in `june-api/`** (ADR-0027). The prompts live in
+  `note_ai/prompts.rs` with their own `NOTE_AI_PROMPT_VERSION`, and they are
+  the product: change them when a rewrite disappoints.
+- Rewrite commands are shared commands: every new one goes in **both**
+  `generate_handler!` lists in `lib.rs`.
+- **`note-lab.html`** mounts the note editor alone, with no sidecar and a fake
+  Tauri bridge, for driving the surface in a browser. It is not a build input.
+
 ---
 
 # June — Agent Instructions
@@ -304,6 +344,7 @@ distinct from the `specs/` Spec Kit feature specs.)
 - [no-typographic-dashes](spec/no-typographic-dashes.md) — no en/em dashes in user-facing copy (hyphen or "to")
 - [icons-central-only](spec/icons-central-only.md) — icons from `central-icons` / `central-icons-filled` only (never lucide)
 - [design-tokens](spec/design-tokens.md) — use the variables in `src/styles/tokens.css`
+- [note-controls-must-serialize](spec/note-controls-must-serialize.md) — no note-editor control without a markdown representation
 
 ## PR and description conventions
 

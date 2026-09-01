@@ -47,6 +47,8 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0034-the-council-issues-a-verifiable-mandate.md](adr/0034-the-council-issues-a-verifiable-mandate.md) — several model families read a request blind, the chair issues capped slots with acceptance criteria, one agent executes, the council judges the result (addendum 2026-08-29: the agent's reply is evidence when the work left no files)
 - [adr/0035-the-desktop-agent-writes-notes-through-the-app.md](adr/0035-the-desktop-agent-writes-notes-through-the-app.md) — the read-only context MCP asks the app to write a note over the local proxy, so one process owns the database and both shells write the same way
 - [adr/0036-reports-are-github-issues-filed-with-the-users-own-credential.md](adr/0036-reports-are-github-issues-filed-with-the-users-own-credential.md) — in-app reports open Issues on the fork's own tracker, with a keychain token or through GitHub's pre-filled form, and the UI names which happened
+- [adr/0037-the-note-body-round-trips-through-a-document-not-the-dom.md](adr/0037-the-note-body-round-trips-through-a-document-not-the-dom.md) — the note's markdown seam serializes the ProseMirror document instead of walking the rendered DOM, escapes what it writes, covers the whole schema, and is gated by a round-trip property rather than a hand-written subset
+- [adr/0038-a-note-rewrite-is-proposed-never-applied.md](adr/0038-a-note-rewrite-is-proposed-never-applied.md) — the model returns a revision the user accepts or discards, fork-side like the long-form summary, transient by design against ADR-0018, and bounded so a hostile note can at worst produce a bad rewrite
 
 ## Enforceable rules (spec/)
 

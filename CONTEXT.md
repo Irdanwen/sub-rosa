@@ -120,6 +120,43 @@ system audio via CoreAudio process taps and reports over a `status.json` file
 (see [ADR-0004](docs/adr/0004-out-of-process-system-audio-helper.md)).
 _Avoid_: system driver, in-process capture.
 
+### Writing a note (fork)
+
+**Rewrite**:
+A named transformation of a passage the user has selected — correct,
+reformulate, shorten, expand, restructure, translate, or a free instruction.
+It is the operation, not its result. Only **restructure** may change the
+markdown structure it was handed; every other kind keeps the heading levels,
+the list markers and the checkbox states exactly as they were.
+_Avoid_: AI action (that is a **proposed action**), AI tool (that is an agent
+or MCP tool), edit (that is what the user does by typing).
+
+**Revision**:
+The replacement text a rewrite produced, while it is still only a proposal.
+A revision is shown beside the passage it would replace and lands in the
+document only on an explicit gesture, which is the same rule a **proposed
+action** follows and for the same reason (ADR-0038). It is never stored: a
+revision the user did not accept leaves no trace.
+_Avoid_: suggestion (that is the editor library's menu machinery), draft,
+version (that is a release).
+
+**Selection toolbar**:
+The floating controls that appear over selected text in a note body: block
+style, list kind, marks, link, and the button that starts a **rewrite**. It
+acts on text that is already written. On a phone it is *docked* above the
+keyboard for as long as the editor has focus, because making a selection with
+a thumb is the hard part and a control that only exists afterwards is a control
+nobody finds.
+_Avoid_: format bar, ribbon (there is no ribbon, deliberately), bubble menu.
+
+**Note palette**:
+The `/` menu in the note body, which inserts a block at the caret. Desktop
+only: it is anchored to the caret, and on a phone the caret sits just above
+the keyboard. Distinct from the **selection toolbar**, which acts on text that
+is already written.
+_Avoid_: slash command (that is the composer's, and it does other things),
+block menu.
+
 ### Imports (fork)
 
 **Import**:

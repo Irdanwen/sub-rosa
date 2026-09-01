@@ -242,6 +242,11 @@
    * tracks the selected accent without touching any foreground/text color. */
   --brand-tint: color-mix(in oklch, var(--brand) 12%, var(--card));
   --brand-tint-strong: color-mix(in oklch, var(--brand) 20%, var(--card));
+  /* Highlighter wash for a note's `==marked==` text. Deliberately NOT derived
+   * from --brand: a highlighter that changes hue with the accent stops reading
+   * as a highlighter. Warm yellow, kept soft enough that body copy stays
+   * legible on top of it. */
+  --note-highlight: oklch(90% 0.13 96 / 62%);
   /* Warm-accent set for the record button hover state — a soft peach
    * surface and a deeper terracotta foreground. Reusable for any
    * "live/recording" primary action that wants a warmer feel. */
@@ -332,6 +337,10 @@
  * pre-paint script in index.html), regardless of system preference. */
 [data-theme="dark"] {
   color-scheme: dark;
+
+  /* Same hue, far less of it: a light wash over near-black reads as a block of
+   * colour rather than a highlight, and swallows the text. */
+  --note-highlight: oklch(72% 0.13 96 / 30%);
 
   /* Same wash as light, a touch stronger since a tint reads less against
    * near-black. Foregrounds + alpha hairlines stay neutral. */

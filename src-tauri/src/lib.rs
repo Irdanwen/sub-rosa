@@ -44,6 +44,7 @@ pub mod memory;
 #[cfg(desktop)]
 pub mod menu_bar;
 pub mod moments;
+pub mod note_ai;
 pub mod open_url;
 pub mod os_accounts;
 #[cfg(target_os = "ios")]
@@ -350,6 +351,8 @@ pub fn run() {
             longform::note_summary_plan,
             longform::summarize_note_longform,
             longform::forget_note_summary,
+            note_ai::note_rewrite,
+            note_ai::cancel_note_rewrite,
             council::council_plan,
             council::council_convene,
             council::council_cycle,
@@ -546,6 +549,8 @@ pub fn run() {
         longform::note_summary_plan,
         longform::summarize_note_longform,
         longform::forget_note_summary,
+        note_ai::note_rewrite,
+        note_ai::cancel_note_rewrite,
         timeline::export_timeline_bundle,
         bible::list_bible_entries,
         bible::save_bible_entry,

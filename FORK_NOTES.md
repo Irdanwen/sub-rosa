@@ -708,6 +708,89 @@ navigateur (l'utilisateur valide). Décision et alternatives rejetées :
   de l'utilisateur fait le titre. Un en-tête sans contenu n'est pas une issue,
   et un en-tête devenu titre ne se répète pas dans le corps.
 
+## Écrire une note, et la faire réécrire (2026-09-01)
+
+L'éditeur de note était un TipTap avec trois boutons, posé sur un convertisseur
+markdown de 90 lignes qui **supprimait silencieusement tout ce qu'il ne
+connaissait pas au `blur`** : chaque niveau de titre retombait en H1, et les
+listes numérotées, imbriquées, les citations, le code, les filets, les liens et
+le barré — tous déjà dans le schéma StarterKit — disparaissaient dès que le
+curseur quittait l'éditeur. Le bug était invisible parce que la barre ne savait
+produire que trois des cinq choses que le convertisseur connaissait.
+
+Trois décisions, trois ADR :
+[ADR-0037](docs/adr/0037-the-note-body-round-trips-through-a-document-not-the-dom.md)
+(le convertisseur sérialise le **document**, pas le DOM rendu, et il échappe),
+[ADR-0038](docs/adr/0038-a-note-rewrite-is-proposed-never-applied.md) (une
+réécriture est **proposée**, jamais appliquée), et le vocabulaire dans la
+section « Writing a note (fork) » de [CONTEXT.md](CONTEXT.md).
+
+### Fichiers ajoutés
+
+| Fichier | Rôle |
+| --- | --- |
+| `src/lib/note-markdown.ts` | markdown ⇄ ProseMirror : sérialise le document, échappe à trois niveaux, six normalisations nommées |
+| `src/components/note-editor/extensions.ts` | le vocabulaire d'édition en un seul endroit — l'éditeur **et** le test en dérivent leur schéma |
+| `src/components/note-editor/SelectionToolbar.tsx` | la barre flottante (titres · listes · marques · lien · IA), forme ancrée sur mobile |
+| `src/components/note-editor/blockPalette.ts`, `BlockPaletteList.tsx` | la palette `/` (desktop seulement), sur le popover du composer |
+| `src/components/note-editor/useAnchoredPanel.ts` | mesure, calage aux bords, bascule sous la sélection quand il n'y a pas la place au-dessus |
+| `src/components/note-editor/RewritePanel.tsx` | la **révision** : ce que le modèle propose, tant que personne n'a cliqué |
+| `src/lib/note-rewrite.ts` | le hook qui pilote un run (deltas, annulation, erreurs) et **n'écrit rien** |
+| `src-tauri/src/note_ai/` | `mod.rs` + `prompts.rs` : sept réécritures, streaming, annulation, bornes |
+| `note-lab.html`, `src/dev/note-lab.tsx` | banc d'essai : monte l'éditeur seul, sans sidecar, avec un faux pont Tauri. **Pas une entrée de build** (`vite.config.ts` liste 4 HTML, celui-ci n'y est pas) |
+| `src/test/note-markdown.test.ts` | la propriété : un document survit à l'aller-retour (corpus + 1000 docs générés) |
+| `src/test/note-{preview,toolbar,rewrite}.test.tsx` | le câblage, la surface d'écriture, la révision |
+
+### Fichiers upstream modifiés
+
+| Fichier | Modification |
+| --- | --- |
+| `src/components/note-editor/NotePreview.tsx` | passe par `note-markdown` et `noteEditorExtensions`, porte la barre, la palette et le panneau ; l'ancien convertisseur est supprimé |
+| `src-tauri/src/lib.rs` | `note_ai` + `note_rewrite` / `cancel_note_rewrite` dans les **deux** listes |
+| `src/lib/tauri.ts` | `NOTE_REWRITE_EVENT`, `RewriteKind`, `noteRewrite`, `cancelNoteRewrite`, `MAX_REWRITE_CHARS` |
+| `src/styles/app.css` | hiérarchie des titres, listes numérotées, cases à cocher, surlignage, citation, code, filet, liens ; barre, palette, menu, panneau |
+| `src/styles/tokens.css` | `--note-highlight` (clair + sombre) |
+| `package.json` | `@tiptap/extension-highlight`, `@tiptap/extension-list` (épinglés en 3.27.1 comme le reste) |
+
+### Pièges
+
+- **Le fichier d'abord, la surface ensuite.** Tout contrôle ajouté à la barre
+  doit être écrivable par `docToMarkdown` avant d'exister. C'est pour ça que
+  `underline` est **désactivé** dans StarterKit : markdown n'a pas de souligné,
+  et une marque que l'éditeur accepte et que le fichier ne peut pas écrire est
+  exactement le bug qu'ADR-0037 supprime.
+- **Le test dérive son schéma de `noteSchemaExtensions()`**, pas d'une liste
+  recopiée. Un convertisseur testé contre un schéma qui a dérivé ne prouve
+  rien, et ce qu'il raterait est une perte de données silencieuse.
+- **Aucune emphase n'est partagée entre deux nœuds de texte** dans le
+  sérialiseur. Partager produit des séquences asymétriques (`***x*y**`) que
+  seule la pile de délimiteurs complète de CommonMark sait relire. Ne pas
+  « optimiser » ça.
+- **`isAllowedUri`, jamais `protocols`.** L'option `protocols` *enregistre* des
+  schémas auprès de linkify, elle n'en restreint aucun : la lister avec
+  http/https/mailto ne filtre rien et fait avertir linkify. Une note contient
+  du texte écrit par un modèle et des transcriptions ; `javascript:` n'a rien à
+  faire dans un lien cliquable.
+- **Une révision ne remplace jamais du texte que le modèle n'a pas vu.** La
+  plage peut s'élargir jusqu'au bloc (ou à l'élément de liste s'il ne contient
+  rien d'autre), jamais jusqu'à la liste entière : les puces voisines n'ont pas
+  été envoyées.
+- **La plage suit les modifications concurrentes.** Le panneau ne verrouille
+  pas l'éditeur : sans `transaction.mapping`, taper pendant la réécriture puis
+  accepter écrase le mauvais texte. Le test le prouve — vérifier qu'il **échoue**
+  si on retire le suivi avant de toucher à cette zone.
+- **Un champ de la barre qui prend le focus blure l'éditeur.** La barre doit
+  rester montée tant qu'elle possède un champ ouvert (`onFieldOpenChange`),
+  sinon elle disparaît sous les doigts. Vaut pour le lien, la langue cible et
+  l'instruction libre.
+- **La palette `/` est desktop seulement**, et c'est une décision : elle
+  s'ancre au curseur, et sur un téléphone le curseur est juste au-dessus du
+  clavier. La barre ancrée offre les mêmes blocs.
+- **`note_ai` ne touche pas à `june-api/`** (ADR-0027). Les prompts sont le
+  produit ; c'est eux qu'on change quand une réécriture déçoit.
+- **Une seule réécriture peut changer la structure** : `restructure`. Un test
+  vérifie que la dérogation n'apparaît que dans ce prompt.
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.

@@ -2006,6 +2006,61 @@ export async function forgetNoteSummary(noteId: string) {
   return invoke<void>("forget_note_summary", { noteId });
 }
 
+// --- Note rewrites (ADR-0038) ---------------------------------------------
+
+/** Emitted while a rewrite runs, so the panel shows it being written instead
+ * of showing nothing for twenty seconds. */
+export const NOTE_REWRITE_EVENT = "june://note-rewrite";
+
+/** What a rewrite is asked to do. Only `restructure` may change the markdown
+ * structure it was handed. */
+export type RewriteKind =
+  | "correct"
+  | "reformulate"
+  | "shorten"
+  | "expand"
+  | "restructure"
+  | "translate"
+  | "custom";
+
+export type NoteRewriteEvent = {
+  requestId: string;
+  phase: "started" | "delta" | "done" | "failed";
+  text: string | null;
+};
+
+export type NoteRewriteResult = {
+  requestId: string;
+  text: string;
+  promptVersion: string;
+};
+
+export type NoteRewriteRequest = {
+  requestId: string;
+  kind: RewriteKind;
+  text: string;
+  /** Required by `translate`. */
+  targetLanguage?: string;
+  /** Required by `custom`. */
+  instruction?: string;
+};
+
+/** Rewrite a passage. Resolves with the whole replacement; the deltas that
+ * arrived on the way are a preview, not the answer. Nothing is written to the
+ * note: what comes back is a revision the user still has to accept. */
+export async function noteRewrite(request: NoteRewriteRequest) {
+  return invoke<NoteRewriteResult>("note_rewrite", { request });
+}
+
+/** Stop a running rewrite. A no-op for a request that is not running. */
+export async function cancelNoteRewrite(requestId: string) {
+  return invoke<void>("cancel_note_rewrite", { requestId });
+}
+
+/** Ceiling on a selection, mirroring `note_ai::MAX_SELECTION_CHARS`. Checked
+ * here too so an oversize selection is refused before it costs a round trip. */
+export const MAX_REWRITE_CHARS = 24_000;
+
 /** Drop a staged file that will not be imported after all. */
 export async function discardStagedImport(uploadId: string, fileName: string) {
   return invoke<void>("discard_staged_import", { uploadId, fileName });

@@ -1,10 +1,17 @@
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import { IconBold } from "central-icons/IconBold";
-import { IconBulletList } from "central-icons/IconBulletList";
-import { IconH1 } from "central-icons/IconH1";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { ResolvedPos } from "@tiptap/pm/model";
+import type { Transaction } from "@tiptap/pm/state";
+import type { JSONContent } from "@tiptap/react";
+import { useKeyboardInset } from "../../lib/keyboard-inset";
+import { useNoteRewrite, type StartRewrite } from "../../lib/note-rewrite";
+import type { Anchor } from "./useAnchoredPanel";
+import { RewritePanel } from "./RewritePanel";
+import { isMobilePlatform } from "../../lib/mobile";
+import { docToMarkdown, markdownToDoc } from "../../lib/note-markdown";
+import { noteEditorExtensions } from "./extensions";
+import { SelectionToolbar } from "./SelectionToolbar";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type NotePreviewProps = {
   noteId: string;
@@ -18,8 +25,39 @@ type NotePreviewProps = {
 
 export function NotePreview({ noteId, markdown, onChange, emptyPlaceholder }: NotePreviewProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [toolbar, setToolbar] = useState<{ x: number; y: number } | null>(null);
-  const initialHtml = useMemo(() => markdownToHtml(markdown), [noteId]);
+  const [toolbar, setToolbar] = useState<Anchor | null>(null);
+  const [linkRequested, setLinkRequested] = useState(false);
+  // The toolbar takes focus while one of its fields is open — a link address,
+  // a target language, an instruction — which blurs the editor. Without this
+  // the toolbar would dismiss itself the instant the caret entered its own
+  // field.
+  const [fieldOpen, setFieldOpen] = useState(false);
+  // On a phone the toolbar is docked above the keyboard for as long as the
+  // editor has focus, rather than appearing on a selection: making a selection
+  // with a thumb is the hard part, and a control that only exists afterwards
+  // is a control nobody finds.
+  const [focused, setFocused] = useState(false);
+  const docked = useMemo(() => isMobilePlatform(), []);
+  const keyboardInset = useKeyboardInset();
+  const {
+    run: rewriteRun,
+    start: startRewriteRun,
+    stop: stopRewrite,
+    dismiss: dismissRewrite,
+  } = useNoteRewrite();
+  // The range the revision would replace, captured when the rewrite starts and
+  // then *carried through every edit that lands while the model works*. The
+  // panel does not lock the editor, so the user can keep typing above the
+  // passage — and a stored absolute position, applied afterwards, would
+  // overwrite whatever had slid into its place.
+  const rewriteRange = useRef<{ from: number; to: number } | null>(null);
+  const lastRewriteInput = useRef<Parameters<StartRewrite>[0] | null>(null);
+  // Survives the blur that focusing the link field causes, so the field stays
+  // anchored to the text it is about to link.
+  const lastToolbarPosition = useRef<Anchor | null>(null);
+  // Keyed on the note, not the markdown: the editor is torn down and rebuilt
+  // on a note change, and re-parsing on every keystroke would fight the user.
+  const initialDoc = useMemo(() => markdownToDoc(markdown), [noteId]);
   const focusedExternalMarkdown = useRef<{
     editorMarkdown: string;
     externalMarkdown: string;
@@ -28,18 +66,14 @@ export function NotePreview({ noteId, markdown, onChange, emptyPlaceholder }: No
   const editor = useEditor(
     {
       extensions: [
-        StarterKit.configure({
-          heading: {
-            levels: [1],
-          },
-        }),
+        ...noteEditorExtensions({ palette: !docked }),
         Placeholder.configure({
           placeholder:
             emptyPlaceholder ??
             "Hit record to capture a conversation, or just start typing your thoughts here",
         }),
       ],
-      content: initialHtml,
+      content: initialDoc,
       editorProps: {
         attributes: {
           class: "note-preview",
@@ -47,13 +81,24 @@ export function NotePreview({ noteId, markdown, onChange, emptyPlaceholder }: No
           "aria-label": "Generated note",
           "aria-multiline": "true",
         },
+        handleKeyDown: (_view, event) => {
+          // Cmd-K is the link shortcut everywhere else in this app's world.
+          // Handled here rather than as an extension keymap so the toolbar,
+          // which owns the field, is the thing that opens.
+          if (event.key === "k" && (event.metaKey || event.ctrlKey) && !event.altKey) {
+            event.preventDefault();
+            setLinkRequested(true);
+            return true;
+          }
+          return false;
+        },
       },
       onBlur: ({ editor }) => {
         // `noteId` here is the value at editor-creation time — the
         // useEditor dep list tears the editor down on note change, so
         // this closure always reflects the note the editor was bound
         // to, even when blur fires during teardown.
-        const editorMarkdown = htmlToMarkdown(editor.view.dom);
+        const editorMarkdown = docToMarkdown(editor.state.doc);
         const mergedMarkdown = mergeFocusedExternalMarkdown(
           editorMarkdown,
           focusedExternalMarkdown.current,
@@ -69,21 +114,43 @@ export function NotePreview({ noteId, markdown, onChange, emptyPlaceholder }: No
     if (!editor) return;
 
     function updateToolbar() {
-      setToolbar(getToolbarPosition(editor));
+      const next = getToolbarPosition(editor);
+      if (next) lastToolbarPosition.current = next;
+      setToolbar(next);
     }
     function hideToolbar() {
       setToolbar(null);
     }
 
+    function markFocused() {
+      setFocused(true);
+      updateToolbar();
+    }
+    function markBlurred() {
+      setFocused(false);
+      hideToolbar();
+    }
+
+    function followEdits({ transaction }: { transaction: Transaction }) {
+      const range = rewriteRange.current;
+      if (!range || !transaction.docChanged) return;
+      rewriteRange.current = {
+        from: transaction.mapping.map(range.from),
+        to: transaction.mapping.map(range.to),
+      };
+    }
+
     editor.on("selectionUpdate", updateToolbar);
-    editor.on("focus", updateToolbar);
-    editor.on("blur", hideToolbar);
+    editor.on("transaction", followEdits);
+    editor.on("focus", markFocused);
+    editor.on("blur", markBlurred);
     window.addEventListener("scroll", updateToolbar, true);
 
     return () => {
       editor.off("selectionUpdate", updateToolbar);
-      editor.off("focus", updateToolbar);
-      editor.off("blur", hideToolbar);
+      editor.off("transaction", followEdits);
+      editor.off("focus", markFocused);
+      editor.off("blur", markBlurred);
       window.removeEventListener("scroll", updateToolbar, true);
     };
   }, [editor]);
@@ -97,16 +164,16 @@ export function NotePreview({ noteId, markdown, onChange, emptyPlaceholder }: No
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
     try {
-      const current = htmlToMarkdown(editor.view.dom).trim();
+      const current = docToMarkdown(editor.state.doc).trim();
       if (current === markdown.trim()) return;
       if (editor.isFocused) {
         focusedExternalMarkdown.current = {
-          editorMarkdown: htmlToMarkdown(editor.view.dom),
+          editorMarkdown: current,
           externalMarkdown: markdown,
         };
         return;
       }
-      editor.commands.setContent(markdownToHtml(markdown), {
+      editor.commands.setContent(markdownToDoc(markdown), {
         emitUpdate: false,
       });
     } catch {
@@ -115,61 +182,91 @@ export function NotePreview({ noteId, markdown, onChange, emptyPlaceholder }: No
     }
   }, [editor, markdown]);
 
-  function applyFormat(command: "h1" | "bullet" | "bold") {
-    if (!editor) return;
-    if (command === "bold") {
-      editor.chain().focus().toggleBold().run();
-    } else if (command === "bullet") {
-      editor.chain().focus().toggleBulletList().run();
-    } else {
-      editor.chain().focus().toggleHeading({ level: 1 }).run();
-    }
-    setToolbar(getToolbarPosition(editor));
-  }
+  const startRewrite = useCallback(
+    (input: {
+      kind: Parameters<StartRewrite>[0]["kind"];
+      targetLanguage?: string;
+      instruction?: string;
+    }) => {
+      if (!editor) return;
+      const { from, to } = editor.state.selection;
+      if (from === to) return;
+      rewriteRange.current = { from, to };
+      // The model is handed markdown, not plain text: it is told to keep the
+      // structure, and it cannot keep what it was never shown.
+      const full = { ...input, text: docToMarkdown(editor.state.doc.cut(from, to)) };
+      lastRewriteInput.current = full;
+      startRewriteRun(full);
+    },
+    [editor, startRewriteRun],
+  );
+
+  const applyRevision = useCallback(
+    (text: string, mode: "replace" | "below") => {
+      const range = rewriteRange.current;
+      if (!editor || !range) return;
+      const blocks = (markdownToDoc(text).content ?? []) as JSONContent[];
+
+      // One transaction, so Cmd-Z takes the whole revision back in one press,
+      // and so the blur serializer stays the only writer to the note.
+      if (mode === "replace") {
+        const target = replacementTarget(editor, range, blocks);
+        editor.chain().focus().insertContentAt(target.range, target.content).run();
+      } else {
+        editor.chain().focus().insertContentAt(afterBlockAt(editor, range.to), blocks).run();
+      }
+      rewriteRange.current = null;
+      dismissRewrite();
+    },
+    [editor, dismissRewrite],
+  );
+
+  const refreshToolbar = useCallback(() => {
+    const next = getToolbarPosition(editor);
+    if (next) lastToolbarPosition.current = next;
+    setToolbar(next);
+  }, [editor]);
 
   return (
     <div ref={wrapRef} className="note-preview-wrap">
       <EditorContent editor={editor} />
-      {toolbar ? (
-        <div
-          className="selection-toolbar"
-          role="toolbar"
-          aria-label="Format selection"
-          style={{ left: toolbar.x, top: toolbar.y }}
-          onMouseDown={(event) => event.preventDefault()}
-        >
-          <button
-            type="button"
-            data-active={editor?.isActive("heading", { level: 1 }) || undefined}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyFormat("h1")}
-            title="Heading"
-            aria-label="Heading"
-          >
-            <IconH1 size={16} />
-          </button>
-          <button
-            type="button"
-            data-active={editor?.isActive("bulletList") || undefined}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyFormat("bullet")}
-            title="Bullet list"
-            aria-label="Bullet list"
-          >
-            <IconBulletList size={16} />
-          </button>
-          <span className="divider" aria-hidden />
-          <button
-            type="button"
-            data-active={editor?.isActive("bold") || undefined}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyFormat("bold")}
-            title="Bold"
-            aria-label="Bold"
-          >
-            <IconBold size={16} />
-          </button>
-        </div>
+      {editor && rewriteRun ? (
+        <RewritePanel
+          run={rewriteRun}
+          docked={docked}
+          keyboardInset={keyboardInset}
+          position={toolbar ?? lastToolbarPosition.current ?? getCaretPosition(editor)}
+          onReplace={(text) => applyRevision(text, "replace")}
+          onInsertBelow={(text) => applyRevision(text, "below")}
+          onRetry={() => {
+            const previous = lastRewriteInput.current;
+            if (previous) startRewriteRun(previous);
+          }}
+          onStop={stopRewrite}
+          onDismiss={() => {
+            rewriteRange.current = null;
+            dismissRewrite();
+            editor.commands.focus();
+          }}
+        />
+      ) : null}
+      {editor &&
+      !rewriteRun &&
+      (docked ? focused || fieldOpen : toolbar || linkRequested || fieldOpen) ? (
+        <SelectionToolbar
+          editor={editor}
+          docked={docked}
+          keyboardInset={keyboardInset}
+          onRewrite={startRewrite}
+          // While the link field is open the editor is blurred, so there is no
+          // selection to measure: hold the position it was opened at. Cmd-K on
+          // a bare caret has no selection either, so fall back to the caret.
+          position={toolbar ?? lastToolbarPosition.current ?? getCaretPosition(editor)}
+          linkRequested={linkRequested}
+          onLinkRequestHandled={() => setLinkRequested(false)}
+          onAfterCommand={refreshToolbar}
+          onFieldOpenChange={setFieldOpen}
+        />
       ) : null}
     </div>
   );
@@ -209,7 +306,9 @@ function appendMarkdown(existing: string, addition: string) {
   return `${existingTrimmed}\n\n${additionTrimmed}`;
 }
 
-function getToolbarPosition(editor: Editor | null) {
+/** Where the toolbar wants to sit. Keeping it on screen is the toolbar's own
+ * job, since only it knows how wide it currently is. */
+function getToolbarPosition(editor: Editor | null): Anchor | null {
   if (!editor || editor.state.selection.empty) return null;
   try {
     const { from, to } = editor.state.selection;
@@ -217,99 +316,96 @@ function getToolbarPosition(editor: Editor | null) {
     const end = editor.view.coordsAtPos(to);
     return {
       x: (start.left + end.right) / 2,
-      y: Math.min(start.top, end.top) - 8,
+      top: Math.min(start.top, end.top),
+      // The bottom matters as much as the top: a panel with no room above the
+      // selection has to know what it is flipping under.
+      bottom: Math.max(start.bottom, end.bottom),
     };
   } catch {
     return null;
   }
 }
 
-/* ---- markdown <-> html (tiny subset: headings, lists, paragraphs, bold) -- */
+/**
+ * What a revision actually replaces, and with what.
+ *
+ * Three cases, and the middle one is the one that bites.
+ *
+ * - **Inline selection, inline reply.** Half a sentence corrected comes back
+ *   as one paragraph. Inserting that paragraph *as a block* would split the
+ *   paragraph the user was in, so its inline content goes in instead and the
+ *   paragraph survives.
+ * - **Inline selection, structured reply.** A reorganisation into headings and
+ *   a checklist cannot go into the middle of a sentence. The range widens to
+ *   the whole textblock the selection sits in, so the block *becomes* the new
+ *   structure. Without this the old block is left behind, empty — a bare
+ *   `- [ ]` with a document nested underneath it.
+ * - **Selection already spanning blocks.** Replace it as it stands.
+ *
+ * The range never widens past the textblock. A rewrite must not replace text
+ * the model was never shown, and the neighbouring items of a list are exactly
+ * that.
+ */
+function replacementTarget(
+  editor: Editor,
+  range: { from: number; to: number },
+  blocks: JSONContent[],
+): { range: { from: number; to: number }; content: JSONContent[] } {
+  const from = editor.state.doc.resolve(range.from);
+  const to = editor.state.doc.resolve(range.to);
+  const inline = from.sameParent(to) && from.parent.isTextblock;
+  if (!inline) return { range, content: blocks };
 
-function escapeHtml(value: string) {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function inlineToHtml(text: string) {
-  return escapeHtml(text)
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
-}
-
-function markdownToHtml(markdown: string): string {
-  const lines = markdown.split("\n");
-  const html: string[] = [];
-  let listOpen = false;
-
-  function closeList() {
-    if (listOpen) {
-      html.push("</ul>");
-      listOpen = false;
-    }
+  if (blocks.length === 1 && blocks[0].type === "paragraph") {
+    return { range, content: blocks[0].content ?? [] };
   }
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) {
-      closeList();
-      continue;
-    }
-    const heading = line.match(/^#{1,4}\s+(.+)$/);
-    if (heading) {
-      closeList();
-      html.push(`<h1>${inlineToHtml(heading[1])}</h1>`);
-      continue;
-    }
-    const item = line.match(/^[-*]\s+(.+)$/);
-    if (item) {
-      if (!listOpen) {
-        html.push("<ul>");
-        listOpen = true;
-      }
-      html.push(`<li>${inlineToHtml(item[1])}</li>`);
-      continue;
-    }
-    closeList();
-    html.push(`<p>${inlineToHtml(line)}</p>`);
-  }
-  closeList();
-  return html.join("");
+  return { range: structuralRange(from, to), content: blocks };
 }
 
-function inlineToMarkdown(node: Node): string {
-  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
-  if (node.nodeType !== Node.ELEMENT_NODE) return "";
-  const el = node as HTMLElement;
-  const inner = Array.from(el.childNodes).map(inlineToMarkdown).join("");
-  const tag = el.tagName.toLowerCase();
-  if (tag === "strong" || tag === "b") return `**${inner}**`;
-  if (tag === "em" || tag === "i") return `*${inner}*`;
-  if (tag === "br") return "\n";
-  return inner;
+/**
+ * The range a structured reply replaces, widened from an inline selection.
+ *
+ * The textblock, normally. Inside a list item it is the *item*, because a list
+ * item is `paragraph block*`: replace only its paragraph and the schema puts
+ * an empty one back, and the note ends up with a bare `- [ ]` carrying a
+ * document underneath it. Replacing the item lets the list close and reopen
+ * around the new blocks, which is what the shape actually wants.
+ *
+ * Only when the item holds nothing else. An item with a sub-list under it
+ * holds text the model was never shown, and no rewrite may replace that.
+ *
+ * A residual: restructuring the text *inside* a single list item can still
+ * leave the list's now-empty first marker behind, because a list may not be
+ * empty and the schema puts one back. It is undoable, it loses nothing, the
+ * neighbouring items survive, and it takes asking to reorganise one line of a
+ * checklist to reach — so it is left alone rather than fixed with a special
+ * case that would have to know about every list-shaped node.
+ */
+function structuralRange(from: ResolvedPos, to: ResolvedPos) {
+  const itemDepth = from.depth - 1;
+  const item = itemDepth > 0 ? from.node(itemDepth) : null;
+  const isLoneTextblock =
+    item !== null &&
+    (item.type.name === "listItem" || item.type.name === "taskItem") &&
+    item.childCount === 1;
+  if (isLoneTextblock) {
+    return { from: from.before(itemDepth), to: to.after(itemDepth) };
+  }
+  return { from: from.before(from.depth), to: to.after(to.depth) };
 }
 
-function htmlToMarkdown(root: HTMLElement): string {
-  const blocks: string[] = [];
-  for (const node of Array.from(root.childNodes)) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent?.trim();
-      if (text) blocks.push(text);
-      continue;
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) continue;
-    const el = node as HTMLElement;
-    const tag = el.tagName.toLowerCase();
-    if (tag === "h1") {
-      blocks.push(`# ${inlineToMarkdown(el).trim()}`);
-    } else if (tag === "ul" || tag === "ol") {
-      for (const li of Array.from(el.querySelectorAll("li"))) {
-        const text = inlineToMarkdown(li).trim();
-        if (text) blocks.push(`- ${text}`);
-      }
-    } else {
-      const text = inlineToMarkdown(el).trim();
-      if (text) blocks.push(text);
-    }
+/** The position just after the top-level block holding `pos`, which is where
+ * "below" means. */
+function afterBlockAt(editor: Editor, pos: number) {
+  const resolved = editor.state.doc.resolve(pos);
+  return resolved.depth >= 1 ? resolved.after(1) : pos;
+}
+
+function getCaretPosition(editor: Editor): Anchor {
+  try {
+    const at = editor.view.coordsAtPos(editor.state.selection.from);
+    return { x: at.left, top: at.top, bottom: at.bottom };
+  } catch {
+    return { x: window.innerWidth / 2, top: 12, bottom: 12 };
   }
-  return blocks.join("\n\n");
 }
