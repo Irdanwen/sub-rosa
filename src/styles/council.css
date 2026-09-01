@@ -142,6 +142,90 @@
   color: var(--muted-foreground);
 }
 
+/* --- Signs of life -------------------------------------------------------
+ *
+ * A sitting spends real money for a minute or more at a stretch, and between
+ * two seats landing there is nothing to repaint. The screen went perfectly
+ * still and the only honest reading was "it has crashed".
+ *
+ * Two things fix that, and they answer different questions. The dots answer
+ * "is this alive" -- they are cheap and they never stop. The elapsed counter
+ * beside them answers "is this stuck", which a looping animation cannot: a
+ * spinner spins just as happily through a crash. */
+
+.council-status-working {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+
+.council-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  /* Baseline-aligned with the text beside it rather than centred, so the row
+     does not appear to sag next to a multi-line status. */
+  transform: translateY(-2px);
+}
+
+.council-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.25;
+  animation: council-dot 1.2s ease-in-out infinite;
+}
+
+.council-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.council-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes council-dot {
+  0%,
+  70%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+.council-footer-working {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.council-waiting-long {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.council-waiting-stalled {
+  color: var(--foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The dots still have to read as "running", so they hold at full strength
+     rather than disappearing: removing them would take the answer away from
+     the people who most need the interface to stay legible. */
+  .council-dots i {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
 /* --- Fields ------------------------------------------------------------- */
 
 .council-mandate {

@@ -369,3 +369,72 @@ describe("dismissing", () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+describe("telling a sitting that is thinking from one that has died", () => {
+  it("keeps a running count of the silence while it deliberates", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    councilCycle.mockResolvedValue(cycle({ status: "deliberating" }));
+    renderSitting({ mandateId: "m1" });
+
+    // The moment a seat lands is the moment the clock restarts, so before any
+    // time passes the sitting reports no silence at all.
+    await waitFor(() => expect(screen.getByText(/Working/)).toBeTruthy());
+    expect(screen.getByText(/Working · 0s/)).toBeTruthy();
+
+    await vi.advanceTimersByTimeAsync(12_000);
+    expect(screen.getByText(/Working · 12s/)).toBeTruthy();
+    vi.useRealTimers();
+  });
+
+  it("says nothing about the wait while it is still an ordinary one", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    councilCycle.mockResolvedValue(cycle({ status: "deliberating" }));
+    renderSitting({ mandateId: "m1" });
+    await waitFor(() => expect(screen.getByText(/Working/)).toBeTruthy());
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(screen.queryByText(/Still waiting/)).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("names the wait once it stops being ordinary, without crying wolf", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    councilCycle.mockResolvedValue(cycle({ status: "deliberating" }));
+    renderSitting({ mandateId: "m1" });
+    await waitFor(() => expect(screen.getByText(/Working/)).toBeTruthy());
+
+    await vi.advanceTimersByTimeAsync(95_000);
+    // Slow, but a long request legitimately takes this long: the wording has
+    // to reassure rather than accuse.
+    expect(screen.getByText(/Still waiting after 1min 35s/)).toBeTruthy();
+    expect(screen.queryByText(/most likely stopped/)).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("calls it stopped once the silence can no longer be explained", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    councilCycle.mockResolvedValue(cycle({ status: "deliberating" }));
+    renderSitting({ mandateId: "m1" });
+    await waitFor(() => expect(screen.getByText(/Working/)).toBeTruthy());
+
+    await vi.advanceTimersByTimeAsync(305_000);
+    expect(screen.getByText(/most likely stopped answering/)).toBeTruthy();
+    // And it says what the exit costs, because the user's next move is to
+    // decide whether to abandon something already paid for.
+    expect(screen.getByText(/nothing further is charged/)).toBeTruthy();
+    vi.useRealTimers();
+  });
+
+  it("stops counting once the sitting is no longer spending", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    councilCycle.mockResolvedValue(cycle({ status: "ready" }));
+    renderSitting({ mandateId: "m1" });
+    await waitFor(() => expect(screen.getByText(/Hand to the agent/)).toBeTruthy());
+
+    await vi.advanceTimersByTimeAsync(305_000);
+    // A mandate waiting on a human is not a stalled one.
+    expect(screen.queryByText(/Working/)).toBeNull();
+    expect(screen.queryByText(/most likely stopped/)).toBeNull();
+    vi.useRealTimers();
+  });
+});

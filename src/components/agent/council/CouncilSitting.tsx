@@ -1,4 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
+import { messageFromError } from "../../../lib/errors";
 import { IconCircleCheck } from "central-icons/IconCircleCheck";
 import { IconCircleDashed } from "central-icons/IconCircleDashed";
 import { IconCircleQuestionmark } from "central-icons/IconCircleQuestionmark";
@@ -46,6 +47,64 @@ import { MandateEditor } from "./MandateEditor";
  * exactly where it got to, and a reload does not lose a deliberation that has
  * already been paid for.
  */
+/** A model call can legitimately take a minute; past this, silence is worth
+ * naming. Past the second threshold it is worth doubting. */
+const SLOW_AFTER_S = 90;
+const STALLED_AFTER_S = 300;
+
+/**
+ * How long nothing has come back.
+ *
+ * A spinner that loops forever looks exactly the same whether the council is
+ * thinking or has died -- which is the one question being asked while it runs.
+ * What answers it is a number that keeps climbing, and a threshold past which
+ * the silence stops being normal.
+ *
+ * Timed locally, from when each event actually arrived, rather than from the
+ * row's own updatedAt: that timestamp is written on another machine and any
+ * clock skew between the two would show up here as a sitting that has been
+ * silent for minus forty seconds.
+ */
+function useSilence(signal: unknown, active: boolean): number {
+  const since = useRef(Date.now());
+  const [seconds, setSeconds] = useState(0);
+  // `signal` is the dependency on purpose: the effect never reads it, it
+  // restarts *because* it changed, which is what "a seat landed, so the
+  // silence starts over" means here.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
+  useEffect(() => {
+    since.current = Date.now();
+    setSeconds(0);
+  }, [signal]);
+  useEffect(() => {
+    if (!active) return;
+    const tick = window.setInterval(() => {
+      setSeconds(Math.round((Date.now() - since.current) / 1000));
+    }, 1000);
+    return () => window.clearInterval(tick);
+  }, [active]);
+  return seconds;
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest === 0 ? `${minutes}min` : `${minutes}min ${rest}s`;
+}
+
+/** Three dots that keep moving while a call is outstanding. The only thing on
+ * screen that separates "thinking" from "stopped" at a glance. */
+function WorkingDots() {
+  return (
+    <span className="council-dots" aria-hidden>
+      <i />
+      <i />
+      <i />
+    </span>
+  );
+}
+
 export function CouncilSitting({
   request,
   mandateId,
@@ -94,7 +153,7 @@ export function CouncilSitting({
         if (live) setPlan(next);
       })
       .catch((err: unknown) => {
-        if (live) setError(err instanceof Error ? err.message : String(err));
+        if (live) setError(messageFromError(err));
       });
     void textPricing().then((table) => {
       if (live) setPrices(table);
@@ -181,7 +240,7 @@ export function CouncilSitting({
       onClose();
     } catch (err) {
       handedOff.current = false;
-      setError(err instanceof Error ? err.message : String(err));
+      setError(messageFromError(err));
     } finally {
       setBusy(false);
     }
@@ -199,7 +258,7 @@ export function CouncilSitting({
         }));
         setCycle(await councilAnswerQuestions(mandateId, payload));
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(messageFromError(err));
       } finally {
         setBusy(false);
       }
@@ -214,7 +273,7 @@ export function CouncilSitting({
       const opened = await councilConvene({ request, workingDir, unrestricted });
       onConvened(opened.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(messageFromError(err));
     } finally {
       setBusy(false);
     }
@@ -232,6 +291,17 @@ export function CouncilSitting({
     }
     onClose();
   }, [mandateId, onClose]);
+
+  // Above every early return: this component bails out before the sitting
+  // exists, and a hook that only runs on some renders makes React lose track
+  // of the whole list.
+  const working = cycle ? isSitting(cycle) : false;
+  // Both parts change when a seat lands, and neither changes while the chair
+  // is merging -- which is exactly the stretch that looked frozen.
+  const silence = useSilence(
+    cycle ? `${cycle.status}:${cycle.updatedAt}:${drafts.length}` : "none",
+    working,
+  );
 
   if (!mandateId) {
     return (
@@ -281,12 +351,29 @@ export function CouncilSitting({
       </ol>
 
       {cycle.status === "deliberating" ? (
-        <p className="council-status" role="status">
-          {waiting.length > 0
-            ? `Reading it independently. ${waiting.length} of ${
-                cycle.seats.filter((seat) => seat.role === "position").length
-              } still to answer. They run at once, so the round takes as long as the slowest of them.`
-            : "Merging what they said."}
+        <p className="council-status council-status-working" role="status">
+          <WorkingDots />
+          <span>
+            {waiting.length > 0
+              ? `Reading it independently. ${waiting.length} of ${
+                  cycle.seats.filter((seat) => seat.role === "position").length
+                } still to answer. They run at once, so the round takes as long as the slowest of them.`
+              : "Merging what they said, then the objection seat gets its turn."}
+          </span>
+        </p>
+      ) : null}
+
+      {working && silence >= SLOW_AFTER_S ? (
+        // The answer to "is it stuck?" is never a spinner -- a spinner spins
+        // just as happily through a crash. It is the elapsed number, and a
+        // sentence that changes tone once the wait stops being ordinary.
+        <p
+          className={`council-waiting-long${silence >= STALLED_AFTER_S ? " council-waiting-stalled" : ""}`}
+          role="status"
+        >
+          {silence >= STALLED_AFTER_S
+            ? `Nothing has come back for ${formatDuration(silence)}. A seat has most likely stopped answering — dismissing this ends the sitting, and nothing further is charged.`
+            : `Still waiting after ${formatDuration(silence)}. Some models take a while on a long request; this is not yet unusual.`}
         </p>
       ) : null}
 
@@ -470,7 +557,12 @@ export function CouncilSitting({
         <span>
           {cycle.modelCalls} model {cycle.modelCalls === 1 ? "call" : "calls"} so far
         </span>
-        {isSitting(cycle) ? <span>Working</span> : null}
+        {working ? (
+          <span className="council-footer-working">
+            <WorkingDots />
+            Working · {formatDuration(silence)}
+          </span>
+        ) : null}
         {awaitsUser(cycle) ? <span>Waiting on you</span> : null}
       </footer>
 
