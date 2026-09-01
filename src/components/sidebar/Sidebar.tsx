@@ -122,6 +122,10 @@ type SidebarProps = {
    * no picker, in which case the command is simply not offered. */
   onImportMedia?: () => void;
   onSelectAgentSession: (session: HermesSessionInfo) => void;
+  /** Projects, so the palette can reach one by name. Optional because several
+   * tests mount the sidebar without the folders plumbing. */
+  folders?: { id: string; name: string }[];
+  onSelectFolder?: (folderId: string) => void;
   recoverableNoteIds?: ReadonlySet<string>;
   recordingStatus?: RecordingStatusDto | null;
   recordingTitle?: string;
@@ -192,7 +196,7 @@ type SidebarDevStateSnapshot = {
   query: string;
 };
 
-const SETTINGS_SIDEBAR_GROUPS: {
+export const SETTINGS_SIDEBAR_GROUPS: {
   title: string;
   items: { id: SettingsTab; label: string; icon: ReactNode }[];
 }[] = [
@@ -339,6 +343,44 @@ export const HIDDEN_SETTINGS_TABS: ReadonlySet<SettingsTab> = new Set<SettingsTa
   "import-export",
 ]);
 
+/**
+ * What someone types when they are looking for a setting but do not remember
+ * what it is called here. The label and its group title are already searched;
+ * this covers the gap between the name in the app and the name in the head --
+ * "api key" for Carpe Diem, "hotkey" for Shortcuts, "voice" for Dictation.
+ *
+ * Only meaningful aliases belong here. A tab whose label is already the word
+ * people use needs no entry, and an entry that repeats the label only makes
+ * the index harder to read.
+ */
+const SETTINGS_SEARCH_ALIASES: Partial<Record<SettingsTab, string>> = {
+  general: "appearance theme accent language startup",
+  "carpe-diem": "api key credits balance top up account billing endpoint",
+  shortcuts: "hotkey keyboard keybinding shortcut keys",
+  dictation: "voice speech push to talk microphone transcribe",
+  audio: "microphone input device system sound recording",
+  models: "model picker chat image video default",
+  agent: "hermes tools autonomy sandbox permissions",
+  memory: "remember facts recall forget",
+  council: "sitting judge review verdict",
+  skills: "plugins capabilities installed",
+  "external-dirs": "folders directories shared skills",
+  "skill-review": "pending changes approve diff",
+  mcp: "servers model context protocol connections",
+  "mcp-catalog": "servers browse install model context protocol",
+  "mcp-diagnostics": "logs troubleshoot debug servers",
+  "mcp-security": "permissions trust servers approval",
+  "skills-hub": "browse install marketplace",
+  taps: "team shared skills subscriptions",
+  toolsets: "tools groups enable disable",
+  bundles: "packs collections",
+  "profile-builder": "persona profile prompt",
+  "integrations-health": "status connections diagnostics",
+  "import-export": "backup restore data transfer",
+  reports: "bug feedback issue",
+  about: "version update licence build",
+};
+
 export function Sidebar({
   notes,
   activeView,
@@ -354,6 +396,8 @@ export function Sidebar({
   onNewAgentSession,
   onImportMedia,
   onSelectAgentSession,
+  folders,
+  onSelectFolder,
   recoverableNoteIds,
   recordingStatus,
   recordingTitle = "New note",
@@ -560,23 +604,60 @@ export function Sidebar({
         searchText: normalizeCommandQuery("routines go to"),
         action: () => onChangeView("routines"),
       },
-      {
-        id: "quick:settings-general",
-        label: "Settings -> General",
-        icon: <IconSettingsGear4 size={15} />,
-        searchText: normalizeCommandQuery("settings general"),
-        action: () => {
-          onSettingsTabChange?.("general");
-          onChangeView("settings");
-        },
-      },
     ].filter(matches);
+
+    const folderItems: CommandPaletteItem[] = (folders ?? [])
+      .map((folder) => ({
+        id: `folder:${folder.id}`,
+        label: folder.name,
+        meta: "Project",
+        icon: <IconProjects size={15} />,
+        searchText: normalizeCommandQuery(`${folder.name} project folder`),
+        action: () => {
+          onSelectFolder?.(folder.id);
+        },
+      }))
+      .filter(matches)
+      .slice(0, 8);
+
+    // Every settings destination the nav offers, so a setting you have seen
+    // once can be reached by typing three letters of its name instead of
+    // remembering which group it was under.
+    //
+    // The tabs in HIDDEN_SETTINGS_TABS are deliberately left out. They are not
+    // "advanced": they are unstabilised, hidden one at a time on purpose
+    // (docs/settings-focus-runbook.md), and a search box that reaches them
+    // would undo that decision quietly -- which is worse than doing it openly.
+    // Built from SETTINGS_SIDEBAR_GROUPS rather than a second hand-written
+    // list, so a new tab cannot be findable in one place and not the other;
+    // settings-index.test.tsx holds that line.
+    const settingsItems: CommandPaletteItem[] = SETTINGS_SIDEBAR_GROUPS.flatMap((group) =>
+      group.items
+        .filter((item) => !HIDDEN_SETTINGS_TABS.has(item.id))
+        .map((item) => ({
+          id: `settings:${item.id}`,
+          label: item.label,
+          meta: "Settings",
+          icon: item.icon,
+          searchText: normalizeCommandQuery(
+            `${item.label} ${group.title} settings ${SETTINGS_SEARCH_ALIASES[item.id] ?? ""}`,
+          ),
+          action: () => {
+            onSettingsTabChange?.(item.id);
+            onChangeView("settings");
+          },
+        })),
+    ).filter(matches);
 
     return [
       { title: "Recents", items: recentItems },
+      { title: "Projects", items: folderItems },
       { title: "Quick actions", items: quickItems },
+      { title: "Settings", items: settingsItems },
     ].filter((group) => group.items.length > 0);
   }, [
+    folders,
+    onSelectFolder,
     agentSessions,
     commandQuery,
     notes,
