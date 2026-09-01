@@ -6,6 +6,7 @@ import { NoteSummaryPanel } from "./NoteSummaryPanel";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
 import { IconArrowDownWall } from "central-icons/IconArrowDownWall";
+import { IconBookSimple } from "central-icons/IconBookSimple";
 import { IconProjects } from "central-icons/IconProjects";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconMicrophoneOff } from "central-icons/IconMicrophoneOff";
@@ -131,6 +132,9 @@ function formatTurnTime(startMs?: number, endMs?: number) {
   return `${format(startMs)}-${format(endMs)}`;
 }
 
+/** Same prefix as every other stored preference in this app. */
+const READING_MODE_KEY = "os-june:note-reading";
+
 export function NoteEditor({
   note,
   folders,
@@ -240,6 +244,24 @@ export function NoteEditor({
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [consentReminderVisible, setConsentReminderVisible] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  // A preference, not a property of the note: someone who reads their notes
+  // this way reads all of them this way. Stored under the app's own prefix,
+  // and a failure to read it is simply "off" rather than a broken editor.
+  const [reading, setReading] = useState(() => {
+    try {
+      return window.localStorage.getItem(READING_MODE_KEY) === "on";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(READING_MODE_KEY, reading ? "on" : "off");
+    } catch {
+      // A browser with storage blocked still gets the mode, just not the memory.
+    }
+  }, [reading]);
   // The source filter is ephemeral view state — reset it when navigating
   // to a different note so it never leaks across transcripts.
   useEffect(() => {
@@ -421,6 +443,22 @@ export function NoteEditor({
             <IconClapboard aria-hidden="true" />
           </button>
         ) : null}
+        {/* Reading, as opposed to writing. Same document, same file: this
+            changes nothing the markdown holds (ADR-0037), only how wide the
+            column is and what it is set in. The caret is put away while it is
+            on, because a mode called reading that you can type into is two
+            modes wearing one name. */}
+        <button
+          type="button"
+          className="note-header-actions"
+          data-active={reading || undefined}
+          onClick={() => setReading((current) => !current)}
+          aria-pressed={reading}
+          aria-label={reading ? "Stop reading" : "Read"}
+          title={reading ? "Back to writing" : "Read"}
+        >
+          <IconBookSimple aria-hidden="true" />
+        </button>
         {onExportPdf ? (
           <button
             type="button"
@@ -514,12 +552,13 @@ export function NoteEditor({
             )}
           </div>
         ) : (
-          <div className="note-body-stack">
+          <div className="note-body-stack" data-reading={reading || undefined}>
             <div className={revealingNotes ? "note-reveal-active" : undefined}>
               <NotePreview
                 noteId={note.id}
                 markdown={content}
                 onChange={onContentChange}
+                editable={!reading}
                 emptyPlaceholder={
                   processingLock
                     ? ""

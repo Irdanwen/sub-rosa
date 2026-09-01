@@ -86,17 +86,24 @@ const SEED = [
 function Lab() {
   const [markdown, setMarkdown] = useState(SEED);
   const [saved, setSaved] = useState(SEED);
+  const [reading, setReading] = useState(false);
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", height: "100vh" }}>
       <div style={{ padding: "32px 40px", overflow: "auto" }}>
-        <NotePreview
-          noteId="lab"
-          markdown={markdown}
-          onChange={(_id, next) => {
-            setSaved(next);
-            setMarkdown(next);
-          }}
-        />
+        <button type="button" onClick={() => setReading((on) => !on)} style={{ marginBottom: 16 }}>
+          {reading ? "Back to writing" : "Read"}
+        </button>
+        <div className="note-body-stack" data-reading={reading || undefined}>
+          <NotePreview
+            noteId="lab"
+            markdown={markdown}
+            editable={!reading}
+            onChange={(_id, next) => {
+              setSaved(next);
+              setMarkdown(next);
+            }}
+          />
+        </div>
       </div>
       <pre
         style={{

@@ -21,9 +21,19 @@ type NotePreviewProps = {
   // different note's content.
   onChange: (noteId: string, markdown: string) => void;
   emptyPlaceholder?: string;
+  /** False in reading mode: the surface is being read, not written. The
+   * document is untouched either way -- this only decides whether a caret can
+   * land in it. */
+  editable?: boolean;
 };
 
-export function NotePreview({ noteId, markdown, onChange, emptyPlaceholder }: NotePreviewProps) {
+export function NotePreview({
+  noteId,
+  markdown,
+  onChange,
+  emptyPlaceholder,
+  editable = true,
+}: NotePreviewProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [toolbar, setToolbar] = useState<Anchor | null>(null);
   const [linkRequested, setLinkRequested] = useState(false);
@@ -74,6 +84,7 @@ export function NotePreview({ noteId, markdown, onChange, emptyPlaceholder }: No
         }),
       ],
       content: initialDoc,
+      editable,
       editorProps: {
         attributes: {
           class: "note-preview",
@@ -94,6 +105,11 @@ export function NotePreview({ noteId, markdown, onChange, emptyPlaceholder }: No
         },
       },
       onBlur: ({ editor }) => {
+        // Reading is not editing. Without this, leaving a note you only read
+        // saves it: the content comes back identical (the round trip is
+        // lossless by construction, ADR-0037), but the note is written all the
+        // same and climbs to the top of everything sorted by last change.
+        if (!editor.isEditable) return;
         // `noteId` here is the value at editor-creation time — the
         // useEditor dep list tears the editor down on note change, so
         // this closure always reflects the note the editor was bound
@@ -109,6 +125,13 @@ export function NotePreview({ noteId, markdown, onChange, emptyPlaceholder }: No
     },
     [noteId],
   );
+
+  // The editor is created once per note, so a mode change after that has to be
+  // pushed in rather than waiting for a rebuild -- rebuilding would throw away
+  // the undo history for what is only a change of presentation.
+  useEffect(() => {
+    editor?.setEditable(editable);
+  }, [editor, editable]);
 
   useEffect(() => {
     if (!editor) return;

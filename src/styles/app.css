@@ -8361,6 +8361,76 @@ input:focus-visible,
   color: var(--body-copy);
 }
 
+/* Reading mode ------------------------------------------------------------
+ *
+ * The same document, set to be read rather than worked on. Nothing here
+ * changes what the file holds (ADR-0037): it is a column width, a face, and a
+ * line height, and turning it off leaves the note exactly as it was.
+ *
+ * The exceptions are the whole difficulty. A measure of sixty-six characters
+ * and a drop cap belong to running prose and nothing else: a table narrowed to
+ * a text column is unreadable, a code block reflowed is wrong, and a drop cap
+ * on a list item is a mistake. So the measure is applied to paragraphs, and
+ * everything that is not prose keeps the full width it had.
+ */
+.note-body-stack[data-reading] .note-preview {
+  font-family: var(--font-serif);
+  font-size: calc(var(--fs-lg) + 2px);
+  line-height: 1.72;
+  letter-spacing: 0.002em;
+}
+
+.note-body-stack[data-reading] .note-preview p,
+.note-body-stack[data-reading] .note-preview h1,
+.note-body-stack[data-reading] .note-preview h2,
+.note-body-stack[data-reading] .note-preview h3,
+.note-body-stack[data-reading] .note-preview ul,
+.note-body-stack[data-reading] .note-preview ol {
+  max-width: 66ch;
+}
+
+/* Not prose, and so not narrowed: a table pushed into a text column stops
+ * being a table, and a wrapped line of code stops being that line. */
+.note-body-stack[data-reading] .note-preview pre,
+.note-body-stack[data-reading] .note-preview table,
+.note-body-stack[data-reading] .note-preview img,
+.note-body-stack[data-reading] .note-preview blockquote {
+  max-width: none;
+}
+
+/* Code keeps its own face inside the serif: it is quoted material, not prose
+ * set in the reading face. */
+.note-body-stack[data-reading] .note-preview pre,
+.note-body-stack[data-reading] .note-preview code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  letter-spacing: 0;
+}
+
+.note-body-stack[data-reading] .note-preview h1,
+.note-body-stack[data-reading] .note-preview h2 {
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid color-mix(in oklch, var(--brand) 28%, transparent);
+}
+
+/* The opening letter, and only ever the opening one: `first-of-type` on a
+ * direct child paragraph, so a paragraph that merely happens to start a
+ * section does not get one too. */
+.note-body-stack[data-reading] .note-preview > p:first-of-type::first-letter {
+  float: left;
+  margin: 0.02em 0.08em 0 0;
+  color: var(--brand);
+  font-size: 3.1em;
+  line-height: 0.86;
+  font-weight: 400;
+}
+
+/* Reading has no caret, so nothing should look like it is waiting for one. */
+.note-body-stack[data-reading] .note-preview {
+  caret-color: transparent;
+  cursor: default;
+}
+
 /* Three heading levels that actually read as three. The old sheet gave every
  * level the same 15px/600 — one notch above 14px body — which is why a note
  * with sections looked like an undifferentiated wall. The steps are the type
@@ -12255,20 +12325,79 @@ input:focus-visible,
   grid-template-columns: 1fr;
 }
 
-.installed-skill-skeleton-line {
+/* The loading placeholder, in one place ---------------------------------
+ *
+ * Five surfaces had carried a byte-for-byte copy of this rule -- installed
+ * skills, MCP servers, pending skill changes, the skills hub, toolsets -- and
+ * a sixth differed only in a margin. Nothing was wrong with any of them, which
+ * is how five copies happen; what it cost was that none of them moved. A
+ * static grey bar says "this is broken" about as readily as it says "this is
+ * loading", and fixing that in five places is a change nobody makes.
+ *
+ * One definition, and it breathes. The per-surface class names are kept as
+ * aliases rather than renamed across nine components: the point was to have
+ * one rule, not to touch every file that draws a placeholder.
+ */
+.skeleton-line,
+.installed-skill-skeleton-line,
+.mcp-server-skeleton-line,
+.skill-review-skeleton-line,
+.skills-hub-skeleton-line,
+.toolset-skeleton-line,
+.external-dir-skeleton-line {
   display: block;
   height: 12px;
   border-radius: var(--r-sm);
-  background: var(--surface-subtle);
+  background: linear-gradient(
+    90deg,
+    var(--surface-subtle) 0%,
+    color-mix(in oklch, var(--surface-subtle) 55%, var(--card)) 50%,
+    var(--surface-subtle) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.6s var(--ease-in-out) infinite;
 }
 
-.installed-skill-skeleton-title {
+.skeleton-title,
+.installed-skill-skeleton-title,
+.mcp-server-skeleton-title,
+.skill-review-skeleton-title,
+.skills-hub-skeleton-title,
+.toolset-skeleton-title {
   width: 40%;
   height: 14px;
 }
 
-.installed-skill-skeleton-line + .installed-skill-skeleton-line {
+/* The second line of a placeholder is shorter, the way a second line of real
+ * text usually is. */
+.skeleton-line + .skeleton-line,
+.installed-skill-skeleton-line + .installed-skill-skeleton-line,
+.mcp-server-skeleton-line + .mcp-server-skeleton-line,
+.skills-hub-skeleton-line + .skills-hub-skeleton-line,
+.toolset-skeleton-line + .toolset-skeleton-line {
   width: 70%;
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 130% 0;
+  }
+  to {
+    background-position: -30% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line,
+  .installed-skill-skeleton-line,
+  .mcp-server-skeleton-line,
+  .skill-review-skeleton-line,
+  .skills-hub-skeleton-line,
+  .toolset-skeleton-line,
+  .external-dir-skeleton-line {
+    background: var(--surface-subtle);
+    animation: none;
+  }
 }
 
 /* External skill directories manager (Hermes admin surface, spec 10). Lists the
@@ -12582,12 +12711,10 @@ input:focus-visible,
   display: block;
 }
 
+/* Only what differs from the shared placeholder: this list spaces its lines
+ * itself rather than through a grid gap. */
 .external-dir-skeleton-line {
-  display: block;
-  height: 12px;
   margin-bottom: var(--sp-2);
-  border-radius: var(--r-sm);
-  background: var(--surface-subtle);
 }
 
 .external-dir-skeleton-title {
@@ -13003,18 +13130,6 @@ input:focus-visible,
 
 .skill-review-skeleton {
   grid-template-columns: 1fr;
-}
-
-.skill-review-skeleton-line {
-  display: block;
-  height: 12px;
-  border-radius: var(--r-sm);
-  background: var(--surface-subtle);
-}
-
-.skill-review-skeleton-title {
-  width: 40%;
-  height: 14px;
 }
 
 /* Skill config + required-secret setup (Hermes admin surface, spec 09). The
@@ -14392,22 +14507,6 @@ input:focus-visible,
 
 .mcp-server-skeleton {
   grid-template-columns: 1fr;
-}
-
-.mcp-server-skeleton-line {
-  display: block;
-  height: 12px;
-  border-radius: var(--r-sm);
-  background: var(--surface-subtle);
-}
-
-.mcp-server-skeleton-title {
-  width: 40%;
-  height: 14px;
-}
-
-.mcp-server-skeleton-line + .mcp-server-skeleton-line {
-  width: 70%;
 }
 
 /* Add-server dialog form. */
@@ -21345,22 +21444,6 @@ input:focus-visible,
   grid-template-columns: 1fr;
 }
 
-.skills-hub-skeleton-line {
-  display: block;
-  height: 12px;
-  border-radius: var(--r-sm);
-  background: var(--surface-subtle);
-}
-
-.skills-hub-skeleton-title {
-  width: 40%;
-  height: 14px;
-}
-
-.skills-hub-skeleton-line + .skills-hub-skeleton-line {
-  width: 70%;
-}
-
 .skills-hub-loading-note {
   margin: var(--sp-3) 0 0;
   padding: 0 var(--sp-1);
@@ -22647,22 +22730,6 @@ input:focus-visible,
   color: var(--secondary-foreground);
   font-size: var(--fs-sm);
   cursor: pointer;
-}
-
-.toolset-skeleton-line {
-  display: block;
-  height: 12px;
-  border-radius: var(--r-sm);
-  background: var(--surface-subtle);
-}
-
-.toolset-skeleton-title {
-  width: 40%;
-  height: 14px;
-}
-
-.toolset-skeleton-line + .toolset-skeleton-line {
-  width: 70%;
 }
 
 /* ------------------------------------------------------------------ */
