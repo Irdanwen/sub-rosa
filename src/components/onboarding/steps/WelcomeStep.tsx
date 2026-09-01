@@ -4,7 +4,6 @@ import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconSparkle } from "central-icons/IconSparkle";
 import { CARPE_DIEM_DASHBOARD_URL, PRODUCT_NAME } from "../../../lib/branding";
 import { isMacLikePlatform } from "../../../lib/platform";
-import { juneOpenCommunityPage } from "../../../lib/tauri";
 import { OnboardingPrimaryButton, StepCard } from "../StepChrome";
 
 // macOS can introduce the full agent, dictation, and notes surface because the
@@ -55,6 +54,11 @@ const WINDOWS_POINTS = [
  * accounts terms links. Sub Rosa has no account to sign into, so only the
  * introduction survives; the API key is collected by the gate that runs before
  * the wizard at all.
+ *
+ * No community link here either. It is a real link to a real place and it lives
+ * in Settings, but the first screen of the app is not where someone is asked to
+ * go somewhere else: this screen has one job, which is to say what the app is
+ * and hand over to the wizard.
  */
 export function WelcomeStep({ onContinue }: { onContinue: () => void }) {
   const isMac = isMacLikePlatform();
@@ -81,28 +85,17 @@ export function WelcomeStep({ onContinue }: { onContinue: () => void }) {
           </li>
         ))}
       </ul>
-      <p className="onboarding-community">
-        Join us in the{" "}
-        <button
-          type="button"
-          className="onboarding-community-link"
-          onClick={() => void juneOpenCommunityPage().catch(() => undefined)}
-        >
-          {PRODUCT_NAME} community on Telegram
-        </button>
-        .
-      </p>
       <div className="welcome-providers">
         <OnboardingPrimaryButton onClick={onContinue}>
           <span>Get started</span>
         </OnboardingPrimaryButton>
       </div>
       <p className="welcome-terms">
-        Inference runs on{" "}
+        Your requests are handled by{" "}
         <a href={CARPE_DIEM_DASHBOARD_URL} target="_blank" rel="noreferrer">
           Carpe Diem
         </a>
-        , under their terms.
+        , with the key you provide.
       </p>
     </StepCard>
   );

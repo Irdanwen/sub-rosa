@@ -342,6 +342,7 @@ distinct from the `specs/` Spec Kit feature specs.)
 
 - [sentence-case](spec/sentence-case.md) — sentence case for all UI labels (never ALL CAPS / uppercase)
 - [no-typographic-dashes](spec/no-typographic-dashes.md) — no en/em dashes in user-facing copy (hyphen or "to")
+- [one-voice](spec/one-voice.md) — address the reader, name their action, no jokes in failures
 - [icons-central-only](spec/icons-central-only.md) — icons from `central-icons` / `central-icons-filled` only (never lucide)
 - [design-tokens](spec/design-tokens.md) — use the variables in `src/styles/tokens.css`
 - [note-controls-must-serialize](spec/note-controls-must-serialize.md) — no note-editor control without a markdown representation

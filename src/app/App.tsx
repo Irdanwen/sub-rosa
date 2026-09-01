@@ -2775,7 +2775,7 @@ export function App() {
           data-tauri-drag-region
           onPointerDown={handleTitlebarPointerDown}
         />
-        <CarpeDiemGate />
+        <CarpeDiemGate reason={carpeDiem?.status === "failed" ? "failed" : "no-key"} />
       </main>
     );
   }
@@ -2870,6 +2870,13 @@ export function App() {
       </button>
       <Sidebar
         notes={state.notes}
+        folders={state.folders}
+        onSelectFolder={(folderId) => {
+          setActiveView("folders");
+          dispatch({ type: "folderSelected", folderId });
+          setActiveAgentSession(undefined);
+          setAgentOrigin(undefined);
+        }}
         activeView={activeView}
         settingsTab={settingsTab}
         onSettingsTabChange={setSettingsTab}

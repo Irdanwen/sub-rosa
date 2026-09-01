@@ -76,3 +76,19 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     {import.meta.env.DEV ? <Agentation /> : null}
   </React.StrictMode>,
 );
+
+// Drop the curtain painted by index.html, one frame after the shell has had a
+// chance to paint over it. Two frames, not zero: removing it in the same tick
+// as `render` uncovers a root React has committed but the compositor has not
+// drawn yet, which is the flash the curtain exists to prevent.
+requestAnimationFrame(() =>
+  requestAnimationFrame(() => {
+    const boot = document.getElementById("boot");
+    if (!boot) return;
+    boot.setAttribute("data-leaving", "");
+    boot.addEventListener("transitionend", () => boot.remove(), { once: true });
+    // The transition never fires under reduced motion, and a curtain that
+    // stays is worse than one that never faded.
+    window.setTimeout(() => boot.remove(), 600);
+  }),
+);

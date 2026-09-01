@@ -12,6 +12,7 @@ authoritative, reviewable version.
 
 - [sentence-case](sentence-case.md) — sentence case for all UI labels
 - [no-typographic-dashes](no-typographic-dashes.md) — no en/em dashes in user-facing copy
+- [one-voice](one-voice.md) — address the reader, name their action, no jokes in failures
 
 ## Frontend — UI styling
 

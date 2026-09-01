@@ -37,9 +37,89 @@
         } catch (e) {}
       })();
     </script>
+    <style>
+      /* The curtain.
+       *
+       * Between the window opening and React's first paint there was nothing:
+       * the webview's own ground, which is white, on an app that is usually
+       * dark. It read as a flash of somebody else's application, and on a slow
+       * cold start it read as a hang.
+       *
+       * It lives here rather than in the bundle because the bundle is the thing
+       * being waited for. It uses only what the script above has already
+       * resolved -- the theme attribute and --brand -- so it is correct on the
+       * very first frame, and it carries no glyph: the rose path lives in the
+       * app, and a sixth copy of it that must be kept in sync is a worse trade
+       * than a ground that is simply the right colour. The mark and the named
+       * wait belong to the loading state the app itself shows, which is what
+       * covers the long wait (the sidecar), not this one. */
+      #boot {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(
+            120% 80% at 50% 42%,
+            color-mix(in oklch, var(--brand) 14%, transparent),
+            transparent 70%
+          ),
+          #f2efec;
+        transition: opacity 260ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      [data-theme="dark"] #boot {
+        background:
+          radial-gradient(
+            120% 80% at 50% 42%,
+            color-mix(in oklch, var(--brand) 20%, transparent),
+            transparent 70%
+          ),
+          #1a1614;
+      }
+
+      /* A single breath, so a curtain that stays up for more than an instant
+       * is visibly alive without pretending to measure anything. */
+      #boot::after {
+        content: "";
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        background: color-mix(in oklch, var(--brand) 34%, transparent);
+        animation: boot-breathe 1600ms cubic-bezier(0.65, 0, 0.35, 1) infinite;
+      }
+
+      #boot[data-leaving] {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      @keyframes boot-breathe {
+        0%,
+        100% {
+          transform: scale(0.86);
+          opacity: 0.55;
+        }
+        50% {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #boot::after {
+          animation: none;
+        }
+        #boot {
+          transition: none;
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <div id="boot"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

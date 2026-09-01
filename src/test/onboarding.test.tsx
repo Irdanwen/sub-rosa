@@ -364,18 +364,29 @@ describe("OnboardingFlow", () => {
     );
   });
 
-  it("opens the Sub Rosa community from the welcome step", async () => {
-    const user = userEvent.setup();
+  // The welcome screen used to offer the community link. It now says what the
+  // app is and hands over to the wizard, and nothing on it sends the reader to
+  // a browser before they have seen the product. The link itself is not gone:
+  // it lives in Settings, and app-settings.test.tsx covers it there.
+  it("offers no way out of the app from the welcome step", async () => {
     render(<OnboardingFlow {...flowProps()} />);
 
     await screen.findByRole("heading", { name: "Welcome to Sub Rosa" });
-    await user.click(
-      screen.getByRole("button", {
-        name: "Sub Rosa community on Telegram",
-      }),
-    );
 
-    expect(mocks.juneOpenCommunityPage).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/Telegram/i)).toBeNull();
+    expect(screen.queryByText(/community/i)).toBeNull();
+    expect(mocks.juneOpenCommunityPage).not.toHaveBeenCalled();
+  });
+
+  it("says who handles a request in the reader's terms", async () => {
+    render(<OnboardingFlow {...flowProps()} />);
+
+    await screen.findByRole("heading", { name: "Welcome to Sub Rosa" });
+
+    // "Inference runs on Carpe Diem, under their terms" described the machine
+    // and read as a disclaimer. The line names what the reader controls.
+    expect(screen.getByText(/Your requests are handled by/)).toBeInTheDocument();
+    expect(screen.queryByText(/under their terms/)).toBeNull();
   });
 
   it("shows Windows-accurate welcome copy", async () => {
