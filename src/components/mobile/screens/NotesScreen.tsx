@@ -8,6 +8,7 @@ import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { useMemo, useRef, useState } from "react";
 import type { FolderDto, NoteListItemDto } from "../../../lib/tauri";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
+import { ActionSheet } from "../ActionSheet";
 import { EmptyState } from "../../ui/EmptyState";
 import { PullToRefresh } from "../PullToRefresh";
 import { StackHeader } from "../StackHeader";
@@ -46,6 +47,9 @@ export function NotesScreen({
 }: NotesScreenProps) {
   const [query, setQuery] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<NoteListItemDto | null>(null);
+  // The note a long press opened the actions for. The swipe still works; this
+  // is the route that does not have to be discovered.
+  const [rowMenu, setRowMenu] = useState<NoteListItemDto | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const sortedNotes = useMemo(
@@ -165,6 +169,7 @@ export function NotesScreen({
                     note={note}
                     recording={note.id === activeRecordingNoteId}
                     onSelect={() => onSelectNote(note.id)}
+                    onLongPress={() => setRowMenu(note)}
                   />
                 </SwipeableRow>
               </li>
@@ -176,6 +181,25 @@ export function NotesScreen({
         <IconMicrophone size={22} aria-hidden />
         <span>Record</span>
       </button>
+      {rowMenu ? (
+        <ActionSheet
+          title={rowMenu.title.trim() || "New note"}
+          subtitle="What would you like to do with this note?"
+          actions={[
+            // Only what this screen can actually do. Moving to a project lives
+            // on the note itself, and an entry here that opened something else
+            // would be a promise the sheet cannot keep.
+            { label: "Open", onAction: () => onSelectNote(rowMenu.id) },
+            { label: "Archive", onAction: () => onArchiveNote(rowMenu.id) },
+            {
+              label: "Delete",
+              destructive: true,
+              onAction: () => setConfirmDelete(rowMenu),
+            },
+          ]}
+          onClose={() => setRowMenu(null)}
+        />
+      ) : null}
       <ConfirmDialog
         open={confirmDelete !== null}
         title="Delete this note?"

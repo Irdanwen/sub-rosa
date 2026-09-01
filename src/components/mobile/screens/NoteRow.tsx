@@ -1,4 +1,5 @@
 import { IconMicrophone } from "central-icons/IconMicrophone";
+import { useLongPress } from "../../../lib/long-press";
 import { IconNoteText } from "central-icons/IconNoteText";
 import type { NoteListItemDto } from "../../../lib/tauri";
 
@@ -6,9 +7,12 @@ type NoteRowProps = {
   note: NoteListItemDto;
   recording?: boolean;
   onSelect: () => void;
+  /** Opens the row's actions. Absent where the row is not actionable. */
+  onLongPress?: () => void;
 };
 
-export function NoteRow({ note, recording, onSelect }: NoteRowProps) {
+export function NoteRow({ note, recording, onSelect, onLongPress }: NoteRowProps) {
+  const longPress = useLongPress(() => onLongPress?.());
   const title = note.title.trim() || "New note";
   const effectiveStatus =
     note.processingStatus === "recording" && !recording ? "draft" : note.processingStatus;
@@ -28,7 +32,17 @@ export function NoteRow({ note, recording, onSelect }: NoteRowProps) {
   const duration = recorded ? formatDuration(note.durationMs as number) : null;
 
   return (
-    <button type="button" className="mobile-note-row" onClick={onSelect}>
+    <button
+      type="button"
+      className="mobile-note-row"
+      // The browser synthesises a click after a long press; without this the
+      // sheet opens and the note opens behind it.
+      onClick={() => {
+        if (longPress.consumed()) return;
+        onSelect();
+      }}
+      {...(onLongPress ? longPress.handlers : {})}
+    >
       <span className="mobile-note-row-icon" aria-hidden>
         {recorded ? <IconMicrophone size={16} /> : <IconNoteText size={16} />}
       </span>

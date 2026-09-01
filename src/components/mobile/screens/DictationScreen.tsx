@@ -2,6 +2,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { IconMicrophone } from "central-icons/IconMicrophone";
+import { IconMicrophoneSparkle } from "central-icons/IconMicrophoneSparkle";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { messageFromError } from "../../../lib/errors";
 import { hapticImpact, hapticNotify } from "../../../lib/haptics";
@@ -17,12 +18,23 @@ import {
   mobileDictationStop,
   mobileListDictationHistory,
 } from "../../../lib/tauri";
+import { EmptyState } from "../../ui/EmptyState";
 import { SettingsGroup } from "../SettingsList";
 import { StackHeader } from "../StackHeader";
 import { SwipeableRow } from "../SwipeableRow";
 import { formatNoteTime } from "./NoteRow";
 
 type Phase = "idle" | "recording" | "processing";
+
+/** Past this, the wait is named rather than merely counted. */
+const LONG_WAIT_MS = 10_000;
+
+/** Elapsed, in the shape a person reads at a glance rather than a duration. */
+function formatSince(ms: number) {
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+}
 
 /**
  * In-app dictation: tap to record, tap to stop, get polished text to copy.
@@ -37,6 +49,12 @@ export function DictationScreen() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [history, setHistory] = useState<DictationHistoryItemDto[]>([]);
+  // Transcription has no progress to report -- it is one round trip -- but it
+  // has a duration, and a duration counting up is the difference between "it
+  // is working" and "it has died". No estimate is shown: nothing here knows
+  // how long this recording will take, and an invented number is worse than
+  // an honest clock.
+  const [processingMs, setProcessingMs] = useState(0);
   const styleRef = useRef<DictationStyle>("standard");
 
   const refreshHistory = useCallback(() => {
@@ -48,6 +66,16 @@ export function DictationScreen() {
   useEffect(() => {
     refreshHistory();
   }, [refreshHistory]);
+
+  useEffect(() => {
+    if (phase !== "processing") {
+      setProcessingMs(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const interval = window.setInterval(() => setProcessingMs(Date.now() - startedAt), 250);
+    return () => window.clearInterval(interval);
+  }, [phase]);
 
   // Level + elapsed polling while recording.
   useEffect(() => {
@@ -132,11 +160,14 @@ export function DictationScreen() {
             <p className="mobile-dictation-elapsed">
               {minutes}:{String(seconds).padStart(2, "0")}
             </p>
+          ) : phase === "processing" ? (
+            <p className="mobile-dictation-hint" aria-live="polite">
+              <span>Transcribing your recording</span>
+              <span className="mobile-dictation-since">{formatSince(processingMs)}</span>
+            </p>
           ) : (
             <p className="mobile-dictation-hint">
-              {phase === "processing"
-                ? "Transcribing…"
-                : "Tap the microphone, speak, then tap again to get clean text."}
+              Tap the microphone, speak, then tap again to get clean text.
             </p>
           )}
           <button
@@ -165,6 +196,21 @@ export function DictationScreen() {
 
         {error ? <p className="mobile-dictation-error">{error}</p> : null}
 
+        {phase === "processing" ? (
+          // The result card, before it has anything in it. Three lines that
+          // breathe say "text is coming here" in a way a spinner cannot.
+          <section className="mobile-dictation-result" aria-hidden>
+            <div className="mobile-dictation-skeleton">
+              <span className="mobile-skeleton-bar" />
+              <span className="mobile-skeleton-bar" />
+              <span className="mobile-skeleton-bar" />
+            </div>
+            {processingMs > LONG_WAIT_MS ? (
+              <p className="mobile-dictation-patience">A long recording takes a moment.</p>
+            ) : null}
+          </section>
+        ) : null}
+
         {result ? (
           <section className="mobile-dictation-result" aria-label="Dictation result">
             <p>{result.text}</p>
@@ -179,6 +225,15 @@ export function DictationScreen() {
               </button>
             </div>
           </section>
+        ) : null}
+
+        {history.length === 0 && !result && phase === "idle" ? (
+          <EmptyState
+            icon={<IconMicrophoneSparkle size={20} />}
+            title="Your voice journal starts here"
+            description="Speak a note, a message, a thought. What you dictate is transcribed on the spot and kept here so you can copy it again later."
+            label="No dictations yet"
+          />
         ) : null}
 
         {history.length > 0 ? (

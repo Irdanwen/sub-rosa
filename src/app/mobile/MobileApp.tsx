@@ -1,5 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { BrandGradientMark } from "../../components/brand/Marks";
 import { CarpeDiemGate } from "../../components/carpe-diem/CarpeDiemGate";
 import { RailSwitchBanner } from "../../components/carpe-diem/RailSwitchBanner";
 import { SIDECAR_STATUS_EVENT } from "../../components/settings/CarpeDiemSettings";
@@ -35,6 +36,7 @@ import {
   NOTES_CHANGED_EVENT,
   assignNoteToFolder,
   bootstrapApp,
+  recoverRecording,
   carpeDiemSidecarStatus,
   checkRecordingSourceReadiness,
   createFolder,
@@ -53,6 +55,11 @@ import {
 import { PROCESSING_DEMO_NOTE_ID, shouldPollProcessingStatus } from "../processing-polling";
 import { createInitialState, notesReducer } from "../state/app-state";
 import { useMobileNav } from "./nav";
+
+/** Just under the shell's own patience with the sidecar, so the wait is named
+ * before it is abandoned. Keep below SIDECAR_STATUS_TIMEOUT_MS in App.tsx. */
+const SHELL_LOADING_SLOW_MS = 6_000;
+import { useScrollRestoration } from "./useScrollRestoration";
 
 /**
  * Error banner with a real exit path: replacing the message re-runs the
@@ -148,6 +155,11 @@ export function MobileApp() {
   // no re-render runs per frame), then commits past 35% width or a right
   // flick, mirroring the platform's back gesture.
   const screenRef = useRef<HTMLDivElement | null>(null);
+  // The screen wrapper is keyed by tab and depth, so it remounts on every move
+  // through the stack and takes the scroll position with it. This puts it back.
+  // Off on the agent tab: the conversation places its own scroll, pinning to
+  // the last message, and two owners of `scrollTop` is a fight you can see.
+  useScrollRestoration(`${nav.tab}:${nav.depth}`, screenRef, nav.tab !== "agent");
   const edgeSwipe = useRef<{
     x: number;
     y: number;
@@ -271,6 +283,16 @@ export function MobileApp() {
       .then(setSourceReadiness)
       .catch(() => undefined);
   }, [carpeDiemLoading, carpeDiemRequired]);
+
+  // At most one recovery per note in practice; the first wins if the backend
+  // ever surfaces two, exactly as the desktop resolves it.
+  const selectedRecovery = useMemo(
+    () =>
+      state.selectedNote
+        ? state.activeRecoveries.find((entry) => entry.noteId === state.selectedNote?.id)
+        : undefined,
+    [state.activeRecoveries, state.selectedNote],
+  );
 
   const recordingStatusRef = useRef(state.recordingStatus);
   recordingStatusRef.current = state.recordingStatus;
@@ -538,6 +560,25 @@ export function MobileApp() {
     [nav],
   );
 
+  // An interrupted recording -- the app was killed, the phone rebooted, the
+  // battery went -- leaves audio on disk and a row that says so. Until now the
+  // phone knew about it and offered nothing: the buttons were wired to
+  // `() => undefined`, so the only surface that could recover it did nothing
+  // when tapped. Everything else already existed: `recover_recording` is in
+  // both command lists, and `bootstrap_app` returns the pending recoveries the
+  // reducer is already storing.
+  const handleRecovery = useCallback((sessionId: string, action: "validate" | "discard") => {
+    void (async () => {
+      try {
+        const note = await recoverRecording(sessionId, action);
+        dispatch({ type: "noteProcessingUpdated", note });
+        dispatch({ type: "recoveryRemoved", sessionId });
+      } catch (err) {
+        setError(messageFromError(err));
+      }
+    })();
+  }, []);
+
   const handleRetry = useCallback(async () => {
     const note = state.selectedNote;
     if (!note) return;
@@ -647,13 +688,13 @@ export function MobileApp() {
 
   // --- Gates ---
   if (carpeDiemLoading) {
-    return <div className="mobile-shell mobile-shell-loading" aria-busy="true" />;
+    return <ShellLoading />;
   }
   if (carpeDiemRequired) {
     return (
       <div className="mobile-shell">
         <div className="mobile-gate-scroll">
-          <CarpeDiemGate />
+          <CarpeDiemGate reason={carpeDiem?.status === "failed" ? "failed" : "no-key"} />
         </div>
       </div>
     );
@@ -685,6 +726,9 @@ export function MobileApp() {
         onFinishRecording={(sessionId) => void handleFinishRecording(sessionId)}
         onRetry={handleRetry}
         onDelete={() => void handleDeleteNote(top.noteId)}
+        recovery={selectedRecovery}
+        onRecoverRecording={(sessionId) => handleRecovery(sessionId, "validate")}
+        onDiscardRecording={(sessionId) => handleRecovery(sessionId, "discard")}
         onAssignFolder={(folderId) => void handleSetNoteFolder(top.noteId, folderId)}
         onRemoveFolder={(folderId) => void handleRemoveNoteFromFolder(top.noteId, folderId)}
         onCreateAndAssignFolder={(name) => {
@@ -842,6 +886,39 @@ export function MobileApp() {
           busy={{ agent: chatBusy, studio: studioBusy }}
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * The long wait, which is the sidecar starting rather than the bundle loading.
+ *
+ * It used to be a bare ring: correct, and indistinguishable from any other
+ * app's spinner. It now carries the mark, and past the point where the shell
+ * gives up on the sidecar it says so instead of spinning forever -- the timeout
+ * is eight seconds (SIDECAR_STATUS_TIMEOUT_MS in App.tsx), which is long enough
+ * that an unnamed spinner reads as a hang well before it fires.
+ *
+ * No progress bar and no estimate: nothing here knows how long a cold start
+ * takes on this device, and a bar that fills at an invented rate is a lie the
+ * user catches the second time.
+ */
+function ShellLoading() {
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSlow(true), SHELL_LOADING_SLOW_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  return (
+    <div className="mobile-shell mobile-shell-loading" aria-busy="true">
+      <span className="mobile-shell-loading-mark" aria-hidden>
+        <BrandGradientMark />
+      </span>
+      <p className="mobile-shell-loading-line" aria-live="polite">
+        {slow ? "Still starting the local engine." : "Starting up"}
+      </p>
     </div>
   );
 }

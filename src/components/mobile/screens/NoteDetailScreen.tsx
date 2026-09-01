@@ -6,6 +6,7 @@ import type {
   LiveTranscriptEventDto,
   NoteDto,
   NoteTab,
+  RecoverableRecordingDto,
   RecordingSourceReadinessDto,
   RecordingStatusDto,
 } from "../../../lib/tauri";
@@ -32,6 +33,10 @@ type NoteDetailScreenProps = {
   onFinishRecording: (sessionId: string) => void;
   onRetry: () => void | Promise<void>;
   onDelete: () => void;
+  /** The interrupted recording this note is waiting on, if there is one. */
+  recovery?: RecoverableRecordingDto;
+  onRecoverRecording: (sessionId: string) => void;
+  onDiscardRecording: (sessionId: string) => void;
   onAssignFolder: (folderId: string) => void;
   onRemoveFolder: (folderId: string) => void;
   onCreateAndAssignFolder: (name: string) => void;
@@ -61,6 +66,9 @@ export function NoteDetailScreen({
   onFinishRecording,
   onRetry,
   onDelete,
+  recovery,
+  onRecoverRecording,
+  onDiscardRecording,
   onAssignFolder,
   onRemoveFolder,
   onCreateAndAssignFolder,
@@ -123,8 +131,9 @@ export function NoteDetailScreen({
             onFinishRecording={onFinishRecording}
             onRetry={onRetry}
             onTopUp={() => undefined}
-            onRecoverRecording={() => undefined}
-            onDiscardRecording={() => undefined}
+            recovery={recovery}
+            onRecoverRecording={onRecoverRecording}
+            onDiscardRecording={onDiscardRecording}
             onAssignFolder={onAssignFolder}
             onRemoveFolder={onRemoveFolder}
             onCreateAndAssignFolder={onCreateAndAssignFolder}

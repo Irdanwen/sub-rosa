@@ -41,27 +41,44 @@
   user-select: text;
 }
 
+/* The sidecar wait. The ring that used to live here was a spinner like any
+ * other application's; the mark says whose app is starting, and the line under
+ * it says what is being waited for once the wait stops being brief. */
 .mobile-shell-loading {
   background: var(--background);
   align-items: center;
   justify-content: center;
+  gap: var(--sp-4);
 }
 
-/* First-paint spinner: two crossing arcs of the brand mark would be heavy,
- * so a quiet token-driven ring keeps the launch from reading as a hang. */
-.mobile-shell-loading::after {
-  content: "";
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2.5px solid var(--border);
-  border-top-color: var(--muted-foreground);
-  animation: mobile-loading-spin 800ms linear infinite;
+.mobile-shell-loading-mark {
+  display: grid;
+  place-items: center;
+  animation: mobile-loading-breathe 1600ms var(--ease-in-out) infinite;
 }
 
-@keyframes mobile-loading-spin {
-  to {
-    transform: rotate(360deg);
+.mobile-shell-loading-line {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+  text-align: center;
+}
+
+@keyframes mobile-loading-breathe {
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-shell-loading-mark {
+    animation: none;
   }
 }
 
@@ -971,6 +988,39 @@
   background: var(--card);
   padding: var(--sp-4);
   margin-bottom: var(--sp-6);
+}
+
+/* The transcription scene. The hint line carries the phase and the clock side
+ * by side while the result card stands empty above the text that is coming. */
+.mobile-dictation-since {
+  margin-left: var(--sp-2);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+  opacity: 0.7;
+}
+
+.mobile-dictation-skeleton {
+  display: grid;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+/* Staggered, so the three bars read as lines of text arriving rather than one
+ * block flashing. Reuses the shared bar; only the offsets are local. */
+.mobile-dictation-skeleton .mobile-skeleton-bar:nth-child(2) {
+  width: 88%;
+  animation-delay: 160ms;
+}
+
+.mobile-dictation-skeleton .mobile-skeleton-bar:nth-child(3) {
+  width: 62%;
+  animation-delay: 320ms;
+}
+
+.mobile-dictation-patience {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
 }
 
 .mobile-dictation-result p {
@@ -2321,6 +2371,47 @@
 
 .mobile-flows-step-status {
   color: var(--muted-foreground);
+}
+
+/* The row actions sheet. Same glass as the model picker, different contents:
+ * named actions instead of a searchable list, and a cancel that is the size of
+ * a thumb because dismissing is the most likely thing you want. */
+/* The dimmed area, as a control rather than a handler on a div: it dismisses,
+ * so it is a button, and it sits behind the sheet it dismisses. */
+.mobile-sheet-dismiss {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: none;
+}
+
+.mobile-action-sheet-subtitle {
+  margin: 0 0 var(--sp-3);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.mobile-action-sheet-item {
+  justify-content: center;
+  min-height: 54px;
+  font-size: var(--fs-lg);
+}
+
+.mobile-action-sheet-item[data-destructive] .mobile-sheet-item-title {
+  color: var(--record);
+}
+
+.mobile-action-sheet-cancel {
+  width: 100%;
+  min-height: 52px;
+  margin-top: var(--sp-3);
+  border: 0;
+  border-radius: var(--r-xl);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
 }
 
 .mobile-sheet-error {
