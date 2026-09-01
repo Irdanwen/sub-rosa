@@ -8835,7 +8835,23 @@ input:focus-visible,
 
 /* Floating selection toolbar ---------------------------------------- */
 
-/* Fellow-style floating toolbar: blurred glass, pill, narrow padding. */
+/*
+ * The tool tray for a selection: blurred glass, pill, narrow padding.
+ *
+ * It is the only chrome that appears *on* the page you are writing, so it
+ * arrives rather than blinks into place: the glass settles out of a blur, the
+ * controls ripple in from the left, and one warm pass of light crosses the
+ * pill. Then it holds still. The one thing that keeps moving is the sparkle,
+ * because it is the one control that does not toggle something the file
+ * already holds.
+ *
+ * None of that motion may touch `transform`: `useAnchoredPanel` writes the
+ * anchoring transform inline and flips it between above and below the caret,
+ * so a keyframe writing `transform` would drop the toolbar somewhere else for
+ * the length of the animation. The container moves with the `translate`
+ * longhand instead (pure translations commute with the inline one), and the
+ * buttons, which anchor nothing, are free to scale.
+ */
 .selection-toolbar {
   position: fixed;
   z-index: 80;
@@ -8845,15 +8861,88 @@ input:focus-visible,
   padding: 4px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
-  background: color-mix(in oklch, var(--popover) 70%, transparent);
+  /* A warm wash across the glass, so the pill belongs to the accent instead of
+   * reading as a grey system menu dropped on the page. */
+  background:
+    linear-gradient(150deg, color-mix(in oklch, var(--brand) 13%, transparent), transparent 62%),
+    color-mix(in oklch, var(--popover) 70%, transparent);
   -webkit-backdrop-filter: blur(20px) saturate(1.7);
   backdrop-filter: blur(20px) saturate(1.7);
   color: var(--popover-foreground);
-  box-shadow: var(--shadow-lg);
+  box-shadow:
+    var(--shadow-lg),
+    0 0 0 1px color-mix(in oklch, var(--brand) 10%, transparent);
   transform: translate(-50%, -100%);
+  animation: selection-toolbar-in 190ms var(--ease-out) backwards;
+}
+
+/* The pass of light. `backwards` fill only: the sweep ends at the resting
+ * opacity of 0, so it happens once and the gradient is never seen again.
+ *
+ * Linear, and only here: an eased sweep spends most of its length already
+ * past the pill, so the band would be gone before the fade-in that is meant
+ * to reveal it has finished. A glint has no reason to decelerate. */
+.selection-toolbar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    100deg,
+    transparent 35%,
+    color-mix(in oklch, var(--brand) 36%, transparent) 50%,
+    transparent 65%
+  );
+  background-size: 200% 100%;
+  opacity: 0;
+  pointer-events: none;
+  animation: selection-toolbar-sheen 700ms linear 110ms backwards;
+}
+
+@keyframes selection-toolbar-in {
+  from {
+    opacity: 0;
+    translate: 0 5px;
+    filter: blur(5px);
+  }
+}
+
+@keyframes selection-toolbar-sheen {
+  from {
+    background-position: 130% 0;
+    opacity: 0;
+  }
+  22% {
+    opacity: 1;
+  }
+  78% {
+    opacity: 1;
+  }
+  to {
+    background-position: -30% 0;
+    opacity: 0;
+  }
+}
+
+/* Every control lands a beat after the one to its left — `--tool-index` is its
+ * place in the bar, dividers counted, so the ripple crosses the whole pill
+ * rather than restarting inside each group. `backwards` fill again: once the
+ * button has landed it is back under its own resting style, which is what
+ * leaves the hover transform free to work. */
+.selection-toolbar > * {
+  animation: selection-tool-in 210ms var(--ease-spring) backwards;
+  animation-delay: calc(var(--tool-index, 0) * 7ms);
+}
+
+@keyframes selection-tool-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px) scale(0.72);
+  }
 }
 
 .selection-toolbar button {
+  position: relative;
   display: inline-grid;
   place-items: center;
   min-width: 30px;
@@ -8866,43 +8955,127 @@ input:focus-visible,
   font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
+  transition:
+    background-color var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out),
+    transform var(--t-med) var(--ease-spring);
+}
+
+/* The glyph leans toward the pointer, and gives under it. */
+.selection-toolbar button svg {
+  transition: transform var(--t-med) var(--ease-spring);
 }
 
 .selection-toolbar button:hover {
-  background: color-mix(in oklch, var(--foreground) 12%, transparent);
-  color: var(--foreground);
+  background: color-mix(in oklch, var(--brand) 16%, transparent);
+  color: var(--warm-strong);
+  transform: translateY(-1px);
+}
+
+.selection-toolbar button:hover svg {
+  transform: scale(1.14);
+}
+
+.selection-toolbar button:active {
+  transform: translateY(0) scale(0.9);
+  transition-duration: var(--t-fast);
+}
+
+.selection-toolbar button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 @media (prefers-color-scheme: dark) {
-  /* Dark glass needs a brighter hover wash to register against the blur. */
+  /* Dark glass needs a heavier wash to register through the blur. */
   .selection-toolbar button:hover {
-    background: color-mix(in oklch, white 18%, transparent);
-    color: white;
+    background: color-mix(in oklch, var(--brand) 36%, transparent);
   }
 }
 
 [data-theme="dark"] .selection-toolbar button:hover {
-  background: color-mix(in oklch, white 18%, transparent);
-  color: white;
+  background: color-mix(in oklch, var(--brand) 36%, transparent);
 }
 
 .selection-toolbar .divider {
   width: 1px;
-  height: 16px;
-  margin: 0 2px;
-  background: var(--border);
+  height: 18px;
+  margin: 0 3px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--border) 20%,
+    var(--border) 80%,
+    transparent
+  );
 }
 
-/* The toolbar carries three groups and a link button, so it is wide enough to
- * need a floor on the buttons rather than the old min-width-per-glyph. */
+/* Active is the accent, not one more shade of grey: what the selection already
+ * is should be readable at a glance rather than hunted for. */
 .selection-toolbar button[data-active] {
-  background: color-mix(in oklch, var(--foreground) 10%, transparent);
-  color: var(--foreground);
+  background: color-mix(in oklch, var(--brand) 24%, transparent);
+  color: var(--warm-strong);
+}
+
+@media (prefers-color-scheme: dark) {
+  .selection-toolbar button[data-active] {
+    background: color-mix(in oklch, var(--brand) 44%, transparent);
+  }
 }
 
 [data-theme="dark"] .selection-toolbar button[data-active] {
-  background: color-mix(in oklch, white 16%, transparent);
-  color: white;
+  background: color-mix(in oklch, var(--brand) 44%, transparent);
+}
+
+/* The highlighter's colour is the one here that is not a matter of taste:
+ * active, it wears the wash it applies. */
+.selection-toolbar button[data-tool="highlight"][data-active] {
+  background: var(--note-highlight);
+  color: var(--foreground);
+}
+
+/* The odd one out, and it should look it. Every other control toggles
+ * something the file can already hold; this one asks a model what the
+ * selection could be, so it carries the accent instead of the muted grey and
+ * keeps a slow twinkle going while it waits to be asked. */
+.selection-toolbar .selection-toolbar-ai {
+  background: color-mix(in oklch, var(--brand) 12%, transparent);
+  color: var(--brand);
+}
+
+.selection-toolbar .selection-toolbar-ai:hover {
+  background: color-mix(in oklch, var(--brand) 26%, transparent);
+  color: var(--warm-strong);
+}
+
+/* The twinkle rides the icon rather than the button, so it never collides with
+ * the entrance animation the button is already running. */
+.selection-toolbar-ai svg {
+  animation: selection-sparkle-twinkle 3.6s var(--ease-in-out) 900ms infinite;
+}
+
+/* Under the pointer the sparkle stops twinkling and simply turns: two loops
+ * fighting over one transform would read as a stutter. */
+.selection-toolbar-ai:hover svg {
+  animation: none;
+  transform: rotate(45deg) scale(1.14);
+}
+
+@keyframes selection-sparkle-twinkle {
+  0%,
+  58%,
+  100% {
+    opacity: 0.88;
+    transform: scale(1) rotate(0deg);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.2) rotate(16deg);
+  }
+  82% {
+    opacity: 0.95;
+    transform: scale(1) rotate(0deg);
+  }
 }
 
 .selection-toolbar-link {
@@ -8938,6 +9111,13 @@ input:focus-visible,
   height: 36px;
 }
 
+/* Docked, the bar stands above the keyboard for as long as you are writing,
+ * and something twinkling beside the keyboard that whole time is not charm,
+ * it is a fly in the room. The sparkle holds still here. */
+.note-toolbar-docked .selection-toolbar-ai svg {
+  animation: none;
+}
+
 .note-toolbar-docked.selection-toolbar-link {
   padding-right: var(--sp-3);
   overflow-x: visible;
@@ -8960,16 +9140,22 @@ input:focus-visible,
   color: var(--foreground);
   font-family: var(--font-sans);
   font-size: var(--fs-md);
+  transition:
+    border-color var(--t-fast) var(--ease-out),
+    box-shadow var(--t-fast) var(--ease-out);
 }
 
 .selection-toolbar-link input:focus {
   border-color: var(--brand);
   outline: none;
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--brand) 18%, transparent);
 }
 
 /* The rewrite menu. A sibling of the toolbar rather than a child, because the
  * docked bar scrolls sideways and would clip it; positioned from the same
- * anchor so it still reads as belonging to the button that opened it. */
+ * anchor so it still reads as belonging to the button that opened it. Same
+ * rule as the toolbar about `transform`: the anchoring one is inline, so the
+ * entrance moves with `translate`. */
 .rewrite-menu {
   position: fixed;
   z-index: 81;
@@ -8982,10 +9168,25 @@ input:focus-visible,
   padding: var(--sp-1);
   border: 1px solid var(--popover-border);
   border-radius: var(--r-lg);
-  background: var(--popover);
-  box-shadow: var(--shadow-lg);
+  background:
+    linear-gradient(160deg, color-mix(in oklch, var(--brand) 10%, transparent), transparent 55%),
+    var(--popover);
+  box-shadow:
+    var(--shadow-lg),
+    0 0 0 1px color-mix(in oklch, var(--brand) 10%, transparent);
+  animation: rewrite-menu-in 160ms var(--ease-out) backwards;
 }
 
+@keyframes rewrite-menu-in {
+  from {
+    opacity: 0;
+    translate: 0 -6px;
+  }
+}
+
+/* The reset is this rule's job: unlike the toolbar's buttons these are not
+ * inside `.selection-toolbar`, so without it they wear the browser's own
+ * button chrome and the menu reads as a stack of system buttons. */
 .rewrite-menu button {
   display: flex;
   align-items: center;
@@ -8994,19 +9195,52 @@ input:focus-visible,
   min-width: 0;
   height: auto;
   padding: var(--sp-2);
+  border: 0;
   border-radius: var(--r-md);
+  background: transparent;
   color: var(--foreground);
   font-size: var(--fs-lg);
   font-weight: 400;
   text-align: left;
+  animation: rewrite-item-in 200ms var(--ease-out) backwards;
+  animation-delay: calc(60ms + var(--item-index, 0) * 22ms);
+  transition:
+    background-color var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out),
+    padding-left var(--t-med) var(--ease-spring);
 }
 
+@keyframes rewrite-item-in {
+  from {
+    opacity: 0;
+    translate: -6px 0;
+  }
+}
+
+/* The row slides a little out of the way of the pointer, which is the whole
+ * hover affordance a menu of verbs needs. */
+.rewrite-menu button:hover {
+  background: color-mix(in oklch, var(--brand) 14%, transparent);
+  color: var(--warm-strong);
+  padding-left: var(--sp-4);
+}
+
+/* Docked, the menu sits above the bar rather than below the caret, so it rises
+ * into place instead of dropping. */
 .rewrite-menu-docked {
   right: var(--sp-3);
   left: auto;
   margin-top: 0;
   margin-bottom: 6px;
   transform: none;
+  animation-name: rewrite-menu-docked-in;
+}
+
+@keyframes rewrite-menu-docked-in {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
 }
 
 .selection-toolbar-prompt {
@@ -9014,6 +9248,41 @@ input:focus-visible,
   color: var(--muted-foreground);
   font-size: var(--fs-md);
   white-space: nowrap;
+}
+
+/* Nothing here is load-bearing: the toolbar is legible standing perfectly
+ * still, so a reader who asked for less movement gets a plain fade and no
+ * ripple, no sweep, no twinkle. */
+@media (prefers-reduced-motion: reduce) {
+  .selection-toolbar,
+  .rewrite-menu,
+  .rewrite-menu-docked {
+    animation-name: fade-in;
+  }
+
+  .selection-toolbar > *,
+  .selection-toolbar-ai svg,
+  .selection-toolbar::after,
+  .rewrite-menu button {
+    animation: none;
+  }
+
+  .selection-toolbar button,
+  .selection-toolbar button svg,
+  .rewrite-menu button {
+    transition: none;
+  }
+
+  .selection-toolbar button:hover,
+  .selection-toolbar button:active,
+  .selection-toolbar button:hover svg,
+  .selection-toolbar-ai:hover svg {
+    transform: none;
+  }
+
+  .rewrite-menu button:hover {
+    padding-left: var(--sp-2);
+  }
 }
 
 /* The revision. Same glass as the toolbar it replaces, because it occupies the
@@ -9191,11 +9460,19 @@ input:focus-visible,
   font-size: var(--fs-sm);
 }
 
+/* The one button in the field variants is the commit, so it is filled rather
+ * than ghosted: there is nothing else in the bar to weigh it against. */
 .selection-toolbar-link button {
   min-width: auto;
   padding: 0 var(--sp-3);
-  color: var(--foreground);
+  background: color-mix(in oklch, var(--brand) 20%, transparent);
+  color: var(--warm-strong);
   font-size: var(--fs-md);
+}
+
+.selection-toolbar-link button:hover {
+  background: color-mix(in oklch, var(--brand) 32%, transparent);
+  color: var(--warm-strong);
 }
 
 /* Empty / primary actions ------------------------------------------ */

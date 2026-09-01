@@ -13,7 +13,7 @@ import { IconNumberedList } from "central-icons/IconNumberedList";
 import { IconSparkle } from "central-icons/IconSparkle";
 import { IconStrikeThrough } from "central-icons/IconStrikeThrough";
 import type { CentralIconBaseProps } from "central-icons/CentralIconBase";
-import { type ComponentType, useEffect, useRef, useState } from "react";
+import { type ComponentType, type CSSProperties, useEffect, useRef, useState } from "react";
 import { type Anchor, useAnchoredPanel } from "./useAnchoredPanel";
 import type { RewriteKind } from "../../lib/tauri";
 
@@ -150,6 +150,25 @@ const MARK_ACTIONS: ToolbarAction[] = [
     },
   },
 ];
+
+/**
+ * Where each group's first control sits in the left-to-right order of the bar,
+ * dividers counted, and where the two trailing buttons sit after it. The CSS
+ * reads these as `--tool-index` and lands each control a beat after the one to
+ * its left, so the entrance ripples across the whole pill rather than
+ * restarting inside every group. The groups are a fixed literal, so these are
+ * constants rather than something threaded through a render.
+ */
+const GROUPS = [BLOCK_ACTIONS, LIST_ACTIONS, MARK_ACTIONS];
+const GROUP_FIRST_INDEX = GROUPS.map((_, index) =>
+  GROUPS.slice(0, index).reduce((count, group) => count + group.length + 1, 0),
+);
+const TRAILING_INDEX = GROUP_FIRST_INDEX[GROUPS.length - 1] + MARK_ACTIONS.length;
+
+/** A control's place in the bar, for the entrance cascade. */
+function toolIndex(index: number): CSSProperties {
+  return { "--tool-index": index } as CSSProperties;
+}
 
 export type SelectionToolbarProps = {
   editor: Editor;
@@ -365,7 +384,7 @@ export function SelectionToolbar({
         style={placement.style}
         onMouseDown={(event) => event.preventDefault()}
       >
-        {[BLOCK_ACTIONS, LIST_ACTIONS, MARK_ACTIONS].map((group, index) => (
+        {GROUPS.map((group, index) => (
           <ToolbarGroup
             // The groups are a fixed literal, so the index is a stable identity.
             key={group[0].id}
@@ -373,12 +392,15 @@ export function SelectionToolbar({
             editor={editor}
             onRun={run}
             leadingDivider={index > 0}
+            firstIndex={GROUP_FIRST_INDEX[index]}
           />
         ))}
-        <span className="divider" aria-hidden />
+        <span className="divider" aria-hidden style={toolIndex(TRAILING_INDEX)} />
         <button
           type="button"
+          data-tool="link"
           data-active={editor.isActive("link") || undefined}
+          style={toolIndex(TRAILING_INDEX + 1)}
           onPointerDown={(event) => event.preventDefault()}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => setLinkDraft(currentHref(editor))}
@@ -387,11 +409,13 @@ export function SelectionToolbar({
         >
           <IconChainLink1 size={16} />
         </button>
-        <span className="divider" aria-hidden />
+        <span className="divider" aria-hidden style={toolIndex(TRAILING_INDEX + 2)} />
         <button
           type="button"
           className="selection-toolbar-ai"
+          data-tool="rewrite"
           data-active={menuOpen || undefined}
+          style={toolIndex(TRAILING_INDEX + 3)}
           onPointerDown={(event) => event.preventDefault()}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => setMenuOpen((open) => !open)}
@@ -414,11 +438,12 @@ export function SelectionToolbar({
           onPointerDown={(event) => event.preventDefault()}
           onMouseDown={(event) => event.preventDefault()}
         >
-          {REWRITES.map((entry) => (
+          {REWRITES.map((entry, index) => (
             <button
               key={entry.kind}
               type="button"
               role="menuitem"
+              style={{ "--item-index": index } as CSSProperties}
               onPointerDown={(event) => event.preventDefault()}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => chooseRewrite(entry)}
@@ -438,20 +463,29 @@ function ToolbarGroup({
   editor,
   onRun,
   leadingDivider,
+  firstIndex,
 }: {
   actions: ToolbarAction[];
   editor: Editor;
   onRun: (action: ToolbarAction) => void;
   leadingDivider: boolean;
+  /** Place of this group's first action in the bar; the divider precedes it. */
+  firstIndex: number;
 }) {
   return (
     <>
-      {leadingDivider ? <span className="divider" aria-hidden /> : null}
-      {actions.map((action) => (
+      {leadingDivider ? (
+        <span className="divider" aria-hidden style={toolIndex(firstIndex - 1)} />
+      ) : null}
+      {actions.map((action, index) => (
         <button
           key={action.id}
           type="button"
+          // Named so the stylesheet can give a control its own colour where the
+          // colour is not a matter of taste: the highlighter wears its wash.
+          data-tool={action.id}
           data-active={action.isActive(editor) || undefined}
+          style={toolIndex(firstIndex + index)}
           // Both, and on purpose: preventing the mouse event is what keeps a
           // desktop click from blurring the editor, and preventing the pointer
           // event is what keeps a tap from doing the same on iOS, where the
