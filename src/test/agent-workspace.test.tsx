@@ -6708,6 +6708,43 @@ describe("AgentWorkspace", () => {
     expect(mocks.councilConvene).not.toHaveBeenCalled();
   });
 
+  it("shows an excerpt of a long request, not the document somebody pasted", async () => {
+    // People put whole documents to the council. Rendered raw, a five-thousand
+    // character request filled the screen on every new session and pushed the
+    // banner's own buttons out of reach.
+    const request = `ACQUA ALTA ${"scene ".repeat(400)}end`;
+    mocks.councilCycles.mockResolvedValue([{ id: "m9", request, status: "questions" }]);
+    render(<AgentWorkspace />);
+
+    const banner = await screen.findByText(/A council sitting is still open on/);
+    expect(banner.textContent?.length).toBeLessThan(160);
+    expect(banner.textContent).toContain("ACQUA ALTA");
+    expect(banner.textContent).toContain("…");
+    // The whole thing is still reachable, just not painted across the page.
+    expect(banner).toHaveAttribute("title", request);
+    // And the way back is still there.
+    expect(screen.getByRole("button", { name: "Reopen it" })).toBeInTheDocument();
+  });
+
+  it("stays dismissed when the workspace is remounted", async () => {
+    // The workspace is mounted conditionally on the active view, so a trip to
+    // the notes and back used to re-offer a sitting the user had just waved
+    // away: a Dismiss button that undid itself the moment you looked away.
+    mocks.councilCycles.mockResolvedValue([
+      { id: "m-remount", request: "a request nobody wants back", status: "ready" },
+    ]);
+    const user = userEvent.setup();
+    const first = render(<AgentWorkspace />);
+    await screen.findByText(/A council sitting is still open/);
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(/A council sitting is still open/)).toBeNull();
+    first.unmount();
+
+    render(<AgentWorkspace />);
+    await waitFor(() => expect(mocks.councilCycles).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(/A council sitting is still open/)).toBeNull();
+  });
+
   it("leaves a settled sitting alone", async () => {
     // Everything from `executing` on is reachable through its session, and a
     // failed one is not worth reopening. Offering those would turn the banner

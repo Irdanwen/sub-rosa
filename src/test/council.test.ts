@@ -8,6 +8,7 @@ import {
   isSitting,
   mandateProblems,
   pendingSeats,
+  requestExcerpt,
   type CouncilCycle,
   type CouncilSeat,
   type Mandate,
@@ -201,5 +202,31 @@ describe("reading a cycle", () => {
     // A failed seat has no opinion, and a second turn has already seen the
     // table — neither is a single-model baseline.
     expect(baselineDrafts(drafts).map((entry) => entry.seatId)).toEqual(["shape"]);
+  });
+});
+
+describe("requestExcerpt", () => {
+  it("leaves a short request exactly as it is", () => {
+    expect(requestExcerpt("make the settings page faster")).toBe("make the settings page faster");
+  });
+
+  it("collapses the whitespace a pasted document is full of", () => {
+    expect(requestExcerpt("one\n\n  two\tthree")).toBe("one two three");
+  });
+
+  it("cuts on a word boundary and says it cut", () => {
+    const excerpt = requestExcerpt("alpha bravo charlie delta echo foxtrot golf", 20);
+    expect(excerpt).toBe("alpha bravo charlie…");
+    expect(excerpt.length).toBeLessThanOrEqual(21);
+  });
+
+  it("cuts mid-word rather than return almost nothing", () => {
+    // No space near the end to break on: better a hard cut than four
+    // characters standing in for a request.
+    expect(requestExcerpt(`a ${"x".repeat(40)}`, 20)).toBe("a xxxxxxxxxxxxxxxxxx…");
+  });
+
+  it("survives a request that is one unbroken string", () => {
+    expect(requestExcerpt("y".repeat(5000), 30)).toBe(`${"y".repeat(30)}…`);
   });
 });

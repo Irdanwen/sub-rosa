@@ -10010,10 +10010,16 @@ input:focus-visible,
   color: var(--muted-foreground);
 }
 
+/* One line, always. The text is already excerpted in JS; this is the guard for
+ * an excerpt with no space to break on, which would otherwise push the
+ * banner's buttons off the edge. */
 .agent-branched-banner p {
   margin: 0;
   min-width: 0;
   flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agent-branched-banner button {

@@ -90,6 +90,7 @@ import {
   councilCycleForSession,
   councilCycles,
   isUnfinished,
+  requestExcerpt,
 } from "../../lib/council";
 import { CouncilSitting } from "./council/CouncilSitting";
 import { VerdictPanel } from "./council/VerdictPanel";
@@ -3374,12 +3375,20 @@ export function AgentWorkspace({
   // A sitting with no surface is money already spent and invisible, so the
   // workspace looks for one on mount. It is offered, never forced: landing in
   // a council you left is as wrong as losing it.
+  //
+  // Once per launch, though, and that is the point of `dismissedSittings`.
+  // This workspace is mounted conditionally on the active view, so every trip
+  // to the notes and back re-ran this effect and put the banner up again: a
+  // Dismiss button that undid itself the moment you looked away. The set is
+  // module-level on purpose — it must outlive the component and must NOT
+  // outlive the process, because a relaunch is exactly the event that strands
+  // a sitting, and after one the offer is worth making again.
   useEffect(() => {
     let live = true;
     void councilCycles(10)
       .then((rows) => {
         if (!live) return;
-        const open = rows.find(isUnfinished);
+        const open = rows.find((row) => isUnfinished(row) && !dismissedSittings.has(row.id));
         if (open) setStrandedSitting({ id: open.id, request: open.request });
       })
       .catch(() => {
@@ -8026,7 +8035,10 @@ export function AgentWorkspace({
             <AgentStrandedSittingBanner
               request={strandedSitting.request}
               onReopen={() => reopenSitting(strandedSitting)}
-              onDismiss={() => setStrandedSitting(null)}
+              onDismiss={() => {
+                dismissedSittings.add(strandedSitting.id);
+                setStrandedSitting(null);
+              }}
             />
           ) : null}
           <div className="agent-hero-heading">
@@ -8101,7 +8113,10 @@ export function AgentWorkspace({
                 <AgentStrandedSittingBanner
                   request={strandedSitting.request}
                   onReopen={() => reopenSitting(strandedSitting)}
-                  onDismiss={() => setStrandedSitting(null)}
+                  onDismiss={() => {
+                    dismissedSittings.add(strandedSitting.id);
+                    setStrandedSitting(null);
+                  }}
                 />
               ) : null}
               {sessionSitting && !councilRequest ? (
@@ -10695,6 +10710,9 @@ function AgentSessionSittingBanner({
   );
 }
 
+/** Sittings the user has waved away this launch. See the resume effect. */
+const dismissedSittings = new Set<string>();
+
 function AgentStrandedSittingBanner({
   request,
   onReopen,
@@ -10707,7 +10725,10 @@ function AgentStrandedSittingBanner({
   return (
     <div className="agent-branched-banner" role="status">
       <IconCirclesThree size={14} aria-hidden />
-      <p>A council sitting is still open on "{request}".</p>
+      {/* An excerpt, never the request: people put whole documents to the
+          council, and the raw text filled the screen and pushed these buttons
+          out of reach. The full request is on the title, and behind Reopen. */}
+      <p title={request}>A council sitting is still open on "{requestExcerpt(request)}".</p>
       <button type="button" className="btn btn-secondary" onClick={onReopen}>
         Reopen it
       </button>

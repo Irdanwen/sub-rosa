@@ -4,6 +4,7 @@ import {
   councilPlan,
   councilSeatModels,
   councilVerdicts,
+  requestExcerpt,
   setCouncilSeatModel,
   verdictTally,
   type CouncilCycle,
@@ -123,7 +124,9 @@ export function CouncilSettingsSection() {
               const tally = latest ? verdictTally(latest) : null;
               return (
                 <li key={cycle.id}>
-                  <span className="council-history-request">{cycle.request}</span>
+                  <span className="council-history-request" title={cycle.request}>
+                    {requestExcerpt(cycle.request, 120)}
+                  </span>
                   <span className="council-history-meta">
                     {cycle.modelCalls} model calls
                     {tally ? ` · ${tally.satisfied} of ${tally.total} criteria held` : ""}

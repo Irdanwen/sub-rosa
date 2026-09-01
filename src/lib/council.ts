@@ -323,6 +323,29 @@ export function isUnfinished(cycle: CouncilCycle): boolean {
   );
 }
 
+/**
+ * A request shortened to fit a one-line label.
+ *
+ * A council request is whatever the user typed, and people put whole documents
+ * to the council -- a film treatment, a spec, a transcript. The resume banner
+ * and the history row are one-line labels that were rendering it raw, so a
+ * five-thousand-character request filled the screen on every new session and
+ * pushed the banner's own buttons out of reach.
+ *
+ * Cut on a word boundary when there is one near the end, so the label reads as
+ * a sentence rather than as a string that stopped. Whitespace is collapsed
+ * first: a pasted document is full of newlines, and they are what turned one
+ * line into forty.
+ */
+export function requestExcerpt(request: string, max = 90): string {
+  const flat = request.replace(/\s+/g, " ").trim();
+  if (flat.length <= max) return flat;
+  const cut = flat.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  const kept = lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut;
+  return `${kept.trimEnd()}…`;
+}
+
 /** A sitting is spending money right now. */
 export function isSitting(cycle: CouncilCycle): boolean {
   return cycle.status === "deliberating" || cycle.status === "reviewing";
