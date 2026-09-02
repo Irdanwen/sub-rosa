@@ -1,0 +1,129 @@
+name: supply chain
+
+# Known CVEs in the dependency tree, checked on a clock rather than when
+# somebody remembers. `docs/github-security-readiness.md` records one manual
+# `cargo audit` run; a run that happened once is not a property.
+#
+# Dependabot (`.github/dependabot.yml`) already opens update PRs weekly. That
+# tells us a newer version exists. This tells us the version we ship is
+# vulnerable, which is a different question and the one that matters on the day
+# an advisory lands.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Mondays, after Dependabot's 12:00 America/New_York pass has opened its PRs.
+    - cron: "0 18 * * 1"
+  pull_request:
+    paths:
+      - ".github/workflows/supply-chain.yml"
+      - "src-tauri/.cargo/audit.toml"
+      - "src-tauri/deny.toml"
+      - "june-api/.cargo/audit.toml"
+      - "june-api/deny.toml"
+      - "src-tauri/Cargo.toml"
+      - "src-tauri/Cargo.lock"
+      - "june-api/Cargo.toml"
+      - "june-api/Cargo.lock"
+      - "package.json"
+      - "pnpm-lock.yaml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/supply-chain.yml"
+      - "src-tauri/.cargo/audit.toml"
+      - "src-tauri/deny.toml"
+      - "june-api/deny.toml"
+      - "src-tauri/Cargo.lock"
+      - "june-api/Cargo.lock"
+      - "pnpm-lock.yaml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supply-chain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-audit:
+    name: cargo audit (${{ matrix.workspace }})
+    runs-on: ubuntu-latest
+    strategy:
+      # Both lockfiles are reported even when the first one fails: a run that
+      # stops at the desktop crate hides whatever the backend is carrying.
+      fail-fast: false
+      matrix:
+        workspace: [src-tauri, june-api]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Cache the advisory database and the binary
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/bin/cargo-audit
+            ~/.cargo/advisory-db
+          key: cargo-audit-${{ runner.os }}-v1
+
+      - name: Install cargo-audit
+        run: |
+          set -euo pipefail
+          if ! command -v cargo-audit >/dev/null 2>&1; then
+            cargo install cargo-audit --locked --version ^0.21
+          fi
+
+      # Run from inside the workspace so its own `.cargo/audit.toml` policy
+      # applies. The default policy fails on a vulnerability and reports
+      # unmaintained / unsound / yanked crates as warnings — a vulnerability is
+      # an incident, an unmaintained crate is a planning problem, and treating
+      # them alike trains everyone to ignore the job.
+      - name: Audit ${{ matrix.workspace }}
+        working-directory: ${{ matrix.workspace }}
+        run: cargo audit
+
+  cargo-deny:
+    name: cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Cache the binary
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cargo/bin/cargo-deny
+          key: cargo-deny-${{ runner.os }}-v1
+
+      - name: Install cargo-deny
+        run: |
+          set -euo pipefail
+          if ! command -v cargo-deny >/dev/null 2>&1; then
+            cargo install cargo-deny --locked --version ^0.18
+          fi
+
+      # Licenses, duplicate versions, and where a crate came from. The app
+      # bundles an agent runtime, so its dependency tree deserves the same
+      # scrutiny as its own code.
+      - name: Check src-tauri
+        run: cargo deny --manifest-path src-tauri/Cargo.toml --all-features check
+
+      - name: Check june-api
+        run: cargo deny --manifest-path june-api/Cargo.toml --all-features check
+
+  pnpm-audit:
+    name: pnpm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4.1.0
+
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # The frontend ships inside the app bundle, so a vulnerable runtime
+      # dependency is shipped code, not a build-time detail.
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level moderate

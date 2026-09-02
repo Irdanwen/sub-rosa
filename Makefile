@@ -7,6 +7,7 @@
 	tauri-fmt tauri-fmt-check tauri-lint tauri-test \
 	june-api-fmt june-api-fmt-check june-api-lint june-api-test \
 	fmt fmt-check lint test verify \
+	audit audit-cargo audit-deps \
 	skills-update skills-restore skills-sync
 
 .DEFAULT_GOAL := help
@@ -58,6 +59,20 @@ june-api-lint:  ## clippy (warnings = errors)
 
 june-api-test:  ## cargo test
 	cd june-api && cargo test --all-targets --all-features --locked
+
+# --- Supply chain (mirrors .github/workflows/supply-chain.yml) ---
+# Not part of `verify`: these fetch the advisory database over the network, and
+# a gate that needs the network is a gate that fails on a plane. CI runs them
+# weekly; run them by hand before a release.
+audit-cargo:  ## cargo audit on both lockfiles (needs cargo-audit)
+	cd src-tauri && cargo audit
+	cd june-api && cargo audit
+
+audit-deps:  ## cargo deny: licences, sources, bans (needs cargo-deny)
+	cargo deny --manifest-path src-tauri/Cargo.toml --all-features check
+	cargo deny --manifest-path june-api/Cargo.toml --all-features check
+
+audit: audit-cargo audit-deps  ## Every supply-chain gate CI runs
 
 # --- Skills (.agents/skills is the source of truth; .claude/skills are symlinks) ---
 skills-update:  ## Update project skills to latest (npx skills)

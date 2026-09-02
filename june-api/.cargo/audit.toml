@@ -1,0 +1,9 @@
+# `cargo audit` policy for the backend workspace.
+#
+# Same split as the desktop crate (`src-tauri/.cargo/audit.toml`): a
+# vulnerability fails the run, an unmaintained or unsound crate is reported.
+# Nothing is ignored here — the tree is clean, and it should stay easy to see
+# when that stops being true.
+
+[advisories]
+ignore = []
