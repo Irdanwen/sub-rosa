@@ -75,9 +75,8 @@ async fn cached_tile(path: &PathBuf) -> Option<Vec<u8>> {
 fn http_client() -> &'static reqwest::Client {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
+        crate::http_client::anonymous(Duration::from_secs(8))
             .user_agent(USER_AGENT)
-            .timeout(Duration::from_secs(8))
             .build()
             .unwrap_or_default()
     })

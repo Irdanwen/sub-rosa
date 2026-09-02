@@ -459,8 +459,7 @@ struct CreatedIssue {
 }
 
 fn client() -> Result<reqwest::Client, AppError> {
-    reqwest::Client::builder()
-        .timeout(REQUEST_TIMEOUT)
+    crate::http_client::credentialed(REQUEST_TIMEOUT)
         .build()
         .map_err(|error| AppError::new("github_http_client", error.to_string()))
 }

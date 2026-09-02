@@ -163,8 +163,7 @@ fn photo_cache_path(app: &AppHandle, photo_ref: &str, width: u32) -> Option<std:
 fn http_client() -> &'static reqwest::Client {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .timeout(Duration::from_secs(10))
+        crate::http_client::credentialed(Duration::from_secs(10))
             .build()
             .unwrap_or_default()
     })

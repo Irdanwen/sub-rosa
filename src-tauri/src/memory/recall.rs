@@ -122,13 +122,12 @@ async fn embed(texts: &[String]) -> Result<Vec<Vec<f32>>, AppError> {
         ));
     };
     let base = crate::carpe_diem::settings::base_url();
-    let client = reqwest::Client::builder()
-        .timeout(EMBEDDING_TIMEOUT)
+    let client = crate::http_client::credentialed(EMBEDDING_TIMEOUT)
         .build()
         .map_err(|error| AppError::new("memory_embeddings_client", error.to_string()))?;
     let response = client
         .post(format!("{base}/embeddings"))
-        .bearer_auth(&key)
+        .bearer_auth(key.expose_str())
         .json(&serde_json::json!({
             "model": EMBEDDING_MODEL,
             "input": texts,

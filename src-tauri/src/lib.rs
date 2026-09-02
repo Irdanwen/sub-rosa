@@ -12,6 +12,7 @@ pub mod audio;
 pub mod background;
 pub mod calendar;
 pub mod carpe_diem;
+pub mod child_env;
 pub mod commands;
 #[cfg(desktop)]
 pub mod council;
@@ -22,11 +23,13 @@ pub mod dictation;
 #[cfg(mobile)]
 pub mod dictation_mobile;
 pub mod domain;
+pub mod egress;
 #[cfg(desktop)]
 pub mod hermes_bridge;
 pub mod hermes_image_fit;
 #[cfg(desktop)]
 pub mod hermes_working_dir;
+pub mod http_client;
 pub mod ingest;
 pub mod ios_background;
 pub mod june_api;
@@ -47,10 +50,12 @@ pub mod moments;
 pub mod note_ai;
 pub mod open_url;
 pub mod os_accounts;
+pub mod path_confinement;
 #[cfg(target_os = "ios")]
 pub mod photos_ios;
 pub mod places;
 pub mod providers;
+pub mod redacted;
 #[cfg(target_os = "ios")]
 pub mod share_ios;
 pub mod spotlight;
@@ -347,6 +352,7 @@ pub fn run() {
             commands::import_audio_note,
             commands::stage_imported_file,
             commands::discard_staged_import,
+            egress::declared_egress,
             longform::note_summary,
             longform::note_summary_plan,
             longform::summarize_note_longform,
@@ -545,6 +551,7 @@ pub fn run() {
         commands::import_audio_note,
         commands::stage_imported_file,
         commands::discard_staged_import,
+        egress::declared_egress,
         longform::note_summary,
         longform::note_summary_plan,
         longform::summarize_note_longform,

@@ -20,6 +20,7 @@ use std::{
 use tauri::{AppHandle, Manager, State};
 
 use super::branding;
+use crate::redacted::Redacted;
 
 const SETTINGS_FILE: &str = "carpe-diem.json";
 const KEYCHAIN_ACCOUNT: &str = "api-key";
@@ -201,7 +202,11 @@ fn catalog_base_url_of(base: &str) -> String {
 
 /// The stored Carpe Diem API key, if any. Reads the OS keychain synchronously
 /// (fine for the sidecar's setup path, which is not on the async runtime).
-pub fn api_key() -> Option<String> {
+///
+/// Wrapped in [`Redacted`] so it cannot be printed by a `{:?}` somebody adds
+/// while debugging. Reading it is `expose_str()`, which is deliberately a word
+/// that shows up in review.
+pub fn api_key() -> Option<Redacted<String>> {
     // Debug convenience: inject the key via env for `pnpm tauri:dev` without
     // touching the OS keychain (mirrors June's OS_JUNE_DEV_PLAINTEXT_TOKEN_STORE
     // escape hatch). Never compiled into release builds.
@@ -209,7 +214,7 @@ pub fn api_key() -> Option<String> {
     if let Ok(key) = std::env::var("SUBROSA_DEV_API_KEY") {
         let key = key.trim().to_string();
         if !key.is_empty() {
-            return Some(key);
+            return Some(Redacted::new(key));
         }
     }
     keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
@@ -217,6 +222,7 @@ pub fn api_key() -> Option<String> {
         .and_then(|entry| entry.get_password().ok())
         .map(|key| key.trim().to_string())
         .filter(|key| !key.is_empty())
+        .map(Redacted::new)
 }
 
 /// Whether the app has enough configuration to run (a key is present).
@@ -293,8 +299,7 @@ pub async fn carpe_diem_test_connection() -> Result<TestConnectionResult, AppErr
         });
     };
 
-    let client = reqwest::Client::builder()
-        .timeout(TEST_TIMEOUT)
+    let client = crate::http_client::credentialed(TEST_TIMEOUT)
         .build()
         .map_err(|error| AppError::new("carpe_diem_http_client", error.to_string()))?;
     let base = base.trim_end_matches('/').to_string();
@@ -305,7 +310,7 @@ pub async fn carpe_diem_test_connection() -> Result<TestConnectionResult, AppErr
     // 1) Reachability + catalog size (public on Carpe Diem, so proves the URL).
     let model_count = match client
         .get(format!("{catalog}/models"))
-        .bearer_auth(&key)
+        .bearer_auth(key.expose_str())
         .send()
         .await
     {
@@ -333,7 +338,7 @@ pub async fn carpe_diem_test_connection() -> Result<TestConnectionResult, AppErr
     });
     match client
         .post(format!("{base}/chat/completions"))
-        .bearer_auth(&key)
+        .bearer_auth(key.expose_str())
         .json(&body)
         .send()
         .await
@@ -387,8 +392,7 @@ pub async fn carpe_diem_get_credits() -> Result<CarpeDiemCreditsDto, AppError> {
         ));
     };
 
-    let client = reqwest::Client::builder()
-        .timeout(TEST_TIMEOUT)
+    let client = crate::http_client::credentialed(TEST_TIMEOUT)
         .build()
         .map_err(|error| AppError::new("carpe_diem_http_client", error.to_string()))?;
     // Billing (`/credits`, `/prepaid/*`, `/api_keys/rate_limits`) and pricing
@@ -398,10 +402,10 @@ pub async fn carpe_diem_get_credits() -> Result<CarpeDiemCreditsDto, AppError> {
     // Route by key prefix (the fork's rule): `cdm_` keys talk to Carpe Diem;
     // any other key is a Venice key pointed straight at api.venice.ai, which
     // bills at full rate — hence the fixed ×1.00 factor on that path.
-    if key.starts_with("cdm_") {
-        carpe_diem_credits(&client, &base, &key).await
+    if key.expose_str().starts_with("cdm_") {
+        carpe_diem_credits(&client, &base, key.expose_str()).await
     } else {
-        venice_credits(&client, &base, &key).await
+        venice_credits(&client, &base, key.expose_str()).await
     }
 }
 
@@ -608,7 +612,7 @@ pub struct SetRailRequest {
 #[tauri::command]
 pub async fn carpe_diem_get_billing() -> Result<CarpeDiemBillingDto, AppError> {
     let (base, key, client) = billing_ctx()?;
-    fetch_billing(&client, &base, &key).await
+    fetch_billing(&client, &base, key.expose_str()).await
 }
 
 /// Switch the active payment rail (`auto` / `credits` / `prepaid`) and return
@@ -626,14 +630,14 @@ pub async fn carpe_diem_set_rail(request: SetRailRequest) -> Result<CarpeDiemBil
     let (base, key, client) = billing_ctx()?;
     client
         .post(format!("{base}/prepaid/rail"))
-        .bearer_auth(&key)
+        .bearer_auth(key.expose_str())
         .json(&serde_json::json!({ "rail": rail }))
         .send()
         .await
         .map_err(|error| AppError::new("carpe_diem_billing_unreachable", error.to_string()))?
         .error_for_status()
         .map_err(|error| AppError::new("carpe_diem_set_rail_failed", error.to_string()))?;
-    fetch_billing(&client, &base, &key).await
+    fetch_billing(&client, &base, key.expose_str()).await
 }
 
 /// Opens the Carpe Diem dashboard, where credits are actually bought. This is
@@ -649,14 +653,14 @@ pub fn carpe_diem_open_dashboard() -> Result<(), AppError> {
 
 /// Shared setup for the billing commands: the base URL, a `cdm_` key, and an
 /// HTTP client. Rejects Venice keys (no payment rails there).
-fn billing_ctx() -> Result<(String, String, reqwest::Client), AppError> {
+fn billing_ctx() -> Result<(String, Redacted<String>, reqwest::Client), AppError> {
     let Some(key) = api_key() else {
         return Err(AppError::new(
             "carpe_diem_no_api_key",
             "No Carpe Diem API key is stored yet.",
         ));
     };
-    if !key.starts_with("cdm_") {
+    if !key.expose_str().starts_with("cdm_") {
         return Err(AppError::new(
             "carpe_diem_billing_unsupported",
             "Payment rails apply to Carpe Diem keys only.",
@@ -664,8 +668,7 @@ fn billing_ctx() -> Result<(String, String, reqwest::Client), AppError> {
     }
     // Billing endpoints (`/credits`, `/prepaid/*`) live only on the `/v1` rail.
     let base = catalog_base_url();
-    let client = reqwest::Client::builder()
-        .timeout(TEST_TIMEOUT)
+    let client = crate::http_client::credentialed(TEST_TIMEOUT)
         .build()
         .map_err(|error| AppError::new("carpe_diem_http_client", error.to_string()))?;
     Ok((base, key, client))
@@ -918,7 +921,41 @@ fn validate_base_url(raw: &str) -> Result<String, AppError> {
             "The base URL is missing a host.",
         ));
     }
+    // Every request to this base carries the `cdm_` key as a bearer token. Over
+    // plain http that key crosses the network in the clear, and a base URL is
+    // pasted once and then forgotten — so the check has to happen here, not in
+    // the user's memory. Loopback is exempt: it never leaves the machine, and
+    // it is how a self-hosted or development backend is reached.
+    if value.starts_with("http://") && !is_loopback_host(host) {
+        return Err(AppError::new(
+            "carpe_diem_base_url_insecure",
+            "Use https:// for this address. Your API key travels with every request, and http would send it in the clear.",
+        ));
+    }
     Ok(value.to_string())
+}
+
+/// Whether `host` (an authority, so possibly `name:port`) names this machine.
+///
+/// Matched on the host part only, and on the whole of it: `127.0.0.1.evil.com`
+/// and `localhost.attacker.net` resolve wherever their owner wants and are not
+/// loopback, however they read.
+fn is_loopback_host(host: &str) -> bool {
+    let name = match host.rsplit_once(':') {
+        // `[::1]:8080` — the bracketed form is the only one where a colon can
+        // appear inside the host itself.
+        Some((left, right)) if right.chars().all(|c| c.is_ascii_digit()) && !right.is_empty() => {
+            left
+        }
+        _ => host,
+    };
+    let name = name.trim_start_matches('[').trim_end_matches(']');
+    name.eq_ignore_ascii_case("localhost")
+        || name == "127.0.0.1"
+        || name == "::1"
+        || name
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
 }
 
 fn normalize_api_key(raw: &str) -> Result<String, AppError> {
@@ -941,6 +978,58 @@ fn normalize_api_key(raw: &str) -> Result<String, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The key rides on every request to this base, so the scheme is not a
+    /// preference. Loopback is the one exemption, and it has to survive every
+    /// spelling of "this machine" without accepting anything that merely looks
+    /// like one.
+    #[test]
+    fn a_base_url_over_http_is_refused_unless_it_is_loopback() {
+        for allowed in [
+            "http://127.0.0.1:8080/v1",
+            "http://localhost:3000/v1",
+            "http://LocalHost/v1",
+            "http://[::1]:9000/v1",
+            "http://127.2.3.4/v1",
+            "https://carpe-diem.xyz/v1",
+            "https://example.internal:8443/v1",
+        ] {
+            assert!(
+                validate_base_url(allowed).is_ok(),
+                "should accept {allowed}"
+            );
+        }
+
+        for refused in [
+            "http://carpe-diem.xyz/v1",
+            "http://example.com",
+            "http://127.0.0.1.evil.com/v1",
+            "http://localhost.attacker.net/v1",
+            "http://notlocalhost/v1",
+            "http://10.0.0.5/v1",
+            "http://[::ffff:127.0.0.1]/v1",
+        ] {
+            let error = validate_base_url(refused).expect_err(&format!("should refuse {refused}"));
+            assert_eq!(error.code, "carpe_diem_base_url_insecure", "for {refused}");
+        }
+    }
+
+    #[test]
+    fn a_base_url_still_has_to_be_a_url_at_all() {
+        for refused in [
+            "",
+            "   ",
+            "ftp://example.com",
+            "example.com",
+            "https://",
+            "http://",
+        ] {
+            assert!(
+                validate_base_url(refused).is_err(),
+                "should refuse {refused:?}"
+            );
+        }
+    }
 
     #[test]
     fn suggest_switch_proposes_the_funded_rail_only_when_active_is_empty() {
