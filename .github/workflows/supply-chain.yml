@@ -64,13 +64,15 @@ jobs:
           path: |
             ~/.cargo/bin/cargo-audit
             ~/.cargo/advisory-db
-          key: cargo-audit-${{ runner.os }}-v1
+          key: cargo-audit-${{ runner.os }}-0.22
 
       - name: Install cargo-audit
         run: |
           set -euo pipefail
           if ! command -v cargo-audit >/dev/null 2>&1; then
-            cargo install cargo-audit --locked --version ^0.21
+            # 0.22 or newer: 0.21 cannot parse the CVSS 4.0 advisories now in
+            # the RustSec database and fails before it reads a single lockfile.
+            cargo install cargo-audit --locked --version ^0.22
           fi
 
       # Run from inside the workspace so its own `.cargo/audit.toml` policy
@@ -92,13 +94,16 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cargo/bin/cargo-deny
-          key: cargo-deny-${{ runner.os }}-v1
+          key: cargo-deny-${{ runner.os }}-0.20
 
       - name: Install cargo-deny
         run: |
           set -euo pipefail
           if ! command -v cargo-deny >/dev/null 2>&1; then
-            cargo install cargo-deny --locked --version ^0.18
+            # 0.20 or newer: the `[advisories] unmaintained` key takes
+            # "workspace" rather than a severity from 0.19 on, and deny.toml
+            # is written for that schema.
+            cargo install cargo-deny --locked --version ^0.20
           fi
 
       # Licenses, duplicate versions, and where a crate came from. The app
