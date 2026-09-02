@@ -461,19 +461,9 @@ fn attach_sidecar_log(app: &AppHandle, command: &mut Command) {
         return;
     }
     let path = dir.join(SIDECAR_LOG_FILE);
-    let oversize = std::fs::metadata(&path)
-        .map(|meta| meta.len() > SIDECAR_LOG_MAX_BYTES)
-        .unwrap_or(false);
-    let mut options = std::fs::OpenOptions::new();
-    options.create(true).write(true);
-    // `truncate` and `append` cannot both be set; a restart past the cap
-    // starts the file over, every other restart adds to it.
-    if oversize {
-        options.truncate(true);
-    } else {
-        options.append(true);
-    }
-    let Ok(out) = options.open(&path) else {
+    // A restart past the cap starts the file over, every other restart adds
+    // to it; the policy lives in one place with the dictation log's.
+    let Ok(out) = crate::app_paths::open_capped_log(&path, SIDECAR_LOG_MAX_BYTES) else {
         return;
     };
     let Ok(err) = out.try_clone() else {

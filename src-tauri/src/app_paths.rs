@@ -101,6 +101,70 @@ fn validate_recording_component(field: &'static str, value: &str) -> std::io::Re
     Ok(())
 }
 
+/// Open a log file that is allowed to grow only so far.
+///
+/// Every log the app keeps on disk goes through here so that none of them
+/// grows without end: the sidecar's stdout, the dictation event log. The
+/// policy is the sidecar's original one, kept deliberately simple. Below the
+/// cap the file is opened for append; past it, the next open starts it over.
+/// There is no archive, because the window anyone debugging cares about is the
+/// last few sessions, and a cap of a few megabytes holds those. `truncate` and
+/// `append` cannot both be set on one open, which is why the decision is made
+/// from the file's size before opening.
+///
+/// Best-effort by design: a caller that cannot open its log must carry on
+/// without one, so this returns the error rather than panicking.
+pub fn open_capped_log(path: &Path, max_bytes: u64) -> std::io::Result<std::fs::File> {
+    let oversize = std::fs::metadata(path)
+        .map(|meta| meta.len() > max_bytes)
+        .unwrap_or(false);
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).write(true);
+    if oversize {
+        options.truncate(true);
+    } else {
+        options.append(true);
+    }
+    options.open(path)
+}
+
+#[cfg(test)]
+mod capped_log_tests {
+    use super::open_capped_log;
+    use std::io::Write;
+
+    #[test]
+    fn appends_below_the_cap_and_starts_over_past_it() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("events.log");
+        let cap = 64;
+        // Twice the cap in small writes: the file is allowed to overshoot by
+        // one write, never by two.
+        for _ in 0..8 {
+            let mut file = open_capped_log(&path, cap).expect("open");
+            file.write_all(&[b'x'; 16]).expect("write");
+        }
+        let len = std::fs::metadata(&path).expect("meta").len();
+        assert!(
+            len <= cap + 16,
+            "log grew to {len} bytes past a cap of {cap}"
+        );
+        assert!(len > 0, "the log must keep the most recent write");
+    }
+
+    #[test]
+    fn a_missing_file_is_created_for_append() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("fresh.log");
+        let mut file = open_capped_log(&path, 1024).expect("open");
+        writeln!(file, "first").expect("write");
+        let mut file = open_capped_log(&path, 1024).expect("reopen");
+        writeln!(file, "second").expect("write");
+        let body = std::fs::read_to_string(&path).expect("read");
+        assert_eq!(body, "first\nsecond\n");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{app_data_dir_for_build, AppPaths};

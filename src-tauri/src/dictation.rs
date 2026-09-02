@@ -54,6 +54,10 @@ const DICTATION_CLEANUP_RETRY_MIN_CHUNK_BYTES: usize = 300;
 /// Email is the only recognized context today.
 const DICTATION_AUDIO_ACTIVITY_THRESHOLD: f32 = 0.04;
 const DICTATION_EVENT_LOG: &str = "dictation-events.log";
+/// One dictation is a handful of JSON lines; this keeps weeks of them. Without
+/// a cap the file reached 6.8 MB on one machine in two months, which is not a
+/// lot, but nothing was ever going to stop it.
+const DICTATION_EVENT_LOG_MAX_BYTES: u64 = 2 * 1024 * 1024;
 
 static SETTINGS_CACHE: OnceLock<Mutex<DictationSettings>> = OnceLock::new();
 
@@ -3792,11 +3796,10 @@ fn append_dictation_event_log(
     if fs::create_dir_all(&directory).is_err() {
         return;
     }
-    let Ok(mut file) = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(directory.join(DICTATION_EVENT_LOG))
-    else {
+    let Ok(mut file) = crate::app_paths::open_capped_log(
+        &directory.join(DICTATION_EVENT_LOG),
+        DICTATION_EVENT_LOG_MAX_BYTES,
+    ) else {
         return;
     };
     let _ = writeln!(file, "{entry}");
