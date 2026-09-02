@@ -1,6 +1,7 @@
 [package]
 name = "os-june"
-version = "1.57.0"
+version = "1.58.0"
+publish = false
 description = "Sub Rosa"
 authors = ["Open Software Network"]
 license = "MIT"
@@ -35,7 +36,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 rand = "0.8"
 # Parses podcast feeds so an enclosure can be fetched (ADR-0028). Already in
 # the tree transitively, so pinning it here adds no new crate to the lockfile.
-quick-xml = "0.39"
+quick-xml = "0.41"
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "cookies"] }
 # Pure-Rust FFT for the echo-rejection similarity gate (GCC-PHAT lag estimation).
 rustfft = "6.2"
@@ -160,3 +161,6 @@ keyring = { version = "3", features = ["windows-native"] }
 
 [dev-dependencies]
 tempfile = "3.14"
+# Captures what `tracing` emits, so "the key is never logged" is a test rather
+# than a habit (see tests/no_secret_in_logs.rs).
+tracing-subscriber = { version = "0.3", features = ["fmt"] }

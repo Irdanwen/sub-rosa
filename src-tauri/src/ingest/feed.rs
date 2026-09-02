@@ -67,7 +67,7 @@ pub fn first_episode(xml: &str) -> Result<FeedEpisode, AppError> {
                         for attribute in element.attributes().flatten() {
                             let key = local_name(attribute.key.as_ref());
                             let value = attribute
-                                .unescape_value()
+                                .normalized_value(quick_xml::XmlVersion::Implicit1_0)
                                 .map(|value| value.trim().to_string())
                                 .unwrap_or_default();
                             match key.as_str() {
@@ -102,7 +102,12 @@ pub fn first_episode(xml: &str) -> Result<FeedEpisode, AppError> {
                 if let Some(target) = collecting.take() {
                     // Titles routinely carry entities (`&amp;`, `&#8217;`), so
                     // decode the bytes and then unescape what they meant.
-                    let decoded = text.xml_content().unwrap_or_default();
+                    // quick-xml 0.41 asks which XML version's character rules
+                    // to apply. Feeds rarely carry a declaration, and the spec
+                    // says an entity without one is 1.0.
+                    let decoded = text
+                        .xml_content(quick_xml::XmlVersion::Implicit1_0)
+                        .unwrap_or_default();
                     let value = quick_xml::escape::unescape(&decoded)
                         .map(|value| value.trim().to_string())
                         .unwrap_or_else(|_| decoded.trim().to_string());
