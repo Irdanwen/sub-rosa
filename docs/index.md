@@ -80,7 +80,7 @@ feature specs). Full index: [spec/index.md](../spec/index.md).
 
 - [release-macos.md](release-macos.md) / [release-windows.md](release-windows.md) — the release runbooks
 - [desktop-release-runner.md](desktop-release-runner.md) — Mac Studio self-hosted runner setup for signed desktop releases
-- [reproducible-builds.md](reproducible-builds.md) — June API source → TEE trust chain (Phase A shipped)
+- [reproducible-builds.md](reproducible-builds.md) — June API source → TEE trust chain (Phase A shipped). **Does not apply to this fork**: June API runs as an embedded sidecar, not a deployed image; the `build-june-api`, `june-api-watchdog` and `promote-june-api` workflows were removed on 2026-09-02
 - [threat-model.md](threat-model.md) — what the app protects, from whom, and what it deliberately does not:
   the five boundaries, what is in scope, what is out of it, and the commands that check each claim
 - [github-security-readiness.md](github-security-readiness.md) — pre-public repo hardening checklist

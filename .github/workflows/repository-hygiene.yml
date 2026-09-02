@@ -50,6 +50,20 @@ jobs:
             exit 1
           fi
 
+      # `packageManager` names pnpm, and the CI installs with pnpm. A second
+      # lockfile (bun.lock lived next to pnpm-lock.yaml for two months) means
+      # two resolutions of the same package.json, and which one a machine gets
+      # depends on which tool it ran last.
+      - name: Reject a second JavaScript lockfile
+        run: |
+          set -euo pipefail
+          extra="$(git ls-files | grep -E '^(bun\.lock|bun\.lockb|yarn\.lock|package-lock\.json)$' || true)"
+          if [[ -n "$extra" ]]; then
+            echo "$extra" >&2
+            echo "pnpm-lock.yaml is the only lockfile. Remove the others." >&2
+            exit 1
+          fi
+
       # This fork tracks upstream June and cherry-picks its fixes, so a merge
       # can quietly reintroduce a coordinate or an identity string the fork
       # deliberately removed (ADR 0017). A green test suite would not notice:
@@ -117,7 +131,6 @@ jobs:
               ':(exclude)LICENSE*' \
               ':(exclude).github/workflows/repository-hygiene.yml' \
               ':(exclude).github/workflows/upstream-sync.yml' \
-              ':(exclude).github/workflows/june-api-watchdog.yml' \
               ':(exclude)june-api/deploy/**' \
               || true
           )"

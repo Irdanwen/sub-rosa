@@ -17,16 +17,16 @@ référencé par le **nom de secret GitHub** attendu par la CI. **Aucun secret n
 - Confirmer la permission d'écrire des **secrets Actions** sur `sub-rosa` et de **push des releases** sur `sub-rosa-releases`
   (le workflow release aura besoin d'un token — voir §6).
 
-## 3. Signature macOS — ✅ signature / ⏳ notarisation
+## 3. Signature macOS — ✅ signature / ✅ notarisation
 Certificat **Developer ID Application: Morgan Magalhaes (H6N5V777LL)** fourni (`.p12`, valide jusqu'à 2027-02).
 Secrets GitHub **déjà posés** sur `sub-rosa` :
 - `APPLE_CERTIFICATE` (`.p12` base64) · `APPLE_CERTIFICATE_PASSWORD` · `APPLE_SIGNING_IDENTITY` · `APPLE_TEAM_ID`.
 - → La CI mac **signe** l'app + le sidecar + les helpers (Developer ID, hardened runtime). Vérifié aussi en local.
 
-⏳ **Notarisation encore requise** pour lever complètement l'avertissement Gatekeeper au premier lancement.
-Fournir en secrets : `APPLE_ID` + `APPLE_PASSWORD` (mot de passe d'app) *(le `APPLE_TEAM_ID` est déjà posé)*,
-ou en alternative `APPLE_API_KEY` + `APPLE_API_ISSUER` + `APPLE_API_KEY_P8_BASE64` (App Store Connect).
-Sans ça : DMG **signé mais non notarisé** (installable ; Gatekeeper demande une confirmation au 1er lancement).
+✅ **Notarisation opérationnelle** (secrets App Store Connect posés ; `release.yml` notarise et agrafe chaque DMG,
+vérifié sur v1.58.0 le 2026-09-02). Le runtime Hermes et les helpers Swift sont signés en profondeur pour
+que la notarisation passe ; voir les étapes de signature du workflow. Un timeout Apple `-1001` se relance
+avec `gh run rerun --failed`, on ne re-tagge jamais.
 
 ## 4. Signature Windows — ➖ volontairement non signé
 Choix produit : **pas de signature Windows** pour l'instant. `scripts/windows-sign.ps1` **skip proprement** (exit 0)
@@ -40,10 +40,11 @@ Pour signer plus tard : poser `WINDOWS_CERTIFICATE` (`.pfx` base64) + `WINDOWS_C
 - ⚠️ La clé privée est **non récupérable** : sauvegarde `.tauri-keys/sub-rosa-updater.key` hors du repo. Sa perte
   oblige à migrer tous les clients vers une nouvelle clé.
 
-## 6. Token de publication des releases — ⏳ en attente
-- Le repo source est **privé** mais les releases/updater doivent être **publics** (`sub-rosa-releases`).
-- Fournir un **PAT** (fine-grained, scope `contents:write` sur `sub-rosa-releases`) en secret `RELEASES_REPO_TOKEN`
-  pour que le workflow release y publie les artefacts + `latest.json`.
+## 6. Token de publication des releases — ✅ posé
+- Le repo source est **public** depuis l'été 2026 (CI gratuite) ; les releases/updater restent sur
+  `sub-rosa-releases`, le point d'entrée de l'updateur.
+- Le secret `RELEASES_REPO_TOKEN` (fine-grained, `contents:write` sur `sub-rosa-releases`) est posé :
+  chaque tag `vX.Y.Z` y publie les artefacts + `latest.json` (huit releases la semaine du 2026-09-01).
 
 ## 7. Identité de marque — ✅ décidée / ⏳ icônes définitives
 - Nom = **Sub Rosa** ; identifiant bundle = `xyz.carpediem.subrosa` ; scheme deep-link = `subrosa://`.

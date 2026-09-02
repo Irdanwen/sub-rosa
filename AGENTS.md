@@ -384,7 +384,8 @@ restore from the lockfile, or re-link them.
 
 ## Build, test, lint
 
-Package manager: `pnpm` (a `bun.lock` also exists; the scripts are
+Package manager: `pnpm`, and `pnpm-lock.yaml` is the only lockfile
+(`repository-hygiene.yml` rejects a second one; the scripts themselves are
 runner-agnostic).
 
 - **Run the app:** `pnpm tauri:dev` (builds `src-tauri` and launches the native
