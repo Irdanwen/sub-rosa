@@ -1238,27 +1238,27 @@ fn body_model_accepts_venice_api_key(body: &serde_json::Value) -> bool {
 
 fn http_client() -> &'static reqwest::Client {
     HTTP_CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .no_proxy()
-            .timeout(HTTP_TIMEOUT)
-            .pool_idle_timeout(Duration::from_secs(90))
-            .tcp_keepalive(Some(Duration::from_secs(30)))
-            .user_agent("os-june/0.1")
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new())
+        crate::http_client::build(
+            crate::http_client::loopback(HTTP_TIMEOUT)
+                .no_proxy()
+                .pool_idle_timeout(Duration::from_secs(90))
+                .tcp_keepalive(Some(Duration::from_secs(30)))
+                .user_agent("os-june/0.1"),
+            "june-api",
+        )
     })
 }
 
 fn agent_http_client() -> &'static reqwest::Client {
     AGENT_HTTP_CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .no_proxy()
-            .timeout(AGENT_HTTP_TIMEOUT)
-            .pool_idle_timeout(Duration::from_secs(90))
-            .tcp_keepalive(Some(Duration::from_secs(30)))
-            .user_agent("os-june-agent/0.1")
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new())
+        crate::http_client::build(
+            crate::http_client::loopback(AGENT_HTTP_TIMEOUT)
+                .no_proxy()
+                .pool_idle_timeout(Duration::from_secs(90))
+                .tcp_keepalive(Some(Duration::from_secs(30)))
+                .user_agent("os-june-agent/0.1"),
+            "june-api-agent",
+        )
     })
 }
 
@@ -1297,12 +1297,21 @@ async fn ensure_sidecar_ready() {
 
 /// Base URL of the backend, or `None` when the sidecar has not published one
 /// yet. There is deliberately **no remote default**: the only writer is
-/// `carpe_diem::sidecar`, which sets `JUNE_API_URL` to a loopback address once
-/// its child is up. A fallback host here would mean that any window in which
+/// `carpe_diem::sidecar`, which publishes a loopback address once its child is
+/// up. A fallback host here would mean that any window in which
 /// the sidecar is down (still starting, failed to spawn, no API key) silently
 /// redirects the user's prompts and audio to a third party's server, which is
 /// exactly the failure this fork exists to avoid. Fail closed instead.
 fn june_api_url() -> Option<String> {
+    // The sidecar publishes in process memory, never into the environment (see
+    // `carpe_diem::local_session`). The env is read only as the developer
+    // fallback for `pnpm tauri:dev` against a hand-started backend.
+    if let Some(url) = crate::carpe_diem::local_session::api_url() {
+        let url = url.trim().trim_end_matches('/').to_string();
+        if !url.is_empty() {
+            return Some(url);
+        }
+    }
     crate::os_accounts::load_local_env();
     std::env::var("JUNE_API_URL")
         .ok()

@@ -2506,7 +2506,11 @@ fn spawn_helper(app: &AppHandle) -> Result<HelperProcess, AppError> {
             )
         })?;
 
-    let mut child = Command::new(&helper_path)
+    // The helper transcribes audio and needs nothing from the app but a pipe;
+    // it outlives a turn, so it is scrubbed like the runtime (see `child_env`).
+    let mut helper = Command::new(&helper_path);
+    crate::child_env::scrub(&mut helper);
+    let mut child = helper
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

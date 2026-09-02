@@ -13,6 +13,7 @@ pub mod branding;
 pub mod cache_stats;
 pub mod issue_reports;
 pub mod jobs;
+pub mod local_session;
 pub mod media;
 pub mod settings;
 pub mod sidecar;

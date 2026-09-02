@@ -29,6 +29,7 @@ use std::{
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use super::local_session;
 use super::settings;
 
 /// Handle to the running backend. Killing it stops the backend: on desktop we
@@ -251,10 +252,7 @@ fn sidecar_snapshot(app: &AppHandle) -> Option<(SidecarStatus, u16)> {
 /// in-process server answers in single-digit milliseconds.
 #[cfg(mobile)]
 async fn probe(port: u16) -> bool {
-    let Ok(client) = reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()
-    else {
+    let Ok(client) = crate::http_client::loopback(Duration::from_secs(2)).build() else {
         return false;
     };
     let url = format!("http://127.0.0.1:{port}/livez");
@@ -326,20 +324,30 @@ fn spawn_sidecar(app: &AppHandle) {
             return;
         }
     };
-    let token = uuid::Uuid::new_v4().to_string();
+    // 256 bits of CSPRNG, hex. A UUIDv4 carries 122 and would be plenty against
+    // guessing a loopback bearer, but a session token is not a UUID: it has no
+    // structure worth reading, and matching the convention for local tokens
+    // costs nothing.
+    let token = local_session::new_bearer_token();
 
-    match start_backend(app, port, &token, &base_url, &key) {
+    match start_backend(app, port, &token, &base_url, key.expose_str()) {
         Ok(backend) => {
             // Only after a successful start do we point the June client at the
-            // new backend. june_api_url() / access_token() read these on every
-            // request and are not cached, so this takes effect for the next
-            // call. Set here (not before spawn) so a failed spawn never leaves
-            // JUNE_API_URL aimed at a dead port. `start_or_mark_unconfigured`
+            // new backend. june_api_url() / access_token() read this on every
+            // request and cache nothing, so it takes effect for the next call.
+            // Published here (not before spawn) so a failed spawn never leaves
+            // the client aimed at a dead port. `start_or_mark_unconfigured`
             // holds the restart lock, so these writes are never concurrent.
-            std::env::set_var("JUNE_API_URL", format!("http://127.0.0.1:{port}"));
-            std::env::set_var("OS_JUNE_LOCAL_DEV", "1");
-            std::env::set_var("OS_JUNE_LOCAL_DEV_BEARER_TOKEN", &token);
-            std::env::set_var("OS_JUNE_LOCAL_DEV_USER_ID", LOCAL_USER_ID);
+            //
+            // In process memory, deliberately, and NOT in the environment: the
+            // environment is copied into every child, so a token written there
+            // would be handed to the Hermes runtime and the Swift helpers, none
+            // of which need it (see `local_session`).
+            local_session::publish(local_session::LocalSession {
+                api_url: format!("http://127.0.0.1:{port}"),
+                bearer_token: crate::redacted::Redacted::new(token.clone()),
+                user_id: LOCAL_USER_ID.to_string(),
+            });
             let generation = store_child(app, backend, port);
             set_status(app, SidecarStatus::Starting, Some(port), None);
             spawn_health_check(app.clone(), port, generation);
@@ -574,8 +582,7 @@ fn free_port() -> std::io::Result<u16> {
 
 fn spawn_health_check(app: AppHandle, port: u16, generation: u64) {
     tauri::async_runtime::spawn(async move {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(3))
+        let client = crate::http_client::loopback(Duration::from_secs(3))
             .build()
             .ok();
         let url = format!("http://127.0.0.1:{port}/livez");
@@ -646,6 +653,10 @@ fn store_child(app: &AppHandle, child: Backend, port: u16) -> u64 {
 }
 
 fn stop_child(app: &AppHandle) {
+    // The session goes first: a request made between the kill and the next
+    // publish must fail closed rather than aim at a port that is gone, or at
+    // one the OS has since handed to something else.
+    local_session::clear();
     if let Some(state) = app.try_state::<SidecarState>() {
         if let Ok(mut process) = state.0.lock() {
             // Bump generation so any in-flight health check for the old child

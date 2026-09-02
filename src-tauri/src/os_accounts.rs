@@ -13,8 +13,12 @@
 //! reference `crate::os_accounts::*`, and leaving those call sites untouched
 //! keeps upstream cherry-picks landing cleanly. See ADR 0017.
 //!
-//! The sidecar (`carpe_diem::sidecar`) is the only writer of the environment
-//! read here; it sets `OS_JUNE_LOCAL_DEV*` once its backend is up.
+//! The sidecar (`carpe_diem::sidecar`) is the only writer, and it publishes to
+//! `carpe_diem::local_session` — process memory, not the environment, because
+//! the environment is copied into every child the app spawns. The
+//! `OS_JUNE_LOCAL_DEV*` variables are still *read* as a fallback so
+//! `pnpm tauri:dev` can point the app at a hand-started backend through a
+//! `.env`; a value the developer wrote is one they already have.
 
 use crate::domain::types::AppError;
 use std::sync::OnceLock;
@@ -43,11 +47,17 @@ fn env_truthy(key: &str) -> bool {
 /// True once the sidecar has published its bearer token, i.e. once there is a
 /// backend to talk to.
 pub(crate) fn local_dev_enabled() -> bool {
+    if crate::carpe_diem::local_session::is_active() {
+        return true;
+    }
     load_local_env();
     env_truthy(LOCAL_DEV_ENV)
 }
 
 fn local_dev_bearer_token() -> String {
+    if let Some(token) = crate::carpe_diem::local_session::bearer_token() {
+        return token;
+    }
     load_local_env();
     let token = env_trimmed(LOCAL_DEV_BEARER_TOKEN_ENV);
     if token.is_empty() {
