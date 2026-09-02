@@ -24009,3 +24009,97 @@ input:focus-visible,
   border-radius: var(--r-xs);
   padding: 2px var(--sp-2);
 }
+
+/* --- Settings > Privacy ------------------------------------------------- */
+/* "What leaves, what stays". The rows are read, not operated, so the styling
+   stays close to prose: the host is the thing being named, the sentence next
+   to it is the answer. */
+
+.privacy-stays {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+}
+
+.privacy-stays-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md);
+  color: var(--brand);
+  background: color-mix(in oklch, var(--brand) 12%, transparent);
+}
+
+.settings-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+  color: var(--muted-foreground);
+}
+
+.privacy-hosts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Flex rather than grid, and wrapping rather than a media query: the settings
+   panel can be narrow while the window is wide, and `body` carries
+   `min-width: 720px`, so a viewport-based breakpoint here would be code that
+   never runs. Wrapping is driven by the container, which is the thing that
+   actually gets narrow. */
+.privacy-host {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-4);
+  align-items: baseline;
+}
+
+.privacy-host-name {
+  /* Wide enough for the longest host in the list. A hostname has no break
+     opportunity a browser will take, so a narrower box splits it mid-word. */
+  flex: 0 0 19rem;
+  max-width: 100%;
+}
+
+.privacy-host-reason {
+  /* Below this the sentence is unreadable, so it takes its own line instead. */
+  flex: 1 1 20rem;
+}
+
+.privacy-host-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--foreground);
+  /* Only break a host if it genuinely cannot fit; at the widths above it does. */
+  overflow-wrap: break-word;
+}
+
+.privacy-host-reason {
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+
+/* An inline control that reads as part of the sentence around it. Used where a
+   link would be wrong because the destination is opened through Rust. */
+.privacy-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.privacy-link:hover {
+  text-decoration-thickness: 2px;
+}

@@ -101,6 +101,7 @@ import { DictionarySettingsSection } from "./DictionarySettingsSection";
 import { ImportSettingsSection } from "./ImportSettingsSection";
 import { CouncilSettingsSection } from "./CouncilSettingsSection";
 import { MemorySettingsSection } from "./MemorySettingsSection";
+import { PrivacySettingsSection } from "./PrivacySettingsSection";
 import { ReportsSettingsSection } from "./ReportsSettingsSection";
 import { MicTestControl, type MicTestState } from "./MicTestControl";
 import { StyleSettingsSection } from "./StyleSettingsSection";
@@ -213,6 +214,7 @@ export type SettingsTab =
   | "models"
   | "agent"
   | "memory"
+  | "privacy"
   | "council"
   | "skills"
   | "external-dirs"
@@ -240,6 +242,7 @@ export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "models", label: "Models" },
   { id: "agent", label: "Agent" },
   { id: "memory", label: "Memory" },
+  { id: "privacy", label: "Privacy" },
   { id: "council", label: "Council" },
   { id: "skills", label: "Installed skills" },
   { id: "external-dirs", label: "External skill directories" },
@@ -1327,6 +1330,7 @@ export function AppSettings({
         ) : null}
 
         {activeTab === "agent" ? <AgentSettingsSection /> : null}
+        {activeTab === "privacy" ? <PrivacySettingsSection /> : null}
         {activeTab === "memory" ? (
           <>
             <MemorySettingsSection />

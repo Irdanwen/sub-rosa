@@ -214,6 +214,11 @@ export const SETTINGS_SIDEBAR_GROUPS: {
         icon: <IconServer1 size={16} />,
       },
       {
+        id: "privacy",
+        label: "Privacy",
+        icon: <IconShieldCheck size={16} />,
+      },
+      {
         id: "shortcuts",
         label: "Shortcuts",
         icon: <IconShortcut size={16} />,
@@ -362,6 +367,7 @@ const SETTINGS_SEARCH_ALIASES: Partial<Record<SettingsTab, string>> = {
   models: "model picker chat image video default",
   agent: "hermes tools autonomy sandbox permissions",
   memory: "remember facts recall forget",
+  privacy: "data network what leaves security offline local sends",
   council: "sitting judge review verdict",
   skills: "plugins capabilities installed",
   "external-dirs": "folders directories shared skills",

@@ -50,7 +50,7 @@ describe("the settings index", () => {
     // in the runbook rather than a number quietly drifting.
     const visible = grouped.filter((item) => !HIDDEN_SETTINGS_TABS.has(item.id));
 
-    expect(visible).toHaveLength(13);
+    expect(visible).toHaveLength(14);
     expect(HIDDEN_SETTINGS_TABS.size).toBe(12);
     expect(visible.length + HIDDEN_SETTINGS_TABS.size).toBe(SETTINGS_TABS.length);
   });
