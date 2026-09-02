@@ -4,6 +4,7 @@ import { IconClipboard } from "central-icons/IconClipboard";
 import { type ReactNode, useState } from "react";
 import { ChatBlockSkeleton, ChatBlockView } from "../components/chat-blocks/ChatBlockView";
 import { resolveChatBlockFence } from "./chat-blocks";
+import { safeExternalHref } from "./external-link";
 import { openExternalUrl } from "./tauri";
 
 /**
@@ -349,26 +350,23 @@ function renderInline(text: string): ReactNode[] {
       nodes.push(<code key={key++}>{token.slice(1, -1)}</code>);
     } else if (token.startsWith("[")) {
       const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token);
-      if (link) {
-        const href = link[2];
-        // The webview drops target="_blank", so https taps route through the
-        // Rust open command (Safari on iOS, browser on desktop). Anything
-        // else keeps the anchor's default behavior.
-        const external = /^https:\/\//i.test(href);
+      // The webview drops target="_blank", so a tap routes through the Rust
+      // open command (Safari on iOS, browser on desktop). An href the app
+      // cannot open would not open a browser either — it would navigate the
+      // app's own webview away — so it stays literal text instead of becoming
+      // a link. `safeExternalUrl` is the same gate the desktop renderer uses.
+      const target = link ? safeExternalHref(link[2]) : null;
+      if (link && target) {
         nodes.push(
           <a
             key={key++}
-            href={href}
+            href={target}
             target="_blank"
             rel="noreferrer"
-            onClick={
-              external
-                ? (event) => {
-                    event.preventDefault();
-                    void openExternalUrl(href);
-                  }
-                : undefined
-            }
+            onClick={(event) => {
+              event.preventDefault();
+              void openExternalUrl(target);
+            }}
           >
             {link[1]}
           </a>,

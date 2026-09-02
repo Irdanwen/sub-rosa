@@ -20,7 +20,7 @@ import { IconShieldCheck } from "central-icons/IconShieldCheck";
 import { IconStopCircle } from "central-icons/IconStopCircle";
 import { IconToolbox } from "central-icons/IconToolbox";
 import { IconTrashCan } from "central-icons/IconTrashCan";
-import { open as openFileDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { PRODUCT_NAME } from "../../lib/branding";
 import { noteAssistantTurnCompleted } from "../../lib/memory";
 import { isMacDesktopPlatform } from "../../lib/platform";
@@ -67,6 +67,7 @@ import { IconStop } from "central-icons/IconStop";
 import { DotSpinner } from "../DotSpinner";
 import { ChatBlockSkeleton, ChatBlockView } from "../chat-blocks/ChatBlockView";
 import { chatBlocksToClipboardText, resolveChatBlockFence } from "../../lib/chat-blocks";
+import { safeExternalHref } from "../../lib/external-link";
 import {
   type CSSProperties,
   type ClipboardEvent,
@@ -6710,12 +6711,12 @@ export function AgentWorkspace({
   const surfacedArtifacts = [...turnArtifacts.values()].flat().concat(devArtifacts);
   // "Download" opens a native save dialog so the user picks the folder and
   // name (the old behavior copied silently into ~/Downloads with no feedback,
-  // which read as broken). A cancelled dialog returns null — a no-op.
+  // which read as broken). The dialog is opened in Rust, not here: a
+  // destination sent across IPC would make the save command an arbitrary
+  // file-write. A cancelled dialog resolves to null — a no-op.
   const downloadArtifact = async (artifact: AgentArtifact) => {
     try {
-      const destination = await saveDialog({ defaultPath: artifact.name });
-      if (!destination) return;
-      await saveHermesBridgeFile(artifact.path, destination);
+      await saveHermesBridgeFile(artifact.path, artifact.name);
     } catch (err) {
       setError(messageFromError(err));
     }
@@ -6735,9 +6736,7 @@ export function AgentWorkspace({
   const downloadGeneratedImage = async (part: Extract<AgentChatPart, { type: "image" }>) => {
     if (!part.path) return;
     try {
-      const destination = await saveDialog({ defaultPath: part.name?.trim() || undefined });
-      if (!destination) return;
-      await saveHermesBridgeFile(part.path, destination);
+      await saveHermesBridgeFile(part.path, part.name?.trim() || undefined);
     } catch (err) {
       setError(messageFromError(err));
     }
@@ -6761,7 +6760,9 @@ export function AgentWorkspace({
   const openTimelineArtifact = useCallback((artifact: TimelineArtifact) => {
     if (artifact.action === "failed") return;
     if (artifact.kind === "url") {
-      if (artifact.path) window.open(artifact.path, "_blank", "noopener");
+      // A tool-reported URL is model-adjacent input: it goes out the same door
+      // as every other link, never straight to window.open.
+      if (artifact.path) void openExternalUrl(artifact.path);
       return;
     }
     if (!artifact.path) return;
@@ -12566,7 +12567,9 @@ function renderMarkdownBlocks(
   return blocks;
 }
 
-function renderInlineMarkdown(
+/** Exported for the shared link-safety corpus, which asserts that this renderer
+ * and `SimpleMarkdown` agree on which hrefs may become anchors. */
+export function renderInlineMarkdown(
   text: string,
   keySeed: number,
   highlight?: string,
@@ -12579,8 +12582,11 @@ function renderInlineMarkdown(
   // repair; code spans and URLs go through `mark` untouched.
   const markProse = (value: string, slot: string) =>
     mark(repairProse ? repairContractionSpacing(value) : value, slot);
+  // `i` so `HTTPS://…` is recognized as a link and gated, rather than slipping
+  // past the pattern and rendering as raw text (SimpleMarkdown matches any
+  // scheme and defers to the gate, so the two engines must agree here).
   const pattern =
-    /(\*\*([^*]+)\*\*|\*([^*]+)\*|~~([^~]+)~~|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\))/g;
+    /(\*\*([^*]+)\*\*|\*([^*]+)\*|~~([^~]+)~~|`([^`]+)`|\[([^\]]+)\]\(\s*(https?:\/\/[^)\s]+)\s*\))/gi;
   let lastIndex = 0;
   let index = 0;
   let match = pattern.exec(text);
@@ -12599,30 +12605,33 @@ function renderInlineMarkdown(
     } else if (match[5]) {
       nodes.push(<code key={`code-${keySeed}-${index}`}>{mark(match[5], `c${index}`)}</code>);
     } else if (match[6] && match[7]) {
-      nodes.push(
-        // The webview drops target="_blank", so https clicks route through
-        // the Rust open command (see open_url.rs); other schemes keep the
-        // anchor's default behavior. `match` is reassigned by the loop, so
-        // the closure must capture the href by value.
-        ((href: string) => (
-          <a
-            key={`link-${keySeed}-${index}`}
-            href={href}
-            rel="noreferrer"
-            target="_blank"
-            onClick={
-              /^https:\/\//i.test(href)
-                ? (event) => {
-                    event.preventDefault();
-                    void openExternalUrl(href);
-                  }
-                : undefined
-            }
-          >
-            {markProse(match[6], `a${index}`)}
-          </a>
-        ))(match[7]),
-      );
+      // The webview drops target="_blank", so a click routes through the Rust
+      // open command (see open_url.rs). The pattern above also matches http,
+      // which the app cannot open: such a link would navigate the app's own
+      // webview away, so an href that does not pass `safeExternalUrl` stays
+      // literal text. `match` is reassigned by the loop, so the closure must
+      // capture the href by value.
+      const href = safeExternalHref(match[7]);
+      if (href) {
+        nodes.push(
+          ((target: string, label: string) => (
+            <a
+              key={`link-${keySeed}-${index}`}
+              href={target}
+              rel="noreferrer"
+              target="_blank"
+              onClick={(event) => {
+                event.preventDefault();
+                void openExternalUrl(target);
+              }}
+            >
+              {markProse(label, `a${index}`)}
+            </a>
+          ))(href, match[6]),
+        );
+      } else {
+        nodes.push(...markProse(match[0], `g${index}`));
+      }
     }
     lastIndex = pattern.lastIndex;
     index += 1;

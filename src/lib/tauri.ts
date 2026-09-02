@@ -1,4 +1,5 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { safeExternalHref } from "./external-link";
 
 // Re-exported so modules that build their own command calls (e.g. the Hermes
 // admin Rust transport) route through the same `invoke` the rest of the app's
@@ -879,16 +880,36 @@ export async function renderMapCard(request: {
 /**
  * Opens an https link outside the app: default browser on desktop, Safari on
  * iOS. Routed through Rust because neither webview honors target="_blank";
- * the browser preview (no Tauri bridge) falls back to window.open. Non-https
- * URLs are dropped here and re-checked in Rust.
+ * the browser preview (no Tauri bridge) falls back to window.open. The scheme,
+ * length and character rules live in `safeExternalUrl` (which mirrors
+ * `open_url.rs`), and Rust re-checks whatever gets through. This is the only
+ * place in the app that may call `window.open`.
  */
 export async function openExternalUrl(url: string) {
-  if (!/^https:\/\//i.test(url)) return;
+  const target = safeExternalHref(url);
+  if (!target) return;
   if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-    await invoke<void>("open_external_url", { url }).catch(() => {});
+    await invoke<void>("open_external_url", { url: target }).catch(() => {});
   } else {
-    window.open(url, "_blank", "noopener");
+    window.open(target, "_blank", "noopener");
   }
+}
+
+/** One address the app can reach, and why. Mirrors `egress::EgressHost`. */
+export type EgressHost = {
+  host: string;
+  /** `always` = while the app runs; `whenAsked` = only after you act. */
+  reach: "always" | "whenAsked";
+  reason: string;
+};
+
+/**
+ * Every address this binary can contact. Read from Rust rather than written in
+ * the frontend so the Privacy screen and the build-time guard
+ * (`src-tauri/tests/egress.rs`) cannot describe different apps.
+ */
+export async function declaredEgress() {
+  return invoke<EgressHost[]>("declared_egress");
 }
 
 export async function createNote(folderId?: string) {
@@ -1262,8 +1283,16 @@ export async function downloadHermesBridgeFile(path: string) {
 
 // Copies a workspace file to a destination the user picked in a native save
 // dialog (any folder + name), unlike the silent copy-to-Downloads above.
-export async function saveHermesBridgeFile(path: string, destination: string) {
-  return invoke<void>("save_hermes_bridge_file", { request: { path, destination } });
+/**
+ * Saves a workspace file where the user chooses. The native save dialog is
+ * opened by Rust, so no destination path crosses IPC — `suggestedName` only
+ * pre-fills the name field. Resolves to the saved path, or `null` if the user
+ * cancelled.
+ */
+export async function saveHermesBridgeFile(path: string, suggestedName?: string) {
+  return invoke<string | null>("save_hermes_bridge_file", {
+    request: { path, suggestedName },
+  });
 }
 
 // Puts a workspace file on the OS clipboard as a file reference (pasteable into

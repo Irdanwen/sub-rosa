@@ -47,7 +47,8 @@ import {
   type McpTestState,
   type ToolPolicyDraft,
 } from "../../lib/hermes-admin";
-import { hermesBridgeStatus, type HermesBridgeStatus } from "../../lib/tauri";
+import { safeExternalHref } from "../../lib/external-link";
+import { hermesBridgeStatus, openExternalUrl, type HermesBridgeStatus } from "../../lib/tauri";
 import { AdminNotifications } from "./AdminNotifications";
 import { McpToolsDialog } from "./McpToolsDialog";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
@@ -616,6 +617,12 @@ function OauthStatus({
   // the server's config / env, which the add/edit and secret-setup surfaces own.
   const canSignIn =
     Boolean(onSignIn) && (meta.action === "sign-in" || meta.action === "re-auth") && !inFlight;
+  // The sign-in address comes from the MCP server, so it crosses IPC and is
+  // treated like any other model-adjacent URL. `safeAuthorizationUrl` upstream
+  // already redacts tokens and rejects non-http(s); this narrows it to what the
+  // app can actually open, and routes the click through the Rust gate — without
+  // which target="_blank" is dropped and the app's own webview navigates away.
+  const signInHref = safeExternalHref(login?.authUrl);
 
   return (
     <div className="mcp-server-oauth" data-state={meta.state} role="group">
@@ -661,12 +668,16 @@ function OauthStatus({
         </p>
       ) : null}
 
-      {login?.authUrl ? (
+      {signInHref ? (
         <a
           className="mcp-server-oauth-link"
-          href={login.authUrl}
+          href={signInHref}
           target="_blank"
           rel="noreferrer noopener"
+          onClick={(event) => {
+            event.preventDefault();
+            void openExternalUrl(signInHref);
+          }}
         >
           <IconArrowUpRight size={12} ariaHidden />
           Open the sign-in page

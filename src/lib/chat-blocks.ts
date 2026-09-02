@@ -15,6 +15,8 @@
  * call site (return null — never a half-valid card).
  */
 
+import { safeExternalUrl } from "./external-link";
+
 export const CHAT_BLOCK_FENCE_PREFIX = "subrosa:";
 
 export type ChatBlockLink = {
@@ -128,16 +130,13 @@ function cappedString(value: unknown, max: number): string | undefined {
   return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed;
 }
 
-/** https-only, parseable, bounded. Returns the normalized href + host. */
+/** https-only, parseable, bounded. Returns the normalized href + host.
+ * Delegates the rules to `safeExternalUrl` so a block's link and a markdown
+ * link cannot disagree about what is openable. */
 function safeHttpsUrl(value: unknown): { url: string; domain: string } | null {
-  if (typeof value !== "string" || value.length > MAX_URL) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(value.trim());
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== "https:" || !parsed.hostname) return null;
+  if (typeof value === "string" && value.length > MAX_URL) return null;
+  const parsed = safeExternalUrl(value);
+  if (!parsed) return null;
   return { url: parsed.href, domain: parsed.hostname.replace(/^www\./, "") };
 }
 

@@ -5370,12 +5370,10 @@ describe("AgentWorkspace", () => {
 
     await user.click(screen.getByRole("button", { name: "Download sample.pdf" }));
 
-    // The flow asks for a destination, then copies the workspace file there.
+    // Rust opens the save dialog, so the command receives the source path and a
+    // suggested name — never a destination the webview chose.
     await waitFor(() => {
-      expect(mocks.saveHermesBridgeFile).toHaveBeenCalledWith(
-        samplePath,
-        "/Users/alex/Downloads/sample.pdf",
-      );
+      expect(mocks.saveHermesBridgeFile).toHaveBeenCalledWith(samplePath, "sample.pdf");
     });
   });
 
