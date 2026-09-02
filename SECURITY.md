@@ -22,14 +22,17 @@ private while we investigate, and coordinate disclosure timing with you.
 
 ## Scope
 
+What the app protects, from whom, and what it deliberately does not, is written
+out in [`docs/threat-model.md`](docs/threat-model.md). Read that first: it will
+tell you whether a finding is in scope faster than this list does.
+
 In scope:
 
-- June desktop app authentication, local storage, updater, permissions, and
-  signed release flow.
-- June API authentication, model proxying, billing authorization, request
-  validation, logging, and deployment configuration.
-- GitHub Actions, release automation, container publishing, and signing
-  material handling.
+- The desktop and iOS app: key storage, the local backend and its token, path
+  handling, the updater, webview permissions, and the signed release flow.
+- The local backend: authentication, model proxying, request validation, and
+  logging.
+- GitHub Actions, release automation, and signing material handling.
 
 Out of scope:
 

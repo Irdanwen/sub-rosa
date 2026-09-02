@@ -49,6 +49,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0036-reports-are-github-issues-filed-with-the-users-own-credential.md](adr/0036-reports-are-github-issues-filed-with-the-users-own-credential.md) — in-app reports open Issues on the fork's own tracker, with a keychain token or through GitHub's pre-filled form, and the UI names which happened
 - [adr/0037-the-note-body-round-trips-through-a-document-not-the-dom.md](adr/0037-the-note-body-round-trips-through-a-document-not-the-dom.md) — the note's markdown seam serializes the ProseMirror document instead of walking the rendered DOM, escapes what it writes, covers the whole schema, and is gated by a round-trip property rather than a hand-written subset
 - [adr/0038-a-note-rewrite-is-proposed-never-applied.md](adr/0038-a-note-rewrite-is-proposed-never-applied.md) — the model returns a revision the user accepts or discards, fork-side like the long-form summary, transient by design against ADR-0018, and bounded so a hostile note can at worst produce a bad rewrite
+- [adr/0039-the-database-is-not-encrypted-at-rest.md](adr/0039-the-database-is-not-encrypted-at-rest.md) — the disk is out of scope and full-disk encryption is the assumption, written down rather than implied; SQLCipher rejected because a keychain-held key protects against nobody the app can beat, and a passphrase would be a different product
 
 ## Enforceable rules (spec/)
 
@@ -80,6 +81,8 @@ feature specs). Full index: [spec/index.md](../spec/index.md).
 - [release-macos.md](release-macos.md) / [release-windows.md](release-windows.md) — the release runbooks
 - [desktop-release-runner.md](desktop-release-runner.md) — Mac Studio self-hosted runner setup for signed desktop releases
 - [reproducible-builds.md](reproducible-builds.md) — June API source → TEE trust chain (Phase A shipped)
+- [threat-model.md](threat-model.md) — what the app protects, from whom, and what it deliberately does not:
+  the five boundaries, what is in scope, what is out of it, and the commands that check each claim
 - [github-security-readiness.md](github-security-readiness.md) — pre-public repo hardening checklist
 - [settings-focus-runbook.md](settings-focus-runbook.md) — transient: settings tabs hidden while admin surfaces stabilize
 
