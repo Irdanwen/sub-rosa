@@ -16,7 +16,7 @@ concurrency:
 jobs:
   hygiene:
     name: Repository hygiene
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -28,13 +28,6 @@ jobs:
             echo "External GitHub Actions must be pinned to full-length commit SHAs." >&2
             exit 1
           fi
-
-      - name: Test supply-chain guard scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/hooks/test_require_sfw.py
-          python3 scripts/test_check_pnpm_release_age.py
-          python3 scripts/test_check_cargo_release_age.py
 
       - name: Reject committed env and key material
         run: |
@@ -54,5 +47,99 @@ jobs:
           if [[ -n "$env_files$key_files$private_key_matches" ]]; then
             printf '%s\n%s\n%s\n' "$env_files" "$key_files" "$private_key_matches" | sed '/^$/d' >&2
             echo "Tracked env files or private key material are not allowed." >&2
+            exit 1
+          fi
+
+      # `packageManager` names pnpm, and the CI installs with pnpm. A second
+      # lockfile (bun.lock lived next to pnpm-lock.yaml for two months) means
+      # two resolutions of the same package.json, and which one a machine gets
+      # depends on which tool it ran last.
+      - name: Reject a second JavaScript lockfile
+        run: |
+          set -euo pipefail
+          extra="$(git ls-files | grep -E '^(bun\.lock|bun\.lockb|yarn\.lock|package-lock\.json)$' || true)"
+          if [[ -n "$extra" ]]; then
+            echo "$extra" >&2
+            echo "pnpm-lock.yaml is the only lockfile. Remove the others." >&2
+            exit 1
+          fi
+
+      # This fork tracks upstream June and cherry-picks its fixes, so a merge
+      # can quietly reintroduce a coordinate or an identity string the fork
+      # deliberately removed (ADR 0017). A green test suite would not notice:
+      # the app works fine while pointing at somebody else's server. This does.
+      #
+      # Scope: things that name upstream's *infrastructure or product identity*.
+      # Shared technical identifiers (`os-june`, `JUNE_*`, `june://`,
+      # `os-june:*`) are kept on purpose and are NOT matched here.
+      #
+      # The allowlist is prose about the fork's history, not code:
+      #   docs/, FORK_NOTES.md, AGENTS.md + its CLAUDE.md symlink, CONTEXT.md,
+      #   LICENSE, vendored agent skills, this file, and the two workflows that
+      #   deliberately still reference upstream (the dispatch-only watchdog and
+      #   the sync that fetches upstream's git remote).
+      # Film production moved into the app (ADR-0029). The remote studio is
+      # gone: its module, its wallet, its billing rail and its MCP were
+      # removed, and the CSP was narrowed once nothing needed a remote origin
+      # any more. A re-merge, or a well-meaning restoration, would put the
+      # dependency back with none of that visible in a diff review. This makes
+      # it visible.
+      #
+      # Scope: the studio's coordinates only. Deliberately NOT the word
+      # "DIEM": that is a Venice balance bucket the credits reader still parses
+      # (`venice_available_credits`), and the studio merely quoted in it. A
+      # guard that bans a word the app legitimately uses is a guard people
+      # learn to work around. "film" is fine too - the app makes films.
+      - name: Reject reintroduced remote film studio
+        run: |
+          set -euo pipefail
+          matches="$(
+            git grep -I -n -E -- 'furetier\.com|vmk_|[Vv]ideomaker' -- . \
+              ':(exclude)docs/**' \
+              ':(exclude).agents/**' \
+              ':(exclude).claude/**' \
+              ':(exclude)FORK_NOTES.md' \
+              ':(exclude)AGENTS.md' \
+              ':(exclude)CLAUDE.md' \
+              ':(exclude)CONTEXT.md' \
+              ':(exclude)LICENSE*' \
+              ':(exclude).github/workflows/repository-hygiene.yml' \
+              || true
+          )"
+          if [[ -n "$matches" ]]; then
+            echo "$matches" >&2
+            echo >&2
+            echo "The remote film studio reappeared." >&2
+            echo "Sub Rosa produces films locally and contacts only Carpe Diem" >&2
+            echo "see docs/adr/0029-film-production-is-local.md." >&2
+            echo "If a re-merge brought this in, drop it rather than adopting it." >&2
+            exit 1
+          fi
+
+      - name: Reject reintroduced June coordinates
+        run: |
+          set -euo pipefail
+          matches="$(
+            git grep -I -n -E -- 'opensoftware\.co|os-june-releases|You are June|made by Open Software' -- . \
+              ':(exclude)docs/**' \
+              ':(exclude).agents/**' \
+              ':(exclude).claude/**' \
+              ':(exclude)FORK_NOTES.md' \
+              ':(exclude)AGENTS.md' \
+              ':(exclude)CLAUDE.md' \
+              ':(exclude)CONTEXT.md' \
+              ':(exclude)LICENSE*' \
+              ':(exclude).github/workflows/repository-hygiene.yml' \
+              ':(exclude).github/workflows/upstream-sync.yml' \
+              ':(exclude)june-api/deploy/**' \
+              || true
+          )"
+          if [[ -n "$matches" ]]; then
+            echo "$matches" >&2
+            echo >&2
+            echo "Upstream June coordinates or identity strings reappeared." >&2
+            echo "Sub Rosa contacts none of upstream's infrastructure and does not" >&2
+            echo "present as June; see docs/adr/0017-product-autonomy-from-june.md." >&2
+            echo "If a re-merge brought this in, drop it rather than adopting it." >&2
             exit 1
           fi

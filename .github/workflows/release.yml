@@ -1,0 +1,311 @@
+name: Release
+
+# DoD-3: when `main` is tagged, build signed installers for macOS (DMG,
+# notarized) and Windows (NSIS), plus Tauri updater artifacts, and publish them
+# — together with a per-platform `latest.json` — to the PUBLIC releases repo
+# (Irdanwen/sub-rosa-releases) that the updater endpoint points at.
+#
+# Requires the secrets documented in HANDOFF.md. Until they are set, this
+# workflow is authored-but-inert (it will fail fast on missing secrets).
+
+on:
+  push:
+    tags: ["v*.*.*"]
+    # Remote-agent stand-in for the tag push and the dispatch button: those
+    # sessions can only push branches (their git relay rejects refs/tags and
+    # their Actions API access is read-only, so workflow_dispatch is out of
+    # reach too). Pushing release-run/vX.Y.Z builds the EXISTING tag vX.Y.Z
+    # (create it first via tag-version.yml); resolve derives the tag from the
+    # branch name and everything downstream checks out the tag ref as usual.
+    branches: ["release-run/**"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build, e.g. v1.0.0"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RELEASES_REPO: Irdanwen/sub-rosa-releases
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - id: tag
+        env:
+          REF_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          BRANCH_REF: ${{ github.ref_type == 'branch' && github.ref_name || '' }}
+        run: |
+          branch_tag=""
+          case "$BRANCH_REF" in
+            release-run/*) branch_tag="${BRANCH_REF#release-run/}" ;;
+          esac
+          tag="${REF_TAG:-${INPUT_TAG:-$branch_tag}}"
+          if [ -z "$tag" ]; then echo "No tag resolved." >&2; exit 1; fi
+          # Validate strictly before this value flows into `checkout ref:` and
+          # release names — reject anything that is not a semver-ish vX.Y.Z tag.
+          if ! printf '%s' "$tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "Refusing non-semver tag: $tag" >&2; exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+            config: src-tauri/tauri.macos.conf.json
+            updater_target: darwin-aarch64
+          # x86_64 is CROSS-compiled on an Apple Silicon runner (macos-14):
+          # macos-13 Intel runners are scarce/deprecated and queue for a long
+          # time. Apple Silicon can build + sign the x86_64 target thanks to the
+          # universal macOS SDK.
+          - os: macos-14
+            target: x86_64-apple-darwin
+            config: src-tauri/tauri.macos.conf.json
+            updater_target: darwin-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            config: src-tauri/tauri.windows.conf.json
+            updater_target: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+
+      - name: Setup Node + pnpm
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: "src-tauri -> target\njune-api -> target"
+
+      - name: Build june-api sidecar (externalBin)
+        run: node scripts/build-sidecar.mjs --target ${{ matrix.target }}
+
+      # Hermes is the agent runtime, and a build without it ships a placeholder
+      # where 130 MB of runtime should be.
+      #
+      # On Windows that is fatal: the managed fallback needs a preinstalled
+      # Python 3.11-3.13, which end-user machines do not have, so an NSIS with
+      # no bundled runtime ships a broken agent (v1.0.3 did exactly that when
+      # this step failed silently).
+      #
+      # On macOS the fallback does work — bash and curl bootstrap uv and python
+      # on first launch — which is why this step was `continue-on-error` for a
+      # long time. That tolerance was written to save a *build*, and it quietly
+      # did something else to a *release*: during v1.44.1 all three jobs pulled
+      # the same tarball within seconds, GitHub answered 429, and the Intel leg
+      # silently produced a 17 MB app while the ARM leg produced a 150 MB one.
+      # Same version, two different products, and nothing in the run said so.
+      # A release must not ship that, so the step is blocking here too and the
+      # payload is checked below on both platforms. The script itself now
+      # authenticates and retries, so the case this tolerated should not recur.
+      - name: Build bundled Hermes runtime (macOS)
+        if: runner.os == 'macOS'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/bundle-hermes-runtime.sh
+      - name: Verify bundled Hermes runtime (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          for expected in \
+            ".tauri-hermes/hermes/bin/hermes" \
+            ".tauri-hermes/hermes/hermes-agent/pyproject.toml"; do
+            if [ ! -e "$expected" ]; then
+              echo "::error::the bundled Hermes runtime is missing $expected." \
+                   "This release would ship a placeholder instead of the agent runtime."
+              exit 1
+            fi
+          done
+          if [ -e ".tauri-hermes/hermes/PLACEHOLDER.md" ]; then
+            echo "::error::the bundled Hermes runtime is the placeholder, not the runtime."
+            exit 1
+          fi
+          echo "bundled Hermes runtime: $(du -sh .tauri-hermes/hermes | cut -f1)"
+      - name: Build bundled Hermes runtime (Windows)
+        if: runner.os == 'Windows'
+        # The script downloads the pinned Hermes source from github.com, whose
+        # anonymous rate limit is shared across the hosted-runner IP pool and
+        # answered 429 during the v1.44.1 release. The workflow token makes the
+        # first hop an authenticated request, which is billed per token instead
+        # of per IP. The script retries regardless: a rate limit is transient,
+        # and a signed release is too expensive to lose to one HTTP status.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pwsh scripts/bundle-hermes-runtime-windows.ps1
+      - name: Verify bundled Hermes runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($expected in @(
+            ".tauri-hermes\hermes\bin\hermes.exe",
+            ".tauri-hermes\hermes\python\current\python.exe",
+            ".tauri-hermes\hermes\hermes-agent\pyproject.toml"
+          )) {
+            if (!(Test-Path -LiteralPath $expected -PathType Leaf)) {
+              throw "Bundled Hermes runtime is incomplete: missing $expected."
+            }
+          }
+
+      # Notarization requires EVERY nested Mach-O to be signed (Developer ID +
+      # hardened runtime + secure timestamp). Two pieces Tauri/tauri-action don't
+      # cover on their own:
+      #   1. The bundled Hermes venv's Python extensions (.so/.dylib).
+      #   2. The Swift helper apps — build.rs signs them during `cargo build`,
+      #      but only if codesign can reach the private key. tauri-action's
+      #      keychain grants that access to its OWN signing process, not to
+      #      build.rs's codesign.
+      # So we import the cert ourselves into a keychain with a broad partition
+      # list, make it the default (so build.rs's codesign + Tauri both use it),
+      # pre-sign the Hermes runtime, and do NOT let tauri-action import a second
+      # copy (which would make `codesign --sign "<identity>"` ambiguous).
+      - name: Prepare code signing + pre-sign Hermes (macOS)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_CERTIFICATE:-}" ]; then echo "no signing cert; skipping"; exit 0; fi
+          KC="$RUNNER_TEMP/sr-sign.keychain-db"
+          KCPASS="sr-$RANDOM-$$"
+          security create-keychain -p "$KCPASS" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPASS" "$KC"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/sr-cert.p12"
+          security import "$RUNNER_TEMP/sr-cert.p12" -k "$KC" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security >/dev/null
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" >/dev/null
+          # Single keychain, made default + first in the search list, so both
+          # build.rs's helper codesign and Tauri's app codesign find one identity.
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$KC"
+          HERMES=.tauri-hermes/hermes
+          if [ -d "$HERMES" ]; then
+            count=0
+            while IFS= read -r f; do
+              if file "$f" | grep -q "Mach-O"; then
+                codesign --force --timestamp --options runtime \
+                  --sign "$APPLE_SIGNING_IDENTITY" "$f" && count=$((count+1)) || true
+              fi
+            done < <(find "$HERMES" -type f | awk '{ print gsub(/\//,"/") "\t" $0 }' | sort -rn | cut -f2-)
+            echo "pre-signed $count Mach-O files in the Hermes runtime"
+          fi
+
+      - name: Build + sign app (tauri-action)
+        id: tauri
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
+        env:
+          SKIP_SIDECAR_BUILD: "1"
+          # Updater signing (required by createUpdaterArtifacts)
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # NOTE: APPLE_CERTIFICATE is deliberately NOT passed here — the previous
+          # step already imported it into the default keychain. Passing it again
+          # would create a second keychain with the same identity and make
+          # codesign ambiguous. We still pass the identity + notary credentials so
+          # Tauri signs (using our keychain) and notarizes + staples.
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          args: --target ${{ matrix.target }} --config ${{ matrix.config }}
+
+      - name: Collect + prefix bundle and updater artifacts
+        shell: bash
+        env:
+          ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+          UPDATER_TARGET: ${{ matrix.updater_target }}
+        run: |
+          mkdir -p dist-release
+          # tauri-action returns a JSON array of produced artifact paths. Both
+          # macOS arches emit an identically named `*.app.tar.gz`; prefix every
+          # file with the updater target so nothing collides when the publish
+          # job merges all matrix outputs, and so the manifest can map platforms.
+          # Also sanitize spaces/odd chars to '.' EXACTLY as GitHub does to
+          # release asset names on upload — otherwise the staged filename (used
+          # to build the latest.json download URL) wouldn't match the uploaded
+          # asset name and the updater would 404.
+          echo "$ARTIFACT_PATHS" | python3 -c "import sys,json,shutil,os,re
+          target=os.environ['UPDATER_TARGET']
+          for p in json.load(sys.stdin):
+              if os.path.isfile(p):
+                  base=re.sub(r'[^A-Za-z0-9._-]+', '.', os.path.basename(p))
+                  dest=os.path.join('dist-release', f'{target}-{base}')
+                  shutil.copy(p, dest); print('collected', dest)"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: bundle-${{ matrix.target }}
+          path: dist-release/*
+          if-no-files-found: error
+
+  publish:
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    steps:
+      # Needed for scripts/build-updater-manifest.py (this job runs the manifest
+      # assembler, so it must have the repo checked out).
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: incoming
+          merge-multiple: true
+
+      - name: Assemble latest.json
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          RELEASES_REPO: ${{ env.RELEASES_REPO }}
+        run: |
+          python3 scripts/build-updater-manifest.py \
+            --dir incoming --tag "$TAG" --version "$VERSION" \
+            --repo "$RELEASES_REPO" --out incoming/latest.json
+          echo "--- latest.json ---"; cat incoming/latest.json
+
+      - name: Publish to the public releases repo
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          RELEASES_REPO: ${{ env.RELEASES_REPO }}
+        run: |
+          # Create the release (idempotent) then upload every asset + manifest.
+          gh release view "$TAG" --repo "$RELEASES_REPO" >/dev/null 2>&1 || \
+            gh release create "$TAG" --repo "$RELEASES_REPO" --title "$TAG" \
+              --notes "Sub Rosa $TAG" --verify-tag=false
+          shopt -s nullglob
+          for asset in incoming/*; do
+            [ -f "$asset" ] || continue
+            gh release upload "$TAG" "$asset" --repo "$RELEASES_REPO" --clobber
+          done

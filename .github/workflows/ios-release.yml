@@ -1,0 +1,194 @@
+name: iOS release (TestFlight)
+
+# Builds the iOS app (App Store signing) and uploads the IPA to App Store
+# Connect / TestFlight. Manual dispatch while the lane stabilizes; wire it to
+# tags once two runs have passed cleanly.
+#
+# Required secrets (see HANDOFF.md §7):
+# - APPLE_API_KEY_ID       App Store Connect API key id (e.g. 2X9R4HXF34)
+# - APPLE_API_ISSUER       App Store Connect issuer id (UUID)
+# - APPLE_API_KEY_P8       The AuthKey_<id>.p8 content, base64-encoded
+# - APPLE_TEAM_ID          Already set for macOS signing (H6N5V777LL)
+#
+# Signing uses Xcode cloud-managed certificates: with the API key,
+# `-allowProvisioningUpdates` creates/fetches the Apple Distribution
+# certificate and App Store profile on the runner — no .p12 to maintain.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or tag to build (default: main)"
+        required: false
+        default: "main"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-upload:
+    # macos-15 ships Xcode 16.x: the committed gen/apple project is saved in the
+    # Xcode 16 project format (objectVersion 77), which Xcode 15.4 on macos-14
+    # cannot open ("future Xcode project file format").
+    runs-on: macos-15
+    steps:
+      # Dispatch inputs come from maintainers, but validate anyway before the
+      # value reaches checkout (same discipline as release.yml's tag guard).
+      - name: Validate ref input
+        env:
+          INPUT_REF: ${{ github.event.inputs.ref }}
+        run: |
+          if ! printf '%s' "$INPUT_REF" | grep -qE '^[A-Za-z0-9._/-]{1,120}$'; then
+            echo "Refusing suspicious ref: $INPUT_REF" >&2; exit 1
+          fi
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.inputs.ref }}
+
+      # Pick the newest installed Xcode. Apple requires the iOS 26 SDK (Xcode 26+)
+      # for App Store / TestFlight uploads — an older Xcode archives fine but the
+      # upload is rejected with an SDK-version validation error. macos-15 ships
+      # Xcode 26.x (not as default), so select the highest and hard-fail if < 26.
+      - name: Select latest Xcode
+        run: |
+          LATEST=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$LATEST" ]; then echo "No Xcode found under /Applications." >&2; exit 1; fi
+          echo "Selecting $LATEST"
+          sudo xcode-select -s "$LATEST/Contents/Developer"
+          xcodebuild -version
+          MAJOR=$(xcodebuild -version | sed -n 's/^Xcode \([0-9][0-9]*\).*/\1/p')
+          if [ "${MAJOR:-0}" -lt 26 ]; then
+            echo "Xcode >= 26 (iOS 26 SDK) required for App Store upload; got $MAJOR." >&2
+            exit 1
+          fi
+
+      - name: Setup Node + pnpm
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          targets: aarch64-apple-ios
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: "src-tauri -> target\njune-api -> target"
+
+      - name: Write App Store Connect API key
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          if [ -z "$APPLE_API_KEY_ID" ] || [ -z "$APPLE_API_KEY_P8" ]; then
+            echo "Missing APPLE_API_KEY_ID / APPLE_API_KEY_P8 secrets." >&2; exit 1
+          fi
+          mkdir -p ~/private_keys
+          printf '%s' "$APPLE_API_KEY_P8" | base64 -d > ~/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8
+
+      # Manual App Store signing: import the Apple Distribution identity into a
+      # dedicated keychain and install the App Store provisioning profile. The
+      # App Store Connect *App Manager* key cannot do xcodebuild cloud signing
+      # (it can't create the distribution cert/profile on the fly — "Cloud
+      # signing permission error"), so we sign against pre-provisioned assets.
+      - name: Import signing certificate + provisioning profile
+        env:
+          IOS_DIST_CERT_P12: ${{ secrets.IOS_DIST_CERT_P12 }}
+          IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          IOS_PROVISION_PROFILE: ${{ secrets.IOS_PROVISION_PROFILE }}
+        run: |
+          if [ -z "${IOS_DIST_CERT_P12:-}" ] || [ -z "${IOS_PROVISION_PROFILE:-}" ]; then
+            echo "Missing IOS_DIST_CERT_P12 / IOS_PROVISION_PROFILE secrets." >&2; exit 1
+          fi
+          KC="$RUNNER_TEMP/sr-ios-sign.keychain-db"
+          KCPASS=$(openssl rand -base64 24)
+          security create-keychain -p "$KCPASS" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPASS" "$KC"
+          printf '%s' "$IOS_DIST_CERT_P12" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" -k "$KC" -P "$IOS_DIST_CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security >/dev/null
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" >/dev/null
+          # Keep the login keychain in the search list; add ours and make it default.
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$KC"
+          security find-identity -v -p codesigning "$KC"
+          PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES_DIR"
+          printf '%s' "$IOS_PROVISION_PROFILE" | base64 --decode > "$PROFILES_DIR/subrosa-appstore.mobileprovision"
+
+      # Archive through the Tauri CLI (not a raw `xcodebuild archive`): the Xcode
+      # "Build Rust Code" phase runs `tauri ios xcode-script`, which needs the
+      # `<identifier>-server-addr` file that only `tauri ios build`/`dev` writes —
+      # a direct xcodebuild archive panics on the missing file. Tauri's OWN
+      # export/signing is unreliable (it falls back to an "Apple Distribution:
+      # Tauri (unset)" cert with the team unset), so we let it archive and export
+      # the resulting xcarchive ourselves below. Tolerate Tauri's export failure
+      # as long as it leaves a valid xcarchive.
+      - name: Archive via Tauri (Rust build + xcarchive)
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_KEY_PATH: /Users/runner/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          pnpm tauri ios build --export-method app-store-connect --verbose || \
+            echo "Tauri's own export failed (expected); exporting the xcarchive manually."
+
+      # Export the archive with manual signing against the imported Apple
+      # Distribution identity + installed App Store profile — re-signs the app
+      # for upload (replacing Tauri's placeholder archive signature). No
+      # -allowProvisioningUpdates / API key: manual signing needs neither.
+      - name: Export IPA (manual App Store signing)
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          ARCHIVE=$(find src-tauri/gen/apple/build -name '*.xcarchive' -print | head -1)
+          if [ -z "$ARCHIVE" ]; then echo "No xcarchive produced by Tauri." >&2; exit 1; fi
+          echo "Exporting archive: $ARCHIVE"
+          mkdir -p build
+          cat > build/ExportOptions-asc.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>destination</key>
+            <string>export</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>teamID</key>
+            <string>${APPLE_TEAM_ID}</string>
+            <key>signingCertificate</key>
+            <string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>xyz.carpediem.subrosa</key>
+              <string>Sub Rosa App Store</string>
+            </dict>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE" \
+            -exportOptionsPlist build/ExportOptions-asc.plist \
+            -exportPath build/export
+
+      - name: Upload to TestFlight
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          IPA=$(find build/export src-tauri/gen/apple/build -name '*.ipa' -print | head -1)
+          if [ -z "$IPA" ]; then echo "No .ipa to upload." >&2; exit 1; fi
+          echo "Uploading $IPA to TestFlight"
+          # altool reads the key from ~/private_keys/AuthKey_<APPLE_API_KEY_ID>.p8
+          xcrun altool --upload-app --type ios --file "$IPA" \
+            --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"

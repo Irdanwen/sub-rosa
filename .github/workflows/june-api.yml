@@ -1,66 +1,57 @@
-name: clovy-api
+name: june-api
 
 on:
   pull_request:
     paths:
-      - "clovy-api/**"
-      - "crates/clovy-companion-protocol/**"
-      - ".github/workflows/clovy-api.yml"
+      - "june-api/**"
+      - ".github/workflows/june-api.yml"
       - ".github/actions/setup-rust/**"
   push:
     branches: [main]
     paths:
-      - "clovy-api/**"
-      - "crates/clovy-companion-protocol/**"
-      - ".github/workflows/clovy-api.yml"
+      - "june-api/**"
+      - ".github/workflows/june-api.yml"
       - ".github/actions/setup-rust/**"
 
 permissions:
   contents: read
 
 concurrency:
-  group: clovy-api-${{ github.ref }}
+  group: june-api-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   fmt:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-rust
       - name: cargo fmt
-        working-directory: clovy-api
+        working-directory: june-api
         run: cargo fmt --all -- --check
 
   clippy:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-rust
       - name: cargo clippy
-        working-directory: clovy-api
+        working-directory: june-api
         run: cargo clippy --all-targets --all-features --locked -- -D warnings
 
   test:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-rust
-      # Also part of the full run below; the named step makes a shipped-client
-      # compatibility break unmissable in the check list. See ADR 0021.
-      - name: client contract suite
-        working-directory: clovy-api
-        env:
-          RUST_BACKTRACE: 1
-        run: cargo test -p clovy-api --test client_contract --locked
       - name: cargo test
-        working-directory: clovy-api
+        working-directory: june-api
         env:
           RUST_BACKTRACE: 1
         run: cargo test --all-targets --all-features --locked
