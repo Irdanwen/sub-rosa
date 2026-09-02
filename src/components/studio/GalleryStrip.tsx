@@ -2,7 +2,6 @@
 // fullscreen lightbox; video and audio render as inline players. Files live
 // on disk (see lib/studio/artifacts.ts) so everything here survives restarts.
 
-import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { IconArrowDownCircle } from "central-icons/IconArrowDownCircle";
 import { IconArrowRightCircle } from "central-icons/IconArrowRightCircle";
 import { IconCapture } from "central-icons/IconCapture";
@@ -72,9 +71,10 @@ export function GalleryStrip({
     return () => window.clearTimeout(timer);
   }, [captured]);
 
+  // Rust opens the save dialog: a destination chosen here would make the export
+  // command an arbitrary file write.
   const onExport = useCallback(async (artifact: StudioArtifact) => {
-    const destination = await saveDialog({ defaultPath: artifact.fileName });
-    if (destination) await exportArtifact(artifact, destination);
+    await exportArtifact(artifact);
   }, []);
 
   const onDelete = useCallback(

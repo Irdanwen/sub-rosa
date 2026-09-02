@@ -98,15 +98,16 @@ describe("bundleCut", () => {
 
 describe("writeTimelineBundle", () => {
   it("hands Rust the finished document, its extension and the files to copy", async () => {
-    await writeTimelineBundle({ name: "Film", clips: [clip("one.mp4")] }, "fcpxml", "/out");
+    await writeTimelineBundle({ name: "Film", clips: [clip("one.mp4")] }, "fcpxml");
     expect(invokeMock).toHaveBeenCalledTimes(1);
     const [command, payload] = invokeMock.mock.calls[0] as [
       string,
       { request: Record<string, unknown> },
     ];
     expect(command).toBe("export_timeline_bundle");
+    // No destination crosses IPC: Rust opens the folder picker.
+    expect(payload.request).not.toHaveProperty("directory");
     expect(payload.request).toMatchObject({
-      directory: "/out",
       name: "Film",
       extension: "fcpxml",
       media: ["/gallery/one.mp4"],
@@ -116,7 +117,7 @@ describe("writeTimelineBundle", () => {
   });
 
   it("writes the Premiere dialect with its own extension", async () => {
-    await writeTimelineBundle({ name: "Film", clips: [clip("one.mp4")] }, "xmeml", "/out");
+    await writeTimelineBundle({ name: "Film", clips: [clip("one.mp4")] }, "xmeml");
     const [, payload] = invokeMock.mock.calls[0] as [string, { request: Record<string, unknown> }];
     expect(payload.request.extension).toBe("xml");
     expect(String(payload.request.document)).toContain("<xmeml");
@@ -130,7 +131,6 @@ describe("writeTimelineBundle", () => {
         subtitles: [{ atSeconds: 0, untilSeconds: 1, text: "Hello" }],
       },
       "fcpxml",
-      "/out",
     );
     const [, payload] = invokeMock.mock.calls[0] as [string, { request: Record<string, unknown> }];
     expect(String(payload.request.subtitles)).toContain("00:00:00,000 --> 00:00:01,000");
@@ -142,7 +142,6 @@ describe("writeTimelineBundle", () => {
       writeTimelineBundle(
         { name: "Film", clips: [clip("one.mp4", { sourceDurationSeconds: Number.NaN })] },
         "fcpxml",
-        "/out",
       ),
     ).rejects.toThrow(/no measured duration/);
     expect(invokeMock).not.toHaveBeenCalled();

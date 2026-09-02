@@ -112,7 +112,9 @@ pub(super) async fn send(
     // Media (`/image/*`, `/video/*`, `/audio/*`, catalogs) lives only on the
     // `/v1` rail — the `/router` aggregator does not serve these paths.
     let url = format!("{}{}", settings::catalog_base_url(), path);
-    let mut builder = media_http_client().request(method, &url).bearer_auth(&key);
+    let mut builder = media_http_client()
+        .request(method, &url)
+        .bearer_auth(key.expose_str());
     if let Some(body) = body {
         builder = builder.json(body);
     }
@@ -285,7 +287,7 @@ pub async fn carpe_diem_text_pricing() -> Result<Vec<TextPriceDto>, AppError> {
             "No API key is stored yet.",
         ));
     };
-    if !key.starts_with("cdm_") {
+    if !key.expose_str().starts_with("cdm_") {
         // A Venice-direct key has no operator pricing table to read.
         return Ok(Vec::new());
     }
@@ -330,7 +332,7 @@ pub async fn carpe_diem_media_catalog() -> Result<MediaCatalogDto, AppError> {
     };
     let client = media_http_client();
 
-    if key.starts_with("cdm_") {
+    if key.expose_str().starts_with("cdm_") {
         // The catalog lives on the `/v1` rail and pricing at the operator root;
         // neither is served under the `/router` aggregator.
         let catalog = settings::catalog_base_url();
@@ -338,7 +340,7 @@ pub async fn carpe_diem_media_catalog() -> Result<MediaCatalogDto, AppError> {
         let models_url = format!("{catalog}/models");
         let pricing_url = format!("{operator_root}/pricing");
         let (primary, venice, pricing) = tokio::join!(
-            fetch_json(client, &models_url, Some(&key)),
+            fetch_json(client, &models_url, Some(key.expose_str())),
             fetch_json(client, VENICE_PUBLIC_CATALOG_URL, None),
             fetch_json(client, &pricing_url, None),
         );
@@ -356,7 +358,12 @@ pub async fn carpe_diem_media_catalog() -> Result<MediaCatalogDto, AppError> {
     } else {
         // Venice-direct key: its base already targets `/v1`; no rail rewrite.
         let base = settings::base_url();
-        let catalog = fetch_json(client, &format!("{base}/models?type=all"), Some(&key)).await?;
+        let catalog = fetch_json(
+            client,
+            &format!("{base}/models?type=all"),
+            Some(key.expose_str()),
+        )
+        .await?;
         Ok(MediaCatalogDto {
             backend: "venice".to_string(),
             price_multiplier: Some(1.0),
@@ -595,7 +602,10 @@ pub struct FetchArtifactRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ExportArtifactRequest {
     pub path: String,
-    pub destination: String,
+    /// Pre-fills the save dialog's name field. A suggestion only: the app never
+    /// receives a destination path from the webview.
+    #[serde(default)]
+    pub suggested_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -676,7 +686,7 @@ pub(super) async fn download(
     // Only attach the key to the backend's own host — a signed CDN URL on
     // another host must not receive it.
     if let (Some(key), true) = (settings::api_key(), same_host(&base, &url)) {
-        builder = builder.bearer_auth(key);
+        builder = builder.bearer_auth(key.expose_str());
     }
     let mut response = builder
         .send()
@@ -719,32 +729,79 @@ pub(super) async fn download(
     })
 }
 
-/// Copies a gallery artifact to a destination the user picked in a save
-/// dialog. The source must live inside the gallery directory.
+/// Copies a gallery artifact to a place the user picks in a save dialog.
+///
+/// The dialog opens in Rust. A destination taken from the webview would make
+/// this an arbitrary file-write reachable from the gallery strip, with the
+/// bytes of any generated media as its payload. Returns the saved path, or
+/// `None` when the user cancels.
 #[tauri::command]
 pub async fn carpe_diem_media_export_artifact(
     app: AppHandle,
     request: ExportArtifactRequest,
-) -> Result<(), AppError> {
+) -> Result<Option<String>, AppError> {
     let dir = artifacts_dir(&app)?;
     let source = PathBuf::from(&request.path);
-    if !is_within(&dir, &source) {
+    if !crate::path_confinement::is_confined(&dir, &source) {
         return Err(AppError::new(
             "media_artifact_invalid",
             "Only gallery files can be exported.",
         ));
     }
-    let destination = PathBuf::from(&request.destination);
-    if !destination.is_absolute() {
-        return Err(AppError::new(
-            "media_artifact_invalid",
-            "The export destination must be an absolute path.",
-        ));
-    }
+    let suggested = request
+        .suggested_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            source
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "export".to_string());
+
+    let Some(destination) = pick_export_destination(&app, &suggested).await? else {
+        return Ok(None);
+    };
     tokio::fs::copy(&source, &destination)
         .await
         .map_err(|error| AppError::new("media_artifact_export_failed", error.to_string()))?;
-    Ok(())
+    Ok(Some(destination.to_string_lossy().into_owned()))
+}
+
+/// The native save dialog, awaited off the main thread. On mobile there is no
+/// save dialog: an export leaves through the share sheet or the photo library,
+/// both of which have their own commands.
+async fn pick_export_destination(
+    app: &AppHandle,
+    suggested_name: &str,
+) -> Result<Option<PathBuf>, AppError> {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_dialog::DialogExt;
+
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        app.dialog()
+            .file()
+            .set_file_name(suggested_name)
+            .save_file(move |path| {
+                let _ = tx.send(path);
+            });
+        let picked = rx
+            .await
+            .map_err(|error| AppError::new("media_artifact_export_failed", error.to_string()))?;
+        Ok(picked.and_then(|path| path.into_path().ok()))
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, suggested_name);
+        Err(AppError::new(
+            "media_artifact_export_unsupported",
+            "Use share or save to photos to get this file off the phone.",
+        ))
+    }
 }
 
 /// Removes a gallery artifact. Deleting a file that is already gone is a
@@ -756,7 +813,7 @@ pub async fn carpe_diem_media_delete_artifact(
 ) -> Result<(), AppError> {
     let dir = artifacts_dir(&app)?;
     let path = PathBuf::from(&request.path);
-    if !is_within(&dir, &path) {
+    if !crate::path_confinement::is_confined(&dir, &path) {
         return Err(AppError::new(
             "media_artifact_invalid",
             "Only gallery files can be deleted.",
@@ -781,7 +838,7 @@ pub async fn carpe_diem_media_read_artifact(
 ) -> Result<String, AppError> {
     let dir = artifacts_dir(&app)?;
     let path = PathBuf::from(&request.path);
-    if !is_within(&dir, &path) {
+    if !crate::path_confinement::is_confined(&dir, &path) {
         return Err(AppError::new(
             "media_artifact_invalid",
             "Only gallery files can be read.",
@@ -858,17 +915,7 @@ pub(crate) fn artifacts_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
 /// prefixes. Gallery file names are generated UUIDs, so symlink tricks inside
 /// the directory are not a concern; rejecting `..` keeps traversal out.
 pub(crate) fn is_within_gallery(dir: &std::path::Path, path: &std::path::Path) -> bool {
-    is_within(dir, path)
-}
-
-fn is_within(dir: &std::path::Path, path: &std::path::Path) -> bool {
-    if path
-        .components()
-        .any(|component| matches!(component, std::path::Component::ParentDir))
-    {
-        return false;
-    }
-    path.starts_with(dir)
+    crate::path_confinement::is_confined(dir, path)
 }
 
 fn validate_extension(raw: &str) -> Result<String, AppError> {
@@ -940,21 +987,23 @@ fn host_of(url: &str) -> Option<String> {
 
 fn media_http_client() -> &'static reqwest::Client {
     MEDIA_HTTP_CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .timeout(MEDIA_HTTP_TIMEOUT)
-            .user_agent("sub-rosa-studio/0.1")
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new())
+        crate::http_client::build(
+            crate::http_client::credentialed(MEDIA_HTTP_TIMEOUT).user_agent("sub-rosa-studio/0.1"),
+            "studio-media",
+        )
     })
 }
 
 fn download_http_client() -> &'static reqwest::Client {
     DOWNLOAD_HTTP_CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .timeout(DOWNLOAD_HTTP_TIMEOUT)
-            .user_agent("sub-rosa-studio/0.1")
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new())
+        // A generated file often lives on a signed CDN URL on another host,
+        // which is a legitimate cross-host hop. The key is only attached when
+        // the host matches the backend (see `same_host`), so an anonymous
+        // client is the honest description of this one.
+        crate::http_client::build(
+            crate::http_client::anonymous(DOWNLOAD_HTTP_TIMEOUT).user_agent("sub-rosa-studio/0.1"),
+            "studio-media-download",
+        )
     })
 }
 
@@ -1248,10 +1297,15 @@ mod tests {
 
     #[test]
     fn containment_rejects_traversal_and_outside_paths() {
+        // The rules themselves live in `path_confinement` and are exercised by
+        // `tests/path_confinement.rs`; this keeps the gallery's own call honest.
         let dir = PathBuf::from("/data/studio-media");
-        assert!(is_within(&dir, &dir.join("a.png")));
-        assert!(!is_within(&dir, &PathBuf::from("/data/other/a.png")));
-        assert!(!is_within(&dir, &dir.join("../secrets.json")));
+        assert!(is_within_gallery(&dir, &dir.join("a.png")));
+        assert!(!is_within_gallery(
+            &dir,
+            &PathBuf::from("/data/other/a.png")
+        ));
+        assert!(!is_within_gallery(&dir, &dir.join("../secrets.json")));
     }
 
     #[test]

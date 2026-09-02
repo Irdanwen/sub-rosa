@@ -28,8 +28,6 @@ pub const MEDIA_SUBDIR: &str = "media";
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportTimelineRequest {
-    /// Absolute directory the bundle folder is created in.
-    pub directory: String,
     /// Bundle name, also the stem of the files inside it.
     pub name: String,
     /// The interchange document, already generated.
@@ -45,11 +43,53 @@ pub struct ExportTimelineRequest {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedTimelineDto {
-    /// The bundle folder that was created.
+    /// The bundle folder that was created. Empty when the user cancelled.
     pub directory: String,
-    /// The document inside it.
+    /// The document inside it. Empty when the user cancelled.
     pub document_path: String,
     pub media_count: usize,
+    /// True when the user dismissed the folder picker and nothing was written.
+    pub cancelled: bool,
+}
+
+impl ExportedTimelineDto {
+    fn cancelled() -> Self {
+        Self {
+            directory: String::new(),
+            document_path: String::new(),
+            media_count: 0,
+            cancelled: true,
+        }
+    }
+}
+
+/// The native folder picker, awaited off the main thread. On mobile there is no
+/// picker and no Assemble surface, so the bundle lands in the app's documents.
+async fn pick_export_directory(app: &AppHandle) -> Result<Option<PathBuf>, AppError> {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_dialog::DialogExt;
+
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        app.dialog().file().pick_folder(move |path| {
+            let _ = tx.send(path);
+        });
+        let picked = rx
+            .await
+            .map_err(|error| AppError::new("timeline_write_failed", error.to_string()))?;
+        Ok(picked.and_then(|path| path.into_path().ok()))
+    }
+    #[cfg(not(desktop))]
+    {
+        use tauri::Manager;
+        let dir = app
+            .path()
+            .document_dir()
+            .map_err(|error| AppError::new("timeline_write_failed", error.to_string()))?;
+        std::fs::create_dir_all(&dir)
+            .map_err(|error| AppError::new("timeline_write_failed", error.to_string()))?;
+        Ok(Some(dir))
+    }
 }
 
 /// A file name safe to write, derived from something a user typed.
@@ -116,13 +156,15 @@ pub async fn export_timeline_bundle(
     app: AppHandle,
     request: ExportTimelineRequest,
 ) -> Result<ExportedTimelineDto, AppError> {
-    let parent = PathBuf::from(&request.directory);
-    if !parent.is_absolute() {
-        return Err(AppError::new(
-            "timeline_invalid",
-            "The export destination must be an absolute path.",
-        ));
-    }
+    // The folder is picked here, not sent across IPC. A destination from the
+    // webview would make this an arbitrary directory-write primitive: the
+    // document and the subtitles are generated content, and a bundle folder
+    // dropped into an auto-run location is persistence. The user picks, or
+    // nothing is written. (Mobile has no folder picker and no Assemble
+    // surface; there the bundle lands in the app's own documents.)
+    let Some(parent) = pick_export_directory(&app).await? else {
+        return Ok(ExportedTimelineDto::cancelled());
+    };
     if !parent.is_dir() {
         return Err(AppError::new(
             "timeline_invalid",
@@ -178,6 +220,7 @@ pub async fn export_timeline_bundle(
         directory: bundle.to_string_lossy().to_string(),
         document_path: document_path.to_string_lossy().to_string(),
         media_count: copied,
+        cancelled: false,
     })
 }
 

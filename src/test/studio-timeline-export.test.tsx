@@ -89,8 +89,10 @@ describe("exporting a chain as a timeline", () => {
 
     await waitFor(() => expect(bundleCall()).toBeDefined());
     const payload = bundleCall() as { request: Record<string, unknown> };
+    // No destination crosses IPC: Rust opens the folder picker, so the request
+    // carries what to write and never where.
+    expect(payload.request).not.toHaveProperty("directory");
     expect(payload.request).toMatchObject({
-      directory: "/out",
       name: "Neon alley",
       extension: "fcpxml",
       media: ["/gallery/a.mp4", "/gallery/b.mp4"],
@@ -226,14 +228,23 @@ describe("exporting a chain as a timeline", () => {
     );
   });
 
-  it("writes nothing when the user closes the folder picker", async () => {
-    hoisted.openDialog.mockResolvedValue(null);
+  it("says nothing was written when the user closes the folder picker", async () => {
+    // The picker lives in Rust now, so a cancel comes back as a reply rather
+    // than as a dialog the webview never opened.
+    hoisted.invoke.mockImplementation(async (command: string) => {
+      if (command === "export_timeline_bundle") {
+        return { directory: "", documentPath: "", mediaCount: 0, cancelled: true };
+      }
+      return undefined;
+    });
     render(<AssembleStudio pendingCuts={chainCuts([A, B])} />);
     const button = await screen.findByRole("button", { name: "Export timeline" });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
-    await waitFor(() => expect(hoisted.openDialog).toHaveBeenCalled());
-    expect(bundleCall()).toBeUndefined();
+
+    await waitFor(() => expect(bundleCall()).toBeDefined());
+    // A cancelled export leaves no "wrote ..." notice behind.
+    await waitFor(() => expect(screen.queryByText(/^Wrote /)).toBeNull());
   });
 
   it("offers no timeline until there is something to put in it", async () => {

@@ -7,7 +7,7 @@ use std::{
     fs,
     io::{self, Write},
     net::TcpListener,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
@@ -819,7 +819,11 @@ pub struct DownloadHermesFileRequest {
 #[serde(rename_all = "camelCase")]
 pub struct SaveHermesFileRequest {
     pub path: String,
-    pub destination: String,
+    /// What to pre-fill the save dialog's name field with. A suggestion only —
+    /// the user names the file, and the app never receives a destination path
+    /// from the webview.
+    #[serde(default)]
+    pub suggested_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1207,6 +1211,11 @@ async fn start_hermes_bridge_inner(
             cmd
         }
     };
+    // The runtime executes model-authored tool calls for as long as a session
+    // lasts, and it has no business holding a backend credential: it reaches
+    // the app through the gateway, not through the sidecar. Strip anything
+    // credential-shaped before it inherits (see `child_env`).
+    crate::child_env::scrub(&mut cmd);
     cmd.stdin(Stdio::null());
     // Keep the dashboard's stdout/stderr: uvicorn writes unhandled route
     // exceptions ("Exception in ASGI application" + traceback) to stderr and
@@ -2862,29 +2871,95 @@ pub async fn download_hermes_bridge_file(
     Ok(destination.to_string_lossy().into_owned())
 }
 
-/// Copies a workspace file to a destination the user picked in a native save
-/// dialog. Unlike `download_hermes_bridge_file` (which drops the file into
-/// ~/Downloads with no prompt), this lets the user choose any folder and name.
+/// Copies a workspace file to a place the user picks in a native save dialog.
+/// Unlike `download_hermes_bridge_file` (which drops the file into ~/Downloads
+/// with no prompt), this lets the user choose the folder and the name.
+///
+/// The dialog is opened **here**, not in the webview. A destination handed
+/// across IPC would make this command an arbitrary file-write primitive — the
+/// source is confined to the Hermes workspace, but its contents are whatever
+/// the agent last wrote there, so a destination like `~/Library/LaunchAgents`
+/// would turn a download button into persistence. Rust owning the dialog
+/// removes the parameter rather than filtering it.
+///
+/// Returns the saved path, or `None` when the user cancels.
 #[tauri::command]
 pub async fn save_hermes_bridge_file(
     app: AppHandle,
     request: SaveHermesFileRequest,
-) -> Result<(), AppError> {
+) -> Result<Option<String>, AppError> {
     let requested = validate_hermes_file_path(&app, &request.path)?;
-    let destination = PathBuf::from(&request.destination);
-    if !destination.is_absolute() {
-        return Err(AppError::new(
-            "hermes_file_save_failed",
-            "The save destination must be an absolute path.",
-        ));
-    }
+    let suggested = request
+        .suggested_name
+        .as_deref()
+        .map(safe_save_file_name)
+        .filter(|name| !name.is_empty())
+        .or_else(|| {
+            requested
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(safe_save_file_name)
+        })
+        .unwrap_or_else(|| "download".to_string());
+
+    let Some(destination) = pick_save_destination(&app, &suggested).await? else {
+        return Ok(None);
+    };
+    // The dialog reply is still a path from outside this function, so it is
+    // held to the same roots as everything else that writes.
+    let destination = crate::path_confinement::confine_new(
+        &user_save_roots(&app),
+        &destination,
+        "hermes_file_save_failed",
+        "Pick a folder in your documents, downloads, desktop, or media folders.",
+    )?;
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent)
             .map_err(|error| AppError::new("hermes_file_save_failed", error.to_string()))?;
     }
     fs::copy(&requested, &destination)
         .map_err(|error| AppError::new("hermes_file_save_failed", error.to_string()))?;
-    Ok(())
+    Ok(Some(destination.to_string_lossy().into_owned()))
+}
+
+/// One path component, stripped of anything that could steer where it lands.
+fn safe_save_file_name(raw: &str) -> String {
+    raw.trim()
+        .chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '/' | '\\' | ':') {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect::<String>()
+        .trim_matches('.')
+        .chars()
+        .take(120)
+        .collect()
+}
+
+/// The native save dialog, awaited off the main thread. The plugin's blocking
+/// variant panics when called from the main thread, so the callback form is
+/// used and the answer arrives over a channel.
+async fn pick_save_destination(
+    app: &AppHandle,
+    suggested_name: &str,
+) -> Result<Option<PathBuf>, AppError> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_file_name(suggested_name)
+        .save_file(move |path| {
+            let _ = tx.send(path);
+        });
+    let picked = rx
+        .await
+        .map_err(|error| AppError::new("hermes_file_save_failed", error.to_string()))?;
+    Ok(picked.and_then(|path| path.into_path().ok()))
 }
 
 /// Puts a workspace file onto the OS clipboard as a file reference (pasteable
@@ -3122,36 +3197,50 @@ fn validate_dropped_file_name(raw: &str) -> Result<String, AppError> {
 
 fn validate_hermes_file_path(app: &AppHandle, path: &str) -> Result<PathBuf, AppError> {
     let hermes_home = resolve_june_hermes_home(app)?;
-    let requested = PathBuf::from(path)
-        .canonicalize()
-        .map_err(|error| AppError::new("hermes_file_download_failed", error.to_string()))?;
+    let roots: Vec<PathBuf> = filesystem_roots(&hermes_home)?
+        .into_iter()
+        .map(|root| root.path)
+        // The live runtimes' working folders are browsable roots too (the
+        // Files panel lists them), so their files must preview/download.
+        .chain(live_working_dirs(app))
+        .collect();
+    let requested = crate::path_confinement::confine_existing(
+        &roots,
+        Path::new(path),
+        "hermes_file_download_denied",
+        "Only files in this app's Hermes workspace, memory, or the active working folder can be downloaded.",
+    )?;
     if !requested.is_file() {
         return Err(AppError::new(
             "hermes_file_download_failed",
             "Only files in the Hermes workspace, memory, or the active working folder can be downloaded.",
         ));
     }
-    if is_hidden_secret_path(&requested) {
-        return Err(AppError::new(
-            "hermes_file_download_denied",
-            "This Hermes file is hidden or sensitive.",
-        ));
-    }
-    let allowed = filesystem_roots(&hermes_home)?
-        .into_iter()
-        .map(|root| root.path)
-        // The live runtimes' working folders are browsable roots too (the
-        // Files panel lists them), so their files must preview/download.
-        .chain(live_working_dirs(app))
-        .filter_map(|root| root.canonicalize().ok())
-        .any(|root| requested.starts_with(root));
-    if !allowed {
-        return Err(AppError::new(
-            "hermes_file_download_denied",
-            "Only files in this app's Hermes workspace, memory, or the active working folder can be downloaded.",
-        ));
-    }
     Ok(requested)
+}
+
+/// Where a "save a copy" may land, when the user picks the place themselves.
+///
+/// The app never accepts a destination from the webview: `save_hermes_bridge_file`
+/// opens the native save dialog in Rust and copies to whatever comes back. These
+/// roots are the second line — a dialog result is still bounded to the places a
+/// person saves things, so a compromised dialog reply cannot drop a file into an
+/// auto-run location.
+#[cfg(desktop)]
+fn user_save_roots(app: &AppHandle) -> Vec<PathBuf> {
+    let path = app.path();
+    [
+        path.download_dir(),
+        path.document_dir(),
+        path.desktop_dir(),
+        path.video_dir(),
+        path.picture_dir(),
+        path.audio_dir(),
+    ]
+    .into_iter()
+    .flatten()
+    .chain(live_working_dirs(app))
+    .collect()
 }
 
 /// The working folders of the live runtime processes (at most one per mode,
@@ -5564,13 +5653,12 @@ async fn hermes_connection_json(
     body: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, AppError> {
     let url = format!("{}{}", connection.base_url, path);
-    let client = reqwest::Client::builder()
+    // Exceed Hermes' own 30s budgets (e.g. the skill hub's parallel
+    // source-search timeout) so a slow but successful response — partial
+    // results included — wins over a proxy-level timeout that would
+    // otherwise surface as a misleading "could not reach Hermes" error.
+    let client = crate::http_client::loopback(Duration::from_secs(45))
         .no_proxy()
-        // Exceed Hermes' own 30s budgets (e.g. the skill hub's parallel
-        // source-search timeout) so a slow but successful response — partial
-        // results included — wins over a proxy-level timeout that would
-        // otherwise surface as a misleading "could not reach Hermes" error.
-        .timeout(Duration::from_secs(45))
         .build()
         .map_err(|error| AppError::new("hermes_bridge_api_failed", error.to_string()))?;
     let mut request = client
@@ -6818,6 +6906,11 @@ fn apply_isolated_hermes_env(
     for name in ISOLATED_HERMES_ENV_VARS {
         cmd.env_remove(name);
     }
+    // The runtime never talks to the sidecar directly — it reaches the app
+    // through the gateway — so nothing credential-shaped should reach it. All
+    // eight Hermes spawns funnel through here, which makes this the one place
+    // to say so (see `child_env`).
+    crate::child_env::scrub(cmd);
     cmd.env("HERMES_HOME", hermes_home)
         .env("HERMES_DASHBOARD_SESSION_TOKEN", token)
         .env("NO_PROXY", "127.0.0.1,localhost,::1")
@@ -7799,45 +7892,7 @@ fn filesystem_entry(path: PathBuf, depth: usize) -> Result<HermesFilesystemEntry
 }
 
 fn is_hidden_secret_path(path: &Path) -> bool {
-    path.components().any(|component| {
-        let Component::Normal(name) = component else {
-            return false;
-        };
-        name.to_str().is_some_and(is_sensitive_path_component)
-    })
-}
-
-fn is_sensitive_path_component(name: &str) -> bool {
-    let normalized = name.to_ascii_lowercase();
-    matches!(
-        normalized.as_str(),
-        ".ssh" | ".aws" | ".azure" | ".gnupg" | ".kube" | ".docker"
-    ) || is_sensitive_file_name(&normalized)
-}
-
-fn is_sensitive_file_name(name: &str) -> bool {
-    let normalized = name.to_ascii_lowercase();
-    normalized == ".env"
-        || normalized.starts_with(".env.")
-        || matches!(
-            normalized.as_str(),
-            "auth.lock"
-                | ".credentials"
-                | "credentials"
-                | "credentials.json"
-                | "application_default_credentials.json"
-                | "secrets"
-                | "secrets.json"
-                | "id_rsa"
-                | "id_dsa"
-                | "id_ecdsa"
-                | "id_ed25519"
-        )
-        || normalized.ends_with(".lock")
-        || normalized.ends_with(".key")
-        || normalized.ends_with(".pem")
-        || normalized.ends_with(".p12")
-        || normalized.ends_with(".pfx")
+    crate::path_confinement::is_sensitive_path(path)
 }
 
 fn system_time_to_iso(value: std::time::SystemTime) -> String {
@@ -8738,9 +8793,8 @@ async fn wait_for_hermes(base_url: &str, token: &str) -> Result<(), AppError> {
     // `.no_proxy()` matters: the probe targets 127.0.0.1, and routing it
     // through an HTTP(S)_PROXY would fail for the whole readiness window
     // and kill a healthy Hermes.
-    let client = reqwest::Client::builder()
+    let client = crate::http_client::loopback(Duration::from_secs(5))
         .no_proxy()
-        .timeout(Duration::from_secs(5))
         .build()
         .map_err(|error| AppError::new("hermes_bridge_ready_timeout", error.to_string()))?;
     let deadline = Instant::now() + READY_TIMEOUT;

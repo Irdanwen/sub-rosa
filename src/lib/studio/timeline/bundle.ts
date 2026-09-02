@@ -122,10 +122,16 @@ export interface ExportedTimeline {
   directory: string;
   documentPath: string;
   mediaCount: number;
+  /** True when the user dismissed the folder picker and nothing was written. */
+  cancelled: boolean;
 }
 
 /**
- * Write the bundle into `directory`, in the chosen dialect.
+ * Write the bundle where the user picks, in the chosen dialect.
+ *
+ * The folder picker opens in Rust, so no destination crosses IPC: a directory
+ * chosen in the webview would make the export an arbitrary directory-write.
+ * A dismissed picker resolves with `cancelled: true` and nothing on disk.
  *
  * Throws with everything wrong at once if the cut is not writable, before any
  * file is created - a half-written bundle is worse than no bundle.
@@ -133,14 +139,12 @@ export interface ExportedTimeline {
 export async function writeTimelineBundle(
   input: BundleInput,
   format: TimelineFormat,
-  directory: string,
 ): Promise<ExportedTimeline> {
   const { cut, media } = bundleCut(input);
   const document = toTimeline(cut, format);
   const subtitles = cut.subtitles?.length ? toSrt(cut.subtitles) : undefined;
   return invoke<ExportedTimeline>("export_timeline_bundle", {
     request: {
-      directory,
       name: cut.name,
       document,
       extension: TIMELINE_FORMAT_EXTENSIONS[format],

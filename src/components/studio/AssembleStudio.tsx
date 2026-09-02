@@ -12,7 +12,6 @@
 // them. That is the finishing path, and the reason the app can keep refusing to
 // ship ffmpeg (see lib/studio/timeline/fcpxml.ts).
 
-import { open as openDirectoryDialog } from "@tauri-apps/plugin-dialog";
 import { IconVideo } from "central-icons/IconVideo";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { artifactSrc, listArtifacts, saveArtifactFromBase64 } from "../../lib/studio/artifacts";
@@ -619,11 +618,12 @@ export function AssembleStudio({
     if (writingTimeline || cuts.length === 0) return;
     setError(undefined);
     setNotice(undefined);
-    const directory = await openDirectoryDialog({ directory: true, multiple: false });
-    if (typeof directory !== "string") return;
     setWritingTimeline(true);
     try {
-      const written = await writeTimelineBundle(bundleInput, timelineFormat, directory);
+      // Rust opens the folder picker: a directory chosen here would make the
+      // export command an arbitrary directory-write.
+      const written = await writeTimelineBundle(bundleInput, timelineFormat);
+      if (written.cancelled) return;
       setNotice(
         `Wrote ${written.directory} with ${written.mediaCount} file${
           written.mediaCount === 1 ? "" : "s"

@@ -210,9 +210,13 @@ export async function deleteArtifact(artifact: StudioArtifact): Promise<void> {
   writeIndex(readIndex().filter((entry) => entry.id !== artifact.id));
 }
 
-/** Copies a gallery file to a destination the user picked in a save dialog. */
-export async function exportArtifact(artifact: StudioArtifact, destination: string): Promise<void> {
-  await invoke<void>("carpe_diem_media_export_artifact", {
-    request: { path: artifact.path, destination },
+/**
+ * Copies a gallery file where the user chooses. Rust opens the save dialog, so
+ * no destination crosses IPC. Resolves to the saved path, or `null` if the user
+ * cancelled.
+ */
+export async function exportArtifact(artifact: StudioArtifact): Promise<string | null> {
+  return invoke<string | null>("carpe_diem_media_export_artifact", {
+    request: { path: artifact.path, suggestedName: artifact.fileName },
   });
 }
