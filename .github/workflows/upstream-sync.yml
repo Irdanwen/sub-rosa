@@ -14,6 +14,8 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # Labels are issue metadata: without this the `--label` lookup fails.
+  issues: write
 
 concurrency:
   group: upstream-sync
