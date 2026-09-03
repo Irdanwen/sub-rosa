@@ -56,7 +56,9 @@ jobs:
             echo
             echo "Read them, cherry-pick what is worth having (one upstream commit per fork commit, upstream hash in the message), then move the marker to \`$(git rev-parse --short upstream/main)\` and close this issue. See ADR 0040."
             echo
-            git log --reverse --format="- [\`%h\`]($UPSTREAM_WEB/commit/%H) %s" "$marker..upstream/main" | head -n 400
+            # --max-count rather than a pipe into head: with pipefail, head
+            # closing the pipe early made git log exit 141 and the job fail.
+            git log --reverse --max-count=400 --format="- [\`%h\`]($UPSTREAM_WEB/commit/%H) %s" "$marker..upstream/main"
             if [ "$count" -gt 400 ]; then
               echo "- … and $((count - 400)) more; move the marker to see them."
             fi
