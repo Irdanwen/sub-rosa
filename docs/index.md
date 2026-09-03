@@ -50,6 +50,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0037-the-note-body-round-trips-through-a-document-not-the-dom.md](adr/0037-the-note-body-round-trips-through-a-document-not-the-dom.md) — the note's markdown seam serializes the ProseMirror document instead of walking the rendered DOM, escapes what it writes, covers the whole schema, and is gated by a round-trip property rather than a hand-written subset
 - [adr/0038-a-note-rewrite-is-proposed-never-applied.md](adr/0038-a-note-rewrite-is-proposed-never-applied.md) — the model returns a revision the user accepts or discards, fork-side like the long-form summary, transient by design against ADR-0018, and bounded so a hostile note can at worst produce a bad rewrite
 - [adr/0039-the-database-is-not-encrypted-at-rest.md](adr/0039-the-database-is-not-encrypted-at-rest.md) — the disk is out of scope and full-disk encryption is the assumption, written down rather than implied; SQLCipher rejected because a keychain-held key protects against nobody the app can beat, and a passphrase would be a different product
+- [adr/0040-upstream-is-a-source-of-patches-not-a-merge-base.md](adr/0040-upstream-is-a-source-of-patches-not-a-merge-base.md) — the fork reads upstream June and cherry-picks; the weekly job files an "Upstream digest" issue instead of a merge PR (the one it produced touched 1 484 files), `.github/upstream-reviewed` marks how far the log was read, and `june-api/` stops being a re-merge surface
 
 ## Enforceable rules (spec/)
 
@@ -84,7 +85,6 @@ feature specs). Full index: [spec/index.md](../spec/index.md).
 - [threat-model.md](threat-model.md) — what the app protects, from whom, and what it deliberately does not:
   the five boundaries, what is in scope, what is out of it, and the commands that check each claim
 - [github-security-readiness.md](github-security-readiness.md) — pre-public repo hardening checklist
-- [settings-focus-runbook.md](settings-focus-runbook.md) — transient: settings tabs hidden while admin surfaces stabilize
 
 ## Upstream reports (defects filed with Carpe Diem)
 

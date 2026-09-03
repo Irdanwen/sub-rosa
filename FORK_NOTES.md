@@ -800,6 +800,12 @@ section « Writing a note (fork) » de [CONTEXT.md](CONTEXT.md).
 
 ## Procédure de synchronisation upstream (voir aussi `.github/workflows/upstream-sync.yml`)
 
+> **Remplacée le 2026-09-02 par [ADR-0040](docs/adr/0040-upstream-is-a-source-of-patches-not-a-merge-base.md).**
+> Le fork ne fusionne plus upstream : il le lit et cherry-picke. `upstream-sync.yml` ouvre désormais
+> une issue « Upstream digest » listant les commits upstream non lus depuis le marqueur
+> `.github/upstream-reviewed` ; on avance le marqueur quand on a lu. La procédure ci-dessous décrit
+> l'ancien flux par PR de fusion et n'est conservée que pour l'historique.
+
 1. `git fetch upstream`
 2. Brancher `sync/upstream-<date>` depuis `main`, `git merge upstream/main`.
 3. Conflits attendus sur les fichiers listés « modifiés » ci-dessus (surtout `tauri.conf.json`, `lib.rs`,

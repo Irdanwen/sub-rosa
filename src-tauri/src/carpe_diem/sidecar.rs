@@ -10,7 +10,8 @@
 //! 3. `set_var` the client-facing env (URL + local-dev bearer) in-process,
 //!    which the June client reads on its next request (values are not cached);
 //! 4. run `june-api` in local mode with the Carpe Diem upstream config —
-//!    **desktop**: spawned as a child process with `JUNE__…` env;
+//!    **desktop**: spawned as a child process with `JUNE__…` env for the port
+//!    and the mode, and the two credentials written to its stdin;
 //!    **mobile (iOS)**: subprocesses are forbidden, so the same server runs
 //!    in-process on a Tokio task via the `june-embed` crate;
 //! 5. poll `/livez` until ready, tracking status for the UI.
@@ -372,7 +373,23 @@ fn start_backend(
     base_url: &str,
     key: &str,
 ) -> std::io::Result<Backend> {
-    build_command(app, port, token, base_url, key).spawn()
+    use std::io::Write;
+    let mut child = build_command(app, port, token, base_url, key).spawn()?;
+    // Hand the credentials over on the pipe and close it: the backend reads
+    // to EOF before it binds. A child that cannot take them is a child that
+    // will not start, which is the failure the caller already handles.
+    let Some(mut stdin) = child.stdin.take() else {
+        let _ = child.kill();
+        return Err(std::io::Error::other(
+            "the backend's stdin was not a pipe; credentials could not be delivered",
+        ));
+    };
+    if let Err(error) = stdin.write_all(stdin_secrets(token, key).as_bytes()) {
+        let _ = child.kill();
+        return Err(error);
+    }
+    drop(stdin);
+    Ok(child)
 }
 
 /// Mobile backend: run the same server in-process (`june-embed`) on a Tokio
@@ -483,18 +500,40 @@ fn apply_june_api_env(
     key: &str,
 ) {
     attach_sidecar_log(app, command);
+    // The environment names the port and the mode. The two credentials, the
+    // session bearer and the upstream key, are written to the child's stdin
+    // by `start_backend` (`JUNE_SECRETS_ON_STDIN`): a process's environment
+    // is readable by any other process of the same user with `ps eww`, a
+    // pipe is not. `tests/sidecar_secrets_on_stdin.rs` keeps them off `.env`.
+    let _ = (token, key);
     command
         .env("JUNE__SERVER__HOST", "127.0.0.1")
         .env("JUNE__SERVER__PORT", port.to_string())
         .env("JUNE__SERVER__MAX_JSON_BYTES", MAX_JSON_BYTES.to_string())
         .env("JUNE__LOCAL_DEV__ENABLED", "true")
-        .env("JUNE__LOCAL_DEV__BEARER_TOKEN", token)
         .env("JUNE__LOCAL_DEV__USER_ID", LOCAL_USER_ID)
         .env("JUNE__UPSTREAMS__VENICE__BASE_URL", base_url)
-        .env("JUNE__UPSTREAMS__VENICE__API_KEY", key);
+        .env(SECRETS_ON_STDIN_ENV, "1")
+        .stdin(Stdio::piped());
     // Both build_command variants funnel through here — keeps the june-api
     // child from opening a terminal window on Windows.
     crate::win_console::hide_console(command);
+}
+
+/// The variable that tells the backend to read `key=value` secrets from its
+/// stdin until EOF. Mirrors `june_config::SECRETS_ON_STDIN_ENV`; the name does
+/// not start with `JUNE__`, so the backend's env provider never treats it as
+/// a config key.
+#[cfg(desktop)]
+const SECRETS_ON_STDIN_ENV: &str = "JUNE_SECRETS_ON_STDIN";
+
+/// The lines the backend reads on stdin. One config path per line; the
+/// values never contain a newline (a bearer is base64url, a key is `cdm_`
+/// plus base62), and the backend refuses a line it cannot parse rather than
+/// starting without a credential.
+#[cfg(desktop)]
+fn stdin_secrets(token: &str, key: &str) -> String {
+    format!("local_dev.bearer_token={token}\nupstreams.venice.api_key={key}\n")
 }
 
 #[cfg(all(desktop, debug_assertions))]

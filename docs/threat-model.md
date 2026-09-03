@@ -67,6 +67,10 @@ Five, and each is a place where something is checked rather than assumed.
   helper, and the agent runtime hold no credential and inherit none.
 - **A tampered update.** The updater checks a minisign signature against a key
   pinned in the binary, and refuses a version older than the one installed.
+- **A local process listing the environment of the backend child.** The
+  credentials the child needs arrive on a pipe and are read before it serves
+  a single request; its environment names the port and the mode, nothing
+  secret.
 - **A silent change of destination.** `june_api_url()` has no remote fallback.
   If the local backend is not up, requests fail; they are never redirected
   somewhere else (ADR-0017).
@@ -93,13 +97,12 @@ Named, because a threat model that claims everything protects nothing.
   the base, when, and roughly how much. TLS hides the content, not the shape.
 - **The operating system and the hardware.** A malicious OS update, firmware,
   or keyboard is below this app.
-- **Another local process reading the sidecar's environment.** The backend
-  child receives the upstream key through `JUNE__UPSTREAMS__VENICE__API_KEY`,
-  which a same-user process can read with `ps eww`. Moving it to stdin would
-  mean changing `june-api/`, which every upstream sync re-merges forever
-  (ADR-0027), and an attacker who can read another of your processes' memory
-  has already cleared a higher bar than this. Revisit if the app stops
-  tracking upstream.
+- **A same-user process reading another process's memory.** Since
+  2026-09-03 the backend child receives the upstream key and the session
+  bearer on its standard input (`JUNE_SECRETS_ON_STDIN`), not in its
+  environment, so `ps eww` shows neither; `tests/sidecar_secrets_on_stdin.rs`
+  holds this. What remains is a process that can read another process's
+  memory, which is the "already runs code as you" case above.
 
 ## How to check these claims
 

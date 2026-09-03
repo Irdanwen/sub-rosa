@@ -677,11 +677,75 @@ pub enum ConfigError {
     InvalidPricing { model: String, reason: String },
 }
 
+/// When this variable is set, the process reads `key=value` lines from its
+/// standard input until EOF and merges them over the environment, one nested
+/// config key per line (`upstreams.venice.api_key=…`).
+///
+/// A parent that embeds this server as a child process can keep credentials
+/// out of the child's environment that way: the environment of a process is
+/// readable by any other process of the same user (`ps eww`), a pipe is not.
+/// The name deliberately does not start with `JUNE__`, so the env provider
+/// above never sees it as a config key.
+pub const SECRETS_ON_STDIN_ENV: &str = "JUNE_SECRETS_ON_STDIN";
+
+/// Parse the `key=value` lines a parent writes on stdin. Blank lines and
+/// lines starting with `#` are ignored; a line without `=` is an error, since
+/// a silently dropped credential is worse than a refused start.
+pub fn parse_stdin_secrets(input: &str) -> Result<Vec<(String, String)>, ConfigError> {
+    let mut pairs = Vec::new();
+    for (index, raw) in input.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            return Err(ConfigError::InvalidRequired {
+                field: "stdin secrets",
+                reason: match index {
+                    0 => "line 1 is not key=value",
+                    _ => "a line is not key=value",
+                },
+            });
+        };
+        let key = key.trim();
+        if key.is_empty()
+            || !key
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_')
+        {
+            return Err(ConfigError::InvalidRequired {
+                field: "stdin secrets",
+                reason: "a key is not a dotted config path",
+            });
+        }
+        pairs.push((key.to_string(), value.to_string()));
+    }
+    Ok(pairs)
+}
+
+fn stdin_secrets() -> Result<Vec<(String, String)>, ConfigError> {
+    if std::env::var_os(SECRETS_ON_STDIN_ENV).is_none() {
+        return Ok(Vec::new());
+    }
+    let mut input = String::new();
+    std::io::Read::read_to_string(&mut std::io::stdin(), &mut input).map_err(|_| {
+        ConfigError::InvalidRequired {
+            field: "stdin secrets",
+            reason: "stdin could not be read",
+        }
+    })?;
+    parse_stdin_secrets(&input)
+}
+
 pub fn load() -> Result<AppConfig, ConfigError> {
-    let config: AppConfig = Figment::new()
+    let mut figment = Figment::new()
         .merge(Serialized::defaults(AppConfig::default()))
         .merge(Toml::file("config.toml"))
-        .merge(Env::prefixed("JUNE__").split("__"))
+        .merge(Env::prefixed("JUNE__").split("__"));
+    for (key, value) in stdin_secrets()? {
+        figment = figment.merge((key.as_str(), value));
+    }
+    let config: AppConfig = figment
         .extract()
         .map_err(Box::new)
         .map_err(ConfigError::from)?;
@@ -913,6 +977,36 @@ fn validate_positive_rate(
             model: model_id.to_string(),
             reason: format!("{field} must be > 0"),
         }),
+    }
+}
+
+#[cfg(test)]
+mod stdin_secrets_tests {
+    use super::parse_stdin_secrets;
+
+    #[test]
+    fn key_value_lines_become_dotted_config_paths() {
+        let pairs = parse_stdin_secrets(
+            "# written by the desktop shell\nupstreams.venice.api_key=cdm_abc=def\n\nlocal_dev.bearer_token=tok\n",
+        )
+        .expect("parse");
+        assert_eq!(
+            pairs,
+            vec![
+                (
+                    "upstreams.venice.api_key".to_string(),
+                    "cdm_abc=def".to_string()
+                ),
+                ("local_dev.bearer_token".to_string(), "tok".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_line_without_a_separator_is_refused() {
+        assert!(parse_stdin_secrets("upstreams.venice.api_key\n").is_err());
+        assert!(parse_stdin_secrets("bad key=value\n").is_err());
+        assert!(parse_stdin_secrets("").expect("empty").is_empty());
     }
 }
 

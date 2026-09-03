@@ -1,10 +1,11 @@
-name: Upstream sync
+name: Upstream digest
 
-# Keeps the Sub Rosa fork tracking upstream June (open-software-network/os-june).
-# Weekly (and on demand) it fetches upstream, and — when there are new commits —
-# opens/updates a PR from an `upstream-sync` branch into `main`. Conflicts are
-# surfaced in the PR for a human to resolve (we never auto-merge a conflicting
-# upstream, per FORK_NOTES). A clean PR can be merged once CI is green.
+# Sub Rosa does not merge upstream June; it reads upstream and cherry-picks
+# the fixes worth having (ADR 0040). Every Monday this lists the upstream
+# commits that appeared since the last review in one issue, so that reading
+# the log is a task someone can see, close, and be reminded of. The marker
+# `.github/upstream-reviewed` holds the upstream commit up to which the log
+# has been read; move it forward when you have looked.
 
 on:
   schedule:
@@ -12,97 +13,73 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: write
-  pull-requests: write
-  # Labels are issue metadata: without this the `--label` lookup fails.
+  contents: read
   issues: write
 
 concurrency:
-  group: upstream-sync
+  group: upstream-digest
   cancel-in-progress: false
 
 env:
   UPSTREAM_REPO: https://github.com/open-software-network/os-june.git
-  SYNC_BRANCH: upstream-sync
+  UPSTREAM_WEB: https://github.com/open-software-network/os-june
+  MARKER_FILE: .github/upstream-reviewed
+  ISSUE_TITLE: "Upstream digest: commits to read"
 
 jobs:
-  sync:
+  digest:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout fork (full history)
+      - name: Checkout fork
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Fetch upstream
         run: |
           git remote add upstream "$UPSTREAM_REPO" 2>/dev/null || git remote set-url upstream "$UPSTREAM_REPO"
-          git fetch upstream --no-tags
+          git fetch upstream --no-tags main
 
-      - name: Determine whether upstream has new commits
-        id: check
+      - name: List the unread upstream commits
+        id: list
         run: |
-          behind="$(git rev-list --count HEAD..upstream/main)"
-          echo "behind=$behind" >> "$GITHUB_OUTPUT"
-          echo "Fork is $behind commits behind upstream/main."
-
-      - name: Build the sync branch from upstream/main, keeping our workflows
-        if: steps.check.outputs.behind != '0'
-        run: |
-          # The sync branch is the upstream tip with one difference: the
-          # workflow directory is the fork's, not upstream's. Two reasons.
-          # The token this job runs with cannot create or update workflow
-          # files (GitHub refuses the push without the `workflows` permission,
-          # which is what silently broke this job for five weeks in August
-          # 2026). And the fork never adopts an upstream workflow as-is anyway:
-          # it deleted the hosted-backend ones and rewrote release (see
-          # FORK_NOTES, "Autonomie"). The PR (sync branch -> main) therefore
-          # shows the whole upstream diff except .github/workflows; GitHub
-          # flags any conflicts for manual resolution.
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B "$SYNC_BRANCH" upstream/main
-          git rm -r -q --ignore-unmatch .github/workflows
-          git checkout main -- .github/workflows
-          if ! git diff --cached --quiet; then
-            git commit -q -m "chore(sync): keep the fork's workflows on the sync branch"
+          set -euo pipefail
+          marker="$(tr -d '[:space:]' < "$MARKER_FILE")"
+          if ! git cat-file -e "$marker^{commit}" 2>/dev/null; then
+            echo "The marker $marker is not an upstream commit." >&2
+            exit 1
           fi
-          git push --force origin "$SYNC_BRANCH"
+          count="$(git rev-list --count "$marker..upstream/main")"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "tip=$(git rev-parse --short upstream/main)" >> "$GITHUB_OUTPUT"
+          echo "marker=$(git rev-parse --short "$marker")" >> "$GITHUB_OUTPUT"
+          {
+            echo "Unread upstream commits since \`$(git rev-parse --short "$marker")\` (the marker in \`$MARKER_FILE\`): **$count**."
+            echo
+            echo "Read them, cherry-pick what is worth having (one upstream commit per fork commit, upstream hash in the message), then move the marker to \`$(git rev-parse --short upstream/main)\` and close this issue. See ADR 0040."
+            echo
+            git log --reverse --format="- [\`%h\`]($UPSTREAM_WEB/commit/%H) %s" "$marker..upstream/main" | head -n 400
+            if [ "$count" -gt 400 ]; then
+              echo "- … and $((count - 400)) more; move the marker to see them."
+            fi
+          } > digest.md
+          echo "Fork is $count upstream commits behind the marker's reading."
 
-      - name: Open or update the sync PR
-        if: steps.check.outputs.behind != '0'
+      - name: Open or refresh the digest issue
+        if: steps.list.outputs.count != '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COUNT: ${{ steps.list.outputs.count }}
+          TIP: ${{ steps.list.outputs.tip }}
         run: |
-          upstream_sha="$(git rev-parse --short upstream/main)"
-          title="chore: sync upstream June (${upstream_sha})"
-          body=$(cat <<EOF
-          Automated upstream sync from \`open-software-network/os-june@${upstream_sha}\`.
-
-          - The fork is **${{ steps.check.outputs.behind }}** commits behind upstream/main.
-          - Review the diff, resolve any conflicts (see \`FORK_NOTES.md\` for the
-            files the fork owns: branding, \`carpe_diem/\`, \`tauri.conf.json\`,
-            \`lib.rs\`, updater config), and merge once CI is green.
-          - **Do not blind-merge**: keep the Sub Rosa branding + Carpe Diem sidecar.
-          - The branch carries the fork's \`.github/workflows\`, not upstream's:
-            workflow changes from upstream are reviewed by hand, never synced.
-          - CI does not start on its own for a PR opened by the Actions token.
-            Close and reopen the PR, or push an empty commit to the branch, to
-            run the checks.
-
-          Generated by \`.github/workflows/upstream-sync.yml\`.
-          EOF
-          )
-          existing="$(gh pr list --head "$SYNC_BRANCH" --base main --state open --json number --jq '.[0].number' || true)"
+          set -euo pipefail
+          existing="$(gh issue list --search "\"$ISSUE_TITLE\" in:title" --state open --json number --jq '.[0].number' || true)"
           if [ -n "$existing" ]; then
-            gh pr edit "$existing" --title "$title" --body "$body"
-            echo "Updated existing sync PR #$existing."
+            gh issue edit "$existing" --body-file digest.md --title "$ISSUE_TITLE ($COUNT, up to $TIP)"
+            echo "Refreshed issue #$existing."
           else
-            gh pr create --base main --head "$SYNC_BRANCH" --title "$title" --body "$body" --label upstream-sync || \
-              gh pr create --base main --head "$SYNC_BRANCH" --title "$title" --body "$body"
+            gh issue create --title "$ISSUE_TITLE ($COUNT, up to $TIP)" --body-file digest.md --label upstream-digest ||
+              gh issue create --title "$ISSUE_TITLE ($COUNT, up to $TIP)" --body-file digest.md
           fi
 
-      - name: Nothing to do
-        if: steps.check.outputs.behind == '0'
-        run: echo "Fork is up to date with upstream/main."
+      - name: Nothing to read
+        if: steps.list.outputs.count == '0'
+        run: echo "The upstream log has been read up to its tip."
