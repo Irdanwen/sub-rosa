@@ -2,10 +2,17 @@ name: Upstream digest
 
 # Sub Rosa does not merge upstream June; it reads upstream and cherry-picks
 # the fixes worth having (ADR 0040). Every Monday this lists the upstream
-# commits that appeared since the last review in one issue, so that reading
-# the log is a task someone can see, close, and be reminded of. The marker
+# commits that appeared since the last review, so that reading the log is a
+# task someone can see, tick off, and be reminded of. The marker
 # `.github/upstream-reviewed` holds the upstream commit up to which the log
 # has been read; move it forward when you have looked.
+#
+# The digest always lands in the run's summary and as an artifact. It is also
+# filed as an issue when a token that may create one is available: the
+# Actions token of this repository cannot ("Resource not accessible by
+# integration" on createIssue, whatever `permissions:` says), so a
+# fine-grained PAT with `issues: write` in the `DIGEST_TOKEN` secret is what
+# turns the summary into an issue. Without it the job still succeeds.
 
 on:
   schedule:
@@ -50,7 +57,6 @@ jobs:
           count="$(git rev-list --count "$marker..upstream/main")"
           echo "count=$count" >> "$GITHUB_OUTPUT"
           echo "tip=$(git rev-parse --short upstream/main)" >> "$GITHUB_OUTPUT"
-          echo "marker=$(git rev-parse --short "$marker")" >> "$GITHUB_OUTPUT"
           {
             echo "Unread upstream commits since \`$(git rev-parse --short "$marker")\` (the marker in \`$MARKER_FILE\`): **$count**."
             echo
@@ -64,23 +70,42 @@ jobs:
             fi
           } > digest.md
           echo "Fork is $count upstream commits behind the marker's reading."
+          {
+            echo "## $ISSUE_TITLE"
+            echo
+            cat digest.md
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Open or refresh the digest issue
+      - name: Keep the digest as an artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: upstream-digest
+          path: digest.md
+
+      - name: File or refresh the digest issue (best effort)
         if: steps.list.outputs.count != '0'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.DIGEST_TOKEN || secrets.GITHUB_TOKEN }}
           COUNT: ${{ steps.list.outputs.count }}
           TIP: ${{ steps.list.outputs.tip }}
+          REPO: ${{ github.repository }}
         run: |
-          set -euo pipefail
-          existing="$(gh issue list --search "\"$ISSUE_TITLE\" in:title" --state open --json number --jq '.[0].number' || true)"
-          if [ -n "$existing" ]; then
-            gh issue edit "$existing" --body-file digest.md --title "$ISSUE_TITLE ($COUNT, up to $TIP)"
-            echo "Refreshed issue #$existing."
+          set -uo pipefail
+          title="$ISSUE_TITLE ($COUNT, up to $TIP)"
+          body="$(cat digest.md)"
+          existing="$(gh api "repos/$REPO/issues?state=open&labels=upstream-digest&per_page=1" --jq '.[0].number' 2>/dev/null || true)"
+          if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+            if gh api -X PATCH "repos/$REPO/issues/$existing" -f title="$title" -f body="$body" >/dev/null 2>&1; then
+              echo "Refreshed issue #$existing."
+              exit 0
+            fi
           else
-            gh issue create --title "$ISSUE_TITLE ($COUNT, up to $TIP)" --body-file digest.md --label upstream-digest ||
-              gh issue create --title "$ISSUE_TITLE ($COUNT, up to $TIP)" --body-file digest.md
+            if gh api -X POST "repos/$REPO/issues" -f title="$title" -f body="$body" -f 'labels[]=upstream-digest' >/dev/null 2>&1; then
+              echo "Filed the digest as an issue."
+              exit 0
+            fi
           fi
+          echo "::warning::Could not file the digest as an issue with this token; it is in the run summary and the artifact. Add a fine-grained PAT with issues:write as DIGEST_TOKEN to have it filed."
 
       - name: Nothing to read
         if: steps.list.outputs.count == '0'

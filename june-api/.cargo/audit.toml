@@ -2,8 +2,16 @@
 #
 # Same split as the desktop crate (`src-tauri/.cargo/audit.toml`): a
 # vulnerability fails the run, an unmaintained or unsound crate is reported.
-# Nothing is ignored here — the tree is clean, and it should stay easy to see
-# when that stops being true.
+# One advisory is ignored, with its reason inline; it should stay easy to see
+# when a second one appears.
 
 [advisories]
-ignore = []
+ignore = [
+  # rsa 0.9 (Marvin attack, RUSTSEC-2023-0071, no fixed release): reached only
+  # through jsonwebtoken's pure-Rust backend, whose RSA code this fork never
+  # runs. The verifier it serves (the JWKS check of OS Accounts tokens) is
+  # dead code here (ADR-0017 deleted OS Accounts), and the advisory concerns
+  # private-key operations, which a verifier does not perform. Revisit if the
+  # backend ever signs with RSA, or when jsonwebtoken's backend moves off rsa.
+  "RUSTSEC-2023-0071",
+]

@@ -22,7 +22,8 @@ yanked = "warn"
 # Tauri's GTK3 stack is upstream's to replace and ours to know about, not a
 # reason to fail every pull request.
 unmaintained = "workspace"
-ignore = ["RUSTSEC-2026-0194", "RUSTSEC-2026-0195"]
+# rsa via jsonwebtoken's pure-Rust backend; see .cargo/audit.toml for why.
+ignore = ["RUSTSEC-2023-0071"]
 
 [licenses]
 # Every licence below is one actually present in the tree today. The list is an
