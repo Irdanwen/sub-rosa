@@ -47,7 +47,7 @@ describe("the settings index", () => {
     // Nothing is hidden any more: the count is the count. It is asserted so
     // that adding a tab is a decision taken here, not a number drifting.
     expect(grouped).toHaveLength(SETTINGS_TABS.length);
-    expect(SETTINGS_TABS).toHaveLength(19);
+    expect(SETTINGS_TABS).toHaveLength(20);
   });
 
   it("gives every tab a label a person would type", () => {

@@ -10874,6 +10874,33 @@ input:focus-visible,
   gap: var(--sp-3);
 }
 
+/* Settings › Storage: a size reads as one number with its file count under
+ * it, right-aligned so the column lines up down the list. */
+.storage-size {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  min-width: 7ch;
+  font-variant-numeric: tabular-nums;
+}
+
+.storage-size-bytes {
+  font-weight: 600;
+}
+
+.storage-size-files {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.storage-total {
+  border-top: 1px solid var(--border);
+}
+
+.storage-purge {
+  gap: var(--sp-2);
+}
+
 .settings-row-mic-test {
   align-items: start;
 }

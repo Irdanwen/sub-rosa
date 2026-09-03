@@ -1843,6 +1843,67 @@ export async function searchEverything(query: string, limit = 20): Promise<Searc
   return invoke<SearchHit[]>("search_everything", { request: { query, limit } });
 }
 
+/** What this build can do on this platform; `false` is a fact, not a failure. */
+export type PlatformCapabilitiesDto = {
+  platform: string;
+  systemAudio: boolean;
+  hud: boolean;
+  dictationHotkey: boolean;
+  spotlight: boolean;
+  calendar: boolean;
+  meetingDetection: boolean;
+  share: boolean;
+  hermesAgent: boolean;
+  updater: boolean;
+};
+
+export async function platformCapabilities(): Promise<PlatformCapabilitiesDto> {
+  return invoke<PlatformCapabilitiesDto>("platform_capabilities");
+}
+
+export type StorageBucketDto = {
+  id: string;
+  label: string;
+  note: string;
+  bytes: number;
+  files: number;
+  purgeable: boolean;
+};
+
+export type StorageReportDto = {
+  buckets: StorageBucketDto[];
+  totalBytes: number;
+  measuredAt: string;
+};
+
+export async function storageReport(): Promise<StorageReportDto> {
+  return invoke<StorageReportDto>("storage_report");
+}
+
+export type PurgeRecordingsResultDto = {
+  recordings: number;
+  bytes: number;
+  dryRun: boolean;
+};
+
+/** Delete (or, with dryRun, count) the audio of notes transcribed more than N days ago. */
+export async function purgeTranscribedRecordings(request: {
+  olderThanDays: number;
+  dryRun?: boolean;
+}): Promise<PurgeRecordingsResultDto> {
+  return invoke<PurgeRecordingsResultDto>("purge_transcribed_recordings", { request });
+}
+
+export type ExportDiagnosticsResultDto = {
+  path: string | null;
+  files: number;
+};
+
+/** Desktop only: writes a redacted diagnostics folder where the native dialog says. */
+export async function exportDiagnostics(): Promise<ExportDiagnosticsResultDto> {
+  return invoke<ExportDiagnosticsResultDto>("export_diagnostics");
+}
+
 export async function listNotesPage(request: {
   folderId?: string;
   cursor?: string;

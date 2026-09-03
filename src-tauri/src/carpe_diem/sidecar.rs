@@ -239,6 +239,22 @@ pub async fn ensure_ready_for_request() {
     }
 }
 
+/// One line for the diagnostics bundle: state, port and the last message,
+/// never the token.
+pub fn status_for_diagnostics(app: &AppHandle) -> Option<String> {
+    app.try_state::<SidecarState>().and_then(|state| {
+        state.0.lock().ok().map(|process| {
+            format!(
+                "status={:?} port={} generation={} message={}",
+                process.status,
+                process.port,
+                process.generation,
+                process.message.as_deref().unwrap_or("-")
+            )
+        })
+    })
+}
+
 fn sidecar_snapshot(app: &AppHandle) -> Option<(SidecarStatus, u16)> {
     app.try_state::<SidecarState>().and_then(|state| {
         state

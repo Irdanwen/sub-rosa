@@ -72,6 +72,7 @@ import {
   type ReleaseChannel,
 } from "../../lib/updater";
 import { isMacLikePlatform } from "../../lib/platform";
+import { unavailableOn, usePlatformCapabilities } from "../../lib/platform-capabilities";
 import { systemAudioAvailability } from "../../lib/source-readiness";
 import { parseDictationHelperEvent } from "../../lib/dictation-events";
 import { dispatchProviderModelSettingsChanged } from "../../lib/model-privacy";
@@ -93,6 +94,7 @@ import { CouncilSettingsSection } from "./CouncilSettingsSection";
 import { MemorySettingsSection } from "./MemorySettingsSection";
 import { PrivacySettingsSection } from "./PrivacySettingsSection";
 import { ReportsSettingsSection } from "./ReportsSettingsSection";
+import { StorageSettingsSection } from "./StorageSettingsSection";
 import { MicTestControl, type MicTestState } from "./MicTestControl";
 import { StyleSettingsSection } from "./StyleSettingsSection";
 
@@ -213,6 +215,7 @@ export type SettingsTab =
   | "mcp-security"
   | "toolsets"
   | "import-export"
+  | "storage"
   | "reports"
   | "about";
 
@@ -234,6 +237,7 @@ export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "mcp-security", label: "MCP security" },
   { id: "toolsets", label: "Toolsets" },
   { id: "import-export", label: "Import / export" },
+  { id: "storage", label: "Storage" },
   { id: "reports", label: "Reports" },
   { id: "about", label: "About" },
 ];
@@ -322,7 +326,11 @@ export function AppSettings({
   const controlled = controlledTab !== undefined && onTabChange !== undefined;
   const activeTab = controlled ? controlledTab : internalTab;
   const settingsTabs = SETTINGS_TABS;
+  // What the webview runs on, and what this build compiled in: the second
+  // is the one that decides whether a control exists (diagnostics::capabilities).
   const macLikePlatform = isMacLikePlatform();
+  const capabilities = usePlatformCapabilities();
+  const dictationHotkeyAvailable = capabilities?.dictationHotkey ?? macLikePlatform;
   const setActiveTab = (tab: SettingsTab) => {
     if (controlled) {
       onTabChange?.(tab);
@@ -984,7 +992,7 @@ export function AppSettings({
             </h2>
             <div className="settings-card">
               <div className="settings-rows">
-                {macLikePlatform ? (
+                {dictationHotkeyAvailable ? (
                   <>
                     <ShortcutRow
                       title="Push to talk"
@@ -1019,7 +1027,7 @@ export function AppSettings({
                     <div className="settings-row-info">
                       <h3 className="settings-row-title">Dictation shortcuts unavailable</h3>
                       <p className="settings-row-description">
-                        Global dictation shortcuts are only supported on macOS.
+                        {unavailableOn(capabilities, "A global dictation shortcut")}
                       </p>
                     </div>
                   </div>
@@ -1316,6 +1324,7 @@ export function AppSettings({
         {activeTab === "council" ? <CouncilSettingsSection /> : null}
 
         {activeTab === "reports" ? <ReportsSettingsSection /> : null}
+        {activeTab === "storage" ? <StorageSettingsSection /> : null}
 
         {activeTab === "skills" ? <InstalledSkillsSection /> : null}
         {activeTab === "external-dirs" ? <ExternalDirsSection /> : null}

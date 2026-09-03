@@ -54,6 +54,9 @@ fn platform_specific(name: &str) -> bool {
         // replaces with agent-lite.
         "commands::explain_agent_approval",
         "commands::save_agent_hermes_session",
+        // The bundle is written where a native folder dialog says; the phone
+        // has no such dialog and gets its logs through the share sheet later.
+        "diagnostics::export_diagnostics",
     ];
     PREFIXES.iter().any(|prefix| name.starts_with(prefix)) || NAMES.contains(&name)
 }

@@ -144,3 +144,108 @@ async fn deletes_note_and_removes_folder_assignment() {
     assert!(all_notes.items.is_empty());
     assert!(folder_notes.items.is_empty());
 }
+
+/// Settings › Storage may delete the audio of a note that is done with it:
+/// the note reached `ready`, the artifact is older than the cutoff, it has a
+/// transcript of its own, and it was not purged before. Each of those is a
+/// condition a person's recordings depend on, so each has a case.
+#[tokio::test]
+async fn only_transcribed_ready_recordings_older_than_the_cutoff_are_purgeable() {
+    use os_june_lib::domain::types::{ProcessingStatus, RecordingSourceMode};
+
+    let pool = sqlx_sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("sqlite memory");
+    os_june_lib::db::migrations::run_migrations(&pool)
+        .await
+        .expect("migrations");
+    let repos = os_june_lib::db::repositories::Repositories::new(pool);
+
+    async fn note_with_recording(
+        repos: &os_june_lib::db::repositories::Repositories,
+        transcribed: bool,
+        status: ProcessingStatus,
+    ) -> (String, String) {
+        let note = repos.create_note(None).await.expect("note");
+        let session_id = format!("session-{}", note.id);
+        repos
+            .create_recording_session(
+                &note.id,
+                &session_id,
+                RecordingSourceMode::MicrophoneOnly,
+                "/tmp/partial.wav",
+                "/tmp/session.wav",
+                None,
+            )
+            .await
+            .expect("session");
+        let artifact = repos
+            .create_audio_artifact(&note.id, &session_id, "/tmp/mic.wav", 1_000, 4_096, "sum")
+            .await
+            .expect("artifact");
+        if transcribed {
+            repos
+                .create_source_transcript(
+                    &note.id,
+                    &session_id,
+                    &artifact.id,
+                    RecordingSourceMode::MicrophoneOnly,
+                    "microphone",
+                    "hello",
+                    None,
+                    "test",
+                    Some(0),
+                    Some(1_000),
+                    Some(0),
+                )
+                .await
+                .expect("transcript");
+        }
+        repos
+            .set_note_status(&note.id, status, None)
+            .await
+            .expect("status");
+        (note.id, artifact.id)
+    }
+
+    let (_ready_note, ready_artifact) =
+        note_with_recording(&repos, true, ProcessingStatus::Ready).await;
+    let (_untranscribed, _) = note_with_recording(&repos, false, ProcessingStatus::Ready).await;
+    let (_still_working, _) =
+        note_with_recording(&repos, true, ProcessingStatus::Transcribing).await;
+
+    // A cutoff in the future makes every artifact "old enough"; the other
+    // conditions decide.
+    let future = "2999-01-01T00:00:00Z";
+    let purgeable = repos.purgeable_recordings(future).await.expect("query");
+    assert_eq!(
+        purgeable
+            .iter()
+            .map(|p| p.artifact_id.as_str())
+            .collect::<Vec<_>>(),
+        vec![ready_artifact.as_str()],
+        "{purgeable:#?}"
+    );
+    assert_eq!(purgeable[0].size_bytes, 4_096);
+
+    // A cutoff in the past leaves everything alone.
+    let past = "2000-01-01T00:00:00Z";
+    assert!(repos
+        .purgeable_recordings(past)
+        .await
+        .expect("query")
+        .is_empty());
+
+    // Once purged, an artifact is never offered again.
+    repos
+        .mark_audio_artifact_purged(&ready_artifact)
+        .await
+        .expect("mark");
+    assert!(repos
+        .purgeable_recordings(future)
+        .await
+        .expect("query")
+        .is_empty());
+}

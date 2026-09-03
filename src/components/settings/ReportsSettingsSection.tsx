@@ -7,7 +7,9 @@ import {
   issueReportsSetGithubToken,
   issueReportsTestToken,
   openExternalUrl,
+  exportDiagnostics,
 } from "../../lib/tauri";
+import { isMobilePlatform } from "../../lib/mobile";
 
 /**
  * Where a report goes when you send one.
@@ -24,6 +26,28 @@ export function ReportsSettingsSection() {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  // A report used to be able to name a log and never carry one. The bundle
+  // is a dated folder the user chooses in the native dialog, with every
+  // secret-shaped token stripped before it is written (diagnostics::redact).
+  const exportBundle = async () => {
+    setExporting(true);
+    setDiagnostics(null);
+    try {
+      const result = await exportDiagnostics();
+      setDiagnostics(
+        result.path
+          ? `Written to ${result.path} (${result.files} files). Attach the folder's files to your report.`
+          : "Export cancelled.",
+      );
+    } catch (err) {
+      setDiagnostics(err instanceof Error ? err.message : "The diagnostics could not be written.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const load = useCallback(() => {
     issueReportsGetSettings()
@@ -184,6 +208,35 @@ export function ReportsSettingsSection() {
           </div>
         </div>
       </div>
+      {isMobilePlatform() ? null : (
+        <div className="settings-card">
+          <div className="settings-row">
+            <div className="settings-row-info">
+              <h3 className="settings-row-title">Diagnostics</h3>
+              <p className="settings-row-description">
+                Write a folder with the backend and dictation logs, the version, the state of the
+                local engine, the hosts this build can reach and what it keeps on disk. Keys and
+                tokens are removed before anything is written.
+              </p>
+              {diagnostics ? (
+                <p className="settings-row-description" role="status">
+                  {diagnostics}
+                </p>
+              ) : null}
+            </div>
+            <div className="settings-row-control">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={exporting}
+                onClick={() => void exportBundle()}
+              >
+                {exporting ? "Writing…" : "Export diagnostics"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

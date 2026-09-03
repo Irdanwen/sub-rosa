@@ -18,6 +18,7 @@ pub mod commands;
 pub mod council;
 pub mod db;
 pub mod destinations;
+pub mod diagnostics;
 #[cfg(desktop)]
 pub mod dictation;
 #[cfg(mobile)]
@@ -232,6 +233,10 @@ pub fn run() {
             commands::create_note,
             commands::list_notes,
             commands::search_everything,
+            diagnostics::platform_capabilities,
+            diagnostics::storage_report,
+            diagnostics::purge_transcribed_recordings,
+            diagnostics::export_diagnostics,
             commands::get_note,
             commands::update_note,
             commands::delete_note,
@@ -484,6 +489,9 @@ pub fn run() {
         commands::create_note,
         commands::list_notes,
         commands::search_everything,
+        diagnostics::platform_capabilities,
+        diagnostics::storage_report,
+        diagnostics::purge_transcribed_recordings,
         commands::get_note,
         commands::update_note,
         commands::delete_note,

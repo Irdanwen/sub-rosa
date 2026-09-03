@@ -226,6 +226,10 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
     // a relaunch must still hold the thing it was judging.
     ensure_column(_pool, "council_verdicts", "reply", "TEXT").await?;
 
+    // Settings › Storage can delete the audio of a transcribed note; the row
+    // stays (transcripts reference it) and records when its file went.
+    ensure_column(_pool, "audio_artifacts", "purged_at", "TEXT").await?;
+
     // Full-text search over notes, transcripts, memories and conversations.
     // The file defines triggers, whose bodies carry semicolons, so it goes
     // through the statement-aware splitter rather than `split(';')`.

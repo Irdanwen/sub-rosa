@@ -598,6 +598,49 @@ impl Repositories {
         Ok(Some(item))
     }
 
+    /// Recordings whose note is done with them: the note reached `ready`, the
+    /// artifact is older than `cutoff`, it has a transcript of its own, and
+    /// its file has not been purged already.
+    pub async fn purgeable_recordings(
+        &self,
+        cutoff: &str,
+    ) -> Result<Vec<PurgeableRecording>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT a.id AS artifact_id, a.note_id AS note_id, a.path AS path, a.size_bytes AS size_bytes
+             FROM audio_artifacts a
+             JOIN notes n ON n.id = a.note_id
+             WHERE n.processing_status = 'ready'
+               AND a.created_at < ?1
+               AND a.purged_at IS NULL
+               AND EXISTS (SELECT 1 FROM transcripts t WHERE t.audio_artifact_id = a.id)
+             ORDER BY a.created_at ASC",
+        )
+        .bind(cutoff)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| PurgeableRecording {
+                artifact_id: row.get("artifact_id"),
+                note_id: row.get("note_id"),
+                path: row.get("path"),
+                size_bytes: row.get("size_bytes"),
+            })
+            .collect())
+    }
+
+    pub async fn mark_audio_artifact_purged(
+        &self,
+        artifact_id: &str,
+    ) -> Result<(), sqlx::error::Error> {
+        query("UPDATE audio_artifacts SET purged_at = ? WHERE id = ?")
+            .bind(timestamp())
+            .bind(artifact_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     /// The search that reads everything.
     ///
     /// Four FTS5 tables (migration 020), one query each, merged by bm25 rank.
@@ -4726,6 +4769,15 @@ pub struct BriefRow {
     pub calendar_event_id: String,
     pub event_title: String,
     pub scheduled_for: String,
+}
+
+/// A recording Settings › Storage may delete: see `purgeable_recordings`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PurgeableRecording {
+    pub artifact_id: String,
+    pub note_id: String,
+    pub path: String,
+    pub size_bytes: i64,
 }
 
 /// One hit of the search that reads everything (notes, transcripts, memories,
