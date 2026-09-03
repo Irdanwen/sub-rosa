@@ -1,5 +1,8 @@
 //! The shot list's durable half, and the one thing it exists for: resuming
 //! without re-buying what already landed.
+// Integration tests fail by panicking; the production rules on unwrap and
+// expect (Cargo.toml [lints]) stop at this crate boundary.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use os_june_lib::db::{migrations::run_migrations, repositories::Repositories};
 use sqlx_sqlite::SqlitePoolOptions;

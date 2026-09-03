@@ -53,7 +53,9 @@ impl ProcessingTicket {
         if self.finished.swap(true, Ordering::SeqCst) {
             return;
         }
-        let mut map = QUEUES.lock().expect("processing queue mutex poisoned");
+        let mut map = QUEUES
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let remaining = self.pending.fetch_sub(1, Ordering::SeqCst) - 1;
         if remaining <= 0 {
             // Only remove if the map still points at our queue (a concurrent
@@ -78,7 +80,9 @@ impl Drop for ProcessingTicket {
 /// Register a processing job for `note_id`. Returns the ticket and the queue
 /// depth *including* this job (1 = runs immediately, 2 = one job ahead, …).
 pub fn enqueue(note_id: &str) -> (ProcessingTicket, i64) {
-    let mut map = QUEUES.lock().expect("processing queue mutex poisoned");
+    let mut map = QUEUES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let queue = map.entry(note_id.to_string()).or_insert_with(|| NoteQueue {
         lock: Arc::new(AsyncMutex::new(())),
         pending: Arc::new(AtomicI64::new(0)),
@@ -96,7 +100,9 @@ pub fn enqueue(note_id: &str) -> (ProcessingTicket, i64) {
 /// Number of recordings queued *behind* the one currently processing for this
 /// note (0 when nothing extra is waiting). Drives the UI count chip.
 pub fn queued_behind(note_id: &str) -> i64 {
-    let map = QUEUES.lock().expect("processing queue mutex poisoned");
+    let map = QUEUES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     map.get(note_id)
         .map(|queue| (queue.pending.load(Ordering::SeqCst) - 1).max(0))
         .unwrap_or(0)

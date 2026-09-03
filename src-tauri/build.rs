@@ -1,3 +1,8 @@
+// A build script has one way to fail, and that is to stop the build with a
+// message: the production lints on `expect` and `panic` (Cargo.toml [lints])
+// do not apply to it.
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 const SYSTEM_AUDIO_MIN_MACOS_VERSION_FILE: &str = "system-audio-min-macos-version.txt";
 const DICTATION_HELPER_MIN_MACOS_VERSION: &str = "14.0";
 

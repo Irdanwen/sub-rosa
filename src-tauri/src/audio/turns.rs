@@ -726,13 +726,9 @@ fn detect_source_turns(
                 silence_run += 1;
                 if silence_run >= silence_windows {
                     let end_ms = window_start - ((silence_windows - 1) * WINDOW_MS);
-                    push_turn_if_long_enough(
-                        &mut turns,
-                        source,
-                        current_start.take().unwrap(),
-                        end_ms,
-                        config,
-                    );
+                    if let Some(start_ms) = current_start.take() {
+                        push_turn_if_long_enough(&mut turns, source, start_ms, end_ms, config);
+                    }
                     silence_run = 0;
                 }
             }

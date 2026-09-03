@@ -12,6 +12,9 @@
 //! being whatever the agent last put in its workspace. The dialog moved into
 //! Rust so no destination crosses IPC at all; `confine_new` is the second line
 //! behind that, and these cases are what hold it.
+// Integration tests fail by panicking; the production rules on unwrap and
+// expect (Cargo.toml [lints]) stop at this crate boundary.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use std::fs;
 use std::path::{Path, PathBuf};

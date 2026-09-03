@@ -18,6 +18,27 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "os-june"
 path = "src/main.rs"
 
+# The same policy as the june-api workspace, minus what a Tauri shell cannot
+# hold. `unsafe_code` cannot be forbidden here: the calendar, Spotlight and
+# iOS bridges are FFI, and `unsafe_op_in_unsafe_fn` waits until those bridges
+# wrap their calls (docs/roadmap.md). `pedantic` is not on: 71 000 lines were
+# written without it and a wall of nits hides the lints that matter. What is on is the set
+# that turns a crash into an error at review time: no unwrap or expect in
+# production code (tests are exempt, see clippy.toml), no debug macros, no
+# stdout. `panic` is not listed: clippy has no test exemption for it and the
+# in-file test modules use it as they should. Stderr stays: it is how this
+# process logs.
+[lints.rust]
+unused_lifetimes = "warn"
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+todo = "warn"
+unimplemented = "warn"
+dbg_macro = "warn"
+print_stdout = "warn"
+
 [build-dependencies]
 tauri-build = { version = "2.4.0", features = [] }
 
@@ -33,7 +54,7 @@ hound = "3.5"
 # JPEG encoder it re-encodes to; no default features, so nothing else is pulled
 # in for a dependency tauri already resolves.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "tiff"] }
-rand = "0.8"
+rand = "0.9"
 # Parses podcast feeds so an enclosure can be fetched (ADR-0028). Already in
 # the tree transitively, so pinning it here adds no new crate to the lockfile.
 quick-xml = "0.41"
@@ -45,7 +66,7 @@ rustfft = "6.2"
 semver = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sha2 = "0.10"
+sha2 = "0.11"
 # Avoid the SQLx umbrella crate here. Its optional macro/database dependencies
 # put unused MySQL/Postgres packages into Cargo.lock and cargo-audit.
 # sqlx-sqlite does not expose a public runtime-tokio feature in SQLx 0.8.x, so
@@ -154,7 +175,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSGeometry",
     "objc2-core-foundation",
 ] }
-window-vibrancy = "0.6"
+window-vibrancy = "0.7"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }

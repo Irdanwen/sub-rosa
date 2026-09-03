@@ -15,6 +15,9 @@
 //!   half — logging an exposed value, or removing the compile-time guard that
 //!   keeps `Redacted` from growing a `Display` (which `bearer_auth` would
 //!   happily send as the credential).
+// Integration tests fail by panicking; the production rules on unwrap and
+// expect (Cargo.toml [lints]) stop at this crate boundary.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};

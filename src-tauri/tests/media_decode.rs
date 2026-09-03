@@ -7,6 +7,9 @@
 //! MP3 podcast, an AAC voice memo, and a real H.264 video whose audio track
 //! has to be picked out of the container — and each is one second of a 440 Hz
 //! tone at 48 kHz, a few kilobytes on disk.
+// Integration tests fail by panicking; the production rules on unwrap and
+// expect (Cargo.toml [lints]) stop at this crate boundary.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use os_june_lib::audio::decode::decode_to_transcription_wav;
 use std::path::{Path, PathBuf};

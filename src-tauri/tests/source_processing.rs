@@ -1,3 +1,7 @@
+// Integration tests fail by panicking; the production rules on unwrap and
+// expect (Cargo.toml [lints]) stop at this crate boundary.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
+
 use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
 use os_june_lib::audio::turns::{
     coalesce_turns_for_transcription, detect_turns, normalize_wav_for_transcription,

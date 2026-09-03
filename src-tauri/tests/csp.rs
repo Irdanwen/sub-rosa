@@ -12,6 +12,9 @@
 //! override them: `tauri.ios.conf.json` merges over the base, so a `csp` key
 //! appearing there would replace the whole policy on the phone, where nothing
 //! else would notice.
+// Integration tests fail by panicking; the production rules on unwrap and
+// expect (Cargo.toml [lints]) stop at this crate boundary.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use std::collections::BTreeMap;
 

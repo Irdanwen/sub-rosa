@@ -20,6 +20,9 @@
 //!
 //! It leaves a closed issue behind. That is the point: a closed issue is the
 //! receipt.
+// Integration tests fail by panicking; the production rules on unwrap and
+// expect (Cargo.toml [lints]) stop at this crate boundary.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use os_june_lib::carpe_diem::issue_reports::{compose, file_all, ISSUE_TRACKER_REPO};
 use os_june_lib::domain::types::SubmitIssueReportRequest;

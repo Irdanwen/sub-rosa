@@ -1,6 +1,9 @@
 //! The bible's durable half: entries, their references, and the order the
 //! references are offered in - which is load bearing, because the first image
 //! is the identity anchor for the reference-to-video families.
+// Integration tests fail by panicking; the production rules on unwrap and
+// expect (Cargo.toml [lints]) stop at this crate boundary.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use os_june_lib::db::{migrations::run_migrations, repositories::Repositories};
 use sqlx_sqlite::SqlitePoolOptions;

@@ -332,7 +332,12 @@ fn agent_hud_panel_class() -> Option<&'static objc2::runtime::AnyClass> {
                 }
             }
             let superclass = *SUPERCLASS
-                .get_or_init(|| AnyClass::get(c"NSPanel").expect("NSPanel class missing"));
+                // AppKit without NSPanel is not a macOS this binary can run on; there
+                // is nothing to fall back to.
+                .get_or_init(|| {
+                    #[allow(clippy::expect_used)]
+                    AnyClass::get(c"NSPanel").expect("NSPanel class missing")
+                });
             let _: () = msg_send![super(this, superclass), sendEvent: event];
         }
     }

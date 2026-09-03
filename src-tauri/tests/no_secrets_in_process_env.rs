@@ -19,6 +19,9 @@
 //! here: the mistake it catches is a single line, added by someone who reached
 //! for the obvious tool, and no runtime test would see it unless it happened to
 //! exercise that path.
+// Integration tests fail by panicking; the production rules on unwrap and
+// expect (Cargo.toml [lints]) stop at this crate boundary.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use std::path::Path;
 

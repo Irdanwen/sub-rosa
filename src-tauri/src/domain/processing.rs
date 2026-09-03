@@ -506,7 +506,14 @@ pub async fn process_captioned_import(
         repos,
         note_id,
         session_id,
-        first_transcript_id.expect("at least one cue was persisted"),
+        // `cues` was checked non-empty above, so a row was written; if that
+        // ever stops being true this is a data error, not a crash.
+        first_transcript_id.ok_or_else(|| {
+            AppError::new(
+                "captions_empty",
+                "Those captions had nothing readable in them.",
+            )
+        })?,
         TranscriptionProviderResult {
             text,
             language,

@@ -15,6 +15,9 @@
 //! Reading a path is a different question and stays allowed: those go through
 //! `path_confinement::confine_existing`, which `tests/path_confinement.rs`
 //! holds to its own corpus.
+// Integration tests fail by panicking; the production rules on unwrap and
+// expect (Cargo.toml [lints]) stop at this crate boundary.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use std::collections::BTreeSet;
 use std::path::Path;

@@ -1,5 +1,8 @@
 //! The council's durable rows (ADR-0034): what a resume reads, and what it
 //! must never re-buy.
+// Integration tests fail by panicking; the production rules on unwrap and
+// expect (Cargo.toml [lints]) stop at this crate boundary.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use os_june_lib::db::{migrations::run_migrations, repositories::Repositories};
 use os_june_lib::domain::types::{

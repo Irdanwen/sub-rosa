@@ -11,6 +11,9 @@
 //! client comes from `http_client` and every destination is a declared
 //! constant, the set of reachable hosts is the set below. Adding a destination
 //! then means editing this file, in the same commit, where a reviewer sees it.
+// Integration tests fail by panicking; the production rules on unwrap and
+// expect (Cargo.toml [lints]) stop at this crate boundary.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use std::path::Path;
 
