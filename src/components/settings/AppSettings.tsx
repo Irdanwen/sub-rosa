@@ -82,20 +82,10 @@ import { IMAGE_GENERATION_ENABLED } from "../../lib/feature-flags";
 import { AgentSettingsSection } from "./AgentSettingsSection";
 import { ExternalDirsSection } from "./ExternalDirsSection";
 import { InstalledSkillsSection } from "./InstalledSkillsSection";
-import { SkillReviewSection } from "./SkillReviewSection";
-import { McpCatalogSection } from "./McpCatalogSection";
 import { McpDiagnosticsSection } from "./McpDiagnosticsSection";
 import { McpSecuritySection } from "./McpSecuritySection";
 import { McpServersSection } from "./McpServersSection";
-import {
-  IntegrationsHealthSection,
-  type IntegrationsHealthTarget,
-} from "./IntegrationsHealthSection";
-import { ProfileBuilderSection } from "./ProfileBuilderSection";
 import { SetupSnapshotSection } from "./SetupSnapshotSection";
-import { SkillBundlesSection } from "./SkillBundlesSection";
-import { SkillsHubSection } from "./SkillsHubSection";
-import { TeamTapsSection } from "./TeamTapsSection";
 import { ToolsetsSection } from "./ToolsetsSection";
 import { DictionarySettingsSection } from "./DictionarySettingsSection";
 import { ImportSettingsSection } from "./ImportSettingsSection";
@@ -218,17 +208,10 @@ export type SettingsTab =
   | "council"
   | "skills"
   | "external-dirs"
-  | "skill-review"
   | "mcp"
-  | "mcp-catalog"
   | "mcp-diagnostics"
   | "mcp-security"
-  | "skills-hub"
-  | "taps"
   | "toolsets"
-  | "bundles"
-  | "profile-builder"
-  | "integrations-health"
   | "import-export"
   | "reports"
   | "about";
@@ -246,17 +229,10 @@ export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "council", label: "Council" },
   { id: "skills", label: "Installed skills" },
   { id: "external-dirs", label: "External skill directories" },
-  { id: "skill-review", label: "Pending skill changes" },
   { id: "mcp", label: "MCP servers" },
-  { id: "mcp-catalog", label: "MCP catalog" },
   { id: "mcp-diagnostics", label: "MCP diagnostics" },
   { id: "mcp-security", label: "MCP security" },
-  { id: "skills-hub", label: "Skills hub" },
-  { id: "taps", label: "Team skill taps" },
   { id: "toolsets", label: "Toolsets" },
-  { id: "bundles", label: "Bundles" },
-  { id: "profile-builder", label: "Profile builder" },
-  { id: "integrations-health", label: "Integrations health" },
   { id: "import-export", label: "Import / export" },
   { id: "reports", label: "Reports" },
   { id: "about", label: "About" },
@@ -286,7 +262,6 @@ type AppSettingsProps = {
   // Opens a new agent session seeded with a report category chip.
   onReportIssue?: (category: ReportCategory) => void;
   // Opens a new agent session that runs a skill bundle's slash command.
-  onStartBundleChat?: (prompt: string) => void;
 };
 
 export function AppSettings({
@@ -304,7 +279,6 @@ export function AppSettings({
   onCheckForUpdates,
   onReconcileToStable,
   onReportIssue,
-  onStartBundleChat,
 }: AppSettingsProps) {
   const [settings, setSettings] = useState<DictationSettingsDto>(DEFAULT_SETTINGS);
   const [providerSettings, setProviderSettings] =
@@ -1345,24 +1319,11 @@ export function AppSettings({
 
         {activeTab === "skills" ? <InstalledSkillsSection /> : null}
         {activeTab === "external-dirs" ? <ExternalDirsSection /> : null}
-        {activeTab === "skill-review" ? <SkillReviewSection /> : null}
 
         {activeTab === "mcp" ? <McpServersSection /> : null}
-        {activeTab === "mcp-catalog" ? <McpCatalogSection /> : null}
         {activeTab === "mcp-diagnostics" ? <McpDiagnosticsSection /> : null}
         {activeTab === "mcp-security" ? <McpSecuritySection /> : null}
-        {activeTab === "skills-hub" ? <SkillsHubSection /> : null}
-        {activeTab === "taps" ? (
-          <TeamTapsSection onConfigureGithubToken={() => setActiveTab("skills")} />
-        ) : null}
         {activeTab === "toolsets" ? <ToolsetsSection /> : null}
-        {activeTab === "bundles" ? <SkillBundlesSection onStartChat={onStartBundleChat} /> : null}
-        {activeTab === "profile-builder" ? <ProfileBuilderSection /> : null}
-        {activeTab === "integrations-health" ? (
-          <IntegrationsHealthSection
-            onNavigate={(target: IntegrationsHealthTarget) => setActiveTab(target)}
-          />
-        ) : null}
         {activeTab === "import-export" ? <SetupSnapshotSection /> : null}
 
         {activeTab === "about" ? (

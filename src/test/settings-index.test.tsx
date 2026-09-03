@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SETTINGS_TABS } from "../components/settings/AppSettings";
-import { HIDDEN_SETTINGS_TABS, SETTINGS_SIDEBAR_GROUPS } from "../components/sidebar/Sidebar";
+import { SETTINGS_SIDEBAR_GROUPS } from "../components/sidebar/Sidebar";
 
 /**
  * Settings live in two lists that have to agree.
@@ -12,12 +12,11 @@ import { HIDDEN_SETTINGS_TABS, SETTINGS_SIDEBAR_GROUPS } from "../components/sid
  * which is exactly how this surface grew to twenty-five entries with twelve of
  * them reachable only by knowing they were there.
  *
- * Hiding a tab from the nav is a deliberate, documented choice: those panels
- * are unstabilised and are being brought back one at a time
- * (HIDDEN_SETTINGS_TABS, docs/settings-focus-runbook.md). So the rule is not
- * "everything must be findable" -- it is that the visible surface and the
- * searchable surface are the same surface. A tab reachable by search but not
- * by the nav would undo that decision without anybody deciding it.
+ * Twelve tabs were once hidden from the nav "while they stabilised", and
+ * stayed hidden for two months. On 2026-09-03 five came back (MCP servers,
+ * MCP security, MCP diagnostics, toolsets, import / export) and seven were
+ * deleted with their code. So the rule is simple again: every tab the page
+ * can render is in a group, and the searchable surface is the visible one.
  */
 describe("the settings index", () => {
   const grouped = SETTINGS_SIDEBAR_GROUPS.flatMap((group) => group.items);
@@ -45,21 +44,10 @@ describe("the settings index", () => {
   });
 
   it("keeps the searchable surface equal to the visible one", () => {
-    // The palette indexes SETTINGS_SIDEBAR_GROUPS minus HIDDEN_SETTINGS_TABS.
-    // This states what that comes to, so re-enabling a tab is a decision taken
-    // in the runbook rather than a number quietly drifting.
-    const visible = grouped.filter((item) => !HIDDEN_SETTINGS_TABS.has(item.id));
-
-    expect(visible).toHaveLength(14);
-    expect(HIDDEN_SETTINGS_TABS.size).toBe(12);
-    expect(visible.length + HIDDEN_SETTINGS_TABS.size).toBe(SETTINGS_TABS.length);
-  });
-
-  it("hides only tabs that exist", () => {
-    const known = new Set(SETTINGS_TABS.map((tab) => tab.id));
-    const ghosts = [...HIDDEN_SETTINGS_TABS].filter((id) => !known.has(id));
-
-    expect(ghosts).toEqual([]);
+    // Nothing is hidden any more: the count is the count. It is asserted so
+    // that adding a tab is a decision taken here, not a number drifting.
+    expect(grouped).toHaveLength(SETTINGS_TABS.length);
+    expect(SETTINGS_TABS).toHaveLength(19);
   });
 
   it("gives every tab a label a person would type", () => {
