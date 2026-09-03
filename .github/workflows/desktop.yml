@@ -348,7 +348,100 @@ jobs:
           name: june-windows-debug-nsis
           path: src-tauri/target/debug/bundle/nsis/*-setup.exe
 
-# Coverage reruns of these suites live in coverage.yml (manual-only). They
+  # The iOS project was the one target no PR ever compiled: ios-release.yml
+  # runs by hand, and CLAUDE.md asked for a manual `cargo check` that nothing
+  # enforced. A `cargo check --lib` per iOS target is a few minutes on a warm
+  # cache and catches the two ways it usually breaks: a command missing from
+  # the mobile generate_handler! list, and a desktop-only API used outside
+  # a #[cfg(desktop)] gate.
+  ios-check:
+    name: iOS cargo check
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-ios, aarch64-apple-ios-sim]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: tauri-cargo-registry-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            tauri-cargo-registry-${{ runner.os }}-
+
+      - name: Cache cargo target
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: src-tauri/target
+          key: tauri-cargo-target-${{ matrix.target }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            tauri-cargo-target-${{ matrix.target }}-
+
+      - name: Stage placeholder june-api sidecar (externalBin)
+        run: |
+          mkdir -p src-tauri/binaries
+          touch "src-tauri/binaries/june-api-$(rustc -vV | sed -n 's/host: //p')"
+          touch "src-tauri/binaries/june-api-${{ matrix.target }}"
+
+      - name: cargo check (${{ matrix.target }})
+        run: cargo check --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }} --lib
+
+  # Windows had no signal on a PR either: the NSIS bundle below is manual
+  # because it is slow. A `cargo check` is what catches a `cfg(windows)`
+  # branch that no longer compiles, and it is cheap enough to run every time.
+  windows-check:
+    name: Windows cargo check
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: tauri-cargo-registry-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            tauri-cargo-registry-${{ runner.os }}-
+
+      - name: Cache cargo target
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: src-tauri/target
+          key: tauri-cargo-check-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            tauri-cargo-check-${{ runner.os }}-
+
+      - name: Stage placeholder june-api sidecar (externalBin)
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries
+          touch "src-tauri/binaries/june-api-$(rustc -vV | sed -n 's/host: //p').exe"
+
+      - name: cargo check
+        run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets
+
+# Coverage reruns of these suites live in coverage.yml (the frontend floor on every PR, the Rust floor on a clock). They
 # duplicated this workflow's jobs on a macOS runner for every push and PR
 # sync, gated nothing (continue-on-error), and produced artifacts nothing
 # downloads — the single largest Actions line item in the repo.

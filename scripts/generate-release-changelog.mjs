@@ -1,8 +1,17 @@
 import { execFileSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
-const RELEASE_SUBJECT_RE = /^release: v(\d+\.\d+\.\d+)(?:\b|[^0-9])/;
+// Two subjects mark a release: upstream June's `release: vX.Y.Z` and this
+// fork's `chore(release): bump to X.Y.Z`. Both are the commit just before the
+// tag, so "changes since the previous release" is everything after the last
+// one of these, minus the bump commit at the head.
+const RELEASE_SUBJECT_RE =
+  /^(?:release: v|chore\(release\): bump to v?)(\d+\.\d+\.\d+)(?:\b|[^0-9])/;
+// The trailer lines a commit body may carry; they are not release notes.
+const TRAILER_RE = /^(?:Co-Authored-By|Claude-Session|Signed-off-by):/i;
 const FIELD_SEPARATOR = "\x1f";
 const RECORD_SEPARATOR = "\x1e";
 
@@ -44,7 +53,7 @@ export function releaseNoteTitleForCommit(commit) {
     const title = commit.body
       .split("\n")
       .map((line) => line.trim())
-      .find(Boolean);
+      .find((line) => line && !TRAILER_RE.test(line));
     return title ? `${title} (#${merge[1]})` : undefined;
   }
 
@@ -52,7 +61,7 @@ export function releaseNoteTitleForCommit(commit) {
 }
 
 export function formatChangelog({ version, previousVersion, commits }) {
-  const lines = [`## June v${version}`, ""];
+  const lines = [`## Sub Rosa v${version}`, ""];
   if (previousVersion) {
     lines.push(`Changes since v${previousVersion}.`, "");
   } else {
@@ -116,7 +125,10 @@ async function main() {
   process.stdout.write(changelog);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Compare paths, not URLs: `import.meta.url` percent-encodes a space in the
+// checkout path ("Sub%20Rosa") while argv[1] carries it raw, and the string
+// comparison silently never matched, so `main()` never ran locally.
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   main().catch((error) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);

@@ -160,6 +160,32 @@ function normalizeNotes(notes?: string) {
   return trimmed ? trimmed : undefined;
 }
 
+/**
+ * The lines of a release note worth showing next to "Relaunch to update".
+ *
+ * The notes are the commit subjects since the previous version, one bullet
+ * each under a heading (scripts/generate-release-changelog.mjs). The card has
+ * room for a few of them, not for the heading or the "Changes since" line, so
+ * this keeps the bullets, strips the bullet marker and the conventional
+ * `type(scope):` prefix a subject may carry, and stops at `limit`.
+ */
+export function releaseNoteLines(notes: string | undefined, limit = 4): string[] {
+  if (!notes) return [];
+  const lines: string[] = [];
+  for (const raw of notes.split("\n")) {
+    const line = raw.trim();
+    if (!line.startsWith("- ")) continue;
+    const text = line
+      .slice(2)
+      .replace(/^[a-z]+(?:\([^)]*\))?!?:\s+/i, "")
+      .trim();
+    if (!text) continue;
+    lines.push(text.charAt(0).toUpperCase() + text.slice(1));
+    if (lines.length >= limit) break;
+  }
+  return lines;
+}
+
 function messageFromUnknown(error: unknown) {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;

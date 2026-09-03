@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 const VERSION_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
@@ -151,7 +152,10 @@ async function main() {
   await writeFile(paths.packageJson, next.packageJson);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Compare paths, not URLs: `import.meta.url` percent-encodes a space in the
+// checkout path ("Sub%20Rosa") while argv[1] carries it raw, so the URL
+// comparison never matched on this machine and `main()` never ran.
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   main().catch((error) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);

@@ -45,7 +45,12 @@ export default defineConfig({
     css: true,
     coverage: {
       provider: "v8",
-      reporter: ["text", "html", "lcov"],
+      // json-summary feeds scripts/coverage-floor.mjs, the ratchet CI reads.
+      reporter: ["text", "html", "lcov", "json-summary"],
+      // The floor check reads the summary after the run; a teardown flake in
+      // one suite must not leave it unwritten (the default drops the report
+      // on any failure).
+      reportOnFailure: true,
       reportsDirectory: "coverage/frontend",
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/test/**", "src/**/*.d.ts", "src/main.tsx", "src/hud.ts", "src/agent-hud.ts"],

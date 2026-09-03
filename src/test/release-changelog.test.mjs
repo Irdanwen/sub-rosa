@@ -21,6 +21,17 @@ describe("parsePreviousReleaseLine", () => {
   it("ignores unrelated commits", () => {
     expect(parsePreviousReleaseLine(`b1fc9eb${field}Fix system audio (#511)`)).toBeUndefined();
   });
+
+  it("recognises the fork's version bump commits as releases", () => {
+    expect(parsePreviousReleaseLine(`615c1d88${field}chore(release): bump to 1.58.0`)).toEqual({
+      hash: "615c1d88",
+      version: "1.58.0",
+    });
+    expect(parsePreviousReleaseLine(`0a1b2c3d${field}chore(release): bump to v1.59.0`)).toEqual({
+      hash: "0a1b2c3d",
+      version: "1.59.0",
+    });
+  });
 });
 
 describe("findPreviousRelease", () => {
@@ -90,6 +101,23 @@ describe("releaseNoteTitleForCommit", () => {
         body: "",
       }),
     ).toBeUndefined();
+    expect(
+      releaseNoteTitleForCommit({
+        hash: "abc124",
+        subject: "chore(release): bump to 1.58.0",
+        body: "",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("skips trailer lines when a merge commit body starts with one", () => {
+    expect(
+      releaseNoteTitleForCommit({
+        hash: "abc125",
+        subject: "Merge pull request #9 from Irdanwen/topic",
+        body: "Co-Authored-By: Someone <x@y.z>\nMake the thing work\n",
+      }),
+    ).toBe("Make the thing work (#9)");
   });
 });
 
@@ -114,7 +142,7 @@ describe("formatChangelog", () => {
       }),
     ).toBe(
       [
-        "## June v0.0.23",
+        "## Sub Rosa v0.0.23",
         "",
         "Changes since v0.0.22.",
         "",

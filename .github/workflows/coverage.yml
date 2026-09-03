@@ -1,13 +1,34 @@
 name: coverage
 
-# Manual-only: coverage reruns every test suite a second time with
-# instrumentation, on a macOS runner for the desktop half (10x Linux
-# pricing), and nothing consumes the artifacts automatically — no coverage
-# gate, no upload to a coverage service. As per-push jobs these were the
-# largest Actions line item in the repo while never blocking a merge
-# (continue-on-error). Dispatch from the Actions tab (or
-# `gh workflow run coverage.yml`) when you actually want the reports.
+# Coverage is a ratchet. The floors in coverage-floor.json are the line
+# coverage measured when this was wired up; a PR that lands below them is
+# red, and `pnpm coverage:raise` moves a floor up (never down) so a
+# reviewer sees a lowered floor as a diff.
+#
+# The frontend half is cheap (jsdom on Linux) and runs on every PR. The Rust
+# half needs a macOS runner (src-tauri gates real code behind target_os =
+# "macos", so Linux would measure the wrong binary) and reruns every Rust
+# test instrumented, so it runs on a clock and on demand, not per PR.
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/coverage.yml"
+      - "coverage-floor.json"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "scripts/**"
+      - "src/**"
+      - "tsconfig.json"
+      - "vite.config.ts"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/coverage.yml"
+      - "coverage-floor.json"
+      - "src/**"
+      - "src-tauri/**"
+  schedule:
+    - cron: "0 5 * * 1" # Mondays 05:00 UTC, before the supply-chain scan
   workflow_dispatch:
 
 permissions:
@@ -18,9 +39,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  desktop:
-    name: Desktop coverage artifacts
-    runs-on: macos-latest
+  frontend:
+    name: Frontend coverage floor
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -36,53 +58,67 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@528e28158500e8adf409c61ac0eaa6bdd47f49ca # cargo-llvm-cov
-
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      # The runner can exit non-zero on teardown noise with zero failures
+      # (see AGENTS.md); the floor check below reads the summary the run
+      # wrote, and a run that wrote no summary fails there.
       - name: Frontend coverage
-        run: pnpm test:coverage
+        run: pnpm test:coverage || true
 
-      - name: Tauri Rust coverage
-        run: pnpm test:rust:coverage
+      - name: Check the frontend floor
+        run: node scripts/coverage-floor.mjs check frontend coverage/frontend/coverage-summary.json
 
       - name: Upload frontend coverage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: desktop-frontend-coverage
+          name: frontend-coverage
           path: coverage/frontend
           if-no-files-found: error
 
-      - name: Upload Tauri Rust coverage
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: desktop-rust-coverage
-          path: src-tauri/target/llvm-cov/html
-          if-no-files-found: error
-
-  june-api:
-    name: June API coverage artifacts
-    runs-on: ubuntu-latest
+  rust:
+    name: Tauri Rust coverage floor
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
-          fetch-depth: 0
-      - uses: ./.github/actions/setup-rust
+          components: llvm-tools-preview
+
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@528e28158500e8adf409c61ac0eaa6bdd47f49ca # cargo-llvm-cov
-      - name: cargo llvm-cov
-        working-directory: june-api
-        env:
-          RUST_BACKTRACE: 1
-        run: cargo llvm-cov --workspace --all-features --html --output-dir target/llvm-cov/html
-      - name: Upload coverage
+
+      - name: Cache cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: tauri-cargo-registry-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            tauri-cargo-registry-${{ runner.os }}-
+
+      - name: Stage placeholder june-api sidecar (externalBin)
+        run: |
+          mkdir -p src-tauri/binaries
+          touch "src-tauri/binaries/june-api-$(rustc -vV | sed -n 's/host: //p')"
+
+      - name: Tauri Rust coverage
+        run: |
+          cargo llvm-cov --manifest-path src-tauri/Cargo.toml --all-targets \
+            --json --summary-only --output-path src-tauri/target/llvm-cov/summary.json
+
+      - name: Check the Rust floor
+        run: node scripts/coverage-floor.mjs check rust src-tauri/target/llvm-cov/summary.json
+
+      - name: Upload Rust coverage summary
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: june-api-rust-coverage
-          path: june-api/target/llvm-cov/html
+          name: rust-coverage-summary
+          path: src-tauri/target/llvm-cov/summary.json
           if-no-files-found: error
