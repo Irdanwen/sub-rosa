@@ -724,7 +724,12 @@ pub fn parse_stdin_secrets(input: &str) -> Result<Vec<(String, String)>, ConfigE
 }
 
 fn stdin_secrets() -> Result<Vec<(String, String)>, ConfigError> {
-    if std::env::var_os(SECRETS_ON_STDIN_ENV).is_none() {
+    // The workspace bans `std::env` everywhere but here: this is the config
+    // loader, the one place the environment is read, and this switch has to
+    // be read before the typed config exists.
+    #[allow(clippy::disallowed_methods)]
+    let requested = std::env::var_os(SECRETS_ON_STDIN_ENV).is_some();
+    if !requested {
         return Ok(Vec::new());
     }
     let mut input = String::new();
@@ -989,16 +994,16 @@ mod stdin_secrets_tests {
         let pairs = parse_stdin_secrets(
             "# written by the desktop shell\nupstreams.venice.api_key=cdm_abc=def\n\nlocal_dev.bearer_token=tok\n",
         )
-        .expect("parse");
+        .ok();
         assert_eq!(
             pairs,
-            vec![
+            Some(vec![
                 (
                     "upstreams.venice.api_key".to_string(),
                     "cdm_abc=def".to_string()
                 ),
                 ("local_dev.bearer_token".to_string(), "tok".to_string()),
-            ]
+            ])
         );
     }
 
@@ -1006,7 +1011,7 @@ mod stdin_secrets_tests {
     fn a_line_without_a_separator_is_refused() {
         assert!(parse_stdin_secrets("upstreams.venice.api_key\n").is_err());
         assert!(parse_stdin_secrets("bad key=value\n").is_err());
-        assert!(parse_stdin_secrets("").expect("empty").is_empty());
+        assert!(matches!(parse_stdin_secrets(""), Ok(pairs) if pairs.is_empty()));
     }
 }
 

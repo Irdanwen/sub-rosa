@@ -110,6 +110,7 @@ jobs:
 
       - name: Tauri Rust coverage
         run: |
+          mkdir -p src-tauri/target/llvm-cov
           cargo llvm-cov --manifest-path src-tauri/Cargo.toml --all-targets \
             --json --summary-only --output-path src-tauri/target/llvm-cov/summary.json
 
