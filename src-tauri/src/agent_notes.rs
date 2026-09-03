@@ -60,7 +60,7 @@ pub async fn create(
         .update_note(&note.id, Some(title), Some(body), None)
         .await
         .map_err(|error| AppError::new("agent_note_create_failed", error.to_string()))?;
-    announce(app);
+    announce(app, std::slice::from_ref(&note.id));
     Ok(saved)
 }
 
@@ -83,16 +83,32 @@ pub async fn append(app: &AppHandle, note_id: &str, content: &str) -> Result<Not
         .get_note(note_id)
         .await
         .map_err(|error| AppError::new("agent_note_append_failed", error.to_string()))?;
-    announce(app);
+    announce(app, std::slice::from_ref(&saved.id));
     Ok(saved)
 }
 
-/// Tells the open shell its notes moved, and refreshes the search index so a
-/// note the assistant wrote is findable like one the user wrote. Both are
+/// What `NOTES_CHANGED_EVENT` carries: which notes moved, so the shell can
+/// reload the one it has open instead of only the list.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotesChanged {
+    pub note_ids: Vec<String>,
+}
+
+/// Tells the open shell which notes moved, and refreshes the search index so
+/// a note written outside the editor (by the assistant, by an import, by a
+/// background sweep) is findable like one the user wrote. Both are
 /// best-effort: a note that is saved is saved, whether or not anyone was
-/// listening.
-fn announce(app: &AppHandle) {
-    let _ = app.emit(NOTES_CHANGED_EVENT, ());
+/// listening. Every path that creates or rewrites a note off the editor's
+/// own save goes through here; the list used to refresh on the agent's
+/// writes only, and an open note never did.
+pub fn announce(app: &AppHandle, note_ids: &[String]) {
+    let _ = app.emit(
+        NOTES_CHANGED_EVENT,
+        NotesChanged {
+            note_ids: note_ids.to_vec(),
+        },
+    );
     crate::spotlight::reindex_detached(app);
 }
 
@@ -129,6 +145,15 @@ fn truncate_chars(value: &str, max: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_event_names_its_notes_in_camel_case() {
+        let json = serde_json::to_string(&super::NotesChanged {
+            note_ids: vec!["n1".into(), "n2".into()],
+        })
+        .expect("serialize");
+        assert_eq!(json, r#"{"noteIds":["n1","n2"]}"#);
+    }
+
     use super::{clean_body, clean_title, truncate_chars, MAX_BODY_CHARS, MAX_TITLE_CHARS};
 
     #[test]

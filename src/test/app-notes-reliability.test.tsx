@@ -11,6 +11,10 @@ import type {
   RecordingStatusDto,
 } from "../lib/tauri";
 
+// The module is mocked below, so the constant App reads has to come from the
+// mock too; the literal is the wire name in src/lib/tauri.ts.
+const NOTES_CHANGED_EVENT = "june://notes-changed";
+
 type TauriListener = (event: { payload: unknown }) => unknown;
 
 const mocks = vi.hoisted(() => ({
@@ -859,5 +863,25 @@ describe("notes recording reliability", () => {
         activeTab: "transcription",
       }),
     );
+  });
+
+  it("reloads the open note when the backend says that note changed", async () => {
+    render(<App />);
+    await waitFor(() => expect(mocks.listeners.has(NOTES_CHANGED_EVENT)).toBe(true));
+    await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
+    await userEvent.click(await screen.findByRole("button", { name: /Meeting notes/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /Second note Preview/ }));
+    await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-2"));
+    mocks.getNote.mockClear();
+    mocks.listNotes.mockClear();
+
+    // Some other note moved: the list refreshes, the open note is left alone.
+    mocks.listeners.get(NOTES_CHANGED_EVENT)?.({ payload: { noteIds: ["note-1"] } });
+    await waitFor(() => expect(mocks.listNotes).toHaveBeenCalled());
+    expect(mocks.getNote).not.toHaveBeenCalled();
+
+    // The open note moved (the agent appended to it): it is read again.
+    mocks.listeners.get(NOTES_CHANGED_EVENT)?.({ payload: { noteIds: ["note-2"] } });
+    await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-2"));
   });
 });

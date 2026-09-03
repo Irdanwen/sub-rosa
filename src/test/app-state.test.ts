@@ -38,6 +38,26 @@ describe("notesReducer", () => {
     expect(state.providerConfigured).toBe(true);
   });
 
+  it("keeps the open note when the list is refreshed under it", () => {
+    const first = note({ id: "note-1", title: "First" });
+    const second = note({ id: "note-2", title: "Second" });
+    let state = notesReducer(createInitialState(), { type: "notesLoaded", notes: [first, second] });
+    state = notesReducer(state, { type: "noteLoaded", note: second });
+    expect(state.selectedNoteId).toBe("note-2");
+
+    // The agent wrote a third note: the list grows, the open note stays.
+    const third = note({ id: "note-3", title: "Third" });
+    state = notesReducer(state, { type: "notesRefreshed", notes: [third, first, second] });
+    expect(state.selectedNoteId).toBe("note-2");
+    expect(state.selectedNote?.id).toBe("note-2");
+    expect(state.notes.map((item) => item.id)).toEqual(["note-3", "note-1", "note-2"]);
+
+    // The open note was deleted elsewhere: fall back to the first one.
+    state = notesReducer(state, { type: "notesRefreshed", notes: [third, first] });
+    expect(state.selectedNoteId).toBe("note-3");
+    expect(state.selectedNote).toBeUndefined();
+  });
+
   it("updates the selected note after autosave", () => {
     const initial = notesReducer(createInitialState(), {
       type: "noteLoaded",

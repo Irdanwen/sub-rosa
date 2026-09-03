@@ -33,6 +33,7 @@ export type NotesAction =
   | { type: "folderSelected"; folderId?: string }
   | { type: "foldersLoaded"; folders: FolderDto[] }
   | { type: "notesLoaded"; notes: NoteListItemDto[] }
+  | { type: "notesRefreshed"; notes: NoteListItemDto[] }
   | { type: "recoveriesUpdated"; recoveries: RecoverableRecordingDto[] }
   | { type: "recoveryRemoved"; sessionId: string };
 
@@ -140,6 +141,18 @@ export function notesReducer(state: NotesState, action: NotesAction): NotesState
         selectedNoteId: action.notes[0]?.id,
         selectedNote: undefined,
       };
+    case "notesRefreshed": {
+      // The list changed under the user (the agent wrote a note, an import
+      // finished, a background sweep caught up). Keep what is open if it is
+      // still there; fall back to the first note only when it is gone.
+      const stillThere = action.notes.some((note) => note.id === state.selectedNoteId);
+      return {
+        ...state,
+        notes: action.notes,
+        selectedNoteId: stillThere ? state.selectedNoteId : action.notes[0]?.id,
+        selectedNote: stillThere ? state.selectedNote : undefined,
+      };
+    }
     case "recoveriesUpdated":
       return {
         ...state,

@@ -318,6 +318,14 @@ function tabMeta(
   }
 }
 
+/** Whether a notes-changed payload names the note that is open. */
+export function notesChangedTouches(
+  payload: { noteIds?: string[] } | null | undefined,
+  openNoteId: string,
+) {
+  return Array.isArray(payload?.noteIds) && payload.noteIds.includes(openNoteId);
+}
+
 export function App() {
   // framer-motion does not drop `y` movement by itself under reduced motion;
   // surfaces that slide (the global recorder dock) branch on this.
@@ -1963,7 +1971,11 @@ export function App() {
   const refreshNotesList = useCallback(async () => {
     try {
       const response = await listNotes();
-      dispatch({ type: "notesLoaded", notes: response.items });
+      // A refresh keeps the note that is open. `notesLoaded` is the initial
+      // load and a folder change, which select the first note; using it
+      // here closed whatever the user was reading every time the agent
+      // wrote any other note.
+      dispatch({ type: "notesRefreshed", notes: response.items });
     } catch {
       // A stale list is not worth an error banner; the next action reloads it.
     }
@@ -1972,11 +1984,26 @@ export function App() {
   // The agent can write a note now, and it writes it in Rust, mid-turn. With
   // nothing listening, the note it just confirmed to the user would be missing
   // from the list until the next reload, which reads as the tool having lied.
+  // The event names the notes that moved. The list always refreshes; the
+  // open note reloads too when it is one of them, so a body the agent
+  // appended to, or an import that just finished, shows up in the editor
+  // and not only in the list. NotePreview absorbs the new markdown itself,
+  // and holds it back while the caret is in the text (it merges on blur).
   useEffect(() => {
     let aborted = false;
     let unlisten: (() => void) | undefined;
-    void listen(NOTES_CHANGED_EVENT, () => {
+    void listen<{ noteIds?: string[] } | null>(NOTES_CHANGED_EVENT, (event) => {
       void refreshNotesList();
+      const open = selectedNoteIdRef.current;
+      if (open && notesChangedTouches(event.payload, open)) {
+        getNote(open)
+          .then((note) => {
+            if (selectedNoteIdRef.current === note.id) dispatch({ type: "noteLoaded", note });
+          })
+          .catch(() => {
+            // A note that cannot be re-read keeps what the editor has.
+          });
+      }
     }).then((cleanup) => {
       if (aborted) cleanup();
       else unlisten = cleanup;

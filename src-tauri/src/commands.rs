@@ -1479,6 +1479,10 @@ pub(crate) async fn import_media_from_path_with_captions(
     let paths = app_paths(&app)?;
     let repos = repositories(&app).await?;
     let note = repos.create_note(folder_id).await.map_err(AppError::from)?;
+    // An import is a note the moment its row exists: say so, so the list
+    // shows it without a reload and the phone's sweep is not the only one
+    // that knows (FORK_NOTES: "une note créée hors UI n'apparaît pas").
+    crate::agent_notes::announce(&app, std::slice::from_ref(&note.id));
     let session_id = uuid::Uuid::new_v4().to_string();
     let session_dir = paths
         .recording_session_dir(&note.id, &session_id)
