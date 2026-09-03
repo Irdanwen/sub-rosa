@@ -42,6 +42,12 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: mocks.listen,
 }));
 
+vi.mock("../components/settings/CarpeDiemSettings", () => ({
+  // The settings panel talks to the keychain; the key step's own chrome and
+  // gating are the subject here.
+  CarpeDiemSettings: () => <div data-testid="carpe-diem-settings" />,
+}));
+
 type ListenHandler = (event: { payload: string }) => void;
 
 // What check_recording_source_readiness returns after the capture-helper
@@ -200,9 +206,49 @@ describe("OnboardingFlow", () => {
     await screen.findByRole("status", { name: "Dictation is working" });
     await user.click(screen.getByRole("button", { name: "Start using Sub Rosa" }));
 
+    // The last screen asks for the first note; "Later" is an answer too.
+    await screen.findByRole("heading", { name: "Your first note" });
+    expect(onComplete).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Later" }));
+
     expect(onComplete).toHaveBeenCalledOnce();
+    expect(onComplete).toHaveBeenCalledWith(undefined);
     // Completion is the caller's job (App marks it), not the flow's.
     expect(isOnboardingComplete()).toBe(false);
+  });
+
+  it("hands the first-note choice to the caller", async () => {
+    const user = userEvent.setup();
+    const onComplete = await renderFlow();
+    grantPermissions();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.type(await screen.findByPlaceholderText(/Tell Sub Rosa what to do/i), "hello");
+    await screen.findByRole("status", { name: "Dictation is working" });
+    await user.click(screen.getByRole("button", { name: "Start using Sub Rosa" }));
+    await user.click(await screen.findByRole("button", { name: /Record a meeting/ }));
+    expect(onComplete).toHaveBeenCalledWith("record");
+  });
+
+  it("takes the key as its second screen when the install has none", async () => {
+    const user = userEvent.setup();
+    const onComplete = vi.fn();
+    const { rerender } = render(
+      <OnboardingFlow onComplete={onComplete} needsKey keyReady={false} />,
+    );
+    await user.click(await screen.findByRole("button", { name: /Get started/i }));
+    await screen.findByRole("heading", { name: "Connect your Carpe Diem key" });
+    expect(screen.getByTestId("carpe-diem-settings")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+
+    rerender(<OnboardingFlow onComplete={onComplete} needsKey keyReady />);
+    expect(screen.getByText(/Connected\./)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    // Third of five: welcome, key, permissions, practice, first note.
+    expect(
+      screen.getByRole("navigation", { name: /Setup progress: step 3 of 5, Permissions/ }),
+    ).toBeInTheDocument();
   });
 
   async function walkToPractice(user: ReturnType<typeof userEvent.setup>) {
@@ -500,8 +546,10 @@ describe("OnboardingFlow", () => {
       await waitFor(() => expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled());
       await userEvent.click(screen.getByRole("button", { name: "Continue" }));
 
-      await waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
+      // No practice step on Windows: straight to the first-note screen.
       expect(screen.queryByRole("heading", { name: "Talk to Sub Rosa" })).not.toBeInTheDocument();
+      await userEvent.click(await screen.findByRole("button", { name: "Later" }));
+      await waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
     } finally {
       restoreNavigator();
     }

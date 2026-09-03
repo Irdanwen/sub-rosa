@@ -19609,6 +19609,38 @@ input:focus-visible,
   animation: update-popover-in var(--t-med) var(--ease-spring) both;
 }
 
+/* The release notes above the relaunch card: a short list, quiet, the same
+ * width and hairline as the card so the two read as one object. */
+.update-relaunch-notes {
+  margin: 0 0 var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid color-mix(in oklch, var(--foreground) 15%, transparent);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  line-height: 1.35;
+}
+
+.update-relaunch-notes li {
+  display: flex;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.update-relaunch-notes li::before {
+  content: "";
+  flex: 0 0 4px;
+  height: 4px;
+  margin-top: 0.5em;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--muted-foreground) 70%, transparent);
+}
+
 .update-relaunch-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) 16px;
@@ -20565,6 +20597,62 @@ input:focus-visible,
 
 .onboarding-community-link:hover {
   color: var(--warm-strong);
+}
+
+/* The first-note step: two choices that read as one object, the same card
+ * hairline as the rest of the wizard. */
+.onboarding-first-note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.onboarding-choice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3);
+  border: 1px solid color-mix(in oklch, var(--foreground) 15%, transparent);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow var(--t-slow) var(--ease-spring);
+}
+
+.onboarding-choice:hover {
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--foreground) 12%, transparent);
+}
+
+.onboarding-choice:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.onboarding-choice > svg {
+  margin-top: 2px;
+  color: var(--muted-foreground);
+}
+
+.onboarding-choice-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.onboarding-choice-title {
+  font-weight: 600;
+}
+
+.onboarding-choice-detail {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  line-height: 1.35;
 }
 
 .onboarding-skip {

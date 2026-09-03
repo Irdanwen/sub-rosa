@@ -14,6 +14,7 @@ import { CarpeDiemGate } from "../components/carpe-diem/CarpeDiemGate";
 import { RailSwitchBanner } from "../components/carpe-diem/RailSwitchBanner";
 import { SIDECAR_STATUS_EVENT } from "../components/settings/CarpeDiemSettings";
 import { OnboardingFlow } from "../components/onboarding/OnboardingFlow";
+import type { FirstNoteIntent } from "../components/onboarding/steps/FirstNoteStep";
 import { IMPORTABLE_MEDIA_EXTENSIONS, importMediaFile, importMediaPath } from "../lib/import-media";
 import { ImportLinkBar } from "../components/notes-list/ImportLinkBar";
 import { startLinkIngest } from "../lib/tauri";
@@ -169,6 +170,7 @@ import { handleSidebarResizeStart } from "./sidebar-resize";
 import {
   checkForJuneUpdate,
   prepareJuneUpdate,
+  releaseNoteLines,
   startPeriodicJuneUpdateChecks,
   type UpdateCheckMode,
   type UpdateInstallProgress,
@@ -542,6 +544,9 @@ export function App() {
     applyOnboardingReplayFlag();
     return isOnboardingComplete();
   });
+  // What the first-run wizard's last screen chose; consumed by one effect
+  // below once the main shell renders, then cleared.
+  const [firstNoteIntent, setFirstNoteIntent] = useState<FirstNoteIntent | null>(null);
   // Carpe Diem (Sub Rosa fork): the app can't do anything without an API key,
   // so gate the whole app on it. `null` = status not yet loaded.
   const [carpeDiem, setCarpeDiem] = useState<CarpeDiemSidecarStatusDto | null>(null);
@@ -2239,23 +2244,6 @@ export function App() {
   // "Start chat with this bundle" from the Bundles settings tab: the same
   // fresh-chat handshake the dictation prompt path uses, auto-submitting the
   // bundle's slash command so Hermes resolves the bundle and loads its skills.
-  function handleStartBundleChat(prompt: string) {
-    const trimmed = prompt.trim();
-    if (!trimmed) return;
-    pendingSessionProjectRef.current = null;
-    setAgentOrigin(undefined);
-    markAgentNewSessionPending(trimmed);
-    setActiveAgentSession(undefined);
-    setActiveView("agent");
-    window.setTimeout(() => {
-      window.dispatchEvent(
-        new CustomEvent<AgentNewSessionDetail>(AGENT_NEW_SESSION_EVENT, {
-          detail: { prompt: trimmed },
-        }),
-      );
-    }, 0);
-  }
-
   // "New session" from inside a project: same fresh-chat handshake, but the
   // session gets filed into the project once Hermes hands back its id.
   function handleNewAgentSessionInProject(folderId: string) {
@@ -2733,6 +2721,18 @@ export function App() {
     ? Math.max(0, Math.ceil((recordingInactivityPrompt.expiresAt - recordingInactivityNow) / 1000))
     : 0;
 
+  // The first-run wizard's last screen asked for the first note; act on the
+  // answer once the shell renders. Above the early returns, as every hook.
+  useEffect(() => {
+    if (!firstNoteIntent || appBlocked) return;
+    setFirstNoteIntent(null);
+    if (firstNoteIntent === "record") {
+      void handleStartMeetingDetectedRecording();
+    } else {
+      void handlePickImportFile();
+    }
+  }, [firstNoteIntent, appBlocked, handleStartMeetingDetectedRecording, handlePickImportFile]);
+
   if (carpeDiemLoading) {
     return (
       <main className="account-gate-shell">
@@ -2766,7 +2766,11 @@ export function App() {
     );
   }
 
-  if (carpeDiemRequired) {
+  // A fresh install takes its key inside the wizard (the second screen); the
+  // gate is for an install that already finished the wizard and lost its key,
+  // and for an engine that failed to start on the key it has.
+  const wizardOwnsTheKey = onboardingRequired && carpeDiem?.status !== "failed";
+  if (carpeDiemRequired && !wizardOwnsTheKey) {
     return (
       <main className="account-gate-shell">
         <div
@@ -2790,7 +2794,9 @@ export function App() {
           onPointerDown={handleTitlebarPointerDown}
         />
         <OnboardingFlow
-          onComplete={() => {
+          needsKey={!carpeDiem?.hasApiKey}
+          keyReady={!!carpeDiem?.hasApiKey && carpeDiem?.status === "ready"}
+          onComplete={(intent) => {
             // Read before marking complete: marking writes the completion
             // key that distinguishes a fresh install from a wizard replay.
             const firstOnboardingCompletion = !hasCompletedAnyOnboardingVersion();
@@ -2801,6 +2807,9 @@ export function App() {
             // replays never re-enroll existing users.
             void applyAutostartDefaultOnce({ firstOnboardingCompletion });
             setOnboardingDone(true);
+            // The last screen asked for the first note; honour the answer
+            // once the shell is up, which is the next render.
+            if (intent) setFirstNoteIntent(intent);
           }}
         />
       </main>
@@ -3040,7 +3049,6 @@ export function App() {
                   onCheckForUpdates={() => runUpdateCheck("manual")}
                   onReconcileToStable={handleReconcileToStable}
                   onReportIssue={handleReportIssue}
-                  onStartBundleChat={handleStartBundleChat}
                 />
               ) : activeView === "dictation" ? (
                 <DictationHistoryView
@@ -3582,9 +3590,19 @@ function UpdateRelaunchCard({
 }) {
   const meta = status ?? updateVersionLabel(payload.version);
   const failed = status?.toLowerCase().includes("failed") ?? false;
+  // The release notes ride in with the update manifest; a person deciding
+  // whether to relaunch now gets to see what they are relaunching into.
+  const noteLines = releaseNoteLines(payload.notes);
 
   return (
     <aside className="update-popover" role={failed ? "alert" : "status"} aria-live="polite">
+      {noteLines.length > 0 && !relaunching && (
+        <ul className="update-relaunch-notes" aria-label="What changes in this update">
+          {noteLines.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      )}
       <button
         type="button"
         className="update-relaunch-card"

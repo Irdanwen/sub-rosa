@@ -13,6 +13,10 @@ import { CarpeDiemGate } from "../components/carpe-diem/CarpeDiemGate";
  */
 
 vi.mock("../lib/mobile", () => ({ isMobilePlatform: () => false }));
+vi.mock("../lib/tauri", () => ({
+  carpeDiemRestartSidecar: vi.fn(() => Promise.resolve()),
+}));
+
 vi.mock("../components/settings/CarpeDiemSettings", () => ({
   // The settings panel talks to the keychain; the gate's own copy is the
   // subject here, and the panel appears in both cases either way.
@@ -53,5 +57,18 @@ describe("the Carpe Diem gate", () => {
     for (const guess of [/because/i, /port/i, /firewall/i, /corrupt/i]) {
       expect(screen.queryByText(guess)).toBeNull();
     }
+  });
+
+  it("lets a failed engine be started again from the gate", async () => {
+    const { carpeDiemRestartSidecar } = await import("../lib/tauri");
+    render(<CarpeDiemGate reason="failed" />);
+    screen.getByRole("button", { name: "Try again" }).click();
+    expect(carpeDiemRestartSidecar).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeNull();
+  });
+
+  it("does not offer a restart when nothing is configured yet", () => {
+    render(<CarpeDiemGate reason="no-key" />);
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
 });

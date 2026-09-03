@@ -7,16 +7,20 @@ import type { DictationShortcutSetting } from "../../lib/tauri";
 import { PermissionsStep } from "./steps/PermissionSteps";
 import { WelcomeStep } from "./steps/WelcomeStep";
 import { DictationPracticeStep } from "./steps/PracticeStep";
+import { KeyStep } from "./steps/KeyStep";
+import { FirstNoteStep, type FirstNoteIntent } from "./steps/FirstNoteStep";
 import { usePermissionStatuses, useSystemAudioStatus } from "./use-permission-status";
 
-type StepId = "welcome" | "permissions" | "dictation-practice";
+type StepId = "welcome" | "key" | "permissions" | "dictation-practice" | "first-note";
 
 // Announced by the progress bar so screen readers hear where they are, not
 // just a bare step count.
 const STEP_LABELS: Record<StepId, string> = {
   welcome: "Welcome",
+  key: "Your key",
   permissions: "Permissions",
   "dictation-practice": "Try dictation",
+  "first-note": "Your first note",
 };
 
 // The product default: bare fn, mirroring DictationShortcutSetting::bare_fn()
@@ -47,12 +51,24 @@ function isFactoryDefaultShortcut(shortcut: DictationShortcutSetting) {
   );
 }
 
-const MAC_STEPS: StepId[] = ["welcome", "permissions", "dictation-practice"];
-const NON_MAC_STEPS: StepId[] = ["welcome", "permissions"];
+// One sequence, not a gate and then a wizard: the key is the second screen
+// when the install has none, and the last screen asks for the first note.
+const MAC_STEPS: StepId[] = ["welcome", "key", "permissions", "dictation-practice", "first-note"];
+const NON_MAC_STEPS: StepId[] = ["welcome", "key", "permissions", "first-note"];
 
 type Props = {
-  onComplete: () => void;
+  /** Called once, with what the person chose to do first (or nothing). */
+  onComplete: (intent?: FirstNoteIntent) => void;
+  /** No key is stored yet: the sequence includes the key step. */
+  needsKey?: boolean;
+  /** The engine runs on a stored key: the key step may be left. */
+  keyReady?: boolean;
 };
+
+export function onboardingSteps(mac: boolean, needsKey: boolean): StepId[] {
+  const steps = mac ? MAC_STEPS : NON_MAC_STEPS;
+  return needsKey ? steps : steps.filter((step) => step !== "key");
+}
 
 function initialStepIndex(steps: StepId[]): number {
   const demoStep = browserOnboardingDemoStep();
@@ -69,13 +85,17 @@ function initialStepIndex(steps: StepId[]): number {
 function browserOnboardingDemoStep(): StepId | null {
   if (!import.meta.env.DEV || typeof window === "undefined") return null;
   const step = new URLSearchParams(window.location.search).get("juneDemoStep");
-  return step === "welcome" || step === "permissions" || step === "dictation-practice"
+  return step === "welcome" ||
+    step === "key" ||
+    step === "permissions" ||
+    step === "dictation-practice" ||
+    step === "first-note"
     ? step
     : null;
 }
 
-export function OnboardingFlow({ onComplete }: Props) {
-  const steps = useMemo(() => (isMacLikePlatform() ? MAC_STEPS : NON_MAC_STEPS), []);
+export function OnboardingFlow({ onComplete, needsKey = false, keyReady = false }: Props) {
+  const steps = useMemo(() => onboardingSteps(isMacLikePlatform(), needsKey), [needsKey]);
   const supportsDictationPractice = steps.includes("dictation-practice");
   const [stepIndex, setStepIndex] = useState(() => initialStepIndex(steps));
   const [shortcutLabel, setShortcutLabel] = useState("fn");
@@ -122,7 +142,7 @@ export function OnboardingFlow({ onComplete }: Props) {
 
   function goNext() {
     if (stepIndex >= steps.length - 1) {
-      onComplete();
+      onComplete(undefined);
       return;
     }
     setStepIndex((index) => Math.min(index + 1, steps.length - 1));
@@ -165,6 +185,8 @@ export function OnboardingFlow({ onComplete }: Props) {
       <div className="onboarding-body">
         {stepId === "welcome" ? (
           <WelcomeStep onContinue={goNext} />
+        ) : stepId === "key" ? (
+          <KeyStep ready={keyReady} onContinue={goNext} />
         ) : stepId === "permissions" ? (
           <PermissionsStep
             statuses={permissionStatuses}
@@ -176,8 +198,10 @@ export function OnboardingFlow({ onComplete }: Props) {
           <DictationPracticeStep
             shortcutLabel={shortcutLabel}
             onShortcutLabelChange={setShortcutLabel}
-            onContinue={onComplete}
+            onContinue={goNext}
           />
+        ) : stepId === "first-note" ? (
+          <FirstNoteStep onChoose={onComplete} />
         ) : null}
       </div>
     </div>

@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { CarpeDiemSettings } from "../settings/CarpeDiemSettings";
 import { BrandGradientMark } from "../brand/Marks";
+import { BrandPrimaryButton } from "../ui/BrandPrimaryButton";
 import { CARPE_DIEM_DASHBOARD_URL, PRODUCT_NAME } from "../../lib/branding";
 import { isMobilePlatform } from "../../lib/mobile";
+import { carpeDiemRestartSidecar } from "../../lib/tauri";
 
 /**
  * First-run gate: shown until a Carpe Diem API key is configured and the
@@ -28,6 +31,14 @@ export function CarpeDiemGate({
 }) {
   const mobile = isMobilePlatform();
   const failed = reason === "failed";
+  // The engine can be asked to start again from here. It used to require a
+  // trip to Settings, or a relaunch, for a failure that is often a network
+  // blip at boot.
+  const [retrying, setRetrying] = useState(false);
+  const retry = () => {
+    setRetrying(true);
+    void carpeDiemRestartSidecar().finally(() => setRetrying(false));
+  };
 
   return (
     <div className="welcome-screen">
@@ -47,6 +58,14 @@ export function CarpeDiemGate({
         </p>
 
         <CarpeDiemSettings compact />
+
+        {failed ? (
+          <div className="welcome-providers">
+            <BrandPrimaryButton disabled={retrying} onClick={retry}>
+              {retrying ? "Starting…" : "Try again"}
+            </BrandPrimaryButton>
+          </div>
+        ) : null}
 
         <p className="welcome-terms">
           {failed ? (
