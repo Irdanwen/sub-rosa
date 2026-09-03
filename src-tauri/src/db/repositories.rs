@@ -389,39 +389,59 @@ impl Repositories {
         })
     }
 
+    /// Newest notes first, a page at a time.
+    ///
+    /// The cursor is a keyset on `(created_at, rowid)`, the same order the
+    /// query sorts by, so a page boundary never skips or repeats a note when
+    /// one is created between two calls. Until 2026-09-03 the cursor was
+    /// accepted and ignored, and `next_cursor` was never set: the app showed
+    /// the newest hundred notes and the hundred-and-first did not exist.
     pub async fn list_notes(
         &self,
         folder_id: Option<String>,
         limit: i64,
-        _cursor: Option<String>,
+        cursor: Option<String>,
     ) -> Result<ListNotesResponse, sqlx::error::Error> {
+        let limit = limit.clamp(1, 1000);
+        let after = cursor.as_deref().and_then(parse_notes_cursor);
+        let (after_created, after_rowid) = match &after {
+            Some((created_at, rowid)) => (Some(created_at.as_str()), Some(*rowid)),
+            None => (None, None),
+        };
         let rows = if let Some(folder_id) = folder_id {
             query(
-                "SELECT n.id, n.title, n.generated_content, n.edited_content, n.processing_status, n.created_at, n.updated_at
+                "SELECT n.rowid AS row_id, n.id, n.title, n.generated_content, n.edited_content, n.processing_status, n.created_at, n.updated_at
                  FROM notes n
                  INNER JOIN note_folders nf ON nf.note_id = n.id
                  WHERE nf.folder_id = ?
+                   AND (?2 IS NULL OR n.created_at < ?2 OR (n.created_at = ?2 AND n.rowid < ?3))
                  ORDER BY n.created_at DESC, n.rowid DESC
-                 LIMIT ?",
+                 LIMIT ?4",
             )
             .bind(folder_id)
-            .bind(limit)
+            .bind(after_created)
+            .bind(after_rowid)
+            .bind(limit + 1)
             .fetch_all(&self.pool)
             .await?
         } else {
             query(
-                "SELECT id, title, generated_content, edited_content, processing_status, created_at, updated_at
+                "SELECT rowid AS row_id, id, title, generated_content, edited_content, processing_status, created_at, updated_at
                  FROM notes
+                 WHERE (?1 IS NULL OR created_at < ?1 OR (created_at = ?1 AND rowid < ?2))
                  ORDER BY created_at DESC, rowid DESC
-                 LIMIT ?",
+                 LIMIT ?3",
             )
-            .bind(limit)
+            .bind(after_created)
+            .bind(after_rowid)
+            .bind(limit + 1)
             .fetch_all(&self.pool)
             .await?
         };
-
+        let has_more = rows.len() as i64 > limit;
         let mut items = Vec::with_capacity(rows.len());
-        for row in rows {
+        let mut last_key: Option<(String, i64)> = None;
+        for row in rows.into_iter().take(limit as usize) {
             let id: String = row.get("id");
             let title: String = row.get("title");
             let content = row
@@ -432,6 +452,8 @@ impl Repositories {
                         .flatten()
                 })
                 .unwrap_or_default();
+            let created_at: String = row.get("created_at");
+            last_key = Some((created_at.clone(), row.get::<i64, _>("row_id")));
             items.push(NoteListItemDto {
                 id: id.clone(),
                 title: title.clone(),
@@ -440,16 +462,17 @@ impl Repositories {
                     row.get::<String, _>("processing_status").as_str(),
                 ),
                 folder_ids: self.folder_ids(&id).await?,
-                created_at: row.get("created_at"),
+                created_at,
                 updated_at: row.get("updated_at"),
                 duration_ms: None,
             });
         }
-
-        Ok(ListNotesResponse {
-            items,
-            next_cursor: None,
-        })
+        let next_cursor = if has_more {
+            last_key.map(|(created_at, rowid)| format_notes_cursor(&created_at, rowid))
+        } else {
+            None
+        };
+        Ok(ListNotesResponse { items, next_cursor })
     }
 
     pub async fn assign_note_to_folder(
@@ -575,6 +598,157 @@ impl Repositories {
         Ok(Some(item))
     }
 
+    /// The search that reads everything.
+    ///
+    /// Four FTS5 tables (migration 020), one query each, merged by bm25 rank.
+    /// Transcripts are folded into their note so a meeting with the word in
+    /// twelve turns is one hit, not twelve; the best-ranked turn supplies the
+    /// excerpt. Conversations are keyed by the agent task so opening a hit
+    /// lands on the session. Nothing here is fuzzy: a term either matches a
+    /// token prefix or it does not, and the ranking is the engine's.
+    pub async fn search_everything(
+        &self,
+        input: &str,
+        limit: i64,
+    ) -> Result<Vec<SearchHit>, sqlx::error::Error> {
+        let Some(fts) = fts_query(input) else {
+            return Ok(Vec::new());
+        };
+        let limit = limit.clamp(1, 50);
+        let per_corpus = limit * 2;
+        let mut hits: Vec<SearchHit> = Vec::new();
+
+        let rows = query(
+            "SELECT f.note_id AS target_id, n.title AS title, n.updated_at AS updated_at,
+                    snippet(notes_fts, 2, char(1), char(2), '…', 18) AS excerpt,
+                    bm25(notes_fts, 0.0, 2.0, 1.0) AS rank
+             FROM notes_fts f
+             JOIN notes n ON n.id = f.note_id
+             WHERE notes_fts MATCH ?1
+             ORDER BY rank
+             LIMIT ?2",
+        )
+        .bind(&fts)
+        .bind(per_corpus)
+        .fetch_all(&self.pool)
+        .await?;
+        for row in rows {
+            hits.push(SearchHit {
+                kind: "note".into(),
+                target_id: row.get("target_id"),
+                title: row.get("title"),
+                excerpt: row.get("excerpt"),
+                updated_at: row.get("updated_at"),
+                rank: row.get("rank"),
+            });
+        }
+
+        let rows = query(
+            "SELECT f.note_id AS target_id, n.title AS title, n.updated_at AS updated_at,
+                    snippet(transcripts_fts, 2, char(1), char(2), '…', 18) AS excerpt,
+                    bm25(transcripts_fts) AS rank
+             FROM transcripts_fts f
+             JOIN notes n ON n.id = f.note_id
+             WHERE transcripts_fts MATCH ?1
+             ORDER BY rank
+             LIMIT ?2",
+        )
+        .bind(&fts)
+        .bind(per_corpus * 4)
+        .fetch_all(&self.pool)
+        .await?;
+        let mut seen_transcript_notes = std::collections::HashSet::new();
+        for row in rows {
+            let target_id: String = row.get("target_id");
+            if hits
+                .iter()
+                .any(|hit| hit.kind == "note" && hit.target_id == target_id)
+                || !seen_transcript_notes.insert(target_id.clone())
+            {
+                continue;
+            }
+            hits.push(SearchHit {
+                kind: "transcript".into(),
+                target_id,
+                title: row.get("title"),
+                excerpt: row.get("excerpt"),
+                updated_at: row.get("updated_at"),
+                rank: row.get("rank"),
+            });
+        }
+
+        let rows = query(
+            "SELECT f.memory_id AS target_id, m.updated_at AS updated_at,
+                    snippet(memories_fts, 1, char(1), char(2), '…', 24) AS excerpt,
+                    bm25(memories_fts) AS rank
+             FROM memories_fts f
+             JOIN memories m ON m.id = f.memory_id
+             WHERE memories_fts MATCH ?1 AND m.disabled = 0
+             ORDER BY rank
+             LIMIT ?2",
+        )
+        .bind(&fts)
+        .bind(per_corpus)
+        .fetch_all(&self.pool)
+        .await?;
+        for row in rows {
+            hits.push(SearchHit {
+                kind: "memory".into(),
+                target_id: row.get("target_id"),
+                title: "Memory".into(),
+                excerpt: row.get("excerpt"),
+                updated_at: row.get("updated_at"),
+                rank: row.get("rank"),
+            });
+        }
+
+        // bm25() may only appear in the query that holds the MATCH, so the
+        // per-message ranking is an inner query and the fold to one row per
+        // conversation happens outside it. SQLite's bare-column rule makes
+        // `excerpt` the one from the row that won MIN(rank).
+        let rows = query(
+            "SELECT target_id, title, MAX(updated_at) AS updated_at, excerpt, MIN(rank) AS rank
+             FROM (
+               SELECT f.task_id AS target_id, t.title AS title, t.updated_at AS updated_at,
+                      snippet(agent_messages_fts, 2, char(1), char(2), '…', 18) AS excerpt,
+                      bm25(agent_messages_fts) AS rank
+               FROM agent_messages_fts f
+               JOIN agent_tasks t ON t.id = f.task_id
+               WHERE agent_messages_fts MATCH ?1
+               ORDER BY rank
+               LIMIT ?2
+             )
+             GROUP BY target_id
+             ORDER BY rank
+             LIMIT ?3",
+        )
+        .bind(&fts)
+        .bind(per_corpus * 4)
+        .bind(per_corpus)
+        .fetch_all(&self.pool)
+        .await?;
+        for row in rows {
+            hits.push(SearchHit {
+                kind: "conversation".into(),
+                target_id: row.get("target_id"),
+                title: row.get("title"),
+                excerpt: row.get("excerpt"),
+                updated_at: row.get("updated_at"),
+                rank: row.get("rank"),
+            });
+        }
+
+        // bm25 is negative, more negative is better; ties go to the newest.
+        hits.sort_by(|a, b| {
+            a.rank
+                .partial_cmp(&b.rank)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.updated_at.cmp(&a.updated_at))
+        });
+        hits.truncate(limit as usize);
+        Ok(hits)
+    }
+
     /// Free-text context retrieval for the agent-lite chat: newest notes and
     /// transcripts whose title or content matches the query, trimmed to
     /// snippets. LIKE keeps it simple and index-free; the corpus is one
@@ -593,19 +767,29 @@ impl Repositories {
                 .replace('_', "\\_")
         );
         let limit = limit.clamp(1, 20);
-        let rows = query(
-            "SELECT id, title, COALESCE(edited_content, generated_content, '') AS content, updated_at
-             FROM notes
-             WHERE title LIKE ? ESCAPE '\\' OR edited_content LIKE ? ESCAPE '\\' OR generated_content LIKE ? ESCAPE '\\'
-             ORDER BY updated_at DESC
-             LIMIT ?",
-        )
-        .bind(&pattern)
-        .bind(&pattern)
-        .bind(&pattern)
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await?;
+        // Since migration 020 the notes are found through FTS5 (ranked,
+        // accent-folded, prefix on the last term) instead of a LIKE over the
+        // newest hundred; the long snippet the agent reads is still cut from
+        // the note's own content around the first match.
+        let rows = match fts_query(search) {
+            Some(fts) => {
+                query(
+                    "SELECT n.id AS id, n.title AS title,
+                            COALESCE(n.edited_content, n.generated_content, '') AS content,
+                            n.updated_at AS updated_at
+                     FROM notes_fts f
+                     JOIN notes n ON n.id = f.note_id
+                     WHERE notes_fts MATCH ?1
+                     ORDER BY bm25(notes_fts, 0.0, 2.0, 1.0)
+                     LIMIT ?2",
+                )
+                .bind(&fts)
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await?
+            }
+            None => Vec::new(),
+        };
         let mut snippets: Vec<NoteContextSnippet> = rows
             .into_iter()
             .map(|row| {
@@ -2355,7 +2539,9 @@ impl Repositories {
         .bind(&now)
         .execute(&self.pool)
         .await?;
-        Ok(self.ingest(id).await?.expect("the row was just written"))
+        self.ingest(id)
+            .await?
+            .ok_or(sqlx::error::Error::RowNotFound)
     }
 
     pub async fn ingest(&self, id: &str) -> Result<Option<IngestDto>, sqlx::error::Error> {
@@ -2526,10 +2712,9 @@ impl Repositories {
         .bind(&now)
         .execute(&self.pool)
         .await?;
-        Ok(self
-            .note_summary(note_id)
+        self.note_summary(note_id)
             .await?
-            .expect("the row was just written"))
+            .ok_or(sqlx::error::Error::RowNotFound)
     }
 
     /// Record a finished map pass.
@@ -3978,7 +4163,9 @@ impl Repositories {
         .bind(&now)
         .execute(&self.pool)
         .await?;
-        Ok(self.shot_list(note_id).await?.expect("just written"))
+        self.shot_list(note_id)
+            .await?
+            .ok_or(sqlx::error::Error::RowNotFound)
     }
 
     pub async fn save_shot_list_parts(
@@ -4541,6 +4728,57 @@ pub struct BriefRow {
     pub scheduled_for: String,
 }
 
+/// One hit of the search that reads everything (notes, transcripts, memories,
+/// conversations). `kind` says which corpus it came from; `target_id` is the
+/// row to open (a note id, a memory id, an agent task id); `excerpt` is the
+/// matched passage with the hits wrapped in `\u{1}` and `\u{2}` so the
+/// webview can highlight without trusting HTML from the database.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    pub kind: String,
+    pub target_id: String,
+    pub title: String,
+    pub excerpt: String,
+    pub updated_at: String,
+    pub rank: f64,
+}
+
+/// Turn what a person typed into an FTS5 query that cannot be mis-parsed.
+///
+/// FTS5 has its own syntax (AND, OR, NOT, NEAR, quotes, colons) and a user's
+/// text is not written in it. Every term is quoted, an embedded double quote
+/// is doubled, and the last term gets a prefix star so a search feels live
+/// while typing. Terms are ANDed, FTS5's default.
+pub fn fts_query(input: &str) -> Option<String> {
+    // Split on anything that is not a letter or a digit, which is also what
+    // the unicode61 tokenizer does to the indexed text, so `this:that` asks
+    // for the two words and not for a phrase the engine will never find.
+    let terms: Vec<String> = input
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|term| !term.is_empty())
+        .map(str::to_string)
+        .collect();
+    if terms.is_empty() {
+        return None;
+    }
+    let last = terms.len() - 1;
+    Some(
+        terms
+            .iter()
+            .enumerate()
+            .map(|(index, term)| {
+                if index == last {
+                    format!("\"{term}\"*")
+                } else {
+                    format!("\"{term}\"")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+}
+
 /// One retrieval hit for the agent-lite chat: which note it came from, and a
 /// snippet of the matching content.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -4745,10 +4983,9 @@ impl Repositories {
         .bind(&now)
         .execute(&self.pool)
         .await?;
-        Ok(self
-            .council_mandate(id)
+        self.council_mandate(id)
             .await?
-            .expect("the row was just written"))
+            .ok_or(sqlx::error::Error::RowNotFound)
     }
 
     pub async fn council_mandate(
@@ -5040,10 +5277,9 @@ impl Repositories {
         .bind(&now)
         .execute(&self.pool)
         .await?;
-        Ok(self
-            .council_verdict(mandate_id, round)
+        self.council_verdict(mandate_id, round)
             .await?
-            .expect("the row was just written"))
+            .ok_or(sqlx::error::Error::RowNotFound)
     }
 
     /// What the shell handed in as evidence for this verdict, if anything. Read
@@ -5212,4 +5448,37 @@ fn council_verdict_from_row(row: sqlx_sqlite::SqliteRow) -> CouncilVerdictDto {
 fn parse_json_column<T: serde::de::DeserializeOwned + Default>(raw: Option<String>) -> T {
     raw.and_then(|json| serde_json::from_str(&json).ok())
         .unwrap_or_default()
+}
+
+/// The notes page cursor: the last row's `created_at` and rowid, joined by a
+/// character no timestamp contains. Opaque to the webview.
+fn format_notes_cursor(created_at: &str, rowid: i64) -> String {
+    format!("{created_at}|{rowid}")
+}
+
+fn parse_notes_cursor(cursor: &str) -> Option<(String, i64)> {
+    let (created_at, rowid) = cursor.rsplit_once('|')?;
+    let rowid = rowid.parse::<i64>().ok()?;
+    if created_at.is_empty() {
+        return None;
+    }
+    Some((created_at.to_string(), rowid))
+}
+
+#[cfg(test)]
+mod notes_cursor_tests {
+    use super::{format_notes_cursor, parse_notes_cursor};
+
+    #[test]
+    fn a_cursor_round_trips_and_a_bad_one_is_ignored() {
+        let cursor = format_notes_cursor("2026-09-03T08:00:00.000Z", 42);
+        assert_eq!(
+            parse_notes_cursor(&cursor),
+            Some(("2026-09-03T08:00:00.000Z".to_string(), 42))
+        );
+        assert_eq!(parse_notes_cursor(""), None);
+        assert_eq!(parse_notes_cursor("no-separator"), None);
+        assert_eq!(parse_notes_cursor("|7"), None);
+        assert_eq!(parse_notes_cursor("2026|x"), None);
+    }
 }

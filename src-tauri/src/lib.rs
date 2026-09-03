@@ -231,6 +231,7 @@ pub fn run() {
             commands::bootstrap_app,
             commands::create_note,
             commands::list_notes,
+            commands::search_everything,
             commands::get_note,
             commands::update_note,
             commands::delete_note,
@@ -482,6 +483,7 @@ pub fn run() {
         commands::bootstrap_app,
         commands::create_note,
         commands::list_notes,
+        commands::search_everything,
         commands::get_note,
         commands::update_note,
         commands::delete_note,
@@ -704,7 +706,12 @@ pub fn run() {
             Ok(())
         })
         .build(context)
-        .expect("failed to build June")
+        // A shell that cannot build has nothing left to do but stop; there is
+        // no window to show the error in yet.
+        .unwrap_or_else(|error| {
+            eprintln!("failed to build Sub Rosa: {error}");
+            std::process::exit(1)
+        })
         .run(|app, event| match event {
             // iOS suspends the process and can reclaim the loopback listener;
             // make sure the embedded backend still answers when we come back.

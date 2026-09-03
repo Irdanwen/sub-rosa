@@ -15,8 +15,6 @@ import { IconCreditCard1 } from "central-icons/IconCreditCard1";
 import { IconDotGrid1x3Vertical } from "central-icons/IconDotGrid1x3Vertical";
 import { IconFolderAddRight } from "central-icons/IconFolderAddRight";
 import { IconFolderDelete } from "central-icons/IconFolderDelete";
-import { IconLayersThree } from "central-icons/IconLayersThree";
-import { IconMagicWand } from "central-icons/IconMagicWand";
 import { IconImport } from "central-icons/IconImport";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconMicrophone } from "central-icons/IconMicrophone";
@@ -25,18 +23,14 @@ import { IconMoveFolder } from "central-icons/IconMoveFolder";
 import { IconNoteText } from "central-icons/IconNoteText";
 import { IconPeople } from "central-icons/IconPeople";
 import { IconPin } from "central-icons/IconPin";
-import { IconGithub } from "central-icons/IconGithub";
 import { IconPlugin2 } from "central-icons/IconPlugin2";
-import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { IconToolbox } from "central-icons/IconToolbox";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { IconProjects } from "central-icons/IconProjects";
 import { IconHeartBeat } from "central-icons/IconHeartBeat";
-import { IconGauge } from "central-icons/IconGauge";
 import { IconServer1 } from "central-icons/IconServer1";
 import { IconShield } from "central-icons/IconShield";
 import { IconShieldCheck } from "central-icons/IconShieldCheck";
-import { IconStore1 } from "central-icons/IconStore1";
 import { IconSettingsGear4 } from "central-icons/IconSettingsGear4";
 import { IconShortcut } from "central-icons/IconShortcut";
 import { IconTrashCan } from "central-icons/IconTrashCan";
@@ -81,7 +75,9 @@ import type {
   HermesSessionInfo,
   NoteListItemDto,
   RecordingStatusDto,
+  SearchHit,
 } from "../../lib/tauri";
+import { searchEverything } from "../../lib/tauri";
 import type { SettingsTab } from "../settings/AppSettings";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { DotSpinner } from "../DotSpinner";
@@ -239,11 +235,6 @@ export const SETTINGS_SIDEBAR_GROUPS: {
   {
     title: "AI",
     items: [
-      {
-        id: "integrations-health",
-        label: "Integrations health",
-        icon: <IconGauge size={16} />,
-      },
       { id: "models", label: "Models", icon: <IconBrain2 size={16} /> },
       { id: "agent", label: "Agent", icon: <IconRobot2 size={16} /> },
       { id: "memory", label: "Memory", icon: <IconBookmark size={16} /> },
@@ -259,19 +250,9 @@ export const SETTINGS_SIDEBAR_GROUPS: {
         icon: <IconFolderShared size={16} />,
       },
       {
-        id: "skill-review",
-        label: "Pending skill changes",
-        icon: <IconShieldCheck size={16} />,
-      },
-      {
         id: "mcp",
         label: "MCP servers",
         icon: <IconServer1 size={16} />,
-      },
-      {
-        id: "mcp-catalog",
-        label: "MCP catalog",
-        icon: <IconStore1 size={16} />,
       },
       {
         id: "mcp-diagnostics",
@@ -284,29 +265,9 @@ export const SETTINGS_SIDEBAR_GROUPS: {
         icon: <IconShield size={16} />,
       },
       {
-        id: "skills-hub",
-        label: "Skills hub",
-        icon: <IconArrowInbox size={16} />,
-      },
-      {
-        id: "taps",
-        label: "Team skill taps",
-        icon: <IconGithub size={16} />,
-      },
-      {
         id: "toolsets",
         label: "Toolsets",
         icon: <IconToolbox size={16} />,
-      },
-      {
-        id: "bundles",
-        label: "Bundles",
-        icon: <IconLayersThree size={16} />,
-      },
-      {
-        id: "profile-builder",
-        label: "Profile builder",
-        icon: <IconMagicWand size={16} />,
       },
       {
         id: "import-export",
@@ -323,30 +284,6 @@ export const SETTINGS_SIDEBAR_GROUPS: {
     ],
   },
 ];
-
-/**
- * Settings tabs introduced by the admin-surfaces PR, hidden from the nav until
- * they're stabilized. The pre-PR tabs (General, Billing, Shortcuts, Dictation,
- * Audio, Models, Agent, Installed skills, About) stay visible, plus External
- * skill directories (PR-new but verified working). These are hidden, not
- * removed: tabs, panels, and logic are all intact. Re-enable one by deleting its
- * id here; restore the full nav by deleting this set and the `.filter` in
- * SettingsSidebar that uses it. See docs/settings-focus-runbook.md.
- */
-export const HIDDEN_SETTINGS_TABS: ReadonlySet<SettingsTab> = new Set<SettingsTab>([
-  "skill-review",
-  "mcp",
-  "mcp-catalog",
-  "mcp-diagnostics",
-  "mcp-security",
-  "skills-hub",
-  "taps",
-  "toolsets",
-  "bundles",
-  "profile-builder",
-  "integrations-health",
-  "import-export",
-]);
 
 /**
  * What someone types when they are looking for a setting but do not remember
@@ -371,17 +308,10 @@ const SETTINGS_SEARCH_ALIASES: Partial<Record<SettingsTab, string>> = {
   council: "sitting judge review verdict",
   skills: "plugins capabilities installed",
   "external-dirs": "folders directories shared skills",
-  "skill-review": "pending changes approve diff",
   mcp: "servers model context protocol connections",
-  "mcp-catalog": "servers browse install model context protocol",
   "mcp-diagnostics": "logs troubleshoot debug servers",
   "mcp-security": "permissions trust servers approval",
-  "skills-hub": "browse install marketplace",
-  taps: "team shared skills subscriptions",
   toolsets: "tools groups enable disable",
-  bundles: "packs collections",
-  "profile-builder": "persona profile prompt",
-  "integrations-health": "status connections diagnostics",
   "import-export": "backup restore data transfer",
   reports: "bug feedback issue",
   about: "version update licence build",
@@ -415,6 +345,33 @@ export function Sidebar({
   const commandInputRef = useRef<HTMLInputElement>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState("");
+  // The search that reads the notes (migration 020). The palette used to
+  // match only what the sidebar already held: five recent titles, folders,
+  // settings. Now three letters reach a word inside any note, transcript,
+  // memory or past conversation, with a short debounce so a keystroke does
+  // not become a query.
+  const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
+  useEffect(() => {
+    const trimmed = commandQuery.trim();
+    if (trimmed.length < 2) {
+      setSearchHits([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      searchEverything(trimmed, 12)
+        .then((hits) => {
+          if (!cancelled) setSearchHits(hits);
+        })
+        .catch(() => {
+          if (!cancelled) setSearchHits([]);
+        });
+    }, 120);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [commandQuery]);
   const [commandActiveIndex, setCommandActiveIndex] = useState(0);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [identityMenuOpen, setIdentityMenuOpen] = useState(false);
@@ -630,42 +587,89 @@ export function Sidebar({
     // once can be reached by typing three letters of its name instead of
     // remembering which group it was under.
     //
-    // The tabs in HIDDEN_SETTINGS_TABS are deliberately left out. They are not
-    // "advanced": they are unstabilised, hidden one at a time on purpose
-    // (docs/settings-focus-runbook.md), and a search box that reaches them
-    // would undo that decision quietly -- which is worse than doing it openly.
     // Built from SETTINGS_SIDEBAR_GROUPS rather than a second hand-written
     // list, so a new tab cannot be findable in one place and not the other;
-    // settings-index.test.tsx holds that line.
+    // settings-index.test.tsx holds that line. (Twelve tabs used to be hidden
+    // from the nav "while they stabilised"; on 2026-09-03 five came back and
+    // seven were deleted with their code, so there is nothing to filter.)
     const settingsItems: CommandPaletteItem[] = SETTINGS_SIDEBAR_GROUPS.flatMap((group) =>
-      group.items
-        .filter((item) => !HIDDEN_SETTINGS_TABS.has(item.id))
-        .map((item) => ({
-          id: `settings:${item.id}`,
-          label: item.label,
-          meta: "Settings",
-          icon: item.icon,
-          searchText: normalizeCommandQuery(
-            `${item.label} ${group.title} settings ${SETTINGS_SEARCH_ALIASES[item.id] ?? ""}`,
-          ),
-          action: () => {
-            onSettingsTabChange?.(item.id);
-            onChangeView("settings");
-          },
-        })),
+      group.items.map((item) => ({
+        id: `settings:${item.id}`,
+        label: item.label,
+        meta: "Settings",
+        icon: item.icon,
+        searchText: normalizeCommandQuery(
+          `${item.label} ${group.title} settings ${SETTINGS_SEARCH_ALIASES[item.id] ?? ""}`,
+        ),
+        action: () => {
+          onSettingsTabChange?.(item.id);
+          onChangeView("settings");
+        },
+      })),
     ).filter(matches);
+
+    // Hits from the full-text search, already ranked by the engine, so they
+    // are not re-filtered by the substring matcher above. A hit that is also
+    // a recent item is dropped here rather than shown twice.
+    const recentIds = new Set(recentItems.map((item) => item.id));
+    const searchItems: CommandPaletteItem[] = searchHits
+      .map((hit) => searchHitToPaletteItem(hit))
+      .filter((item) => !recentIds.has(item.id));
 
     return [
       { title: "Recents", items: recentItems },
+      { title: "In your notes", items: searchItems },
       { title: "Projects", items: folderItems },
       { title: "Quick actions", items: quickItems },
       { title: "Settings", items: settingsItems },
     ].filter((group) => group.items.length > 0);
+
+    function searchHitToPaletteItem(hit: SearchHit): CommandPaletteItem {
+      const excerpt = searchExcerptText(hit.excerpt);
+      switch (hit.kind) {
+        case "memory":
+          return {
+            id: `memory:${hit.targetId}`,
+            label: excerpt || "Memory",
+            meta: "Memory",
+            icon: <IconSparkle3 size={15} />,
+            searchText: "",
+            action: () => {
+              onSettingsTabChange?.("memory");
+              onChangeView("settings");
+            },
+          };
+        case "conversation": {
+          const session = agentSessions.find((candidate) => candidate.id === hit.targetId);
+          return {
+            id: `agent:${hit.targetId}`,
+            label: hit.title.trim() || "Untitled",
+            meta: excerpt || "Session",
+            icon: <IconBubble3 size={15} />,
+            searchText: "",
+            action: () => {
+              setSelectedAgentSessionId(hit.targetId);
+              if (session) onSelectAgentSession(session);
+            },
+          };
+        }
+        default:
+          return {
+            id: `note:${hit.targetId}`,
+            label: hit.title.trim() || "New note",
+            meta: excerpt || (hit.kind === "transcript" ? "Transcript" : "Meeting note"),
+            icon: <IconNoteText size={15} />,
+            searchText: "",
+            action: () => onSelectNote(hit.targetId),
+          };
+      }
+    }
   }, [
     folders,
     onSelectFolder,
     agentSessions,
     commandQuery,
+    searchHits,
     notes,
     onChangeView,
     onImportMedia,
@@ -1517,7 +1521,7 @@ function SettingsSidebarNav({
   // their headers don't render.
   const groups = SETTINGS_SIDEBAR_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => !HIDDEN_SETTINGS_TABS.has(item.id)),
+    items: group.items,
   })).filter((group) => group.items.length > 0);
 
   return (
@@ -1682,6 +1686,24 @@ function CommandPalette({
     </div>,
     document.body,
   );
+}
+
+/**
+ * The excerpt the search engine returns wraps each hit in \u0001 and \u0002
+ * so the webview never has to trust markup from the database. The palette
+ * shows plain text, so the markers go and the whitespace is collapsed.
+ */
+const SEARCH_HIT_START = String.fromCharCode(1);
+const SEARCH_HIT_END = String.fromCharCode(2);
+
+export function searchExcerptText(excerpt: string) {
+  return excerpt
+    .split(SEARCH_HIT_START)
+    .join("")
+    .split(SEARCH_HIT_END)
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizeCommandQuery(value: string) {

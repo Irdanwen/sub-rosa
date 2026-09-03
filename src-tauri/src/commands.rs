@@ -96,6 +96,27 @@ pub async fn create_note(app: AppHandle, request: CreateNoteRequest) -> Result<N
         .await?)
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchEverythingRequest {
+    pub query: String,
+    pub limit: Option<i64>,
+}
+
+/// The search that reads the notes, the transcripts, the memories and the
+/// conversations (migration 020). Shared by both shells: the palette on the
+/// desktop, the notes screen on the phone, and agent-lite's `search_notes`.
+#[tauri::command]
+pub async fn search_everything(
+    app: AppHandle,
+    request: SearchEverythingRequest,
+) -> Result<Vec<crate::db::repositories::SearchHit>, AppError> {
+    Ok(repositories(&app)
+        .await?
+        .search_everything(&request.query, request.limit.unwrap_or(20))
+        .await?)
+}
+
 #[tauri::command]
 pub async fn list_notes(
     app: AppHandle,
@@ -1096,6 +1117,8 @@ async fn finish_recording_session(
         let result = if valid_sources.len() == 1
             && task_source_mode == RecordingSourceMode::MicrophoneOnly
         {
+            // `valid_sources.len() == 1` was tested in the condition above.
+            #[allow(clippy::expect_used)]
             let (artifact_id, _source, path) = valid_sources
                 .into_iter()
                 .next()
@@ -1720,6 +1743,8 @@ pub async fn retry_processing(
         let existing_generated_note = note.generated_content.clone();
         let manual_notes = manual_notes_for_generation(&note);
         let result = if sources.len() == 1 {
+            // `sources.len() == 1` was tested in the condition above.
+            #[allow(clippy::expect_used)]
             let (audio_artifact_id, _source, audio_path, session_id) = sources
                 .into_iter()
                 .next()
@@ -2109,9 +2134,11 @@ fn schedule_agent_runtime_placeholder(repos: Repositories, task_id: String) {
     // double retry) would double-insert tool events and messages, so only
     // one in-flight run per task is allowed.
     {
+        // A poisoned set is still a set of ids: reuse it rather than crash
+        // the shell over a panic in another task.
         let mut in_flight = agent_placeholder_tasks_in_flight()
             .lock()
-            .expect("agent placeholder in-flight set is poisoned");
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if !in_flight.insert(task_id.clone()) {
             return;
         }
@@ -2120,7 +2147,7 @@ fn schedule_agent_runtime_placeholder(repos: Repositories, task_id: String) {
         run_agent_runtime_placeholder(&repos, &task_id).await;
         agent_placeholder_tasks_in_flight()
             .lock()
-            .expect("agent placeholder in-flight set is poisoned")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(&task_id);
     });
 }

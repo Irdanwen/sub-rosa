@@ -76,3 +76,17 @@ here are load-bearing:
 - **Letting the agent write its own memories via an MCP tool**: writes from
   the sandboxed Python MCP would add a second SQLite writer process; all
   writes stay in the Rust process, the MCP stays read-only.
+
+## Addendum — 2026-09-03 (FTS5 arrives, for search rather than for recall)
+
+The rejected alternative above said "revisit only if document-import lands".
+Imports landed in v1.45.0, and the app's only search was still a substring
+filter in the webview over the first hundred notes the list had loaded.
+Migration `020_search.sql` adds four FTS5 tables (notes, transcripts,
+memories, agent messages), kept current by triggers, and
+`Repositories::search_everything` ranks across them with bm25. Memory
+**recall** does not change: the prompt-time injection and the hybrid
+LIKE + cosine path stay as decided here, because they answer "what is
+relevant to this turn", not "where did I write this word". The memories
+FTS table serves the palette and agent-lite's `search_memories`, both of
+which want a word, not a vector.

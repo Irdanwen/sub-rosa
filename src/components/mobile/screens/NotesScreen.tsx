@@ -5,8 +5,9 @@ import { IconFolder2 } from "central-icons/IconFolder2";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FolderDto, NoteListItemDto } from "../../../lib/tauri";
+import { searchEverything } from "../../../lib/tauri";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { ActionSheet } from "../ActionSheet";
 import { EmptyState } from "../../ui/EmptyState";
@@ -59,15 +60,55 @@ export function NotesScreen({
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [notes, archiveFolderId],
   );
+  // Ids of the notes whose body or transcript contains the query, from the
+  // full-text index (migration 020). The title-and-preview filter below is
+  // instant and stays first; these arrive a beat later and add the notes
+  // whose match sits deeper than the preview.
+  const [deepHitIds, setDeepHitIds] = useState<string[]>([]);
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      setDeepHitIds([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      searchEverything(trimmed, 30)
+        .then((hits) => {
+          if (cancelled) return;
+          setDeepHitIds(
+            hits
+              .filter((hit) => hit.kind === "note" || hit.kind === "transcript")
+              .map((hit) => hit.targetId),
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setDeepHitIds([]);
+        });
+    }, 150);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [query]);
+
   const visibleNotes = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return sortedNotes;
-    return sortedNotes.filter(
+    const shallow = sortedNotes.filter(
       (note) =>
         note.title.toLowerCase().includes(needle) ||
         (note.preview ?? "").toLowerCase().includes(needle),
     );
-  }, [sortedNotes, query]);
+    if (deepHitIds.length === 0) return shallow;
+    const shown = new Set(shallow.map((note) => note.id));
+    const byId = new Map(sortedNotes.map((note) => [note.id, note]));
+    const deep = deepHitIds
+      .filter((id) => !shown.has(id))
+      .map((id) => byId.get(id))
+      .filter((note): note is NoteListItemDto => Boolean(note));
+    return [...shallow, ...deep];
+  }, [sortedNotes, query, deepHitIds]);
 
   return (
     <div className="mobile-screen-root">

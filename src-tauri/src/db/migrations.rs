@@ -226,7 +226,65 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
     // a relaunch must still hold the thing it was judging.
     ensure_column(_pool, "council_verdicts", "reply", "TEXT").await?;
 
+    // Full-text search over notes, transcripts, memories and conversations.
+    // The file defines triggers, whose bodies carry semicolons, so it goes
+    // through the statement-aware splitter rather than `split(';')`.
+    for statement in split_sql_statements(include_str!("../../migrations/020_search.sql")) {
+        query(&statement).execute(_pool).await?;
+    }
+
     Ok(())
+}
+
+/// Split a migration file into statements without cutting a trigger in half.
+///
+/// The runner has always split files on `;`, which is why migration comments
+/// may not contain one. A `CREATE TRIGGER ... BEGIN ... END;` body carries
+/// semicolons of its own, so this splitter counts `BEGIN` / `END` nesting
+/// (case-insensitively, on word boundaries) and only ends a statement at a
+/// `;` that sits outside such a block. Comment lines starting with `--` are
+/// dropped first, so a word like END in prose does not count.
+pub fn split_sql_statements(sql: &str) -> Vec<String> {
+    let mut statements = Vec::new();
+    let mut current = String::new();
+    let mut depth: usize = 0;
+    for raw_line in sql.lines() {
+        let line = raw_line.trim();
+        if line.starts_with("--") {
+            continue;
+        }
+        for token in line.split_inclusive(';') {
+            let (body, terminated) = match token.strip_suffix(';') {
+                Some(body) => (body, true),
+                None => (token, false),
+            };
+            for word in body.split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
+                if word.eq_ignore_ascii_case("begin") {
+                    depth += 1;
+                } else if word.eq_ignore_ascii_case("end") {
+                    depth = depth.saturating_sub(1);
+                }
+            }
+            current.push_str(body);
+            if terminated {
+                if depth == 0 {
+                    let statement = current.trim().to_string();
+                    if !statement.is_empty() {
+                        statements.push(statement);
+                    }
+                    current.clear();
+                } else {
+                    current.push(';');
+                }
+            }
+        }
+        current.push('\n');
+    }
+    let tail = current.trim().to_string();
+    if !tail.is_empty() {
+        statements.push(tail);
+    }
+    statements
 }
 
 async fn index_exists(pool: &SqlitePool, index: &str) -> Result<bool, sqlx::error::Error> {
@@ -273,4 +331,45 @@ async fn drop_index_if_exists(pool: &SqlitePool, index: &str) -> Result<(), sqlx
 
 fn quote_sqlite_identifier(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
+}
+
+#[cfg(test)]
+mod split_tests {
+    use super::split_sql_statements;
+
+    #[test]
+    fn a_trigger_body_stays_in_one_statement() {
+        let sql = "-- a comment with a ; in it\n\
+                   CREATE TABLE t (id TEXT);\n\
+                   CREATE TRIGGER IF NOT EXISTS t_ai AFTER INSERT ON t BEGIN\n\
+                     DELETE FROM u WHERE id = new.id;\n\
+                     INSERT INTO u(id) VALUES (new.id);\n\
+                   END;\n\
+                   INSERT INTO t(id) SELECT 'x' WHERE 0;";
+        let statements = split_sql_statements(sql);
+        assert_eq!(statements.len(), 3, "{statements:#?}");
+        assert!(statements[1].starts_with("CREATE TRIGGER"));
+        assert!(statements[1].trim_end().ends_with("END"));
+        assert_eq!(statements[1].matches(';').count(), 2);
+        assert!(statements[2].starts_with("INSERT INTO t"));
+    }
+
+    #[test]
+    fn the_search_migration_splits_into_whole_statements() {
+        let statements = split_sql_statements(include_str!("../../migrations/020_search.sql"));
+        let triggers = statements
+            .iter()
+            .filter(|s| s.starts_with("CREATE TRIGGER"))
+            .count();
+        let tables = statements
+            .iter()
+            .filter(|s| s.starts_with("CREATE VIRTUAL TABLE"))
+            .count();
+        assert_eq!(tables, 4);
+        assert_eq!(triggers, 12);
+        assert!(statements
+            .iter()
+            .filter(|s| s.starts_with("CREATE TRIGGER"))
+            .all(|s| s.trim_end().ends_with("END")));
+    }
 }

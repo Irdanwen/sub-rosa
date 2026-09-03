@@ -1798,8 +1798,57 @@ export async function openHermesTuiDebug(input: {
   return invoke<void>("open_hermes_tui_debug", { request: input });
 }
 
-export async function listNotes(folderId?: string) {
-  return invoke<ListNotesResponse>("list_notes", { request: { folderId } });
+/** How many notes one `list_notes` call returns; the backend clamps at 1000. */
+const NOTES_PAGE_SIZE = 500;
+/** A ceiling on what the list will hold in memory, not a product limit. */
+const NOTES_LIST_CEILING = 20_000;
+
+/**
+ * Every note, newest first.
+ *
+ * The backend pages by keyset cursor; this walks the pages so callers keep
+ * the one-call shape they had when the list was capped at a hundred notes
+ * and silently dropped the rest. A single page is still available through
+ * `listNotesPage` for surfaces that want to render as they go.
+ */
+export async function listNotes(folderId?: string): Promise<ListNotesResponse> {
+  const items: NoteListItemDto[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await listNotesPage({ folderId, cursor, limit: NOTES_PAGE_SIZE });
+    items.push(...page.items);
+    cursor = page.nextCursor;
+  } while (cursor && items.length < NOTES_LIST_CEILING);
+  return { items };
+}
+
+/** One hit of the search that reads everything. `kind` says where it came from. */
+export type SearchHit = {
+  kind: "note" | "transcript" | "memory" | "conversation";
+  targetId: string;
+  title: string;
+  /** Matched passage; hits are wrapped in  …  for the UI to highlight. */
+  excerpt: string;
+  updatedAt: string;
+  rank: number;
+};
+
+/**
+ * Full-text search over notes, transcripts, memories and conversations.
+ * Terms are ANDed; the last one matches as a prefix so results move while
+ * typing. Empty input returns no hits rather than everything.
+ */
+export async function searchEverything(query: string, limit = 20): Promise<SearchHit[]> {
+  if (!query.trim()) return [];
+  return invoke<SearchHit[]>("search_everything", { request: { query, limit } });
+}
+
+export async function listNotesPage(request: {
+  folderId?: string;
+  cursor?: string;
+  limit?: number;
+}): Promise<ListNotesResponse> {
+  return invoke<ListNotesResponse>("list_notes", { request });
 }
 
 export async function getNote(noteId: string) {
