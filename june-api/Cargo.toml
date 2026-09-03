@@ -20,13 +20,13 @@ june-services = { path = "crates/services" }
 
 async-trait = "0.1"
 axum = { version = "0.8", features = ["multipart"] }
-base64 = "0.22"
+base64 = "0.23"
 bytes = "1"
 clap = { version = "4", features = ["derive"] }
 dotenvy = "0.15"
 figment = { version = "0.10", features = ["env", "toml"] }
 hound = "3.5"
-jsonwebtoken = "9"
+jsonwebtoken = { version = "10.3", default-features = false, features = ["use_pem", "rust_crypto"] }
 sha2 = "0.11"
 # Pure-Rust MP4/M4A parser used for duration probing on the /v1/dictate
 # path, where the desktop helper records AAC-in-MPEG-4. Hound is WAV-only.
@@ -37,7 +37,7 @@ serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "timeout", "limit", "cors"] }
+tower-http = { version = "0.7", features = ["trace", "timeout", "limit", "cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = "2"

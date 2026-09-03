@@ -1,6 +1,9 @@
 version: 2
 
 updates:
+  # One PR per ecosystem per week for minors and patches; majors stay
+  # individual because each one is a session with a changelog. A backlog of
+  # forty single-bump PRs in August 2026 is what this replaces.
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -8,17 +11,29 @@ updates:
       day: monday
       time: "12:00"
       timezone: America/New_York
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     groups:
-      tauri:
-        patterns:
-          - "@tauri-apps/*"
-      frontend-tooling:
-        patterns:
-          - "@vitejs/*"
-          - "vite"
-          - "typescript"
-          - "vitest"
+      npm-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # jsdom 26+ changes accessible-name computation (a note row's preview
+      # no longer counts toward its button name), which breaks a dozen
+      # testing-library queries; held at 25 until those tests are rewritten
+      # against the new rules (tracked in docs/roadmap.md, palier 1).
+      - dependency-name: "jsdom"
+        update-types: ["version-update:semver-major"]
+      # React 19 is a separate migration (tiptap, xyflow, framer-motion peer
+      # ranges), not a dependency bump.
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react-dom"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: cargo
     directory: /src-tauri
@@ -27,7 +42,12 @@ updates:
       day: monday
       time: "12:15"
       timezone: America/New_York
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: cargo
     directory: /june-api
@@ -36,7 +56,12 @@ updates:
       day: monday
       time: "12:30"
       timezone: America/New_York
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: github-actions
     directory: /
@@ -45,4 +70,8 @@ updates:
       day: monday
       time: "12:45"
       timezone: America/New_York
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns:
+          - "*"

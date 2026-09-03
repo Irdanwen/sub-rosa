@@ -1,6 +1,6 @@
 use crate::domain::types::AppError;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{distr::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -3532,9 +3532,11 @@ fn is_safe_mcp_server_name(name: &str) -> bool {
     if name.is_empty() || name.len() > 64 {
         return false;
     }
-    let mut chars = name.chars();
-    let first = chars.next().unwrap();
-    if !first.is_ascii_alphanumeric() {
+    if !name
+        .chars()
+        .next()
+        .is_some_and(|first| first.is_ascii_alphanumeric())
+    {
         return false;
     }
     name.chars()
@@ -3972,8 +3974,11 @@ fn is_safe_tap_segment(segment: &str) -> bool {
     if segment.is_empty() || segment == "." || segment == ".." {
         return false;
     }
-    let mut chars = segment.chars();
-    if !chars.next().unwrap().is_ascii_alphanumeric() {
+    if !segment
+        .chars()
+        .next()
+        .is_some_and(|first| first.is_ascii_alphanumeric())
+    {
         return false;
     }
     segment
@@ -4385,9 +4390,11 @@ fn is_safe_bundle_slug(slug: &str) -> bool {
     if slug.is_empty() || slug.len() > 64 {
         return false;
     }
-    let mut chars = slug.chars();
-    let first = chars.next().unwrap();
-    if !first.is_ascii_alphanumeric() {
+    if !slug
+        .chars()
+        .next()
+        .is_some_and(|first| first.is_ascii_alphanumeric())
+    {
         return false;
     }
     slug.chars()
@@ -5149,7 +5156,7 @@ fn discover_external_skill_names(dir: &Path) -> Vec<String> {
 /// outcome is ambiguous. The probe file is `.june-write-probe-<rand>` and is
 /// always cleaned up.
 fn probe_external_dir_writable(dir: &Path) -> Option<bool> {
-    let suffix: String = rand::thread_rng()
+    let suffix: String = rand::rng()
         .sample_iter(&Alphanumeric)
         .take(12)
         .map(char::from)
@@ -8782,7 +8789,7 @@ fn pick_port() -> Result<u16, AppError> {
 }
 
 fn random_token() -> String {
-    rand::thread_rng()
+    rand::rng()
         .sample_iter(&Alphanumeric)
         .take(43)
         .map(char::from)

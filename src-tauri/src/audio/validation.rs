@@ -366,7 +366,13 @@ pub fn checksum_file(path: &Path) -> Result<String, std::io::Error> {
         }
         hasher.update(&buffer[..read]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    // sha2 0.11 returns a hybrid `Array` with no LowerHex impl; spell the
+    // hex out byte by byte, which is what `{:x}` did for the old GenericArray.
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
 }
 
 #[cfg(test)]

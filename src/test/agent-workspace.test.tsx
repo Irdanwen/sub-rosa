@@ -747,7 +747,10 @@ describe("AgentWorkspace", () => {
       );
     });
 
-    expect(screen.getByText("Bug report")).toBeInTheDocument();
+    // The chip lands in the next editor transaction (tiptap 3.31 dispatches
+    // it after the event handler returns), so wait for it rather than assume
+    // it is synchronous; the assertion that matters is the second one.
+    expect(await screen.findByText("Bug report")).toBeInTheDocument();
     expect(mocks.gatewayRequest).not.toHaveBeenCalledWith("session.create", expect.anything());
   });
 
@@ -5205,8 +5208,13 @@ describe("AgentWorkspace", () => {
         true,
       ),
     );
-    expect(textbox).toHaveTextContent(
-      "/repo-build-pr implement issue JUN-46 and keep this draft edit",
+    // The editor applies the kept draft in its own transaction; under load
+    // (coverage instrumentation, a full suite) it can land a tick after the
+    // submit is observed, so wait for it rather than read it synchronously.
+    await waitFor(() =>
+      expect(textbox).toHaveTextContent(
+        "/repo-build-pr implement issue JUN-46 and keep this draft edit",
+      ),
     );
   });
 
