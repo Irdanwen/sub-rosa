@@ -62,9 +62,12 @@ Legend: `[x]` done and gated · `[~]` partly done, remainder named · `[ ]` open
   first note; the failed gate offers "Try again").
 - [x] 2.5 Un diagnostic qu'on peut joindre (Settings › Reports › Export
   diagnostics: a dated folder, every byte through `redact`).
-- [~] 2.6 Réglages › Stockage. Seven buckets measured; the audio of
+- [x] 2.6 Réglages › Stockage. Seven buckets measured; the audio of
   transcribed notes older than N days can be removed, previewed first.
   The agent runtime's own state is shown, not pruned (it is the runtime's).
+  Closed 2026-09-04 as designed: the agent's workspace is the person's
+  files and its state is its sessions; neither is something the app should
+  offer to delete, so the display is the feature, not a remnant.
 - [x] 2.7 Windows dit ce qu'il n'a pas. `platform_capabilities` is the map;
   the dictation settings read it. Other `isMacLikePlatform()` gates migrate
   as they are touched.
