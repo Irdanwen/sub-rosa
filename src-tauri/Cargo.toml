@@ -58,7 +58,7 @@ hound = "3.5"
 # JPEG encoder it re-encodes to; no default features, so nothing else is pulled
 # in for a dependency tauri already resolves.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "tiff"] }
-rand = "0.9"
+rand = "0.10"
 # Parses podcast feeds so an enclosure can be fetched (ADR-0028). Already in
 # the tree transitively, so pinning it here adds no new crate to the lockfile.
 quick-xml = "0.41"
