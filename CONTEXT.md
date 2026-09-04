@@ -759,7 +759,7 @@ _Avoid_: notes generation, AI summarisation.
 Producing a new image from a text **prompt** (text-to-image), via Venice. The
 user reaches it two ways: an explicit `/image` command (a fast, no-model shot),
 or the assistant calling it as a tool mid-conversation. Distinct from **image
-editing**. See [ADR 0003](docs/adr/0003-image-generation-and-editing-tools.md).
+editing**. See [ADR 0045](docs/adr/0045-image-generation-and-editing-tools.md).
 _Avoid_: rendering, drawing (say **image generation**).
 
 **Image editing**:

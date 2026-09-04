@@ -1,4 +1,8 @@
-# Image generation and editing (fast path + LLM tools)
+# ADR 0045: Image generation and editing (fast path + LLM tools)
+
+> Filed as 0003 in the fork, at the same time as upstream's 0003 (the
+> release-candidate channel). Renumbered to 0045 on 2026-09-04 so each
+> number names one decision; the content is unchanged.
 
 ## Status
 
