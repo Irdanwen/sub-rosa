@@ -1,8 +1,6 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
 import { Agentation } from "agentation";
-import { App } from "./app/App";
-import { MobileApp } from "./app/mobile/MobileApp";
 import { isMobilePlatform } from "./lib/mobile";
 import { installNativeContextMenuGuard } from "./lib/native-context-menu";
 import { replayOnboarding } from "./lib/onboarding";
@@ -67,12 +65,20 @@ if (import.meta.env.DEV) {
 
 // The mobile (iOS/Android) build renders its own shell: bottom tabs and push
 // stacks instead of the desktop sidebar + tab strip. Same IPC, same reducer,
-// same feature components underneath.
+// same feature components underneath. Each shell is its own chunk, so the
+// desktop never parses the phone's screens and the phone never parses the
+// desktop's; the boot curtain in index.html covers the load.
+const App = lazy(() => import("./app/App").then((module) => ({ default: module.App })));
+const MobileApp = lazy(() =>
+  import("./app/mobile/MobileApp").then((module) => ({ default: module.MobileApp })),
+);
 const Shell = isMobilePlatform() ? MobileApp : App;
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <Shell />
+    <Suspense fallback={null}>
+      <Shell />
+    </Suspense>
     {import.meta.env.DEV ? <Agentation /> : null}
   </React.StrictMode>,
 );

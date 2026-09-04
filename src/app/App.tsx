@@ -21,7 +21,7 @@ import { OfflineBanner, useOfflineState } from "../components/notes-list/Offline
 import { startLinkIngest } from "../lib/tauri";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../lib/chat-blocks-nav";
 import { FILM_FROM_NOTE_EVENT } from "../lib/film-from-note";
-import { STUDIO_FILM_NOTE_KEY, STUDIO_TAB_STORAGE_KEY } from "../components/studio/StudioView";
+import { STUDIO_FILM_NOTE_KEY, STUDIO_TAB_STORAGE_KEY } from "../components/studio/studio-keys";
 import { MeetingAmbiguityPrompt } from "../components/calendar/MeetingContext";
 import { linkRecordingToMeeting } from "../lib/calendar-link";
 import type { CalendarEventDto } from "../lib/tauri";
@@ -41,7 +41,6 @@ import type { ReportCategory } from "../components/agent/composer/reportCategory
 import { DictationHistoryView } from "../components/dictation/DictationHistoryView";
 import { FoldersWorkspace } from "../components/folders/FoldersWorkspace";
 import { RoutinesView } from "../components/routines/RoutinesView";
-import { StudioView } from "../components/studio/StudioView";
 import { MoveNoteToFolderDialog } from "../components/folders/MoveNoteToFolderDialog";
 import { MoveSessionToProjectDialog } from "../components/folders/MoveSessionToProjectDialog";
 import { NoteEditor } from "../components/note-editor/NoteEditor";
@@ -51,7 +50,8 @@ import type { GlobalRecorderDemoApi } from "../lib/global-recorder-demo";
 import type { UpdateCardDemoApi } from "../lib/update-card-demo";
 import { NotesList, type NotesListHandle } from "../components/notes-list/NotesList";
 import { PermissionBanner } from "../components/permissions/PermissionBanner";
-import { AppSettings, type SettingsTab } from "../components/settings/AppSettings";
+import type { SettingsTab } from "../components/settings/AppSettings";
+import { AppSettings, StudioView } from "./lazy-views";
 import { Sidebar, type SidebarView } from "../components/sidebar/Sidebar";
 import { TabBar, type TabItem } from "../components/tabs/TabBar";
 import { defaultNav, makeTabId, navEquals, type Tab, type TabNav } from "./tabs/tabs";

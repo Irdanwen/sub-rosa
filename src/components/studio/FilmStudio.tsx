@@ -78,7 +78,7 @@ import { Darkroom } from "./Darkroom";
 import { Switch } from "../ui/Switch";
 import { NotePicker } from "./NotePicker";
 import { StudioField } from "./controls";
-import { STUDIO_FILM_NOTE_KEY } from "./StudioView";
+import { STUDIO_FILM_NOTE_KEY } from "./studio-keys";
 
 /** Which engines this user likes to shoot on. See the effect that reads it. */
 const FILM_MODELS_KEY = "os-june:film-models";

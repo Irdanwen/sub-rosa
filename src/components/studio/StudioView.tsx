@@ -3,6 +3,7 @@
 // and prices all come from the merged catalog — nothing here hardcodes what
 // a backend can do today.
 
+import { STUDIO_TAB_STORAGE_KEY } from "./studio-keys";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import type { ChainShot } from "../../lib/studio/chain";
 import { EmptyState } from "../ui/EmptyState";
@@ -24,15 +25,6 @@ const WorkflowStudio = lazy(() =>
 
 type StudioTab = "film" | "image" | "video" | "audio" | "bible" | "assemble" | "workflows";
 
-export const STUDIO_TAB_STORAGE_KEY = "os-june:studio-tab";
-/**
- * A note the shell asked the Film tab to open, left here rather than passed.
- *
- * The Studio is mounted lazily by the shell, so a prop would have to be
- * threaded through a view that may not exist yet. One key, read once and
- * cleared, is the smaller thing.
- */
-export const STUDIO_FILM_NOTE_KEY = "os-june:studio-film-note";
 const TAB_STORAGE_KEY = STUDIO_TAB_STORAGE_KEY;
 
 function initialTab(): StudioTab {

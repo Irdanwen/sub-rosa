@@ -36,6 +36,20 @@ export default defineConfig({
         "agent-hud": fileURLToPath(new URL("./agent-hud.html", import.meta.url)),
         "meeting-hud": fileURLToPath(new URL("./meeting-hud.html", import.meta.url)),
       },
+      output: {
+        // Vendor code that changes on its own schedule sits in its own
+        // chunk, so an app release does not make the webview re-parse the
+        // editor or the animation runtime, and the note list can paint
+        // before the canvas libraries are even requested.
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (/[\\/](prosemirror-[a-z-]+|@tiptap|linkifyjs)[\\/]/.test(id)) return "editor";
+          if (/[\\/](framer-motion|motion-dom|motion-utils)[\\/]/.test(id)) return "motion";
+          if (/[\\/](@xyflow|d3-[a-z-]+)[\\/]/.test(id)) return "flow";
+          if (/[\\/](react-dom|react|scheduler)[\\/]/.test(id)) return "react";
+          return undefined;
+        },
+      },
     },
   },
   test: {
