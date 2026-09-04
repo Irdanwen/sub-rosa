@@ -82,7 +82,8 @@ Legend: `[x]` done and gated · `[~]` partly done, remainder named · `[ ]` open
   place (`biome-warnings.json`, `pnpm check:ratchet` in CI): 631 warnings
   across 27 rules may only go down. Promote a rule to `error` at zero.
 - [ ] 3.4 Le clavier et le focus, une seule fois.
-- [ ] 3.5 Charger ce qu'on regarde (measure first).
+- [x] 3.5 Charger ce qu'on regarde (measure first).
+  Done 2026-09-04. Measured first: the root chunk carried 2.3 MB minified, of which the editor (prosemirror + tiptap), the animation runtime and the flow canvas were the largest vendor parts. Now `src/main.tsx` loads the desktop and phone shells as separate chunks, `src/app/lazy-views.tsx` loads Settings and the Studio the first time they open, and `vite.config.ts` splits vendor code into `editor`, `motion`, `flow` and `react` chunks that only change on their own schedule.
 - [x] 3.6 Les invariants Rust deviennent des specs (six files,
   `spec-guards.test.ts`).
 - [~] 3.7 La documentation se remet d'accord avec le produit. ADR-0040,
@@ -102,8 +103,8 @@ Legend: `[x]` done and gated · `[~]` partly done, remainder named · `[ ]` open
   for permission when a render is queued).
 - [x] 4.5 Un modèle d'extraction pour la mémoire (Settings › Memory).
 - [x] 4.6 L'ADR Dictation (ADR-0041).
-- [ ] 4.7 Mesurer le démarrage avant d'y toucher.
-
+- [x] 4.7 Mesurer le démarrage avant d'y toucher.
+  Done 2026-09-04. `diagnostics::mark` records launch milestones (run, database open, migrations, sidecar setup) in the log and in the diagnostics report. Measured, then touched: `schema_migrations` (in `db/migrations.rs`) records each file with its checksum, so a launch replays only files it has not seen; the `ensure_column` catch-ups still run.
 ## Ce qui rend Sub Rosa singulier (au-delà du plan)
 
 Two features the plan did not list, chosen because each one is a claim the

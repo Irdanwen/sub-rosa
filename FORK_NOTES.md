@@ -831,6 +831,25 @@ liste exacte des passages envoyés sous la réponse
   tous les passages venaient de la même note ; la liste « What was sent »
   est la vérité par requête.
 
+## Démarrage mesuré, registre de schéma, chunks (2026-09-04)
+
+- `src-tauri/src/diagnostics.rs` : `mark(label)` / `startup_marks()` ; jalons
+  `run` (lib.rs), `database open` et `migrations` (db/migrations.rs),
+  `sidecar setup` (lib.rs). Ils sortent dans le log et dans le rapport de
+  diagnostic (« ## Startup »).
+- `src-tauri/src/db/migrations.rs` : table `schema_migrations` (nom, checksum
+  SHA-256 du fichier, date). `replay` / `replay_statements` sautent un fichier
+  déjà enregistré avec le même checksum ; les `ensure_column` continuent de
+  tourner à chaque lancement. Test : deux passes, la seconde ne rejoue rien.
+- `src-tauri/src/db/repositories/passages.rs` : module enfant de
+  `repositories` (accès à `pool`), pour que le fichier du store ne grossisse
+  plus (cliquet de taille).
+- `src/main.tsx` : les deux shells sont chargés paresseusement (chunks
+  séparés) ; `src/app/lazy-views.tsx` : Réglages et Studio à la demande ;
+  `src/components/studio/studio-keys.ts` : les clés de stockage du Studio
+  sorties de la vue pour que le shell ne l'importe plus statiquement ;
+  `vite.config.ts` : `manualChunks` `editor` / `motion` / `flow` / `react`.
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.
