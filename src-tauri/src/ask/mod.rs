@@ -75,6 +75,54 @@ pub struct AskAnswer {
     pub prompt_version: u32,
 }
 
+/// Words in French and English that carry no retrieval signal. A question
+/// is mostly these; the passages are found by what is left.
+const STOP_WORDS: &[&str] = &[
+    "the", "and", "for", "are", "was", "were", "what", "when", "where", "who", "why", "how",
+    "which", "did", "does", "has", "have", "had", "about", "with", "that", "this", "from", "into",
+    "our", "you", "your", "they", "them", "their", "there", "been", "will", "would", "should",
+    "could", "can", "say", "said", "les", "des", "une", "est", "sont", "que", "qui", "quoi",
+    "quand", "pourquoi", "comment", "combien", "quel", "quelle", "quels", "quelles", "dans", "sur",
+    "avec", "pour", "par", "pas", "nous", "vous", "ils", "elles", "leur", "leurs", "notre", "nos",
+    "votre", "vos", "mon", "mes", "ton", "tes", "ses", "son", "cette", "ces", "cet", "était",
+    "été", "être", "avoir", "fait", "faire", "dit", "aussi", "mais", "donc", "alors", "comme",
+    "plus", "moins", "très", "tout", "tous", "toute", "toutes", "ont", "avons", "avez", "sommes",
+    "êtes", "suis",
+];
+
+/// The words of a question worth searching for: three letters or more,
+/// lower-cased, stop words dropped, order kept, duplicates removed.
+pub fn content_terms(question: &str) -> Vec<String> {
+    let mut terms: Vec<String> = Vec::new();
+    for raw in question.split(|c: char| !c.is_alphanumeric()) {
+        let term = raw.to_lowercase();
+        if term.chars().count() < 3 || STOP_WORDS.contains(&term.as_str()) {
+            continue;
+        }
+        if !terms.contains(&term) {
+            terms.push(term);
+        }
+    }
+    terms
+}
+
+/// An FTS5 expression that matches a row containing *any* of the terms.
+/// bm25 then ranks rows that contain more of them higher, which is what a
+/// question wants; the all-terms query the palette uses would find nothing
+/// for a six-word question.
+pub fn passages_match(terms: &[String]) -> Option<String> {
+    if terms.is_empty() {
+        return None;
+    }
+    Some(
+        terms
+            .iter()
+            .map(|term| format!("\"{term}\""))
+            .collect::<Vec<_>>()
+            .join(" OR "),
+    )
+}
+
 /// The numbered passages, as the model sees them.
 pub fn build_user_prompt(question: &str, sources: &[AskSource]) -> String {
     let mut out = String::new();
@@ -138,7 +186,11 @@ pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAn
         return Err(AppError::new("ask_empty", "Ask something first."));
     }
     let repos = crate::commands::repositories(&app).await?;
-    let snippets = repos.search_note_context(&question, PASSAGES).await?;
+    let terms = content_terms(&question);
+    let snippets = match passages_match(&terms) {
+        Some(fts) => repos.retrieve_passages(&fts, &terms, PASSAGES).await?,
+        None => Vec::new(),
+    };
     let sent: Vec<AskSource> = snippets
         .into_iter()
         .enumerate()
@@ -212,7 +264,7 @@ pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAn
 
 #[cfg(test)]
 mod tests {
-    use super::{build_user_prompt, parse_citations, AskSource};
+    use super::{build_user_prompt, content_terms, parse_citations, passages_match, AskSource};
 
     fn source(index: usize, id: &str) -> AskSource {
         AskSource {
@@ -240,6 +292,19 @@ mod tests {
             parse_citations("no citation here [x] [12a]", &sent).0.len(),
             0
         );
+    }
+
+    #[test]
+    fn a_question_is_reduced_to_its_content_words_and_matched_as_any_of_them() {
+        let terms =
+            content_terms("Quand est-ce qu'on migre le cluster vers Hetzner, et pourquoi ?");
+        assert_eq!(terms, vec!["migre", "cluster", "vers", "hetzner"]);
+        assert_eq!(
+            passages_match(&terms).as_deref(),
+            Some("\"migre\" OR \"cluster\" OR \"vers\" OR \"hetzner\"")
+        );
+        assert!(passages_match(&content_terms("What is it?")).is_none());
+        assert_eq!(content_terms("Budget, budget, BUDGET"), vec!["budget"]);
     }
 
     #[test]
