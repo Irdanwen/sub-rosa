@@ -64,7 +64,13 @@ export function currentLocale(): Locale {
   return current;
 }
 
-/** Apply a choice: store it, switch, and tell the root to re-render. */
+/**
+ * Apply a choice: store it and switch. Copy built at module scope (a table
+ * of labels, the welcome page's points) was translated when its module
+ * loaded and does not follow a switch, so the settings that offer the
+ * choice reload the page after calling this; the root's re-render covers
+ * everything that reads `t()` in render.
+ */
 export function setLocaleChoice(choice: LocaleChoice) {
   try {
     localStorage.setItem(LOCALE_STORAGE_KEY, choice);
@@ -72,6 +78,14 @@ export function setLocaleChoice(choice: LocaleChoice) {
     // Unstorable: the choice lasts this session.
   }
   applyLocale(resolveLocale(choice));
+}
+
+/** Store a choice, then reload so every sentence, module-scope ones included, follows. */
+export function chooseLocaleAndReload(choice: LocaleChoice) {
+  setLocaleChoice(choice);
+  if (typeof window !== "undefined" && typeof window.location?.reload === "function") {
+    window.location.reload();
+  }
 }
 
 /** Switch without storing (the root's boot, tests). */

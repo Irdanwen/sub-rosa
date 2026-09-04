@@ -64,7 +64,10 @@ is a visible English sentence, never a broken key.
 
 - Copy specs still bind (sentence case, one voice, no typographic dashes)
   and bind the French too.
-- A component that caches a translated sentence in state must re-render
-  on a switch; the root's re-mount covers every component that reads
-  `t()` in render, which is nearly all of them.
+- Some copy is built at module scope (a table of rows with labels, the
+  welcome page's points) and is translated when its module loads. Two
+  things follow: `src/lib/i18n-boot.ts` is the shell's first import, so
+  the language is decided before any component module evaluates; and a
+  switch in Settings reloads the page (`chooseLocaleAndReload`) rather
+  than only re-mounting the shell, so module-scope copy follows too.
 - Adding a language is a JSON file and one entry in `SUPPORTED_LOCALES`.

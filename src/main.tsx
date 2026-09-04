@@ -1,7 +1,8 @@
+// First, before any component module evaluates: see i18n-boot.
+import "./lib/i18n-boot";
 import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
 import { Agentation } from "agentation";
-import { initLocale } from "./lib/i18n";
 import { useLocaleVersion } from "./lib/i18n-react";
 import { isMobilePlatform } from "./lib/mobile";
 import { installNativeContextMenuGuard } from "./lib/native-context-menu";
@@ -27,8 +28,6 @@ if (import.meta.env.DEV) {
   window.june = { replayOnboarding };
 }
 
-// The language before the first render, so no sentence flips after paint.
-initLocale();
 initTheme();
 initBrand();
 installNativeContextMenuGuard();

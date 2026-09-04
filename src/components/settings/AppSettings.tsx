@@ -1,4 +1,4 @@
-import { t, type LocaleChoice, localeChoice, setLocaleChoice } from "../../lib/i18n";
+import { t, type LocaleChoice, localeChoice, chooseLocaleAndReload } from "../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
 import { PRODUCT_NAME } from "../../lib/branding";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
@@ -920,7 +920,7 @@ export function AppSettings({
                         options={UI_LANGUAGE_OPTIONS}
                         onValueChange={(next) => {
                           setLanguage(next);
-                          setLocaleChoice(next);
+                          chooseLocaleAndReload(next);
                         }}
                       />
                     </div>

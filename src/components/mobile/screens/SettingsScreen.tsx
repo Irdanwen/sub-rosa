@@ -1,4 +1,4 @@
-import { t, type LocaleChoice, localeChoice, setLocaleChoice } from "../../../lib/i18n";
+import { t, type LocaleChoice, localeChoice, chooseLocaleAndReload } from "../../../lib/i18n";
 import { getVersion } from "@tauri-apps/api/app";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useEffect, useState } from "react";
@@ -195,7 +195,7 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
                   data-active={language === option.id ? "true" : undefined}
                   onClick={() => {
                     setLanguage(option.id);
-                    setLocaleChoice(option.id);
+                    chooseLocaleAndReload(option.id);
                   }}
                 >
                   {option.label}
