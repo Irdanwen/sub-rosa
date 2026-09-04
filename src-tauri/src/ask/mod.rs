@@ -66,6 +66,55 @@ pub struct AskNotesRequest {
     /// "Ask this note": retrieval kept to one note, several passages of it.
     #[serde(default)]
     pub note_id: Option<String>,
+    /// The questions and answers before this one in the same panel, so a
+    /// follow-up ("and who decided?") reads in context. Passages are
+    /// retrieved for the new question alone and sent once.
+    #[serde(default)]
+    pub history: Vec<AskTurn>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AskTurn {
+    pub question: String,
+    pub answer: String,
+}
+
+/// Turns kept from a long thread: the last few, so the prompt stays a
+/// prompt and not a transcript of the panel.
+const HISTORY_TURNS: usize = 4;
+
+/// The terms to retrieve with: the question's own content words, and when
+/// a follow-up has fewer than two of them ("and who decided?"), the
+/// previous question's as well, since that is what it is about.
+pub fn retrieval_terms(question: &str, history: &[AskTurn]) -> Vec<String> {
+    let mut terms = content_terms(question);
+    if terms.len() < 2 {
+        if let Some(previous) = history.last() {
+            for term in content_terms(&previous.question) {
+                if !terms.contains(&term) {
+                    terms.push(term);
+                }
+            }
+        }
+    }
+    terms
+}
+
+/// The conversation as the model sees it: the system rules, the earlier
+/// turns without their passages, then the passages and the new question.
+pub fn build_messages(user: &str, history: &[AskTurn]) -> Vec<serde_json::Value> {
+    let mut messages = vec![serde_json::json!({ "role": "system", "content": SYSTEM_PROMPT })];
+    let start = history.len().saturating_sub(HISTORY_TURNS);
+    for turn in &history[start..] {
+        messages.push(serde_json::json!({
+            "role": "user",
+            "content": format!("Question: {}", turn.question.trim())
+        }));
+        messages.push(serde_json::json!({ "role": "assistant", "content": turn.answer.trim() }));
+    }
+    messages.push(serde_json::json!({ "role": "user", "content": user }));
+    messages
 }
 
 /// The answers running right now, each with the handle that stops it. A
@@ -335,7 +384,7 @@ pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAn
         None => None,
     };
     let repos = crate::commands::repositories(&app).await?;
-    let terms = content_terms(&question);
+    let terms = retrieval_terms(&question, &request.history);
     let scope = request
         .note_id
         .as_deref()
@@ -397,10 +446,7 @@ pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAn
     let answer = crate::egress_ledger::scoped("ask", single_note, async {
         let response = june_api::proxy_agent_chat_completions(serde_json::json!({
             "model": crate::providers::generation_model(),
-            "messages": [
-                { "role": "system", "content": SYSTEM_PROMPT },
-                { "role": "user", "content": user }
-            ],
+            "messages": build_messages(&user, &request.history),
             "temperature": TEMPERATURE,
             "max_tokens": MAX_TOKENS,
             "stream": streamed
@@ -431,7 +477,10 @@ pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAn
 
 #[cfg(test)]
 mod tests {
-    use super::{build_user_prompt, content_terms, parse_citations, passages_match, AskSource};
+    use super::{
+        build_messages, build_user_prompt, content_terms, parse_citations, passages_match,
+        retrieval_terms, AskSource, AskTurn,
+    };
 
     fn source(index: usize, id: &str) -> AskSource {
         AskSource {
@@ -472,6 +521,31 @@ mod tests {
         );
         assert!(passages_match(&content_terms("What is it?")).is_none());
         assert_eq!(content_terms("Budget, budget, BUDGET"), vec!["budget"]);
+    }
+
+    #[test]
+    fn a_follow_up_borrows_the_previous_question_terms_and_the_thread_is_sent_in_order() {
+        let history = vec![AskTurn {
+            question: "Quand migre-t-on le cluster ?".into(),
+            answer: "Lundi [1].".into(),
+        }];
+        assert_eq!(
+            retrieval_terms("Et qui décide ?", &history),
+            vec!["décide", "migre", "cluster"]
+        );
+        assert_eq!(
+            retrieval_terms("Quel budget pour Hetzner ?", &history),
+            vec!["budget", "hetzner"]
+        );
+        let messages = build_messages("Passages…", &history);
+        assert_eq!(messages.len(), 4);
+        assert_eq!(messages[1]["role"], "user");
+        assert_eq!(
+            messages[1]["content"],
+            "Question: Quand migre-t-on le cluster ?"
+        );
+        assert_eq!(messages[2]["role"], "assistant");
+        assert_eq!(messages[3]["content"], "Passages…");
     }
 
     #[test]

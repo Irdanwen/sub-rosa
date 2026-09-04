@@ -258,6 +258,7 @@ describe("desktop journeys", () => {
         "When is the migration?",
         expect.any(String),
         undefined,
+        [],
       ),
     );
     const answer = await screen.findByRole("dialog", { name: "Answer from your notes" });

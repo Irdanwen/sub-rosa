@@ -38,7 +38,7 @@ describe("AskNoteOverlay", () => {
     fireEvent.change(input, { target: { value: "When is it?" } });
     fireEvent.submit(input.closest("form") as HTMLFormElement);
     await waitFor(() =>
-      expect(mocks.askNotes).toHaveBeenCalledWith("When is it?", expect.any(String), "n1"),
+      expect(mocks.askNotes).toHaveBeenCalledWith("When is it?", expect.any(String), "n1", []),
     );
     expect(await screen.findByText(/Monday/)).toBeInTheDocument();
   });

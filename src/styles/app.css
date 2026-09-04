@@ -24525,3 +24525,33 @@ input:focus-visible,
   opacity: 0.5;
   cursor: default;
 }
+
+/* A thread in the answer panel: earlier turns folded, the follow-up below. */
+.ask-panel-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ask-panel-turn summary {
+  cursor: pointer;
+  list-style: none;
+  opacity: 0.7;
+}
+
+.ask-panel-turn summary::-webkit-details-marker {
+  display: none;
+}
+
+.ask-panel-earlier {
+  margin: 4px 0 8px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+  white-space: pre-wrap;
+}
+
+.ask-panel-follow-up {
+  margin-top: 4px;
+}

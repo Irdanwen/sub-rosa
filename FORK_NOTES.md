@@ -831,6 +831,15 @@ liste exacte des passages envoyés sous la réponse
   `ask_cancel(requestId)` arrête le flux (registre `RUNNING` + `Notify`,
   même forme que `note_ai`). Le panneau ferme = annulation.
 
+### Questions de suite (2026-09-04)
+
+- `AskNotesRequest.history: Vec<AskTurn>` : le panneau garde le fil
+  (question, réponse) et l'envoie avec la question suivante ;
+  `build_messages` reconstitue la conversation (4 derniers tours, sans
+  passages), `retrieval_terms` emprunte les mots de la question précédente
+  quand la suite en a moins de deux (« et qui décide ? »). Le panneau
+  replie les tours précédents (`<details>`) et propose « Ask a follow-up… ».
+
 ### Portée à une note (2026-09-04)
 
 - `AskNotesRequest.note_id` : « Ask this note » depuis l'en-tête de la note

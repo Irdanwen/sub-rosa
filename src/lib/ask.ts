@@ -27,12 +27,18 @@ export type AskDeltaEvent = { requestId: string; phase: "delta"; text: string };
  * request id the words arrive as ASK_EVENT deltas while the whole answer,
  * citations resolved, is still the returned value.
  */
+/** One earlier question and its answer, for a follow-up. */
+export type AskTurnDto = { question: string; answer: string };
+
 export async function askNotes(
   question: string,
   requestId?: string,
   noteId?: string,
+  history: AskTurnDto[] = [],
 ): Promise<AskAnswerDto> {
-  return invoke<AskAnswerDto>("ask_notes", { request: { question, requestId, noteId } });
+  return invoke<AskAnswerDto>("ask_notes", {
+    request: { question, requestId, noteId, history },
+  });
 }
 
 /** Stop an answer on the way; a request already finished is not an error. */

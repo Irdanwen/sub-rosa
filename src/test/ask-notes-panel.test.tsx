@@ -68,7 +68,7 @@ describe("AskNotesPanel", () => {
     const view = render(
       <AskNotesPanel question="Where is it?" onOpenNote={() => {}} onClose={() => {}} />,
     );
-    expect(mocks.askNotes).toHaveBeenCalledWith("Where is it?", expect.any(String), undefined);
+    expect(mocks.askNotes).toHaveBeenCalledWith("Where is it?", expect.any(String), undefined, []);
     const requestId = mocks.askNotes.mock.calls[0][1] as string;
     await waitFor(() => expect(mocks.listeners.has("june://ask")).toBe(true));
     act(() => {
@@ -117,6 +117,7 @@ describe("AskNotesPanel", () => {
       "When is the migration?",
       expect.any(String),
       undefined,
+      [],
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Budget review/ }));
@@ -125,6 +126,33 @@ describe("AskNotesPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "What was sent (3 passages)" }));
     expect(screen.getByText("Offsite")).toBeInTheDocument();
     expect(screen.getByText("unused…")).toBeInTheDocument();
+  });
+
+  it("asks a follow-up with the earlier turn as its thread, and folds it above", async () => {
+    const first = {
+      answer: "Monday [1].",
+      citations: [{ index: 1, noteId: "n1", title: "Infra sync", kind: "note", excerpt: "Monday" }],
+      sent: [{ index: 1, noteId: "n1", title: "Infra sync", kind: "note", excerpt: "Monday" }],
+      invented: [],
+      promptVersion: 1,
+    };
+    const second = { ...first, answer: "The infra lead decided [1]." };
+    mocks.askNotes.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    render(<AskNotesPanel question="When is it?" onOpenNote={() => {}} onClose={() => {}} />);
+    await screen.findByText(/Monday/);
+    const input = screen.getByRole("textbox", { name: "Follow-up question" });
+    fireEvent.change(input, { target: { value: "And who decided?" } });
+    fireEvent.submit(input.closest("form") as HTMLFormElement);
+    await waitFor(() =>
+      expect(mocks.askNotes).toHaveBeenLastCalledWith(
+        "And who decided?",
+        expect.any(String),
+        undefined,
+        [{ question: "When is it?", answer: "Monday [1]." }],
+      ),
+    );
+    expect(await screen.findByText(/infra lead decided/)).toBeInTheDocument();
+    expect(screen.getByText("When is it?")).toBeInTheDocument();
   });
 
   it("names a citation the model invented instead of hiding it", async () => {

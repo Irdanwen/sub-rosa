@@ -10,6 +10,7 @@ import {
   type AskDeltaEvent,
   askCancel,
   askNotes,
+  type AskTurnDto,
 } from "../../lib/ask";
 import { useModalFocus } from "../../lib/modal-focus";
 
@@ -64,7 +65,7 @@ export function answerParts(
  * is the point: a person sees what left the machine for this answer.
  */
 export function AskNotesPanel({
-  question,
+  question: initialQuestion,
   noteId,
   onOpenNote,
   onClose,
@@ -75,16 +76,33 @@ export function AskNotesPanel({
   onOpenNote: (noteId: string) => void;
   onClose: () => void;
 }) {
+  // The question being answered now; a follow-up replaces it and moves the
+  // pair before it into the thread, which travels with the next request.
+  const [question, setQuestion] = useState(initialQuestion);
+  const [thread, setThread] = useState<AskTurnDto[]>([]);
+  const [followUp, setFollowUp] = useState("");
   const [result, setResult] = useState<AskAnswerDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSent, setShowSent] = useState(false);
   // The words as they arrive, shown until the whole answer replaces them.
   const [partial, setPartial] = useState("");
+
+  function askFollowUp() {
+    const next = followUp.trim();
+    if (!next || !result) return;
+    setThread((turns) => [...turns, { question, answer: result.answer }]);
+    setFollowUp("");
+    setShowSent(false);
+    setQuestion(next);
+  }
   const panelRef = useRef<HTMLElement>(null);
   // Focus in, Escape closes, focus back (spec/modal-focus.md). The panel
   // itself takes focus first so a screen reader lands on the question.
   useModalFocus(panelRef, { onClose, initialFocusSelector: ".ask-panel" });
 
+  // `thread` is read here but changes only together with `question`, in
+  // askFollowUp, so the question is the dependency that matters.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
     let cancelled = false;
     let settled = false;
@@ -99,7 +117,7 @@ export function AskNotesPanel({
       if (cancelled || event.payload.requestId !== requestId) return;
       if (event.payload.phase === "delta") setPartial((text) => text + event.payload.text);
     });
-    askNotes(question, requestId, noteId)
+    askNotes(question, requestId, noteId, thread)
       .then((answer) => {
         settled = true;
         if (!cancelled) setResult(answer);
@@ -127,7 +145,16 @@ export function AskNotesPanel({
       tabIndex={-1}
     >
       <header className="ask-panel-header">
-        <p className="ask-panel-question">{question}</p>
+        <div className="ask-panel-thread">
+          {thread.map((turn, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: turns are appended, never reordered
+            <details className="ask-panel-turn" key={index}>
+              <summary className="ask-panel-question">{turn.question}</summary>
+              <p className="ask-panel-earlier">{turn.answer}</p>
+            </details>
+          ))}
+          <p className="ask-panel-question">{question}</p>
+        </div>
         <button type="button" className="ask-panel-close" aria-label="Close" onClick={onClose}>
           <IconCrossSmall size={14} aria-hidden />
         </button>
@@ -182,6 +209,23 @@ export function AskNotesPanel({
           >
             {showSent ? "Hide what was sent" : `What was sent (${result.sent.length} passages)`}
           </button>
+          <form
+            className="ask-panel-follow-up"
+            onSubmit={(event) => {
+              event.preventDefault();
+              askFollowUp();
+            }}
+          >
+            <input
+              type="text"
+              className="ask-prompt-input"
+              value={followUp}
+              onChange={(event) => setFollowUp(event.currentTarget.value)}
+              placeholder="Ask a follow-up…"
+              aria-label="Follow-up question"
+              autoComplete="off"
+            />
+          </form>
           {showSent ? (
             <ol className="ask-panel-sent">
               {result.sent.map((source) => (
