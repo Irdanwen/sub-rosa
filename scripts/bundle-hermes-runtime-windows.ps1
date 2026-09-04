@@ -189,7 +189,7 @@ function Get-Tarball {
     Log "no GITHUB_TOKEN in the environment: downloading anonymously, which is rate limited"
   }
 
-  $delays = @(0, 5, 15, 45, 90)
+  $delays = @(0, 5, 15, 45, 90, 180, 300)
   for ($attempt = 0; $attempt -lt $delays.Count; $attempt++) {
     if ($delays[$attempt] -gt 0) {
       Log "retrying the download in $($delays[$attempt])s (attempt $($attempt + 1) of $($delays.Count))"

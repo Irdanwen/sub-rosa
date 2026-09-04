@@ -180,7 +180,9 @@ fetch_tarball() {
   fi
 
   attempt=1
-  for delay in 0 5 15 45 90; do
+  # A shared runner shares its address with many others; a 429 from the
+  # tarball host can last minutes, so the tail of this list is long.
+  for delay in 0 5 15 45 90 180 300; do
     [ "$delay" -eq 0 ] || { log "retrying the download in ${delay}s (attempt $attempt)"; sleep "$delay"; }
     if [ -n "$auth_args" ]; then
       curl -LsSf --header "Authorization: Bearer $token" "$url" -o "$dest" && return 0
