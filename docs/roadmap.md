@@ -101,7 +101,8 @@ Legend: `[x]` done and gated · `[~]` partly done, remainder named · `[ ]` open
 
 ## Palier 4 · Après, et seulement après
 
-- [ ] 4.1 Le français, en entier ou pas (after 3.2, strictly).
+- [x] 4.1 Le français, en entier ou pas (after 3.2, strictly).
+  Done 2026-09-05 (ADR-0047). The English sentence is the key (`t("…")`, `src/lib/i18n.ts`); a codemod over the AST wrapped 1,800 sites and a hand pass rewrote the mixed runs into templates; `src/locales/fr.json` carries every sentence, backend error literals included (`rust-messages.mjs` + `messageFromError`), and two tests gate it: the catalog (complete, placeholders intact) and the guard (no bare copy left outside `t()`). Language in Settings on both shells, applied before the first render; dates and numbers follow through `intlLocale()`. Documented limit: a backend message built with `format!` stays English.
 - [ ] 4.2 L'extension de partage iOS.
 - [x] 4.3 Le téléphone règle ce que le poste règle. Privacy, Archive and
   About reached the phone by reusing the desktop sections. Open: Models,

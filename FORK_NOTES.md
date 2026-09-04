@@ -945,6 +945,27 @@ liste exacte des passages envoyés sous la réponse
 - Tests : `tests/note_passages.rs`, tests unitaires dans `semantic.rs`,
   `src/test/semantic-ask-card.test.tsx`.
 
+## L'app dans la langue de la personne (2026-09-05, ADR-0047)
+
+- `src/lib/i18n.ts` : `t(sentence, vars)`, la phrase anglaise est la clé ;
+  `initLocale` / `setLocaleChoice` / `intlLocale` ; `src/lib/i18n-react.ts`
+  (`useLocaleVersion`, le shell est re-monté au changement). Catalogues :
+  `src/locales/en.json` (liste), `fr.json` (complet), `backend-messages.json`
+  (littéraux `AppError::new`, passés par `messageFromError`).
+- Outils : `scripts/i18n/codemod.mjs` (JSX texte, runs simples, attributs de
+  copie), `literals.mjs` (propriétés `label:`/`title:`…, sinks `setStatus`…),
+  `extract.mjs` (`pnpm i18n:extract` / `i18n:check`, en CI),
+  `rust-messages.mjs`. Ces deux codemods à sec = le garde
+  `src/test/i18n-guard.test.mjs` ; le catalogue = `i18n-catalog.test.ts`.
+- Réglage Langue : `appearance-options.tsx` (desktop, sorti d'AppSettings
+  pour le cliquet) + `mobile/screens/SettingsScreen.tsx`.
+- Pièges : `JsxText.getText()` mange les espaces de tête (utiliser
+  `getFullText`) ; les entités (`&quot;`) d'un attribut arrivent brutes ;
+  `toLocale*String(undefined)` doit devenir `intlLocale()` ; pas de types
+  node dans tsconfig (les tests qui lancent node sont en `.test.mjs`).
+- Limite documentée : un message Rust construit par `format!` reste en
+  anglais.
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.
