@@ -88,10 +88,12 @@ Legend: `[x]` done and gated · `[~]` partly done, remainder named · `[ ]` open
   Done 2026-09-04. Measured first: the root chunk carried 2.3 MB minified, of which the editor (prosemirror + tiptap), the animation runtime and the flow canvas were the largest vendor parts. Now `src/main.tsx` loads the desktop and phone shells as separate chunks, `src/app/lazy-views.tsx` loads Settings and the Studio the first time they open, and `vite.config.ts` splits vendor code into `editor`, `motion`, `flow` and `react` chunks that only change on their own schedule.
 - [x] 3.6 Les invariants Rust deviennent des specs (six files,
   `spec-guards.test.ts`).
-- [~] 3.7 La documentation se remet d'accord avec le produit. ADR-0040,
+- [x] 3.7 La documentation se remet d'accord avec le produit. ADR-0040,
   ADR-0041, ADR-0042, addendum 0009, this file, seven CONTEXT.md terms and
-  the release-channel term fixed. Open: the 0003 collision, the orphan
-  image ADR, the ADR-0011 addendum.
+  the release-channel term fixed. Done 2026-09-04: the 0003 collision is
+  resolved (the fork's image ADR is 0045, indexed, superseded with a line
+  to the media MCP) and ADR-0011 carries its addendum (void since
+  ADR-0029). Gate: `ls docs/adr | cut -d- -f1 | sort | uniq -d` is empty.
 
 ## Palier 4 · Après, et seulement après
 

@@ -6,8 +6,14 @@
 
 ## Status
 
-proposed - grill-with-docs design for JUN-129 follow-on; implementation phased
-(Phase A first).
+superseded (2026-09-04). Phase A landed as described below (metered image
+generation through `ImageService`). Phases B and C were never shipped in
+this form: in Sub Rosa the agent generates and edits images through the
+`june_media` MCP toolset (`src-tauri/src/hermes/june_media_mcp.py`), and the Studio's own
+image tools are the user-facing surface. Kept for the reasoning; not a plan.
+
+Originally: proposed - grill-with-docs design for JUN-129 follow-on;
+implementation phased (Phase A first).
 
 Landed ahead of the phases: **image generation is now metered** (this PR). It
 runs through a `june_services::ImageService` (authorize hold -> generate ->

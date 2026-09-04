@@ -314,3 +314,14 @@ hard cap, and human phase gates per
 [ADR-0029](0029-film-production-is-local.md). The transient-error tolerance
 this ADR argued for was carried across to the local run engine, which is the
 only part of it that still has something to supervise.
+
+## Addendum (2026-09-04): void since ADR-0029
+
+[ADR-0029](0029-film-production-is-local.md) removed Videomaker and with it
+the server-side guardian this decision describes; a film is produced
+locally since v1.46.0, and there is no run to supervise from a server. The
+follow-ups listed above are void, not deferred: the escalation (a native
+image extractor) is named in the roadmap's refusals as deliberately not
+built, because the need is not measured. The decision stays recorded for
+the reasoning it carries about deterministic supervision over an in-app
+agent, which ADR-0029's local pipeline kept.
