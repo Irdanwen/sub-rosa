@@ -132,4 +132,19 @@ jobs:
       # The frontend ships inside the app bundle, so a vulnerable runtime
       # dependency is shipped code, not a build-time detail.
       - name: Audit production dependencies
-        run: pnpm audit --prod --audit-level moderate
+        # The registry's audit endpoint times out now and then. A timeout is
+        # retried; a finding is not.
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm audit --prod --audit-level moderate 2>&1 | tee audit.log; then
+              exit 0
+            fi
+            if grep -qE "FetchError|ERR_SOCKET_TIMEOUT|ECONNRESET|ETIMEDOUT" audit.log; then
+              echo "Registry unreachable on attempt $attempt; retrying."
+              sleep 30
+              continue
+            fi
+            exit 1
+          done
+          echo "::error::The npm registry stayed unreachable; the audit could not run."
+          exit 1
