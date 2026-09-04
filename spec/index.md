@@ -34,3 +34,4 @@ each spec names the test that holds it.
 - [secrets-are-redacted-types](secrets-are-redacted-types.md) — a credential is a `Redacted<T>`, never in the environment, delivered to the backend on stdin
 - [no-fork-feature-in-june-api](no-fork-feature-in-june-api.md) — fork features keep their prompts and routes in `src-tauri/`
 - [background-work-is-a-row](background-work-is-a-row.md) — long work writes a durable row first and is re-driven by the sweep
+- [modal-focus](modal-focus.md) — every modal surface takes keyboard and focus from `useModalFocus` (one Escape, one Tab trap, one restore)

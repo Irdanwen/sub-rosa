@@ -1,3 +1,4 @@
+import { useModalFocus } from "../../lib/modal-focus";
 import { IconBranchSimple } from "central-icons/IconBranchSimple";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
@@ -76,6 +77,8 @@ export function ModelSheet({
   const [dragY, setDragY] = useState(0);
   const dragStart = useRef<number | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
+  // Focus in, Tab kept inside, Escape closes, focus back (spec/modal-focus.md).
+  useModalFocus(sheetRef, { onClose });
   const backdropRef = useRef<HTMLDivElement | null>(null);
   const dismissing = useRef(false);
   // Track the finger's velocity so release inherits the throw: a flick
@@ -172,7 +175,9 @@ export function ModelSheet({
         className="mobile-sheet"
         ref={sheetRef}
         role="dialog"
+        aria-modal="true"
         aria-label={title}
+        tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
         style={{
           transform: dragY ? `translateY(${dragY}px)` : undefined,

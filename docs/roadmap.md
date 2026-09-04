@@ -81,7 +81,8 @@ Legend: `[x]` done and gated · `[~]` partly done, remainder named · `[ ]` open
 - [~] 3.3 Les règles rétrogradées redeviennent des règles. The ratchet is in
   place (`biome-warnings.json`, `pnpm check:ratchet` in CI): 631 warnings
   across 27 rules may only go down. Promote a rule to `error` at zero.
-- [ ] 3.4 Le clavier et le focus, une seule fois.
+- [x] 3.4 Le clavier et le focus, une seule fois.
+  Done 2026-09-04. `src/lib/modal-focus.ts` holds the four rules (focus in, Tab kept inside, Escape closes, focus back) and a stack so only the top surface listens; the dialog primitive, the ⌘K palette, the ask panel and the phone sheets (actions, model picker, media preview) use it and nothing else. Spec: `spec/modal-focus.md`; the rewrite proposal and the trace drawer are named as non-modal exceptions.
 - [x] 3.5 Charger ce qu'on regarde (measure first).
   Done 2026-09-04. Measured first: the root chunk carried 2.3 MB minified, of which the editor (prosemirror + tiptap), the animation runtime and the flow canvas were the largest vendor parts. Now `src/main.tsx` loads the desktop and phone shells as separate chunks, `src/app/lazy-views.tsx` loads Settings and the Studio the first time they open, and `vite.config.ts` splits vendor code into `editor`, `motion`, `flow` and `react` chunks that only change on their own schedule.
 - [x] 3.6 Les invariants Rust deviennent des specs (six files,

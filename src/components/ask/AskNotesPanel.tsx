@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { messageFromError } from "../../lib/errors";
 import { type AskAnswerDto, askNotes } from "../../lib/ask";
+import { useModalFocus } from "../../lib/modal-focus";
 
 /**
  * Whether a palette query reads as a question rather than a name to find.
@@ -61,14 +62,9 @@ export function AskNotesPanel({
   const [error, setError] = useState<string | null>(null);
   const [showSent, setShowSent] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
-
-  // The panel takes focus so Escape closes it and a screen reader lands on
-  // the question; the focus goes back to where it was when it closes.
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    panelRef.current?.focus();
-    return () => previous?.focus?.();
-  }, []);
+  // Focus in, Escape closes, focus back (spec/modal-focus.md). The panel
+  // itself takes focus first so a screen reader lands on the question.
+  useModalFocus(panelRef, { onClose, initialFocusSelector: ".ask-panel" });
 
   useEffect(() => {
     let cancelled = false;
@@ -87,18 +83,7 @@ export function AskNotesPanel({
   }, [question]);
 
   return (
-    <section
-      className="ask-panel"
-      aria-label="Answer from your notes"
-      ref={panelRef}
-      tabIndex={-1}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.stopPropagation();
-          onClose();
-        }
-      }}
-    >
+    <section className="ask-panel" aria-label="Answer from your notes" ref={panelRef} tabIndex={-1}>
       <header className="ask-panel-header">
         <p className="ask-panel-question">{question}</p>
         <button type="button" className="ask-panel-close" aria-label="Close" onClick={onClose}>
@@ -183,7 +168,14 @@ export function AskNotesOverlay(props: {
   onClose: () => void;
 }) {
   return createPortal(
-    <div className="ask-overlay" role="dialog" aria-label="Ask your notes">
+    // biome-ignore lint/a11y/noStaticElementInteractions: the backdrop is a click-away target; the panel inside is the dialog, and Escape (spec/modal-focus.md) is the keyboard route
+    <div
+      className="ask-overlay"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) props.onClose();
+      }}
+    >
       <AskNotesPanel {...props} />
     </div>,
     document.body,

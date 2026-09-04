@@ -79,6 +79,7 @@ import type {
   SearchHit,
 } from "../../lib/tauri";
 import { searchEverything } from "../../lib/tauri";
+import { useModalFocus } from "../../lib/modal-focus";
 import { searchExcerptText } from "../../lib/search-excerpt";
 import { AskNotesOverlay, askPaletteItems } from "../ask/AskNotesPanel";
 import type { SettingsTab } from "../settings/AppSettings";
@@ -845,14 +846,6 @@ export function Sidebar({
   });
 
   useEffect(() => {
-    if (!commandPaletteOpen) return;
-    const frame = window.requestAnimationFrame(() => {
-      commandInputRef.current?.focus();
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [commandPaletteOpen]);
-
-  useEffect(() => {
     let cancelled = false;
     let retryTimeout: number | undefined;
 
@@ -1600,12 +1593,12 @@ function CommandPalette({
   onClose: () => void;
   onSelect: (item: CommandPaletteItem) => void;
 }) {
+  // Focus on the input, Tab kept inside, Escape closes, focus given back:
+  // the shared modal rules (spec/modal-focus.md).
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalFocus(dialogRef, { onClose, initialFocusSelector: "input" });
+
   function onKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onClose();
-      return;
-    }
     if (event.key === "ArrowDown") {
       event.preventDefault();
       if (items.length === 0) return;
@@ -1640,7 +1633,14 @@ function CommandPalette({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="command-palette" role="dialog" aria-modal="true" aria-label="Search">
+      <div
+        className="command-palette"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search"
+        ref={dialogRef}
+        tabIndex={-1}
+      >
         <label className="command-palette-search">
           <IconMagnifyingGlass size={16} />
           <input

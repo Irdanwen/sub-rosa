@@ -346,6 +346,7 @@ distinct from the `specs/` Spec Kit feature specs.)
 - [icons-central-only](spec/icons-central-only.md) — icons from `central-icons` / `central-icons-filled` only (never lucide)
 - [design-tokens](spec/design-tokens.md) — use the variables in `src/styles/tokens.css`
 - [note-controls-must-serialize](spec/note-controls-must-serialize.md) — no note-editor control without a markdown representation
+- [modal-focus](spec/modal-focus.md) — every modal surface takes keyboard and focus from `useModalFocus`, never its own Escape or Tab handling
 
 ## PR and description conventions
 

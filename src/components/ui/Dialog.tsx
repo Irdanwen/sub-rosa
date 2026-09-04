@@ -1,6 +1,7 @@
 import { IconCrossMedium } from "central-icons/IconCrossMedium";
-import { type ReactNode, useEffect, useId, useLayoutEffect, useRef } from "react";
+import { type ReactNode, useId, useRef } from "react";
 import { createPortal } from "react-dom";
+import { useModalFocus } from "../../lib/modal-focus";
 
 type DialogProps = {
   open: boolean;
@@ -23,12 +24,9 @@ type DialogProps = {
   className?: string;
 };
 
-const FOCUSABLE =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
 /**
  * Base dialog primitive. Renders into a portal with a blurred backdrop,
- * a centered card, focus trap, and Esc-to-close — the substrate we share
+ * a centered card, the shared focus and keyboard rules, the substrate we share
  * across folder create / rename / move and any future dialog.
  */
 export function Dialog({
@@ -45,57 +43,12 @@ export function Dialog({
   className,
 }: DialogProps) {
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const onCloseRef = useRef(onClose);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
   const titleId = useId();
   const descriptionId = useId();
 
-  // Keep the latest onClose without making it a useEffect dependency.
-  // Re-running the keydown effect on every parent render would refocus
-  // `previousFocus` mid-typing and bounce focus out of the dialog.
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-
-  useEffect(() => {
-    if (!open) return;
-    previousFocusRef.current = document.activeElement as HTMLElement | null;
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCloseRef.current();
-        return;
-      }
-      if (event.key !== "Tab" || !cardRef.current) return;
-      const focusables = Array.from(cardRef.current.querySelectorAll<HTMLElement>(FOCUSABLE));
-      if (focusables.length === 0) return;
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previousOverflow;
-      previousFocusRef.current?.focus?.();
-    };
-  }, [open]);
-
-  useLayoutEffect(() => {
-    if (!open || !cardRef.current) return;
-    const target = initialFocusSelector
-      ? cardRef.current.querySelector<HTMLElement>(initialFocusSelector)
-      : cardRef.current.querySelector<HTMLElement>(FOCUSABLE);
-    target?.focus();
-  }, [open, initialFocusSelector]);
+  // Focus in, Tab trapped, Esc closes, focus back, page behind frozen:
+  // the shared rules for every modal surface (spec/modal-focus.md).
+  useModalFocus(cardRef, { open, onClose, initialFocusSelector, lockScroll: true });
 
   if (!open) return null;
 

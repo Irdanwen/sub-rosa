@@ -850,6 +850,18 @@ liste exacte des passages envoyés sous la réponse
   sorties de la vue pour que le shell ne l'importe plus statiquement ;
   `vite.config.ts` : `manualChunks` `editor` / `motion` / `flow` / `react`.
 
+## Clavier et focus des surfaces modales (2026-09-04)
+
+- `src/lib/modal-focus.ts` : `useModalFocus(ref, { open, onClose,
+  initialFocusSelector, lockScroll, restoreFocus })` ; pile de jetons pour
+  que seule la surface du dessus écoute Escape/Tab ; écoute en phase de
+  capture. Test : `src/test/modal-focus.test.tsx`. Règle : `spec/modal-focus.md`.
+- Fichiers upstream modifiés : `src/components/ui/Dialog.tsx` (les effets
+  inline remplacés par le hook), `src/components/sidebar/Sidebar.tsx`
+  (palette : ref + hook, plus d'effet rAF de focus ni de branche Escape).
+- Fichiers fork modifiés : `AskNotesPanel.tsx`, `mobile/ActionSheet.tsx`,
+  `mobile/ModelSheet.tsx`, `mobile/screens/studio/StudioLightbox.tsx`.
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.

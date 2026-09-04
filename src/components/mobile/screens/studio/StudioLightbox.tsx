@@ -1,3 +1,4 @@
+import { useModalFocus } from "../../../../lib/modal-focus";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
@@ -136,8 +137,19 @@ export function Lightbox({
     }
   }, [artifact, cuttingOut, onUpscaled, onClose]);
 
+  // Focus in, Tab kept inside, Escape closes, focus back (spec/modal-focus.md).
+  const previewRef = useRef<HTMLDivElement>(null);
+  useModalFocus(previewRef, { onClose });
+
   return (
-    <div className="mobile-studio-preview" role="dialog" aria-label="Media preview">
+    <div
+      className="mobile-studio-preview"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Media preview"
+      ref={previewRef}
+      tabIndex={-1}
+    >
       <button
         type="button"
         className="mobile-studio-preview-scrim"

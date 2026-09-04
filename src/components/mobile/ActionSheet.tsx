@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
+import { useModalFocus } from "../../lib/modal-focus";
 import { hapticSelection } from "../../lib/haptics";
 
 /**
@@ -33,19 +34,10 @@ export function ActionSheet({
   actions: SheetAction[];
   onClose: () => void;
 }) {
-  const firstRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    firstRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  // First action focused, Tab kept inside, Escape closes, focus given back
+  // (spec/modal-focus.md).
+  const sheetRef = useRef<HTMLDivElement>(null);
+  useModalFocus(sheetRef, { onClose });
 
   return (
     <div className="mobile-sheet-backdrop">
@@ -58,15 +50,16 @@ export function ActionSheet({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        ref={sheetRef}
+        tabIndex={-1}
       >
         <span className="mobile-sheet-grabber" aria-hidden />
         <p className="mobile-sheet-title">{title}</p>
         {subtitle ? <p className="mobile-action-sheet-subtitle">{subtitle}</p> : null}
         <ul className="mobile-sheet-list">
-          {actions.map((action, index) => (
+          {actions.map((action) => (
             <li key={action.label}>
               <button
-                ref={index === 0 ? firstRef : undefined}
                 type="button"
                 className="mobile-sheet-item mobile-action-sheet-item"
                 data-destructive={action.destructive || undefined}
