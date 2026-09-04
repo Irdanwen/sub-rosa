@@ -259,6 +259,12 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
           />
         </SettingsGroup>
 
+        <SettingsGroup>
+          <SettingsLinkRow label="Privacy" onClick={() => onOpen("privacy")} />
+          <SettingsLinkRow label="Archive" onClick={() => onOpen("archive")} />
+          <SettingsLinkRow label="About" onClick={() => onOpen("about")} />
+        </SettingsGroup>
+
         <p className="mobile-settings-footnote">
           {PRODUCT_NAME} keeps your notes, audio, and transcripts on this device. AI requests go
           directly to Carpe Diem with your key.

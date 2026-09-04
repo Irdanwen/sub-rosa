@@ -10,7 +10,7 @@ import { useCallback, useMemo, useState } from "react";
 export type MobileTab = "notes" | "dictation" | "agent" | "studio" | "settings";
 
 /** The settings detail screens the root list pushes to. */
-export type SettingsSection = "memory" | "connection" | "usage";
+export type SettingsSection = "memory" | "connection" | "usage" | "privacy" | "archive" | "about";
 
 export type MobileRoute =
   | { view: "note"; noteId: string }

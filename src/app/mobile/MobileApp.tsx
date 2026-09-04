@@ -20,6 +20,11 @@ import { NoteDetailScreen } from "../../components/mobile/screens/NoteDetailScre
 import { NotesScreen } from "../../components/mobile/screens/NotesScreen";
 import { ConnectionScreen } from "../../components/mobile/screens/ConnectionScreen";
 import { MemoryScreen } from "../../components/mobile/screens/MemoryScreen";
+import {
+  AboutScreen,
+  ArchiveScreen,
+  PrivacyScreen,
+} from "../../components/mobile/screens/SectionScreen";
 import { UsageScreen } from "../../components/mobile/screens/UsageScreen";
 import { SettingsScreen } from "../../components/mobile/screens/SettingsScreen";
 import { StudioScreen } from "../../components/mobile/screens/StudioScreen";
@@ -781,6 +786,12 @@ export function MobileApp() {
         <MemoryScreen onBack={nav.pop} />
       ) : top.section === "usage" ? (
         <UsageScreen onBack={nav.pop} />
+      ) : top.section === "privacy" ? (
+        <PrivacyScreen onBack={nav.pop} />
+      ) : top.section === "archive" ? (
+        <ArchiveScreen onBack={nav.pop} />
+      ) : top.section === "about" ? (
+        <AboutScreen onBack={nav.pop} />
       ) : (
         <ConnectionScreen onBack={nav.pop} />
       );

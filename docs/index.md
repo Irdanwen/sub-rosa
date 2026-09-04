@@ -51,6 +51,9 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0038-a-note-rewrite-is-proposed-never-applied.md](adr/0038-a-note-rewrite-is-proposed-never-applied.md) — the model returns a revision the user accepts or discards, fork-side like the long-form summary, transient by design against ADR-0018, and bounded so a hostile note can at worst produce a bad rewrite
 - [adr/0039-the-database-is-not-encrypted-at-rest.md](adr/0039-the-database-is-not-encrypted-at-rest.md) — the disk is out of scope and full-disk encryption is the assumption, written down rather than implied; SQLCipher rejected because a keychain-held key protects against nobody the app can beat, and a passphrase would be a different product
 - [adr/0040-upstream-is-a-source-of-patches-not-a-merge-base.md](adr/0040-upstream-is-a-source-of-patches-not-a-merge-base.md) — the fork reads upstream June and cherry-picks; the weekly job files an "Upstream digest" issue instead of a merge PR (the one it produced touched 1 484 files), `.github/upstream-reviewed` marks how far the log was read, and `june-api/` stops being a re-merge surface
+- [adr/0041-dictation-is-a-latency-budget-not-a-pipeline.md](adr/0041-dictation-is-a-latency-budget-not-a-pipeline.md) — dictation records what `dictation.rs` already does: two requests (transcribe, then clean), a cleanup budget that scales with the text and is capped by the billing hold, 800-byte chunks measured against the prompt, the charge following each request, the macOS helper owning the paste
+- [adr/0042-the-archive-is-the-bridge-not-a-synchronisation.md](adr/0042-the-archive-is-the-bridge-not-a-synchronisation.md) — one file of the person's corpus (every table as JSON lines, a Markdown copy of each note, the recordings on request), tar wrapped in age with a passphrase, restored by upsert; written and read where the native dialog says; explicitly not a sync
+- [adr/0043-the-egress-ledger-records-shapes-never-contents.md](adr/0043-the-egress-ledger-records-shapes-never-contents.md) — one row per outbound request (when, host, purpose, bytes each way, status, model), never a body; a bounded buffer and a flusher so a request is never slowed; ninety days; the promise kept next to the promise stated in Settings › Privacy
 
 ## Enforceable rules (spec/)
 
@@ -114,10 +117,9 @@ tasks / contracts / checklists`.
 - [plan-films-locaux-2026-08-24.md](plan-films-locaux-2026-08-24.md) — design: film production becomes local, Videomaker is removed (finishes ADR-0017)
 - [IMPLEMENTATION-films-locaux-2026-08-24.md](IMPLEMENTATION-films-locaux-2026-08-24.md) — the executable spec for the above: five waves, verified seams, keyless smokes, DONE per wave
 
-## Gaps (no doc yet — candidates for new docs/ADRs)
+## Roadmap
 
-- **Roadmap / MVP scope** — no single sequenced source of truth across the active tracks (admin surfaces, reliability).
-- **Dictation ADR** — the low-latency request shape + charge timing (flagged in CONTEXT.md).
+- [roadmap.md](roadmap.md) — the sequenced list of what is still missing, one gate per item, ticked as gates hold on `main`
 
 ## Security
 

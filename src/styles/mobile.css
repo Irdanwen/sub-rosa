@@ -3362,3 +3362,14 @@
 .mobile-link-import .import-link-field {
   height: 36px;
 }
+
+/* A desktop settings section reused on the phone (Privacy, Archive): the
+ * section keeps its own markup; the screen gives it the phone's gutters. */
+.mobile-settings-section {
+  padding: var(--sp-3) var(--sp-4) var(--sp-6);
+}
+
+.mobile-settings-value {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}

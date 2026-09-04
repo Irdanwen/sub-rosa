@@ -802,11 +802,64 @@ The metered-operation id (e.g. `note_transcribe`, `dictate_transcribe`,
 splits the bill in the dashboard.
 _Avoid_: operation, endpoint.
 
+### Keeping and carrying (fork)
+
+**Search**:
+The full-text index over notes, transcripts, memories and conversations
+(migration 020, FTS5), ranked by bm25, accent-folded, with the last word as a
+prefix. The ⌘K palette's "In your notes" group, the phone's notes search and
+agent-lite's `search_notes` all read it. Terms are ANDed.
+_Avoid_: filter (the old substring pass over the loaded list), recall (that is
+memory's word, see **Memory**).
+
+**Archive**:
+One file of the person's corpus: every table that is theirs as JSON lines, a
+Markdown copy of each note, the recordings on request; a tar stream, sealed
+with age when a passphrase is given (`.subrosa`, `.subrosa.age`). Written and
+restored on purpose (ADR-0042). Importing is an upsert by id.
+_Avoid_: backup (implies a schedule), sync (there is none, by decision), export
+alone (that is one note to PDF or Markdown).
+
+**Report**:
+A bug, feedback or feature request filed as a GitHub Issue with the user's own
+credential, or opened pre-filled in the browser (ADR-0036). Never sent to a
+Sub Rosa server; there is none.
+_Avoid_: ticket, telemetry (the app has none).
+
+**Diagnostics bundle**:
+The dated folder Settings › Reports writes: the logs' tails, the version, the
+local backend's state, the egress list, the capability map and the storage
+report, every byte passed through `diagnostics::redact` first.
+_Avoid_: crash report (the app never sends one), logs (the bundle is more, and
+redacted).
+
+**Capability map**:
+What this build can do on this platform (`diagnostics::capabilities`): system
+audio, HUD, global dictation, Spotlight, calendar, meeting detection, share,
+agent runtime, updater. Read by the webview instead of `navigator.platform`;
+`false` is a fact the settings state in a sentence, not a failure.
+_Avoid_: feature flag (nothing here is toggled), platform check.
+
+**Storage bucket**:
+One thing on disk the app is responsible for, measured in Settings › Storage:
+the database, the recordings, the Studio gallery, the agent's workspace, its
+state, its runtime, the logs. The one action offered removes the audio of
+notes transcribed more than N days ago, previewed first, never automatic.
+_Avoid_: cache (nothing here is regenerable except the runtime), cleanup.
+
+**Offline**:
+The state the shell shows while notes wait because their request never reached
+the endpoint: a banner with the count, a probe every thirty seconds, and one
+"Retry all" once the endpoint answers. Nothing retries on its own on the
+desktop (ADR-0018).
+_Avoid_: degraded mode, queue (the notes are simply failed, and known to be).
+
 ### Desktop shell & updates
 
 **Release channel**:
-The updater track: `stable` (the only track on `main` today) or `rc`
-(in-flight on branch `jakub/rc-channel-for-june`, PR #529).
+The updater track: `stable` (every tag on `main`) or `rc` (ADR-0003, promoted
+to stable from the same artifacts). Every release carries its notes, generated
+from the commit subjects since the previous bump.
 _Avoid_: beta.
 
 **Update manifest** (`latest.json`):
