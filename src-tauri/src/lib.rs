@@ -52,6 +52,7 @@ pub mod memory;
 pub mod menu_bar;
 pub mod moments;
 pub mod note_ai;
+pub mod note_export;
 pub mod open_url;
 pub mod os_accounts;
 pub mod path_confinement;
@@ -238,9 +239,11 @@ pub fn run() {
             commands::list_notes,
             commands::search_everything,
             ask::ask_notes,
+            diagnostics::diagnostics_report_text,
             egress_ledger::egress_ledger,
             archive::import_archive,
             archive::export_archive,
+            note_export::export_note_markdown,
             commands::list_notes_failed_in_transit,
             carpe_diem::settings::carpe_diem_probe_upstream,
             diagnostics::platform_capabilities,
@@ -500,6 +503,7 @@ pub fn run() {
         commands::list_notes,
         commands::search_everything,
         ask::ask_notes,
+        diagnostics::diagnostics_report_text,
         egress_ledger::egress_ledger,
         archive::import_archive,
         commands::list_notes_failed_in_transit,

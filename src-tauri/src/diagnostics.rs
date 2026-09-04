@@ -505,6 +505,13 @@ pub fn write_bundle(dest: &Path, inputs: &BundleInputs) -> std::io::Result<Vec<P
 }
 
 /// The report's text: what a maintainer reads first.
+/// The report as text, for the phone's Reports screen (which shares it
+/// through the share sheet) and for anyone who wants to read it first.
+#[tauri::command]
+pub fn diagnostics_report_text(app: AppHandle) -> String {
+    report_text(&app)
+}
+
 pub fn report_text(app: &AppHandle) -> String {
     let caps = capabilities();
     let version = app.package_info().version.to_string();

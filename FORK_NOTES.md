@@ -875,6 +875,19 @@ liste exacte des passages envoyés sous la réponse
   meta+ctrl ensemble ; le bouton « Retry all » est désactivé hors-ligne
   (avancer la sonde de 30 s avec les faux timers).
 
+## Export Markdown et Rapports sur iPhone (2026-09-04)
+
+- `src-tauri/src/note_export.rs` : `export_note_markdown` (desktop seulement,
+  allowlisté dans `tests/shared_commands.rs`) ; dialogue natif en Rust,
+  `note_markdown` (titre en H1 + corps édité sinon généré),
+  `suggested_file_name`. Binding : `src/lib/note-export.ts`.
+- `src-tauri/src/diagnostics.rs` : `diagnostics_report_text` (partagé) ;
+  binding `src/lib/diagnostics-report.ts` ; écran `ReportsScreen`
+  (`mobile/screens/SectionScreen.tsx`), section `reports` dans `nav.ts`,
+  ligne dans `SettingsScreen`, route dans `MobileApp`.
+- `src/app/tab-meta.tsx` : `tabMeta` + `agentSessionTabTitle` sortis de
+  `App.tsx` (cliquet de taille) ; `NoteEditor` reçoit `onExportMarkdown`.
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.

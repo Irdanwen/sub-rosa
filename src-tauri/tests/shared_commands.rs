@@ -61,6 +61,7 @@ fn platform_specific(name: &str) -> bool {
         // phone imports one (pick_file works there) and exports through the
         // share sheet later.
         "archive::export_archive",
+        "note_export::export_note_markdown",
     ];
     PREFIXES.iter().any(|prefix| name.starts_with(prefix)) || NAMES.contains(&name)
 }

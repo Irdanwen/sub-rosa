@@ -1,4 +1,7 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
+import { diagnosticsReportText } from "../../../lib/diagnostics-report";
+import { messageFromError } from "../../../lib/errors";
+import { shareText } from "../../../lib/tauri";
 import { APP_COMMIT_HASH, APP_VERSION } from "../../../app/build-info";
 import { usePlatformCapabilities } from "../../../lib/platform-capabilities";
 import { PrivacySettingsSection } from "../../settings/PrivacySettingsSection";
@@ -65,6 +68,45 @@ export function AboutScreen({ onBack }: { onBack: () => void }) {
         Your notes, transcripts and memories stay on this phone. Requests go to the Carpe Diem
         endpoint you configured, and nowhere else.
       </p>
+    </SectionScreen>
+  );
+}
+
+/**
+ * The diagnostics report, readable before it is shared: what the desktop
+ * writes to a folder, the phone hands to the share sheet as text.
+ */
+export function ReportsScreen({ onBack }: { onBack: () => void }) {
+  const [report, setReport] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    diagnosticsReportText()
+      .then(setReport)
+      .catch((err) => setError(messageFromError(err)));
+  }, []);
+  return (
+    <SectionScreen title="Reports" onBack={onBack}>
+      <SettingsGroup title="Diagnostics">
+        <p className="mobile-settings-note">
+          Versions, platform, storage and the local backend's state. No note, no transcript, no key.
+          Read it, then share it with whoever is helping you.
+        </p>
+        {error ? <p className="mobile-settings-error">{error}</p> : null}
+        {report ? (
+          <>
+            <pre className="mobile-report">{report}</pre>
+            <button
+              type="button"
+              className="mobile-settings-button"
+              onClick={() => void shareText(report)}
+            >
+              Share report
+            </button>
+          </>
+        ) : (
+          <p className="mobile-settings-note">Gathering the report…</p>
+        )}
+      </SettingsGroup>
     </SectionScreen>
   );
 }

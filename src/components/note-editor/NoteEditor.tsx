@@ -6,6 +6,7 @@ import { NoteSummaryPanel } from "./NoteSummaryPanel";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
 import { IconArrowDownWall } from "central-icons/IconArrowDownWall";
+import { IconMarkdown } from "central-icons/IconMarkdown";
 import { IconBookSimple } from "central-icons/IconBookSimple";
 import { IconProjects } from "central-icons/IconProjects";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
@@ -57,6 +58,8 @@ type NoteEditorProps = {
   recovery?: RecoverableRecordingDto;
   onTitleChange: (title: string) => void;
   onExportPdf?: () => void;
+  /** Save the note as a Markdown file (desktop; the phone shares instead). */
+  onExportMarkdown?: () => void;
   onContentChange: (noteId: string, content: string) => void;
   onSourceModeChange: (mode: RecordingSourceMode) => void;
   onEnableSystemAudio: () => void;
@@ -146,6 +149,7 @@ export function NoteEditor({
   recovery,
   onTitleChange,
   onExportPdf,
+  onExportMarkdown,
   onContentChange,
   onSourceModeChange,
   onEnableSystemAudio,
@@ -468,6 +472,17 @@ export function NoteEditor({
             title="Export as PDF"
           >
             <IconArrowDownWall aria-hidden="true" />
+          </button>
+        ) : null}
+        {onExportMarkdown ? (
+          <button
+            type="button"
+            className="note-header-actions note-export-markdown"
+            onClick={onExportMarkdown}
+            aria-label="Export as Markdown"
+            title="Export as Markdown"
+          >
+            <IconMarkdown aria-hidden="true" />
           </button>
         ) : null}
       </header>

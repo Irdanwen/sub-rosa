@@ -97,9 +97,10 @@ Legend: `[x]` done and gated · `[~]` partly done, remainder named · `[ ]` open
 
 - [ ] 4.1 Le français, en entier ou pas (after 3.2, strictly).
 - [ ] 4.2 L'extension de partage iOS.
-- [~] 4.3 Le téléphone règle ce que le poste règle. Privacy, Archive and
+- [x] 4.3 Le téléphone règle ce que le poste règle. Privacy, Archive and
   About reached the phone by reusing the desktop sections. Open: Models,
   Reports, and the desktop's own "Export as Markdown".
+  Done 2026-09-04, with one part deferred. The phone reaches Reports (`ReportsScreen`: the diagnostics text, readable, then the share sheet through `diagnostics_report_text` + `share_text`); the desktop exports a note as Markdown next to the PDF button (`note_export.rs`, native save dialog in Rust, ADR-0037's stored Markdown with the title as heading). Deferred: a Models page on the phone. The desktop tab is a picker over AppSettings' own state, and the phone already picks a model per chat, per flow and per Studio panel through `ModelSheet`; a second, global picker would be a second source of truth until the desktop tab is itself extracted from AppSettings (3.2).
 - [x] 4.4 Prévenir quand la fenêtre n'est pas devant (`desktop_should_notify`:
   Studio work only, window away, wait over two minutes; the desktop asks
   for permission when a render is queued).

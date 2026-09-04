@@ -3402,3 +3402,47 @@
   background: var(--card);
   border-color: var(--border);
 }
+
+/* Reports: the diagnostics text, readable before it is shared. */
+.mobile-settings-note {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+
+.mobile-settings-error {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--destructive);
+}
+
+.mobile-report {
+  margin: 0 0 12px;
+  padding: 12px;
+  max-height: 46vh;
+  overflow: auto;
+  border-radius: 12px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--foreground);
+}
+
+.mobile-settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 500;
+}
