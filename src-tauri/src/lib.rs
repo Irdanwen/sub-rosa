@@ -8,6 +8,7 @@ pub mod agent_hud;
 pub mod agent_lite;
 pub mod agent_notes;
 pub mod app_paths;
+pub mod archive;
 pub mod audio;
 pub mod background;
 pub mod calendar;
@@ -25,6 +26,7 @@ pub mod dictation;
 pub mod dictation_mobile;
 pub mod domain;
 pub mod egress;
+pub mod egress_ledger;
 #[cfg(desktop)]
 pub mod hermes_bridge;
 pub mod hermes_image_fit;
@@ -233,6 +235,11 @@ pub fn run() {
             commands::create_note,
             commands::list_notes,
             commands::search_everything,
+            egress_ledger::egress_ledger,
+            archive::import_archive,
+            archive::export_archive,
+            commands::list_notes_failed_in_transit,
+            carpe_diem::settings::carpe_diem_probe_upstream,
             diagnostics::platform_capabilities,
             diagnostics::storage_report,
             diagnostics::purge_transcribed_recordings,
@@ -489,6 +496,10 @@ pub fn run() {
         commands::create_note,
         commands::list_notes,
         commands::search_everything,
+        egress_ledger::egress_ledger,
+        archive::import_archive,
+        commands::list_notes_failed_in_transit,
+        carpe_diem::settings::carpe_diem_probe_upstream,
         diagnostics::platform_capabilities,
         diagnostics::storage_report,
         diagnostics::purge_transcribed_recordings,
@@ -684,6 +695,7 @@ pub fn run() {
             carpe_diem::settings::setup(app);
             carpe_diem::sidecar::setup(app);
             memory::setup(app);
+            egress_ledger::spawn_flusher(app.handle());
             moments::setup(app);
             spotlight::setup(app);
             #[cfg(desktop)]
@@ -944,7 +956,7 @@ fn emit_close_tab_if_main_window_focused(app: &tauri::AppHandle) {
 }
 
 #[cfg(desktop)]
-fn main_window_focus_state(app: &tauri::AppHandle) -> Option<bool> {
+pub(crate) fn main_window_focus_state(app: &tauri::AppHandle) -> Option<bool> {
     app.get_webview_window("main")
         .and_then(|window| window.is_focused().ok())
 }

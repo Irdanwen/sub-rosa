@@ -17,6 +17,7 @@ costs.
 | Prompts, transcripts, notes, memories | SQLite in the app data directory | Someone reads what you said and wrote |
 | Recorded audio and generated media | Files in the app data directory | Same, plus your voice |
 | The local backend's bearer token | Process memory only, for one run | Someone talks to the inference backend as you |
+| An exported archive (`.subrosa`, `.subrosa.age`) | Wherever you saved it | In the clear it is your notes; sealed with a passphrase it is safe to carry (ADR-0042) |
 | The signing keys for releases | GitHub Actions secrets, never in the repo | Someone ships an update that is not ours |
 
 ## Boundaries
@@ -52,7 +53,9 @@ Five, and each is a place where something is checked rather than assumed.
 5. **The network.** Every HTTP client comes from one factory, and every host
    the binary can reach is a declared constant with a stated reason.
    `tests/egress.rs` holds this, and Settings › Privacy shows the same list to
-   the user.
+   the user. Under that list, the same screen shows the ledger of what actually
+   left: one row per outbound request with its host, purpose and size, never
+   its content (ADR-0043), so the claim can be checked against the record.
 
 ## In scope
 

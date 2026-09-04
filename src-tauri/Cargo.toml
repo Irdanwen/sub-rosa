@@ -45,6 +45,10 @@ tauri-build = { version = "2.4.0", features = [] }
 [dependencies]
 anyhow = "1.0"
 base64 = "0.22"
+# The archive (Settings › Import / export): a tar stream, optionally wrapped
+# in age with a passphrase. Both are pure Rust and compile for iOS.
+tar = "0.4"
+age = { version = "0.12", default-features = false }
 chrono = { version = "0.4", features = ["serde"] }
 cpal = "0.15"
 dotenvy = "0.15"

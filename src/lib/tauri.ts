@@ -426,6 +426,8 @@ export type MemoryDto = {
 export type MemorySettings = {
   enabled: boolean;
   autoExtract: boolean;
+  /** The model extraction runs on; absent means the chat's own model. */
+  extractionModel?: string;
 };
 
 export type MemoryListResponse = {
@@ -1904,6 +1906,77 @@ export async function exportDiagnostics(): Promise<ExportDiagnosticsResultDto> {
   return invoke<ExportDiagnosticsResultDto>("export_diagnostics");
 }
 
+export type ExportArchiveResultDto = {
+  path: string | null;
+  bytes: number;
+  sealed: boolean;
+};
+
+/** Desktop only: writes the archive where the native save dialog says. */
+export async function exportArchive(request: {
+  includeRecordings?: boolean;
+  passphrase?: string;
+}): Promise<ExportArchiveResultDto> {
+  return invoke<ExportArchiveResultDto>("export_archive", { request });
+}
+
+export type ImportSummaryDto = {
+  notes: number;
+  rows: number;
+  recordings: number;
+  appVersion: string;
+};
+
+export type ImportArchiveResultDto = {
+  summary: ImportSummaryDto | null;
+  needsPassphrase: boolean;
+};
+
+/** Both shells: the user picks the archive in the native dialog. */
+export async function importArchive(request: {
+  passphrase?: string;
+}): Promise<ImportArchiveResultDto> {
+  return invoke<ImportArchiveResultDto>("import_archive", { request });
+}
+
+/** One outbound request as the ledger keeps it: shapes, never contents. */
+export type EgressRowDto = {
+  id: number;
+  at: string;
+  host: string;
+  purpose: string;
+  method: string;
+  requestBytes: number;
+  responseBytes: number;
+  status: number | null;
+  durationMs: number;
+  model: string | null;
+  noteId: string | null;
+};
+
+export type EgressSummaryDto = {
+  requests: number;
+  requestBytes: number;
+  responseBytes: number;
+  hosts: string[];
+  purposes: [string, number][];
+};
+
+export type EgressLedgerDto = {
+  rows: EgressRowDto[];
+  summary: EgressSummaryDto;
+  retentionDays: number;
+};
+
+/** What left the machine: newest rows and the totals over the last `days`. */
+export async function egressLedger(request: {
+  limit?: number;
+  noteId?: string;
+  days?: number;
+}): Promise<EgressLedgerDto> {
+  return invoke<EgressLedgerDto>("egress_ledger", { request });
+}
+
 export async function listNotesPage(request: {
   folderId?: string;
   cursor?: string;
@@ -1983,6 +2056,21 @@ export async function finishRecording(sessionId: string) {
   return invoke<FinishRecordingResponse>("finish_recording", {
     request: { sessionId },
   });
+}
+
+/** Whether the configured endpoint answers at all right now (about the network, not the key). */
+export type UpstreamReachabilityDto = {
+  reachable: boolean;
+  message: string | null;
+};
+
+export async function carpeDiemProbeUpstream(): Promise<UpstreamReachabilityDto> {
+  return invoke<UpstreamReachabilityDto>("carpe_diem_probe_upstream");
+}
+
+/** Notes whose processing failed because the request never reached the endpoint. */
+export async function listNotesFailedInTransit(): Promise<string[]> {
+  return invoke<string[]>("list_notes_failed_in_transit");
 }
 
 export async function retryProcessing(noteId: string) {

@@ -57,6 +57,10 @@ fn platform_specific(name: &str) -> bool {
         // The bundle is written where a native folder dialog says; the phone
         // has no such dialog and gets its logs through the share sheet later.
         "diagnostics::export_diagnostics",
+        // Same reason: the archive is written where a save dialog says; the
+        // phone imports one (pick_file works there) and exports through the
+        // share sheet later.
+        "archive::export_archive",
     ];
     PREFIXES.iter().any(|prefix| name.starts_with(prefix)) || NAMES.contains(&name)
 }

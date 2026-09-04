@@ -87,6 +87,7 @@ import { McpDiagnosticsSection } from "./McpDiagnosticsSection";
 import { McpSecuritySection } from "./McpSecuritySection";
 import { McpServersSection } from "./McpServersSection";
 import { SetupSnapshotSection } from "./SetupSnapshotSection";
+import { ArchiveSection } from "./ArchiveSection";
 import { ToolsetsSection } from "./ToolsetsSection";
 import { DictionarySettingsSection } from "./DictionarySettingsSection";
 import { ImportSettingsSection } from "./ImportSettingsSection";
@@ -1333,7 +1334,12 @@ export function AppSettings({
         {activeTab === "mcp-diagnostics" ? <McpDiagnosticsSection /> : null}
         {activeTab === "mcp-security" ? <McpSecuritySection /> : null}
         {activeTab === "toolsets" ? <ToolsetsSection /> : null}
-        {activeTab === "import-export" ? <SetupSnapshotSection /> : null}
+        {activeTab === "import-export" ? (
+          <>
+            <ArchiveSection />
+            <SetupSnapshotSection />
+          </>
+        ) : null}
 
         {activeTab === "about" ? (
           <section className="settings-group" aria-labelledby="about-heading">
