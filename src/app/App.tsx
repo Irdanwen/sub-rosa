@@ -7,7 +7,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { EASE_OUT } from "../lib/motion";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { BrandMark } from "../components/brand/Marks";
 import { StartupFailure } from "../components/brand/StartupFailure";
 import { CarpeDiemGate } from "../components/carpe-diem/CarpeDiemGate";
@@ -55,14 +55,9 @@ import { AppSettings, StudioView } from "./lazy-views";
 import { Sidebar, type SidebarView } from "../components/sidebar/Sidebar";
 import { TabBar, type TabItem } from "../components/tabs/TabBar";
 import { defaultNav, makeTabId, navEquals, type Tab, type TabNav } from "./tabs/tabs";
+import { agentSessionTabTitle, tabMeta } from "./tab-meta";
+import { exportNoteMarkdown } from "../lib/note-export";
 import { BreadcrumbBar } from "../components/ui/BreadcrumbBar";
-import { IconNoteText } from "central-icons/IconNoteText";
-import { IconBubble3 } from "central-icons/IconBubble3";
-import { IconProjects } from "central-icons/IconProjects";
-import { IconSparkle3 } from "central-icons/IconSparkle3";
-import { IconZap } from "central-icons/IconZap";
-import { IconMicrophone } from "central-icons/IconMicrophone";
-import { IconSettingsGear4 } from "central-icons/IconSettingsGear4";
 import { Dialog } from "../components/ui/Dialog";
 import { Spinner } from "../components/ui/Spinner";
 import {
@@ -144,7 +139,6 @@ import {
 } from "../lib/agent-hud-settings";
 import type {
   BootstrapResponse,
-  FolderDto,
   NoteDto,
   RecordingStatusDto,
   HermesSessionInfo,
@@ -206,16 +200,10 @@ function sidebarMaxWidth() {
   );
 }
 
-const TAB_ICON_SIZE = 14;
-
 type RecordingInactivityPrompt = {
   sessionId: string;
   expiresAt: number;
 };
-
-function agentSessionTabTitle(session?: HermesSessionInfo): string | undefined {
-  return session?.title?.trim() || session?.preview?.trim() || undefined;
-}
 
 function refreshedTabNav(current: TabNav, live: TabNav): TabNav | undefined {
   if (!navEquals(current, live)) return live;
@@ -233,91 +221,6 @@ function refreshedTabNav(current: TabNav, live: TabNav): TabNav | undefined {
 // project, agent session) are looked up live from the loaded data, so a tab's
 // label tracks renames. Agent tabs also carry a fallback title so a newly
 // created session is identifiable before the session list hydrates.
-function tabMeta(
-  nav: TabNav,
-  notes: NoteListItemDto[],
-  folders: FolderDto[],
-  sessions: HermesSessionInfo[],
-  activity: {
-    workingSessionIds: ReadonlySet<string>;
-    waitingSessionIds: ReadonlySet<string>;
-  },
-): { title: string; icon: ReactNode; status?: TabItem["status"] } {
-  switch (nav.view) {
-    case "meetings": {
-      const note = nav.noteId ? notes.find((n) => n.id === nav.noteId) : undefined;
-      const processing =
-        note?.processingStatus === "validating" ||
-        note?.processingStatus === "transcribing" ||
-        note?.processingStatus === "generating";
-      return {
-        title: note?.title?.trim() || "New note",
-        icon: <IconNoteText size={TAB_ICON_SIZE} />,
-        status: processing ? "working" : undefined,
-      };
-    }
-    case "folders": {
-      const folder = nav.folderId ? folders.find((f) => f.id === nav.folderId) : undefined;
-      return {
-        title: folder?.name?.trim() || "Projects",
-        icon: <IconProjects size={TAB_ICON_SIZE} />,
-      };
-    }
-    case "agent": {
-      const session = nav.agentSessionId
-        ? sessions.find((s) => s.id === nav.agentSessionId)
-        : undefined;
-      const sessionId = nav.agentSessionId;
-      return {
-        title: agentSessionTabTitle(session) || nav.agentSessionTitle?.trim() || "New session",
-        icon: <IconBubble3 size={TAB_ICON_SIZE} />,
-        status: !sessionId
-          ? undefined
-          : activity.waitingSessionIds.has(sessionId)
-            ? "waitingForUser"
-            : activity.workingSessionIds.has(sessionId)
-              ? "working"
-              : undefined,
-      };
-    }
-    case "agent-sessions":
-      return {
-        title: "Sessions",
-        icon: <IconBubble3 size={TAB_ICON_SIZE} />,
-      };
-    case "all-notes":
-      return {
-        title: "All notes",
-        icon: <IconNoteText size={TAB_ICON_SIZE} />,
-      };
-    case "routines":
-      return {
-        title: "Routines",
-        icon: <IconZap size={TAB_ICON_SIZE} />,
-      };
-    case "studio":
-      return {
-        title: "Studio",
-        icon: <IconSparkle3 size={TAB_ICON_SIZE} />,
-      };
-    case "dictation":
-      return {
-        title: "Dictation",
-        icon: <IconMicrophone size={TAB_ICON_SIZE} />,
-      };
-    case "settings":
-      return {
-        title: "Settings",
-        icon: <IconSettingsGear4 size={TAB_ICON_SIZE} />,
-      };
-    case "notes":
-    default:
-      return {
-        title: "Notes",
-        icon: <IconNoteText size={TAB_ICON_SIZE} />,
-      };
-  }
-}
 
 /** Whether a notes-changed payload names the note that is open. */
 export function notesChangedTouches(
@@ -3389,6 +3292,7 @@ export function App() {
                       onDiscardRecording={(sessionId) => handleRecovery(sessionId, "discard")}
                       onTitleChange={(title) => void handleUpdateNote({ title })}
                       onExportPdf={() => exportNoteAsPdf(selectedNote.title)}
+                      onExportMarkdown={() => void exportNoteMarkdown(selectedNote.id)}
                       onContentChange={(sourceNoteId, editedContent) => {
                         // Blur fired by an editor that was already torn
                         // down on note-switch — ignore so we don't write
