@@ -287,6 +287,51 @@ pub async fn carpe_diem_clear_api_key(app: AppHandle) -> Result<CarpeDiemSetting
     Ok(dto())
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpstreamReachability {
+    /// The configured base answered anything at all over TLS.
+    pub reachable: bool,
+    /// One sentence for the banner when it did not.
+    pub message: Option<String>,
+}
+
+/// Is the configured endpoint reachable right now? A cheap, unauthenticated
+/// request: the answer is about the network, not the key. The webview asks
+/// this while a note is waiting in transit, to say "you are offline" instead
+/// of showing a failed note with a transport error in it, and to know when
+/// "Retry all" has a chance.
+#[tauri::command]
+pub async fn carpe_diem_probe_upstream() -> Result<UpstreamReachability, AppError> {
+    let base = base_url();
+    if base.trim().is_empty() {
+        return Ok(UpstreamReachability {
+            reachable: false,
+            message: Some("No endpoint is configured.".to_string()),
+        });
+    }
+    let client = crate::http_client::anonymous(std::time::Duration::from_secs(6))
+        .build()
+        .map_err(|error| AppError::new("carpe_diem_http_client", error.to_string()))?;
+    let url = format!("{}/models", catalog_base_url());
+    match client.head(&url).send().await {
+        // Any HTTP answer means the network and the host are there; a 401 or
+        // a 404 is still "reachable", and is the key's or the URL's problem.
+        Ok(_) => Ok(UpstreamReachability {
+            reachable: true,
+            message: None,
+        }),
+        Err(error) => Ok(UpstreamReachability {
+            reachable: false,
+            message: Some(if error.is_timeout() {
+                "The endpoint did not answer in time.".to_string()
+            } else {
+                "The endpoint could not be reached.".to_string()
+            }),
+        }),
+    }
+}
+
 #[tauri::command]
 pub async fn carpe_diem_test_connection() -> Result<TestConnectionResult, AppError> {
     let base = base_url();

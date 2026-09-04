@@ -17,6 +17,7 @@ import { OnboardingFlow } from "../components/onboarding/OnboardingFlow";
 import type { FirstNoteIntent } from "../components/onboarding/steps/FirstNoteStep";
 import { IMPORTABLE_MEDIA_EXTENSIONS, importMediaFile, importMediaPath } from "../lib/import-media";
 import { ImportLinkBar } from "../components/notes-list/ImportLinkBar";
+import { OfflineBanner, useOfflineState } from "../components/notes-list/OfflineBanner";
 import { startLinkIngest } from "../lib/tauri";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../lib/chat-blocks-nav";
 import { FILM_FROM_NOTE_EVENT } from "../lib/film-from-note";
@@ -1981,6 +1982,11 @@ export function App() {
     }
   }, []);
 
+  // Notes that failed because the request never left: a banner says so,
+  // says when the endpoint is back, and offers one "Retry all". Nothing
+  // retries on its own on the desktop (ADR-0018).
+  const offline = useOfflineState(state.notes);
+
   // The agent can write a note now, and it writes it in Rust, mid-turn. With
   // nothing listening, the note it just confirmed to the user would be missing
   // from the list until the next reload, which reads as the tool having lied.
@@ -3040,6 +3046,12 @@ export function App() {
               onEnableAccessibility={handleEnableAccessibility}
             />
           ) : null}
+          <OfflineBanner
+            waiting={offline.waiting.length}
+            reachable={offline.reachable}
+            retrying={offline.retrying}
+            onRetryAll={() => void offline.retryAll().then(refreshNotesList)}
+          />
           <RailSwitchBanner />
           {calendarAmbiguity ? (
             <MeetingAmbiguityPrompt

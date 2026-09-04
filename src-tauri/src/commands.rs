@@ -1713,6 +1713,17 @@ fn apply_system_audio_permission_probe_result(
     system
 }
 
+/// Notes whose processing failed on the network (the request never reached
+/// the endpoint), as opposed to being refused by it. These are the ones a
+/// "Retry all" is worth offering once the endpoint answers again.
+#[tauri::command]
+pub async fn list_notes_failed_in_transit(app: AppHandle) -> Result<Vec<String>, AppError> {
+    Ok(repositories(&app)
+        .await?
+        .list_notes_failed_in_transit()
+        .await?)
+}
+
 #[tauri::command]
 pub async fn retry_processing(
     app: AppHandle,
