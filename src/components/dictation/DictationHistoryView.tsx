@@ -35,6 +35,7 @@ import {
 import { parseDictationHelperEvent } from "../../lib/dictation-events";
 import { useForcedEmptyStates } from "../../lib/empty-states-demo";
 import { isMacLikePlatform } from "../../lib/platform";
+import { usePlatformCapabilities } from "../../lib/platform-capabilities";
 
 const NO_DICTATIONS: DictationHistoryItemDto[] = [];
 
@@ -89,7 +90,10 @@ export function DictationHistoryView({ onNavigateToSettings }: DictationHistoryV
   const [dictionaryCount, setDictionaryCount] = useState<number | null>(null);
   const [hintDismissed, setHintDismissed] = useState(readHintDismissed);
   const [pendingDelete, setPendingDelete] = useState<DictationHistoryItemDto | null>(null);
-  const dictationAvailable = isMacLikePlatform();
+  // What this platform can do is Rust's answer (diagnostics::capabilities);
+  // the platform predicate only fills the frame before that answer lands.
+  const capabilities = usePlatformCapabilities();
+  const dictationAvailable = capabilities?.dictationHotkey ?? isMacLikePlatform();
 
   const loadHistory = useCallback(async () => {
     try {

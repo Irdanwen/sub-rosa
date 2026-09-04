@@ -65,9 +65,10 @@ Legend: `[x]` done and gated · `[~]` partly done, remainder named · `[ ]` open
 - [~] 2.6 Réglages › Stockage. Seven buckets measured; the audio of
   transcribed notes older than N days can be removed, previewed first.
   The agent runtime's own state is shown, not pruned (it is the runtime's).
-- [~] 2.7 Windows dit ce qu'il n'a pas. `platform_capabilities` is the map;
+- [x] 2.7 Windows dit ce qu'il n'a pas. `platform_capabilities` is the map;
   the dictation settings read it. Other `isMacLikePlatform()` gates migrate
   as they are touched.
+  Done 2026-09-04. The two gates that were about a capability (system audio in the note editor, the dictation hotkey in the dictation view) read Rust's answer now, with the platform predicate only filling the frame before it lands. The five that remain (`App.tsx`, onboarding, permission steps, `AppSettings`) describe what the platform looks like, not what it can do, and stay.
 - [x] 2.8 Une note que l'agent complète se recharge (the event names its
   notes; the open note reloads; refreshing the list keeps the selection).
 - [x] 2.9 Les douze onglets masqués : cinq sont revenus, sept sont supprimés.

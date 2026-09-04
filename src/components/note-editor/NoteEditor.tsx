@@ -38,6 +38,7 @@ import { SegmentedControl } from "../ui/SegmentedControl";
 import { RecorderBar } from "../recorder/RecorderBar";
 import { NoteRecoveryPrompt } from "../recorder/NoteRecoveryPrompt";
 import { isMacLikePlatform } from "../../lib/platform";
+import { usePlatformCapabilities } from "../../lib/platform-capabilities";
 import { systemAudioAvailability } from "../../lib/source-readiness";
 import {
   isInvalidJuneResponseMessage,
@@ -299,7 +300,10 @@ export function NoteEditor({
   // Denied and granted-but-uncapturable both mean the switch must not be
   // offered; only the recovery copy differs.
   const systemLocked = systemAvailability === "denied" || systemAvailability === "unavailable";
-  const showRecordingOptions = isMacLikePlatform();
+  // System audio is a capability Rust reports (diagnostics::capabilities);
+  // the platform predicate only fills the frame before that answer lands.
+  const capabilities = usePlatformCapabilities();
+  const showRecordingOptions = capabilities?.systemAudio ?? isMacLikePlatform();
   // Mic denial is sourced from App via the dictation helper, not from
   // sourceReadiness — the Rust cpal-based check can't see TCC denials.
   const micDenied = microphoneBlocked;

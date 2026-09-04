@@ -109,11 +109,14 @@ vi.mock("../lib/tauri", async () => {
     platformCapabilities: vi.fn(async () => ({
       platform: "macos",
       systemAudio: true,
-      dictationShortcuts: true,
-      tray: true,
+      hud: true,
+      dictationHotkey: true,
+      spotlight: true,
+      calendar: true,
+      meetingDetection: true,
+      share: false,
+      hermesAgent: true,
       updater: true,
-      shareSheet: false,
-      photoLibrary: false,
     })),
   });
 });
