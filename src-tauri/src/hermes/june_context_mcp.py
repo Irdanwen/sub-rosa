@@ -10,6 +10,7 @@ extra packaging.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
@@ -144,7 +145,11 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Search text. Leave empty to list recent notes.",
+                    "description": (
+                        "A question or a few words. Any of the content words match, "
+                        "over the notes and their transcripts, best first; stop words "
+                        "are ignored. Leave empty to list recent notes."
+                    ),
                 },
                 "limit": {
                     "type": "integer",
@@ -453,6 +458,38 @@ def error_response(request_id: Any, code: int, message: str) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
 
 
+STOP_WORDS = frozenset(
+    """the and for are was were what when where who why how which did does has have had
+    about with that this from into our you your they them their there been will would
+    should could can say said les des une est sont que qui quoi quand pourquoi comment
+    combien quel quelle quels quelles dans sur avec pour par pas nous vous ils elles
+    leur leurs notre nos votre vos mon mes ton tes ses son cette ces cet était été être
+    avoir fait faire dit aussi mais donc alors comme plus moins très tout tous toute
+    toutes ont avons avez sommes êtes suis""".split()
+)
+
+
+def content_terms(query: str) -> list[str]:
+    """The words of a query worth searching for: three letters or more,
+    lower-cased, stop words dropped, order kept, duplicates removed. A
+    question is mostly stop words; the notes are found by what is left."""
+    terms: list[str] = []
+    for raw in re.split(r"[^\w]+", query, flags=re.UNICODE):
+        term = raw.lower()
+        if len(term) < 3 or term in STOP_WORDS or term in terms:
+            continue
+        terms.append(term)
+    return terms
+
+
+def snippet_any(text: str, terms: list[str]) -> str:
+    """`snippet` around whichever term occurs first; the head when none does."""
+    lowered = " ".join(text.split()).lower()
+    hits = [(lowered.find(term), term) for term in terms]
+    hits = [(at, term) for at, term in hits if at >= 0]
+    return snippet(text, min(hits)[1] if hits else "")
+
+
 def search_meeting_notes(db_path: Path, arguments: dict[str, Any]) -> dict[str, Any]:
     query = str(arguments.get("query") or "").strip()
     limit = bounded_limit(arguments.get("limit"))
@@ -460,6 +497,87 @@ def search_meeting_notes(db_path: Path, arguments: dict[str, Any]) -> dict[str, 
     if not db_path.exists():
         return {"query": query, "items": [], "message": "June notes database does not exist yet."}
 
+    terms = content_terms(query)
+    with connect_readonly(db_path) as conn:
+        rows = None
+        if terms:
+            # The same retrieval "Ask your notes" uses (ADR-0044): any of the
+            # content words, over the notes and the transcripts, best first.
+            # An index that is not there (a database from before migration
+            # 020) falls back to the substring search below.
+            try:
+                rows = search_with_fts(conn, terms, limit)
+            except sqlite3.OperationalError:
+                rows = None
+        if rows is None:
+            rows = search_with_like(conn, query, limit)
+
+    items = []
+    for row in rows:
+        note_text = first_text(row["edited_content"], row["generated_content"])
+        transcript_text = row["transcript_text"] or ""
+        items.append(
+            {
+                "id": row["id"],
+                "title": row["title"] or "Untitled note",
+                "processingStatus": row["processing_status"],
+                "createdAt": row["created_at"],
+                "updatedAt": row["updated_at"],
+                "noteSnippet": snippet_any(note_text, terms) if terms else snippet(note_text, query),
+                "transcriptSnippet": (
+                    snippet_any(transcript_text, terms) if terms else snippet(transcript_text, query)
+                ),
+            }
+        )
+    return {"query": query, "terms": terms, "count": len(items), "items": items}
+
+
+NOTE_COLUMNS = """
+    n.id,
+    n.title,
+    n.generated_content,
+    n.edited_content,
+    n.processing_status,
+    n.created_at,
+    n.updated_at,
+    (
+        SELECT group_concat(t.text, char(10))
+        FROM transcripts t
+        WHERE t.note_id = n.id
+          AND trim(coalesce(t.text, '')) != ''
+    ) AS transcript_text
+"""
+
+
+def search_with_fts(conn: sqlite3.Connection, terms: list[str], limit: int) -> list[Any]:
+    match = " OR ".join('"' + term.replace('"', '""') + '"' for term in terms)
+    # Notes by rank, then transcripts by rank for notes not already found;
+    # one row per note, in that order.
+    sql = f"""
+        WITH ranked AS (
+            SELECT f.note_id AS note_id, bm25(notes_fts, 0.0, 2.0, 1.0) AS rank, 0 AS corpus
+            FROM notes_fts f
+            WHERE notes_fts MATCH ?
+            UNION ALL
+            SELECT f.note_id AS note_id, bm25(transcripts_fts) AS rank, 1 AS corpus
+            FROM transcripts_fts f
+            WHERE transcripts_fts MATCH ?
+        ),
+        best AS (
+            SELECT note_id, min(corpus) AS corpus, min(rank) AS rank
+            FROM ranked
+            GROUP BY note_id
+        )
+        SELECT {NOTE_COLUMNS}
+        FROM best b
+        JOIN notes n ON n.id = b.note_id
+        ORDER BY b.corpus, b.rank
+        LIMIT ?
+    """
+    return conn.execute(sql, [match, match, limit]).fetchall()
+
+
+def search_with_like(conn: sqlite3.Connection, query: str, limit: int) -> list[Any]:
     where = ""
     params: list[Any] = []
     if query:
@@ -476,48 +594,15 @@ def search_meeting_notes(db_path: Path, arguments: dict[str, Any]) -> dict[str, 
            )
         """
         params.extend([needle, needle, needle, needle])
-
     sql = f"""
-        SELECT
-            n.id,
-            n.title,
-            n.generated_content,
-            n.edited_content,
-            n.processing_status,
-            n.created_at,
-            n.updated_at,
-            (
-                SELECT group_concat(t.text, char(10))
-                FROM transcripts t
-                WHERE t.note_id = n.id
-                  AND trim(coalesce(t.text, '')) != ''
-            ) AS transcript_text
+        SELECT {NOTE_COLUMNS}
         FROM notes n
         {where}
         ORDER BY n.updated_at DESC, n.created_at DESC, n.rowid DESC
         LIMIT ?
     """
     params.append(limit)
-
-    with connect_readonly(db_path) as conn:
-        rows = conn.execute(sql, params).fetchall()
-
-    items = []
-    for row in rows:
-        note_text = first_text(row["edited_content"], row["generated_content"])
-        transcript_text = row["transcript_text"] or ""
-        items.append(
-            {
-                "id": row["id"],
-                "title": row["title"] or "Untitled note",
-                "processingStatus": row["processing_status"],
-                "createdAt": row["created_at"],
-                "updatedAt": row["updated_at"],
-                "noteSnippet": snippet(note_text, query),
-                "transcriptSnippet": snippet(transcript_text, query),
-            }
-        )
-    return {"query": query, "count": len(items), "items": items}
+    return conn.execute(sql, params).fetchall()
 
 
 def row_value(row: Any, column: str) -> Any:

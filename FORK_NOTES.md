@@ -888,6 +888,19 @@ liste exacte des passages envoyés sous la réponse
 - `src/app/tab-meta.tsx` : `tabMeta` + `agentSessionTabTitle` sortis de
   `App.tsx` (cliquet de taille) ; `NoteEditor` reçoit `onExportMarkdown`.
 
+## L'agent desktop cherche comme « Ask » (2026-09-04)
+
+- `src-tauri/src/hermes/june_context_mcp.py` : `search_meeting_notes` passe
+  par FTS5 (`notes_fts` + `transcripts_fts`, bm25, un résultat par note,
+  notes avant transcriptions) avec les mêmes mots de contenu qu'`ask/`
+  (`content_terms`, stop-words FR/EN) ; repli LIKE sur `OperationalError`
+  (base sans l'index). La réponse garde sa forme (+ `terms`).
+- Test : `src/test/june-context-mcp.test.ts` pilote le vrai module avec le
+  `python3` de la machine sur une base synthétique (sauté sans python3).
+- ADR 0003 : le doublon du fork (image generation) devient
+  `docs/adr/0045-…` avec une note de renumérotation ; lien de CONTEXT.md
+  mis à jour.
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.
