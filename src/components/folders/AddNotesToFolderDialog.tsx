@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconCheckmark1 } from "central-icons-filled/IconCheckmark1";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconNoteText } from "central-icons/IconNoteText";
@@ -75,12 +76,12 @@ export function AddNotesToFolderDialog({
         onClose();
       }}
       title={`Add meeting notes to ${folder.name}`}
-      description="Pick the meeting notes you want in this project."
+      description={t("Pick the meeting notes you want in this project.")}
       initialFocusSelector='input[name="add-notes-search"]'
       footer={
         <>
           <button type="button" className="primary-action" onClick={onClose} disabled={submitting}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             type="button"
@@ -103,7 +104,7 @@ export function AddNotesToFolderDialog({
           <input
             type="search"
             name="add-notes-search"
-            placeholder="Search meeting notes"
+            placeholder={t("Search meeting notes")}
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
             autoComplete="off"

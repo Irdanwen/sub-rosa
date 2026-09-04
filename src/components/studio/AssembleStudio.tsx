@@ -12,6 +12,7 @@
 // them. That is the finishing path, and the reason the app can keep refusing to
 // ship ffmpeg (see lib/studio/timeline/fcpxml.ts).
 
+import { t } from "../../lib/i18n";
 import { IconVideo } from "central-icons/IconVideo";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { artifactSrc, listArtifacts, saveArtifactFromBase64 } from "../../lib/studio/artifacts";
@@ -247,7 +248,7 @@ export function AssembleStudio({
     try {
       const cut = await productionCut(runId);
       if (!cut) {
-        setError("That production has nothing left to open. Its files may have been deleted.");
+        setError(t("That production has nothing left to open. Its files may have been deleted."));
         return;
       }
       const gallery = await listArtifacts();
@@ -265,7 +266,7 @@ export function AssembleStudio({
         });
       }
       if (staged.length === 0) {
-        setError("None of that production's shots are still in your gallery.");
+        setError(t("None of that production's shots are still in your gallery."));
         return;
       }
       setCuts(staged);
@@ -301,7 +302,11 @@ export function AssembleStudio({
       }
       const missing = cut.shots.length - staged.length;
       if (missing > 0) {
-        setNotice(`${missing} shot${missing === 1 ? "" : "s"} are no longer in your gallery.`);
+        setNotice(
+          missing === 1
+            ? t("1 shot is no longer in your gallery.")
+            : t("{count} shots are no longer in your gallery.", { count: missing }),
+        );
       }
       for (const entry of staged) {
         void probeClip(artifactSrc(entry.artifact)).then((probed) => {
@@ -576,7 +581,7 @@ export function AssembleStudio({
     if (cuts.length === 0 || judging) return;
     const model = catalog ? pickJudgeModel(modelsOfType(catalog, "text")) : undefined;
     if (!model) {
-      setError("No model on this account can look at pictures.");
+      setError(t("No model on this account can look at pictures."));
       return;
     }
     setJudging(true);
@@ -590,7 +595,7 @@ export function AssembleStudio({
         try {
           const frame = await extractFrameAt(artifactSrc(cut.artifact), middle);
           subjects.push({
-            label: `Shot ${index + 1}`,
+            label: t("Shot {number}", { number: index + 1 }),
             intent: cut.artifact.prompt || undefined,
             imageDataUri: frame.dataUrl,
           });
@@ -608,7 +613,7 @@ export function AssembleStudio({
         model,
       );
       setVerdict(result);
-      if (!result) setNotice("The judge had nothing to say this time.");
+      if (!result) setNotice(t("The judge had nothing to say this time."));
     } finally {
       setJudging(false);
     }
@@ -625,9 +630,14 @@ export function AssembleStudio({
       const written = await writeTimelineBundle(bundleInput, timelineFormat);
       if (written.cancelled) return;
       setNotice(
-        `Wrote ${written.directory} with ${written.mediaCount} file${
-          written.mediaCount === 1 ? "" : "s"
-        } next to the timeline.`,
+        written.mediaCount === 1
+          ? t("Wrote {directory} with 1 file next to the timeline.", {
+              directory: written.directory,
+            })
+          : t("Wrote {directory} with {count} files next to the timeline.", {
+              directory: written.directory,
+              count: written.mediaCount,
+            }),
       );
     } catch (writeError) {
       setError(writeError instanceof Error ? writeError.message : "The timeline export failed.");
@@ -693,7 +703,7 @@ export function AssembleStudio({
   const controls = (
     <>
       <StudioField
-        label="Clips"
+        label={t("Clips")}
         hint={cuts.length > 0 ? `${cuts.length} · ${formatSeconds(totalSeconds)}` : undefined}
       >
         <div className="studio-cutlist">
@@ -710,7 +720,7 @@ export function AssembleStudio({
                     <button
                       type="button"
                       className="studio-icon-button"
-                      aria-label="Move clip up"
+                      aria-label={t("Move clip up")}
                       disabled={index === 0}
                       onClick={() => move(cut.key, -1)}
                     >
@@ -719,7 +729,7 @@ export function AssembleStudio({
                     <button
                       type="button"
                       className="studio-icon-button"
-                      aria-label="Move clip down"
+                      aria-label={t("Move clip down")}
                       disabled={index === cuts.length - 1}
                       onClick={() => move(cut.key, 1)}
                     >
@@ -728,7 +738,7 @@ export function AssembleStudio({
                     <button
                       type="button"
                       className="studio-icon-button"
-                      aria-label="Remove clip"
+                      aria-label={t("Remove clip")}
                       onClick={() =>
                         setCuts((current) => current.filter((entry) => entry.key !== cut.key))
                       }
@@ -739,7 +749,7 @@ export function AssembleStudio({
                 </div>
                 <div className="studio-cut-trim">
                   <label>
-                    <span>Start</span>
+                    <span>{t("Start")}</span>
                     <input
                       className="studio-input"
                       inputMode="decimal"
@@ -754,7 +764,7 @@ export function AssembleStudio({
                     />
                   </label>
                   <label>
-                    <span>End</span>
+                    <span>{t("End")}</span>
                     <input
                       className="studio-input"
                       inputMode="decimal"
@@ -784,7 +794,7 @@ export function AssembleStudio({
           <Select
             value={null}
             placeholder={cuts.length > 0 ? "Add another clip" : "Add a clip from your gallery"}
-            ariaLabel="Add a clip"
+            ariaLabel={t("Add a clip")}
             onChange={(path) => {
               const artifact = galleryVideos.find((entry) => entry.path === path);
               if (artifact) void addCut(artifact);
@@ -797,11 +807,14 @@ export function AssembleStudio({
         </div>
       </StudioField>
       {productions.length > 0 ? (
-        <StudioField label="A film you made" hint="Opens its shots and sound, to finish properly">
+        <StudioField
+          label={t("A film you made")}
+          hint={t("Opens its shots and sound, to finish properly")}
+        >
           <Select
             value={null}
             placeholder={loadingProduction ? "Opening..." : "Open a production"}
-            ariaLabel="Open a production"
+            ariaLabel={t("Open a production")}
             onChange={(runId) => void openProduction(runId)}
             options={productions.map((run) => ({
               value: run.id,
@@ -811,7 +824,7 @@ export function AssembleStudio({
         </StudioField>
       ) : null}
       <StudioField
-        label="Sound"
+        label={t("Sound")}
         hint={sounds.length > 0 ? `${sounds.length} on 3 lanes` : "Dialogue, effects, music"}
       >
         <div className="studio-cutlist">
@@ -836,17 +849,17 @@ export function AssembleStudio({
               </div>
               <div className="studio-cut-trim">
                 <div>
-                  <span>Lane</span>
+                  <span>{t("Lane")}</span>
                   <Select
                     value={sound.lane}
-                    placeholder="Music"
+                    placeholder={t("Music")}
                     ariaLabel={`Sound ${index + 1} lane`}
                     onChange={(value) => patchSound(sound.key, { lane: value as AudioLane })}
                     options={AUDIO_LANES.map((lane) => ({ value: lane, label: LANE_LABELS[lane] }))}
                   />
                 </div>
                 <label>
-                  <span>Start</span>
+                  <span>{t("Start")}</span>
                   <input
                     className="studio-input"
                     inputMode="decimal"
@@ -875,7 +888,7 @@ export function AssembleStudio({
           <Select
             value={null}
             placeholder={sounds.length > 0 ? "Add another sound" : "Add a sound from your gallery"}
-            ariaLabel="Add a sound"
+            ariaLabel={t("Add a sound")}
             onChange={(path) => {
               const artifact = galleryAudio.find((entry) => entry.path === path);
               if (artifact) void addSound(artifact);
@@ -889,20 +902,20 @@ export function AssembleStudio({
       </StudioField>
       {cuts.length > 0 ? (
         <>
-          <StudioField label="Film name" hint="Names the export">
+          <StudioField label={t("Film name")} hint={t("Names the export")}>
             <input
               className="studio-input"
               type="text"
               value={filmName}
-              aria-label="Film name"
+              aria-label={t("Film name")}
               onChange={(event) => setFilmName(event.target.value)}
             />
           </StudioField>
-          <StudioField label="Timeline for" hint="Used by the timeline export">
+          <StudioField label={t("Timeline for")} hint={t("Used by the timeline export")}>
             <Select
               value={timelineFormat}
-              placeholder="Final Cut Pro and Resolve"
-              ariaLabel="Timeline format"
+              placeholder={t("Final Cut Pro and Resolve")}
+              ariaLabel={t("Timeline format")}
               onChange={(value) => setTimelineFormat(value as TimelineFormat)}
               options={Object.entries(TIMELINE_FORMAT_LABELS).map(([value, label]) => ({
                 value,
@@ -910,11 +923,11 @@ export function AssembleStudio({
               }))}
             />
           </StudioField>
-          <StudioField label="Frame rate" hint="Frames per second in the timeline">
+          <StudioField label={t("Frame rate")} hint={t("Frames per second in the timeline")}>
             <Select
               value={frameRateKey}
               placeholder="30"
-              ariaLabel="Frame rate"
+              ariaLabel={t("Frame rate")}
               onChange={setFrameRateKey}
               options={Object.keys(FRAME_RATES).map((key) => ({ value: key, label: key }))}
             />
@@ -927,9 +940,9 @@ export function AssembleStudio({
   const action = exporting ? (
     <div className="studio-progress">
       <Spinner aria-hidden />
-      <span>Exporting {Math.round(progress * 100)}%</span>
+      <span>{t("Exporting {percent}%", { percent: Math.round(progress * 100) })}</span>
       <button type="button" className="btn btn-secondary" onClick={() => abortRef.current?.abort()}>
-        Cancel
+        {t("Cancel")}
       </button>
     </div>
   ) : (
@@ -940,7 +953,7 @@ export function AssembleStudio({
         disabled={cuts.length === 0}
         onClick={() => void runExport()}
       >
-        Export film
+        {t("Export film")}
       </button>
       <button
         type="button"
@@ -962,8 +975,10 @@ export function AssembleStudio({
         <p className="studio-queue-hint">{timelineBlockers.join(" ")}</p>
       ) : totalSeconds > 0 ? (
         <p className="studio-queue-hint">
-          Exporting the film runs in real time: about {formatElapsed(totalSeconds * 1000)} for this
-          cut. The timeline is written instantly and keeps every clip untouched.
+          {t(
+            "Exporting the film runs in real time: about {duration} for this cut. The timeline is written instantly and keeps every clip untouched.",
+            { duration: formatElapsed(totalSeconds * 1000) },
+          )}
         </p>
       ) : null}
     </>
@@ -1011,8 +1026,10 @@ export function AssembleStudio({
           cuts.length === 0 ? (
             <EmptyState
               icon={<IconVideo size={22} />}
-              title="Nothing to assemble yet"
-              description="Generate a few clips in the video tab, then add them here to cut one film."
+              title={t("Nothing to assemble yet")}
+              description={t(
+                "Generate a few clips in the video tab, then add them here to cut one film.",
+              )}
             />
           ) : null
         }

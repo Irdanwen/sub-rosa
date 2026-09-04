@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { messageFromError } from "../../lib/errors";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
@@ -95,10 +96,10 @@ export function McpDiagnosticsView({
   return (
     <section className="settings-group mcp-diagnostics" aria-labelledby="mcp-diagnostics-heading">
       <h2 id="mcp-diagnostics-heading" className="settings-group-heading">
-        MCP diagnostics
+        {t("MCP diagnostics")}
       </h2>
       <p className="settings-group-description">
-        See exactly why MCP tools are or are not available to your sessions.{" "}
+        {t("See exactly why MCP tools are or are not available to your sessions.")}{" "}
         <ModeNote mode={state.mode ?? mode} profile={state.profile} show={!isUnavailable} />
       </p>
 
@@ -106,11 +107,12 @@ export function McpDiagnosticsView({
         <div className="mcp-diagnostics-stale" data-tone="warning" role="status">
           <span className="mcp-diagnostics-stale-eyebrow">
             <IconCircleInfo size={15} ariaHidden />
-            Restart required
+            {t("Restart required")}
           </span>
           <span className="mcp-diagnostics-stale-body">
-            This shows the last known tool inventory. Restart the Hermes gateway to rebuild it with
-            your latest changes.
+            {t(
+              "This shows the last known tool inventory. Restart the Hermes gateway to rebuild it with your latest changes.",
+            )}
           </span>
         </div>
       ) : null}
@@ -125,8 +127,8 @@ export function McpDiagnosticsView({
       <div className="settings-card mcp-diagnostics-card">
         {isUnavailable ? (
           <EmptyState
-            title="Hermes is not running"
-            description="Start Hermes to diagnose the MCP servers your sessions can use."
+            title={t("Hermes is not running")}
+            description={t("Start Hermes to diagnose the MCP servers your sessions can use.")}
           />
         ) : isErrored ? (
           <ErrorState
@@ -138,8 +140,8 @@ export function McpDiagnosticsView({
           <Loading />
         ) : !hasServers ? (
           <EmptyState
-            title="No MCP servers"
-            description="Add a server on the MCP servers page to diagnose its tools here."
+            title={t("No MCP servers")}
+            description={t("Add a server on the MCP servers page to diagnose its tools here.")}
           />
         ) : (
           <>
@@ -175,8 +177,8 @@ function ModeNote({
   const modeLabel = mode === "unrestricted" ? "Full mode" : "Sandboxed";
   return (
     <span className="mcp-diagnostics-mode-note">
-      Targeting the {modeLabel} runtime
-      {profile ? ` (profile ${profile})` : ""}.
+      {t("Targeting the {mode} runtime", { mode: modeLabel })}
+      {profile ? t(" (profile {profile})", { profile }) : ""}.
     </span>
   );
 }
@@ -185,14 +187,14 @@ function ModeNote({
 function SummaryBar({ state }: { state: McpDiagnosticsState }) {
   const { summary } = state;
   return (
-    <div className="mcp-diagnostics-summary" role="group" aria-label="MCP health">
+    <div className="mcp-diagnostics-summary" role="group" aria-label={t("MCP health")}>
       <div className="mcp-diagnostics-counts">
-        <Count label="Enabled" value={summary.enabled} tone="ok" />
-        <Count label="Disabled" value={summary.disabled} tone="neutral" />
-        <Count label="Failing" value={summary.failing} tone="error" />
-        <Count label="Auth needed" value={summary.authNeeded} tone="attention" />
+        <Count label={t("Enabled")} value={summary.enabled} tone="ok" />
+        <Count label={t("Disabled")} value={summary.disabled} tone="neutral" />
+        <Count label={t("Failing")} value={summary.failing} tone="error" />
+        <Count label={t("Auth needed")} value={summary.authNeeded} tone="attention" />
         {summary.restartPending ? (
-          <Count label="Restart pending" value={1} tone="attention" />
+          <Count label={t("Restart pending")} value={1} tone="attention" />
         ) : null}
       </div>
       <div className="mcp-diagnostics-actions">
@@ -246,7 +248,7 @@ function ExportButton({ state }: { state: McpDiagnosticsState }) {
       onClick={handleExport}
     >
       <IconArrowInbox size={14} ariaHidden />
-      Export diagnostics
+      {t("Export diagnostics")}
     </button>
   );
 }
@@ -258,7 +260,7 @@ function ReasonChain({ state }: { state: McpDiagnosticsState }) {
   return (
     <div className="mcp-diagnostics-reason">
       <label className="mcp-diagnostics-reason-label" htmlFor="mcp-tool-query">
-        Why is a tool missing?
+        {t("Why is a tool missing?")}
       </label>
       <div className="mcp-diagnostics-reason-search">
         <IconMagnifyingGlass size={15} ariaHidden className="mcp-diagnostics-reason-icon" />
@@ -266,8 +268,8 @@ function ReasonChain({ state }: { state: McpDiagnosticsState }) {
           id="mcp-tool-query"
           type="search"
           value={state.toolQuery}
-          placeholder="mcp_linear_delete_workspace"
-          aria-label="Tool name to diagnose"
+          placeholder={t("mcp_linear_delete_workspace")}
+          aria-label={t("Tool name to diagnose")}
           autoComplete="off"
           spellCheck={false}
           onChange={(event) => state.setToolQuery(event.currentTarget.value)}
@@ -344,62 +346,62 @@ function DiagnosticsRow({
       ) : (
         <p className="mcp-diagnostics-healthy" role="status">
           <IconCircleCheck size={13} ariaHidden />
-          No problems found. Its tools register after the gateway restarts.
+          {t("No problems found. Its tools register after the gateway restarts.")}
         </p>
       )}
 
       <dl className="mcp-diagnostics-facts">
-        <Fact label="Connection">
+        <Fact label={t("Connection")}>
           {server.transport === "stdio"
             ? (server.command ?? "No command configured.")
             : (server.url ?? "No URL configured.")}
         </Fact>
-        {server.statusMessage ? <Fact label="Last test">{server.statusMessage}</Fact> : null}
-        <Fact label="Discovered tools">
+        {server.statusMessage ? <Fact label={t("Last test")}>{server.statusMessage}</Fact> : null}
+        <Fact label={t("Discovered tools")}>
           {diagnostics.discoveredTools.length > 0
             ? `${diagnostics.discoveredTools.map((tool) => tool.name).join(", ")} (${
                 diagnostics.discoveredFromTest ? "from last test" : "from stored config"
               })`
             : "None reported. Run a test to discover them."}
         </Fact>
-        <Fact label="Registered tool names (derived)">
+        <Fact label={t("Registered tool names (derived)")}>
           {diagnostics.derivedRegisteredTools.length > 0
             ? diagnostics.derivedRegisteredTools.join(", ")
             : "None. Nothing registers in the current state."}
         </Fact>
-        <Fact label="Tool filtering">
+        <Fact label={t("Tool filtering")}>
           <FilterSummary diagnostics={diagnostics} />
         </Fact>
         {policy.allowed.length > 0 || policy.tools.length > 0 ? (
-          <Fact label="Allowed tools">
+          <Fact label={t("Allowed tools")}>
             {policy.allowed.length > 0
               ? policy.allowed.join(", ")
               : "None. Filtering hides every tool."}
           </Fact>
         ) : null}
-        <Fact label="Resource and prompt utilities">
+        <Fact label={t("Resource and prompt utilities")}>
           {formatUtilities(diagnostics.resourcesAvailable, diagnostics.promptsAvailable)}
         </Fact>
         {diagnostics.timeoutSeconds !== undefined ||
         diagnostics.connectTimeoutSeconds !== undefined ? (
-          <Fact label="Timeouts">
+          <Fact label={t("Timeouts")}>
             {formatTimeouts(diagnostics.timeoutSeconds, diagnostics.connectTimeoutSeconds)}
           </Fact>
         ) : null}
         {diagnostics.missingEnv.length > 0 || diagnostics.missingHeaders.length > 0 ? (
-          <Fact label="Missing values">
+          <Fact label={t("Missing values")}>
             {[...diagnostics.missingEnv, ...diagnostics.missingHeaders].join(", ")}
           </Fact>
         ) : null}
         {env.length > 0 || headers.length > 0 ? (
-          <Fact label="Configured secrets">
+          <Fact label={t("Configured secrets")}>
             {[
-              env.length > 0 ? `${env.length} environment` : null,
-              headers.length > 0 ? `${headers.length} headers` : null,
+              env.length > 0 ? t("{count} environment", { count: env.length }) : null,
+              headers.length > 0 ? t("{count} headers", { count: headers.length }) : null,
             ]
               .filter(Boolean)
               .join(", ")}{" "}
-            (values hidden)
+            {t("(values hidden)")}
           </Fact>
         ) : null}
       </dl>
@@ -410,7 +412,7 @@ function DiagnosticsRow({
 function FilterSummary({ diagnostics }: { diagnostics: ServerDiagnostics }) {
   const { policy } = diagnostics;
   if (policy.include.length === 0 && policy.exclude.length === 0) {
-    return <>No filters. Every discovered tool is allowed.</>;
+    return <>{t("No filters. Every discovered tool is allowed.")}</>;
   }
   const parts: string[] = [];
   if (policy.include.length > 0) {
@@ -530,11 +532,11 @@ function ErrorState({
       <span className="mcp-diagnostics-empty-icon" aria-hidden>
         <IconExclamationCircle size={22} />
       </span>
-      <p className="mcp-diagnostics-empty-title">Couldn't load MCP servers</p>
+      <p className="mcp-diagnostics-empty-title">{t("Couldn't load MCP servers")}</p>
       <p className="mcp-diagnostics-empty-description">{message}</p>
       {retryable ? (
         <button type="button" className="mcp-diagnostics-retry" onClick={onRetry}>
-          Try again
+          {t("Try again")}
         </button>
       ) : null}
     </div>

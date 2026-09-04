@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconBlock } from "central-icons/IconBlock";
 import { IconBolt } from "central-icons/IconBolt";
 import { IconCode } from "central-icons/IconCode";
@@ -81,7 +82,7 @@ export function SkillInstallReviewDialog({
       footer={
         <>
           <button type="button" className="primary-action" onClick={cancel}>
-            Cancel
+            {t("Cancel")}
           </button>
           {review.installable ? (
             <button
@@ -105,7 +106,7 @@ export function SkillInstallReviewDialog({
 
         <dl className="skill-review-facts">
           <div className="skill-review-fact">
-            <dt>Source</dt>
+            <dt>{t("Source")}</dt>
             <dd>
               {review.sourceLabel}
               <span className="skill-review-verdict-pill" data-tone={review.verdict.tone}>
@@ -115,8 +116,8 @@ export function SkillInstallReviewDialog({
           </div>
           {review.directUrl ? (
             <div className="skill-review-fact">
-              <dt>Install type</dt>
-              <dd>Single SKILL.md file fetched directly from a URL</dd>
+              <dt>{t("Install type")}</dt>
+              <dd>{t("Single SKILL.md file fetched directly from a URL")}</dd>
             </div>
           ) : null}
         </dl>
@@ -124,8 +125,8 @@ export function SkillInstallReviewDialog({
         {review.summary ? <p className="skill-review-summary">{review.summary}</p> : null}
 
         {review.findings.length > 0 ? (
-          <section className="skill-review-section" aria-label="Security findings">
-            <h4 className="skill-review-section-title">What the scan found</h4>
+          <section className="skill-review-section" aria-label={t("Security findings")}>
+            <h4 className="skill-review-section-title">{t("What the scan found")}</h4>
             <ul className="skill-review-findings">
               {review.findings.map((finding, index) => (
                 <li
@@ -144,10 +145,10 @@ export function SkillInstallReviewDialog({
         ) : null}
 
         {review.bundle.length > 0 ? (
-          <section className="skill-review-section" aria-label="What it bundles">
+          <section className="skill-review-section" aria-label={t("What it bundles")}>
             <h4 className="skill-review-section-title">
               <IconCode size={14} ariaHidden />
-              What this skill bundles
+              {t("What this skill bundles")}
             </h4>
             <ul className="skill-review-bundle">
               {review.bundle.map((line) => (
@@ -161,10 +162,13 @@ export function SkillInstallReviewDialog({
         ) : null}
 
         {review.capabilities.length > 0 ? (
-          <section className="skill-review-section" aria-label="Capabilities the skill may use">
+          <section
+            className="skill-review-section"
+            aria-label={t("Capabilities the skill may use")}
+          >
             <h4 className="skill-review-section-title">
               <IconBolt size={14} ariaHidden />
-              Capabilities it may ask the agent to use
+              {t("Capabilities it may ask the agent to use")}
             </h4>
             <ul className="skill-review-chips">
               {review.capabilities.map((capability) => (
@@ -177,10 +181,10 @@ export function SkillInstallReviewDialog({
         ) : null}
 
         {review.affectedFiles.length > 0 ? (
-          <section className="skill-review-section" aria-label="Affected files">
+          <section className="skill-review-section" aria-label={t("Affected files")}>
             <h4 className="skill-review-section-title">
               <IconFileText size={14} ariaHidden />
-              Files it adds
+              {t("Files it adds")}
             </h4>
             <ul className="skill-review-files">
               {review.affectedFiles.map((file) => (
@@ -193,8 +197,8 @@ export function SkillInstallReviewDialog({
         ) : null}
 
         {review.upstreamUrls.length > 0 ? (
-          <section className="skill-review-section" aria-label="Source links">
-            <h4 className="skill-review-section-title">Where it comes from</h4>
+          <section className="skill-review-section" aria-label={t("Source links")}>
+            <h4 className="skill-review-section-title">{t("Where it comes from")}</h4>
             <ul className="skill-review-links">
               {review.upstreamUrls.map((url) => (
                 <li key={url}>
@@ -209,15 +213,17 @@ export function SkillInstallReviewDialog({
 
         {hasScripts && review.installable ? (
           <p className="skill-review-runtime" role="note">
-            Helper scripts run in the {modeLabel} runtime when the agent uses this skill. Only
-            install it if you trust what those scripts do.
+            {t(
+              "Helper scripts run in the {modeLabel} runtime when the agent uses this skill. Only install it if you trust what those scripts do.",
+              { modeLabel },
+            )}
           </p>
         ) : null}
 
         <details className="skill-review-advanced">
-          <summary>Advanced</summary>
+          <summary>{t("Advanced")}</summary>
           <dl className="skill-review-advanced-list">
-            <dt>Install identifier</dt>
+            <dt>{t("Install identifier")}</dt>
             <dd className="skill-review-mono">{review.identifier}</dd>
           </dl>
         </details>
@@ -230,15 +236,16 @@ export function SkillInstallReviewDialog({
               checked={acknowledged}
               onChange={(event) => setAcknowledged(event.currentTarget.checked)}
             />
-            <span>I reviewed the findings above and want to install this skill anyway.</span>
+            <span>{t("I reviewed the findings above and want to install this skill anyway.")}</span>
           </label>
         ) : null}
 
         {!review.installable ? (
           <p className="skill-review-blocked" role="alert">
             <IconBlock size={14} ariaHidden />
-            Hermes blocked this skill. Sub Rosa will not install a skill that fails the security
-            review.
+            {t(
+              "Hermes blocked this skill. Sub Rosa will not install a skill that fails the security review.",
+            )}
           </p>
         ) : null}
       </div>

@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconGlobe } from "central-icons/IconGlobe";
 import { IconLock } from "central-icons/IconLock";
 import { IconShieldCheck } from "central-icons/IconShieldCheck";
@@ -33,7 +34,7 @@ export function PrivacySettingsSection() {
         setHosts(declared);
         setBaseUrl(settings.baseUrl);
       } catch {
-        setError("Could not read the list of destinations. Restart the app and try again.");
+        setError(t("Could not read the list of destinations. Restart the app and try again."));
       }
     })();
   }, []);
@@ -44,11 +45,12 @@ export function PrivacySettingsSection() {
   return (
     <section className="settings-group" aria-labelledby="privacy-heading">
       <h2 id="privacy-heading" className="settings-group-heading">
-        What leaves, what stays
+        {t("What leaves, what stays")}
       </h2>
       <p className="settings-group-description">
-        Every address this app can reach, and why. Anything not on this list is not something the
-        app can contact: the list is checked against the code when the app is built.
+        {t(
+          "Every address this app can reach, and why. Anything not on this list is not something the app can contact: the list is checked against the code when the app is built.",
+        )}
       </p>
 
       {error ? (
@@ -66,11 +68,11 @@ export function PrivacySettingsSection() {
           <IconLock size={18} />
         </div>
         <div>
-          <h3 className="settings-row-title">Your notes stay here</h3>
+          <h3 className="settings-row-title">{t("Your notes stay here")}</h3>
           <p className="settings-row-description">
-            Recordings, transcripts, notes, and what the app remembers about you are stored on this
-            machine and are never uploaded. Your key is held in the system keychain, and the app
-            never shows it to the screen or writes it to a log.
+            {t(
+              "Recordings, transcripts, notes, and what the app remembers about you are stored on this machine and are never uploaded. Your key is held in the system keychain, and the app never shows it to the screen or writes it to a log.",
+            )}
           </p>
         </div>
       </div>
@@ -78,7 +80,7 @@ export function PrivacySettingsSection() {
       <div className="settings-card">
         <div className="settings-card-header">
           <IconGlobe size={15} ariaHidden />
-          <h3 className="settings-row-title">Contacted while the app runs</h3>
+          <h3 className="settings-row-title">{t("Contacted while the app runs")}</h3>
         </div>
         <ul className="privacy-hosts">
           {always.map((host) => (
@@ -97,7 +99,7 @@ export function PrivacySettingsSection() {
       <div className="settings-card">
         <div className="settings-card-header">
           <IconShieldCheck size={15} ariaHidden />
-          <h3 className="settings-row-title">Contacted only when you ask</h3>
+          <h3 className="settings-row-title">{t("Contacted only when you ask")}</h3>
         </div>
         <ul className="privacy-hosts">
           {whenAsked.map((host) => (
@@ -110,8 +112,9 @@ export function PrivacySettingsSection() {
       </div>
 
       <p className="settings-group-description">
-        The full reasoning, including what this app deliberately does not protect against, is in the
-        threat model.{" "}
+        {t(
+          "The full reasoning, including what this app deliberately does not protect against, is in the threat model.",
+        )}{" "}
         <button
           type="button"
           className="privacy-link"
@@ -121,7 +124,7 @@ export function PrivacySettingsSection() {
             )
           }
         >
-          Read the threat model
+          {t("Read the threat model")}
         </button>
       </p>
     </section>

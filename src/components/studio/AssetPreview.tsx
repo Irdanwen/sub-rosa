@@ -6,6 +6,7 @@
 // moves). So the item is resolved at render time, from the editor's one shared
 // index, and previewed the way this platform can afford to.
 
+import { t } from "../../lib/i18n";
 import { useArtifactPreview } from "../../lib/artifact-media";
 import type { StudioArtifact } from "../../lib/studio/types";
 
@@ -26,7 +27,7 @@ export function AssetPreview({
     // only minutes in, after the nodes above it have been paid for.
     return loaded ? (
       <p className={`${className} ${className}-missing`}>
-        This gallery item is gone. Pick another one.
+        {t("This gallery item is gone. Pick another one.")}
       </p>
     ) : null;
   }

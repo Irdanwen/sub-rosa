@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconArrowDown } from "central-icons/IconArrowDown";
@@ -150,9 +151,9 @@ export function AgentScreen({
       <SwipeableRow
         actions={[
           isArchived
-            ? { label: "Restore", tone: "neutral", onAction: () => void restore(task.id) }
-            : { label: "Archive", tone: "neutral", onAction: () => void archive(task.id) },
-          { label: "Delete", tone: "destructive", onAction: () => setConfirmDelete(task) },
+            ? { label: t("Restore"), tone: "neutral", onAction: () => void restore(task.id) }
+            : { label: t("Archive"), tone: "neutral", onAction: () => void archive(task.id) },
+          { label: t("Delete"), tone: "destructive", onAction: () => setConfirmDelete(task) },
         ]}
       >
         <button type="button" className="mobile-note-row" onClick={() => onOpenSession(task.id)}>
@@ -172,14 +173,14 @@ export function AgentScreen({
   return (
     <div className="mobile-screen-root">
       <StackHeader
-        title="Chats"
+        title={t("Chats")}
         large
         onBack={onBack}
         trailing={
           <button
             type="button"
             className="mobile-icon-button"
-            aria-label="New chat"
+            aria-label={t("New chat")}
             onClick={() => onOpenSession(undefined)}
           >
             <IconPlusMedium size={20} />
@@ -199,26 +200,26 @@ export function AgentScreen({
         ) : loadError && active.length === 0 && archived.length === 0 ? (
           <EmptyState
             icon={<IconBubble3 size={28} />}
-            title="Couldn't load your chats"
+            title={t("Couldn't load your chats")}
             description={loadError}
             action={
               <button type="button" className="mobile-chip-button" onClick={() => void refresh()}>
-                Try again
+                {t("Try again")}
               </button>
             }
           />
         ) : active.length === 0 && archived.length === 0 ? (
           <EmptyState
             icon={<IconBubble3 size={28} />}
-            title="Ask about your notes"
-            description="Start a chat to search your meetings and the web."
+            title={t("Ask about your notes")}
+            description={t("Start a chat to search your meetings and the web.")}
             action={
               <button
                 type="button"
                 className="mobile-chip-button"
                 onClick={() => onOpenSession(undefined)}
               >
-                New chat
+                {t("New chat")}
               </button>
             }
           />
@@ -246,9 +247,9 @@ export function AgentScreen({
       </PullToRefresh>
       <ConfirmDialog
         open={confirmDelete !== null}
-        title="Delete this chat?"
-        description="The conversation and its messages are removed from this device."
-        confirmLabel="Delete"
+        title={t("Delete this chat?")}
+        description={t("The conversation and its messages are removed from this device.")}
+        confirmLabel={t("Delete")}
         destructive
         onConfirm={() => {
           if (confirmDelete) void remove(confirmDelete.id);
@@ -480,11 +481,11 @@ export function AgentSessionScreen({
         .then((data) => {
           setAttachments((current) => [...current, { kind: "image", name: file.name, data }]);
         })
-        .catch(() => setError("This image could not be read."));
+        .catch(() => setError(t("This image could not be read.")));
       return;
     }
     if (file.size > 512 * 1024) {
-      setError("Text files up to 512 KB can be attached.");
+      setError(t("Text files up to 512 KB can be attached."));
       return;
     }
     const reader = new FileReader();
@@ -654,13 +655,13 @@ export function AgentSessionScreen({
       <StackHeader
         title={task?.title.trim() || "New chat"}
         onBack={onBack}
-        backLabel="Chats"
+        backLabel={t("Chats")}
         trailing={
           <>
             {credits ? (
               // Compact form (no "credits" word): the pill shares the header
               // with the title and two buttons, unlike Studio's roomy one.
-              <span className="mobile-credits-pill" aria-label="Available credits">
+              <span className="mobile-credits-pill" aria-label={t("Available credits")}>
                 {formatCredits(credits.availableCredits).replace(" credits", "")}
                 {typeof credits.priceMultiplier === "number"
                   ? ` · x${credits.priceMultiplier.toFixed(2)}`
@@ -671,7 +672,7 @@ export function AgentSessionScreen({
               <button
                 type="button"
                 className="mobile-icon-button"
-                aria-label="Chat history"
+                aria-label={t("Chat history")}
                 onClick={onOpenHistory}
               >
                 <IconClock size={20} />
@@ -681,7 +682,7 @@ export function AgentSessionScreen({
               <button
                 type="button"
                 className="mobile-icon-button"
-                aria-label="New chat"
+                aria-label={t("New chat")}
                 disabled={running}
                 onClick={onNewChat}
               >
@@ -698,7 +699,9 @@ export function AgentSessionScreen({
               <BrandGradientMark />
             </span>
             <h2 className="mobile-chat-hero-greeting">{greeting()}</h2>
-            <p className="mobile-chat-hero-hint">Ask about your notes, or have me write one.</p>
+            <p className="mobile-chat-hero-hint">
+              {t("Ask about your notes, or have me write one.")}
+            </p>
             {/* An empty chat with only a placeholder makes the user invent the
              * capability. These name what it can actually do now: read a note
              * in full, search the web, and write back. */}
@@ -787,7 +790,7 @@ export function AgentSessionScreen({
             <p className="mobile-dictation-error">{error}</p>
             {canRetry ? (
               <button type="button" className="mobile-chat-retry" onClick={() => void retryTurn()}>
-                Try again
+                {t("Try again")}
               </button>
             ) : null}
           </div>
@@ -797,7 +800,7 @@ export function AgentSessionScreen({
         <button
           type="button"
           className="mobile-chat-jump"
-          aria-label="Jump to latest message"
+          aria-label={t("Jump to latest message")}
           onClick={jumpToLatest}
         >
           <IconArrowDown size={16} />
@@ -848,7 +851,7 @@ export function AgentSessionScreen({
             ref={chatInputRef}
             className="mobile-chat-input"
             value={draft}
-            placeholder="Ask about your notes"
+            placeholder={t("Ask about your notes")}
             rows={1}
             onChange={(event) => setDraft(event.target.value)}
             onPaste={(event) => {
@@ -873,7 +876,7 @@ export function AgentSessionScreen({
             <button
               type="button"
               className="mobile-composer-round"
-              aria-label="Attach a file"
+              aria-label={t("Attach a file")}
               onClick={() => attachInputRef.current?.click()}
             >
               <IconPaperclip1 size={17} />
@@ -882,7 +885,7 @@ export function AgentSessionScreen({
               type="button"
               className="mobile-composer-model"
               onClick={() => setPickerOpen(true)}
-              aria-label="Choose model"
+              aria-label={t("Choose model")}
             >
               {activeModelLabel}
             </button>
@@ -899,7 +902,7 @@ export function AgentSessionScreen({
             <button
               type="button"
               className="mobile-chat-send"
-              aria-label="Send"
+              aria-label={t("Send")}
               disabled={(!draft.trim() && attachments.length === 0) || running}
               onClick={() => void send()}
             >
@@ -910,7 +913,7 @@ export function AgentSessionScreen({
       </div>
       {pickerOpen ? (
         <ModelSheet
-          title="Chat model"
+          title={t("Chat model")}
           entries={models.map((entry) => ({
             id: entry.id,
             name: entry.name,
@@ -920,7 +923,7 @@ export function AgentSessionScreen({
                 : undefined,
           }))}
           selectedId={model}
-          defaultOption={{ label: "Default", subtitle: "Recommended model" }}
+          defaultOption={{ label: t("Default"), subtitle: t("Recommended model") }}
           error={modelsError}
           onSelect={selectModel}
           onFork={task ? forkChat : undefined}
@@ -971,7 +974,7 @@ function CopyReplyButton({ text }: { text: string }) {
       type="button"
       className="mobile-chat-copy"
       onClick={() => void copy()}
-      aria-label="Copy reply"
+      aria-label={t("Copy reply")}
     >
       {copied ? <IconCheckmark1Small size={13} /> : <IconClipboard size={13} />}
       {copied ? "Copied" : "Copy"}

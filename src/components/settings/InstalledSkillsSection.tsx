@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconArrowUpRight } from "central-icons/IconArrowUpRight";
@@ -160,11 +161,12 @@ export function InstalledSkillsView({
   return (
     <section className="settings-group installed-skills" aria-labelledby="installed-skills-heading">
       <h2 id="installed-skills-heading" className="settings-group-heading">
-        Installed skills
+        {t("Installed skills")}
       </h2>
       <p className="settings-group-description">
-        Browse the skills Hermes has installed and choose which ones future sessions can use.
-        Changes apply to new sessions.{" "}
+        {t(
+          "Browse the skills Hermes has installed and choose which ones future sessions can use. Changes apply to new sessions.",
+        )}{" "}
         <ModeNote mode={state.mode ?? mode} profile={state.profile} show={!isUnavailable} />
       </p>
 
@@ -181,8 +183,8 @@ export function InstalledSkillsView({
             <input
               type="search"
               value={query}
-              placeholder="Filter skills"
-              aria-label="Filter installed skills"
+              placeholder={t("Filter skills")}
+              aria-label={t("Filter installed skills")}
               disabled={isUnavailable}
               onChange={(event) => setQuery(event.currentTarget.value)}
             />
@@ -206,7 +208,7 @@ export function InstalledSkillsView({
               onClick={() => lifecycle.updateAll(state.skills)}
             >
               <IconArrowInbox size={14} ariaHidden />
-              Update all ({updatableCount})
+              {t("Update all ({updatableCount})", { updatableCount })}
             </button>
           ) : null}
           <button
@@ -216,7 +218,7 @@ export function InstalledSkillsView({
             onClick={state.refresh}
           >
             <IconArrowRotateClockwise size={14} ariaHidden />
-            Refresh
+            {t("Refresh")}
           </button>
         </div>
         {lifecycle?.sweepError ? (
@@ -227,9 +229,13 @@ export function InstalledSkillsView({
         ) : null}
 
         {categories.length > 1 && !isUnavailable ? (
-          <div className="installed-skills-filters" role="group" aria-label="Filter by category">
+          <div
+            className="installed-skills-filters"
+            role="group"
+            aria-label={t("Filter by category")}
+          >
             <CategoryChip
-              label="All"
+              label={t("All")}
               count={state.skills.length}
               active={activeCategory === ALL_CATEGORIES}
               onSelect={() => setCategory(ALL_CATEGORIES)}
@@ -256,8 +262,10 @@ export function InstalledSkillsView({
         <div className="installed-skills-body">
           {isUnavailable ? (
             <EmptyState
-              title="Hermes is not running"
-              description="Start Hermes to see and manage the skills installed for your sessions."
+              title={t("Hermes is not running")}
+              description={t(
+                "Start Hermes to see and manage the skills installed for your sessions.",
+              )}
             />
           ) : isErrored ? (
             <ErrorState
@@ -269,13 +277,17 @@ export function InstalledSkillsView({
             <SkillsLoading />
           ) : !hasSkills ? (
             <EmptyState
-              title="No skills installed"
-              description="Skills you install from the Skills Hub or load from a directory will appear here."
+              title={t("No skills installed")}
+              description={t(
+                "Skills you install from the Skills Hub or load from a directory will appear here.",
+              )}
             />
           ) : visible.length === 0 ? (
             <EmptyState
-              title="No matching skills"
-              description="No installed skill matches your search. Try a different term or clear the filters."
+              title={t("No matching skills")}
+              description={t(
+                "No installed skill matches your search. Try a different term or clear the filters.",
+              )}
             />
           ) : (
             <ul className="installed-skills-list" aria-busy={isLoadingFirst}>
@@ -322,8 +334,8 @@ function ModeNote({
   const modeLabel = mode === "unrestricted" ? "Full mode" : "Sandboxed";
   return (
     <span className="installed-skills-mode-note">
-      Targeting the {modeLabel} runtime
-      {profile ? ` (profile ${profile})` : ""}.
+      {t("Targeting the {mode} runtime", { mode: modeLabel })}
+      {profile ? t(" (profile {profile})", { profile }) : ""}.
     </span>
   );
 }
@@ -442,7 +454,7 @@ function SkillRow({
           {readOnly ? (
             <span className="installed-skill-readonly" title={meta.blurb}>
               <IconLock size={12} ariaHidden />
-              Read only
+              {t("Read only")}
             </span>
           ) : null}
         </div>
@@ -463,26 +475,27 @@ function SkillRow({
           ) : null}
           {activation?.requires ? (
             <span className="installed-skill-meta-item">
-              Requires {activation.requires.join(", ")}
+              {t("Requires {list}", { list: activation.requires.join(", ") })}
             </span>
           ) : null}
           {activation?.fallback ? (
             <span className="installed-skill-meta-item">
-              Falls back to {activation.fallback.join(", ")}
+              {t("Falls back to {list}", { list: activation.fallback.join(", ") })}
             </span>
           ) : null}
           {restrictions ? (
             <span className="installed-skill-restriction">
               <IconWarningSign size={12} ariaHidden />
-              {restrictions.join(", ")} only
+              {t("{list} only", { list: restrictions.join(", ") })}
             </span>
           ) : null}
         </div>
 
         {readOnly ? (
           <p className="installed-skill-note">
-            Loaded from an external directory. It may be shared with other tools and cannot be
-            changed from Sub Rosa.
+            {t(
+              "Loaded from an external directory. It may be shared with other tools and cannot be changed from Sub Rosa.",
+            )}
           </p>
         ) : null}
 
@@ -513,7 +526,7 @@ function SkillRow({
             type="button"
             className="installed-skill-open"
             aria-label={`Open ${skill.name}`}
-            title="Open skill"
+            title={t("Open skill")}
             onClick={onOpen}
           >
             <IconArrowUpRight size={14} ariaHidden />
@@ -528,7 +541,7 @@ function SkillRow({
           />
           {pending ? (
             <span className="installed-skill-timing" aria-hidden>
-              Saving
+              {t("Saving")}
             </span>
           ) : null}
         </span>
@@ -599,11 +612,11 @@ function ErrorState({
       <span className="installed-skills-empty-icon" aria-hidden>
         <IconExclamationCircle size={22} />
       </span>
-      <p className="installed-skills-empty-title">Couldn't load skills</p>
+      <p className="installed-skills-empty-title">{t("Couldn't load skills")}</p>
       <p className="installed-skills-empty-description">{message}</p>
       {retryable ? (
         <button type="button" className="installed-skills-retry" onClick={onRetry}>
-          Try again
+          {t("Try again")}
         </button>
       ) : null}
     </div>

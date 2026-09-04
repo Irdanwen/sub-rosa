@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconChevronDownSmall } from "central-icons/IconChevronDownSmall";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
@@ -244,7 +245,7 @@ export function TabBar({
     <div
       className="tab-bar"
       role="tablist"
-      aria-label="Open tabs"
+      aria-label={t("Open tabs")}
       data-tauri-drag-region
       onPointerDown={handleDragRegionPointerDown}
     >
@@ -282,12 +283,12 @@ export function TabBar({
           delay={550}
           tip={
             <span className="tab-tip">
-              New tab
+              {t("New tab")}
               <span className="tab-tip-kbd">{newTabShortcut}</span>
             </span>
           }
         >
-          <button type="button" className="tab-new" aria-label="New tab" onClick={onNew}>
+          <button type="button" className="tab-new" aria-label={t("New tab")} onClick={onNew}>
             <IconPlusMedium size={14} />
           </button>
         </HoverTip>
@@ -359,7 +360,7 @@ export function TabBar({
               setMenu(null);
             }}
           >
-            Close tab
+            {t("Close tab")}
           </button>
           <button
             type="button"
@@ -370,7 +371,7 @@ export function TabBar({
               setMenu(null);
             }}
           >
-            Close other tabs
+            {t("Close other tabs")}
           </button>
         </div>
       ) : null}

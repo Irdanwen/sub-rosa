@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconAnonymous } from "central-icons/IconAnonymous";
 import { IconCheckmark2Small } from "central-icons/IconCheckmark2Small";
 import { IconFire1 } from "central-icons/IconFire1";
@@ -49,14 +50,14 @@ export function ModelMeta({ model }: { model: VeniceModelDto }) {
   }
   if (flags.uncensored) {
     items.push(
-      <span className="model-trait-icon" title="Uncensored">
+      <span className="model-trait-icon" title={t("Uncensored")}>
         <IconFire1 size={14} />
-        <span>Uncensored</span>
+        <span>{t("Uncensored")}</span>
       </span>,
     );
   }
   if (items.length === 0) {
-    items.push(<span>Model details unavailable</span>);
+    items.push(<span>{t("Model details unavailable")}</span>);
   }
   return (
     <span className="model-meta-items">
@@ -152,19 +153,19 @@ export function ModelPickerDialog({
           className="model-picker-search-input"
           value={search}
           onChange={(event) => onSearchChange(event.currentTarget.value)}
-          placeholder="Search models"
-          aria-label="Search models"
+          placeholder={t("Search models")}
+          aria-label={t("Search models")}
         />
       </label>
       {!searching && suggested.length > 0 ? (
-        <div className="model-picker-tabs" role="tablist" aria-label="Model groups">
+        <div className="model-picker-tabs" role="tablist" aria-label={t("Model groups")}>
           <button
             type="button"
             role="tab"
             aria-selected={tab === "suggested"}
             onClick={() => setTab("suggested")}
           >
-            Suggested
+            {t("Suggested")}
           </button>
           <button
             type="button"
@@ -172,7 +173,7 @@ export function ModelPickerDialog({
             aria-selected={tab === "all"}
             onClick={() => setTab("all")}
           >
-            All
+            {t("All")}
           </button>
         </div>
       ) : null}
@@ -212,7 +213,7 @@ export function ModelPickerDialog({
                 {selected ? <IconCheckmark2Small size={14} /> : null}
               </span>
               <span className="model-picker-meta">
-                {noTools ? <span className="model-picker-no-tools">No tools</span> : null}
+                {noTools ? <span className="model-picker-no-tools">{t("No tools")}</span> : null}
                 <ModelMeta model={model} />
               </span>
               {reason ? <span className="model-picker-reason">{reason}</span> : null}

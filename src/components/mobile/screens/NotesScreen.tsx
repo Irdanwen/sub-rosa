@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { IMPORTABLE_MEDIA_ACCEPT } from "../../../lib/import-media";
 import { ImportLinkBar } from "../../notes-list/ImportLinkBar";
@@ -116,7 +117,7 @@ export function NotesScreen({
   return (
     <div className="mobile-screen-root">
       <StackHeader
-        title="Notes"
+        title={t("Notes")}
         large
         trailing={
           <>
@@ -137,7 +138,7 @@ export function NotesScreen({
             <button
               type="button"
               className="mobile-icon-button"
-              aria-label="Import audio or video"
+              aria-label={t("Import audio or video")}
               onClick={() => importInputRef.current?.click()}
             >
               <IconArrowInbox size={20} />
@@ -145,7 +146,7 @@ export function NotesScreen({
             <button
               type="button"
               className="mobile-icon-button"
-              aria-label="New note"
+              aria-label={t("New note")}
               onClick={onCreateNote}
             >
               <IconPlusMedium size={20} />
@@ -157,7 +158,7 @@ export function NotesScreen({
         <IconMagnifyingGlass size={16} aria-hidden />
         <input
           type="search"
-          placeholder="Search notes"
+          placeholder={t("Search notes")}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           autoCapitalize="none"
@@ -171,7 +172,7 @@ export function NotesScreen({
           onClick={() => setAskQuestion(query.trim())}
         >
           <IconSparkle3 size={14} aria-hidden />
-          <span>Ask your notes</span>
+          <span>{t("Ask your notes")}</span>
         </button>
       ) : null}
       {askQuestion ? (
@@ -187,7 +188,7 @@ export function NotesScreen({
         </div>
       ) : null}
       {folders.length > 0 ? (
-        <div className="mobile-folder-strip" role="list" aria-label="Folders">
+        <div className="mobile-folder-strip" role="list" aria-label={t("Folders")}>
           {folders.map((folder) => (
             <button
               key={folder.id}
@@ -223,9 +224,13 @@ export function NotesScreen({
               <li key={note.id}>
                 <SwipeableRow
                   actions={[
-                    { label: "Archive", tone: "neutral", onAction: () => onArchiveNote(note.id) },
                     {
-                      label: "Delete",
+                      label: t("Archive"),
+                      tone: "neutral",
+                      onAction: () => onArchiveNote(note.id),
+                    },
+                    {
+                      label: t("Delete"),
                       tone: "destructive",
                       onAction: () => setConfirmDelete(note),
                     },
@@ -245,20 +250,20 @@ export function NotesScreen({
       </PullToRefresh>
       <button type="button" className="mobile-record-fab" onClick={onRecord}>
         <IconMicrophone size={22} aria-hidden />
-        <span>Record</span>
+        <span>{t("Record")}</span>
       </button>
       {rowMenu ? (
         <ActionSheet
           title={rowMenu.title.trim() || "New note"}
-          subtitle="What would you like to do with this note?"
+          subtitle={t("What would you like to do with this note?")}
           actions={[
             // Only what this screen can actually do. Moving to a project lives
             // on the note itself, and an entry here that opened something else
             // would be a promise the sheet cannot keep.
-            { label: "Open", onAction: () => onSelectNote(rowMenu.id) },
-            { label: "Archive", onAction: () => onArchiveNote(rowMenu.id) },
+            { label: t("Open"), onAction: () => onSelectNote(rowMenu.id) },
+            { label: t("Archive"), onAction: () => onArchiveNote(rowMenu.id) },
             {
-              label: "Delete",
+              label: t("Delete"),
               destructive: true,
               onAction: () => setConfirmDelete(rowMenu),
             },
@@ -268,9 +273,9 @@ export function NotesScreen({
       ) : null}
       <ConfirmDialog
         open={confirmDelete !== null}
-        title="Delete this note?"
-        description="The note, its audio, and its transcript are removed from this device."
-        confirmLabel="Delete"
+        title={t("Delete this note?")}
+        description={t("The note, its audio, and its transcript are removed from this device.")}
+        confirmLabel={t("Delete")}
         destructive
         onConfirm={() => {
           if (confirmDelete) onDeleteNote(confirmDelete.id);

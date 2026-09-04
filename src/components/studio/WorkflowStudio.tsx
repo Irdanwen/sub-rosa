@@ -5,6 +5,7 @@
 // by level with live per-node status; produced media lands in the gallery at
 // the node that made it, with real provenance and chain links.
 
+import { t } from "../../lib/i18n";
 import {
   addEdge,
   applyEdgeChanges,
@@ -386,7 +387,7 @@ function ParamField({
           )
         }
       >
-        <option value="">Choose a model</option>
+        <option value="">{t("Choose a model")}</option>
         {models.map((model) => (
           <option key={model.id} value={model.id}>
             {model.name}
@@ -437,8 +438,8 @@ function ParamField({
           <GalleryPicker
             kinds={assetPickerKinds(node)}
             resolveData={false}
-            title="Pick an asset"
-            description="This item feeds every node the asset connects to."
+            title={t("Pick an asset")}
+            description={t("This item feeds every node the asset connects to.")}
             onPick={(_, artifact) => {
               // Filed straight into the index: the preview appears with the
               // pick rather than after the next gallery listing.
@@ -525,7 +526,7 @@ function ParamField({
               });
             }}
           >
-            Insert {INPUT_MARKER}
+            {t("Insert {INPUT_MARKER}", { INPUT_MARKER })}
           </button>
         ) : null}
       </div>
@@ -636,7 +637,7 @@ function NodeOutputView({ result, node }: { result: NodeRunResult; node: Workflo
   if (output.kind === "image") {
     return (
       <div className="studio-node-output">
-        <img src={`data:${output.mimeType};base64,${output.base64}`} alt="Node output" />
+        <img src={`data:${output.mimeType};base64,${output.base64}`} alt={t("Node output")} />
       </div>
     );
   }
@@ -658,7 +659,7 @@ function NodeOutputView({ result, node }: { result: NodeRunResult; node: Workflo
         // biome-ignore lint/a11y/useMediaCaption: generated clips have no track
         <video controls playsInline src={output.src} className="studio-node-video nodrag" />
       ) : (
-        <span>Video ready - saved to the gallery.</span>
+        <span>{t("Video ready - saved to the gallery.")}</span>
       )}
     </div>
   );
@@ -681,7 +682,7 @@ function GateApproval({ data }: { data: StudioNodeData }) {
         <select
           className="studio-native-select nodrag"
           value={choice ?? sources[0]?.id ?? ""}
-          aria-label="Candidate to continue with"
+          aria-label={t("Candidate to continue with")}
           onChange={(event) => setChoice(event.target.value)}
         >
           {sources.map((source, index) => (
@@ -696,7 +697,7 @@ function GateApproval({ data }: { data: StudioNodeData }) {
         className="studio-primary-button"
         onClick={() => data.onApproveGate?.(data.wfNode.id, choice ?? sources[0]?.id)}
       >
-        Approve and continue
+        {t("Approve and continue")}
       </button>
     </div>
   );
@@ -748,7 +749,7 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
           <button
             type="button"
             className="studio-icon-button nodrag"
-            aria-label="Remove node"
+            aria-label={t("Remove node")}
             onClick={() => onRemove(wfNode.id)}
           >
             <IconCrossSmall size={14} />
@@ -780,7 +781,9 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
             referenceMention(modelId ? { id: modelId } : undefined, "image", index + 1);
           return (
             <div key={port.id} className="studio-port-order nodrag">
-              <span className="studio-port-order-head">{port.label} order</span>
+              <span className="studio-port-order-head">
+                {t("{label} order", { label: port.label })}
+              </span>
               <ol className="studio-port-order-list">
                 {sources.map((source, index) => (
                   <li
@@ -836,10 +839,10 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
                 <button
                   type="button"
                   className="btn btn-secondary studio-port-order-chain"
-                  title="These clips continue each other; cut them in chain order."
+                  title={t("These clips continue each other; cut them in chain order.")}
                   onClick={() => data.onApplyChainOrder?.(wfNode.id, data.chainSuggestion ?? [])}
                 >
-                  Order by chain
+                  {t("Order by chain")}
                 </button>
               ) : null}
             </div>
@@ -895,8 +898,8 @@ function RunCostDialog({
     <Dialog
       open
       onClose={onClose}
-      title="Run this production?"
-      description="What one run of this workflow is expected to spend."
+      title={t("Run this production?")}
+      description={t("What one run of this workflow is expected to spend.")}
       width={440}
     >
       <div className="dialog-body">
@@ -913,7 +916,7 @@ function RunCostDialog({
           ))}
         </ul>
         <p className="studio-cost-total">
-          <span>Total</span>
+          <span>{t("Total")}</span>
           <span>
             {estimate.metered > 0
               ? `at least ~${formatCredits(estimate.credits)}`
@@ -921,14 +924,14 @@ function RunCostDialog({
           </span>
         </p>
         <p className="studio-cost-note">
-          These are estimates, not a receipt. Usage priced nodes bill by what they consume.
+          {t("These are estimates, not a receipt. Usage priced nodes bill by what they consume.")}
         </p>
         <div className="studio-cost-actions">
           <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button type="button" className="studio-primary-button" onClick={onConfirm}>
-            Run workflow
+            {t("Run workflow")}
           </button>
         </div>
       </div>
@@ -1606,16 +1609,16 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
       <div className="studio-workflows-toolbar">
         <Select
           value={current?.id ?? null}
-          placeholder="Choose a workflow"
-          ariaLabel="Workflow"
+          placeholder={t("Choose a workflow")}
+          ariaLabel={t("Workflow")}
           onChange={(id) => hydrate(workflows.find((entry) => entry.id === id))}
           options={workflows.map((entry) => ({ value: entry.id, label: entry.name }))}
         />
         <input
           className="studio-input studio-workflow-name"
           value={current?.name ?? ""}
-          placeholder="Workflow name"
-          aria-label="Workflow name"
+          placeholder={t("Workflow name")}
+          aria-label={t("Workflow name")}
           onChange={(event) =>
             setCurrent((existing) =>
               existing ? { ...existing, name: event.target.value } : existing,
@@ -1623,19 +1626,19 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
           }
         />
         <button type="button" className="btn btn-secondary" onClick={newWorkflow}>
-          New
+          {t("New")}
         </button>
         <Select
           value={null}
-          placeholder="Templates"
-          ariaLabel="Start from a template"
+          placeholder={t("Templates")}
+          ariaLabel={t("Start from a template")}
           onChange={applyTemplate}
           options={templateWorkflows().map((entry) => ({ value: entry.id, label: entry.name }))}
         />
         <Select
           value={null}
-          placeholder="Add node"
-          ariaLabel="Add a node"
+          placeholder={t("Add node")}
+          ariaLabel={t("Add a node")}
           onChange={(type) => addNode(type as WorkflowNodeType)}
           options={Object.values(NODE_SCHEMAS).map((schema) => ({
             value: schema.type,
@@ -1645,17 +1648,17 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
         <span className="studio-spacer" />
         {current ? (
           <button type="button" className="btn btn-secondary" onClick={removeCurrent}>
-            Delete
+            {t("Delete")}
           </button>
         ) : null}
         {estimate && (estimate.credits > 0 || estimate.metered > 0) ? (
-          <span className="studio-workflow-cost" title="Estimated cost of one run">
+          <span className="studio-workflow-cost" title={t("Estimated cost of one run")}>
             {costSummary(estimate)}
           </span>
         ) : null}
         {running ? (
           <button type="button" className="btn btn-secondary" onClick={stop}>
-            Stop
+            {t("Stop")}
           </button>
         ) : (
           <button
@@ -1686,7 +1689,7 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
           <button
             type="button"
             className="studio-icon-button"
-            aria-label="Dismiss"
+            aria-label={t("Dismiss")}
             onClick={() => setPortNotice(undefined)}
           >
             <IconCrossSmall size={14} />
@@ -1698,8 +1701,8 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
           {liveProductions.map((entry) => (
             <div key={entry.id} className="studio-resume-row">
               <span>
-                Still producing: <strong>{entry.name || "Untitled workflow"}</strong>. Its media
-                lands in the gallery as it finishes.
+                {t("Still producing:")} <strong>{entry.name || "Untitled workflow"}</strong>
+                {t(". Its media lands in the gallery as it finishes.")}
               </span>
             </div>
           ))}
@@ -1712,20 +1715,22 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
               <span>
                 {entry.status === "failed" ? (
                   <>
-                    A production that stopped: <strong>{entry.name || "Untitled workflow"}</strong>.{" "}
-                    {entry.error || "A step failed."} Finished steps are kept; resuming retries the
-                    one that failed.
+                    {t("A production that stopped:")}{" "}
+                    <strong>{entry.name || t("Untitled workflow")}</strong>.{" "}
+                    {entry.error || t("A step failed.")}{" "}
+                    {t("Finished steps are kept; resuming retries the one that failed.")}
                   </>
                 ) : entry.status === "awaitingGate" ? (
                   <>
-                    A production waiting on you:{" "}
-                    <strong>{entry.name || "Untitled workflow"}</strong>. Resume it to reach the
-                    gate and decide.
+                    {t("A production waiting on you:")}{" "}
+                    <strong>{entry.name || t("Untitled workflow")}</strong>
+                    {t(". Resume it to reach the gate and decide.")}
                   </>
                 ) : (
                   <>
-                    An interrupted production: <strong>{entry.name || "Untitled workflow"}</strong>.
-                    Finished steps are kept; resuming only runs what is left.
+                    {t("An interrupted production:")}{" "}
+                    <strong>{entry.name || "Untitled workflow"}</strong>
+                    {t(". Finished steps are kept; resuming only runs what is left.")}
                   </>
                 )}
               </span>
@@ -1736,7 +1741,7 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
                   disabled={running}
                   onClick={() => void dismissResumable(entry)}
                 >
-                  Dismiss
+                  {t("Dismiss")}
                 </button>
                 <button
                   type="button"
@@ -1744,7 +1749,7 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
                   disabled={running}
                   onClick={() => void resume(entry)}
                 >
-                  Resume
+                  {t("Resume")}
                 </button>
               </span>
             </div>

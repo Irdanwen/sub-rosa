@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../lib/i18n";
 import { IconBookSimple } from "central-icons/IconBookSimple";
 import { IconChainLink1 } from "central-icons/IconChainLink1";
 import { IconBell } from "central-icons/IconBell";
@@ -86,7 +87,7 @@ export function ProposalCard({ block }: { block: ProposalChatBlock }) {
                   </span>
                 </span>
                 {detail ? (
-                  <span className="proposal-done" aria-label="Done">
+                  <span className="proposal-done" aria-label={t("Done")}>
                     <IconCheckmark1Small size={14} />
                   </span>
                 ) : (
@@ -121,13 +122,13 @@ function actionHint(action: ProposedAction): string {
   switch (action.kind) {
     case "reminder":
       return action.due
-        ? `Reminder · ${new Date(action.due).toLocaleString(undefined, {
+        ? `Reminder · ${new Date(action.due).toLocaleString(intlLocale(), {
             dateStyle: "medium",
             timeStyle: "short",
           })}`
         : "Reminder";
     case "event":
-      return `Calendar · ${new Date(action.start).toLocaleString(undefined, {
+      return `Calendar · ${new Date(action.start).toLocaleString(intlLocale(), {
         dateStyle: "medium",
         timeStyle: "short",
       })}`;

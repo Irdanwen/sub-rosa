@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { CARPE_DIEM_DASHBOARD_URL, PRODUCT_NAME } from "../../../lib/branding";
 import { CarpeDiemSettings } from "../../settings/CarpeDiemSettings";
 import { StepActions, StepCard } from "../StepChrome";
@@ -22,7 +23,7 @@ export function KeyStep({
 }) {
   return (
     <StepCard
-      title="Connect your Carpe Diem key"
+      title={t("Connect your Carpe Diem key")}
       subtitle={`${PRODUCT_NAME} sends your requests to Carpe Diem with your own key, and nowhere else. Paste it once; it is kept in the system keychain.`}
       wide
     >
@@ -32,11 +33,11 @@ export function KeyStep({
           "Connected. Your key works and the engine is running."
         ) : (
           <>
-            Need a key?{" "}
+            {t("Need a key?")}{" "}
             <a href={CARPE_DIEM_DASHBOARD_URL} target="_blank" rel="noreferrer">
-              Create one and add credits
+              {t("Create one and add credits")}
             </a>{" "}
-            in the Carpe Diem dashboard, then paste it above.
+            {t("in the Carpe Diem dashboard, then paste it above.")}
           </>
         )}
       </p>

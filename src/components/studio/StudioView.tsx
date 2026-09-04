@@ -3,6 +3,7 @@
 // and prices all come from the merged catalog — nothing here hardcodes what
 // a backend can do today.
 
+import { t } from "../../lib/i18n";
 import { STUDIO_TAB_STORAGE_KEY } from "./studio-keys";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import type { ChainShot } from "../../lib/studio/chain";
@@ -97,38 +98,38 @@ export function StudioView() {
     <div className="studio-view">
       <header className="studio-header">
         <div className="studio-header-copy">
-          <h1>Studio</h1>
+          <h1>{t("Studio")}</h1>
           <p className="studio-subtitle">
-            Generate images, videos, and audio, or chain them into workflows.
+            {t("Generate images, videos, and audio, or chain them into workflows.")}
           </p>
         </div>
         <SegmentedControl
           value={tab}
           onValueChange={setTab}
-          aria-label="Studio section"
+          aria-label={t("Studio section")}
           options={[
             // Film first: it is what the other tabs are for.
-            { value: "film", label: "Film" },
-            { value: "image", label: "Image" },
-            { value: "video", label: "Video" },
-            { value: "audio", label: "Audio" },
-            { value: "assemble", label: "Assemble" },
-            { value: "bible", label: "Bible" },
-            { value: "workflows", label: "Workflows" },
+            { value: "film", label: t("Film") },
+            { value: "image", label: t("Image") },
+            { value: "video", label: t("Video") },
+            { value: "audio", label: t("Audio") },
+            { value: "assemble", label: t("Assemble") },
+            { value: "bible", label: t("Bible") },
+            { value: "workflows", label: t("Workflows") },
           ]}
         />
       </header>
       {loading ? (
         <div className="studio-loading">
-          <Spinner aria-label="Loading models" />
+          <Spinner aria-label={t("Loading models")} />
         </div>
       ) : error || !catalog ? (
         <EmptyState
-          title="Couldn't load the model catalog"
+          title={t("Couldn't load the model catalog")}
           description={error ?? "The media backend didn't answer."}
           action={
             <button type="button" className="btn btn-secondary" onClick={retry}>
-              Try again
+              {t("Try again")}
             </button>
           }
         />
@@ -154,7 +155,7 @@ export function StudioView() {
         <Suspense
           fallback={
             <div className="studio-loading">
-              <Spinner aria-label="Loading workflows" />
+              <Spinner aria-label={t("Loading workflows")} />
             </div>
           }
         >

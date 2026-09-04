@@ -1,8 +1,11 @@
+import { t } from "./i18n";
 /** Human-readable message from a thrown value — Tauri command errors arrive
  * as objects with a `message` field, everything else falls back to String. */
 export function messageFromError(err: unknown) {
   if (err && typeof err === "object" && "message" in err) {
-    return String((err as { message: unknown }).message);
+    // A backend sentence the catalog knows comes back in the app's
+    // language; one it does not (a formatted message) stays as sent.
+    return t(String((err as { message: unknown }).message));
   }
   return String(err);
 }

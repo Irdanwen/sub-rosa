@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { IconChevronRight } from "central-icons/IconChevronRight";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -166,12 +167,13 @@ export function FlowsPanel({
   return (
     <div className="mobile-studio-form">
       <p className="mobile-flows-intro">
-        Chained generations: one input, several models working in sequence. Results land in the
-        gallery.
+        {t(
+          "Chained generations: one input, several models working in sequence. Results land in the gallery.",
+        )}
       </p>
 
       {resumable.length > 0 ? (
-        <ul className="mobile-flows-resume" aria-label="Interrupted productions">
+        <ul className="mobile-flows-resume" aria-label={t("Interrupted productions")}>
           {resumable.map((entry) => (
             <li key={entry.id} className="mobile-flows-resume-row">
               <span className="mobile-flows-resume-name">{entry.name || "Untitled workflow"}</span>
@@ -182,7 +184,7 @@ export function FlowsPanel({
                   disabled={resuming !== null}
                   onClick={() => void dismissRun(entry)}
                 >
-                  Dismiss
+                  {t("Dismiss")}
                 </button>
                 <button
                   type="button"
@@ -207,12 +209,12 @@ export function FlowsPanel({
 
       <button type="button" className="mobile-studio-generate" onClick={createNew}>
         <IconPlusMedium size={18} />
-        New workflow
+        {t("New workflow")}
       </button>
 
       {saved.length > 0 ? (
         <>
-          <h3 className="mobile-flows-section">Your workflows</h3>
+          <h3 className="mobile-flows-section">{t("Your workflows")}</h3>
           <ul className="mobile-sheet-list">
             {saved.map((workflow) => (
               <li key={workflow.id}>
@@ -223,7 +225,9 @@ export function FlowsPanel({
                 >
                   <span>
                     <span className="mobile-sheet-item-title">{workflow.name}</span>
-                    <span className="mobile-sheet-item-subtitle">{stepCount(workflow)} steps</span>
+                    <span className="mobile-sheet-item-subtitle">
+                      {t("{count} steps", { count: stepCount(workflow) })}
+                    </span>
                   </span>
                   <IconChevronRight size={16} aria-hidden />
                 </button>
@@ -233,7 +237,7 @@ export function FlowsPanel({
         </>
       ) : null}
 
-      <h3 className="mobile-flows-section">Templates</h3>
+      <h3 className="mobile-flows-section">{t("Templates")}</h3>
       <ul className="mobile-sheet-list">
         {templates.map((template) => (
           <li key={template.id} className="mobile-flows-template">
@@ -244,7 +248,9 @@ export function FlowsPanel({
             >
               <span>
                 <span className="mobile-sheet-item-title">{template.name}</span>
-                <span className="mobile-sheet-item-subtitle">{stepCount(template)} steps</span>
+                <span className="mobile-sheet-item-subtitle">
+                  {t("{count} steps", { count: stepCount(template) })}
+                </span>
               </span>
               <IconChevronRight size={16} aria-hidden />
             </button>
@@ -253,7 +259,7 @@ export function FlowsPanel({
               className="mobile-flows-template-edit"
               onClick={() => duplicateTemplate(template)}
             >
-              Edit a copy
+              {t("Edit a copy")}
             </button>
           </li>
         ))}
@@ -354,7 +360,7 @@ function TemplateRunner({
   return (
     <div className="mobile-studio-form">
       <button type="button" className="mobile-chip-button" onClick={onBack} disabled={running}>
-        All flows
+        {t("All flows")}
       </button>
       <h3 className="mobile-flows-title">{template.name}</h3>
       {textInputs.map((node) => (
@@ -380,9 +386,9 @@ function TemplateRunner({
       </button>
       <ConfirmDialog
         open={confirmRun !== null}
-        title="Run this flow?"
+        title={t("Run this flow?")}
         description={confirmRun ? runCostDescription(confirmRun.estimate) : ""}
-        confirmLabel="Run"
+        confirmLabel={t("Run")}
         onConfirm={() => {
           const pending = confirmRun;
           setConfirmRun(null);
@@ -391,7 +397,7 @@ function TemplateRunner({
         onClose={() => setConfirmRun(null)}
       />
       {results ? (
-        <ul className="mobile-flows-steps" aria-label="Flow progress">
+        <ul className="mobile-flows-steps" aria-label={t("Flow progress")}>
           {template.nodes
             .filter((node) => node.type !== "textInput")
             .map((node) => {
@@ -422,7 +428,7 @@ function TemplateRunner({
         </ul>
       ) : null}
       {issues.length > 0 ? (
-        <ul className="mobile-flows-issues" aria-label="Flow problems">
+        <ul className="mobile-flows-issues" aria-label={t("Flow problems")}>
           {issues.map((issue) => (
             <li
               key={`${issue.nodeId ?? "flow"}-${issue.message}`}
@@ -446,7 +452,7 @@ export function FlowStepOutput({ state }: { state?: NodeRunResult }) {
     return <p className="mobile-flows-output mobile-dictation-error">{state.error}</p>;
   }
   if (state.status === "awaiting") {
-    return <p className="mobile-flows-output">Paused here until you approve.</p>;
+    return <p className="mobile-flows-output">{t("Paused here until you approve.")}</p>;
   }
   if (state.status !== "done" || !state.output) return null;
   const output = state.output;
@@ -458,12 +464,12 @@ export function FlowStepOutput({ state }: { state?: NodeRunResult }) {
       <img
         className="mobile-flows-output-image"
         src={`data:${output.mimeType};base64,${output.base64}`}
-        alt="Step result"
+        alt={t("Step result")}
       />
     );
   }
   if (output.kind === "video" || output.kind === "audio") {
-    return <p className="mobile-flows-output">Saved to the gallery.</p>;
+    return <p className="mobile-flows-output">{t("Saved to the gallery.")}</p>;
   }
   return null;
 }

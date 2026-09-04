@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconCloudOff } from "central-icons/IconCloudOff";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { NoteListItemDto } from "../../lib/tauri";
@@ -123,7 +124,7 @@ export function OfflineBanner({
     <section
       className="message-card permission-banner offline-banner"
       role="status"
-      aria-label="Connection"
+      aria-label={t("Connection")}
     >
       <p className="permission-banner-message">
         <span className="permission-banner-eyebrow">

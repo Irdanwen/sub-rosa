@@ -14,6 +14,7 @@
 // (native resolution, PNG, no ceiling), because that file is going to disk and
 // possibly into another editor.
 
+import { t } from "../../lib/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { artifactSrc, saveArtifactFromBase64 } from "../../lib/studio/artifacts";
 import { extractFrameAt, extractHandoffFrame, lastReadableTime } from "../../lib/studio/frames";
@@ -82,7 +83,7 @@ export function FrameCaptureDialog({
       setTime(frame.timeSeconds);
       setDefaultTime(frame.timeSeconds);
     } catch {
-      setError("Couldn't read a frame from that clip.");
+      setError(t("Couldn't read a frame from that clip."));
     } finally {
       setLoading(false);
     }
@@ -112,7 +113,7 @@ export function FrameCaptureDialog({
           setError(undefined);
         })
         .catch(() => {
-          if (!cancelled) setError("Couldn't read that frame.");
+          if (!cancelled) setError(t("Couldn't read that frame."));
         })
         .finally(() => {
           if (!cancelled) setLoading(false);
@@ -147,7 +148,7 @@ export function FrameCaptureDialog({
       onCaptured?.(still);
       onClose();
     } catch {
-      setError("Couldn't save that frame to the gallery.");
+      setError(t("Couldn't save that frame to the gallery."));
     } finally {
       setSaving(false);
     }
@@ -162,13 +163,15 @@ export function FrameCaptureDialog({
     <Dialog
       open
       onClose={onClose}
-      title="Capture a frame"
-      description="The still is saved to the gallery, where you can export it, edit it, or use it as a reference."
+      title={t("Capture a frame")}
+      description={t(
+        "The still is saved to the gallery, where you can export it, edit it, or use it as a reference.",
+      )}
       width={560}
       footer={
         <>
           <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             type="button"
@@ -188,7 +191,7 @@ export function FrameCaptureDialog({
           ) : null}
           {loading ? (
             <span className="studio-capture-busy">
-              <Spinner aria-label="Reading the frame" />
+              <Spinner aria-label={t("Reading the frame")} />
             </span>
           ) : null}
         </div>
@@ -201,7 +204,7 @@ export function FrameCaptureDialog({
               max={maxTime}
               step={SCRUB_STEP_SECONDS}
               value={Math.min(time, maxTime)}
-              aria-label="Position in the clip"
+              aria-label={t("Position in the clip")}
               onChange={(event) => setTime(Number(event.target.value))}
             />
             <div className="studio-capture-meta">
@@ -216,7 +219,7 @@ export function FrameCaptureDialog({
               </span>
               {preview ? (
                 <span>
-                  {preview.width} x {preview.height}, PNG
+                  {t("{width} x {height}, PNG", { width: preview.width, height: preview.height })}
                 </span>
               ) : null}
             </div>
@@ -227,7 +230,7 @@ export function FrameCaptureDialog({
                 disabled={loading || atDefault}
                 onClick={() => void readDefault()}
               >
-                Sharpest near the end
+                {t("Sharpest near the end")}
               </button>
               <button
                 type="button"
@@ -235,12 +238,13 @@ export function FrameCaptureDialog({
                 disabled={loading || atLastFrame}
                 onClick={() => setTime(maxTime)}
               >
-                Last frame
+                {t("Last frame")}
               </button>
             </div>
             <p className="studio-field-note">
-              The slider stops one frame short of the end: seeking to the very last position reads
-              back black on most decoders.
+              {t(
+                "The slider stops one frame short of the end: seeking to the very last position reads back black on most decoders.",
+              )}
             </p>
           </>
         ) : null}

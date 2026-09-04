@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useRef } from "react";
 import { useModalFocus } from "../../lib/modal-focus";
 import { hapticSelection } from "../../lib/haptics";
@@ -44,7 +45,12 @@ export function ActionSheet({
       {/* Tapping the dimmed area dismisses, which is the gesture people try
           first. A real button rather than a handler on the backdrop div: it is
           a control, so it should be reachable and announced like one. */}
-      <button type="button" className="mobile-sheet-dismiss" aria-label="Close" onClick={onClose} />
+      <button
+        type="button"
+        className="mobile-sheet-dismiss"
+        aria-label={t("Close")}
+        onClick={onClose}
+      />
       <div
         className="mobile-sheet mobile-action-sheet"
         role="dialog"
@@ -75,7 +81,7 @@ export function ActionSheet({
           ))}
         </ul>
         <button type="button" className="mobile-action-sheet-cancel" onClick={onClose}>
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { BRAND_PRESETS, type BrandId } from "../../lib/brand";
@@ -198,7 +199,7 @@ export function AccentWheel({
           className="accent-wheel-pop"
           data-phase={phase}
           role="radiogroup"
-          aria-label="Accent color"
+          aria-label={t("Accent color")}
         >
           {tipWedge ? (
             <span

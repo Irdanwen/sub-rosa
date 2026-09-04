@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { IconArrowDown } from "central-icons/IconArrowDown";
 import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
@@ -214,16 +215,16 @@ export function WorkflowEditor({
   return (
     <div className="mobile-studio-form">
       <button type="button" className="mobile-chip-button" onClick={onBack} disabled={running}>
-        All flows
+        {t("All flows")}
       </button>
 
       <label className="mobile-flows-field">
-        <span>Name</span>
+        <span>{t("Name")}</span>
         <input
           className="mobile-studio-search"
           value={name}
           onChange={(event) => setName(event.target.value)}
-          placeholder="My workflow"
+          placeholder={t("My workflow")}
         />
       </label>
 
@@ -251,7 +252,7 @@ export function WorkflowEditor({
                 <span className="mobile-workflow-step-actions">
                   <button
                     type="button"
-                    aria-label="Move up"
+                    aria-label={t("Move up")}
                     disabled={index === 0 || running}
                     onClick={() => move(index, -1)}
                   >
@@ -259,7 +260,7 @@ export function WorkflowEditor({
                   </button>
                   <button
                     type="button"
-                    aria-label="Move down"
+                    aria-label={t("Move down")}
                     disabled={index === steps.length - 1 || running}
                     onClick={() => move(index, 1)}
                   >
@@ -267,7 +268,7 @@ export function WorkflowEditor({
                   </button>
                   <button
                     type="button"
-                    aria-label="Remove step"
+                    aria-label={t("Remove step")}
                     disabled={running}
                     onClick={() => remove(node.id)}
                   >
@@ -320,12 +321,12 @@ export function WorkflowEditor({
             </button>
           ))}
           <button type="button" className="mobile-chip-button" onClick={() => setAdding(false)}>
-            Cancel
+            {t("Cancel")}
           </button>
         </div>
       ) : (
         <button type="button" className="mobile-chip-button" onClick={() => setAdding(true)}>
-          Add step
+          {t("Add step")}
         </button>
       )}
 
@@ -360,11 +361,11 @@ export function WorkflowEditor({
 
       {paused ? (
         <p className="mobile-workflow-cost">
-          Paused at an approval gate. Approve it from the flows list to continue.
+          {t("Paused at an approval gate. Approve it from the flows list to continue.")}
         </p>
       ) : null}
       {issues.length > 0 ? (
-        <ul className="mobile-flows-issues" aria-label="Flow problems">
+        <ul className="mobile-flows-issues" aria-label={t("Flow problems")}>
           {issues.map((issue) => (
             <li
               key={`${issue.nodeId ?? "flow"}-${issue.message}`}
@@ -383,14 +384,14 @@ export function WorkflowEditor({
         onClick={() => setConfirmDelete(true)}
         disabled={running}
       >
-        Delete workflow
+        {t("Delete workflow")}
       </button>
 
       <ConfirmDialog
         open={confirmDelete}
-        title="Delete this workflow?"
-        description="This removes the workflow. Generated media in your gallery is kept."
-        confirmLabel="Delete"
+        title={t("Delete this workflow?")}
+        description={t("This removes the workflow. Generated media in your gallery is kept.")}
+        confirmLabel={t("Delete")}
         destructive
         onConfirm={() => {
           deleteWorkflow(workflow.id);
@@ -402,9 +403,9 @@ export function WorkflowEditor({
 
       <ConfirmDialog
         open={confirmRun !== null}
-        title="Run this flow?"
+        title={t("Run this flow?")}
         description={confirmRun ? runCostDescription(confirmRun) : ""}
-        confirmLabel="Run"
+        confirmLabel={t("Run")}
         onConfirm={() => {
           const costs = confirmRun ? nodeCostMap(confirmRun) : undefined;
           setConfirmRun(null);
@@ -469,7 +470,7 @@ export function assembleWorkflow(base: Workflow, name: string, steps: WorkflowNo
     nodes.push({
       id: outputId,
       type: "output",
-      label: "Result",
+      label: t("Result"),
       position: { x: steps.length * 260, y: 0 },
       params: {},
     });
@@ -844,15 +845,17 @@ function ArtifactSheet({
       <div
         className="mobile-sheet"
         role="dialog"
-        aria-label="Pick a gallery item"
+        aria-label={t("Pick a gallery item")}
         onClick={(event) => event.stopPropagation()}
       >
         <span className="mobile-sheet-grabber" aria-hidden />
-        <h2 className="mobile-sheet-title">From your gallery</h2>
+        <h2 className="mobile-sheet-title">{t("From your gallery")}</h2>
         {artifacts === null ? (
           <Spinner />
         ) : artifacts.length === 0 ? (
-          <p className="mobile-workflow-param-hint">Nothing of this kind in the gallery yet.</p>
+          <p className="mobile-workflow-param-hint">
+            {t("Nothing of this kind in the gallery yet.")}
+          </p>
         ) : (
           <ul className="mobile-sheet-list">
             {artifacts.map((artifact) => (
@@ -920,15 +923,15 @@ function NoteSheet({
       <div
         className="mobile-sheet"
         role="dialog"
-        aria-label="Pick a note"
+        aria-label={t("Pick a note")}
         onClick={(event) => event.stopPropagation()}
       >
         <span className="mobile-sheet-grabber" aria-hidden />
-        <h2 className="mobile-sheet-title">From your notes</h2>
+        <h2 className="mobile-sheet-title">{t("From your notes")}</h2>
         {notes === null ? (
           <Spinner />
         ) : notes.length === 0 ? (
-          <p className="mobile-workflow-param-hint">No notes yet.</p>
+          <p className="mobile-workflow-param-hint">{t("No notes yet.")}</p>
         ) : (
           <ul className="mobile-sheet-list">
             {notes.map((note) => (

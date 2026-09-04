@@ -1,3 +1,4 @@
+import { intlLocale } from "./i18n";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { friendlyErrorMessage } from "./errors";
@@ -107,7 +108,7 @@ export function useNoteRewrite() {
         original: text,
         status: "failed",
         text: "",
-        error: `That selection is too long to rewrite in one go. Select at most ${MAX_REWRITE_CHARS.toLocaleString()} characters.`,
+        error: `That selection is too long to rewrite in one go. Select at most ${MAX_REWRITE_CHARS.toLocaleString(intlLocale())} characters.`,
       });
       return;
     }

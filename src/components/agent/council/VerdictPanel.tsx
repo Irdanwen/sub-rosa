@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
 import { messageFromError } from "../../../lib/errors";
 import { IconCircleCheck } from "central-icons/IconCircleCheck";
@@ -116,17 +117,17 @@ export function VerdictPanel({
   const left = cycle ? retakesLeft(cycle) : 0;
 
   return (
-    <section className="council-verdict" aria-label="Verdict">
+    <section className="council-verdict" aria-label={t("Verdict")}>
       <header className="council-header">
         <div className="council-header-text">
-          <h2 className="council-title">The verdict</h2>
+          <h2 className="council-title">{t("The verdict")}</h2>
           {cycle ? <p className="council-request">{cycle.request}</p> : null}
         </div>
         <button
           type="button"
           className="icon-button"
           onClick={() => onClose(cycle?.round)}
-          aria-label="Close"
+          aria-label={t("Close")}
         >
           <IconCrossSmall size={16} aria-hidden />
         </button>
@@ -135,8 +136,9 @@ export function VerdictPanel({
       {!latest && !running ? (
         <>
           <p className="council-status">
-            The agent has stopped. The council can read what changed against the mandate it issued,
-            on models the work was not written on.
+            {t(
+              "The agent has stopped. The council can read what changed against the mandate it issued, on models the work was not written on.",
+            )}
           </p>
           <div className="council-actions">
             <button
@@ -145,14 +147,14 @@ export function VerdictPanel({
               disabled={busy}
               onClick={() => void ask()}
             >
-              Have it read
+              {t("Have it read")}
             </button>
             <button
               type="button"
               className="council-secondary"
               onClick={() => onClose(cycle?.round)}
             >
-              Not now
+              {t("Not now")}
             </button>
           </div>
         </>
@@ -160,13 +162,13 @@ export function VerdictPanel({
 
       {running ? (
         <p className="council-status" role="status">
-          Reading what changed…
+          {t("Reading what changed…")}
         </p>
       ) : null}
 
       {latest?.status === "failed" ? (
         <div className="council-notice council-failed" role="alert">
-          <h3 className="council-notice-title">The reading stopped</h3>
+          <h3 className="council-notice-title">{t("The reading stopped")}</h3>
           <p>{latest.lastError ?? "Something went wrong."}</p>
           <div className="council-actions">
             <button
@@ -175,7 +177,7 @@ export function VerdictPanel({
               disabled={busy}
               onClick={() => void ask()}
             >
-              Try again
+              {t("Try again")}
             </button>
           </div>
         </div>
@@ -196,20 +198,21 @@ export function VerdictPanel({
               disabled={busy}
               onClick={() => void correct()}
             >
-              Send it back ({left} left)
+              {t("Send it back ({left} left)", { left })}
             </button>
           ) : null}
           {needsRetake(latest) && left === 0 ? (
             <p className="council-status">
-              Both corrections have been used. What is still unsatisfied is listed above, and the
-              next move is yours.
+              {t(
+                "Both corrections have been used. What is still unsatisfied is listed above, and the next move is yours.",
+              )}
             </p>
           ) : null}
           {!needsRetake(latest) ? (
-            <p className="council-status">Everything the mandate asked for holds.</p>
+            <p className="council-status">{t("Everything the mandate asked for holds.")}</p>
           ) : null}
           <button type="button" className="council-secondary" onClick={() => onClose(cycle?.round)}>
-            Close
+            {t("Close")}
           </button>
         </div>
       ) : null}
@@ -228,10 +231,17 @@ function VerdictRound({ verdict }: { verdict: CouncilVerdict }) {
   return (
     <article className="council-verdict-round">
       <h3 className="council-notice-title">
-        {verdict.round === 0 ? "First reading" : `After correction ${verdict.round}`}
+        {verdict.round === 0
+          ? t("First reading")
+          : t("After correction {round}", { round: verdict.round })}
         <span className="council-verdict-tally">
-          {tally.satisfied} of {tally.total} criteria hold
-          {tally.unverifiable > 0 ? `, ${tally.unverifiable} could not be checked` : ""}
+          {t("{satisfied} of {total} criteria hold", {
+            satisfied: tally.satisfied,
+            total: tally.total,
+          })}
+          {tally.unverifiable > 0
+            ? `, ${t("{count} could not be checked", { count: tally.unverifiable })}`
+            : ""}
         </span>
       </h3>
 
@@ -253,7 +263,7 @@ function VerdictRound({ verdict }: { verdict: CouncilVerdict }) {
 
       {verdict.findings.length > 0 ? (
         <div className="council-notice">
-          <h4 className="council-notice-title">Outside the criteria</h4>
+          <h4 className="council-notice-title">{t("Outside the criteria")}</h4>
           <ul>
             {verdict.findings.map((finding) => (
               <li key={`${finding.kind}-${finding.summary}`}>

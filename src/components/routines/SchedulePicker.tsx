@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import {
   humanizeSchedule,
   scheduleFromDraft,
@@ -6,11 +7,11 @@ import {
 import { Select } from "../ui/Select";
 
 const KIND_OPTIONS = [
-  { value: "daily", label: "Daily" },
-  { value: "weekdays", label: "Weekdays" },
-  { value: "weekly", label: "Weekly" },
-  { value: "interval", label: "Interval" },
-  { value: "custom", label: "Custom" },
+  { value: "daily", label: t("Daily") },
+  { value: "weekdays", label: t("Weekdays") },
+  { value: "weekly", label: t("Weekly") },
+  { value: "interval", label: t("Interval") },
+  { value: "custom", label: t("Custom") },
 ];
 
 type ScheduleKind = ScheduleDraft["kind"];
@@ -88,8 +89,8 @@ export function SchedulePicker({
         <Select
           value={draft.kind}
           options={KIND_OPTIONS}
-          placeholder="Schedule"
-          ariaLabel="Schedule type"
+          placeholder={t("Schedule")}
+          ariaLabel={t("Schedule type")}
           onChange={(kind) => switchKind(kind as ScheduleKind)}
         />
 
@@ -97,8 +98,8 @@ export function SchedulePicker({
           <Select
             value={String(draft.day)}
             options={DAY_OPTIONS}
-            placeholder="Day"
-            ariaLabel="Day of week"
+            placeholder={t("Day")}
+            ariaLabel={t("Day of week")}
             onChange={(day) => onChange({ ...draft, day: Number(day) })}
           />
         ) : null}
@@ -107,7 +108,7 @@ export function SchedulePicker({
           <input
             type="time"
             value={draft.time}
-            aria-label="Time"
+            aria-label={t("Time")}
             onChange={(event) => onChange({ ...draft, time: event.currentTarget.value })}
           />
         ) : null}
@@ -118,7 +119,7 @@ export function SchedulePicker({
               type="number"
               min={1}
               value={intervalAmount}
-              aria-label="Repeat every"
+              aria-label={t("Repeat every")}
               onChange={(event) => {
                 const amount = Math.max(1, Math.floor(Number(event.currentTarget.value) || 1));
                 onChange({
@@ -130,8 +131,8 @@ export function SchedulePicker({
             <Select
               value={intervalUnit}
               options={UNIT_OPTIONS}
-              placeholder="Unit"
-              ariaLabel="Interval unit"
+              placeholder={t("Unit")}
+              ariaLabel={t("Interval unit")}
               onChange={(unit) =>
                 onChange({
                   kind: "interval",
@@ -147,8 +148,8 @@ export function SchedulePicker({
             className="schedule-picker-custom"
             type="text"
             value={draft.expression}
-            aria-label="Custom schedule"
-            placeholder="0 9 * * 1-5 or every 30m"
+            aria-label={t("Custom schedule")}
+            placeholder={t("0 9 * * 1-5 or every 30m")}
             onChange={(event) =>
               onChange({
                 kind: "custom",
@@ -163,7 +164,7 @@ export function SchedulePicker({
         <p className="schedule-picker-preview">{preview}</p>
       ) : draft.kind === "custom" ? (
         <p className="schedule-picker-preview">
-          A cron expression, an interval like "every 30m", or a date for a one-time run.
+          {t('A cron expression, an interval like "every 30m", or a date for a one-time run.')}
         </p>
       ) : null}
     </div>

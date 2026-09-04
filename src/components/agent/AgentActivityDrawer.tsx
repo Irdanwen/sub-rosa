@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconAddImage } from "central-icons/IconAddImage";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { IconArrowUpRight } from "central-icons/IconArrowUpRight";
@@ -139,11 +140,11 @@ export function AgentActivityDrawer({
   const activeCount = records.filter((record) => isActivePhase(record.phase)).length;
 
   return (
-    <section className="agent-activity-drawer" aria-label="Agent activity">
+    <section className="agent-activity-drawer" aria-label={t("Agent activity")}>
       <header className="agent-activity-drawer-header">
         <span className="agent-activity-drawer-heading">
           <IconBolt size={15} ariaHidden />
-          <span className="agent-activity-drawer-title">Agent activity</span>
+          <span className="agent-activity-drawer-title">{t("Agent activity")}</span>
           {activeCount > 0 ? (
             <span className="agent-activity-drawer-count" aria-hidden>
               {activeCount}
@@ -154,17 +155,19 @@ export function AgentActivityDrawer({
           type="button"
           className="agent-activity-drawer-close"
           onClick={onClose}
-          aria-label="Close agent activity"
+          aria-label={t("Close agent activity")}
         >
           <IconCrossMedium size={15} ariaHidden />
         </button>
       </header>
 
       {status === "loading" ? (
-        <p className="agent-activity-drawer-state">Loading activity…</p>
+        <p className="agent-activity-drawer-state">{t("Loading activity…")}</p>
       ) : !hasActivity ? (
         <p className="agent-activity-drawer-state">
-          No agents are working right now. Activity shows up here when a session starts running.
+          {t(
+            "No agents are working right now. Activity shows up here when a session starts running.",
+          )}
         </p>
       ) : (
         <ul className="agent-activity-drawer-list">
@@ -201,14 +204,14 @@ export function AgentActivityDrawer({
         onClose={stop.cancelConfirm}
         onConfirm={stop.confirmStop}
         destructive
-        title="Stop this background subagent?"
+        title={t("Stop this background subagent?")}
         description={
           stop.confirm
             ? `${stop.confirm.label} is using a tool right now. Stopping it may leave its work unfinished.`
             : undefined
         }
-        confirmLabel="Stop subagent"
-        cancelLabel="Keep running"
+        confirmLabel={t("Stop subagent")}
+        cancelLabel={t("Keep running")}
       />
     </section>
   );
@@ -403,7 +406,7 @@ function ActivityRow({
             className="agent-activity-row-action"
             onClick={onSteer}
             aria-label={`Steer ${sessionLabel}`}
-            title="Send a redirecting instruction"
+            title={t("Send a redirecting instruction")}
           >
             <IconBubbleWide size={14} ariaHidden />
           </button>
@@ -414,7 +417,7 @@ function ActivityRow({
             className="agent-activity-row-action agent-activity-row-action-stop"
             onClick={onStop}
             aria-label={`Stop ${sessionLabel}`}
-            title="Stop this session"
+            title={t("Stop this session")}
           >
             <IconStop size={14} ariaHidden />
           </button>
@@ -424,7 +427,7 @@ function ActivityRow({
           className="agent-activity-row-action"
           onClick={onOpen}
           aria-label={`Open session ${sessionLabel}`}
-          title="Open this session"
+          title={t("Open this session")}
         >
           <IconArrowUpRight size={14} ariaHidden />
         </button>
@@ -465,7 +468,7 @@ function SubagentList({
   subagentStop: SubagentStopController;
 }) {
   return (
-    <ul className="agent-activity-subagents" aria-label="Background work">
+    <ul className="agent-activity-subagents" aria-label={t("Background work")}>
       {subagents.map((subagent) => (
         <SubagentRow
           key={subagent.subagentId}
@@ -581,7 +584,7 @@ function SubagentRow({
               })
             }
             aria-label={`Stop subagent ${task}`}
-            title="Stop this background subagent"
+            title={t("Stop this background subagent")}
           >
             <IconStopCircle size={14} ariaHidden />
           </button>
@@ -660,25 +663,25 @@ function phaseMeta(phase: AgentActivityPhase): {
 } {
   switch (phase) {
     case "running":
-      return { label: "Running", icon: <IconPlay size={15} ariaHidden /> };
+      return { label: t("Running"), icon: <IconPlay size={15} ariaHidden /> };
     case "waiting":
       return {
-        label: "Waiting for you",
+        label: t("Waiting for you"),
         icon: <IconHand5Finger size={15} ariaHidden />,
       };
     case "background":
       return {
-        label: "Background work",
+        label: t("Background work"),
         icon: <IconLayersTwo size={15} ariaHidden />,
       };
     case "error":
       return {
-        label: "Error",
+        label: t("Error"),
         icon: <IconExclamationCircle size={15} ariaHidden />,
       };
     case "complete":
       return {
-        label: "Complete",
+        label: t("Complete"),
         icon: <IconCircleCheck size={15} ariaHidden />,
       };
   }
@@ -749,11 +752,11 @@ export function AgentArtifactsSection({
   if (artifacts.length === 0) return null;
 
   return (
-    <section className="agent-artifacts-section" aria-label="Artifacts">
+    <section className="agent-artifacts-section" aria-label={t("Artifacts")}>
       <header className="agent-artifacts-header">
         <span className="agent-artifacts-heading">
           <IconFileText size={14} ariaHidden />
-          <span className="agent-artifacts-title">Artifacts</span>
+          <span className="agent-artifacts-title">{t("Artifacts")}</span>
           <span className="agent-artifacts-count" aria-hidden>
             {artifacts.length}
           </span>
@@ -814,29 +817,29 @@ function actionMeta(action: ArtifactAction): {
   switch (action) {
     case "created":
       return {
-        label: "Created",
+        label: t("Created"),
         icon: <IconFileArrowRightOut size={12} ariaHidden />,
       };
     case "modified":
       return {
-        label: "Modified",
+        label: t("Modified"),
         icon: <IconPencilLine size={12} ariaHidden />,
       };
     case "read":
-      return { label: "Read", icon: <IconEyeOpen size={12} ariaHidden /> };
+      return { label: t("Read"), icon: <IconEyeOpen size={12} ariaHidden /> };
     case "downloaded":
       return {
-        label: "Downloaded",
+        label: t("Downloaded"),
         icon: <IconArrowInbox size={12} ariaHidden />,
       };
     case "failed":
       return {
-        label: "Failed",
+        label: t("Failed"),
         icon: <IconExclamationTriangle size={12} ariaHidden />,
       };
     case "attached":
       return {
-        label: "Attached",
+        label: t("Attached"),
         icon: <IconAddImage size={12} ariaHidden />,
       };
   }
@@ -866,23 +869,23 @@ function pathSafetyMeta(artifact: AgentArtifact): {
   if (artifact.kind === "url") {
     return {
       key: "remote",
-      label: "Remote",
-      title: "A remote location, not a file on this machine",
+      label: t("Remote"),
+      title: t("A remote location, not a file on this machine"),
       icon: <IconGlobe size={12} ariaHidden />,
     };
   }
   if (artifact.mode === "unrestricted") {
     return {
       key: "unrestricted",
-      label: "Unrestricted path",
-      title: "A real path on your machine (this session is not sandboxed)",
+      label: t("Unrestricted path"),
+      title: t("A real path on your machine (this session is not sandboxed)"),
       icon: <IconShieldCrossed size={12} ariaHidden />,
     };
   }
   return {
     key: "sandboxed",
-    label: "Sandboxed copy",
-    title: "A copy inside Sub Rosa's sandbox, not your wider filesystem",
+    label: t("Sandboxed copy"),
+    title: t("A copy inside Sub Rosa's sandbox, not your wider filesystem"),
     icon: <IconShieldCheck size={12} ariaHidden />,
   };
 }

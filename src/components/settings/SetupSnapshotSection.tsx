@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { messageFromError } from "../../lib/errors";
 import { IconArrowOutOfBox } from "central-icons/IconArrowOutOfBox";
@@ -86,19 +87,20 @@ export function SetupSnapshotView({
   return (
     <section className="settings-group setup-snapshot" aria-labelledby="setup-snapshot-heading">
       <h2 id="setup-snapshot-heading" className="settings-group-heading">
-        Import / export
+        {t("Import / export")}
       </h2>
       <p className="settings-group-description">
-        Export a sanitized snapshot of your skills, MCP servers, and profile setup to reproduce it
-        on another machine, or import one to apply it here. Secret values are never included.{" "}
+        {t(
+          "Export a sanitized snapshot of your skills, MCP servers, and profile setup to reproduce it on another machine, or import one to apply it here. Secret values are never included.",
+        )}{" "}
         <ModeNote mode={state.mode ?? mode} profile={state.profile} show={!isUnavailable} />
       </p>
 
       {isUnavailable ? (
         <div className="settings-card setup-snapshot-card">
           <EmptyState
-            title="Hermes is not running"
-            description="Start Hermes to export or import a setup snapshot."
+            title={t("Hermes is not running")}
+            description={t("Start Hermes to export or import a setup snapshot.")}
           />
         </div>
       ) : isErrored ? (
@@ -132,8 +134,8 @@ function ModeNote({
   const modeLabel = mode === "unrestricted" ? "Full mode" : "Sandboxed";
   return (
     <span className="setup-snapshot-mode-note">
-      Targeting the {modeLabel} runtime
-      {profile ? ` (profile ${profile})` : ""}.
+      {t("Targeting the {mode} runtime", { mode: modeLabel })}
+      {profile ? t(" (profile {profile})", { profile }) : ""}.
     </span>
   );
 }
@@ -149,11 +151,12 @@ function ExportCard({ state }: { state: SetupSnapshotState }) {
     <div className="settings-card setup-snapshot-card setup-snapshot-export">
       <h3 className="setup-snapshot-card-title">
         <IconArrowOutOfBox size={16} ariaHidden />
-        Export
+        {t("Export")}
       </h3>
       <p className="setup-snapshot-card-body">
-        Saves a JSON snapshot. Profiles, skills, MCP servers, tool filters, and toolset readiness
-        are included. Memory, sessions, and secret values are not.
+        {t(
+          "Saves a JSON snapshot. Profiles, skills, MCP servers, tool filters, and toolset readiness are included. Memory, sessions, and secret values are not.",
+        )}
       </p>
       <label className="setup-snapshot-opt">
         <input
@@ -162,7 +165,7 @@ function ExportCard({ state }: { state: SetupSnapshotState }) {
           onChange={(event) => state.setIncludeSkillConfig(event.currentTarget.checked)}
         />
         <span>
-          Include non-secret skill config values. Secret-shaped values are still excluded.
+          {t("Include non-secret skill config values. Secret-shaped values are still excluded.")}
         </span>
       </label>
       <button
@@ -172,7 +175,7 @@ function ExportCard({ state }: { state: SetupSnapshotState }) {
         onClick={handleExport}
       >
         <IconArrowOutOfBox size={14} ariaHidden />
-        Export snapshot
+        {t("Export snapshot")}
       </button>
     </div>
   );
@@ -188,15 +191,16 @@ function ImportCard({ state }: { state: SetupSnapshotState }) {
     <div className="settings-card setup-snapshot-card setup-snapshot-import">
       <h3 className="setup-snapshot-card-title">
         <IconArrowInbox size={16} ariaHidden />
-        Import
+        {t("Import")}
       </h3>
       <p className="setup-snapshot-card-body">
-        Paste a snapshot to preview what it would change before applying. Importing never deletes
-        your current skills or servers, and never reads secrets from the file.
+        {t(
+          "Paste a snapshot to preview what it would change before applying. Importing never deletes your current skills or servers, and never reads secrets from the file.",
+        )}
       </p>
 
       <label className="setup-snapshot-paste-label" htmlFor="setup-snapshot-raw">
-        Snapshot JSON
+        {t("Snapshot JSON")}
       </label>
       <textarea
         id="setup-snapshot-raw"
@@ -204,7 +208,7 @@ function ImportCard({ state }: { state: SetupSnapshotState }) {
         value={raw}
         spellCheck={false}
         rows={5}
-        placeholder='{ "schemaVersion": 1, ... }'
+        placeholder={'{ "schemaVersion": 1, ... }'}
         onChange={(event) => setRaw(event.currentTarget.value)}
       />
       <div className="setup-snapshot-import-actions">
@@ -214,7 +218,7 @@ function ImportCard({ state }: { state: SetupSnapshotState }) {
           disabled={raw.trim().length === 0 || phase === "applying"}
           onClick={() => state.preview(raw)}
         >
-          Preview import
+          {t("Preview import")}
         </button>
         {phase !== "idle" ? (
           <button
@@ -225,7 +229,7 @@ function ImportCard({ state }: { state: SetupSnapshotState }) {
               state.resetImport();
             }}
           >
-            Clear
+            {t("Clear")}
           </button>
         ) : null}
       </div>
@@ -316,8 +320,9 @@ function SecretPrompts({
   return (
     <div className="setup-snapshot-secrets">
       <p className="setup-snapshot-secrets-note">
-        This snapshot needs secret values it does not carry. Enter the ones you want to apply now.
-        Leave a value blank to configure it later.
+        {t(
+          "This snapshot needs secret values it does not carry. Enter the ones you want to apply now. Leave a value blank to configure it later.",
+        )}
       </p>
       <ul className="setup-snapshot-secrets-list">
         {secrets.map((secret) => {
@@ -333,7 +338,7 @@ function SecretPrompts({
                 autoComplete="off"
                 className="setup-snapshot-secret-input"
                 value={values[id] ?? ""}
-                placeholder="Leave blank to set later"
+                placeholder={t("Leave blank to set later")}
                 onChange={(event) => onChange(id, event.currentTarget.value)}
               />
             </li>
@@ -353,12 +358,14 @@ function ImportReportView({ report }: { report: ImportReport }) {
         {report.hadFailures ? (
           <>
             <IconExclamationCircle size={14} ariaHidden />
-            Import finished with some failures. Review the steps below and retry the failed ones.
+            {t(
+              "Import finished with some failures. Review the steps below and retry the failed ones.",
+            )}
           </>
         ) : (
           <>
             <IconCircleCheck size={14} ariaHidden />
-            Import applied. {report.restarted ? "The gateway restarted to apply it." : ""}
+            {t("Import applied.")} {report.restarted ? t("The gateway restarted to apply it.") : ""}
           </>
         )}
       </p>
@@ -424,11 +431,11 @@ function ErrorState({
       <span className="setup-snapshot-empty-icon" aria-hidden>
         <IconExclamationCircle size={22} />
       </span>
-      <p className="setup-snapshot-empty-title">Couldn't load your setup</p>
+      <p className="setup-snapshot-empty-title">{t("Couldn't load your setup")}</p>
       <p className="setup-snapshot-empty-description">{message}</p>
       {retryable ? (
         <button type="button" className="setup-snapshot-retry" onClick={onRetry}>
-          Try again
+          {t("Try again")}
         </button>
       ) : null}
     </div>

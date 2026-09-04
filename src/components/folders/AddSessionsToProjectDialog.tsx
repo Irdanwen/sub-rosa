@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconCheckmark1 } from "central-icons-filled/IconCheckmark1";
 import { IconBubble3 } from "central-icons/IconBubble3";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
@@ -79,12 +80,12 @@ export function AddSessionsToProjectDialog({
         onClose();
       }}
       title={`Add sessions to ${folder.name}`}
-      description="Pick the agent sessions you want in this project."
+      description={t("Pick the agent sessions you want in this project.")}
       initialFocusSelector='input[name="add-sessions-search"]'
       footer={
         <>
           <button type="button" className="primary-action" onClick={onClose} disabled={submitting}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             type="button"
@@ -107,7 +108,7 @@ export function AddSessionsToProjectDialog({
           <input
             type="search"
             name="add-sessions-search"
-            placeholder="Search sessions"
+            placeholder={t("Search sessions")}
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
             autoComplete="off"

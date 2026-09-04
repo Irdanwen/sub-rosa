@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
@@ -197,14 +198,16 @@ export function DictationHistoryView({ onNavigateToSettings }: DictationHistoryV
   }
 
   return (
-    <section className="dictation-history-workspace" aria-label="Dictation">
+    <section className="dictation-history-workspace" aria-label={t("Dictation")}>
       <header className="folders-header">
         <div className="folders-heading">
           <h1>
-            Dictation
+            {t("Dictation")}
             {items.length > 0 ? <span className="folders-count">{items.length}</span> : null}
           </h1>
-          <p className="folders-subtitle">AI transcriptions from the last {retentionDays} days.</p>
+          <p className="folders-subtitle">
+            {t("AI transcriptions from the last {retentionDays} days.", { retentionDays })}
+          </p>
         </div>
         {/* Shortcuts live in the header whenever there's history; newcomers
             get them in the empty state instead. */}
@@ -229,7 +232,7 @@ export function DictationHistoryView({ onNavigateToSettings }: DictationHistoryV
             <IconMagnifyingGlass size={14} />
             <input
               type="search"
-              placeholder="Search"
+              placeholder={t("Search")}
               value={query}
               onChange={(event) => setQuery(event.currentTarget.value)}
             />
@@ -241,7 +244,7 @@ export function DictationHistoryView({ onNavigateToSettings }: DictationHistoryV
 
       {loading ? (
         <div className="folders-empty">
-          <p>Loading dictations…</p>
+          <p>{t("Loading dictations…")}</p>
         </div>
       ) : items.length === 0 ? (
         <EmptyState
@@ -267,7 +270,7 @@ export function DictationHistoryView({ onNavigateToSettings }: DictationHistoryV
         />
       ) : groups.length === 0 ? (
         <div className="folders-empty">
-          <p>No dictations match “{query.trim()}”.</p>
+          <p>{t("No dictations match “{query}”.", { query: query.trim() })}</p>
         </div>
       ) : (
         <div className="dictation-history-groups">
@@ -294,9 +297,9 @@ export function DictationHistoryView({ onNavigateToSettings }: DictationHistoryV
         open={pendingDelete !== null}
         onClose={() => setPendingDelete(null)}
         onConfirm={confirmDelete}
-        title="Delete this transcription?"
-        description="It will be removed from your dictation history. This can’t be undone."
-        confirmLabel="Delete"
+        title={t("Delete this transcription?")}
+        description={t("It will be removed from your dictation history. This can’t be undone.")}
+        confirmLabel={t("Delete")}
         destructive
       />
     </section>
@@ -404,7 +407,7 @@ function DictationHistoryRow({
         <button
           type="button"
           className="dictation-row-act dictation-row-act-danger"
-          aria-label="Delete"
+          aria-label={t("Delete")}
           onClick={onDelete}
         >
           <IconTrashCanSimple size={14} />
@@ -456,16 +459,16 @@ function GetMoreCard({
   onSetUpDictionary: () => void;
 }) {
   return (
-    <section className="dictation-hint" aria-label="Get more from dictation">
+    <section className="dictation-hint" aria-label={t("Get more from dictation")}>
       <button
         type="button"
         className="dictation-hint-dismiss"
-        aria-label="Dismiss"
+        aria-label={t("Dismiss")}
         onClick={onDismiss}
       >
         <IconCrossSmall size={14} />
       </button>
-      <h2 className="dictation-hint-title">Get more from dictation</h2>
+      <h2 className="dictation-hint-title">{t("Get more from dictation")}</h2>
       <div className="dictation-hint-items">
         {showStyles ? (
           <button type="button" className="dictation-hint-item" onClick={onSetUpStyles}>
@@ -473,13 +476,13 @@ function GetMoreCard({
               <IconFontStyle size={16} />
             </span>
             <span className="dictation-hint-item-body">
-              <span className="dictation-hint-item-name">Writing style</span>
+              <span className="dictation-hint-item-name">{t("Writing style")}</span>
               <span className="dictation-hint-item-desc">
-                Choose how transcriptions read: casual, standard, or formal.
+                {t("Choose how transcriptions read: casual, standard, or formal.")}
               </span>
             </span>
             <span className="dictation-hint-setup">
-              Set up <IconChevronRightSmall size={15} />
+              {t("Set up")} <IconChevronRightSmall size={15} />
             </span>
           </button>
         ) : null}
@@ -489,13 +492,13 @@ function GetMoreCard({
               <IconSpeachToText size={16} />
             </span>
             <span className="dictation-hint-item-body">
-              <span className="dictation-hint-item-name">Personal dictionary</span>
+              <span className="dictation-hint-item-name">{t("Personal dictionary")}</span>
               <span className="dictation-hint-item-desc">
-                Teach it the names and jargon it keeps mishearing.
+                {t("Teach it the names and jargon it keeps mishearing.")}
               </span>
             </span>
             <span className="dictation-hint-setup">
-              Set up <IconChevronRightSmall size={15} />
+              {t("Set up")} <IconChevronRightSmall size={15} />
             </span>
           </button>
         ) : null}
@@ -516,12 +519,12 @@ function ShortcutLegend({
   toggle: string;
 }) {
   return (
-    <dl className={className} aria-label="Dictation shortcuts">
+    <dl className={className} aria-label={t("Dictation shortcuts")}>
       <div className="dictation-shortcut">
         <span className="dictation-shortcut-icon" aria-hidden>
           <IconMicrophone size={15} />
         </span>
-        <dt>Push to talk</dt>
+        <dt>{t("Push to talk")}</dt>
         <dd>
           <KeycapShortcut label={pushToTalk} />
         </dd>
@@ -530,7 +533,7 @@ function ShortcutLegend({
         <span className="dictation-shortcut-icon" aria-hidden>
           <IconInfinity size={15} />
         </span>
-        <dt>Hands-free</dt>
+        <dt>{t("Hands-free")}</dt>
         <dd>
           <KeycapShortcut label={toggle} />
         </dd>
@@ -561,7 +564,7 @@ function formatGroupLabel(iso: string) {
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
   if (isSameDate(date, yesterday)) return "Yesterday";
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(intlLocale(), {
     weekday: "long",
     month: "short",
     day: "numeric",
@@ -571,7 +574,7 @@ function formatGroupLabel(iso: string) {
 function formatTime(iso: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleTimeString(undefined, {
+  return date.toLocaleTimeString(intlLocale(), {
     hour: "numeric",
     minute: "2-digit",
   });
@@ -580,7 +583,7 @@ function formatTime(iso: string) {
 function formatTranscriptTimestamp(iso: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(intlLocale(), {
     weekday: "long",
     month: "short",
     day: "numeric",

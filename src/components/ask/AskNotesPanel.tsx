@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -140,7 +141,7 @@ export function AskNotesPanel({
       className="ask-panel"
       role="dialog"
       aria-modal="true"
-      aria-label="Answer from your notes"
+      aria-label={t("Answer from your notes")}
       ref={panelRef}
       tabIndex={-1}
     >
@@ -155,7 +156,7 @@ export function AskNotesPanel({
           ))}
           <p className="ask-panel-question">{question}</p>
         </div>
-        <button type="button" className="ask-panel-close" aria-label="Close" onClick={onClose}>
+        <button type="button" className="ask-panel-close" aria-label={t("Close")} onClick={onClose}>
           <IconCrossSmall size={14} aria-hidden />
         </button>
       </header>
@@ -183,7 +184,7 @@ export function AskNotesPanel({
             )}
           </p>
           {result.citations.length > 0 ? (
-            <ul className="ask-panel-sources" aria-label="Sources">
+            <ul className="ask-panel-sources" aria-label={t("Sources")}>
               {result.citations.map((source) => (
                 <li key={source.index}>
                   <button type="button" onClick={() => onOpenNote(source.noteId)}>
@@ -197,8 +198,10 @@ export function AskNotesPanel({
           ) : null}
           {result.invented.length > 0 ? (
             <p className="ask-panel-note">
-              The model cited {result.invented.map((n) => `[${n}]`).join(", ")}, which was not among
-              the passages it was given; treat that sentence with care.
+              {t(
+                "The model cited {citations}, which was not among the passages it was given; treat that sentence with care.",
+                { citations: result.invented.map((n) => `[${n}]`).join(", ") },
+              )}
             </p>
           ) : null}
           <button
@@ -221,8 +224,8 @@ export function AskNotesPanel({
               className="ask-prompt-input"
               value={followUp}
               onChange={(event) => setFollowUp(event.currentTarget.value)}
-              placeholder="Ask a follow-up…"
-              aria-label="Follow-up question"
+              placeholder={t("Ask a follow-up…")}
+              aria-label={t("Follow-up question")}
               autoComplete="off"
             />
           </form>
@@ -245,7 +248,7 @@ export function AskNotesPanel({
         </p>
       ) : (
         <p className="ask-panel-answer ask-panel-pending" role="status">
-          Reading your notes…
+          {t("Reading your notes…")}
         </p>
       )}
     </section>
@@ -294,8 +297,8 @@ export function askPaletteItems(
   return [
     {
       id: "ask:notes",
-      label: `Ask your notes: ${trimmed}`,
-      meta: "Answer with citations",
+      label: t("Ask your notes: {question}", { question: trimmed }),
+      meta: t("Answer with citations"),
       icon: <IconSparkle3 size={15} />,
       searchText: "",
       action: () => onAsk(trimmed),

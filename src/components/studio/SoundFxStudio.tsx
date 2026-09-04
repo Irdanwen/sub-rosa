@@ -2,6 +2,7 @@
 // Rides the same async music queue as the music studio - only the model set,
 // the input rules, and the copy differ.
 
+import { t } from "../../lib/i18n";
 import { IconSoundFx } from "central-icons/IconSoundFx";
 import { useCallback, useMemo, useState } from "react";
 import { registerDownloadedArtifact } from "../../lib/studio/artifacts";
@@ -102,16 +103,16 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
 
   const controls = (
     <>
-      <StudioField label="Model">
+      <StudioField label={t("Model")}>
         <ModelSelect
           models={models}
           value={model?.id ?? null}
           onChange={setModelId}
-          ariaLabel="Sound effect model"
+          ariaLabel={t("Sound effect model")}
         />
       </StudioField>
       <StudioField
-        label="Description"
+        label={t("Description")}
         hint={`${Math.min(prompt.length, SFX_PROMPT_LIMIT)} / ${SFX_PROMPT_LIMIT}`}
       >
         <textarea
@@ -119,20 +120,20 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
           rows={3}
           value={prompt}
           maxLength={SFX_PROMPT_LIMIT}
-          placeholder="A heavy wooden door creaks open"
+          placeholder={t("A heavy wooden door creaks open")}
           onChange={(event) => setPrompt(event.target.value)}
         />
       </StudioField>
-      <StudioField label="Auto duration" hint="Let the model pick">
+      <StudioField label={t("Auto duration")} hint={t("Let the model pick")}>
         <Switch
           checked={autoDuration}
           onCheckedChange={setAutoDuration}
-          aria-label="Auto duration"
+          aria-label={t("Auto duration")}
         />
       </StudioField>
       {!autoDuration && caps.durationSeconds ? (
         <SliderField
-          label="Duration"
+          label={t("Duration")}
           min={caps.durationSeconds.min}
           max={caps.durationSeconds.max}
           step={caps.durationSeconds.step}
@@ -148,11 +149,11 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
   // darkroom, so the controls column keeps only the thing there is left to do.
   const action = busy ? (
     <button type="button" className="btn btn-secondary" onClick={job.cancel}>
-      Stop waiting
+      {t("Stop waiting")}
     </button>
   ) : (
     <button type="button" className="studio-primary-button" disabled={!canSubmit} onClick={start}>
-      <span>Generate effect</span>
+      <span>{t("Generate effect")}</span>
       <CostHint credits={costCredits} />
     </button>
   );
@@ -185,8 +186,10 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
           !busy ? (
             <EmptyState
               icon={<IconSoundFx size={22} />}
-              title="No sound effects yet"
-              description="Describe a short sound: a door creak, rain on glass, a sci-fi whoosh."
+              title={t("No sound effects yet")}
+              description={t(
+                "Describe a short sound: a door creak, rain on glass, a sci-fi whoosh.",
+              )}
             />
           ) : null
         }

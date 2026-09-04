@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { useEffect, useState } from "react";
 import { BrandMark } from "../../brand/Marks";
@@ -45,7 +46,7 @@ export function DictationPracticeStep({
   }, []);
 
   return (
-    <StepCard title="Talk to Sub Rosa" subtitle="Say what you want done." wide>
+    <StepCard title={t("Talk to Sub Rosa")} subtitle={t("Say what you want done.")} wide>
       <div className="onboarding-practice-stack">
         <div className="onboarding-shortcut-row">
           <span className="onboarding-shortcut-label">
@@ -53,7 +54,7 @@ export function DictationPracticeStep({
               <KeycapShortcut label="" capturing />
             ) : (
               <>
-                Hold <KeycapShortcut label={shortcutLabel} /> to dictate
+                {t("Hold")} <KeycapShortcut label={shortcutLabel} /> {t("to dictate")}
               </>
             )}
           </span>
@@ -71,11 +72,13 @@ export function DictationPracticeStep({
               <BrandMark />
             </div>
             <div className="onboarding-practice-message">
-              <span className="onboarding-practice-sender">Sub Rosa</span>
+              <span className="onboarding-practice-sender">{t("Sub Rosa")}</span>
               {greeted ? (
-                <span className="onboarding-practice-text">What should we work on first?</span>
+                <span className="onboarding-practice-text">
+                  {t("What should we work on first?")}
+                </span>
               ) : (
-                <span className="onboarding-typing" aria-label="Sub Rosa is typing">
+                <span className="onboarding-typing" aria-label={t("Sub Rosa is typing")}>
                   <span />
                   <span />
                   <span />
@@ -88,7 +91,7 @@ export function DictationPracticeStep({
               className="onboarding-practice-input"
               rows={2}
               value={value}
-              placeholder="Tell Sub Rosa what to do…"
+              placeholder={t("Tell Sub Rosa what to do…")}
               onChange={(event) => setValue(event.target.value)}
             />
             <div className="onboarding-practice-toolbar">
@@ -99,7 +102,7 @@ export function DictationPracticeStep({
                 <span
                   className="onboarding-practice-success"
                   role="status"
-                  aria-label="Dictation is working"
+                  aria-label={t("Dictation is working")}
                 >
                   <IconCheckmark1Small size={15} aria-hidden />
                 </span>
@@ -110,7 +113,7 @@ export function DictationPracticeStep({
       </div>
       {capture.error ? <p className="welcome-status">{capture.error}</p> : null}
       <StepActions
-        continueLabel="Start using Sub Rosa"
+        continueLabel={t("Start using Sub Rosa")}
         onContinue={onContinue}
         continueDisabled={!succeeded}
         onSkip={onContinue}

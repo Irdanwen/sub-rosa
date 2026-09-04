@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconRecord } from "central-icons/IconRecord";
 import { InlineNotice } from "../ui/InlineNotice";
 import type { RecoverableRecordingDto } from "../../lib/tauri";
@@ -18,7 +19,7 @@ export function NoteRecoveryPrompt({
   return (
     <InlineNotice
       className="note-recovery-prompt"
-      aria-label="Recoverable recording"
+      aria-label={t("Recoverable recording")}
       icon={<IconRecord size={14} aria-hidden />}
       body={`This recording was interrupted. We saved ${formatBytes(recovery.bytesFound)} of audio.`}
       actions={
@@ -29,7 +30,7 @@ export function NoteRecoveryPrompt({
             disabled={disabled}
             onClick={() => onDiscard(recovery.sessionId)}
           >
-            Discard
+            {t("Discard")}
           </button>
           <button
             type="button"
@@ -37,7 +38,7 @@ export function NoteRecoveryPrompt({
             disabled={disabled}
             onClick={() => onRecover(recovery.sessionId)}
           >
-            Recover
+            {t("Recover")}
           </button>
         </>
       }

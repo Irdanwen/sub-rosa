@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { Extension, type Range } from "@tiptap/react";
 import { PluginKey } from "@tiptap/pm/state";
 import Suggestion from "@tiptap/suggestion";
@@ -51,7 +52,7 @@ function at(range: Range, editor: Editor) {
 const ENTRIES: BlockPaletteEntry[] = [
   {
     id: "paragraph",
-    label: "Text",
+    label: t("Text"),
     hint: "",
     aliases: ["paragraph", "body", "plain"],
     Icon: IconText1,
@@ -61,7 +62,7 @@ const ENTRIES: BlockPaletteEntry[] = [
   },
   ...([1, 2, 3] as const).map((level) => ({
     id: `h${level}`,
-    label: `Heading ${level}`,
+    label: t("Heading {level}", { level }),
     hint: `${"#".repeat(level)} `,
     aliases: ["title", "section"],
     Icon: [IconH1, IconH2, IconH3][level - 1],
@@ -71,7 +72,7 @@ const ENTRIES: BlockPaletteEntry[] = [
   })),
   {
     id: "bulletList",
-    label: "Bullet list",
+    label: t("Bullet list"),
     hint: "- ",
     aliases: ["unordered", "points"],
     Icon: IconBulletList,
@@ -81,7 +82,7 @@ const ENTRIES: BlockPaletteEntry[] = [
   },
   {
     id: "orderedList",
-    label: "Numbered list",
+    label: t("Numbered list"),
     hint: "1. ",
     aliases: ["ordered", "steps"],
     Icon: IconNumberedList,
@@ -91,7 +92,7 @@ const ENTRIES: BlockPaletteEntry[] = [
   },
   {
     id: "taskList",
-    label: "Task list",
+    label: t("Task list"),
     hint: "[] ",
     aliases: ["todo", "checkbox", "checklist"],
     Icon: IconChecklist,
@@ -101,7 +102,7 @@ const ENTRIES: BlockPaletteEntry[] = [
   },
   {
     id: "blockquote",
-    label: "Quote",
+    label: t("Quote"),
     hint: "> ",
     aliases: ["citation"],
     Icon: IconOpenQuote1,
@@ -111,7 +112,7 @@ const ENTRIES: BlockPaletteEntry[] = [
   },
   {
     id: "codeBlock",
-    label: "Code block",
+    label: t("Code block"),
     hint: "```",
     aliases: ["snippet", "pre"],
     Icon: IconCodeLines,
@@ -121,7 +122,7 @@ const ENTRIES: BlockPaletteEntry[] = [
   },
   {
     id: "horizontalRule",
-    label: "Divider",
+    label: t("Divider"),
     hint: "---",
     aliases: ["rule", "separator", "line"],
     Icon: IconDivider,

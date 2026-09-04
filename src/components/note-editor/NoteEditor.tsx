@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../lib/i18n";
 import { turnIdForTime } from "../../lib/chapters";
 import { IconClapboard } from "central-icons/IconClapboard";
 import { requestFilmFromNote } from "../../lib/film-from-note";
@@ -88,13 +89,13 @@ type NoteEditorProps = {
 export type NoteTab = "notes" | "transcription" | "summary";
 
 const BASE_TABS = [
-  { value: "notes", label: "Notes" },
-  { value: "transcription", label: "Transcription" },
+  { value: "notes", label: t("Notes") },
+  { value: "transcription", label: t("Transcription") },
 ] as const;
 
 /** The long-form reading (ADR-0027). Offered only once there is a transcript
  * to read: a tab that can never do anything is noise on every short note. */
-const SUMMARY_TAB = { value: "summary", label: "Summary" } as const;
+const SUMMARY_TAB = { value: "summary", label: t("Summary") } as const;
 
 function sourceLabel(source?: string) {
   return source === "system" ? "System" : "Microphone";
@@ -119,9 +120,9 @@ type ProcessingStageStatus = Extract<
 >;
 
 const SOURCE_FILTERS = [
-  { value: "all", label: "All" },
-  { value: "microphone", label: "Microphone" },
-  { value: "system", label: "System" },
+  { value: "all", label: t("All") },
+  { value: "microphone", label: t("Microphone") },
+  { value: "system", label: t("System") },
 ] as const;
 
 const RECORD_CONSENT_REVEAL_DELAY_MS = 420;
@@ -420,8 +421,8 @@ export function NoteEditor({
         </div>
         <input
           className="note-title"
-          aria-label="Note title"
-          placeholder="New note"
+          aria-label={t("Note title")}
+          placeholder={t("New note")}
           value={note.title}
           onChange={(event) => onTitleChange(event.currentTarget.value)}
         />
@@ -435,7 +436,7 @@ export function NoteEditor({
           content={note.editedContent ?? note.generatedContent ?? ""}
         />
         <SegmentedControl
-          aria-label="Note views"
+          aria-label={t("Note views")}
           value={activeTab}
           options={tabs}
           onValueChange={(value) => onTabChange(value as NoteTab)}
@@ -449,7 +450,7 @@ export function NoteEditor({
             type="button"
             className="note-header-actions"
             onClick={() => requestFilmFromNote(note.id)}
-            aria-label="Open this note's film"
+            aria-label={t("Open this note's film")}
             title={`This note is a film: ${filmShotCount} shot${filmShotCount === 1 ? "" : "s"}`}
           >
             <IconClapboard aria-hidden="true" />
@@ -476,8 +477,8 @@ export function NoteEditor({
             type="button"
             className="note-header-actions note-export-pdf"
             onClick={onExportPdf}
-            aria-label="Export as PDF"
-            title="Export as PDF"
+            aria-label={t("Export as PDF")}
+            title={t("Export as PDF")}
           >
             <IconArrowDownWall aria-hidden="true" />
           </button>
@@ -487,8 +488,8 @@ export function NoteEditor({
             type="button"
             className="note-header-actions note-ask"
             onClick={onAskNote}
-            aria-label="Ask this note"
-            title="Ask this note"
+            aria-label={t("Ask this note")}
+            title={t("Ask this note")}
           >
             <IconSparkle3 aria-hidden="true" />
           </button>
@@ -498,8 +499,8 @@ export function NoteEditor({
             type="button"
             className="note-header-actions note-export-markdown"
             onClick={onExportMarkdown}
-            aria-label="Export as Markdown"
-            title="Export as Markdown"
+            aria-label={t("Export as Markdown")}
+            title={t("Export as Markdown")}
           >
             <IconMarkdown aria-hidden="true" />
           </button>
@@ -533,7 +534,7 @@ export function NoteEditor({
                 {hasBothSources ? (
                   <SegmentedControl
                     className="transcript-source-filter"
-                    aria-label="Filter transcript by source"
+                    aria-label={t("Filter transcript by source")}
                     value={sourceFilter}
                     options={SOURCE_FILTERS}
                     onValueChange={setSourceFilter}
@@ -548,7 +549,7 @@ export function NoteEditor({
               <div className="transcript-processing" role="status" aria-live="polite">
                 <DotSpinner className="transcript-processing-spinner" />
                 <span className="transcript-processing-label">
-                  Listening for transcript preview...
+                  {t("Listening for transcript preview...")}
                 </span>
               </div>
             ) : showTranscriptProcessing && processingStatus ? (
@@ -619,12 +620,12 @@ export function NoteEditor({
           <InlineNotice
             className="record-mic-blocked"
             role="alert"
-            aria-label="Microphone access required"
+            aria-label={t("Microphone access required")}
             icon={<IconMicrophoneOff size={14} aria-hidden />}
-            body="Microphone access is blocked. You can still write notes here."
+            body={t("Microphone access is blocked. You can still write notes here.")}
             actions={
               <button type="button" className="btn btn-secondary" onClick={onEnableMicrophone}>
-                Enable
+                {t("Enable")}
               </button>
             }
           />
@@ -642,7 +643,7 @@ export function NoteEditor({
                 >
                   <InlineNotice
                     className="record-consent-note-surface"
-                    aria-label="Recording source warning"
+                    aria-label={t("Recording source warning")}
                     body={recordingForNote.warnings[0].message}
                   />
                 </motion.div>
@@ -658,15 +659,15 @@ export function NoteEditor({
                 >
                   <InlineNotice
                     className="record-consent-note-surface"
-                    aria-label="Recording consent reminder"
-                    body="Make sure everyone has agreed to be recorded."
+                    aria-label={t("Recording consent reminder")}
+                    body={t("Make sure everyone has agreed to be recorded.")}
                     actions={
                       <button
                         type="button"
                         className="btn btn-ghost"
                         onClick={() => setConsentReminderVisible(false)}
                       >
-                        Dismiss
+                        {t("Dismiss")}
                       </button>
                     }
                   />
@@ -689,7 +690,7 @@ export function NoteEditor({
                   <div className="record-options-panel-inner">
                     {systemUnsupported ? (
                       <p className="record-options-unsupported">
-                        System audio requires macOS 14.2 or later.
+                        {t("System audio requires macOS 14.2 or later.")}
                       </p>
                     ) : (
                       <div className="record-options-row" data-locked={systemLocked || undefined}>
@@ -702,7 +703,7 @@ export function NoteEditor({
                           }
                         />
                         <span id="record-options-system" className="record-options-label">
-                          Capture system audio
+                          {t("Capture system audio")}
                         </span>
                         {systemAvailability === "denied" ? (
                           <button
@@ -710,7 +711,7 @@ export function NoteEditor({
                             className="btn btn-ghost record-options-enable"
                             onClick={onEnableSystemAudio}
                           >
-                            Enable
+                            {t("Enable")}
                           </button>
                         ) : null}
                       </div>
@@ -787,7 +788,7 @@ export function NoteEditor({
                           <button
                             type="button"
                             className="record-options-trigger"
-                            aria-label="Recording options"
+                            aria-label={t("Recording options")}
                             aria-expanded={optionsOpen}
                             data-rotated={optionsOpen}
                             onClick={() => setOptionsOpen((value) => !value)}
@@ -892,7 +893,7 @@ function FolderChip({
             <input
               ref={searchRef}
               type="search"
-              placeholder="Search or create project"
+              placeholder={t("Search or create project")}
               value={query}
               onChange={(event) => setQuery(event.currentTarget.value)}
               onKeyDown={(event) => {
@@ -915,7 +916,9 @@ function FolderChip({
                 }}
               >
                 <IconPlusMedium size={14} />
-                <span className="move-to-folder-item-name">Create “{trimmed}”</span>
+                <span className="move-to-folder-item-name">
+                  {t("Create “{trimmed}”", { trimmed })}
+                </span>
                 <span aria-hidden />
               </button>
               <div className="move-to-folder-divider" aria-hidden />
@@ -943,7 +946,7 @@ function FolderChip({
                 );
               })
             ) : trimmed.length === 0 ? (
-              <p className="move-to-folder-empty">No projects yet.</p>
+              <p className="move-to-folder-empty">{t("No projects yet.")}</p>
             ) : null}
           </div>
         </div>
@@ -996,8 +999,9 @@ function ProcessingProgressIndicator({
         <span className="note-generating-count" tabIndex={0} aria-describedby={queuedTooltipId}>
           +{queuedRecordings}
           <span className="note-generating-tip" id={queuedTooltipId} role="tooltip">
-            {queuedRecordings} more recording
-            {queuedRecordings > 1 ? "s" : ""} queued
+            {queuedRecordings > 1
+              ? t("{count} more recordings queued", { count: queuedRecordings })
+              : t("1 more recording queued")}
           </span>
         </span>
       ) : null}
@@ -1199,7 +1203,7 @@ function TranscriptTurn({
         <div className="transcript-turn-meta">
           <span className="transcript-turn-source">{sourceLabel(transcript.source)}</span>
           {turnTime ? <time>{turnTime}</time> : null}
-          {preview ? <span className="transcript-turn-preview">Live preview</span> : null}
+          {preview ? <span className="transcript-turn-preview">{t("Live preview")}</span> : null}
         </div>
         {hasText ? (
           <p ref={textRef} className="transcript-turn-text" data-expanded={expanded || undefined}>
@@ -1277,7 +1281,7 @@ function CopyTranscriptButton({ text }: { text: string }) {
 function formatFullDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Today";
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(intlLocale(), {
     weekday: "short",
     month: "short",
     day: "numeric",

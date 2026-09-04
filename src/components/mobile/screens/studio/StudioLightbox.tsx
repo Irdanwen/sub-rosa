@@ -1,3 +1,4 @@
+import { t } from "../../../../lib/i18n";
 import { useModalFocus } from "../../../../lib/modal-focus";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
@@ -146,14 +147,14 @@ export function Lightbox({
       className="mobile-studio-preview"
       role="dialog"
       aria-modal="true"
-      aria-label="Media preview"
+      aria-label={t("Media preview")}
       ref={previewRef}
       tabIndex={-1}
     >
       <button
         type="button"
         className="mobile-studio-preview-scrim"
-        aria-label="Close"
+        aria-label={t("Close")}
         onClick={onClose}
       />
       <div className="mobile-studio-preview-body">
@@ -181,7 +182,7 @@ export function Lightbox({
               type="button"
               className="mobile-studio-preview-copy"
               onClick={() => void copyPrompt()}
-              aria-label="Copy prompt"
+              aria-label={t("Copy prompt")}
             >
               {promptCopied ? <IconCheckmark1Small size={14} /> : <IconClipboard size={14} />}
               {promptCopied ? "Copied" : "Copy prompt"}
@@ -227,12 +228,12 @@ export function Lightbox({
           ) : null}
           {onUseAsReference ? (
             <button type="button" className="mobile-chip-button" onClick={onUseAsReference}>
-              Use as reference
+              {t("Use as reference")}
             </button>
           ) : null}
           {onContinueShot ? (
             <button type="button" className="mobile-chip-button" onClick={onContinueShot}>
-              Continue this shot
+              {t("Continue this shot")}
             </button>
           ) : null}
           <button
@@ -241,10 +242,10 @@ export function Lightbox({
             data-tone="destructive"
             onClick={onDelete}
           >
-            Delete
+            {t("Delete")}
           </button>
           <button type="button" className="mobile-chip-button" onClick={onClose}>
-            Close
+            {t("Close")}
           </button>
         </div>
       </div>
@@ -417,7 +418,7 @@ export function MediaReferencePicker({
               disabled={reading}
               onClick={() => setGalleryOpen(true)}
             >
-              From gallery
+              {t("From gallery")}
             </button>
           ) : null}
         </div>
@@ -431,7 +432,7 @@ export function MediaReferencePicker({
             aria-label={`Pick a ${noun}`}
             onClick={(event) => event.stopPropagation()}
           >
-            <h2 className="mobile-sheet-title">From your gallery</h2>
+            <h2 className="mobile-sheet-title">{t("From your gallery")}</h2>
             <ul className="mobile-sheet-list">
               {gallery.map((artifact) => (
                 <li key={artifact.path}>
@@ -558,7 +559,7 @@ export function ReferencePicker({
           className="mobile-chip-button"
           onClick={() => inputRef.current?.click()}
         >
-          Add a photo
+          {t("Add a photo")}
         </button>
         {isMobilePlatform() ? (
           <button
@@ -566,12 +567,12 @@ export function ReferencePicker({
             className="mobile-chip-button"
             onClick={() => cameraRef.current?.click()}
           >
-            Take a photo
+            {t("Take a photo")}
           </button>
         ) : null}
         {galleryImages.length > 0 ? (
           <button type="button" className="mobile-chip-button" onClick={() => setGalleryOpen(true)}>
-            From gallery
+            {t("From gallery")}
           </button>
         ) : null}
       </div>
@@ -582,10 +583,10 @@ export function ReferencePicker({
           <div
             className="mobile-sheet"
             role="dialog"
-            aria-label="Pick a gallery image"
+            aria-label={t("Pick a gallery image")}
             onClick={(event) => event.stopPropagation()}
           >
-            <h2 className="mobile-sheet-title">From your gallery</h2>
+            <h2 className="mobile-sheet-title">{t("From your gallery")}</h2>
             <div className="mobile-studio-grid mobile-sheet-grid">
               {galleryImages.map((artifact) => (
                 <GalleryCell

@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { IconRotate } from "central-icons/IconRotate";
 import { IconBookSimple } from "central-icons/IconBookSimple";
@@ -144,7 +145,7 @@ export function NoteSummaryPanel({
         <div className="note-summary-progress-row">
           <SummaryProgress summary={summary} />
           <button type="button" className="primary-action" onClick={() => void forget()}>
-            Stop
+            {t("Stop")}
           </button>
         </div>
       ) : null}
@@ -176,20 +177,20 @@ export function NoteSummaryPanel({
           </button>
           <button type="button" className="primary-action" onClick={() => void start()}>
             <IconRotate size={13} />
-            Read it again
+            {t("Read it again")}
           </button>
           {confirmingForget ? (
             <>
-              <span className="note-summary-confirm">Delete this summary?</span>
+              <span className="note-summary-confirm">{t("Delete this summary?")}</span>
               <button type="button" className="primary-action" onClick={() => void forget()}>
-                Delete
+                {t("Delete")}
               </button>
               <button
                 type="button"
                 className="primary-action"
                 onClick={() => setConfirmingForget(false)}
               >
-                Keep
+                {t("Keep")}
               </button>
             </>
           ) : (
@@ -199,7 +200,7 @@ export function NoteSummaryPanel({
               onClick={() => setConfirmingForget(true)}
             >
               <IconTrashCan size={13} />
-              Delete
+              {t("Delete")}
             </button>
           )}
         </div>
@@ -225,7 +226,7 @@ function ChapterList({
   const chapters = useMemo(() => parseChapters(markdown), [markdown]);
   if (chapters.length < 2) return null;
   return (
-    <nav className="note-chapters" aria-label="Chapters">
+    <nav className="note-chapters" aria-label={t("Chapters")}>
       {chapters.map((chapter) => (
         <button
           key={`${chapter.startMs}-${chapter.title}`}
@@ -282,10 +283,11 @@ function SummaryInvitation({
   return (
     <div className="note-summary-empty">
       <IconBookSimple size={22} />
-      <h2>Read this recording end to end</h2>
+      <h2>{t("Read this recording end to end")}</h2>
       <p>
-        A faithful account of everything that was said, with chapters you can jump to. Different
-        from the note above, which keeps only what a meeting needs.
+        {t(
+          "A faithful account of everything that was said, with chapters you can jump to. Different from the note above, which keeps only what a meeting needs.",
+        )}
       </p>
       {plan ? (
         <p className="note-summary-cost">
@@ -296,7 +298,7 @@ function SummaryInvitation({
       ) : null}
       <button type="button" className="primary-action primary-solid" onClick={() => void onStart()}>
         <IconBookSimple size={13} />
-        Summarize
+        {t("Summarize")}
       </button>
     </div>
   );

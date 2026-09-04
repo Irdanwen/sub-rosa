@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useModalFocus } from "../../lib/modal-focus";
@@ -49,22 +50,22 @@ export function AskNoteOverlay({
             if (trimmed) setQuestion(trimmed);
           }}
         >
-          <p className="ask-panel-question">Ask {name}</p>
+          <p className="ask-panel-question">{t("Ask {name}", { name })}</p>
           <input
             type="text"
             className="ask-prompt-input"
             value={draft}
             onChange={(event) => setDraft(event.currentTarget.value)}
-            placeholder="What was decided, who said what, when…"
-            aria-label="Your question"
+            placeholder={t("What was decided, who said what, when…")}
+            aria-label={t("Your question")}
             autoComplete="off"
           />
           <div className="ask-prompt-actions">
             <button type="button" className="ask-panel-toggle" onClick={onClose}>
-              Cancel
+              {t("Cancel")}
             </button>
             <button type="submit" className="ask-prompt-submit" disabled={!draft.trim()}>
-              Ask
+              {t("Ask")}
             </button>
           </div>
         </form>

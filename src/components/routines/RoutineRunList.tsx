@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../lib/i18n";
 import { IconZap } from "central-icons/IconZap";
 import { isRunningScheduledRunSession, sessionTimestamp } from "../../lib/hermes-adapter";
 import type { HermesSessionInfo } from "../../lib/tauri";
@@ -42,7 +43,7 @@ function RunRow({
         <span className="routines-run-body">
           <span className="routines-run-title">
             <span className="routines-run-name">{label}</span>
-            {running ? <span className="routines-run-status">Running</span> : null}
+            {running ? <span className="routines-run-status">{t("Running")}</span> : null}
           </span>
           {preview ? <span className="routines-run-preview">{preview}</span> : null}
         </span>
@@ -56,7 +57,7 @@ export function formatRunTime(iso: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   const now = new Date();
-  const time = date.toLocaleTimeString(undefined, {
+  const time = date.toLocaleTimeString(intlLocale(), {
     hour: "numeric",
     minute: "2-digit",
   });
@@ -67,7 +68,7 @@ export function formatRunTime(iso: string) {
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
   if (isSameDate(date, yesterday)) return `yesterday ${time}`;
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(intlLocale(), {
     month: "short",
     day: "numeric",
     hour: "numeric",

@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { IconFolder2 } from "central-icons/IconFolder2";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
@@ -41,12 +42,12 @@ export function FolderScreen({
       <StackHeader
         title={folder?.name ?? "Folder"}
         onBack={onBack}
-        backLabel="Notes"
+        backLabel={t("Notes")}
         trailing={
           <button
             type="button"
             className="mobile-icon-button"
-            aria-label="New note in folder"
+            aria-label={t("New note in folder")}
             onClick={onCreateNote}
           >
             <IconPlusMedium size={20} />
@@ -78,7 +79,7 @@ export function FolderScreen({
                         onAction: () => onRemoveFromFolder(note.id),
                       },
                       {
-                        label: "Delete",
+                        label: t("Delete"),
                         tone: "destructive",
                         onAction: () => setConfirmDelete(note),
                       },
@@ -97,9 +98,9 @@ export function FolderScreen({
       </div>
       <ConfirmDialog
         open={confirmDelete !== null}
-        title="Delete this note?"
-        description="The note, its audio, and its transcript are removed from this device."
-        confirmLabel="Delete"
+        title={t("Delete this note?")}
+        description={t("The note, its audio, and its transcript are removed from this device.")}
+        confirmLabel={t("Delete")}
         destructive
         onConfirm={() => {
           if (confirmDelete) onDeleteNote(confirmDelete.id);

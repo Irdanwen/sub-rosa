@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconShieldCheck } from "central-icons/IconShieldCheck";
 import { IconShieldCrossed } from "central-icons/IconShieldCrossed";
 import { SegmentedControl } from "../ui/SegmentedControl";
@@ -8,7 +9,7 @@ const MODE_OPTIONS = [
     label: (
       <>
         <IconShieldCheck size={14} aria-hidden />
-        Sandboxed
+        {t("Sandboxed")}
       </>
     ),
     ariaLabel: "Sandboxed",
@@ -18,7 +19,7 @@ const MODE_OPTIONS = [
     label: (
       <>
         <IconShieldCrossed size={14} aria-hidden />
-        Unrestricted
+        {t("Unrestricted")}
       </>
     ),
     ariaLabel: "Unrestricted",
@@ -43,7 +44,7 @@ export function RoutineModePicker({
         // The indicator goes terracotta while Unrestricted is armed, same
         // warm accent as the composer's sandbox trigger.
         className={unrestricted ? "segmented-warm" : undefined}
-        aria-label="What can this routine change?"
+        aria-label={t("What can this routine change?")}
       />
       <p className="routines-mode-hint">
         {unrestricted

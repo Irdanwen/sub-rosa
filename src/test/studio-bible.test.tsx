@@ -104,7 +104,7 @@ describe("the bible panel", () => {
     hoisted.listArtifacts.mockResolvedValue([artifact("nera.png")]);
     render(<BibleStudio catalog={catalog} />);
     expect(
-      await screen.findByText(/1 reference point at files that are no longer in your gallery/),
+      await screen.findByText(/1 reference points at a file that is no longer in your gallery/),
     ).toBeInTheDocument();
   });
 

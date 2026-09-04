@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useState } from "react";
 import {
   draftFromSchedule,
@@ -45,15 +46,15 @@ export function RoutineCreate({ template, creating, error, onBack, onCreate }: R
   }
 
   return (
-    <section className="routine-detail" aria-label="New routine">
+    <section className="routine-detail" aria-label={t("New routine")}>
       <BreadcrumbBar
-        backLabel="Back to routines"
+        backLabel={t("Back to routines")}
         onBack={onBack}
-        items={[{ label: "Routines", onClick: onBack }, { label: name.trim() || "New routine" }]}
+        items={[{ label: t("Routines"), onClick: onBack }, { label: name.trim() || "New routine" }]}
         actions={
           <div className="routine-detail-actions">
             <button type="button" className="btn btn-ghost" onClick={onBack}>
-              Cancel
+              {t("Cancel")}
             </button>
             <button
               type="button"
@@ -71,8 +72,8 @@ export function RoutineCreate({ template, creating, error, onBack, onCreate }: R
         <input
           className="routine-detail-name"
           value={name}
-          placeholder="Routine name"
-          aria-label="Routine name"
+          placeholder={t("Routine name")}
+          aria-label={t("Routine name")}
           onChange={(event) => setName(event.currentTarget.value)}
         />
 
@@ -81,7 +82,7 @@ export function RoutineCreate({ template, creating, error, onBack, onCreate }: R
         <div className="routine-detail-body">
           <section className="settings-group" aria-labelledby="routine-schedule">
             <h2 id="routine-schedule" className="settings-group-heading">
-              Schedule
+              {t("Schedule")}
             </h2>
             <div className="settings-card">
               <SchedulePicker draft={draft} onChange={setDraft} />
@@ -90,20 +91,20 @@ export function RoutineCreate({ template, creating, error, onBack, onCreate }: R
 
           <section className="settings-group" aria-labelledby="routine-instructions">
             <h2 id="routine-instructions" className="settings-group-heading">
-              Instructions
+              {t("Instructions")}
             </h2>
             <GrowingTextarea
               className="routine-detail-instructions"
               value={prompt}
-              aria-label="Instructions"
-              placeholder="Summarize my unread notes and list anything that needs a reply…"
+              aria-label={t("Instructions")}
+              placeholder={t("Summarize my unread notes and list anything that needs a reply…")}
               onChange={(event) => setPrompt(event.currentTarget.value)}
             />
           </section>
 
           <section className="settings-group" aria-labelledby="routine-access">
             <h2 id="routine-access" className="settings-group-heading">
-              Access
+              {t("Access")}
             </h2>
             <div className="settings-card">
               <RoutineModePicker unrestricted={unrestricted} onChange={setUnrestricted} />

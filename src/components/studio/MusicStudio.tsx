@@ -1,6 +1,7 @@
 // Music studio: async queue + poll, like video, with per-model input rules
 // (lyrics required / optional / forbidden) and duration-bracket pricing.
 
+import { t } from "../../lib/i18n";
 import { IconAudio } from "central-icons/IconAudio";
 import { useCallback, useMemo, useState } from "react";
 import { registerDownloadedArtifact } from "../../lib/studio/artifacts";
@@ -98,37 +99,37 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
 
   const controls = (
     <>
-      <StudioField label="Model">
+      <StudioField label={t("Model")}>
         <ModelSelect
           models={models}
           value={modelId || null}
           onChange={setModelId}
-          ariaLabel="Music model"
+          ariaLabel={t("Music model")}
         />
       </StudioField>
-      <StudioField label="Prompt">
+      <StudioField label={t("Prompt")}>
         <textarea
           className="studio-textarea"
           rows={4}
           value={prompt}
-          placeholder="Genre, mood, tempo, instruments"
+          placeholder={t("Genre, mood, tempo, instruments")}
           onChange={(event) => setPrompt(event.target.value)}
         />
       </StudioField>
       {caps.lyrics !== "none" ? (
         <>
           {caps.instrumental ? (
-            <StudioField label="Instrumental" hint="No vocals">
+            <StudioField label={t("Instrumental")} hint={t("No vocals")}>
               <Switch
                 checked={instrumental}
                 onCheckedChange={setInstrumental}
-                aria-label="Instrumental only"
+                aria-label={t("Instrumental only")}
               />
             </StudioField>
           ) : null}
           {!instrumental ? (
             <StudioField
-              label="Lyrics"
+              label={t("Lyrics")}
               hint={caps.lyrics === "required" ? "Required for this model" : "Optional"}
             >
               <textarea
@@ -144,7 +145,7 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
       ) : null}
       {caps.durationSeconds && duration !== undefined ? (
         <SliderField
-          label="Duration"
+          label={t("Duration")}
           min={caps.durationSeconds.min}
           max={caps.durationSeconds.max}
           step={caps.durationSeconds.step}
@@ -160,11 +161,11 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
   // darkroom, so the controls column keeps only the thing there is left to do.
   const action = busy ? (
     <button type="button" className="btn btn-secondary" onClick={job.cancel}>
-      Stop waiting
+      {t("Stop waiting")}
     </button>
   ) : (
     <button type="button" className="studio-primary-button" disabled={!canSubmit} onClick={start}>
-      <span>Generate music</span>
+      <span>{t("Generate music")}</span>
       <CostHint credits={costCredits} />
     </button>
   );
@@ -191,7 +192,7 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
         />
       ) : null}
       {lyricsMissing && prompt.trim() ? (
-        <p className="studio-error">This model needs lyrics, or switch to instrumental.</p>
+        <p className="studio-error">{t("This model needs lyrics, or switch to instrumental.")}</p>
       ) : null}
       <GalleryStrip
         kind="music"
@@ -200,8 +201,10 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
           !busy ? (
             <EmptyState
               icon={<IconAudio size={22} />}
-              title="No tracks yet"
-              description="Describe a genre and mood, then generate. Tracks usually take 20 to 90 seconds."
+              title={t("No tracks yet")}
+              description={t(
+                "Describe a genre and mood, then generate. Tracks usually take 20 to 90 seconds.",
+              )}
             />
           ) : null
         }

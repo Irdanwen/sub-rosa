@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useId } from "react";
 import { ROSE_MARK_PATH } from "./roseMark";
 
@@ -21,7 +22,7 @@ export function JuneWordmark({ className }: { className?: string }) {
       viewBox="0 0 100 18"
       fill="none"
       role="img"
-      aria-label="Sub Rosa"
+      aria-label={t("Sub Rosa")}
     >
       {/* Squircle mark — gradient derives from the selected accent; the rose
           glyph fills ~62% of the tile, matching the app icon's proportions. */}
@@ -35,7 +36,7 @@ export function JuneWordmark({ className }: { className?: string }) {
         fontSize="14"
         style={{ fontFamily: "var(--font-serif)", fontWeight: 500 }}
       >
-        Sub Rosa
+        {t("Sub Rosa")}
       </text>
       <defs>
         <linearGradient id={gradientId} x1="9" y1="0" x2="9" y2="18" gradientUnits="userSpaceOnUse">

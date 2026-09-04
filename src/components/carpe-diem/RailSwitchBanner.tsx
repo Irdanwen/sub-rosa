@@ -4,6 +4,7 @@
 // don't wait for a 402 — offer a one-click switch. The suggestion comes from
 // the same balance poll that feeds the sidebar footer (`suggestSwitchTo`), so
 // this needs no extra polling. Dismissible per-suggestion so it never nags.
+import { t } from "../../lib/i18n";
 import { useCallback, useState } from "react";
 import { useCarpeDiemCredits } from "../../lib/carpe-diem-credits";
 import { carpeDiemSetRail } from "../../lib/tauri";
@@ -37,7 +38,10 @@ export function RailSwitchBanner({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`carpe-diem-rail-prompt${compact ? " compact" : ""}`} role="status">
       <span className="carpe-diem-rail-prompt-text">
-        Your {from} balance is empty, but your {to} balance still has funds. Switch to keep going?
+        {t(
+          "Your {from} balance is empty, but your {to} balance still has funds. Switch to keep going?",
+          { from, to },
+        )}
       </span>
       <div className="carpe-diem-rail-prompt-actions">
         <button
@@ -49,7 +53,7 @@ export function RailSwitchBanner({ compact = false }: { compact?: boolean }) {
           {busy ? "Switching…" : `Switch to ${to}`}
         </button>
         <button type="button" className="btn btn-ghost" onClick={() => setDismissed(suggest)}>
-          Not now
+          {t("Not now")}
         </button>
       </div>
     </div>

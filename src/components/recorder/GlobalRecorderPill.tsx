@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useRef } from "react";
 import type { RecordingStatusDto } from "../../lib/tauri";
 import { combineSourceAudioLevels, Waveform } from "./Waveform";
@@ -34,7 +35,7 @@ export function GlobalRecorderPill({ status, title, onOpen }: GlobalRecorderPill
       data-state={status.state}
       onClick={onOpen}
       aria-label={`Open recording: ${title}`}
-      title="Open recording"
+      title={t("Open recording")}
     >
       <Waveform level={meterLevel} active={recording} />
     </button>

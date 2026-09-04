@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../lib/i18n";
 import { useCallback, useEffect, useId, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -144,15 +145,17 @@ function CarpeDiemPayment({ hasApiKey }: { hasApiKey: boolean }) {
       <div className="settings-rows">
         <div className="settings-row">
           <div className="settings-row-info">
-            <h3 className="settings-row-title">Payment</h3>
+            <h3 className="settings-row-title">{t("Payment")}</h3>
             <p className="settings-row-description">
-              Carpe Diem bills one rail at a time. Your prepaid account and credits are separate
-              balances — the active rail is what actually pays.
+              {t(
+                "Carpe Diem bills one rail at a time. Your prepaid account and credits are separate balances — the active rail is what actually pays.",
+              )}
             </p>
             {view.activeRailEmpty ? (
               <p className="settings-row-description carpe-diem-payment-warning" role="status">
-                Your active rail ({RAIL_LABELS[view.effectiveRail].toLowerCase()}) is out of funds,
-                so requests will fail.{" "}
+                {t("Your active rail ({rail}) is out of funds, so requests will fail.", {
+                  rail: RAIL_LABELS[view.effectiveRail].toLowerCase(),
+                })}{" "}
                 {view.fundsElsewhere
                   ? `Your ${
                       view.effectiveRail === "prepaid" ? "credits" : "prepaid account"
@@ -165,20 +168,25 @@ function CarpeDiemPayment({ hasApiKey }: { hasApiKey: boolean }) {
 
         <div className="settings-row">
           <div className="settings-row-info">
-            <h3 className="settings-row-title">Balances</h3>
+            <h3 className="settings-row-title">{t("Balances")}</h3>
             <p className="settings-row-description">
-              Prepaid account:{" "}
-              {billing.prepaidRegistered ? formatUsd(billing.prepaidUsdcBalance) : "not set up"}
+              {t("Prepaid account: {balance}", {
+                balance: billing.prepaidRegistered
+                  ? formatUsd(billing.prepaidUsdcBalance)
+                  : t("not set up"),
+              })}
               {" · "}
-              Credits: {formatUsd(billing.availableUsdc)} (
-              {billing.availableCredits.toLocaleString()} credits)
+              {t("Credits: {usd} ({credits} credits)", {
+                usd: formatUsd(billing.availableUsdc),
+                credits: billing.availableCredits.toLocaleString(intlLocale()),
+              })}
             </p>
           </div>
         </div>
 
         <div className="settings-row">
           <div className="settings-row-info">
-            <h3 className="settings-row-title">Active rail</h3>
+            <h3 className="settings-row-title">{t("Active rail")}</h3>
             <p className="settings-row-description">
               {RAIL_LABELS[billing.rail]}
               {billing.rail === "auto" ? ` — paying via ${view.effectiveRail}` : ""}
@@ -250,12 +258,17 @@ function CarpeDiemCache({ hasApiKey }: { hasApiKey: boolean }) {
       <div className="settings-rows">
         <div className="settings-row">
           <div className="settings-row-info">
-            <h3 className="settings-row-title">Prompt cache</h3>
+            <h3 className="settings-row-title">{t("Prompt cache")}</h3>
             <p className="settings-row-description">
-              {(cache.cachedTokens ?? 0).toLocaleString()} of{" "}
-              {(cache.promptTokens ?? 0).toLocaleString()} prompt tokens came from the provider's
-              cache{pct === null ? "" : ` (${pct}%)`} across {(cache.turns ?? 0).toLocaleString()}{" "}
-              requests since the app started.
+              {t(
+                "{cached} of {prompt} prompt tokens came from the provider's cache{pct} across {turns} requests since the app started.",
+                {
+                  cached: (cache.cachedTokens ?? 0).toLocaleString(intlLocale()),
+                  prompt: (cache.promptTokens ?? 0).toLocaleString(intlLocale()),
+                  pct: pct === null ? "" : ` (${pct}%)`,
+                  turns: (cache.turns ?? 0).toLocaleString(intlLocale()),
+                },
+              )}
               {cache.savedUsd !== undefined && cache.savedUsd > 0
                 ? ` The provider reports that saved ${formatUsd(cache.savedUsd)}.`
                 : ""}
@@ -312,7 +325,7 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
       const next = await carpeDiemSetApiKey(keyDraft);
       setSettings(next);
       setKeyDraft("");
-      setNotice("API key saved. Connecting…");
+      setNotice(t("API key saved. Connecting…"));
       setTest({ kind: "idle" });
       await refresh();
     } catch (err) {
@@ -324,7 +337,7 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
     try {
       const next = await carpeDiemClearApiKey();
       setSettings(next);
-      setNotice("API key removed.");
+      setNotice(t("API key removed."));
       setTest({ kind: "idle" });
       await refresh();
     } catch (err) {
@@ -350,13 +363,13 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
 
   return (
     <div className={compact ? "carpe-diem-connect" : "settings-group"}>
-      {!compact ? <h2 className="settings-group-heading">Carpe Diem</h2> : null}
+      {!compact ? <h2 className="settings-group-heading">{t("Carpe Diem")}</h2> : null}
       <div className="settings-card">
         <div className="settings-rows">
           {/* Endpoint (V1 vs Router) */}
           <div className="settings-row">
             <div className="settings-row-info">
-              <h3 className="settings-row-title">Endpoint</h3>
+              <h3 className="settings-row-title">{t("Endpoint")}</h3>
               <p className="settings-row-description">
                 {endpoint === "router"
                   ? "Router: served by the cheapest market, so some requests may leave Carpe Diem's confidential network."
@@ -365,12 +378,12 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
             </div>
             <div className="settings-row-control">
               <SegmentedControl<EndpointChoice>
-                aria-label="Carpe Diem endpoint"
+                aria-label={t("Carpe Diem endpoint")}
                 value={endpoint}
                 onValueChange={(value) => void selectEndpoint(value)}
                 options={[
                   { value: "v1", label: "V1", ariaLabel: "V1 (private)" },
-                  { value: "router", label: "Router", ariaLabel: "Router (best price)" },
+                  { value: "router", label: t("Router"), ariaLabel: "Router (best price)" },
                 ]}
               />
             </div>
@@ -379,12 +392,14 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
           {/* API key */}
           <div className="settings-row settings-row-venice-key">
             <div className="settings-row-info">
-              <h3 className="settings-row-title">API key</h3>
+              <h3 className="settings-row-title">{t("API key")}</h3>
               <p className="settings-row-description">
-                Your Carpe Diem key ({CARPE_DIEM_KEY_PREFIX}…). Stored in your system keychain,
-                never on disk in plain text.{" "}
+                {t(
+                  "Your Carpe Diem key ({prefix}…). Stored in your system keychain, never on disk in plain text.",
+                  { prefix: CARPE_DIEM_KEY_PREFIX },
+                )}{" "}
                 <a href={CARPE_DIEM_DASHBOARD_URL} target="_blank" rel="noreferrer">
-                  Get a key
+                  {t("Get a key")}
                 </a>
                 .
               </p>
@@ -399,7 +414,7 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
                 autoComplete="off"
                 spellCheck={false}
                 placeholder={hasApiKey ? "Saved key hidden" : `${CARPE_DIEM_KEY_PREFIX}…`}
-                aria-label="Carpe Diem API key"
+                aria-label={t("Carpe Diem API key")}
                 onChange={(event) => setKeyDraft(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && canSaveKey) void saveKey();
@@ -411,7 +426,7 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
                 disabled={!canSaveKey}
                 onClick={() => void saveKey()}
               >
-                Save
+                {t("Save")}
               </button>
               {hasApiKey ? (
                 <button
@@ -419,7 +434,7 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
                   className="btn btn-secondary"
                   onClick={() => void removeKey()}
                 >
-                  Remove
+                  {t("Remove")}
                 </button>
               ) : null}
             </div>
@@ -428,9 +443,9 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
           {/* Test connection */}
           <div className="settings-row">
             <div className="settings-row-info">
-              <h3 className="settings-row-title">Test connection</h3>
+              <h3 className="settings-row-title">{t("Test connection")}</h3>
               <p className="settings-row-description">
-                Checks the base URL, key, and available credits.
+                {t("Checks the base URL, key, and available credits.")}
               </p>
               {test.kind === "done" ? (
                 <p
@@ -456,7 +471,7 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
                   className="btn btn-secondary"
                   onClick={() => void carpeDiemRestartSidecar()}
                 >
-                  Retry
+                  {t("Retry")}
                 </button>
               ) : null}
             </div>

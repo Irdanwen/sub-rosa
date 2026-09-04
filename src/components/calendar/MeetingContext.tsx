@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../lib/i18n";
 import { IconCalendar1 } from "central-icons/IconCalendar1";
 import { useState } from "react";
 import { meetingSummary } from "../../lib/calendar-link";
@@ -24,7 +25,7 @@ export function MeetingBadge({
   if (!scheduledStart) return null;
   const start = new Date(scheduledStart);
   if (Number.isNaN(start.getTime())) return null;
-  const when = start.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const when = start.toLocaleString(intlLocale(), { dateStyle: "medium", timeStyle: "short" });
   const people = attendees ?? [];
   const who =
     people.length > 0
@@ -73,8 +74,8 @@ export function MeetingAmbiguityPrompt({
   };
 
   return (
-    <section className="meeting-prompt" aria-label="Which meeting is this?">
-      <p className="meeting-prompt-question">Which meeting is this?</p>
+    <section className="meeting-prompt" aria-label={t("Which meeting is this?")}>
+      <p className="meeting-prompt-question">{t("Which meeting is this?")}</p>
       <ul className="meeting-prompt-options">
         {events.map((event) => (
           <li key={event.id}>
@@ -96,7 +97,7 @@ export function MeetingAmbiguityPrompt({
         disabled={busy}
         onClick={() => void choose(null)}
       >
-        Neither
+        {t("Neither")}
       </button>
     </section>
   );

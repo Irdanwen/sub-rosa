@@ -1,3 +1,4 @@
+import { intlLocale } from "./i18n";
 /** Turns the cron expressions Hermes stores for routines into plain language
  * for the Routines list ("0 8 * * 1-5" reads as "Weekdays at 8:00 AM").
  *
@@ -187,7 +188,7 @@ function dayPhrase(days: number[]): string {
 }
 
 function formatClockTime(hourOfDay: number, minute: number): string {
-  return new Date(2000, 0, 1, hourOfDay, minute).toLocaleTimeString(undefined, {
+  return new Date(2000, 0, 1, hourOfDay, minute).toLocaleTimeString(intlLocale(), {
     hour: "numeric",
     minute: "2-digit",
   });

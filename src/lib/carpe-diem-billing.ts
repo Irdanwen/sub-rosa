@@ -6,6 +6,7 @@
 // even though the balance "looks" fine. This derives the one thing the UI
 // needs to say plainly: is the rail that actually pays out of money, and is
 // there money on the other rail a switch would reach?
+import { intlLocale } from "./i18n";
 import type { CarpeDiemBillingDto } from "./tauri";
 
 // Below this the rail can't cover even a trivial request (matches the studio's
@@ -44,5 +45,5 @@ export function deriveBilling(billing: CarpeDiemBillingDto): CarpeDiemBillingVie
 }
 
 export function formatUsd(value: number): string {
-  return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${value.toLocaleString(intlLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }

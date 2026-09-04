@@ -11,6 +11,7 @@
  * never cost the user a recording — that is the whole point of asking late.
  */
 
+import { intlLocale } from "./i18n";
 import {
   type CalendarEventDto,
   type CalendarMatch,
@@ -80,7 +81,7 @@ export async function linkRecordingToMeeting(
 
 /** The one-line summary a shell shows on a linked note. */
 export function meetingSummary(event: CalendarEventDto): string {
-  const when = new Date(event.start * 1000).toLocaleString(undefined, {
+  const when = new Date(event.start * 1000).toLocaleString(intlLocale(), {
     dateStyle: "medium",
     timeStyle: "short",
   });

@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { useState } from "react";
@@ -37,11 +38,12 @@ export function AutomationsSection() {
       <div className="settings-rows">
         <div className="settings-row">
           <div className="settings-row-info">
-            <h3 className="settings-row-title">Shortcuts and Siri</h3>
+            <h3 className="settings-row-title">{t("Shortcuts and Siri")}</h3>
             <p className="settings-row-description">
-              {PRODUCT_NAME} answers to addresses. Put one in a Shortcuts "Open URL" action and you
-              can start a recording from the Action button, from Siri, or from the end of any
-              shortcut you already use.
+              {t(
+                '{PRODUCT_NAME} answers to addresses. Put one in a Shortcuts "Open URL" action and you can start a recording from the Action button, from Siri, or from the end of any shortcut you already use.',
+                { PRODUCT_NAME },
+              )}
             </p>
           </div>
         </div>

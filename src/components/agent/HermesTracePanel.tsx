@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { IconConsole } from "central-icons/IconConsole";
 import { IconCrossMedium } from "central-icons/IconCrossMedium";
@@ -70,21 +71,21 @@ export function HermesTracePanel({
   }
 
   return (
-    <section className="hermes-trace-panel" role="dialog" aria-label="Raw Hermes trace">
+    <section className="hermes-trace-panel" role="dialog" aria-label={t("Raw Hermes trace")}>
       <header className="hermes-trace-panel-header">
         <div className="hermes-trace-panel-title">
           <IconConsole size={16} aria-hidden="true" />
-          <span>Raw Hermes trace</span>
+          <span>{t("Raw Hermes trace")}</span>
         </div>
         <div className="hermes-trace-panel-controls">
           <label className="hermes-trace-panel-field">
-            <span>Filter by session</span>
+            <span>{t("Filter by session")}</span>
             <select
               value={activeSession ?? ""}
               onChange={(event) => setSessionFilter(event.target.value || undefined)}
             >
               {sessionIds.length === 0 ? (
-                <option value="">No sessions</option>
+                <option value="">{t("No sessions")}</option>
               ) : (
                 sessionIds.map((id) => (
                   <option key={id} value={id}>
@@ -95,7 +96,7 @@ export function HermesTracePanel({
             </select>
           </label>
           <label className="hermes-trace-panel-field">
-            <span>Filter by kind</span>
+            <span>{t("Filter by kind")}</span>
             <select
               value={kindFilter}
               onChange={(event) => setKindFilter(event.target.value as TraceKindFilter)}
@@ -113,12 +114,12 @@ export function HermesTracePanel({
             onClick={() => void copyTrace()}
           >
             <IconArrowInbox size={14} aria-hidden="true" />
-            Copy trace
+            {t("Copy trace")}
           </button>
           <button
             type="button"
             className="hermes-trace-panel-button hermes-trace-panel-close"
-            aria-label="Close raw trace"
+            aria-label={t("Close raw trace")}
             onClick={onClose}
           >
             <IconCrossMedium size={14} aria-hidden="true" />
@@ -127,11 +128,11 @@ export function HermesTracePanel({
       </header>
 
       <p className="hermes-trace-panel-note">
-        Sanitized for safe sharing. Secret-like values are masked; this view is dev only.
+        {t("Sanitized for safe sharing. Secret-like values are masked; this view is dev only.")}
       </p>
 
       {visibleEntries.length === 0 ? (
-        <p className="hermes-trace-panel-empty">No trace entries for this session yet.</p>
+        <p className="hermes-trace-panel-empty">{t("No trace entries for this session yet.")}</p>
       ) : (
         <ol className="hermes-trace-panel-list">
           {visibleEntries.map((entry) => (
@@ -172,15 +173,15 @@ function TraceRow({ entry }: { entry: HermesTraceEntry }) {
 type TraceKindFilter = "all" | JuneHermesEventKind;
 
 const KIND_FILTERS: { value: TraceKindFilter; label: string }[] = [
-  { value: "all", label: "All kinds" },
-  { value: "transcript", label: "Transcript" },
-  { value: "reasoning", label: "Reasoning" },
-  { value: "tool", label: "Tool" },
-  { value: "pending_action", label: "Pending action" },
-  { value: "background_activity", label: "Background activity" },
-  { value: "lifecycle", label: "Lifecycle" },
-  { value: "error", label: "Error" },
-  { value: "unsupported", label: "Unsupported" },
+  { value: "all", label: t("All kinds") },
+  { value: "transcript", label: t("Transcript") },
+  { value: "reasoning", label: t("Reasoning") },
+  { value: "tool", label: t("Tool") },
+  { value: "pending_action", label: t("Pending action") },
+  { value: "background_activity", label: t("Background activity") },
+  { value: "lifecycle", label: t("Lifecycle") },
+  { value: "error", label: t("Error") },
+  { value: "unsupported", label: t("Unsupported") },
 ];
 
 /** Whether an entry passes the kind filter. Outbound/error entries (which have

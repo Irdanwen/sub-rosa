@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconCircleCheck } from "central-icons/IconCircleCheck";
 import { IconCircleInfo } from "central-icons/IconCircleInfo";
 import { IconCircleX } from "central-icons/IconCircleX";
@@ -57,7 +58,9 @@ export function McpToolsDialog({
       open={Boolean(server)}
       onClose={saving ? () => {} : onClose}
       title={server ? `Tools for ${server.name}` : "Tools"}
-      description="Choose which of this server's tools the agent can use. Changes apply after the Hermes gateway restarts."
+      description={t(
+        "Choose which of this server's tools the agent can use. Changes apply after the Hermes gateway restarts.",
+      )}
       width={620}
       className="mcp-tools-dialog"
     >
@@ -151,8 +154,9 @@ function McpToolsForm({
       {comparison.empty ? (
         <p className="mcp-tools-discovery-note" role="note">
           <IconCircleInfo size={13} ariaHidden />
-          No tools discovered yet. Test the server first to list the tools it exposes, then choose
-          which to allow.
+          {t(
+            "No tools discovered yet. Test the server first to list the tools it exposes, then choose which to allow.",
+          )}
         </p>
       ) : (
         <p className="mcp-tools-discovery-note" role="note">
@@ -164,23 +168,23 @@ function McpToolsForm({
       )}
 
       <fieldset className="mcp-tools-mode">
-        <legend className="mcp-tools-legend">Filter mode</legend>
-        <div className="mcp-tools-mode-options" role="radiogroup" aria-label="Filter mode">
+        <legend className="mcp-tools-legend">{t("Filter mode")}</legend>
+        <div className="mcp-tools-mode-options" role="radiogroup" aria-label={t("Filter mode")}>
           <ModeOption
-            label="Allowlist"
-            hint="Expose only chosen tools. Safest for sensitive servers."
+            label={t("Allowlist")}
+            hint={t("Expose only chosen tools. Safest for sensitive servers.")}
             active={draft.mode === "allowlist"}
             onSelect={() => setMode("allowlist")}
           />
           <ModeOption
-            label="Blocklist"
-            hint="Expose all tools except chosen ones."
+            label={t("Blocklist")}
+            hint={t("Expose all tools except chosen ones.")}
             active={draft.mode === "blocklist"}
             onSelect={() => setMode("blocklist")}
           />
           <ModeOption
-            label="No filter"
-            hint="Expose every tool the server reports."
+            label={t("No filter")}
+            hint={t("Expose every tool the server reports.")}
             active={draft.mode === "none"}
             onSelect={() => setMode("none")}
           />
@@ -195,8 +199,9 @@ function McpToolsForm({
       {recommendAllowlist && draft.mode !== "allowlist" ? (
         <p className="mcp-tools-allowlist-rec" role="note">
           <IconExclamationCircle size={13} ariaHidden />
-          This server exposes destructive-looking tools that the current setting would expose.
-          Consider an allowlist that includes only the tools you need.
+          {t(
+            "This server exposes destructive-looking tools that the current setting would expose. Consider an allowlist that includes only the tools you need.",
+          )}
         </p>
       ) : null}
 
@@ -206,7 +211,7 @@ function McpToolsForm({
 
       {draft.mode === "allowlist" ? (
         <NameListField
-          label="Allowlist (one tool per line)"
+          label={t("Allowlist (one tool per line)")}
           inert={false}
           value={includeText}
           onChange={(text) => setDraft((d) => ({ ...d, include: splitNames(text) }))}
@@ -215,7 +220,7 @@ function McpToolsForm({
 
       {draft.mode === "blocklist" ? (
         <NameListField
-          label="Blocklist (one tool per line)"
+          label={t("Blocklist (one tool per line)")}
           inert={false}
           value={excludeText}
           onChange={(text) => setDraft((d) => ({ ...d, exclude: splitNames(text) }))}
@@ -226,40 +231,44 @@ function McpToolsForm({
           it greyed as inert so the user sees include wins. */}
       {precedence.excludeInert ? (
         <p className="mcp-tools-inert-note" role="note">
-          <IconCircleInfo size={13} ariaHidden />A blocklist is set but ignored while an allowlist
-          is active. Include wins.
+          <IconCircleInfo size={13} ariaHidden />
+          {t("A blocklist is set but ignored while an allowlist is active. Include wins.")}
         </p>
       ) : null}
 
       <fieldset className="mcp-tools-utilities">
-        <legend className="mcp-tools-legend">Utility tools</legend>
+        <legend className="mcp-tools-legend">{t("Utility tools")}</legend>
         <UtilityRow
-          label="Resource tools"
-          hint="Read and list the server's resources. Registered only if the server supports resources."
+          label={t("Resource tools")}
+          hint={t(
+            "Read and list the server's resources. Registered only if the server supports resources.",
+          )}
           value={draft.resources}
           onChange={(value) => setDraft((d) => ({ ...d, resources: value }))}
         />
         <UtilityRow
-          label="Prompt tools"
-          hint="Use the server's prompt templates. Registered only if the server supports prompts."
+          label={t("Prompt tools")}
+          hint={t(
+            "Use the server's prompt templates. Registered only if the server supports prompts.",
+          )}
           value={draft.prompts}
           onChange={(value) => setDraft((d) => ({ ...d, prompts: value }))}
         />
       </fieldset>
 
       <fieldset className="mcp-tools-advanced">
-        <legend className="mcp-tools-legend">Advanced</legend>
+        <legend className="mcp-tools-legend">{t("Advanced")}</legend>
         <ParallelRow
           value={draft.supportsParallelToolCalls}
           onChange={(value) => setDraft((d) => ({ ...d, supportsParallelToolCalls: value }))}
         />
         <SecondsRow
-          label="Request timeout (seconds)"
+          label={t("Request timeout (seconds)")}
           value={draft.timeoutSeconds}
           onChange={(value) => setDraft((d) => ({ ...d, timeoutSeconds: value }))}
         />
         <SecondsRow
-          label="Connect timeout (seconds)"
+          label={t("Connect timeout (seconds)")}
           value={draft.connectTimeoutSeconds}
           onChange={(value) => setDraft((d) => ({ ...d, connectTimeoutSeconds: value }))}
         />
@@ -275,13 +284,13 @@ function McpToolsForm({
       {saved ? (
         <p className="mcp-tools-saved" role="status">
           <IconCircleCheck size={13} ariaHidden />
-          Tool filter saved. Restart Hermes gateway to refresh registered tools.
+          {t("Tool filter saved. Restart Hermes gateway to refresh registered tools.")}
         </p>
       ) : null}
 
       <div className="mcp-tools-actions">
         <button type="button" className="primary-action" onClick={onClose} disabled={saving}>
-          Close
+          {t("Close")}
         </button>
         <button
           type="button"
@@ -296,8 +305,10 @@ function McpToolsForm({
       {/* A debug-friendly, non-secret echo of exactly what will be written, so a
           reviewer can see the scoped block. Tool names are not secret. */}
       <details className="mcp-tools-preview">
-        <summary>What gets saved</summary>
-        <p className="mcp-tools-preview-path">mcp_servers.{server.name}.tools</p>
+        <summary>{t("What gets saved")}</summary>
+        <p className="mcp-tools-preview-path">
+          {t("mcp_servers.{name}.tools", { name: server.name })}
+        </p>
         <pre className="mcp-tools-preview-block">{JSON.stringify(block, null, 2)}</pre>
       </details>
     </div>
@@ -307,21 +318,23 @@ function McpToolsForm({
 /** The "Server exposes / June will expose / Blocked/destructive" compare. */
 function CompareCounts({ comparison }: { comparison: ReturnType<typeof compareToolPolicy> }) {
   return (
-    <dl className="mcp-tools-compare" aria-label="Tool exposure summary">
+    <dl className="mcp-tools-compare" aria-label={t("Tool exposure summary")}>
       <div className="mcp-tools-compare-item">
-        <dt>Server exposes</dt>
-        <dd>{comparison.exposed} tools</dd>
+        <dt>{t("Server exposes")}</dt>
+        <dd>{t("{exposed} tools", { exposed: comparison.exposed })}</dd>
       </div>
       <div className="mcp-tools-compare-item" data-tone="ok">
-        <dt>Sub Rosa will expose to agent</dt>
-        <dd>{comparison.willExpose} tools</dd>
+        <dt>{t("Sub Rosa will expose to agent")}</dt>
+        <dd>{t("{willExpose} tools", { willExpose: comparison.willExpose })}</dd>
       </div>
       <div
         className="mcp-tools-compare-item"
         data-tone={comparison.destructiveBlocked > 0 ? "attention" : "neutral"}
       >
-        <dt>Blocked/destructive</dt>
-        <dd>{comparison.destructiveBlocked} tools</dd>
+        <dt>{t("Blocked/destructive")}</dt>
+        <dd>
+          {t("{destructiveBlocked} tools", { destructiveBlocked: comparison.destructiveBlocked })}
+        </dd>
       </div>
     </dl>
   );
@@ -365,7 +378,7 @@ function ToolList({
   onToggle: (name: string) => void;
 }) {
   return (
-    <ul className="mcp-tools-list" aria-label="Discovered tools">
+    <ul className="mcp-tools-list" aria-label={t("Discovered tools")}>
       {tools.map((tool) => (
         <li
           key={tool.name}
@@ -393,9 +406,9 @@ function ToolList({
             </span>
             <span className="mcp-tools-row-name">{tool.name}</span>
             {tool.destructive ? (
-              <span className="mcp-tools-row-destructive" title="Destructive">
+              <span className="mcp-tools-row-destructive" title={t("Destructive")}>
                 <IconExclamationCircle size={11} ariaHidden />
-                Destructive
+                {t("Destructive")}
               </span>
             ) : null}
           </button>
@@ -460,9 +473,9 @@ function UtilityRow({
           value={value}
           onChange={(event) => onChange(event.currentTarget.value as UtilityToggle)}
         >
-          <option value="default">Default</option>
-          <option value="on">On</option>
-          <option value="off">Off</option>
+          <option value="default">{t("Default")}</option>
+          <option value="on">{t("On")}</option>
+          <option value="off">{t("Off")}</option>
         </select>
       </div>
       <p className="mcp-tools-utility-hint">{hint}</p>
@@ -484,7 +497,7 @@ function ParallelRow({
     <div className="mcp-tools-utility-row">
       <div className="mcp-tools-utility-head">
         <label className="mcp-tools-utility-label" htmlFor={id}>
-          Parallel tool calls
+          {t("Parallel tool calls")}
         </label>
         <select
           id={id}
@@ -495,13 +508,13 @@ function ParallelRow({
             onChange(next === "default" ? undefined : next === "on");
           }}
         >
-          <option value="default">Default</option>
-          <option value="on">On</option>
-          <option value="off">Off</option>
+          <option value="default">{t("Default")}</option>
+          <option value="on">{t("On")}</option>
+          <option value="off">{t("Off")}</option>
         </select>
       </div>
       <p className="mcp-tools-utility-hint">
-        Set only if this server documents support for parallel tool calls.
+        {t("Set only if this server documents support for parallel tool calls.")}
       </p>
     </div>
   );
@@ -528,7 +541,7 @@ function SecondsRow({
         min={0}
         className="mcp-tools-number"
         value={value ?? ""}
-        placeholder="Default"
+        placeholder={t("Default")}
         onChange={(event) => {
           const raw = event.currentTarget.value.trim();
           if (raw === "") {

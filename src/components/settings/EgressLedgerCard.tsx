@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../lib/i18n";
 import { useCallback, useEffect, useState } from "react";
 import { messageFromError } from "../../lib/errors";
 import { type EgressLedgerDto, egressLedger } from "../../lib/tauri";
@@ -16,7 +17,7 @@ export function relativeTime(iso: string, now = Date.now()) {
   const days = Math.round(hours / 24);
   if (days === 1) return "yesterday";
   if (days < 14) return `${days} days ago`;
-  return new Date(then).toLocaleDateString();
+  return new Date(then).toLocaleDateString(intlLocale());
 }
 
 /** The sentence above the timeline: what left, in how many requests, to whom. */
@@ -54,7 +55,7 @@ export function EgressLedgerCard({ noteId }: { noteId?: string } = {}) {
     <div className="settings-card egress-ledger">
       <div className="settings-row">
         <div className="settings-row-info">
-          <h3 className="settings-row-title">What left this machine</h3>
+          <h3 className="settings-row-title">{t("What left this machine")}</h3>
           <p className="settings-row-description">
             {ledger ? egressSentence(ledger.summary, days) : error ? error : "Reading the ledger…"}
           </p>
@@ -68,7 +69,7 @@ export function EgressLedgerCard({ noteId }: { noteId?: string } = {}) {
         </div>
         <div className="settings-row-control">
           <button type="button" className="btn btn-secondary" onClick={load}>
-            Refresh
+            {t("Refresh")}
           </button>
         </div>
       </div>
@@ -76,12 +77,12 @@ export function EgressLedgerCard({ noteId }: { noteId?: string } = {}) {
         <table className="egress-table">
           <thead>
             <tr>
-              <th scope="col">When</th>
-              <th scope="col">Purpose</th>
-              <th scope="col">Host</th>
-              <th scope="col">Sent</th>
-              <th scope="col">Received</th>
-              <th scope="col">Status</th>
+              <th scope="col">{t("When")}</th>
+              <th scope="col">{t("Purpose")}</th>
+              <th scope="col">{t("Host")}</th>
+              <th scope="col">{t("Sent")}</th>
+              <th scope="col">{t("Received")}</th>
+              <th scope="col">{t("Status")}</th>
             </tr>
           </thead>
           <tbody>
@@ -106,14 +107,16 @@ export function EgressLedgerCard({ noteId }: { noteId?: string } = {}) {
       {ledger && ledger.rows.length >= limit ? (
         <div className="egress-more">
           <button type="button" className="btn btn-ghost" onClick={() => setLimit((n) => n + 100)}>
-            Show more
+            {t("Show more")}
           </button>
         </div>
       ) : null}
       {ledger ? (
         <p className="settings-row-description egress-footnote">
-          Shapes, never contents: the ledger records where a request went, what it was for and how
-          big it was, and keeps {ledger.retentionDays} days of it.
+          {t(
+            "Shapes, never contents: the ledger records where a request went, what it was for and how big it was, and keeps {retentionDays} days of it.",
+            { retentionDays: ledger.retentionDays },
+          )}
         </p>
       ) : null}
     </div>

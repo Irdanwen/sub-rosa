@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { useState } from "react";
 import { isInsufficientCreditsMessage, isUpstreamRateLimitedMessage } from "../../lib/errors";
@@ -127,7 +128,7 @@ export function NoteFailureBanner({
             className="balance-refresh-icon"
             style={{ transform: `rotate(${spins * 360}deg)` }}
           />
-          Retry
+          {t("Retry")}
         </button>
       </div>
     </aside>

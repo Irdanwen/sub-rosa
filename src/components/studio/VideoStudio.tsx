@@ -5,6 +5,7 @@
 // is queued, so a render survives the app being closed and lands in the
 // gallery on its own — the job list here is a view of those durable rows.
 
+import { t } from "../../lib/i18n";
 import { IconVideo } from "central-icons/IconVideo";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -793,7 +794,7 @@ export function VideoStudio({
             setSurface(value);
             setFamilyKey("");
           }}
-          aria-label="What to build"
+          aria-label={t("What to build")}
           options={availableSurfaces.map((entry) => ({
             value: entry,
             label: entry === "shot" ? "New shot" : "From video",
@@ -801,7 +802,7 @@ export function VideoStudio({
         />
       ) : null}
       <StudioField
-        label="Model"
+        label={t("Model")}
         // The variant follows the inputs, and it changes the price, so it is
         // named rather than left to be inferred from a checkbox label. Shared
         // with the mobile picker so both shells name it identically.
@@ -809,15 +810,15 @@ export function VideoStudio({
       >
         <Select
           value={family?.key ?? null}
-          placeholder="Choose a model"
-          ariaLabel="Video model"
+          placeholder={t("Choose a model")}
+          ariaLabel={t("Video model")}
           onChange={setFamilyKey}
           options={familiesForSurface.map((entry) => ({ value: entry.key, label: entry.name }))}
         />
       </StudioField>
       {familiesForSurface.length > 1 ? (
         <StudioField
-          label="Also render with"
+          label={t("Also render with")}
           hint={alsoFamilies.length > 0 ? `${alsoFamilies.length + 1} renders` : "Optional"}
         >
           <div className="studio-upload">
@@ -841,8 +842,8 @@ export function VideoStudio({
             ) : null}
             <Select
               value={null}
-              placeholder="Add a model"
-              ariaLabel="Add a model to render with"
+              placeholder={t("Add a model")}
+              ariaLabel={t("Add a model to render with")}
               onChange={(key) =>
                 setAlsoKeys((current) => (current.includes(key) ? current : [...current, key]))
               }
@@ -856,7 +857,7 @@ export function VideoStudio({
       {effectiveSurface === "shot" ? (
         <>
           <StudioField
-            label="Opening frame"
+            label={t("Opening frame")}
             hint={
               handoff
                 ? `Continuing at ${formatSeconds(handoff.timeSeconds)} of ${formatSeconds(handoff.durationSeconds)}`
@@ -865,10 +866,16 @@ export function VideoStudio({
           >
             <div className="studio-upload">
               {openingFrame ? (
-                <img src={openingFrame} alt="Opening frame" className="studio-upload-preview" />
+                <img
+                  src={openingFrame}
+                  alt={t("Opening frame")}
+                  className="studio-upload-preview"
+                />
               ) : null}
               {handoff ? (
-                <p className="studio-field-note">Handed off from {handoff.fileName}</p>
+                <p className="studio-field-note">
+                  {t("Handed off from {fileName}", { fileName: handoff.fileName })}
+                </p>
               ) : null}
               {handoffNote ? <p className="studio-field-note">{handoffNote}</p> : null}
               {handoffError ? <p className="studio-error">{handoffError}</p> : null}
@@ -888,7 +895,7 @@ export function VideoStudio({
                   className="btn btn-secondary"
                   onClick={() => setPicking("opening")}
                 >
-                  From the gallery
+                  {t("From the gallery")}
                 </button>
               </div>
               <input
@@ -911,17 +918,19 @@ export function VideoStudio({
                 onChange={(event) => setKeepLook(event.currentTarget.checked)}
               />
               <span>
-                Keep the first shot's look
+                {t("Keep the first shot's look")}
                 <span className="studio-consent-meta">
-                  Renders with {family?.referenceModel?.name ?? "the reference model"} so a frame
-                  from the first shot can hold the subject and lighting steady down the chain.
+                  {t(
+                    "Renders with {model} so a frame from the first shot can hold the subject and lighting steady down the chain.",
+                    { model: family?.referenceModel?.name ?? t("the reference model") },
+                  )}
                 </span>
               </span>
             </label>
           ) : null}
           {handoff ? (
             <SliderField
-              label="Handoff point"
+              label={t("Handoff point")}
               min={Math.max(0, handoff.durationSeconds - HANDOFF_ADJUST_WINDOW_SECONDS)}
               max={handoff.durationSeconds}
               step={0.05}
@@ -938,17 +947,19 @@ export function VideoStudio({
                 onChange={(event) => void closeLoop(event.currentTarget.checked)}
               />
               <span>
-                Close the loop
+                {t("Close the loop")}
                 <span className="studio-consent-meta">
-                  Ends this shot on the frame the chain opened with, so the sequence plays round.
+                  {t(
+                    "Ends this shot on the frame the chain opened with, so the sequence plays round.",
+                  )}
                 </span>
               </span>
             </label>
           ) : null}
-          <StudioField label="End frame" hint="Optional">
+          <StudioField label={t("End frame")} hint={t("Optional")}>
             <div className="studio-upload">
               {endFrame ? (
-                <img src={endFrame} alt="End frame" className="studio-upload-preview" />
+                <img src={endFrame} alt={t("End frame")} className="studio-upload-preview" />
               ) : null}
               <div className="studio-upload-actions">
                 <button
@@ -963,7 +974,7 @@ export function VideoStudio({
                   className="btn btn-secondary"
                   onClick={() => setPicking("end")}
                 >
-                  From the gallery
+                  {t("From the gallery")}
                 </button>
                 {endFrame ? (
                   <button
@@ -971,7 +982,7 @@ export function VideoStudio({
                     className="btn btn-secondary"
                     onClick={() => setEndFrame("")}
                   >
-                    Remove
+                    {t("Remove")}
                   </button>
                 ) : null}
               </div>
@@ -990,7 +1001,7 @@ export function VideoStudio({
         </>
       ) : null}
       {effectiveSurface === "shot" && family?.referenceModel ? (
-        <StudioField label="Reference photos" hint={`${references.length} / ${referenceCap}`}>
+        <StudioField label={t("Reference photos")} hint={`${references.length} / ${referenceCap}`}>
           <div className="studio-upload">
             {references.length > 0 ? (
               <div className="studio-edit-sources">
@@ -1034,8 +1045,12 @@ export function VideoStudio({
                   return (
                     <>
                       <p className="studio-hint">
-                        Name them in the prompt as {mentions.join(", ")}, and start it with what you
-                        want done:
+                        {t(
+                          "Name them in the prompt as {mentions}, and start it with what you want done:",
+                          {
+                            mentions: mentions.join(", "),
+                          },
+                        )}
                       </p>
                       {/* Describing the opening was not enough: a prompt that
                           does not carry it verbatim routes to another workflow,
@@ -1075,7 +1090,7 @@ export function VideoStudio({
                   className="btn btn-secondary"
                   onClick={() => setPicking("reference")}
                 >
-                  From the gallery
+                  {t("From the gallery")}
                 </button>
               </div>
             ) : null}
@@ -1094,7 +1109,7 @@ export function VideoStudio({
       ) : null}
       {effectiveSurface === "shot" && clipsAllowed ? (
         <StudioField
-          label="Reference clips"
+          label={t("Reference clips")}
           hint={`${referenceClips.length} / ${maxReferenceVideos(family?.referenceModel)}`}
         >
           <div className="studio-upload">
@@ -1135,11 +1150,16 @@ export function VideoStudio({
             {referenceClips.length > 0 ? (
               <>
                 <p className="studio-hint">
-                  Name them in the prompt as{" "}
-                  {referenceClips
-                    .map((_, index) => referenceMention(family?.referenceModel, "video", index + 1))
-                    .join(", ")}
-                  , and start it with what you want done:
+                  {t(
+                    "Name them in the prompt as {mentions}, and start it with what you want done:",
+                    {
+                      mentions: referenceClips
+                        .map((_, index) =>
+                          referenceMention(family?.referenceModel, "video", index + 1),
+                        )
+                        .join(", "),
+                    },
+                  )}
                 </p>
                 <div className="studio-upload-actions">
                   {seedanceWorkflowsFor(family?.referenceModel)
@@ -1167,7 +1187,7 @@ export function VideoStudio({
       ) : null}
       {effectiveSurface === "shot" && audioAllowed ? (
         <StudioField
-          label="Reference audio"
+          label={t("Reference audio")}
           hint={`${referenceAudio.length} / ${maxReferenceAudio(family?.referenceModel)}`}
         >
           <div className="studio-upload">
@@ -1208,7 +1228,7 @@ export function VideoStudio({
                   className="btn btn-secondary"
                   onClick={() => setPicking("audio")}
                 >
-                  From the gallery
+                  {t("From the gallery")}
                 </button>
               </div>
             ) : null}
@@ -1234,11 +1254,16 @@ export function VideoStudio({
             />
             {referenceAudio.length > 0 ? (
               <p className="studio-hint">
-                Name them in the prompt as{" "}
-                {referenceAudio
-                  .map((_, index) => referenceMention(family?.referenceModel, "audio", index + 1))
-                  .join(", ")}
-                . A track never travels alone, so keep a photo or a clip in play.
+                {t(
+                  "Name them in the prompt as {mentions}. A track never travels alone, so keep a photo or a clip in play.",
+                  {
+                    mentions: referenceAudio
+                      .map((_, index) =>
+                        referenceMention(family?.referenceModel, "audio", index + 1),
+                      )
+                      .join(", "),
+                  },
+                )}
               </p>
             ) : null}
           </div>
@@ -1246,7 +1271,7 @@ export function VideoStudio({
       ) : null}
       {effectiveSurface === "video" ? (
         <>
-          <StudioField label="Source clip" hint={sourceVideoName || undefined}>
+          <StudioField label={t("Source clip")} hint={sourceVideoName || undefined}>
             <div className="studio-upload">
               {sourceVideo ? (
                 // biome-ignore lint/a11y/useMediaCaption: user-picked source clip has no track
@@ -1262,8 +1287,8 @@ export function VideoStudio({
               {galleryVideos.length > 0 ? (
                 <Select
                   value={null}
-                  placeholder="Or pick from your gallery"
-                  ariaLabel="Pick a gallery clip"
+                  placeholder={t("Or pick from your gallery")}
+                  ariaLabel={t("Pick a gallery clip")}
                   onChange={(path) => {
                     const artifact = galleryVideos.find((entry) => entry.path === path);
                     if (artifact) void pickGalleryVideo(artifact);
@@ -1288,7 +1313,7 @@ export function VideoStudio({
             {sourceVideoError ? <p className="studio-error">{sourceVideoError}</p> : null}
           </StudioField>
           {isUpscale ? (
-            <StudioField label="Upscale" hint="x1 enhances without resizing">
+            <StudioField label={t("Upscale")} hint={t("x1 enhances without resizing")}>
               <PillGroup
                 options={[
                   { value: "1", label: "x1" },
@@ -1297,7 +1322,7 @@ export function VideoStudio({
                 ]}
                 value={upscaleFactor}
                 onChange={setUpscaleFactor}
-                ariaLabel="Upscale factor"
+                ariaLabel={t("Upscale factor")}
               />
             </StudioField>
           ) : null}
@@ -1314,8 +1339,9 @@ export function VideoStudio({
             }}
           />
           <span>
-            I have the right to use this media and accept the model's face-media policy for anyone
-            shown in it.
+            {t(
+              "I have the right to use this media and accept the model's face-media policy for anyone shown in it.",
+            )}
             <span className="studio-consent-meta">
               {personMediaCaveat ??
                 "Seedance requires this before it will build a clip from a photo of a person."}
@@ -1323,7 +1349,7 @@ export function VideoStudio({
           </span>
         </label>
       ) : null}
-      <StudioField label="Prompt" hint={isUpscale ? "Optional" : undefined}>
+      <StudioField label={t("Prompt")} hint={isUpscale ? "Optional" : undefined}>
         <textarea
           className="studio-textarea"
           rows={4}
@@ -1343,42 +1369,42 @@ export function VideoStudio({
         />
         {promptAdvice ? <p className="studio-hint">{promptAdvice}</p> : null}
       </StudioField>
-      <StudioField label="Negative prompt">
+      <StudioField label={t("Negative prompt")}>
         <textarea
           className="studio-textarea"
           rows={2}
           value={negativePrompt}
-          placeholder="What to avoid (optional)"
+          placeholder={t("What to avoid (optional)")}
           onChange={(event) => setNegativePrompt(event.target.value)}
         />
       </StudioField>
       {durationOptions.length > 0 ? (
-        <StudioField label="Duration">
+        <StudioField label={t("Duration")}>
           <PillGroup
             options={durationOptions.map((value) => ({ value }))}
             value={effectiveDuration}
             onChange={setDuration}
-            ariaLabel="Duration"
+            ariaLabel={t("Duration")}
           />
         </StudioField>
       ) : null}
       {aspectOptions.length > 0 ? (
-        <StudioField label="Aspect ratio">
+        <StudioField label={t("Aspect ratio")}>
           <PillGroup
             options={aspectOptions.map((value) => ({ value }))}
             value={effectiveAspect}
             onChange={setAspectRatio}
-            ariaLabel="Aspect ratio"
+            ariaLabel={t("Aspect ratio")}
           />
         </StudioField>
       ) : null}
       {resolutionOptions.length > 0 ? (
-        <StudioField label="Resolution">
+        <StudioField label={t("Resolution")}>
           <PillGroup
             options={resolutionOptions.map((value) => ({ value }))}
             value={effectiveResolution}
             onChange={setResolution}
-            ariaLabel="Resolution"
+            ariaLabel={t("Resolution")}
           />
         </StudioField>
       ) : null}
@@ -1388,11 +1414,15 @@ export function VideoStudio({
   const action = (
     <>
       {quoteCredits !== undefined ? (
-        <p className="studio-quote">This render will cost about {formatCredits(quoteCredits)}.</p>
+        <p className="studio-quote">
+          {t("This render will cost about {credits}.", { credits: formatCredits(quoteCredits) })}
+        </p>
       ) : null}
       {droppedReferences ? (
         <p className="studio-field-note">
-          {`${family?.name ?? "This model"} cannot take reference photos, so only the opening frame will be used.`}
+          {t("{model} cannot take reference photos, so only the opening frame will be used.", {
+            model: family?.name ?? t("This model"),
+          })}
         </p>
       ) : null}
       {needsOpeningFrame ? (
@@ -1407,7 +1437,7 @@ export function VideoStudio({
       ) : null}
       {oversize ? <p className="studio-error">{oversize}</p> : null}
       <button type="button" className="studio-primary-button" disabled={!canSubmit} onClick={start}>
-        Generate video
+        {t("Generate video")}
       </button>
       {queue.jobs.length > 0 ? (
         <p className="studio-queue-hint">
@@ -1507,7 +1537,7 @@ export function VideoStudio({
                   className="btn btn-secondary"
                   onClick={() => queue.stop(entry.job.id)}
                 >
-                  Stop waiting
+                  {t("Stop waiting")}
                 </button>
               }
             />
@@ -1530,7 +1560,7 @@ export function VideoStudio({
                   className="btn btn-primary"
                   onClick={() => void queue.retry(entry.job.id)}
                 >
-                  Start again
+                  {t("Start again")}
                 </button>
               ) : null}
               <button
@@ -1538,7 +1568,7 @@ export function VideoStudio({
                 className="btn btn-secondary"
                 onClick={() => queue.dismiss(entry.job.id)}
               >
-                Dismiss
+                {t("Dismiss")}
               </button>
             </span>
           </div>
@@ -1546,12 +1576,12 @@ export function VideoStudio({
       })}
       {handoffError && !openingFrame ? <p className="studio-error">{handoffError}</p> : null}
       {activeChain.length > 1 ? (
-        <section className="studio-chain" aria-label="Shot chain">
+        <section className="studio-chain" aria-label={t("Shot chain")}>
           <div className="studio-chain-head">
             <span className="studio-field-label">
-              Shot chain · {activeChain.length} shots
+              {t("Shot chain · {count} shots", { count: activeChain.length })}
               {chainSpend.known > 0
-                ? ` · ${chainSpend.known < chainSpend.total ? "at least " : ""}${formatCredits(chainSpend.credits)}`
+                ? ` · ${chainSpend.known < chainSpend.total ? t("at least ") : ""}${formatCredits(chainSpend.credits)}`
                 : ""}
             </span>
             {onAssembleChain ? (
@@ -1560,7 +1590,7 @@ export function VideoStudio({
                 className="btn btn-secondary"
                 onClick={() => onAssembleChain(chainCuts(activeChain))}
               >
-                Send to assemble
+                {t("Send to assemble")}
               </button>
             ) : null}
           </div>
@@ -1576,7 +1606,10 @@ export function VideoStudio({
                   {shot.prompt || shot.fileName}
                 </span>
                 {alternativeCount(shot, activeChain, videoArtifacts) > 0 ? (
-                  <span className="studio-chain-index" title="Other takes continue from this shot">
+                  <span
+                    className="studio-chain-index"
+                    title={t("Other takes continue from this shot")}
+                  >
                     +{alternativeCount(shot, activeChain, videoArtifacts)}
                   </span>
                 ) : null}
@@ -1584,7 +1617,7 @@ export function VideoStudio({
             ))}
           </ol>
           <p className="studio-field-note">
-            Each shot is cut where the next one took over, so the seam is not played twice.
+            {t("Each shot is cut where the next one took over, so the seam is not played twice.")}
           </p>
         </section>
       ) : null}
@@ -1598,8 +1631,10 @@ export function VideoStudio({
           queue.jobs.length === 0 ? (
             <EmptyState
               icon={<IconVideo size={22} />}
-              title="No videos yet"
-              description="Videos render in the background and land here when ready. Most take 30 seconds to a few minutes."
+              title={t("No videos yet")}
+              description={t(
+                "Videos render in the background and land here when ready. Most take 30 seconds to a few minutes.",
+              )}
             />
           ) : null
         }

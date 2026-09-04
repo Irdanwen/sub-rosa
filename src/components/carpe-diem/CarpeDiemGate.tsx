@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useState } from "react";
 import { CarpeDiemSettings } from "../settings/CarpeDiemSettings";
 import { BrandGradientMark } from "../brand/Marks";
@@ -70,19 +71,19 @@ export function CarpeDiemGate({
         <p className="welcome-terms">
           {failed ? (
             <>
-              Still stuck? Check that the key has credits in the{" "}
+              {t("Still stuck? Check that the key has credits in the")}{" "}
               <a href={CARPE_DIEM_DASHBOARD_URL} target="_blank" rel="noreferrer">
-                Carpe Diem dashboard
+                {t("Carpe Diem dashboard")}
               </a>
               .
             </>
           ) : (
             <>
-              Need a key?{" "}
+              {t("Need a key?")}{" "}
               <a href={CARPE_DIEM_DASHBOARD_URL} target="_blank" rel="noreferrer">
-                Create one and add credits
+                {t("Create one and add credits")}
               </a>{" "}
-              in the Carpe Diem dashboard, then paste it above.
+              {t("in the Carpe Diem dashboard, then paste it above.")}
             </>
           )}
         </p>

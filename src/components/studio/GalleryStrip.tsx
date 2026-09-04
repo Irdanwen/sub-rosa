@@ -2,6 +2,7 @@
 // fullscreen lightbox; video and audio render as inline players. Files live
 // on disk (see lib/studio/artifacts.ts) so everything here survives restarts.
 
+import { t } from "../../lib/i18n";
 import { IconArrowDownCircle } from "central-icons/IconArrowDownCircle";
 import { IconArrowRightCircle } from "central-icons/IconArrowRightCircle";
 import { IconCapture } from "central-icons/IconCapture";
@@ -111,8 +112,8 @@ export function GalleryStrip({
                     <button
                       type="button"
                       className="studio-icon-button"
-                      aria-label="Send to edit"
-                      title="Send to edit"
+                      aria-label={t("Send to edit")}
+                      title={t("Send to edit")}
                       onClick={() => onSendToEdit(artifact)}
                     >
                       <IconPencil size={14} />
@@ -121,8 +122,8 @@ export function GalleryStrip({
                   <button
                     type="button"
                     className="studio-icon-button"
-                    aria-label="Save a copy"
-                    title="Save a copy"
+                    aria-label={t("Save a copy")}
+                    title={t("Save a copy")}
                     onClick={() => void onExport(artifact)}
                   >
                     <IconArrowDownCircle size={14} />
@@ -130,8 +131,8 @@ export function GalleryStrip({
                   <button
                     type="button"
                     className="studio-icon-button"
-                    aria-label="Delete"
-                    title="Delete"
+                    aria-label={t("Delete")}
+                    title={t("Delete")}
                     onClick={() => void onDelete(artifact)}
                   >
                     <IconTrashCanSimple size={14} />
@@ -145,7 +146,7 @@ export function GalleryStrip({
           <div
             className="studio-lightbox"
             role="dialog"
-            aria-label="Image preview"
+            aria-label={t("Image preview")}
             onClick={() => setLightbox(undefined)}
             onKeyDown={(event) => {
               if (event.key === "Escape") setLightbox(undefined);
@@ -169,7 +170,7 @@ export function GalleryStrip({
       ) : null}
       {captured ? (
         <p className="studio-field-note" role="status">
-          Saved to the image gallery.
+          {t("Saved to the image gallery.")}
         </p>
       ) : null}
       <div className="studio-media-list">
@@ -191,8 +192,8 @@ export function GalleryStrip({
                   <button
                     type="button"
                     className="studio-icon-button"
-                    aria-label="Capture a frame"
-                    title="Capture a frame: keep a still from this clip in the image gallery"
+                    aria-label={t("Capture a frame")}
+                    title={t("Capture a frame: keep a still from this clip in the image gallery")}
                     onClick={() => setCapturing(artifact)}
                   >
                     <IconCapture size={14} />
@@ -202,8 +203,8 @@ export function GalleryStrip({
                   <button
                     type="button"
                     className="studio-icon-button"
-                    aria-label="Continue this shot"
-                    title="Continue this shot: start the next one from its last frame"
+                    aria-label={t("Continue this shot")}
+                    title={t("Continue this shot: start the next one from its last frame")}
                     disabled={continuingId === artifact.id}
                     onClick={() => onContinue(artifact)}
                   >
@@ -217,8 +218,8 @@ export function GalleryStrip({
                 <button
                   type="button"
                   className="studio-icon-button"
-                  aria-label="Save a copy"
-                  title="Save a copy"
+                  aria-label={t("Save a copy")}
+                  title={t("Save a copy")}
                   onClick={() => void onExport(artifact)}
                 >
                   <IconArrowDownCircle size={14} />
@@ -226,8 +227,8 @@ export function GalleryStrip({
                 <button
                   type="button"
                   className="studio-icon-button"
-                  aria-label="Delete"
-                  title="Delete"
+                  aria-label={t("Delete")}
+                  title={t("Delete")}
                   onClick={() => void onDelete(artifact)}
                 >
                   <IconTrashCanSimple size={14} />

@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
@@ -50,7 +51,7 @@ function PermissionRow({
           onClick={onAllow}
           aria-label={`Allow ${title.toLowerCase()} access`}
         >
-          Allow
+          {t("Allow")}
         </button>
       ) : null}
     </li>
@@ -122,7 +123,7 @@ export function PermissionsStep({
 
   return (
     <StepCard
-      title="Let Sub Rosa listen and type"
+      title={t("Let Sub Rosa listen and type")}
       subtitle={
         macLikePlatform
           ? "Dictation and meeting notes need three macOS permissions."
@@ -138,7 +139,7 @@ export function PermissionsStep({
         <PermissionRow
           icon={<IconMicrophone size={15} />}
           granted={showPermissionRows && micGranted}
-          title="Microphone"
+          title={t("Microphone")}
           detail={
             micDenied
               ? "Turned off in System Settings. Flip the toggle and Sub Rosa will notice."
@@ -160,15 +161,15 @@ export function PermissionsStep({
             <PermissionRow
               icon={<IconTextIndicator size={15} />}
               granted={showPermissionRows && accessibilityGranted}
-              title="Accessibility"
-              detail="Types your words at your cursor, in any app."
+              title={t("Accessibility")}
+              detail={t("Types your words at your cursor, in any app.")}
               onAllow={showPermissionRows ? openAccessibilitySettings : undefined}
             />
             <PermissionRow
               icon={<IconVolumeFull size={15} />}
               granted={showPermissionRows && systemAudioGranted}
               probing={showPermissionRows && systemAudioStatus === "probing"}
-              title="System audio"
+              title={t("System audio")}
               detail={
                 systemAudioDenied
                   ? "Turned off in System Settings. Flip the toggle and Sub Rosa will notice."

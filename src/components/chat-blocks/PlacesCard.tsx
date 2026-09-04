@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../lib/i18n";
 import { IconGlobe } from "central-icons/IconGlobe";
 import { IconMinusMedium } from "central-icons/IconMinusMedium";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
@@ -194,10 +195,10 @@ export function PlacesCard({ block }: { block: PlacesChatBlock }) {
             })}
           </div>
           <div className="chat-block-map-zoom">
-            <button type="button" aria-label="Zoom in" onClick={() => zoomTo(1)}>
+            <button type="button" aria-label={t("Zoom in")} onClick={() => zoomTo(1)}>
               <IconPlusMedium size={13} />
             </button>
-            <button type="button" aria-label="Zoom out" onClick={() => zoomTo(-1)}>
+            <button type="button" aria-label={t("Zoom out")} onClick={() => zoomTo(-1)}>
               <IconMinusMedium size={13} />
             </button>
           </div>
@@ -238,7 +239,7 @@ export function PlacesCard({ block }: { block: PlacesChatBlock }) {
                 <button
                   type="button"
                   className="chat-block-place-site"
-                  title="Open the website"
+                  title={t("Open the website")}
                   aria-label={`Open the website of ${place.name}`}
                   onClick={() => void openExternalUrl(place.url ?? "")}
                 >
@@ -250,7 +251,7 @@ export function PlacesCard({ block }: { block: PlacesChatBlock }) {
         ))}
       </ul>
       {!mapState && mapFailed ? (
-        <p className="chat-block-footer-attribution">Data: {attribution}</p>
+        <p className="chat-block-footer-attribution">{t("Data: {attribution}", { attribution })}</p>
       ) : null}
     </section>
   );
@@ -301,7 +302,7 @@ function placeMeta(place: ChatBlockPlace): string {
   const parts: string[] = [];
   if (place.rating !== undefined) {
     const reviews = place.reviews !== undefined ? ` (${place.reviews})` : "";
-    parts.push(`★ ${place.rating.toLocaleString()}${reviews}`);
+    parts.push(`★ ${place.rating.toLocaleString(intlLocale())}${reviews}`);
   }
   if (place.category) parts.push(place.category);
   if (place.address) parts.push(place.address);

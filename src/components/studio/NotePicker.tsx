@@ -2,6 +2,7 @@
 // sibling of GalleryPicker's pull model: the slot opens the list and takes
 // what it needs.
 
+import { t } from "../../lib/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { listNotes, type NoteListItemDto } from "../../lib/tauri";
 import { Dialog } from "../ui/Dialog";
@@ -45,21 +46,21 @@ export function NotePicker({
     <Dialog
       open
       onClose={onClose}
-      title="From your notes"
-      description="Pick the note this document should read from."
+      title={t("From your notes")}
+      description={t("Pick the note this document should read from.")}
       width={520}
     >
       <div className="dialog-body">
         <input
           className="studio-input"
           value={query}
-          placeholder="Search notes"
-          aria-label="Search notes"
+          placeholder={t("Search notes")}
+          aria-label={t("Search notes")}
           onChange={(event) => setQuery(event.target.value)}
         />
         {visible === undefined ? (
           <div className="studio-picker-empty">
-            <Spinner aria-label="Loading notes" />
+            <Spinner aria-label={t("Loading notes")} />
           </div>
         ) : visible.length === 0 ? (
           <p className="studio-picker-empty">

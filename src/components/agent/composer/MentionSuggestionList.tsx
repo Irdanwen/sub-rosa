@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { IconFileText } from "central-icons/IconFileText";
 import { IconFolder1 } from "central-icons/IconFolder1";
@@ -70,7 +71,7 @@ export const MentionSuggestionList = forwardRef<
   );
 
   if (items.length === 0) {
-    return <div className="agent-category-menu agent-category-menu-empty">No matches</div>;
+    return <div className="agent-category-menu agent-category-menu-empty">{t("No matches")}</div>;
   }
 
   const files = items.map((item, index) => ({ item, index })).filter(({ item }) => !item.noteId);
@@ -83,17 +84,17 @@ export const MentionSuggestionList = forwardRef<
           ref={menuRef}
           className="agent-category-menu"
           role="listbox"
-          aria-label="Mention a document"
+          aria-label={t("Mention a document")}
         >
           {files.length ? (
             <div className="agent-category-menu-section" role="presentation">
-              <div className="agent-category-menu-section-label">Files</div>
+              <div className="agent-category-menu-section-label">{t("Files")}</div>
               {files.map(({ item, index }) => renderRow(item, index))}
             </div>
           ) : null}
           {notes.length ? (
             <div className="agent-category-menu-section" role="presentation">
-              <div className="agent-category-menu-section-label">Notes</div>
+              <div className="agent-category-menu-section-label">{t("Notes")}</div>
               {notes.map(({ item, index }) => renderRow(item, index))}
             </div>
           ) : null}

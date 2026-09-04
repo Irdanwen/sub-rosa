@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { IconCameraSparkle } from "central-icons/IconCameraSparkle";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { artifactDataUrl, evictArtifactDataUrl } from "../../../lib/artifact-media";
@@ -153,11 +154,11 @@ export function StudioScreen() {
   return (
     <div className="mobile-screen-root">
       <StackHeader
-        title="Studio"
+        title={t("Studio")}
         large
         trailing={
           credits ? (
-            <span className="mobile-credits-pill" aria-label="Available credits">
+            <span className="mobile-credits-pill" aria-label={t("Available credits")}>
               {formatCredits(credits.availableCredits)}
               {typeof credits.priceMultiplier === "number"
                 ? ` · x${credits.priceMultiplier.toFixed(2)}`
@@ -166,7 +167,7 @@ export function StudioScreen() {
           ) : undefined
         }
       />
-      <div className="mobile-segmented" role="tablist" aria-label="Studio mode">
+      <div className="mobile-segmented" role="tablist" aria-label={t("Studio mode")}>
         {(["image", "video", "audio", "flows", "library"] as const).map((entry) => (
           <button
             key={entry}
@@ -193,7 +194,7 @@ export function StudioScreen() {
         {catalogError ? (
           <EmptyState
             icon={<IconCameraSparkle size={28} />}
-            title="Studio is unavailable"
+            title={t("Studio is unavailable")}
             description={catalogError}
           />
         ) : !catalog ? (

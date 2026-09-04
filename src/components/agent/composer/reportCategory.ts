@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 /**
  * The three report categories a composer message can be tagged with. A tag is
  * an inline chip in the composer (see CategoryChip) — at most one per message.
@@ -21,20 +22,20 @@ export type ReportCategoryDef = {
 export const REPORT_CATEGORIES: ReportCategoryDef[] = [
   {
     key: "bug",
-    label: "Bug report",
-    hint: "Something isn't working right",
+    label: t("Bug report"),
+    hint: t("Something isn't working right"),
     keywords: ["bug", "issue", "report", "broken", "problem", "error", "crash"],
   },
   {
     key: "feedback",
-    label: "Feedback",
-    hint: "Share a thought with the team",
+    label: t("Feedback"),
+    hint: t("Share a thought with the team"),
     keywords: ["feedback", "thoughts", "comment", "suggestion"],
   },
   {
     key: "feature",
-    label: "Feature request",
-    hint: "Ask for something new",
+    label: t("Feature request"),
+    hint: t("Ask for something new"),
     keywords: ["feature", "request", "idea", "wish", "want"],
   },
 ];

@@ -1,3 +1,4 @@
+import { t } from "../../../../lib/i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { hapticNotify } from "../../../../lib/haptics";
 import { registerDownloadedArtifact } from "../../../../lib/studio/artifacts";
@@ -393,13 +394,13 @@ export function VideoPanel({
   return (
     <div className="mobile-studio-form">
       <ModelPickerButton
-        label="Video model"
+        label={t("Video model")}
         value={family?.name ?? ""}
         hint={variantHint(family, model)}
         onOpen={() => setPickerOpen(true)}
       />
       {durationOptions.length > 0 ? (
-        <div className="mobile-pill-row" role="radiogroup" aria-label="Duration">
+        <div className="mobile-pill-row" role="radiogroup" aria-label={t("Duration")}>
           {durationOptions.map((option) => (
             <button
               key={option}
@@ -414,7 +415,7 @@ export function VideoPanel({
         </div>
       ) : null}
       {videoAspectOptions.length > 0 ? (
-        <div className="mobile-pill-row" role="radiogroup" aria-label="Aspect ratio">
+        <div className="mobile-pill-row" role="radiogroup" aria-label={t("Aspect ratio")}>
           {videoAspectOptions.map((option) => (
             <button
               key={option}
@@ -429,7 +430,7 @@ export function VideoPanel({
         </div>
       ) : null}
       {videoResolutionOptions.length > 0 ? (
-        <div className="mobile-pill-row" role="radiogroup" aria-label="Resolution">
+        <div className="mobile-pill-row" role="radiogroup" aria-label={t("Resolution")}>
           {videoResolutionOptions.map((option) => (
             <button
               key={option}
@@ -554,23 +555,24 @@ export function VideoPanel({
         className="mobile-studio-prompt"
         value={negativePrompt}
         rows={2}
-        placeholder="Negative prompt (optional)"
-        aria-label="Negative prompt"
+        placeholder={t("Negative prompt (optional)")}
+        aria-label={t("Negative prompt")}
         onChange={(event) => setNegativePrompt(event.target.value)}
       />
       {needsConsent ? (
         <div className="mobile-toggle-row mobile-studio-consent">
           <Switch
             checked={consent}
-            aria-label="I have the right to use this media"
+            aria-label={t("I have the right to use this media")}
             onCheckedChange={(next) => {
               setConsent(next);
               rememberSeedanceConsent(next);
             }}
           />
           <span>
-            I have the right to use this media and accept this model's face-media policy for anyone
-            shown in it.
+            {t(
+              "I have the right to use this media and accept this model's face-media policy for anyone shown in it.",
+            )}
             {personMediaCaveat ? (
               <span className="mobile-workflow-param-hint">{personMediaCaveat}</span>
             ) : null}
@@ -611,7 +613,7 @@ export function VideoPanel({
           elapsedMs={waiting.phase === "queueing" ? undefined : waiting.elapsedMs}
           estimateMs={estimate}
           aspectRatio={effectiveVideoAspect}
-          meta="You can leave this tab; the job resumes."
+          meta={t("You can leave this tab; the job resumes.")}
         />
       ) : null}
       {job.state.phase === "failed" ? (
@@ -626,7 +628,7 @@ export function VideoPanel({
       ) : null}
       {pickerOpen ? (
         <ModelSheet
-          title="Video model"
+          title={t("Video model")}
           entries={familiesForMode.map((entry) => ({
             id: entry.key,
             name: entry.name,

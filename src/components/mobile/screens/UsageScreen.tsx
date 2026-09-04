@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../../lib/i18n";
 import { useEffect, useState } from "react";
 import { type CacheUsage, hasMeasuredTurns, parseCacheUsage } from "../../../lib/carpe-diem-cache";
 import {
@@ -65,19 +66,19 @@ export function UsageScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mobile-screen">
-      <StackHeader title="Usage" onBack={onBack} />
+      <StackHeader title={t("Usage")} onBack={onBack} />
       <div className="mobile-screen-body">
         {measured ? (
           <>
-            <SettingsGroup title="Since launch">
-              <SettingsRow label="Turns" detail={formatCount(usage?.turns)} />
-              <SettingsRow label="Prompt tokens" detail={formatCount(usage?.promptTokens)} />
+            <SettingsGroup title={t("Since launch")}>
+              <SettingsRow label={t("Turns")} detail={formatCount(usage?.turns)} />
+              <SettingsRow label={t("Prompt tokens")} detail={formatCount(usage?.promptTokens)} />
               <SettingsRow
-                label="Completion tokens"
+                label={t("Completion tokens")}
                 detail={formatCount(usage?.completionTokens)}
               />
               <SettingsRow
-                label="Served from cache"
+                label={t("Served from cache")}
                 detail={
                   cachePercent
                     ? `${formatCount(usage?.cachedTokens)} · ${cachePercent}`
@@ -86,15 +87,15 @@ export function UsageScreen({ onBack }: { onBack: () => void }) {
               />
             </SettingsGroup>
 
-            <SettingsGroup title="Cost">
+            <SettingsGroup title={t("Cost")}>
               {estimate !== undefined ? (
                 <SettingsRow
-                  label="At most"
+                  label={t("At most")}
                   detail={`$${estimate < 0.01 ? estimate.toFixed(4) : estimate.toFixed(2)}`}
                 />
               ) : (
                 <SettingsRow
-                  label="Estimate"
+                  label={t("Estimate")}
                   detail={
                     price ? "Nothing measured yet" : "No published price for the current chat model"
                   }
@@ -110,8 +111,9 @@ export function UsageScreen({ onBack }: { onBack: () => void }) {
           </>
         ) : (
           <p className="mobile-settings-footnote">
-            Nothing measured yet. Counting starts when the app does, so this is empty after a
-            restart until the next message.
+            {t(
+              "Nothing measured yet. Counting starts when the app does, so this is empty after a restart until the next message.",
+            )}
           </p>
         )}
       </div>
@@ -120,5 +122,5 @@ export function UsageScreen({ onBack }: { onBack: () => void }) {
 }
 
 function formatCount(value: number | undefined): string {
-  return value === undefined ? "Unavailable" : value.toLocaleString();
+  return value === undefined ? t("Unavailable") : value.toLocaleString(intlLocale());
 }

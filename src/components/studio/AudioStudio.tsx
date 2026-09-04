@@ -1,6 +1,7 @@
 // Audio tab: music, speech, and sound effects behind one mode switch. Each
 // mode is its own studio; this wrapper only remembers which one is active.
 
+import { t } from "../../lib/i18n";
 import { useEffect, useState } from "react";
 import type { MediaCatalog } from "../../lib/studio/types";
 import { SegmentedControl } from "../ui/SegmentedControl";
@@ -38,11 +39,11 @@ export function AudioStudio({ catalog }: { catalog: MediaCatalog }) {
       <SegmentedControl
         value={mode}
         onValueChange={setMode}
-        aria-label="Audio mode"
+        aria-label={t("Audio mode")}
         options={[
-          { value: "music", label: "Music" },
-          { value: "speech", label: "Speech" },
-          { value: "sfx", label: "Sound effects" },
+          { value: "music", label: t("Music") },
+          { value: "speech", label: t("Speech") },
+          { value: "sfx", label: t("Sound effects") },
         ]}
       />
       {mode === "music" ? (

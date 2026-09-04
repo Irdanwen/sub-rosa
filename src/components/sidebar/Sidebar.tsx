@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../lib/i18n";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { IconZap } from "central-icons/IconZap";
 import { IconBubble3 } from "central-icons/IconBubble3";
@@ -201,91 +202,91 @@ export const SETTINGS_SIDEBAR_GROUPS: {
   items: { id: SettingsTab; label: string; icon: ReactNode }[];
 }[] = [
   {
-    title: "Personal",
+    title: t("Personal"),
     items: [
       {
         id: "general",
-        label: "General",
+        label: t("General"),
         icon: <IconSettingsGear4 size={16} />,
       },
       {
         id: "carpe-diem",
-        label: "Carpe Diem",
+        label: t("Carpe Diem"),
         icon: <IconServer1 size={16} />,
       },
       {
         id: "privacy",
-        label: "Privacy",
+        label: t("Privacy"),
         icon: <IconShieldCheck size={16} />,
       },
       {
         id: "shortcuts",
-        label: "Shortcuts",
+        label: t("Shortcuts"),
         icon: <IconShortcut size={16} />,
       },
     ],
   },
   {
-    title: "Audio",
+    title: t("Audio"),
     items: [
       {
         id: "dictation",
-        label: "Dictation",
+        label: t("Dictation"),
         icon: <IconMicrophoneSparkle size={16} />,
       },
-      { id: "audio", label: "Audio", icon: <IconAudio size={16} /> },
+      { id: "audio", label: t("Audio"), icon: <IconAudio size={16} /> },
     ],
   },
   {
     title: "AI",
     items: [
-      { id: "models", label: "Models", icon: <IconBrain2 size={16} /> },
-      { id: "agent", label: "Agent", icon: <IconRobot2 size={16} /> },
-      { id: "memory", label: "Memory", icon: <IconBookmark size={16} /> },
-      { id: "council", label: "Council", icon: <IconCirclesThree size={16} /> },
+      { id: "models", label: t("Models"), icon: <IconBrain2 size={16} /> },
+      { id: "agent", label: t("Agent"), icon: <IconRobot2 size={16} /> },
+      { id: "memory", label: t("Memory"), icon: <IconBookmark size={16} /> },
+      { id: "council", label: t("Council"), icon: <IconCirclesThree size={16} /> },
       {
         id: "skills",
-        label: "Installed skills",
+        label: t("Installed skills"),
         icon: <IconPlugin2 size={16} />,
       },
       {
         id: "external-dirs",
-        label: "External skill directories",
+        label: t("External skill directories"),
         icon: <IconFolderShared size={16} />,
       },
       {
         id: "mcp",
-        label: "MCP servers",
+        label: t("MCP servers"),
         icon: <IconServer1 size={16} />,
       },
       {
         id: "mcp-diagnostics",
-        label: "MCP diagnostics",
+        label: t("MCP diagnostics"),
         icon: <IconHeartBeat size={16} />,
       },
       {
         id: "mcp-security",
-        label: "MCP security",
+        label: t("MCP security"),
         icon: <IconShield size={16} />,
       },
       {
         id: "toolsets",
-        label: "Toolsets",
+        label: t("Toolsets"),
         icon: <IconToolbox size={16} />,
       },
       {
         id: "import-export",
-        label: "Import / export",
+        label: t("Import / export"),
         icon: <IconBox2 size={16} />,
       },
     ],
   },
   {
-    title: "App",
+    title: t("App"),
     items: [
-      { id: "storage", label: "Storage", icon: <IconArchive1 size={16} /> },
-      { id: "reports", label: "Reports", icon: <IconBug size={16} /> },
-      { id: "about", label: "About", icon: <IconCircleInfo size={16} /> },
+      { id: "storage", label: t("Storage"), icon: <IconArchive1 size={16} /> },
+      { id: "reports", label: t("Reports"), icon: <IconBug size={16} /> },
+      { id: "about", label: t("About"), icon: <IconCircleInfo size={16} /> },
     ],
   },
 ];
@@ -496,7 +497,7 @@ export function Sidebar({
         return {
           id: `note:${note.id}`,
           label: title,
-          meta: "Meeting note",
+          meta: t("Meeting note"),
           icon: <IconNoteText size={15} />,
           searchText: normalizeCommandQuery(`${title} ${note.preview}`),
           action: () => onSelectNote(note.id),
@@ -507,7 +508,7 @@ export function Sidebar({
         return {
           id: `agent:${session.id}`,
           label: title,
-          meta: "Session",
+          meta: t("Session"),
           icon: <IconBubble3 size={15} />,
           searchText: normalizeCommandQuery(`${title} ${session.preview ?? ""} agent session`),
           action: () => {
@@ -523,7 +524,7 @@ export function Sidebar({
     const quickItems: CommandPaletteItem[] = [
       {
         id: "quick:new-session",
-        label: "New session",
+        label: t("New session"),
         icon: <IconPlusMedium size={15} />,
         searchText: normalizeCommandQuery("new session agent"),
         action: handleNewAgentSession,
@@ -532,7 +533,7 @@ export function Sidebar({
         ? [
             {
               id: "quick:import-media",
-              label: "Import audio or video",
+              label: t("Import audio or video"),
               icon: <IconImport size={15} />,
               searchText: normalizeCommandQuery(
                 "import audio video file recording podcast talk mp3 mp4 open",
@@ -543,35 +544,35 @@ export function Sidebar({
         : []),
       {
         id: "quick:meetings",
-        label: "Go to Meeting notes",
+        label: t("Go to Meeting notes"),
         icon: <IconNoteText size={15} />,
         searchText: normalizeCommandQuery("meeting notes meetings go to"),
         action: () => onChangeView("notes"),
       },
       {
         id: "quick:projects",
-        label: "Go to Projects",
+        label: t("Go to Projects"),
         icon: <IconProjects size={15} />,
         searchText: normalizeCommandQuery("projects folders go to"),
         action: () => onChangeView("folders"),
       },
       {
         id: "quick:dictation",
-        label: "Go to Dictation",
+        label: t("Go to Dictation"),
         icon: <IconMicrophone size={15} />,
         searchText: normalizeCommandQuery("dictation go to"),
         action: () => onChangeView("dictation"),
       },
       {
         id: "quick:studio",
-        label: "Go to Studio",
+        label: t("Go to Studio"),
         icon: <IconSparkle3 size={15} />,
         searchText: normalizeCommandQuery("studio image video music workflows go to"),
         action: () => onChangeView("studio"),
       },
       {
         id: "quick:routines",
-        label: "Go to Routines",
+        label: t("Go to Routines"),
         icon: <IconZap size={15} />,
         searchText: normalizeCommandQuery("routines go to"),
         action: () => onChangeView("routines"),
@@ -582,7 +583,7 @@ export function Sidebar({
       .map((folder) => ({
         id: `folder:${folder.id}`,
         label: folder.name,
-        meta: "Project",
+        meta: t("Project"),
         icon: <IconProjects size={15} />,
         searchText: normalizeCommandQuery(`${folder.name} project folder`),
         action: () => {
@@ -605,7 +606,7 @@ export function Sidebar({
       group.items.map((item) => ({
         id: `settings:${item.id}`,
         label: item.label,
-        meta: "Settings",
+        meta: t("Settings"),
         icon: item.icon,
         searchText: normalizeCommandQuery(
           `${item.label} ${group.title} settings ${SETTINGS_SEARCH_ALIASES[item.id] ?? ""}`,
@@ -626,12 +627,12 @@ export function Sidebar({
       .filter((item) => !recentIds.has(item.id));
 
     return [
-      { title: "Ask", items: askPaletteItems(commandQuery, setAskQuestion) },
-      { title: "Recents", items: recentItems },
-      { title: "In your notes", items: searchItems },
-      { title: "Projects", items: folderItems },
-      { title: "Quick actions", items: quickItems },
-      { title: "Settings", items: settingsItems },
+      { title: t("Ask"), items: askPaletteItems(commandQuery, setAskQuestion) },
+      { title: t("Recents"), items: recentItems },
+      { title: t("In your notes"), items: searchItems },
+      { title: t("Projects"), items: folderItems },
+      { title: t("Quick actions"), items: quickItems },
+      { title: t("Settings"), items: settingsItems },
     ].filter((group) => group.items.length > 0);
 
     function searchHitToPaletteItem(hit: SearchHit): CommandPaletteItem {
@@ -641,7 +642,7 @@ export function Sidebar({
           return {
             id: `memory:${hit.targetId}`,
             label: excerpt || "Memory",
-            meta: "Memory",
+            meta: t("Memory"),
             icon: <IconSparkle3 size={15} />,
             searchText: "",
             action: () => {
@@ -1023,7 +1024,7 @@ export function Sidebar({
     >
       {inSettings ? null : (
         <header className="sidebar-header">
-          <a className="sidebar-brand" href="#" aria-label="Sub Rosa">
+          <a className="sidebar-brand" href="#" aria-label={t("Sub Rosa")}>
             <JuneWordmark className="sidebar-brand-mark" />
           </a>
           {recordingStatus ? (
@@ -1056,8 +1057,8 @@ export function Sidebar({
               type="search"
               value={query}
               onChange={(event) => setQuery(event.currentTarget.value)}
-              placeholder="Search"
-              aria-label="Search"
+              placeholder={t("Search")}
+              aria-label={t("Search")}
               readOnly
             />
             <span className="sidebar-search-kbd" aria-hidden="true">
@@ -1065,7 +1066,7 @@ export function Sidebar({
             </span>
           </label>
 
-          <nav className="sidebar-nav" aria-label="Primary">
+          <nav className="sidebar-nav" aria-label={t("Primary")}>
             <button
               type="button"
               className="sidebar-nav-item"
@@ -1076,7 +1077,7 @@ export function Sidebar({
               <span className="sidebar-nav-icon">
                 <IconPlusMedium size={15} />
               </span>
-              <span className="sidebar-nav-label">New session</span>
+              <span className="sidebar-nav-label">{t("New session")}</span>
               <kbd className="sidebar-nav-shortcut" aria-hidden="true">
                 {newSessionShortcut}
               </kbd>
@@ -1095,7 +1096,7 @@ export function Sidebar({
               <span className="sidebar-nav-icon">
                 <IconNoteText size={15} />
               </span>
-              <span className="sidebar-nav-label">Meeting notes</span>
+              <span className="sidebar-nav-label">{t("Meeting notes")}</span>
             </button>
             <button
               type="button"
@@ -1107,7 +1108,7 @@ export function Sidebar({
               <span className="sidebar-nav-icon">
                 <IconProjects size={15} />
               </span>
-              <span className="sidebar-nav-label">Projects</span>
+              <span className="sidebar-nav-label">{t("Projects")}</span>
             </button>
             <button
               type="button"
@@ -1119,7 +1120,7 @@ export function Sidebar({
               <span className="sidebar-nav-icon">
                 <IconMicrophone size={16} />
               </span>
-              <span className="sidebar-nav-label">Dictation</span>
+              <span className="sidebar-nav-label">{t("Dictation")}</span>
             </button>
             <button
               type="button"
@@ -1131,7 +1132,7 @@ export function Sidebar({
               <span className="sidebar-nav-icon">
                 <IconSparkle3 size={16} />
               </span>
-              <span className="sidebar-nav-label">Studio</span>
+              <span className="sidebar-nav-label">{t("Studio")}</span>
             </button>
             <button
               type="button"
@@ -1143,17 +1144,17 @@ export function Sidebar({
               <span className="sidebar-nav-icon">
                 <IconZap size={16} />
               </span>
-              <span className="sidebar-nav-label">Routines</span>
+              <span className="sidebar-nav-label">{t("Routines")}</span>
             </button>
           </nav>
 
           {pinnedAgentSessions.length > 0 ? (
             <section
               className="sidebar-section sidebar-pinned-section"
-              aria-label="Pinned agent sessions"
+              aria-label={t("Pinned agent sessions")}
             >
               <div className="section-title">
-                <span className="section-title-label">Pinned</span>
+                <span className="section-title-label">{t("Pinned")}</span>
               </div>
               <div className="notes-nav sidebar-pinned-list">
                 {pinnedAgentSessions.map((session) => (
@@ -1180,7 +1181,7 @@ export function Sidebar({
 
           <section
             className="sidebar-section sidebar-agent-section"
-            aria-label="Sessions"
+            aria-label={t("Sessions")}
             data-active={activeView === "agent" || activeView === "agent-sessions"}
           >
             <div className="section-title section-title-with-action">
@@ -1189,7 +1190,7 @@ export function Sidebar({
                 className="section-title-label section-title-open"
                 onClick={() => onChangeView("agent-sessions")}
               >
-                Sessions
+                {t("Sessions")}
               </button>
               {/* Same destination as the header — the hover affordance just
                * makes the "this opens a list" behavior legible. */}
@@ -1198,7 +1199,7 @@ export function Sidebar({
                 className="section-view-all"
                 onClick={() => onChangeView("agent-sessions")}
               >
-                View all
+                {t("View all")}
               </button>
             </div>
             <div className="notes-nav-wrap">
@@ -1320,7 +1321,7 @@ export function Sidebar({
           agentSessionToDelete?.title || agentSessionToDelete?.preview || "Untitled session"
         }"?`}
         description={agentSessionDeleteError || "This agent session cannot be restored."}
-        confirmLabel="Delete session"
+        confirmLabel={t("Delete session")}
         destructive
       />
     </aside>
@@ -1352,7 +1353,7 @@ function SidebarRecordingIndicator({
       data-state={status.state}
       onClick={onOpen}
       aria-label={`Open recording: ${title}`}
-      title="Open recording"
+      title={t("Open recording")}
     >
       <span className="sidebar-recording-dot" aria-hidden />
       <Waveform level={meterLevel} active={recording} />
@@ -1430,8 +1431,8 @@ function NoteRow({
           {recoverable ? (
             <span
               className="note-row-recovery-dot"
-              aria-label="Interrupted recording"
-              title="Interrupted recording"
+              aria-label={t("Interrupted recording")}
+              title={t("Interrupted recording")}
             />
           ) : null}
         </span>
@@ -1537,12 +1538,12 @@ function SettingsSidebarNav({
   })).filter((group) => group.items.length > 0);
 
   return (
-    <section className="sidebar-section sidebar-settings-section" aria-label="Settings">
+    <section className="sidebar-section sidebar-settings-section" aria-label={t("Settings")}>
       <button type="button" className="sidebar-nav-item sidebar-settings-back" onClick={onBack}>
         <span className="sidebar-nav-icon">
           <IconChevronLeftSmall size={15} />
         </span>
-        <span className="sidebar-nav-label">Back to app</span>
+        <span className="sidebar-nav-label">{t("Back to app")}</span>
       </button>
       {groups.map((group) => (
         <div key={group.title} className="sidebar-settings-group">
@@ -1637,7 +1638,7 @@ function CommandPalette({
         className="command-palette"
         role="dialog"
         aria-modal="true"
-        aria-label="Search"
+        aria-label={t("Search")}
         ref={dialogRef}
         tabIndex={-1}
       >
@@ -1649,8 +1650,8 @@ function CommandPalette({
             value={query}
             onChange={(event) => onQueryChange(event.currentTarget.value)}
             onKeyDown={onKeyDown}
-            placeholder="Search meeting notes, sessions, or jump to…"
-            aria-label="Search"
+            placeholder={t("Search meeting notes, sessions, or jump to…")}
+            aria-label={t("Search")}
             aria-activedescendant={
               items[activeIndex] ? `command-palette-item-${activeIndex}` : undefined
             }
@@ -1687,18 +1688,18 @@ function CommandPalette({
               </section>
             ))
           ) : (
-            <div className="command-palette-empty">No results</div>
+            <div className="command-palette-empty">{t("No results")}</div>
           )}
         </div>
         <div className="command-palette-footer" aria-hidden="true">
           <span>
-            <kbd>↵</kbd> Open
+            <kbd>↵</kbd> {t("Open")}
           </span>
           <span>
-            <kbd>↑↓</kbd> Navigate
+            <kbd>↑↓</kbd> {t("Navigate")}
           </span>
           <span>
-            <kbd>Esc</kbd> Close
+            <kbd>Esc</kbd> {t("Close")}
           </span>
         </div>
       </div>
@@ -1720,9 +1721,9 @@ function isSearchShortcut(event: KeyboardEvent) {
 // The report shortcuts in the account menu: the same set as the composer's
 // "+" popover, minus attaching a file. Action-phrased to read as menu verbs.
 const REPORT_MENU_ITEMS: { category: ReportCategory; label: string }[] = [
-  { category: "bug", label: "Report a bug" },
-  { category: "feedback", label: "Send feedback" },
-  { category: "feature", label: "Request a feature" },
+  { category: "bug", label: t("Report a bug") },
+  { category: "feedback", label: t("Send feedback") },
+  { category: "feature", label: t("Request a feature") },
 ];
 
 function SidebarIdentity({
@@ -1780,7 +1781,7 @@ function SidebarIdentity({
         <div className="sidebar-identity-menu" role="menu">
           <button type="button" role="menuitem" onClick={onOpenSettings}>
             <IconSettingsGear4 size={14} />
-            Settings
+            {t("Settings")}
           </button>
           {onReportIssue
             ? REPORT_MENU_ITEMS.map((item) => (
@@ -1807,7 +1808,7 @@ function SidebarIdentity({
 // price factor (the fraction of the upstream rate billed today). The factor is
 // omitted when the public pricing endpoint didn't answer.
 function creditsLabel(credits: CarpeDiemCreditsDto) {
-  const amount = Math.floor(credits.availableCredits).toLocaleString("en-US");
+  const amount = Math.floor(credits.availableCredits).toLocaleString(intlLocale());
   // The balance follows the active rail; flag a prepaid balance so it isn't
   // mistaken for the (possibly larger, unused) credits pool.
   const railHint = credits.rail === "prepaid" ? " · prepaid" : "";
@@ -1914,15 +1915,19 @@ function AgentSessionRow({
         <span
           className="agent-session-meta agent-session-status"
           role="status"
-          aria-label="Needs you"
+          aria-label={t("Needs you")}
         >
-          <span className="agent-sidebar-working" data-status="waitingForUser" title="Needs you" />
+          <span
+            className="agent-sidebar-working"
+            data-status="waitingForUser"
+            title={t("Needs you")}
+          />
         </span>
       ) : working ? (
         <span
           className="agent-session-meta agent-session-status"
           role="status"
-          aria-label="Working"
+          aria-label={t("Working")}
         >
           <DotSpinner className="agent-sidebar-spinner" />
         </span>
@@ -1933,21 +1938,21 @@ function AgentSessionRow({
         <span
           className="agent-session-meta agent-session-status"
           role="status"
-          aria-label="Running in the background"
+          aria-label={t("Running in the background")}
         >
           <span
             className="agent-sidebar-working"
             data-status="background"
-            title="Running in the background"
+            title={t("Running in the background")}
           />
         </span>
       ) : unread ? (
         <span
           className="agent-session-meta agent-session-status"
           role="status"
-          aria-label="New reply"
+          aria-label={t("New reply")}
         >
-          <span className="agent-sidebar-working" data-status="unread" title="New reply" />
+          <span className="agent-sidebar-working" data-status="unread" title={t("New reply")} />
         </span>
       ) : time ? (
         <span className="agent-session-meta agent-session-time">{time}</span>
@@ -2021,7 +2026,7 @@ function AgentSessionContextMenu({
         }}
       >
         <IconTrashCan size={14} />
-        Delete session
+        {t("Delete session")}
       </button>
     </div>
   );
@@ -2041,7 +2046,7 @@ function formatSessionTime(iso: string): string {
   if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d`;
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(intlLocale(), {
     month: "short",
     day: "numeric",
   });
@@ -2098,7 +2103,7 @@ function NoteContextMenu({
           }}
         >
           <IconFolderDelete size={14} />
-          Remove from project
+          {t("Remove from project")}
         </button>
       ) : null}
       <div className="context-menu-separator" role="separator" />
@@ -2112,7 +2117,7 @@ function NoteContextMenu({
         }}
       >
         <IconTrashCan size={14} />
-        Delete note
+        {t("Delete note")}
       </button>
     </div>
   );
@@ -2121,7 +2126,7 @@ function NoteContextMenu({
 function relativeDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(intlLocale(), {
     month: "short",
     day: "numeric",
     hour: "numeric",

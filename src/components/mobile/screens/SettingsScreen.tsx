@@ -1,3 +1,4 @@
+import { t, type LocaleChoice, localeChoice, setLocaleChoice } from "../../../lib/i18n";
 import { getVersion } from "@tauri-apps/api/app";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useEffect, useState } from "react";
@@ -29,9 +30,9 @@ import { StackHeader } from "../StackHeader";
 import type { SettingsSection } from "../../../app/mobile/nav";
 
 const THEME_OPTIONS: Array<{ id: ThemePreference; label: string }> = [
-  { id: "system", label: "System" },
-  { id: "light", label: "Light" },
-  { id: "dark", label: "Dark" },
+  { id: "system", label: t("System") },
+  { id: "light", label: t("Light") },
+  { id: "dark", label: t("Dark") },
 ];
 
 const STATUS_SUMMARY: Record<string, string> = {
@@ -51,10 +52,17 @@ const STATUS_SUMMARY: Record<string, string> = {
  * connection controls two and a half screens down, below however many memories
  * the user had accumulated.
  */
+const LANGUAGE_OPTIONS: Array<{ id: LocaleChoice; label: string }> = [
+  { id: "system", label: t("System") },
+  { id: "en", label: t("English") },
+  { id: "fr", label: t("Français") },
+];
+
 export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) => void }) {
   const credits = useCarpeDiemCredits();
   const { status } = useCarpeDiem();
   const [theme, setTheme] = useState<ThemePreference>(getStoredTheme);
+  const [language, setLanguage] = useState<LocaleChoice>(() => localeChoice());
   const [version, setVersion] = useState<string | null>(null);
   const [memorySummary, setMemorySummary] = useState<string | null>(null);
 
@@ -128,7 +136,7 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
 
   return (
     <div className="mobile-screen-root">
-      <StackHeader title="Settings" large />
+      <StackHeader title={t("Settings")} large />
       <div className="mobile-settings-scroll">
         {credits ? (
           // Tappable: the balance is the number people come here to check, and
@@ -136,7 +144,7 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
           <button
             type="button"
             className="mobile-credits-card"
-            aria-label="Carpe Diem balance, opens the dashboard"
+            aria-label={t("Carpe Diem balance, opens the dashboard")}
             onClick={() => {
               hapticSelection();
               void carpeDiemOpenDashboard();
@@ -150,16 +158,16 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
                 {credits.rail === "prepaid" ? "prepaid balance" : "credits available"}
               </span>
             </span>
-            <span className="mobile-credits-action">Top up</span>
+            <span className="mobile-credits-action">{t("Top up")}</span>
           </button>
         ) : null}
 
-        <SettingsGroup title="Appearance">
-          <SettingsRow label="Theme" align="stack">
+        <SettingsGroup title={t("Appearance")}>
+          <SettingsRow label={t("Theme")} align="stack">
             <div
               className="mobile-segmented mobile-segmented-flush"
               role="radiogroup"
-              aria-label="Theme"
+              aria-label={t("Theme")}
             >
               {THEME_OPTIONS.map((option) => (
                 <button
@@ -176,15 +184,36 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
               ))}
             </div>
           </SettingsRow>
+          <SettingsRow label={t("Language")} align="stack">
+            <div className="mobile-segmented mobile-segmented-flush">
+              {LANGUAGE_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className="mobile-segmented-item"
+                  aria-pressed={language === option.id}
+                  data-active={language === option.id ? "true" : undefined}
+                  onClick={() => {
+                    setLanguage(option.id);
+                    setLocaleChoice(option.id);
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </SettingsRow>
         </SettingsGroup>
 
         <SettingsGroup
-          title="When the app speaks first"
-          footer="Briefs read your calendar on this device and stay quiet when your notes have nothing to say about the people you are meeting."
+          title={t("When the app speaks first")}
+          footer={t(
+            "Briefs read your calendar on this device and stay quiet when your notes have nothing to say about the people you are meeting.",
+          )}
         >
           <SettingsToggleRow
-            label="Meeting briefs"
-            detail="Ten minutes before, what you last decided"
+            label={t("Meeting briefs")}
+            detail={t("Ten minutes before, what you last decided")}
             checked={moments?.briefEnabled === true}
             disabled={moments === null}
             onChange={(next) =>
@@ -195,7 +224,7 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
             }
           />
           <SettingsToggleRow
-            label="Tell me when a note is ready"
+            label={t("Tell me when a note is ready")}
             checked={moments?.recapEnabled === true}
             disabled={moments === null}
             onChange={(next) =>
@@ -208,11 +237,13 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
         </SettingsGroup>
 
         <SettingsGroup
-          title="System search"
-          footer="Titles and dates go in this device's search index so Spotlight finds your notes. The index is not Sub Rosa's storage, so what the notes say stays out of it until you ask."
+          title={t("System search")}
+          footer={t(
+            "Titles and dates go in this device's search index so Spotlight finds your notes. The index is not Sub Rosa's storage, so what the notes say stays out of it until you ask.",
+          )}
         >
           <SettingsToggleRow
-            label="Find notes in Spotlight"
+            label={t("Find notes in Spotlight")}
             checked={spotlight?.enabled === true}
             disabled={spotlight === null}
             onChange={(next) =>
@@ -223,7 +254,7 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
             }
           />
           <SettingsToggleRow
-            label="Include what the notes say"
+            label={t("Include what the notes say")}
             checked={spotlight?.includeContent === true}
             disabled={spotlight === null || spotlight?.enabled !== true}
             onChange={(next) =>
@@ -233,8 +264,10 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
         </SettingsGroup>
 
         <SettingsGroup
-          title="Shortcuts and Siri"
-          footer="Put one of these in a Shortcuts &quot;Open URL&quot; action to start a recording from the Action button, from Siri, or from any shortcut you already use."
+          title={t("Shortcuts and Siri")}
+          footer={t(
+            'Put one of these in a Shortcuts "Open URL" action to start a recording from the Action button, from Siri, or from any shortcut you already use.',
+          )}
         >
           {AUTOMATION_ADDRESSES.map((automation) => (
             <SettingsActionRow
@@ -247,30 +280,32 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
 
         <SettingsGroup>
           <SettingsLinkRow
-            label="Memory"
+            label={t("Memory")}
             value={memorySummary ?? undefined}
             onClick={() => onOpen("memory")}
           />
-          <SettingsLinkRow label="Usage" onClick={() => onOpen("usage")} />
+          <SettingsLinkRow label={t("Usage")} onClick={() => onOpen("usage")} />
           <SettingsLinkRow
-            label="Connection"
+            label={t("Connection")}
             value={STATUS_SUMMARY[status?.status ?? "unconfigured"]}
             onClick={() => onOpen("connection")}
           />
         </SettingsGroup>
 
         <SettingsGroup>
-          <SettingsLinkRow label="Privacy" onClick={() => onOpen("privacy")} />
-          <SettingsLinkRow label="Models" onClick={() => onOpen("models")} />
-          <SettingsLinkRow label="Reports" onClick={() => onOpen("reports")} />
-          <SettingsLinkRow label="Archive" onClick={() => onOpen("archive")} />
-          <SettingsLinkRow label="About" onClick={() => onOpen("about")} />
+          <SettingsLinkRow label={t("Privacy")} onClick={() => onOpen("privacy")} />
+          <SettingsLinkRow label={t("Models")} onClick={() => onOpen("models")} />
+          <SettingsLinkRow label={t("Reports")} onClick={() => onOpen("reports")} />
+          <SettingsLinkRow label={t("Archive")} onClick={() => onOpen("archive")} />
+          <SettingsLinkRow label={t("About")} onClick={() => onOpen("about")} />
         </SettingsGroup>
 
         <p className="mobile-settings-footnote">
-          {PRODUCT_NAME} keeps your notes, audio, and transcripts on this device. AI requests go
-          directly to Carpe Diem with your key.
-          {version ? ` Version ${version}.` : ""}
+          {t(
+            "{product} keeps your notes, audio, and transcripts on this device. AI requests go directly to Carpe Diem with your key.",
+            { product: PRODUCT_NAME },
+          )}
+          {version ? ` ${t("Version {version}.", { version })}` : ""}
         </p>
       </div>
     </div>

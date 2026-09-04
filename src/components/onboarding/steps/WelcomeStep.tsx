@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { IconCalendar1 } from "central-icons/IconCalendar1";
 import { IconLock } from "central-icons/IconLock";
 import { IconMicrophone } from "central-icons/IconMicrophone";
@@ -12,37 +13,44 @@ import { OnboardingPrimaryButton, StepCard } from "../StepChrome";
 const POINTS = [
   {
     icon: IconSparkle,
-    title: `Chat and work with ${PRODUCT_NAME}`,
-    detail: `Hand ${PRODUCT_NAME} real work. It runs the session and comes back done.`,
+    title: t("Chat and work with {product}", { product: PRODUCT_NAME }),
+    detail: t("Hand {product} real work. It runs the session and comes back done.", {
+      product: PRODUCT_NAME,
+    }),
   },
   {
     icon: IconMicrophone,
-    title: "Speak instead of type",
-    detail: `${PRODUCT_NAME} turns your voice into polished writing in any app on your computer.`,
+    title: t("Speak instead of type"),
+    detail: t("{product} turns your voice into polished writing in any app on your computer.", {
+      product: PRODUCT_NAME,
+    }),
   },
   {
     icon: IconCalendar1,
-    title: "Effortlessly capture meetings",
-    detail: `${PRODUCT_NAME} takes meeting notes without ever having to join the meeting.`,
+    title: t("Effortlessly capture meetings"),
+    detail: t("{product} takes meeting notes without ever having to join the meeting.", {
+      product: PRODUCT_NAME,
+    }),
   },
   {
     icon: IconLock,
-    title: "Private by default",
-    detail:
+    title: t("Private by default"),
+    detail: t(
       "Notes, sessions, and memory stay on this device. Prompts go only to Carpe Diem, with your own key.",
+    ),
   },
 ];
 
 const WINDOWS_POINTS = [
   {
     icon: IconSparkle,
-    title: "Desktop notes for your work",
-    detail: "Keep meeting notes and projects together in one app.",
+    title: t("Desktop notes for your work"),
+    detail: t("Keep meeting notes and projects together in one app."),
   },
   {
     icon: IconMicrophone,
-    title: "Meeting notes from your mic",
-    detail: "Record meetings from your microphone and turn them into notes.",
+    title: t("Meeting notes from your mic"),
+    detail: t("Record meetings from your microphone and turn them into notes."),
   },
   POINTS[3],
 ];
@@ -67,7 +75,7 @@ export function WelcomeStep({ onContinue }: { onContinue: () => void }) {
   return (
     <StepCard
       title={`Welcome to ${PRODUCT_NAME}`}
-      subtitle="Private AI for everyday life and work."
+      subtitle={t("Private AI for everyday life and work.")}
       mark
       wide
       className={isMac ? "welcome-card-intro" : undefined}
@@ -87,15 +95,15 @@ export function WelcomeStep({ onContinue }: { onContinue: () => void }) {
       </ul>
       <div className="welcome-providers">
         <OnboardingPrimaryButton onClick={onContinue}>
-          <span>Get started</span>
+          <span>{t("Get started")}</span>
         </OnboardingPrimaryButton>
       </div>
       <p className="welcome-terms">
-        Your requests are handled by{" "}
+        {t("Your requests are handled by")}{" "}
         <a href={CARPE_DIEM_DASHBOARD_URL} target="_blank" rel="noreferrer">
-          Carpe Diem
+          {t("Carpe Diem")}
         </a>
-        , with the key you provide.
+        {t(", with the key you provide.")}
       </p>
     </StepCard>
   );

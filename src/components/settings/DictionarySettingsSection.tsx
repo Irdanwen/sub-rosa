@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconPencilLine } from "central-icons/IconPencilLine";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
@@ -105,10 +106,10 @@ export function DictionarySettingsSection() {
   return (
     <section className="settings-group" aria-labelledby="dictionary-heading">
       <h2 id="dictionary-heading" className="settings-group-heading">
-        Dictionary
+        {t("Dictionary")}
       </h2>
       <p className="settings-group-description">
-        Words or phrases Sub Rosa should preserve during transcription.
+        {t("Words or phrases Sub Rosa should preserve during transcription.")}
       </p>
       <div className="settings-card dictionary-card">
         <div className="dictionary-toolbar">
@@ -118,13 +119,13 @@ export function DictionarySettingsSection() {
               type="search"
               value={query}
               onChange={(event) => setQuery(event.currentTarget.value)}
-              placeholder="Search"
-              aria-label="Search dictionary"
+              placeholder={t("Search")}
+              aria-label={t("Search dictionary")}
             />
           </label>
           <button type="button" className="primary-action primary-solid" onClick={startCreating}>
             <IconPlusMedium size={14} />
-            Add entry
+            {t("Add entry")}
           </button>
         </div>
         {visibleEntries.length === 0 ? (
@@ -208,7 +209,7 @@ function DictionaryEntryDialog({
       footer={
         <>
           <button type="button" className="primary-action" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             type="submit"
@@ -222,14 +223,14 @@ function DictionaryEntryDialog({
       }
     >
       <form id="dictionary-entry-form" className="dialog-body" onSubmit={handleSubmit}>
-        <DialogField label="Word or phrase" htmlFor="dictionary-phrase">
+        <DialogField label={t("Word or phrase")} htmlFor="dictionary-phrase">
           <input
             id="dictionary-phrase"
             name="dictionary-phrase"
             className="dialog-input"
             value={phrase}
             onChange={(event) => onChange(event.currentTarget.value)}
-            placeholder="e.g. Anthropic, ARR, Jane Doe"
+            placeholder={t("e.g. Anthropic, ARR, Jane Doe")}
             autoComplete="off"
             maxLength={160}
             aria-invalid={error ? true : undefined}

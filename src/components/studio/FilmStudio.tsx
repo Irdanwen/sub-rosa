@@ -19,6 +19,7 @@
 // gallery artifact. The Bible, Workflows and Assemble tabs are the same
 // objects in detail, so nothing here is a private world.
 
+import { t } from "../../lib/i18n";
 import { IconClapboard } from "central-icons/IconClapboard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -435,7 +436,11 @@ export function FilmStudio({
     if (!workflow || running) return;
     const validation = validateWorkflow(workflow);
     if (!validation.ok) {
-      setError(`That did not compile cleanly: ${validation.errors[0]?.message ?? "unknown"}`);
+      setError(
+        t("That did not compile cleanly: {reason}", {
+          reason: validation.errors[0]?.message ?? t("unknown"),
+        }),
+      );
       return;
     }
     const saved: Workflow = {
@@ -573,7 +578,7 @@ export function FilmStudio({
   const review = useCallback(async () => {
     const model = pickJudgeModel(modelsOfType(catalog, "text"));
     if (!model || judging) {
-      if (!model) setError("No model on this account can look at pictures.");
+      if (!model) setError(t("No model on this account can look at pictures."));
       return;
     }
     setJudging(true);
@@ -599,7 +604,7 @@ export function FilmStudio({
         model,
       );
       setVerdict(result);
-      if (!result) setError("The judge had nothing to say this time.");
+      if (!result) setError(t("The judge had nothing to say this time."));
     } finally {
       setJudging(false);
     }
@@ -645,15 +650,19 @@ export function FilmStudio({
         <div className="film-describe">
           <EmptyState
             icon={<IconClapboard size={22} />}
-            title="What's your film?"
-            description="Write what happens, in a few sentences. Sub Rosa reads it as shots, draws whoever is in it, and makes it."
+            title={t("What's your film?")}
+            description={t(
+              "Write what happens, in a few sentences. Sub Rosa reads it as shots, draws whoever is in it, and makes it.",
+            )}
           />
           <textarea
             className="studio-input studio-textarea"
             rows={6}
             value={draft}
-            aria-label="What happens"
-            placeholder="Nera waits under the rain in the alley. She hears something behind her and turns. 'Get in the car.' She runs towards the light at the far end."
+            aria-label={t("What happens")}
+            placeholder={t(
+              "Nera waits under the rain in the alley. She hears something behind her and turns. 'Get in the car.' She runs towards the light at the far end.",
+            )}
             onChange={(event) => setDraft(event.target.value)}
           />
           {plan && !plan.breakable ? <p className="studio-queue-hint">{plan.reason}</p> : null}
@@ -667,15 +676,19 @@ export function FilmStudio({
               {busy ? "Reading it..." : "Read it"}
             </button>
             <button type="button" className="btn btn-secondary" onClick={() => setPicking(true)}>
-              Use a note I wrote
+              {t("Use a note I wrote")}
             </button>
           </div>
-          {note ? <p className="studio-queue-hint">From "{note.title || "Untitled"}".</p> : null}
+          {note ? (
+            <p className="studio-queue-hint">
+              {t('From "{title}".', { title: note.title || t("Untitled") })}
+            </p>
+          ) : null}
           {films.length > 0 ? (
             <div className="film-previous">
               {/* A reading is paid for. Leaving this tab used to lose the way
                   back to one, which meant paying for it twice. */}
-              <p className="studio-picker-section-title">Films you started</p>
+              <p className="studio-picker-section-title">{t("Films you started")}</p>
               <ul>
                 {films.map((film) => (
                   <li key={film.noteId}>
@@ -721,9 +734,9 @@ export function FilmStudio({
 
       {stage === "reading" ? (
         <div className="film-describe">
-          <Spinner aria-label="Reading the script" />
+          <Spinner aria-label={t("Reading the script")} />
           <p className="studio-queue-hint">
-            Reading it as shots. This keeps going if you close the app.
+            {t("Reading it as shots. This keeps going if you close the app.")}
           </p>
         </div>
       ) : null}
@@ -731,19 +744,23 @@ export function FilmStudio({
       {stage === "review" ? (
         <div className="film-review">
           <p className="studio-picker-section-title">
-            {shots.length} shot{shots.length === 1 ? "" : "s"},{" "}
-            {shots.filter((shot) => shot.dialogue.trim()).length} spoken
+            {shots.length === 1 ? t("1 shot") : t("{count} shots", { count: shots.length })},{" "}
+            {t("{count} spoken", { count: shots.filter((shot) => shot.dialogue.trim()).length })}
           </p>
 
           {uncast.length > 0 ? (
             <div className="script-casting">
               <p>
                 <strong>
-                  {uncast.length} name{uncast.length === 1 ? "" : "s"}
+                  {uncast.length === 1 ? t("1 name") : t("{count} names", { count: uncast.length })}
                 </strong>{" "}
-                {uncast.length === 1 ? "has" : "have"} no face yet, so{" "}
-                {uncast.length === 1 ? "it is" : "they are"} redrawn from scratch in every shot and
-                will not look the same twice.
+                {uncast.length === 1
+                  ? t(
+                      "has no face yet, so it is redrawn from scratch in every shot and will not look the same twice.",
+                    )
+                  : t(
+                      "have no face yet, so they are redrawn from scratch in every shot and will not look the same twice.",
+                    )}
               </p>
               <ul className="script-cast-list">
                 {uncast.map((member) => (
@@ -770,7 +787,7 @@ export function FilmStudio({
                   disabled={castingName !== undefined}
                   onClick={() => void castEveryone()}
                 >
-                  Draw all {uncast.length}
+                  {t("Draw all {count}", { count: uncast.length })}
                   {referenceCost === undefined
                     ? ""
                     : ` (${(referenceCost * uncast.length).toFixed(0)} cr)`}
@@ -799,24 +816,29 @@ export function FilmStudio({
                   : "studio-queue-hint"
               }
             >
-              About {compiled?.estimateCredits.toFixed(0)} credits, at least
-              {balance === undefined ? "" : ` of the ${Math.floor(balance)} you have`}.
+              {t("About {credits} credits, at least", {
+                credits: compiled?.estimateCredits.toFixed(0) ?? "",
+              })}
+              {balance === undefined
+                ? ""
+                : t(" of the {balance} you have", { balance: Math.floor(balance) })}
+              .
               {isTight(compiled?.estimateCredits ?? 0, balance)
-                ? " Renders with no published price are not in that figure, so this one could run out part way. Fewer shots would be safer."
+                ? ` ${t("Renders with no published price are not in that figure, so this one could run out part way. Fewer shots would be safer.")}`
                 : ""}
             </p>
           )}
           <p className="film-crew">
-            Shot on{" "}
+            {t("Shot on")}{" "}
             <button type="button" onClick={() => setShowOptions(true)}>
-              {chosen.family?.label ?? "no video model"}
+              {chosen.family?.label ?? t("no video model")}
             </button>
             {chosen.family?.costCredits === undefined
               ? ""
               : ` (${chosen.family.costCredits.toFixed(0)} cr a shot)`}
             {chosen.voice ? (
               <>
-                , spoken by{" "}
+                , {t("spoken by")}{" "}
                 <button type="button" onClick={() => setShowOptions(true)}>
                   {chosen.voice.name}
                 </button>
@@ -824,7 +846,7 @@ export function FilmStudio({
             ) : null}
             {withScore && chosen.music ? (
               <>
-                , scored by{" "}
+                , {t("scored by")}{" "}
                 <button type="button" onClick={() => setShowOptions(true)}>
                   {chosen.music.name}
                 </button>
@@ -850,7 +872,7 @@ export function FilmStudio({
               disabled={!compiled?.workflow}
               onClick={() => void makeIt()}
             >
-              Make it
+              {t("Make it")}
             </button>
             <button
               type="button"
@@ -860,38 +882,38 @@ export function FilmStudio({
               {showOptions ? "Hide options" : "Options"}
             </button>
             <button type="button" className="btn btn-ghost" onClick={() => void startOver()}>
-              Start over
+              {t("Start over")}
             </button>
           </div>
 
           {showOptions ? (
             <div className="film-options">
               <StudioField
-                label="Shoot on"
-                hint="One engine for the whole film. Only some can carry a face between shots."
+                label={t("Shoot on")}
+                hint={t("One engine for the whole film. Only some can carry a face between shots.")}
               >
                 <Select
                   value={videoModelId || null}
                   placeholder={families[0] ? `Cheapest (${families[0].label})` : "Cheapest"}
-                  ariaLabel="Video family"
+                  ariaLabel={t("Video family")}
                   onChange={setVideoModelId}
                   options={families.map((family) => ({
                     value: family.representativeId,
                     label: `${family.label}${
                       family.costCredits === undefined
                         ? ""
-                        : ` (${family.costCredits.toFixed(0)} cr a shot)`
+                        : ` ${t("({credits} cr a shot)", { credits: family.costCredits.toFixed(0) })}`
                     }${family.holdsFaces ? ", holds faces" : ""}`,
                   }))}
                 />
               </StudioField>
-              <StudioField label="Voices" hint="Who speaks the dialogue">
+              <StudioField label={t("Voices")} hint={t("Who speaks the dialogue")}>
                 <Select
                   value={ttsModelId || null}
                   placeholder={
                     chosen.voice ? `Most voices (${chosen.voice.name})` : "No voice model"
                   }
-                  ariaLabel="Voice model"
+                  ariaLabel={t("Voice model")}
                   onChange={setTtsModelId}
                   options={voiceModels.map((entry) => ({
                     value: entry.id,
@@ -902,11 +924,11 @@ export function FilmStudio({
                 />
               </StudioField>
               {withScore ? (
-                <StudioField label="Score" hint="Who writes the music">
+                <StudioField label={t("Score")} hint={t("Who writes the music")}>
                   <Select
                     value={musicModelId || null}
                     placeholder={chosen.music ? chosen.music.name : "No music model"}
-                    ariaLabel="Music model"
+                    ariaLabel={t("Music model")}
                     onChange={setMusicModelId}
                     options={musicModels.map((entry) => ({
                       value: entry.id,
@@ -915,16 +937,16 @@ export function FilmStudio({
                   />
                 </StudioField>
               ) : null}
-              <StudioField label="Aspect ratio">
+              <StudioField label={t("Aspect ratio")}>
                 <input
                   className="studio-input"
                   value={aspectRatio}
-                  aria-label="Aspect ratio"
+                  aria-label={t("Aspect ratio")}
                   onChange={(event) => setAspectRatio(event.target.value)}
                 />
               </StudioField>
               <StudioField
-                label="Spend ceiling"
+                label={t("Spend ceiling")}
                 hint={
                   balance === undefined
                     ? "Nothing is made above this"
@@ -935,7 +957,7 @@ export function FilmStudio({
                   className="studio-input"
                   inputMode="decimal"
                   value={String(envelope)}
-                  aria-label="Spend ceiling"
+                  aria-label={t("Spend ceiling")}
                   onChange={(event) => {
                     ceilingTouched.current = true;
                     const value = Number(event.target.value.replace(",", "."));
@@ -943,7 +965,7 @@ export function FilmStudio({
                   }}
                 />
               </StudioField>
-              <StudioField label="Score">
+              <StudioField label={t("Score")}>
                 <Switch checked={withScore} onCheckedChange={setWithScore} />
               </StudioField>
             </div>
@@ -959,7 +981,7 @@ export function FilmStudio({
             className="film-darkroom"
             seed={note?.id ?? "film"}
             phase="processing"
-            label="Making your film"
+            label={t("Making your film")}
             progress={shotProgress.total > 0 ? shotProgress.done / shotProgress.total : undefined}
             meta={`${shotProgress.done} of ${shotProgress.total} steps${
               shotProgress.failed > 0 ? `, ${shotProgress.failed} failed` : ""
@@ -970,12 +992,12 @@ export function FilmStudio({
                 className="btn btn-secondary"
                 onClick={() => abortRef.current?.abort()}
               >
-                Stop
+                {t("Stop")}
               </button>
             }
           />
           <p className="studio-queue-hint">
-            Renders keep going if you close the app. Come back and it picks up.
+            {t("Renders keep going if you close the app. Come back and it picks up.")}
           </p>
         </div>
       ) : null}
@@ -987,7 +1009,7 @@ export function FilmStudio({
             <video className="studio-video-player" controls playsInline src={film.src} />
           ) : null}
           <p className="studio-picker-section-title">
-            {note?.title?.trim() || "Your film"} is ready.
+            {t("{title} is ready.", { title: note?.title?.trim() || t("Your film") })}
           </p>
           <div className="studio-card-actions">
             {runId && onOpenProduction ? (
@@ -996,16 +1018,17 @@ export function FilmStudio({
                 className="studio-primary-button"
                 onClick={() => onOpenProduction(runId)}
               >
-                Finish it
+                {t("Finish it")}
               </button>
             ) : null}
             <button type="button" className="btn btn-secondary" onClick={() => void startOver()}>
-              Make another
+              {t("Make another")}
             </button>
           </div>
           <p className="studio-queue-hint">
-            "Finish it" opens the cut in Assemble: play it, move a line, or export a timeline for a
-            real editor.
+            {t(
+              '"Finish it" opens the cut in Assemble: play it, move a line, or export a timeline for a real editor.',
+            )}
           </p>
 
           <button
@@ -1050,7 +1073,7 @@ export function FilmStudio({
                   </button>
                   <Select
                     value={null}
-                    placeholder="On another engine"
+                    placeholder={t("On another engine")}
                     ariaLabel={`Remake shot ${shot.index + 1} on another engine`}
                     disabled={running}
                     onChange={(value) => void redoShot(shot.nodeId, value)}

@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconWarningSign } from "central-icons/IconWarningSign";
 import type { UnsupportedEventNoticeData } from "../../lib/hermes-unsupported-events";
 
@@ -53,35 +54,37 @@ export function UnsupportedEventNotice({
       </div>
       <div className="agent-unsupported-notice-body">
         <p className="agent-unsupported-notice-title">
-          Sub Rosa received a Hermes event it does not support yet.
+          {t("Sub Rosa received a Hermes event it does not support yet.")}
         </p>
         <p className="agent-unsupported-notice-text">
-          This session can keep going. If something looks stuck, stop the session and try again.
+          {t(
+            "This session can keep going. If something looks stuck, stop the session and try again.",
+          )}
         </p>
 
         {showDevDetails ? (
           <dl className="agent-unsupported-notice-dev">
             <div>
-              <dt>Type</dt>
+              <dt>{t("Type")}</dt>
               <dd>
                 <code>{notice.type ?? "(unknown)"}</code>
               </dd>
             </div>
             <div>
-              <dt>Session</dt>
+              <dt>{t("Session")}</dt>
               <dd>
                 <code>{notice.sessionId}</code>
               </dd>
             </div>
             {notice.count > 1 ? (
               <div>
-                <dt>Seen</dt>
-                <dd>{notice.count} times</dd>
+                <dt>{t("Seen")}</dt>
+                <dd>{t("{count} times", { count: notice.count })}</dd>
               </div>
             ) : null}
             {notice.payloadPreview ? (
               <div>
-                <dt>Sanitized payload</dt>
+                <dt>{t("Sanitized payload")}</dt>
                 <dd>
                   <pre>{notice.payloadPreview}</pre>
                 </dd>
@@ -97,7 +100,7 @@ export function UnsupportedEventNotice({
               className="agent-unsupported-notice-action"
               onClick={() => onOpenRawTrace?.(notice.sessionId)}
             >
-              Open raw trace
+              {t("Open raw trace")}
             </button>
           ) : null}
           <button
@@ -105,7 +108,7 @@ export function UnsupportedEventNotice({
             className="agent-unsupported-notice-action"
             onClick={() => onStopSession?.()}
           >
-            Stop session
+            {t("Stop session")}
           </button>
           {showReportIssue ? (
             <button
@@ -113,7 +116,7 @@ export function UnsupportedEventNotice({
               className="agent-unsupported-notice-action"
               onClick={() => onReportIssue?.()}
             >
-              Report issue
+              {t("Report issue")}
             </button>
           ) : null}
         </div>

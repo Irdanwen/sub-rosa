@@ -1,3 +1,4 @@
+import { t } from "../../../../lib/i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { hapticNotify } from "../../../../lib/haptics";
 import { saveArtifactFromBase64 } from "../../../../lib/studio/artifacts";
@@ -195,7 +196,7 @@ export function ImagePanel({
         );
         if (failures.length === settled.length) throw failures[0].reason;
         if (failures.length > 0) {
-          setError("Some models failed; the rest landed in the gallery.");
+          setError(t("Some models failed; the rest landed in the gallery."));
         }
         hapticNotify("success");
         onGenerated();
@@ -306,7 +307,7 @@ export function ImagePanel({
       await saveArtifactFromBase64(result, "png", {
         kind: "image",
         model: "background-remover",
-        prompt: "Background removed",
+        prompt: t("Background removed"),
       });
       hapticNotify("success");
       setUpscaleRefs([]);
@@ -325,7 +326,7 @@ export function ImagePanel({
 
   return (
     <div className="mobile-studio-form">
-      <div className="mobile-segmented" role="tablist" aria-label="Image mode">
+      <div className="mobile-segmented" role="tablist" aria-label={t("Image mode")}>
         {modes.map((entry) => (
           <button
             key={entry}
@@ -380,7 +381,7 @@ export function ImagePanel({
                 : undefined
             }
           />
-          <div className="mobile-pill-row" role="radiogroup" aria-label="Upscale factor">
+          <div className="mobile-pill-row" role="radiogroup" aria-label={t("Upscale factor")}>
             {([2, 3, 4] as const).map((factor) => (
               <button
                 key={factor}
@@ -440,8 +441,8 @@ export function ImagePanel({
           {mode === "generate" ? (
             <>
               {aspectOptions.length > 0 ? (
-                <StudioSetting label="Aspect ratio">
-                  <div className="mobile-pill-row" role="radiogroup" aria-label="Aspect ratio">
+                <StudioSetting label={t("Aspect ratio")}>
+                  <div className="mobile-pill-row" role="radiogroup" aria-label={t("Aspect ratio")}>
                     {aspectOptions.map((option) => (
                       <button
                         key={option}
@@ -461,13 +462,13 @@ export function ImagePanel({
                   className="mobile-studio-prompt"
                   value={negativePrompt}
                   rows={2}
-                  placeholder="Negative prompt (optional)"
-                  aria-label="Negative prompt"
+                  placeholder={t("Negative prompt (optional)")}
+                  aria-label={t("Negative prompt")}
                   onChange={(event) => setNegativePrompt(event.target.value)}
                 />
                 {resolutionOptions.length > 0 ? (
-                  <StudioSetting label="Resolution">
-                    <div className="mobile-pill-row" role="radiogroup" aria-label="Resolution">
+                  <StudioSetting label={t("Resolution")}>
+                    <div className="mobile-pill-row" role="radiogroup" aria-label={t("Resolution")}>
                       {resolutionOptions.map((option) => (
                         <button
                           key={option}
@@ -484,7 +485,7 @@ export function ImagePanel({
                 ) : null}
                 {maxSteps > 1 ? (
                   <SliderSetting
-                    label="Steps"
+                    label={t("Steps")}
                     min={1}
                     max={maxSteps}
                     value={steps > 0 ? Math.min(steps, maxSteps) : defaultSteps}
@@ -493,7 +494,7 @@ export function ImagePanel({
                 ) : null}
                 {!comparing ? (
                   <SliderSetting
-                    label="Variants"
+                    label={t("Variants")}
                     min={1}
                     max={4}
                     value={variants}
@@ -501,7 +502,7 @@ export function ImagePanel({
                   />
                 ) : null}
                 <StudioSetting
-                  label="Compare models"
+                  label={t("Compare models")}
                   hint={comparing ? `${compareModels.length + 1} side by side` : "Optional"}
                 >
                   <div className="mobile-reference-actions">
@@ -523,34 +524,34 @@ export function ImagePanel({
                       className="mobile-chip-button"
                       onClick={() => setComparePickerOpen(true)}
                     >
-                      Add a model
+                      {t("Add a model")}
                     </button>
                   </div>
                 </StudioSetting>
-                <StudioSetting label="Seed" hint="Blank for random">
+                <StudioSetting label={t("Seed")} hint={t("Blank for random")}>
                   <input
                     className="mobile-studio-input"
                     inputMode="numeric"
                     value={seed}
-                    placeholder="Random"
-                    aria-label="Seed"
+                    placeholder={t("Random")}
+                    aria-label={t("Seed")}
                     onChange={(event) => setSeed(event.target.value.replace(/[^0-9]/g, ""))}
                   />
                 </StudioSetting>
                 {styles.length > 0 ? (
                   <ModelPickerButton
-                    label="Style"
+                    label={t("Style")}
                     value={stylePreset || "None"}
                     onOpen={() => setStylePickerOpen(true)}
                   />
                 ) : null}
                 <StudioToggle
-                  label="Improve prompt with AI"
+                  label={t("Improve prompt with AI")}
                   checked={improvePrompt}
                   onChange={setImprovePrompt}
                 />
-                <StudioSetting label="Format">
-                  <div className="mobile-pill-row" role="radiogroup" aria-label="Image format">
+                <StudioSetting label={t("Format")}>
+                  <div className="mobile-pill-row" role="radiogroup" aria-label={t("Image format")}>
                     {(["png", "webp", "jpeg"] as const).map((entry) => (
                       <button
                         key={entry}
@@ -565,12 +566,12 @@ export function ImagePanel({
                   </div>
                 </StudioSetting>
                 <StudioToggle
-                  label="Hide watermark"
+                  label={t("Hide watermark")}
                   checked={hideWatermark}
                   onChange={setHideWatermark}
                 />
                 <StudioToggle
-                  label="Embed prompt in metadata"
+                  label={t("Embed prompt in metadata")}
                   checked={embedExif}
                   onChange={setEmbedExif}
                 />
@@ -592,8 +593,9 @@ export function ImagePanel({
           </button>
           {busy && mode === "edit" ? (
             <p className="mobile-studio-progress" data-shimmer="true">
-              {references.length > 1 ? "Combining photos" : "Editing"}. Heavy models can take a
-              minute or two.
+              {references.length > 1
+                ? t("Combining photos. Heavy models can take a minute or two.")
+                : t("Editing. Heavy models can take a minute or two.")}
             </p>
           ) : null}
         </>
@@ -610,7 +612,7 @@ export function ImagePanel({
           selectedId={mode === "edit" ? editModelId : (model?.id ?? "")}
           defaultOption={
             mode === "edit"
-              ? { label: "Automatic", subtitle: "Picks a capable edit model" }
+              ? { label: t("Automatic"), subtitle: t("Picks a capable edit model") }
               : undefined
           }
           onSelect={(id) => {
@@ -623,7 +625,7 @@ export function ImagePanel({
       ) : null}
       {comparePickerOpen ? (
         <ModelSheet
-          title="Compare with"
+          title={t("Compare with")}
           entries={generateModels
             .filter((entry) => entry.id !== model?.id && !compareIds.includes(entry.id))
             .map((entry) => ({
@@ -641,10 +643,10 @@ export function ImagePanel({
       ) : null}
       {stylePickerOpen ? (
         <ModelSheet
-          title="Style"
+          title={t("Style")}
           entries={styles.map((entry) => ({ id: entry, name: entry, subtitle: "" }))}
           selectedId={stylePreset}
-          defaultOption={{ label: "None", subtitle: "No style preset" }}
+          defaultOption={{ label: t("None"), subtitle: t("No style preset") }}
           onSelect={(id) => {
             setStylePreset(id);
             setStylePickerOpen(false);

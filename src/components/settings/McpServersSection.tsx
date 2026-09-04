@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { messageFromError } from "../../lib/errors";
 import { IconCircleCheck } from "central-icons/IconCircleCheck";
@@ -166,11 +167,12 @@ export function McpServersView({
   return (
     <section className="settings-group mcp-servers" aria-labelledby="mcp-servers-heading">
       <h2 id="mcp-servers-heading" className="settings-group-heading">
-        MCP servers
+        {t("MCP servers")}
       </h2>
       <p className="settings-group-description">
-        Connect Model Context Protocol servers so future sessions can use their tools. Changes apply
-        after the Hermes gateway restarts.{" "}
+        {t(
+          "Connect Model Context Protocol servers so future sessions can use their tools. Changes apply after the Hermes gateway restarts.",
+        )}{" "}
         <ModeNote mode={state.mode ?? mode} profile={state.profile} show={!isUnavailable} />
       </p>
 
@@ -187,8 +189,8 @@ export function McpServersView({
             <input
               type="search"
               value={query}
-              placeholder="Filter servers"
-              aria-label="Filter MCP servers"
+              placeholder={t("Filter servers")}
+              aria-label={t("Filter MCP servers")}
               disabled={isUnavailable}
               onChange={(event) => setQuery(event.currentTarget.value)}
             />
@@ -200,7 +202,7 @@ export function McpServersView({
             onClick={state.refresh}
           >
             <IconArrowRotateClockwise size={14} ariaHidden />
-            Refresh
+            {t("Refresh")}
           </button>
           <button
             type="button"
@@ -209,7 +211,7 @@ export function McpServersView({
             onClick={() => setAddOpen(true)}
           >
             <IconPlusMedium size={14} ariaHidden />
-            Add server
+            {t("Add server")}
           </button>
         </div>
 
@@ -223,8 +225,10 @@ export function McpServersView({
         <div className="mcp-servers-body">
           {isUnavailable ? (
             <EmptyState
-              title="Hermes is not running"
-              description="Start Hermes to see and manage the MCP servers your sessions can use."
+              title={t("Hermes is not running")}
+              description={t(
+                "Start Hermes to see and manage the MCP servers your sessions can use.",
+              )}
             />
           ) : isErrored ? (
             <ErrorState
@@ -236,13 +240,15 @@ export function McpServersView({
             <ServersLoading />
           ) : !hasServers ? (
             <EmptyState
-              title="No MCP servers"
-              description="Add a server to connect external tools. Local (stdio) servers run as subprocesses; remote servers connect over HTTP."
+              title={t("No MCP servers")}
+              description={t(
+                "Add a server to connect external tools. Local (stdio) servers run as subprocesses; remote servers connect over HTTP.",
+              )}
             />
           ) : visible.length === 0 ? (
             <EmptyState
-              title="No matching servers"
-              description="No server matches your search. Try a different term."
+              title={t("No matching servers")}
+              description={t("No server matches your search. Try a different term.")}
             />
           ) : (
             <ul className="mcp-servers-list">
@@ -322,8 +328,8 @@ function ModeNote({
   const modeLabel = mode === "unrestricted" ? "Full mode" : "Sandboxed";
   return (
     <span className="mcp-servers-mode-note">
-      Targeting the {modeLabel} runtime
-      {profile ? ` (profile ${profile})` : ""}.
+      {t("Targeting the {mode} runtime", { mode: modeLabel })}
+      {profile ? t(" (profile {profile})", { profile }) : ""}.
     </span>
   );
 }
@@ -451,8 +457,10 @@ function ServerRow({
 
         {env.length > 0 || headers.length > 0 ? (
           <div className="mcp-server-secrets">
-            {env.length > 0 ? <SecretSummary label="Environment" count={env.length} /> : null}
-            {headers.length > 0 ? <SecretSummary label="Headers" count={headers.length} /> : null}
+            {env.length > 0 ? <SecretSummary label={t("Environment")} count={env.length} /> : null}
+            {headers.length > 0 ? (
+              <SecretSummary label={t("Headers")} count={headers.length} />
+            ) : null}
           </div>
         ) : null}
 
@@ -469,17 +477,17 @@ function ServerRow({
           type="button"
           className="mcp-server-tools"
           aria-label={`Configure tools for ${server.name}`}
-          title="Configure tools"
+          title={t("Configure tools")}
           onClick={onTools}
         >
           <IconFilter2 size={14} ariaHidden />
-          Tools
+          {t("Tools")}
         </button>
         <button
           type="button"
           className="mcp-server-delete"
           aria-label={`Delete ${server.name}`}
-          title="Delete server"
+          title={t("Delete server")}
           disabled={pending}
           onClick={onDelete}
         >
@@ -508,7 +516,7 @@ function ServerRow({
 function SecurityLabels({ labels }: { labels: ReturnType<typeof securityLabelsFor> }) {
   if (labels.length === 0) return null;
   return (
-    <ul className="mcp-server-security-labels" aria-label="Security labels">
+    <ul className="mcp-server-security-labels" aria-label={t("Security labels")}>
       {labels.map((entry) => (
         <li
           key={entry.code}
@@ -530,7 +538,7 @@ function SecurityLabels({ labels }: { labels: ReturnType<typeof securityLabelsFo
 function SecretSummary({ label, count }: { label: string; count: number }) {
   return (
     <span className="mcp-server-secret" title={`${count} hidden ${label.toLowerCase()}`}>
-      {label}: {count} hidden
+      {t("{label}: {count} hidden", { label, count })}
     </span>
   );
 }
@@ -566,10 +574,12 @@ function TestResult({
     <div className="mcp-server-test-ok" role="status">
       <p className="mcp-server-test-ok-line">
         <IconCircleCheck size={13} ariaHidden />
-        Connected.{" "}
+        {t("Connected.")}{" "}
         {tools.length > 0
-          ? `Discovered ${tools.length} ${tools.length === 1 ? "tool" : "tools"}.`
-          : "No tools reported."}
+          ? tools.length === 1
+            ? t("Discovered 1 tool.")
+            : t("Discovered {count} tools.", { count: tools.length })
+          : t("No tools reported.")}
       </p>
       {tools.length > 0 ? (
         <ul className="mcp-server-test-tools">
@@ -642,15 +652,15 @@ function OauthStatus({
 
       {login?.phase === "signing-in" ? (
         <p className="mcp-server-oauth-progress" role="status">
-          <IconCloud size={13} ariaHidden />A browser window should have opened. Approve the sign-in
-          there to finish.
+          <IconCloud size={13} ariaHidden />
+          {t("A browser window should have opened. Approve the sign-in there to finish.")}
         </p>
       ) : null}
 
       {login?.phase === "waiting" ? (
         <p className="mcp-server-oauth-progress" role="status">
           <IconCloud size={13} ariaHidden />
-          Still waiting for the browser sign-in. Finish it, then test the server to confirm.
+          {t("Still waiting for the browser sign-in. Finish it, then test the server to confirm.")}
         </p>
       ) : null}
 
@@ -680,7 +690,7 @@ function OauthStatus({
           }}
         >
           <IconArrowUpRight size={12} ariaHidden />
-          Open the sign-in page
+          {t("Open the sign-in page")}
         </a>
       ) : null}
     </div>
@@ -806,14 +816,16 @@ function AddServerDialog({
     <Dialog
       open={open}
       onClose={handleClose}
-      title="Add MCP server"
-      description="Connect a stdio or HTTP server. It becomes available to new sessions after the Hermes gateway restarts."
+      title={t("Add MCP server")}
+      description={t(
+        "Connect a stdio or HTTP server. It becomes available to new sessions after the Hermes gateway restarts.",
+      )}
       width={560}
       className="mcp-add-dialog"
       footer={
         <>
           <button type="button" className="primary-action" onClick={handleClose} disabled={adding}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             type="button"
@@ -829,7 +841,7 @@ function AddServerDialog({
       <div className="mcp-add-form" aria-labelledby={headingId}>
         <fieldset className="mcp-add-field">
           <label className="mcp-add-label" htmlFor="mcp-add-name">
-            Name
+            {t("Name")}
           </label>
           <input
             id="mcp-add-name"
@@ -845,17 +857,17 @@ function AddServerDialog({
         </fieldset>
 
         <fieldset className="mcp-add-field">
-          <span className="mcp-add-label">Transport</span>
-          <div className="mcp-add-transport" role="radiogroup" aria-label="Transport">
+          <span className="mcp-add-label">{t("Transport")}</span>
+          <div className="mcp-add-transport" role="radiogroup" aria-label={t("Transport")}>
             <TransportOption
-              label="Local (stdio)"
-              hint="Runs a local subprocess"
+              label={t("Local (stdio)")}
+              hint={t("Runs a local subprocess")}
               active={draft.transport === "stdio"}
               onSelect={() => setDraft((d) => ({ ...d, transport: "stdio" }))}
             />
             <TransportOption
-              label="Remote (HTTP)"
-              hint="Connects over HTTP"
+              label={t("Remote (HTTP)")}
+              hint={t("Connects over HTTP")}
               active={draft.transport === "http"}
               onSelect={() => setDraft((d) => ({ ...d, transport: "http" }))}
             />
@@ -865,8 +877,9 @@ function AddServerDialog({
         {draft.transport === "stdio" ? (
           <p className="mcp-add-note">
             <IconShield size={13} ariaHidden />
-            Local servers run as subprocesses and inherit Sub Rosa and Hermes sandbox constraints.
-            Enter only the program path here; put arguments in their own rows.
+            {t(
+              "Local servers run as subprocesses and inherit Sub Rosa and Hermes sandbox constraints. Enter only the program path here; put arguments in their own rows.",
+            )}
           </p>
         ) : null}
 
@@ -874,14 +887,14 @@ function AddServerDialog({
           <>
             <fieldset className="mcp-add-field">
               <label className="mcp-add-label" htmlFor="mcp-add-command">
-                Command
+                {t("Command")}
               </label>
               <input
                 id="mcp-add-command"
                 type="text"
                 className="mcp-add-input"
                 value={draft.command}
-                placeholder="mcp-server-filesystem"
+                placeholder={t("mcp-server-filesystem")}
                 autoComplete="off"
                 spellCheck={false}
                 aria-invalid={Boolean(errors.command)}
@@ -896,8 +909,8 @@ function AddServerDialog({
             </fieldset>
 
             <ListEditor
-              legend="Arguments"
-              addLabel="Add argument"
+              legend={t("Arguments")}
+              addLabel={t("Add argument")}
               values={draft.args}
               errorPrefix="args"
               errors={errors}
@@ -905,10 +918,10 @@ function AddServerDialog({
             />
 
             <PairEditor
-              legend="Environment variables"
-              addLabel="Add variable"
-              keyPlaceholder="VAR_NAME"
-              valuePlaceholder="Value (hidden)"
+              legend={t("Environment variables")}
+              addLabel={t("Add variable")}
+              keyPlaceholder={t("VAR_NAME")}
+              valuePlaceholder={t("Value (hidden)")}
               pairs={draft.env}
               errorPrefix="env"
               errors={errors}
@@ -919,14 +932,14 @@ function AddServerDialog({
           <>
             <fieldset className="mcp-add-field">
               <label className="mcp-add-label" htmlFor="mcp-add-url">
-                URL
+                {t("URL")}
               </label>
               <input
                 id="mcp-add-url"
                 type="url"
                 className="mcp-add-input"
                 value={draft.url}
-                placeholder="https://example.com/mcp"
+                placeholder={t("https://example.com/mcp")}
                 autoComplete="off"
                 spellCheck={false}
                 aria-invalid={Boolean(errors.url)}
@@ -937,7 +950,7 @@ function AddServerDialog({
 
             <fieldset className="mcp-add-field">
               <label className="mcp-add-label" htmlFor="mcp-add-auth">
-                Auth
+                {t("Auth")}
               </label>
               <select
                 id="mcp-add-auth"
@@ -950,25 +963,26 @@ function AddServerDialog({
                   }))
                 }
               >
-                <option value="none">None</option>
-                <option value="bearer">Bearer token</option>
-                <option value="oauth">OAuth</option>
+                <option value="none">{t("None")}</option>
+                <option value="bearer">{t("Bearer token")}</option>
+                <option value="oauth">{t("OAuth")}</option>
               </select>
             </fieldset>
 
             {draft.auth === "oauth" ? (
               <p className="mcp-add-note">
                 <IconCloud size={13} ariaHidden />
-                You will sign in to this server after it is added. The sign-in flow opens in your
-                browser.
+                {t(
+                  "You will sign in to this server after it is added. The sign-in flow opens in your browser.",
+                )}
               </p>
             ) : null}
 
             <PairEditor
-              legend="Headers"
-              addLabel="Add header"
-              keyPlaceholder="Authorization"
-              valuePlaceholder="Value (hidden)"
+              legend={t("Headers")}
+              addLabel={t("Add header")}
+              keyPlaceholder={t("Authorization")}
+              valuePlaceholder={t("Value (hidden)")}
               pairs={draft.headers}
               errorPrefix="headers"
               errors={errors}
@@ -1181,7 +1195,7 @@ function DeleteServerDialog({
       onConfirm={onConfirm}
       title={server ? `Delete "${server.name}"?` : "Delete server?"}
       description={description}
-      confirmLabel="Delete server"
+      confirmLabel={t("Delete server")}
       destructive
     />
   );
@@ -1218,7 +1232,7 @@ function EnableServerDialog({
           </span>
         ) : undefined
       }
-      confirmLabel="Enable server"
+      confirmLabel={t("Enable server")}
     />
   );
 }
@@ -1268,11 +1282,11 @@ function ErrorState({
       <span className="mcp-servers-empty-icon" aria-hidden>
         <IconExclamationCircle size={22} />
       </span>
-      <p className="mcp-servers-empty-title">Couldn't load MCP servers</p>
+      <p className="mcp-servers-empty-title">{t("Couldn't load MCP servers")}</p>
       <p className="mcp-servers-empty-description">{message}</p>
       {retryable ? (
         <button type="button" className="mcp-servers-retry" onClick={onRetry}>
-          Try again
+          {t("Try again")}
         </button>
       ) : null}
     </div>

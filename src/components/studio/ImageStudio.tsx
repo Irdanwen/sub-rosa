@@ -3,6 +3,7 @@
 // queue path (their sync call 502s at the backend's ~60 s edge cap even when
 // the image rendered). Every result lands in the on-disk gallery.
 
+import { t } from "../../lib/i18n";
 import { IconImagesSparkle } from "central-icons/IconImagesSparkle";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { artifactDataUrl } from "../../lib/artifact-media";
@@ -180,7 +181,11 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
           throw first?.reason ?? new MediaError("The generation failed.", { status: 200 });
         }
         if (failed.length > 0) {
-          setError(`Some models failed: ${failed.map((entry) => entry.name).join(", ")}.`);
+          setError(
+            t("Some models failed: {models}.", {
+              models: failed.map((entry) => entry.name).join(", "),
+            }),
+          );
         }
         return;
       }
@@ -339,26 +344,26 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
       <SegmentedControl
         value={mode}
         onValueChange={setMode}
-        aria-label="Image tool"
+        aria-label={t("Image tool")}
         options={[
-          { value: "generate", label: "Generate" },
-          { value: "edit", label: "Edit" },
-          { value: "upscale", label: "Upscale" },
-          ...(cutoutAvailable ? [{ value: "cutout" as const, label: "Cutout" }] : []),
+          { value: "generate", label: t("Generate") },
+          { value: "edit", label: t("Edit") },
+          { value: "upscale", label: t("Upscale") },
+          ...(cutoutAvailable ? [{ value: "cutout" as const, label: t("Cutout") }] : []),
         ]}
       />
       {isGenerate ? (
         <>
-          <StudioField label="Model">
+          <StudioField label={t("Model")}>
             <ModelSelect
               models={generateModels}
               value={modelId || null}
               onChange={setModelId}
-              ariaLabel="Image model"
+              ariaLabel={t("Image model")}
             />
           </StudioField>
           <StudioField
-            label="Prompt"
+            label={t("Prompt")}
             hint={promptLimit ? `${prompt.length}/${promptLimit}` : undefined}
           >
             <textarea
@@ -366,42 +371,42 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
               rows={4}
               value={prompt}
               maxLength={promptLimit}
-              placeholder="Describe the image you want"
+              placeholder={t("Describe the image you want")}
               onChange={(event) => setPrompt(event.target.value)}
             />
           </StudioField>
-          <StudioField label="Negative prompt">
+          <StudioField label={t("Negative prompt")}>
             <textarea
               className="studio-textarea"
               rows={2}
               value={negativePrompt}
-              placeholder="What to avoid (optional)"
+              placeholder={t("What to avoid (optional)")}
               onChange={(event) => setNegativePrompt(event.target.value)}
             />
           </StudioField>
           {aspectOptions.length > 0 ? (
-            <StudioField label="Aspect ratio">
+            <StudioField label={t("Aspect ratio")}>
               <PillGroup
                 options={aspectOptions.map((value) => ({ value }))}
                 value={effectiveAspect}
                 onChange={setAspectRatio}
-                ariaLabel="Aspect ratio"
+                ariaLabel={t("Aspect ratio")}
               />
             </StudioField>
           ) : null}
           {resolutionOptions.length > 0 ? (
-            <StudioField label="Resolution">
+            <StudioField label={t("Resolution")}>
               <PillGroup
                 options={resolutionOptions.map((value) => ({ value }))}
                 value={effectiveResolution}
                 onChange={setResolution}
-                ariaLabel="Resolution"
+                ariaLabel={t("Resolution")}
               />
             </StudioField>
           ) : null}
           {maxSteps > 1 ? (
             <SliderField
-              label="Steps"
+              label={t("Steps")}
               min={1}
               max={maxSteps}
               step={1}
@@ -411,7 +416,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
           ) : null}
           {!comparing ? (
             <SliderField
-              label="Variants"
+              label={t("Variants")}
               min={1}
               max={4}
               step={1}
@@ -420,7 +425,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
             />
           ) : null}
           <StudioField
-            label="Compare models"
+            label={t("Compare models")}
             hint={comparing ? `${compareModels.length + 1} render side by side` : "Optional"}
           >
             <div className="studio-upload">
@@ -444,8 +449,8 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
               ) : null}
               <Select
                 value={null}
-                placeholder="Add a model to compare"
-                ariaLabel="Add a model to compare"
+                placeholder={t("Add a model to compare")}
+                ariaLabel={t("Add a model to compare")}
                 onChange={(id) =>
                   setCompareIds((current) => (current.includes(id) ? current : [...current, id]))
                 }
@@ -456,14 +461,14 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
             </div>
           </StudioField>
           {styles.length > 0 ? (
-            <StudioField label="Style">
+            <StudioField label={t("Style")}>
               <select
                 className="studio-native-select"
                 value={stylePreset}
-                aria-label="Style preset"
+                aria-label={t("Style preset")}
                 onChange={(event) => setStylePreset(event.target.value)}
               >
-                <option value="">None</option>
+                <option value="">{t("None")}</option>
                 {styles.map((style) => (
                   <option key={style} value={style}>
                     {style}
@@ -472,49 +477,49 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
               </select>
             </StudioField>
           ) : null}
-          <StudioField label="Seed" hint="Blank for random">
+          <StudioField label={t("Seed")} hint={t("Blank for random")}>
             <input
               className="studio-input"
               inputMode="numeric"
               value={seed}
-              placeholder="Random"
+              placeholder={t("Random")}
               onChange={(event) => setSeed(event.target.value.replace(/[^0-9]/g, ""))}
             />
           </StudioField>
-          <StudioField label="Improve prompt" hint="AI expands it first">
+          <StudioField label={t("Improve prompt")} hint={t("AI expands it first")}>
             <Switch
               checked={improvePrompt}
               onCheckedChange={setImprovePrompt}
-              aria-label="Improve the prompt before generating"
+              aria-label={t("Improve the prompt before generating")}
             />
           </StudioField>
-          <StudioField label="Format">
+          <StudioField label={t("Format")}>
             <PillGroup
               options={[{ value: "png" }, { value: "webp" }, { value: "jpeg" }]}
               value={format}
               onChange={setFormat}
-              ariaLabel="Image format"
+              ariaLabel={t("Image format")}
             />
           </StudioField>
-          <StudioField label="Hide watermark">
+          <StudioField label={t("Hide watermark")}>
             <Switch
               checked={hideWatermark}
               onCheckedChange={setHideWatermark}
-              aria-label="Hide watermark"
+              aria-label={t("Hide watermark")}
             />
           </StudioField>
-          <StudioField label="Embed metadata" hint="Prompt in EXIF">
+          <StudioField label={t("Embed metadata")} hint={t("Prompt in EXIF")}>
             <Switch
               checked={embedExif}
               onCheckedChange={setEmbedExif}
-              aria-label="Embed prompt metadata"
+              aria-label={t("Embed prompt metadata")}
             />
           </StudioField>
         </>
       ) : mode === "edit" ? (
         <>
           <StudioField
-            label="Source images"
+            label={t("Source images")}
             hint={
               editSources.length > 1
                 ? `Combining ${editSources.length}, in this order`
@@ -528,7 +533,9 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
                     <div key={`${index}-${source.slice(-24)}`} className="studio-edit-source">
                       <img src={source} alt={`Source ${index + 1}`} />
                       {editSources.length > 1 ? (
-                        <span className="studio-edit-source-index">Image {index + 1}</span>
+                        <span className="studio-edit-source-index">
+                          {t("Image {number}", { number: index + 1 })}
+                        </span>
                       ) : null}
                       <button
                         type="button"
@@ -558,7 +565,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
                     className="btn btn-secondary"
                     onClick={() => setPicking("compose")}
                   >
-                    From the gallery
+                    {t("From the gallery")}
                   </button>
                 </div>
               ) : null}
@@ -574,21 +581,21 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
               />
             </div>
           </StudioField>
-          <StudioField label="Model">
+          <StudioField label={t("Model")}>
             <Select
               value={editModelId}
-              placeholder="Automatic"
-              ariaLabel="Edit model"
+              placeholder={t("Automatic")}
+              ariaLabel={t("Edit model")}
               onChange={setEditModelId}
               options={[
-                { value: "", label: "Automatic" },
+                { value: "", label: t("Automatic") },
                 ...editModels.map((entry) => ({ value: entry.id, label: entry.name })),
               ]}
             />
           </StudioField>
           <StudioField
-            label="Instruction"
-            hint="Each result feeds the next edit; steps stay in the gallery"
+            label={t("Instruction")}
+            hint={t("Each result feeds the next edit; steps stay in the gallery")}
           >
             <textarea
               className="studio-textarea"
@@ -605,10 +612,10 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
         </>
       ) : (
         <>
-          <StudioField label="Source image">
+          <StudioField label={t("Source image")}>
             <div className="studio-upload">
               {sourceDataUri ? (
-                <img src={sourceDataUri} alt="Source" className="studio-upload-preview" />
+                <img src={sourceDataUri} alt={t("Source")} className="studio-upload-preview" />
               ) : null}
               <div className="studio-upload-actions">
                 <button
@@ -623,7 +630,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
                   className="btn btn-secondary"
                   onClick={() => setPicking("source")}
                 >
-                  From the gallery
+                  {t("From the gallery")}
                 </button>
               </div>
               <input
@@ -637,19 +644,19 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
           </StudioField>
           {mode === "upscale" ? (
             <>
-              <StudioField label="Scale">
+              <StudioField label={t("Scale")}>
                 <PillGroup
                   options={[{ value: "2" }, { value: "3" }, { value: "4" }]}
                   value={upscaleScale}
                   onChange={setUpscaleScale}
-                  ariaLabel="Upscale factor"
+                  ariaLabel={t("Upscale factor")}
                 />
               </StudioField>
-              <StudioField label="Enhance" hint="AI detail pass">
+              <StudioField label={t("Enhance")} hint={t("AI detail pass")}>
                 <Switch
                   checked={upscaleEnhance}
                   onCheckedChange={setUpscaleEnhance}
-                  aria-label="Enhance while upscaling"
+                  aria-label={t("Enhance while upscaling")}
                 />
               </StudioField>
             </>
@@ -730,8 +737,8 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
           !busy && artifacts.length === 0 ? (
             <EmptyState
               icon={<IconImagesSparkle size={22} />}
-              title="No images yet"
-              description="Describe an image and generate. Results stay in your gallery."
+              title={t("No images yet")}
+              description={t("Describe an image and generate. Results stay in your gallery.")}
             />
           ) : null
         }

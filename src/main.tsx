@@ -1,6 +1,8 @@
 import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
 import { Agentation } from "agentation";
+import { initLocale } from "./lib/i18n";
+import { useLocaleVersion } from "./lib/i18n-react";
 import { isMobilePlatform } from "./lib/mobile";
 import { installNativeContextMenuGuard } from "./lib/native-context-menu";
 import { replayOnboarding } from "./lib/onboarding";
@@ -25,6 +27,8 @@ if (import.meta.env.DEV) {
   window.june = { replayOnboarding };
 }
 
+// The language before the first render, so no sentence flips after paint.
+initLocale();
 initTheme();
 initBrand();
 installNativeContextMenuGuard();
@@ -74,11 +78,19 @@ const MobileApp = lazy(() =>
 );
 const Shell = isMobilePlatform() ? MobileApp : App;
 
+/** Re-mounts the shell when the language changes, so every sentence follows. */
+function LocaleRoot() {
+  const version = useLocaleVersion();
+  return (
+    <Suspense fallback={null}>
+      <Shell key={version} />
+    </Suspense>
+  );
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <Suspense fallback={null}>
-      <Shell />
-    </Suspense>
+    <LocaleRoot />
     {import.meta.env.DEV ? <Agentation /> : null}
   </React.StrictMode>,
 );

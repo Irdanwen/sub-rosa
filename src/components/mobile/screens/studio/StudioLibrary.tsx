@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../../../lib/i18n";
 import { IconPlay } from "central-icons-filled/IconPlay";
 import { IconAudio } from "central-icons/IconAudio";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
@@ -130,8 +131,8 @@ export function Library({
     return (
       <EmptyState
         icon={<IconCameraSparkle size={28} />}
-        title="Nothing generated yet"
-        description="Images, videos and audio you make in Studio collect here, on this device."
+        title={t("Nothing generated yet")}
+        description={t("Images, videos and audio you make in Studio collect here, on this device.")}
       />
     );
   }
@@ -143,8 +144,8 @@ export function Library({
           className="mobile-studio-search"
           type="search"
           value={query}
-          placeholder="Search everything"
-          aria-label="Search the library"
+          placeholder={t("Search everything")}
+          aria-label={t("Search the library")}
           onChange={(event) => setQuery(event.target.value)}
         />
         <button
@@ -156,7 +157,7 @@ export function Library({
         </button>
       </div>
       {kinds.length > 1 ? (
-        <div className="mobile-pill-row" role="radiogroup" aria-label="Filter by kind">
+        <div className="mobile-pill-row" role="radiogroup" aria-label={t("Filter by kind")}>
           {(["all", ...kinds] as const).map((entry) => (
             <button
               key={entry}
@@ -176,7 +177,7 @@ export function Library({
         </div>
       ) : null}
       {filtered.length === 0 ? (
-        <p className="mobile-studio-empty-hint">Nothing matches that search.</p>
+        <p className="mobile-studio-empty-hint">{t("Nothing matches that search.")}</p>
       ) : (
         groups.map(([label, group]) => (
           <section key={label} className="mobile-library-day">
@@ -205,11 +206,13 @@ export function Library({
         ))
       )}
       <p className="mobile-studio-empty-hint">
-        {items.length} {items.length === 1 ? "item" : "items"} on this device.
+        {items.length === 1
+          ? t("1 item on this device.")
+          : t("{count} items on this device.", { count: items.length })}
       </p>
       {selecting ? (
         <div className="mobile-studio-select-bar">
-          <span>{selected.size} selected</span>
+          <span>{t("{size} selected", { size: selected.size })}</span>
           <button
             type="button"
             className="mobile-studio-delete-selected"
@@ -256,7 +259,7 @@ export function dayLabel(createdAt: number): string {
   const days = Math.round((startOf(today) - startOf(date)) / 86_400_000);
   if (days <= 0) return "Today";
   if (days === 1) return "Yesterday";
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(intlLocale(), {
     weekday: days < 7 ? "long" : undefined,
     month: "short",
     day: "numeric",
@@ -345,7 +348,7 @@ export function Gallery({
                   ? "No sound effects yet"
                   : "No tracks yet"
         }
-        description="Everything you generate stays on this device."
+        description={t("Everything you generate stays on this device.")}
       />
     );
   }
@@ -371,9 +374,11 @@ export function Gallery({
         </button>
       </div>
       {filtered.length === 0 ? (
-        <p className="mobile-studio-empty-hint">No results for “{query.trim()}”.</p>
+        <p className="mobile-studio-empty-hint">
+          {t("No results for “{query}”.", { query: query.trim() })}
+        </p>
       ) : isAudioKind ? (
-        <ul className="mobile-note-list" aria-label="Generated audio">
+        <ul className="mobile-note-list" aria-label={t("Generated audio")}>
           {filtered.map((artifact) => (
             <MusicRow
               key={artifact.path}
@@ -399,7 +404,7 @@ export function Gallery({
       )}
       {selecting ? (
         <div className="mobile-studio-select-bar">
-          <span>{selected.size} selected</span>
+          <span>{t("{size} selected", { size: selected.size })}</span>
           <button
             type="button"
             className="mobile-studio-delete-selected"

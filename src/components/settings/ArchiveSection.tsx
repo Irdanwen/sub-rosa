@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useId, useState } from "react";
 import { messageFromError } from "../../lib/errors";
 import { isMobilePlatform } from "../../lib/mobile";
@@ -46,7 +47,7 @@ export function ArchiveSection() {
       const result = await importArchive({ passphrase });
       if (result.needsPassphrase) {
         setNeedsPassphrase(true);
-        setStatus("That archive is sealed. Enter its passphrase, then import again.");
+        setStatus(t("That archive is sealed. Enter its passphrase, then import again."));
         return;
       }
       setNeedsPassphrase(false);
@@ -65,12 +66,12 @@ export function ArchiveSection() {
   return (
     <section className="settings-group" aria-labelledby="archive-heading">
       <h2 id="archive-heading" className="settings-group-heading">
-        Archive
+        {t("Archive")}
       </h2>
       <p className="settings-group-description">
-        Everything you made here, in one file: notes, transcripts, folders, memories, the bible,
-        conversations. Carry it to another device and import it there. It is not a sync: nothing
-        moves unless you move it.
+        {t(
+          "Everything you made here, in one file: notes, transcripts, folders, memories, the bible, conversations. Carry it to another device and import it there. It is not a sync: nothing moves unless you move it.",
+        )}
       </p>
 
       {error ? (
@@ -84,7 +85,7 @@ export function ArchiveSection() {
           <div className="settings-row">
             <div className="settings-row-info">
               <label htmlFor={passphraseId} className="settings-row-title">
-                Passphrase
+                {t("Passphrase")}
               </label>
               <p className="settings-row-description">
                 {needsPassphrase
@@ -107,10 +108,12 @@ export function ArchiveSection() {
             <div className="settings-row">
               <div className="settings-row-info">
                 <label htmlFor={recordingsId} className="settings-row-title">
-                  Include the recordings
+                  {t("Include the recordings")}
                 </label>
                 <p className="settings-row-description">
-                  The audio behind your notes. Large; a transcribed note keeps its words without it.
+                  {t(
+                    "The audio behind your notes. Large; a transcribed note keeps its words without it.",
+                  )}
                 </p>
               </div>
               <div className="settings-row-control">
@@ -129,8 +132,9 @@ export function ArchiveSection() {
                 {mobile ? "Import an archive" : "Export or import"}
               </h3>
               <p className="settings-row-description">
-                Importing adds what the archive holds and rewrites nothing you wrote since;
-                importing the same archive twice changes nothing.
+                {t(
+                  "Importing adds what the archive holds and rewrites nothing you wrote since; importing the same archive twice changes nothing.",
+                )}
               </p>
               {status ? (
                 <p className="settings-row-description" role="status">

@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconCrossMedium } from "central-icons/IconCrossMedium";
 import { type ReactNode, useId, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -75,7 +76,7 @@ export function Dialog({
           <h2 id={titleId} className="dialog-title">
             {title}
           </h2>
-          <button type="button" className="dialog-close" aria-label="Close" onClick={onClose}>
+          <button type="button" className="dialog-close" aria-label={t("Close")} onClick={onClose}>
             <IconCrossMedium size={14} />
           </button>
         </header>

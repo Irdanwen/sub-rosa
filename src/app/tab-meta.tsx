@@ -1,3 +1,4 @@
+import { t } from "../lib/i18n";
 import { IconBubble3 } from "central-icons/IconBubble3";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconNoteText } from "central-icons/IconNoteText";
@@ -71,38 +72,38 @@ export function tabMeta(
     }
     case "agent-sessions":
       return {
-        title: "Sessions",
+        title: t("Sessions"),
         icon: <IconBubble3 size={TAB_ICON_SIZE} />,
       };
     case "all-notes":
       return {
-        title: "All notes",
+        title: t("All notes"),
         icon: <IconNoteText size={TAB_ICON_SIZE} />,
       };
     case "routines":
       return {
-        title: "Routines",
+        title: t("Routines"),
         icon: <IconZap size={TAB_ICON_SIZE} />,
       };
     case "studio":
       return {
-        title: "Studio",
+        title: t("Studio"),
         icon: <IconSparkle3 size={TAB_ICON_SIZE} />,
       };
     case "dictation":
       return {
-        title: "Dictation",
+        title: t("Dictation"),
         icon: <IconMicrophone size={TAB_ICON_SIZE} />,
       };
     case "settings":
       return {
-        title: "Settings",
+        title: t("Settings"),
         icon: <IconSettingsGear4 size={TAB_ICON_SIZE} />,
       };
     case "notes":
     default:
       return {
-        title: "Notes",
+        title: t("Notes"),
         icon: <IconNoteText size={TAB_ICON_SIZE} />,
       };
   }

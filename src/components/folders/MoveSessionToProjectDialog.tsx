@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconCheckmark1 } from "central-icons-filled/IconCheckmark1";
 import { IconProjects } from "central-icons/IconProjects";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
@@ -100,7 +101,7 @@ export function MoveSessionToProjectDialog({
       footer={
         <>
           <button type="button" className="primary-action" onClick={onClose} disabled={submitting}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             type="button"
@@ -119,7 +120,7 @@ export function MoveSessionToProjectDialog({
           <input
             type="search"
             name="move-session-search"
-            placeholder="Search projects"
+            placeholder={t("Search projects")}
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
             autoComplete="off"

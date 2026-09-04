@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useModalFocus } from "../../lib/modal-focus";
 import { IconBranchSimple } from "central-icons/IconBranchSimple";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
@@ -199,7 +200,7 @@ export function ModelSheet({
           <IconMagnifyingGlass size={16} aria-hidden />
           <input
             type="search"
-            placeholder="Search models"
+            placeholder={t("Search models")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             autoCapitalize="none"

@@ -1,6 +1,7 @@
 // Speech studio: text to speech as a first-class surface (not just the
 // workflow node). Synchronous - one /audio/speech call returns the bytes.
 
+import { t } from "../../lib/i18n";
 import { IconVoice2 } from "central-icons/IconVoice2";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { saveArtifactFromBase64 } from "../../lib/studio/artifacts";
@@ -76,27 +77,27 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
 
   const controls = (
     <>
-      <StudioField label="Model">
+      <StudioField label={t("Model")}>
         <ModelSelect
           models={models}
           value={model?.id ?? null}
           onChange={setModelId}
-          ariaLabel="Speech model"
+          ariaLabel={t("Speech model")}
         />
       </StudioField>
       {voices.length > 0 ? (
-        <StudioField label="Voice">
+        <StudioField label={t("Voice")}>
           <Select
             value={effectiveVoice || null}
-            placeholder="Choose a voice"
-            ariaLabel="Voice"
+            placeholder={t("Choose a voice")}
+            ariaLabel={t("Voice")}
             onChange={setVoice}
             options={voices.map((entry) => ({ value: entry, label: entry }))}
           />
         </StudioField>
       ) : null}
       <StudioField
-        label="Text"
+        label={t("Text")}
         hint={`${Math.min(text.length, SPEECH_INPUT_LIMIT)} / ${SPEECH_INPUT_LIMIT}`}
       >
         <textarea
@@ -104,12 +105,12 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
           rows={7}
           value={text}
           maxLength={SPEECH_INPUT_LIMIT}
-          placeholder="Type or paste the text to narrate"
+          placeholder={t("Type or paste the text to narrate")}
           onChange={(event) => setText(event.target.value)}
         />
       </StudioField>
       <SliderField
-        label="Speed"
+        label={t("Speed")}
         min={SPEECH_SPEED.min}
         max={SPEECH_SPEED.max}
         step={SPEECH_SPEED.step}
@@ -117,12 +118,12 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
         onChange={setSpeed}
         format={(value) => `x${value}`}
       />
-      <StudioField label="Format">
+      <StudioField label={t("Format")}>
         <PillGroup
           options={SPEECH_FORMATS.map((entry) => ({ value: entry }))}
           value={format}
           onChange={setFormat}
-          ariaLabel="Audio format"
+          ariaLabel={t("Audio format")}
         />
       </StudioField>
     </>
@@ -131,9 +132,9 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
   const action = busy ? (
     <div className="studio-progress">
       <Spinner aria-hidden />
-      <span>Narrating your text</span>
+      <span>{t("Narrating your text")}</span>
       <button type="button" className="btn btn-secondary" onClick={cancel}>
-        Cancel
+        {t("Cancel")}
       </button>
     </div>
   ) : (
@@ -143,7 +144,7 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
       disabled={!canSubmit}
       onClick={() => void generate()}
     >
-      <span>Generate speech</span>
+      <span>{t("Generate speech")}</span>
     </button>
   );
 
@@ -157,8 +158,10 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
           !busy ? (
             <EmptyState
               icon={<IconVoice2 size={22} />}
-              title="No narrations yet"
-              description="Type some text, pick a voice, and generate. Short texts render in seconds."
+              title={t("No narrations yet")}
+              description={t(
+                "Type some text, pick a voice, and generate. Short texts render in seconds.",
+              )}
             />
           ) : null
         }

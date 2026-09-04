@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useRef, useState } from "react";
 
 export type MicTestState = "idle" | "recording" | "ready" | "error";
@@ -32,7 +33,7 @@ export function MicTestControl({
   return (
     <div className="settings-row settings-row-mic-test">
       <div className="settings-row-info">
-        <h3 className="settings-row-title">Mic test</h3>
+        <h3 className="settings-row-title">{t("Mic test")}</h3>
         <p className="settings-row-description">{micTestDescription(state)}</p>
         {error ? <p className="settings-row-error">{error}</p> : null}
       </div>
@@ -43,7 +44,7 @@ export function MicTestControl({
               <div
                 className="settings-mic-test-meter-fill"
                 role="progressbar"
-                aria-label="Microphone test level"
+                aria-label={t("Microphone test level")}
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={Math.round(level * 100)}
@@ -74,12 +75,12 @@ export function MicTestControl({
             disabled={playing}
             onClick={onStartOver}
           >
-            Start over
+            {t("Start over")}
           </button>
         ) : null}
         {state !== "recording" && state !== "ready" ? (
           <button type="button" className="btn btn-secondary" onClick={onStart}>
-            Start test
+            {t("Start test")}
           </button>
         ) : null}
       </div>
@@ -177,17 +178,17 @@ function MicTestPlayer({
           max={Math.max(duration, durationSeconds)}
           step={0.1}
           value={Math.min(currentTime, duration)}
-          aria-label="Microphone test playback progress"
+          aria-label={t("Microphone test playback progress")}
           onChange={(event) => seek(event.currentTarget.value)}
         />
       ) : (
         <button
           type="button"
           className="btn btn-secondary"
-          aria-label="Play microphone test sample"
+          aria-label={t("Play microphone test sample")}
           onClick={() => void playSample()}
         >
-          Play sample
+          {t("Play sample")}
         </button>
       )}
     </>

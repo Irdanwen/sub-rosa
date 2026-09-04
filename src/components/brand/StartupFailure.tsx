@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useState } from "react";
 import { PRODUCT_NAME } from "../../lib/branding";
 import { BrandPrimaryButton } from "../ui/BrandPrimaryButton";
@@ -35,7 +36,9 @@ export function StartupFailure({ message, onRetry }: Props) {
         <span className="welcome-mark welcome-mark-symbol" aria-hidden>
           <BrandGradientMark />
         </span>
-        <h1 className="welcome-title">{PRODUCT_NAME} could not finish starting</h1>
+        <h1 className="welcome-title">
+          {t("{PRODUCT_NAME} could not finish starting", { PRODUCT_NAME })}
+        </h1>
         <p className="welcome-subtitle">{message}</p>
         <div className="welcome-providers">
           <BrandPrimaryButton disabled={retrying} onClick={() => void handleRetry()}>

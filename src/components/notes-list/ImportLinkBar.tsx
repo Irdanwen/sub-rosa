@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconCrossMedium } from "central-icons/IconCrossMedium";
 import { IconChainLink1 } from "central-icons/IconChainLink1";
 import { listen } from "@tauri-apps/api/event";
@@ -135,7 +136,7 @@ export function ImportLinkBar({
           <input
             type="url"
             inputMode="url"
-            placeholder="Paste a podcast or media link"
+            placeholder={t("Paste a podcast or media link")}
             value={url}
             onChange={(event) => setUrl(event.currentTarget.value)}
           />
@@ -145,18 +146,23 @@ export function ImportLinkBar({
           className="primary-action"
           disabled={!url.trim() || starting || blocked}
         >
-          Fetch
+          {t("Fetch")}
         </button>
       </form>
 
       {preview?.fetchable ? (
         <p className="import-link-hint">
           {preview.kind === "feed"
-            ? `A podcast feed on ${preview.host}. The newest episode will be fetched.`
+            ? t("A podcast feed on {host}. The newest episode will be fetched.", {
+                host: preview.host,
+              })
             : preview.kind === "platformPage"
-              ? `A page on ${preview.host}. yt-dlp will be asked for the audio, and its captions when it has them.`
-              : `A media file on ${preview.host}.`}{" "}
-          The download goes straight from this machine to {preview.host}.
+              ? t(
+                  "A page on {host}. yt-dlp will be asked for the audio, and its captions when it has them.",
+                  { host: preview.host },
+                )
+              : t("A media file on {host}.", { host: preview.host })}{" "}
+          {t("The download goes straight from this machine to {host}.", { host: preview.host })}
         </p>
       ) : null}
 

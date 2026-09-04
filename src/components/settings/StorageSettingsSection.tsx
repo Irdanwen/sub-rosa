@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../lib/i18n";
 import { useCallback, useEffect, useId, useState } from "react";
 import { messageFromError } from "../../lib/errors";
 import {
@@ -77,11 +78,12 @@ export function StorageSettingsSection() {
   return (
     <section className="settings-group" aria-labelledby="storage-heading">
       <h2 id="storage-heading" className="settings-group-heading">
-        Storage
+        {t("Storage")}
       </h2>
       <p className="settings-group-description">
-        What Sub Rosa keeps on this device. Nothing is deleted on its own; the one action below
-        removes only audio whose note already has its transcript.
+        {t(
+          "What Sub Rosa keeps on this device. Nothing is deleted on its own; the one action below removes only audio whose note already has its transcript.",
+        )}
       </p>
 
       {error ? (
@@ -102,7 +104,9 @@ export function StorageSettingsSection() {
                 <div className="settings-row-control storage-size">
                   <span className="storage-size-bytes">{formatBytes(bucket.bytes)}</span>
                   <span className="storage-size-files">
-                    {bucket.files === 1 ? "1 file" : `${bucket.files.toLocaleString()} files`}
+                    {bucket.files === 1
+                      ? t("1 file")
+                      : t("{count} files", { count: bucket.files.toLocaleString(intlLocale()) })}
                   </span>
                 </div>
               </div>
@@ -110,14 +114,14 @@ export function StorageSettingsSection() {
           ) : (
             <div className="settings-row">
               <div className="settings-row-info">
-                <p className="settings-row-description">Measuring…</p>
+                <p className="settings-row-description">{t("Measuring…")}</p>
               </div>
             </div>
           )}
           {report ? (
             <div className="settings-row storage-total">
               <div className="settings-row-info">
-                <h3 className="settings-row-title">Total</h3>
+                <h3 className="settings-row-title">{t("Total")}</h3>
               </div>
               <div className="settings-row-control storage-size">
                 <span className="storage-size-bytes">{formatBytes(report.totalBytes)}</span>
@@ -132,14 +136,14 @@ export function StorageSettingsSection() {
           <div className="settings-row">
             <div className="settings-row-info">
               <label htmlFor={selectId} className="settings-row-title">
-                Remove the audio of notes transcribed more than
+                {t("Remove the audio of notes transcribed more than")}
               </label>
               <p className="settings-row-description">
-                The note keeps its transcript and its text; only the recording file goes.
+                {t("The note keeps its transcript and its text; only the recording file goes.")}
                 {preview
                   ? preview.recordings === 0
-                    ? " Nothing matches right now."
-                    : ` ${preview.recordings === 1 ? "1 recording" : `${preview.recordings} recordings`}, ${formatBytes(preview.bytes)}.`
+                    ? ` ${t("Nothing matches right now.")}`
+                    : ` ${preview.recordings === 1 ? t("1 recording") : t("{count} recordings", { count: preview.recordings })}, ${formatBytes(preview.bytes)}.`
                   : ""}
               </p>
             </div>
@@ -152,7 +156,7 @@ export function StorageSettingsSection() {
               >
                 {RETENTION_CHOICES.map((choice) => (
                   <option key={choice} value={choice}>
-                    {choice} days ago
+                    {t("{choice} days ago", { choice })}
                   </option>
                 ))}
               </select>
@@ -168,9 +172,13 @@ export function StorageSettingsSection() {
           </div>
           {outcome && !outcome.dryRun ? (
             <p className="settings-row-description" role="status">
-              Removed{" "}
-              {outcome.recordings === 1 ? "1 recording" : `${outcome.recordings} recordings`} and
-              freed {formatBytes(outcome.bytes)}.
+              {t("Removed {recordings} and freed {bytes}.", {
+                recordings:
+                  outcome.recordings === 1
+                    ? t("1 recording")
+                    : t("{count} recordings", { count: outcome.recordings }),
+                bytes: formatBytes(outcome.bytes),
+              })}
             </p>
           ) : null}
         </div>

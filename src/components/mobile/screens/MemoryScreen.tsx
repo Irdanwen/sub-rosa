@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { useEffect, useState } from "react";
 import { messageFromError } from "../../../lib/errors";
 import {
@@ -105,11 +106,15 @@ export function MemoryScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mobile-screen-root">
-      <StackHeader title="Memory" onBack={onBack} backLabel="Settings" />
+      <StackHeader title={t("Memory")} onBack={onBack} backLabel={t("Settings")} />
       <div className="mobile-settings-scroll">
-        <SettingsGroup footer="Sub Rosa remembers durable facts about you and uses them in future conversations. Turning memory off stops it being used but never deletes anything.">
+        <SettingsGroup
+          footer={t(
+            "Sub Rosa remembers durable facts about you and uses them in future conversations. Turning memory off stops it being used but never deletes anything.",
+          )}
+        >
           <SettingsToggleRow
-            label="Use memory in chats"
+            label={t("Use memory in chats")}
             checked={enabled}
             disabled={settings === null}
             onChange={(next) =>
@@ -117,8 +122,8 @@ export function MemoryScreen({ onBack }: { onBack: () => void }) {
             }
           />
           <SettingsToggleRow
-            label="Learn from conversations"
-            detail="Pick up new facts automatically"
+            label={t("Learn from conversations")}
+            detail={t("Pick up new facts automatically")}
             checked={settings?.autoExtract === true}
             disabled={settings === null || !enabled}
             onChange={(next) =>
@@ -127,7 +132,7 @@ export function MemoryScreen({ onBack }: { onBack: () => void }) {
           />
         </SettingsGroup>
 
-        <SettingsGroup title="Add a fact">
+        <SettingsGroup title={t("Add a fact")}>
           <SettingsRow align="stack">
             <form
               className="mobile-memory-add"
@@ -140,12 +145,12 @@ export function MemoryScreen({ onBack }: { onBack: () => void }) {
                 type="text"
                 value={draft}
                 onChange={(event) => setDraft(event.currentTarget.value)}
-                placeholder="Something to remember"
-                aria-label="Add a fact to remember"
+                placeholder={t("Something to remember")}
+                aria-label={t("Add a fact to remember")}
                 maxLength={2000}
               />
               <button type="submit" disabled={draft.trim().length === 0}>
-                Add
+                {t("Add")}
               </button>
             </form>
           </SettingsRow>
@@ -157,7 +162,7 @@ export function MemoryScreen({ onBack }: { onBack: () => void }) {
         >
           {items.length === 0 ? (
             <p className="mobile-memory-empty">
-              Nothing remembered yet. Facts are picked up from your chats, or add one above.
+              {t("Nothing remembered yet. Facts are picked up from your chats, or add one above.")}
             </p>
           ) : (
             items.map((memory) => (
@@ -170,7 +175,7 @@ export function MemoryScreen({ onBack }: { onBack: () => void }) {
                     onAction: () => void toggleMemory(memory),
                   },
                   {
-                    label: "Forget",
+                    label: t("Forget"),
                     tone: "destructive",
                     onAction: () => void removeMemory(memory),
                   },

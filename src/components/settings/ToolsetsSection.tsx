@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconCircleInfo } from "central-icons/IconCircleInfo";
 import { IconExclamationCircle } from "central-icons/IconExclamationCircle";
@@ -75,11 +76,12 @@ export function ToolsetsView({
   return (
     <section className="settings-group toolsets" aria-labelledby="toolsets-heading">
       <h2 id="toolsets-heading" className="settings-group-heading">
-        Toolsets
+        {t("Toolsets")}
       </h2>
       <p className="settings-group-description">
-        See which capabilities Hermes can use and what setup is still missing. Toolsets are read
-        only here. Install skills or MCP servers to add more.{" "}
+        {t(
+          "See which capabilities Hermes can use and what setup is still missing. Toolsets are read only here. Install skills or MCP servers to add more.",
+        )}{" "}
         <ModeNote mode={state.mode ?? mode} profile={state.profile} show={!isUnavailable} />
       </p>
 
@@ -96,8 +98,8 @@ export function ToolsetsView({
             <input
               type="search"
               value={query}
-              placeholder="Filter toolsets"
-              aria-label="Filter toolsets"
+              placeholder={t("Filter toolsets")}
+              aria-label={t("Filter toolsets")}
               disabled={isUnavailable}
               onChange={(event) => setQuery(event.currentTarget.value)}
             />
@@ -109,7 +111,7 @@ export function ToolsetsView({
             onClick={state.refresh}
           >
             <IconArrowRotateClockwise size={14} ariaHidden />
-            Refresh
+            {t("Refresh")}
           </button>
         </div>
 
@@ -129,8 +131,8 @@ export function ToolsetsView({
         <div className="toolsets-body">
           {isUnavailable ? (
             <EmptyState
-              title="Hermes is not running"
-              description="Start Hermes to see which toolsets and tools your sessions can use."
+              title={t("Hermes is not running")}
+              description={t("Start Hermes to see which toolsets and tools your sessions can use.")}
             />
           ) : isErrored ? (
             <ErrorState
@@ -142,13 +144,17 @@ export function ToolsetsView({
             <ToolsetsLoading />
           ) : !hasToolsets ? (
             <EmptyState
-              title="No toolsets reported"
-              description="Hermes did not report any toolsets for this runtime. Tools from MCP servers appear here after the gateway restarts."
+              title={t("No toolsets reported")}
+              description={t(
+                "Hermes did not report any toolsets for this runtime. Tools from MCP servers appear here after the gateway restarts.",
+              )}
             />
           ) : visible.length === 0 ? (
             <EmptyState
-              title="No matching toolsets"
-              description="No toolset matches your search. Try a different term or clear the filter."
+              title={t("No matching toolsets")}
+              description={t(
+                "No toolset matches your search. Try a different term or clear the filter.",
+              )}
             />
           ) : (
             <ul className="toolsets-list">
@@ -179,8 +185,8 @@ function ModeNote({
   const modeLabel = mode === "unrestricted" ? "Full mode" : "Sandboxed";
   return (
     <span className="toolsets-mode-note">
-      Showing the {modeLabel} runtime
-      {profile ? ` (profile ${profile})` : ""}.
+      {t("Showing the {mode} runtime", { mode: modeLabel })}
+      {profile ? t(" (profile {profile})", { profile }) : ""}.
     </span>
   );
 }
@@ -214,7 +220,7 @@ function ToolsetRow({ toolset }: { toolset: HermesToolsetInfo }) {
         {toolset.description ? <p className="toolset-description">{toolset.description}</p> : null}
 
         {tools.length > 0 ? (
-          <div className="toolset-tools" aria-label="Included tools">
+          <div className="toolset-tools" aria-label={t("Included tools")}>
             {tools.map((tool) => (
               <span key={tool} className="toolset-tool">
                 {tool}
@@ -222,14 +228,16 @@ function ToolsetRow({ toolset }: { toolset: HermesToolsetInfo }) {
             ))}
           </div>
         ) : (
-          <p className="toolset-tools-empty">Hermes did not list the tools in this toolset.</p>
+          <p className="toolset-tools-empty">
+            {t("Hermes did not list the tools in this toolset.")}
+          </p>
         )}
 
         {unmet.length > 0 ? (
           <div className="toolset-requirements">
             <span className="toolset-requirements-eyebrow">
               <IconWarningSign size={12} ariaHidden />
-              Needs setup
+              {t("Needs setup")}
             </span>
             <ul className="toolset-requirements-list">
               {unmet.map((requirement) => (
@@ -274,10 +282,12 @@ function SkillExplanations({ entries }: { entries: ExplainedSkill[] }) {
       <div className="toolsets-skills-header">
         <span className="toolsets-skills-eyebrow">
           <IconToolbox size={15} ariaHidden />
-          Skill availability
+          {t("Skill availability")}
         </span>
         <p className="toolsets-skills-description">
-          Why these skills are visible, hidden, or waiting on setup, based on the toolsets above.
+          {t(
+            "Why these skills are visible, hidden, or waiting on setup, based on the toolsets above.",
+          )}
         </p>
       </div>
       <ul className="toolsets-skills-list">
@@ -357,11 +367,11 @@ function ErrorState({
       <span className="toolsets-empty-icon" aria-hidden>
         <IconExclamationCircle size={22} />
       </span>
-      <p className="toolsets-empty-title">Couldn't load toolsets</p>
+      <p className="toolsets-empty-title">{t("Couldn't load toolsets")}</p>
       <p className="toolsets-empty-description">{message}</p>
       {retryable ? (
         <button type="button" className="toolsets-retry" onClick={onRetry}>
-          Try again
+          {t("Try again")}
         </button>
       ) : null}
     </div>

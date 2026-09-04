@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { parseDictationHelperEvent } from "../../lib/dictation-events";
@@ -85,7 +86,7 @@ export function useShortcutCapture({
       if (helperEvent.type !== "shortcut_captured") return;
       const captured = shortcutFromCapturePayload(helperEvent.payload?.shortcut, 1);
       if (!captured) {
-        setError("Shortcut capture returned invalid data.");
+        setError(t("Shortcut capture returned invalid data."));
         setCapturing(false);
         return;
       }

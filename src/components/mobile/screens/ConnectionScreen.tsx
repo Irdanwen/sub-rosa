@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../../lib/i18n";
 import { useCallback, useEffect, useState } from "react";
 import { CARPE_DIEM_KEY_PREFIX } from "../../../lib/branding";
 import { deriveBilling, formatUsd } from "../../../lib/carpe-diem-billing";
@@ -74,7 +75,7 @@ export function ConnectionScreen({ onBack }: { onBack: () => void }) {
     try {
       setSettings(await carpeDiemSetApiKey(keyDraft));
       setKeyDraft("");
-      setNotice("API key saved. Connecting.");
+      setNotice(t("API key saved. Connecting."));
       setTestResult(null);
       await refresh();
     } catch (err) {
@@ -85,7 +86,7 @@ export function ConnectionScreen({ onBack }: { onBack: () => void }) {
   const removeKey = useCallback(async () => {
     try {
       setSettings(await carpeDiemClearApiKey());
-      setNotice("API key removed.");
+      setNotice(t("API key removed."));
       setTestResult(null);
       await refresh();
     } catch (err) {
@@ -106,10 +107,10 @@ export function ConnectionScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mobile-screen-root">
-      <StackHeader title="Connection" onBack={onBack} backLabel="Settings" />
+      <StackHeader title={t("Connection")} onBack={onBack} backLabel={t("Settings")} />
       <div className="mobile-settings-scroll">
         <SettingsGroup>
-          <SettingsRow label="Status">
+          <SettingsRow label={t("Status")}>
             <CarpeDiemStatusPill status={status} />
           </SettingsRow>
           <SettingsActionRow
@@ -119,7 +120,7 @@ export function ConnectionScreen({ onBack }: { onBack: () => void }) {
           />
           {status?.status === "failed" ? (
             <SettingsActionRow
-              label="Restart the backend"
+              label={t("Restart the backend")}
               onClick={() => void carpeDiemRestartSidecar()}
             />
           ) : null}
@@ -135,11 +136,13 @@ export function ConnectionScreen({ onBack }: { onBack: () => void }) {
         ) : null}
 
         <SettingsGroup
-          title="API key"
+          title={t("API key")}
           footer={
             <>
-              Stored in your device keychain, never on disk in plain text. Keys start with{" "}
-              {CARPE_DIEM_KEY_PREFIX}.
+              {t(
+                "Stored in your device keychain, never on disk in plain text. Keys start with {prefix}.",
+                { prefix: CARPE_DIEM_KEY_PREFIX },
+              )}
             </>
           }
         >
@@ -157,18 +160,18 @@ export function ConnectionScreen({ onBack }: { onBack: () => void }) {
                 autoComplete="off"
                 spellCheck={false}
                 placeholder={hasApiKey ? "Saved key hidden" : `${CARPE_DIEM_KEY_PREFIX}…`}
-                aria-label="Carpe Diem API key"
+                aria-label={t("Carpe Diem API key")}
                 onChange={(event) => setKeyDraft(event.currentTarget.value)}
               />
               <button type="submit" disabled={keyDraft.trim().length === 0}>
-                Save
+                {t("Save")}
               </button>
             </form>
           </SettingsRow>
-          <SettingsActionRow label="Get a key" onClick={() => void carpeDiemOpenDashboard()} />
+          <SettingsActionRow label={t("Get a key")} onClick={() => void carpeDiemOpenDashboard()} />
           {hasApiKey ? (
             <SettingsActionRow
-              label="Remove key"
+              label={t("Remove key")}
               tone="destructive"
               onClick={() => void removeKey()}
             />
@@ -176,23 +179,23 @@ export function ConnectionScreen({ onBack }: { onBack: () => void }) {
         </SettingsGroup>
 
         <SettingsGroup
-          title="Endpoint"
+          title={t("Endpoint")}
           footer={
             endpoint === "router"
               ? "Router is served by the cheapest market, so some requests may leave Carpe Diem's confidential network."
               : "V1 keeps every request inside Carpe Diem's confidential network, at standard price."
           }
         >
-          <SettingsRow label="Route requests through" align="stack">
+          <SettingsRow label={t("Route requests through")} align="stack">
             <div
               className="mobile-segmented mobile-segmented-flush"
               role="radiogroup"
-              aria-label="Carpe Diem endpoint"
+              aria-label={t("Carpe Diem endpoint")}
             >
               {(
                 [
-                  { id: "v1" as const, label: "V1", hint: "V1 (private)" },
-                  { id: "router" as const, label: "Router", hint: "Router (best price)" },
+                  { id: "v1" as const, label: "V1", hint: t("V1 (private)") },
+                  { id: "router" as const, label: t("Router"), hint: t("Router (best price)") },
                 ] satisfies Array<{ id: EndpointChoice; label: string; hint: string }>
               ).map((option) => (
                 <button
@@ -266,7 +269,7 @@ function PaymentGroup({ hasApiKey }: { hasApiKey: boolean }) {
 
   return (
     <SettingsGroup
-      title="Payment"
+      title={t("Payment")}
       footer={
         view.activeRailEmpty
           ? `Your active rail is out of funds, so requests will fail. ${
@@ -279,11 +282,11 @@ function PaymentGroup({ hasApiKey }: { hasApiKey: boolean }) {
           : "Carpe Diem bills one rail at a time. Your prepaid account and credits are separate balances, and the active rail is what actually pays."
       }
     >
-      <SettingsRow label="Paying with" align="stack">
+      <SettingsRow label={t("Paying with")} align="stack">
         <div
           className="mobile-segmented mobile-segmented-flush"
           role="radiogroup"
-          aria-label="Rail"
+          aria-label={t("Rail")}
         >
           {rails.map((rail) => (
             <button
@@ -302,20 +305,20 @@ function PaymentGroup({ hasApiKey }: { hasApiKey: boolean }) {
         </div>
       </SettingsRow>
       <SettingsRow
-        label="Credits"
-        detail={`${billing.availableCredits.toLocaleString()} available`}
+        label={t("Credits")}
+        detail={`${billing.availableCredits.toLocaleString(intlLocale())} available`}
       >
         <span className="mobile-settings-row-detail">{formatUsd(billing.availableUsdc)}</span>
       </SettingsRow>
       <SettingsRow
-        label="Prepaid account"
+        label={t("Prepaid account")}
         detail={billing.rail === "auto" ? `Automatic picks ${view.effectiveRail}` : undefined}
       >
         <span className="mobile-settings-row-detail">
           {billing.prepaidRegistered ? formatUsd(billing.prepaidUsdcBalance) : "Not set up"}
         </span>
       </SettingsRow>
-      {error ? <SettingsRow label="Could not switch rails" detail={error} /> : null}
+      {error ? <SettingsRow label={t("Could not switch rails")} detail={error} /> : null}
     </SettingsGroup>
   );
 }
@@ -364,8 +367,10 @@ function PlacesKeyGroup() {
 
   return (
     <SettingsGroup
-      title="Place search"
-      footer="Place cards work without any key, using OpenStreetMap data. Your own Google Places key adds ratings, reviews and photos; it stays in the keychain and is only sent with place searches."
+      title={t("Place search")}
+      footer={t(
+        "Place cards work without any key, using OpenStreetMap data. Your own Google Places key adds ratings, reviews and photos; it stays in the keychain and is only sent with place searches.",
+      )}
     >
       <SettingsRow label={keyPresent ? "Replace your key" : "Google Places key"} align="stack">
         <form
@@ -381,16 +386,20 @@ function PlacesKeyGroup() {
             autoComplete="off"
             spellCheck={false}
             placeholder={keyPresent ? "Saved key hidden" : "AIza…"}
-            aria-label="Google Places API key"
+            aria-label={t("Google Places API key")}
             onChange={(event) => setKeyDraft(event.currentTarget.value)}
           />
           <button type="submit" disabled={keyDraft.trim().length === 0}>
-            Save
+            {t("Save")}
           </button>
         </form>
       </SettingsRow>
       {keyPresent ? (
-        <SettingsActionRow label="Remove key" tone="destructive" onClick={() => void removeKey()} />
+        <SettingsActionRow
+          label={t("Remove key")}
+          tone="destructive"
+          onClick={() => void removeKey()}
+        />
       ) : null}
     </SettingsGroup>
   );

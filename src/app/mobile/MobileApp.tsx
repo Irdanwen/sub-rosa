@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { BrandGradientMark } from "../../components/brand/Marks";
@@ -99,7 +100,7 @@ function MobileErrorBanner({ error, onDismiss }: { error: string | null; onDismi
       key={shown}
       data-exiting={exiting || undefined}
       onClick={onDismiss}
-      aria-label="Dismiss error"
+      aria-label={t("Dismiss error")}
     >
       {shown}
     </button>

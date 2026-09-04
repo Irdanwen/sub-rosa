@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { IconFileArrowLeftIn } from "central-icons/IconFileArrowLeftIn";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { PRODUCT_NAME } from "../../../lib/branding";
@@ -19,32 +20,32 @@ export function FirstNoteStep({
 }) {
   return (
     <StepCard
-      title="Your first note"
+      title={t("Your first note")}
       subtitle={`Everything ${PRODUCT_NAME} does starts from a note. Record a meeting now, or bring in something you already have.`}
     >
       <div className="onboarding-first-note">
         <button type="button" className="onboarding-choice" onClick={() => onChoose("record")}>
           <IconMicrophone size={18} aria-hidden />
           <span className="onboarding-choice-copy">
-            <span className="onboarding-choice-title">Record a meeting</span>
+            <span className="onboarding-choice-title">{t("Record a meeting")}</span>
             <span className="onboarding-choice-detail">
-              A new note opens and starts listening. Stop when the meeting ends.
+              {t("A new note opens and starts listening. Stop when the meeting ends.")}
             </span>
           </span>
         </button>
         <button type="button" className="onboarding-choice" onClick={() => onChoose("import")}>
           <IconFileArrowLeftIn size={18} aria-hidden />
           <span className="onboarding-choice-copy">
-            <span className="onboarding-choice-title">Import a file or a link</span>
+            <span className="onboarding-choice-title">{t("Import a file or a link")}</span>
             <span className="onboarding-choice-detail">
-              A recording, a podcast, a talk: it becomes a note with a transcript.
+              {t("A recording, a podcast, a talk: it becomes a note with a transcript.")}
             </span>
           </span>
         </button>
       </div>
       <div className="welcome-providers">
         <button type="button" className="onboarding-skip" onClick={() => onChoose(undefined)}>
-          Later
+          {t("Later")}
         </button>
       </div>
     </StepCard>

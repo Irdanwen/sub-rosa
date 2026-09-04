@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useEffect, useId, useState } from "react";
 import { placesClearGoogleKey, placesGetSettings, placesSetGoogleKey } from "../../lib/tauri";
 
@@ -34,7 +35,7 @@ export function PlacesSettingsSection() {
       setKeyPresent(settings.googleKeyPresent);
       setKeyDraft("");
     } catch {
-      setError("That key could not be saved. Check it and try again.");
+      setError(t("That key could not be saved. Check it and try again."));
     }
   };
 
@@ -44,7 +45,7 @@ export function PlacesSettingsSection() {
       const settings = await placesClearGoogleKey();
       setKeyPresent(settings.googleKeyPresent);
     } catch {
-      setError("The key could not be removed.");
+      setError(t("The key could not be removed."));
     }
   };
 
@@ -53,11 +54,11 @@ export function PlacesSettingsSection() {
       <div className="settings-rows">
         <div className="settings-row">
           <div className="settings-row-info">
-            <h3 className="settings-row-title">Place search</h3>
+            <h3 className="settings-row-title">{t("Place search")}</h3>
             <p className="settings-row-description">
-              Place cards in chat work without any key, using OpenStreetMap data. Add your own
-              Google Places API key to get ratings, reviews and photos. The key stays in your
-              keychain and is only sent with place searches.
+              {t(
+                "Place cards in chat work without any key, using OpenStreetMap data. Add your own Google Places API key to get ratings, reviews and photos. The key stays in your keychain and is only sent with place searches.",
+              )}
             </p>
             {error ? (
               <p className="settings-row-substatus" role="status">
@@ -74,7 +75,7 @@ export function PlacesSettingsSection() {
               autoComplete="off"
               spellCheck={false}
               placeholder={keyPresent ? "Saved key hidden" : "AIza…"}
-              aria-label="Google Places API key"
+              aria-label={t("Google Places API key")}
               onChange={(event) => setKeyDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && canSave) void saveKey();
@@ -86,11 +87,11 @@ export function PlacesSettingsSection() {
               disabled={!canSave}
               onClick={() => void saveKey()}
             >
-              Save
+              {t("Save")}
             </button>
             {keyPresent ? (
               <button type="button" className="btn btn-secondary" onClick={() => void removeKey()}>
-                Remove
+                {t("Remove")}
               </button>
             ) : null}
           </div>

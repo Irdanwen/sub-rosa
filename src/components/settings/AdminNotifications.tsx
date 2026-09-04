@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { useEffect } from "react";
 import type { AdminNotification } from "../../lib/hermes-admin";
@@ -40,7 +41,7 @@ export function AdminNotifications({
   if (notifications.length === 0) return null;
   const visible = [...notifications].reverse().slice(0, MAX_VISIBLE_NOTIFICATIONS);
   return (
-    <ul className="admin-notifications" aria-label="Recent changes">
+    <ul className="admin-notifications" aria-label={t("Recent changes")}>
       {visible.map((note) => (
         <li
           key={note.id}
@@ -52,8 +53,8 @@ export function AdminNotifications({
           <button
             type="button"
             className="admin-notification-dismiss"
-            aria-label="Dismiss"
-            title="Dismiss"
+            aria-label={t("Dismiss")}
+            title={t("Dismiss")}
             onClick={() => onDismiss(note.id)}
           >
             <IconCrossSmall size={13} ariaHidden />

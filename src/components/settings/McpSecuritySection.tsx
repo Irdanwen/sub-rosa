@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconCircleInfo } from "central-icons/IconCircleInfo";
 import { IconExclamationCircle } from "central-icons/IconExclamationCircle";
 import { IconShield } from "central-icons/IconShield";
@@ -69,11 +70,12 @@ export function McpSecurityView({
   return (
     <section className="settings-group mcp-security" aria-labelledby="mcp-security-heading">
       <h2 id="mcp-security-heading" className="settings-group-heading">
-        MCP security
+        {t("MCP security")}
       </h2>
       <p className="settings-group-description">
-        Control how much new MCP servers can do by default, and learn what each security label on
-        the MCP pages means. Changes apply next session.{" "}
+        {t(
+          "Control how much new MCP servers can do by default, and learn what each security label on the MCP pages means. Changes apply next session.",
+        )}{" "}
         <ModeNote mode={state.mode ?? mode} profile={state.profile} show={!isUnavailable} />
       </p>
 
@@ -85,17 +87,18 @@ export function McpSecurityView({
 
       <div className="settings-card mcp-security-card">
         <div className="mcp-security-policy-head">
-          <h3 className="settings-row-title">Default exposure policy</h3>
+          <h3 className="settings-row-title">{t("Default exposure policy")}</h3>
           <p className="settings-row-description">
-            How a newly installed MCP server is exposed to your sessions. The most conservative
-            option is recommended.
+            {t(
+              "How a newly installed MCP server is exposed to your sessions. The most conservative option is recommended.",
+            )}
           </p>
         </div>
 
         {isUnavailable ? (
           <p className="mcp-security-note" role="status">
             <IconCircleInfo size={14} ariaHidden />
-            Start Hermes to set the default MCP exposure policy.
+            {t("Start Hermes to set the default MCP exposure policy.")}
           </p>
         ) : isErrored ? (
           <div className="mcp-security-error" role="alert">
@@ -104,7 +107,7 @@ export function McpSecurityView({
             </p>
             {state.retryable ? (
               <button type="button" className="mcp-servers-retry" onClick={state.refresh}>
-                Try again
+                {t("Try again")}
               </button>
             ) : null}
           </div>
@@ -112,7 +115,7 @@ export function McpSecurityView({
           <fieldset
             className="mcp-security-policy"
             role="radiogroup"
-            aria-label="Default MCP exposure policy"
+            aria-label={t("Default MCP exposure policy")}
           >
             {exposurePolicyOptions().map((option) => (
               <PolicyOption
@@ -139,10 +142,11 @@ export function McpSecurityView({
 
       <div className="settings-card mcp-security-card">
         <div className="mcp-security-policy-head">
-          <h3 className="settings-row-title">What the labels mean</h3>
+          <h3 className="settings-row-title">{t("What the labels mean")}</h3>
           <p className="settings-row-description">
-            Every MCP server shows these labels so where code runs, what secrets it sees, and what
-            the sandbox protects are explicit.
+            {t(
+              "Every MCP server shows these labels so where code runs, what secrets it sees, and what the sandbox protects are explicit.",
+            )}
           </p>
         </div>
         <ul className="mcp-security-legend">
@@ -161,9 +165,9 @@ export function McpSecurityView({
         </ul>
         <p className="mcp-security-note">
           <IconShieldCheck size={14} ariaHidden />
-          High-risk servers (file, shell, browser, database, or cloud admin tools) ask for
-          confirmation before they turn on. None of these checks block a server. They make the risk
-          explicit so you decide.
+          {t(
+            "High-risk servers (file, shell, browser, database, or cloud admin tools) ask for confirmation before they turn on. None of these checks block a server. They make the risk explicit so you decide.",
+          )}
         </p>
       </div>
     </section>
@@ -201,7 +205,9 @@ function PolicyOption({
     >
       <span className="mcp-security-policy-option-head">
         <span className="mcp-security-policy-option-label">{label}</span>
-        {recommended ? <span className="mcp-security-policy-recommended">Recommended</span> : null}
+        {recommended ? (
+          <span className="mcp-security-policy-recommended">{t("Recommended")}</span>
+        ) : null}
       </span>
       <span className="mcp-security-policy-option-description">{description}</span>
     </button>
@@ -222,8 +228,8 @@ function ModeNote({
   const modeLabel = mode === "unrestricted" ? "Full mode" : "Sandboxed";
   return (
     <span className="mcp-servers-mode-note">
-      Targeting the {modeLabel} runtime
-      {profile ? ` (profile ${profile})` : ""}.
+      {t("Targeting the {mode} runtime", { mode: modeLabel })}
+      {profile ? t(" (profile {profile})", { profile }) : ""}.
     </span>
   );
 }

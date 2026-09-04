@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useCallback, useEffect, useState } from "react";
 import {
   councilCycles,
@@ -95,28 +96,39 @@ export function CouncilSettingsSection() {
   return (
     <section className="settings-group" aria-labelledby="council-heading">
       <h2 id="council-heading" className="settings-group-heading">
-        Council
+        {t("Council")}
       </h2>
       <p className="settings-group-description">
-        Type <code>/council</code> in the chat to put a request to several models before any work
-        starts. They read it independently, on different weights, and issue a mandate you can edit.
-        When the work is done they read it back against that mandate.
+        {t("Type")} <code>/council</code>{" "}
+        {t(
+          "in the chat to put a request to several models before any work starts. They read it independently, on different weights, and issue a mandate you can edit. When the work is done they read it back against that mandate.",
+        )}
       </p>
 
-      <Roster title="Issuing a mandate" plan={plan} pins={pins} models={models} onPin={pinSeat} />
       <Roster
-        title="Judging finished work"
+        title={t("Issuing a mandate")}
+        plan={plan}
+        pins={pins}
+        models={models}
+        onPin={pinSeat}
+      />
+      <Roster
+        title={t("Judging finished work")}
         plan={verdictPlan}
         pins={pins}
         models={models}
         onPin={pinSeat}
-        note="These never run on the model the work was written on. A reviewer sharing weights with the author shares its blind spots, so a seat pinned to that model is passed over for that sitting."
+        note={t(
+          "These never run on the model the work was written on. A reviewer sharing weights with the author shares its blind spots, so a seat pinned to that model is passed over for that sitting.",
+        )}
       />
 
       <div className="settings-card">
-        <h3 className="settings-row-title">Recent sittings</h3>
+        <h3 className="settings-row-title">{t("Recent sittings")}</h3>
         {cycles.length === 0 ? (
-          <p className="settings-group-description">Nothing has been put to the council yet.</p>
+          <p className="settings-group-description">
+            {t("Nothing has been put to the council yet.")}
+          </p>
         ) : (
           <ul className="council-history">
             {cycles.map((cycle) => {
@@ -128,9 +140,13 @@ export function CouncilSettingsSection() {
                     {requestExcerpt(cycle.request, 120)}
                   </span>
                   <span className="council-history-meta">
-                    {cycle.modelCalls} model calls
-                    {tally ? ` · ${tally.satisfied} of ${tally.total} criteria held` : ""}
-                    {cycle.round > 0 ? ` · ${cycle.round} correction(s)` : ""}
+                    {t("{count} model calls", { count: cycle.modelCalls })}
+                    {tally
+                      ? ` · ${t("{satisfied} of {total} criteria held", { satisfied: tally.satisfied, total: tally.total })}`
+                      : ""}
+                    {cycle.round > 0
+                      ? ` · ${t("{count} correction(s)", { count: cycle.round })}`
+                      : ""}
                   </span>
                 </li>
               );
@@ -181,7 +197,9 @@ function Roster({
                     >
                       {/* Left alone by default, and named by what it does
                           rather than by the absence of a choice. */}
-                      <option value="">Chosen for me ({seat.model})</option>
+                      <option value="">
+                        {t("Chosen for me ({model})", { model: seat.model })}
+                      </option>
                       {models.map((model) => (
                         <option key={model.id} value={model.id}>
                           {model.id}
@@ -206,7 +224,7 @@ function Roster({
           ) : null}
         </>
       ) : (
-        <p className="settings-group-description">Reading the model catalog…</p>
+        <p className="settings-group-description">{t("Reading the model catalog…")}</p>
       )}
     </div>
   );

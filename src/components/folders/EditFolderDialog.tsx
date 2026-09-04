@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useEffect, useState } from "react";
 import type { FolderDto } from "../../lib/tauri";
 import { Dialog, DialogField } from "../ui/Dialog";
@@ -41,13 +42,13 @@ export function EditFolderDialog({ open, onClose, folder, onSave }: EditFolderDi
         if (submitting) return;
         onClose();
       }}
-      title="Edit project"
-      description="Update the project’s name or description."
+      title={t("Edit project")}
+      description={t("Update the project’s name or description.")}
       initialFocusSelector='input[name="edit-folder-name"]'
       footer={
         <>
           <button type="button" className="primary-action" onClick={onClose} disabled={submitting}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             type="submit"
@@ -61,7 +62,7 @@ export function EditFolderDialog({ open, onClose, folder, onSave }: EditFolderDi
       }
     >
       <form id="edit-folder-form" className="dialog-body" onSubmit={handleSubmit}>
-        <DialogField label="Name" htmlFor="edit-folder-name">
+        <DialogField label={t("Name")} htmlFor="edit-folder-name">
           <input
             id="edit-folder-name"
             name="edit-folder-name"
@@ -72,12 +73,12 @@ export function EditFolderDialog({ open, onClose, folder, onSave }: EditFolderDi
             maxLength={120}
           />
         </DialogField>
-        <DialogField label="Description" htmlFor="edit-folder-description">
+        <DialogField label={t("Description")} htmlFor="edit-folder-description">
           <textarea
             id="edit-folder-description"
             name="edit-folder-description"
             className="dialog-textarea"
-            placeholder="What belongs in this project?"
+            placeholder={t("What belongs in this project?")}
             value={description}
             onChange={(event) => setDescription(event.currentTarget.value)}
             rows={3}

@@ -10,6 +10,7 @@
 // most actionable thing we can say, so it wins. Anything else goes through
 // `describeJobFailure`, which is where "what happened" becomes "what to do".
 
+import { t } from "../../lib/i18n";
 import { describeJobFailure } from "../../lib/studio/job-errors";
 import { explainConstraintError } from "../../lib/studio/model-constraints";
 
@@ -47,7 +48,7 @@ export function JobFailureNotice({
         <>
           {" "}
           <button type="button" className={retryClassName} onClick={onRetry}>
-            Start again
+            {t("Start again")}
           </button>
         </>
       ) : null}

@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconCircleInfo } from "central-icons/IconCircleInfo";
 import { IconCircleCheck } from "central-icons/IconCircleCheck";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
@@ -75,8 +76,8 @@ export function SkillSetupView({
           <button
             type="button"
             className="skill-setup-close"
-            aria-label="Close setup"
-            title="Close"
+            aria-label={t("Close setup")}
+            title={t("Close")}
             onClick={onClose}
           >
             <IconCrossSmall size={13} ariaHidden />
@@ -95,7 +96,7 @@ export function SkillSetupView({
           {state.error}
           {state.retryable ? (
             <button type="button" className="skill-setup-retry" onClick={state.refresh}>
-              Try again
+              {t("Try again")}
             </button>
           ) : null}
         </p>
@@ -103,23 +104,25 @@ export function SkillSetupView({
 
       {isLoading ? (
         <p className="skill-setup-loading" role="status">
-          Loading setup...
+          {t("Loading setup...")}
         </p>
       ) : isError && !model.hasAnySetup ? null : !model.hasAnySetup ? (
         <p className="skill-setup-none" role="status">
-          This skill does not declare any required setup. It is ready to use.
+          {t("This skill does not declare any required setup. It is ready to use.")}
         </p>
       ) : (
         <>
           {model.env.length > 0 ? (
-            <section className="skill-setup-block" aria-label="Required secrets">
+            <section className="skill-setup-block" aria-label={t("Required secrets")}>
               <h4 className="skill-setup-block-heading">
                 <IconLock size={13} ariaHidden />
-                Secrets
+                {t("Secrets")}
               </h4>
               <p className="skill-setup-block-note">
-                Stored as environment variables for this profile. They become available to Hermes
-                tools and sandboxes when the skill runs. {timingLabel("gateway-restart")}.
+                {t(
+                  "Stored as environment variables for this profile. They become available to Hermes tools and sandboxes when the skill runs.",
+                )}{" "}
+                {timingLabel("gateway-restart")}.
               </p>
               <ul className="skill-setup-rows">
                 {model.env.map((row) => (
@@ -137,13 +140,13 @@ export function SkillSetupView({
           ) : null}
 
           {model.config.length > 0 ? (
-            <section className="skill-setup-block" aria-label="Configuration">
+            <section className="skill-setup-block" aria-label={t("Configuration")}>
               <h4 className="skill-setup-block-heading">
                 <IconCircleInfo size={13} ariaHidden />
-                Configuration
+                {t("Configuration")}
               </h4>
               <p className="skill-setup-block-note">
-                Saved under skills.config in config.yaml. {timingLabel("next-session")}.
+                {t("Saved under skills.config in config.yaml.")} {timingLabel("next-session")}.
               </p>
               <ul className="skill-setup-rows">
                 {model.config.map((row) => (
@@ -240,9 +243,9 @@ function EnvSetupRow({
           {requirement.name}
         </label>
         {requirement.required ? (
-          <span className="skill-setup-tag skill-setup-tag-required">Required</span>
+          <span className="skill-setup-tag skill-setup-tag-required">{t("Required")}</span>
         ) : (
-          <span className="skill-setup-tag">Optional</span>
+          <span className="skill-setup-tag">{t("Optional")}</span>
         )}
         <span className="skill-setup-row-state" data-configured={row.configured}>
           {row.configured ? "Configured" : "Not set"}
@@ -252,11 +255,13 @@ function EnvSetupRow({
       {requirement.prompt ? <p className="skill-setup-row-prompt">{requirement.prompt}</p> : null}
       {requirement.help ? <p className="skill-setup-row-help">{requirement.help}</p> : null}
       {requirement.requiredFor ? (
-        <p className="skill-setup-row-help">Needed for {requirement.requiredFor}.</p>
+        <p className="skill-setup-row-help">
+          {t("Needed for {requiredFor}.", { requiredFor: requirement.requiredFor })}
+        </p>
       ) : null}
       {row.configured && row.preview ? (
-        <p className="skill-setup-row-preview" aria-label="Current value preview">
-          Current: {row.preview}
+        <p className="skill-setup-row-preview" aria-label={t("Current value preview")}>
+          {t("Current: {preview}", { preview: row.preview })}
         </p>
       ) : null}
 
@@ -289,7 +294,7 @@ function EnvSetupRow({
 
       {revealed ? (
         <p className="skill-setup-row-revealed" role="status">
-          Showing the stored value. It is not saved anywhere in Sub Rosa.
+          {t("Showing the stored value. It is not saved anywhere in Sub Rosa.")}
         </p>
       ) : null}
 
@@ -310,7 +315,7 @@ function EnvSetupRow({
               disabled={pending}
               onClick={() => void reveal()}
             >
-              Reveal current
+              {t("Reveal current")}
             </button>
             <button
               type="button"
@@ -318,7 +323,7 @@ function EnvSetupRow({
               disabled={pending}
               onClick={onDelete}
             >
-              Clear
+              {t("Clear")}
             </button>
           </>
         ) : null}
@@ -382,16 +387,16 @@ function ConfigSetupRow({
           {requirement.prompt ?? requirement.key}
         </label>
         {requirement.required ? (
-          <span className="skill-setup-tag skill-setup-tag-required">Required</span>
+          <span className="skill-setup-tag skill-setup-tag-required">{t("Required")}</span>
         ) : (
-          <span className="skill-setup-tag">Optional</span>
+          <span className="skill-setup-tag">{t("Optional")}</span>
         )}
         {row.modified ? (
           <span className="skill-setup-row-state" data-configured>
-            Modified
+            {t("Modified")}
           </span>
         ) : (
-          <span className="skill-setup-row-state">Default</span>
+          <span className="skill-setup-row-state">{t("Default")}</span>
         )}
       </div>
 
@@ -400,7 +405,7 @@ function ConfigSetupRow({
       ) : null}
       {requirement.default !== undefined ? (
         <p className="skill-setup-row-help">
-          Default: <code>{requirement.default}</code>
+          {t("Default:")} <code>{requirement.default}</code>
         </p>
       ) : null}
 
@@ -438,7 +443,7 @@ function ConfigSetupRow({
         </button>
         {row.current !== undefined && row.current.length > 0 ? (
           <button type="button" className="skill-setup-clear" disabled={pending} onClick={onDelete}>
-            Reset to default
+            {t("Reset to default")}
           </button>
         ) : null}
       </div>

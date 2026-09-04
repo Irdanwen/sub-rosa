@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useEffect, useState } from "react";
 import { Dialog, DialogField } from "../ui/Dialog";
 
@@ -46,13 +47,13 @@ export function CreateFolderDialog({
         if (submitting) return;
         onClose();
       }}
-      title="Create project"
-      description="Group meeting notes and agent sessions by project, client, or topic."
+      title={t("Create project")}
+      description={t("Group meeting notes and agent sessions by project, client, or topic.")}
       initialFocusSelector='input[name="folder-name"]'
       footer={
         <>
           <button type="button" className="primary-action" onClick={onClose} disabled={submitting}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             type="submit"
@@ -66,24 +67,24 @@ export function CreateFolderDialog({
       }
     >
       <form id="create-folder-form" className="dialog-body" onSubmit={handleSubmit}>
-        <DialogField label="Name" htmlFor="folder-name">
+        <DialogField label={t("Name")} htmlFor="folder-name">
           <input
             id="folder-name"
             name="folder-name"
             className="dialog-input"
-            placeholder="e.g. Customer interviews"
+            placeholder={t("e.g. Customer interviews")}
             autoComplete="off"
             value={name}
             onChange={(event) => setName(event.currentTarget.value)}
             maxLength={120}
           />
         </DialogField>
-        <DialogField label="Description" htmlFor="folder-description">
+        <DialogField label={t("Description")} htmlFor="folder-description">
           <textarea
             id="folder-description"
             name="folder-description"
             className="dialog-textarea"
-            placeholder="What belongs in this project?"
+            placeholder={t("What belongs in this project?")}
             value={description}
             onChange={(event) => setDescription(event.currentTarget.value)}
             rows={3}

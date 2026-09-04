@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { IconArrowBoxRight } from "central-icons/IconArrowBoxRight";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { IconTrashCan } from "central-icons/IconTrashCan";
@@ -85,13 +86,13 @@ export function NoteDetailScreen({
       <StackHeader
         title=""
         onBack={onBack}
-        backLabel="Notes"
+        backLabel={t("Notes")}
         trailing={
           <>
             <button
               type="button"
               className="mobile-icon-button"
-              aria-label="Ask this note"
+              aria-label={t("Ask this note")}
               disabled={!note}
               onClick={() => setAsking(true)}
             >
@@ -100,7 +101,7 @@ export function NoteDetailScreen({
             <button
               type="button"
               className="mobile-icon-button"
-              aria-label="Export note"
+              aria-label={t("Export note")}
               disabled={!note}
               onClick={() => {
                 if (!note) return;
@@ -114,7 +115,7 @@ export function NoteDetailScreen({
             <button
               type="button"
               className="mobile-icon-button"
-              aria-label="Delete note"
+              aria-label={t("Delete note")}
               onClick={() => setConfirmDelete(true)}
             >
               <IconTrashCan size={18} />
@@ -161,16 +162,16 @@ export function NoteDetailScreen({
             onTabChange={onTabChange}
           />
         ) : (
-          <section className="editor-empty" role="status" aria-label="Opening note">
+          <section className="editor-empty" role="status" aria-label={t("Opening note")}>
             <Spinner />
           </section>
         )}
       </div>
       <ConfirmDialog
         open={confirmDelete}
-        title="Delete this note?"
-        description="The note, its audio, and its transcript are removed from this device."
-        confirmLabel="Delete"
+        title={t("Delete this note?")}
+        description={t("The note, its audio, and its transcript are removed from this device.")}
+        confirmLabel={t("Delete")}
         destructive
         onConfirm={() => {
           setConfirmDelete(false);

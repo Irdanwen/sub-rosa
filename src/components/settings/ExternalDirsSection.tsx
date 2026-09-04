@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconCircleInfo } from "central-icons/IconCircleInfo";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
@@ -74,11 +75,12 @@ export function ExternalDirsView({
   return (
     <section className="settings-group external-dirs" aria-labelledby="external-dirs-heading">
       <h2 id="external-dirs-heading" className="settings-group-heading">
-        External skill directories
+        {t("External skill directories")}
       </h2>
       <p className="settings-group-description">
-        Shared folders Hermes scans for skills alongside your installed skills. Changes apply to new
-        sessions.{" "}
+        {t(
+          "Shared folders Hermes scans for skills alongside your installed skills. Changes apply to new sessions.",
+        )}{" "}
         <ModeNote mode={state.mode ?? mode} profile={state.profile} show={!isUnavailable} />
       </p>
 
@@ -100,8 +102,8 @@ export function ExternalDirsView({
             <input
               type="text"
               value={draft}
-              placeholder="Add a directory path"
-              aria-label="External directory path"
+              placeholder={t("Add a directory path")}
+              aria-label={t("External directory path")}
               disabled={isUnavailable || state.busy}
               onChange={(event) => {
                 setDraft(event.currentTarget.value);
@@ -120,7 +122,7 @@ export function ExternalDirsView({
               disabled={isUnavailable || state.busy || draft.trim().length === 0}
               onClick={() => void submit()}
             >
-              Add
+              {t("Add")}
             </button>
           </div>
           <button
@@ -130,13 +132,14 @@ export function ExternalDirsView({
             onClick={state.refresh}
           >
             <IconArrowRotateClockwise size={14} ariaHidden />
-            Refresh
+            {t("Refresh")}
           </button>
         </div>
 
         <p className="external-dirs-hint">
-          Paths can use {"~"} for your home folder and {"${VAR}"} for environment variables. Sub
-          Rosa shows the resolved path below each entry.
+          {t(
+            "Paths can use ~ for your home folder and ${VAR} for environment variables. Sub Rosa shows the resolved path below each entry.",
+          )}
         </p>
 
         {formError ? (
@@ -155,8 +158,10 @@ export function ExternalDirsView({
         <div className="external-dirs-body">
           {isUnavailable ? (
             <EmptyState
-              title="Hermes is not running"
-              description="Start Hermes to see and manage the external skill directories for your sessions."
+              title={t("Hermes is not running")}
+              description={t(
+                "Start Hermes to see and manage the external skill directories for your sessions.",
+              )}
             />
           ) : isErrored ? (
             <ErrorState
@@ -168,8 +173,10 @@ export function ExternalDirsView({
             <Loading />
           ) : !hasRows ? (
             <EmptyState
-              title="No external directories"
-              description="Add a folder of shared skills to load them alongside your installed skills."
+              title={t("No external directories")}
+              description={t(
+                "Add a folder of shared skills to load them alongside your installed skills.",
+              )}
             />
           ) : (
             <ul className="external-dirs-list">
@@ -205,8 +212,8 @@ function ModeNote({
   const modeLabel = mode === "unrestricted" ? "Full mode" : "Sandboxed";
   return (
     <span className="external-dirs-mode-note">
-      Targeting the {modeLabel} runtime
-      {profile ? ` (profile ${profile})` : ""}.
+      {t("Targeting the {mode} runtime", { mode: modeLabel })}
+      {profile ? t(" (profile {profile})", { profile }) : ""}.
     </span>
   );
 }
@@ -277,13 +284,15 @@ function DirRow({
 
         {row.expanded && row.resolvedPath ? (
           <p className="external-dir-resolved" title={row.resolvedPath}>
-            Resolves to {row.resolvedPath}
+            {t("Resolves to {resolvedPath}", { resolvedPath: row.resolvedPath })}
           </p>
         ) : null}
 
         {row.presence === "unresolved" && row.unresolvedVar ? (
           <p className="external-dir-note external-dir-note-warning">
-            Set the {row.unresolvedVar} environment variable to resolve this path.
+            {t("Set the {unresolvedVar} environment variable to resolve this path.", {
+              unresolvedVar: row.unresolvedVar,
+            })}
           </p>
         ) : null}
 
@@ -293,11 +302,16 @@ function DirRow({
               {row.skillCount === 1 ? "1 skill found" : `${row.skillCount} skills found`}
             </span>
           ) : row.presence === "missing" ? (
-            <span className="external-dir-meta-item">No skills loaded (directory not found)</span>
+            <span className="external-dir-meta-item">
+              {t("No skills loaded (directory not found)")}
+            </span>
           ) : null}
-          <span className="external-dir-readonly" title="Sub Rosa does not edit external skills.">
+          <span
+            className="external-dir-readonly"
+            title={t("Sub Rosa does not edit external skills.")}
+          >
             <IconLock size={12} ariaHidden />
-            Read only in Sub Rosa
+            {t("Read only in Sub Rosa")}
           </span>
         </div>
 
@@ -309,7 +323,7 @@ function DirRow({
           type="button"
           className="external-dir-remove"
           aria-label={`Remove ${row.rawPath}`}
-          title="Remove directory"
+          title={t("Remove directory")}
           disabled={busy}
           onClick={onRemove}
         >
@@ -361,11 +375,11 @@ function ErrorState({
       <span className="external-dirs-empty-icon" aria-hidden>
         <IconExclamationCircle size={22} />
       </span>
-      <p className="external-dirs-empty-title">Couldn't load directories</p>
+      <p className="external-dirs-empty-title">{t("Couldn't load directories")}</p>
       <p className="external-dirs-empty-description">{message}</p>
       {retryable ? (
         <button type="button" className="external-dirs-retry" onClick={onRetry}>
-          Try again
+          {t("Try again")}
         </button>
       ) : null}
     </div>

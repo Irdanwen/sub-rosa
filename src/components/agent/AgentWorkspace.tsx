@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
@@ -586,14 +587,14 @@ const SANDBOX_OPTIONS = [
   {
     unrestricted: false,
     icon: <IconShieldCheck size={16} aria-hidden />,
-    title: "Sandboxed",
-    description: "Sub Rosa can read your files but only change its own workspace.",
+    title: t("Sandboxed"),
+    description: t("Sub Rosa can read your files but only change its own workspace."),
   },
   {
     unrestricted: true,
     icon: <IconShieldCrossed size={16} aria-hidden />,
-    title: "Unrestricted",
-    description: "Sub Rosa can change any file your account can.",
+    title: t("Unrestricted"),
+    description: t("Sub Rosa can change any file your account can."),
   },
 ] as const;
 
@@ -640,69 +641,73 @@ const AGENT_SHORTCUTS: AgentShortcut[] = [
   {
     key: "recent-files",
     icon: <IconHistory size={18} />,
-    title: "Catch up on recent files",
-    description: "A quick rundown of what's new across your folders.",
-    prompt:
+    title: t("Catch up on recent files"),
+    description: t("A quick rundown of what's new across your folders."),
+    prompt: t(
       "Look through my Desktop, Documents, and Downloads folders for files added or changed in the last week and give me a quick rundown of what's new, grouped by what they seem to be for. Don't move or change anything.",
+    ),
     action: "run",
   },
   {
     key: "research",
     icon: <IconDeepSearch size={18} />,
-    title: "Research a topic",
-    description: "Get a short, sourced write-up on anything.",
-    prompt: "Research <topic> and write a short summary of what you find, with sources.",
+    title: t("Research a topic"),
+    description: t("Get a short, sourced write-up on anything."),
+    prompt: t("Research <topic> and write a short summary of what you find, with sources."),
     action: "prefill",
   },
   {
     key: "summarize-file",
     icon: <IconFileSparkle size={18} />,
-    title: "Summarize a file",
-    description: "Pick a document and get the key points out of it.",
-    prompt: "Summarize the key points of the attached file and pull out any action items.",
+    title: t("Summarize a file"),
+    description: t("Pick a document and get the key points out of it."),
+    prompt: t("Summarize the key points of the attached file and pull out any action items."),
     action: "attach",
   },
   {
     key: "health-check",
     icon: <IconHeartBeat size={18} />,
-    title: "Check my computer's health",
-    description: "Disk, memory, and login items that need attention.",
-    prompt:
+    title: t("Check my computer's health"),
+    description: t("Disk, memory, and login items that need attention."),
+    prompt: t(
       "Give my computer a quick health check: free disk space, memory pressure, login items, and anything else worth flagging. Summarize what looks fine and what needs attention.",
+    ),
     action: "run",
   },
   {
     key: "find-file",
     icon: <IconMagnifyingGlass size={18} />,
-    title: "Find a file",
-    description: "Describe what you remember; Sub Rosa tracks it down.",
-    prompt: "Find <a file I half-remember> on my computer and tell me where it is.",
+    title: t("Find a file"),
+    description: t("Describe what you remember; Sub Rosa tracks it down."),
+    prompt: t("Find <a file I half-remember> on my computer and tell me where it is."),
     action: "prefill",
   },
   {
     key: "analyze-spreadsheet",
     icon: <IconPieChart1 size={18} />,
-    title: "Analyze a spreadsheet",
-    description: "Key figures, trends, and oddities from a CSV or sheet.",
-    prompt:
+    title: t("Analyze a spreadsheet"),
+    description: t("Key figures, trends, and oddities from a CSV or sheet."),
+    prompt: t(
       "Analyze the attached spreadsheet: summarize the key figures and trends, and call out anything that looks off.",
+    ),
     action: "attach",
   },
   {
     key: "extract-text",
     icon: <IconFileText size={18} />,
-    title: "Extract text from a file",
-    description: "Pull clean text out of a PDF, image, or scan.",
-    prompt: "Extract all the text from the attached file and clean it up into tidy Markdown.",
+    title: t("Extract text from a file"),
+    description: t("Pull clean text out of a PDF, image, or scan."),
+    prompt: t("Extract all the text from the attached file and clean it up into tidy Markdown."),
     action: "attach",
   },
   {
     key: "plan-project",
     icon: <IconListBullets size={18} />,
-    title: "Plan a project",
-    description: "Turn a vague goal into concrete first steps.",
-    prompt:
+    title: t("Plan a project"),
+    description: t("Turn a vague goal into concrete first steps."),
+    prompt: t(
       "Help me plan <a project>: break it into concrete steps, flag the risks, and suggest what to tackle first.",
+    ),
     action: "prefill",
   },
 ];
@@ -2773,7 +2778,11 @@ export function AgentWorkspace({
     // Defense in depth: the picker already hides tool-less models, but the
     // agent bricks without function calling, so refuse one rather than switch.
     if (chosen && !modelSupportsTools(chosen)) {
-      setError(`${chosen.name} can't run Sub Rosa's tools, so it can't be used for the agent.`);
+      setError(
+        t("{model} can't run Sub Rosa's tools, so it can't be used for the agent.", {
+          model: chosen.name,
+        }),
+      );
       return false;
     }
     const modelName = chosen?.name ?? modelId;
@@ -3339,7 +3348,7 @@ export function AgentWorkspace({
 
     if (parsed.name === "image") {
       if (!IMAGE_GENERATION_ENABLED) {
-        setError("Image generation is not available.");
+        setError(t("Image generation is not available."));
         return true;
       }
       await runImageSlashCommand(parsed.argument, commandText);
@@ -3448,7 +3457,7 @@ export function AgentWorkspace({
         reopenSitting(strandedSitting);
         return;
       }
-      setError("Type what you want done after /council.");
+      setError(t("Type what you want done after /council."));
       return;
     }
     clearComposerCommandDraft(commandText);
@@ -3472,7 +3481,7 @@ export function AgentWorkspace({
   async function runImageSlashCommand(argument: string, commandText: string) {
     const prompt = argument.trim();
     if (!prompt) {
-      setError("Type a description after /image to generate an image.");
+      setError(t("Type a description after /image to generate an image."));
       return;
     }
 
@@ -3508,7 +3517,7 @@ export function AgentWorkspace({
       if (heroMode) setHeroLeaving(false);
       setGeneratingImage(false);
       setImportingFiles(false);
-      setError("Could not start an image session. Try again.");
+      setError(t("Could not start an image session. Try again."));
       return;
     }
     const sessionId = targetSessionId;
@@ -3595,7 +3604,7 @@ export function AgentWorkspace({
 
     const models = await generationModelsForSlashCommand();
     if (!models.length) {
-      setError("Could not load models. Try again in a moment.");
+      setError(t("Could not load models. Try again in a moment."));
       return;
     }
 
@@ -3655,7 +3664,7 @@ export function AgentWorkspace({
     const sessionId = newSessionModeRef.current ? undefined : selectedHermesSessionId;
     if (request.kind !== "set") {
       if (!sessionId) {
-        setError("Open a conversation to check or change its goal.");
+        setError(t("Open a conversation to check or change its goal."));
         return;
       }
       try {
@@ -3677,7 +3686,7 @@ export function AgentWorkspace({
         clearComposerCommandDraft(commandText);
         setError(null);
         setGoalNotice({
-          message: `${goalDispatchNoticeText(response)} Sub Rosa keeps going when the current step finishes.`,
+          message: `${goalDispatchNoticeText(response)} ${t("Sub Rosa keeps going when the current step finishes.")}`,
           sessionId,
         });
       } catch (err) {
@@ -4028,7 +4037,7 @@ export function AgentWorkspace({
     setDropActive(false);
     const files = Array.from(event.dataTransfer.files);
     if (!files.length) {
-      setError("Drop files from Finder to attach them to the agent.");
+      setError(t("Drop files from Finder to attach them to the agent."));
       return;
     }
     void importDroppedFiles(files);
@@ -4142,7 +4151,7 @@ export function AgentWorkspace({
     try {
       const selected = await openFileDialog({
         multiple: true,
-        title: "Attach files",
+        title: t("Attach files"),
       });
       if (!selected) return false;
       const paths = Array.isArray(selected) ? selected : [selected];
@@ -4191,7 +4200,7 @@ export function AgentWorkspace({
       const selected = await openFileDialog({
         directory: true,
         multiple: false,
-        title: "Choose a working folder",
+        title: t("Choose a working folder"),
       });
       if (!selected || Array.isArray(selected)) return;
       await adoptWorkingDirCandidate(selected);
@@ -4421,7 +4430,7 @@ export function AgentWorkspace({
       title,
       prompt: displayContent,
       status: "starting",
-      summary: "Starting Sub Rosa.",
+      summary: t("Starting Sub Rosa."),
     });
     return { createdAt, id: sessionId, userMessage };
   }
@@ -5078,7 +5087,7 @@ export function AgentWorkspace({
       title: sessionDisplayTitle,
       prompt: displayContent,
       status: "running",
-      summary: "Sub Rosa is working.",
+      summary: t("Sub Rosa is working."),
     });
     // Runs the turn against one runtime: the pre-turn state hook, then the
     // prompt itself. Factored out so it can be replayed once against a fresh
@@ -5947,7 +5956,7 @@ export function AgentWorkspace({
   ) {
     if (branchingMessageId) return;
     if (!sessionId) {
-      setError("Cannot branch from this message because its session is unavailable.", {
+      setError(t("Cannot branch from this message because its session is unavailable."), {
         sessionId: modeSessionId ?? null,
       });
       return;
@@ -6086,7 +6095,7 @@ export function AgentWorkspace({
       prompt: initialPrompt,
       title: titleFromPrompt(initialPrompt),
       status: "starting",
-      summary: "Starting Sub Rosa.",
+      summary: t("Starting Sub Rosa."),
     });
     setSubmitting(true);
     try {
@@ -6222,7 +6231,7 @@ export function AgentWorkspace({
       prompt,
       title: titleFromPrompt(prompt),
       status: "starting",
-      summary: "Starting Sub Rosa.",
+      summary: t("Starting Sub Rosa."),
     });
     setSubmitting(true);
     try {
@@ -6310,7 +6319,7 @@ export function AgentWorkspace({
       title:
         hermesSessionItems.find((session) => session.id === sessionId)?.title ?? "Agent session",
       status: "cancelled",
-      summary: "Stopped.",
+      summary: t("Stopped."),
       ...activityCounts,
     });
 
@@ -7186,7 +7195,9 @@ export function AgentWorkspace({
                 className="agent-composer-image-warning-icon"
               />
               <span className="agent-composer-image-warning-text">
-                {resolvedGenerationModel?.name ?? "This model"} can't read images.
+                {t("{model} can't read images.", {
+                  model: resolvedGenerationModel?.name ?? t("This model"),
+                })}
               </span>
               {preferredVisionModel ? (
                 <button
@@ -7204,7 +7215,7 @@ export function AgentWorkspace({
                     void handleSelectGenerationModel(preferredVisionModel.id)
                   }
                 >
-                  Switch to {preferredVisionModel.name}
+                  {t("Switch to {name}", { name: preferredVisionModel.name })}
                 </button>
               ) : null}
             </div>
@@ -7217,11 +7228,14 @@ export function AgentWorkspace({
                 className="agent-composer-size-warning-icon"
               />
               <span className="agent-composer-size-warning-text">
-                This message is about{" "}
-                {formatComposerTokenCount(visibleComposerSizeWarning.estimatedTokens)} tokens, over{" "}
-                {visibleComposerSizeWarning.modelName}'s{" "}
-                {formatComposerTokenCount(visibleComposerSizeWarning.contextLimit)} token context
-                window.
+                {t(
+                  "This message is about {tokens} tokens, over {model}'s {limit} token context window.",
+                  {
+                    tokens: formatComposerTokenCount(visibleComposerSizeWarning.estimatedTokens),
+                    model: visibleComposerSizeWarning.modelName,
+                    limit: formatComposerTokenCount(visibleComposerSizeWarning.contextLimit),
+                  },
+                )}
               </span>
               <span className="agent-composer-size-warning-actions">
                 <button
@@ -7229,14 +7243,14 @@ export function AgentWorkspace({
                   className="agent-composer-notice-button"
                   onClick={proceedWithOversizeComposerInput}
                 >
-                  Proceed
+                  {t("Proceed")}
                 </button>
                 <button
                   type="button"
                   className="agent-composer-notice-button"
                   onClick={editOversizeComposerInput}
                 >
-                  Edit message
+                  {t("Edit message")}
                 </button>
                 {visibleComposerSizeWarning.switchModel ? (
                   <button
@@ -7244,7 +7258,7 @@ export function AgentWorkspace({
                     className="agent-composer-notice-button"
                     onClick={switchOversizeComposerModel}
                   >
-                    Switch to {visibleComposerSizeWarning.switchModel.name}
+                    {t("Switch to {name}", { name: visibleComposerSizeWarning.switchModel.name })}
                   </button>
                 ) : null}
               </span>
@@ -7294,8 +7308,8 @@ export function AgentWorkspace({
               type="button"
               ref={attachTriggerRef}
               className="agent-composer-attach"
-              aria-label="Attach files or tag this message"
-              title="Attach or tag"
+              aria-label={t("Attach files or tag this message")}
+              title={t("Attach or tag")}
               aria-haspopup="menu"
               aria-expanded={attachMenuOpen}
               data-open={attachMenuOpen || undefined}
@@ -7315,7 +7329,7 @@ export function AgentWorkspace({
                 data-unrestricted={fullModeDraft ? "true" : undefined}
                 aria-haspopup="menu"
                 aria-expanded={sandboxMenuOpen}
-                title="Change what Sub Rosa can touch"
+                title={t("Change what Sub Rosa can touch")}
                 onClick={() => setSandboxMenuOpen((open) => !open)}
               >
                 {fullModeDraft ? (
@@ -7368,8 +7382,8 @@ export function AgentWorkspace({
               <button
                 type="button"
                 className="agent-composer-mic"
-                aria-label="Dictate"
-                title="Start dictation"
+                aria-label={t("Dictate")}
+                title={t("Start dictation")}
                 onClick={() => void startDictation()}
               >
                 <IconMicrophone size={18} />
@@ -7382,8 +7396,8 @@ export function AgentWorkspace({
                 <button
                   type="button"
                   className="agent-composer-stop"
-                  aria-label="Stop Sub Rosa"
-                  title="Stop Sub Rosa"
+                  aria-label={t("Stop Sub Rosa")}
+                  title={t("Stop Sub Rosa")}
                   disabled={stoppingSessionIds.has(selectedHermesSessionId)}
                   onClick={() => void stopHermesSession(selectedHermesSessionId)}
                 >
@@ -7416,7 +7430,7 @@ export function AgentWorkspace({
             ref={attachMenuRef}
             className="agent-attach-menu"
             role="menu"
-            aria-label="Attach or tag this message"
+            aria-label={t("Attach or tag this message")}
           >
             <button
               type="button"
@@ -7429,7 +7443,7 @@ export function AgentWorkspace({
               <span className="agent-attach-menu-icon">
                 <IconFileText size={16} aria-hidden />
               </span>
-              <span className="agent-attach-menu-label">Attach files</span>
+              <span className="agent-attach-menu-label">{t("Attach files")}</span>
             </button>
             <div className="agent-attach-menu-divider" role="separator" />
             {REPORT_CATEGORIES.map((reportCategory) => (
@@ -7469,9 +7483,9 @@ export function AgentWorkspace({
             ref={sandboxMenuRef}
             className="agent-sandbox-menu"
             role="menu"
-            aria-label="What can Sub Rosa change?"
+            aria-label={t("What can Sub Rosa change?")}
           >
-            <p className="agent-sandbox-menu-title">What can Sub Rosa change?</p>
+            <p className="agent-sandbox-menu-title">{t("What can Sub Rosa change?")}</p>
             {SANDBOX_OPTIONS.map((option, index) => (
               <button
                 key={option.title}
@@ -7513,9 +7527,9 @@ export function AgentWorkspace({
             ref={workdirMenuRef}
             className="agent-sandbox-menu agent-workdir-menu"
             role="menu"
-            aria-label="Where does Sub Rosa work?"
+            aria-label={t("Where does Sub Rosa work?")}
           >
-            <p className="agent-sandbox-menu-title">Where does Sub Rosa work?</p>
+            <p className="agent-sandbox-menu-title">{t("Where does Sub Rosa work?")}</p>
             <button
               ref={workdirFirstItemRef}
               type="button"
@@ -7529,9 +7543,9 @@ export function AgentWorkspace({
             >
               <IconFolder1 size={16} aria-hidden />
               <span className="agent-sandbox-option">
-                <span className="agent-sandbox-option-title">App workspace</span>
+                <span className="agent-sandbox-option-title">{t("App workspace")}</span>
                 <span className="agent-sandbox-option-desc">
-                  Sub Rosa's own folder inside the app.
+                  {t("Sub Rosa's own folder inside the app.")}
                 </span>
               </span>
               {workingDirDraft === null ? (
@@ -7569,9 +7583,9 @@ export function AgentWorkspace({
             <button type="button" role="menuitem" onClick={() => void pickWorkingDir()}>
               <IconFolders size={16} aria-hidden />
               <span className="agent-sandbox-option">
-                <span className="agent-sandbox-option-title">Choose folder…</span>
+                <span className="agent-sandbox-option-title">{t("Choose folder…")}</span>
                 <span className="agent-sandbox-option-desc">
-                  Sub Rosa works in the folder you pick: it reads and writes files there.
+                  {t("Sub Rosa works in the folder you pick: it reads and writes files there.")}
                 </span>
               </span>
             </button>
@@ -7580,8 +7594,10 @@ export function AgentWorkspace({
         <Dialog
           open={confirmUnrestricted}
           onClose={() => setConfirmUnrestricted(false)}
-          title="Turn on Unrestricted?"
-          description="Sub Rosa will be able to change any file your account can, not just its own workspace. This comes with risks like data loss if something goes wrong."
+          title={t("Turn on Unrestricted?")}
+          description={t(
+            "Sub Rosa will be able to change any file your account can, not just its own workspace. This comes with risks like data loss if something goes wrong.",
+          )}
           footer={
             <>
               <button
@@ -7589,7 +7605,7 @@ export function AgentWorkspace({
                 className="primary-action"
                 onClick={() => setConfirmUnrestricted(false)}
               >
-                Cancel
+                {t("Cancel")}
               </button>
               <button
                 type="button"
@@ -7601,7 +7617,7 @@ export function AgentWorkspace({
                   setConfirmUnrestricted(false);
                 }}
               >
-                Turn on Unrestricted
+                {t("Turn on Unrestricted")}
               </button>
             </>
           }
@@ -7611,7 +7627,7 @@ export function AgentWorkspace({
         <Dialog
           open={confirmBroadWorkingDir !== null}
           onClose={() => setConfirmBroadWorkingDir(null)}
-          title="Use a broad folder?"
+          title={t("Use a broad folder?")}
           description={
             confirmBroadWorkingDir
               ? `Sub Rosa will be able to change everything in "${confirmBroadWorkingDir.displayName}". A narrower project folder keeps mistakes contained.`
@@ -7624,7 +7640,7 @@ export function AgentWorkspace({
                 className="primary-action"
                 onClick={() => setConfirmBroadWorkingDir(null)}
               >
-                Cancel
+                {t("Cancel")}
               </button>
               <button
                 type="button"
@@ -7636,7 +7652,7 @@ export function AgentWorkspace({
                   setConfirmBroadWorkingDir(null);
                 }}
               >
-                Use this folder
+                {t("Use this folder")}
               </button>
             </>
           }
@@ -7795,7 +7811,7 @@ export function AgentWorkspace({
             <button
               type="button"
               className="agent-icon-button"
-              aria-label="Cancel task"
+              aria-label={t("Cancel task")}
               onClick={() => void cancelTask(selectedTask.id)}
             >
               <IconStopCircle size={15} />
@@ -7805,7 +7821,7 @@ export function AgentWorkspace({
             <button
               type="button"
               className="agent-icon-button"
-              aria-label="Retry task"
+              aria-label={t("Retry task")}
               onClick={() => void retryTask(selectedTask.id)}
             >
               <IconArrowRotateClockwise size={15} />
@@ -7890,7 +7906,7 @@ export function AgentWorkspace({
   return (
     <section
       className="agent-workspace"
-      aria-label="Session"
+      aria-label={t("Session")}
       data-artifact-panel={artifactPanel ? "open" : undefined}
       data-hero={heroMode ? "true" : undefined}
     >
@@ -7907,10 +7923,10 @@ export function AgentWorkspace({
           type="button"
           className="agent-activity-toggle"
           onClick={() => setActivityDrawerOpen(true)}
-          aria-label="Show agent activity"
+          aria-label={t("Show agent activity")}
         >
           <IconBolt size={15} ariaHidden />
-          <span className="agent-activity-toggle-label">Activity</span>
+          <span className="agent-activity-toggle-label">{t("Activity")}</span>
           {activeAgentCount > 0 ? (
             <span className="agent-activity-toggle-count" aria-hidden>
               {activeAgentCount}
@@ -8017,7 +8033,7 @@ export function AgentWorkspace({
       {heroMode ? (
         <section
           className="agent-main"
-          aria-label="Agent task details"
+          aria-label={t("Agent task details")}
           data-hero="true"
           data-hero-leaving={heroLeaving ? "true" : undefined}
         >
@@ -8086,10 +8102,10 @@ export function AgentWorkspace({
       ) : (
         <>
           <div ref={agentScrollRef} className="agent-scroll">
-            <section className="agent-main" aria-label="Agent task details">
+            <section className="agent-main" aria-label={t("Agent task details")}>
               {galleryErrors ? (
                 <AgentErrorBanner
-                  message="Could not connect to Hermes gateway."
+                  message={t("Could not connect to Hermes gateway.")}
                   onRetry={galleryNoop}
                   onDismiss={galleryNoop}
                 />
@@ -8134,7 +8150,7 @@ export function AgentWorkspace({
                   <p>{workingDirNotice}</p>
                   <button
                     type="button"
-                    aria-label="Dismiss"
+                    aria-label={t("Dismiss")}
                     onClick={() => setWorkingDirNotice(null)}
                   >
                     <IconCrossMedium size={14} />
@@ -8190,7 +8206,9 @@ export function AgentWorkspace({
                         : undefined;
                       if (!target) {
                         setError(
-                          "The session that did this work is no longer here, so the correction was not sent.",
+                          t(
+                            "The session that did this work is no longer here, so the correction was not sent.",
+                          ),
                         );
                         return;
                       }
@@ -8474,7 +8492,7 @@ function ComposerModelPopover({
       ref={popoverRef}
       className="agent-composer-model-popover"
       role="dialog"
-      aria-label="Choose text model"
+      aria-label={t("Choose text model")}
       onMouseLeave={() => {
         // Hover details follow the pointer out; the all-models panel stays
         // pinned so a search in progress doesn't vanish mid-keystroke.
@@ -8482,8 +8500,12 @@ function ComposerModelPopover({
         if (flyout?.kind === "model") onFlyoutChange(null);
       }}
     >
-      <p className="agent-composer-model-title">Model</p>
-      <div className="agent-composer-model-menu" role="listbox" aria-label="Suggested text models">
+      <p className="agent-composer-model-title">{t("Model")}</p>
+      <div
+        className="agent-composer-model-menu"
+        role="listbox"
+        aria-label={t("Suggested text models")}
+      >
         {suggested.length ? (
           suggested.map(({ model: option }) => (
             <button
@@ -8513,7 +8535,7 @@ function ComposerModelPopover({
             </button>
           ))
         ) : (
-          <p className="agent-composer-model-empty">Loading suggested models.</p>
+          <p className="agent-composer-model-empty">{t("Loading suggested models.")}</p>
         )}
       </div>
       <button
@@ -8533,7 +8555,7 @@ function ComposerModelPopover({
           searchRef.current?.focus();
         }}
       >
-        <span className="agent-composer-model-row-name">All models</span>
+        <span className="agent-composer-model-row-name">{t("All models")}</span>
         <IconChevronRightSmall size={12} aria-hidden className="agent-composer-model-row-chevron" />
       </button>
       {detail ? (
@@ -8547,7 +8569,7 @@ function ComposerModelPopover({
           ref={flyoutRef}
           className="agent-composer-model-flyout agent-composer-model-all-panel"
           role="group"
-          aria-label="All text models"
+          aria-label={t("All text models")}
           onMouseLeave={() => {
             cancelHoverIntent();
             scheduleCatalogClose();
@@ -8560,8 +8582,8 @@ function ComposerModelPopover({
                 ref={searchRef}
                 value={search}
                 onChange={(event) => onSearchChange(event.currentTarget.value)}
-                placeholder="Search models"
-                aria-label="Search models"
+                placeholder={t("Search models")}
+                aria-label={t("Search models")}
               />
             </label>
             <div
@@ -8573,7 +8595,7 @@ function ComposerModelPopover({
                 ref={listRef}
                 className="agent-composer-model-list"
                 role="listbox"
-                aria-label="All text models"
+                aria-label={t("All text models")}
                 onScroll={() => {
                   updateFade();
                   cancelHoverIntent();
@@ -8599,7 +8621,7 @@ function ComposerModelPopover({
                     />
                   ))
                 ) : (
-                  <p className="agent-composer-model-empty">No models match your search.</p>
+                  <p className="agent-composer-model-empty">{t("No models match your search.")}</p>
                 )}
               </div>
             </div>
@@ -8798,7 +8820,7 @@ function UnrestrictedBadge() {
       aria-label={`Unrestricted - ${description}`}
     >
       <IconShieldCrossed size={13} aria-hidden />
-      Unrestricted
+      {t("Unrestricted")}
     </HoverTip>
   );
 }
@@ -8879,7 +8901,7 @@ function AgentSessionBar({
   return (
     <div className="detail-bar agent-session-bar" data-tauri-drag-region>
       {origin ? <BackButton label={origin.backLabel} onClick={origin.onBack} /> : null}
-      <nav className="detail-breadcrumb" aria-label="Breadcrumb">
+      <nav className="detail-breadcrumb" aria-label={t("Breadcrumb")}>
         <ol>
           {origin ? (
             origin.crumbs.map((crumb, index) => (
@@ -8896,7 +8918,7 @@ function AgentSessionBar({
             ))
           ) : (
             <li>
-              <span className="detail-breadcrumb-label">Session</span>
+              <span className="detail-breadcrumb-label">{t("Session")}</span>
             </li>
           )}
           {title !== undefined ? (
@@ -8907,7 +8929,7 @@ function AgentSessionBar({
               {renaming ? (
                 <input
                   className="agent-session-rename"
-                  aria-label="Session name"
+                  aria-label={t("Session name")}
                   autoFocus
                   value={draft}
                   onChange={(event) => setDraft(event.currentTarget.value)}
@@ -8932,7 +8954,7 @@ function AgentSessionBar({
               <span className="detail-breadcrumb-separator" aria-hidden>
                 /
               </span>
-              <span className="detail-breadcrumb-current">New session</span>
+              <span className="detail-breadcrumb-current">{t("New session")}</span>
             </li>
           ) : null}
         </ol>
@@ -8955,7 +8977,7 @@ function AgentSessionBar({
             type="button"
             className="agent-session-files"
             aria-label={`View files (${artifactCount})`}
-            title="View files"
+            title={t("View files")}
             aria-pressed={artifactsOpen}
             onClick={onToggleArtifacts}
           >
@@ -8969,7 +8991,7 @@ function AgentSessionBar({
             <button
               type="button"
               className="icon-button agent-session-menu-trigger"
-              aria-label="Session actions"
+              aria-label={t("Session actions")}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen((open) => !open)}
@@ -8988,7 +9010,7 @@ function AgentSessionBar({
                     }}
                   >
                     <IconGauge size={14} />
-                    Usage
+                    {t("Usage")}
                   </button>
                 ) : null}
                 {onCompactContext ? (
@@ -9001,7 +9023,7 @@ function AgentSessionBar({
                     }}
                   >
                     <IconConcise size={14} />
-                    Compact context
+                    {t("Compact context")}
                   </button>
                 ) : null}
                 {onRename ? (
@@ -9015,7 +9037,7 @@ function AgentSessionBar({
                     }}
                   >
                     <IconPencil size={14} />
-                    Rename
+                    {t("Rename")}
                   </button>
                 ) : null}
                 {onDelete ? (
@@ -9029,7 +9051,7 @@ function AgentSessionBar({
                     }}
                   >
                     <IconTrashCan size={14} />
-                    Delete session
+                    {t("Delete session")}
                   </button>
                 ) : null}
                 {onOpenTuiDebug ? (
@@ -9047,7 +9069,7 @@ function AgentSessionBar({
                       }}
                     >
                       <IconConsole size={14} />
-                      Debug with Hermes TUI
+                      {t("Debug with Hermes TUI")}
                     </button>
                   </>
                 ) : null}
@@ -9090,10 +9112,10 @@ function PanelTabs({
   onChange: (panel: AgentPanel) => void;
 }) {
   return (
-    <div className="agent-panel-tabs" role="tablist" aria-label="Agent panels">
+    <div className="agent-panel-tabs" role="tablist" aria-label={t("Agent panels")}>
       <button type="button" aria-selected={activePanel === "chat"} onClick={() => onChange("chat")}>
         <IconBubble3 size={14} />
-        Chat
+        {t("Chat")}
       </button>
       <button
         type="button"
@@ -9101,7 +9123,7 @@ function PanelTabs({
         onClick={() => onChange("skills")}
       >
         <IconToolbox size={14} />
-        Skills
+        {t("Skills")}
       </button>
       <button
         type="button"
@@ -9109,7 +9131,7 @@ function PanelTabs({
         onClick={() => onChange("messaging")}
       >
         <IconBubbleWide size={14} />
-        Messaging
+        {t("Messaging")}
       </button>
     </div>
   );
@@ -9224,9 +9246,9 @@ export function SkillsToolsPanel({
         />
         <ConfirmDialog
           open={discardConfirmOpen}
-          title="Discard skill edits?"
-          description="Your unsaved changes will be lost."
-          confirmLabel="Discard"
+          title={t("Discard skill edits?")}
+          description={t("Your unsaved changes will be lost.")}
+          confirmLabel={t("Discard")}
           destructive
           onClose={() => setDiscardConfirmOpen(false)}
           onConfirm={closeSkillEditor}
@@ -9236,10 +9258,10 @@ export function SkillsToolsPanel({
   }
 
   return (
-    <section className="agent-management-panel" aria-label="Skills and tools">
+    <section className="agent-management-panel" aria-label={t("Skills and tools")}>
       <ManagementToolbar
         loading={loading}
-        placeholder="Search skills and toolsets"
+        placeholder={t("Search skills and toolsets")}
         query={query}
         onQueryChange={onQueryChange}
         onRefresh={onRefresh}
@@ -9250,7 +9272,11 @@ export function SkillsToolsPanel({
         </div>
       ) : (
         <div className="agent-management-scroll">
-          <CapabilityGroup title="Skills" count={visibleSkills.length} empty="No matching skills">
+          <CapabilityGroup
+            title={t("Skills")}
+            count={visibleSkills.length}
+            empty={t("No matching skills")}
+          >
             {visibleSkills.map((skill) => (
               <CapabilityRow
                 key={skill.name}
@@ -9265,9 +9291,9 @@ export function SkillsToolsPanel({
             ))}
           </CapabilityGroup>
           <CapabilityGroup
-            title="Toolsets"
+            title={t("Toolsets")}
             count={visibleToolsets.length}
-            empty="No matching toolsets"
+            empty={t("No matching toolsets")}
           >
             {visibleToolsets.map((toolset) => (
               <CapabilityRow
@@ -9320,7 +9346,7 @@ function SkillEditorPanel({
         <header className="agent-skill-editor-header">
           <button type="button" className="btn btn-ghost agent-skill-editor-back" onClick={onBack}>
             <IconChevronLeftSmall size={15} aria-hidden />
-            Skills
+            {t("Skills")}
           </button>
           <div className="agent-skill-editor-heading">
             <div>
@@ -9330,7 +9356,7 @@ function SkillEditorPanel({
             <div className="agent-platform-pills">
               {skill?.category ? <span>{skill.category}</span> : null}
               {document?.relativePath ? <span>{document.relativePath}</span> : null}
-              {readOnly ? <span>Read-only</span> : null}
+              {readOnly ? <span>{t("Read-only")}</span> : null}
               {skill ? <span>{skill.enabled ? "Enabled" : "Disabled"}</span> : null}
             </div>
           </div>
@@ -9355,11 +9381,11 @@ function SkillEditorPanel({
       <footer className="agent-messaging-footer">
         {readOnly ? (
           <p className="agent-skill-editor-readonly-note">
-            Read-only. This skill loads from ~/.agents/skills. Edit it on disk.
+            {t("Read-only. This skill loads from ~/.agents/skills. Edit it on disk.")}
           </p>
         ) : null}
         <button type="button" disabled={saving || loading} onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </button>
         {readOnly ? null : (
           <button
@@ -9410,10 +9436,10 @@ export function MessagingPanel({
   const selected =
     visible.find((platform) => platform.id === selectedPlatformId) ?? visible[0] ?? null;
   return (
-    <section className="agent-management-panel" aria-label="Messaging">
+    <section className="agent-management-panel" aria-label={t("Messaging")}>
       <ManagementToolbar
         loading={loading}
-        placeholder="Search messaging platforms"
+        placeholder={t("Search messaging platforms")}
         query={query}
         onQueryChange={onQueryChange}
         onRefresh={onRefresh}
@@ -9424,8 +9450,12 @@ export function MessagingPanel({
         </div>
       ) : (
         <div className="agent-messaging-layout">
-          <div className="agent-messaging-list" aria-label="Messaging channels">
-            <CapabilityGroup title="Messaging" count={visible.length} empty="No matching platforms">
+          <div className="agent-messaging-list" aria-label={t("Messaging channels")}>
+            <CapabilityGroup
+              title={t("Messaging")}
+              count={visible.length}
+              empty={t("No matching platforms")}
+            >
               {visible.map((platform) => {
                 const envVars = platform.envVars ?? platform.env_vars ?? [];
                 const requiredSet = envVars.filter(
@@ -9499,10 +9529,10 @@ export function FilesystemPanel({
     );
 
   return (
-    <section className="agent-management-panel" aria-label="Agent filesystem">
+    <section className="agent-management-panel" aria-label={t("Agent filesystem")}>
       <ManagementToolbar
         loading={loading}
-        placeholder="Search workspace, memory, and working folder"
+        placeholder={t("Search workspace, memory, and working folder")}
         query={query}
         onQueryChange={onQueryChange}
         onRefresh={onRefresh}
@@ -9532,7 +9562,7 @@ export function FilesystemPanel({
                   ))}
                 </div>
               ) : (
-                <p className="agent-capability-empty">No visible entries</p>
+                <p className="agent-capability-empty">{t("No visible entries")}</p>
               )}
             </section>
           ))}
@@ -9541,8 +9571,8 @@ export function FilesystemPanel({
         <div className="agent-loading">
           <EmptyState
             icon={<IconFolders size={24} />}
-            title="No files"
-            description="No matching agent files were found."
+            title={t("No files")}
+            description={t("No matching agent files were found.")}
           />
         </div>
       )}
@@ -9597,8 +9627,8 @@ function MessagingPlatformDetail({
       <div className="agent-messaging-detail">
         <EmptyState
           icon={<IconBubbleWide size={24} />}
-          title="No messaging platform"
-          description="No matching Hermes messaging platform is available."
+          title={t("No messaging platform")}
+          description={t("No matching Hermes messaging platform is available.")}
         />
       </div>
     );
@@ -9625,7 +9655,7 @@ function MessagingPlatformDetail({
               <span>{stateLabel(platform.state ?? "unknown")}</span>
               <span>{platform.configured ? "Credentials set" : "Needs setup"}</span>
               {platform.gatewayRunning || platform.gateway_running ? null : (
-                <span>Messaging gateway stopped</span>
+                <span>{t("Messaging gateway stopped")}</span>
               )}
             </div>
           </div>
@@ -9637,18 +9667,18 @@ function MessagingPlatformDetail({
         ) : null}
         {docsUrl ? (
           <a className="agent-platform-docs" href={docsUrl} rel="noreferrer" target="_blank">
-            Open setup guide
+            {t("Open setup guide")}
           </a>
         ) : null}
         <MessagingFieldGroup
-          title="Required"
+          title={t("Required")}
           fields={required}
           edits={envEdits}
           saving={saving}
           onEditEnv={onEditEnv}
         />
         <MessagingFieldGroup
-          title="Recommended"
+          title={t("Recommended")}
           fields={recommended}
           edits={envEdits}
           saving={saving}
@@ -9661,7 +9691,7 @@ function MessagingPlatformDetail({
               className="agent-advanced-toggle"
               onClick={() => setShowAdvanced((value) => !value)}
             >
-              Advanced ({advanced.length})
+              {t("Advanced ({advancedCount})", { advancedCount: advanced.length })}
             </button>
             {showAdvanced ? (
               <MessagingFieldGroup
@@ -9719,7 +9749,7 @@ function MessagingFieldGroup({
         <label key={field.key} className="agent-messaging-field">
           <span>
             {fieldLabel(field)}
-            {envFieldSet(field) ? <strong>Saved</strong> : null}
+            {envFieldSet(field) ? <strong>{t("Saved")}</strong> : null}
           </span>
           <input
             type={field.isPassword || field.is_password ? "password" : "text"}
@@ -9761,7 +9791,7 @@ function ManagementToolbar({
       />
       <button type="button" disabled={loading} onClick={onRefresh}>
         <IconArrowRotateClockwise size={14} />
-        Refresh
+        {t("Refresh")}
       </button>
     </div>
   );
@@ -9924,16 +9954,18 @@ function AgentResponseGallery({
           <strong>{errors ? "Agent error gallery" : "Agent response gallery"}</strong>
           <p>
             {errors
-              ? "Every error surface in agent chat. The banner above and the composer notice below are forced samples too."
-              : "Every response part type and status, for styling."}{" "}
-            Close from the console with{" "}
+              ? t(
+                  "Every error surface in agent chat. The banner above and the composer notice below are forced samples too.",
+                )
+              : t("Every response part type and status, for styling.")}{" "}
+            {t("Close from the console with")}{" "}
             <code>{errors ? "__agentErrors" : "__agentGallery"}(false)</code>.
           </p>
         </div>
         <button
           type="button"
           className="agent-icon-button"
-          aria-label="Close gallery"
+          aria-label={t("Close gallery")}
           onClick={onClose}
         >
           <IconCrossMedium size={15} />
@@ -10158,12 +10190,12 @@ export function AgentChatTurnRow({
       <button
         type="button"
         className="agent-turn-action"
-        aria-label="Edit message"
-        title="Edit message"
+        aria-label={t("Edit message")}
+        title={t("Edit message")}
         onClick={() => onEditUserPrompt(userPromptText)}
       >
         <IconPencilLine size={13} aria-hidden />
-        <span>Edit</span>
+        <span>{t("Edit")}</span>
       </button>
     ) : null;
   const turnActions =
@@ -10218,7 +10250,7 @@ export function AgentChatTurnRow({
         {turn.isScheduledRun ? (
           <span className="agent-user-turn-eyebrow">
             <IconArrowsRepeat size={12} aria-hidden />
-            Scheduled routine run
+            {t("Scheduled routine run")}
           </span>
         ) : null}
         <div className="agent-user-turn-body">
@@ -10388,7 +10420,7 @@ export function AgentChatTurnRow({
         />
         {textParts.length === 0 && nonTextParts.length === 0 ? (
           <p className="agent-assistant-empty">
-            <span className="text-shimmer">Thinking…</span>
+            <span className="text-shimmer">{t("Thinking…")}</span>
           </p>
         ) : (
           // No actions on an empty/in-flight turn. There is nothing useful to
@@ -10441,7 +10473,7 @@ function ContextCompactionPart({
           <span className="agent-tool-icon-expand">+</span>
           <span className="agent-tool-icon-minimize">−</span>
         </span>
-        <span className="agent-context-label">Context compacted</span>
+        <span className="agent-context-label">{t("Context compacted")}</span>
         <time>{relativeDate(createdAt)}</time>
       </summary>
       <MarkdownContent markdown={part.text} />
@@ -10560,28 +10592,28 @@ export function SessionCompactDialog({
       onClose={() => {
         if (!working) onClose();
       }}
-      title="Compact context"
+      title={t("Compact context")}
       leading={<IconConcise size={16} aria-hidden />}
       width={440}
       disableBackdropClose={working}
       footer={
         phase === "done" ? (
           <button type="button" className="primary-action" onClick={onClose}>
-            Done
+            {t("Done")}
           </button>
         ) : phase === "error" ? (
           <>
             <button type="button" className="primary-action" onClick={onClose}>
-              Close
+              {t("Close")}
             </button>
             <button type="button" className="primary-action primary-solid" onClick={runCompaction}>
-              Try again
+              {t("Try again")}
             </button>
           </>
         ) : (
           <>
             <button type="button" className="primary-action" onClick={onClose} disabled={working}>
-              Cancel
+              {t("Cancel")}
             </button>
             <button
               type="button"
@@ -10608,11 +10640,14 @@ export function SessionCompactDialog({
         ) : (
           <>
             <p className="agent-compact-explainer">
-              This summarizes older context so the agent can continue with a smaller working memory.
+              {t(
+                "This summarizes older context so the agent can continue with a smaller working memory.",
+              )}
             </p>
             <p className="agent-compact-caveat">
-              Older messages may be summarized. The agent keeps a reference summary rather than the
-              full earlier transcript.
+              {t(
+                "Older messages may be summarized. The agent keeps a reference summary rather than the full earlier transcript.",
+              )}
             </p>
           </>
         )}
@@ -10634,16 +10669,21 @@ function CompactSuccess({ result }: { result: CompressSessionResult | null }) {
     <div className="agent-compact-success" role="status">
       <p className="agent-compact-success-line">
         <IconCheckCircle2 size={15} aria-hidden />
-        Context compacted
+        {t("Context compacted")}
       </p>
       {hasSavings ? (
         <p className="agent-compact-savings">
-          {before.toLocaleString()} to {after.toLocaleString()} tokens
-          {saved !== undefined && saved > 0 ? ` (${saved.toLocaleString()} saved)` : ""}
+          {t("{before} to {after} tokens", {
+            before: before.toLocaleString(intlLocale()),
+            after: after.toLocaleString(intlLocale()),
+          })}
+          {saved !== undefined && saved > 0
+            ? ` ${t("({saved} saved)", { saved: saved.toLocaleString(intlLocale()) })}`
+            : ""}
         </p>
       ) : (
         <p className="agent-compact-savings" data-unavailable="true">
-          The agent now continues with a smaller working memory.
+          {t("The agent now continues with a smaller working memory.")}
         </p>
       )}
     </div>
@@ -10667,10 +10707,10 @@ function AgentErrorBanner({
       <div className="agent-error-banner-actions">
         {onRetry ? (
           <button type="button" onClick={onRetry}>
-            Try again
+            {t("Try again")}
           </button>
         ) : null}
-        <button type="button" aria-label="Dismiss" onClick={onDismiss}>
+        <button type="button" aria-label={t("Dismiss")} onClick={onDismiss}>
           <IconCrossMedium size={14} />
         </button>
       </div>
@@ -10700,11 +10740,11 @@ function AgentSessionSittingBanner({
   return (
     <div className="agent-branched-banner" role="status">
       <IconCirclesThree size={14} aria-hidden />
-      <p>This session is working under a council mandate.</p>
+      <p>{t("This session is working under a council mandate.")}</p>
       <button type="button" className="btn btn-secondary" onClick={onOpen}>
-        Open the sitting
+        {t("Open the sitting")}
       </button>
-      <button type="button" aria-label="Dismiss" onClick={onDismiss}>
+      <button type="button" aria-label={t("Dismiss")} onClick={onDismiss}>
         <IconCrossMedium size={14} />
       </button>
     </div>
@@ -10729,11 +10769,13 @@ function AgentStrandedSittingBanner({
       {/* An excerpt, never the request: people put whole documents to the
           council, and the raw text filled the screen and pushed these buttons
           out of reach. The full request is on the title, and behind Reopen. */}
-      <p title={request}>A council sitting is still open on "{requestExcerpt(request)}".</p>
+      <p title={request}>
+        {t('A council sitting is still open on "{excerpt}".', { excerpt: requestExcerpt(request) })}
+      </p>
       <button type="button" className="btn btn-secondary" onClick={onReopen}>
-        Reopen it
+        {t("Reopen it")}
       </button>
-      <button type="button" aria-label="Dismiss" onClick={onDismiss}>
+      <button type="button" aria-label={t("Dismiss")} onClick={onDismiss}>
         <IconCrossMedium size={14} />
       </button>
     </div>
@@ -10750,8 +10792,8 @@ function AgentBranchedBanner({
   return (
     <div className="agent-branched-banner" role="status">
       <IconBranchSimple size={14} aria-hidden />
-      <p>Branched from {sourceTitle}</p>
-      <button type="button" aria-label="Dismiss" onClick={onDismiss}>
+      <p>{t("Branched from {sourceTitle}", { sourceTitle })}</p>
+      <button type="button" aria-label={t("Dismiss")} onClick={onDismiss}>
         <IconCrossMedium size={14} />
       </button>
     </div>
@@ -10784,7 +10826,7 @@ function CreditsNoticePart({
       tone="destructive"
       role="alert"
       icon={<IconWallet3 size={14} aria-hidden />}
-      body="Sub Rosa stopped because your balance ran out."
+      body={t("Sub Rosa stopped because your balance ran out.")}
       actions={
         onTopUp ? (
           <button type="button" className="btn btn-secondary" onClick={onTopUp}>
@@ -10809,7 +10851,9 @@ function ContextOverflowNoticePart() {
       tone="warning"
       role="alert"
       icon={<IconExclamationTriangle size={14} aria-hidden />}
-      body="This message is too large for the model's context. Try attaching a smaller file, splitting it into parts, or starting a new session."
+      body={t(
+        "This message is too large for the model's context. Try attaching a smaller file, splitting it into parts, or starting a new session.",
+      )}
     />
   );
 }
@@ -10825,14 +10869,16 @@ function UpstreamBusyNoticePart({ onRetry }: { onRetry?: () => void }) {
       tone="warning"
       role="alert"
       icon={<IconArrowRotateClockwise size={14} aria-hidden />}
-      body="This model is busy right now. Wait a few seconds and send again, or switch to another model."
+      body={t(
+        "This model is busy right now. Wait a few seconds and send again, or switch to another model.",
+      )}
       actions={
         onRetry ? (
           // Re-sends the same message so a busy turn need not be retyped. The
           // send uses the session's current model, so switching the composer
           // model first retries on the new one.
           <button type="button" className="btn btn-secondary" onClick={onRetry}>
-            Try again
+            {t("Try again")}
           </button>
         ) : undefined
       }
@@ -10852,11 +10898,13 @@ function ProviderFailedNoticePart({ onRetry }: { onRetry?: () => void }) {
       tone="warning"
       role="alert"
       icon={<IconExclamationTriangle size={14} aria-hidden />}
-      body="The model provider could not answer this message. Try again, or switch to another model."
+      body={t(
+        "The model provider could not answer this message. Try again, or switch to another model.",
+      )}
       actions={
         onRetry ? (
           <button type="button" className="btn btn-secondary" onClick={onRetry}>
-            Try again
+            {t("Try again")}
           </button>
         ) : undefined
       }
@@ -10879,11 +10927,13 @@ function InterruptedNoticePart({ onRetry }: { onRetry?: () => void }) {
       tone="warning"
       role="alert"
       icon={<IconArrowRotateClockwise size={14} aria-hidden />}
-      body="This turn stopped before it finished, likely because the model provider was briefly unavailable. Try again, or switch to another model."
+      body={t(
+        "This turn stopped before it finished, likely because the model provider was briefly unavailable. Try again, or switch to another model.",
+      )}
       actions={
         onRetry ? (
           <button type="button" className="btn btn-secondary" onClick={onRetry}>
-            Try again
+            {t("Try again")}
           </button>
         ) : undefined
       }
@@ -10907,7 +10957,7 @@ function SteeringPart({
       <span className="agent-steering-icon" aria-hidden>
         <IconArrowCornerDownRight size={14} />
       </span>
-      <span className="agent-steering-label">Steering</span>
+      <span className="agent-steering-label">{t("Steering")}</span>
       <span className="agent-steering-text">{part.text}</span>
       <time>{relativeDate(createdAt)}</time>
     </div>
@@ -10966,7 +11016,7 @@ function AgentInlineMediaImage({ path }: { path: string }) {
     return (
       <div className="agent-generated-image" data-status="running" role="status" aria-live="polite">
         <div className="agent-generated-image-placeholder">
-          <span className="text-shimmer">Loading image…</span>
+          <span className="text-shimmer">{t("Loading image…")}</span>
         </div>
       </div>
     );
@@ -10979,7 +11029,7 @@ function AgentInlineMediaImage({ path }: { path: string }) {
           className="agent-generated-image-frame"
           onClick={() => setZoomed(true)}
           aria-label={`Enlarge ${name}`}
-          title="Enlarge image"
+          title={t("Enlarge image")}
         >
           <img src={state.url} alt={name} draggable={false} />
         </button>
@@ -10994,7 +11044,7 @@ function AgentInlineMediaImage({ path }: { path: string }) {
           type="button"
           className="agent-image-lightbox"
           onClick={() => setZoomed(false)}
-          aria-label="Close image"
+          aria-label={t("Close image")}
         >
           <img src={state.url} alt={name} />
         </button>
@@ -11020,7 +11070,7 @@ function AgentGeneratedImage({
     return (
       <div className="agent-generated-image" data-status="running" role="status" aria-live="polite">
         <div className="agent-generated-image-placeholder">
-          <span className="text-shimmer">Generating image…</span>
+          <span className="text-shimmer">{t("Generating image…")}</span>
         </div>
       </div>
     );
@@ -11042,7 +11092,7 @@ function AgentGeneratedImage({
         className="agent-generated-image-frame"
         onClick={() => onOpen?.(part)}
         aria-label={`Open ${label}`}
-        title="Open image"
+        title={t("Open image")}
       >
         {part.dataUrl ? <img src={part.dataUrl} alt={part.prompt} draggable={false} /> : null}
       </button>
@@ -11055,11 +11105,11 @@ function AgentGeneratedImage({
             type="button"
             className="agent-generated-image-download"
             onClick={() => onDownload(part)}
-            aria-label="Download image"
-            title="Download image"
+            aria-label={t("Download image")}
+            title={t("Download image")}
           >
             <IconArrowInbox size={14} aria-hidden />
-            <span>Download</span>
+            <span>{t("Download")}</span>
           </button>
         ) : null}
       </figcaption>
@@ -11087,7 +11137,7 @@ function ClarifyPart({
       </span>
       <div>
         <div className="agent-tool-title">
-          <span>Clarify</span>
+          <span>{t("Clarify")}</span>
           <span
             className="agent-tool-live-status"
             data-status={part.status === "pending" ? "running" : "complete"}
@@ -11120,7 +11170,7 @@ function ClarifyPart({
                   onClick={() => setTyping(true)}
                 >
                   <span>+</span>
-                  Other
+                  {t("Other")}
                 </button>
               </div>
             ) : null}
@@ -11137,7 +11187,7 @@ function ClarifyPart({
                   value={draft}
                   disabled={disabled}
                   rows={3}
-                  placeholder="Type your answer"
+                  placeholder={t("Type your answer")}
                   onChange={(event) => setDraft(event.currentTarget.value)}
                 />
                 <div>
@@ -11151,7 +11201,7 @@ function ClarifyPart({
                         setTyping(false);
                       }}
                     >
-                      Back
+                      {t("Back")}
                     </button>
                   ) : null}
                   <button
@@ -11160,7 +11210,7 @@ function ClarifyPart({
                     disabled={disabled}
                     onClick={() => onClarify(part, "")}
                   >
-                    Skip
+                    {t("Skip")}
                   </button>
                   <button
                     type="submit"
@@ -11205,16 +11255,15 @@ function AgentCliAccessCard({ cliAccess }: { cliAccess?: AgentCliAccessCardProps
       </span>
       <div>
         <div className="agent-tool-title">
-          <span>Agent CLI access requested</span>
+          <span>{t("Agent CLI access requested")}</span>
           <span className="agent-tool-live-status" data-status={resolved ? "complete" : "running"}>
             {resolved ? "Resolved" : "Waiting"}
           </span>
         </div>
         <p>
-          Sub Rosa wants write access to the state folders of your coding CLIs (Claude Code, Codex,
-          Gemini, opencode) so they stay logged in and can save their work in sandboxed sessions.
-          Those folders configure software that also runs outside Sub Rosa's sandbox. Enabling turns
-          on "Agent CLI access" in Settings and restarts the sandboxed runtime.
+          {t(
+            'Sub Rosa wants write access to the state folders of your coding CLIs (Claude Code, Codex, Gemini, opencode) so they stay logged in and can save their work in sandboxed sessions. Those folders configure software that also runs outside Sub Rosa\'s sandbox. Enabling turns on "Agent CLI access" in Settings and restarts the sandboxed runtime.',
+          )}
         </p>
         {resolved ? (
           <p className="agent-approval-result" data-choice={enabled ? "once" : "deny"}>
@@ -11237,7 +11286,7 @@ function AgentCliAccessCard({ cliAccess }: { cliAccess?: AgentCliAccessCardProps
               disabled={busy}
               onClick={() => setDismissed(true)}
             >
-              Not now
+              {t("Not now")}
             </button>
           </div>
         )}
@@ -11297,7 +11346,7 @@ function ApprovalPart({
       </span>
       <div>
         <div className="agent-tool-title">
-          <span>Approval required</span>
+          <span>{t("Approval required")}</span>
           <span
             className="agent-tool-live-status"
             data-status={part.status === "pending" ? "running" : "complete"}
@@ -11312,7 +11361,7 @@ function ApprovalPart({
             {explainState === "loading" ? (
               <p className="agent-approval-explanation-loading" role="status" aria-live="polite">
                 <Spinner aria-hidden />
-                <span>Working out what this request does…</span>
+                <span>{t("Working out what this request does…")}</span>
               </p>
             ) : explainState === "ready" && explanation ? (
               explanation
@@ -11324,15 +11373,19 @@ function ApprovalPart({
               // Generation unavailable (offline, signed out): keep the
               // static framing rather than an empty panel.
               <p>
-                Sub Rosa is paused because this request needs your explicit permission before it can
-                continue.
+                {t(
+                  "Sub Rosa is paused because this request needs your explicit permission before it can continue.",
+                )}
               </p>
             )}
             <p>
-              Approve once allows only this request. This session allows matching requests until the
-              session ends.{" "}
-              {part.allowPermanent ? "Always allows matching requests in future sessions. " : null}
-              Deny blocks the request.
+              {t(
+                "Approve once allows only this request. This session allows matching requests until the session ends.",
+              )}{" "}
+              {part.allowPermanent
+                ? `${t("Always allows matching requests in future sessions.")} `
+                : null}
+              {t("Deny blocks the request.")}
             </p>
           </div>
         ) : null}
@@ -11369,7 +11422,7 @@ function ApprovalPart({
               disabled={disabled}
               onClick={() => onApproval(part, "once")}
             >
-              Approve once
+              {t("Approve once")}
             </button>
             <button
               type="button"
@@ -11377,7 +11430,7 @@ function ApprovalPart({
               disabled={disabled}
               onClick={() => onApproval(part, "session")}
             >
-              This session
+              {t("This session")}
             </button>
             {part.allowPermanent ? (
               <button
@@ -11386,7 +11439,7 @@ function ApprovalPart({
                 disabled={disabled}
                 onClick={() => onApproval(part, "always")}
               >
-                Always
+                {t("Always")}
               </button>
             ) : null}
             <button
@@ -11395,7 +11448,7 @@ function ApprovalPart({
               disabled={disabled}
               onClick={() => onApproval(part, "deny")}
             >
-              Deny
+              {t("Deny")}
             </button>
           </div>
         )}
@@ -11449,12 +11502,12 @@ export function BranchFromHereAction({
       // The disabled reason is honest, not silent: a synthetic/in-flight turn
       // has no persisted id Hermes can fork from yet.
       title={branchable ? "Branch from here" : "Branching is available once the message is saved"}
-      aria-label="Branch from here"
+      aria-label={t("Branch from here")}
       disabled={disabled}
       onClick={() => onBranch(messageId, sessionId)}
     >
       <IconBranchSimple size={13} aria-hidden />
-      <span>Branch from here</span>
+      <span>{t("Branch from here")}</span>
     </button>
   );
 }
@@ -11488,7 +11541,7 @@ export function SudoPart({
       </span>
       <div>
         <div className="agent-tool-title">
-          <span>Privilege escalation requested</span>
+          <span>{t("Privilege escalation requested")}</span>
           <span
             className="agent-tool-live-status"
             data-status={part.status === "pending" ? "running" : "complete"}
@@ -11529,7 +11582,7 @@ export function SudoPart({
               disabled={disabled}
               onClick={() => onSudo(part, true)}
             >
-              Approve
+              {t("Approve")}
             </button>
             <button
               type="button"
@@ -11537,7 +11590,7 @@ export function SudoPart({
               disabled={disabled}
               onClick={() => onSudo(part, false)}
             >
-              Deny
+              {t("Deny")}
             </button>
           </div>
         )}
@@ -11595,7 +11648,7 @@ export function SecretPart({
       </span>
       <div>
         <div className="agent-tool-title">
-          <span>Secret requested</span>
+          <span>{t("Secret requested")}</span>
           <span
             className="agent-tool-live-status"
             data-status={part.status === "pending" ? "running" : "complete"}
@@ -11606,7 +11659,7 @@ export function SecretPart({
         <p>{part.reason ?? "Sub Rosa needs a secret value before it can continue."}</p>
         {label ? (
           <p className="agent-secret-key">
-            <span>Key</span>
+            <span>{t("Key")}</span>
             <code>{label}</code>
           </p>
         ) : null}
@@ -11619,7 +11672,7 @@ export function SecretPart({
             }}
           >
             <label htmlFor={inputId} className="agent-secret-label">
-              Secret value
+              {t("Secret value")}
             </label>
             <input
               id={inputId}
@@ -11634,11 +11687,11 @@ export function SecretPart({
               data-lpignore="true"
               disabled={disabled}
               value={value}
-              placeholder="Paste the value"
+              placeholder={t("Paste the value")}
               onChange={(event) => setValue(event.currentTarget.value)}
             />
             <p className="agent-secret-note">
-              Sent straight to the agent and never saved, logged, or shown.
+              {t("Sent straight to the agent and never saved, logged, or shown.")}
             </p>
             <div className="agent-approval-actions">
               <button type="submit" className="btn btn-secondary" disabled={disabled || !value}>
@@ -11650,14 +11703,14 @@ export function SecretPart({
                 disabled={submitting !== undefined}
                 onClick={cancel}
               >
-                Cancel
+                {t("Cancel")}
               </button>
             </div>
           </form>
         ) : (
           <p className="agent-approval-result" data-choice="once">
             <IconCheckmark1Small size={14} />
-            Secret provided
+            {t("Secret provided")}
           </p>
         )}
       </div>
@@ -11822,7 +11875,7 @@ function AgentToolDisclosure({
       </span>
       {elapsed ? <span className="agent-tool-elapsed">{elapsed}</span> : null}
       {statusNode}
-      {redacted ? <span className="agent-redacted">Redacted</span> : null}
+      {redacted ? <span className="agent-redacted">{t("Redacted")}</span> : null}
     </>
   );
   if (!body) {
@@ -11848,12 +11901,17 @@ function AgentToolPartRow({ part }: { part: Extract<AgentChatPart, { type: "tool
       text={part.text}
       statusNode={
         part.status === "running" ? (
-          <span className="agent-tool-spinner" role="status" aria-label="Running" title="Running">
+          <span
+            className="agent-tool-spinner"
+            role="status"
+            aria-label={t("Running")}
+            title={t("Running")}
+          >
             <DotSpinner />
           </span>
         ) : part.status === "failed" ? (
           <span className="agent-tool-live-status" data-status="failed">
-            Failed
+            {t("Failed")}
           </span>
         ) : null
       }
@@ -11872,7 +11930,7 @@ function AgentArtifactList({
 }) {
   if (!artifacts.length) return null;
   return (
-    <div className="agent-artifact-list" aria-label="Generated files">
+    <div className="agent-artifact-list" aria-label={t("Generated files")}>
       {artifacts.map((artifact) => (
         <AgentArtifactCard
           key={artifact.path}
@@ -11928,7 +11986,7 @@ function AgentArtifactCard({
           type="button"
           className="agent-artifact-download"
           aria-label={`Download ${artifact.name}`}
-          title="Download"
+          title={t("Download")}
           onClick={() => onDownload(artifact)}
         >
           <IconArrowInbox size={16} />
@@ -12125,13 +12183,13 @@ function AgentArtifactPanel({
         className="agent-files-resize-handle"
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize files panel"
+        aria-label={t("Resize files panel")}
         onPointerDown={startResize}
       />
       <aside
         ref={panelRef}
         className="agent-artifact-panel"
-        aria-label="Files"
+        aria-label={t("Files")}
         data-entered={entered ? "true" : undefined}
         onAnimationEnd={(event) => {
           if (event.animationName === "agent-artifact-panel-in") setEntered(true);
@@ -12142,8 +12200,8 @@ function AgentArtifactPanel({
             <button
               type="button"
               className="icon-button"
-              aria-label="All files"
-              title="All files"
+              aria-label={t("All files")}
+              title={t("All files")}
               onClick={onShowList}
             >
               <IconChevronLeftSmall size={16} />
@@ -12209,7 +12267,7 @@ function AgentArtifactPanel({
               type="button"
               className="icon-button"
               aria-label={`Copy ${artifact.name} to clipboard`}
-              title="Copy file"
+              title={t("Copy file")}
               onClick={() => onCopyFile(artifact)}
             >
               <IconClipboard size={15} />
@@ -12220,7 +12278,7 @@ function AgentArtifactPanel({
               type="button"
               className="icon-button"
               aria-label={`Download ${artifact.name}`}
-              title="Download"
+              title={t("Download")}
               onClick={() => onDownload(artifact)}
             >
               <IconArrowInbox size={15} />
@@ -12229,8 +12287,8 @@ function AgentArtifactPanel({
           <button
             type="button"
             className="icon-button"
-            aria-label="Close files"
-            title="Close"
+            aria-label={t("Close files")}
+            title={t("Close")}
             onClick={onClose}
           >
             <IconCrossMedium size={15} />
@@ -12239,12 +12297,12 @@ function AgentArtifactPanel({
         {markdown ? (
           <div className="agent-artifact-panel-mode">
             <SegmentedControl
-              aria-label="File view"
+              aria-label={t("File view")}
               value={showSource ? "source" : "preview"}
               onValueChange={(value) => setShowSource(value === "source")}
               options={[
-                { value: "preview", label: "Preview" },
-                { value: "source", label: "Source" },
+                { value: "preview", label: t("Preview") },
+                { value: "source", label: t("Source") },
               ]}
             />
           </div>
@@ -12274,14 +12332,14 @@ function AgentArtifactPanel({
               </pre>
             ) : (
               <div className="agent-artifact-panel-empty">
-                <p>No preview for this file.</p>
+                <p>{t("No preview for this file.")}</p>
                 <button
                   type="button"
                   className="btn btn-secondary"
                   onClick={() => onDownload(artifact)}
                 >
                   <IconArrowInbox size={14} />
-                  Download
+                  {t("Download")}
                 </button>
               </div>
             )}
@@ -12318,7 +12376,7 @@ function AgentArtifactPanel({
                   })}
                 </ul>
               ) : (
-                <p className="agent-artifact-search-empty">No files match.</p>
+                <p className="agent-artifact-search-empty">{t("No files match.")}</p>
               )}
             </div>
           </>
@@ -12848,7 +12906,7 @@ function composerInputHash(value: string) {
 }
 
 function formatComposerTokenCount(value: number) {
-  return value.toLocaleString();
+  return value.toLocaleString(intlLocale());
 }
 
 /** Turns the images a message mentioned into turn-scoped image attachments, so
@@ -13400,7 +13458,7 @@ function AgentThinking() {
   return (
     <div className="agent-thinking" role="status" aria-live="polite">
       <Spinner aria-hidden />
-      <span className="text-shimmer agent-thinking-label">Thinking…</span>
+      <span className="text-shimmer agent-thinking-label">{t("Thinking…")}</span>
     </div>
   );
 }
@@ -13455,7 +13513,7 @@ function BackgroundWorkNotice({ processes }: { processes: BackgroundProcess[] })
     return (
       <>
         <IconConsole size={14} aria-hidden />
-        <span>Background task finished. Sub Rosa is picking it back up.</span>
+        <span>{t("Background task finished. Sub Rosa is picking it back up.")}</span>
       </>
     );
   }
@@ -13494,7 +13552,7 @@ function taskActivitySummary(task: AgentTaskDto) {
 function relativeDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(intlLocale(), {
     month: "short",
     day: "numeric",
     hour: "numeric",

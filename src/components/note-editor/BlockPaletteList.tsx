@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import type { CentralIconBaseProps } from "central-icons/CentralIconBase";
 import type { ComponentType } from "react";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
@@ -59,11 +60,11 @@ export const BlockPaletteList = forwardRef<BlockPaletteListHandle, BlockPaletteL
     }));
 
     if (!items.length) {
-      return <div className="note-block-menu-empty">No matching block</div>;
+      return <div className="note-block-menu-empty">{t("No matching block")}</div>;
     }
 
     return (
-      <div className="note-block-menu" ref={listRef} role="listbox" aria-label="Insert block">
+      <div className="note-block-menu" ref={listRef} role="listbox" aria-label={t("Insert block")}>
         {items.map((item, index) => (
           <button
             key={item.id}

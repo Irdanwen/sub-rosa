@@ -1,3 +1,4 @@
+import { t } from "../lib/i18n";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
@@ -1425,7 +1426,7 @@ export function App() {
           prompt,
           title: titleFromPrompt(prompt),
           status: "received",
-          summary: "Sub Rosa is starting.",
+          summary: t("Sub Rosa is starting."),
         });
         markAgentNewSessionPending(prompt);
         setActiveView("agent");
@@ -1970,7 +1971,7 @@ export function App() {
     try {
       const selected = await openFileDialog({
         multiple: false,
-        title: "Import audio or video",
+        title: t("Import audio or video"),
         filters: [{ name: "Audio and video", extensions: [...IMPORTABLE_MEDIA_EXTENSIONS] }],
       });
       const path = Array.isArray(selected) ? selected[0] : selected;
@@ -2261,7 +2262,7 @@ export function App() {
 
   async function handleDeleteNote(noteId: string) {
     if (state.recordingStatus) {
-      setError("Stop the current recording before deleting a note.");
+      setError(t("Stop the current recording before deleting a note."));
       return;
     }
     try {
@@ -2283,7 +2284,7 @@ export function App() {
 
   async function handleDeleteNotes(noteIds: string[]) {
     if (state.recordingStatus) {
-      setError("Stop the current recording before deleting meetings.");
+      setError(t("Stop the current recording before deleting meetings."));
       return;
     }
     try {
@@ -2681,9 +2682,13 @@ export function App() {
           data-tauri-drag-region
           onPointerDown={handleTitlebarPointerDown}
         />
-        <div className="welcome-screen welcome-screen-loading" role="status" aria-label="Loading">
-          <Spinner aria-label="Starting Sub Rosa" />
-          <p>Starting Sub Rosa...</p>
+        <div
+          className="welcome-screen welcome-screen-loading"
+          role="status"
+          aria-label={t("Loading")}
+        >
+          <Spinner aria-label={t("Starting Sub Rosa")} />
+          <p>{t("Starting Sub Rosa...")}</p>
         </div>
       </main>
     );
@@ -2905,7 +2910,7 @@ export function App() {
         className="sidebar-resize-handle"
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize sidebar"
+        aria-label={t("Resize sidebar")}
         onPointerDown={(event) =>
           handleSidebarResizeStart(event, sidebarWidth, {
             collapseWidth: SIDEBAR_COLLAPSE_WIDTH,
@@ -3052,7 +3057,7 @@ export function App() {
                           onBack: handleReturnToAgentOriginFolder,
                           crumbs: [
                             {
-                              label: "Projects",
+                              label: t("Projects"),
                               onClick: () => {
                                 setActiveView("folders");
                                 dispatch({
@@ -3075,7 +3080,7 @@ export function App() {
                             onBack: handleReturnToRoutines,
                             crumbs: [
                               {
-                                label: "Routines",
+                                label: t("Routines"),
                                 onClick: handleReturnToRoutines,
                               },
                             ],
@@ -3085,7 +3090,7 @@ export function App() {
                             onBack: handleReturnToAgentsList,
                             crumbs: [
                               {
-                                label: "Sessions",
+                                label: t("Sessions"),
                                 onClick: handleReturnToAgentsList,
                               },
                             ],
@@ -3152,7 +3157,7 @@ export function App() {
                   folderBackTarget={
                     folderReturnTarget
                       ? {
-                          label: `Back to ${folderReturnTarget.label}`,
+                          label: t("Back to {target}", { target: folderReturnTarget.label }),
                           onBack: () => void handleReturnToNote(folderReturnTarget.noteId),
                         }
                       : undefined
@@ -3252,14 +3257,14 @@ export function App() {
                     />
                   ) : originAllNotes ? (
                     <BreadcrumbBar
-                      backLabel="Back to meeting notes"
+                      backLabel={t("Back to meeting notes")}
                       onBack={() => {
                         setActiveView("all-notes");
                         setOriginAllNotes(false);
                       }}
                       items={[
                         {
-                          label: "Meeting notes",
+                          label: t("Meeting notes"),
                           onClick: () => {
                             setActiveView("all-notes");
                             setOriginAllNotes(false);
@@ -3366,7 +3371,7 @@ export function App() {
                   </div>
                 </div>
               ) : (
-                <section className="editor-empty" role="status" aria-label="Opening note">
+                <section className="editor-empty" role="status" aria-label={t("Opening note")}>
                   <Spinner />
                 </section>
               )}
@@ -3413,8 +3418,8 @@ export function App() {
       <Dialog
         open={recordingInactivityPrompt !== null}
         onClose={handleKeepRecordingAfterInactivityPrompt}
-        title="Still in a meeting?"
-        description="Sub Rosa has not heard meeting audio for a while."
+        title={t("Still in a meeting?")}
+        description={t("Sub Rosa has not heard meeting audio for a while.")}
         width={420}
         footer={
           <>
@@ -3423,22 +3428,24 @@ export function App() {
               className="primary-action"
               onClick={handlePauseRecordingAfterInactivityPrompt}
             >
-              Pause recording
+              {t("Pause recording")}
             </button>
             <button
               type="button"
               className="primary-action primary-solid"
               onClick={handleKeepRecordingAfterInactivityPrompt}
             >
-              Keep recording
+              {t("Keep recording")}
             </button>
           </>
         }
       >
         <div className="dialog-body">
           <p className="recording-inactivity-copy">
-            Sub Rosa will pause this recording in {recordingInactivitySecondsRemaining} seconds if
-            you do not answer.
+            {t(
+              "Sub Rosa will pause this recording in {recordingInactivitySecondsRemaining} seconds if you do not answer.",
+              { recordingInactivitySecondsRemaining },
+            )}
           </p>
         </div>
       </Dialog>
@@ -3555,7 +3562,7 @@ function UpdateRelaunchCard({
   return (
     <aside className="update-popover" role={failed ? "alert" : "status"} aria-live="polite">
       {noteLines.length > 0 && !relaunching && (
-        <ul className="update-relaunch-notes" aria-label="What changes in this update">
+        <ul className="update-relaunch-notes" aria-label={t("What changes in this update")}>
           {noteLines.map((line) => (
             <li key={line}>{line}</li>
           ))}
@@ -3803,7 +3810,7 @@ function withFakeRecovery(payload: BootstrapResponse): {
   const now = new Date().toISOString();
   const fakeListItem = {
     id: noteId,
-    title: "Team sync",
+    title: t("Team sync"),
     preview: "Recovered from an interrupted recording",
     processingStatus: "recoverable" as const,
     folderIds: [],

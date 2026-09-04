@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useEffect, useState } from "react";
 import {
   type MomentSettingsDto,
@@ -68,11 +69,11 @@ export function MomentsSettingsSection() {
       <div className="settings-rows">
         <div className="settings-row">
           <div className="settings-row-info">
-            <h3 className="settings-row-title">Meeting briefs</h3>
+            <h3 className="settings-row-title">{t("Meeting briefs")}</h3>
             <p className="settings-row-description">
-              Ten minutes before a meeting with other people, a reminder of what you last decided
-              with them and what is still open. It stays quiet when your notes have nothing to say
-              about them, and it reads your calendar on this device only.
+              {t(
+                "Ten minutes before a meeting with other people, a reminder of what you last decided with them and what is still open. It stays quiet when your notes have nothing to say about them, and it reads your calendar on this device only.",
+              )}
             </p>
           </div>
           <div className="settings-row-control">
@@ -82,16 +83,17 @@ export function MomentsSettingsSection() {
               onCheckedChange={(briefEnabled) =>
                 void update({ briefEnabled, recapEnabled: settings?.recapEnabled ?? true })
               }
-              aria-label="Meeting briefs"
+              aria-label={t("Meeting briefs")}
             />
           </div>
         </div>
         <div className="settings-row">
           <div className="settings-row-info">
-            <h3 className="settings-row-title">Tell me when a note is ready</h3>
+            <h3 className="settings-row-title">{t("Tell me when a note is ready")}</h3>
             <p className="settings-row-description">
-              A recording usually finishes becoming a note while you are doing something else. This
-              says so, and opens the note when you tap it.
+              {t(
+                "A recording usually finishes becoming a note while you are doing something else. This says so, and opens the note when you tap it.",
+              )}
             </p>
           </div>
           <div className="settings-row-control">
@@ -101,16 +103,17 @@ export function MomentsSettingsSection() {
               onCheckedChange={(recapEnabled) =>
                 void update({ briefEnabled: settings?.briefEnabled ?? false, recapEnabled })
               }
-              aria-label="Tell me when a note is ready"
+              aria-label={t("Tell me when a note is ready")}
             />
           </div>
         </div>
         <div className="settings-row">
           <div className="settings-row-info">
-            <h3 className="settings-row-title">Find notes in system search</h3>
+            <h3 className="settings-row-title">{t("Find notes in system search")}</h3>
             <p className="settings-row-description">
-              Put your note titles and dates in this device's search index, so Spotlight finds them.
-              Turning this off removes what is already indexed.
+              {t(
+                "Put your note titles and dates in this device's search index, so Spotlight finds them. Turning this off removes what is already indexed.",
+              )}
             </p>
           </div>
           <div className="settings-row-control">
@@ -123,17 +126,17 @@ export function MomentsSettingsSection() {
                   includeContent: spotlight?.includeContent ?? false,
                 })
               }
-              aria-label="Find notes in system search"
+              aria-label={t("Find notes in system search")}
             />
           </div>
         </div>
         <div className="settings-row">
           <div className="settings-row-info">
-            <h3 className="settings-row-title">Include what the notes say</h3>
+            <h3 className="settings-row-title">{t("Include what the notes say")}</h3>
             <p className="settings-row-description">
-              Also index the first lines of each note, so searching for something said inside one
-              finds it. The system index is not Sub Rosa's storage, so this is off until you ask for
-              it.
+              {t(
+                "Also index the first lines of each note, so searching for something said inside one finds it. The system index is not Sub Rosa's storage, so this is off until you ask for it.",
+              )}
             </p>
           </div>
           <div className="settings-row-control">
@@ -143,7 +146,7 @@ export function MomentsSettingsSection() {
               onCheckedChange={(includeContent) =>
                 void updateSpotlight({ enabled: spotlight?.enabled ?? true, includeContent })
               }
-              aria-label="Include what the notes say"
+              aria-label={t("Include what the notes say")}
             />
           </div>
         </div>

@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../lib/i18n";
 import { IconCheckmark2Medium } from "central-icons-filled/IconCheckmark2Medium";
 import { IconCrossMedium } from "central-icons/IconCrossMedium";
 import { IconDotGrid1x3Horizontal } from "central-icons/IconDotGrid1x3Horizontal";
@@ -226,7 +227,7 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
   return (
     <section
       className="all-notes-workspace"
-      aria-label="Meeting notes"
+      aria-label={t("Meeting notes")}
       data-drop-active={importEnabled && dragDepth > 0 ? "true" : undefined}
       onDragEnter={(event) => {
         if (!importEnabled || !dragCarriesFiles(event)) return;
@@ -252,23 +253,23 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
       {importEnabled && dragDepth > 0 ? (
         <div className="notes-drop-overlay" aria-hidden>
           <IconImport size={22} />
-          <p>Drop audio or video to make a note</p>
+          <p>{t("Drop audio or video to make a note")}</p>
         </div>
       ) : null}
 
       <header className="folders-header">
         <div className="folders-heading">
           <h1>
-            Meeting notes
+            {t("Meeting notes")}
             {notes.length > 0 ? <span className="folders-count">{notes.length}</span> : null}
           </h1>
-          <p className="folders-subtitle">Everything across your workspace.</p>
+          <p className="folders-subtitle">{t("Everything across your workspace.")}</p>
         </div>
         <div className="folders-header-actions">
           {onPickImportFile ? (
             <button type="button" className="primary-action" onClick={onPickImportFile}>
               <IconImport size={13} />
-              Import
+              {t("Import")}
             </button>
           ) : null}
           <button
@@ -277,7 +278,7 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
             onClick={onCreateNote}
           >
             <IconPlusMedium size={13} />
-            New note
+            {t("New note")}
             <kbd className="primary-action-kbd" aria-hidden>
               {createNoteShortcut}
             </kbd>
@@ -289,7 +290,7 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
 
       {importing ? (
         <p className="notes-import-progress" role="status">
-          Importing {importing.fileName}
+          {t("Importing {file}", { file: importing.fileName })}
           {importing.fraction < 1 ? ` — ${Math.round(importing.fraction * 100)}%` : null}
         </p>
       ) : null}
@@ -300,7 +301,7 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
             <IconMagnifyingGlass size={14} />
             <input
               type="search"
-              placeholder="Search"
+              placeholder={t("Search")}
               value={query}
               onChange={(event) => setQuery(event.currentTarget.value)}
             />
@@ -310,20 +311,22 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
 
       {notes.length === 0 ? (
         <EmptyState
-          label="Create your first note"
+          label={t("Create your first note")}
           icon={<IconNoteText size={28} />}
-          title="Capture your first meeting"
-          description="Record a meeting, a phone call, or a half-formed thought. Sub Rosa transcribes it and writes the note for you."
+          title={t("Capture your first meeting")}
+          description={t(
+            "Record a meeting, a phone call, or a half-formed thought. Sub Rosa transcribes it and writes the note for you.",
+          )}
           action={
             <div className="folders-header-actions">
               <button type="button" className="primary-action primary-solid" onClick={onCreateNote}>
                 <IconPlusMedium size={13} />
-                Create your first note
+                {t("Create your first note")}
               </button>
               {onPickImportFile ? (
                 <button type="button" className="primary-action" onClick={onPickImportFile}>
                   <IconImport size={13} />
-                  Import a recording
+                  {t("Import a recording")}
                 </button>
               ) : null}
             </div>
@@ -331,7 +334,7 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
         />
       ) : filteredNotes.length === 0 ? (
         <div className="folders-empty">
-          <p>No notes match “{query.trim()}”.</p>
+          <p>{t("No notes match “{query}”.", { query: query.trim() })}</p>
         </div>
       ) : (
         <ul className="folder-notes all-notes-list" role="list" data-selecting={selectedCount > 0}>
@@ -359,7 +362,7 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
         <div
           className="meetings-bulk-bar"
           role="toolbar"
-          aria-label="Selection"
+          aria-label={t("Selection")}
           data-exit={isExiting ? exit : undefined}
           onAnimationEnd={(event) => {
             // Only the bar's own exit keyframes unmount it. Child button
@@ -375,33 +378,35 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
             setExit(null);
           }}
         >
-          <span className="meetings-bulk-count">{displayCount} selected</span>
+          <span className="meetings-bulk-count">
+            {t("{displayCount} selected", { displayCount })}
+          </span>
           {hasUnselectedVisibleNotes ? (
             <button type="button" className="meetings-bulk-action" onClick={selectAllVisibleNotes}>
-              Select all
+              {t("Select all")}
             </button>
           ) : null}
           <button type="button" className="meetings-bulk-action" onClick={deselectAllVisibleNotes}>
-            Deselect all
+            {t("Deselect all")}
           </button>
           <button
             type="button"
             className="meetings-bulk-action"
             onClick={() => onOpenMoveNotes(selectedNoteIds)}
           >
-            Move
+            {t("Move")}
           </button>
           <button
             type="button"
             className="meetings-bulk-action"
             onClick={() => setConfirmBulkDelete(true)}
           >
-            Delete
+            {t("Delete")}
           </button>
           <button
             type="button"
             className="meetings-bulk-dismiss"
-            aria-label="Clear selection"
+            aria-label={t("Clear selection")}
             onClick={resetSelection}
           >
             <IconCrossMedium size={14} />
@@ -417,7 +422,9 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
           resetSelection();
         }}
         title={`Delete ${selectedCount} ${selectedCount === 1 ? "note" : "notes"}?`}
-        description="This cannot be undone. Audio, transcripts, and generated notes for these notes will be removed."
+        description={t(
+          "This cannot be undone. Audio, transcripts, and generated notes for these notes will be removed.",
+        )}
         confirmLabel={selectedCount === 1 ? "Delete note" : "Delete notes"}
         destructive
       />
@@ -537,7 +544,7 @@ function AllNoteRow({
               }}
             >
               <IconMoveFolder size={14} />
-              Move to project
+              {t("Move to project")}
             </button>
             <div className="context-menu-separator" role="separator" />
             <button
@@ -550,7 +557,7 @@ function AllNoteRow({
               }}
             >
               <IconTrashCan size={14} />
-              Delete note
+              {t("Delete note")}
             </button>
           </div>
         ) : null}
@@ -560,8 +567,8 @@ function AllNoteRow({
         onClose={() => setConfirmDelete(false)}
         onConfirm={onDelete}
         title={`Delete "${title}"?`}
-        description="This cannot be undone."
-        confirmLabel="Delete note"
+        description={t("This cannot be undone.")}
+        confirmLabel={t("Delete note")}
         destructive
       />
     </li>
@@ -658,16 +665,16 @@ function formatNoteTime(iso: string): string {
     date.getMonth() === now.getMonth() &&
     date.getDate() === now.getDate();
   if (sameDay) {
-    return date.toLocaleTimeString(undefined, {
+    return date.toLocaleTimeString(intlLocale(), {
       hour: "numeric",
       minute: "2-digit",
     });
   }
   const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
   if (diffDays < 7) {
-    return date.toLocaleDateString(undefined, { weekday: "short" });
+    return date.toLocaleDateString(intlLocale(), { weekday: "short" });
   }
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(intlLocale(), {
     month: "short",
     day: "numeric",
   });

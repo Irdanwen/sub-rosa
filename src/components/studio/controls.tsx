@@ -1,6 +1,7 @@
 // Small shared form controls for the Studio views. All of them lean on the
 // studio.css classes and the app's design tokens; none carry local styling.
 
+import { t } from "../../lib/i18n";
 import type { ReactNode } from "react";
 import { formatCredits } from "../../lib/studio/catalog";
 import type { MediaModel } from "../../lib/studio/types";
@@ -82,7 +83,7 @@ export function ModelSelect({
   return (
     <Select
       value={value}
-      placeholder="Choose a model"
+      placeholder={t("Choose a model")}
       ariaLabel={ariaLabel}
       onChange={onChange}
       options={models.map((model) => {

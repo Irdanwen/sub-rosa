@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useCallback, useEffect, useState } from "react";
 import { type AskIndexStatusDto, askIndexStatus, setAskSettings } from "../../lib/ask";
 import { messageFromError } from "../../lib/errors";
@@ -63,12 +64,12 @@ export function SemanticAskCard() {
       <div className="settings-row">
         <div className="settings-row-text">
           <h3 className="settings-row-title" id="semantic-ask-title">
-            Understand questions by meaning
+            {t("Understand questions by meaning")}
           </h3>
           <p className="settings-row-description">
-            Passages of your notes are sent to your endpoint once more, in the background, to be
-            turned into vectors, so a question finds a note that says the same thing in other words.
-            Off, questions match by words only, and the vectors are deleted.
+            {t(
+              "Passages of your notes are sent to your endpoint once more, in the background, to be turned into vectors, so a question finds a note that says the same thing in other words. Off, questions match by words only, and the vectors are deleted.",
+            )}
           </p>
           {status ? <p className="settings-row-description">{semanticSentence(status)}</p> : null}
           {error ? <p className="settings-row-description">{error}</p> : null}

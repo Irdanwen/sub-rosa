@@ -1,3 +1,4 @@
+import { t } from "../../../../lib/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMediaJob } from "../../../../lib/studio/async-job";
 import {
@@ -61,7 +62,7 @@ export function AudioPanel({
 }) {
   return (
     <div className="mobile-studio-form">
-      <div className="mobile-segmented" role="tablist" aria-label="Audio mode">
+      <div className="mobile-segmented" role="tablist" aria-label={t("Audio mode")}>
         {(["music", "speech", "sfx"] as const).map((entry) => (
           <button
             key={entry}
@@ -147,13 +148,13 @@ export function SpeechPanel({
   return (
     <>
       <ModelPickerButton
-        label="Speech model"
+        label={t("Speech model")}
         value={model?.name ?? ""}
         onOpen={() => setPickerOpen(true)}
       />
       {voices.length > 0 ? (
         <ModelPickerButton
-          label="Voice"
+          label={t("Voice")}
           value={effectiveVoice}
           onOpen={() => setVoicePickerOpen(true)}
         />
@@ -163,13 +164,13 @@ export function SpeechPanel({
         value={text}
         rows={4}
         maxLength={SPEECH_INPUT_LIMIT}
-        placeholder="Text to narrate"
-        aria-label="Text to narrate"
+        placeholder={t("Text to narrate")}
+        aria-label={t("Text to narrate")}
         onChange={(event) => setText(event.target.value)}
       />
       <div className="mobile-studio-field">
         <div className="mobile-studio-field-head">
-          <span className="mobile-studio-field-label">Speed</span>
+          <span className="mobile-studio-field-label">{t("Speed")}</span>
           <span className="mobile-studio-field-value">{`x${speed}`}</span>
         </div>
         <input
@@ -179,12 +180,12 @@ export function SpeechPanel({
           max={SPEECH_SPEED.max}
           step={SPEECH_SPEED.step}
           value={speed}
-          aria-label="Speed"
+          aria-label={t("Speed")}
           onChange={(event) => setSpeed(Number(event.target.value))}
         />
       </div>
-      <StudioSetting label="Format">
-        <div className="mobile-pill-row" role="radiogroup" aria-label="Audio format">
+      <StudioSetting label={t("Format")}>
+        <div className="mobile-pill-row" role="radiogroup" aria-label={t("Audio format")}>
           {SPEECH_FORMATS.map((entry) => (
             <button
               key={entry}
@@ -212,13 +213,13 @@ export function SpeechPanel({
           className="mobile-chip-button"
           onClick={() => abortRef.current?.abort()}
         >
-          Cancel
+          {t("Cancel")}
         </button>
       ) : null}
       {error ? <p className="mobile-dictation-error">{error}</p> : null}
       {pickerOpen ? (
         <ModelSheet
-          title="Speech model"
+          title={t("Speech model")}
           entries={models.map((entry) => ({
             id: entry.id,
             name: entry.name,
@@ -234,7 +235,7 @@ export function SpeechPanel({
       ) : null}
       {voicePickerOpen ? (
         <ModelSheet
-          title="Voice"
+          title={t("Voice")}
           entries={voices.map((entry) => ({ id: entry, name: entry, subtitle: "" }))}
           selectedId={effectiveVoice}
           onSelect={(id) => {
@@ -325,7 +326,7 @@ export function SfxPanel({
   return (
     <>
       <ModelPickerButton
-        label="Effect model"
+        label={t("Effect model")}
         value={model?.name ?? ""}
         onOpen={() => setPickerOpen(true)}
       />
@@ -334,14 +335,14 @@ export function SfxPanel({
         value={prompt}
         rows={2}
         maxLength={SFX_PROMPT_LIMIT}
-        placeholder="Describe a short sound (a door creak, rain on glass)"
+        placeholder={t("Describe a short sound (a door creak, rain on glass)")}
         onChange={(event) => setPrompt(event.target.value)}
       />
-      <StudioToggle label="Auto duration" checked={autoDuration} onChange={setAutoDuration} />
+      <StudioToggle label={t("Auto duration")} checked={autoDuration} onChange={setAutoDuration} />
       {!autoDuration && caps.durationSeconds ? (
         <div className="mobile-studio-field">
           <div className="mobile-studio-field-head">
-            <span className="mobile-studio-field-label">Duration</span>
+            <span className="mobile-studio-field-label">{t("Duration")}</span>
             <span className="mobile-studio-field-value">{`${duration}s`}</span>
           </div>
           <input
@@ -351,7 +352,7 @@ export function SfxPanel({
             max={caps.durationSeconds.max}
             step={caps.durationSeconds.step}
             value={duration}
-            aria-label="Duration"
+            aria-label={t("Duration")}
             onChange={(event) => setDurationSeconds(Number(event.target.value))}
           />
         </div>
@@ -375,7 +376,7 @@ export function SfxPanel({
           phase={waiting.phase}
           elapsedMs={waiting.phase === "queueing" ? undefined : waiting.elapsedMs}
           estimateMs={estimate}
-          meta="You can leave this tab; the job resumes."
+          meta={t("You can leave this tab; the job resumes.")}
         />
       ) : null}
       {job.state.phase === "failed" ? (
@@ -390,7 +391,7 @@ export function SfxPanel({
       ) : null}
       {pickerOpen ? (
         <ModelSheet
-          title="Effect model"
+          title={t("Effect model")}
           entries={models.map((entry) => ({
             id: entry.id,
             name: entry.name,
@@ -486,7 +487,7 @@ export function MusicPanel({
   return (
     <>
       <ModelPickerButton
-        label="Music model"
+        label={t("Music model")}
         value={model?.name ?? ""}
         onOpen={() => setPickerOpen(true)}
       />
@@ -494,14 +495,14 @@ export function MusicPanel({
         className="mobile-studio-prompt"
         value={prompt}
         rows={2}
-        placeholder="Describe the track (style, mood, tempo)"
+        placeholder={t("Describe the track (style, mood, tempo)")}
         onChange={(event) => setPrompt(event.target.value)}
       />
       {caps.lyrics !== "none" ? (
         <>
           {caps.instrumental ? (
             <StudioToggle
-              label="Instrumental (no vocals)"
+              label={t("Instrumental (no vocals)")}
               checked={instrumental}
               onChange={setInstrumental}
             />
@@ -537,7 +538,7 @@ export function MusicPanel({
           elapsedMs={waiting.phase === "queueing" ? undefined : waiting.elapsedMs}
           estimateMs={estimate}
           label={waiting.phase === "processing" ? "Composing your track" : undefined}
-          meta="You can leave this tab; the job resumes."
+          meta={t("You can leave this tab; the job resumes.")}
         />
       ) : null}
       {job.state.phase === "failed" ? (
@@ -552,7 +553,7 @@ export function MusicPanel({
       ) : null}
       {pickerOpen ? (
         <ModelSheet
-          title="Music model"
+          title={t("Music model")}
           entries={models.map((entry) => ({
             id: entry.id,
             name: entry.name,

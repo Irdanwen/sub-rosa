@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconArrowRotateCounterClockwise } from "central-icons/IconArrowRotateCounterClockwise";
@@ -73,7 +74,7 @@ export function SkillLifecycleActions({
 
   return (
     <div className="skill-lifecycle" data-variant={variant}>
-      <div className="skill-lifecycle-actions" role="group" aria-label="Skill actions">
+      <div className="skill-lifecycle-actions" role="group" aria-label={t("Skill actions")}>
         {valid.map((availability) => (
           <LifecycleActionButton
             key={availability.action}
@@ -138,7 +139,7 @@ function LifecycleActionButton({
             onRun(Boolean(availability.divergenceWarning));
           }}
         >
-          Try again
+          {t("Try again")}
         </button>
       </span>
     );
@@ -154,7 +155,7 @@ function LifecycleActionButton({
           aria-label={`Dismiss ${action} result`}
           onClick={onClear}
         >
-          Dismiss
+          {t("Dismiss")}
         </button>
       </span>
     );
@@ -223,7 +224,7 @@ function ConfirmAction({
       </p>
       <div className="skill-lifecycle-confirm-actions">
         <button type="button" className="skill-lifecycle-confirm-cancel" onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </button>
         <button
           type="button"

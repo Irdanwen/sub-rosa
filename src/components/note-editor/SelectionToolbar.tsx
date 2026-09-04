@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import type { Editor } from "@tiptap/react";
 import { IconBold } from "central-icons/IconBold";
 import { IconBulletList } from "central-icons/IconBulletList";
@@ -41,13 +42,13 @@ import type { RewriteKind } from "../../lib/tauri";
 /** The rewrites offered, in the order they are reached for. `translate` and
  * `custom` need something typed, so they open a field instead of running. */
 const REWRITES: { kind: RewriteKind; label: string; needsInput?: "language" | "instruction" }[] = [
-  { kind: "correct", label: "Correct spelling and grammar" },
-  { kind: "reformulate", label: "Reformulate" },
-  { kind: "shorten", label: "Make it shorter" },
-  { kind: "expand", label: "Develop it" },
-  { kind: "restructure", label: "Reorganise" },
-  { kind: "translate", label: "Translate to", needsInput: "language" },
-  { kind: "custom", label: "Do something else", needsInput: "instruction" },
+  { kind: "correct", label: t("Correct spelling and grammar") },
+  { kind: "reformulate", label: t("Reformulate") },
+  { kind: "shorten", label: t("Make it shorter") },
+  { kind: "expand", label: t("Develop it") },
+  { kind: "restructure", label: t("Reorganise") },
+  { kind: "translate", label: t("Translate to"), needsInput: "language" },
+  { kind: "custom", label: t("Do something else"), needsInput: "instruction" },
 ];
 
 type ToolbarAction = {
@@ -61,7 +62,7 @@ type ToolbarAction = {
 
 const BLOCK_ACTIONS: ToolbarAction[] = [1, 2, 3].map((level) => ({
   id: `h${level}`,
-  label: `Heading ${level}`,
+  label: t("Heading {level}", { level }),
   Icon: [IconH1, IconH2, IconH3][level - 1],
   isActive: (editor) => editor.isActive("heading", { level }),
   run: (editor) => {
@@ -76,7 +77,7 @@ const BLOCK_ACTIONS: ToolbarAction[] = [1, 2, 3].map((level) => ({
 const LIST_ACTIONS: ToolbarAction[] = [
   {
     id: "bulletList",
-    label: "Bullet list",
+    label: t("Bullet list"),
     Icon: IconBulletList,
     isActive: (editor) => editor.isActive("bulletList"),
     run: (editor) => {
@@ -85,7 +86,7 @@ const LIST_ACTIONS: ToolbarAction[] = [
   },
   {
     id: "orderedList",
-    label: "Numbered list",
+    label: t("Numbered list"),
     Icon: IconNumberedList,
     isActive: (editor) => editor.isActive("orderedList"),
     run: (editor) => {
@@ -94,7 +95,7 @@ const LIST_ACTIONS: ToolbarAction[] = [
   },
   {
     id: "taskList",
-    label: "Task list",
+    label: t("Task list"),
     Icon: IconChecklist,
     isActive: (editor) => editor.isActive("taskList"),
     run: (editor) => {
@@ -106,7 +107,7 @@ const LIST_ACTIONS: ToolbarAction[] = [
 const MARK_ACTIONS: ToolbarAction[] = [
   {
     id: "bold",
-    label: "Bold",
+    label: t("Bold"),
     Icon: IconBold,
     isActive: (editor) => editor.isActive("bold"),
     run: (editor) => {
@@ -115,7 +116,7 @@ const MARK_ACTIONS: ToolbarAction[] = [
   },
   {
     id: "italic",
-    label: "Italic",
+    label: t("Italic"),
     Icon: IconItalic,
     isActive: (editor) => editor.isActive("italic"),
     run: (editor) => {
@@ -124,7 +125,7 @@ const MARK_ACTIONS: ToolbarAction[] = [
   },
   {
     id: "strike",
-    label: "Strikethrough",
+    label: t("Strikethrough"),
     Icon: IconStrikeThrough,
     isActive: (editor) => editor.isActive("strike"),
     run: (editor) => {
@@ -133,7 +134,7 @@ const MARK_ACTIONS: ToolbarAction[] = [
   },
   {
     id: "highlight",
-    label: "Highlight",
+    label: t("Highlight"),
     Icon: IconHighlight,
     isActive: (editor) => editor.isActive("highlight"),
     run: (editor) => {
@@ -142,7 +143,7 @@ const MARK_ACTIONS: ToolbarAction[] = [
   },
   {
     id: "code",
-    label: "Code",
+    label: t("Code"),
     Icon: IconCode,
     isActive: (editor) => editor.isActive("code"),
     run: (editor) => {
@@ -299,7 +300,7 @@ export function SelectionToolbar({
         ref={ref}
         className={`${placement.className} selection-toolbar-link`}
         role="toolbar"
-        aria-label="Rewrite"
+        aria-label={t("Rewrite")}
         style={placement.style}
         onMouseDown={(event) => event.preventDefault()}
       >
@@ -329,7 +330,7 @@ export function SelectionToolbar({
           onMouseDown={(event) => event.preventDefault()}
           onClick={commitPending}
         >
-          Go
+          {t("Go")}
         </button>
       </div>
     );
@@ -341,7 +342,7 @@ export function SelectionToolbar({
         ref={ref}
         className={`${placement.className} selection-toolbar-link`}
         role="toolbar"
-        aria-label="Link"
+        aria-label={t("Link")}
         style={placement.style}
         // Keeps the click from blurring the editor, which would drop the
         // selection the link is about to be applied to.
@@ -351,8 +352,8 @@ export function SelectionToolbar({
           ref={linkInputRef}
           type="url"
           value={linkDraft}
-          placeholder="Paste a link"
-          aria-label="Link address"
+          placeholder={t("Paste a link")}
+          aria-label={t("Link address")}
           onMouseDown={(event) => event.stopPropagation()}
           onChange={(event) => setLinkDraft(event.target.value)}
           onKeyDown={(event) => {
@@ -380,7 +381,7 @@ export function SelectionToolbar({
         ref={ref}
         className={placement.className}
         role="toolbar"
-        aria-label="Format selection"
+        aria-label={t("Format selection")}
         style={placement.style}
         onMouseDown={(event) => event.preventDefault()}
       >
@@ -404,8 +405,8 @@ export function SelectionToolbar({
           onPointerDown={(event) => event.preventDefault()}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => setLinkDraft(currentHref(editor))}
-          title="Link"
-          aria-label="Link"
+          title={t("Link")}
+          aria-label={t("Link")}
         >
           <IconChainLink1 size={16} />
         </button>
@@ -419,8 +420,8 @@ export function SelectionToolbar({
           onPointerDown={(event) => event.preventDefault()}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => setMenuOpen((open) => !open)}
-          title="Rewrite"
-          aria-label="Rewrite"
+          title={t("Rewrite")}
+          aria-label={t("Rewrite")}
           aria-expanded={menuOpen}
         >
           <IconSparkle size={16} />
@@ -433,7 +434,7 @@ export function SelectionToolbar({
           ref={menu.ref}
           className={docked ? "rewrite-menu rewrite-menu-docked" : "rewrite-menu"}
           role="menu"
-          aria-label="Rewrite"
+          aria-label={t("Rewrite")}
           style={docked ? { bottom: keyboardInset + DOCKED_BAR_HEIGHT } : menu.style}
           onPointerDown={(event) => event.preventDefault()}
           onMouseDown={(event) => event.preventDefault()}

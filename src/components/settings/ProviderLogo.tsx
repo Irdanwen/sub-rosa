@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconAnthropic } from "central-icons/IconAnthropic";
 import { IconClaudeai } from "central-icons/IconClaudeai";
 import { IconDeepseek } from "central-icons/IconDeepseek";
@@ -21,25 +22,25 @@ export function ProviderLogo({ provider, id, name = "", size = 18 }: ProviderLog
   const kind = classifyProvider(provider, id, name);
   switch (kind) {
     case "openai":
-      return <IconOpenai size={size} aria-label="OpenAI" />;
+      return <IconOpenai size={size} aria-label={t("OpenAI")} />;
     case "anthropic":
-      return <IconClaudeai size={size} aria-label="Claude" />;
+      return <IconClaudeai size={size} aria-label={t("Claude")} />;
     case "google":
-      return <IconGemini size={size} aria-label="Gemini" />;
+      return <IconGemini size={size} aria-label={t("Gemini")} />;
     case "meta":
-      return <IconMetaAi size={size} aria-label="Meta" />;
+      return <IconMetaAi size={size} aria-label={t("Meta")} />;
     case "mistral":
-      return <IconMistral size={size} aria-label="Mistral" />;
+      return <IconMistral size={size} aria-label={t("Mistral")} />;
     case "deepseek":
-      return <IconDeepseek size={size} aria-label="DeepSeek" />;
+      return <IconDeepseek size={size} aria-label={t("DeepSeek")} />;
     case "perplexity":
-      return <IconPerplexity size={size} aria-label="Perplexity" />;
+      return <IconPerplexity size={size} aria-label={t("Perplexity")} />;
     case "ollama":
-      return <IconOllama size={size} aria-label="Ollama" />;
+      return <IconOllama size={size} aria-label={t("Ollama")} />;
     case "xai":
-      return <IconGrok size={size} aria-label="Grok" />;
+      return <IconGrok size={size} aria-label={t("Grok")} />;
     case "nvidia":
-      return <IconNvidia size={size} aria-label="NVIDIA" />;
+      return <IconNvidia size={size} aria-label={t("NVIDIA")} />;
     case "elevenlabs":
       return <ElevenLabsMark size={size} />;
     case "venice":
@@ -180,7 +181,7 @@ function ElevenLabsMark({ size }: { size: number }) {
       viewBox="0 0 876 876"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      aria-label="ElevenLabs"
+      aria-label={t("ElevenLabs")}
     >
       <path d="M468 292H528V584H468V292Z" fill="currentColor" />
       <path d="M348 292H408V584H348V292Z" fill="currentColor" />
@@ -197,7 +198,7 @@ function FalMark({ size }: { size: number }) {
       viewBox="0 0 170 171"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      aria-label="Fal"
+      aria-label={t("Fal")}
     >
       <path
         fillRule="evenodd"
@@ -218,7 +219,7 @@ function VeniceMark({ size }: { size: number }) {
       viewBox="0 0 326 366"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      aria-label="Venice"
+      aria-label={t("Venice")}
     >
       <path
         fillRule="evenodd"

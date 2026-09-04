@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconArrowDownWall } from "central-icons/IconArrowDownWall";
 import { IconCheckmark1 } from "central-icons-filled/IconCheckmark1";
 import { IconArrowsRepeat } from "central-icons/IconArrowsRepeat";
@@ -76,7 +77,7 @@ export function RewritePanel({
         <button
           type="button"
           className="rewrite-panel-close"
-          aria-label="Discard"
+          aria-label={t("Discard")}
           onPointerDown={(event) => event.preventDefault()}
           onClick={onDismiss}
         >
@@ -91,7 +92,7 @@ export function RewritePanel({
           {run.text ? (
             run.text
           ) : (
-            <span className="rewrite-panel-waiting">Reading the selection</span>
+            <span className="rewrite-panel-waiting">{t("Reading the selection")}</span>
           )}
         </div>
       )}
@@ -99,7 +100,7 @@ export function RewritePanel({
       <footer className="rewrite-panel-actions">
         {running ? (
           <button type="button" onPointerDown={(event) => event.preventDefault()} onClick={onStop}>
-            Stop
+            {t("Stop")}
           </button>
         ) : (
           <>
@@ -112,7 +113,7 @@ export function RewritePanel({
                   onClick={() => onReplace(run.text)}
                 >
                   <IconCheckmark1 size={14} />
-                  Replace
+                  {t("Replace")}
                 </button>
                 <button
                   type="button"
@@ -120,7 +121,7 @@ export function RewritePanel({
                   onClick={() => onInsertBelow(run.text)}
                 >
                   <IconArrowDownWall size={14} />
-                  Insert below
+                  {t("Insert below")}
                 </button>
               </>
             ) : null}
@@ -130,7 +131,7 @@ export function RewritePanel({
               onClick={onRetry}
             >
               <IconArrowsRepeat size={14} />
-              Try again
+              {t("Try again")}
             </button>
           </>
         )}

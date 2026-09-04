@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../lib/i18n";
 import { IconAiTokens } from "central-icons/IconAiTokens";
 import { messageFromError } from "../../lib/errors";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
@@ -155,18 +156,18 @@ export function SessionUsagePanel({
   }, [load]);
 
   return (
-    <section className="agent-usage-panel" aria-label="Session usage">
+    <section className="agent-usage-panel" aria-label={t("Session usage")}>
       <header className="agent-usage-header">
         <span className="agent-usage-title">
           <IconGauge size={15} ariaHidden />
-          Usage
+          {t("Usage")}
         </span>
         <div className="agent-usage-header-actions">
           <button
             type="button"
             className="icon-button"
-            aria-label="Refresh usage"
-            title="Refresh"
+            aria-label={t("Refresh usage")}
+            title={t("Refresh")}
             disabled={status === "loading"}
             onClick={load}
           >
@@ -175,8 +176,8 @@ export function SessionUsagePanel({
           <button
             type="button"
             className="icon-button"
-            aria-label="Close usage"
-            title="Close"
+            aria-label={t("Close usage")}
+            title={t("Close")}
             onClick={onClose}
           >
             <IconCrossSmall size={14} />
@@ -186,10 +187,10 @@ export function SessionUsagePanel({
 
       {status === "error" ? (
         <div className="agent-usage-error" role="status">
-          <p>Couldn't load usage for this session.</p>
+          <p>{t("Couldn't load usage for this session.")}</p>
           {errorReason ? <p className="agent-usage-error-detail">{errorReason}</p> : null}
           <button type="button" className="agent-usage-retry" onClick={load}>
-            Try again
+            {t("Try again")}
           </button>
         </div>
       ) : (
@@ -202,14 +203,14 @@ export function SessionUsagePanel({
             </p>
           ) : null}
           <dl className="agent-usage-grid">
-            <Metric label="Model" value={usage?.model} />
+            <Metric label={t("Model")} value={usage?.model} />
             {/* The runtime reports no provider, and never will: it talks to the
              * local sidecar. This binary reaches one operator (ADR-0017), so
              * naming it is a fact rather than a guess. */}
-            <Metric label="Provider" value={usage?.provider ?? PROVIDER_NAME} />
-            <Metric label="Prompt tokens" value={formatCount(usage?.promptTokens)} />
-            <Metric label="Completion tokens" value={formatCount(usage?.completionTokens)} />
-            <Metric label="Total tokens" value={formatCount(usage?.totalTokens)} />
+            <Metric label={t("Provider")} value={usage?.provider ?? PROVIDER_NAME} />
+            <Metric label={t("Prompt tokens")} value={formatCount(usage?.promptTokens)} />
+            <Metric label={t("Completion tokens")} value={formatCount(usage?.completionTokens)} />
+            <Metric label={t("Total tokens")} value={formatCount(usage?.totalTokens)} />
           </dl>
 
           <ContextMeter used={usage?.contextUsed} limit={usage?.contextLimit} />
@@ -241,7 +242,7 @@ export function SessionUsagePanel({
 /** Hours and minutes, local. The stale notice says when the reading was taken,
  * not how long ago: a duration would go stale itself between renders. */
 function formatClock(at: number): string {
-  return new Date(at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return new Date(at).toLocaleTimeString(intlLocale(), { hour: "2-digit", minute: "2-digit" });
 }
 
 /** A label/value row. Empty/absent values render the sentence-case
@@ -267,7 +268,7 @@ function ContextMeter({ used, limit }: { used?: number; limit?: number }) {
   return (
     <div className="agent-usage-context">
       <div className="agent-usage-context-head">
-        <span className="agent-usage-context-label">Context used</span>
+        <span className="agent-usage-context-label">{t("Context used")}</span>
         <span
           className="agent-usage-context-reading"
           data-unavailable={hasBoth ? undefined : "true"}
@@ -280,7 +281,7 @@ function ContextMeter({ used, limit }: { used?: number; limit?: number }) {
         <div
           className="agent-usage-bar"
           role="progressbar"
-          aria-label="Context used"
+          aria-label={t("Context used")}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(pct)}
@@ -308,7 +309,7 @@ function CacheMeter({ cache }: { cache: CacheUsage | null }) {
       <div className="agent-usage-cache-head">
         <span className="agent-usage-cache-label">
           <IconBolt size={14} ariaHidden />
-          From cache
+          {t("From cache")}
         </span>
         <span className="agent-usage-cache-reading">
           {formatCount(cached)} / {formatCount(prompt)}
@@ -319,7 +320,7 @@ function CacheMeter({ cache }: { cache: CacheUsage | null }) {
         <div
           className="agent-usage-bar"
           role="progressbar"
-          aria-label="Prompt tokens from cache"
+          aria-label={t("Prompt tokens from cache")}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={pct}
@@ -331,8 +332,9 @@ function CacheMeter({ cache }: { cache: CacheUsage | null }) {
         </div>
       ) : null}
       <p className="agent-usage-cache-note">
-        Prompt tokens the provider served from its cache, across every request this app has made
-        since it started.
+        {t(
+          "Prompt tokens the provider served from its cache, across every request this app has made since it started.",
+        )}
       </p>
     </div>
   );
@@ -379,13 +381,14 @@ function CostSection({
           <div className="agent-usage-cost-head">
             <span className="agent-usage-cost-label">
               <IconCoins size={14} ariaHidden />
-              Spent since launch
+              {t("Spent since launch")}
             </span>
             <span className="agent-usage-cache-reading">{formatUsd(spentUsd)}</span>
           </div>
           <p className="agent-usage-cost-note">
-            Charged by the provider, across every request this app has made since it started, not
-            this session alone.
+            {t(
+              "Charged by the provider, across every request this app has made since it started, not this session alone.",
+            )}
           </p>
         </>
       ) : null}
@@ -394,15 +397,16 @@ function CostSection({
           <div className="agent-usage-cost-head">
             <span className="agent-usage-cost-label">
               <IconCoins size={14} ariaHidden />
-              Spent since launch
+              {t("Spent since launch")}
             </span>
             <span className="agent-usage-cost-value" data-unavailable="true">
-              Not reported
+              {t("Not reported")}
             </span>
           </div>
           <p className="agent-usage-cost-note">
-            The provider stopped returning a price per turn, so there is nothing to total. Your
-            balance is what to read instead.
+            {t(
+              "The provider stopped returning a price per turn, so there is nothing to total. Your balance is what to read instead.",
+            )}
           </p>
         </>
       ) : null}
@@ -411,13 +415,14 @@ function CostSection({
           <div className="agent-usage-cost-head">
             <span className="agent-usage-cost-label">
               {spentUsd === undefined ? <IconCoins size={14} ariaHidden /> : null}
-              Estimated cost, this session
+              {t("Estimated cost, this session")}
             </span>
             <span className="agent-usage-cost-value">{formatUsd(estimatedCostUsd)}</span>
           </div>
           <p className="agent-usage-cost-note">
-            At most: priced from this session's tokens at the provider's rates. Prompt tokens served
-            from the cache cost less and are not counted apart here, so the real charge is lower.
+            {t(
+              "At most: priced from this session's tokens at the provider's rates. Prompt tokens served from the cache cost less and are not counted apart here, so the real charge is lower.",
+            )}
           </p>
         </>
       ) : null}
@@ -425,22 +430,22 @@ function CostSection({
         <div className="agent-usage-cost-head">
           <span className="agent-usage-cost-label">
             <IconCoins size={14} ariaHidden />
-            Cost
+            {t("Cost")}
           </span>
           <span className="agent-usage-cost-value" data-unavailable="true">
-            Not reported yet
+            {t("Not reported yet")}
           </span>
         </div>
       ) : null}
       {cacheSavedUsd !== undefined && cacheSavedUsd > 0 ? (
         // The one number here that is NOT an estimate: the provider reports it.
         <div className="agent-usage-cost-head">
-          <span className="agent-usage-cost-label">Saved by the cache</span>
+          <span className="agent-usage-cost-label">{t("Saved by the cache")}</span>
           <span className="agent-usage-cache-reading">{formatUsd(cacheSavedUsd)}</span>
         </div>
       ) : null}
       {toolCosts && toolCosts.length > 0 ? (
-        <ul className="agent-usage-tool-costs" aria-label="Tool and subagent costs">
+        <ul className="agent-usage-tool-costs" aria-label={t("Tool and subagent costs")}>
           {toolCosts.map((cost) => (
             <li key={cost.name}>
               <span className="agent-usage-tool-name">
@@ -466,7 +471,7 @@ function CostSection({
 /** Group-format a token count, or undefined when absent (so the caller can
  * fall back to "Unavailable"). */
 function formatCount(value?: number): string | undefined {
-  return value === undefined ? undefined : value.toLocaleString();
+  return value === undefined ? undefined : value.toLocaleString(intlLocale());
 }
 
 /** Format a USD amount with enough precision for small per-call costs. Sub-cent

@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconDotGrid1x3Horizontal } from "central-icons/IconDotGrid1x3Horizontal";
 import { IconCalendarRepeat } from "central-icons/IconCalendarRepeat";
 import { IconPlay } from "central-icons/IconPlay";
@@ -149,16 +150,16 @@ export function RoutineDetail({
   return (
     <section className="routine-detail" aria-label={routine.name}>
       <BreadcrumbBar
-        backLabel="Back to routines"
+        backLabel={t("Back to routines")}
         onBack={onBack}
-        items={[{ label: "Routines", onClick: onBack }, { label: name.trim() || routine.name }]}
+        items={[{ label: t("Routines"), onClick: onBack }, { label: name.trim() || routine.name }]}
         actions={
           <div className="routine-detail-actions">
             <div className="agent-session-menu-wrap" ref={menuWrapRef}>
               <button
                 type="button"
                 className="btn btn-ghost routine-detail-menu-trigger"
-                aria-label="Routine actions"
+                aria-label={t("Routine actions")}
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((open) => !open)}
@@ -178,7 +179,7 @@ export function RoutineDetail({
                     }}
                   >
                     <IconTrashCan size={14} />
-                    Delete routine
+                    {t("Delete routine")}
                   </button>
                 </div>
               ) : null}
@@ -209,8 +210,8 @@ export function RoutineDetail({
           <input
             className="routine-detail-name"
             value={name}
-            placeholder="Routine name"
-            aria-label="Routine name"
+            placeholder={t("Routine name")}
+            aria-label={t("Routine name")}
             onChange={(event) => setName(event.currentTarget.value)}
           />
           {!completed ? (
@@ -230,38 +231,42 @@ export function RoutineDetail({
 
         <div className="routine-detail-meta">
           {routine.state === "scheduled" ? (
-            <span className="routine-meta-pill routine-meta-pill-warm">Active</span>
+            <span className="routine-meta-pill routine-meta-pill-warm">{t("Active")}</span>
           ) : null}
           {routineUnrestricted(routine) ? (
             <HoverTip
-              tip="This routine runs with full access: when it fires, Sub Rosa can run commands and change any file your account can. Routines without this badge run sandboxed and cannot touch your files."
+              tip={t(
+                "This routine runs with full access: when it fires, Sub Rosa can run commands and change any file your account can. Routines without this badge run sandboxed and cannot touch your files.",
+              )}
               className="routine-meta-pill routine-meta-pill-warm"
               tabIndex={0}
             >
               <IconShieldCrossed size={11} aria-hidden />
-              Unrestricted
+              {t("Unrestricted")}
             </HoverTip>
           ) : null}
           {paused ? (
-            <span className="routine-meta-pill" aria-label="Paused">
+            <span className="routine-meta-pill" aria-label={t("Paused")}>
               <IconPause size={12} aria-hidden />
-              Paused
+              {t("Paused")}
             </span>
           ) : null}
-          {completed ? <span className="routine-meta-pill">Completed</span> : null}
+          {completed ? <span className="routine-meta-pill">{t("Completed")}</span> : null}
           <span className="routine-meta-pill">
             <IconCalendarRepeat size={12} aria-hidden />
             {compactScheduleLabel(routine.schedule)}
           </span>
           {completed && routine.last_run_at ? (
-            <span className="routine-meta-pill">Last ran {formatRunTime(routine.last_run_at)}</span>
+            <span className="routine-meta-pill">
+              {t("Last ran {when}", { when: formatRunTime(routine.last_run_at) })}
+            </span>
           ) : null}
         </div>
 
         {error ? <p className="error-banner">{error}</p> : null}
         {failure ? (
           <div className="routine-detail-failure" role="status">
-            <strong>Last run failed.</strong> {failure}
+            <strong>{t("Last run failed.")}</strong> {failure}
           </div>
         ) : null}
 
@@ -274,7 +279,7 @@ export function RoutineDetail({
             } as CSSProperties
           }
           role="tablist"
-          aria-label="Routine sections"
+          aria-label={t("Routine sections")}
         >
           <button
             ref={detailsTabRef}
@@ -285,7 +290,7 @@ export function RoutineDetail({
             aria-controls="routine-details-panel"
             onClick={() => setActiveTab("details")}
           >
-            Details
+            {t("Details")}
           </button>
           <button
             ref={historyTabRef}
@@ -296,7 +301,7 @@ export function RoutineDetail({
             aria-controls="routine-history-panel"
             onClick={() => setActiveTab("history")}
           >
-            Run history
+            {t("Run history")}
           </button>
         </div>
 
@@ -309,7 +314,7 @@ export function RoutineDetail({
           >
             <section className="settings-group" aria-labelledby="routine-schedule">
               <h2 id="routine-schedule" className="settings-group-heading">
-                Schedule
+                {t("Schedule")}
               </h2>
               <div className="settings-card">
                 <SchedulePicker draft={draft} onChange={setDraft} />
@@ -318,27 +323,28 @@ export function RoutineDetail({
 
             <section className="settings-group" aria-labelledby="routine-instructions">
               <h2 id="routine-instructions" className="settings-group-heading">
-                Instructions
+                {t("Instructions")}
               </h2>
               <GrowingTextarea
                 className="routine-detail-instructions"
                 value={prompt}
-                aria-label="Instructions"
+                aria-label={t("Instructions")}
                 onChange={(event) => setPrompt(event.currentTarget.value)}
               />
             </section>
 
             <section className="settings-group" aria-labelledby="routine-access">
               <h2 id="routine-access" className="settings-group-heading">
-                Access
+                {t("Access")}
               </h2>
               <div className="settings-card">
                 <RoutineModePicker unrestricted={unrestricted} onChange={setUnrestricted} />
                 {routine.script ? (
                   <p className="routine-detail-script-note">
-                    This routine has an attached script ({routine.script}) that runs outside the
-                    sandbox, so it always has full access. Switching it to Sandboxed removes the
-                    script when you save.
+                    {t(
+                      "This routine has an attached script ({script}) that runs outside the sandbox, so it always has full access. Switching it to Sandboxed removes the script when you save.",
+                      { script: routine.script },
+                    )}
                   </p>
                 ) : null}
               </div>
@@ -350,7 +356,7 @@ export function RoutineDetail({
             className="routine-detail-body"
             role="tabpanel"
             aria-labelledby="routine-history-tab"
-            aria-label="Run history"
+            aria-label={t("Run history")}
           >
             {runs.length > 0 ? (
               <div className="settings-card routines-runs-card">
@@ -358,7 +364,7 @@ export function RoutineDetail({
               </div>
             ) : (
               <p className="routines-runs-empty">
-                No runs yet. When this routine fires, its session appears here.
+                {t("No runs yet. When this routine fires, its session appears here.")}
               </p>
             )}
           </section>

@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useEffect, useRef } from "react";
 import type { AudioLevelDto } from "../../lib/tauri";
 import {
@@ -93,7 +94,7 @@ export function Waveform({ level, active = true }: WaveformProps) {
   }, []);
 
   return (
-    <div className="waveform" aria-label="Audio activity">
+    <div className="waveform" aria-label={t("Audio activity")}>
       {Array.from({ length: RECORDER_BAR_COUNT }, (_, index) => (
         <span
           key={index}

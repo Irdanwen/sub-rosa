@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import {
   forwardRef,
   useCallback,
@@ -180,7 +181,7 @@ export const CategorySuggestionList = forwardRef<
   );
 
   if (items.length === 0) {
-    return <div className="agent-category-menu agent-category-menu-empty">No matches</div>;
+    return <div className="agent-category-menu agent-category-menu-empty">{t("No matches")}</div>;
   }
 
   const detailItem = detail ? items[detail.index] : undefined;
@@ -216,7 +217,7 @@ export const CategorySuggestionList = forwardRef<
           ref={menuRef}
           className="agent-category-menu"
           role="listbox"
-          aria-label="Tag this message"
+          aria-label={t("Tag this message")}
           onScroll={() => {
             updateFade();
             setDetail(null);
@@ -224,14 +225,14 @@ export const CategorySuggestionList = forwardRef<
         >
           {builtins.length ? (
             <div className="agent-category-menu-section" role="presentation">
-              <div className="agent-category-menu-section-label">Commands</div>
+              <div className="agent-category-menu-section-label">{t("Commands")}</div>
               {builtins.map(({ item, index }) => renderCommandRow(item, index))}
             </div>
           ) : null}
           {categories.map(({ item, index }) => renderCommandRow(item, index))}
           {skills.length ? (
             <div className="agent-category-menu-section" role="presentation">
-              <div className="agent-category-menu-section-label">Skills</div>
+              <div className="agent-category-menu-section-label">{t("Skills")}</div>
               {skills.map(({ item, index }) => renderCommandRow(item, index))}
             </div>
           ) : null}

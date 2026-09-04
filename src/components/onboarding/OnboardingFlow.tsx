@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconChevronLeftSmall } from "central-icons/IconChevronLeftSmall";
 import { useEffect, useMemo, useState } from "react";
 import { onboardingResumeStep, setOnboardingResumeStep } from "../../lib/onboarding";
@@ -34,7 +35,7 @@ const FN_SHORTCUT = {
     shift: false,
     function: true,
   },
-  label: "Fn",
+  label: t("Fn"),
   pressCount: 1 as const,
 };
 
@@ -162,8 +163,8 @@ export function OnboardingFlow({ onComplete, needsKey = false, keyReady = false 
             type="button"
             className="onboarding-back"
             onClick={goBack}
-            aria-label="Back"
-            title="Back"
+            aria-label={t("Back")}
+            title={t("Back")}
           >
             <IconChevronLeftSmall size={18} aria-hidden />
           </button>

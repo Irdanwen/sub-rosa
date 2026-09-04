@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconPencilLine } from "central-icons/IconPencilLine";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
@@ -170,20 +171,22 @@ export function MemorySettingsSection() {
   return (
     <section className="settings-group" aria-labelledby="memory-heading">
       <h2 id="memory-heading" className="settings-group-heading">
-        Memory
+        {t("Memory")}
       </h2>
       <p className="settings-group-description">
-        Sub Rosa remembers durable facts from your conversations, stored only on this device, and
-        uses them so you never have to repeat yourself.
+        {t(
+          "Sub Rosa remembers durable facts from your conversations, stored only on this device, and uses them so you never have to repeat yourself.",
+        )}
       </p>
       <div className="settings-card">
         <div className="settings-rows">
           <div className="settings-row">
             <div className="settings-row-info">
-              <h3 className="settings-row-title">Use memory</h3>
+              <h3 className="settings-row-title">{t("Use memory")}</h3>
               <p className="settings-row-description">
-                Give the assistant your remembered facts in every conversation. Turning this off
-                stops using memories but does not delete them.
+                {t(
+                  "Give the assistant your remembered facts in every conversation. Turning this off stops using memories but does not delete them.",
+                )}
               </p>
             </div>
             <div className="settings-row-control">
@@ -197,16 +200,17 @@ export function MemorySettingsSection() {
                     extractionModel: settings?.extractionModel,
                   })
                 }
-                aria-label="Use memory"
+                aria-label={t("Use memory")}
               />
             </div>
           </div>
           <div className="settings-row">
             <div className="settings-row-info">
-              <h3 className="settings-row-title">Learn from conversations</h3>
+              <h3 className="settings-row-title">{t("Learn from conversations")}</h3>
               <p className="settings-row-description">
-                Extract new facts automatically as you chat. Turn this off to only keep memories you
-                add by hand.
+                {t(
+                  "Extract new facts automatically as you chat. Turn this off to only keep memories you add by hand.",
+                )}
               </p>
             </div>
             <div className="settings-row-control">
@@ -220,18 +224,19 @@ export function MemorySettingsSection() {
                     extractionModel: settings?.extractionModel,
                   })
                 }
-                aria-label="Learn from conversations"
+                aria-label={t("Learn from conversations")}
               />
             </div>
           </div>
           <div className="settings-row">
             <div className="settings-row-info">
               <label htmlFor={extractionModelId} className="settings-row-title">
-                Extraction model
+                {t("Extraction model")}
               </label>
               <p className="settings-row-description">
-                Extraction is a short classification task, not a conversation; a smaller model does
-                it for less. Leave it on the chat's model unless you have a reason.
+                {t(
+                  "Extraction is a short classification task, not a conversation; a smaller model does it for less. Leave it on the chat's model unless you have a reason.",
+                )}
               </p>
             </div>
             <div className="settings-row-control">
@@ -248,7 +253,7 @@ export function MemorySettingsSection() {
                   })
                 }
               >
-                <option value="">Same as the chat</option>
+                <option value="">{t("Same as the chat")}</option>
                 {extractionModels.map((model) => (
                   <option key={model.id} value={model.id}>
                     {model.name || model.id}
@@ -267,13 +272,13 @@ export function MemorySettingsSection() {
               type="search"
               value={query}
               onChange={(event) => setQuery(event.currentTarget.value)}
-              placeholder="Search"
-              aria-label="Search memories"
+              placeholder={t("Search")}
+              aria-label={t("Search memories")}
             />
           </label>
           <button type="button" className="primary-action primary-solid" onClick={startCreating}>
             <IconPlusMedium size={14} />
-            Add memory
+            {t("Add memory")}
           </button>
         </div>
         {visibleItems.length === 0 ? (
@@ -378,7 +383,7 @@ function MemoryDialog({
       footer={
         <>
           <button type="button" className="primary-action" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             type="submit"
@@ -392,14 +397,14 @@ function MemoryDialog({
       }
     >
       <form id="memory-form" className="dialog-body" onSubmit={handleSubmit}>
-        <DialogField label="Fact to remember" htmlFor="memory-text">
+        <DialogField label={t("Fact to remember")} htmlFor="memory-text">
           <input
             id="memory-text"
             name="memory-text"
             className="dialog-input"
             value={text}
             onChange={(event) => onChange(event.currentTarget.value)}
-            placeholder="e.g. I prefer answers in French"
+            placeholder={t("e.g. I prefer answers in French")}
             autoComplete="off"
             maxLength={2000}
             aria-invalid={error ? true : undefined}

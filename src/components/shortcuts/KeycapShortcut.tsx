@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 /**
  * Renders a keyboard shortcut as macOS-style keycaps inside a single framed
  * group. Shared by Settings (where it can also show a capturing state) and the
@@ -26,7 +27,7 @@ export function KeycapShortcut({
   capturing?: boolean;
 }) {
   if (capturing) {
-    return <span className="keycap-frame keycap-frame-capturing">Press shortcut...</span>;
+    return <span className="keycap-frame keycap-frame-capturing">{t("Press shortcut...")}</span>;
   }
   const keys = label.split("+").filter(Boolean);
   return (

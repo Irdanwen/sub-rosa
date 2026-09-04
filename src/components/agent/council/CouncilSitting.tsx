@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
 import { messageFromError } from "../../../lib/errors";
 import { IconCircleCheck } from "central-icons/IconCircleCheck";
@@ -222,14 +223,14 @@ export function CouncilSitting({
       }
       const prompt = current.renderedPrompt;
       if (!prompt) {
-        setError("This mandate has no rendered instructions yet.");
+        setError(t("This mandate has no rendered instructions yet."));
         return;
       }
       handedOff.current = true;
       const sessionId = await onHandOff(prompt);
       if (!sessionId) {
         handedOff.current = false;
-        setError("The session could not be started, so the mandate was not handed over.");
+        setError(t("The session could not be started, so the mandate was not handed over."));
         return;
       }
       await councilBindSession({
@@ -319,8 +320,8 @@ export function CouncilSitting({
 
   if (!cycle) {
     return (
-      <section className="council-sitting" aria-label="Council">
-        <p className="council-status">Convening…</p>
+      <section className="council-sitting" aria-label={t("Council")}>
+        <p className="council-status">{t("Convening…")}</p>
       </section>
     );
   }
@@ -329,13 +330,13 @@ export function CouncilSitting({
   const baseline = baselineDrafts(drafts);
 
   return (
-    <section className="council-sitting" aria-label="Council">
+    <section className="council-sitting" aria-label={t("Council")}>
       <header className="council-header">
         <div className="council-header-text">
-          <h2 className="council-title">The council</h2>
+          <h2 className="council-title">{t("The council")}</h2>
           <p className="council-request">{cycle.request}</p>
         </div>
-        <button type="button" className="icon-button" onClick={dismiss} aria-label="Dismiss">
+        <button type="button" className="icon-button" onClick={dismiss} aria-label={t("Dismiss")}>
           <IconCrossSmall size={16} aria-hidden />
         </button>
       </header>
@@ -380,7 +381,9 @@ export function CouncilSitting({
       {cycle.status === "questions" ? (
         <div className="council-questions">
           <p className="council-status">
-            More than one seat needed the same thing settled before drafting. Nothing else is asked.
+            {t(
+              "More than one seat needed the same thing settled before drafting. Nothing else is asked.",
+            )}
           </p>
           {cycle.questions.map((question) => (
             // A wrapping label would fold the "raised by" line into the field's
@@ -391,7 +394,9 @@ export function CouncilSitting({
               <label className="council-field-label" htmlFor={`council-q-${question.id}`}>
                 {question.question}
               </label>
-              <p className="council-field-hint">Raised by {question.raisedBy} seats</p>
+              <p className="council-field-hint">
+                {t("Raised by {raisedBy} seats", { raisedBy: question.raisedBy })}
+              </p>
               <input
                 id={`council-q-${question.id}`}
                 className="council-input"
@@ -410,7 +415,7 @@ export function CouncilSitting({
               disabled={busy}
               onClick={() => void sendAnswers(false)}
             >
-              Send answers
+              {t("Send answers")}
             </button>
             <button
               type="button"
@@ -418,7 +423,7 @@ export function CouncilSitting({
               disabled={busy}
               onClick={() => void sendAnswers(true)}
             >
-              Skip, decide for me
+              {t("Skip, decide for me")}
             </button>
           </div>
         </div>
@@ -432,16 +437,17 @@ export function CouncilSitting({
             // already carries its X -- but this is the moment somebody decides
             // to hand the thing over, and it is the moment worth saying it at.
             <div className="council-notice" role="status">
-              <h3 className="council-notice-title">Nobody attacked this mandate</h3>
+              <h3 className="council-notice-title">{t("Nobody attacked this mandate")}</h3>
               <p>
-                The objection seat did not answer, so what you are about to hand over is what the
-                other seats agreed on, unchallenged.
+                {t(
+                  "The objection seat did not answer, so what you are about to hand over is what the other seats agreed on, unchallenged.",
+                )}
               </p>
             </div>
           ) : null}
           {cycle.dissent.length > 0 ? (
             <div className="council-notice council-dissent">
-              <h3 className="council-notice-title">Where they disagreed</h3>
+              <h3 className="council-notice-title">{t("Where they disagreed")}</h3>
               <ul>
                 {cycle.dissent.map((line) => (
                   <li key={line}>{line}</li>
@@ -451,7 +457,7 @@ export function CouncilSitting({
           ) : null}
           {cycle.cuts.length > 0 ? (
             <div className="council-notice council-cuts">
-              <h3 className="council-notice-title">What was cut to fit</h3>
+              <h3 className="council-notice-title">{t("What was cut to fit")}</h3>
               <ul>
                 {cycle.cuts.map((line) => (
                   <li key={line}>{line}</li>
@@ -477,10 +483,10 @@ export function CouncilSitting({
               disabled={busy || problems.length > 0}
               onClick={() => void handOff()}
             >
-              Hand to the agent
+              {t("Hand to the agent")}
             </button>
             <button type="button" className="council-secondary" onClick={dismiss}>
-              Discard
+              {t("Discard")}
             </button>
           </div>
         </>
@@ -505,7 +511,7 @@ export function CouncilSitting({
 
       {cycle.status === "failed" ? (
         <div className="council-notice council-failed" role="alert">
-          <h3 className="council-notice-title">The sitting stopped</h3>
+          <h3 className="council-notice-title">{t("The sitting stopped")}</h3>
           <p>{cycle.lastError ?? "Something went wrong."}</p>
         </div>
       ) : null}
@@ -518,14 +524,16 @@ export function CouncilSitting({
             onClick={() => setShowBaseline((open) => !open)}
             aria-expanded={showBaseline}
           >
-            {showBaseline ? "Hide" : "Show"} what each model said alone
+            {showBaseline
+              ? t("Hide what each model said alone")
+              : t("Show what each model said alone")}
           </button>
           {showBaseline ? (
             <div className="council-baseline-body">
               <p className="council-field-hint">
-                One independent answer per model, written before any of them saw the others. It is
-                also what a single model would have produced on its own, which is the thing the
-                council is worth comparing against.
+                {t(
+                  "One independent answer per model, written before any of them saw the others. It is also what a single model would have produced on its own, which is the thing the council is worth comparing against.",
+                )}
               </p>
               {baseline.map((draft) => (
                 <article className="council-draft" key={`${draft.seatId}-${draft.createdAt}`}>
@@ -543,7 +551,9 @@ export function CouncilSitting({
                   ) : null}
                   {draft.whatWouldChangeMyMind ? (
                     <p className="council-draft-mind">
-                      Would change its mind if: {draft.whatWouldChangeMyMind}
+                      {t("Would change its mind if: {whatWouldChangeMyMind}", {
+                        whatWouldChangeMyMind: draft.whatWouldChangeMyMind,
+                      })}
                     </p>
                   ) : null}
                 </article>
@@ -555,15 +565,17 @@ export function CouncilSitting({
 
       <footer className="council-footer">
         <span>
-          {cycle.modelCalls} model {cycle.modelCalls === 1 ? "call" : "calls"} so far
+          {cycle.modelCalls === 1
+            ? t("{count} model call so far", { count: cycle.modelCalls })
+            : t("{count} model calls so far", { count: cycle.modelCalls })}
         </span>
         {working ? (
           <span className="council-footer-working">
             <WorkingDots />
-            Working · {formatDuration(silence)}
+            {t("Working · {duration}", { duration: formatDuration(silence) })}
           </span>
         ) : null}
-        {awaitsUser(cycle) ? <span>Waiting on you</span> : null}
+        {awaitsUser(cycle) ? <span>{t("Waiting on you")}</span> : null}
       </footer>
 
       {error ? (
@@ -602,13 +614,13 @@ function CouncilProposal({
 }) {
   const cost = plan ? formatSittingCost(estimateSittingCost(plan, prices)) : undefined;
   return (
-    <section className="council-sitting" aria-label="Council">
+    <section className="council-sitting" aria-label={t("Council")}>
       <header className="council-header">
         <div className="council-header-text">
-          <h2 className="council-title">Put this to the council</h2>
+          <h2 className="council-title">{t("Put this to the council")}</h2>
           <p className="council-request">{request}</p>
         </div>
-        <button type="button" className="icon-button" onClick={onClose} aria-label="Dismiss">
+        <button type="button" className="icon-button" onClick={onClose} aria-label={t("Dismiss")}>
           <IconCrossSmall size={16} aria-hidden />
         </button>
       </header>
@@ -616,9 +628,9 @@ function CouncilProposal({
       {plan ? (
         <>
           <p className="council-status">
-            Each seat reads your request alone, on a different model, and writes what it thinks the
-            agent should be asked to do. The chair merges them into a mandate you can edit before
-            anything runs.
+            {t(
+              "Each seat reads your request alone, on a different model, and writes what it thinks the agent should be asked to do. The chair merges them into a mandate you can edit before anything runs.",
+            )}
           </p>
           <ol className="council-seats">
             {plan.seats.map((seat) => (
@@ -632,51 +644,54 @@ function CouncilProposal({
             // reply instead of finding nothing and calling everything
             // unverifiable.
             <div className="council-notice" role="status">
-              <h3 className="council-notice-title">No working folder</h3>
+              <h3 className="council-notice-title">{t("No working folder")}</h3>
               <p>
-                The agent will answer in the conversation rather than change files, so the mandate
-                will only ask for what can be settled by reading that answer, and the reading at the
-                end will judge the answer itself.
+                {t(
+                  "The agent will answer in the conversation rather than change files, so the mandate will only ask for what can be settled by reading that answer, and the reading at the end will judge the answer itself.",
+                )}
               </p>
             </div>
           ) : null}
           {plan.reusedFamilies.length > 0 ? (
             <div className="council-notice">
-              <h3 className="council-notice-title">Two seats are sharing weights</h3>
+              <h3 className="council-notice-title">{t("Two seats are sharing weights")}</h3>
               <p>
-                The catalog offered fewer model families than there are seats, so this council is
-                less independent than it looks.
+                {t(
+                  "The catalog offered fewer model families than there are seats, so this council is less independent than it looks.",
+                )}
               </p>
             </div>
           ) : null}
           <dl className="council-plan">
             <div>
-              <dt>Model calls</dt>
+              <dt>{t("Model calls")}</dt>
               <dd>
-                {plan.minModelCalls} to {plan.maxModelCalls}
+                {t("{min} to {max}", { min: plan.minModelCalls, max: plan.maxModelCalls })}
                 {/* A seat that answers with nothing is asked once more, which
                     is a billed call the range above does not contain. Saying
                     so is cheaper than inflating every estimate to cover a
                     failure that is rare. */}
-                <span className="council-plan-note">, plus one if a seat comes back empty</span>
+                <span className="council-plan-note">
+                  {t(", plus one if a seat comes back empty")}
+                </span>
               </dd>
             </div>
             {cost ? (
               <div>
-                <dt>Estimated cost</dt>
+                <dt>{t("Estimated cost")}</dt>
                 <dd>{cost}</dd>
               </div>
             ) : null}
             {plan.situation ? (
               <div>
-                <dt>Ground</dt>
+                <dt>{t("Ground")}</dt>
                 <dd className="council-plan-situation">{plan.situation}</dd>
               </div>
             ) : null}
           </dl>
         </>
       ) : (
-        <p className="council-status">Reading the ground…</p>
+        <p className="council-status">{t("Reading the ground…")}</p>
       )}
 
       {error ? (
@@ -692,10 +707,10 @@ function CouncilProposal({
           disabled={busy || !plan}
           onClick={onConvene}
         >
-          Convene
+          {t("Convene")}
         </button>
         <button type="button" className="council-secondary" onClick={onClose}>
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
     </section>

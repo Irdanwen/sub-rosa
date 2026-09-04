@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useCallback, useEffect, useId, useState } from "react";
 import {
   issueReportsClearGithubToken,
@@ -52,7 +53,7 @@ export function ReportsSettingsSection() {
   const load = useCallback(() => {
     issueReportsGetSettings()
       .then(setSettings)
-      .catch(() => setError("The report settings could not be read."));
+      .catch(() => setError(t("The report settings could not be read.")));
   }, []);
 
   useEffect(load, [load]);
@@ -63,7 +64,7 @@ export function ReportsSettingsSection() {
     try {
       setSettings(await issueReportsSetGithubToken(draft.trim()));
       setDraft("");
-      setStatus("Token saved. Reports will now be filed from the app.");
+      setStatus(t("Token saved. Reports will now be filed from the app."));
     } catch (err) {
       setError(err instanceof Error ? err.message : "That token could not be saved.");
     }
@@ -74,9 +75,9 @@ export function ReportsSettingsSection() {
     setStatus(null);
     try {
       setSettings(await issueReportsClearGithubToken());
-      setStatus("Token removed. Reports will open a pre-filled issue in your browser.");
+      setStatus(t("Token removed. Reports will open a pre-filled issue in your browser."));
     } catch {
-      setError("The token could not be removed.");
+      setError(t("The token could not be removed."));
     }
   };
 
@@ -85,7 +86,7 @@ export function ReportsSettingsSection() {
     setStatus(null);
     try {
       setSettings(await issueReportsImportCliToken());
-      setStatus("Token taken from the GitHub CLI. Reports will now be filed from the app.");
+      setStatus(t("Token taken from the GitHub CLI. Reports will now be filed from the app."));
     } catch (err) {
       setError(err instanceof Error ? err.message : "The GitHub CLI token could not be read.");
     }
@@ -100,7 +101,7 @@ export function ReportsSettingsSection() {
       if (result.ok) setStatus(result.message);
       else setError(result.message);
     } catch {
-      setError("GitHub could not be reached.");
+      setError(t("GitHub could not be reached."));
     } finally {
       setTesting(false);
     }
@@ -114,13 +115,16 @@ export function ReportsSettingsSection() {
       <div className="settings-rows">
         <div className="settings-row">
           <div className="settings-row-info">
-            <h3 className="settings-row-title">Where your reports go</h3>
+            <h3 className="settings-row-title">{t("Where your reports go")}</h3>
             <p className="settings-row-description">
-              Reports you send from the assistant become issues on {settings?.repo ?? "the tracker"}
-              .{" "}
+              {t("Reports you send from the assistant become issues on {repo}.", {
+                repo: settings?.repo ?? t("the tracker"),
+              })}{" "}
               {hasToken
-                ? "With your token saved, the app files them for you and gives you the link."
-                : "Without a token, sending one opens GitHub's new issue form with everything filled in, and you press Submit under your own account."}
+                ? t("With your token saved, the app files them for you and gives you the link.")
+                : t(
+                    "Without a token, sending one opens GitHub's new issue form with everything filled in, and you press Submit under your own account.",
+                  )}
             </p>
             {status ? (
               <p className="settings-row-substatus" role="status">
@@ -142,20 +146,18 @@ export function ReportsSettingsSection() {
                 if (settings) void openExternalUrl(settings.repoUrl).catch(() => {});
               }}
             >
-              Open tracker
+              {t("Open tracker")}
             </button>
           </div>
         </div>
 
         <div className="settings-row">
           <div className="settings-row-info">
-            <h3 className="settings-row-title">GitHub token</h3>
+            <h3 className="settings-row-title">{t("GitHub token")}</h3>
             <p className="settings-row-description">
-              Optional. A token with permission to open issues lets the app file the report in the
-              background instead of sending you to the browser. It stays in your keychain and is
-              only ever sent to GitHub. If you already use the GitHub CLI, take its token instead of
-              making a new one. Screenshots are named in the issue, never uploaded: GitHub's API
-              cannot attach a file.
+              {t(
+                "Optional. A token with permission to open issues lets the app file the report in the background instead of sending you to the browser. It stays in your keychain and is only ever sent to GitHub. If you already use the GitHub CLI, take its token instead of making a new one. Screenshots are named in the issue, never uploaded: GitHub's API cannot attach a file.",
+              )}
             </p>
           </div>
           <div className="settings-row-control settings-secret-control">
@@ -167,7 +169,7 @@ export function ReportsSettingsSection() {
               autoComplete="off"
               spellCheck={false}
               placeholder={hasToken ? "Saved token hidden" : "ghp_…"}
-              aria-label="GitHub token"
+              aria-label={t("GitHub token")}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && canSave) void save();
@@ -179,7 +181,7 @@ export function ReportsSettingsSection() {
               disabled={!canSave}
               onClick={() => void save()}
             >
-              Save
+              {t("Save")}
             </button>
             {!hasToken && settings?.hasCliToken ? (
               <button
@@ -187,7 +189,7 @@ export function ReportsSettingsSection() {
                 className="btn btn-secondary"
                 onClick={() => void importFromCli()}
               >
-                Use GitHub CLI token
+                {t("Use GitHub CLI token")}
               </button>
             ) : null}
             {hasToken ? (
@@ -201,7 +203,7 @@ export function ReportsSettingsSection() {
                   {testing ? "Checking…" : "Check"}
                 </button>
                 <button type="button" className="btn btn-secondary" onClick={() => void remove()}>
-                  Remove
+                  {t("Remove")}
                 </button>
               </>
             ) : null}
@@ -212,11 +214,11 @@ export function ReportsSettingsSection() {
         <div className="settings-card">
           <div className="settings-row">
             <div className="settings-row-info">
-              <h3 className="settings-row-title">Diagnostics</h3>
+              <h3 className="settings-row-title">{t("Diagnostics")}</h3>
               <p className="settings-row-description">
-                Write a folder with the backend and dictation logs, the version, the state of the
-                local engine, the hosts this build can reach and what it keeps on disk. Keys and
-                tokens are removed before anything is written.
+                {t(
+                  "Write a folder with the backend and dictation logs, the version, the state of the local engine, the hosts this build can reach and what it keeps on disk. Keys and tokens are removed before anything is written.",
+                )}
               </p>
               {diagnostics ? (
                 <p className="settings-row-description" role="status">

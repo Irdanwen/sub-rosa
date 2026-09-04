@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import type { ReactNode } from "react";
 import { BackButton } from "./BackButton";
 
@@ -19,7 +20,7 @@ export function BreadcrumbBar({ backLabel, onBack, items, actions }: Props) {
   return (
     <div className="detail-bar" data-tauri-drag-region>
       {onBack ? <BackButton label={backLabel ?? "Back"} onClick={onBack} /> : null}
-      <nav className="detail-breadcrumb" aria-label="Breadcrumb">
+      <nav className="detail-breadcrumb" aria-label={t("Breadcrumb")}>
         <ol>
           {items.map((item, index) => {
             const current = index === items.length - 1;

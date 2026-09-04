@@ -1,3 +1,4 @@
+import { intlLocale } from "../../../lib/i18n";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { useLongPress } from "../../../lib/long-press";
 import { IconNoteText } from "central-icons/IconNoteText";
@@ -98,10 +99,10 @@ export function formatNoteTime(iso: string): string {
     date.getMonth() === now.getMonth() &&
     date.getDate() === now.getDate();
   if (sameDay) {
-    return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return date.toLocaleTimeString(intlLocale(), { hour: "numeric", minute: "2-digit" });
   }
   const sameYear = date.getFullYear() === now.getFullYear();
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(intlLocale(), {
     month: "short",
     day: "numeric",
     year: sameYear ? undefined : "numeric",

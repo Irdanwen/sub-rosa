@@ -1,3 +1,4 @@
+import { t, type LocaleChoice, localeChoice, setLocaleChoice } from "../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
 import { PRODUCT_NAME } from "../../lib/branding";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
@@ -6,9 +7,6 @@ import { IconCircleCheck } from "central-icons/IconCircleCheck";
 import { IconCircleQuestionmark } from "central-icons/IconCircleQuestionmark";
 import { IconCircleX } from "central-icons/IconCircleX";
 import { IconExclamationCircle } from "central-icons/IconExclamationCircle";
-import { IconMoonStar } from "central-icons/IconMoonStar";
-import { IconSun } from "central-icons/IconSun";
-import { IconTelevision } from "central-icons/IconTelevision";
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import {
@@ -98,50 +96,14 @@ import { ReportsSettingsSection } from "./ReportsSettingsSection";
 import { StorageSettingsSection } from "./StorageSettingsSection";
 import { MicTestControl, type MicTestState } from "./MicTestControl";
 import { StyleSettingsSection } from "./StyleSettingsSection";
-
-const THEME_OPTIONS: readonly {
-  value: ThemePreference;
-  label: ReactNode;
-  ariaLabel: string;
-}[] = [
-  {
-    value: "system",
-    label: (
-      <>
-        <IconTelevision size={14} />
-        System
-      </>
-    ),
-    ariaLabel: "Match system theme",
-  },
-  {
-    value: "light",
-    label: (
-      <>
-        <IconSun size={14} />
-        Light
-      </>
-    ),
-    ariaLabel: "Use light theme",
-  },
-  {
-    value: "dark",
-    label: (
-      <>
-        <IconMoonStar size={14} />
-        Dark
-      </>
-    ),
-    ariaLabel: "Use dark theme",
-  },
-];
+import { THEME_OPTIONS, UI_LANGUAGE_OPTIONS } from "./appearance-options";
 
 const RELEASE_CHANNEL_OPTIONS: readonly {
   value: ReleaseChannel;
   label: ReactNode;
 }[] = [
-  { value: "stable", label: "Stable" },
-  { value: "rc", label: "Release candidate" },
+  { value: "stable", label: t("Stable") },
+  { value: "rc", label: t("Release candidate") },
 ];
 
 const EMPTY_MODIFIERS: DictationShortcutModifiers = {
@@ -156,7 +118,7 @@ const DEFAULT_SETTINGS: DictationSettingsDto = {
   pushToTalkShortcut: {
     keyCode: 0x02,
     code: "KeyD",
-    label: "Ctrl+Opt+D",
+    label: t("Ctrl+Opt+D"),
     pressCount: 1,
     modifiers: {
       ...EMPTY_MODIFIERS,
@@ -167,7 +129,7 @@ const DEFAULT_SETTINGS: DictationSettingsDto = {
   toggleShortcut: {
     keyCode: 0x11,
     code: "KeyT",
-    label: "Ctrl+Opt+T",
+    label: t("Ctrl+Opt+T"),
     pressCount: 1,
     modifiers: {
       ...EMPTY_MODIFIERS,
@@ -221,26 +183,26 @@ export type SettingsTab =
   | "about";
 
 export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
-  { id: "general", label: "General" },
-  { id: "carpe-diem", label: "Carpe Diem" },
-  { id: "shortcuts", label: "Shortcuts" },
-  { id: "dictation", label: "Dictation" },
-  { id: "audio", label: "Audio" },
-  { id: "models", label: "Models" },
-  { id: "agent", label: "Agent" },
-  { id: "memory", label: "Memory" },
-  { id: "privacy", label: "Privacy" },
-  { id: "council", label: "Council" },
-  { id: "skills", label: "Installed skills" },
-  { id: "external-dirs", label: "External skill directories" },
-  { id: "mcp", label: "MCP servers" },
-  { id: "mcp-diagnostics", label: "MCP diagnostics" },
-  { id: "mcp-security", label: "MCP security" },
-  { id: "toolsets", label: "Toolsets" },
-  { id: "import-export", label: "Import / export" },
-  { id: "storage", label: "Storage" },
-  { id: "reports", label: "Reports" },
-  { id: "about", label: "About" },
+  { id: "general", label: t("General") },
+  { id: "carpe-diem", label: t("Carpe Diem") },
+  { id: "shortcuts", label: t("Shortcuts") },
+  { id: "dictation", label: t("Dictation") },
+  { id: "audio", label: t("Audio") },
+  { id: "models", label: t("Models") },
+  { id: "agent", label: t("Agent") },
+  { id: "memory", label: t("Memory") },
+  { id: "privacy", label: t("Privacy") },
+  { id: "council", label: t("Council") },
+  { id: "skills", label: t("Installed skills") },
+  { id: "external-dirs", label: t("External skill directories") },
+  { id: "mcp", label: t("MCP servers") },
+  { id: "mcp-diagnostics", label: t("MCP diagnostics") },
+  { id: "mcp-security", label: t("MCP security") },
+  { id: "toolsets", label: t("Toolsets") },
+  { id: "import-export", label: t("Import / export") },
+  { id: "storage", label: t("Storage") },
+  { id: "reports", label: t("Reports") },
+  { id: "about", label: t("About") },
 ];
 
 type AppSettingsProps = {
@@ -303,6 +265,7 @@ export function AppSettings({
   const [status, setStatus] = useState<string>();
   const [micOpen, setMicOpen] = useState(false);
   const [theme, setTheme] = useState<ThemePreference>(() => getStoredTheme());
+  const [language, setLanguage] = useState<LocaleChoice>(() => localeChoice());
   const [brand, setBrand] = useState<BrandId>(() => getStoredBrand());
   const [releaseChannel, setReleaseChannelValue] = useState<ReleaseChannel>("stable");
   // Set only when a leave-rc switch turns up an installable stable, so the
@@ -612,7 +575,7 @@ export function AppSettings({
       return;
     }
     if (helperEvent.type === "shortcut_capture_started") {
-      setStatus("Press the shortcut to record it.");
+      setStatus(t("Press the shortcut to record it."));
       return;
     }
     if (helperEvent.type === "shortcut_capture_error") {
@@ -625,13 +588,13 @@ export function AppSettings({
       const kind = capturingShortcutRef.current;
       if (!kind) {
         setShortcutError("Shortcut capture returned without an active target.");
-        setStatus("Shortcut capture returned without an active target.");
+        setStatus(t("Shortcut capture returned without an active target."));
         return;
       }
       const shortcut = shortcutFromCapturePayload(helperEvent.payload?.shortcut, 1);
       if (!shortcut) {
         setShortcutError("Shortcut capture returned invalid data.");
-        setStatus("Shortcut capture returned invalid data.");
+        setStatus(t("Shortcut capture returned invalid data."));
         return;
       }
       setShortcutError(undefined);
@@ -665,7 +628,12 @@ export function AppSettings({
       const next = await setDictationShortcut(kind, shortcut);
       setSettings(next);
       setCapturingShortcut(undefined);
-      setStatus(`${shortcutKindLabel(kind)} set to ${shortcutForKind(next, kind).label}.`);
+      setStatus(
+        t("{kind} set to {shortcut}.", {
+          kind: shortcutKindLabel(kind),
+          shortcut: shortcutForKind(next, kind).label,
+        }),
+      );
     } catch (error) {
       setShortcutError(messageFromError(error));
       setStatus(messageFromError(error));
@@ -761,7 +729,7 @@ export function AppSettings({
     try {
       const next = await clearVeniceApiKey();
       setProviderSettings(next);
-      setStatus("Legacy Venice key removed.");
+      setStatus(t("Legacy Venice key removed."));
     } catch (error) {
       setStatus(messageFromError(error));
     }
@@ -873,13 +841,13 @@ export function AppSettings({
       {controlled ? null : (
         <>
           <header className="settings-header">
-            <h1 className="settings-title">Settings</h1>
+            <h1 className="settings-title">{t("Settings")}</h1>
             <p className="settings-description">
-              Manage audio, dictation, AI models, and agent capabilities.
+              {t("Manage audio, dictation, AI models, and agent capabilities.")}
             </p>
           </header>
 
-          <nav className="settings-nav" role="tablist" aria-label="Settings sections">
+          <nav className="settings-nav" role="tablist" aria-label={t("Settings sections")}>
             {settingsTabs.map((tab) => (
               <button
                 key={tab.id}
@@ -915,20 +883,20 @@ export function AppSettings({
           <>
             <section className="settings-group" aria-labelledby="appearance-heading">
               <h2 id="appearance-heading" className="settings-group-heading">
-                Appearance
+                {t("Appearance")}
               </h2>
               <div className="settings-card">
                 <div className="settings-rows">
                   <div className="settings-row">
                     <div className="settings-row-info">
-                      <h3 className="settings-row-title">Theme</h3>
+                      <h3 className="settings-row-title">{t("Theme")}</h3>
                       <p className="settings-row-description">
-                        Match the system or force light or dark mode.
+                        {t("Match the system or force light or dark mode.")}
                       </p>
                     </div>
                     <div className="settings-row-control">
                       <SegmentedControl<ThemePreference>
-                        aria-label="App theme"
+                        aria-label={t("App theme")}
                         value={theme}
                         options={THEME_OPTIONS}
                         onValueChange={(next) => {
@@ -940,9 +908,28 @@ export function AppSettings({
                   </div>
                   <div className="settings-row">
                     <div className="settings-row-info">
-                      <h3 className="settings-row-title">Accent</h3>
+                      <h3 className="settings-row-title">{t("Language")}</h3>
                       <p className="settings-row-description">
-                        The brand color used across buttons, highlights, and the recorder.
+                        {t("Follow the system, or pick one. Dates and numbers follow too.")}
+                      </p>
+                    </div>
+                    <div className="settings-row-control">
+                      <SegmentedControl<LocaleChoice>
+                        aria-label={t("Language")}
+                        value={language}
+                        options={UI_LANGUAGE_OPTIONS}
+                        onValueChange={(next) => {
+                          setLanguage(next);
+                          setLocaleChoice(next);
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="settings-row">
+                    <div className="settings-row-info">
+                      <h3 className="settings-row-title">{t("Accent")}</h3>
+                      <p className="settings-row-description">
+                        {t("The brand color used across buttons, highlights, and the recorder.")}
                       </p>
                     </div>
                     <div className="settings-row-control">
@@ -950,13 +937,13 @@ export function AppSettings({
                         <button
                           type="button"
                           className="btn btn-secondary"
-                          aria-label="Reset accent color to default"
+                          aria-label={t("Reset accent color to default")}
                           onClick={() => {
                             setBrand(DEFAULT_BRAND);
                             setStoredBrand(DEFAULT_BRAND);
                           }}
                         >
-                          Reset
+                          {t("Reset")}
                         </button>
                       ) : null}
                       <AccentWheel
@@ -989,15 +976,15 @@ export function AppSettings({
         {activeTab === "shortcuts" ? (
           <section className="settings-group" aria-labelledby="shortcuts-heading">
             <h2 id="shortcuts-heading" className="settings-group-heading">
-              Shortcuts
+              {t("Shortcuts")}
             </h2>
             <div className="settings-card">
               <div className="settings-rows">
                 {dictationHotkeyAvailable ? (
                   <>
                     <ShortcutRow
-                      title="Push to talk"
-                      description="Hold this shortcut to dictate, then release to paste."
+                      title={t("Push to talk")}
+                      description={t("Hold this shortcut to dictate, then release to paste.")}
                       shortcut={settings.pushToTalkShortcut}
                       defaultShortcut={DEFAULT_SHORTCUTS.push_to_talk}
                       capturing={capturingShortcut === "push_to_talk"}
@@ -1011,8 +998,8 @@ export function AppSettings({
                     />
 
                     <ShortcutRow
-                      title="Toggle dictation"
-                      description="Press this shortcut to start or stop dictation."
+                      title={t("Toggle dictation")}
+                      description={t("Press this shortcut to start or stop dictation.")}
                       shortcut={settings.toggleShortcut}
                       defaultShortcut={DEFAULT_SHORTCUTS.toggle}
                       capturing={capturingShortcut === "toggle"}
@@ -1026,7 +1013,7 @@ export function AppSettings({
                 ) : (
                   <div className="settings-row">
                     <div className="settings-row-info">
-                      <h3 className="settings-row-title">Dictation shortcuts unavailable</h3>
+                      <h3 className="settings-row-title">{t("Dictation shortcuts unavailable")}</h3>
                       <p className="settings-row-description">
                         {unavailableOn(capabilities, "A global dictation shortcut")}
                       </p>
@@ -1042,22 +1029,22 @@ export function AppSettings({
           <>
             <section className="settings-group" aria-labelledby="dictation-heading">
               <h2 id="dictation-heading" className="settings-group-heading">
-                Dictation
+                {t("Dictation")}
               </h2>
               <div className="settings-card">
                 <div className="settings-rows">
                   <div className="settings-row">
                     <div className="settings-row-info">
-                      <h3 className="settings-row-title">Language</h3>
+                      <h3 className="settings-row-title">{t("Language")}</h3>
                       <p className="settings-row-description">
-                        Default language hint for note transcription and dictation.
+                        {t("Default language hint for note transcription and dictation.")}
                       </p>
                     </div>
                     <div className="settings-row-control" ref={languageWrapRef}>
                       <button
                         type="button"
                         className="select-trigger settings-language-select"
-                        aria-label="Default transcription language"
+                        aria-label={t("Default transcription language")}
                         aria-haspopup="listbox"
                         aria-expanded={languageOpen}
                         onClick={() => setLanguageOpen((value) => !value)}
@@ -1108,13 +1095,13 @@ export function AppSettings({
         {activeTab === "audio" ? (
           <section className="settings-group" aria-labelledby="audio-heading">
             <h2 id="audio-heading" className="settings-group-heading">
-              Audio
+              {t("Audio")}
             </h2>
             <div className="settings-card">
               <div className="settings-rows">
                 <div className="settings-row">
                   <div className="settings-row-info">
-                    <h3 className="settings-row-title">Microphone</h3>
+                    <h3 className="settings-row-title">{t("Microphone")}</h3>
                     <p className="settings-row-description">{microphoneDescription}</p>
                   </div>
                   <div className="settings-row-control" ref={micWrapRef}>
@@ -1190,9 +1177,9 @@ export function AppSettings({
                 {systemUnavailable ? null : (
                   <div className="settings-row">
                     <div className="settings-row-info">
-                      <h3 className="settings-row-title">System audio</h3>
+                      <h3 className="settings-row-title">{t("System audio")}</h3>
                       <p className="settings-row-description">
-                        Capture audio from other apps along with your microphone.
+                        {t("Capture audio from other apps along with your microphone.")}
                       </p>
                     </div>
                     <div className="settings-row-control">
@@ -1202,13 +1189,13 @@ export function AppSettings({
                           className="btn btn-secondary"
                           onClick={onEnableSystemAudio}
                         >
-                          Enable
+                          {t("Enable")}
                         </button>
                       ) : null}
                       <Switch
                         checked={systemOn}
                         disabled={checkingSourceReadiness || systemLocked}
-                        aria-label="Capture system audio for notes"
+                        aria-label={t("Capture system audio for notes")}
                         onCheckedChange={(next) =>
                           onSourceModeChange(next ? "microphonePlusSystem" : "microphoneOnly")
                         }
@@ -1241,20 +1228,20 @@ export function AppSettings({
 
             <section className="settings-group" aria-labelledby="models-heading">
               <h2 id="models-heading" className="settings-group-heading">
-                AI models
+                {t("AI models")}
               </h2>
               <div className="settings-card">
                 <div className="settings-rows">
                   <ModelRow
-                    title="Transcription"
-                    description="Speech-to-text for note recordings and dictation."
+                    title={t("Transcription")}
+                    description={t("Speech-to-text for note recordings and dictation.")}
                     value={providerSettings.transcriptionModel}
                     options={transcriptionOptions}
                     onOpen={() => openModelPicker("transcription")}
                   />
                   <ModelRow
-                    title="Text"
-                    description="Used for generated notes and agent responses."
+                    title={t("Text")}
+                    description={t("Used for generated notes and agent responses.")}
                     value={providerSettings.generationModel}
                     options={generationOptions}
                     onOpen={() => openModelPicker("generation")}
@@ -1267,8 +1254,10 @@ export function AppSettings({
                     onClick={() => setShowMoreModelOptions((open) => !open)}
                   >
                     <span className="settings-row-info">
-                      <span className="settings-row-title">More options</span>
-                      <span className="settings-row-description">Advanced model settings.</span>
+                      <span className="settings-row-title">{t("More options")}</span>
+                      <span className="settings-row-description">
+                        {t("Advanced model settings.")}
+                      </span>
                     </span>
                     <IconChevronDownSmall
                       className="settings-more-options-chevron"
@@ -1291,16 +1280,16 @@ export function AppSettings({
             {IMAGE_GENERATION_ENABLED ? (
               <section className="settings-group" aria-labelledby="image-generation-heading">
                 <h2 id="image-generation-heading" className="settings-group-heading">
-                  Image generation
+                  {t("Image generation")}
                 </h2>
                 <p className="settings-group-description">
-                  Choose the model Sub Rosa uses when you ask it to generate an image.
+                  {t("Choose the model Sub Rosa uses when you ask it to generate an image.")}
                 </p>
                 <div className="settings-card">
                   <div className="settings-rows">
                     <ModelRow
-                      title="Image"
-                      description="Used when you generate an image from chat."
+                      title={t("Image")}
+                      description={t("Used when you generate an image from chat.")}
                       value={providerSettings.imageModel}
                       options={imageOptions}
                       onOpen={() => openModelPicker("image")}
@@ -1344,13 +1333,15 @@ export function AppSettings({
         {activeTab === "about" ? (
           <section className="settings-group" aria-labelledby="about-heading">
             <h2 id="about-heading" className="settings-group-heading">
-              About
+              {t("About")}
             </h2>
             <div className="settings-card">
               <div className="settings-rows">
                 <div className="settings-row settings-row-meta">
                   <div className="settings-row-info">
-                    <h3 className="settings-row-title settings-meta-label">Release version</h3>
+                    <h3 className="settings-row-title settings-meta-label">
+                      {t("Release version")}
+                    </h3>
                   </div>
                   <div className="settings-row-control">
                     <span className="settings-meta-value">{APP_VERSION}</span>
@@ -1359,7 +1350,7 @@ export function AppSettings({
 
                 <div className="settings-row settings-row-meta">
                   <div className="settings-row-info">
-                    <h3 className="settings-row-title settings-meta-label">Commit</h3>
+                    <h3 className="settings-row-title settings-meta-label">{t("Commit")}</h3>
                   </div>
                   <div className="settings-row-control">
                     <span className="settings-meta-value settings-meta-value-mono">
@@ -1372,9 +1363,9 @@ export function AppSettings({
                   <>
                     <div className="settings-row">
                       <div className="settings-row-info">
-                        <h3 className="settings-row-title">Updates</h3>
+                        <h3 className="settings-row-title">{t("Updates")}</h3>
                         <p className="settings-row-description">
-                          Check whether a newer version of Sub Rosa is available.
+                          {t("Check whether a newer version of Sub Rosa is available.")}
                         </p>
                       </div>
                       <div className="settings-row-control">
@@ -1383,21 +1374,23 @@ export function AppSettings({
                           className="btn btn-secondary"
                           onClick={onCheckForUpdates}
                         >
-                          Check for updates
+                          {t("Check for updates")}
                         </button>
                       </div>
                     </div>
 
                     <div className="settings-row">
                       <div className="settings-row-info">
-                        <h3 className="settings-row-title">Release channel</h3>
+                        <h3 className="settings-row-title">{t("Release channel")}</h3>
                         <p className="settings-row-description">
-                          Stable is recommended. Release candidate gets early builds for testing.
+                          {t(
+                            "Stable is recommended. Release candidate gets early builds for testing.",
+                          )}
                         </p>
                       </div>
                       <div className="settings-row-control">
                         <SegmentedControl<ReleaseChannel>
-                          aria-label="Release channel"
+                          aria-label={t("Release channel")}
                           value={releaseChannel}
                           options={RELEASE_CHANNEL_OPTIONS}
                           onValueChange={handleReleaseChannelChange}
@@ -1408,8 +1401,8 @@ export function AppSettings({
                     {reconcileVersion ? (
                       <div className="settings-row">
                         <InlineNotice
-                          aria-label="Switch to stable now"
-                          eyebrow="Switch to stable now?"
+                          aria-label={t("Switch to stable now")}
+                          eyebrow={t("Switch to stable now?")}
                           body={`Installs ${reconcileVersion}, replacing your release candidate build. You'll get ${baseVersion()} when it reaches stable.`}
                           actions={
                             <>
@@ -1418,14 +1411,14 @@ export function AppSettings({
                                 className="btn btn-ghost"
                                 onClick={() => setReconcileVersion(undefined)}
                               >
-                                Not now
+                                {t("Not now")}
                               </button>
                               <button
                                 type="button"
                                 className="btn btn-secondary"
                                 onClick={confirmReconcileToStable}
                               >
-                                Switch to stable
+                                {t("Switch to stable")}
                               </button>
                             </>
                           }
@@ -1437,10 +1430,11 @@ export function AppSettings({
 
                 <div className="settings-row">
                   <div className="settings-row-info">
-                    <h3 className="settings-row-title">Community</h3>
+                    <h3 className="settings-row-title">{t("Community")}</h3>
                     <p className="settings-row-description">
-                      Join us in the Sub Rosa community on Telegram at{" "}
-                      {JUNE_COMMUNITY_URL.replace("https://", "")}.
+                      {t("Join us in the Sub Rosa community on Telegram at {url}.", {
+                        url: JUNE_COMMUNITY_URL.replace("https://", ""),
+                      })}
                     </p>
                   </div>
                   <div className="settings-row-control">
@@ -1449,17 +1443,19 @@ export function AppSettings({
                       className="btn btn-secondary"
                       onClick={() => void juneOpenCommunityPage().catch(() => undefined)}
                     >
-                      Join community
+                      {t("Join community")}
                     </button>
                   </div>
                 </div>
 
                 <div className="settings-row">
                   <div className="settings-row-info">
-                    <h3 className="settings-row-title">Where your data goes</h3>
+                    <h3 className="settings-row-title">{t("Where your data goes")}</h3>
                     <p className="settings-row-description">
-                      {PRODUCT_NAME}&apos;s backend runs on this machine, on loopback. See what it
-                      keeps, what leaves the device, and how to check both yourself.
+                      {t(
+                        "{PRODUCT_NAME}'s backend runs on this machine, on loopback. See what it keeps, what leaves the device, and how to check both yourself.",
+                        { PRODUCT_NAME },
+                      )}
                     </p>
                   </div>
                   <div className="settings-row-control">
@@ -1472,7 +1468,7 @@ export function AppSettings({
                         )
                       }
                     >
-                      Open
+                      {t("Open")}
                     </button>
                   </div>
                 </div>
@@ -1480,11 +1476,11 @@ export function AppSettings({
                 {onReportIssue ? (
                   <div className="settings-row">
                     <div className="settings-row-info">
-                      <h3 className="settings-row-title">Report an issue</h3>
+                      <h3 className="settings-row-title">{t("Report an issue")}</h3>
                       <p className="settings-row-description">
-                        Something not working? Describe it to Sub Rosa, attach a screenshot if you
-                        have one, and Sub Rosa will send the report to the team along with its own
-                        diagnosis.
+                        {t(
+                          "Something not working? Describe it to Sub Rosa, attach a screenshot if you have one, and Sub Rosa will send the report to the team along with its own diagnosis.",
+                        )}
                       </p>
                     </div>
                     <div className="settings-row-control">
@@ -1493,7 +1489,7 @@ export function AppSettings({
                         className="btn btn-secondary"
                         onClick={() => onReportIssue("bug")}
                       >
-                        Report an issue
+                        {t("Report an issue")}
                       </button>
                     </div>
                   </div>
@@ -1505,10 +1501,11 @@ export function AppSettings({
                   // reloads into the wizard.
                   <div className="settings-row">
                     <div className="settings-row-info">
-                      <h3 className="settings-row-title">Replay onboarding</h3>
+                      <h3 className="settings-row-title">{t("Replay onboarding")}</h3>
                       <p className="settings-row-description">
-                        Dev only. Forget that onboarding finished and reload into the first-run
-                        wizard.
+                        {t(
+                          "Dev only. Forget that onboarding finished and reload into the first-run wizard.",
+                        )}
                       </p>
                     </div>
                     <div className="settings-row-control">
@@ -1517,7 +1514,7 @@ export function AppSettings({
                         className="btn btn-secondary"
                         onClick={() => replayOnboarding()}
                       >
-                        Replay onboarding
+                        {t("Replay onboarding")}
                       </button>
                     </div>
                   </div>
@@ -1555,7 +1552,7 @@ function StartupSettingsSection() {
         if (!cancelled) setEnabled(value);
       })
       .catch(() => {
-        if (!cancelled) setError("Could not read the login item state.");
+        if (!cancelled) setError(t("Could not read the login item state."));
       });
     return () => {
       cancelled = true;
@@ -1569,7 +1566,7 @@ function StartupSettingsSection() {
       await setAutostartEnabled(next);
       setEnabled(next);
     } catch {
-      setError("Could not update the login item. Try again.");
+      setError(t("Could not update the login item. Try again."));
     } finally {
       setSaving(false);
     }
@@ -1580,26 +1577,27 @@ function StartupSettingsSection() {
   return (
     <section className="settings-group" aria-labelledby="startup-heading">
       <h2 id="startup-heading" className="settings-group-heading">
-        Startup
+        {t("Startup")}
       </h2>
       <p className="settings-group-description">
-        Dictation shortcuts, meeting detection, and scheduled routines only work while Sub Rosa is
-        running.
+        {t(
+          "Dictation shortcuts, meeting detection, and scheduled routines only work while Sub Rosa is running.",
+        )}
       </p>
       <div className="settings-card">
         <div className="settings-rows">
           <div className="settings-row">
             <div className="settings-row-info">
-              <h3 className="settings-row-title">Open Sub Rosa at login</h3>
+              <h3 className="settings-row-title">{t("Open Sub Rosa at login")}</h3>
               <p className="settings-row-description">
-                Start Sub Rosa automatically when you sign in to your computer.
+                {t("Start Sub Rosa automatically when you sign in to your computer.")}
               </p>
             </div>
             <div className="settings-row-control">
               <Switch
                 checked={enabled === true}
                 disabled={saving || enabled === undefined}
-                aria-label="Open Sub Rosa at login"
+                aria-label={t("Open Sub Rosa at login")}
                 onCheckedChange={(next) => void toggle(next)}
               />
             </div>
@@ -1632,7 +1630,7 @@ function PermissionsSettingsSection({
   return (
     <section className="settings-group" aria-labelledby="permissions-heading">
       <h2 id="permissions-heading" className="settings-group-heading">
-        System permissions
+        {t("System permissions")}
       </h2>
       <p className="settings-group-description">
         {macLikePlatform
@@ -1642,8 +1640,8 @@ function PermissionsSettingsSection({
       <div className="settings-card">
         <div className="settings-rows">
           <PermissionRow
-            title="Microphone"
-            description="Record dictation and note audio."
+            title={t("Microphone")}
+            description={t("Record dictation and note audio.")}
             status={permissionStatus(
               microphonePermissionStatus ?? microphoneReadiness?.permissionState,
             )}
@@ -1653,15 +1651,15 @@ function PermissionsSettingsSection({
           {macLikePlatform ? (
             <>
               <PermissionRow
-                title="Accessibility"
-                description="Paste dictated text into the active app."
+                title={t("Accessibility")}
+                description={t("Paste dictated text into the active app.")}
                 status={permissionStatus(accessibilityPermissionStatus)}
                 onManage={onEnableAccessibility}
               />
 
               <PermissionRow
-                title="System audio"
-                description="Record audio from other apps when system audio is enabled."
+                title={t("System audio")}
+                description={t("Record audio from other apps when system audio is enabled.")}
                 status={sourcePermissionStatus(systemReadiness)}
                 onManage={onEnableSystemAudio}
               />
@@ -1708,7 +1706,7 @@ function PermissionRow({
           aria-label={`Manage ${title} permission`}
           onClick={onManage}
         >
-          Manage
+          {t("Manage")}
         </button>
       </div>
     </div>
@@ -1725,36 +1723,36 @@ function PermissionStatusIcon({ tone }: { tone: PermissionStatusTone }) {
 function permissionStatus(state?: string): PermissionStatusView {
   switch (state) {
     case "granted":
-      return { label: "Allowed", tone: "allowed" };
+      return { label: t("Allowed"), tone: "allowed" };
     case "denied":
-      return { label: "Blocked", tone: "blocked" };
+      return { label: t("Blocked"), tone: "blocked" };
     case "restricted":
-      return { label: "Restricted", tone: "blocked" };
+      return { label: t("Restricted"), tone: "blocked" };
     case "missing":
-      return { label: "Needs access", tone: "attention" };
+      return { label: t("Needs access"), tone: "attention" };
     case "not_determined":
-      return { label: "Not requested", tone: "attention" };
+      return { label: t("Not requested"), tone: "attention" };
     case "unsupported":
-      return { label: "Unsupported", tone: "unsupported" };
+      return { label: t("Unsupported"), tone: "unsupported" };
     case "unknown":
-      return { label: "Unknown", tone: "unknown" };
+      return { label: t("Unknown"), tone: "unknown" };
     default:
-      return { label: "Checking", tone: "unknown" };
+      return { label: t("Checking"), tone: "unknown" };
   }
 }
 
 function sourcePermissionStatus(
   source?: RecordingSourceReadinessDto["sources"][number],
 ): PermissionStatusView {
-  if (!source) return { label: "Checking", tone: "unknown" };
+  if (!source) return { label: t("Checking"), tone: "unknown" };
   // The two halves are independent: permissionState is the grant, `ready` is
   // whether this Mac can actually capture. A microphone-only check never asks
   // for the grant, and a granted source can still be uncapturable (the helper
   // reports `system_audio_capture_unavailable`, recoverable by restarting).
   if (source.permissionState === "granted") {
     return source.ready
-      ? { label: "Allowed", tone: "allowed" }
-      : { label: "Unavailable", tone: "attention" };
+      ? { label: t("Allowed"), tone: "allowed" }
+      : { label: t("Unavailable"), tone: "attention" };
   }
   return permissionStatus(source.permissionState);
 }
@@ -1830,29 +1828,30 @@ function CarpeDiemKeyRow({
     <>
       <div id={id} className="settings-row">
         <div className="settings-row-info">
-          <h3 className="settings-row-title">Carpe Diem API key</h3>
+          <h3 className="settings-row-title">{t("Carpe Diem API key")}</h3>
           <p className="settings-row-description">
-            Model requests use the Carpe Diem key stored in your system keychain.
+            {t("Model requests use the Carpe Diem key stored in your system keychain.")}
           </p>
         </div>
         <div className="settings-row-control">
           <button type="button" className="btn btn-secondary" onClick={onOpenCarpeDiemSettings}>
-            Manage key
+            {t("Manage key")}
           </button>
         </div>
       </div>
       {legacyVeniceKeyConfigured ? (
         <div className="settings-row">
           <div className="settings-row-info">
-            <h3 className="settings-row-title">Legacy Venice key</h3>
+            <h3 className="settings-row-title">{t("Legacy Venice key")}</h3>
             <p className="settings-row-description">
-              A Venice API key saved by an earlier version overrides your Carpe Diem key on every
-              request. Remove it to use the Carpe Diem key.
+              {t(
+                "A Venice API key saved by an earlier version overrides your Carpe Diem key on every request. Remove it to use the Carpe Diem key.",
+              )}
             </p>
           </div>
           <div className="settings-row-control">
             <button type="button" className="btn btn-secondary" onClick={onRemoveLegacyKey}>
-              Remove
+              {t("Remove")}
             </button>
           </div>
         </div>
@@ -1910,7 +1909,7 @@ function ShortcutRow({
             aria-label={`Reset ${title} shortcut to default`}
             onClick={onReset}
           >
-            Reset
+            {t("Reset")}
           </button>
         ) : null}
       </div>

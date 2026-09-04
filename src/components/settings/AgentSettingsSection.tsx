@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { useEffect, useState } from "react";
 import { FilesystemPanel, MessagingPanel } from "../agent/AgentWorkspace";
 import {
@@ -193,38 +194,35 @@ export function AgentSettingsSection() {
   return (
     <section className="settings-group" aria-labelledby="agent-heading">
       <h2 id="agent-heading" className="settings-group-heading">
-        Agent
+        {t("Agent")}
       </h2>
       <p className="settings-group-description">
-        Configure Hermes capabilities and external messaging channels.
+        {t("Configure Hermes capabilities and external messaging channels.")}
       </p>
       <div className="settings-card">
         <div className="settings-rows">
           <div className="settings-row">
             <div className="settings-row-info">
-              <h3 className="settings-row-title">Sessions HUD</h3>
+              <h3 className="settings-row-title">{t("Sessions HUD")}</h3>
               <p className="settings-row-description">
-                Show a small pill at the top right of your screen with live session status.
+                {t("Show a small pill at the top right of your screen with live session status.")}
               </p>
             </div>
             <div className="settings-row-control">
               <Switch
                 checked={agentHudEnabled}
                 onCheckedChange={(enabled) => void handleAgentHudEnabledChange(enabled)}
-                aria-label="Show sessions HUD"
+                aria-label={t("Show sessions HUD")}
               />
             </div>
           </div>
           <div className="settings-row">
             <div className="settings-row-info">
-              <h3 className="settings-row-title">Agent CLI access</h3>
+              <h3 className="settings-row-title">{t("Agent CLI access")}</h3>
               <p className="settings-row-description">
-                Let Sub Rosa drive the coding CLIs you already use (Claude Code, Codex, Gemini,
-                opencode). Sandboxed sessions gain write access to those tools' own settings and
-                session folders. Some CLIs (Codex among them) will not even start without it; others
-                lose their login. Those folders configure software that also runs outside Sub Rosa's
-                sandbox, so leave this off unless you want Sub Rosa operating your CLIs. Applies to
-                new sessions.
+                {t(
+                  "Let Sub Rosa drive the coding CLIs you already use (Claude Code, Codex, Gemini, opencode). Sandboxed sessions gain write access to those tools' own settings and session folders. Some CLIs (Codex among them) will not even start without it; others lose their login. Those folders configure software that also runs outside Sub Rosa's sandbox, so leave this off unless you want Sub Rosa operating your CLIs. Applies to new sessions.",
+                )}
               </p>
             </div>
             <div className="settings-row-control">
@@ -232,14 +230,14 @@ export function AgentSettingsSection() {
                 checked={cliAccessEnabled === true}
                 disabled={cliAccessEnabled === null || cliAccessSaving}
                 onCheckedChange={(enabled) => void handleCliAccessChange(enabled)}
-                aria-label="Allow agent CLI access"
+                aria-label={t("Allow agent CLI access")}
               />
             </div>
           </div>
         </div>
       </div>
       <div className="settings-card settings-agent-card">
-        <div className="settings-section-tabs" role="tablist" aria-label="Agent settings">
+        <div className="settings-section-tabs" role="tablist" aria-label={t("Agent settings")}>
           <button
             type="button"
             aria-selected={panel === "messaging"}
@@ -248,7 +246,7 @@ export function AgentSettingsSection() {
               setQuery("");
             }}
           >
-            Messaging
+            {t("Messaging")}
           </button>
           <button
             type="button"
@@ -258,7 +256,7 @@ export function AgentSettingsSection() {
               setQuery("");
             }}
           >
-            Files
+            {t("Files")}
           </button>
         </div>
         {error ? <p className="settings-row-error">{error}</p> : null}

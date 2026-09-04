@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { type ReactNode, useEffect, useState } from "react";
 import { diagnosticsReportText } from "../../../lib/diagnostics-report";
 import { messageFromError } from "../../../lib/errors";
@@ -35,7 +36,7 @@ export function SectionScreen({
 }) {
   return (
     <div className="mobile-screen-root">
-      <StackHeader title={title} onBack={onBack} backLabel="Settings" />
+      <StackHeader title={title} onBack={onBack} backLabel={t("Settings")} />
       <div className="mobile-scroll mobile-settings-section">{children}</div>
     </div>
   );
@@ -43,7 +44,7 @@ export function SectionScreen({
 
 export function PrivacyScreen({ onBack }: { onBack: () => void }) {
   return (
-    <SectionScreen title="Privacy" onBack={onBack}>
+    <SectionScreen title={t("Privacy")} onBack={onBack}>
       <PrivacySettingsSection />
     </SectionScreen>
   );
@@ -51,7 +52,7 @@ export function PrivacyScreen({ onBack }: { onBack: () => void }) {
 
 export function ArchiveScreen({ onBack }: { onBack: () => void }) {
   return (
-    <SectionScreen title="Archive" onBack={onBack}>
+    <SectionScreen title={t("Archive")} onBack={onBack}>
       <ArchiveSection />
     </SectionScreen>
   );
@@ -60,21 +61,22 @@ export function ArchiveScreen({ onBack }: { onBack: () => void }) {
 export function AboutScreen({ onBack }: { onBack: () => void }) {
   const caps = usePlatformCapabilities();
   return (
-    <SectionScreen title="About" onBack={onBack}>
-      <SettingsGroup title="Sub Rosa">
-        <SettingsRow label="Version">
+    <SectionScreen title={t("About")} onBack={onBack}>
+      <SettingsGroup title={t("Sub Rosa")}>
+        <SettingsRow label={t("Version")}>
           <span className="mobile-settings-value">{APP_VERSION}</span>
         </SettingsRow>
-        <SettingsRow label="Build">
+        <SettingsRow label={t("Build")}>
           <span className="mobile-settings-value">{APP_COMMIT_HASH}</span>
         </SettingsRow>
-        <SettingsRow label="Platform">
+        <SettingsRow label={t("Platform")}>
           <span className="mobile-settings-value">{caps?.platform ?? "…"}</span>
         </SettingsRow>
       </SettingsGroup>
       <p className="mobile-settings-footnote">
-        Your notes, transcripts and memories stay on this phone. Requests go to the Carpe Diem
-        endpoint you configured, and nowhere else.
+        {t(
+          "Your notes, transcripts and memories stay on this phone. Requests go to the Carpe Diem endpoint you configured, and nowhere else.",
+        )}
       </p>
     </SectionScreen>
   );
@@ -93,11 +95,12 @@ export function ReportsScreen({ onBack }: { onBack: () => void }) {
       .catch((err) => setError(messageFromError(err)));
   }, []);
   return (
-    <SectionScreen title="Reports" onBack={onBack}>
-      <SettingsGroup title="Diagnostics">
+    <SectionScreen title={t("Reports")} onBack={onBack}>
+      <SettingsGroup title={t("Diagnostics")}>
         <p className="mobile-settings-note">
-          Versions, platform, storage and the local backend's state. No note, no transcript, no key.
-          Read it, then share it with whoever is helping you.
+          {t(
+            "Versions, platform, storage and the local backend's state. No note, no transcript, no key. Read it, then share it with whoever is helping you.",
+          )}
         </p>
         {error ? <p className="mobile-settings-error">{error}</p> : null}
         {report ? (
@@ -108,11 +111,11 @@ export function ReportsScreen({ onBack }: { onBack: () => void }) {
               className="mobile-settings-button"
               onClick={() => void shareText(report)}
             >
-              Share report
+              {t("Share report")}
             </button>
           </>
         ) : (
-          <p className="mobile-settings-note">Gathering the report…</p>
+          <p className="mobile-settings-note">{t("Gathering the report…")}</p>
         )}
       </SettingsGroup>
     </SectionScreen>
@@ -120,9 +123,9 @@ export function ReportsScreen({ onBack }: { onBack: () => void }) {
 }
 
 const MODEL_ROWS: Array<{ mode: ProviderModelMode; label: string; note: string }> = [
-  { mode: "generation", label: "Text", note: "Writes notes, answers, summaries." },
-  { mode: "transcription", label: "Transcription", note: "Turns recordings into text." },
-  { mode: "image", label: "Image", note: "Studio images and edits." },
+  { mode: "generation", label: t("Text"), note: t("Writes notes, answers, summaries.") },
+  { mode: "transcription", label: t("Transcription"), note: t("Turns recordings into text.") },
+  { mode: "image", label: t("Image"), note: t("Studio images and edits.") },
 ];
 
 /**
@@ -173,11 +176,12 @@ export function ModelsScreen({ onBack }: { onBack: () => void }) {
 
   const active = picking ? catalog[picking] : undefined;
   return (
-    <SectionScreen title="Models" onBack={onBack}>
-      <SettingsGroup title="Default models">
+    <SectionScreen title={t("Models")} onBack={onBack}>
+      <SettingsGroup title={t("Default models")}>
         <p className="mobile-settings-note">
-          What each kind of work starts with. A chat, a flow or a Studio panel can still pick its
-          own model for one run.
+          {t(
+            "What each kind of work starts with. A chat, a flow or a Studio panel can still pick its own model for one run.",
+          )}
         </p>
         {error ? <p className="mobile-settings-error">{error}</p> : null}
         {MODEL_ROWS.map((row) => {

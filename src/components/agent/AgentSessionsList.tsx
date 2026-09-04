@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../../lib/i18n";
 import { IconCheckmark2Medium } from "central-icons-filled/IconCheckmark2Medium";
 import { IconArrowsRepeat } from "central-icons/IconArrowsRepeat";
 import { IconBubble3 } from "central-icons/IconBubble3";
@@ -215,11 +216,11 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
     }
 
     return (
-      <section className="all-notes-workspace agent-sessions-workspace" aria-label="Sessions">
+      <section className="all-notes-workspace agent-sessions-workspace" aria-label={t("Sessions")}>
         <header className="folders-header">
           <div className="folders-heading">
             <h1>
-              Sessions
+              {t("Sessions")}
               {sessions.length > 0 ? (
                 <span className="folders-count">{sessions.length}</span>
               ) : null}
@@ -231,7 +232,7 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
             onClick={onNewSession}
           >
             <IconPlusMedium size={13} />
-            New session
+            {t("New session")}
             <kbd className="primary-action-kbd" aria-hidden>
               {newSessionShortcut}
             </kbd>
@@ -244,7 +245,7 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
               <IconMagnifyingGlass size={14} />
               <input
                 type="search"
-                placeholder="Search"
+                placeholder={t("Search")}
                 value={query}
                 onChange={(event) => setQuery(event.currentTarget.value)}
               />
@@ -254,20 +255,22 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
 
         {sessions.length === 0 ? (
           <EmptyState
-            label="Start your first session"
+            label={t("Start your first session")}
             icon={<IconBubble3 size={28} />}
-            title="Put Sub Rosa to work"
-            description="Ask Sub Rosa to check on your computer, dig through your files, or research a topic. Each session keeps one task's conversation and everything it produces in one place."
+            title={t("Put Sub Rosa to work")}
+            description={t(
+              "Ask Sub Rosa to check on your computer, dig through your files, or research a topic. Each session keeps one task's conversation and everything it produces in one place.",
+            )}
             action={
               <button type="button" className="primary-action primary-solid" onClick={onNewSession}>
                 <IconPlusMedium size={13} />
-                Start your first session
+                {t("Start your first session")}
               </button>
             }
           />
         ) : filteredSessions.length === 0 ? (
           <div className="folders-empty">
-            <p>No sessions match “{query.trim()}”.</p>
+            <p>{t("No sessions match “{query}”.", { query: query.trim() })}</p>
           </div>
         ) : (
           <ul
@@ -296,7 +299,7 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
           <div
             className="meetings-bulk-bar"
             role="toolbar"
-            aria-label="Selection"
+            aria-label={t("Selection")}
             data-exit={isExiting ? exit : undefined}
             onAnimationEnd={(event) => {
               if (!isExiting || event.target !== event.currentTarget) return;
@@ -306,7 +309,9 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
               setExit(null);
             }}
           >
-            <span className="meetings-bulk-count">{displayCount} selected</span>
+            <span className="meetings-bulk-count">
+              {t("{displayCount} selected", { displayCount })}
+            </span>
             {hasUnselectedVisibleSessions ? (
               <button
                 type="button"
@@ -314,7 +319,7 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
                 onClick={selectAllVisibleSessions}
                 disabled={isExiting}
               >
-                Select all
+                {t("Select all")}
               </button>
             ) : null}
             <button
@@ -323,7 +328,7 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
               onClick={deselectAllVisibleSessions}
               disabled={isExiting}
             >
-              Deselect all
+              {t("Deselect all")}
             </button>
             <button
               type="button"
@@ -331,7 +336,7 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
               onClick={() => onOpenMoveSessions(selectedSessionIds)}
               disabled={isExiting}
             >
-              Move
+              {t("Move")}
             </button>
             <button
               type="button"
@@ -339,12 +344,12 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
               onClick={() => setConfirmBulkDelete(true)}
               disabled={isExiting}
             >
-              Delete
+              {t("Delete")}
             </button>
             <button
               type="button"
               className="meetings-bulk-dismiss"
-              aria-label="Clear selection"
+              aria-label={t("Clear selection")}
               onClick={resetSelection}
               disabled={isExiting}
             >
@@ -576,7 +581,7 @@ function AgentSessionListRow({
                 }}
               >
                 <IconFolderDelete size={14} />
-                Remove from project
+                {t("Remove from project")}
               </button>
             ) : null}
             <div className="context-menu-separator" role="separator" />
@@ -591,7 +596,7 @@ function AgentSessionListRow({
               }}
             >
               <IconTrashCan size={14} />
-              Delete session
+              {t("Delete session")}
             </button>
           </div>
         ) : null}
@@ -605,7 +610,7 @@ function AgentSessionListRow({
         onConfirm={() => handleDelete()}
         title={`Delete "${title}"?`}
         description={deleteError || "This agent session cannot be restored."}
-        confirmLabel="Delete session"
+        confirmLabel={t("Delete session")}
         destructive
       />
     </li>
@@ -623,16 +628,16 @@ function formatSessionTime(iso: string): string {
     date.getMonth() === now.getMonth() &&
     date.getDate() === now.getDate();
   if (sameDay) {
-    return date.toLocaleTimeString(undefined, {
+    return date.toLocaleTimeString(intlLocale(), {
       hour: "numeric",
       minute: "2-digit",
     });
   }
   const diffDays = Math.floor((now.getTime() - date.getTime()) / (24 * 60 * 60 * 1000));
   if (diffDays < 7) {
-    return date.toLocaleDateString(undefined, { weekday: "short" });
+    return date.toLocaleDateString(intlLocale(), { weekday: "short" });
   }
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(intlLocale(), {
     month: "short",
     day: "numeric",
   });

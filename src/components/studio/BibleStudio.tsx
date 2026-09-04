@@ -15,6 +15,7 @@
 // aiming at nothing - which is reported here, and nowhere else, because this
 // is the only surface where the user can do something about it.
 
+import { t } from "../../lib/i18n";
 import { IconCirclePerson } from "central-icons/IconCirclePerson";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { artifactSrc, listArtifacts, saveArtifactFromBase64 } from "../../lib/studio/artifacts";
@@ -211,7 +212,7 @@ export function BibleStudio({
     async (entry: BibleEntry) => {
       const voices = ttsModel?.voices ?? [];
       if (!ttsModel || voices.length === 0) {
-        setError("No voices are available on this account.");
+        setError(t("No voices are available on this account."));
         return;
       }
       const controller = new AbortController();
@@ -253,7 +254,7 @@ export function BibleStudio({
     async (entryId: string, artifact: StudioArtifact, voice: string) => {
       await addBibleRef({ entryId, artifactId: artifact.id, role: "voice", label: voice });
       setAuditions([]);
-      setNotice(`Kept ${voice}.`);
+      setNotice(t("Kept {voice}.", { voice }));
       await reload();
     },
     [reload],
@@ -261,43 +262,43 @@ export function BibleStudio({
 
   const controls = (
     <>
-      <StudioField label="Kind">
+      <StudioField label={t("Kind")}>
         <PillGroup
-          ariaLabel="Kind"
+          ariaLabel={t("Kind")}
           value={draft.kind}
           onChange={(value) => setDraft((current) => ({ ...current, kind: value as BibleKind }))}
           options={BIBLE_KINDS.map((kind) => ({ value: kind, label: BIBLE_KIND_LABELS[kind] }))}
         />
       </StudioField>
-      <StudioField label="Name">
+      <StudioField label={t("Name")}>
         <input
           className="studio-input"
           type="text"
           value={draft.name}
-          aria-label="Name"
+          aria-label={t("Name")}
           placeholder={draft.kind === "location" ? "The alley" : "Nera"}
           onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
         />
       </StudioField>
       <StudioField
-        label="Invariant traits"
-        hint="Restated on every shot. Keep it to what must not drift."
+        label={t("Invariant traits")}
+        hint={t("Restated on every shot. Keep it to what must not drift.")}
       >
         <textarea
           className="studio-input studio-textarea"
           rows={2}
           value={draft.traits}
-          aria-label="Invariant traits"
-          placeholder="green coat, scar over the left brow, a head shorter than Kell"
+          aria-label={t("Invariant traits")}
+          placeholder={t("green coat, scar over the left brow, a head shorter than Kell")}
           onChange={(event) => setDraft((current) => ({ ...current, traits: event.target.value }))}
         />
       </StudioField>
-      <StudioField label="Notes" hint="For you. Never sent to a model.">
+      <StudioField label={t("Notes")} hint={t("For you. Never sent to a model.")}>
         <textarea
           className="studio-input studio-textarea"
           rows={2}
           value={draft.note}
-          aria-label="Notes"
+          aria-label={t("Notes")}
           onChange={(event) => setDraft((current) => ({ ...current, note: event.target.value }))}
         />
       </StudioField>
@@ -323,7 +324,7 @@ export function BibleStudio({
         <GalleryPicker
           offerBible={false}
           title={`Pick a ${BIBLE_ROLE_LABELS[attaching.role].toLowerCase()}`}
-          description="Anything already in your gallery can stand in for this."
+          description={t("Anything already in your gallery can stand in for this.")}
           kinds={attaching.role === "voice" ? ["speech", "music"] : ["image"]}
           resolveData={false}
           onClose={() => setAttaching(undefined)}
@@ -333,8 +334,10 @@ export function BibleStudio({
       {entries.length === 0 ? (
         <EmptyState
           icon={<IconCirclePerson size={22} />}
-          title="Nothing in the bible yet"
-          description="Name a character or a location once and attach a few references. Then write your film as a note, and the Studio turns it into shots that hold on to the faces you named."
+          title={t("Nothing in the bible yet")}
+          description={t(
+            "Name a character or a location once and attach a few references. Then write your film as a note, and the Studio turns it into shots that hold on to the faces you named.",
+          )}
         />
       ) : (
         <>
@@ -343,13 +346,14 @@ export function BibleStudio({
               that uses it lives three tabs away. */}
           <div className="bible-next">
             <p>
-              <strong>Now write the film as a note.</strong> Call your characters and places exactly
-              what you called them here - the names are how they get recognised - then bring the
-              note back and it becomes shots.
+              <strong>{t("Now write the film as a note.")}</strong>{" "}
+              {t(
+                "Call your characters and places exactly what you called them here - the names are how they get recognised - then bring the note back and it becomes shots.",
+              )}
             </p>
             {onMakeAFilm ? (
               <button type="button" className="studio-primary-button" onClick={onMakeAFilm}>
-                Make a film from a note
+                {t("Make a film from a note")}
               </button>
             ) : null}
           </div>
@@ -378,7 +382,7 @@ export function BibleStudio({
                           })
                         }
                       >
-                        Edit
+                        {t("Edit")}
                       </button>
                       {entry.kind === "character" ? (
                         <button
@@ -398,14 +402,14 @@ export function BibleStudio({
                           await reload();
                         }}
                       >
-                        Delete
+                        {t("Delete")}
                       </button>
                     </div>
                   </div>
 
                   {auditioning === entry.id || (auditions.length > 0 && draft.id !== entry.id) ? (
                     <div className="bible-auditions">
-                      {auditioning === entry.id ? <Spinner aria-label="Auditioning" /> : null}
+                      {auditioning === entry.id ? <Spinner aria-label={t("Auditioning")} /> : null}
                       {auditions.map((take) => (
                         <div key={take.artifact.id} className="bible-audition">
                           <span>{take.voice}</span>
@@ -416,7 +420,7 @@ export function BibleStudio({
                             className="btn btn-secondary"
                             onClick={() => void keepVoice(entry.id, take.artifact, take.voice)}
                           >
-                            Keep this voice
+                            {t("Keep this voice")}
                           </button>
                         </div>
                       ))}
@@ -492,7 +496,7 @@ export function BibleStudio({
                       />
                       <Select
                         value={null}
-                        placeholder="Use one I have"
+                        placeholder={t("Use one I have")}
                         ariaLabel={`Attach a reference to ${entry.name}`}
                         onChange={(role) =>
                           setAttaching({ entryId: entry.id, role: role as BibleRole })
@@ -507,8 +511,14 @@ export function BibleStudio({
 
                   {missing.length > 0 ? (
                     <p className="studio-queue-hint">
-                      {missing.length} reference{missing.length === 1 ? "" : "s"} point at files
-                      that are no longer in your gallery. Attach them again, or remove them.
+                      {missing.length === 1
+                        ? t(
+                            "1 reference points at a file that is no longer in your gallery. Attach it again, or remove it.",
+                          )
+                        : t(
+                            "{count} references point at files that are no longer in your gallery. Attach them again, or remove them.",
+                            { count: missing.length },
+                          )}
                     </p>
                   ) : null}
                 </li>

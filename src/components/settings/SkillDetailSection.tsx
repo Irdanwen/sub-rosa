@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconArrowLeft } from "central-icons/IconArrowLeft";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconCircleInfo } from "central-icons/IconCircleInfo";
@@ -98,7 +99,7 @@ export function SkillDetailView({
         {onBack ? (
           <button type="button" className="skill-detail-back" onClick={onBack}>
             <IconArrowLeft size={14} ariaHidden />
-            Installed skills
+            {t("Installed skills")}
           </button>
         ) : null}
         <button
@@ -108,7 +109,7 @@ export function SkillDetailView({
           onClick={state.refresh}
         >
           <IconArrowRotateClockwise size={14} ariaHidden />
-          Refresh
+          {t("Refresh")}
         </button>
       </div>
 
@@ -121,15 +122,17 @@ export function SkillDetailView({
         {policy.editable ? null : (
           <span className="skill-detail-readonly" title={policy.readOnlyReason}>
             <IconLock size={12} ariaHidden />
-            Read only
+            {t("Read only")}
           </span>
         )}
       </h2>
       <p className="settings-group-description">
         {info?.description ?? meta.blurb}{" "}
         <span className="skill-detail-mode-note">
-          Targeting the {state.mode === "unrestricted" ? "Full mode" : "Sandboxed"} runtime (profile{" "}
-          {state.profile}). Edits apply to new sessions.
+          {t("Targeting the {mode} runtime (profile {profile}). Edits apply to new sessions.", {
+            mode: state.mode === "unrestricted" ? t("Full mode") : t("Sandboxed"),
+            profile: state.profile,
+          })}
         </span>
       </p>
 
@@ -144,7 +147,7 @@ export function SkillDetailView({
           {state.error}
           {state.retryable ? (
             <button type="button" className="skill-detail-retry" onClick={state.refresh}>
-              Try again
+              {t("Try again")}
             </button>
           ) : null}
         </p>
@@ -152,7 +155,7 @@ export function SkillDetailView({
 
       {isLoading ? (
         <p className="skill-detail-loading" role="status">
-          Loading skill...
+          {t("Loading skill...")}
         </p>
       ) : isError ? null : (
         <>
@@ -164,7 +167,7 @@ export function SkillDetailView({
 
           {info ? (
             <div className="settings-card skill-detail-setup-card">
-              <h3 className="skill-detail-card-heading">Setup</h3>
+              <h3 className="skill-detail-card-heading">{t("Setup")}</h3>
               <SkillSetupSection skill={state.skill} skillRaw={info.raw} mode={state.mode} />
             </div>
           ) : null}
@@ -189,25 +192,25 @@ function MetadataCard({ info }: { info?: HermesSkillInfo }) {
 
   return (
     <div className="settings-card skill-detail-meta-card">
-      <h3 className="skill-detail-card-heading">Details</h3>
+      <h3 className="skill-detail-card-heading">{t("Details")}</h3>
       <dl className="skill-detail-meta-grid">
-        <MetaItem label="Source" value={meta.label} hint={meta.blurb} />
-        {author ? <MetaItem label="Author" value={author} /> : null}
-        {info?.version ? <MetaItem label="Version" value={info.version} /> : null}
-        <MetaItem label="Enabled" value={info?.enabled ? "Yes" : "No"} />
+        <MetaItem label={t("Source")} value={meta.label} hint={meta.blurb} />
+        {author ? <MetaItem label={t("Author")} value={author} /> : null}
+        {info?.version ? <MetaItem label={t("Version")} value={info.version} /> : null}
+        <MetaItem label={t("Enabled")} value={info?.enabled ? "Yes" : "No"} />
         {restrictions ? (
-          <MetaItem label="Platforms" value={`${restrictions.join(", ")} only`} />
+          <MetaItem label={t("Platforms")} value={`${restrictions.join(", ")} only`} />
         ) : null}
         {activation?.requires ? (
-          <MetaItem label="Requires" value={activation.requires.join(", ")} />
+          <MetaItem label={t("Requires")} value={activation.requires.join(", ")} />
         ) : null}
         {activation?.fallback ? (
-          <MetaItem label="Falls back to" value={activation.fallback.join(", ")} />
+          <MetaItem label={t("Falls back to")} value={activation.fallback.join(", ")} />
         ) : null}
-        {path ? <MetaItem label="Path" value={path} mono /> : null}
+        {path ? <MetaItem label={t("Path")} value={path} mono /> : null}
       </dl>
       {tags && tags.length > 0 ? (
-        <div className="skill-detail-tags" aria-label="Tags">
+        <div className="skill-detail-tags" aria-label={t("Tags")}>
           {tags.map((tag) => (
             <span key={tag} className="skill-detail-tag">
               {tag}
@@ -232,12 +235,12 @@ function LifecycleCard({
   const meta = lifecycleClassMeta(policy.lifecycleClass);
   return (
     <div className="settings-card skill-detail-lifecycle-card">
-      <h3 className="skill-detail-card-heading">Manage</h3>
+      <h3 className="skill-detail-card-heading">{t("Manage")}</h3>
       <p className="skill-detail-lifecycle-blurb">{meta.blurb}</p>
       {policy.locallyModified ? (
         <p className="skill-detail-lifecycle-modified" role="note">
           <IconWarningSign size={13} ariaHidden />
-          This skill has local edits. Updating or resetting it replaces them.
+          {t("This skill has local edits. Updating or resetting it replaces them.")}
         </p>
       ) : null}
       <SkillLifecycleActions skill={info} policy={policy} state={lifecycle} variant="detail" />
@@ -275,24 +278,26 @@ function SupportingFilesCard({ files }: { files: SkillSupportingFiles }) {
   if (!hasSupportingFiles(files)) {
     return (
       <div className="settings-card skill-detail-files-card">
-        <h3 className="skill-detail-card-heading">Supporting files</h3>
-        <p className="skill-detail-files-empty">No supporting files reported for this skill.</p>
+        <h3 className="skill-detail-card-heading">{t("Supporting files")}</h3>
+        <p className="skill-detail-files-empty">
+          {t("No supporting files reported for this skill.")}
+        </p>
       </div>
     );
   }
   return (
     <div className="settings-card skill-detail-files-card">
-      <h3 className="skill-detail-card-heading">Supporting files</h3>
-      <FileGroup label="References" paths={files.references} />
-      <FileGroup label="Templates" paths={files.templates} />
+      <h3 className="skill-detail-card-heading">{t("Supporting files")}</h3>
+      <FileGroup label={t("References")} paths={files.references} />
+      <FileGroup label={t("Templates")} paths={files.templates} />
       <FileGroup
-        label="Scripts"
+        label={t("Scripts")}
         paths={files.scripts}
-        note="Scripts run in the targeted runtime when the skill executes them."
+        note={t("Scripts run in the targeted runtime when the skill executes them.")}
         danger
       />
-      <FileGroup label="Assets" paths={files.assets} />
-      <FileGroup label="Other" paths={files.other} />
+      <FileGroup label={t("Assets")} paths={files.assets} />
+      <FileGroup label={t("Other")} paths={files.other} />
     </div>
   );
 }
@@ -355,13 +360,13 @@ function SkillDocumentReadView({ state }: { state: SkillDetailState }) {
       </div>
       {parts.hasFrontmatter ? (
         <>
-          <p className="skill-detail-doc-subheading">Frontmatter</p>
+          <p className="skill-detail-doc-subheading">{t("Frontmatter")}</p>
           <pre className="skill-detail-doc-frontmatter">
             <code>{parts.frontmatter}</code>
           </pre>
         </>
       ) : null}
-      <p className="skill-detail-doc-subheading">Instructions</p>
+      <p className="skill-detail-doc-subheading">{t("Instructions")}</p>
       <pre className="skill-detail-doc-body">
         <code>{parts.body || "(empty)"}</code>
       </pre>
@@ -382,7 +387,7 @@ function SkillDocumentEditor({ state }: { state: SkillDetailState }) {
       <div className="skill-detail-doc-header">
         <h3 className="skill-detail-card-heading">
           <IconPencilLine size={14} ariaHidden />
-          Edit {state.relativePath ?? "SKILL.md"}
+          {t("Edit {file}", { file: state.relativePath ?? "SKILL.md" })}
         </h3>
         <span className="skill-detail-doc-timing">{timingLabel("next-session")}</span>
       </div>
@@ -395,7 +400,7 @@ function SkillDocumentEditor({ state }: { state: SkillDetailState }) {
       ) : null}
 
       <label className="skill-detail-editor-label" htmlFor="skill-md-editor">
-        Skill instructions and metadata
+        {t("Skill instructions and metadata")}
       </label>
       <textarea
         id="skill-md-editor"
@@ -425,7 +430,7 @@ function SkillDocumentEditor({ state }: { state: SkillDetailState }) {
           disabled={!state.dirty || state.saving}
           onClick={state.revert}
         >
-          Revert
+          {t("Revert")}
         </button>
         <button
           type="button"
@@ -463,7 +468,7 @@ function IssueRow({ issue }: { issue: SkillContentIssue }) {
         <IconWarningSign size={13} ariaHidden />
       )}
       <span>
-        {issue.line ? <strong>Line {issue.line}: </strong> : null}
+        {issue.line ? <strong>{t("Line {line}:", { line: issue.line })} </strong> : null}
         {issue.message}
       </span>
     </li>
@@ -489,24 +494,28 @@ function SaveConfirm({
     <div
       className="skill-detail-confirm"
       role="dialog"
-      aria-label="Review changes before saving"
+      aria-label={t("Review changes before saving")}
       aria-modal="false"
     >
       <p className="skill-detail-confirm-summary">
         <IconCode size={13} ariaHidden />
-        {diff.addedCount} added, {diff.removedCount} removed. This applies to new sessions.
+        {t("{addedCount} added, {removedCount} removed. This applies to new sessions.", {
+          addedCount: diff.addedCount,
+          removedCount: diff.removedCount,
+        })}
       </p>
       {warnings.length > 0 ? (
         <p className="skill-detail-confirm-warning" role="note">
           <IconWarningSign size={13} ariaHidden />
-          One or more values look like secrets. Secrets belong in .env or secret config, not in
-          SKILL.md.
+          {t(
+            "One or more values look like secrets. Secrets belong in .env or secret config, not in SKILL.md.",
+          )}
         </p>
       ) : null}
       <DiffView diff={diff} />
       <div className="skill-detail-confirm-actions">
         <button type="button" className="skill-detail-confirm-cancel" onClick={onCancel}>
-          Keep editing
+          {t("Keep editing")}
         </button>
         <button
           type="button"
@@ -514,7 +523,7 @@ function SaveConfirm({
           disabled={saving}
           onClick={onConfirm}
         >
-          Save changes
+          {t("Save changes")}
         </button>
       </div>
     </div>
@@ -527,7 +536,7 @@ function DiffView({ diff }: { diff: SkillDiff }) {
   const MAX = 200;
   const lines = useMemo(() => diff.lines.slice(0, MAX), [diff.lines]);
   return (
-    <pre className="skill-detail-diff" aria-label="Changes">
+    <pre className="skill-detail-diff" aria-label={t("Changes")}>
       <code>
         {lines.map((line, index) => (
           <span key={index} className="skill-detail-diff-line" data-kind={line.kind}>

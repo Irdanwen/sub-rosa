@@ -11,6 +11,7 @@
 // none of them appears on the gallery card. Mobile already works this way (the
 // reference picker's "From gallery" sheet); this is that idea on desktop.
 
+import { t } from "../../lib/i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { artifactDataUrl } from "../../lib/artifact-media";
 import {
@@ -127,7 +128,7 @@ export function GalleryPicker({
         onPick(resolveData ? await artifactDataUrl(artifact) : "", artifact, entry);
         onClose();
       } catch {
-        setError("Couldn't read that item from the gallery.");
+        setError(t("Couldn't read that item from the gallery."));
       } finally {
         setBusyId(undefined);
       }
@@ -140,11 +141,11 @@ export function GalleryPicker({
       <div className="dialog-body">
         {artifacts === undefined ? (
           <div className="studio-picker-empty">
-            <Spinner aria-label="Loading the gallery" />
+            <Spinner aria-label={t("Loading the gallery")} />
           </div>
         ) : artifacts.length === 0 ? (
           <p className="studio-picker-empty">
-            Nothing here yet. Media you generate, edit, or capture lands in the gallery.
+            {t("Nothing here yet. Media you generate, edit, or capture lands in the gallery.")}
           </p>
         ) : (
           <>
@@ -176,7 +177,7 @@ export function GalleryPicker({
               </div>
             ))}
             {bibleSections.length > 0 ? (
-              <p className="studio-picker-section-title">Everything else</p>
+              <p className="studio-picker-section-title">{t("Everything else")}</p>
             ) : null}
             <div className="studio-picker-grid">
               {artifacts.map((artifact) => (
@@ -191,7 +192,7 @@ export function GalleryPicker({
                   <PickerTile artifact={artifact} />
                   {busyId === artifact.id ? (
                     <span className="studio-picker-busy">
-                      <Spinner aria-label="Loading" />
+                      <Spinner aria-label={t("Loading")} />
                     </span>
                   ) : null}
                 </button>

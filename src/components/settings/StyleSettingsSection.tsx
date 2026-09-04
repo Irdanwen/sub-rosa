@@ -1,27 +1,28 @@
+import { t } from "../../lib/i18n";
 import { useEffect, useState } from "react";
 import { dictationSettings, setDictationStyle } from "../../lib/tauri";
 import type { DictationStyle } from "../../lib/tauri";
 import { SegmentedControl } from "../ui/SegmentedControl";
 
 const STYLE_OPTIONS = [
-  { value: "standard" as const, label: "Standard" },
-  { value: "casualLowercase" as const, label: "Casual" },
-  { value: "formal" as const, label: "Formal" },
+  { value: "standard" as const, label: t("Standard") },
+  { value: "casualLowercase" as const, label: t("Casual") },
+  { value: "formal" as const, label: t("Formal") },
 ];
 
 const SAMPLES: Record<DictationStyle, { description: string; sample: string }> = {
   standard: {
-    description: "Sentence case with light cleanup. Keeps your natural tone.",
+    description: t("Sentence case with light cleanup. Keeps your natural tone."),
     sample:
       "Got it. Let me know when you're free to chat about the Q3 plan. Happy to jump on in the morning.",
   },
   casualLowercase: {
-    description: "Lowercase sentences, contractions, minimal cleanup.",
+    description: t("Lowercase sentences, contractions, minimal cleanup."),
     sample:
       "got it. let me know when you're free to chat about the q3 plan. happy to jump on in the morning.",
   },
   formal: {
-    description: "Full words and conventional capitalization. Keeps your wording.",
+    description: t("Full words and conventional capitalization. Keeps your wording."),
     sample:
       "Got it. Let me know when you are free to chat about the Q3 plan. Happy to jump on in the morning.",
   },
@@ -61,13 +62,13 @@ export function StyleSettingsSection() {
   return (
     <section className="settings-group" aria-labelledby="style-heading">
       <h2 id="style-heading" className="settings-group-heading">
-        Style
+        {t("Style")}
       </h2>
       <div className="settings-card">
         <div className="settings-rows">
           <div className="settings-row">
             <div className="settings-row-info">
-              <h3 className="settings-row-title">Output style</h3>
+              <h3 className="settings-row-title">{t("Output style")}</h3>
               <p className="settings-row-description">{current.description}</p>
               {error ? <p className="settings-row-error">{error}</p> : null}
             </div>
@@ -76,7 +77,7 @@ export function StyleSettingsSection() {
                 value={style}
                 onValueChange={(value) => void selectStyle(value)}
                 options={STYLE_OPTIONS}
-                aria-label="Dictation style"
+                aria-label={t("Dictation style")}
               />
             </div>
           </div>

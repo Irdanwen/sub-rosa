@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { IconCirclePlus } from "central-icons/IconCirclePlus";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import type { AcceptanceCriterion, Mandate } from "../../../lib/council";
@@ -30,38 +31,39 @@ export function MandateEditor({
   return (
     <div className="council-mandate">
       <label className="council-field">
-        <span className="council-field-label">Objective</span>
+        <span className="council-field-label">{t("Objective")}</span>
         <textarea
           className="council-input"
           rows={2}
           value={mandate.objective}
           disabled={disabled}
           onChange={(event) => set({ objective: event.target.value })}
-          placeholder="What changes in the world, in one sentence."
+          placeholder={t("What changes in the world, in one sentence.")}
         />
       </label>
 
       <ListField
-        label="Deliverable"
-        hint="What must exist when this is done."
+        label={t("Deliverable")}
+        hint={t("What must exist when this is done.")}
         values={mandate.deliverable}
         disabled={disabled}
         onChange={(deliverable) => set({ deliverable })}
       />
 
       <ListField
-        label="Constraints"
-        hint="What must not change."
+        label={t("Constraints")}
+        hint={t("What must not change.")}
         values={mandate.constraints}
         disabled={disabled}
         onChange={(constraints) => set({ constraints })}
       />
 
       <fieldset className="council-field council-criteria">
-        <legend className="council-field-label">Acceptance criteria</legend>
+        <legend className="council-field-label">{t("Acceptance criteria")}</legend>
         <p className="council-field-hint">
-          Each one says how it is checked. This is what the verdict reads, so a criterion with no
-          means of verification is refused.
+          {t(
+            "Each one says how it is checked. This is what the verdict reads, so a criterion with no means of verification is refused.",
+          )}
         </p>
         {mandate.acceptance.map((criterion, index) => (
           <CriterionRow
@@ -92,26 +94,26 @@ export function MandateEditor({
           }
         >
           <IconCirclePlus size={14} aria-hidden />
-          Add a criterion
+          {t("Add a criterion")}
         </button>
       </fieldset>
 
       <ListField
-        label="Out of scope"
-        hint="Deliberately excluded, so nobody does it as a favour."
+        label={t("Out of scope")}
+        hint={t("Deliberately excluded, so nobody does it as a favour.")}
         values={mandate.outOfScope}
         disabled={disabled}
         onChange={(outOfScope) => set({ outOfScope })}
       />
 
       <label className="council-field">
-        <span className="council-field-label">First step</span>
+        <span className="council-field-label">{t("First step")}</span>
         <input
           className="council-input"
           value={mandate.firstStep}
           disabled={disabled}
           onChange={(event) => set({ firstStep: event.target.value })}
-          placeholder="Where the work starts."
+          placeholder={t("Where the work starts.")}
         />
       </label>
     </div>
@@ -137,23 +139,23 @@ function CriterionRow({
         value={criterion.statement}
         disabled={disabled}
         onChange={(event) => onChange({ ...criterion, statement: event.target.value })}
-        placeholder="A checkable statement about the finished work"
-        aria-label="Criterion"
+        placeholder={t("A checkable statement about the finished work")}
+        aria-label={t("Criterion")}
       />
       <input
         className="council-input council-input-verify"
         value={criterion.verifiedBy}
         disabled={disabled}
         onChange={(event) => onChange({ ...criterion, verifiedBy: event.target.value })}
-        placeholder="Verified by: a command, a file, a page"
-        aria-label="How this criterion is verified"
+        placeholder={t("Verified by: a command, a file, a page")}
+        aria-label={t("How this criterion is verified")}
       />
       <button
         type="button"
         className="icon-button"
         disabled={disabled}
         onClick={onRemove}
-        aria-label="Remove this criterion"
+        aria-label={t("Remove this criterion")}
       >
         <IconCrossSmall size={14} aria-hidden />
       </button>
@@ -212,7 +214,7 @@ function ListField({
         onClick={() => onChange([...values, ""])}
       >
         <IconCirclePlus size={14} aria-hidden />
-        Add a line
+        {t("Add a line")}
       </button>
     </fieldset>
   );

@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconCalendarRepeat } from "central-icons/IconCalendarRepeat";
@@ -349,8 +350,8 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
         onClose={() => setPendingDelete(null)}
         onConfirm={confirmDelete}
         title={`Delete “${pendingDelete?.name ?? ""}”?`}
-        description="Sub Rosa will stop running this routine. This can’t be undone."
-        confirmLabel="Delete"
+        description={t("Sub Rosa will stop running this routine. This can’t be undone.")}
+        confirmLabel={t("Delete")}
         destructive
       />
     </>
@@ -396,18 +397,20 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
   }
 
   return (
-    <section className="routines-workspace" aria-label="Routines">
+    <section className="routines-workspace" aria-label={t("Routines")}>
       <header className="folders-header">
         <div className="folders-heading">
           <h1>
-            Routines
+            {t("Routines")}
             {routines.length > 0 ? <span className="folders-count">{routines.length}</span> : null}
           </h1>
-          <p className="folders-subtitle">Automations Sub Rosa runs for you on a schedule.</p>
+          <p className="folders-subtitle">
+            {t("Automations Sub Rosa runs for you on a schedule.")}
+          </p>
         </div>
         <button type="button" className="primary-action primary-solid" onClick={() => openCreate()}>
           <IconPlusMedium size={13} />
-          New routine
+          {t("New routine")}
         </button>
       </header>
 
@@ -417,7 +420,7 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
             <IconMagnifyingGlass size={14} />
             <input
               type="search"
-              placeholder="Search"
+              placeholder={t("Search")}
               value={query}
               onChange={(event) => setQuery(event.currentTarget.value)}
             />
@@ -425,10 +428,10 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
           <button
             type="button"
             className="icon-button routines-refresh"
-            aria-label="Refresh"
+            aria-label={t("Refresh")}
             aria-busy={refreshing}
             disabled={refreshing}
-            title="Refresh"
+            title={t("Refresh")}
             onClick={refreshNow}
           >
             <IconArrowRotateClockwise
@@ -443,8 +446,9 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
       {storeCorrupted ? (
         <div className="error-banner agent-error-banner" role="alert">
           <p>
-            Sub Rosa can't read the routines saved on this device because their storage file is
-            damaged. Resetting moves the damaged file aside and starts with an empty list.
+            {t(
+              "Sub Rosa can't read the routines saved on this device because their storage file is damaged. Resetting moves the damaged file aside and starts with an empty list.",
+            )}
           </p>
           <div className="agent-error-banner-actions">
             <button type="button" disabled={resettingStore} onClick={() => void resetStore()}>
@@ -459,7 +463,7 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
 
       {loading ? (
         <div className="folders-empty">
-          <p>Loading routines…</p>
+          <p>{t("Loading routines…")}</p>
         </div>
       ) : routines.length === 0 ? (
         <div className="routines-hero">
@@ -467,10 +471,10 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
         </div>
       ) : filtered.length === 0 ? (
         <div className="folders-empty">
-          <p>No routines match “{query.trim()}”.</p>
+          <p>{t("No routines match “{query}”.", { query: query.trim() })}</p>
         </div>
       ) : (
-        <ul className="routines-list" role="list" aria-label="Routines">
+        <ul className="routines-list" role="list" aria-label={t("Routines")}>
           {filtered.map((routine) => (
             <RoutineRow
               key={routine.job_id}
@@ -491,18 +495,18 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
       (query.trim()
         ? filteredRuns.length > 0
         : routines.length > 0 || runs.length > 0 || runsUnavailable) ? (
-        <section className="routines-runs" aria-label="Run history">
+        <section className="routines-runs" aria-label={t("Run history")}>
           <header className="routines-runs-header">
             <h2>
-              Run history
+              {t("Run history")}
               {runs.length > 0 ? <span className="folders-count">{runs.length}</span> : null}
             </h2>
           </header>
           {runsUnavailable ? (
-            <p className="routines-runs-empty">Run history is unavailable right now.</p>
+            <p className="routines-runs-empty">{t("Run history is unavailable right now.")}</p>
           ) : runs.length === 0 ? (
             <p className="routines-runs-empty">
-              No runs yet. When a routine fires, its session appears here.
+              {t("No runs yet. When a routine fires, its session appears here.")}
             </p>
           ) : (
             <div className="routines-runs-panel">
@@ -513,9 +517,9 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
       ) : null}
 
       {!loading && routines.length > 0 && !query.trim() ? (
-        <section className="routines-starters" aria-label="Starter routines">
+        <section className="routines-starters" aria-label={t("Starter routines")}>
           <header className="routines-section-header">
-            <h2>Starter routines</h2>
+            <h2>{t("Starter routines")}</h2>
           </header>
           <TemplateGrid onPick={openCreate} />
         </section>
@@ -542,10 +546,12 @@ function TemplateGrid({ onPick }: { onPick: (template: RoutineTemplate) => void 
                 // The list rows spell the badge out; cards just flash the
                 // warm shield and let the tip carry the explanation.
                 <HoverTip
-                  tip="This starter needs full access: when it fires, Sub Rosa can run commands and change any file your account can. You confirm that before creating it."
+                  tip={t(
+                    "This starter needs full access: when it fires, Sub Rosa can run commands and change any file your account can. You confirm that before creating it.",
+                  )}
                   className="routines-item-badge routines-item-badge-warm routines-badge-compact"
                   tabIndex={0}
-                  aria-label="Unrestricted"
+                  aria-label={t("Unrestricted")}
                 >
                   <IconShieldCrossed size={11} aria-hidden />
                 </HoverTip>
@@ -620,20 +626,24 @@ function RoutineRow({
             <span className="routines-item-name">{routine.name}</span>
             {routineUnrestricted(routine) ? (
               <HoverTip
-                tip="This routine runs with full access: when it fires, Sub Rosa can run commands and change any file your account can. Routines without this badge run sandboxed and cannot touch your files."
+                tip={t(
+                  "This routine runs with full access: when it fires, Sub Rosa can run commands and change any file your account can. Routines without this badge run sandboxed and cannot touch your files.",
+                )}
                 className="routines-item-badge routines-item-badge-warm"
                 tabIndex={0}
               >
                 <IconShieldCrossed size={11} aria-hidden />
-                Unrestricted
+                {t("Unrestricted")}
               </HoverTip>
             ) : null}
             {routine.last_status === "error" ? (
-              <span className="routines-item-badge routines-item-badge-error">Last run failed</span>
+              <span className="routines-item-badge routines-item-badge-error">
+                {t("Last run failed")}
+              </span>
             ) : null}
           </span>
         </span>
-        <span className="routines-item-meta" aria-label="Routine metadata">
+        <span className="routines-item-meta" aria-label={t("Routine metadata")}>
           <span className="routine-meta-pill">
             <IconCalendarRepeat size={12} aria-hidden />
             {compactScheduleLabel(routine.schedule)}
@@ -670,7 +680,7 @@ function RoutineRow({
                 }}
               >
                 <IconPencil size={14} />
-                Edit
+                {t("Edit")}
               </button>
               <button
                 type="button"
@@ -682,7 +692,7 @@ function RoutineRow({
                 }}
               >
                 <IconPlay size={14} />
-                Run now
+                {t("Run now")}
               </button>
               <span className="context-menu-separator" role="separator" />
               <button
@@ -696,7 +706,7 @@ function RoutineRow({
                 }}
               >
                 <IconTrashCan size={14} />
-                Delete routine
+                {t("Delete routine")}
               </button>
             </span>
           ) : null}
@@ -730,14 +740,14 @@ const DEJUNE_MODE_OPTIONS = [
   {
     unrestricted: false,
     icon: <IconShieldCheck size={16} aria-hidden />,
-    title: "Sandboxed",
-    description: "The routine can read the web and memory but cannot touch your files.",
+    title: t("Sandboxed"),
+    description: t("The routine can read the web and memory but cannot touch your files."),
   },
   {
     unrestricted: true,
     icon: <IconShieldCrossed size={16} aria-hidden />,
-    title: "Unrestricted",
-    description: "When it fires, Sub Rosa can change any file your account can.",
+    title: t("Unrestricted"),
+    description: t("When it fires, Sub Rosa can change any file your account can."),
   },
 ] as const;
 
@@ -787,7 +797,7 @@ function DescribeBar({
       <form
         ref={rootRef}
         className="routines-describe-composer"
-        aria-label="Describe a routine to Sub Rosa"
+        aria-label={t("Describe a routine to Sub Rosa")}
         onSubmit={(event) => {
           event.preventDefault();
           onSubmit();
@@ -795,9 +805,9 @@ function DescribeBar({
       >
         <div className="agent-composer-box">
           <GrowingTextarea
-            aria-label="Describe a routine"
+            aria-label={t("Describe a routine")}
             value={draft}
-            placeholder="Have Sub Rosa help you set up a routine"
+            placeholder={t("Have Sub Rosa help you set up a routine")}
             onChange={(event) => onDraftChange(event.currentTarget.value)}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing) return;
@@ -814,7 +824,7 @@ function DescribeBar({
               data-unrestricted={unrestricted ? "true" : undefined}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              title="Change what this routine can touch"
+              title={t("Change what this routine can touch")}
               onClick={() => setMenuOpen((open) => !open)}
             >
               {unrestricted ? (
@@ -830,7 +840,7 @@ function DescribeBar({
                 type="submit"
                 className="agent-composer-send"
                 disabled={!draft.trim()}
-                aria-label="Ask Sub Rosa to set it up"
+                aria-label={t("Ask Sub Rosa to set it up")}
               >
                 <IconArrowUp size={16} />
               </button>
@@ -841,9 +851,9 @@ function DescribeBar({
           <div
             className="agent-sandbox-menu"
             role="menu"
-            aria-label="What can this routine change?"
+            aria-label={t("What can this routine change?")}
           >
-            <p className="agent-sandbox-menu-title">What can this routine change?</p>
+            <p className="agent-sandbox-menu-title">{t("What can this routine change?")}</p>
             {DEJUNE_MODE_OPTIONS.map((option) => (
               <button
                 key={option.title}

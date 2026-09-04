@@ -1,3 +1,4 @@
+import { t } from "../../../lib/i18n";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
@@ -153,7 +154,7 @@ export function DictationScreen() {
 
   return (
     <div className="mobile-screen-root">
-      <StackHeader title="Dictation" large />
+      <StackHeader title={t("Dictation")} large />
       <div className="mobile-settings-scroll">
         <div className="mobile-dictation-stage">
           {phase === "recording" ? (
@@ -162,12 +163,12 @@ export function DictationScreen() {
             </p>
           ) : phase === "processing" ? (
             <p className="mobile-dictation-hint" aria-live="polite">
-              <span>Transcribing your recording</span>
+              <span>{t("Transcribing your recording")}</span>
               <span className="mobile-dictation-since">{formatSince(processingMs)}</span>
             </p>
           ) : (
             <p className="mobile-dictation-hint">
-              Tap the microphone, speak, then tap again to get clean text.
+              {t("Tap the microphone, speak, then tap again to get clean text.")}
             </p>
           )}
           <button
@@ -189,7 +190,7 @@ export function DictationScreen() {
           </button>
           {phase === "recording" ? (
             <button type="button" className="mobile-dictation-cancel" onClick={() => void cancel()}>
-              Cancel
+              {t("Cancel")}
             </button>
           ) : null}
         </div>
@@ -206,13 +207,13 @@ export function DictationScreen() {
               <span className="mobile-skeleton-bar" />
             </div>
             {processingMs > LONG_WAIT_MS ? (
-              <p className="mobile-dictation-patience">A long recording takes a moment.</p>
+              <p className="mobile-dictation-patience">{t("A long recording takes a moment.")}</p>
             ) : null}
           </section>
         ) : null}
 
         {result ? (
-          <section className="mobile-dictation-result" aria-label="Dictation result">
+          <section className="mobile-dictation-result" aria-label={t("Dictation result")}>
             <p>{result.text}</p>
             <div className="mobile-dictation-result-actions">
               <button
@@ -230,20 +231,22 @@ export function DictationScreen() {
         {history.length === 0 && !result && phase === "idle" ? (
           <EmptyState
             icon={<IconMicrophoneSparkle size={20} />}
-            title="Your voice journal starts here"
-            description="Speak a note, a message, a thought. What you dictate is transcribed on the spot and kept here so you can copy it again later."
-            label="No dictations yet"
+            title={t("Your voice journal starts here")}
+            description={t(
+              "Speak a note, a message, a thought. What you dictate is transcribed on the spot and kept here so you can copy it again later.",
+            )}
+            label={t("No dictations yet")}
           />
         ) : null}
 
         {history.length > 0 ? (
-          <SettingsGroup title="History" footer="Tap to copy, swipe to delete.">
+          <SettingsGroup title={t("History")} footer={t("Tap to copy, swipe to delete.")}>
             {history.map((item) => (
               <SwipeableRow
                 key={item.id}
                 actions={[
                   {
-                    label: "Delete",
+                    label: t("Delete"),
                     tone: "destructive",
                     onAction: () => {
                       void mobileDeleteDictationHistoryItem(item.id).then(refreshHistory);
