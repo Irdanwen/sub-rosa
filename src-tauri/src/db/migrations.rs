@@ -1,13 +1,105 @@
 use sqlx::query::query;
+use sqlx::row::Row as _;
 use sqlx_sqlite::SqlitePool;
 
-pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
-    for statement in include_str!("../../migrations/001_init.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
+/// Every migration file this build knows, and whether the database has
+/// already taken it. A file is replayed once per checksum: the runner used
+/// to replay all of them at every launch (each is idempotent), which cost a
+/// few hundred statements of `IF NOT EXISTS` before the first window. The
+/// `ensure_column` calls between the files stay: they are cheap and they are
+/// what makes a database from before any given file catch up.
+const SCHEMA_LEDGER: &str = "CREATE TABLE IF NOT EXISTS schema_migrations (
+        name TEXT PRIMARY KEY,
+        checksum TEXT NOT NULL,
+        applied_at TEXT NOT NULL
+    )";
+
+fn checksum(sql: &str) -> String {
+    use sha2::Digest as _;
+    let digest = sha2::Sha256::digest(sql.as_bytes());
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+async fn already_applied(
+    pool: &SqlitePool,
+    name: &str,
+    sum: &str,
+) -> Result<bool, sqlx::error::Error> {
+    let row = query("SELECT checksum FROM schema_migrations WHERE name = ?1")
+        .bind(name)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.is_some_and(|row| row.get::<String, _>("checksum") == sum))
+}
+
+async fn record_applied(
+    pool: &SqlitePool,
+    name: &str,
+    sum: &str,
+) -> Result<(), sqlx::error::Error> {
+    query(
+        "INSERT INTO schema_migrations (name, checksum, applied_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT(name) DO UPDATE SET checksum = excluded.checksum,
+                                        applied_at = excluded.applied_at",
+    )
+    .bind(name)
+    .bind(sum)
+    .bind(chrono::Utc::now().to_rfc3339())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Replay one `;`-separated migration file unless this exact file has run.
+async fn replay(pool: &SqlitePool, name: &str, sql: &str) -> Result<(), sqlx::error::Error> {
+    let statements = sql
+        .split(';')
+        .map(str::trim)
+        .filter(|statement| !statement.is_empty())
+        .map(str::to_string)
+        .collect();
+    replay_statements(pool, name, sql, statements).await
+}
+
+/// Replay already-split statements unless this exact file has run.
+async fn replay_statements(
+    pool: &SqlitePool,
+    name: &str,
+    sql: &str,
+    statements: Vec<String>,
+) -> Result<(), sqlx::error::Error> {
+    let sum = checksum(sql);
+    if already_applied(pool, name, &sum).await? {
+        return Ok(());
     }
+    for statement in statements {
+        query(&statement).execute(pool).await?;
+    }
+    record_applied(pool, name, &sum).await
+}
+
+/// The files the runner knows, for the ledger test and the diagnostics.
+pub async fn applied_migrations(
+    pool: &SqlitePool,
+) -> Result<Vec<(String, String)>, sqlx::error::Error> {
+    let rows = query("SELECT name, applied_at FROM schema_migrations ORDER BY name")
+        .fetch_all(pool)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.get("name"), row.get("applied_at")))
+        .collect())
+}
+
+pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
+    crate::diagnostics::mark("database open");
+    query(SCHEMA_LEDGER).execute(_pool).await?;
+    replay(
+        _pool,
+        "001_init.sql",
+        include_str!("../../migrations/001_init.sql"),
+    )
+    .await?;
     ensure_column(
         _pool,
         "recording_sessions",
@@ -59,49 +151,47 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
     // Folder names don't need to be unique — each folder has a stable
     // UUID, and the user may legitimately want two "Inbox"es etc.
     drop_index_if_exists(_pool, "idx_folders_active_name").await?;
-    for statement in include_str!("../../migrations/002_source_modes.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
-    for statement in include_str!("../../migrations/003_generation_blocks.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
-    for statement in include_str!("../../migrations/004_dictionary.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
-    for statement in include_str!("../../migrations/005_dictation_history.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
+    replay(
+        _pool,
+        "002_source_modes.sql",
+        include_str!("../../migrations/002_source_modes.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "003_generation_blocks.sql",
+        include_str!("../../migrations/003_generation_blocks.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "004_dictionary.sql",
+        include_str!("../../migrations/004_dictionary.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "005_dictation_history.sql",
+        include_str!("../../migrations/005_dictation_history.sql"),
+    )
+    .await?;
     // The dedupe DELETE in this migration scans `transcripts`, so only run it
     // until the unique index exists. Once present, there is nothing left to
     // dedupe and re-running on every startup would be wasted work.
     if !index_exists(_pool, "idx_transcripts_session_source_turn").await? {
-        for statement in
-            include_str!("../../migrations/006_transcript_turn_uniqueness.sql").split(';')
-        {
-            let statement = statement.trim();
-            if !statement.is_empty() {
-                query(statement).execute(_pool).await?;
-            }
-        }
+        replay(
+            _pool,
+            "006_transcript_turn_uniqueness.sql",
+            include_str!("../../migrations/006_transcript_turn_uniqueness.sql"),
+        )
+        .await?;
     }
-    for statement in include_str!("../../migrations/007_agent.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
+    replay(
+        _pool,
+        "007_agent.sql",
+        include_str!("../../migrations/007_agent.sql"),
+    )
+    .await?;
     ensure_column(_pool, "agent_tasks", "hermes_session_id", "TEXT").await?;
     // `model` records the chat model this session last ran with, so reopening a
     // mobile (agent-lite) chat restores its model in the picker and a
@@ -114,32 +204,31 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
     // used for migration 006 above).
     ensure_column(_pool, "agent_messages", "external_id", "TEXT").await?;
     if !index_exists(_pool, "idx_agent_messages_task_external_id").await? {
-        for statement in include_str!("../../migrations/008_agent_message_identity.sql").split(';')
-        {
-            let statement = statement.trim();
-            if !statement.is_empty() {
-                query(statement).execute(_pool).await?;
-            }
-        }
+        replay(
+            _pool,
+            "008_agent_message_identity.sql",
+            include_str!("../../migrations/008_agent_message_identity.sql"),
+        )
+        .await?;
     }
-    for statement in include_str!("../../migrations/009_session_folders.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
-    for statement in include_str!("../../migrations/010_memory.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
-    for statement in include_str!("../../migrations/011_background_jobs.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
+    replay(
+        _pool,
+        "009_session_folders.sql",
+        include_str!("../../migrations/009_session_folders.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "010_memory.sql",
+        include_str!("../../migrations/010_memory.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "011_background_jobs.sql",
+        include_str!("../../migrations/011_background_jobs.sql"),
+    )
+    .await?;
     // Shot continuity: a generation can continue an earlier clip, starting from
     // a frame taken near its end. The link belongs on the durable row, not in
     // the webview - the render outlives the session that queued it, so a chain
@@ -170,54 +259,54 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
     ensure_column(_pool, "notes", "calendar_event_id", "TEXT").await?;
     ensure_column(_pool, "notes", "scheduled_start", "TEXT").await?;
     ensure_column(_pool, "notes", "attendees_json", "TEXT").await?;
-    for statement in include_str!("../../migrations/019_council.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
-    for statement in include_str!("../../migrations/018_shot_lists.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
-    for statement in include_str!("../../migrations/017_bible.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
-    for statement in include_str!("../../migrations/016_ingests.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
-    for statement in include_str!("../../migrations/015_note_summaries.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
-    for statement in include_str!("../../migrations/014_agent_actions.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
-    for statement in include_str!("../../migrations/013_briefs.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
-    for statement in include_str!("../../migrations/012_workflow_runs.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
+    replay(
+        _pool,
+        "019_council.sql",
+        include_str!("../../migrations/019_council.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "018_shot_lists.sql",
+        include_str!("../../migrations/018_shot_lists.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "017_bible.sql",
+        include_str!("../../migrations/017_bible.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "016_ingests.sql",
+        include_str!("../../migrations/016_ingests.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "015_note_summaries.sql",
+        include_str!("../../migrations/015_note_summaries.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "014_agent_actions.sql",
+        include_str!("../../migrations/014_agent_actions.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "013_briefs.sql",
+        include_str!("../../migrations/013_briefs.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "012_workflow_runs.sql",
+        include_str!("../../migrations/012_workflow_runs.sql"),
+    )
+    .await?;
     // What a verdict reads when the work left no trace on disk. Not every
     // mandate produces files: ask for an analysis or a rewrite and the
     // deliverable is what the agent said. The transcript lives in the runtime,
@@ -232,19 +321,24 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
 
     // What left the machine: one row per outbound request (shapes, never
     // contents), read by Settings > Privacy.
-    for statement in include_str!("../../migrations/021_egress_ledger.sql").split(';') {
-        let statement = statement.trim();
-        if !statement.is_empty() {
-            query(statement).execute(_pool).await?;
-        }
-    }
+    replay(
+        _pool,
+        "021_egress_ledger.sql",
+        include_str!("../../migrations/021_egress_ledger.sql"),
+    )
+    .await?;
 
     // Full-text search over notes, transcripts, memories and conversations.
     // The file defines triggers, whose bodies carry semicolons, so it goes
     // through the statement-aware splitter rather than `split(';')`.
-    for statement in split_sql_statements(include_str!("../../migrations/020_search.sql")) {
-        query(&statement).execute(_pool).await?;
-    }
+    replay_statements(
+        _pool,
+        "020_search.sql",
+        include_str!("../../migrations/020_search.sql"),
+        split_sql_statements(include_str!("../../migrations/020_search.sql")),
+    )
+    .await?;
+    crate::diagnostics::mark("migrations");
 
     Ok(())
 }
@@ -348,7 +442,26 @@ fn quote_sqlite_identifier(identifier: &str) -> String {
 
 #[cfg(test)]
 mod split_tests {
-    use super::split_sql_statements;
+    use super::{applied_migrations, run_migrations, split_sql_statements};
+
+    #[tokio::test]
+    async fn every_file_is_recorded_once_and_a_second_run_replays_nothing() {
+        let pool = sqlx_sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("memory db");
+        run_migrations(&pool).await.expect("first run");
+        let first = applied_migrations(&pool).await.expect("ledger");
+        assert!(first.iter().any(|(name, _)| name == "001_init.sql"));
+        assert!(first.iter().any(|(name, _)| name == "020_search.sql"));
+        assert!(first
+            .iter()
+            .any(|(name, _)| name == "021_egress_ledger.sql"));
+        run_migrations(&pool).await.expect("second run");
+        let second = applied_migrations(&pool).await.expect("ledger");
+        assert_eq!(first, second, "a recorded file is not replayed");
+    }
 
     #[test]
     fn a_trigger_body_stays_in_one_statement() {

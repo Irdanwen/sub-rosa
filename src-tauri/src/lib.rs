@@ -160,6 +160,7 @@ type MainWindowSendEventImp = unsafe extern "C-unwind" fn(
 );
 
 pub fn run() {
+    diagnostics::mark("run");
     providers::load_local_env();
     let context = tauri::generate_context!();
     let mut builder = tauri::Builder::default();
@@ -697,6 +698,7 @@ pub fn run() {
             // in-process (subprocess spawning is forbidden on iOS).
             carpe_diem::settings::setup(app);
             carpe_diem::sidecar::setup(app);
+            diagnostics::mark("sidecar setup");
             memory::setup(app);
             egress_ledger::spawn_flusher(app.handle());
             moments::setup(app);

@@ -26,6 +26,35 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
 use crate::domain::types::AppError;
+use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
+
+/// Milestones of this launch, in milliseconds since the first mark. The
+/// first call sets the clock; each label is recorded once so a repeated
+/// milestone (a sidecar restart) does not rewrite the launch story.
+type Marks = Mutex<Vec<(String, u64)>>;
+static STARTUP: OnceLock<(Instant, Marks)> = OnceLock::new();
+
+/// Record a startup milestone. Cheap enough to call from anywhere.
+pub fn mark(label: &str) {
+    let (start, marks) = STARTUP.get_or_init(|| (Instant::now(), Mutex::new(Vec::new())));
+    let elapsed = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+    if let Ok(mut marks) = marks.lock() {
+        if marks.iter().any(|(known, _)| known == label) {
+            return;
+        }
+        tracing::info!("startup: {label} at {elapsed} ms");
+        marks.push((label.to_string(), elapsed));
+    }
+}
+
+/// The milestones recorded so far, in order.
+pub fn startup_marks() -> Vec<(String, u64)> {
+    STARTUP
+        .get()
+        .and_then(|(_, marks)| marks.lock().ok().map(|marks| marks.clone()))
+        .unwrap_or_default()
+}
 
 /// What this build of the app can do on this platform. `false` is a fact,
 /// not a failure: the settings screens replace a dead control with a
@@ -497,6 +526,11 @@ pub fn report_text(app: &AppHandle) -> String {
         Some(status) => out.push_str(&format!("{status}\n\n")),
         None => out.push_str("(not available)\n\n"),
     }
+    out.push_str("## Startup\n\n");
+    for (label, ms) in startup_marks() {
+        out.push_str(&format!("- {label}: {ms} ms\n"));
+    }
+    out.push('\n');
     out.push_str("## Capabilities\n\n");
     out.push_str(&format!(
         "{}\n\n",
@@ -684,5 +718,25 @@ mod tests {
             assert!(!body.contains("cdm_"), "{}: {body}", file.display());
             assert!(!body.contains("abc.def"), "{}: {body}", file.display());
         }
+    }
+
+    #[test]
+    fn marks_are_recorded_once_each_in_order_of_arrival() {
+        // The clock is process-wide, and other tests mark too, so the check
+        // is on this test's own labels among whatever else is there.
+        super::mark("test first");
+        super::mark("test second");
+        super::mark("test first");
+        let marks = super::startup_marks();
+        let ours: Vec<(&str, u64)> = marks
+            .iter()
+            .filter(|(label, _)| label.starts_with("test "))
+            .map(|(label, ms)| (label.as_str(), *ms))
+            .collect();
+        assert_eq!(
+            ours.iter().map(|(l, _)| *l).collect::<Vec<_>>(),
+            vec!["test first", "test second"]
+        );
+        assert!(ours[0].1 <= ours[1].1);
     }
 }
