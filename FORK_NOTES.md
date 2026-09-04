@@ -791,6 +791,46 @@ section « Writing a note (fork) » de [CONTEXT.md](CONTEXT.md).
 - **Une seule réécriture peut changer la structure** : `restructure`. Un test
   vérifie que la dérogation n'apparaît que dans ce prompt.
 
+## Interroger ses notes (2026-09-04)
+
+Une question posée dans la palette ⌘K (ou sous la recherche du téléphone)
+reçoit une réponse tirée des notes, chaque affirmation citant sa note, et la
+liste exacte des passages envoyés sous la réponse
+([ADR-0044](docs/adr/0044-an-answer-over-the-notes-cites-passages-the-app-chose.md)).
+
+### Fichiers ajoutés
+
+- `src-tauri/src/ask/mod.rs` : la commande `ask_notes` (retrieval FTS5 via
+  `search_note_context`, prompt versionné `ASK_PROMPT_VERSION`, résolution
+  des `[n]` en notes, indices inventés nommés). Rien dans `june-api/`.
+- `src/components/ask/AskNotesPanel.tsx` : le panneau (réponse, citations
+  cliquables, « What was sent »), `looksLikeAQuestion`, `answerParts`.
+- `src/test/ask-notes-panel.test.tsx`.
+
+### Fichiers upstream modifiés
+
+- `src-tauri/src/lib.rs` : `pub mod ask` + `ask::ask_notes` dans les deux
+  `generate_handler!`.
+- `src-tauri/src/june_api.rs` : `record_egress` lit
+  `egress_ledger::current_context()` (purpose + note_id du scope).
+- `src-tauri/src/egress_ledger.rs` (fork) : `scoped` / `current_context`
+  (task-local tokio).
+- `src/components/sidebar/Sidebar.tsx` : groupe « Ask » en tête de la
+  palette quand la requête se lit comme une question ; overlay portail
+  `.ask-overlay` qui survit à la fermeture de la palette.
+- `src/lib/tauri.ts` : `askNotes`, `AskAnswerDto`, `AskSourceDto`.
+- `src/styles/app.css` (`.ask-*`), `src/styles/mobile.css`
+  (`.mobile-ask*`), `src/components/mobile/screens/NotesScreen.tsx`
+  (bouton « Ask your notes »).
+
+### Pièges
+
+- Le modèle ne choisit jamais les passages ni ne donne de timestamp : il
+  numérote, l'app résout (même discipline qu'ADR-0027).
+- Une ligne du registre ne porte qu'un `note_id` : il n'est renseigné que si
+  tous les passages venaient de la même note ; la liste « What was sent »
+  est la vérité par requête.
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.

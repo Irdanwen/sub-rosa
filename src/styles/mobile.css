@@ -3373,3 +3373,32 @@
   color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
 }
+
+/* Ask your notes, from the search bar. */
+.mobile-ask-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 16px 8px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.mobile-ask {
+  margin: 0 12px 10px;
+}
+
+.mobile-ask .ask-panel {
+  width: 100%;
+  max-height: 52vh;
+  padding: 14px 14px 12px;
+  border-radius: 14px;
+  box-shadow: none;
+  background: var(--card);
+  border-color: var(--border);
+}

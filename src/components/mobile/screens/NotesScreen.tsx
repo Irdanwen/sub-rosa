@@ -1,3 +1,4 @@
+import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { IMPORTABLE_MEDIA_ACCEPT } from "../../../lib/import-media";
 import { ImportLinkBar } from "../../notes-list/ImportLinkBar";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
@@ -8,6 +9,7 @@ import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FolderDto, NoteListItemDto } from "../../../lib/tauri";
 import { searchEverything } from "../../../lib/tauri";
+import { AskNotesPanel, looksLikeAQuestion } from "../../ask/AskNotesPanel";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { ActionSheet } from "../ActionSheet";
 import { EmptyState } from "../../ui/EmptyState";
@@ -47,6 +49,7 @@ export function NotesScreen({
   onRefresh,
 }: NotesScreenProps) {
   const [query, setQuery] = useState("");
+  const [askQuestion, setAskQuestion] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<NoteListItemDto | null>(null);
   // The note a long press opened the actions for. The swipe still works; this
   // is the route that does not have to be discovered.
@@ -161,6 +164,28 @@ export function NotesScreen({
           autoCorrect="off"
         />
       </div>
+      {looksLikeAQuestion(query) && askQuestion !== query.trim() ? (
+        <button
+          type="button"
+          className="mobile-ask-button"
+          onClick={() => setAskQuestion(query.trim())}
+        >
+          <IconSparkle3 size={14} aria-hidden />
+          <span>Ask your notes</span>
+        </button>
+      ) : null}
+      {askQuestion ? (
+        <div className="mobile-ask">
+          <AskNotesPanel
+            question={askQuestion}
+            onOpenNote={(noteId) => {
+              setAskQuestion(null);
+              onSelectNote(noteId);
+            }}
+            onClose={() => setAskQuestion(null)}
+          />
+        </div>
+      ) : null}
       {folders.length > 0 ? (
         <div className="mobile-folder-strip" role="list" aria-label="Folders">
           {folders.map((folder) => (

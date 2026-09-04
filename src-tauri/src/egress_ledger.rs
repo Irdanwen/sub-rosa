@@ -40,6 +40,36 @@ pub struct EgressEntry {
     pub note_id: Option<String>,
 }
 
+tokio::task_local! {
+    /// What the request running on this task is for, when the caller knows
+    /// better than the path does (the path says `chat`; the caller says
+    /// `ask`, and names the note when there is one).
+    static REQUEST_CONTEXT: RequestContext;
+}
+
+#[derive(Debug, Clone)]
+pub struct RequestContext {
+    pub purpose: &'static str,
+    pub note_id: Option<String>,
+}
+
+/// Run `future` so that every row recorded from it carries `purpose` and
+/// `note_id` instead of what the path alone would say.
+pub async fn scoped<F: std::future::Future>(
+    purpose: &'static str,
+    note_id: Option<String>,
+    future: F,
+) -> F::Output {
+    REQUEST_CONTEXT
+        .scope(RequestContext { purpose, note_id }, future)
+        .await
+}
+
+/// The context the current task runs under, if any.
+pub fn current_context() -> Option<RequestContext> {
+    REQUEST_CONTEXT.try_with(Clone::clone).ok()
+}
+
 const BUFFER_CAP: usize = 2_000;
 const FLUSH_EVERY: Duration = Duration::from_secs(4);
 /// Rows older than this are pruned at launch. The count is the point.
@@ -249,5 +279,16 @@ mod tests {
         assert_eq!(dropped, 5);
         assert_eq!(entries.last().map(|e| e.host.as_str()), Some("h2004"));
         assert!(drain().0.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_scoped_request_carries_its_purpose_and_note_and_nothing_leaks_outside() {
+        assert!(super::current_context().is_none());
+        let inside =
+            super::scoped("ask", Some("n1".into()), async { super::current_context() }).await;
+        let inside = inside.expect("context inside the scope");
+        assert_eq!(inside.purpose, "ask");
+        assert_eq!(inside.note_id.as_deref(), Some("n1"));
+        assert!(super::current_context().is_none());
     }
 }

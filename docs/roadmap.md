@@ -114,12 +114,18 @@ product makes that no other tool makes checkable.
   row per request, shapes never contents, ninety days (ADR-0043). Gate:
   `tests/egress_ledger.rs`; the card's sentence and rows in
   `egress-ledger-card.test.tsx`.
-- [ ] S.2 Interroger ses notes, avec citations. A question over the corpus
+- [x] S.2 Interroger ses notes, avec citations. A question over the corpus
   answered from the notes themselves, each claim linked to the note and the
   turn it comes from, the excerpts sent to the model listed on screen (and
   in the ledger). Builds on the FTS5 index (2.1) and the memory embeddings
   path (ADR-0009). Gate: an answer cites a note; the ledger row for the
   question names the note ids it sent.
+  Done 2026-09-04 (ADR-0044): `src-tauri/src/ask/`, the "Ask" group of the
+  ⌘K palette and the "Ask your notes" button under the phone's search; the
+  panel lists what was sent; the ledger row says `ask` (task-local scope in
+  `egress_ledger.rs`) and names the note when one note fed every passage.
+  Left open: embeddings over note bodies, which would join the same
+  numbered-passage contract.
 
 ## Ce qui ne sera pas fait
 

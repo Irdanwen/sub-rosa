@@ -9,6 +9,7 @@ pub mod agent_lite;
 pub mod agent_notes;
 pub mod app_paths;
 pub mod archive;
+pub mod ask;
 pub mod audio;
 pub mod background;
 pub mod calendar;
@@ -235,6 +236,7 @@ pub fn run() {
             commands::create_note,
             commands::list_notes,
             commands::search_everything,
+            ask::ask_notes,
             egress_ledger::egress_ledger,
             archive::import_archive,
             archive::export_archive,
@@ -496,6 +498,7 @@ pub fn run() {
         commands::create_note,
         commands::list_notes,
         commands::search_everything,
+        ask::ask_notes,
         egress_ledger::egress_ledger,
         archive::import_archive,
         commands::list_notes_failed_in_transit,

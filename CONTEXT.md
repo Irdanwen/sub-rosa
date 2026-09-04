@@ -900,6 +900,27 @@ query-only macOS API); the dictation helper is the authoritative source for
 mic + accessibility state.
 _Avoid_: entitlement (that is the code-signing sense).
 
+### Asking the notes (fork)
+
+**Ask (ask your notes)** — a question answered from the notes, with
+citations. The app picks the passages (FTS5), sends only those, and turns
+the `[n]` the model writes back into links to notes (ADR-0044). Offered
+from the ⌘K palette when the query reads as a question, and from the notes
+search on the phone.
+_Avoid:_ "chat with your notes" (that is the agent, which chooses its own
+reads); "RAG" in copy.
+
+**Passage** — one excerpt handed to the model for an ask, numbered from 1,
+with its note id and kind (note or transcript). The list of passages is
+"what was sent" and is shown under the answer.
+_Avoid:_ "chunk" (that is the long-form summary's unit), "source" (an audio
+lane).
+
+**Citation** — an index in the answer that names a passage that was sent.
+An index that was never sent is *invented*, and the answer says so rather
+than hiding it.
+_Avoid:_ "reference", "footnote".
+
 ## Flagged ambiguities
 
 - **"proxy"** usually means **June API** (the thing in front of OpenAI /

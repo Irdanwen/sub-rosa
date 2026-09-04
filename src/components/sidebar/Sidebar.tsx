@@ -79,6 +79,8 @@ import type {
   SearchHit,
 } from "../../lib/tauri";
 import { searchEverything } from "../../lib/tauri";
+import { searchExcerptText } from "../../lib/search-excerpt";
+import { AskNotesOverlay, askPaletteItems } from "../ask/AskNotesPanel";
 import type { SettingsTab } from "../settings/AppSettings";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { DotSpinner } from "../DotSpinner";
@@ -347,6 +349,9 @@ export function Sidebar({
   const [query, setQuery] = useState("");
   const commandInputRef = useRef<HTMLInputElement>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  // A question typed into the palette is answered in an overlay that
+  // outlives the palette (which closes on select like for any other item).
+  const [askQuestion, setAskQuestion] = useState<string | null>(null);
   const [commandQuery, setCommandQuery] = useState("");
   // The search that reads the notes (migration 020). The palette used to
   // match only what the sidebar already held: five recent titles, folders,
@@ -620,6 +625,7 @@ export function Sidebar({
       .filter((item) => !recentIds.has(item.id));
 
     return [
+      { title: "Ask", items: askPaletteItems(commandQuery, setAskQuestion) },
       { title: "Recents", items: recentItems },
       { title: "In your notes", items: searchItems },
       { title: "Projects", items: folderItems },
@@ -1285,6 +1291,16 @@ export function Sidebar({
           onClose={() => setMenu(null)}
         />
       ) : null}
+      {askQuestion ? (
+        <AskNotesOverlay
+          question={askQuestion}
+          onOpenNote={(noteId) => {
+            setAskQuestion(null);
+            onSelectNote(noteId);
+          }}
+          onClose={() => setAskQuestion(null)}
+        />
+      ) : null}
       {commandPaletteOpen ? (
         <CommandPalette
           inputRef={commandInputRef}
@@ -1689,24 +1705,6 @@ function CommandPalette({
     </div>,
     document.body,
   );
-}
-
-/**
- * The excerpt the search engine returns wraps each hit in \u0001 and \u0002
- * so the webview never has to trust markup from the database. The palette
- * shows plain text, so the markers go and the whitespace is collapsed.
- */
-const SEARCH_HIT_START = String.fromCharCode(1);
-const SEARCH_HIT_END = String.fromCharCode(2);
-
-export function searchExcerptText(excerpt: string) {
-  return excerpt
-    .split(SEARCH_HIT_START)
-    .join("")
-    .split(SEARCH_HIT_END)
-    .join("")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function normalizeCommandQuery(value: string) {

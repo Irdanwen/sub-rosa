@@ -1172,17 +1172,22 @@ fn record_egress(
         .ok()
         .and_then(|url| url.host_str().map(str::to_string))
         .unwrap_or_else(|| "(unconfigured)".to_string());
+    let context = crate::egress_ledger::current_context();
+    let purpose = context.as_ref().map_or_else(
+        || crate::egress_ledger::purpose_for_path(path),
+        |context| context.purpose.to_string(),
+    );
     crate::egress_ledger::record(crate::egress_ledger::EgressEntry {
         at: chrono::Utc::now().to_rfc3339(),
         host,
-        purpose: crate::egress_ledger::purpose_for_path(path),
+        purpose,
         method: method.to_string(),
         request_bytes,
         response_bytes,
         status,
         duration_ms: 0,
         model,
-        note_id: None,
+        note_id: context.and_then(|context| context.note_id),
     });
 }
 
