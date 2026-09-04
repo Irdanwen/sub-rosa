@@ -862,6 +862,19 @@ liste exacte des passages envoyés sous la réponse
 - Fichiers fork modifiés : `AskNotesPanel.tsx`, `mobile/ActionSheet.tsx`,
   `mobile/ModelSheet.tsx`, `mobile/screens/studio/StudioLightbox.tsx`.
 
+## Parcours applicatifs (2026-09-04)
+
+- `src/test/app-journeys.test.tsx` : cinq parcours au niveau de `App` (lancer
+  et ouvrir une note, recherche palette, « Ask your notes », Réglages ›
+  Stockage chargé à la demande, hors-ligne puis « Retry all »).
+- `src/test/helpers/fake-bridge.ts` : `fakeBridge(actual, scripted)` garde
+  les constantes du vrai `src/lib/tauri`, remplace chaque fonction par un
+  no-op résolu, et prend les bindings scriptés par le test. Pièges : importer
+  le helper *dans* la factory `vi.mock` (hissée) ; le shell démarre sur
+  l'agent (cliquer « Meeting notes » d'abord) ; `isPrimaryShortcut` refuse
+  meta+ctrl ensemble ; le bouton « Retry all » est désactivé hors-ligne
+  (avancer la sonde de 30 s avec les faux timers).
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.

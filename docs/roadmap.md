@@ -74,7 +74,8 @@ Legend: `[x]` done and gated · `[~]` partly done, remainder named · `[ ]` open
 
 ## Palier 3 · La structure (un mois)
 
-- [ ] 3.1 Cinq parcours au niveau de l'application (before 3.2).
+- [x] 3.1 Cinq parcours au niveau de l'application (before 3.2).
+  Done 2026-09-04. `src/test/app-journeys.test.tsx` drives the rendered desktop shell over a fake bridge (`src/test/helpers/fake-bridge.ts` keeps every constant of the real module and stubs every binding a journey does not script): launch and open a note; find a note by a word inside it from the palette; ask the notes a question and open the cited note; reach Settings › Storage (loaded on demand) and read the sizes; be told you are offline, then retry every waiting note once the connection is back. The class of bug they exist for is the one a release shipped once: every part works, the assembly does not.
 - [~] 3.2 Aucun fichier de plus de 2 000 lignes. The ratchet is in place
   (`file-size-ratchet.json`, `src/test/file-size-ratchet.test.ts`): the ten
   files above the ceiling may only shrink. The splitting itself is open.

@@ -83,7 +83,14 @@ export function AskNotesPanel({
   }, [question]);
 
   return (
-    <section className="ask-panel" aria-label="Answer from your notes" ref={panelRef} tabIndex={-1}>
+    <section
+      className="ask-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Answer from your notes"
+      ref={panelRef}
+      tabIndex={-1}
+    >
       <header className="ask-panel-header">
         <p className="ask-panel-question">{question}</p>
         <button type="button" className="ask-panel-close" aria-label="Close" onClick={onClose}>
