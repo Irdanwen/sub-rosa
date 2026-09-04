@@ -465,6 +465,18 @@ pub async fn proxy_agent_chat_completions(
                 }
                 Err(error) => return Err(network_error(error)),
             };
+        record_egress(
+            "/v1/chat/completions",
+            "POST",
+            serde_json::to_vec(&body)
+                .map(|b| b.len() as u64)
+                .unwrap_or(0),
+            0,
+            Some(response.status().as_u16()),
+            body.get("model")
+                .and_then(|m| m.as_str())
+                .map(str::to_string),
+        );
         if response.status() == reqwest::StatusCode::UNAUTHORIZED && attempt == 0 {
             token = crate::os_accounts::refresh_access_token().await?;
             continue;
@@ -1129,7 +1141,49 @@ where
     let status = response.status();
     let retry_after_ms = response_retry_after_ms(&response);
     let body = response.text().await.map_err(network_error)?;
+    record_egress(
+        path,
+        "POST",
+        0,
+        body.len() as u64,
+        Some(status.as_u16()),
+        None,
+    );
     parse_response_body(path, status, retry_after_ms, &body)
+}
+
+/// One row in the egress ledger for a request the sidecar forwarded upstream.
+/// The loopback hop is not egress; the host recorded is the configured
+/// endpoint the sidecar sends to. Shapes only: no body is kept.
+fn record_egress(
+    path: &str,
+    method: &str,
+    request_bytes: u64,
+    response_bytes: u64,
+    status: Option<u16>,
+    model: Option<String>,
+) {
+    // Health and catalog reads on the loopback are not what anyone means by
+    // "left the machine"; the catalog is fetched upstream, though, so it stays.
+    if path.contains("/livez") || path.contains("/healthz") {
+        return;
+    }
+    let host = reqwest::Url::parse(&crate::carpe_diem::settings::base_url())
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .unwrap_or_else(|| "(unconfigured)".to_string());
+    crate::egress_ledger::record(crate::egress_ledger::EgressEntry {
+        at: chrono::Utc::now().to_rfc3339(),
+        host,
+        purpose: crate::egress_ledger::purpose_for_path(path),
+        method: method.to_string(),
+        request_bytes,
+        response_bytes,
+        status,
+        duration_ms: 0,
+        model,
+        note_id: None,
+    });
 }
 
 fn parse_response_body<T>(

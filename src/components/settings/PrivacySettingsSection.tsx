@@ -2,6 +2,7 @@ import { IconGlobe } from "central-icons/IconGlobe";
 import { IconLock } from "central-icons/IconLock";
 import { IconShieldCheck } from "central-icons/IconShieldCheck";
 import { useEffect, useState } from "react";
+import { EgressLedgerCard } from "./EgressLedgerCard";
 import {
   type EgressHost,
   carpeDiemGetSettings,
@@ -54,6 +55,8 @@ export function PrivacySettingsSection() {
           <p className="settings-row-description">{error}</p>
         </div>
       ) : null}
+
+      <EgressLedgerCard />
 
       <div className="settings-card privacy-stays">
         <div className="privacy-stays-icon" aria-hidden>

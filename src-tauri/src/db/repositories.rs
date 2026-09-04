@@ -641,6 +641,116 @@ impl Repositories {
         Ok(())
     }
 
+    /// Append rows to the egress ledger (see `egress_ledger.rs`).
+    pub async fn insert_egress_entries(
+        &self,
+        entries: &[crate::egress_ledger::EgressEntry],
+    ) -> Result<(), sqlx::error::Error> {
+        for entry in entries {
+            query(
+                "INSERT INTO egress_ledger (at, host, purpose, method, request_bytes, response_bytes, status, duration_ms, model, note_id)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(&entry.at)
+            .bind(&entry.host)
+            .bind(&entry.purpose)
+            .bind(&entry.method)
+            .bind(entry.request_bytes as i64)
+            .bind(entry.response_bytes as i64)
+            .bind(entry.status.map(i64::from))
+            .bind(entry.duration_ms as i64)
+            .bind(&entry.model)
+            .bind(&entry.note_id)
+            .execute(&self.pool)
+            .await?;
+        }
+        Ok(())
+    }
+
+    pub async fn prune_egress_ledger(&self, before: &str) -> Result<u64, sqlx::error::Error> {
+        let result = query("DELETE FROM egress_ledger WHERE at < ?")
+            .bind(before)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// Newest first; optionally only the rows about one note.
+    pub async fn list_egress_ledger(
+        &self,
+        limit: i64,
+        note_id: Option<&str>,
+    ) -> Result<Vec<crate::egress_ledger::EgressRow>, sqlx::error::Error> {
+        let rows = query(
+            "SELECT id, at, host, purpose, method, request_bytes, response_bytes, status, duration_ms, model, note_id
+             FROM egress_ledger
+             WHERE (?1 IS NULL OR note_id = ?1)
+             ORDER BY at DESC, id DESC
+             LIMIT ?2",
+        )
+        .bind(note_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| crate::egress_ledger::EgressRow {
+                id: row.get("id"),
+                entry: crate::egress_ledger::EgressEntry {
+                    at: row.get("at"),
+                    host: row.get("host"),
+                    purpose: row.get("purpose"),
+                    method: row.get("method"),
+                    request_bytes: row.get::<i64, _>("request_bytes").max(0) as u64,
+                    response_bytes: row.get::<i64, _>("response_bytes").max(0) as u64,
+                    status: row
+                        .get::<Option<i64>, _>("status")
+                        .and_then(|s| u16::try_from(s).ok()),
+                    duration_ms: row.get::<i64, _>("duration_ms").max(0) as u64,
+                    model: row.get("model"),
+                    note_id: row.get("note_id"),
+                },
+            })
+            .collect())
+    }
+
+    /// Totals since a moment: how many requests, how many bytes each way,
+    /// which hosts, and how many requests per purpose.
+    pub async fn summarize_egress_ledger(
+        &self,
+        since: &str,
+    ) -> Result<crate::egress_ledger::EgressSummary, sqlx::error::Error> {
+        let totals = query(
+            "SELECT COUNT(*) AS requests, COALESCE(SUM(request_bytes), 0) AS request_bytes,
+                    COALESCE(SUM(response_bytes), 0) AS response_bytes
+             FROM egress_ledger WHERE at >= ?",
+        )
+        .bind(since)
+        .fetch_one(&self.pool)
+        .await?;
+        let hosts = query("SELECT DISTINCT host FROM egress_ledger WHERE at >= ? ORDER BY host")
+            .bind(since)
+            .fetch_all(&self.pool)
+            .await?;
+        let purposes = query(
+            "SELECT purpose, COUNT(*) AS n FROM egress_ledger WHERE at >= ?
+             GROUP BY purpose ORDER BY n DESC, purpose",
+        )
+        .bind(since)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(crate::egress_ledger::EgressSummary {
+            requests: totals.get::<i64, _>("requests").max(0) as u64,
+            request_bytes: totals.get::<i64, _>("request_bytes").max(0) as u64,
+            response_bytes: totals.get::<i64, _>("response_bytes").max(0) as u64,
+            hosts: hosts.into_iter().map(|row| row.get("host")).collect(),
+            purposes: purposes
+                .into_iter()
+                .map(|row| (row.get("purpose"), row.get::<i64, _>("n").max(0) as u64))
+                .collect(),
+        })
+    }
+
     /// The search that reads everything.
     ///
     /// Four FTS5 tables (migration 020), one query each, merged by bm25 rank.

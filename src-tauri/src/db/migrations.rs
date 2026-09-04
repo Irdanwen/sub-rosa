@@ -230,6 +230,15 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
     // stays (transcripts reference it) and records when its file went.
     ensure_column(_pool, "audio_artifacts", "purged_at", "TEXT").await?;
 
+    // What left the machine: one row per outbound request (shapes, never
+    // contents), read by Settings > Privacy.
+    for statement in include_str!("../../migrations/021_egress_ledger.sql").split(';') {
+        let statement = statement.trim();
+        if !statement.is_empty() {
+            query(statement).execute(_pool).await?;
+        }
+    }
+
     // Full-text search over notes, transcripts, memories and conversations.
     // The file defines triggers, whose bodies carry semicolons, so it goes
     // through the statement-aware splitter rather than `split(';')`.

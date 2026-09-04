@@ -10901,6 +10901,54 @@ input:focus-visible,
   gap: var(--sp-2);
 }
 
+/* Settings › Privacy: the egress ledger. A table because the rows are
+ * comparable (when, what, where, how big); numbers right-aligned and tabular
+ * so a column reads as one. */
+.egress-table {
+  width: 100%;
+  margin-top: var(--sp-3);
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.egress-table th,
+.egress-table td {
+  padding: var(--sp-1) var(--sp-2);
+  text-align: left;
+  border-top: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.egress-table th {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+.egress-table td:nth-child(4),
+.egress-table td:nth-child(5),
+.egress-table td:nth-child(6),
+.egress-table th:nth-child(4),
+.egress-table th:nth-child(5),
+.egress-table th:nth-child(6) {
+  text-align: right;
+}
+
+.egress-model {
+  color: var(--muted-foreground);
+}
+
+.egress-more {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--sp-2);
+}
+
+.egress-footnote,
+.egress-purposes {
+  margin-top: var(--sp-2);
+}
+
 .settings-row-mic-test {
   align-items: start;
 }

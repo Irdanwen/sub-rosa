@@ -10,7 +10,14 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const EMPTY_LEDGER = {
+  rows: [],
+  summary: { requests: 0, requestBytes: 0, responseBytes: 0, hosts: [], purposes: [] },
+  retentionDays: 90,
+};
+
 const invokeMock = vi.fn(async (command: string, _args?: unknown) => {
+  if (command === "egress_ledger") return EMPTY_LEDGER;
   if (command === "declared_egress") return declared;
   if (command === "carpe_diem_get_settings") return settings;
   return undefined;
@@ -69,8 +76,22 @@ describe("Settings > Privacy", () => {
   });
 
   it("explains the failure instead of showing an empty page", async () => {
-    invokeMock.mockRejectedValueOnce(new Error("nope"));
-    render(<PrivacySettingsSection />);
-    expect(await screen.findByText(/Could not read the list of destinations/)).toBeInTheDocument();
+    // Only the destination list fails; the ledger card on the same page keeps
+    // answering, so the failure text is the list's and not a crash.
+    // Effects run child-first, so the ledger card's invoke comes before the
+    // list's; the rejection has to be keyed on the command, not on the order.
+    const previous = invokeMock.getMockImplementation();
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "declared_egress") throw new Error("nope");
+      return EMPTY_LEDGER;
+    });
+    try {
+      render(<PrivacySettingsSection />);
+      expect(
+        await screen.findByText(/Could not read the list of destinations/),
+      ).toBeInTheDocument();
+    } finally {
+      if (previous) invokeMock.mockImplementation(previous);
+    }
   });
 });
