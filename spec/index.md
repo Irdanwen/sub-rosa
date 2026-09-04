@@ -35,3 +35,4 @@ each spec names the test that holds it.
 - [no-fork-feature-in-june-api](no-fork-feature-in-june-api.md) — fork features keep their prompts and routes in `src-tauri/`
 - [background-work-is-a-row](background-work-is-a-row.md) — long work writes a durable row first and is re-driven by the sweep
 - [modal-focus](modal-focus.md) — every modal surface takes keyboard and focus from `useModalFocus` (one Escape, one Tab trap, one restore)
+- [copy-through-t](copy-through-t.md) — every sentence a person can read goes through `t()`, and the French catalog is a gate (ADR-0047)

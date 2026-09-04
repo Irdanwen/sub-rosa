@@ -347,6 +347,7 @@ distinct from the `specs/` Spec Kit feature specs.)
 - [design-tokens](spec/design-tokens.md) — use the variables in `src/styles/tokens.css`
 - [note-controls-must-serialize](spec/note-controls-must-serialize.md) — no note-editor control without a markdown representation
 - [modal-focus](spec/modal-focus.md) — every modal surface takes keyboard and focus from `useModalFocus`, never its own Escape or Tab handling
+- [copy-through-t](spec/copy-through-t.md) — every sentence a person can read goes through `t()`; the French catalog is a test, not a promise
 
 ## PR and description conventions
 

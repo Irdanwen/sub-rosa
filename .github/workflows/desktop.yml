@@ -104,6 +104,8 @@ jobs:
       # may only go down. biome-warnings.json holds the numbers.
       - name: Biome warnings ratchet
         run: pnpm check:ratchet
+      - name: French catalog in step with the code
+        run: pnpm i18n:check
 
   # Decides whether the macOS Rust job has anything to test. macOS minutes
   # bill at 10x Linux, and most changes here are frontend-only — `cargo test`

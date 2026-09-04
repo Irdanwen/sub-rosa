@@ -933,6 +933,23 @@ An index that was never sent is *invented*, and the answer says so rather
 than hiding it.
 _Avoid:_ "reference", "footnote".
 
+### The app in your language (fork)
+
+**Sentence (copy)** — a thing a person can read on screen, written in
+English in the code and passed through `t()`; the English sentence is its
+key in the catalog (ADR-0047).
+_Avoid:_ "string" for copy (a string is data; a sentence is read),
+"message id" (there are none).
+
+**Catalog** — `src/locales/<locale>.json`, the sentences of one language,
+keyed by the English sentence. Complete or the test is red.
+_Avoid:_ "translation file" (it is a catalog: the whole set, gated).
+
+**Language choice** — "System", English or French, chosen per device in
+Settings and applied before the first render. Distinct from the
+transcription language (what the model should expect to hear).
+_Avoid:_ "locale" in copy (the person picks a language, not a locale).
+
 ## Flagged ambiguities
 
 - **"proxy"** usually means **June API** (the thing in front of OpenAI /

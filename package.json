@@ -31,7 +31,9 @@
     "check": "biome check .",
     "check:write": "biome check --write .",
     "format": "biome format --write .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "i18n:extract": "node scripts/i18n/extract.mjs",
+    "i18n:check": "node scripts/i18n/extract.mjs --check"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
