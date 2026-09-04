@@ -188,10 +188,8 @@ pub async fn import_shared_item(
                 .and_then(|value| value.to_str())
                 .unwrap_or("bin")
                 .to_string();
-            let staged = std::env::temp_dir().join(format!(
-                "subrosa-staging-{}.{extension}",
-                &request.item_id.chars().take(8).collect::<String>()
-            ));
+            let short: String = request.item_id.chars().take(8).collect();
+            let staged = std::env::temp_dir().join(format!("subrosa-staging-{short}.{extension}"));
             std::fs::rename(&source, &staged)
                 .or_else(|_| std::fs::copy(&source, &staged).map(|_| ()))
                 .map_err(|error| AppError::new("share_inbox_copy_failed", error.to_string()))?;
