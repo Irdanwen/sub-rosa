@@ -10,6 +10,8 @@ import { describe, expect, it } from "vitest";
  * question's content words, over the notes and the transcripts, best first,
  * with a substring fallback for a database without the index. This drives
  * the real module with the machine's python3 over a synthetic database.
+ * Plain JavaScript on purpose: the TypeScript project has no node types,
+ * and this is the one test that needs a child process.
  */
 
 const SCRIPT = `
@@ -41,7 +43,7 @@ out["recent"] = m.search_meeting_notes(db, {"query": ""})
 print(json.dumps(out))
 `;
 
-function runPython(): Record<string, { terms: string[]; items: Array<{ id: string }> }> | null {
+function runPython() {
   const dir = mkdtempSync(join(tmpdir(), "june-mcp-"));
   const script = join(dir, "drive.py");
   writeFileSync(script, SCRIPT);
@@ -55,7 +57,7 @@ function runPython(): Record<string, { terms: string[]; items: Array<{ id: strin
   } catch (error) {
     // No python3 on this machine, or one without FTS5: the Rust side of the
     // same retrieval is covered by its own tests; this one only runs where it can.
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    if (error && error.code === "ENOENT") return null;
     throw error;
   }
 }
