@@ -443,6 +443,23 @@ fn emit(app: &AppHandle, job: &MediaJobDto) {
 /// another app still reaches them. Best-effort — permission is asked for in the
 /// UI when the generation is queued, and a refusal is not an error here.
 fn notify(app: &AppHandle, job: &MediaJobDto, success: bool) {
+    // On the desktop the result is in the window; a notification is only
+    // worth its interruption when the window is not in front and the wait
+    // was long enough that the user plausibly went elsewhere.
+    #[cfg(desktop)]
+    {
+        let elapsed = chrono::DateTime::parse_from_rfc3339(&job.created_at)
+            .ok()
+            .map(|created| {
+                (chrono::Utc::now() - created.with_timezone(&chrono::Utc))
+                    .to_std()
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+        if !desktop_should_notify(crate::main_window_focus_state(app), elapsed) {
+            return;
+        }
+    }
     let title = if success {
         match job.kind.as_str() {
             "video" => "Your video is ready",
@@ -581,5 +598,30 @@ mod tests {
         let elapsed: Duration = (0..=FAST_POLL_ATTEMPTS).map(poll_delay).sum();
         assert!(elapsed >= Duration::from_secs(5), "{elapsed:?}");
         assert!(elapsed <= Duration::from_secs(10), "{elapsed:?}");
+    }
+}
+
+/// The desktop rule, as a function so a test can hold it: never while the
+/// window has focus (the result is on screen), and never for a wait shorter
+/// than the time it takes to switch to something else.
+pub fn desktop_should_notify(
+    main_window_focused: Option<bool>,
+    elapsed: std::time::Duration,
+) -> bool {
+    const LONG_ENOUGH: std::time::Duration = std::time::Duration::from_secs(120);
+    main_window_focused != Some(true) && elapsed >= LONG_ENOUGH
+}
+
+#[cfg(test)]
+mod desktop_notify_tests {
+    use super::desktop_should_notify;
+    use std::time::Duration;
+
+    #[test]
+    fn only_when_the_window_is_away_and_the_wait_was_long() {
+        assert!(desktop_should_notify(Some(false), Duration::from_secs(180)));
+        assert!(desktop_should_notify(None, Duration::from_secs(180)));
+        assert!(!desktop_should_notify(Some(true), Duration::from_secs(180)));
+        assert!(!desktop_should_notify(Some(false), Duration::from_secs(60)));
     }
 }

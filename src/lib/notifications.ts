@@ -12,18 +12,27 @@
 // iOS prompt appears in a moment that explains itself. The promise is memoised,
 // so at most one prompt is ever shown.
 //
-// Desktop is deliberately left alone: it has never prompted for notification
-// permission, and work finishing there is visible in the window anyway.
+// The desktop asks too, but only for the one kind of work that is long
+// enough to leave the window for: a Studio render or a workflow run. A chat
+// turn and a dictation finish in front of you there. Rust then posts the
+// notification only if the window is not in front and the wait was long
+// (`carpe_diem::jobs::desktop_should_notify`), so the prompt is asked at the
+// moment it explains itself and the notification arrives only when it helps.
 
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { isMobilePlatform } from "./mobile";
 
 let permissionRequest: Promise<boolean> | null = null;
 
+/** What the user just started; decides whether the desktop asks at all. */
+export type NotificationReason = "studio" | "dictation" | "chat";
+
 /** Ask for notification permission once, memoised. Call it when the user starts
  * something that can finish while they are in another app. */
-export function ensureNotificationPermission(): Promise<boolean> {
-  if (!isMobilePlatform()) return Promise.resolve(false);
+export function ensureNotificationPermission(
+  reason: NotificationReason = "chat",
+): Promise<boolean> {
+  if (!isMobilePlatform() && reason !== "studio") return Promise.resolve(false);
   permissionRequest ??= (async () => {
     let granted = await isPermissionGranted().catch(() => false);
     if (!granted) {

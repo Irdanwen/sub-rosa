@@ -115,7 +115,7 @@ export function DictationScreen() {
     // The transcription can outlive this screen: if the phone is locked before
     // it lands, Rust finishes it in the background and notifies. Ask for the
     // permission here, where the wait explains the prompt.
-    void ensureNotificationPermission();
+    void ensureNotificationPermission("dictation");
     try {
       const outcome = await mobileDictationStop({ style: styleRef.current });
       setResult(outcome);

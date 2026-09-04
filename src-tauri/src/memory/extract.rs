@@ -161,7 +161,7 @@ pub async fn extract_and_store(
     let existing = repos.top_memories(EXISTING_MEMORIES_IN_PROMPT).await?;
     let prompt = build_extraction_prompt(&window, &existing);
 
-    let response = june_api::proxy_agent_chat_completions(serde_json::json!({
+    let mut request = serde_json::json!({
         "messages": [
             { "role": "system", "content": EXTRACTION_SYSTEM_PROMPT },
             { "role": "user", "content": prompt }
@@ -170,8 +170,12 @@ pub async fn extract_and_store(
         // Sized for reasoning models: hidden thinking spends from the same
         // budget as the JSON answer.
         "max_tokens": 1500
-    }))
-    .await?;
+    });
+    // Without a model the proxy's default (the chat's) applies, as before.
+    if let Some(model) = extraction_model_for(&settings) {
+        request["model"] = serde_json::Value::String(model);
+    }
+    let response = june_api::proxy_agent_chat_completions(request).await?;
     if !(200..300).contains(&response.status) {
         return Err(AppError::new(
             "memory_extraction_failed",
@@ -359,5 +363,31 @@ mod tests {
         let prompt = build_extraction_prompt(&window, &existing);
         assert!(prompt.contains("(none yet)"));
         assert!(prompt.contains("User: Je préfère les réponses en français."));
+    }
+}
+
+/// The model the extraction runs on, if the user chose one; blank means the
+/// chat's own, which is the default the request already carries.
+pub fn extraction_model_for(settings: &super::MemorySettings) -> Option<String> {
+    settings
+        .extraction_model
+        .as_deref()
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+        .map(str::to_string)
+}
+
+#[cfg(test)]
+mod extraction_model_tests {
+    use super::extraction_model_for;
+
+    #[test]
+    fn a_chosen_model_is_used_and_a_blank_one_is_the_default() {
+        let mut settings = crate::memory::MemorySettings::default();
+        assert_eq!(extraction_model_for(&settings), None);
+        settings.extraction_model = Some("  ".into());
+        assert_eq!(extraction_model_for(&settings), None);
+        settings.extraction_model = Some("qwen3-4b".into());
+        assert_eq!(extraction_model_for(&settings).as_deref(), Some("qwen3-4b"));
     }
 }

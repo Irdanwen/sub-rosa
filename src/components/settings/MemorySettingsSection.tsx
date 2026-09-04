@@ -3,7 +3,7 @@ import { IconPencilLine } from "central-icons/IconPencilLine";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { IconTrashCanSimple } from "central-icons/IconTrashCanSimple";
 import type { FormEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   type MemoryDto,
   type MemorySettings,
@@ -13,6 +13,8 @@ import {
   memoryList,
   memorySetSettings,
   memoryUpdate,
+  listVeniceModels,
+  type VeniceModelDto,
 } from "../../lib/tauri";
 import { Dialog, DialogField } from "../ui/Dialog";
 import { Switch } from "../ui/Switch";
@@ -33,6 +35,24 @@ export function MemorySettingsSection() {
   const [error, setError] = useState<string>();
   const [saveError, setSaveError] = useState<string>();
   const [savingSettings, setSavingSettings] = useState(false);
+  const extractionModelId = useId();
+  const [extractionModels, setExtractionModels] = useState<VeniceModelDto[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    // The text models the note generator can use are the ones extraction
+    // can use; a catalog that cannot be read leaves only "same as the chat".
+    Promise.resolve()
+      .then(() => listVeniceModels("generation"))
+      .then((response) => {
+        if (!cancelled) setExtractionModels(response.models);
+      })
+      .catch(() => {
+        if (!cancelled) setExtractionModels([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [confirmingClear, setConfirmingClear] = useState(false);
 
   useEffect(() => {
@@ -174,6 +194,7 @@ export function MemorySettingsSection() {
                   void updateSettings({
                     enabled,
                     autoExtract: settings?.autoExtract ?? true,
+                    extractionModel: settings?.extractionModel,
                   })
                 }
                 aria-label="Use memory"
@@ -196,10 +217,44 @@ export function MemorySettingsSection() {
                   void updateSettings({
                     enabled: settings?.enabled ?? true,
                     autoExtract,
+                    extractionModel: settings?.extractionModel,
                   })
                 }
                 aria-label="Learn from conversations"
               />
+            </div>
+          </div>
+          <div className="settings-row">
+            <div className="settings-row-info">
+              <label htmlFor={extractionModelId} className="settings-row-title">
+                Extraction model
+              </label>
+              <p className="settings-row-description">
+                Extraction is a short classification task, not a conversation; a smaller model does
+                it for less. Leave it on the chat's model unless you have a reason.
+              </p>
+            </div>
+            <div className="settings-row-control">
+              <select
+                id={extractionModelId}
+                className="mcp-tools-select"
+                value={settings?.extractionModel ?? ""}
+                disabled={settings === null || savingSettings || settings?.enabled !== true}
+                onChange={(event) =>
+                  void updateSettings({
+                    enabled: settings?.enabled ?? true,
+                    autoExtract: settings?.autoExtract ?? true,
+                    extractionModel: event.target.value || undefined,
+                  })
+                }
+              >
+                <option value="">Same as the chat</option>
+                {extractionModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name || model.id}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         </div>

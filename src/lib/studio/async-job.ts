@@ -264,7 +264,7 @@ async function queueAndHandOff(options: StartJobOptions): Promise<MediaJob> {
   // generation that can take minutes, so a "when it's done" prompt reads
   // naturally here — and the notification is now what tells them it landed
   // while they were in another app.
-  void ensureNotificationPermission();
+  void ensureNotificationPermission("studio");
   return invoke<MediaJob>("media_job_start", {
     request: {
       queueId,

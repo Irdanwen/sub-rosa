@@ -36,11 +36,17 @@ static SETTINGS: OnceLock<Mutex<MemorySettings>> = OnceLock::new();
 
 /// Non-secret memory settings persisted to `memory.json`. Missing fields
 /// (older installs) default to on — memory is opt-out, like Venice's.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct MemorySettings {
     pub enabled: bool,
     pub auto_extract: bool,
+    /// The model the extraction prompt runs on. `None` means the chat's own
+    /// model, which is what it always was; a smaller one is cheaper and
+    /// extraction is a classification task, not a conversation (ADR-0009
+    /// called this "a later knob").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extraction_model: Option<String>,
 }
 
 impl Default for MemorySettings {
@@ -48,6 +54,7 @@ impl Default for MemorySettings {
         Self {
             enabled: true,
             auto_extract: true,
+            extraction_model: None,
         }
     }
 }
@@ -71,7 +78,10 @@ pub fn setup(app: &mut tauri::App) {
 /// Current settings snapshot, readable from any thread (the injection and
 /// extraction paths call this outside command context).
 pub fn settings() -> MemorySettings {
-    *mirror().lock().unwrap_or_else(|poison| poison.into_inner())
+    mirror()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .clone()
 }
 
 // --- Prompt injection --------------------------------------------------------
@@ -127,6 +137,8 @@ fn format_memory_block(memories: &[MemoryDto]) -> Option<String> {
 pub struct SetMemorySettingsRequest {
     pub enabled: bool,
     pub auto_extract: bool,
+    #[serde(default)]
+    pub extraction_model: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -171,9 +183,13 @@ pub fn memory_set_settings(
     let next = MemorySettings {
         enabled: request.enabled,
         auto_extract: request.auto_extract,
+        extraction_model: request
+            .extraction_model
+            .map(|model| model.trim().to_string())
+            .filter(|model| !model.is_empty()),
     };
     persist(&state.config_path, &next)?;
-    replace_mirror(next);
+    replace_mirror(next.clone());
     Ok(next)
 }
 

@@ -570,7 +570,7 @@ export function AgentSessionScreen({
       // A turn interrupted by a screen lock is finished by the background
       // sweep and announced with a notification, so ask for the permission the
       // first time the user actually sends something.
-      void ensureNotificationPermission();
+      void ensureNotificationPermission("chat");
       const finished = await agentLiteRun(
         current.id,
         turnModel || undefined,

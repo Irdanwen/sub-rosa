@@ -20,6 +20,12 @@ vi.mock("../lib/tauri", () => ({
   memoryDelete: mocks.memoryDelete,
   memoryClear: mocks.memoryClear,
   memorySetSettings: mocks.memorySetSettings,
+  listVeniceModels: vi.fn(async () => ({
+    mode: "generation",
+    modelType: "text",
+    selectedModel: "",
+    models: [{ id: "qwen3-4b", name: "Qwen 3 4B" }],
+  })),
 }));
 
 function memory(overrides: Partial<MemoryDto> = {}): MemoryDto {

@@ -342,7 +342,7 @@ function durableMediaRunner(
         throw new MediaError("The backend did not return a job id.", { status: 200 });
       }
       jobId = id;
-      void ensureNotificationPermission();
+      void ensureNotificationPermission("studio");
       await invoke("media_job_start", {
         request: {
           queueId: jobId,
