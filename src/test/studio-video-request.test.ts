@@ -239,7 +239,7 @@ describe("reference clips and audio (the seedance edit/extend/stitch inputs)", (
       referenceVideos: many,
     });
     // Seedance 2.0 takes three clips, not four.
-    expect((body?.reference_video_urls as string[]).length).toBe(3);
+    expect(body?.reference_video_urls).toHaveLength(3);
   });
 
   it("refuses to send audio as the only reference, which the contract forbids", () => {

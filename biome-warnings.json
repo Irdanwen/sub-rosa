@@ -6,7 +6,7 @@
   "lint/a11y/noNoninteractiveTabindex": 1,
   "lint/a11y/noRedundantRoles": 8,
   "lint/a11y/noStaticElementInteractions": 15,
-  "lint/a11y/noSvgWithoutTitle": 4,
+  "lint/a11y/noSvgWithoutTitle": 2,
   "lint/a11y/useAriaPropsForRole": 11,
   "lint/a11y/useAriaPropsSupportedByRole": 24,
   "lint/a11y/useFocusableInteractive": 11,
