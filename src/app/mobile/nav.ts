@@ -17,6 +17,7 @@ export type SettingsSection =
   | "privacy"
   | "archive"
   | "reports"
+  | "models"
   | "about";
 
 export type MobileRoute =

@@ -1,7 +1,15 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { diagnosticsReportText } from "../../../lib/diagnostics-report";
 import { messageFromError } from "../../../lib/errors";
-import { shareText } from "../../../lib/tauri";
+import { dispatchProviderModelSettingsChanged } from "../../../lib/model-privacy";
+import {
+  listVeniceModels,
+  type ProviderModelMode,
+  setVeniceModel,
+  shareText,
+  type VeniceModelDto,
+} from "../../../lib/tauri";
+import { ModelSheet } from "../ModelSheet";
 import { APP_COMMIT_HASH, APP_VERSION } from "../../../app/build-info";
 import { usePlatformCapabilities } from "../../../lib/platform-capabilities";
 import { PrivacySettingsSection } from "../../settings/PrivacySettingsSection";
@@ -107,6 +115,106 @@ export function ReportsScreen({ onBack }: { onBack: () => void }) {
           <p className="mobile-settings-note">Gathering the report…</p>
         )}
       </SettingsGroup>
+    </SectionScreen>
+  );
+}
+
+const MODEL_ROWS: Array<{ mode: ProviderModelMode; label: string; note: string }> = [
+  { mode: "generation", label: "Text", note: "Writes notes, answers, summaries." },
+  { mode: "transcription", label: "Transcription", note: "Turns recordings into text." },
+  { mode: "image", label: "Image", note: "Studio images and edits." },
+];
+
+/**
+ * The default model per kind of work, the same three the desktop's Models
+ * tab sets. A chat, a flow or a Studio panel can still pick its own; this
+ * is what they start from.
+ */
+export function ModelsScreen({ onBack }: { onBack: () => void }) {
+  const [catalog, setCatalog] = useState<
+    Partial<Record<ProviderModelMode, { selected: string; models: VeniceModelDto[] }>>
+  >({});
+  const [error, setError] = useState<string | null>(null);
+  const [picking, setPicking] = useState<ProviderModelMode | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    for (const row of MODEL_ROWS) {
+      listVeniceModels(row.mode)
+        .then((response) => {
+          if (cancelled) return;
+          setCatalog((current) => ({
+            ...current,
+            [row.mode]: { selected: response.selectedModel, models: response.models },
+          }));
+        })
+        .catch((err) => {
+          if (!cancelled) setError(messageFromError(err));
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function choose(mode: ProviderModelMode, modelId: string) {
+    setPicking(null);
+    try {
+      await setVeniceModel(mode, modelId);
+      setCatalog((current) => {
+        const entry = current[mode];
+        return entry ? { ...current, [mode]: { ...entry, selected: modelId } } : current;
+      });
+      dispatchProviderModelSettingsChanged({ mode, modelId });
+    } catch (err) {
+      setError(messageFromError(err));
+    }
+  }
+
+  const active = picking ? catalog[picking] : undefined;
+  return (
+    <SectionScreen title="Models" onBack={onBack}>
+      <SettingsGroup title="Default models">
+        <p className="mobile-settings-note">
+          What each kind of work starts with. A chat, a flow or a Studio panel can still pick its
+          own model for one run.
+        </p>
+        {error ? <p className="mobile-settings-error">{error}</p> : null}
+        {MODEL_ROWS.map((row) => {
+          const entry = catalog[row.mode];
+          const name =
+            entry?.models.find((model) => model.id === entry.selected)?.name ??
+            entry?.selected ??
+            "…";
+          return (
+            <SettingsRow key={row.mode} label={row.label} align="stack">
+              <button
+                type="button"
+                className="mobile-settings-button"
+                disabled={!entry}
+                onClick={() => setPicking(row.mode)}
+                aria-label={`${row.label} model: ${name}`}
+              >
+                {name}
+              </button>
+              <p className="mobile-settings-footnote">{row.note}</p>
+            </SettingsRow>
+          );
+        })}
+      </SettingsGroup>
+      {picking && active ? (
+        <ModelSheet
+          title={`${MODEL_ROWS.find((row) => row.mode === picking)?.label ?? ""} model`}
+          entries={active.models.map((model) => ({
+            id: model.id,
+            name: model.name,
+            subtitle: model.description,
+          }))}
+          selectedId={active.selected}
+          onSelect={(id) => void choose(picking, id)}
+          onClose={() => setPicking(null)}
+        />
+      ) : null}
     </SectionScreen>
   );
 }

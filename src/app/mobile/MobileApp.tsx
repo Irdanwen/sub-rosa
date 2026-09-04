@@ -23,6 +23,7 @@ import { MemoryScreen } from "../../components/mobile/screens/MemoryScreen";
 import {
   AboutScreen,
   ArchiveScreen,
+  ModelsScreen,
   PrivacyScreen,
   ReportsScreen,
 } from "../../components/mobile/screens/SectionScreen";
@@ -791,6 +792,8 @@ export function MobileApp() {
         <PrivacyScreen onBack={nav.pop} />
       ) : top.section === "archive" ? (
         <ArchiveScreen onBack={nav.pop} />
+      ) : top.section === "models" ? (
+        <ModelsScreen onBack={nav.pop} />
       ) : top.section === "reports" ? (
         <ReportsScreen onBack={nav.pop} />
       ) : top.section === "about" ? (
