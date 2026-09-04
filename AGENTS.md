@@ -393,8 +393,9 @@ runner-agnostic).
 - **Run the app:** `pnpm tauri:dev` (builds `src-tauri` and launches the native
   app; the first build is slow). `pnpm dev` runs the Vite frontend only.
 - **Frontend tests:** `pnpm test` (vitest; all suites live in `src/test/**`).
-  The runner can exit non-zero from `hud-meeting.test.ts` teardown noise despite
-  0 real failures — judge by the failure count. Composer/ProseMirror tests can
+  A green run exits zero: the `hud-meeting.test.ts` teardown noise that used
+  to fail a green run is fixed (the settle timer returns when there is no
+  window), so a non-zero exit is a real failure. Composer/ProseMirror tests can
   flake with a `localsInner` crash under machine load (a `@tiptap/pm` duplicate,
   not a regression).
 - **Rust tests:** `pnpm test:rust` (src-tauri) and `pnpm test:june-api` (the
