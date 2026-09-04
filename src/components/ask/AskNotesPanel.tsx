@@ -65,10 +65,13 @@ export function answerParts(
  */
 export function AskNotesPanel({
   question,
+  noteId,
   onOpenNote,
   onClose,
 }: {
   question: string;
+  /** "Ask this note": retrieval kept to one note. */
+  noteId?: string;
   onOpenNote: (noteId: string) => void;
   onClose: () => void;
 }) {
@@ -96,7 +99,7 @@ export function AskNotesPanel({
       if (cancelled || event.payload.requestId !== requestId) return;
       if (event.payload.phase === "delta") setPartial((text) => text + event.payload.text);
     });
-    askNotes(question, requestId)
+    askNotes(question, requestId, noteId)
       .then((answer) => {
         settled = true;
         if (!cancelled) setResult(answer);
@@ -112,7 +115,7 @@ export function AskNotesPanel({
       // about what left, and the panel is gone anyway.
       if (!settled) void askCancel(requestId).catch(() => undefined);
     };
-  }, [question]);
+  }, [question, noteId]);
 
   return (
     <section

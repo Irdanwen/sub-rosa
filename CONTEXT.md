@@ -905,8 +905,10 @@ _Avoid_: entitlement (that is the code-signing sense).
 **Ask (ask your notes)** — a question answered from the notes, with
 citations. The app picks the passages (FTS5), sends only those, and turns
 the `[n]` the model writes back into links to notes (ADR-0044). Offered
-from the ⌘K palette when the query reads as a question, and from the notes
-search on the phone.
+from the ⌘K palette when the query reads as a question, from the notes
+search on the phone, and from a note's header as **Ask this note**, where
+the retrieval is kept to that one note and several of its passages may
+answer.
 _Avoid:_ "chat with your notes" (that is the agent, which chooses its own
 reads); "RAG" in copy.
 

@@ -1,4 +1,5 @@
 import { IconArrowBoxRight } from "central-icons/IconArrowBoxRight";
+import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { IconTrashCan } from "central-icons/IconTrashCan";
 import { useState } from "react";
 import type {
@@ -14,6 +15,7 @@ import { shareText } from "../../../lib/tauri";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { Spinner } from "../../ui/Spinner";
 import { NoteEditor } from "../../note-editor/NoteEditor";
+import { AskNoteOverlay } from "../../ask/AskNoteOverlay";
 import { StackHeader } from "../StackHeader";
 
 type NoteDetailScreenProps = {
@@ -75,6 +77,8 @@ export function NoteDetailScreen({
   onTabChange,
 }: NoteDetailScreenProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // "Ask this note": a question answered from this note alone (ADR-0044).
+  const [asking, setAsking] = useState(false);
 
   return (
     <div className="mobile-screen-root mobile-note-detail">
@@ -84,6 +88,15 @@ export function NoteDetailScreen({
         backLabel="Notes"
         trailing={
           <>
+            <button
+              type="button"
+              className="mobile-icon-button"
+              aria-label="Ask this note"
+              disabled={!note}
+              onClick={() => setAsking(true)}
+            >
+              <IconSparkle3 size={18} />
+            </button>
             <button
               type="button"
               className="mobile-icon-button"
@@ -109,6 +122,14 @@ export function NoteDetailScreen({
           </>
         }
       />
+      {asking && note ? (
+        <AskNoteOverlay
+          noteId={note.id}
+          title={note.title}
+          onOpenNote={() => setAsking(false)}
+          onClose={() => setAsking(false)}
+        />
+      ) : null}
       <div className="mobile-note-detail-scroll">
         {note ? (
           <NoteEditor

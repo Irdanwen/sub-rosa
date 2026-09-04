@@ -24482,3 +24482,46 @@ input:focus-visible,
     animation: none;
   }
 }
+
+/* Ask this note: the question first, then the same answer panel. */
+.ask-prompt {
+  gap: 10px;
+}
+
+.ask-prompt-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 15px;
+}
+
+.ask-prompt-input:focus {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.ask-prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.ask-prompt-submit {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--foreground);
+  color: var(--background);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ask-prompt-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

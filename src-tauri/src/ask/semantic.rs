@@ -312,6 +312,7 @@ pub async fn semantic_passages(
     repos: &Repositories,
     question: &str,
     limit: usize,
+    note_id: Option<&str>,
 ) -> Result<Vec<NoteContextSnippet>, AppError> {
     if !settings().semantic {
         return Ok(Vec::new());
@@ -326,6 +327,7 @@ pub async fn semantic_passages(
     let stored = repos.passages_with_embeddings().await?;
     let mut scored: Vec<(f32, StoredPassage)> = stored
         .into_iter()
+        .filter(|passage| note_id.map_or(true, |id| passage.note_id == id))
         .filter_map(|passage| {
             let bytes = passage.embedding.as_deref()?;
             let score = cosine_similarity(&query_vector, &decode_embedding(bytes))?;
@@ -333,13 +335,13 @@ pub async fn semantic_passages(
         })
         .collect();
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    // One passage per note: the best one carries the note into the answer,
-    // the answer cites the note, and a second passage of the same note
-    // would only crowd out another note.
+    // Across notes, one passage per note: the best one carries the note
+    // into the answer, and a second would only crowd out another note.
+    // Within one note, the best passages of that note.
     let mut seen = std::collections::HashSet::new();
     let best: Vec<StoredPassage> = scored
         .into_iter()
-        .filter(|(_, passage)| seen.insert(passage.note_id.clone()))
+        .filter(|(_, passage)| note_id.is_some() || seen.insert(passage.note_id.clone()))
         .take(limit)
         .map(|(_, passage)| passage)
         .collect();
@@ -364,14 +366,34 @@ pub fn fuse(
     semantic: Vec<NoteContextSnippet>,
     limit: usize,
 ) -> Vec<NoteContextSnippet> {
+    fuse_by(lexical, semantic, limit, |a, b| a.note_id == b.note_id)
+}
+
+/// Fusion within one note: entries are the same when their text is, since
+/// every entry names the same note.
+pub fn fuse_within_note(
+    lexical: Vec<NoteContextSnippet>,
+    semantic: Vec<NoteContextSnippet>,
+    limit: usize,
+) -> Vec<NoteContextSnippet> {
+    fuse_by(lexical, semantic, limit, |a, b| {
+        a.snippet.trim() == b.snippet.trim()
+            || a.snippet.contains(b.snippet.trim())
+            || b.snippet.contains(a.snippet.trim())
+    })
+}
+
+fn fuse_by(
+    lexical: Vec<NoteContextSnippet>,
+    semantic: Vec<NoteContextSnippet>,
+    limit: usize,
+    same: impl Fn(&NoteContextSnippet, &NoteContextSnippet) -> bool,
+) -> Vec<NoteContextSnippet> {
     let mut scores: Vec<(f64, NoteContextSnippet)> = Vec::new();
     for list in [lexical, semantic] {
         for (rank, snippet) in list.into_iter().enumerate() {
             let score = 1.0 / (RRF_K + rank as f64 + 1.0);
-            if let Some(existing) = scores
-                .iter_mut()
-                .find(|(_, s)| s.note_id == snippet.note_id)
-            {
+            if let Some(existing) = scores.iter_mut().find(|(_, s)| same(s, &snippet)) {
                 existing.0 += score;
             } else {
                 scores.push((score, snippet));

@@ -63,6 +63,9 @@ pub struct AskNotesRequest {
     /// close can cancel the right run. Absent, the answer is not streamed.
     #[serde(default)]
     pub request_id: Option<String>,
+    /// "Ask this note": retrieval kept to one note, several passages of it.
+    #[serde(default)]
+    pub note_id: Option<String>,
 }
 
 /// The answers running right now, each with the handle that stops it. A
@@ -333,14 +336,27 @@ pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAn
     };
     let repos = crate::commands::repositories(&app).await?;
     let terms = content_terms(&question);
+    let scope = request
+        .note_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
     let lexical = match passages_match(&terms) {
-        Some(fts) => repos.retrieve_passages(&fts, &terms, PASSAGES).await?,
+        Some(fts) => {
+            repos
+                .retrieve_passages(&fts, &terms, PASSAGES, scope)
+                .await?
+        }
         None => Vec::new(),
     };
     // By meaning as well as by word (ADR-0046); empty when the setting is
     // off, the question cannot be embedded, or nothing is embedded yet.
-    let by_meaning = semantic::semantic_passages(&repos, &question, PASSAGES as usize).await?;
-    let snippets = semantic::fuse(lexical, by_meaning, PASSAGES as usize);
+    let by_meaning =
+        semantic::semantic_passages(&repos, &question, PASSAGES as usize, scope).await?;
+    let snippets = match scope {
+        Some(_) => semantic::fuse_within_note(lexical, by_meaning, PASSAGES as usize),
+        None => semantic::fuse(lexical, by_meaning, PASSAGES as usize),
+    };
     let sent: Vec<AskSource> = snippets
         .into_iter()
         .enumerate()
@@ -358,7 +374,10 @@ pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAn
         .collect();
     if sent.is_empty() {
         return Ok(AskAnswer {
-            answer: "Nothing in your notes mentions this.".to_string(),
+            answer: match scope {
+                Some(_) => "Nothing in this note mentions this.".to_string(),
+                None => "Nothing in your notes mentions this.".to_string(),
+            },
             citations: Vec::new(),
             sent,
             invented: Vec::new(),
@@ -369,10 +388,11 @@ pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAn
     let user = build_user_prompt(&question, &sent);
     // The ledger row says "ask", and names the note when every passage came
     // from the same one; the panel's "What was sent" list is the full truth.
-    let single_note = sent
-        .iter()
-        .all(|source| source.note_id == sent[0].note_id)
-        .then(|| sent[0].note_id.clone());
+    let single_note = scope.map(str::to_string).or_else(|| {
+        sent.iter()
+            .all(|source| source.note_id == sent[0].note_id)
+            .then(|| sent[0].note_id.clone())
+    });
     let streamed = claim.is_some();
     let answer = crate::egress_ledger::scoped("ask", single_note, async {
         let response = june_api::proxy_agent_chat_completions(serde_json::json!({

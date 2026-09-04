@@ -233,20 +233,26 @@ impl Repositories {
         fts: &str,
         terms: &[String],
         limit: i64,
+        note_id: Option<&str>,
     ) -> Result<Vec<NoteContextSnippet>, sqlx::error::Error> {
         let limit = limit.clamp(1, 20);
+        // A scope of one note ("Ask this note"): the same ranking, kept to
+        // that note's rows. An empty scope string matches nothing, so the
+        // filter is an equality with a bound value or no filter at all.
+        let scope = note_id.unwrap_or("");
         let rows = query(
             "SELECT n.id AS id, n.title AS title,
                     COALESCE(n.edited_content, n.generated_content, '') AS content,
                     n.updated_at AS updated_at
              FROM notes_fts f
              JOIN notes n ON n.id = f.note_id
-             WHERE notes_fts MATCH ?1
+             WHERE notes_fts MATCH ?1 AND (?3 = '' OR f.note_id = ?3)
              ORDER BY bm25(notes_fts, 0.0, 2.0, 1.0)
              LIMIT ?2",
         )
         .bind(fts)
         .bind(limit)
+        .bind(scope)
         .fetch_all(&self.pool)
         .await?;
         let mut passages: Vec<NoteContextSnippet> = rows
@@ -273,25 +279,35 @@ impl Repositories {
              FROM transcripts_fts f
              JOIN transcripts t ON t.rowid = f.rowid
              JOIN notes n ON n.id = f.note_id
-             WHERE transcripts_fts MATCH ?1
+             WHERE transcripts_fts MATCH ?1 AND (?3 = '' OR f.note_id = ?3)
              ORDER BY bm25(transcripts_fts)
              LIMIT ?2",
         )
         .bind(fts)
         .bind(remaining * 4)
+        .bind(scope)
         .fetch_all(&self.pool)
         .await?;
-        let mut seen: std::collections::HashSet<String> =
-            passages.iter().map(|p| p.note_id.clone()).collect();
+        // Within one note, several transcript passages may answer; across
+        // notes, one per note keeps the other notes in the answer.
+        let mut seen: std::collections::HashSet<String> = if note_id.is_some() {
+            std::collections::HashSet::new()
+        } else {
+            passages.iter().map(|p| p.note_id.clone()).collect()
+        };
         for row in rows {
             if passages.len() as i64 >= limit {
                 break;
             }
             let note_id: String = row.get("note_id");
-            if !seen.insert(note_id.clone()) {
+            let turn_index: Option<i64> = row.get("turn_index");
+            let key = match scope.is_empty() {
+                true => note_id.clone(),
+                false => format!("{note_id}:{}", turn_index.unwrap_or(-1) / 5),
+            };
+            if !seen.insert(key) {
                 continue;
             }
-            let turn_index: Option<i64> = row.get("turn_index");
             let text = match turn_index {
                 Some(index) => {
                     let turns = query(

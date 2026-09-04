@@ -831,6 +831,14 @@ liste exacte des passages envoyés sous la réponse
   `ask_cancel(requestId)` arrête le flux (registre `RUNNING` + `Notify`,
   même forme que `note_ai`). Le panneau ferme = annulation.
 
+### Portée à une note (2026-09-04)
+
+- `AskNotesRequest.note_id` : « Ask this note » depuis l'en-tête de la note
+  (`NoteEditor.onAskNote`, `AskNoteOverlay` qui demande la question puis
+  montre le même panneau). Côté Rust, `retrieve_passages(..., note_id)` et
+  `semantic_passages(..., note_id)` filtrent, et `fuse_within_note` fusionne
+  par texte plutôt que par note (plusieurs passages d'une même note).
+
 ### Pièges
 
 - Le modèle ne choisit jamais les passages ni ne donne de timestamp : il

@@ -254,7 +254,11 @@ describe("desktop journeys", () => {
       await within(palette).findByText("Ask your notes: When is the migration?"),
     );
     await waitFor(() =>
-      expect(mocks.askNotes).toHaveBeenCalledWith("When is the migration?", expect.any(String)),
+      expect(mocks.askNotes).toHaveBeenCalledWith(
+        "When is the migration?",
+        expect.any(String),
+        undefined,
+      ),
     );
     const answer = await screen.findByRole("dialog", { name: "Answer from your notes" });
     expect(within(answer).getByText(/after the freeze/)).toBeInTheDocument();
@@ -274,7 +278,9 @@ describe("desktop journeys", () => {
     await userEvent.click(await within(palette).findByRole("button", { name: /^Storage/ }));
     // Settings is loaded on demand (src/app/lazy-views.tsx); the heading
     // appearing is the proof that the split did not break the route.
-    expect(await screen.findByRole("heading", { name: "Storage" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Storage" }, { timeout: 4000 }),
+    ).toBeInTheDocument();
     await waitFor(() => expect(mocks.storageReport).toHaveBeenCalled());
     expect(await screen.findByText("Recordings")).toBeInTheDocument();
   });

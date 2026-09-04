@@ -8,6 +8,7 @@ import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
 import { IconArrowDownWall } from "central-icons/IconArrowDownWall";
 import { IconMarkdown } from "central-icons/IconMarkdown";
 import { IconBookSimple } from "central-icons/IconBookSimple";
+import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { IconProjects } from "central-icons/IconProjects";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconMicrophoneOff } from "central-icons/IconMicrophoneOff";
@@ -60,6 +61,8 @@ type NoteEditorProps = {
   onExportPdf?: () => void;
   /** Save the note as a Markdown file (desktop; the phone shares instead). */
   onExportMarkdown?: () => void;
+  /** "Ask this note": a question answered from this note alone, cited. */
+  onAskNote?: () => void;
   onContentChange: (noteId: string, content: string) => void;
   onSourceModeChange: (mode: RecordingSourceMode) => void;
   onEnableSystemAudio: () => void;
@@ -150,6 +153,7 @@ export function NoteEditor({
   onTitleChange,
   onExportPdf,
   onExportMarkdown,
+  onAskNote,
   onContentChange,
   onSourceModeChange,
   onEnableSystemAudio,
@@ -472,6 +476,17 @@ export function NoteEditor({
             title="Export as PDF"
           >
             <IconArrowDownWall aria-hidden="true" />
+          </button>
+        ) : null}
+        {onAskNote ? (
+          <button
+            type="button"
+            className="note-header-actions note-ask"
+            onClick={onAskNote}
+            aria-label="Ask this note"
+            title="Ask this note"
+          >
+            <IconSparkle3 aria-hidden="true" />
           </button>
         ) : null}
         {onExportMarkdown ? (

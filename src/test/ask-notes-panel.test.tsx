@@ -68,7 +68,7 @@ describe("AskNotesPanel", () => {
     const view = render(
       <AskNotesPanel question="Where is it?" onOpenNote={() => {}} onClose={() => {}} />,
     );
-    expect(mocks.askNotes).toHaveBeenCalledWith("Where is it?", expect.any(String));
+    expect(mocks.askNotes).toHaveBeenCalledWith("Where is it?", expect.any(String), undefined);
     const requestId = mocks.askNotes.mock.calls[0][1] as string;
     await waitFor(() => expect(mocks.listeners.has("june://ask")).toBe(true));
     act(() => {
@@ -113,7 +113,11 @@ describe("AskNotesPanel", () => {
     );
     expect(screen.getByRole("status")).toHaveTextContent("Reading your notes");
     expect(await screen.findByText(/The migration is on Monday/)).toBeInTheDocument();
-    expect(mocks.askNotes).toHaveBeenCalledWith("When is the migration?", expect.any(String));
+    expect(mocks.askNotes).toHaveBeenCalledWith(
+      "When is the migration?",
+      expect.any(String),
+      undefined,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: /Budget review/ }));
     expect(onOpenNote).toHaveBeenCalledWith("n2");

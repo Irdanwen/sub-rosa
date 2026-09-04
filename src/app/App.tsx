@@ -56,6 +56,7 @@ import { Sidebar, type SidebarView } from "../components/sidebar/Sidebar";
 import { TabBar, type TabItem } from "../components/tabs/TabBar";
 import { defaultNav, makeTabId, navEquals, type Tab, type TabNav } from "./tabs/tabs";
 import { agentSessionTabTitle, tabMeta } from "./tab-meta";
+import { AskNoteOverlay } from "../components/ask/AskNoteOverlay";
 import { exportNoteMarkdown } from "../lib/note-export";
 import { BreadcrumbBar } from "../components/ui/BreadcrumbBar";
 import { Dialog } from "../components/ui/Dialog";
@@ -338,6 +339,8 @@ export function App() {
   const [microphoneStatus, setMicrophoneStatus] = useState<string>();
   const [readyUpdate, setReadyUpdate] = useState<UpdatePromptPayload<JuneUpdate> | null>(null);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+  // "Ask this note": the note whose header asked, until the overlay closes.
+  const [askNoteId, setAskNoteId] = useState<string | null>(null);
   const [preparingUpdate, setPreparingUpdate] = useState(false);
   const [relaunchingUpdate, setRelaunchingUpdate] = useState(false);
   const [updateProgress, setUpdateProgress] = useState<UpdateInstallProgress | null>(null);
@@ -3293,6 +3296,7 @@ export function App() {
                       onTitleChange={(title) => void handleUpdateNote({ title })}
                       onExportPdf={() => exportNoteAsPdf(selectedNote.title)}
                       onExportMarkdown={() => void exportNoteMarkdown(selectedNote.id)}
+                      onAskNote={() => setAskNoteId(selectedNote.id)}
                       onContentChange={(sourceNoteId, editedContent) => {
                         // Blur fired by an editor that was already torn
                         // down on note-switch — ignore so we don't write
@@ -3395,6 +3399,17 @@ export function App() {
           </AnimatePresence>
         </section>
       </div>
+      {askNoteId ? (
+        <AskNoteOverlay
+          noteId={askNoteId}
+          title={state.notes.find((note) => note.id === askNoteId)?.title ?? ""}
+          onOpenNote={(noteId) => {
+            setAskNoteId(null);
+            void handleSelectNote(noteId);
+          }}
+          onClose={() => setAskNoteId(null)}
+        />
+      ) : null}
       <Dialog
         open={recordingInactivityPrompt !== null}
         onClose={handleKeepRecordingAfterInactivityPrompt}

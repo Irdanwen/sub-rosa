@@ -107,7 +107,7 @@ async fn a_missing_note_cuts_nothing_and_fusion_keeps_the_lexical_order_when_alo
     let repos = repos().await;
     assert_eq!(refresh_note(&repos, "ghost").await.unwrap(), None);
     let lexical = repos
-        .retrieve_passages("\"nothing\"", &["nothing".to_string()], 8)
+        .retrieve_passages("\"nothing\"", &["nothing".to_string()], 8, None)
         .await
         .unwrap();
     assert!(lexical.is_empty());
