@@ -26,11 +26,20 @@
 
 pub mod semantic;
 
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, MutexGuard};
+
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
+use tokio::sync::Notify;
 
 use crate::domain::types::AppError;
 use crate::june_api;
+
+/// Deltas of an answer on the way, so the panel shows words as they come:
+/// `{ requestId, phase: "delta", text }`. The whole answer, with its
+/// citations resolved, is the command's return value, never an event.
+pub const ASK_EVENT: &str = "june://ask";
 
 pub const ASK_PROMPT_VERSION: u32 = 1;
 /// Passages handed to the model. Eight is what fits a short answer's
@@ -50,6 +59,132 @@ Never invent a passage number. Do not mention that you were given passages.";
 #[serde(rename_all = "camelCase")]
 pub struct AskNotesRequest {
     pub question: String,
+    /// Chosen by the caller, so deltas reach the panel that asked and a
+    /// close can cancel the right run. Absent, the answer is not streamed.
+    #[serde(default)]
+    pub request_id: Option<String>,
+}
+
+/// The answers running right now, each with the handle that stops it. A
+/// `Notify` the loop selects on, so closing the panel lands mid-chunk
+/// (the same shape as the rewrite panel's registry, for the same reason).
+static RUNNING: std::sync::LazyLock<Mutex<HashMap<String, Arc<Notify>>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn running() -> MutexGuard<'static, HashMap<String, Arc<Notify>>> {
+    RUNNING.lock().unwrap_or_else(|poison| poison.into_inner())
+}
+
+struct AskClaim {
+    request_id: String,
+    stop: Arc<Notify>,
+}
+
+impl AskClaim {
+    fn take(request_id: &str) -> Option<Self> {
+        let stop = Arc::new(Notify::new());
+        let mut running = running();
+        if running.contains_key(request_id) {
+            return None;
+        }
+        running.insert(request_id.to_string(), Arc::clone(&stop));
+        Some(Self {
+            request_id: request_id.to_string(),
+            stop,
+        })
+    }
+}
+
+impl Drop for AskClaim {
+    fn drop(&mut self) {
+        running().remove(&self.request_id);
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AskCancelRequest {
+    pub request_id: String,
+}
+
+/// Stop an answer on the way. Closing the panel calls this; a request that
+/// already finished is not an error.
+#[tauri::command]
+pub async fn ask_cancel(request: AskCancelRequest) -> Result<(), AppError> {
+    if let Some(stop) = running().get(&request.request_id) {
+        stop.notify_one();
+    }
+    Ok(())
+}
+
+fn emit_delta(app: &AppHandle, request_id: &str, text: &str) {
+    let _ = app.emit(
+        ASK_EVENT,
+        serde_json::json!({ "requestId": request_id, "phase": "delta", "text": text }),
+    );
+}
+
+/// Read a streamed completion, emitting each delta, until the stream ends
+/// or the claim is stopped. A route that ignored `stream` answers with
+/// ordinary JSON, and that is read whole.
+async fn collect_answer(
+    app: &AppHandle,
+    mut response: june_api::AgentChatCompletionsResponse,
+    claim: Option<&AskClaim>,
+) -> Result<String, AppError> {
+    if !response.content_type.contains("event-stream") {
+        let body = response.collect_body().await?;
+        let value: serde_json::Value = serde_json::from_slice(&body)
+            .map_err(|error| AppError::new("ask_failed", error.to_string()))?;
+        return Ok(june_api::extract_chat_completion_text(&value).unwrap_or_default());
+    }
+    let mut collected = String::new();
+    let mut buffer = String::new();
+    let stop = claim.map(|claim| Arc::clone(&claim.stop));
+    loop {
+        let chunk = match &stop {
+            Some(stop) => {
+                let stopped = stop.notified();
+                tokio::pin!(stopped);
+                tokio::select! {
+                    // Cancelling wins the race even mid-chunk; dropping the
+                    // response closes the connection so the upstream stops.
+                    _ = &mut stopped => {
+                        return Err(AppError::new("ask_cancelled", "Stopped."));
+                    }
+                    chunk = response.chunk() => chunk?,
+                }
+            }
+            None => response.chunk().await?,
+        };
+        let Some(chunk) = chunk else { break };
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        let before = collected.len();
+        while let Some(newline) = buffer.find('\n') {
+            let line = buffer[..newline].trim().to_string();
+            buffer.drain(..newline + 1);
+            let Some(data) = line.strip_prefix("data:") else {
+                continue;
+            };
+            let data = data.trim();
+            if data.is_empty() || data == "[DONE]" {
+                continue;
+            }
+            let Ok(frame) = serde_json::from_str::<serde_json::Value>(data) else {
+                continue;
+            };
+            if let Some(delta) = frame
+                .pointer("/choices/0/delta/content")
+                .and_then(|v| v.as_str())
+            {
+                collected.push_str(delta);
+            }
+        }
+        if let (Some(claim), true) = (claim, collected.len() > before) {
+            emit_delta(app, &claim.request_id, &collected[before..]);
+        }
+    }
+    Ok(collected)
 }
 
 /// A passage that was sent, and can be cited.
@@ -187,6 +322,15 @@ pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAn
     if question.is_empty() {
         return Err(AppError::new("ask_empty", "Ask something first."));
     }
+    let claim = match request.request_id.as_deref() {
+        Some(id) => Some(AskClaim::take(id).ok_or_else(|| {
+            AppError::new(
+                "ask_already_running",
+                "That question is already being answered.",
+            )
+        })?),
+        None => None,
+    };
     let repos = crate::commands::repositories(&app).await?;
     let terms = content_terms(&question);
     let lexical = match passages_match(&terms) {
@@ -229,7 +373,8 @@ pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAn
         .iter()
         .all(|source| source.note_id == sent[0].note_id)
         .then(|| sent[0].note_id.clone());
-    let body = crate::egress_ledger::scoped("ask", single_note, async {
+    let streamed = claim.is_some();
+    let answer = crate::egress_ledger::scoped("ask", single_note, async {
         let response = june_api::proxy_agent_chat_completions(serde_json::json!({
             "model": crate::providers::generation_model(),
             "messages": [
@@ -237,7 +382,8 @@ pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAn
                 { "role": "user", "content": user }
             ],
             "temperature": TEMPERATURE,
-            "max_tokens": MAX_TOKENS
+            "max_tokens": MAX_TOKENS,
+            "stream": streamed
         }))
         .await?;
         if !(200..300).contains(&response.status) {
@@ -246,15 +392,10 @@ pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAn
                 format!("The model returned status {}.", response.status),
             ));
         }
-        response.collect_body().await
+        collect_answer(&app, response, claim.as_ref()).await
     })
     .await?;
-    let value: serde_json::Value = serde_json::from_slice(&body)
-        .map_err(|error| AppError::new("ask_failed", error.to_string()))?;
-    let answer = june_api::extract_chat_completion_text(&value)
-        .unwrap_or_default()
-        .trim()
-        .to_string();
+    let answer = answer.trim().to_string();
     if answer.is_empty() {
         return Err(AppError::new("ask_failed", "The model returned no answer."));
     }

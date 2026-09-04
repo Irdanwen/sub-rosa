@@ -41,7 +41,11 @@ vi.mock("../lib/recording-sounds", () => ({
   playRecordingSound: vi.fn(),
   preloadRecordingSounds: vi.fn(),
 }));
-vi.mock("../lib/ask", () => ({ askNotes: mocks.askNotes }));
+vi.mock("../lib/ask", () => ({
+  ASK_EVENT: "june://ask",
+  askNotes: mocks.askNotes,
+  askCancel: vi.fn(async () => undefined),
+}));
 
 vi.mock("../lib/tauri", async () => {
   // Imported here rather than at the top: the factory is hoisted above every
@@ -249,7 +253,9 @@ describe("desktop journeys", () => {
     await userEvent.click(
       await within(palette).findByText("Ask your notes: When is the migration?"),
     );
-    await waitFor(() => expect(mocks.askNotes).toHaveBeenCalledWith("When is the migration?"));
+    await waitFor(() =>
+      expect(mocks.askNotes).toHaveBeenCalledWith("When is the migration?", expect.any(String)),
+    );
     const answer = await screen.findByRole("dialog", { name: "Answer from your notes" });
     expect(within(answer).getByText(/after the freeze/)).toBeInTheDocument();
     await userEvent.click(within(answer).getByRole("button", { name: /Infra sync/ }));

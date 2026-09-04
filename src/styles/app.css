@@ -24456,3 +24456,29 @@ input:focus-visible,
   font-size: 11.5px;
   line-height: 1.45;
 }
+
+.ask-panel-streaming {
+  white-space: pre-wrap;
+}
+
+.ask-panel-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -2px;
+  background: var(--foreground);
+  animation: ask-cursor 1s steps(2, start) infinite;
+}
+
+@keyframes ask-cursor {
+  to {
+    visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-panel-cursor {
+    animation: none;
+  }
+}

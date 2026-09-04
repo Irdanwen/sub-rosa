@@ -823,6 +823,14 @@ liste exacte des passages envoyés sous la réponse
   (`.mobile-ask*`), `src/components/mobile/screens/NotesScreen.tsx`
   (bouton « Ask your notes »).
 
+### Streaming (2026-09-04)
+
+- `ask_notes` accepte un `requestId` optionnel : avec, la réponse arrive en
+  deltas sur l'événement `june://ask` (`{ requestId, phase: "delta", text }`)
+  et la valeur de retour reste la réponse entière avec ses citations ;
+  `ask_cancel(requestId)` arrête le flux (registre `RUNNING` + `Notify`,
+  même forme que `note_ai`). Le panneau ferme = annulation.
+
 ### Pièges
 
 - Le modèle ne choisit jamais les passages ni ne donne de timestamp : il

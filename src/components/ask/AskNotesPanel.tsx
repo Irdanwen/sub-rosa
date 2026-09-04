@@ -3,7 +3,14 @@ import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { messageFromError } from "../../lib/errors";
-import { type AskAnswerDto, askNotes } from "../../lib/ask";
+import { listen } from "@tauri-apps/api/event";
+import {
+  ASK_EVENT,
+  type AskAnswerDto,
+  type AskDeltaEvent,
+  askCancel,
+  askNotes,
+} from "../../lib/ask";
 import { useModalFocus } from "../../lib/modal-focus";
 
 /**
@@ -18,6 +25,13 @@ export function looksLikeAQuestion(query: string) {
   return /^(what|why|who|when|where|how|which|did|does|is|are|quand|pourquoi|qui|comment|combien|où|quel|quelle|quels|quelles|est-ce)\b/i.test(
     trimmed,
   );
+}
+
+/** A request id the deltas and the cancel are keyed on. */
+function newRequestId() {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `ask-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 /**
@@ -61,6 +75,8 @@ export function AskNotesPanel({
   const [result, setResult] = useState<AskAnswerDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSent, setShowSent] = useState(false);
+  // The words as they arrive, shown until the whole answer replaces them.
+  const [partial, setPartial] = useState("");
   const panelRef = useRef<HTMLElement>(null);
   // Focus in, Escape closes, focus back (spec/modal-focus.md). The panel
   // itself takes focus first so a screen reader lands on the question.
@@ -68,17 +84,33 @@ export function AskNotesPanel({
 
   useEffect(() => {
     let cancelled = false;
+    let settled = false;
+    const requestId = newRequestId();
     setResult(null);
     setError(null);
-    askNotes(question)
+    setPartial("");
+    // Subscribed before the question goes out, so the first delta cannot
+    // slip past; a listener that is not ready in time just misses words the
+    // final answer carries anyway.
+    const unlisten = listen<AskDeltaEvent>(ASK_EVENT, (event) => {
+      if (cancelled || event.payload.requestId !== requestId) return;
+      if (event.payload.phase === "delta") setPartial((text) => text + event.payload.text);
+    });
+    askNotes(question, requestId)
       .then((answer) => {
+        settled = true;
         if (!cancelled) setResult(answer);
       })
       .catch((err) => {
+        settled = true;
         if (!cancelled) setError(messageFromError(err));
       });
     return () => {
       cancelled = true;
+      void unlisten.then((stop) => stop());
+      // Closing mid-answer stops the model; the ledger row stays honest
+      // about what left, and the panel is gone anyway.
+      if (!settled) void askCancel(requestId).catch(() => undefined);
     };
   }, [question]);
 
@@ -159,6 +191,11 @@ export function AskNotesPanel({
             </ol>
           ) : null}
         </>
+      ) : partial ? (
+        <p className="ask-panel-answer ask-panel-streaming" role="status" aria-live="polite">
+          {partial}
+          <span className="ask-panel-cursor" aria-hidden />
+        </p>
       ) : (
         <p className="ask-panel-answer ask-panel-pending" role="status">
           Reading your notes…

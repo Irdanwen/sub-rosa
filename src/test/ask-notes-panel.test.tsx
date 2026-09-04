@@ -1,10 +1,25 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AskNotesPanel, answerParts, looksLikeAQuestion } from "../components/ask/AskNotesPanel";
 
-const mocks = vi.hoisted(() => ({ askNotes: vi.fn() }));
+type Listener = (event: { payload: unknown }) => void;
 
-vi.mock("../lib/ask", () => ({ askNotes: mocks.askNotes }));
+const mocks = vi.hoisted(() => ({
+  askNotes: vi.fn(),
+  askCancel: vi.fn(async () => undefined),
+  listeners: new Map<string, Listener>(),
+  listen: vi.fn((event: string, listener: Listener) => {
+    mocks.listeners.set(event, listener);
+    return Promise.resolve(() => mocks.listeners.delete(event));
+  }),
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
+vi.mock("../lib/ask", () => ({
+  ASK_EVENT: "june://ask",
+  askNotes: mocks.askNotes,
+  askCancel: mocks.askCancel,
+}));
 
 describe("looksLikeAQuestion", () => {
   it("takes a trailing question mark, or a leading interrogative in either language", () => {
@@ -38,6 +53,39 @@ describe("answerParts", () => {
 describe("AskNotesPanel", () => {
   beforeEach(() => {
     mocks.askNotes.mockReset();
+    mocks.askCancel.mockClear();
+    mocks.listeners.clear();
+  });
+
+  it("shows the words as they arrive, and stops the answer when closed early", async () => {
+    let finish: (answer: unknown) => void = () => {};
+    mocks.askNotes.mockImplementation(
+      (_question: string, _requestId: string) =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const view = render(
+      <AskNotesPanel question="Where is it?" onOpenNote={() => {}} onClose={() => {}} />,
+    );
+    expect(mocks.askNotes).toHaveBeenCalledWith("Where is it?", expect.any(String));
+    const requestId = mocks.askNotes.mock.calls[0][1] as string;
+    await waitFor(() => expect(mocks.listeners.has("june://ask")).toBe(true));
+    act(() => {
+      mocks.listeners.get("june://ask")?.({
+        payload: { requestId, phase: "delta", text: "In the " },
+      });
+      mocks.listeners.get("june://ask")?.({
+        payload: { requestId: "someone-else", phase: "delta", text: "NOPE" },
+      });
+      mocks.listeners.get("june://ask")?.({
+        payload: { requestId, phase: "delta", text: "attic" },
+      });
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("In the attic");
+    view.unmount();
+    expect(mocks.askCancel).toHaveBeenCalledWith(requestId);
+    finish(null);
   });
 
   it("shows the answer, links citations to notes, and lists what was sent", async () => {
@@ -65,7 +113,7 @@ describe("AskNotesPanel", () => {
     );
     expect(screen.getByRole("status")).toHaveTextContent("Reading your notes");
     expect(await screen.findByText(/The migration is on Monday/)).toBeInTheDocument();
-    expect(mocks.askNotes).toHaveBeenCalledWith("When is the migration?");
+    expect(mocks.askNotes).toHaveBeenCalledWith("When is the migration?", expect.any(String));
 
     fireEvent.click(screen.getByRole("button", { name: /Budget review/ }));
     expect(onOpenNote).toHaveBeenCalledWith("n2");
