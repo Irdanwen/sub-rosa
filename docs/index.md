@@ -58,6 +58,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0045-image-generation-and-editing-tools.md](adr/0045-image-generation-and-editing-tools.md) — image generation and editing: a fast path plus model tools (filed as 0003 in the fork, renumbered on 2026-09-04 because upstream's 0003 is the release-candidate channel)
 - [adr/0046-semantic-retrieval-embeds-passages-and-is-a-setting.md](adr/0046-semantic-retrieval-embeds-passages-and-is-a-setting.md) — "Ask your notes" finds meaning as well as words: notes cut into passages, BGE-M3 vectors filled in the background (rows first, ADR 0018), reciprocal rank fusion with the lexical half; a Privacy setting, on by default, off forgets the vectors; every call in the ledger
 - [adr/0047-copy-is-keyed-by-its-english-sentence.md](adr/0047-copy-is-keyed-by-its-english-sentence.md) — the app in the person's language: the English sentence is the key, `fr.json` is complete or the test is red, backend messages go through the same door, the language is a device choice applied before the first render
+- [adr/0048-the-share-sheet-drops-into-an-inbox-the-app-reads.md](adr/0048-the-share-sheet-drops-into-an-inbox-the-app-reads.md) — the iOS share extension writes a manifest (link, file or text) into the app group inbox and opens `subrosa://share/<id>`; the app validates it and uses the import rails it already has; two profiles and one group, with the App Store Connect steps in HANDOFF.md
 
 ## Enforceable rules (spec/)
 

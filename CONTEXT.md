@@ -933,6 +933,14 @@ An index that was never sent is *invented*, and the answer says so rather
 than hiding it.
 _Avoid:_ "reference", "footnote".
 
+### Sharing in (fork)
+
+**Share inbox** — the folder in the app group container where the iOS
+share extension leaves a manifest (a link, a file or a text) for the app
+to act on once, through `subrosa://share/<id>` (ADR-0048). Not a queue the
+app polls, not storage: consumed on open, deleted after.
+_Avoid:_ "shared folder" (nothing is shared with anyone), "import queue".
+
 ### The app in your language (fork)
 
 **Sentence (copy)** — a thing a person can read on screen, written in

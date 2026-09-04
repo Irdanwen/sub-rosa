@@ -43,6 +43,9 @@ fn platform_specific(name: &str) -> bool {
         "agent_lite::",
         "photos_ios::",
         "share_ios::",
+        // The share sheet's inbox (ADR-0048): only the phone has a share
+        // extension to fill it.
+        "share_inbox::",
         "keyboard_ios::",
         "ios_background::",
     ];

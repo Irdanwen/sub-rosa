@@ -102,9 +102,16 @@ jobs:
           IOS_DIST_CERT_P12: ${{ secrets.IOS_DIST_CERT_P12 }}
           IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
           IOS_PROVISION_PROFILE: ${{ secrets.IOS_PROVISION_PROFILE }}
+          IOS_SHARE_PROVISION_PROFILE: ${{ secrets.IOS_SHARE_PROVISION_PROFILE }}
         run: |
           if [ -z "${IOS_DIST_CERT_P12:-}" ] || [ -z "${IOS_PROVISION_PROFILE:-}" ]; then
             echo "Missing IOS_DIST_CERT_P12 / IOS_PROVISION_PROFILE secrets." >&2; exit 1
+          fi
+          # The share extension (ADR-0048) is its own bundle and needs its own
+          # App Store profile, with the app group on it. HANDOFF.md says how to
+          # make one; without it the export below cannot sign the extension.
+          if [ -z "${IOS_SHARE_PROVISION_PROFILE:-}" ]; then
+            echo "Missing IOS_SHARE_PROVISION_PROFILE (the share extension's profile, see HANDOFF.md)." >&2; exit 1
           fi
           KC="$RUNNER_TEMP/sr-ios-sign.keychain-db"
           KCPASS=$(openssl rand -base64 24)
@@ -122,6 +129,7 @@ jobs:
           PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
           mkdir -p "$PROFILES_DIR"
           printf '%s' "$IOS_PROVISION_PROFILE" | base64 --decode > "$PROFILES_DIR/subrosa-appstore.mobileprovision"
+          printf '%s' "$IOS_SHARE_PROVISION_PROFILE" | base64 --decode > "$PROFILES_DIR/subrosa-share-appstore.mobileprovision"
 
       # Archive through the Tauri CLI (not a raw `xcodebuild archive`): the Xcode
       # "Build Rust Code" phase runs `tauri ios xcode-script`, which needs the
@@ -172,6 +180,8 @@ jobs:
             <dict>
               <key>xyz.carpediem.subrosa</key>
               <string>Sub Rosa App Store</string>
+              <key>xyz.carpediem.subrosa.share</key>
+              <string>Sub Rosa Share App Store</string>
             </dict>
           </dict>
           </plist>

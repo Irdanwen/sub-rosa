@@ -32,6 +32,19 @@ import {
   subscribeToDestinations,
 } from "../lib/destinations";
 
+describe("share destinations", () => {
+  it("parses a share id and refuses anything that is not one", async () => {
+    const { parseDestination, destinationUrl } = await import("../lib/destinations");
+    expect(parseDestination("subrosa://share/3f2c1a9e-aa10-4b6e-9d1c-0f1e2d3c4b5a")).toEqual({
+      kind: "share",
+      itemId: "3f2c1a9e-aa10-4b6e-9d1c-0f1e2d3c4b5a",
+    });
+    expect(parseDestination("subrosa://share/../etc")).toBeNull();
+    expect(parseDestination("subrosa://share/")).toBeNull();
+    expect(destinationUrl({ kind: "share", itemId: "abc" })).toBe("subrosa://share/abc");
+  });
+});
+
 describe("destination addresses", () => {
   it("parses every address the app posts", () => {
     expect(parseDestination("subrosa://note/note-abc_1")).toEqual({

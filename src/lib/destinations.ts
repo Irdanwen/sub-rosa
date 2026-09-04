@@ -39,7 +39,11 @@ export type Destination =
   /** Fetch a link and turn it into a note (ADR-0028). The one destination
    * that carries a payload from outside the app, so its URL is validated
    * here and again by the Rust side before a single byte is fetched. */
-  | { kind: "import"; url: string };
+  | { kind: "import"; url: string }
+  /** Something shared in from another app through the share sheet: the id
+   * names a manifest the extension wrote in the app group inbox, and the
+   * Rust side reads and validates it before anything is made (ADR-0048). */
+  | { kind: "share"; itemId: string };
 
 /** App-generated ids (notes, sessions) are opaque tokens, never paths. */
 const ID_RE = /^[\w-]{1,64}$/;
@@ -87,6 +91,8 @@ export function parseDestination(raw: string): Destination | null {
       return { kind: "studio" };
     case "record":
       return { kind: "record" };
+    case "share":
+      return ID_RE.test(segment) ? { kind: "share", itemId: segment } : null;
     case "import": {
       const target = url.searchParams.get("url")?.trim();
       // Only web links, and only ones short enough to be real. The Rust side
@@ -107,6 +113,8 @@ export function destinationUrl(destination: Destination): string {
       return `${DESTINATION_SCHEME}note/${destination.noteId}`;
     case "import":
       return `${DESTINATION_SCHEME}import?url=${encodeURIComponent(destination.url)}`;
+    case "share":
+      return `${DESTINATION_SCHEME}share/${destination.itemId}`;
     case "chat": {
       const path = destination.sessionId ? `chat/${destination.sessionId}` : "chat";
       const query = destination.query ? `?q=${encodeURIComponent(destination.query)}` : "";

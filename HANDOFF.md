@@ -82,3 +82,30 @@ dans l'Info.plist. Pour uploader un nouveau build local :
 **À savoir** : icônes iOS = placeholders (mêmes sources que §7) ; l'App Store refusera une
 icône 1024 avec canal alpha — fournir les icônes définitives avant la première soumission
 publique (TestFlight interne est plus tolérant).
+
+## Extension de partage iOS (ADR-0048) : ce qu'App Store Connect doit connaître
+
+L'extension `os-june_Share` (`xyz.carpediem.subrosa.share`) est un second
+bundle, signé à part, qui partage un App Group avec l'app. La lane
+`ios-release.yml` l'exporte dès que ces quatre choses existent ; tant qu'elles
+manquent, elle s'arrête à l'export avec un message clair plutôt que de
+livrer une entrée du partage qui ne marche pas.
+
+1. **App Group** : dans Certificates, Identifiers & Profiles › Identifiers ›
+   App Groups, créer `group.xyz.carpediem.subrosa`.
+2. **App ID de l'app** (`xyz.carpediem.subrosa`) : activer la capacité
+   *App Groups* et cocher ce groupe. Le profil de distribution existant
+   devient invalide : le régénérer et remplacer le secret
+   `IOS_PROVISION_PROFILE` (base64 du `.mobileprovision`, nom « Sub Rosa
+   App Store »).
+3. **App ID de l'extension** : créer `xyz.carpediem.subrosa.share` avec la
+   capacité *App Groups* sur le même groupe.
+4. **Profil de l'extension** : un profil App Store pour cet App ID, nommé
+   « Sub Rosa Share App Store », avec le même certificat de distribution ;
+   son base64 va dans le secret `IOS_SHARE_PROVISION_PROFILE`.
+
+Les noms des profils sont ceux que `ExportOptions-asc.plist` mappe dans la
+lane (`provisioningProfiles`). En local, `pnpm tauri ios build --export-method
+debugging` signe les deux cibles avec l'équipe `H6N5V777LL` en automatique une
+fois le groupe créé.
+

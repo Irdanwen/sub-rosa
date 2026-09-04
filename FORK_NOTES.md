@@ -966,6 +966,23 @@ liste exacte des passages envoyés sous la réponse
 - Limite documentée : un message Rust construit par `format!` reste en
   anglais.
 
+## Extension de partage iOS (2026-09-05, ADR-0048)
+
+- `src-tauri/gen/apple/ShareExtension/` (`ShareViewController.swift`,
+  `Info.plist`, `.entitlements`) ; cible `os-june_Share` dans `project.yml`,
+  embarquée par l'app ; App Group `group.xyz.carpediem.subrosa` sur les deux
+  entitlements. Régénérer : `mkdir -p src-tauri/gen/apple/assets && (cd
+  src-tauri/gen/apple && xcodegen generate)` (le dossier `assets` est produit
+  par `tauri ios build` et absent hors build). Compilation seule :
+  `xcodebuild -target os-june_Share -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO`.
+- `src-tauri/src/share_inbox.rs` : `import_shared_item` (mobile seulement,
+  préfixe allowlisté dans `tests/shared_commands.rs`) ; conteneur via
+  `NSFileManager containerURLForSecurityApplicationGroupIdentifier:` (objc2).
+- `src/lib/destinations.ts` : arme `share` ; `src/lib/share-inbox.ts` ;
+  `MobileApp` ouvre la note créée. `ios-release.yml` : secret
+  `IOS_SHARE_PROVISION_PROFILE` + mapping dans ExportOptions ; étapes ASC
+  dans `HANDOFF.md`.
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.

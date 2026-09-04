@@ -13,6 +13,7 @@ import type { CalendarEventDto } from "../../lib/tauri";
 import { importMediaFile } from "../../lib/import-media";
 import { startLinkIngest } from "../../lib/tauri";
 import { type Destination, subscribeToDestinations } from "../../lib/destinations";
+import { importSharedItem } from "../../lib/share-inbox";
 import { useAmbientActivity } from "./useAmbientActivity";
 import { AgentScreen, AgentSessionScreen } from "../../components/mobile/screens/AgentScreen";
 import { DictationScreen } from "../../components/mobile/screens/DictationScreen";
@@ -436,6 +437,17 @@ export function MobileApp() {
       case "import":
         nav.switchTab("notes");
         void startLinkIngest(destination.url).catch((err) => setError(messageFromError(err)));
+        break;
+      // Shared through the share sheet: the extension left a manifest in
+      // the app group inbox; Rust reads it and makes the note or starts the
+      // fetch, and the notes tab is where either shows itself.
+      case "share":
+        nav.switchTab("notes");
+        void importSharedItem(destination.itemId)
+          .then((made) => {
+            if (made.noteId) openNote(made.noteId);
+          })
+          .catch((err) => setError(messageFromError(err)));
         break;
     }
   };

@@ -61,6 +61,7 @@ pub mod photos_ios;
 pub mod places;
 pub mod providers;
 pub mod redacted;
+pub mod share_inbox;
 #[cfg(target_os = "ios")]
 pub mod share_ios;
 pub mod spotlight;
@@ -506,6 +507,7 @@ pub fn run() {
         commands::list_notes,
         commands::search_everything,
         ask::ask_notes,
+        share_inbox::import_shared_item,
         ask::ask_cancel,
         ask::semantic::ask_index_status,
         ask::semantic::set_ask_settings,
