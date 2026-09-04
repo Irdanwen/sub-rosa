@@ -45,7 +45,7 @@ jobs:
           if ! printf '%s' "$INPUT_REF" | grep -qE '^[A-Za-z0-9._/-]{1,120}$'; then
             echo "Refusing suspicious ref: $INPUT_REF" >&2; exit 1
           fi
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
           ref: ${{ github.event.inputs.ref }}
 
@@ -67,7 +67,7 @@ jobs:
           fi
 
       - name: Setup Node + pnpm
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
       - run: corepack enable
@@ -77,7 +77,7 @@ jobs:
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           targets: aarch64-apple-ios
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
         with:
           workspaces: "src-tauri -> target\njune-api -> target"
 
