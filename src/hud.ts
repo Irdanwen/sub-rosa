@@ -770,6 +770,9 @@ function assertWindowMatchesPill() {
   clearFrameSettleTimer();
   frameSettleTimer = window.setTimeout(() => {
     frameSettleTimer = undefined;
+    // The timer can outlive the page it measured (a test environment torn
+    // down before it fired); there is nothing to measure then.
+    if (typeof window === "undefined") return;
     const state = hud?.dataset.state;
     if (!hud || !state || state === "idle" || state === "exiting") return;
     const expected = measureWindowSize();
