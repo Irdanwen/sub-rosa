@@ -56,6 +56,12 @@ Five, and each is a place where something is checked rather than assumed.
    the user. Under that list, the same screen shows the ledger of what actually
    left: one row per outbound request with its host, purpose and size, never
    its content (ADR-0043), so the claim can be checked against the record.
+   Two kinds of request go out without a gesture from the person: the
+   vectors for memory (ADR-0009) and, since ADR-0046, the vectors for the
+   passages of every note, cut and embedded in the background. Both are
+   settings on the same screen, in one sentence each, and both are rows in
+   the ledger; turning the second off deletes the passages and their
+   vectors.
 
 ## In scope
 
