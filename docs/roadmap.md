@@ -130,8 +130,9 @@ product makes that no other tool makes checkable.
   ⌘K palette and the "Ask your notes" button under the phone's search; the
   panel lists what was sent; the ledger row says `ask` (task-local scope in
   `egress_ledger.rs`) and names the note when one note fed every passage.
-  Left open: embeddings over note bodies, which would join the same
-  numbered-passage contract.
+  Closed 2026-09-04 (ADR-0046): passages of every note are embedded in the
+  background and the answer fuses the lexical and the semantic rankings;
+  Settings › Privacy carries the setting and the counts.
 
 ## Ce qui ne sera pas fait
 

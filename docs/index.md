@@ -56,6 +56,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0043-the-egress-ledger-records-shapes-never-contents.md](adr/0043-the-egress-ledger-records-shapes-never-contents.md) — one row per outbound request (when, host, purpose, bytes each way, status, model), never a body; a bounded buffer and a flusher so a request is never slowed; ninety days; the promise kept next to the promise stated in Settings › Privacy
 - [adr/0044-an-answer-over-the-notes-cites-passages-the-app-chose.md](adr/0044-an-answer-over-the-notes-cites-passages-the-app-chose.md) — "Ask your notes": the app retrieves the passages (FTS5) and sends only those; the model cites by index and the app resolves the index to a note, naming invented ones; one ledger row that says `ask` through a task-local scope; nothing in `june-api/`
 - [adr/0045-image-generation-and-editing-tools.md](adr/0045-image-generation-and-editing-tools.md) — image generation and editing: a fast path plus model tools (filed as 0003 in the fork, renumbered on 2026-09-04 because upstream's 0003 is the release-candidate channel)
+- [adr/0046-semantic-retrieval-embeds-passages-and-is-a-setting.md](adr/0046-semantic-retrieval-embeds-passages-and-is-a-setting.md) — "Ask your notes" finds meaning as well as words: notes cut into passages, BGE-M3 vectors filled in the background (rows first, ADR 0018), reciprocal rank fusion with the lexical half; a Privacy setting, on by default, off forgets the vectors; every call in the ledger
 
 ## Enforceable rules (spec/)
 

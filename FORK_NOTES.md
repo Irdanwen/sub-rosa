@@ -901,6 +901,25 @@ liste exacte des passages envoyés sous la réponse
   `docs/adr/0045-…` avec une note de renumérotation ; lien de CONTEXT.md
   mis à jour.
 
+## « Ask » par le sens (2026-09-04, ADR-0046)
+
+- `src-tauri/migrations/022_note_passages.sql` ; méthodes dans
+  `db/repositories/passages.rs` (`passage_source`, `replace_passages`,
+  `notes_with_stale_passages`, `passages_missing_embedding`,
+  `set_passage_embedding`, `passages_with_embeddings`, `passages_counts`,
+  `clear_passages`, `note_titles`).
+- `src-tauri/src/ask/semantic.rs` : réglage `ask.json` (`semantic`, défaut
+  vrai), découpe (`chunk_body`, `chunk_turns`, hash de source),
+  `refresh_note` / `refresh_stale` / `backfill` / `catch_up`, recherche
+  cosinus + `fuse` (RRF par note), commandes `ask_index_status` et
+  `set_ask_settings` (les deux listes). Hooks : `background::sweep` et
+  `agent_notes::announce`.
+- `memory/recall.rs` : `embed`, `encode/decode_embedding`,
+  `cosine_similarity` passés `pub(crate)` ; l'appel `/embeddings` écrit une
+  ligne du registre (purpose `embeddings`).
+- Tests : `tests/note_passages.rs`, tests unitaires dans `semantic.rs`,
+  `src/test/semantic-ask-card.test.tsx`.
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.

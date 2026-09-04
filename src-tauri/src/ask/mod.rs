@@ -24,6 +24,8 @@
 //! Shared by both shells: the ⌘K palette on the desktop, the notes search on
 //! the phone.
 
+pub mod semantic;
+
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
@@ -187,10 +189,14 @@ pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAn
     }
     let repos = crate::commands::repositories(&app).await?;
     let terms = content_terms(&question);
-    let snippets = match passages_match(&terms) {
+    let lexical = match passages_match(&terms) {
         Some(fts) => repos.retrieve_passages(&fts, &terms, PASSAGES).await?,
         None => Vec::new(),
     };
+    // By meaning as well as by word (ADR-0046); empty when the setting is
+    // off, the question cannot be embedded, or nothing is embedded yet.
+    let by_meaning = semantic::semantic_passages(&repos, &question, PASSAGES as usize).await?;
+    let snippets = semantic::fuse(lexical, by_meaning, PASSAGES as usize);
     let sent: Vec<AskSource> = snippets
         .into_iter()
         .enumerate()

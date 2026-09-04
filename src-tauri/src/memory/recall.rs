@@ -114,7 +114,7 @@ pub fn spawn_backfill(app: &tauri::AppHandle) {
 }
 
 /// One `/embeddings` call for a batch of inputs, in input order.
-async fn embed(texts: &[String]) -> Result<Vec<Vec<f32>>, AppError> {
+pub(crate) async fn embed(texts: &[String]) -> Result<Vec<Vec<f32>>, AppError> {
     let Some(key) = crate::carpe_diem::settings::api_key() else {
         return Err(AppError::new(
             "memory_embeddings_no_key",
@@ -125,17 +125,47 @@ async fn embed(texts: &[String]) -> Result<Vec<Vec<f32>>, AppError> {
     let client = crate::http_client::credentialed(EMBEDDING_TIMEOUT)
         .build()
         .map_err(|error| AppError::new("memory_embeddings_client", error.to_string()))?;
-    let response = client
+    let body = serde_json::json!({
+        "model": EMBEDDING_MODEL,
+        "input": texts,
+        "encoding_format": "float",
+    });
+    let request_bytes = body.to_string().len() as u64;
+    let started = std::time::Instant::now();
+    let sent = client
         .post(format!("{base}/embeddings"))
         .bearer_auth(key.expose_str())
-        .json(&serde_json::json!({
-            "model": EMBEDDING_MODEL,
-            "input": texts,
-            "encoding_format": "float",
-        }))
+        .json(&body)
         .send()
-        .await
-        .map_err(|error| AppError::new("memory_embeddings_unreachable", error.to_string()))?;
+        .await;
+    // A direct call, so it joins the egress ledger here (ADR-0043): the
+    // shape of the request, never the passages it carried.
+    let status = sent
+        .as_ref()
+        .ok()
+        .map(|response| response.status().as_u16());
+    let response_bytes = sent
+        .as_ref()
+        .ok()
+        .and_then(|response| response.content_length())
+        .unwrap_or(0);
+    crate::egress_ledger::record(crate::egress_ledger::EgressEntry {
+        at: chrono::Utc::now().to_rfc3339(),
+        host: reqwest::Url::parse(&base)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_string))
+            .unwrap_or_else(|| "(unconfigured)".to_string()),
+        purpose: "embeddings".to_string(),
+        method: "POST".to_string(),
+        request_bytes,
+        response_bytes,
+        status,
+        duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        model: Some(EMBEDDING_MODEL.to_string()),
+        note_id: None,
+    });
+    let response =
+        sent.map_err(|error| AppError::new("memory_embeddings_unreachable", error.to_string()))?;
     if !response.status().is_success() {
         return Err(AppError::new(
             "memory_embeddings_failed",
@@ -178,14 +208,14 @@ async fn embed(texts: &[String]) -> Result<Vec<Vec<f32>>, AppError> {
 }
 
 /// Little-endian f32 encoding for the `memories.embedding` BLOB.
-fn encode_embedding(vector: &[f32]) -> Vec<u8> {
+pub(crate) fn encode_embedding(vector: &[f32]) -> Vec<u8> {
     vector
         .iter()
         .flat_map(|value| value.to_le_bytes())
         .collect()
 }
 
-fn decode_embedding(bytes: &[u8]) -> Vec<f32> {
+pub(crate) fn decode_embedding(bytes: &[u8]) -> Vec<f32> {
     bytes
         .chunks_exact(4)
         .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
@@ -194,7 +224,7 @@ fn decode_embedding(bytes: &[u8]) -> Vec<f32> {
 
 /// Cosine similarity; `None` on dimension mismatch or zero vectors so broken
 /// rows drop out of the ranking instead of poisoning it.
-fn cosine_similarity(a: &[f32], b: &[f32]) -> Option<f32> {
+pub(crate) fn cosine_similarity(a: &[f32], b: &[f32]) -> Option<f32> {
     if a.len() != b.len() || a.is_empty() {
         return None;
     }

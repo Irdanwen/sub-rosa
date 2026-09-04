@@ -103,6 +103,8 @@ pub struct NotesChanged {
 /// own save goes through here; the list used to refresh on the agent's
 /// writes only, and an open note never did.
 pub fn announce(app: &AppHandle, note_ids: &[String]) {
+    // A note that changed has passages to re-cut and embed (ADR-0046).
+    crate::ask::semantic::catch_up_detached(app);
     let _ = app.emit(
         NOTES_CHANGED_EVENT,
         NotesChanged {

@@ -3,6 +3,7 @@ import { IconLock } from "central-icons/IconLock";
 import { IconShieldCheck } from "central-icons/IconShieldCheck";
 import { useEffect, useState } from "react";
 import { EgressLedgerCard } from "./EgressLedgerCard";
+import { SemanticAskCard } from "./SemanticAskCard";
 import {
   type EgressHost,
   carpeDiemGetSettings,
@@ -57,6 +58,8 @@ export function PrivacySettingsSection() {
       ) : null}
 
       <EgressLedgerCard />
+
+      <SemanticAskCard />
 
       <div className="settings-card privacy-stays">
         <div className="privacy-stays-icon" aria-hidden>

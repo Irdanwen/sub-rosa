@@ -910,11 +910,21 @@ search on the phone.
 _Avoid:_ "chat with your notes" (that is the agent, which chooses its own
 reads); "RAG" in copy.
 
-**Passage** — one excerpt handed to the model for an ask, numbered from 1,
-with its note id and kind (note or transcript). The list of passages is
-"what was sent" and is shown under the answer.
+**Passage** — one excerpt of a note, numbered from 1 when handed to the
+model for an ask, with its note id and kind (note or transcript). Stored
+passages (`note_passages`, ADR-0046) are cut from the note body on
+paragraphs and from the transcript in windows of turns, and carry a vector
+once the backfill reaches them. The list of passages sent is "what was
+sent" and is shown under the answer.
 _Avoid:_ "chunk" (that is the long-form summary's unit), "source" (an audio
-lane).
+lane), "embedding" as a noun for the passage (the vector is the passage's
+embedding).
+
+**By meaning (semantic retrieval)** — the half of an ask's retrieval that
+compares the question's vector with the passages' vectors; the other half
+is "by word" (the lexical index). Settings › Privacy calls it "understand
+questions by meaning" and turning it off forgets the vectors.
+_Avoid:_ "AI search", "RAG", "vector database".
 
 **Citation** — an index in the answer that names a passage that was sent.
 An index that was never sent is *invented*, and the answer says so rather

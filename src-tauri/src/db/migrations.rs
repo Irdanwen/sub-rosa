@@ -338,6 +338,12 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
         split_sql_statements(include_str!("../../migrations/020_search.sql")),
     )
     .await?;
+    replay(
+        _pool,
+        "022_note_passages.sql",
+        include_str!("../../migrations/022_note_passages.sql"),
+    )
+    .await?;
     crate::diagnostics::mark("migrations");
 
     Ok(())

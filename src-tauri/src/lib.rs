@@ -239,6 +239,8 @@ pub fn run() {
             commands::list_notes,
             commands::search_everything,
             ask::ask_notes,
+            ask::semantic::ask_index_status,
+            ask::semantic::set_ask_settings,
             diagnostics::diagnostics_report_text,
             egress_ledger::egress_ledger,
             archive::import_archive,
@@ -503,6 +505,8 @@ pub fn run() {
         commands::list_notes,
         commands::search_everything,
         ask::ask_notes,
+        ask::semantic::ask_index_status,
+        ask::semantic::set_ask_settings,
         diagnostics::diagnostics_report_text,
         egress_ledger::egress_ledger,
         archive::import_archive,
@@ -704,6 +708,7 @@ pub fn run() {
             carpe_diem::sidecar::setup(app);
             diagnostics::mark("sidecar setup");
             memory::setup(app);
+            ask::semantic::setup(app);
             egress_ledger::spawn_flusher(app.handle());
             moments::setup(app);
             spotlight::setup(app);

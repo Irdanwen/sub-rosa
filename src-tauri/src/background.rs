@@ -65,6 +65,9 @@ pub async fn sweep(app: &AppHandle) {
     // Keep the system index honest about what exists. Cheap (titles and
     // dates unless the user opted the body in) and idempotent.
     crate::spotlight::reindex_all(app).await;
+    // Passages and their vectors for "Ask your notes" (ADR-0046): cut what
+    // changed, embed what is pending, a bounded amount per pass.
+    crate::ask::semantic::catch_up(app).await;
 }
 
 /// Fire-and-forget [`sweep`], for call sites that are not async (app setup, the
