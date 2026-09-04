@@ -50,7 +50,7 @@ base64 = "0.22"
 tar = "0.4"
 age = { version = "0.12", default-features = false }
 chrono = { version = "0.4", features = ["serde"] }
-cpal = "0.15"
+cpal = "0.18"
 dotenvy = "0.15"
 hound = "3.5"
 # Re-encodes an attached image down to what the request can carry (see
