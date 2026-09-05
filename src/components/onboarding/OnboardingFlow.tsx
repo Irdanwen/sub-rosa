@@ -16,13 +16,16 @@ type StepId = "welcome" | "key" | "permissions" | "dictation-practice" | "first-
 
 // Announced by the progress bar so screen readers hear where they are, not
 // just a bare step count.
-const STEP_LABELS: Record<StepId, string> = {
-  welcome: "Welcome",
-  key: "Your key",
-  permissions: "Permissions",
-  "dictation-practice": "Try dictation",
-  "first-note": "Your first note",
-};
+function stepLabel(step: StepId): string {
+  const labels: Record<StepId, string> = {
+    welcome: t("Welcome"),
+    key: t("Your key"),
+    permissions: t("Permissions"),
+    "dictation-practice": t("Try dictation"),
+    "first-note": t("Your first note"),
+  };
+  return labels[step];
+}
 
 // The product default: bare fn, mirroring DictationShortcutSetting::bare_fn()
 // on the Rust side.
@@ -171,7 +174,11 @@ export function OnboardingFlow({ onComplete, needsKey = false, keyReady = false 
         ) : null}
         <nav
           className="onboarding-progress"
-          aria-label={`Setup progress: step ${stepIndex + 1} of ${steps.length}, ${STEP_LABELS[stepId]}`}
+          aria-label={t("Setup progress: step {step} of {count}, {label}", {
+            step: stepIndex + 1,
+            count: steps.length,
+            label: stepLabel(stepId),
+          })}
         >
           {steps.map((id, index) => (
             <span

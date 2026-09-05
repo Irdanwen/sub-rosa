@@ -176,7 +176,7 @@ export function DictationScreen() {
             className="mobile-dictation-button"
             data-recording={phase === "recording" ? "true" : undefined}
             disabled={phase === "processing"}
-            aria-label={phase === "recording" ? "Stop dictation" : "Start dictation"}
+            aria-label={phase === "recording" ? t("Stop dictation") : t("Start dictation")}
             onClick={() => void (phase === "recording" ? stop() : start())}
             style={
               phase === "recording"
@@ -222,7 +222,7 @@ export function DictationScreen() {
                 onClick={() => void copyResult(result.text)}
               >
                 {copied ? <IconCheckmark1Small size={14} /> : <IconClipboard size={14} />}
-                <span>{copied ? "Copied" : "Copy"}</span>
+                <span>{copied ? t("Copied") : t("Copy")}</span>
               </button>
             </div>
           </section>

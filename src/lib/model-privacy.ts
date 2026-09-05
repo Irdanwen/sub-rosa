@@ -1,4 +1,5 @@
 import type { ProviderModelMode, VeniceModelDto } from "./tauri";
+import { t } from "./i18n";
 
 export type ModelPrivacyMode = "e2ee" | "private" | "anonymous";
 
@@ -30,12 +31,25 @@ export function dispatchProviderModelSettingsChanged(detail: ProviderModelSettin
   );
 }
 
-export const E2EE_MODEL_DESCRIPTION =
-  "Private model with end-to-end encryption. Your prompt is encrypted on your device and only decrypted inside a hardware-secured enclave (TEE); the response is encrypted before it leaves the enclave. No prompt data is ever readable by the model provider or its infrastructure.";
-export const PRIVATE_MODEL_DESCRIPTION =
-  "Private model with zero data retention. No prompt data is stored, shared with a third party, or trained on.";
-export const ANONYMOUS_MODEL_DESCRIPTION =
-  "The model provider may retain prompts, though they're anonymized. Your identity is stripped before anything leaves Sub Rosa. For sensitive content, pick a Private or E2EE model.";
+function privacyDescriptions() {
+  return {
+    e2ee: t(
+      "The catalog lists this model as end-to-end encrypted. This describes its advertised privacy policy, not a verification of how Sub Rosa encrypts each request.",
+    ),
+    private: t(
+      "The catalog lists this model as private with zero data retention. This reflects the provider's published policy.",
+    ),
+    anonymous: t(
+      "The catalog lists this model as anonymized. The provider may retain prompts. This label does not guarantee that personal information in your prompt is removed.",
+    ),
+  };
+}
+
+// Compatibility exports for consumers describing the initial language. Badges
+// resolve their descriptions when called, so locale changes cannot leave stale copy.
+export const E2EE_MODEL_DESCRIPTION = privacyDescriptions().e2ee;
+export const PRIVATE_MODEL_DESCRIPTION = privacyDescriptions().private;
+export const ANONYMOUS_MODEL_DESCRIPTION = privacyDescriptions().anonymous;
 
 type ModelPrivacySignals = Pick<VeniceModelDto, "privacy" | "traits"> &
   Partial<Pick<VeniceModelDto, "capabilities">>;
@@ -70,8 +84,8 @@ export function modelSupportsImageInput(model: Partial<Pick<VeniceModelDto, "cap
   });
 }
 
-// Strongest claim wins: E2EE models are also private, but "encrypted into the
-// enclave" is the property worth surfacing.
+// Flags already resolve the authoritative privacy field before fallback
+// signals. Descriptions and labels use the current language at display time.
 export function modelPrivacyBadge(
   model: ModelPrivacySignals,
   flags = modelPrivacyFlags(model),
@@ -80,40 +94,39 @@ export function modelPrivacyBadge(
     return {
       mode: "e2ee",
       label: "E2EE",
-      description: E2EE_MODEL_DESCRIPTION,
+      description: privacyDescriptions().e2ee,
     };
   }
   if (flags.private) {
     return {
       mode: "private",
-      label: "Private mode",
-      description: PRIVATE_MODEL_DESCRIPTION,
+      label: t("Private mode"),
+      description: privacyDescriptions().private,
     };
   }
   if (flags.anonymous) {
     return {
       mode: "anonymous",
-      label: "Anonymous mode",
-      description: ANONYMOUS_MODEL_DESCRIPTION,
+      label: t("Anonymous mode"),
+      description: privacyDescriptions().anonymous,
     };
   }
   return undefined;
 }
 
 export function modelPrivacyFlags(model: ModelPrivacySignals): ModelPrivacyFlags {
-  const privacy = (model.privacy ?? "").toLowerCase();
+  const privacy = (model.privacy ?? "").trim().toLowerCase();
   const traits = model.traits.map((trait) => trait.toLowerCase());
   const capabilities = (model.capabilities ?? []).map((capability) => capability.toLowerCase());
   return {
-    e2ee:
-      privacy === "e2ee" ||
-      traits.some((trait) => trait === "e2ee") ||
-      capabilities.some((capability) => capability === "e2ee"),
-    private: privacy === "private" || traits.some((trait) => trait === "private"),
-    anonymous:
-      privacy.includes("anonymous") ||
-      privacy.includes("anonymized") ||
-      traits.some((trait) => trait.includes("anonymous") || trait.includes("anonymized")),
+    // A published policy wins even when stale traits/capabilities claim
+    // stronger protection. Unknown explicit policies earn no privacy badge.
+    // Legacy catalogs without a privacy field can still use their old signals.
+    e2ee: privacy ? privacy === "e2ee" : traits.includes("e2ee") || capabilities.includes("e2ee"),
+    private: privacy ? privacy === "private" : traits.includes("private"),
+    anonymous: privacy
+      ? ["anonymous", "anonymized"].includes(privacy)
+      : traits.some((trait) => ["anonymous", "anonymized"].includes(trait)),
     uncensored: traits.some((trait) => trait.includes("uncensored")),
   };
 }

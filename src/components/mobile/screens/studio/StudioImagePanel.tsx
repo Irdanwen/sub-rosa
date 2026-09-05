@@ -247,7 +247,7 @@ export function ImagePanel({
       onGenerated();
     } catch (err) {
       hapticNotify("error");
-      setError(err instanceof Error ? err.message : "The generation failed.");
+      setError(err instanceof Error ? t(err.message) : t("The generation failed."));
     } finally {
       setBusy(false);
     }
@@ -292,7 +292,7 @@ export function ImagePanel({
       onGenerated();
     } catch (err) {
       hapticNotify("error");
-      setError(err instanceof Error ? err.message : "The upscale failed.");
+      setError(err instanceof Error ? t(err.message) : t("The upscale failed."));
     } finally {
       setBusy(false);
     }
@@ -314,7 +314,7 @@ export function ImagePanel({
       onGenerated();
     } catch (err) {
       hapticNotify("error");
-      setError(err instanceof Error ? err.message : "The cutout failed.");
+      setError(err instanceof Error ? t(err.message) : t("The cutout failed."));
     } finally {
       setBusy(false);
     }
@@ -338,12 +338,12 @@ export function ImagePanel({
             onClick={() => onModeChange(entry)}
           >
             {entry === "generate"
-              ? "Generate"
+              ? t("Generate")
               : entry === "edit"
-                ? "Edit"
+                ? t("Edit")
                 : entry === "upscale"
-                  ? "Upscale"
-                  : "Cutout"}
+                  ? t("Upscale")
+                  : t("Cutout")}
           </button>
         ))}
       </div>
@@ -356,7 +356,7 @@ export function ImagePanel({
             galleryImages={galleryImages}
             hint={
               upscaleRefs.length === 0
-                ? "Pick an image; the background lifts out into a transparent PNG."
+                ? t("Pick an image; the background lifts out into a transparent PNG.")
                 : undefined
             }
           />
@@ -366,7 +366,7 @@ export function ImagePanel({
             disabled={upscaleRefs.length === 0 || busy}
             onClick={() => void cutout()}
           >
-            {busy ? <Spinner /> : "Remove background"}
+            {busy ? <Spinner /> : t("Remove background")}
           </button>
         </>
       ) : mode === "upscale" ? (
@@ -377,7 +377,7 @@ export function ImagePanel({
             galleryImages={galleryImages}
             hint={
               upscaleRefs.length === 0
-                ? "Pick an image to enlarge (at least 256 by 256 pixels)."
+                ? t("Pick an image to enlarge (at least 256 by 256 pixels).")
                 : undefined
             }
           />
@@ -400,14 +400,14 @@ export function ImagePanel({
             disabled={upscaleRefs.length === 0 || busy}
             onClick={() => void upscale()}
           >
-            {busy ? <Spinner /> : `Upscale x${scale}`}
+            {busy ? <Spinner /> : t("Upscale x{scale}", { scale })}
           </button>
         </>
       ) : (
         <>
           <ModelPickerButton
-            label={mode === "edit" ? "Edit model" : "Image model"}
-            value={mode === "edit" && !editModelId ? "Automatic" : (model?.name ?? "")}
+            label={mode === "edit" ? t("Edit model") : t("Image model")}
+            value={mode === "edit" && !editModelId ? t("Automatic") : (model?.name ?? "")}
             onOpen={() => setPickerOpen(true)}
           />
           {mode === "edit" ? (
@@ -418,10 +418,13 @@ export function ImagePanel({
               prepare={prepareEditReference}
               hint={
                 references.length > 1
-                  ? `Combining ${references.length} photos into one (up to ${MAX_COMPOSE_IMAGES}). The prompt can call them image 1, image 2, in the order shown.`
+                  ? t(
+                      "Combining {count} photos into one (up to {max}). The prompt can call them image 1, image 2, in the order shown.",
+                      { count: references.length, max: MAX_COMPOSE_IMAGES },
+                    )
                   : references.length === 1
-                    ? "The prompt describes the edit. Add another photo to combine them."
-                    : "Add a photo to edit, or two to three to combine."
+                    ? t("The prompt describes the edit. Add another photo to combine them.")
+                    : t("Add a photo to edit, or two to three to combine.")
               }
             />
           ) : null}
@@ -432,9 +435,9 @@ export function ImagePanel({
             placeholder={
               mode === "edit"
                 ? references.length > 1
-                  ? "Describe how to combine the photos"
-                  : "Describe how to transform the photo"
-                : "Describe the image to generate"
+                  ? t("Describe how to combine the photos")
+                  : t("Describe how to transform the photo")
+                : t("Describe the image to generate")
             }
             onChange={(event) => setPrompt(event.target.value)}
           />
@@ -503,7 +506,11 @@ export function ImagePanel({
                 ) : null}
                 <StudioSetting
                   label={t("Compare models")}
-                  hint={comparing ? `${compareModels.length + 1} side by side` : "Optional"}
+                  hint={
+                    comparing
+                      ? t("{count} side by side", { count: compareModels.length + 1 })
+                      : t("Optional")
+                  }
                 >
                   <div className="mobile-reference-actions">
                     {compareModels.map((entry) => (
@@ -511,7 +518,7 @@ export function ImagePanel({
                         key={entry.id}
                         type="button"
                         className="mobile-chip-button"
-                        aria-label={`Stop comparing with ${entry.name}`}
+                        aria-label={t("Stop comparing with {model}", { model: entry.name })}
                         onClick={() =>
                           setCompareIds((current) => current.filter((id) => id !== entry.id))
                         }
@@ -586,7 +593,7 @@ export function ImagePanel({
             }
             onClick={() => void generate()}
           >
-            {busy ? <Spinner /> : "Generate"}
+            {busy ? <Spinner /> : t("Generate")}
             {!busy && cost !== undefined ? (
               <span className="mobile-studio-cost">{formatCredits(cost)}</span>
             ) : null}
@@ -603,7 +610,7 @@ export function ImagePanel({
       {error ? <p className="mobile-dictation-error">{error}</p> : null}
       {pickerOpen ? (
         <ModelSheet
-          title={mode === "edit" ? "Edit model" : "Image model"}
+          title={mode === "edit" ? t("Edit model") : t("Image model")}
           entries={models.map((entry) => ({
             id: entry.id,
             name: entry.name,

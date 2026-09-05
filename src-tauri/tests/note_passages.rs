@@ -87,6 +87,12 @@ async fn passages_are_cut_once_per_source_and_recut_when_the_note_changes() {
     assert_eq!(repos.passages_with_embeddings().await.unwrap().len(), 1);
 
     // The note changes: it is stale again, and a re-cut drops the vectors.
+    // refresh_note stamps the real clock. Pin that stamp to the fixture's
+    // timeline so this simulated edit stays newer after September 5, 2026.
+    query("UPDATE note_passages SET updated_at = '2026-09-04T09:00:01Z' WHERE note_id = 'n1'")
+        .execute(&repos.pool)
+        .await
+        .unwrap();
     query("UPDATE notes SET generated_content = 'Rewritten.', updated_at = '2026-09-05T09:00:00Z' WHERE id = 'n1'")
         .execute(&repos.pool)
         .await

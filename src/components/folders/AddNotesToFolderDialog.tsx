@@ -75,7 +75,7 @@ export function AddNotesToFolderDialog({
         if (submitting) return;
         onClose();
       }}
-      title={`Add meeting notes to ${folder.name}`}
+      title={t("Add meeting notes to {name}", { name: folder.name })}
       description={t("Pick the meeting notes you want in this project.")}
       initialFocusSelector='input[name="add-notes-search"]'
       footer={
@@ -90,10 +90,12 @@ export function AddNotesToFolderDialog({
             disabled={submitting || count === 0}
           >
             {submitting
-              ? "Adding…"
+              ? t("Adding…")
               : count === 0
-                ? "Add meeting notes"
-                : `Add ${count} ${count === 1 ? "meeting note" : "meeting notes"}`}
+                ? t("Add meeting notes")
+                : count === 1
+                  ? t("Add 1 meeting note")
+                  : t("Add {count} meeting notes", { count })}
           </button>
         </>
       }
@@ -128,9 +130,9 @@ export function AddNotesToFolderDialog({
                       <IconNoteText size={14} />
                     </span>
                     <span className="add-notes-body">
-                      <span className="add-notes-title">{note.title.trim() || "New note"}</span>
+                      <span className="add-notes-title">{note.title.trim() || t("New note")}</span>
                       <span className="add-notes-preview">
-                        {note.preview.trim() ? note.preview : "No preview yet"}
+                        {note.preview.trim() ? note.preview : t("No preview yet")}
                       </span>
                     </span>
                     <span className="add-notes-check" aria-hidden>
@@ -144,8 +146,8 @@ export function AddNotesToFolderDialog({
         ) : (
           <p className="add-notes-empty">
             {notes.some((note) => !note.folderIds.includes(folder.id))
-              ? "No meeting notes match that search."
-              : "Every meeting note already lives in this project."}
+              ? t("No meeting notes match that search.")
+              : t("Every meeting note already lives in this project.")}
           </p>
         )}
       </div>

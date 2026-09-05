@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { DotSpinner } from "../DotSpinner";
 
 // The app-wide loading indicator: the rolling dot spinner (see DotSpinner).
@@ -20,7 +21,7 @@ export function Spinner({
     <span
       role={ariaHidden ? undefined : "status"}
       aria-hidden={ariaHidden}
-      aria-label={ariaHidden ? undefined : (ariaLabel ?? "Loading")}
+      aria-label={ariaHidden ? undefined : (ariaLabel ?? t("Loading"))}
       className={classes}
     >
       <DotSpinner />

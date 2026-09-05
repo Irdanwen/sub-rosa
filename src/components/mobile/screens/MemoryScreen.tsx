@@ -157,8 +157,10 @@ export function MemoryScreen({ onBack }: { onBack: () => void }) {
         </SettingsGroup>
 
         <SettingsGroup
-          title={items.length > 0 ? `Remembered · ${items.length}` : "Remembered"}
-          footer={items.length > 0 ? "Swipe a memory to pause or forget it." : undefined}
+          title={
+            items.length > 0 ? t("Remembered · {count}", { count: items.length }) : t("Remembered")
+          }
+          footer={items.length > 0 ? t("Swipe a memory to pause or forget it.") : undefined}
         >
           {items.length === 0 ? (
             <p className="mobile-memory-empty">
@@ -170,7 +172,7 @@ export function MemoryScreen({ onBack }: { onBack: () => void }) {
                 key={memory.id}
                 actions={[
                   {
-                    label: memory.disabled ? "Resume" : "Pause",
+                    label: memory.disabled ? t("Resume") : t("Pause"),
                     tone: "neutral",
                     onAction: () => void toggleMemory(memory),
                   },
@@ -184,8 +186,16 @@ export function MemoryScreen({ onBack }: { onBack: () => void }) {
                 <div className="mobile-memory-row" data-paused={memory.disabled}>
                   <span className="mobile-memory-text">{memory.text}</span>
                   <span className="mobile-memory-meta">
-                    {memory.source === "manual" ? "Added by you" : "Learned from a conversation"}
-                    {memory.disabled ? " · paused" : ""}
+                    {memory.disabled
+                      ? t("{origin} · paused", {
+                          origin:
+                            memory.source === "manual"
+                              ? t("Added by you")
+                              : t("Learned from a conversation"),
+                        })
+                      : memory.source === "manual"
+                        ? t("Added by you")
+                        : t("Learned from a conversation")}
                   </span>
                 </div>
               </SwipeableRow>
@@ -196,7 +206,9 @@ export function MemoryScreen({ onBack }: { onBack: () => void }) {
         {items.length > 0 ? (
           <SettingsGroup>
             <SettingsActionRow
-              label={confirmingClear ? "Tap again to forget everything" : "Forget all memories"}
+              label={
+                confirmingClear ? t("Tap again to forget everything") : t("Forget all memories")
+              }
               tone="destructive"
               onClick={() => void clearAll()}
             />

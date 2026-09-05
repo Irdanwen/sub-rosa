@@ -66,7 +66,7 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
       setGalleryEpoch((epoch) => epoch + 1);
     } catch (err) {
       if (!(err instanceof DOMException && err.name === "AbortError")) {
-        setError(err instanceof Error ? err.message : "The narration failed.");
+        setError(err instanceof Error ? err.message : t("The narration failed."));
       }
     } finally {
       setBusy(false);

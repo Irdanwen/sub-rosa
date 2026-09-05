@@ -201,7 +201,7 @@ function ListField({
             className="icon-button"
             disabled={disabled}
             onClick={() => onChange(values.filter((_, position) => position !== index))}
-            aria-label={`Remove this ${label.toLowerCase()} entry`}
+            aria-label={t("Remove this {value} entry", { value: label.toLowerCase() })}
           >
             <IconCrossSmall size={14} aria-hidden />
           </button>

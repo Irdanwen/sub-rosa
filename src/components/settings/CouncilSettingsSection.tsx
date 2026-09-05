@@ -191,7 +191,7 @@ function Roster({
                   {models.length > 0 ? (
                     <select
                       className="council-seat-picker"
-                      aria-label={`Model for ${seat.name}`}
+                      aria-label={t("Model for {name}", { name: seat.name })}
                       value={pinned}
                       onChange={(event) => void onPin(seat.id, event.target.value)}
                     >
@@ -218,8 +218,12 @@ function Roster({
           {plan.reusedFamilies.length > 0 ? (
             <p className="settings-group-description">
               {plan.reusedByChoice
-                ? "Two of these seats are pinned to the same model family, so they will tend to agree. A council is only worth its cost when its seats can disagree."
-                : "The catalog offers fewer model families than there are seats, so some of them are sharing weights. This council is less independent than it looks."}
+                ? t(
+                    "Two of these seats are pinned to the same model family, so they will tend to agree. A council is only worth its cost when its seats can disagree.",
+                  )
+                : t(
+                    "The catalog offers fewer model families than there are seats, so some of them are sharing weights. This council is less independent than it looks.",
+                  )}
             </p>
           ) : null}
         </>

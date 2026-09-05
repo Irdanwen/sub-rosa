@@ -198,8 +198,13 @@ export function SessionUsagePanel({
           {stale ? (
             <p className="agent-usage-stale" role="status">
               {readAt
-                ? `The runtime has run no turn in this session since it loaded it, so its counters restarted at zero. Showing the last reading, taken at ${formatClock(readAt)}.`
-                : "The runtime has run no turn in this session since it loaded it, so it has no counters to report yet."}
+                ? t(
+                    "The runtime has run no turn in this session since it loaded it, so its counters restarted at zero. Showing the last reading, taken at {value}.",
+                    { value: formatClock(readAt) },
+                  )
+                : t(
+                    "The runtime has run no turn in this session since it loaded it, so it has no counters to report yet.",
+                  )}
             </p>
           ) : null}
           <dl className="agent-usage-grid">
@@ -252,7 +257,7 @@ function Metric({ label, value }: { label: string; value?: string }) {
   return (
     <div className="agent-usage-metric">
       <dt>{label}</dt>
-      <dd data-unavailable={present ? undefined : "true"}>{present ? value : "Unavailable"}</dd>
+      <dd data-unavailable={present ? undefined : "true"}>{present ? value : t("Unavailable")}</dd>
     </div>
   );
 }
@@ -263,7 +268,7 @@ function Metric({ label, value }: { label: string; value?: string }) {
 function ContextMeter({ used, limit }: { used?: number; limit?: number }) {
   const hasBoth = used !== undefined && limit !== undefined && limit > 0;
   const pct = hasBoth ? Math.min(100, Math.max(0, (used / limit) * 100)) : null;
-  const reading = hasBoth ? `${formatCount(used)} / ${formatCount(limit)}` : "Unavailable";
+  const reading = hasBoth ? `${formatCount(used)} / ${formatCount(limit)}` : t("Unavailable");
 
   return (
     <div className="agent-usage-context">
@@ -458,7 +463,7 @@ function CostSection({
               >
                 {cost.estimatedCostUsd !== undefined
                   ? formatUsd(cost.estimatedCostUsd)
-                  : "Unavailable"}
+                  : t("Unavailable")}
               </span>
             </li>
           ))}

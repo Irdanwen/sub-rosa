@@ -1,5 +1,6 @@
 import { t } from "../../lib/i18n";
 import { useState } from "react";
+import { messageFromError } from "../../lib/errors";
 import { CarpeDiemSettings } from "../settings/CarpeDiemSettings";
 import { BrandGradientMark } from "../brand/Marks";
 import { BrandPrimaryButton } from "../ui/BrandPrimaryButton";
@@ -36,9 +37,13 @@ export function CarpeDiemGate({
   // trip to Settings, or a relaunch, for a failure that is often a network
   // blip at boot.
   const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
   const retry = () => {
     setRetrying(true);
-    void carpeDiemRestartSidecar().finally(() => setRetrying(false));
+    setRetryError(null);
+    void carpeDiemRestartSidecar()
+      .catch((error: unknown) => setRetryError(messageFromError(error)))
+      .finally(() => setRetrying(false));
   };
 
   return (
@@ -48,14 +53,24 @@ export function CarpeDiemGate({
           <BrandGradientMark />
         </span>
         <h1 className="welcome-title">
-          {failed ? `${PRODUCT_NAME} could not start` : `Welcome to ${PRODUCT_NAME}`}
+          {failed
+            ? t("{product} could not start", { product: PRODUCT_NAME })
+            : t("Welcome to {product}", { product: PRODUCT_NAME })}
         </h1>
         <p className="welcome-subtitle">
           {failed
-            ? "The local engine did not come up. Your notes are untouched. This is almost always the key or the connection: check the key below, then try again."
+            ? t(
+                "The local engine did not come up. Your notes are untouched. This is almost always the key or the connection: check the key below, then try again.",
+              )
             : mobile
-              ? `${PRODUCT_NAME} turns your meetings into notes, right on your iPhone. Paste your Carpe Diem key to get started.`
-              : `${PRODUCT_NAME} turns your meetings into notes on your computer. Connect your Carpe Diem key to get started: no terminal, no config files.`}
+              ? t(
+                  "{product} turns your meetings into notes, right on your iPhone. Paste your Carpe Diem key to get started.",
+                  { product: PRODUCT_NAME },
+                )
+              : t(
+                  "{product} turns your meetings into notes on your computer. Connect your Carpe Diem key to get started: no terminal, no config files.",
+                  { product: PRODUCT_NAME },
+                )}
         </p>
 
         <CarpeDiemSettings compact />
@@ -63,9 +78,19 @@ export function CarpeDiemGate({
         {failed ? (
           <div className="welcome-providers">
             <BrandPrimaryButton disabled={retrying} onClick={retry}>
-              {retrying ? "Starting…" : "Try again"}
+              {retrying ? t("Starting…") : t("Try again")}
             </BrandPrimaryButton>
           </div>
+        ) : null}
+
+        {retryError ? (
+          <p
+            role="alert"
+            className="settings-row-description settings-row-substatus"
+            data-ok="false"
+          >
+            {retryError}
+          </p>
         ) : null}
 
         <p className="welcome-terms">

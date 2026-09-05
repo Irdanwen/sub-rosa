@@ -34,7 +34,7 @@ export function GlobalRecorderPill({ status, title, onOpen }: GlobalRecorderPill
       className="global-recorder-pill"
       data-state={status.state}
       onClick={onOpen}
-      aria-label={`Open recording: ${title}`}
+      aria-label={t("Open recording: {name}", { name: title })}
       title={t("Open recording")}
     >
       <Waveform level={meterLevel} active={recording} />

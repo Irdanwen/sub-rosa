@@ -309,7 +309,9 @@ export function SelectionToolbar({
           ref={pendingInputRef}
           type="text"
           value={pendingValue}
-          placeholder={pending.needsInput === "language" ? "English" : "Turn this into a checklist"}
+          placeholder={
+            pending.needsInput === "language" ? t("English") : t("Turn this into a checklist")
+          }
           aria-label={pending.label}
           onMouseDown={(event) => event.stopPropagation()}
           onChange={(event) => setPendingValue(event.target.value)}
@@ -369,7 +371,7 @@ export function SelectionToolbar({
           }}
         />
         <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={commitLink}>
-          {linkDraft.trim() ? "Apply" : "Remove"}
+          {linkDraft.trim() ? t("Apply") : t("Remove")}
         </button>
       </div>
     );

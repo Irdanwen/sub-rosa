@@ -197,7 +197,7 @@ export function ModelsScreen({ onBack }: { onBack: () => void }) {
                 className="mobile-settings-button"
                 disabled={!entry}
                 onClick={() => setPicking(row.mode)}
-                aria-label={`${row.label} model: ${name}`}
+                aria-label={t("{mode} model: {name}", { mode: row.label, name })}
               >
                 {name}
               </button>
@@ -208,7 +208,9 @@ export function ModelsScreen({ onBack }: { onBack: () => void }) {
       </SettingsGroup>
       {picking && active ? (
         <ModelSheet
-          title={`${MODEL_ROWS.find((row) => row.mode === picking)?.label ?? ""} model`}
+          title={t("{mode} model", {
+            mode: MODEL_ROWS.find((row) => row.mode === picking)?.label ?? "",
+          })}
           entries={active.models.map((model) => ({
             id: model.id,
             name: model.name,

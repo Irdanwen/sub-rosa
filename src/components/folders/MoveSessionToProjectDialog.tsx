@@ -109,7 +109,7 @@ export function MoveSessionToProjectDialog({
             onClick={() => void handleCommit()}
             disabled={submitting || !selectedId}
           >
-            {submitting ? `${commitLabel}ing…` : commitLabel}
+            {submitting ? t("Saving…") : commitLabel}
           </button>
         </>
       }
@@ -162,10 +162,10 @@ export function MoveSessionToProjectDialog({
         ) : (
           <p className="add-notes-empty">
             {folders.length === 0
-              ? "No projects yet. Create one from the Projects view."
+              ? t("No projects yet. Create one from the Projects view.")
               : query.trim()
-                ? "No projects match that search."
-                : "No other projects to move to."}
+                ? t("No projects match that search.")
+                : t("No other projects to move to.")}
           </p>
         )}
       </div>

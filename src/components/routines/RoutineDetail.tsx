@@ -191,7 +191,7 @@ export function RoutineDetail({
               onClick={() => void runNow()}
             >
               <IconPlay size={13} aria-hidden />
-              {queued ? "Queued" : "Run now"}
+              {queued ? t("Queued") : t("Run now")}
             </button>
             <button
               type="button"
@@ -199,7 +199,7 @@ export function RoutineDetail({
               disabled={!dirty || !prompt.trim() || saving || busy}
               onClick={() => void save()}
             >
-              {saving ? "Saving…" : "Save"}
+              {saving ? t("Saving…") : t("Save")}
             </button>
           </div>
         }
@@ -222,7 +222,7 @@ export function RoutineDetail({
               <Switch
                 checked={routine.state === "scheduled"}
                 disabled={busy}
-                aria-label={`${name.trim() || routine.name} active`}
+                aria-label={t("{name} active", { name: name.trim() || routine.name })}
                 onCheckedChange={onToggleActive}
               />
             </label>

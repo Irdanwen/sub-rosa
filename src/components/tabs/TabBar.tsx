@@ -212,7 +212,9 @@ export function TabBar({
         aria-selected={active}
         aria-busy={tab.status === "working" || undefined}
         data-active={active || undefined}
-        title={tab.status === "waitingForUser" ? `${tab.title} (needs you)` : tab.title}
+        title={
+          tab.status === "waitingForUser" ? t("{name} (needs you)", { name: tab.title }) : tab.title
+        }
         onClick={() => onActivate(tab.id)}
         onAuxClick={(event) => handleAuxClick(event, tab.id)}
         onContextMenu={(event) => handleContextMenu(event, tab.id)}
@@ -227,7 +229,7 @@ export function TabBar({
           <button
             type="button"
             className="tab-close"
-            aria-label={`Close ${tab.title}`}
+            aria-label={t("Close {name}", { name: tab.title })}
             onClick={(event) => {
               event.stopPropagation();
               onClose(tab.id);
@@ -263,7 +265,7 @@ export function TabBar({
             className="tab-overflow"
             // The popover is a full switcher listing every open tab (the badge
             // counts how many are currently off-strip), so the label says so.
-            aria-label={`Show all ${tabs.length} tabs`}
+            aria-label={t("Show all {count} tabs", { count: tabs.length })}
             aria-expanded={overflowOpen}
             onClick={(event) => {
               event.stopPropagation();
@@ -330,7 +332,7 @@ export function TabBar({
                   <button
                     type="button"
                     className="tab-overflow-close"
-                    aria-label={`Close ${tab.title}`}
+                    aria-label={t("Close {name}", { name: tab.title })}
                     onClick={(event) => {
                       event.stopPropagation();
                       onClose(tab.id);

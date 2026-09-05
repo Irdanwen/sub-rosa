@@ -72,10 +72,10 @@ export function useCarpeDiem() {
 }
 
 const STATUS_COPY: Record<CarpeDiemSidecarStatusDto["status"], string> = {
-  unconfigured: "Not connected",
-  starting: "Starting…",
-  ready: "Connected",
-  failed: "Backend error",
+  unconfigured: t("Not connected"),
+  starting: t("Starting…"),
+  ready: t("Connected"),
+  failed: t("Backend error"),
 };
 
 export function CarpeDiemStatusPill({ status }: { status: CarpeDiemSidecarStatusDto | null }) {
@@ -90,9 +90,9 @@ export function CarpeDiemStatusPill({ status }: { status: CarpeDiemSidecarStatus
 }
 
 const RAIL_LABELS: Record<CarpeDiemRail, string> = {
-  auto: "Automatic",
-  credits: "Credits",
-  prepaid: "Prepaid account",
+  auto: t("Automatic"),
+  credits: t("Credits"),
+  prepaid: t("Prepaid account"),
 };
 
 /** Rail-aware payment panel. Carpe Diem bills one rail at a time — a prepaid
@@ -157,10 +157,14 @@ function CarpeDiemPayment({ hasApiKey }: { hasApiKey: boolean }) {
                   rail: RAIL_LABELS[view.effectiveRail].toLowerCase(),
                 })}{" "}
                 {view.fundsElsewhere
-                  ? `Your ${
-                      view.effectiveRail === "prepaid" ? "credits" : "prepaid account"
-                    } still has ${formatUsd(view.otherBalanceUsdc)} — switch rails below.`
-                  : "Add funds on the Carpe Diem site."}
+                  ? view.effectiveRail === "prepaid"
+                    ? t("You still have {amount} in credits. Switch rails below.", {
+                        amount: formatUsd(view.otherBalanceUsdc),
+                      })
+                    : t("Your prepaid account still has {amount}. Switch rails below.", {
+                        amount: formatUsd(view.otherBalanceUsdc),
+                      })
+                  : t("Add funds on the Carpe Diem site.")}
               </p>
             ) : null}
           </div>
@@ -189,7 +193,9 @@ function CarpeDiemPayment({ hasApiKey }: { hasApiKey: boolean }) {
             <h3 className="settings-row-title">{t("Active rail")}</h3>
             <p className="settings-row-description">
               {RAIL_LABELS[billing.rail]}
-              {billing.rail === "auto" ? ` — paying via ${view.effectiveRail}` : ""}
+              {billing.rail === "auto"
+                ? t(" - paying via {effectiveRail}", { effectiveRail: view.effectiveRail })
+                : ""}
             </p>
             {error ? (
               <p className="settings-row-description settings-row-substatus" data-ok="false">
@@ -270,7 +276,9 @@ function CarpeDiemCache({ hasApiKey }: { hasApiKey: boolean }) {
                 },
               )}
               {cache.savedUsd !== undefined && cache.savedUsd > 0
-                ? ` The provider reports that saved ${formatUsd(cache.savedUsd)}.`
+                ? t(" The provider reports that saved {amount}.", {
+                    amount: formatUsd(cache.savedUsd),
+                  })
                 : ""}
             </p>
           </div>
@@ -372,8 +380,12 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
               <h3 className="settings-row-title">{t("Endpoint")}</h3>
               <p className="settings-row-description">
                 {endpoint === "router"
-                  ? "Router: served by the cheapest market, so some requests may leave Carpe Diem's confidential network."
-                  : "V1: every request stays inside Carpe Diem's confidential network, at standard price."}
+                  ? t(
+                      "Router: served by the cheapest market, so some requests may leave Carpe Diem's confidential network.",
+                    )
+                  : t(
+                      "V1: every request stays inside Carpe Diem's confidential network, at standard price.",
+                    )}
               </p>
             </div>
             <div className="settings-row-control">
@@ -413,7 +425,7 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
                 value={keyDraft}
                 autoComplete="off"
                 spellCheck={false}
-                placeholder={hasApiKey ? "Saved key hidden" : `${CARPE_DIEM_KEY_PREFIX}…`}
+                placeholder={hasApiKey ? t("Saved key hidden") : `${CARPE_DIEM_KEY_PREFIX}…`}
                 aria-label={t("Carpe Diem API key")}
                 onChange={(event) => setKeyDraft(event.target.value)}
                 onKeyDown={(event) => {
@@ -463,7 +475,7 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
                 disabled={test.kind === "testing" || !hasApiKey}
                 onClick={() => void runTest()}
               >
-                {test.kind === "testing" ? "Testing…" : "Test connection"}
+                {test.kind === "testing" ? t("Testing…") : t("Test connection")}
               </button>
               {status?.status === "failed" ? (
                 <button

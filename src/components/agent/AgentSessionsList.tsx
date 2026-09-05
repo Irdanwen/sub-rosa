@@ -365,11 +365,15 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
             setBulkDeleteError(null);
           }}
           onConfirm={() => handleBulkDelete()}
-          title={`Delete ${selectedCount} ${selectedCount === 1 ? "session" : "sessions"}?`}
-          description={
-            bulkDeleteError || "This cannot be undone. These agent sessions will be removed."
+          title={
+            selectedCount === 1
+              ? t("Delete 1 session?")
+              : t("Delete {count} sessions?", { count: selectedCount })
           }
-          confirmLabel={selectedCount === 1 ? "Delete session" : "Delete sessions"}
+          description={
+            bulkDeleteError || t("This cannot be undone. These agent sessions will be removed.")
+          }
+          confirmLabel={selectedCount === 1 ? t("Delete session") : t("Delete sessions")}
           destructive
         />
       </section>
@@ -410,8 +414,8 @@ function sessionStatusPriority(
 }
 
 function sessionStatusLabel(status: AgentSessionListStatus) {
-  if (status === "waitingForUser") return "Needs you";
-  if (status === "running") return "Working";
+  if (status === "waitingForUser") return t("Needs you");
+  if (status === "running") return t("Working");
   return "";
 }
 
@@ -436,8 +440,8 @@ function AgentSessionListRow({
   onOpenMove: () => void;
   onRemoveFromProject: (folderId: string) => void;
 }) {
-  const title = session.title?.trim() || session.preview?.trim() || "Untitled session";
-  const preview = session.preview?.trim() || "No messages yet";
+  const title = session.title?.trim() || session.preview?.trim() || t("Untitled session");
+  const preview = session.preview?.trim() || t("No messages yet");
   const statusLabel = sessionStatusLabel(status);
   const [menu, setMenu] = useState<{ right: number; top: number } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -494,7 +498,7 @@ function AgentSessionListRow({
           <input
             type="checkbox"
             checked={checked}
-            aria-label={`Select ${title}`}
+            aria-label={t("Select {title}", { title: title })}
             onChange={onToggleSelected}
           />
           <span className="folder-note-select-box" aria-hidden>
@@ -533,7 +537,7 @@ function AgentSessionListRow({
           <button
             type="button"
             className="folder-note-menu"
-            aria-label={`Actions for ${title}`}
+            aria-label={t("Actions for {title}", { title: title })}
             aria-haspopup="menu"
             aria-expanded={menu !== null}
             onClick={(event) => {
@@ -569,7 +573,7 @@ function AgentSessionListRow({
               }}
             >
               {currentFolderId ? <IconMoveFolder size={14} /> : <IconFolderAddRight size={14} />}
-              {currentFolderId ? "Change project" : "Add to project"}
+              {currentFolderId ? t("Change project") : t("Add to project")}
             </button>
             {currentFolderId ? (
               <button
@@ -608,8 +612,8 @@ function AgentSessionListRow({
           setDeleteError(null);
         }}
         onConfirm={() => handleDelete()}
-        title={`Delete "${title}"?`}
-        description={deleteError || "This agent session cannot be restored."}
+        title={t('Delete "{title}"?', { title: title })}
+        description={deleteError || t("This agent session cannot be restored.")}
         confirmLabel={t("Delete session")}
         destructive
       />

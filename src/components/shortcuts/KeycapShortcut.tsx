@@ -31,7 +31,7 @@ export function KeycapShortcut({
   }
   const keys = label.split("+").filter(Boolean);
   return (
-    <span className="keycap-frame" aria-label={`Shortcut ${label}`}>
+    <span className="keycap-frame" aria-label={t("Shortcut {keys}", { keys: label })}>
       {keys.map((key, idx) => {
         const mapped = KEY_GLYPHS[key.toLowerCase()];
         return (

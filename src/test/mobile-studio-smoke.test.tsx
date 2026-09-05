@@ -65,7 +65,7 @@ describe("the mobile studio", () => {
   it("offers all five tabs", async () => {
     render(<StudioScreen />);
 
-    for (const name of ["Image", "Video", "Audio", "Flows", "Library"]) {
+    for (const name of ["Image", "Video", "Audio", "Flows", "Gallery"]) {
       expect(screen.getByRole("tab", { name })).toBeInTheDocument();
     }
   });
@@ -102,8 +102,8 @@ describe("the mobile studio", () => {
 
   it("renders the library, and says so when it is empty", async () => {
     render(<StudioScreen />);
-    await openTab("Library");
+    await openTab("Gallery");
 
-    expect(screen.getByRole("tab", { name: "Library" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Gallery" })).toHaveAttribute("aria-selected", "true");
   });
 });

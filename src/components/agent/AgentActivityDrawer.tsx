@@ -207,7 +207,9 @@ export function AgentActivityDrawer({
         title={t("Stop this background subagent?")}
         description={
           stop.confirm
-            ? `${stop.confirm.label} is using a tool right now. Stopping it may leave its work unfinished.`
+            ? t("{label} is using a tool right now. Stopping it may leave its work unfinished.", {
+                label: stop.confirm.label,
+              })
             : undefined
         }
         confirmLabel={t("Stop subagent")}
@@ -371,8 +373,10 @@ function ActivityRow({
               className="agent-activity-row-pending"
               title={
                 record.pendingActionCount === 1
-                  ? "1 action needs you"
-                  : `${record.pendingActionCount} actions need you`
+                  ? t("1 action needs you")
+                  : t("{pendingActionCount} actions need you", {
+                      pendingActionCount: record.pendingActionCount,
+                    })
               }
             >
               <IconHand5Finger size={12} ariaHidden />
@@ -384,8 +388,10 @@ function ActivityRow({
               className="agent-activity-row-subagents"
               title={
                 record.subagentCount === 1
-                  ? "1 background subagent"
-                  : `${record.subagentCount} background subagents`
+                  ? t("1 background subagent")
+                  : t("{subagentCount} background subagents", {
+                      subagentCount: record.subagentCount,
+                    })
               }
             >
               <IconRobot size={12} ariaHidden />
@@ -405,7 +411,7 @@ function ActivityRow({
             type="button"
             className="agent-activity-row-action"
             onClick={onSteer}
-            aria-label={`Steer ${sessionLabel}`}
+            aria-label={t("Steer {sessionLabel}", { sessionLabel: sessionLabel })}
             title={t("Send a redirecting instruction")}
           >
             <IconBubbleWide size={14} ariaHidden />
@@ -416,7 +422,7 @@ function ActivityRow({
             type="button"
             className="agent-activity-row-action agent-activity-row-action-stop"
             onClick={onStop}
-            aria-label={`Stop ${sessionLabel}`}
+            aria-label={t("Stop {sessionLabel}", { sessionLabel: sessionLabel })}
             title={t("Stop this session")}
           >
             <IconStop size={14} ariaHidden />
@@ -426,7 +432,7 @@ function ActivityRow({
           type="button"
           className="agent-activity-row-action"
           onClick={onOpen}
-          aria-label={`Open session ${sessionLabel}`}
+          aria-label={t("Open session {sessionLabel}", { sessionLabel: sessionLabel })}
           title={t("Open this session")}
         >
           <IconArrowUpRight size={14} ariaHidden />
@@ -526,7 +532,7 @@ function SubagentRow({
   // While the optimistic overlay is on, the row reads "Stopping" instead of its
   // last reported phase — until a terminal event reconciles it (see
   // useSubagentStop). The phase attributes stay the classifier's truth.
-  const status = stopping ? "Stopping" : subagentPhaseMeta(subagent.phase);
+  const status = stopping ? t("Stopping") : subagentPhaseMeta(subagent.phase);
 
   return (
     <li
@@ -583,7 +589,7 @@ function SubagentRow({
                 destructive: subagent.phase === "tool",
               })
             }
-            aria-label={`Stop subagent ${task}`}
+            aria-label={t("Stop subagent {task}", { task: task })}
             title={t("Stop this background subagent")}
           >
             <IconStopCircle size={14} ariaHidden />
@@ -618,19 +624,19 @@ function isTerminalSubagentPhase(phase: BackgroundHermesPhase): boolean {
 function subagentPhaseMeta(phase: BackgroundHermesPhase): string {
   switch (phase) {
     case "start":
-      return "Starting";
+      return t("Starting");
     case "progress":
-      return "Working";
+      return t("Working");
     case "tool":
-      return "Using a tool";
+      return t("Using a tool");
     case "thinking":
-      return "Thinking";
+      return t("Thinking");
     case "complete":
-      return "Complete";
+      return t("Complete");
     case "error":
-      return "Error";
+      return t("Error");
     case "blocked":
-      return "Blocked";
+      return t("Blocked");
   }
 }
 
@@ -642,8 +648,8 @@ function ModePill({ mode }: { mode: HermesMode }) {
       data-mode={mode}
       title={
         unrestricted
-          ? "This session can change files outside the sandbox"
-          : "This session is sandboxed"
+          ? t("This session can change files outside the sandbox")
+          : t("This session is sandboxed")
       }
     >
       {unrestricted ? (
@@ -651,7 +657,7 @@ function ModePill({ mode }: { mode: HermesMode }) {
       ) : (
         <IconShieldCheck size={12} ariaHidden />
       )}
-      {unrestricted ? "Unrestricted" : "Sandboxed"}
+      {unrestricted ? t("Unrestricted") : t("Sandboxed")}
     </span>
   );
 }
@@ -706,13 +712,13 @@ function formatModel(model: { model?: string; provider?: string } | undefined): 
  */
 function formatAge(lastEventAt: number, now: number): string {
   const seconds = Math.max(0, Math.floor((now - lastEventAt) / 1000));
-  if (seconds < 45) return "just now";
+  if (seconds < 45) return t("just now");
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return t("{count}m ago", { count: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return t("{count}h ago", { count: hours });
   const days = Math.round(hours / 24);
-  return `${days}d ago`;
+  return t("{count}d ago", { count: days });
 }
 
 // ===========================================================================
@@ -776,7 +782,7 @@ export function AgentArtifactsSection({
 }
 
 function ArtifactRow({ artifact, onOpen }: { artifact: AgentArtifact; onOpen: () => void }) {
-  const name = nonEmpty(artifact.displayName) ?? nonEmpty(artifact.path) ?? "File";
+  const name = nonEmpty(artifact.displayName) ?? nonEmpty(artifact.path) ?? t("File");
   const action = actionMeta(artifact.action);
   const safety = pathSafetyMeta(artifact);
 

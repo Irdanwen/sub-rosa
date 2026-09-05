@@ -36,10 +36,10 @@ const THEME_OPTIONS: Array<{ id: ThemePreference; label: string }> = [
 ];
 
 const STATUS_SUMMARY: Record<string, string> = {
-  unconfigured: "Not connected",
-  starting: "Starting",
-  ready: "Connected",
-  failed: "Backend error",
+  unconfigured: t("Not connected"),
+  starting: t("Starting"),
+  ready: t("Connected"),
+  failed: t("Backend error"),
 };
 
 /**
@@ -78,11 +78,11 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
     memoryList()
       .then((response) => {
         if (!response.settings.enabled) {
-          setMemorySummary("Off");
+          setMemorySummary(t("Off"));
           return;
         }
         const count = response.items.filter((item) => !item.disabled).length;
-        setMemorySummary(count === 0 ? "On" : `On · ${count} remembered`);
+        setMemorySummary(count === 0 ? t("On") : t("On · {count} remembered", { count }));
       })
       .catch(() => setMemorySummary(null));
   }, []);
@@ -155,7 +155,7 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
                 {formatCredits(credits.availableCredits)}
               </span>
               <span className="mobile-credits-label">
-                {credits.rail === "prepaid" ? "prepaid balance" : "credits available"}
+                {credits.rail === "prepaid" ? t("prepaid balance") : t("credits available")}
               </span>
             </span>
             <span className="mobile-credits-action">{t("Top up")}</span>

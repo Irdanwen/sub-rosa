@@ -432,7 +432,7 @@ function ParamField({
           className="studio-node-picker nodrag"
           onClick={() => setPickerOpen(true)}
         >
-          {label || "Choose from the gallery"}
+          {label || t("Choose from the gallery")}
         </button>
         {pickerOpen ? (
           <GalleryPicker
@@ -464,7 +464,7 @@ function ParamField({
           className="studio-node-picker nodrag"
           onClick={() => setPickerOpen(true)}
         >
-          {label || "Choose a note"}
+          {label || t("Choose a note")}
         </button>
         {pickerOpen ? (
           <NotePicker
@@ -503,12 +503,16 @@ function ParamField({
             disabled={placed}
             title={
               placed
-                ? "This prompt already says where its upstream text goes."
-                : `${
-                    textSources.length === 1
-                      ? `Puts the text from "${textSources[0]}" here`
-                      : `Puts the text from the ${textSources.length} connected inputs here`
-                  }. Without the marker it is added after the prompt.`
+                ? t("This prompt already says where its upstream text goes.")
+                : textSources.length === 1
+                  ? t(
+                      'Puts the text from "{name}" here. Without the marker it is added after the prompt.',
+                      { name: textSources[0] },
+                    )
+                  : t(
+                      "Puts the text from the {count} connected inputs here. Without the marker it is added after the prompt.",
+                      { count: textSources.length },
+                    )
             }
             // Keeps the caret: the insertion point is wherever the user last
             // was in the prompt, and a button that stole focus would lose it.
@@ -676,7 +680,9 @@ function GateApproval({ data }: { data: StudioNodeData }) {
   const verdict = data.result?.note;
   return (
     <div className="studio-gate-approval nodrag">
-      <p className="studio-gate-note">{note || "The production is waiting for your approval."}</p>
+      <p className="studio-gate-note">
+        {note || t("The production is waiting for your approval.")}
+      </p>
       {verdict ? <p className="studio-gate-verdict">{verdict}</p> : null}
       {sources.length > 1 ? (
         <select
@@ -687,7 +693,9 @@ function GateApproval({ data }: { data: StudioNodeData }) {
         >
           {sources.map((source, index) => (
             <option key={source.id} value={source.id}>
-              {`${index + 1}. ${source.label}${index === 0 ? " (default)" : ""}`}
+              {index === 0
+                ? t("{index}. {name} (default)", { index: index + 1, name: source.label })
+                : `${index + 1}. ${source.label}`}
             </option>
           ))}
         </select>
@@ -731,7 +739,7 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
           className="studio-node-title nodrag"
           value={wfNode.label}
           placeholder={schema.label}
-          aria-label={`${schema.label} name`}
+          aria-label={t("{type} name", { type: schema.label })}
           onChange={(event) => data.onRename(wfNode.id, event.target.value)}
         />
         <span className="studio-card-actions">
@@ -797,7 +805,11 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
                       type="button"
                       className="studio-port-order-entry"
                       disabled={!mentionable}
-                      title={mentionable ? `Add "${mentionFor(index)}" to the prompt` : undefined}
+                      title={
+                        mentionable
+                          ? t('Add "{name}" to the prompt', { name: mentionFor(index) })
+                          : undefined
+                      }
                       onClick={() => {
                         const prompt =
                           typeof wfNode.params.prompt === "string" ? wfNode.params.prompt : "";
@@ -816,7 +828,7 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
                       <button
                         type="button"
                         className="studio-icon-button"
-                        aria-label={`Move ${source.label} up`}
+                        aria-label={t("Move {name} up", { name: source.label })}
                         disabled={index === 0}
                         onClick={() => data.onReorderEdge?.(source.edgeId, -1)}
                       >
@@ -825,7 +837,7 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
                       <button
                         type="button"
                         className="studio-icon-button"
-                        aria-label={`Move ${source.label} down`}
+                        aria-label={t("Move {name} down", { name: source.label })}
                         disabled={index === sources.length - 1}
                         onClick={() => data.onReorderEdge?.(source.edgeId, 1)}
                       >
@@ -910,7 +922,7 @@ function RunCostDialog({
               <span>
                 {node.kind === "flat" && node.credits !== undefined
                   ? `~${formatCredits(node.credits)}`
-                  : "usage priced"}
+                  : t("usage priced")}
               </span>
             </li>
           ))}
@@ -919,7 +931,7 @@ function RunCostDialog({
           <span>{t("Total")}</span>
           <span>
             {estimate.metered > 0
-              ? `at least ~${formatCredits(estimate.credits)}`
+              ? t("at least ~{credits}", { credits: formatCredits(estimate.credits) })
               : `~${formatCredits(estimate.credits)}`}
           </span>
         </p>
@@ -1668,7 +1680,7 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
             title={validation?.errors.map((issue) => issue.message).join("\n") || undefined}
             onClick={() => void startRun()}
           >
-            {quoting ? "Pricing..." : "Run workflow"}
+            {quoting ? t("Pricing...") : t("Run workflow")}
           </button>
         )}
       </div>
@@ -1701,7 +1713,7 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
           {liveProductions.map((entry) => (
             <div key={entry.id} className="studio-resume-row">
               <span>
-                {t("Still producing:")} <strong>{entry.name || "Untitled workflow"}</strong>
+                {t("Still producing:")} <strong>{entry.name || t("Untitled workflow")}</strong>
                 {t(". Its media lands in the gallery as it finishes.")}
               </span>
             </div>
@@ -1729,7 +1741,7 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
                 ) : (
                   <>
                     {t("An interrupted production:")}{" "}
-                    <strong>{entry.name || "Untitled workflow"}</strong>
+                    <strong>{entry.name || t("Untitled workflow")}</strong>
                     {t(". Finished steps are kept; resuming only runs what is left.")}
                   </>
                 )}

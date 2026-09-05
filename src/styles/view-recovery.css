@@ -1,0 +1,48 @@
+.view-recovery {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-10);
+  color: var(--muted-foreground);
+}
+
+.view-recovery-full {
+  min-height: 100dvh;
+  background: var(--background);
+  padding-top: calc(var(--sp-10) + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(var(--sp-10) + env(safe-area-inset-bottom, 0px));
+}
+
+.view-recovery-content {
+  /* A readable line length even when this is the only content in the window. */
+  max-width: 44ch;
+  text-align: center;
+}
+
+.view-recovery-content h1 {
+  color: var(--foreground);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-medium);
+  line-height: var(--leading-2xl);
+  letter-spacing: var(--tracking-2xl);
+  margin: 0 0 var(--sp-5);
+}
+
+.view-recovery-content p {
+  margin: 0 0 var(--sp-7);
+}
+
+.view-recovery-reload {
+  margin-top: var(--sp-10);
+  padding-top: var(--sp-7);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-sm);
+}
+
+.view-recovery-content .btn {
+  min-height: calc(var(--control-xl) + var(--sp-3));
+  padding-inline: var(--sp-7);
+}

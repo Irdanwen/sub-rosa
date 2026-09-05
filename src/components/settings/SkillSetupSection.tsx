@@ -66,7 +66,11 @@ export function SkillSetupView({
   const isError = state.status === "error";
 
   return (
-    <div className="skill-setup" role="group" aria-label={`Set up ${state.skill}`}>
+    <div
+      className="skill-setup"
+      role="group"
+      aria-label={t("Set up {skill}", { skill: state.skill })}
+    >
       <div className="skill-setup-header">
         <div className="skill-setup-title">
           <span className="skill-setup-skill">{state.skill}</span>
@@ -248,7 +252,7 @@ function EnvSetupRow({
           <span className="skill-setup-tag">{t("Optional")}</span>
         )}
         <span className="skill-setup-row-state" data-configured={row.configured}>
-          {row.configured ? "Configured" : "Not set"}
+          {row.configured ? t("Configured") : t("Not set")}
         </span>
       </div>
 
@@ -271,11 +275,11 @@ function EnvSetupRow({
           className="skill-setup-input"
           type={show ? "text" : "password"}
           value={draft}
-          placeholder={row.configured ? "Enter a new value to replace" : "Enter value"}
+          placeholder={row.configured ? t("Enter a new value to replace") : t("Enter value")}
           autoComplete="off"
           spellCheck={false}
           disabled={pending}
-          aria-label={`${requirement.name} value`}
+          aria-label={t("{name} value", { name: requirement.name })}
           onChange={(event) => {
             setRevealed(false);
             setDraft(event.currentTarget.value);
@@ -284,8 +288,8 @@ function EnvSetupRow({
         <button
           type="button"
           className="skill-setup-field-toggle"
-          aria-label={show ? "Hide value" : "Show value"}
-          title={show ? "Hide" : "Show"}
+          aria-label={show ? t("Hide value") : t("Show value")}
+          title={show ? t("Hide") : t("Show")}
           onClick={() => setShow((value) => !value)}
         >
           {show ? <IconEyeSlash size={14} ariaHidden /> : <IconEyeOpen size={14} ariaHidden />}
@@ -305,7 +309,7 @@ function EnvSetupRow({
           disabled={pending || draft.length === 0}
           onClick={save}
         >
-          {pending ? "Saving" : row.configured ? "Update" : "Save"}
+          {pending ? t("Saving") : row.configured ? t("Update") : t("Save")}
         </button>
         {row.configured ? (
           <>
@@ -417,13 +421,13 @@ function ConfigSetupRow({
           value={draft}
           placeholder={
             row.redacted
-              ? "Hidden; enter a new value to replace it"
-              : (requirement.default ?? "Enter value")
+              ? t("Hidden; enter a new value to replace it")
+              : (requirement.default ?? t("Enter value"))
           }
           autoComplete="off"
           spellCheck={false}
           disabled={pending}
-          aria-label={`${requirement.key} value`}
+          aria-label={t("{key} value", { key: requirement.key })}
           onChange={(event) => {
             setValidationError(undefined);
             setDraft(event.currentTarget.value);
@@ -439,7 +443,7 @@ function ConfigSetupRow({
 
       <div className="skill-setup-row-actions">
         <button type="button" className="skill-setup-save" disabled={pending} onClick={save}>
-          {pending ? "Saving" : "Save"}
+          {pending ? t("Saving") : t("Save")}
         </button>
         {row.current !== undefined && row.current.length > 0 ? (
           <button type="button" className="skill-setup-clear" disabled={pending} onClick={onDelete}>

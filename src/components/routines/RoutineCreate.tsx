@@ -62,7 +62,7 @@ export function RoutineCreate({ template, creating, error, onBack, onCreate }: R
               disabled={!prompt.trim() || creating}
               onClick={submit}
             >
-              {creating ? "Creating…" : "Create"}
+              {creating ? t("Creating…") : t("Create")}
             </button>
           </div>
         }

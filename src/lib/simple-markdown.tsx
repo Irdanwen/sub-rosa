@@ -5,6 +5,7 @@ import { type ReactNode, useState } from "react";
 import { ChatBlockSkeleton, ChatBlockView } from "../components/chat-blocks/ChatBlockView";
 import { resolveChatBlockFence } from "./chat-blocks";
 import { safeExternalHref } from "./external-link";
+import { t } from "./i18n";
 import { openExternalUrl } from "./tauri";
 
 /**
@@ -191,15 +192,15 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
   return (
     <div className="simple-markdown-code">
       <div className="simple-markdown-code-head">
-        <span className="simple-markdown-code-lang">{lang || "code"}</span>
+        <span className="simple-markdown-code-lang">{lang || t("code")}</span>
         <button
           type="button"
           className="simple-markdown-code-copy"
           onClick={copy}
-          aria-label="Copy code"
+          aria-label={t("Copy code")}
         >
           {copied ? <IconCheckmark1Small size={13} /> : <IconClipboard size={13} />}
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("Copied") : t("Copy")}
         </button>
       </div>
       <pre>

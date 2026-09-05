@@ -1,4 +1,4 @@
-import { intlLocale } from "../../../lib/i18n";
+import { intlLocale, t } from "../../../lib/i18n";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { useLongPress } from "../../../lib/long-press";
 import { IconNoteText } from "central-icons/IconNoteText";
@@ -14,10 +14,11 @@ type NoteRowProps = {
 
 export function NoteRow({ note, recording, onSelect, onLongPress }: NoteRowProps) {
   const longPress = useLongPress(() => onLongPress?.());
-  const title = note.title.trim() || "New note";
+  const title = note.title.trim() || t("New note");
   const effectiveStatus =
     note.processingStatus === "recording" && !recording ? "draft" : note.processingStatus;
-  const preview = note.preview.trim() || (recording ? "Recording" : statusLabel(effectiveStatus));
+  const preview =
+    note.preview.trim() || (recording ? t("Recording") : statusLabel(effectiveStatus));
   const processing =
     !note.preview.trim() &&
     (effectiveStatus === "transcribing" ||
@@ -72,21 +73,21 @@ function formatDuration(ms: number): string {
 function statusLabel(status: NoteListItemDto["processingStatus"]) {
   switch (status) {
     case "recording":
-      return "Recording";
+      return t("Recording");
     case "validating":
-      return "Validating";
+      return t("Validating");
     case "transcribing":
-      return "Transcribing";
+      return t("Transcribing");
     case "generating":
-      return "Generating";
+      return t("Generating");
     case "failed":
-      return "Needs attention";
+      return t("Needs attention");
     case "recoverable":
-      return "Recoverable";
+      return t("Recoverable");
     case "ready":
-      return "Ready";
+      return t("Ready");
     default:
-      return "Draft";
+      return t("Draft");
   }
 }
 

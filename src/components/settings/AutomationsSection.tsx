@@ -67,7 +67,7 @@ export function AutomationsSection() {
                 ) : (
                   <IconClipboard size={13} />
                 )}
-                {copied === automation.url ? "Copied" : "Copy"}
+                {copied === automation.url ? t("Copied") : t("Copy")}
               </button>
             </div>
           </div>

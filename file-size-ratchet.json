@@ -9,7 +9,6 @@
     "src-tauri/src/domain/processing.rs": 3936,
     "src-tauri/src/commands.rs": 2720,
     "src/lib/tauri.ts": 2681,
-    "src-tauri/src/audio/turns.rs": 2497,
-    "src/components/sidebar/Sidebar.tsx": 2136
+    "src-tauri/src/audio/turns.rs": 2497
   }
 }

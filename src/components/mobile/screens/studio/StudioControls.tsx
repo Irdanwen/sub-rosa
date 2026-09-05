@@ -1,3 +1,4 @@
+import { t } from "../../../../lib/i18n";
 import { IconChevronDownSmall } from "central-icons/IconChevronDownSmall";
 import { type ReactNode, useState } from "react";
 import { hapticSelection } from "../../../../lib/haptics";
@@ -177,7 +178,7 @@ export function MoreOptions({ children }: { children: ReactNode }) {
           setOpen((current) => !current);
         }}
       >
-        <span>{open ? "Fewer options" : "More options"}</span>
+        <span>{open ? t("Fewer options") : t("More options")}</span>
         <IconChevronDownSmall size={14} aria-hidden />
       </button>
       {open ? <div className="mobile-studio-more-body">{children}</div> : null}

@@ -179,7 +179,7 @@ export function FrameCaptureDialog({
             disabled={!preview || saving}
             onClick={() => void onSave()}
           >
-            {saving ? "Saving" : "Save to the gallery"}
+            {saving ? t("Saving") : t("Save to the gallery")}
           </button>
         </>
       }
@@ -187,7 +187,10 @@ export function FrameCaptureDialog({
       <div className="dialog-body studio-capture">
         <div className="studio-capture-preview">
           {preview ? (
-            <img src={preview.dataUrl} alt={`Frame at ${formatSeconds(preview.timeSeconds)}`} />
+            <img
+              src={preview.dataUrl}
+              alt={t("Frame at {time}", { time: formatSeconds(preview.timeSeconds) })}
+            />
           ) : null}
           {loading ? (
             <span className="studio-capture-busy">
@@ -214,8 +217,11 @@ export function FrameCaptureDialog({
                  * directly contradicting the note below about stopping short.
                  * Name the position instead of spelling out a false equality. */}
                 {atLastFrame
-                  ? `Last frame of ${formatSeconds(duration)}`
-                  : `${formatSeconds(preview?.timeSeconds ?? time)} of ${formatSeconds(duration)}`}
+                  ? t("Last frame of {duration}", { duration: formatSeconds(duration) })
+                  : t("{time} of {duration}", {
+                      time: formatSeconds(preview?.timeSeconds ?? time),
+                      duration: formatSeconds(duration),
+                    })}
               </span>
               {preview ? (
                 <span>

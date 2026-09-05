@@ -454,8 +454,12 @@ export function VideoPanel({
           galleryImages={galleryImages}
           hint={
             handoffFrom
-              ? `Continuing ${handoffFrom.fileName} at ${Math.round(handoffFrom.timeSeconds * 10) / 10}s of ${Math.round(handoffFrom.durationSeconds * 10) / 10}s.`
-              : "Optional opening frame: the clip starts from this photo."
+              ? t("Continuing {name} at {position}s of {duration}s.", {
+                  name: handoffFrom.fileName,
+                  position: Math.round(handoffFrom.timeSeconds * 10) / 10,
+                  duration: Math.round(handoffFrom.durationSeconds * 10) / 10,
+                })
+              : t("Optional opening frame: the clip starts from this photo.")
           }
         />
       ) : null}
@@ -470,11 +474,20 @@ export function VideoPanel({
               ? // Seedance routes its workflow from the prompt and only reads
                 // its own mention syntax, so naming them is part of the input.
                 isSeedanceModel(family.referenceModel.id)
-                ? `These photos steer style and subject. Name them in the prompt as ${references
-                    .map((_, index) => referenceMention(family.referenceModel, "image", index + 1))
-                    .join(", ")}.`
-                : "These photos steer the style and subject, alongside the opening frame."
-              : "Optional reference photos: they steer style and subject while the prompt drives the action."
+                ? t(
+                    "These photos steer style and subject. Name them in the prompt as {mentions}.",
+                    {
+                      mentions: references
+                        .map((_, index) =>
+                          referenceMention(family.referenceModel, "image", index + 1),
+                        )
+                        .join(", "),
+                    },
+                  )
+                : t("These photos steer the style and subject, alongside the opening frame.")
+              : t(
+                  "Optional reference photos: they steer style and subject while the prompt drives the action.",
+                )
           }
         />
       ) : null}
@@ -491,8 +504,10 @@ export function VideoPanel({
           mentionOf={(index) => referenceMention(family?.referenceModel, "video", index)}
           hint={
             referenceClips.length > 0
-              ? "Name them in the prompt in this order, and start it with what you want done."
-              : "Optional clips to edit, extend or stitch. They travel with the request, so keep them short."
+              ? t("Name them in the prompt in this order, and start it with what you want done.")
+              : t(
+                  "Optional clips to edit, extend or stitch. They travel with the request, so keep them short.",
+                )
           }
         />
       ) : null}
@@ -509,8 +524,8 @@ export function VideoPanel({
           mentionOf={(index) => referenceMention(family?.referenceModel, "audio", index)}
           hint={
             referenceAudio.length > 0
-              ? "A track never travels alone, so keep a photo or a clip in play."
-              : "Optional audio for the render to follow, alongside a photo or a clip."
+              ? t("A track never travels alone, so keep a photo or a clip in play.")
+              : t("Optional audio for the render to follow, alongside a photo or a clip.")
           }
         />
       ) : null}
@@ -520,10 +535,10 @@ export function VideoPanel({
         rows={3}
         placeholder={
           openingFrame.length > 0
-            ? "Describe the motion"
+            ? t("Describe the motion")
             : references.length > 0
-              ? "Describe the scene to build from the reference"
-              : "Describe the video to generate"
+              ? t("Describe the scene to build from the reference")
+              : t("Describe the video to generate")
         }
         onChange={(event) => setPrompt(event.target.value)}
       />
@@ -588,21 +603,26 @@ export function VideoPanel({
         }
         onClick={start}
       >
-        {busy ? <Spinner /> : "Generate"}
+        {busy ? <Spinner /> : t("Generate")}
         {!busy && quote !== undefined ? (
           <span className="mobile-studio-cost">{formatCredits(quote)}</span>
         ) : null}
       </button>
       {references.length > 0 && model && !isReferenceToVideoModel(model.id) ? (
         <p className="mobile-reference-hint">
-          {`${family?.name ?? "This model"} cannot take reference photos, so only the opening frame will be used.`}
+          {t("{model} cannot take reference photos, so only the opening frame will be used.", {
+            model: family?.name ?? t("This model"),
+          })}
         </p>
       ) : null}
       {requiresOpeningFrame(model?.id) && !openingFrame ? (
         // The body refuses to build without it, so Generate is already
         // disabled; this says why rather than leaving a dead button.
         <p className="mobile-dictation-error">
-          {`${family?.name ?? "This model"} starts from a frame, so it needs an opening frame as well as its reference photos.`}
+          {t(
+            "{model} starts from a frame, so it needs an opening frame as well as its reference photos.",
+            { model: family?.name ?? t("This model") },
+          )}
         </p>
       ) : null}
       {waiting ? (

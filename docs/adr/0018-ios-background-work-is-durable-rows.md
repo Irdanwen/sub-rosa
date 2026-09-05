@@ -117,3 +117,20 @@ catalog lookups and its media chaining across the boundary. Each *generation*
 inside a Flow is already safe (nothing paid for is lost), but the step-to-step
 progression still needs the app in the foreground. That port is a separate
 change and deserves its own ADR.
+
+## Addendum 2026-09-05: interrupted chat attachments
+
+Agent-lite stores attachment markers in the user message, but attachment
+payloads currently live only in memory for the active turn. After a process
+restart, a marker is not enough information to answer a question about a file.
+The resume sweep therefore marks such a turn failed and asks the user to attach
+the files again and send a new message. The same guard runs before manual
+inference, and the mobile screen withholds retry when those payloads are absent.
+Ordinary text turns still resume, and a failed attachment turn can still be
+retried while its original payloads remain available in the foreground.
+
+This is a deliberate limit of the current input contract: resumption must never
+silently replace an image or a text file with its filename. Full attachment
+resumption needs durable payloads bound to the individual user message, written
+before the turn becomes eligible for the sweep, with explicit cleanup after
+completion or deletion. It is not supplied by the readable message markers.

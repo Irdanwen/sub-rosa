@@ -28,11 +28,9 @@ type EndpointChoice = "v1" | "router";
 
 /** Short enough for three segments to share a 390 pt track. The full name
  * ("Prepaid account") is what the balance row below says. */
-const RAIL_LABELS: Record<CarpeDiemRail, string> = {
-  auto: "Automatic",
-  credits: "Credits",
-  prepaid: "Prepaid",
-};
+function railLabel(rail: CarpeDiemRail): string {
+  return { auto: t("Automatic"), credits: t("Credits"), prepaid: t("Prepaid") }[rail];
+}
 
 /**
  * The Carpe Diem connection, as its own pushed screen.
@@ -114,7 +112,7 @@ export function ConnectionScreen({ onBack }: { onBack: () => void }) {
             <CarpeDiemStatusPill status={status} />
           </SettingsRow>
           <SettingsActionRow
-            label={testing ? "Testing" : "Test connection"}
+            label={testing ? t("Testing") : t("Test connection")}
             disabled={testing || !hasApiKey}
             onClick={() => void runTest()}
           />
@@ -146,7 +144,10 @@ export function ConnectionScreen({ onBack }: { onBack: () => void }) {
             </>
           }
         >
-          <SettingsRow label={hasApiKey ? "Replace your key" : "Paste your key"} align="stack">
+          <SettingsRow
+            label={hasApiKey ? t("Replace your key") : t("Paste your key")}
+            align="stack"
+          >
             <form
               className="mobile-memory-add"
               onSubmit={(event) => {
@@ -159,7 +160,7 @@ export function ConnectionScreen({ onBack }: { onBack: () => void }) {
                 value={keyDraft}
                 autoComplete="off"
                 spellCheck={false}
-                placeholder={hasApiKey ? "Saved key hidden" : `${CARPE_DIEM_KEY_PREFIX}…`}
+                placeholder={hasApiKey ? t("Saved key hidden") : `${CARPE_DIEM_KEY_PREFIX}…`}
                 aria-label={t("Carpe Diem API key")}
                 onChange={(event) => setKeyDraft(event.currentTarget.value)}
               />
@@ -182,8 +183,12 @@ export function ConnectionScreen({ onBack }: { onBack: () => void }) {
           title={t("Endpoint")}
           footer={
             endpoint === "router"
-              ? "Router is served by the cheapest market, so some requests may leave Carpe Diem's confidential network."
-              : "V1 keeps every request inside Carpe Diem's confidential network, at standard price."
+              ? t(
+                  "Router is served by the cheapest market, so some requests may leave Carpe Diem's confidential network.",
+                )
+              : t(
+                  "V1 keeps every request inside Carpe Diem's confidential network, at standard price.",
+                )
           }
         >
           <SettingsRow label={t("Route requests through")} align="stack">
@@ -272,14 +277,22 @@ function PaymentGroup({ hasApiKey }: { hasApiKey: boolean }) {
       title={t("Payment")}
       footer={
         view.activeRailEmpty
-          ? `Your active rail is out of funds, so requests will fail. ${
-              view.fundsElsewhere
-                ? `Your ${
-                    view.effectiveRail === "prepaid" ? "credits" : "prepaid account"
-                  } still has ${formatUsd(view.otherBalanceUsdc)}, so switch rails above.`
-                : "Add funds on the Carpe Diem site."
-            }`
-          : "Carpe Diem bills one rail at a time. Your prepaid account and credits are separate balances, and the active rail is what actually pays."
+          ? view.fundsElsewhere
+            ? view.effectiveRail === "prepaid"
+              ? t(
+                  "Your active rail is out of funds, so requests will fail. Your credits still have {balance}, so switch rails above.",
+                  { balance: formatUsd(view.otherBalanceUsdc) },
+                )
+              : t(
+                  "Your active rail is out of funds, so requests will fail. Your prepaid account still has {balance}, so switch rails above.",
+                  { balance: formatUsd(view.otherBalanceUsdc) },
+                )
+            : t(
+                "Your active rail is out of funds, so requests will fail. Add funds on the Carpe Diem site.",
+              )
+          : t(
+              "Carpe Diem bills one rail at a time. Your prepaid account and credits are separate balances, and the active rail is what actually pays.",
+            )
       }
     >
       <SettingsRow label={t("Paying with")} align="stack">
@@ -299,23 +312,29 @@ function PaymentGroup({ hasApiKey }: { hasApiKey: boolean }) {
               disabled={busy !== null}
               onClick={() => void switchRail(rail)}
             >
-              {busy === rail ? "…" : RAIL_LABELS[rail]}
+              {busy === rail ? "…" : railLabel(rail)}
             </button>
           ))}
         </div>
       </SettingsRow>
       <SettingsRow
         label={t("Credits")}
-        detail={`${billing.availableCredits.toLocaleString(intlLocale())} available`}
+        detail={t("{count} available", {
+          count: billing.availableCredits.toLocaleString(intlLocale()),
+        })}
       >
         <span className="mobile-settings-row-detail">{formatUsd(billing.availableUsdc)}</span>
       </SettingsRow>
       <SettingsRow
         label={t("Prepaid account")}
-        detail={billing.rail === "auto" ? `Automatic picks ${view.effectiveRail}` : undefined}
+        detail={
+          billing.rail === "auto"
+            ? t("Automatic picks {balance}", { balance: railLabel(view.effectiveRail) })
+            : undefined
+        }
       >
         <span className="mobile-settings-row-detail">
-          {billing.prepaidRegistered ? formatUsd(billing.prepaidUsdcBalance) : "Not set up"}
+          {billing.prepaidRegistered ? formatUsd(billing.prepaidUsdcBalance) : t("Not set up")}
         </span>
       </SettingsRow>
       {error ? <SettingsRow label={t("Could not switch rails")} detail={error} /> : null}
@@ -372,7 +391,10 @@ function PlacesKeyGroup() {
         "Place cards work without any key, using OpenStreetMap data. Your own Google Places key adds ratings, reviews and photos; it stays in the keychain and is only sent with place searches.",
       )}
     >
-      <SettingsRow label={keyPresent ? "Replace your key" : "Google Places key"} align="stack">
+      <SettingsRow
+        label={keyPresent ? t("Replace your key") : t("Google Places key")}
+        align="stack"
+      >
         <form
           className="mobile-memory-add"
           onSubmit={(event) => {
@@ -385,7 +407,7 @@ function PlacesKeyGroup() {
             value={keyDraft}
             autoComplete="off"
             spellCheck={false}
-            placeholder={keyPresent ? "Saved key hidden" : "AIza…"}
+            placeholder={keyPresent ? t("Saved key hidden") : "AIza…"}
             aria-label={t("Google Places API key")}
             onChange={(event) => setKeyDraft(event.currentTarget.value)}
           />

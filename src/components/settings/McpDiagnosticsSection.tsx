@@ -132,7 +132,7 @@ export function McpDiagnosticsView({
           />
         ) : isErrored ? (
           <ErrorState
-            message={state.error ?? "Could not load MCP servers from Hermes."}
+            message={state.error ?? t("Could not load your MCP servers.")}
             retryable={state.retryable}
             onRetry={state.refresh}
           />
@@ -174,7 +174,7 @@ function ModeNote({
   show: boolean;
 }) {
   if (!show) return null;
-  const modeLabel = mode === "unrestricted" ? "Full mode" : "Sandboxed";
+  const modeLabel = mode === "unrestricted" ? t("Full mode") : t("Sandboxed");
   return (
     <span className="mcp-diagnostics-mode-note">
       {t("Targeting the {mode} runtime", { mode: modeLabel })}
@@ -205,7 +205,7 @@ function SummaryBar({ state }: { state: McpDiagnosticsState }) {
           onClick={() => void state.runAllTests()}
         >
           <IconArrowRotateClockwise size={14} ariaHidden />
-          {state.runningAll ? "Running tests" : "Run all MCP tests"}
+          {state.runningAll ? t("Running tests") : t("Run all MCP tests")}
         </button>
         <ExportButton state={state} />
       </div>
@@ -286,7 +286,9 @@ function ReasonChain({ state }: { state: McpDiagnosticsState }) {
           ) : (
             <IconExclamationCircle size={14} ariaHidden />
           )}
-          {reason.available ? `${reason.query} is available to your sessions.` : reason.reason}
+          {reason.available
+            ? t("{query} is available to your sessions.", { query: reason.query })
+            : reason.reason}
         </p>
       ) : null}
     </div>
@@ -318,7 +320,7 @@ function DiagnosticsRow({
           {transport.label}
         </span>
         <span className="mcp-diagnostics-state" data-enabled={server.enabled}>
-          {server.enabled ? "Enabled" : "Disabled"}
+          {server.enabled ? t("Enabled") : t("Disabled")}
         </span>
         {server.auth !== "not-required" ? (
           <span className="mcp-diagnostics-auth" data-tone={auth.tone}>
@@ -329,7 +331,7 @@ function DiagnosticsRow({
           {status.label}
         </span>
         <button type="button" className="mcp-diagnostics-test" disabled={testing} onClick={onTest}>
-          {testing ? "Testing" : "Test"}
+          {testing ? t("Testing") : t("Test")}
         </button>
       </div>
 
@@ -353,21 +355,21 @@ function DiagnosticsRow({
       <dl className="mcp-diagnostics-facts">
         <Fact label={t("Connection")}>
           {server.transport === "stdio"
-            ? (server.command ?? "No command configured.")
-            : (server.url ?? "No URL configured.")}
+            ? (server.command ?? t("No command configured."))
+            : (server.url ?? t("No URL configured."))}
         </Fact>
         {server.statusMessage ? <Fact label={t("Last test")}>{server.statusMessage}</Fact> : null}
         <Fact label={t("Discovered tools")}>
           {diagnostics.discoveredTools.length > 0
             ? `${diagnostics.discoveredTools.map((tool) => tool.name).join(", ")} (${
-                diagnostics.discoveredFromTest ? "from last test" : "from stored config"
+                diagnostics.discoveredFromTest ? t("from last test") : t("from stored config")
               })`
-            : "None reported. Run a test to discover them."}
+            : t("None reported. Run a test to discover them.")}
         </Fact>
         <Fact label={t("Registered tool names (derived)")}>
           {diagnostics.derivedRegisteredTools.length > 0
             ? diagnostics.derivedRegisteredTools.join(", ")
-            : "None. Nothing registers in the current state."}
+            : t("None. Nothing registers in the current state.")}
         </Fact>
         <Fact label={t("Tool filtering")}>
           <FilterSummary diagnostics={diagnostics} />
@@ -376,7 +378,7 @@ function DiagnosticsRow({
           <Fact label={t("Allowed tools")}>
             {policy.allowed.length > 0
               ? policy.allowed.join(", ")
-              : "None. Filtering hides every tool."}
+              : t("None. Filtering hides every tool.")}
           </Fact>
         ) : null}
         <Fact label={t("Resource and prompt utilities")}>

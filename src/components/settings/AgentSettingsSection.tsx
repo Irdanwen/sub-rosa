@@ -295,5 +295,5 @@ export function AgentSettingsSection() {
 function messageFromError(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
-  return "Unable to update agent settings.";
+  return t("Unable to update agent settings.");
 }

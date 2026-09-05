@@ -130,13 +130,13 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
           {!instrumental ? (
             <StudioField
               label={t("Lyrics")}
-              hint={caps.lyrics === "required" ? "Required for this model" : "Optional"}
+              hint={caps.lyrics === "required" ? t("Required for this model") : t("Optional")}
             >
               <textarea
                 className="studio-textarea"
                 rows={5}
                 value={lyrics}
-                placeholder={"Verse 1: …\nChorus: …"}
+                placeholder={t("Verse 1: …\nChorus: …")}
                 onChange={(event) => setLyrics(event.target.value)}
               />
             </StudioField>
@@ -179,7 +179,7 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
           phase={waiting.phase}
           elapsedMs={waiting.phase === "queueing" ? undefined : waiting.elapsedMs}
           estimateMs={estimate}
-          label={waiting.phase === "processing" ? "Composing your track" : undefined}
+          label={waiting.phase === "processing" ? t("Composing your track") : undefined}
           meta={modelId}
         />
       ) : null}

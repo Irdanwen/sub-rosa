@@ -166,7 +166,7 @@ export function StorageSettingsSection() {
                 disabled={busy || !preview || preview.recordings === 0}
                 onClick={() => void purge()}
               >
-                {busy ? "Removing…" : "Remove"}
+                {busy ? t("Removing…") : t("Remove")}
               </button>
             </div>
           </div>

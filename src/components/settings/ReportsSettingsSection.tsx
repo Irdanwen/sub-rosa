@@ -1,3 +1,5 @@
+// A technical input example, preserved verbatim in every language.
+const GITHUB_TOKEN_EXAMPLE = "ghp_…";
 import { t } from "../../lib/i18n";
 import { useCallback, useEffect, useId, useState } from "react";
 import {
@@ -40,11 +42,16 @@ export function ReportsSettingsSection() {
       const result = await exportDiagnostics();
       setDiagnostics(
         result.path
-          ? `Written to ${result.path} (${result.files} files). Attach the folder's files to your report.`
-          : "Export cancelled.",
+          ? t("Written to {path} ({files} files). Attach the folder's files to your report.", {
+              path: result.path,
+              files: result.files,
+            })
+          : t("Export cancelled."),
       );
     } catch (err) {
-      setDiagnostics(err instanceof Error ? err.message : "The diagnostics could not be written.");
+      setDiagnostics(
+        err instanceof Error ? err.message : t("The diagnostics could not be written."),
+      );
     } finally {
       setExporting(false);
     }
@@ -66,7 +73,7 @@ export function ReportsSettingsSection() {
       setDraft("");
       setStatus(t("Token saved. Reports will now be filed from the app."));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "That token could not be saved.");
+      setError(err instanceof Error ? err.message : t("That token could not be saved."));
     }
   };
 
@@ -88,7 +95,7 @@ export function ReportsSettingsSection() {
       setSettings(await issueReportsImportCliToken());
       setStatus(t("Token taken from the GitHub CLI. Reports will now be filed from the app."));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "The GitHub CLI token could not be read.");
+      setError(err instanceof Error ? err.message : t("The GitHub CLI token could not be read."));
     }
   };
 
@@ -168,7 +175,7 @@ export function ReportsSettingsSection() {
               value={draft}
               autoComplete="off"
               spellCheck={false}
-              placeholder={hasToken ? "Saved token hidden" : "ghp_…"}
+              placeholder={hasToken ? t("Saved token hidden") : GITHUB_TOKEN_EXAMPLE}
               aria-label={t("GitHub token")}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -200,7 +207,7 @@ export function ReportsSettingsSection() {
                   disabled={testing}
                   onClick={() => void test()}
                 >
-                  {testing ? "Checking…" : "Check"}
+                  {testing ? t("Checking…") : t("Check")}
                 </button>
                 <button type="button" className="btn btn-secondary" onClick={() => void remove()}>
                   {t("Remove")}
@@ -233,7 +240,7 @@ export function ReportsSettingsSection() {
                 disabled={exporting}
                 onClick={() => void exportBundle()}
               >
-                {exporting ? "Writing…" : "Export diagnostics"}
+                {exporting ? t("Writing…") : t("Export diagnostics")}
               </button>
             </div>
           </div>

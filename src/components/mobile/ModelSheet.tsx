@@ -239,7 +239,7 @@ export function ModelSheet({
                 <button
                   type="button"
                   className="mobile-icon-button mobile-fork-button"
-                  aria-label={`Fork chat to ${entry.name || entry.id}`}
+                  aria-label={t("Fork chat to {model}", { model: entry.name || entry.id })}
                   onClick={() => onFork(entry.id)}
                 >
                   <IconBranchSimple size={16} />
@@ -249,7 +249,7 @@ export function ModelSheet({
                 type="button"
                 className="mobile-icon-button mobile-favorite-button"
                 data-active={favorites.has(entry.id) ? "true" : undefined}
-                aria-label={favorites.has(entry.id) ? "Remove favorite" : "Add favorite"}
+                aria-label={favorites.has(entry.id) ? t("Remove favorite") : t("Add favorite")}
                 onClick={() => toggleFavorite(entry.id)}
               >
                 <IconStar size={16} />

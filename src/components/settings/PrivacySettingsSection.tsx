@@ -88,7 +88,9 @@ export function PrivacySettingsSection() {
               <code className="privacy-host-name">{host.host}</code>
               <span className="privacy-host-reason">
                 {host.host === "carpe-diem.xyz" && baseUrl && !baseUrl.includes("carpe-diem.xyz")
-                  ? `You have pointed this at ${hostOf(baseUrl) ?? baseUrl} instead. Your requests go there.`
+                  ? t("You have pointed this at {value} instead. Your requests go there.", {
+                      value: hostOf(baseUrl) ?? baseUrl,
+                    })
                   : host.reason}
               </span>
             </li>

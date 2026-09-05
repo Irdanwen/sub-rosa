@@ -21,15 +21,17 @@ import { type Anchor, useAnchoredPanel } from "./useAnchoredPanel";
  * sure about, does not have to destroy anything to be useful.
  */
 
-const KIND_LABELS: Record<RewriteRun["kind"], string> = {
-  correct: "Corrected",
-  reformulate: "Reformulated",
-  shorten: "Shortened",
-  expand: "Developed",
-  restructure: "Reorganised",
-  translate: "Translated",
-  custom: "Rewritten",
-};
+function rewriteLabel(kind: RewriteRun["kind"]): string {
+  return {
+    correct: t("Corrected text"),
+    reformulate: t("Reformulated text"),
+    shorten: t("Shortened text"),
+    expand: t("Developed text"),
+    restructure: t("Reorganised text"),
+    translate: t("Translated text"),
+    custom: t("Rewritten text"),
+  }[kind];
+}
 
 export type RewritePanelProps = {
   run: RewriteRun;
@@ -64,7 +66,7 @@ export function RewritePanel({
       ref={ref}
       className={docked ? "rewrite-panel rewrite-panel-docked" : "rewrite-panel"}
       role="dialog"
-      aria-label={`${KIND_LABELS[run.kind]} text`}
+      aria-label={rewriteLabel(run.kind)}
       style={docked ? { bottom: keyboardInset } : style}
       // Keeps a click inside the panel from blurring the editor, which would
       // drop the range the revision is about to replace.
@@ -72,7 +74,7 @@ export function RewritePanel({
       onMouseDown={(event) => event.preventDefault()}
     >
       <header className="rewrite-panel-head">
-        <span className="rewrite-panel-title">{KIND_LABELS[run.kind]}</span>
+        <span className="rewrite-panel-title">{rewriteLabel(run.kind)}</span>
         {running ? <DotSpinner /> : null}
         <button
           type="button"
@@ -86,7 +88,7 @@ export function RewritePanel({
       </header>
 
       {run.status === "failed" || run.status === "cancelled" ? (
-        <InlineNotice tone="warning" body={run.error ?? "That rewrite did not go through."} />
+        <InlineNotice tone="warning" body={run.error ?? t("That rewrite did not go through.")} />
       ) : (
         <div className="rewrite-panel-body" aria-live="polite" aria-busy={running}>
           {run.text ? (

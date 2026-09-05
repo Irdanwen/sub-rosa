@@ -1,4 +1,4 @@
-import { t } from "../../../lib/i18n";
+import { intlLocale, t } from "../../../lib/i18n";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
@@ -49,7 +49,9 @@ function PermissionRow({
           type="button"
           className="onboarding-perm-btn"
           onClick={onAllow}
-          aria-label={`Allow ${title.toLowerCase()} access`}
+          aria-label={t("Allow {permission} access", {
+            permission: title.toLocaleLowerCase(intlLocale()),
+          })}
         >
           {t("Allow")}
         </button>
@@ -126,8 +128,8 @@ export function PermissionsStep({
       title={t("Let Sub Rosa listen and type")}
       subtitle={
         macLikePlatform
-          ? "Dictation and meeting notes need three macOS permissions."
-          : "Dictation and meeting notes need microphone access."
+          ? t("Dictation and meeting notes need three macOS permissions.")
+          : t("Dictation and meeting notes need microphone access.")
       }
       wide
     >
@@ -142,8 +144,8 @@ export function PermissionsStep({
           title={t("Microphone")}
           detail={
             micDenied
-              ? "Turned off in System Settings. Flip the toggle and Sub Rosa will notice."
-              : "Hears you only when you ask Sub Rosa to listen."
+              ? t("Turned off in System Settings. Flip the toggle and Sub Rosa will notice.")
+              : t("Hears you only when you ask Sub Rosa to listen.")
           }
           onAllow={
             showPermissionRows
@@ -172,14 +174,14 @@ export function PermissionsStep({
               title={t("System audio")}
               detail={
                 systemAudioDenied
-                  ? "Turned off in System Settings. Flip the toggle and Sub Rosa will notice."
+                  ? t("Turned off in System Settings. Flip the toggle and Sub Rosa will notice.")
                   : systemAudioUnsupported
-                    ? "Needs macOS 14.2 or later."
+                    ? t("Needs macOS 14.2 or later.")
                     : systemAudioUnavailable
-                      ? "Allowed. Restart Sub Rosa to finish turning it on."
+                      ? t("Allowed. Restart Sub Rosa to finish turning it on.")
                       : systemAudioStatus === "probing"
-                        ? "Waiting for macOS. Approve the prompt when it appears."
-                        : "Hears your calls and meetings, only while you record."
+                        ? t("Waiting for macOS. Approve the prompt when it appears.")
+                        : t("Hears your calls and meetings, only while you record.")
               }
               onAllow={
                 showPermissionRows

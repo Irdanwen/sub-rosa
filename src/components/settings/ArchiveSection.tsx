@@ -2,7 +2,7 @@ import { t } from "../../lib/i18n";
 import { useId, useState } from "react";
 import { messageFromError } from "../../lib/errors";
 import { isMobilePlatform } from "../../lib/mobile";
-import { exportArchive, importArchive } from "../../lib/tauri";
+import { type ImportSummaryDto, exportArchive, importArchive } from "../../lib/tauri";
 
 /**
  * The archive (ADR-0042): everything you made here, in one file you can
@@ -29,8 +29,16 @@ export function ArchiveSection() {
       const result = await exportArchive({ includeRecordings, passphrase });
       setStatus(
         result.path
-          ? `${result.sealed ? "Sealed archive" : "Archive"} written to ${result.path} (${Math.max(1, Math.round(result.bytes / 1024))} KB).`
-          : "Export cancelled.",
+          ? result.sealed
+            ? t("Sealed archive written to {path} ({size} KB).", {
+                path: result.path,
+                size: Math.max(1, Math.round(result.bytes / 1024)),
+              })
+            : t("Archive written to {path} ({size} KB).", {
+                path: result.path,
+                size: Math.max(1, Math.round(result.bytes / 1024)),
+              })
+          : t("Export cancelled."),
       );
     } catch (err) {
       setError(messageFromError(err));
@@ -51,11 +59,7 @@ export function ArchiveSection() {
         return;
       }
       setNeedsPassphrase(false);
-      setStatus(
-        result.summary
-          ? `Imported ${result.summary.notes === 1 ? "1 note" : `${result.summary.notes} notes`} and ${result.summary.rows} rows from Sub Rosa ${result.summary.appVersion}${result.summary.recordings ? `, with ${result.summary.recordings} recordings` : ""}.`
-          : "Import cancelled.",
-      );
+      setStatus(result.summary ? archiveImportStatus(result.summary) : t("Import cancelled."));
     } catch (err) {
       setError(messageFromError(err));
     } finally {
@@ -89,8 +93,10 @@ export function ArchiveSection() {
               </label>
               <p className="settings-row-description">
                 {needsPassphrase
-                  ? "The archive you chose is sealed; its passphrase opens it."
-                  : "Optional. With one, the archive is sealed (age) and is safe to carry anywhere. Without one, it is your notes in the clear."}
+                  ? t("The archive you chose is sealed; its passphrase opens it.")
+                  : t(
+                      "Optional. With one, the archive is sealed (age) and is safe to carry anywhere. Without one, it is your notes in the clear.",
+                    )}
               </p>
             </div>
             <div className="settings-row-control">
@@ -129,7 +135,7 @@ export function ArchiveSection() {
           <div className="settings-row">
             <div className="settings-row-info">
               <h3 className="settings-row-title">
-                {mobile ? "Import an archive" : "Export or import"}
+                {mobile ? t("Import an archive") : t("Export or import")}
               </h3>
               <p className="settings-row-description">
                 {t(
@@ -150,7 +156,7 @@ export function ArchiveSection() {
                   disabled={busy !== null}
                   onClick={() => void runExport()}
                 >
-                  {busy === "export" ? "Writing…" : "Export"}
+                  {busy === "export" ? t("Writing…") : t("Export")}
                 </button>
               )}
               <button
@@ -159,7 +165,7 @@ export function ArchiveSection() {
                 disabled={busy !== null}
                 onClick={() => void runImport()}
               >
-                {busy === "import" ? "Importing…" : "Import"}
+                {busy === "import" ? t("Importing…") : t("Import")}
               </button>
             </div>
           </div>
@@ -167,4 +173,35 @@ export function ArchiveSection() {
       </div>
     </section>
   );
+}
+
+function archiveImportStatus(summary: ImportSummaryDto) {
+  const values = {
+    notes: summary.notes,
+    rows: summary.rows,
+    version: summary.appVersion,
+    recordings: summary.recordings,
+  };
+  if (summary.recordings === 0) {
+    return summary.notes === 1
+      ? t("Imported 1 note and {rows} rows from Sub Rosa {version}.", values)
+      : t("Imported {notes} notes and {rows} rows from Sub Rosa {version}.", values);
+  }
+  if (summary.recordings === 1) {
+    return summary.notes === 1
+      ? t("Imported 1 note and {rows} rows from Sub Rosa {version}, with 1 recording.", values)
+      : t(
+          "Imported {notes} notes and {rows} rows from Sub Rosa {version}, with 1 recording.",
+          values,
+        );
+  }
+  return summary.notes === 1
+    ? t(
+        "Imported 1 note and {rows} rows from Sub Rosa {version}, with {recordings} recordings.",
+        values,
+      )
+    : t(
+        "Imported {notes} notes and {rows} rows from Sub Rosa {version}, with {recordings} recordings.",
+        values,
+      );
 }

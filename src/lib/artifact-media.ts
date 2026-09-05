@@ -66,6 +66,13 @@ function mimeFor(path: string): string {
       return "audio/wav";
     case "m4a":
       return "audio/mp4";
+    case "flac":
+      return "audio/flac";
+    case "aac":
+      return "audio/aac";
+    case "ogg":
+    case "opus":
+      return "audio/ogg";
     default:
       return "application/octet-stream";
   }

@@ -61,7 +61,7 @@ export function CreateFolderDialog({
             className="primary-action primary-solid"
             disabled={submitting || name.trim().length === 0}
           >
-            {submitting ? "Creating…" : "Create project"}
+            {submitting ? t("Creating…") : t("Create project")}
           </button>
         </>
       }

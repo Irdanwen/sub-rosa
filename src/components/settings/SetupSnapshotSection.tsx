@@ -1,3 +1,5 @@
+// A technical input example, preserved verbatim in every language.
+const SNAPSHOT_EXAMPLE = '{ "schemaVersion": 1, ... }';
 import { t } from "../../lib/i18n";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { messageFromError } from "../../lib/errors";
@@ -106,7 +108,7 @@ export function SetupSnapshotView({
       ) : isErrored ? (
         <div className="settings-card setup-snapshot-card">
           <ErrorState
-            message={state.error ?? "Could not load your setup from Hermes."}
+            message={state.error ?? t("Could not load your setup.")}
             retryable={state.retryable}
             onRetry={state.refresh}
           />
@@ -208,7 +210,7 @@ function ImportCard({ state }: { state: SetupSnapshotState }) {
         value={raw}
         spellCheck={false}
         rows={5}
-        placeholder={'{ "schemaVersion": 1, ... }'}
+        placeholder={SNAPSHOT_EXAMPLE}
         onChange={(event) => setRaw(event.currentTarget.value)}
       />
       <div className="setup-snapshot-import-actions">
@@ -262,10 +264,10 @@ function ImportPreview({ state }: { state: SetupSnapshotState }) {
       <p className="setup-snapshot-preview-summary" role="status">
         <IconCircleInfo size={14} ariaHidden />
         {diff.changeCount === 0
-          ? "This snapshot matches your current setup. Nothing to apply."
-          : `This import would change ${diff.changeCount} ${
-              diff.changeCount === 1 ? "thing" : "things"
-            }.`}
+          ? t("This snapshot matches your current setup. Nothing to apply.")
+          : diff.changeCount === 1
+            ? t("This import would change 1 thing.")
+            : t("This import would change {count} things.", { count: diff.changeCount })}
       </p>
 
       {changing.length > 0 ? (
@@ -290,7 +292,7 @@ function ImportPreview({ state }: { state: SetupSnapshotState }) {
         disabled={state.importPhase === "applying" || diff.changeCount === 0}
         onClick={() => void state.apply(secrets)}
       >
-        {state.importPhase === "applying" ? "Applying import" : "Apply import"}
+        {state.importPhase === "applying" ? t("Applying import") : t("Apply import")}
       </button>
     </div>
   );
@@ -372,8 +374,11 @@ function ImportReportView({ report }: { report: ImportReport }) {
       {report.health ? (
         <p className="setup-snapshot-report-health">
           {report.health.gatewayRunning === false
-            ? "Gateway is not running. Start it to use the imported setup."
-            : `Gateway is running with ${report.health.enabledServers} of ${report.health.serverCount} servers enabled.`}
+            ? t("Gateway is not running. Start it to use the imported setup.")
+            : t("Gateway is running with {enabledServers} of {serverCount} servers enabled.", {
+                enabledServers: report.health.enabledServers,
+                serverCount: report.health.serverCount,
+              })}
         </p>
       ) : null}
       <ul className="setup-snapshot-report-steps">

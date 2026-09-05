@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconChevronLeftMedium } from "central-icons/IconChevronLeftMedium";
 import type { ReactNode } from "react";
 
@@ -23,7 +24,7 @@ export function StackHeader({ title, onBack, backLabel, trailing, large }: Stack
           <div className="mobile-stack-header-row">
             <button type="button" className="mobile-back-button" onClick={onBack}>
               <IconChevronLeftMedium size={20} aria-hidden />
-              <span>{backLabel ?? "Back"}</span>
+              <span>{backLabel ?? t("Back")}</span>
             </button>
           </div>
         ) : null}
@@ -41,7 +42,7 @@ export function StackHeader({ title, onBack, backLabel, trailing, large }: Stack
         {onBack ? (
           <button type="button" className="mobile-back-button" onClick={onBack}>
             <IconChevronLeftMedium size={20} aria-hidden />
-            <span>{backLabel ?? "Back"}</span>
+            <span>{backLabel ?? t("Back")}</span>
           </button>
         ) : (
           <span className="mobile-stack-header-spacer" />

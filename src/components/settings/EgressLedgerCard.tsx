@@ -9,23 +9,41 @@ export function relativeTime(iso: string, now = Date.now()) {
   const then = Date.parse(iso);
   if (Number.isNaN(then)) return iso;
   const seconds = Math.max(0, Math.round((now - then) / 1000));
-  if (seconds < 60) return "just now";
+  if (seconds < 60) return t("just now");
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 60) return t("{minutes} min ago", { minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
+  if (hours < 24) return t("{hours} h ago", { hours });
   const days = Math.round(hours / 24);
-  if (days === 1) return "yesterday";
-  if (days < 14) return `${days} days ago`;
+  if (days === 1) return t("yesterday");
+  if (days < 14) return t("{days} days ago", { days });
   return new Date(then).toLocaleDateString(intlLocale());
 }
 
 /** The sentence above the timeline: what left, in how many requests, to whom. */
 export function egressSentence(summary: EgressLedgerDto["summary"], days: number) {
-  if (summary.requests === 0) return `Nothing left this machine in the last ${days} days.`;
-  const hosts = summary.hosts.length === 1 ? summary.hosts[0] : `${summary.hosts.length} hosts`;
-  const requests = summary.requests === 1 ? "1 request" : `${summary.requests} requests`;
-  return `${requests} in the last ${days} days, ${formatBytes(summary.requestBytes)} sent and ${formatBytes(summary.responseBytes)} received, to ${hosts}.`;
+  if (summary.requests === 0)
+    return t("Nothing left this machine in the last {days} days.", { days });
+  const hosts =
+    summary.hosts.length === 1
+      ? summary.hosts[0]
+      : t("{count} hosts", { count: summary.hosts.length });
+  const values = {
+    count: summary.requests,
+    days,
+    sent: formatBytes(summary.requestBytes),
+    received: formatBytes(summary.responseBytes),
+    hosts,
+  };
+  return summary.requests === 1
+    ? t(
+        "1 request in the last {days} days, {sent} sent and {received} received, to {hosts}.",
+        values,
+      )
+    : t(
+        "{count} requests in the last {days} days, {sent} sent and {received} received, to {hosts}.",
+        values,
+      );
 }
 
 /**
@@ -57,7 +75,11 @@ export function EgressLedgerCard({ noteId }: { noteId?: string } = {}) {
         <div className="settings-row-info">
           <h3 className="settings-row-title">{t("What left this machine")}</h3>
           <p className="settings-row-description">
-            {ledger ? egressSentence(ledger.summary, days) : error ? error : "Reading the ledger…"}
+            {ledger
+              ? egressSentence(ledger.summary, days)
+              : error
+                ? error
+                : t("Reading the ledger…")}
           </p>
           {ledger && ledger.summary.purposes.length > 0 ? (
             <p className="settings-row-description egress-purposes">

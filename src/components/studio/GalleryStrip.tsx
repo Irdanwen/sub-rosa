@@ -98,10 +98,10 @@ export function GalleryStrip({
               <button
                 type="button"
                 className="studio-image-open"
-                aria-label={`Open ${artifact.prompt || "image"}`}
+                aria-label={t("Open {name}", { name: artifact.prompt || t("image") })}
                 onClick={() => setLightbox(artifact)}
               >
-                <img src={artifactSrc(artifact)} alt={artifact.prompt || "Generated image"} />
+                <img src={artifactSrc(artifact)} alt={artifact.prompt || t("Generated image")} />
               </button>
               <figcaption className="studio-card-meta">
                 <span className="studio-card-prompt" title={artifact.prompt}>
@@ -152,7 +152,7 @@ export function GalleryStrip({
               if (event.key === "Escape") setLightbox(undefined);
             }}
           >
-            <img src={artifactSrc(lightbox)} alt={lightbox.prompt || "Generated image"} />
+            <img src={artifactSrc(lightbox)} alt={lightbox.prompt || t("Generated image")} />
           </div>
         ) : null}
       </>

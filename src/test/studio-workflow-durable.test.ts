@@ -112,6 +112,49 @@ beforeEach(() => {
 });
 
 describe("runAndSaveWorkflow (durable)", () => {
+  it("carries a native FLAC delivery into the persisted music output", async () => {
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "carpe_diem_media_catalog") return { backend: "carpe-diem", models: [] };
+      if (command === "media_job_list")
+        return [
+          { ...DELIVERED_JOB, artifactFileName: "score.flac", artifactPath: "/gallery/score.flac" },
+        ];
+      return null;
+    });
+    mocks.register.mockReturnValue({
+      id: "score.flac",
+      fileName: "score.flac",
+      path: "/gallery/score.flac",
+      kind: "music",
+      bytes: 5,
+      model: "ace-step-15",
+      prompt: "piano",
+      createdAt: 1,
+    });
+    mediaJsonMock.mockResolvedValue({ id: "q1" });
+    const results = await runAndSaveWorkflow(
+      workflow(
+        [node("score", "music", { model: "ace-step-15", prompt: "piano" }), node("out", "output")],
+        [edge("score", "out")],
+      ),
+    );
+    expect(results.get("out")?.output).toMatchObject({
+      kind: "audio",
+      mimeType: "audio/flac",
+      artifactId: "score.flac",
+    });
+    const writes = invokeCalls("workflow_run_set_node").map(
+      (call) => call.request as Record<string, unknown>,
+    );
+    expect(writes).toContainEqual(
+      expect.objectContaining({
+        nodeId: "score",
+        status: "done",
+        output: expect.objectContaining({ mimeType: "audio/flac" }),
+      }),
+    );
+  });
+
   it("records the run, rides a Rust job for the render, and files the delivery", async () => {
     mocks.invoke.mockImplementation(async (command: string) => {
       if (command === "media_job_list") return [DELIVERED_JOB];

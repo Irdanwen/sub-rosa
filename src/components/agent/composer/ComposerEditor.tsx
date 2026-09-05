@@ -1,4 +1,5 @@
 import Placeholder from "@tiptap/extension-placeholder";
+import { t } from "../../../lib/i18n";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
@@ -182,7 +183,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
         attributes: {
           class: "agent-composer-editor",
           role: "textbox",
-          "aria-label": "Message Sub Rosa",
+          "aria-label": t("Message Sub Rosa"),
           "aria-multiline": "true",
         },
         handleKeyDown: (_view, event) => {

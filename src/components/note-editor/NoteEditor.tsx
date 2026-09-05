@@ -451,7 +451,11 @@ export function NoteEditor({
             className="note-header-actions"
             onClick={() => requestFilmFromNote(note.id)}
             aria-label={t("Open this note's film")}
-            title={`This note is a film: ${filmShotCount} shot${filmShotCount === 1 ? "" : "s"}`}
+            title={
+              filmShotCount === 1
+                ? t("This note is a film: 1 shot")
+                : t("This note is a film: {count} shots", { count: filmShotCount })
+            }
           >
             <IconClapboard aria-hidden="true" />
           </button>
@@ -467,8 +471,8 @@ export function NoteEditor({
           data-active={reading || undefined}
           onClick={() => setReading((current) => !current)}
           aria-pressed={reading}
-          aria-label={reading ? "Stop reading" : "Read"}
-          title={reading ? "Back to writing" : "Read"}
+          aria-label={reading ? t("Stop reading") : t("Read")}
+          title={reading ? t("Back to writing") : t("Read")}
         >
           <IconBookSimple aria-hidden="true" />
         </button>
@@ -577,11 +581,11 @@ export function NoteEditor({
               <div className="transcript-empty">
                 <p>
                   {recordingActive
-                    ? "Transcript preview will appear here while you record."
+                    ? t("Transcript preview will appear here while you record.")
                     : (processingText ??
                       (note.processingStatus === "failed"
-                        ? "No transcript was produced."
-                        : (note.lastError ?? "No transcript is available yet.")))}
+                        ? t("No transcript was produced.")
+                        : (note.lastError ?? t("No transcript is available yet."))))}
                 </p>
               </div>
             )}
@@ -777,8 +781,8 @@ export function NoteEditor({
                         <button
                           type="button"
                           className="record-button"
-                          aria-label={recordingDisabled ? "Recording in progress" : "Record"}
-                          title={recordingDisabled ? "Recording in progress" : "Record"}
+                          aria-label={recordingDisabled ? t("Recording in progress") : t("Record")}
+                          title={recordingDisabled ? t("Recording in progress") : t("Record")}
                           disabled={recordButtonDisabled}
                           onClick={onStartRecording}
                         >
@@ -870,14 +874,14 @@ function FolderChip({
         onClick={() => setOpen((value) => !value)}
       >
         <IconProjects size={14} />
-        {currentFolder?.name ?? "Project"}
+        {currentFolder?.name ?? t("Project")}
       </button>
       {currentFolder && onNavigateToFolder ? (
         <button
           type="button"
           className="move-to-folder-open"
-          aria-label={`Open ${currentFolder.name}`}
-          title={`Open ${currentFolder.name}`}
+          aria-label={t("Open {name}", { name: currentFolder.name })}
+          title={t("Open {name}", { name: currentFolder.name })}
           onClick={() => {
             setOpen(false);
             onNavigateToFolder(currentFolder.id);
@@ -1216,7 +1220,7 @@ function TranscriptTurn({
             className="transcript-turn-more"
             onClick={() => setExpanded((value) => !value)}
           >
-            {expanded ? "Show less" : "Show more"}
+            {expanded ? t("Show less") : t("Show more")}
           </button>
         ) : null}
         {errorMessage ? <p className="source-transcript-error">{errorMessage}</p> : null}
@@ -1226,8 +1230,8 @@ function TranscriptTurn({
           type="button"
           className="transcript-turn-copy"
           data-copied={copied || undefined}
-          aria-label={copied ? "Copied" : "Copy turn"}
-          title={copied ? "Copied" : "Copy"}
+          aria-label={copied ? t("Copied") : t("Copy turn")}
+          title={copied ? t("Copied") : t("Copy")}
           onClick={() => void handleCopy()}
         >
           {copied ? <IconCheckmark1 size={14} /> : <IconClipboard size={14} />}
@@ -1269,11 +1273,11 @@ function CopyTranscriptButton({ text }: { text: string }) {
       className="transcript-copy"
       onClick={() => void handleCopy()}
       data-copied={copied || undefined}
-      aria-label={copied ? "Transcript copied" : "Copy transcript"}
-      title={copied ? "Copied" : "Copy transcript"}
+      aria-label={copied ? t("Transcript copied") : t("Copy transcript")}
+      title={copied ? t("Copied") : t("Copy transcript")}
     >
       {copied ? <IconCheckmark1 size={14} /> : <IconClipboard size={14} />}
-      {copied ? "Copied" : "Copy"}
+      {copied ? t("Copied") : t("Copy")}
     </button>
   );
 }

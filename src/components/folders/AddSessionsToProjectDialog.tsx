@@ -79,7 +79,7 @@ export function AddSessionsToProjectDialog({
         if (submitting) return;
         onClose();
       }}
-      title={`Add sessions to ${folder.name}`}
+      title={t("Add sessions to {name}", { name: folder.name })}
       description={t("Pick the agent sessions you want in this project.")}
       initialFocusSelector='input[name="add-sessions-search"]'
       footer={
@@ -94,10 +94,12 @@ export function AddSessionsToProjectDialog({
             disabled={submitting || count === 0}
           >
             {submitting
-              ? "Adding…"
+              ? t("Adding…")
               : count === 0
-                ? "Add sessions"
-                : `Add ${count} ${count === 1 ? "session" : "sessions"}`}
+                ? t("Add sessions")
+                : count === 1
+                  ? t("Add 1 session")
+                  : t("Add {count} sessions", { count })}
           </button>
         </>
       }
@@ -133,10 +135,10 @@ export function AddSessionsToProjectDialog({
                     </span>
                     <span className="add-notes-body">
                       <span className="add-notes-title">
-                        {session.title?.trim() || session.preview?.trim() || "Untitled session"}
+                        {session.title?.trim() || session.preview?.trim() || t("Untitled session")}
                       </span>
                       <span className="add-notes-preview">
-                        {session.preview?.trim() || "No messages yet"}
+                        {session.preview?.trim() || t("No messages yet")}
                       </span>
                     </span>
                     <span className="add-notes-check" aria-hidden>
@@ -150,8 +152,8 @@ export function AddSessionsToProjectDialog({
         ) : (
           <p className="add-notes-empty">
             {sessions.some((session) => !(sessionFolderIds[session.id] ?? []).includes(folder.id))
-              ? "No sessions match that search."
-              : "Every session already lives in this project."}
+              ? t("No sessions match that search.")
+              : t("Every session already lives in this project.")}
           </p>
         )}
       </div>

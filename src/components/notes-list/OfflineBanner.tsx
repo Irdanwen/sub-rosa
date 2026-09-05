@@ -139,7 +139,7 @@ export function OfflineBanner({
           disabled={retrying || reachable === false}
           onClick={onRetryAll}
         >
-          {retrying ? "Retrying…" : "Retry all"}
+          {retrying ? t("Retrying…") : t("Retry all")}
         </button>
       </div>
     </section>

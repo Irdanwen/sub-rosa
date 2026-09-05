@@ -214,7 +214,7 @@ function PickerTile({ artifact }: { artifact: StudioArtifact }) {
     );
   }
   if (artifact.kind === "image") {
-    return <img src={artifactSrc(artifact)} alt={artifact.prompt || "Gallery image"} />;
+    return <img src={artifactSrc(artifact)} alt={artifact.prompt || t("Gallery image")} />;
   }
   return (
     <span className="studio-picker-file">

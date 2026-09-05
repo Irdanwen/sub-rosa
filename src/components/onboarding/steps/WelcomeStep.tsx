@@ -10,50 +10,53 @@ import { OnboardingPrimaryButton, StepCard } from "../StepChrome";
 // macOS can introduce the full agent, dictation, and notes surface because the
 // release bundle includes the runtime and helpers. Windows narrows the welcome
 // promise below until its Hermes and dictation support is turnkey.
-const POINTS = [
-  {
-    icon: IconSparkle,
-    title: t("Chat and work with {product}", { product: PRODUCT_NAME }),
-    detail: t("Hand {product} real work. It runs the session and comes back done.", {
-      product: PRODUCT_NAME,
-    }),
-  },
-  {
-    icon: IconMicrophone,
-    title: t("Speak instead of type"),
-    detail: t("{product} turns your voice into polished writing in any app on your computer.", {
-      product: PRODUCT_NAME,
-    }),
-  },
-  {
-    icon: IconCalendar1,
-    title: t("Effortlessly capture meetings"),
-    detail: t("{product} takes meeting notes without ever having to join the meeting.", {
-      product: PRODUCT_NAME,
-    }),
-  },
-  {
-    icon: IconLock,
-    title: t("Private by default"),
-    detail: t(
-      "Notes, sessions, and memory stay on this device. Prompts go only to Carpe Diem, with your own key.",
-    ),
-  },
-];
+function welcomePoints(mac: boolean) {
+  const points = [
+    {
+      icon: IconSparkle,
+      title: t("Chat and work with {product}", { product: PRODUCT_NAME }),
+      detail: t("Hand {product} real work. It runs the session and comes back done.", {
+        product: PRODUCT_NAME,
+      }),
+    },
+    {
+      icon: IconMicrophone,
+      title: t("Speak instead of type"),
+      detail: t("{product} turns your voice into polished writing in any app on your computer.", {
+        product: PRODUCT_NAME,
+      }),
+    },
+    {
+      icon: IconCalendar1,
+      title: t("Effortlessly capture meetings"),
+      detail: t("{product} takes meeting notes without ever having to join the meeting.", {
+        product: PRODUCT_NAME,
+      }),
+    },
+    {
+      icon: IconLock,
+      title: t("Private by default"),
+      detail: t(
+        "Notes, sessions, and memory stay on this device. Prompts go only to Carpe Diem, with your own key.",
+      ),
+    },
+  ];
 
-const WINDOWS_POINTS = [
-  {
-    icon: IconSparkle,
-    title: t("Desktop notes for your work"),
-    detail: t("Keep meeting notes and projects together in one app."),
-  },
-  {
-    icon: IconMicrophone,
-    title: t("Meeting notes from your mic"),
-    detail: t("Record meetings from your microphone and turn them into notes."),
-  },
-  POINTS[3],
-];
+  const windowsPoints = [
+    {
+      icon: IconSparkle,
+      title: t("Desktop notes for your work"),
+      detail: t("Keep meeting notes and projects together in one app."),
+    },
+    {
+      icon: IconMicrophone,
+      title: t("Meeting notes from your mic"),
+      detail: t("Record meetings from your microphone and turn them into notes."),
+    },
+    points[3],
+  ];
+  return mac ? points : windowsPoints;
+}
 
 /**
  * Step 1: what the app is, before the wizard starts asking for permissions.
@@ -70,11 +73,11 @@ const WINDOWS_POINTS = [
  */
 export function WelcomeStep({ onContinue }: { onContinue: () => void }) {
   const isMac = isMacLikePlatform();
-  const points = isMac ? POINTS : WINDOWS_POINTS;
+  const points = welcomePoints(isMac);
 
   return (
     <StepCard
-      title={`Welcome to ${PRODUCT_NAME}`}
+      title={t("Welcome to {product}", { product: PRODUCT_NAME })}
       subtitle={t("Private AI for everyday life and work.")}
       mark
       wide

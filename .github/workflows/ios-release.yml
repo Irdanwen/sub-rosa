@@ -4,15 +4,19 @@ name: iOS release (TestFlight)
 # Connect / TestFlight. Manual dispatch while the lane stabilizes; wire it to
 # tags once two runs have passed cleanly.
 #
-# Required secrets (see HANDOFF.md §7):
+# Required secrets (see HANDOFF.md §9 and the share-extension section):
 # - APPLE_API_KEY_ID       App Store Connect API key id (e.g. 2X9R4HXF34)
 # - APPLE_API_ISSUER       App Store Connect issuer id (UUID)
 # - APPLE_API_KEY_P8       The AuthKey_<id>.p8 content, base64-encoded
 # - APPLE_TEAM_ID          Already set for macOS signing (H6N5V777LL)
+# - IOS_DIST_CERT_P12      Apple Distribution certificate, base64 .p12
+# - IOS_DIST_CERT_PASSWORD Password for the imported .p12
+# - IOS_PROVISION_PROFILE  App Store profile for the app, base64
+# - IOS_SHARE_PROVISION_PROFILE App Store profile for the share extension, base64
 #
-# Signing uses Xcode cloud-managed certificates: with the API key,
-# `-allowProvisioningUpdates` creates/fetches the Apple Distribution
-# certificate and App Store profile on the runner — no .p12 to maintain.
+# Signing imports the distribution identity and both provisioning profiles.
+# Export uses manual signing; both profiles must authorize the shared App Group.
+# The API key authenticates App Store Connect access/upload, not cloud signing.
 
 on:
   workflow_dispatch:

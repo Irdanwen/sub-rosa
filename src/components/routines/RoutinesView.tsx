@@ -349,7 +349,7 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
         open={pendingDelete !== null}
         onClose={() => setPendingDelete(null)}
         onConfirm={confirmDelete}
-        title={`Delete “${pendingDelete?.name ?? ""}”?`}
+        title={t("Delete “{name}”?", { name: pendingDelete?.name ?? "" })}
         description={t("Sub Rosa will stop running this routine. This can’t be undone.")}
         confirmLabel={t("Delete")}
         destructive
@@ -452,7 +452,7 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
           </p>
           <div className="agent-error-banner-actions">
             <button type="button" disabled={resettingStore} onClick={() => void resetStore()}>
-              {resettingStore ? "Resetting…" : "Reset routines"}
+              {resettingStore ? t("Resetting…") : t("Reset routines")}
             </button>
           </div>
         </div>
@@ -562,7 +562,7 @@ function TemplateGrid({ onPick }: { onPick: (template: RoutineTemplate) => void 
           <button
             type="button"
             className="icon-button routines-template-add"
-            aria-label={`Add ${template.name}`}
+            aria-label={t("Add {name}", { name: template.name })}
             onClick={() => onPick(template)}
           >
             <IconPlusMedium size={13} aria-hidden />
@@ -662,7 +662,7 @@ function RoutineRow({
           <button
             type="button"
             className="icon-button routines-item-menu-trigger"
-            aria-label={`Actions for ${routine.name}`}
+            aria-label={t("Actions for {name}", { name: routine.name })}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((open) => !open)}
@@ -832,7 +832,7 @@ function DescribeBar({
               ) : (
                 <IconShieldCheck size={14} aria-hidden />
               )}
-              {unrestricted ? "Unrestricted" : "Sandboxed"}
+              {unrestricted ? t("Unrestricted") : t("Sandboxed")}
               <IconChevronDownSmall size={12} aria-hidden />
             </button>
             <div className="agent-composer-actions">

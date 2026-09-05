@@ -90,6 +90,7 @@ import type {
 import { EmptyState } from "../ui/EmptyState";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { Select } from "../ui/Select";
+import { MediaModelPicker, videoFamilyOption } from "./MediaModelPicker";
 import { withInvariant } from "../../lib/studio/bible";
 import { Darkroom } from "./Darkroom";
 import { GalleryPicker } from "./GalleryPicker";
@@ -664,7 +665,9 @@ export function VideoStudio({
           // Silently falling back to another family is how you end up wondering
           // why the continuation does not look like the shot it continues.
           setHandoffNote(
-            `${source.name} cannot start from an image. Pick the model to continue with.`,
+            t("{model} cannot start from an image. Pick the model to continue with.", {
+              model: source.name,
+            }),
           );
           setFamilyKey("");
         }
@@ -797,7 +800,7 @@ export function VideoStudio({
           aria-label={t("What to build")}
           options={availableSurfaces.map((entry) => ({
             value: entry,
-            label: entry === "shot" ? "New shot" : "From video",
+            label: entry === "shot" ? t("New shot") : t("From video"),
           }))}
         />
       ) : null}
@@ -808,18 +811,22 @@ export function VideoStudio({
         // with the mobile picker so both shells name it identically.
         hint={variantHint(family, model)}
       >
-        <Select
+        <MediaModelPicker
           value={family?.key ?? null}
           placeholder={t("Choose a model")}
           ariaLabel={t("Video model")}
           onChange={setFamilyKey}
-          options={familiesForSurface.map((entry) => ({ value: entry.key, label: entry.name }))}
+          options={familiesForSurface.map(videoFamilyOption)}
         />
       </StudioField>
       {familiesForSurface.length > 1 ? (
         <StudioField
           label={t("Also render with")}
-          hint={alsoFamilies.length > 0 ? `${alsoFamilies.length + 1} renders` : "Optional"}
+          hint={
+            alsoFamilies.length > 0
+              ? t("{count} renders", { count: alsoFamilies.length + 1 })
+              : t("Optional")
+          }
         >
           <div className="studio-upload">
             {alsoFamilies.length > 0 ? (
@@ -829,7 +836,7 @@ export function VideoStudio({
                     key={entry.key}
                     type="button"
                     className="studio-compare-chip"
-                    aria-label={`Stop rendering with ${entry.name}`}
+                    aria-label={t("Stop rendering with {model}", { model: entry.name })}
                     onClick={() =>
                       setAlsoKeys((current) => current.filter((key) => key !== entry.key))
                     }
@@ -840,7 +847,7 @@ export function VideoStudio({
                 ))}
               </div>
             ) : null}
-            <Select
+            <MediaModelPicker
               value={null}
               placeholder={t("Add a model")}
               ariaLabel={t("Add a model to render with")}
@@ -849,7 +856,7 @@ export function VideoStudio({
               }
               options={familiesForSurface
                 .filter((entry) => entry.key !== family?.key && !alsoKeys.includes(entry.key))
-                .map((entry) => ({ value: entry.key, label: entry.name }))}
+                .map(videoFamilyOption)}
             />
           </div>
         </StudioField>
@@ -860,7 +867,10 @@ export function VideoStudio({
             label={t("Opening frame")}
             hint={
               handoff
-                ? `Continuing at ${formatSeconds(handoff.timeSeconds)} of ${formatSeconds(handoff.durationSeconds)}`
+                ? t("Continuing at {position} of {duration}", {
+                    position: formatSeconds(handoff.timeSeconds),
+                    duration: formatSeconds(handoff.durationSeconds),
+                  })
                 : undefined
             }
           >
@@ -888,7 +898,7 @@ export function VideoStudio({
                     openingInputRef.current?.click();
                   }}
                 >
-                  {openingFrame ? "Replace image" : "Choose an image"}
+                  {openingFrame ? t("Replace image") : t("Choose an image")}
                 </button>
                 <button
                   type="button"
@@ -967,7 +977,7 @@ export function VideoStudio({
                   className="btn btn-secondary"
                   onClick={() => endInputRef.current?.click()}
                 >
-                  {endFrame ? "Replace image" : "Add an end frame"}
+                  {endFrame ? t("Replace image") : t("Add an end frame")}
                 </button>
                 <button
                   type="button"
@@ -1007,7 +1017,7 @@ export function VideoStudio({
               <div className="studio-edit-sources">
                 {references.map((reference, index) => (
                   <div key={`${index}-${reference.slice(-24)}`} className="studio-edit-source">
-                    <img src={reference} alt={`Reference ${index + 1}`} />
+                    <img src={reference} alt={t("Reference {count}", { count: index + 1 })} />
                     {references.length > 1 ? (
                       // The label is the name the prompt must use, so a
                       // seedance render reads "<Image 2>" here rather than a
@@ -1019,7 +1029,7 @@ export function VideoStudio({
                     <button
                       type="button"
                       className="studio-edit-source-remove"
-                      aria-label={`Remove reference ${index + 1}`}
+                      aria-label={t("Remove reference {count}", { count: index + 1 })}
                       onClick={() =>
                         setReferences((current) => current.filter((_, i) => i !== index))
                       }
@@ -1083,7 +1093,7 @@ export function VideoStudio({
                   className="btn btn-secondary"
                   onClick={() => referenceInputRef.current?.click()}
                 >
-                  {references.length > 0 ? "Add another photo" : "Choose a photo"}
+                  {references.length > 0 ? t("Add another photo") : t("Choose a photo")}
                 </button>
                 <button
                   type="button"
@@ -1122,7 +1132,7 @@ export function VideoStudio({
                     <button
                       type="button"
                       className="studio-icon-button"
-                      aria-label={`Remove clip ${index + 1}`}
+                      aria-label={t("Remove clip {count}", { count: index + 1 })}
                       onClick={() =>
                         setReferenceClips((current) =>
                           current.filter((entry) => entry.id !== clip.id),
@@ -1143,7 +1153,7 @@ export function VideoStudio({
                   className="btn btn-secondary"
                   onClick={() => setPicking("clip")}
                 >
-                  {referenceClips.length > 0 ? "Add another clip" : "Choose a clip"}
+                  {referenceClips.length > 0 ? t("Add another clip") : t("Choose a clip")}
                 </button>
               ) : null}
             </div>
@@ -1200,7 +1210,7 @@ export function VideoStudio({
                     <button
                       type="button"
                       className="studio-icon-button"
-                      aria-label={`Remove track ${index + 1}`}
+                      aria-label={t("Remove track {count}", { count: index + 1 })}
                       onClick={() =>
                         setReferenceAudio((current) =>
                           current.filter((entry) => entry.id !== track.id),
@@ -1221,7 +1231,7 @@ export function VideoStudio({
                   className="btn btn-secondary"
                   onClick={() => audioInputRef.current?.click()}
                 >
-                  {referenceAudio.length > 0 ? "Add another track" : "Choose a track"}
+                  {referenceAudio.length > 0 ? t("Add another track") : t("Choose a track")}
                 </button>
                 <button
                   type="button"
@@ -1282,7 +1292,7 @@ export function VideoStudio({
                 className="btn btn-secondary"
                 onClick={() => videoInputRef.current?.click()}
               >
-                {sourceVideo ? "Replace clip" : "Choose a clip"}
+                {sourceVideo ? t("Replace clip") : t("Choose a clip")}
               </button>
               {galleryVideos.length > 0 ? (
                 <Select
@@ -1344,12 +1354,12 @@ export function VideoStudio({
             )}
             <span className="studio-consent-meta">
               {personMediaCaveat ??
-                "Seedance requires this before it will build a clip from a photo of a person."}
+                t("Seedance requires this before it will build a clip from a photo of a person.")}
             </span>
           </span>
         </label>
       ) : null}
-      <StudioField label={t("Prompt")} hint={isUpscale ? "Optional" : undefined}>
+      <StudioField label={t("Prompt")} hint={isUpscale ? t("Optional") : undefined}>
         <textarea
           className="studio-textarea"
           rows={4}
@@ -1357,13 +1367,13 @@ export function VideoStudio({
           placeholder={
             effectiveSurface === "video"
               ? isUpscale
-                ? "Optional note for the upscaler"
-                : "Describe how to restyle the clip"
+                ? t("Optional note for the upscaler")
+                : t("Describe how to restyle the clip")
               : openingFrame
-                ? "Describe the motion"
+                ? t("Describe the motion")
                 : references.length > 0
-                  ? "Describe the scene to build from the references"
-                  : "Describe the scene and the motion"
+                  ? t("Describe the scene to build from the references")
+                  : t("Describe the scene and the motion")
           }
           onChange={(event) => setPrompt(event.target.value)}
         />
@@ -1427,12 +1437,17 @@ export function VideoStudio({
       ) : null}
       {needsOpeningFrame ? (
         <p className="studio-error">
-          {`${family?.name ?? "This model"} starts from a frame, so it needs an opening frame as well as its reference photos. The photos steer the look from there.`}
+          {t(
+            "{model} starts from a frame, so it needs an opening frame as well as its reference photos. The photos steer the look from there.",
+            { model: family?.name ?? t("This model") },
+          )}
         </p>
       ) : null}
       {missingFields.length > 0 ? (
         <p className="studio-error">
-          {`This model needs ${missingFields.map((field) => field.replace(/_/g, " ")).join(" and ")} before it will render.`}
+          {t("This model needs {fields} before it will render.", {
+            fields: missingFields.map((field) => field.replace(/_/g, " ")).join(", "),
+          })}
         </p>
       ) : null}
       {oversize ? <p className="studio-error">{oversize}</p> : null}
@@ -1442,8 +1457,10 @@ export function VideoStudio({
       {queue.jobs.length > 0 ? (
         <p className="studio-queue-hint">
           {queue.jobs.length === 1
-            ? "1 render in progress. You can queue another."
-            : `${queue.jobs.length} renders in progress. You can queue another.`}
+            ? t("1 render in progress. You can queue another.")
+            : t("{count} renders in progress. You can queue another.", {
+                count: queue.jobs.length,
+              })}
         </p>
       ) : null}
     </>
@@ -1456,16 +1473,26 @@ export function VideoStudio({
           onClose={() => setPicking(undefined)}
           kinds={picking === "clip" ? CLIP_KINDS : picking === "audio" ? AUDIO_KINDS : undefined}
           title={
-            picking === "clip" ? "Pick a clip" : picking === "audio" ? "Pick a track" : undefined
+            picking === "clip"
+              ? t("Pick a clip")
+              : picking === "audio"
+                ? t("Pick a track")
+                : undefined
           }
           description={
             picking === "clip"
-              ? "Pick a clip to edit, extend or stitch. It travels with the request, so keep it short."
+              ? t(
+                  "Pick a clip to edit, extend or stitch. It travels with the request, so keep it short.",
+                )
               : picking === "audio"
-                ? "Pick a track for the render to follow. It travels with the request, so keep it short."
+                ? t(
+                    "Pick a track for the render to follow. It travels with the request, so keep it short.",
+                  )
                 : picking === "reference"
-                  ? "Pick an image you have already produced. It steers style and subject, alongside the opening frame."
-                  : "Pick an image you have already produced."
+                  ? t(
+                      "Pick an image you have already produced. It steers style and subject, alongside the opening frame.",
+                    )
+                  : t("Pick an image you have already produced.")
           }
           onPick={(dataUri, artifact, entry) => {
             // A face picked out of the bible brings its traits with it. Nothing
@@ -1548,7 +1575,7 @@ export function VideoStudio({
             {/* The backend's own words stay reachable on hover: the summary is
              * for acting on, the detail is for reporting. */}
             <span title={failure?.detail}>
-              {constraint ?? failure?.text ?? "The render failed."}
+              {constraint ?? failure?.text ?? t("The render failed.")}
               {" · "}
               {entry.job.model}
               {entry.job.prompt ? ` · "${entry.job.prompt.slice(0, 60)}"` : ""}

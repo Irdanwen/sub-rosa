@@ -232,7 +232,7 @@ export function McpServersView({
             />
           ) : isErrored ? (
             <ErrorState
-              message={state.error ?? "Could not load MCP servers from Hermes."}
+              message={state.error ?? t("Could not load your MCP servers.")}
               retryable={state.retryable}
               onRetry={state.refresh}
             />
@@ -325,7 +325,7 @@ function ModeNote({
   show: boolean;
 }) {
   if (!show) return null;
-  const modeLabel = mode === "unrestricted" ? "Full mode" : "Sandboxed";
+  const modeLabel = mode === "unrestricted" ? t("Full mode") : t("Sandboxed");
   return (
     <span className="mcp-servers-mode-note">
       {t("Targeting the {mode} runtime", { mode: modeLabel })}
@@ -424,7 +424,7 @@ function ServerRow({
         <p className="mcp-server-target" title={server.command ?? server.url}>
           {server.transport === "stdio"
             ? formatCommand(server.command, args)
-            : (server.url ?? "No URL configured.")}
+            : (server.url ?? t("No URL configured."))}
         </p>
 
         <p className="mcp-server-blurb">{transport.blurb}</p>
@@ -434,7 +434,7 @@ function ServerRow({
         {risk.tier === "high" ? (
           <p className="mcp-server-risk-note" data-tier="high" role="note">
             <IconExclamationCircle size={13} ariaHidden />
-            {risk.reasons[0]?.detail ?? "This server can take high-impact actions."}
+            {risk.reasons[0]?.detail ?? t("This server can take high-impact actions.")}
           </p>
         ) : null}
 
@@ -471,12 +471,12 @@ function ServerRow({
 
       <div className="mcp-server-actions">
         <button type="button" className="mcp-server-test" disabled={test?.pending} onClick={onTest}>
-          {test?.pending ? "Testing" : "Test"}
+          {test?.pending ? t("Testing") : t("Test")}
         </button>
         <button
           type="button"
           className="mcp-server-tools"
-          aria-label={`Configure tools for ${server.name}`}
+          aria-label={t("Configure tools for {name}", { name: server.name })}
           title={t("Configure tools")}
           onClick={onTools}
         >
@@ -486,7 +486,7 @@ function ServerRow({
         <button
           type="button"
           className="mcp-server-delete"
-          aria-label={`Delete ${server.name}`}
+          aria-label={t("Delete {name}", { name: server.name })}
           title={t("Delete server")}
           disabled={pending}
           onClick={onDelete}
@@ -501,7 +501,7 @@ function ServerRow({
             onCheckedChange={onToggle}
           />
           <span className="mcp-server-timing" aria-hidden>
-            {pending ? "Saving" : "Restart to apply"}
+            {pending ? t("Saving") : t("Restart to apply")}
           </span>
         </span>
       </div>
@@ -537,7 +537,10 @@ function SecurityLabels({ labels }: { labels: ReturnType<typeof securityLabelsFo
  * the values. */
 function SecretSummary({ label, count }: { label: string; count: number }) {
   return (
-    <span className="mcp-server-secret" title={`${count} hidden ${label.toLowerCase()}`}>
+    <span
+      className="mcp-server-secret"
+      title={t("{count} hidden {value}", { count: count, value: label.toLowerCase() })}
+    >
       {t("{label}: {count} hidden", { label, count })}
     </span>
   );
@@ -566,7 +569,7 @@ function TestResult({
     return (
       <p className="mcp-server-test-error" role="alert">
         <IconCircleX size={13} ariaHidden />
-        {result.message ?? "Could not connect to the server."}
+        {result.message ?? t("Could not connect to the server.")}
       </p>
     );
   }
@@ -699,7 +702,7 @@ function OauthStatus({
 
 /** Renders the connection target for a stdio server: command plus its args. */
 function formatCommand(command: string | undefined, args: string[]): string {
-  if (!command) return "No command configured.";
+  if (!command) return t("No command configured.");
   return args.length > 0 ? `${command} ${args.join(" ")}` : command;
 }
 
@@ -833,7 +836,7 @@ function AddServerDialog({
             onClick={() => void handleSubmit()}
             disabled={adding}
           >
-            {adding ? "Adding" : "Add server"}
+            {adding ? t("Adding") : t("Add server")}
           </button>
         </>
       }
@@ -1062,7 +1065,7 @@ function ListEditor({
           <button
             type="button"
             className="mcp-add-row-remove"
-            aria-label={`Remove ${legend} ${index + 1}`}
+            aria-label={t("Remove {legend} {value}", { legend: legend, value: index + 1 })}
             onClick={() => onChange(values.filter((existing) => existing.id !== row.id))}
           >
             <IconCrossSmall size={13} ariaHidden />
@@ -1115,7 +1118,7 @@ function PairEditor({
             className="mcp-add-input mcp-add-pair-key"
             value={pair.key}
             placeholder={keyPlaceholder}
-            aria-label={`${legend} ${index + 1} name`}
+            aria-label={t("{legend} {value} name", { legend: legend, value: index + 1 })}
             autoComplete="off"
             spellCheck={false}
             aria-invalid={Boolean(errors[`${errorPrefix}.${index}`])}
@@ -1133,7 +1136,7 @@ function PairEditor({
             className="mcp-add-input mcp-add-pair-value"
             value={pair.value}
             placeholder={valuePlaceholder}
-            aria-label={`${legend} ${index + 1} value`}
+            aria-label={t("{legend} {value} value", { legend: legend, value: index + 1 })}
             autoComplete="off"
             onChange={(event) => {
               const value = event.currentTarget.value;
@@ -1147,7 +1150,7 @@ function PairEditor({
           <button
             type="button"
             className="mcp-add-row-remove"
-            aria-label={`Remove ${legend} ${index + 1}`}
+            aria-label={t("Remove {legend} {value}", { legend: legend, value: index + 1 })}
             onClick={() => onChange(pairs.filter((existing) => existing.id !== pair.id))}
           >
             <IconCrossSmall size={13} ariaHidden />
@@ -1185,15 +1188,20 @@ function DeleteServerDialog({
   const hasTools = server ? hasAvailableTools(server) : false;
   const description = server
     ? hasTools
-      ? `${server.name} currently exposes tools to your sessions. Removing it drops those tools after the gateway restarts. This cannot be undone.`
-      : `Remove ${server.name}? New sessions will no longer load it after the gateway restarts.`
+      ? t(
+          "{name} currently exposes tools to your sessions. Removing it drops those tools after the gateway restarts. This cannot be undone.",
+          { name: server.name },
+        )
+      : t("Remove {name}? New sessions will no longer load it after the gateway restarts.", {
+          name: server.name,
+        })
     : "";
   return (
     <ConfirmDialog
       open={Boolean(server)}
       onClose={onClose}
       onConfirm={onConfirm}
-      title={server ? `Delete "${server.name}"?` : "Delete server?"}
+      title={server ? t('Delete "{name}"?', { name: server.name }) : t("Delete server?")}
       description={description}
       confirmLabel={t("Delete server")}
       destructive
@@ -1219,7 +1227,7 @@ function EnableServerDialog({
       open={Boolean(server)}
       onClose={onClose}
       onConfirm={onConfirm}
-      title={confirmation?.title ?? "Enable server?"}
+      title={confirmation?.title ?? t("Enable server?")}
       description={
         confirmation ? (
           <span className="mcp-confirm-body">

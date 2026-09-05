@@ -192,7 +192,7 @@ interface DiskArtifact {
 function kindFromFileName(fileName: string): ArtifactKind {
   const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
   if (ext === "mp4" || ext === "webm" || ext === "mov") return "video";
-  if (ext === "mp3" || ext === "wav" || ext === "m4a" || ext === "ogg") return "music";
+  if (["mp3", "wav", "m4a", "ogg", "flac", "aac", "opus"].includes(ext)) return "music";
   return "image";
 }
 

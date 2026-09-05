@@ -1,4 +1,5 @@
 /** The bible as the webview sees it. Mirrors `src-tauri/src/bible.rs`. */
+import { t } from "../../i18n";
 
 export const BIBLE_KINDS = ["character", "location", "prop", "look"] as const;
 export type BibleKind = (typeof BIBLE_KINDS)[number];
@@ -15,19 +16,39 @@ export const BIBLE_ROLES = ["portrait", "profile", "wide", "medium", "detail", "
 export type BibleRole = (typeof BIBLE_ROLES)[number];
 
 export const BIBLE_KIND_LABELS: Record<BibleKind, string> = {
-  character: "Character",
-  location: "Location",
-  prop: "Prop",
-  look: "Look",
+  get character() {
+    return t("Character");
+  },
+  get location() {
+    return t("Location");
+  },
+  get prop() {
+    return t("Prop");
+  },
+  get look() {
+    return t("Look");
+  },
 };
 
 export const BIBLE_ROLE_LABELS: Record<BibleRole, string> = {
-  portrait: "Portrait",
-  profile: "Profile",
-  wide: "Wide",
-  medium: "Medium",
-  detail: "Detail",
-  voice: "Voice",
+  get portrait() {
+    return t("Portrait");
+  },
+  get profile() {
+    return t("Profile");
+  },
+  get wide() {
+    return t("Wide");
+  },
+  get medium() {
+    return t("Medium");
+  },
+  get detail() {
+    return t("Detail");
+  },
+  get voice() {
+    return t("Voice");
+  },
 };
 
 /** Which roles make sense for a kind, in the order a surface should offer them. */

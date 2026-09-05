@@ -119,6 +119,8 @@ export interface SavedMedia {
   artifactId: string;
   /** A URL this webview can decode (asset protocol on desktop, blob on iOS). */
   src: string;
+  /** Format recognized when the native gallery saved the returned bytes. */
+  mimeType?: string;
 }
 
 export interface SaveMediaMeta {
@@ -572,7 +574,12 @@ async function executeNode(
             costCredits: context.costCredits,
           })
         : undefined;
-      return { kind: "image", base64: first, mimeType: "image/png", artifactId: saved?.artifactId };
+      return {
+        kind: "image",
+        base64: first,
+        mimeType: saved?.mimeType ?? "image/png",
+        artifactId: saved?.artifactId,
+      };
     }
 
     case "imageEdit": {
@@ -596,7 +603,7 @@ async function executeNode(
       return {
         kind: "image",
         base64: edited,
-        mimeType: "image/png",
+        mimeType: saved?.mimeType ?? "image/png",
         artifactId: saved?.artifactId,
       };
     }
@@ -626,7 +633,7 @@ async function executeNode(
       return {
         kind: "audio",
         base64,
-        mimeType,
+        mimeType: saved?.mimeType ?? mimeType,
         source: "speech",
         artifactId: saved?.artifactId,
         src: saved?.src,
@@ -671,7 +678,7 @@ async function executeNode(
         );
         return {
           kind: "audio",
-          mimeType: "audio/mpeg",
+          mimeType: saved.mimeType ?? "audio/mpeg",
           source: "music",
           artifactId: saved.artifactId,
           src: saved.src,
@@ -697,7 +704,7 @@ async function executeNode(
       return {
         kind: "audio",
         ...result,
-        mimeType: "audio/mpeg",
+        mimeType: saved?.mimeType ?? "audio/mpeg",
         source: "music",
         artifactId: saved?.artifactId,
         src: saved?.src,

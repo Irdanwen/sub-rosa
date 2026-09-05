@@ -197,7 +197,7 @@ export function InstalledSkillsView({
               onClick={lifecycle.checkForUpdates}
             >
               <IconArrowRotateClockwise size={14} ariaHidden />
-              {lifecycle.sweeping ? "Checking…" : "Check for updates"}
+              {lifecycle.sweeping ? t("Checking…") : t("Check for updates")}
             </button>
           ) : null}
           {lifecycle && updatableCount > 0 ? (
@@ -269,7 +269,7 @@ export function InstalledSkillsView({
             />
           ) : isErrored ? (
             <ErrorState
-              message={state.error ?? "Could not load skills from Hermes."}
+              message={state.error ?? t("Could not load your skills.")}
               retryable={state.retryable}
               onRetry={state.refresh}
             />
@@ -518,14 +518,14 @@ function SkillRow({
             aria-controls={panelId}
             onClick={onToggleSetup}
           >
-            {setupOpen ? "Hide setup" : "Set up"}
+            {setupOpen ? t("Hide setup") : t("Set up")}
           </button>
         ) : null}
         {onOpen ? (
           <button
             type="button"
             className="installed-skill-open"
-            aria-label={`Open ${skill.name}`}
+            aria-label={t("Open {name}", { name: skill.name })}
             title={t("Open skill")}
             onClick={onOpen}
           >

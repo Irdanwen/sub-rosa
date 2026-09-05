@@ -167,7 +167,7 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
           phase={waiting.phase}
           elapsedMs={waiting.phase === "queueing" ? undefined : waiting.elapsedMs}
           estimateMs={estimate}
-          label={waiting.phase === "processing" ? "Rendering your effect" : undefined}
+          label={waiting.phase === "processing" ? t("Rendering your effect") : undefined}
           meta={modelId}
         />
       ) : null}

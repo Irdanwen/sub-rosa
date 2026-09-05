@@ -38,22 +38,30 @@ function friendlyFailureSegment(message: string) {
   const normalized = body.toLowerCase();
   let friendly = body;
   if (normalized.includes("no_speech") || normalized.includes("no speech")) {
-    friendly = "No speech detected. Try speaking louder or moving closer to the microphone.";
+    friendly = t("No speech detected. Try speaking louder or moving closer to the microphone.");
   } else if (isInvalidJuneResponseMessage(body)) {
-    friendly = "The processing service returned an invalid response.";
+    friendly = t("The processing service returned an invalid response.");
   } else if (normalized.includes("metering_provider_failed")) {
-    friendly = "Billing is temporarily unavailable. Please try again in a moment.";
+    friendly = t("Billing is temporarily unavailable. Please try again in a moment.");
   } else if (isUpstreamRateLimitedMessage(body)) {
-    friendly = "The transcription provider is busy right now. Please try again in a few seconds.";
+    friendly = t(
+      "The transcription provider is busy right now. Please try again in a few seconds.",
+    );
   } else if (normalized.includes("upstream_provider_failed")) {
-    friendly = "The transcription provider could not process this audio.";
+    friendly = t("The transcription provider could not process this audio.");
   } else if (normalized.includes("model_not_priced")) {
     // Structural, not transient: the model saved in Settings is one the
     // backend will no longer accept, so retrying as-is fails identically.
-    friendly =
-      "The model selected in Settings is not available any more. Choose another one, then retry.";
+    friendly = t(
+      "The model selected in Settings is not available any more. Choose another one, then retry.",
+    );
   }
-  return source ? `${source}: ${friendly}` : friendly;
+  return source
+    ? t("{source}: {message}", {
+        source: source.toLowerCase() === "microphone" ? t("Microphone") : t("System"),
+        message: friendly,
+      })
+    : friendly;
 }
 
 export function isInvalidJuneResponseMessage(message: string) {
@@ -70,7 +78,7 @@ export function NoteFailureBanner({
   audioPreserved,
   onRetry,
   onTopUp,
-  topUpLabel = "Add credits",
+  topUpLabel = t("Add credits"),
 }: Props) {
   const kind = classifyFailure(errorMessage);
   const isBalanceIssue = kind === "balance_low";
@@ -103,11 +111,13 @@ export function NoteFailureBanner({
       <p className="note-failure-message">
         {isBalanceIssue
           ? audioPreserved
-            ? `Your balance ran out. Your recording is saved locally, so ${topUpAction} and retry.`
-            : `Your balance is too low. ${topUpLabel} to continue.`
-          : (displayMessage ?? "Sub Rosa couldn't finish processing this note.")}
+            ? t("Your balance ran out. Your recording is saved locally, so {action} and retry.", {
+                action: topUpAction,
+              })
+            : t("Your balance is too low. {action} to continue.", { action: topUpLabel })
+          : (displayMessage ?? t("Sub Rosa couldn't finish processing this note."))}
         {!isBalanceIssue && audioPreserved
-          ? " Your recording is saved locally, so you can retry."
+          ? t(" Your recording is saved locally, so you can retry.")
           : null}
       </p>
       <div className="note-failure-actions">

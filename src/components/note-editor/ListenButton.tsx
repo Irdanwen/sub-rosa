@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconPause } from "central-icons-filled/IconPause";
 import { IconPlay } from "central-icons-filled/IconPlay";
 import { useEffect, useRef, useState } from "react";
@@ -68,8 +69,8 @@ export function ListenButton({ noteId, content }: { noteId: string; content: str
       className="note-listen"
       data-state={state}
       disabled={state === "loading"}
-      aria-label={state === "playing" ? "Pause the recap" : "Listen to the recap"}
-      title={state === "failed" ? "The recap could not be read aloud" : "Listen"}
+      aria-label={state === "playing" ? t("Pause the recap") : t("Listen to the recap")}
+      title={state === "failed" ? t("The recap could not be read aloud") : t("Listen")}
       onClick={() => void toggle()}
     >
       {state === "loading" ? (
@@ -79,7 +80,7 @@ export function ListenButton({ noteId, content }: { noteId: string; content: str
       ) : (
         <IconPlay size={13} />
       )}
-      <span>{state === "playing" ? "Pause" : "Listen"}</span>
+      <span>{state === "playing" ? t("Pause") : t("Listen")}</span>
     </button>
   );
 }

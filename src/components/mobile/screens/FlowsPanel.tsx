@@ -87,7 +87,7 @@ export function FlowsPanel({
         setResumable((entries) => entries.filter((candidate) => candidate.id !== entry.id));
       } catch (error) {
         hapticNotify("error");
-        setResumeError(error instanceof Error ? error.message : "The resume failed.");
+        setResumeError(error instanceof Error ? t(error.message) : t("The resume failed."));
         setResumable((entries) => entries.filter((candidate) => candidate.id !== entry.id));
       } finally {
         setResuming(null);
@@ -176,7 +176,9 @@ export function FlowsPanel({
         <ul className="mobile-flows-resume" aria-label={t("Interrupted productions")}>
           {resumable.map((entry) => (
             <li key={entry.id} className="mobile-flows-resume-row">
-              <span className="mobile-flows-resume-name">{entry.name || "Untitled workflow"}</span>
+              <span className="mobile-flows-resume-name">
+                {entry.name || t("Untitled workflow")}
+              </span>
               <span className="mobile-flows-resume-actions">
                 <button
                   type="button"
@@ -195,9 +197,9 @@ export function FlowsPanel({
                   {resuming === entry.id ? (
                     <Spinner />
                   ) : entry.status === "awaitingGate" ? (
-                    "Approve and continue"
+                    t("Approve and continue")
                   ) : (
-                    "Resume"
+                    t("Resume")
                   )}
                 </button>
               </span>
@@ -323,7 +325,7 @@ function TemplateRunner({
       } catch (err) {
         hapticNotify("error");
         if (err instanceof WorkflowRunError) setResults(new Map(err.results));
-        setError(err instanceof Error ? err.message : "The workflow failed.");
+        setError(err instanceof Error ? t(err.message) : t("The workflow failed."));
       } finally {
         setRunning(false);
       }
@@ -382,7 +384,7 @@ function TemplateRunner({
         disabled={running || textInputs.some((node) => !(inputs[node.id] ?? "").trim())}
         onClick={run}
       >
-        {running ? <Spinner /> : "Run flow"}
+        {running ? <Spinner /> : t("Run flow")}
       </button>
       <ConfirmDialog
         open={confirmRun !== null}
@@ -412,13 +414,13 @@ function TemplateRunner({
                     {status === "running" ? (
                       <Spinner />
                     ) : status === "done" ? (
-                      "Done"
+                      t("Done")
                     ) : status === "error" ? (
-                      "Failed"
+                      t("Failed")
                     ) : status === "awaiting" ? (
-                      "Needs your approval"
+                      t("Needs your approval")
                     ) : (
-                      "Waiting"
+                      t("Waiting")
                     )}
                   </span>
                   <FlowStepOutput state={state} />

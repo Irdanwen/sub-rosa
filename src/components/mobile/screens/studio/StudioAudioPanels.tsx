@@ -73,7 +73,7 @@ export function AudioPanel({
             data-active={mode === entry ? "true" : undefined}
             onClick={() => onModeChange(entry)}
           >
-            {entry === "music" ? "Music" : entry === "speech" ? "Speech" : "Effects"}
+            {entry === "music" ? t("Music") : entry === "speech" ? t("Speech") : t("Effects")}
           </button>
         ))}
       </div>
@@ -138,7 +138,7 @@ export function SpeechPanel({
     } catch (err) {
       if (!(err instanceof DOMException && err.name === "AbortError")) {
         hapticNotify("error");
-        setError(err instanceof Error ? err.message : "The narration failed.");
+        setError(err instanceof Error ? t(err.message) : t("The narration failed."));
       }
     } finally {
       setBusy(false);
@@ -205,7 +205,7 @@ export function SpeechPanel({
         disabled={!model || !text.trim() || busy}
         onClick={() => void generate()}
       >
-        {busy ? <Spinner /> : "Generate"}
+        {busy ? <Spinner /> : t("Generate")}
       </button>
       {busy ? (
         <button
@@ -363,7 +363,7 @@ export function SfxPanel({
         disabled={!model || !prompt.trim() || busy}
         onClick={start}
       >
-        {busy ? <Spinner /> : "Generate"}
+        {busy ? <Spinner /> : t("Generate")}
         {!busy && cost !== undefined ? (
           <span className="mobile-studio-cost">{formatCredits(cost)}</span>
         ) : null}
@@ -512,7 +512,9 @@ export function MusicPanel({
               className="mobile-studio-prompt"
               value={lyrics}
               rows={3}
-              placeholder={caps.lyrics === "required" ? "Lyrics (required)" : "Lyrics (optional)"}
+              placeholder={
+                caps.lyrics === "required" ? t("Lyrics (required)") : t("Lyrics (optional)")
+              }
               onChange={(event) => setLyrics(event.target.value)}
             />
           ) : null}
@@ -524,7 +526,7 @@ export function MusicPanel({
         disabled={!model || !prompt.trim() || lyricsMissing || busy}
         onClick={start}
       >
-        {busy ? <Spinner /> : "Generate"}
+        {busy ? <Spinner /> : t("Generate")}
         {!busy && cost !== undefined ? (
           <span className="mobile-studio-cost">{formatCredits(cost)}</span>
         ) : null}
@@ -537,7 +539,7 @@ export function MusicPanel({
           phase={waiting.phase}
           elapsedMs={waiting.phase === "queueing" ? undefined : waiting.elapsedMs}
           estimateMs={estimate}
-          label={waiting.phase === "processing" ? "Composing your track" : undefined}
+          label={waiting.phase === "processing" ? t("Composing your track") : undefined}
           meta={t("You can leave this tab; the job resumes.")}
         />
       ) : null}

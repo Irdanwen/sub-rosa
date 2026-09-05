@@ -85,7 +85,7 @@ export function MeetingAmbiguityPrompt({
               disabled={busy}
               onClick={() => void choose(event.id)}
             >
-              <span className="meeting-prompt-title">{event.title || "Untitled event"}</span>
+              <span className="meeting-prompt-title">{event.title || t("Untitled event")}</span>
               <span className="meeting-prompt-meta">{meetingSummary(event)}</span>
             </button>
           </li>
