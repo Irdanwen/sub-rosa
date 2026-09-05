@@ -127,6 +127,10 @@ function mimeForFile(fileName: string): string {
   if (extension === "mov") return "video/quicktime";
   if (extension === "mp3") return "audio/mpeg";
   if (extension === "wav") return "audio/wav";
+  if (extension === "flac") return "audio/flac";
+  if (extension === "m4a") return "audio/mp4";
+  if (extension === "aac") return "audio/aac";
+  if (extension === "ogg" || extension === "opus") return "audio/ogg";
   if (extension === "png") return "image/png";
   if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
   return "video/mp4";

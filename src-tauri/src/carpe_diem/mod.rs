@@ -9,6 +9,7 @@
 //! ([`jobs`]) that carries asynchronous generations through a suspension, and
 //! the tracker a user's report reaches ([`issue_reports`]).
 
+mod artifact_format;
 pub mod branding;
 pub mod cache_stats;
 pub mod issue_reports;

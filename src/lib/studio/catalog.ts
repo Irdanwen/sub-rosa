@@ -3,7 +3,7 @@
 // video family twice (a text-to-video id and an image-to-video id); the studio
 // presents one family with a Text/Image toggle, like a single "model".
 
-import { intlLocale } from "../i18n";
+import { intlLocale, t } from "../i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { probedConstraints } from "./model-constraints";
 import type { MediaCatalog, MediaModel, MediaType } from "./types";
@@ -646,7 +646,10 @@ function round2(value: number): number {
 }
 
 export function formatCredits(credits: number): string {
-  // Thousands separators keep large balances scannable ("12,450 credits").
-  if (credits >= 100) return `${Math.round(credits).toLocaleString(intlLocale())} credits`;
-  return `${credits.toFixed(credits < 1 ? 2 : 1)} credits`;
+  const fractionDigits = credits >= 100 ? 0 : credits < 1 ? 2 : 1;
+  const count = credits.toLocaleString(intlLocale(), {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  });
+  return credits === 1 ? t("{count} credit", { count }) : t("{count} credits", { count });
 }

@@ -29,6 +29,8 @@
   "{count} available": "{count} available",
   "{count} correction(s)": "{count} correction(s)",
   "{count} could not be checked": "{count} could not be checked",
+  "{count} credit": "{count} credit",
+  "{count} credits": "{count} credits",
   "{count} environment": "{count} environment",
   "{count} files": "{count} files",
   "{count} headers": "{count} headers",

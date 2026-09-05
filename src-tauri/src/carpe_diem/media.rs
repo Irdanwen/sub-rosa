@@ -647,6 +647,9 @@ pub(super) async fn save_base64(
             "The artifact is empty.",
         ));
     }
+    let mut probe = super::artifact_format::Probe::default();
+    probe.push(&bytes);
+    let extension = probe.extension(&extension);
     let dir = artifacts_dir(app)?;
     let file_name = format!("{}.{extension}", uuid::Uuid::new_v4());
     let path = dir.join(&file_name);
@@ -702,11 +705,13 @@ pub(super) async fn download(
         .await
         .map_err(|error| AppError::new("media_artifact_write_failed", error.to_string()))?;
     let mut byte_count: u64 = 0;
+    let mut probe = super::artifact_format::Probe::default();
     while let Some(chunk) = response
         .chunk()
         .await
         .map_err(|error| AppError::new("media_download_failed", error.to_string()))?
     {
+        probe.push(&chunk);
         byte_count += chunk.len() as u64;
         tokio::io::AsyncWriteExt::write_all(&mut file, &chunk)
             .await
@@ -722,6 +727,21 @@ pub(super) async fn download(
             "The downloaded file is empty.",
         ));
     }
+    drop(file);
+    let actual_extension = probe.extension(&extension);
+    let (path, file_name) = if actual_extension != extension {
+        let actual_path = path.with_extension(actual_extension);
+        tokio::fs::rename(&path, &actual_path)
+            .await
+            .map_err(|error| AppError::new("media_artifact_write_failed", error.to_string()))?;
+        let actual_name = std::path::Path::new(&file_name)
+            .with_extension(actual_extension)
+            .to_string_lossy()
+            .into_owned();
+        (actual_path, actual_name)
+    } else {
+        (path, file_name)
+    };
     Ok(ArtifactDto {
         path: path.to_string_lossy().to_string(),
         file_name,

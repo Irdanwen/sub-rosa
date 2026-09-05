@@ -1005,6 +1005,15 @@ liste exacte des passages envoyés sous la réponse
 - Les deux entitlements iOS et leurs propriétés XcodeGen gardent
   `group.xyz.carpediem.subrosa`. Une compilation ne prouve pas que les profils
   Apple accordent ce groupe : vérifier les profils avant de publier.
+- `carpe_diem/artifact_format.rs` reconnaît le format réellement reçu et saute
+  les métadonnées ID3 en flux. `media.rs` utilise cette détection pour les
+  sauvegardes base64 et les téléchargements : ne pas réintroduire une extension
+  fondée seulement sur le format demandé ou sur la présence d’ID3. Les formats
+  audio associés restent reconnus dans la galerie, les blobs mobiles et les
+  entrées des flux. `catalog.ts` traduit et localise les estimations de crédits.
+- `src-tauri/tests/note_passages.rs` fixe l’heure d’indexation de son jeu de
+  données avant une édition simulée : le test ne doit pas expirer à une date
+  de calendrier réelle.
 - Résultats, captures et contrôles de sortie restants :
   [rapport de validation](docs/qa/2026-09-05-public-readiness.md).
 
