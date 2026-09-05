@@ -1,3 +1,5 @@
+// A technical input example, preserved verbatim in every language.
+const GOOGLE_KEY_EXAMPLE = "AIza…";
 import { t } from "../../lib/i18n";
 import { useEffect, useId, useState } from "react";
 import { placesClearGoogleKey, placesGetSettings, placesSetGoogleKey } from "../../lib/tauri";
@@ -74,7 +76,7 @@ export function PlacesSettingsSection() {
               value={keyDraft}
               autoComplete="off"
               spellCheck={false}
-              placeholder={keyPresent ? "Saved key hidden" : "AIza…"}
+              placeholder={keyPresent ? t("Saved key hidden") : GOOGLE_KEY_EXAMPLE}
               aria-label={t("Google Places API key")}
               onChange={(event) => setKeyDraft(event.target.value)}
               onKeyDown={(event) => {

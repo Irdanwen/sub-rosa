@@ -203,6 +203,16 @@ describe("desktop journeys", () => {
     mocks.retryProcessing.mockResolvedValue(undefined);
   });
 
+  it("recovers when the initial notes read fails", async () => {
+    mocks.bootstrapApp.mockRejectedValueOnce(new Error("Notes temporarily unavailable"));
+    render(<App />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Notes temporarily unavailable");
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await goToNotes();
+    expect(await screen.findByText("Budget review")).toBeInTheDocument();
+    expect(mocks.bootstrapApp).toHaveBeenCalledTimes(2);
+  });
+
   it("1. launches on the notes, and opens the one you click", async () => {
     render(<App />);
     await goToNotes();

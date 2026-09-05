@@ -231,6 +231,13 @@ describe("image edit models", () => {
     };
     expect(imageEditModels(venice).map((entry) => entry.id)).toEqual(["seedream-v4-edit"]);
   });
+
+  it("never resurrects a passthrough that the live catalog marks offline", () => {
+    const models = imageEditModels(
+      catalog([model({ id: "qwen-edit-uncensored", mediaType: "imageEdit", offline: true })]),
+    );
+    expect(models).toEqual([]);
+  });
 });
 
 describe("cost estimates", () => {

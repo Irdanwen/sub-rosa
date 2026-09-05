@@ -57,7 +57,7 @@ export function McpToolsDialog({
     <Dialog
       open={Boolean(server)}
       onClose={saving ? () => {} : onClose}
-      title={server ? `Tools for ${server.name}` : "Tools"}
+      title={server ? t("Tools for {name}", { name: server.name }) : t("Tools")}
       description={t(
         "Choose which of this server's tools the agent can use. Changes apply after the Hermes gateway restarts.",
       )}
@@ -162,8 +162,8 @@ function McpToolsForm({
         <p className="mcp-tools-discovery-note" role="note">
           <IconCircleInfo size={13} ariaHidden />
           {comparison.fromTest
-            ? "Tools below come from the last test of this server."
-            : "Tools below come from the stored inventory. Test the server to refresh it."}
+            ? t("Tools below come from the last test of this server.")
+            : t("Tools below come from the stored inventory. Test the server to refresh it.")}
         </p>
       )}
 
@@ -298,7 +298,7 @@ function McpToolsForm({
           onClick={() => void handleSave()}
           disabled={saving}
         >
-          {saving ? "Saving" : "Save tool filter"}
+          {saving ? t("Saving") : t("Save tool filter")}
         </button>
       </div>
 
@@ -393,11 +393,11 @@ function ToolList({
             title={
               mode === "allowlist"
                 ? tool.allowed
-                  ? "Allowed. Click to remove from the allowlist."
-                  : "Not allowed. Click to add to the allowlist."
+                  ? t("Allowed. Click to remove from the allowlist.")
+                  : t("Not allowed. Click to add to the allowlist.")
                 : tool.allowed
-                  ? "Allowed. Click to add to the blocklist."
-                  : "Blocked. Click to remove from the blocklist."
+                  ? t("Allowed. Click to add to the blocklist.")
+                  : t("Blocked. Click to remove from the blocklist.")
             }
             onClick={() => onToggle(tool.name)}
           >

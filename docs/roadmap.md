@@ -103,6 +103,16 @@ Legend: `[x]` done and gated · `[~]` partly done, remainder named · `[ ]` open
 
 - [x] 4.1 Le français, en entier ou pas (after 3.2, strictly).
   Done 2026-09-05 (ADR-0047). The English sentence is the key (`t("…")`, `src/lib/i18n.ts`); a codemod over the AST wrapped 1,800 sites and a hand pass rewrote the mixed runs into templates; `src/locales/fr.json` carries every sentence, backend error literals included (`rust-messages.mjs` + `messageFromError`), and two tests gate it: the catalog (complete, placeholders intact) and the guard (no bare copy left outside `t()`). Language in Settings on both shells, applied before the first render; dates and numbers follow through `intlLocale()`. Documented limit: a backend message built with `format!` stays English.
+  Readiness audit, 2026-09-05: the original guards missed conditional JSX,
+  templates and fallback strings. The new `rendered-copy.mjs` scanner strictly
+  gates rendered copy throughout shipped TSX on both shells, including library
+  renderers. The 778 additional candidates were reviewed, with translations
+  for user-facing branches and complete template sentences. Status and error
+  helpers in chat, settings and mobile were also reviewed; French render
+  regressions cover an English device with French chosen in the app. Technical
+  examples stay literal. This syntax gate is not interprocedural proof: new
+  helper-returned copy still needs review, and dynamic backend messages retain
+  the documented limit above.
 - [x] 4.2 L'extension de partage iOS.
   Built 2026-09-05 (ADR-0048): the `os-june_Share` target (Swift, one file) drops a link, a file or a text into the app group inbox and opens `subrosa://share/<id>`; `share_inbox::import_shared_item` validates the manifest and uses the import rails (ingest for a link, the picked-file path for a file, a note for a text); the destination router and the phone shell carry the new arm. Compiled for the simulator; the App Store Connect side (the group, the extension's App ID, two profiles, one new secret) is written down in HANDOFF.md and is the one thing a device test still waits on.
 - [x] 4.3 Le téléphone règle ce que le poste règle. Privacy, Archive and

@@ -141,7 +141,7 @@ export function DictionarySettingsSection() {
                   <button
                     type="button"
                     className="icon-button"
-                    aria-label={`Edit ${entry.phrase}`}
+                    aria-label={t("Edit {phrase}", { phrase: entry.phrase })}
                     onClick={() => startEditing(entry)}
                   >
                     <IconPencilLine size={14} />
@@ -149,7 +149,7 @@ export function DictionarySettingsSection() {
                   <button
                     type="button"
                     className="icon-button icon-button-destructive"
-                    aria-label={`Delete ${entry.phrase}`}
+                    aria-label={t("Delete {phrase}", { phrase: entry.phrase })}
                     onClick={() => void removeEntry(entry.id)}
                   >
                     <IconTrashCanSimple size={14} />
@@ -204,7 +204,7 @@ function DictionaryEntryDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title={editing ? "Edit dictionary entry" : "Add dictionary entry"}
+      title={editing ? t("Edit dictionary entry") : t("Add dictionary entry")}
       initialFocusSelector='input[name="dictionary-phrase"]'
       footer={
         <>
@@ -217,7 +217,7 @@ function DictionaryEntryDialog({
             className="primary-action primary-solid"
             disabled={phrase.trim().length === 0}
           >
-            {editing ? "Save changes" : "Add entry"}
+            {editing ? t("Save changes") : t("Add entry")}
           </button>
         </>
       }

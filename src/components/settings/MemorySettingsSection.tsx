@@ -290,20 +290,22 @@ export function MemorySettingsSection() {
                 <div className="settings-row-info">
                   <h3 className="settings-row-title">{memory.text}</h3>
                   <p className="settings-row-description">
-                    {memory.source === "manual" ? "Added by you" : "Learned from a conversation"}
-                    {memory.disabled ? " · paused" : ""}
+                    {memory.source === "manual"
+                      ? t("Added by you")
+                      : t("Learned from a conversation")}
+                    {memory.disabled ? t(" · paused") : ""}
                   </p>
                 </div>
                 <div className="settings-row-control">
                   <Switch
                     checked={!memory.disabled}
                     onCheckedChange={(enabled) => void toggleMemory(memory, !enabled)}
-                    aria-label={`Use "${memory.text}"`}
+                    aria-label={t('Use "{text}"', { text: memory.text })}
                   />
                   <button
                     type="button"
                     className="icon-button"
-                    aria-label={`Edit "${memory.text}"`}
+                    aria-label={t('Edit "{text}"', { text: memory.text })}
                     onClick={() => startEditing(memory)}
                   >
                     <IconPencilLine size={14} />
@@ -311,7 +313,7 @@ export function MemorySettingsSection() {
                   <button
                     type="button"
                     className="icon-button icon-button-destructive"
-                    aria-label={`Delete "${memory.text}"`}
+                    aria-label={t('Delete "{text}"', { text: memory.text })}
                     onClick={() => void removeMemory(memory.id)}
                   >
                     <IconTrashCanSimple size={14} />
@@ -329,7 +331,7 @@ export function MemorySettingsSection() {
               onBlur={() => setConfirmingClear(false)}
               onClick={() => void clearAll()}
             >
-              {confirmingClear ? "Click again to forget everything" : "Forget all memories"}
+              {confirmingClear ? t("Click again to forget everything") : t("Forget all memories")}
             </button>
           </div>
         ) : null}
@@ -378,7 +380,7 @@ function MemoryDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title={editing ? "Edit memory" : "Add memory"}
+      title={editing ? t("Edit memory") : t("Add memory")}
       initialFocusSelector='input[name="memory-text"]'
       footer={
         <>
@@ -391,7 +393,7 @@ function MemoryDialog({
             className="primary-action primary-solid"
             disabled={text.trim().length === 0}
           >
-            {editing ? "Save changes" : "Add memory"}
+            {editing ? t("Save changes") : t("Add memory")}
           </button>
         </>
       }

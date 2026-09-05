@@ -351,11 +351,11 @@ function SkillDocumentReadView({ state }: { state: SkillDetailState }) {
       <div className="skill-detail-doc-header">
         <h3 className="skill-detail-card-heading">
           <IconFileText size={14} ariaHidden />
-          {state.relativePath ?? "SKILL.md"}
+          <code>{state.relativePath ?? "SKILL.md"}</code>
         </h3>
         <span className="skill-detail-doc-readonly">
           <IconLock size={12} ariaHidden />
-          {state.policy.readOnlyReason ?? "Read only"}
+          {state.policy.readOnlyReason ?? t("Read only")}
         </span>
       </div>
       {parts.hasFrontmatter ? (
@@ -439,7 +439,7 @@ function SkillDocumentEditor({ state }: { state: SkillDetailState }) {
           onClick={() => setConfirming(true)}
         >
           <IconFloppyDisk1 size={14} ariaHidden />
-          {state.saving ? "Saving…" : "Review and save"}
+          {state.saving ? t("Saving…") : t("Review and save")}
         </button>
       </div>
 

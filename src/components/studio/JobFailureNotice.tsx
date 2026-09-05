@@ -43,7 +43,7 @@ export function JobFailureNotice({
     // The backend's own words stay reachable on hover: the summary is for
     // acting on, the detail is for reporting a bug against.
     <p className={className} title={failure?.detail}>
-      {constraint ?? failure?.text ?? "The render failed."}
+      {constraint ?? failure?.text ?? t("The render failed.")}
       {failure?.retryable && onRetry ? (
         <>
           {" "}

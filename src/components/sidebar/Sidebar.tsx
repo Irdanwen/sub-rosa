@@ -1,3 +1,4 @@
+import { AgentSessionContextMenu, formatSessionTime, NoteContextMenu } from "./sidebar-context";
 import { intlLocale, t } from "../../lib/i18n";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { IconZap } from "central-icons/IconZap";
@@ -15,16 +16,12 @@ import { IconCircleInfo } from "central-icons/IconCircleInfo";
 import { IconFolderShared } from "central-icons/IconFolderShared";
 import { IconCreditCard1 } from "central-icons/IconCreditCard1";
 import { IconDotGrid1x3Vertical } from "central-icons/IconDotGrid1x3Vertical";
-import { IconFolderAddRight } from "central-icons/IconFolderAddRight";
-import { IconFolderDelete } from "central-icons/IconFolderDelete";
 import { IconImport } from "central-icons/IconImport";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconMicrophoneSparkle } from "central-icons/IconMicrophoneSparkle";
-import { IconMoveFolder } from "central-icons/IconMoveFolder";
 import { IconNoteText } from "central-icons/IconNoteText";
 import { IconPeople } from "central-icons/IconPeople";
-import { IconPin } from "central-icons/IconPin";
 import { IconPlugin2 } from "central-icons/IconPlugin2";
 import { IconToolbox } from "central-icons/IconToolbox";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
@@ -35,8 +32,6 @@ import { IconShield } from "central-icons/IconShield";
 import { IconShieldCheck } from "central-icons/IconShieldCheck";
 import { IconSettingsGear4 } from "central-icons/IconSettingsGear4";
 import { IconShortcut } from "central-icons/IconShortcut";
-import { IconTrashCan } from "central-icons/IconTrashCan";
-import { IconUnpin } from "central-icons/IconUnpin";
 import {
   type DragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -1226,10 +1221,10 @@ export function Sidebar({
                 ) : (
                   <div className="sidebar-empty">
                     {agentSessions.length === 0
-                      ? "No sessions yet. Press ⌘N to start one."
+                      ? t("No sessions yet. Press ⌘N to start one.")
                       : filteredAgentSessions.length === 0
-                        ? "No matches"
-                        : "No other sessions"}
+                        ? t("No matches")
+                        : t("No other sessions")}
                   </div>
                 )}
               </div>
@@ -1317,10 +1312,11 @@ export function Sidebar({
         onConfirm={() =>
           agentSessionToDelete ? handleDeleteAgentSession(agentSessionToDelete) : undefined
         }
-        title={`Delete "${
-          agentSessionToDelete?.title || agentSessionToDelete?.preview || "Untitled session"
-        }"?`}
-        description={agentSessionDeleteError || "This agent session cannot be restored."}
+        title={t('Delete "{value}"?', {
+          value:
+            agentSessionToDelete?.title || agentSessionToDelete?.preview || t("Untitled session"),
+        })}
+        description={agentSessionDeleteError || t("This agent session cannot be restored.")}
         confirmLabel={t("Delete session")}
         destructive
       />
@@ -1352,7 +1348,7 @@ function SidebarRecordingIndicator({
       className="sidebar-recording-indicator"
       data-state={status.state}
       onClick={onOpen}
-      aria-label={`Open recording: ${title}`}
+      aria-label={t("Open recording: {title}", { title: title })}
       title={t("Open recording")}
     >
       <span className="sidebar-recording-dot" aria-hidden />
@@ -1441,7 +1437,7 @@ function NoteRow({
         ref={menuRef}
         type="button"
         className="note-row-menu"
-        aria-label={`Actions for ${title}`}
+        aria-label={t("Actions for {title}", { title: title })}
         draggable={false}
         onClick={(event) => {
           event.preventDefault();
@@ -1550,7 +1546,7 @@ function SettingsSidebarNav({
           <div className="section-title">
             <span className="section-title-label">{group.title}</span>
           </div>
-          <nav className="sidebar-nav" aria-label={`${group.title} settings`}>
+          <nav className="sidebar-nav" aria-label={t("{title} settings", { title: group.title })}>
             {group.items.map((tab) => (
               <button
                 key={tab.id}
@@ -1769,7 +1765,7 @@ function SidebarIdentity({
         className="sidebar-nav-item sidebar-identity"
         aria-haspopup="menu"
         aria-expanded={menuOpen}
-        aria-label={`${label}, app menu`}
+        aria-label={t("{label}, app menu", { label: label })}
         onClick={onToggleMenu}
       >
         <span className="sidebar-nav-icon">
@@ -1962,7 +1958,7 @@ function AgentSessionRow({
           ref={menuRef}
           type="button"
           className="note-row-menu agent-session-row-menu"
-          aria-label={`Actions for ${title}`}
+          aria-label={t("Actions for {title}", { title: title })}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           disabled={deleting}
@@ -1977,159 +1973,4 @@ function AgentSessionRow({
       </span>
     </article>
   );
-}
-
-function AgentSessionContextMenu({
-  pinned,
-  deleting,
-  right,
-  top,
-  onTogglePinned,
-  onDelete,
-  onClose,
-}: {
-  pinned: boolean;
-  deleting: boolean;
-  right: number;
-  top: number;
-  onTogglePinned: () => void;
-  onDelete: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <div
-      className="context-menu"
-      style={{ right, top }}
-      role="menu"
-      onClick={(event) => event.stopPropagation()}
-    >
-      <button
-        type="button"
-        role="menuitem"
-        onClick={() => {
-          onTogglePinned();
-          onClose();
-        }}
-      >
-        {pinned ? <IconUnpin size={14} /> : <IconPin size={14} />}
-        {pinned ? "Unpin session" : "Pin session"}
-      </button>
-      <div className="context-menu-separator" role="separator" />
-      <button
-        type="button"
-        role="menuitem"
-        className="destructive"
-        disabled={deleting}
-        onClick={() => {
-          onDelete();
-          onClose();
-        }}
-      >
-        <IconTrashCan size={14} />
-        {t("Delete session")}
-      </button>
-    </div>
-  );
-}
-
-// Compact trailing timestamp for agent session rows: "now", "5m", "3h", "2d"
-// while recent, then "May 2". sessionTimestamp falls back to the epoch when a
-// session has no dates at all, which we render as nothing rather than 1970.
-function formatSessionTime(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime()) || date.getTime() === 0) return "";
-  const diffMs = Date.now() - date.getTime();
-  if (diffMs < 60_000) return "now";
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d`;
-  return date.toLocaleDateString(intlLocale(), {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function NoteContextMenu({
-  noteId,
-  right,
-  top,
-  notes,
-  onOpenMoveDialog,
-  onRemoveNoteFromFolder,
-  onDeleteNote,
-  onClose,
-}: {
-  noteId: string;
-  right: number;
-  top: number;
-  notes: NoteListItemDto[];
-  onOpenMoveDialog: (noteId: string) => void;
-  onRemoveNoteFromFolder: (noteId: string, folderId: string) => void;
-  onDeleteNote: (noteId: string) => void;
-  onClose: () => void;
-}) {
-  const note = notes.find((item) => item.id === noteId);
-  const currentFolderId = note?.folderIds[0];
-  const hasFolder = Boolean(currentFolderId);
-
-  return (
-    <div
-      className="context-menu"
-      style={{ right, top }}
-      role="menu"
-      onClick={(event) => event.stopPropagation()}
-    >
-      <button
-        type="button"
-        role="menuitem"
-        onClick={() => {
-          onOpenMoveDialog(noteId);
-          onClose();
-        }}
-      >
-        {hasFolder ? <IconMoveFolder size={14} /> : <IconFolderAddRight size={14} />}
-        {hasFolder ? "Change project" : "Add to project"}
-      </button>
-      {hasFolder && currentFolderId ? (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            onRemoveNoteFromFolder(noteId, currentFolderId);
-            onClose();
-          }}
-        >
-          <IconFolderDelete size={14} />
-          {t("Remove from project")}
-        </button>
-      ) : null}
-      <div className="context-menu-separator" role="separator" />
-      <button
-        type="button"
-        role="menuitem"
-        className="destructive"
-        onClick={() => {
-          onDeleteNote(noteId);
-          onClose();
-        }}
-      >
-        <IconTrashCan size={14} />
-        {t("Delete note")}
-      </button>
-    </div>
-  );
-}
-
-function relativeDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString(intlLocale(), {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
 }

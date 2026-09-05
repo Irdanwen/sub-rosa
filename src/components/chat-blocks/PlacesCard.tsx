@@ -109,7 +109,7 @@ export function PlacesCard({ block }: { block: PlacesChatBlock }) {
       : "https://www.openstreetmap.org/copyright";
 
   return (
-    <section ref={containerRef} className="chat-block" aria-label={block.title || "Places"}>
+    <section ref={containerRef} className="chat-block" aria-label={block.title || t("Places")}>
       {block.title ? <h4 className="chat-block-title">{block.title}</h4> : null}
       {mapState && mapWidth ? (
         <div
@@ -179,7 +179,7 @@ export function PlacesCard({ block }: { block: PlacesChatBlock }) {
                   className="chat-block-pin"
                   data-hot={hot === index || undefined}
                   style={{ left: offset.left, top: offset.top }}
-                  aria-label={`Open ${place.name} in Maps`}
+                  aria-label={t("Open {name} in Maps", { name: place.name })}
                   onMouseEnter={() => setHot(index)}
                   onMouseLeave={() => setHot((current) => (current === index ? null : current))}
                   onFocus={() => setHot(index)}
@@ -221,7 +221,7 @@ export function PlacesCard({ block }: { block: PlacesChatBlock }) {
               <button
                 type="button"
                 className="chat-block-place-open"
-                title={`Open ${place.name} in Maps`}
+                title={t("Open {name} in Maps", { name: place.name })}
                 onMouseEnter={() => setHot(index)}
                 onMouseLeave={() => setHot((current) => (current === index ? null : current))}
                 onFocus={() => setHot(index)}
@@ -240,7 +240,7 @@ export function PlacesCard({ block }: { block: PlacesChatBlock }) {
                   type="button"
                   className="chat-block-place-site"
                   title={t("Open the website")}
-                  aria-label={`Open the website of ${place.name}`}
+                  aria-label={t("Open the website of {name}", { name: place.name })}
                   onClick={() => void openExternalUrl(place.url ?? "")}
                 >
                   <IconGlobe size={15} />

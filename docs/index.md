@@ -104,6 +104,8 @@ not the upstream fix lands.
 
 ## QA
 
+- [qa/2026-09-05-public-readiness.md](qa/2026-09-05-public-readiness.md) — Studio discovery, model choice, recovery, localization, validation evidence and remaining release checks
+
 - [qa/agent-driven-integration.md](qa/agent-driven-integration.md) — QA strategy (3 layers, skill-first agent-driven)
 - `qa/feature-user-stories.tsv` — story → code → test traceability matrix
 - `qa/agent-e2e-qa-runs/` — dated end-to-end QA run logs

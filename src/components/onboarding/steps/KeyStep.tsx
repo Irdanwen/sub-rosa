@@ -24,13 +24,16 @@ export function KeyStep({
   return (
     <StepCard
       title={t("Connect your Carpe Diem key")}
-      subtitle={`${PRODUCT_NAME} sends your requests to Carpe Diem with your own key, and nowhere else. Paste it once; it is kept in the system keychain.`}
+      subtitle={t(
+        "{product} sends your requests to Carpe Diem with your own key, and nowhere else. Paste it once; it is kept in the system keychain.",
+        { product: PRODUCT_NAME },
+      )}
       wide
     >
       <CarpeDiemSettings compact />
       <p className="welcome-terms" aria-live="polite">
         {ready ? (
-          "Connected. Your key works and the engine is running."
+          t("Connected. Your key works and the engine is running.")
         ) : (
           <>
             {t("Need a key?")}{" "}

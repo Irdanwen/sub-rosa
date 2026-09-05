@@ -673,7 +673,7 @@ export function FilmStudio({
               disabled={busy || (!note && draft.trim().length === 0)}
               onClick={() => void readIt()}
             >
-              {busy ? "Reading it..." : "Read it"}
+              {busy ? t("Reading it...") : t("Read it")}
             </button>
             <button type="button" className="btn btn-secondary" onClick={() => setPicking(true)}>
               {t("Use a note I wrote")}
@@ -699,13 +699,15 @@ export function FilmStudio({
                         setNote({ id: film.noteId, title: film.title } as NoteListItemDto)
                       }
                     >
-                      {film.title || "Untitled film"}
+                      {film.title || t("Untitled film")}
                       <em>
                         {film.status === "ready"
-                          ? ` ${film.shotCount} shot${film.shotCount === 1 ? "" : "s"}`
+                          ? film.shotCount === 1
+                            ? t(" 1 shot")
+                            : t(" {count} shots", { count: film.shotCount })
                           : film.status === "failed"
-                            ? " stopped"
-                            : " still reading"}
+                            ? t(" stopped")
+                            : t(" still reading")}
                       </em>
                     </button>
                     {/* Forgetting a reading, not the note: a script that was
@@ -714,7 +716,9 @@ export function FilmStudio({
                     <button
                       type="button"
                       className="studio-icon-button"
-                      aria-label={`Forget the reading of ${film.title || "this film"}`}
+                      aria-label={t("Forget the reading of {name}", {
+                        name: film.title || t("this film"),
+                      })}
                       onClick={async () => {
                         await forgetShotList(film.noteId).catch(() => undefined);
                         setFilms((current) =>
@@ -775,7 +779,7 @@ export function FilmStudio({
                       disabled={castingName !== undefined}
                       onClick={() => void castOne(member)}
                     >
-                      {castingName === member.name ? "Drawing..." : "Draw"}
+                      {castingName === member.name ? t("Drawing...") : t("Draw")}
                     </button>
                   </li>
                 ))}
@@ -790,7 +794,7 @@ export function FilmStudio({
                   {t("Draw all {count}", { count: uncast.length })}
                   {referenceCost === undefined
                     ? ""
-                    : ` (${(referenceCost * uncast.length).toFixed(0)} cr)`}
+                    : t(" ({credits} cr)", { credits: (referenceCost * uncast.length).toFixed(0) })}
                 </button>
               ) : null}
             </div>
@@ -799,7 +803,7 @@ export function FilmStudio({
           <ol className="script-shots">
             {shots.map((shot, index) => (
               <li key={`${shot.scene}-${index}-${shot.action.slice(0, 24)}`}>
-                <span className="script-shot-scene">{shot.scene || "Scene"}</span>
+                <span className="script-shot-scene">{shot.scene || t("Scene")}</span>
                 <span>{shot.action}</span>
                 {shot.dialogue ? <em>“{shot.dialogue}”</em> : null}
               </li>
@@ -835,7 +839,7 @@ export function FilmStudio({
             </button>
             {chosen.family?.costCredits === undefined
               ? ""
-              : ` (${chosen.family.costCredits.toFixed(0)} cr a shot)`}
+              : t(" ({credits} cr a shot)", { credits: chosen.family.costCredits.toFixed(0) })}
             {chosen.voice ? (
               <>
                 , {t("spoken by")}{" "}
@@ -879,7 +883,7 @@ export function FilmStudio({
               className="btn btn-secondary"
               onClick={() => setShowOptions((open) => !open)}
             >
-              {showOptions ? "Hide options" : "Options"}
+              {showOptions ? t("Hide options") : t("Options")}
             </button>
             <button type="button" className="btn btn-ghost" onClick={() => void startOver()}>
               {t("Start over")}
@@ -894,7 +898,11 @@ export function FilmStudio({
               >
                 <Select
                   value={videoModelId || null}
-                  placeholder={families[0] ? `Cheapest (${families[0].label})` : "Cheapest"}
+                  placeholder={
+                    families[0]
+                      ? t("Cheapest ({name})", { name: families[0].label })
+                      : t("Cheapest")
+                  }
                   ariaLabel={t("Video family")}
                   onChange={setVideoModelId}
                   options={families.map((family) => ({
@@ -911,7 +919,9 @@ export function FilmStudio({
                 <Select
                   value={ttsModelId || null}
                   placeholder={
-                    chosen.voice ? `Most voices (${chosen.voice.name})` : "No voice model"
+                    chosen.voice
+                      ? t("Most voices ({name})", { name: chosen.voice.name })
+                      : t("No voice model")
                   }
                   ariaLabel={t("Voice model")}
                   onChange={setTtsModelId}
@@ -927,7 +937,7 @@ export function FilmStudio({
                 <StudioField label={t("Score")} hint={t("Who writes the music")}>
                   <Select
                     value={musicModelId || null}
-                    placeholder={chosen.music ? chosen.music.name : "No music model"}
+                    placeholder={chosen.music ? chosen.music.name : t("No music model")}
                     ariaLabel={t("Music model")}
                     onChange={setMusicModelId}
                     options={musicModels.map((entry) => ({
@@ -949,8 +959,10 @@ export function FilmStudio({
                 label={t("Spend ceiling")}
                 hint={
                   balance === undefined
-                    ? "Nothing is made above this"
-                    : `Nothing is made above this. You have ${Math.floor(balance)}.`
+                    ? t("Nothing is made above this")
+                    : t("Nothing is made above this. You have {credits}.", {
+                        credits: Math.floor(balance),
+                      })
                 }
               >
                 <input
@@ -983,9 +995,18 @@ export function FilmStudio({
             phase="processing"
             label={t("Making your film")}
             progress={shotProgress.total > 0 ? shotProgress.done / shotProgress.total : undefined}
-            meta={`${shotProgress.done} of ${shotProgress.total} steps${
-              shotProgress.failed > 0 ? `, ${shotProgress.failed} failed` : ""
-            }`}
+            meta={
+              shotProgress.failed > 0
+                ? t("{done} of {total} steps, {failed} failed", {
+                    done: shotProgress.done,
+                    total: shotProgress.total,
+                    failed: shotProgress.failed,
+                  })
+                : t("{done} of {total} steps", {
+                    done: shotProgress.done,
+                    total: shotProgress.total,
+                  })
+            }
             actions={
               <button
                 type="button"
@@ -1037,7 +1058,7 @@ export function FilmStudio({
             disabled={judging || running}
             onClick={() => void review()}
           >
-            {judging ? "Watching it..." : "Review the cut"}
+            {judging ? t("Watching it...") : t("Review the cut")}
           </button>
           {verdict ? (
             <div className="studio-verdict" data-passes={verdict.passes}>
@@ -1066,15 +1087,17 @@ export function FilmStudio({
                     onClick={() => void redoShot(shot.nodeId)}
                   >
                     {running
-                      ? "Working..."
+                      ? t("Working...")
                       : retakeCost === undefined
-                        ? "Do it again"
-                        : `Do it again (${retakeCost.toFixed(0)} cr)`}
+                        ? t("Do it again")
+                        : t("Do it again ({credits} cr)", { credits: retakeCost.toFixed(0) })}
                   </button>
                   <Select
                     value={null}
                     placeholder={t("On another engine")}
-                    ariaLabel={`Remake shot ${shot.index + 1} on another engine`}
+                    ariaLabel={t("Remake shot {index} on another engine", {
+                      index: shot.index + 1,
+                    })}
                     disabled={running}
                     onChange={(value) => void redoShot(shot.nodeId, value)}
                     options={families

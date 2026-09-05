@@ -1,4 +1,15 @@
 import { intlLocale, t } from "../../lib/i18n";
+import {
+  advanceHeroGreeting,
+  shuffleAgentShortcuts,
+  makeProvisionalHermesSessionId,
+  isProvisionalHermesSessionId,
+  HERO_SHORTCUT_COUNT,
+  HERO_ROTATE_MS,
+  HERO_CHIP_SWAP_MS,
+  type AgentShortcut,
+} from "./hero-content";
+export { HERO_GREETINGS } from "./hero-content";
 import { listen } from "@tauri-apps/api/event";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
@@ -36,7 +47,6 @@ import { IconChevronLeftSmall } from "central-icons/IconChevronLeftSmall";
 import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
 import { IconConsoleSimple } from "central-icons/IconConsoleSimple";
 import { IconWallet3 } from "central-icons/IconWallet3";
-import { IconDeepSearch } from "central-icons/IconDeepSearch";
 import { IconCheckCircle2 } from "central-icons/IconCheckCircle2";
 import { IconConcise } from "central-icons/IconConcise";
 import { IconDotGrid1x3Horizontal } from "central-icons/IconDotGrid1x3Horizontal";
@@ -44,7 +54,6 @@ import { IconChecklist } from "central-icons/IconChecklist";
 import { IconCode } from "central-icons/IconCode";
 import { IconFileEdit } from "central-icons/IconFileEdit";
 import { IconFiles } from "central-icons/IconFiles";
-import { IconFileSparkle } from "central-icons/IconFileSparkle";
 import { IconFileText } from "central-icons/IconFileText";
 import { IconGit } from "central-icons/IconGit";
 import { IconGithub } from "central-icons/IconGithub";
@@ -53,15 +62,11 @@ import { IconHammer } from "central-icons/IconHammer";
 import { IconImages1 } from "central-icons/IconImages1";
 import { IconGauge } from "central-icons/IconGauge";
 import { IconGhost2 } from "central-icons/IconGhost2";
-import { IconHeartBeat } from "central-icons/IconHeartBeat";
-import { IconHistory } from "central-icons/IconHistory";
-import { IconListBullets } from "central-icons/IconListBullets";
 import { IconLock } from "central-icons/IconLock";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconPencil } from "central-icons/IconPencil";
 import { IconPencilLine } from "central-icons/IconPencilLine";
-import { IconPieChart1 } from "central-icons/IconPieChart1";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { IconShieldCrossed } from "central-icons/IconShieldCrossed";
 import { IconStop } from "central-icons/IconStop";
@@ -357,13 +362,20 @@ const COMPOSER_TOKEN_ESTIMATE_CHARS_PER_TOKEN = 4;
 // What the user reads instead of the gateway's "session busy" rejection. No
 // action in the pill — the composer's send slot already shows stop while
 // June works.
-const SESSION_BUSY_NOTICE = "Sub Rosa is still working on the previous message.";
+function sessionBusyNotice() {
+  return t("Sub Rosa is still working on the previous message.");
+}
 
 // Connection-shaped failures get a "Try again" on the error banner — these are
-// all our own strings (hermes-gateway.ts client errors, ensureHermesGateway),
-// so the match is stable. Other errors (downloads, renames…) have no single
-// retryable action, so they only offer dismiss.
-const GATEWAY_CONNECTION_ERROR = /hermes (gateway|bridge)/i;
+// match the gateway client errors and the localized missing-connection message.
+// Other errors (downloads, renames…) have no single retryable action, so they
+// only offer dismiss.
+function isGatewayConnectionError(message: string) {
+  return (
+    /hermes (gateway|bridge)/i.test(message) ||
+    message === t("Hermes bridge did not return a gateway URL.")
+  );
+}
 
 // A pending request (approval/sudo/secret/clarify) can only be answered by the
 // runtime process that asked for it. When that runtime ends, the session's data
@@ -371,14 +383,19 @@ const GATEWAY_CONNECTION_ERROR = /hermes (gateway|bridge)/i;
 // request is now permanently unanswerable. Every respond handler treats this as
 // terminal: it retires the dead-end card and shows SESSION_GONE_MESSAGE rather
 // than leaking the raw "Hermes API returned 404 ... Session not found" error.
-const SESSION_GONE_MESSAGE = "This session has ended, so the request can no longer be answered.";
+function sessionGoneMessage() {
+  return t("This session has ended, so the request can no longer be answered.");
+}
 
 // A send whose session cannot be resumed on either runtime. Distinct from
 // SESSION_GONE_MESSAGE (an unanswerable pending request): here the conversation
 // itself has no live runtime left, and the raw wire text ("Hermes API returned
 // 404 … Session not found") told the user nothing about what to do next.
-const SESSION_RUNTIME_GONE_MESSAGE =
-  "Sub Rosa could not reopen this conversation, so the message was not sent. Start a new session to continue.";
+function sessionRuntimeGoneMessage() {
+  return t(
+    "Sub Rosa could not reopen this conversation, so the message was not sent. Start a new session to continue.",
+  );
+}
 
 function isSessionGoneError(message: string): boolean {
   return message.toLowerCase().includes("session not found");
@@ -607,169 +624,6 @@ function isWorkingDirError(err: unknown): boolean {
   if (typeof err !== "object" || err === null) return false;
   const code = (err as { code?: unknown }).code;
   return code === "working_dir_unavailable" || code === "working_dir_invalid";
-}
-
-type AgentShortcut = {
-  key: string;
-  icon: ReactNode;
-  title: string;
-  description: string;
-  prompt: string;
-  /**
-   * "run" submits the prompt immediately; "prefill" drops it into the
-   * composer for the user to finish (selecting the <placeholder> if there is
-   * one); "attach" prefills and opens the file picker.
-   */
-  action: "run" | "prefill" | "attach";
-};
-
-/**
- * Suggestion pool for the new-session hero. Shown HERO_SHORTCUT_COUNT at a
- * time and reshuffled on each visit, so the entry point stays a handful of
- * fresh ideas instead of a wall of ten cards. Pool order matters: the leading
- * window is the curated first-impression mix (an instant run, a prefill, an
- * attach flow, and a health check) that shows when the shuffle is identity
- * (e.g. in tests with Math.random mocked to 0).
- *
- * Every suggestion must succeed inside the default write-jail: reads are
- * broad, but writes land only in the agent workspace. Don't add shortcuts
- * that rename, move, or delete the user's files (tidy a folder, free up
- * disk space, dedupe) — the sandbox denies the write mid-task and June's
- * own suggestion reads as broken.
- */
-const AGENT_SHORTCUTS: AgentShortcut[] = [
-  {
-    key: "recent-files",
-    icon: <IconHistory size={18} />,
-    title: t("Catch up on recent files"),
-    description: t("A quick rundown of what's new across your folders."),
-    prompt: t(
-      "Look through my Desktop, Documents, and Downloads folders for files added or changed in the last week and give me a quick rundown of what's new, grouped by what they seem to be for. Don't move or change anything.",
-    ),
-    action: "run",
-  },
-  {
-    key: "research",
-    icon: <IconDeepSearch size={18} />,
-    title: t("Research a topic"),
-    description: t("Get a short, sourced write-up on anything."),
-    prompt: t("Research <topic> and write a short summary of what you find, with sources."),
-    action: "prefill",
-  },
-  {
-    key: "summarize-file",
-    icon: <IconFileSparkle size={18} />,
-    title: t("Summarize a file"),
-    description: t("Pick a document and get the key points out of it."),
-    prompt: t("Summarize the key points of the attached file and pull out any action items."),
-    action: "attach",
-  },
-  {
-    key: "health-check",
-    icon: <IconHeartBeat size={18} />,
-    title: t("Check my computer's health"),
-    description: t("Disk, memory, and login items that need attention."),
-    prompt: t(
-      "Give my computer a quick health check: free disk space, memory pressure, login items, and anything else worth flagging. Summarize what looks fine and what needs attention.",
-    ),
-    action: "run",
-  },
-  {
-    key: "find-file",
-    icon: <IconMagnifyingGlass size={18} />,
-    title: t("Find a file"),
-    description: t("Describe what you remember; Sub Rosa tracks it down."),
-    prompt: t("Find <a file I half-remember> on my computer and tell me where it is."),
-    action: "prefill",
-  },
-  {
-    key: "analyze-spreadsheet",
-    icon: <IconPieChart1 size={18} />,
-    title: t("Analyze a spreadsheet"),
-    description: t("Key figures, trends, and oddities from a CSV or sheet."),
-    prompt: t(
-      "Analyze the attached spreadsheet: summarize the key figures and trends, and call out anything that looks off.",
-    ),
-    action: "attach",
-  },
-  {
-    key: "extract-text",
-    icon: <IconFileText size={18} />,
-    title: t("Extract text from a file"),
-    description: t("Pull clean text out of a PDF, image, or scan."),
-    prompt: t("Extract all the text from the attached file and clean it up into tidy Markdown."),
-    action: "attach",
-  },
-  {
-    key: "plan-project",
-    icon: <IconListBullets size={18} />,
-    title: t("Plan a project"),
-    description: t("Turn a vague goal into concrete first steps."),
-    prompt: t(
-      "Help me plan <a project>: break it into concrete steps, flag the risks, and suggest what to tackle first.",
-    ),
-    action: "prefill",
-  },
-];
-
-/**
- * Hero greetings, one per visit: the heading cycles through this pool each
- * time the hero is entered, tracked in localStorage so the rotation continues
- * across launches. Exported so tests can match "any greeting".
- */
-export const HERO_GREETINGS = [
-  "What can Sub Rosa do for you?",
-  "What should we work on?",
-  "Where should Sub Rosa start?",
-  "What can Sub Rosa take off your plate?",
-] as const;
-
-const HERO_GREETING_INDEX_KEY = "june:agent:hero-greeting";
-
-function advanceHeroGreeting(): string {
-  try {
-    const index =
-      Math.abs(
-        Number.parseInt(window.localStorage.getItem(HERO_GREETING_INDEX_KEY) ?? "0", 10) || 0,
-      ) % HERO_GREETINGS.length;
-    window.localStorage.setItem(
-      HERO_GREETING_INDEX_KEY,
-      String((index + 1) % HERO_GREETINGS.length),
-    );
-    return HERO_GREETINGS[index];
-  } catch {
-    // Storage unavailable: any greeting beats none.
-    return HERO_GREETINGS[Math.floor(Math.random() * HERO_GREETINGS.length)];
-  }
-}
-
-// Three per hand so the row never wraps — a row-count jump mid-rotation would
-// shove the footnote around every cycle.
-const HERO_SHORTCUT_COUNT = 3;
-// Idle cadence for cycling the hand, and how long the cascade-out runs before
-// the deck advances (300ms fade + 2 × 90ms stagger, see .agent-hero-chip).
-const HERO_ROTATE_MS = 8000;
-const HERO_CHIP_SWAP_MS = 500;
-const PROVISIONAL_HERMES_SESSION_PREFIX = "pending:new-session:";
-
-function makeProvisionalHermesSessionId() {
-  return `${PROVISIONAL_HERMES_SESSION_PREFIX}${Date.now()}:${Math.random().toString(36).slice(2)}`;
-}
-
-function isProvisionalHermesSessionId(sessionId?: string | null) {
-  return Boolean(sessionId && sessionId.startsWith(PROVISIONAL_HERMES_SESSION_PREFIX));
-}
-
-// Fisher–Yates with the swap target mirrored (j = i − rand) so a rand() of 0
-// is the identity permutation: tests that mock Math.random get the curated
-// leading window, real sessions get a fresh shuffle every visit.
-function shuffleAgentShortcuts(): AgentShortcut[] {
-  const pool = [...AGENT_SHORTCUTS];
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = i - Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-  return pool;
 }
 
 export {
@@ -1355,7 +1209,7 @@ export function AgentWorkspace({
   origin,
   onSessionSelected,
   onTopUp,
-  topUpLabel = "Add credits",
+  topUpLabel = t("Add credits"),
 }: AgentWorkspaceProps = {}) {
   const initialSessionId = initialSession?.id ?? initialSessionIdProp;
   // Read once per mount (lazy initializer): the continuity snapshot the
@@ -1909,7 +1763,7 @@ export function AgentWorkspace({
             runtimeSessionId,
             sessionDisplayTitle:
               hermesSessionItemsRef.current.find((session) => session.id === sessionId)?.title ??
-              "Agent session",
+              t("Agent session"),
             storedSessionId: sessionId,
           });
         } catch {
@@ -3309,7 +3163,7 @@ export function AgentWorkspace({
       pathLikePromptIndex === -1 ? resolutions : resolutions.slice(0, pathLikePromptIndex);
     const problem = skillResolutions.find((resolution) => resolution.status !== "resolved");
     if (problem) {
-      throw new Error(skillSlashResolutionError(problem) ?? "Skill command failed.");
+      throw new Error(skillSlashResolutionError(problem) ?? t("Skill command failed."));
     }
 
     const typedMessage =
@@ -3317,7 +3171,7 @@ export function AgentWorkspace({
         ? parsed.prompt.trim()
         : message.slice(commandTokens[pathLikePromptIndex].from).trimStart();
     if (!typedMessage && !messageAttachments.length) {
-      throw new Error("Add a request after the skill command.");
+      throw new Error(t("Add a request after the skill command."));
     }
 
     const resolved = skillResolutions.filter(isResolvedSkillSlashResolution);
@@ -3718,7 +3572,7 @@ export function AgentWorkspace({
     } catch (err) {
       if (isSessionBusyError(err)) {
         setError(null);
-        setBusyNotice(SESSION_BUSY_NOTICE);
+        setBusyNotice(sessionBusyNotice());
       } else {
         setError(messageFromError(err));
       }
@@ -3986,7 +3840,7 @@ export function AgentWorkspace({
         // A busy rejection is proof the gateway is healthy — retire any stale
         // connection banner along with showing the notice.
         setError(null);
-        setBusyNotice(SESSION_BUSY_NOTICE);
+        setBusyNotice(sessionBusyNotice());
       } else {
         setError(messageFromError(err));
       }
@@ -4100,17 +3954,17 @@ export function AgentWorkspace({
   // so read each blob and import its bytes.
   async function importDroppedFiles(files: File[]) {
     await importFileBytes(files, {
-      tooLargeMessage: "Dropped files must be 50 MB or smaller.",
+      tooLargeMessage: t("Dropped files must be 50 MB or smaller."),
       readErrorMessage: (file) =>
         // Reading fails for directories, which Finder happily lets you drop.
-        `Could not read "${file.name}". Folders can't be attached.`,
+        t('Could not read "{name}". Folders can\'t be attached.', { name: file.name }),
     });
   }
 
   async function importPastedImageFiles(files: File[]) {
     await importFileBytes(files, {
-      tooLargeMessage: "Pasted images must be 50 MB or smaller.",
-      readErrorMessage: () => "Could not read the pasted image.",
+      tooLargeMessage: t("Pasted images must be 50 MB or smaller."),
+      readErrorMessage: () => t("Could not read the pasted image."),
     });
   }
 
@@ -4138,7 +3992,7 @@ export function AgentWorkspace({
     try {
       await dictationHelperCommand({
         type: "toggle_listening",
-        shortcut: "Dictation",
+        shortcut: t("Dictation"),
       });
     } catch (err) {
       setError(messageFromError(err));
@@ -4914,7 +4768,7 @@ export function AgentWorkspace({
       const nextStoredSessionId =
         targetSessionId ?? nextCreated?.stored_session_id ?? nextCreated?.session_id;
       if (!nextStoredSessionId) {
-        throw new Error("Hermes did not create a session.");
+        throw new Error(t("Hermes did not create a session."));
       }
       return {
         created: nextCreated,
@@ -5002,7 +4856,7 @@ export function AgentWorkspace({
     }
     if (!runtimeSessionId) {
       clearQueuedIssueReport();
-      rollbackOptimisticBeforePrompt(new Error("Hermes did not resume the session."));
+      rollbackOptimisticBeforePrompt(new Error(t("Hermes did not resume the session.")));
     }
     if (!imageInputFallbackContent) {
       // Feature 19: send any imported images to the session through the
@@ -5210,7 +5064,7 @@ export function AgentWorkspace({
       // wire text ("Hermes API returned 404 … Session not found"), which told
       // the user nothing about what to do next.
       const failure = isSessionGoneError(messageFromError(err))
-        ? new Error(SESSION_RUNTIME_GONE_MESSAGE)
+        ? new Error(sessionRuntimeGoneMessage())
         : err;
       dispatchAgentSessionStatus({
         sessionId: storedSessionId,
@@ -5257,7 +5111,7 @@ export function AgentWorkspace({
       }
     }
     const wsUrl = connection?.wsUrl;
-    if (!wsUrl) throw new Error("Hermes bridge did not return a gateway URL.");
+    if (!wsUrl) throw new Error(t("Hermes bridge did not return a gateway URL."));
     let gateway = gatewaysRef.current.get(fullMode);
     if (!gateway) {
       gateway = new HermesGatewayClient();
@@ -5362,7 +5216,7 @@ export function AgentWorkspace({
 
     forgetRuntimeSessionId(storedSessionId);
     throw new Error(
-      sessionGone ? SESSION_RUNTIME_GONE_MESSAGE : "Hermes did not resume the session.",
+      sessionGone ? sessionRuntimeGoneMessage() : t("Hermes did not resume the session."),
     );
   }
 
@@ -5476,7 +5330,7 @@ export function AgentWorkspace({
               runtimeSessionId: resolved.runtimeSessionId,
               sessionDisplayTitle:
                 hermesSessionItemsRef.current.find((session) => session.id === sessionId)?.title ??
-                "Agent session",
+                t("Agent session"),
               storedSessionId: sessionId,
             });
           } catch {
@@ -5585,12 +5439,12 @@ export function AgentWorkspace({
       sessionId,
       title:
         hermesSessionItemsRef.current.find((session) => session.id === sessionId)?.title ??
-        "Agent session",
+        t("Agent session"),
       // "completed" (not "failed") keeps a clean end quiet: the status title
       // falls back to lastStatus when nothing is active, and a stale "running"
       // there would still render "Working…".
       status: turnFailed ? "failed" : "completed",
-      summary: turnFailed ? "Sub Rosa hit a problem." : summary,
+      summary: turnFailed ? t("Sub Rosa hit a problem.") : summary,
       ...activityCounts,
     });
   }
@@ -5632,7 +5486,7 @@ export function AgentWorkspace({
           misses.delete(sessionId);
           settleSessionRun(
             sessionId,
-            "Sub Rosa finished.",
+            t("Sub Rosa finished."),
             "transcript-fallback-runtime-unreachable",
           );
         }
@@ -5774,7 +5628,7 @@ export function AgentWorkspace({
         // sidebar count nor the inline prompt offers a dead-end "Respond".
         pendingActionStore.resolveRequest(sessionId, requestId);
         void loadHermesSessions();
-        setError(SESSION_GONE_MESSAGE, { sessionId });
+        setError(sessionGoneMessage(), { sessionId });
       } else {
         setError(message, { sessionId });
       }
@@ -5813,7 +5667,7 @@ export function AgentWorkspace({
         // The runtime is gone, so this clarification can never be answered —
         // retire its card and say so plainly instead of leaking the raw 404.
         pendingActionStore.resolveRequest(liveEventKey, requestId);
-        setError(SESSION_GONE_MESSAGE);
+        setError(sessionGoneMessage());
       } else {
         setError(message);
       }
@@ -5864,7 +5718,7 @@ export function AgentWorkspace({
         // The runtime is gone, so this prompt can never be answered — retire
         // its card and say so plainly instead of leaking the raw 404.
         pendingActionStore.resolveRequest(sessionId, requestId);
-        setError(SESSION_GONE_MESSAGE, { sessionId });
+        setError(sessionGoneMessage(), { sessionId });
       } else {
         setError(message, { sessionId });
       }
@@ -5909,7 +5763,7 @@ export function AgentWorkspace({
         // The runtime is gone, so this secret prompt can never be answered —
         // retire its card and say so plainly instead of leaking the raw 404.
         pendingActionStore.resolveRequest(sessionId, requestId);
-        setError(SESSION_GONE_MESSAGE, { sessionId });
+        setError(sessionGoneMessage(), { sessionId });
       } else {
         setError(message, { sessionId });
       }
@@ -5977,7 +5831,7 @@ export function AgentWorkspace({
         sourceMessageId: fromMessageId,
       });
       if (!result) {
-        throw new Error("Hermes did not return a branched session.");
+        throw new Error(t("Hermes did not return a branched session."));
       }
       // Carry the source session's write-access mode onto the fork so its
       // follow-ups route to the matching runtime (mirrors session.create).
@@ -6317,7 +6171,7 @@ export function AgentWorkspace({
     dispatchAgentSessionStatus({
       sessionId,
       title:
-        hermesSessionItems.find((session) => session.id === sessionId)?.title ?? "Agent session",
+        hermesSessionItems.find((session) => session.id === sessionId)?.title ?? t("Agent session"),
       status: "cancelled",
       summary: t("Stopped."),
       ...activityCounts,
@@ -6396,7 +6250,9 @@ export function AgentWorkspace({
       return await loadPromise;
     } catch (err) {
       if (!options?.silent) {
-        throw new Error(`Skill commands are unavailable. ${messageFromError(err)}`);
+        throw new Error(
+          t("Skill commands are unavailable. {error}", { error: messageFromError(err) }),
+        );
       }
       return [];
     } finally {
@@ -6753,7 +6609,7 @@ export function AgentWorkspace({
   const openGeneratedImage = (part: Extract<AgentChatPart, { type: "image" }>) => {
     if (!part.path) return;
     openArtifact({
-      name: part.name?.trim() || "Generated image",
+      name: part.name?.trim() || t("Generated image"),
       path: part.path,
       rootLabel: "Workspace",
     });
@@ -6935,7 +6791,7 @@ export function AgentWorkspace({
       if (draftRef.current.trim()) return;
       setHeroChipPhase("out");
       swapTimeout = window.setTimeout(() => {
-        setHeroDeckStart((start) => (start + HERO_SHORTCUT_COUNT) % AGENT_SHORTCUTS.length);
+        setHeroDeckStart((start) => (start + HERO_SHORTCUT_COUNT) % heroDeck.length);
         // Two frames so the incoming chips paint hidden (phase still "out")
         // before the fade-in transition has a start state to run from.
         requestAnimationFrame(() => {
@@ -6947,7 +6803,7 @@ export function AgentWorkspace({
       window.clearInterval(interval);
       if (swapTimeout !== undefined) window.clearTimeout(swapTimeout);
     };
-  }, [heroMode]);
+  }, [heroMode, heroDeck.length]);
 
   const heroShortcuts = useMemo(
     () =>
@@ -7059,7 +6915,7 @@ export function AgentWorkspace({
               transition={{ duration: 0.22, ease: EASE_OUT }}
             >
               <DotSpinner />
-              {busyNotice ?? SESSION_BUSY_NOTICE}
+              {busyNotice ?? sessionBusyNotice()}
             </motion.p>
           ) : visibleIssueReportReview ? (
             <motion.div
@@ -7073,8 +6929,8 @@ export function AgentWorkspace({
             >
               <span>
                 {visibleIssueReportReview.report.followUps.length
-                  ? "Follow-up added. Add more context in chat, or send it to the Sub Rosa team."
-                  : "Report ready. Add more context in chat, or send it to the Sub Rosa team."}
+                  ? t("Follow-up added. Add more context in chat, or send it to the Sub Rosa team.")
+                  : t("Report ready. Add more context in chat, or send it to the Sub Rosa team.")}
               </span>
               <button
                 type="button"
@@ -7090,12 +6946,12 @@ export function AgentWorkspace({
                   <DotSpinner className="agent-composer-notice-button-spinner" />
                 ) : null}
                 {visibleIssueReportReview.submitting
-                  ? "Sending"
+                  ? t("Sending")
                   : visibleIssueReportImportingFiles
-                    ? "Attaching files"
+                    ? t("Attaching files")
                     : visibleIssueReportHasUnsentContext
-                      ? "Send message first"
-                      : "Send report"}
+                      ? t("Send message first")
+                      : t("Send report")}
               </button>
             </motion.div>
           ) : visibleIssueReportNotice ? (
@@ -7178,7 +7034,7 @@ export function AgentWorkspace({
                   ) : null}
                   <button
                     type="button"
-                    aria-label={`Remove ${attachment.name}`}
+                    aria-label={t("Remove {name}", { name: attachment.name })}
                     onClick={() => removeAttachment(attachment.id)}
                   >
                     <IconCrossSmall size={12} />
@@ -7270,12 +7126,12 @@ export function AgentWorkspace({
             mentionItems={mentionItemsForComposer}
             placeholder={
               generatingImage
-                ? "Generating image…"
+                ? t("Generating image…")
                 : importingFiles
-                  ? "Attaching file…"
+                  ? t("Attaching file…")
                   : heroMode
-                    ? "Ask Sub Rosa anything, run / commands"
-                    : "Send a message"
+                    ? t("Ask Sub Rosa anything, run / commands")
+                    : t("Send a message")
             }
             onChange={(text, nextCategory) => {
               draftRef.current = text;
@@ -7337,7 +7193,7 @@ export function AgentWorkspace({
                 ) : (
                   <IconShieldCheck size={14} aria-hidden />
                 )}
-                {fullModeDraft ? "Unrestricted" : "Sandboxed"}
+                {fullModeDraft ? t("Unrestricted") : t("Sandboxed")}
                 <IconChevronDownSmall size={12} aria-hidden />
               </button>
             ) : null}
@@ -7354,14 +7210,14 @@ export function AgentWorkspace({
                 aria-expanded={workdirMenuOpen}
                 title={
                   workingDirDraft
-                    ? `Working folder: ${workingDirDraft}`
-                    : "Choose where Sub Rosa works"
+                    ? t("Working folder: {workingDirDraft}", { workingDirDraft: workingDirDraft })
+                    : t("Choose where Sub Rosa works")
                 }
                 onClick={() => setWorkdirMenuOpen((open) => !open)}
               >
                 <IconFolder1 size={14} aria-hidden />
                 <span className="agent-workdir-trigger-label">
-                  {workingDirDraft ? workingDirDisplayName(workingDirDraft) : "App workspace"}
+                  {workingDirDraft ? workingDirDisplayName(workingDirDraft) : t("App workspace")}
                 </span>
                 <IconChevronDownSmall size={12} aria-hidden />
               </button>
@@ -7414,7 +7270,7 @@ export function AgentWorkspace({
                     (!draft.trim() && !attachments.length)
                   }
                   aria-label={
-                    selectedHermesSessionId || selectedTask ? "Send message" : "Start session"
+                    selectedHermesSessionId || selectedTask ? t("Send message") : t("Start session")
                   }
                 >
                   {submitting ? <Spinner /> : <IconArrowUp size={18} />}
@@ -7630,7 +7486,10 @@ export function AgentWorkspace({
           title={t("Use a broad folder?")}
           description={
             confirmBroadWorkingDir
-              ? `Sub Rosa will be able to change everything in "${confirmBroadWorkingDir.displayName}". A narrower project folder keeps mistakes contained.`
+              ? t(
+                  'Sub Rosa will be able to change everything in "{displayName}". A narrower project folder keeps mistakes contained.',
+                  { displayName: confirmBroadWorkingDir.displayName },
+                )
               : ""
           }
           footer={
@@ -8041,7 +7900,7 @@ export function AgentWorkspace({
             <AgentErrorBanner
               message={visibleError}
               onRetry={
-                GATEWAY_CONNECTION_ERROR.test(visibleError)
+                isGatewayConnectionError(visibleError)
                   ? () => void retryGatewayConnection()
                   : undefined
               }
@@ -8093,7 +7952,7 @@ export function AgentWorkspace({
               </div>
               <p className="agent-hero-footnote">
                 {bridgeStarting || startupSessionHydrationPending
-                  ? "Getting Sub Rosa ready…"
+                  ? t("Getting Sub Rosa ready…")
                   : heroPrivacyFootnote(generationModel, generationPrivacyBadge)}
               </p>
             </div>
@@ -8113,7 +7972,7 @@ export function AgentWorkspace({
                 <AgentErrorBanner
                   message={visibleError}
                   onRetry={
-                    GATEWAY_CONNECTION_ERROR.test(visibleError)
+                    isGatewayConnectionError(visibleError)
                       ? () => void retryGatewayConnection()
                       : undefined
                   }
@@ -8281,7 +8140,7 @@ function ComposerModelPicker({
         ref={triggerRef}
         type="button"
         className="agent-composer-model-trigger"
-        aria-label={`Model: ${model.name}`}
+        aria-label={t("Model: {name}", { name: model.name })}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={onToggleOpen}
@@ -8661,16 +8520,18 @@ function heroPrivacyFootnote(
   model: VeniceModelDto | undefined,
   badge: ModelPrivacyBadge | undefined,
 ): string {
-  if (!model) return "Sub Rosa runs locally.";
+  if (!model) return t("Sub Rosa runs locally.");
   switch (badge?.mode) {
     case "e2ee":
-      return `Sub Rosa runs locally. Calls to ${model.name} are end-to-end encrypted.`;
+      return t("Sub Rosa runs locally. Calls to {model} are end-to-end encrypted.", {
+        model: model.name,
+      });
     case "private":
-      return `Sub Rosa runs locally. Calls to ${model.name} are private.`;
+      return t("Sub Rosa runs locally. Calls to {model} are private.", { model: model.name });
     case "anonymous":
-      return `Sub Rosa runs locally. Calls to ${model.name} are anonymized.`;
+      return t("Sub Rosa runs locally. Calls to {model} are anonymized.", { model: model.name });
     default:
-      return `Sub Rosa runs locally. You're running ${model.name}.`;
+      return t("Sub Rosa runs locally. You're running {model}.", { model: model.name });
   }
 }
 
@@ -8810,14 +8671,15 @@ function PrivacyModeBadge({ badge }: { badge?: ModelPrivacyBadge }) {
 // recorded mode, so the session — not the runtime's current state — is the
 // honest unit to label.
 function UnrestrictedBadge() {
-  const description =
-    "This session runs without the file sandbox: Sub Rosa can change any file your account can. Sandboxed sessions keep their jail and run alongside on a separate, jailed runtime.";
+  const description = t(
+    "This session runs without the file sandbox: Sub Rosa can change any file your account can. Sandboxed sessions keep their jail and run alongside on a separate, jailed runtime.",
+  );
   return (
     <HoverTip
       tip={description}
       className="agent-safety-badge agent-sandbox-badge"
       tabIndex={0}
-      aria-label={`Unrestricted - ${description}`}
+      aria-label={t("Unrestricted - {description}", { description: description })}
     >
       <IconShieldCrossed size={13} aria-hidden />
       {t("Unrestricted")}
@@ -8946,7 +8808,7 @@ function AgentSessionBar({
                   }}
                 />
               ) : (
-                <span className="detail-breadcrumb-current">{title || "Untitled session"}</span>
+                <span className="detail-breadcrumb-current">{title || t("Untitled session")}</span>
               )}
             </li>
           ) : origin ? (
@@ -8964,7 +8826,9 @@ function AgentSessionBar({
           <button
             type="button"
             className="agent-session-workdir"
-            title={`Working folder: ${workingDir}. Click to show it in your file manager.`}
+            title={t("Working folder: {workingDir}. Click to show it in your file manager.", {
+              workingDir: workingDir,
+            })}
             onClick={onRevealWorkingDir}
           >
             <IconFolder1 size={13} aria-hidden />
@@ -8976,7 +8840,7 @@ function AgentSessionBar({
           <button
             type="button"
             className="agent-session-files"
-            aria-label={`View files (${artifactCount})`}
+            aria-label={t("View files ({artifactCount})", { artifactCount: artifactCount })}
             title={t("View files")}
             aria-pressed={artifactsOpen}
             onClick={onToggleArtifacts}
@@ -9338,7 +9202,7 @@ function SkillEditorPanel({
   onChange: (value: string) => void;
   onSave: () => void;
 }) {
-  const title = skill?.name ?? document?.name ?? "Skill";
+  const title = skill?.name ?? document?.name ?? t("Skill");
   const readOnly = Boolean(document?.readOnly);
   return (
     <section className="agent-management-panel agent-skill-editor-panel" aria-label={title}>
@@ -9357,7 +9221,7 @@ function SkillEditorPanel({
               {skill?.category ? <span>{skill.category}</span> : null}
               {document?.relativePath ? <span>{document.relativePath}</span> : null}
               {readOnly ? <span>{t("Read-only")}</span> : null}
-              {skill ? <span>{skill.enabled ? "Enabled" : "Disabled"}</span> : null}
+              {skill ? <span>{skill.enabled ? t("Enabled") : t("Disabled")}</span> : null}
             </div>
           </div>
         </header>
@@ -9370,7 +9234,7 @@ function SkillEditorPanel({
           <textarea
             className="agent-skill-editor-textarea"
             value={value}
-            aria-label={`${title} skill Markdown`}
+            aria-label={t("{title} skill Markdown", { title: title })}
             disabled={saving}
             readOnly={readOnly}
             spellCheck={false}
@@ -9394,7 +9258,7 @@ function SkillEditorPanel({
             disabled={!dirty || saving || loading || !document}
             onClick={onSave}
           >
-            {saving ? "Saving…" : "Save changes"}
+            {saving ? t("Saving…") : t("Save changes")}
           </button>
         )}
       </footer>
@@ -9472,9 +9336,12 @@ export function MessagingPanel({
                     description={platform.description}
                     meta={`${stateLabel(state)}${
                       requiredTotal
-                        ? ` · ${requiredSet}/${requiredTotal} required set`
+                        ? t(" · {requiredSet}/{requiredTotal} required set", {
+                            requiredSet: requiredSet,
+                            requiredTotal: requiredTotal,
+                          })
                         : configured
-                          ? " · configured"
+                          ? t(" · configured")
                           : ""
                     }`}
                     enabled={Boolean(platform.enabled)}
@@ -9591,7 +9458,7 @@ function FilesystemEntryRow({ entry, level }: { entry: HermesFilesystemEntry; le
         </span>
         <span className="agent-files-entry-name">{entry.name}</span>
         <span className="agent-files-entry-meta">
-          {isDirectory ? "Folder" : formatBytes(entry.size)}
+          {isDirectory ? t("Folder") : formatBytes(entry.size)}
           {entry.modifiedAt ? ` · ${relativeDate(entry.modifiedAt)}` : ""}
         </span>
       </div>
@@ -9653,7 +9520,7 @@ function MessagingPlatformDetail({
             <p>{platform.description}</p>
             <div className="agent-platform-pills">
               <span>{stateLabel(platform.state ?? "unknown")}</span>
-              <span>{platform.configured ? "Credentials set" : "Needs setup"}</span>
+              <span>{platform.configured ? t("Credentials set") : t("Needs setup")}</span>
               {platform.gatewayRunning || platform.gateway_running ? null : (
                 <span>{t("Messaging gateway stopped")}</span>
               )}
@@ -9712,14 +9579,14 @@ function MessagingPlatformDetail({
           disabled={saving === `messaging:${platform.id}`}
           onClick={() => onToggle(platform, !platform.enabled)}
         >
-          {platform.enabled ? "Enabled" : "Disabled"}
+          {platform.enabled ? t("Enabled") : t("Disabled")}
         </button>
         <button
           type="button"
           disabled={!hasEdits || isSavingEnv}
           onClick={() => onSaveEnv(platform)}
         >
-          {isSavingEnv ? "Saving…" : "Save changes"}
+          {isSavingEnv ? t("Saving…") : t("Save changes")}
         </button>
       </footer>
     </div>
@@ -9757,7 +9624,7 @@ function MessagingFieldGroup({
             disabled={saving === `env:${field.key}`}
             placeholder={
               envFieldSet(field)
-                ? (field.redactedValue ?? field.redacted_value ?? "Replace current value")
+                ? (field.redactedValue ?? field.redacted_value ?? t("Replace current value"))
                 : (field.prompt ?? field.key)
             }
             onChange={(event) => onEditEnv(field.key, event.currentTarget.value)}
@@ -9951,7 +9818,7 @@ function AgentResponseGallery({
     <div className="agent-timeline agent-gallery">
       <div className="agent-gallery-banner">
         <div>
-          <strong>{errors ? "Agent error gallery" : "Agent response gallery"}</strong>
+          <strong>{errors ? t("Agent error gallery") : t("Agent response gallery")}</strong>
           <p>
             {errors
               ? t(
@@ -10172,8 +10039,8 @@ export function AgentChatTurnRow({
     <button
       type="button"
       className="agent-turn-action"
-      aria-label={copied ? "Copied message" : "Copy message"}
-      title={copied ? "Copied" : "Copy message"}
+      aria-label={copied ? t("Copied message") : t("Copy message")}
+      title={copied ? t("Copied") : t("Copy message")}
       data-copied={copied ? "true" : undefined}
       onClick={() => void copyTurn()}
     >
@@ -10182,7 +10049,7 @@ export function AgentChatTurnRow({
       ) : (
         <IconClipboard size={13} aria-hidden />
       )}
-      <span>{copied ? "Copied" : "Copy"}</span>
+      <span>{copied ? t("Copied") : t("Copy")}</span>
     </button>
   ) : null;
   const editAction =
@@ -10576,8 +10443,10 @@ export function SessionCompactDialog({
         if (seq !== requestSeq.current) return;
         setErrorMessage(
           isSessionBusyError(err)
-            ? "Sub Rosa is running right now. Wait for the current turn to finish, then compact context."
-            : "Couldn't compact context. Please try again.",
+            ? t(
+                "Sub Rosa is running right now. Wait for the current turn to finish, then compact context.",
+              )
+            : t("Couldn't compact context. Please try again."),
         );
         setPhase("error");
       },
@@ -10621,7 +10490,7 @@ export function SessionCompactDialog({
               onClick={runCompaction}
               disabled={working}
             >
-              {working ? "Compacting…" : "Compact context"}
+              {working ? t("Compacting…") : t("Compact context")}
             </button>
           </>
         )
@@ -10635,7 +10504,7 @@ export function SessionCompactDialog({
             className="agent-compact-error"
             tone="destructive"
             role="alert"
-            body={errorMessage ?? "Couldn't compact context. Please try again."}
+            body={errorMessage ?? t("Couldn't compact context. Please try again.")}
           />
         ) : (
           <>
@@ -10815,7 +10684,7 @@ function visibleAgentWorkspaceError(
 // icon + one sentence + the action, Claude-style.
 function CreditsNoticePart({
   onTopUp,
-  topUpLabel = "Add credits",
+  topUpLabel = t("Add credits"),
 }: {
   onTopUp?: () => void;
   topUpLabel?: string;
@@ -11011,7 +10880,7 @@ function AgentInlineMediaImage({ path }: { path: string }) {
   }, [path]);
 
   if (state === "error") return null;
-  const name = path.split("/").pop() || "Generated image";
+  const name = path.split("/").pop() || t("Generated image");
   if (state === null) {
     return (
       <div className="agent-generated-image" data-status="running" role="status" aria-live="polite">
@@ -11028,7 +10897,7 @@ function AgentInlineMediaImage({ path }: { path: string }) {
           type="button"
           className="agent-generated-image-frame"
           onClick={() => setZoomed(true)}
-          aria-label={`Enlarge ${name}`}
+          aria-label={t("Enlarge {name}", { name: name })}
           title={t("Enlarge image")}
         >
           <img src={state.url} alt={name} draggable={false} />
@@ -11079,19 +10948,19 @@ function AgentGeneratedImage({
     return (
       <div className="agent-generated-image" data-status="error">
         <p className="agent-generated-image-error">
-          {part.error?.trim() || "Could not generate the image."}
+          {part.error?.trim() || t("Could not generate the image.")}
         </p>
       </div>
     );
   }
-  const label = part.name?.trim() || "Generated image";
+  const label = part.name?.trim() || t("Generated image");
   return (
     <figure className="agent-generated-image" data-status="complete">
       <button
         type="button"
         className="agent-generated-image-frame"
         onClick={() => onOpen?.(part)}
-        aria-label={`Open ${label}`}
+        aria-label={t("Open {label}", { label: label })}
         title={t("Open image")}
       >
         {part.dataUrl ? <img src={part.dataUrl} alt={part.prompt} draggable={false} /> : null}
@@ -11142,12 +11011,12 @@ function ClarifyPart({
             className="agent-tool-live-status"
             data-status={part.status === "pending" ? "running" : "complete"}
           >
-            {part.status === "pending" ? "Waiting" : "Answered"}
+            {part.status === "pending" ? t("Waiting") : t("Answered")}
           </span>
         </div>
         <p>{part.question}</p>
         {part.answer !== undefined ? (
-          <p className="agent-clarify-answer">{part.answer.trim() ? part.answer : "Skipped"}</p>
+          <p className="agent-clarify-answer">{part.answer.trim() ? part.answer : t("Skipped")}</p>
         ) : null}
         {part.status === "pending" ? (
           <>
@@ -11217,7 +11086,7 @@ function ClarifyPart({
                     className="btn btn-secondary"
                     disabled={disabled || !draft.trim()}
                   >
-                    {submitting !== undefined ? "Sending" : "Send"}
+                    {submitting !== undefined ? t("Sending") : t("Send")}
                   </button>
                 </div>
               </form>
@@ -11257,7 +11126,7 @@ function AgentCliAccessCard({ cliAccess }: { cliAccess?: AgentCliAccessCardProps
         <div className="agent-tool-title">
           <span>{t("Agent CLI access requested")}</span>
           <span className="agent-tool-live-status" data-status={resolved ? "complete" : "running"}>
-            {resolved ? "Resolved" : "Waiting"}
+            {resolved ? t("Resolved") : t("Waiting")}
           </span>
         </div>
         <p>
@@ -11268,7 +11137,7 @@ function AgentCliAccessCard({ cliAccess }: { cliAccess?: AgentCliAccessCardProps
         {resolved ? (
           <p className="agent-approval-result" data-choice={enabled ? "once" : "deny"}>
             {enabled ? <IconCheckmark1Small size={14} /> : <IconCrossMedium size={14} />}
-            {enabled ? "Agent CLI access enabled" : "Not now"}
+            {enabled ? t("Agent CLI access enabled") : t("Not now")}
           </p>
         ) : (
           <div className="agent-approval-actions">
@@ -11278,7 +11147,7 @@ function AgentCliAccessCard({ cliAccess }: { cliAccess?: AgentCliAccessCardProps
               disabled={busy || !cliAccess || cliAccess.enabled === undefined}
               onClick={() => cliAccess?.onEnable()}
             >
-              {busy ? "Enabling…" : "Enable Agent CLI access"}
+              {busy ? t("Enabling…") : t("Enable Agent CLI access")}
             </button>
             <button
               type="button"
@@ -11351,7 +11220,7 @@ function ApprovalPart({
             className="agent-tool-live-status"
             data-status={part.status === "pending" ? "running" : "complete"}
           >
-            {part.status === "pending" ? "Waiting" : "Resolved"}
+            {part.status === "pending" ? t("Waiting") : t("Resolved")}
           </span>
         </div>
         <p>{part.description}</p>
@@ -11414,7 +11283,7 @@ function ApprovalPart({
               onClick={toggleExplain}
             >
               <IconCircleQuestionmark size={14} />
-              {explainOpen ? "Hide explanation" : "Explain first"}
+              {explainOpen ? t("Hide explanation") : t("Explain first")}
             </button>
             <button
               type="button"
@@ -11458,12 +11327,12 @@ function ApprovalPart({
 }
 
 function approvalChoiceLabel(choice?: AgentApprovalChoice, pending = false) {
-  if (choice === "once") return pending ? "Approving once" : "Approved once";
+  if (choice === "once") return pending ? t("Approving once") : t("Approved once");
   if (choice === "session")
-    return pending ? "Approving for this session" : "Approved for this session";
-  if (choice === "always") return pending ? "Approving permanently" : "Always approved";
-  if (choice === "deny") return pending ? "Denying" : "Denied";
-  return "Resolved";
+    return pending ? t("Approving for this session") : t("Approved for this session");
+  if (choice === "always") return pending ? t("Approving permanently") : t("Always approved");
+  if (choice === "deny") return pending ? t("Denying") : t("Denied");
+  return t("Resolved");
 }
 
 export function branchSourceSessionIdForTurn(turn: Pick<AgentChatTurn, "parts">) {
@@ -11501,7 +11370,9 @@ export function BranchFromHereAction({
       className="agent-turn-action"
       // The disabled reason is honest, not silent: a synthetic/in-flight turn
       // has no persisted id Hermes can fork from yet.
-      title={branchable ? "Branch from here" : "Branching is available once the message is saved"}
+      title={
+        branchable ? t("Branch from here") : t("Branching is available once the message is saved")
+      }
       aria-label={t("Branch from here")}
       disabled={disabled}
       onClick={() => onBranch(messageId, sessionId)}
@@ -11546,18 +11417,18 @@ export function SudoPart({
             className="agent-tool-live-status"
             data-status={part.status === "pending" ? "running" : "complete"}
           >
-            {part.status === "pending" ? "Waiting" : "Resolved"}
+            {part.status === "pending" ? t("Waiting") : t("Resolved")}
           </span>
         </div>
-        <p>{part.reason ?? "Sub Rosa needs elevated permissions before it can continue."}</p>
+        <p>{part.reason ?? t("Sub Rosa needs elevated permissions before it can continue.")}</p>
         {part.command ? <pre>{part.command}</pre> : null}
         <p
           className="agent-sudo-mode"
           data-mode={mode}
           title={
             unrestricted
-              ? "Runs with full write access, outside Sub Rosa's sandbox."
-              : "Runs inside Sub Rosa's write sandbox."
+              ? t("Runs with full write access, outside Sub Rosa's sandbox.")
+              : t("Runs inside Sub Rosa's write sandbox.")
           }
         >
           {unrestricted ? (
@@ -11566,13 +11437,19 @@ export function SudoPart({
             <IconShieldCheck size={12} aria-hidden />
           )}
           {unrestricted
-            ? "Will run unrestricted (full write access)"
-            : "Will run sandboxed (limited write access)"}
+            ? t("Will run unrestricted (full write access)")
+            : t("Will run sandboxed (limited write access)")}
         </p>
         {resolved ? (
           <p className="agent-approval-result" data-choice={decided ? "once" : "deny"}>
             {decided ? <IconCheckmark1Small size={14} /> : <IconCrossMedium size={14} />}
-            {decided ? (submitting ? "Approving" : "Approved") : submitting ? "Denying" : "Denied"}
+            {decided
+              ? submitting
+                ? t("Approving")
+                : t("Approved")
+              : submitting
+                ? t("Denying")
+                : t("Denied")}
           </p>
         ) : (
           <div className="agent-approval-actions">
@@ -11653,10 +11530,10 @@ export function SecretPart({
             className="agent-tool-live-status"
             data-status={part.status === "pending" ? "running" : "complete"}
           >
-            {part.status === "pending" ? "Waiting" : "Provided"}
+            {part.status === "pending" ? t("Waiting") : t("Provided")}
           </span>
         </div>
-        <p>{part.reason ?? "Sub Rosa needs a secret value before it can continue."}</p>
+        <p>{part.reason ?? t("Sub Rosa needs a secret value before it can continue.")}</p>
         {label ? (
           <p className="agent-secret-key">
             <span>{t("Key")}</span>
@@ -11695,7 +11572,7 @@ export function SecretPart({
             </p>
             <div className="agent-approval-actions">
               <button type="submit" className="btn btn-secondary" disabled={disabled || !value}>
-                {submitting ? "Submitting" : "Submit"}
+                {submitting ? t("Submitting") : t("Submit")}
               </button>
               <button
                 type="button"
@@ -11778,7 +11655,7 @@ function AgentThinkingGroup({
          * reads as styling; a spinner reads as something happening. */}
         {running ? <Spinner aria-hidden /> : null}
         <span className={running ? "text-shimmer" : undefined}>
-          {running ? "Thinking" : "Thought"}
+          {running ? t("Thinking") : t("Thought")}
         </span>
         {elapsedLabel ? <span className="agent-reasoning-elapsed">{elapsedLabel}</span> : null}
         <IconChevronDownSmall size={14} className="agent-disclosure-chevron" />
@@ -11973,7 +11850,7 @@ function AgentArtifactCard({
         <button
           type="button"
           className="agent-artifact-open"
-          aria-label={`Open ${artifact.name}`}
+          aria-label={t("Open {name}", { name: artifact.name })}
           onClick={() => onOpen(artifact)}
         >
           {summary}
@@ -11985,7 +11862,7 @@ function AgentArtifactCard({
         <button
           type="button"
           className="agent-artifact-download"
-          aria-label={`Download ${artifact.name}`}
+          aria-label={t("Download {name}", { name: artifact.name })}
           title={t("Download")}
           onClick={() => onDownload(artifact)}
         >
@@ -12128,7 +12005,7 @@ function AgentArtifactPanel({
   // In the list the magnifier filters file names; on a text preview it finds
   // within the document. Images and binaries have nothing to search.
   const searchable = !artifact || preview.kind === "text";
-  const filterLabel = artifact ? "Find in file" : "Filter files";
+  const filterLabel = artifact ? t("Find in file") : t("Filter files");
 
   // Find-in-file re-renders the whole document, so the highlight trails the
   // keystrokes slightly instead of re-parsing a near-2 MB file on each one.
@@ -12233,8 +12110,8 @@ function AgentArtifactPanel({
               <button
                 type="button"
                 className="agent-artifact-filter-clear"
-                aria-label={query ? "Clear filter" : "Close filter"}
-                title={query ? "Clear" : "Close"}
+                aria-label={query ? t("Clear filter") : t("Close filter")}
+                title={query ? t("Clear") : t("Close")}
                 // Mirrors the Esc ladder for the mouse: clear the query
                 // first, then collapse back to the magnifier. mousedown is
                 // suppressed so clearing doesn't blur (and collapse) the
@@ -12249,7 +12126,7 @@ function AgentArtifactPanel({
               </button>
             </label>
           ) : (
-            <h2 className="agent-artifact-panel-title">{artifact ? artifact.name : "Files"}</h2>
+            <h2 className="agent-artifact-panel-title">{artifact ? artifact.name : t("Files")}</h2>
           )}
           {searchable && !filterOpen ? (
             <button
@@ -12266,7 +12143,7 @@ function AgentArtifactPanel({
             <button
               type="button"
               className="icon-button"
-              aria-label={`Copy ${artifact.name} to clipboard`}
+              aria-label={t("Copy {name} to clipboard", { name: artifact.name })}
               title={t("Copy file")}
               onClick={() => onCopyFile(artifact)}
             >
@@ -12277,7 +12154,7 @@ function AgentArtifactPanel({
             <button
               type="button"
               className="icon-button"
-              aria-label={`Download ${artifact.name}`}
+              aria-label={t("Download {name}", { name: artifact.name })}
               title={t("Download")}
               onClick={() => onDownload(artifact)}
             >
@@ -13225,13 +13102,13 @@ function agentStatusSummaryFromHermesEvent(
 ) {
   if (status === "waitingForUser") {
     return event.type === "approval.request"
-      ? "Sub Rosa needs approval."
-      : "Sub Rosa has a question.";
+      ? t("Sub Rosa needs approval.")
+      : t("Sub Rosa has a question.");
   }
-  if (status === "completed") return "Sub Rosa finished.";
-  if (status === "failed") return eventText(event) || "Sub Rosa hit a problem.";
+  if (status === "completed") return t("Sub Rosa finished.");
+  if (status === "failed") return eventText(event) || t("Sub Rosa hit a problem.");
   if (event.type === "status.update") {
-    return eventText(event) || "Sub Rosa is working.";
+    return eventText(event) || t("Sub Rosa is working.");
   }
   if (event.type.startsWith("tool.")) {
     const payload = event.payload as Record<string, unknown> | undefined;
@@ -13240,9 +13117,9 @@ function agentStatusSummaryFromHermesEvent(
     return toolActivitySentence(name, payload);
   }
   if (event.type === "thinking.delta" || event.type === "reasoning.delta") {
-    return "Thinking.";
+    return t("Thinking.");
   }
-  return "Sub Rosa is working.";
+  return t("Sub Rosa is working.");
 }
 
 function visibleHermesMessageText(message: HermesSessionMessage) {
@@ -13269,9 +13146,9 @@ function sameAgentAttachments(left: AgentAttachment[], right: AgentAttachment[])
 function attachmentStatusLabel(state: HermesAttachmentState): string {
   switch (state.status) {
     case "attached":
-      return "Attached";
+      return t("Attached");
     case "failed":
-      return "Couldn't attach";
+      return t("Couldn't attach");
     default:
       return "";
   }
@@ -13413,7 +13290,19 @@ function toolNames(toolset: HermesToolsetInfo) {
 }
 
 function stateLabel(value: string) {
-  return value.replaceAll("_", " ");
+  const labels: Record<string, string> = {
+    connected: t("Connected"),
+    disconnected: t("Disconnected"),
+    configured: t("Configured"),
+    enabled: t("Enabled"),
+    disabled: t("Disabled"),
+    unknown: t("Unknown"),
+    error: t("Error"),
+    ready: t("Ready"),
+    running: t("Running"),
+    stopped: t("Stopped"),
+  };
+  return labels[value] ?? value.replaceAll("_", " ");
 }
 
 function envFieldSet(field: HermesMessagingEnvVarInfo) {
@@ -13445,7 +13334,7 @@ function ActivityIndicator({
   return (
     <span className="agent-activity-indicator" data-large={large} data-status={status}>
       <span aria-hidden="true" />
-      {status === "waitingForUser" ? "Needs you" : "Working"}
+      {status === "waitingForUser" ? t("Needs you") : t("Working")}
     </span>
   );
 }
@@ -13527,8 +13416,8 @@ function BackgroundWorkNotice({ processes }: { processes: BackgroundProcess[] })
       <DotSpinner />
       <span>
         {running.length === 1
-          ? "Running in the background"
-          : `${running.length} tasks running in the background`}
+          ? t("Running in the background")
+          : t("{count} tasks running in the background", { count: running.length })}
       </span>
       {running.length === 1 && oldest.label ? (
         <code className="agent-composer-notice-command">{oldest.label}</code>
@@ -13541,9 +13430,9 @@ function BackgroundWorkNotice({ processes }: { processes: BackgroundProcess[] })
 function taskActivitySummary(task: AgentTaskDto) {
   switch (task.status) {
     case "queued":
-      return "Starting work.";
+      return t("Starting work.");
     case "running":
-      return task.progressSummary || "Working now.";
+      return task.progressSummary || t("Working now.");
     default:
       return "";
   }
@@ -13566,7 +13455,7 @@ function readFileBytes(file: File) {
   return new Promise<Uint8Array>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
-    reader.onerror = () => reject(reader.error ?? new Error("Could not read the dropped file."));
+    reader.onerror = () => reject(reader.error ?? new Error(t("Could not read the dropped file.")));
     reader.readAsArrayBuffer(file);
   });
 }

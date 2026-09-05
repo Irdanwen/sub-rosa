@@ -46,21 +46,26 @@ Pour signer plus tard : poser `WINDOWS_CERTIFICATE` (`.pfx` base64) + `WINDOWS_C
 - Le secret `RELEASES_REPO_TOKEN` (fine-grained, `contents:write` sur `sub-rosa-releases`) est posé :
   chaque tag `vX.Y.Z` y publie les artefacts + `latest.json` (huit releases la semaine du 2026-09-01).
 
-## 7. Identité de marque — ✅ décidée / ⏳ icônes définitives
+## 7. Identité de marque — ✅ décidée / ✅ icônes définitives
 - Nom = **Sub Rosa** ; identifiant bundle = `xyz.carpediem.subrosa` ; scheme deep-link = `subrosa://`.
-- **Icônes** : placeholders générés par le fork. Fournir des sources définitives (`.icns`, `.ico`, `.png` 1024²)
-  pour remplacer `src-tauri/icons/*` quand disponibles.
+- **Icônes** : la rose définitive est intégrée dans `src-tauri/icons/` et l'appiconset iOS
+  de `src-tauri/gen/apple/` (source et régénération dans `FORK_NOTES.md`). Vérification du
+  2026-09-05 : les 18 PNG de l'appiconset sont sans canal alpha, dont l'icône 1024².
 
 ## 8. Licences tierces — ➖ à confirmer
 - Vérifier `THIRD_PARTY_NOTICES.md` (runtime **Hermes** de l'agent) pour la redistribuabilité dans un binaire
   distribué. Signaler tout doute avant distribution large.
+- **Polices** : l'autorisation de redistribution des cinq WOFF2 de `public/` (ABC Diatype,
+  Martina Plantijn, Berkeley Mono) reste à confirmer. Aucun justificatif n'a été trouvé
+  dans le dépôt ; cela ne signifie pas que l'autorisation est absente.
 
 ## 9. iOS / TestFlight — ✅ opérationnel (premier build uploadé le 2026-07-06)
 
 **Fait (2026-07-06)** : build App Store validé en local — `pnpm tauri ios build --export-method
 app-store-connect` produit une IPA signée **Apple Distribution: Morgan Magalhaes (H6N5V777LL)**
-avec le profil App Store (certificat créé automatiquement par la session Xcode du Mac ;
-aucun `.p12` à gérer). Workflow CI : `.github/workflows/ios-release.yml` (dispatch manuel).
+avec le profil App Store et le certificat géré par la session Xcode locale.
+La CI utilise ses propres assets de signature importés, décrits ci-dessous
+(`.github/workflows/ios-release.yml`, dispatch manuel).
 
 **Fiche d'app créée + premier build uploadé (2026-07-06).** Le premier build peut demander
 la conformité chiffrement dans TestFlight (« Missing Compliance » → chiffrement standard
@@ -75,13 +80,15 @@ dans l'Info.plist. Pour uploader un nouveau build local :
    (le plist = method app-store-connect + destination upload + teamID ; la session Xcode
    authentifie). Le build apparaît ensuite dans TestFlight après le traitement Apple.
 
-**Pour la CI** (`ios-release.yml`) : poser les secrets `APPLE_API_KEY_ID`,
-`APPLE_API_ISSUER`, `APPLE_API_KEY_P8` (clé API App Store Connect, rôle App Manager,
-`.p8` en base64) — la signature cloud crée le certificat sur le runner.
+**Pour la CI** (`ios-release.yml`) : l'export utilise une signature **manuelle** avec
+le certificat Apple Distribution importé (`IOS_DIST_CERT_P12`, base64, et
+`IOS_DIST_CERT_PASSWORD`), `APPLE_TEAM_ID` et les deux profils App Store importés
+(`IOS_PROVISION_PROFILE` et `IOS_SHARE_PROVISION_PROFILE`, base64). La lane les mappe
+aux noms « Sub Rosa App Store » et « Sub Rosa Share App Store ». Elle ne crée pas ces
+assets par signature cloud. Les secrets `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` et
+`APPLE_API_KEY_P8` (`.p8` en base64) authentifient l'accès App Store Connect et l'upload.
 
-**À savoir** : icônes iOS = placeholders (mêmes sources que §7) ; l'App Store refusera une
-icône 1024 avec canal alpha — fournir les icônes définitives avant la première soumission
-publique (TestFlight interne est plus tolérant).
+Les icônes iOS définitives sont déjà intégrées et sans canal alpha (voir §7).
 
 ## Extension de partage iOS (ADR-0048) : ce qu'App Store Connect doit connaître
 
@@ -109,3 +116,7 @@ lane (`provisioningProfiles`). En local, `pnpm tauri ios build --export-method
 debugging` signe les deux cibles avec l'équipe `H6N5V777LL` en automatique une
 fois le groupe créé.
 
+**Vérification du 2026-09-05** : les entitlements de l'app et de l'extension déclarent
+maintenant `group.xyz.carpediem.subrosa`, y compris dans les propriétés de `project.yml`
+qui les régénèrent. Les deux profils de distribution doivent autoriser ce même App Group ;
+leur conformité reste à vérifier côté provisioning, elle n'est pas prouvée par le dépôt.

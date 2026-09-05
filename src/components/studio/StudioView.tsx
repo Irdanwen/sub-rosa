@@ -5,7 +5,8 @@
 
 import { t } from "../../lib/i18n";
 import { STUDIO_TAB_STORAGE_KEY } from "./studio-keys";
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { recoverableView } from "../../app/recoverable-view";
 import type { ChainShot } from "../../lib/studio/chain";
 import { EmptyState } from "../ui/EmptyState";
 import { SegmentedControl } from "../ui/SegmentedControl";
@@ -13,18 +14,28 @@ import { Spinner } from "../ui/Spinner";
 import { AssembleStudio } from "./AssembleStudio";
 import { BibleStudio } from "./BibleStudio";
 import { FilmStudio } from "./FilmStudio";
-import { AudioStudio } from "./AudioStudio";
+import { AudioStudio, type AudioMode } from "./AudioStudio";
+import { StudioStart, type StudioDestination } from "./StudioStart";
 import { ImageStudio } from "./ImageStudio";
 import { VideoStudio } from "./VideoStudio";
 import { useMediaCatalog } from "./useMediaCatalog";
 
 // The workflow canvas pulls in @xyflow/react; only the Workflows tab pays
 // for it.
-const WorkflowStudio = lazy(() =>
-  import("./WorkflowStudio").then((module) => ({ default: module.WorkflowStudio })),
-);
+const WorkflowStudio = recoverableView(async () => {
+  const module = await import("./WorkflowStudio");
+  return { default: module.WorkflowStudio };
+});
 
-type StudioTab = "film" | "image" | "video" | "audio" | "bible" | "assemble" | "workflows";
+type StudioTab =
+  | "start"
+  | "film"
+  | "image"
+  | "video"
+  | "audio"
+  | "bible"
+  | "assemble"
+  | "workflows";
 
 const TAB_STORAGE_KEY = STUDIO_TAB_STORAGE_KEY;
 
@@ -39,6 +50,7 @@ function initialTab(): StudioTab {
     // "films" was the remote studio. What replaced it is the Film tab.
     if (saved === "films") return "film";
     if (
+      saved === "start" ||
       saved === "film" ||
       saved === "image" ||
       saved === "video" ||
@@ -52,11 +64,16 @@ function initialTab(): StudioTab {
   } catch {
     // Fall through to the default.
   }
-  return "film";
+  return "start";
 }
 
 export function StudioView() {
   const [tab, setTab] = useState<StudioTab>(initialTab);
+  const [audioMode, setAudioMode] = useState<AudioMode | undefined>();
+  const openWorkshop = useCallback((destination: StudioDestination) => {
+    setAudioMode(destination.audioMode);
+    setTab(destination.tab);
+  }, []);
   const { catalog, error, loading, retry } = useMediaCatalog();
   // A shot chain on its way to the Assemble tab: the video studio hands over
   // the cut list, the tab switches, and Assemble loads it once.
@@ -103,21 +120,26 @@ export function StudioView() {
             {t("Generate images, videos, and audio, or chain them into workflows.")}
           </p>
         </div>
-        <SegmentedControl
-          value={tab}
-          onValueChange={setTab}
-          aria-label={t("Studio section")}
-          options={[
-            // Film first: it is what the other tabs are for.
-            { value: "film", label: t("Film") },
-            { value: "image", label: t("Image") },
-            { value: "video", label: t("Video") },
-            { value: "audio", label: t("Audio") },
-            { value: "assemble", label: t("Assemble") },
-            { value: "bible", label: t("Bible") },
-            { value: "workflows", label: t("Workflows") },
-          ]}
-        />
+        <div className="studio-section-nav">
+          <SegmentedControl
+            value={tab}
+            onValueChange={(next) => {
+              setAudioMode(undefined);
+              setTab(next);
+            }}
+            aria-label={t("Studio section")}
+            options={[
+              { value: "start", label: t("Explore") },
+              { value: "film", label: t("Film") },
+              { value: "image", label: t("Image") },
+              { value: "video", label: t("Video") },
+              { value: "audio", label: t("Audio") },
+              { value: "assemble", label: t("Assemble") },
+              { value: "bible", label: t("Bible") },
+              { value: "workflows", label: t("Workflows") },
+            ]}
+          />
+        </div>
       </header>
       {loading ? (
         <div className="studio-loading">
@@ -126,19 +148,21 @@ export function StudioView() {
       ) : error || !catalog ? (
         <EmptyState
           title={t("Couldn't load the model catalog")}
-          description={error ?? "The media backend didn't answer."}
+          description={error ?? t("The model catalog did not respond. Try again in a moment.")}
           action={
             <button type="button" className="btn btn-secondary" onClick={retry}>
               {t("Try again")}
             </button>
           }
         />
+      ) : tab === "start" ? (
+        <StudioStart catalog={catalog} onOpen={openWorkshop} />
       ) : tab === "image" ? (
         <ImageStudio catalog={catalog} />
       ) : tab === "video" ? (
         <VideoStudio catalog={catalog} onAssembleChain={assembleChain} />
       ) : tab === "audio" ? (
-        <AudioStudio catalog={catalog} />
+        <AudioStudio catalog={catalog} requestedMode={audioMode} />
       ) : tab === "film" ? (
         <FilmStudio catalog={catalog} onOpenProduction={openProduction} />
       ) : tab === "bible" ? (
@@ -152,15 +176,7 @@ export function StudioView() {
           onPendingProductionApplied={clearPendingProduction}
         />
       ) : (
-        <Suspense
-          fallback={
-            <div className="studio-loading">
-              <Spinner aria-label={t("Loading workflows")} />
-            </div>
-          }
-        >
-          <WorkflowStudio catalog={catalog} />
-        </Suspense>
+        <WorkflowStudio catalog={catalog} />
       )}
     </div>
   );

@@ -97,7 +97,9 @@ export function UsageScreen({ onBack }: { onBack: () => void }) {
                 <SettingsRow
                   label={t("Estimate")}
                   detail={
-                    price ? "Nothing measured yet" : "No published price for the current chat model"
+                    price
+                      ? t("Nothing measured yet")
+                      : t("No published price for the current chat model")
                   }
                 />
               )}
@@ -105,8 +107,11 @@ export function UsageScreen({ onBack }: { onBack: () => void }) {
 
             <p className="mobile-settings-footnote">
               {price
-                ? `Priced from these tokens at ${price.model} rates, the provider's own, with its multiplier applied. It is an upper bound: the provider no longer returns what it charged per turn. Counts every request this app has made since it started.`
-                : "Counts every request this app has made since it started."}
+                ? t(
+                    "Priced from these tokens at {model} rates, the provider's own, with its multiplier applied. It is an upper bound: the provider no longer returns what it charged per turn. Counts every request this app has made since it started.",
+                    { model: price.model },
+                  )
+                : t("Counts every request this app has made since it started.")}
             </p>
           </>
         ) : (

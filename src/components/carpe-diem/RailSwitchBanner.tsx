@@ -50,7 +50,7 @@ export function RailSwitchBanner({ compact = false }: { compact?: boolean }) {
           disabled={busy}
           onClick={() => void switchRail()}
         >
-          {busy ? "Switching…" : `Switch to ${to}`}
+          {busy ? t("Switching…") : t("Switch to {name}", { name: to })}
         </button>
         <button type="button" className="btn btn-ghost" onClick={() => setDismissed(suggest)}>
           {t("Not now")}

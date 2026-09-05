@@ -23,8 +23,14 @@ function initialMode(): AudioMode {
   return "music";
 }
 
-export function AudioStudio({ catalog }: { catalog: MediaCatalog }) {
-  const [mode, setMode] = useState<AudioMode>(initialMode);
+export function AudioStudio({
+  catalog,
+  requestedMode,
+}: {
+  catalog: MediaCatalog;
+  requestedMode?: AudioMode;
+}) {
+  const [mode, setMode] = useState<AudioMode>(() => requestedMode ?? initialMode());
 
   useEffect(() => {
     try {

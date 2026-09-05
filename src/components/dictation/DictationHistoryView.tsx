@@ -248,15 +248,19 @@ export function DictationHistoryView({ onNavigateToSettings }: DictationHistoryV
         </div>
       ) : items.length === 0 ? (
         <EmptyState
-          label={dictationAvailable ? "Start dictating" : "Dictation unavailable"}
+          label={dictationAvailable ? t("Start dictating") : t("Dictation unavailable")}
           icon={<IconMicrophoneSparkleFilled size={28} />}
           title={
-            dictationAvailable ? "Start dictating anywhere" : "Dictation is only supported on macOS"
+            dictationAvailable
+              ? t("Start dictating anywhere")
+              : t("Dictation is only supported on macOS")
           }
           description={
             dictationAvailable
-              ? "Place your cursor in any app, hold the shortcut, and speak. Your words are transcribed and pasted right where you're typing."
-              : "Meeting notes still work with microphone recording on this device."
+              ? t(
+                  "Place your cursor in any app, hold the shortcut, and speak. Your words are transcribed and pasted right where you're typing.",
+                )
+              : t("Meeting notes still work with microphone recording on this device.")
           }
           footer={
             dictationAvailable ? (
@@ -380,7 +384,7 @@ function DictationHistoryRow({
         <p
           ref={textRef}
           className="dictation-history-text"
-          aria-label={truncated ? "Show full transcript" : undefined}
+          aria-label={truncated ? t("Show full transcript") : undefined}
           {...expandProps}
         >
           {item.text}
@@ -399,7 +403,7 @@ function DictationHistoryRow({
           type="button"
           className="dictation-row-act"
           data-copied={copied}
-          aria-label={copied ? "Copied" : "Copy"}
+          aria-label={copied ? t("Copied") : t("Copy")}
           onClick={onCopy}
         >
           {copied ? <IconCheckmark1Small size={14} /> : <IconClipboard size={14} />}
@@ -424,7 +428,7 @@ function DictationHistoryRow({
         footer={
           <button type="button" className="btn btn-secondary" onClick={onCopy}>
             {copied ? <IconCheckmark1Small size={14} /> : <IconClipboard size={14} />}
-            {copied ? "Copied" : "Copy"}
+            {copied ? t("Copied") : t("Copy")}
           </button>
         }
       >

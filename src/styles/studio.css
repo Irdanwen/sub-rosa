@@ -32,6 +32,12 @@
   line-height: var(--leading-display);
 }
 
+.studio-section-nav {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: var(--sp-1);
+}
+
 .studio-subtitle {
   margin: var(--sp-1) 0 0;
   font-size: var(--fs-md);

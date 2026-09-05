@@ -12,27 +12,33 @@ const CATALOG_TTL_MS = 5 * 60 * 1000;
 
 let cached: { catalog: MediaCatalog; fetchedAt: number } | undefined;
 let inflight: Promise<MediaCatalog> | undefined;
+let cacheGeneration = 0;
 
 export async function fetchMediaCatalog(force = false): Promise<MediaCatalog> {
   if (!force && cached && Date.now() - cached.fetchedAt < CATALOG_TTL_MS) {
     return cached.catalog;
   }
   if (!inflight) {
-    inflight = invoke<MediaCatalog>("carpe_diem_media_catalog")
+    const generation = cacheGeneration;
+    const request = invoke<MediaCatalog>("carpe_diem_media_catalog")
       .then((catalog) => {
         const patched = withVideoConstraintFallbacks(catalog);
-        cached = { catalog: patched, fetchedAt: Date.now() };
+        // A settings change can start a new request before this one finishes.
+        // Its response must never restore the old backend's catalog.
+        if (generation === cacheGeneration) cached = { catalog: patched, fetchedAt: Date.now() };
         return patched;
       })
       .finally(() => {
-        inflight = undefined;
+        if (inflight === request) inflight = undefined;
       });
+    inflight = request;
   }
   return inflight;
 }
 
 /** Test seam + settings-change hook: drop the cache so the next fetch is live. */
 export function resetMediaCatalogCache() {
+  cacheGeneration += 1;
   cached = undefined;
   inflight = undefined;
 }
@@ -64,7 +70,9 @@ const CARPE_DIEM_EXTRA_EDIT_MODELS: MediaModel[] = [
 export function imageEditModels(catalog: MediaCatalog): MediaModel[] {
   const live = modelsOfType(catalog, "imageEdit");
   if (catalog.backend !== "carpe-diem") return live;
-  const seen = new Set(live.map((model) => model.id));
+  // An explicit offline entry is authoritative too: do not resurrect it as
+  // an unlisted passthrough after modelsOfType has filtered it out.
+  const seen = new Set(catalog.models.map((model) => model.id));
   const extras = CARPE_DIEM_EXTRA_EDIT_MODELS.filter((model) => !seen.has(model.id));
   return [...live, ...extras].sort((a, b) => a.name.localeCompare(b.name));
 }

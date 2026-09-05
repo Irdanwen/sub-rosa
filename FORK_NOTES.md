@@ -983,6 +983,31 @@ liste exacte des passages envoyés sous la réponse
   `IOS_SHARE_PROVISION_PROFILE` + mapping dans ExportOptions ; étapes ASC
   dans `HANDOFF.md`.
 
+## Préparation à la diffusion (2026-09-05)
+
+- `StudioStart.tsx` et `studio-start.css` : entrée du Studio par objectif,
+  compteurs dérivés du catalogue ; `StudioView` conserve les onglets stockés.
+  `MediaModelPicker.tsx` et son CSS : recherche commune des modèles et
+  familles vidéo, sans déduire leurs capacités des noms.
+- `app/recoverable-view.tsx`, `useDesktopBootstrap.ts` et
+  `app/mobile/useMobileBootstrap.ts` : reprises explicites des écrans et du
+  chargement des notes. `main.tsx` et les vues chargées à la demande gardent
+  une interface visible pendant le chargement et après un échec.
+- `agent_lite` : propriété exclusive du tour, revérification avant reprise et
+  refus explicite d’un tour dont les pièces jointes ont été perdues. Tests
+  extraits dans `agent_lite/tests.rs` ; addendum d’ADR-0018.
+- `scripts/i18n/rendered-copy.mjs` complète les anciens contrôles : tous les
+  TSX livrés passent ses branches et gabarits par `t()`. Les catalogues et les
+  messages indirects ont été audités. `hero-content.tsx` et
+  `sidebar-context.tsx` gardent les grandes vues sous leur limite existante.
+- `model-privacy.ts` : politique explicite du catalogue prioritaire ; ne pas
+  réintroduire de promesse de chiffrement côté client à partir d’un badge.
+- Les deux entitlements iOS et leurs propriétés XcodeGen gardent
+  `group.xyz.carpediem.subrosa`. Une compilation ne prouve pas que les profils
+  Apple accordent ce groupe : vérifier les profils avant de publier.
+- Résultats, captures et contrôles de sortie restants :
+  [rapport de validation](docs/qa/2026-09-05-public-readiness.md).
+
 ## Escape hatch dev
 - `SUBROSA_DEV_API_KEY` (env, **debug uniquement**) : injecte la clé sans passer par le trousseau, pour
   `pnpm tauri:dev` (le trousseau refuse un item créé par un autre binaire). Jamais compilé en release.

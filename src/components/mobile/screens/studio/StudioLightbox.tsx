@@ -107,7 +107,7 @@ export function Lightbox({
         onClose();
       } catch (err) {
         hapticNotify("error");
-        setError(err instanceof Error ? err.message : "The upscale failed.");
+        setError(err instanceof Error ? t(err.message) : t("The upscale failed."));
       } finally {
         setUpscaling(null);
       }
@@ -132,7 +132,7 @@ export function Lightbox({
       onClose();
     } catch (err) {
       hapticNotify("error");
-      setError(err instanceof Error ? err.message : "The cutout failed.");
+      setError(err instanceof Error ? t(err.message) : t("The cutout failed."));
     } finally {
       setCuttingOut(false);
     }
@@ -170,7 +170,7 @@ export function Lightbox({
               onEnded={() => markMediaPlayback(false)}
             />
           ) : (
-            <img src={src} alt={artifact.prompt ?? "Generated image"} />
+            <img src={src} alt={artifact.prompt ?? t("Generated image")} />
           )
         ) : (
           <Spinner />
@@ -185,7 +185,7 @@ export function Lightbox({
               aria-label={t("Copy prompt")}
             >
               {promptCopied ? <IconCheckmark1Small size={14} /> : <IconClipboard size={14} />}
-              {promptCopied ? "Copied" : "Copy prompt"}
+              {promptCopied ? t("Copied") : t("Copy prompt")}
             </button>
           </div>
         ) : null}
@@ -193,7 +193,7 @@ export function Lightbox({
         <div className="mobile-studio-preview-actions">
           {canSaveToPhotos ? (
             <button type="button" className="mobile-chip-button" onClick={() => void save()}>
-              {saved ? "Saved" : "Save to Photos"}
+              {saved ? t("Saved") : t("Save to Photos")}
             </button>
           ) : null}
           {artifact.kind === "image" ? (
@@ -204,7 +204,7 @@ export function Lightbox({
                 disabled={upscaling !== null}
                 onClick={() => void upscale(2)}
               >
-                {upscaling === 2 ? <Spinner /> : "Upscale x2"}
+                {upscaling === 2 ? <Spinner /> : t("Upscale x2")}
               </button>
               <button
                 type="button"
@@ -212,7 +212,7 @@ export function Lightbox({
                 disabled={upscaling !== null}
                 onClick={() => void upscale(4)}
               >
-                {upscaling === 4 ? <Spinner /> : "Upscale x4"}
+                {upscaling === 4 ? <Spinner /> : t("Upscale x4")}
               </button>
               {canRemoveBackground ? (
                 <button
@@ -221,7 +221,7 @@ export function Lightbox({
                   disabled={cuttingOut}
                   onClick={() => void removeBg()}
                 >
-                  {cuttingOut ? <Spinner /> : "Remove background"}
+                  {cuttingOut ? <Spinner /> : t("Remove background")}
                 </button>
               ) : null}
             </>
@@ -391,7 +391,11 @@ export function MediaReferencePicker({
               <button
                 type="button"
                 className="mobile-icon-button"
-                aria-label={`Remove ${noun} ${index + 1}`}
+                aria-label={
+                  kind === "video"
+                    ? t("Remove clip {number}", { number: index + 1 })
+                    : t("Remove track {number}", { number: index + 1 })
+                }
                 onClick={() => onRemove(item.id)}
               >
                 <span aria-hidden>x</span>
@@ -409,7 +413,19 @@ export function MediaReferencePicker({
             disabled={reading}
             onClick={() => inputRef.current?.click()}
           >
-            {reading ? <Spinner /> : items.length > 0 ? `Add another ${noun}` : `Add a ${noun}`}
+            {reading ? (
+              <Spinner />
+            ) : items.length > 0 ? (
+              kind === "video" ? (
+                t("Add another clip")
+              ) : (
+                t("Add another track")
+              )
+            ) : kind === "video" ? (
+              t("Add a clip")
+            ) : (
+              t("Add a track")
+            )}
           </button>
           {gallery.length > 0 ? (
             <button
@@ -429,7 +445,7 @@ export function MediaReferencePicker({
           <div
             className="mobile-sheet"
             role="dialog"
-            aria-label={`Pick a ${noun}`}
+            aria-label={kind === "video" ? t("Pick a clip") : t("Pick a track")}
             onClick={(event) => event.stopPropagation()}
           >
             <h2 className="mobile-sheet-title">{t("From your gallery")}</h2>
@@ -537,10 +553,10 @@ export function ReferencePicker({
               key={`${index}-${reference.slice(-24)}`}
               type="button"
               className="mobile-reference-chip"
-              aria-label={`Remove reference ${index + 1}`}
+              aria-label={t("Remove reference {number}", { number: index + 1 })}
               onClick={() => onChange(references.filter((_, i) => i !== index))}
             >
-              <img src={reference} alt={`Reference ${index + 1}`} />
+              <img src={reference} alt={t("Reference {number}", { number: index + 1 })} />
               {references.length > 1 ? (
                 <span className="mobile-reference-index" aria-hidden>
                   {index + 1}

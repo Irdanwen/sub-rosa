@@ -165,7 +165,7 @@ export function ExternalDirsView({
             />
           ) : isErrored ? (
             <ErrorState
-              message={state.error ?? "Could not load external directories."}
+              message={state.error ?? t("Could not load external directories.")}
               retryable={state.retryable}
               onRetry={state.refresh}
             />
@@ -299,7 +299,9 @@ function DirRow({
         <div className="external-dir-meta">
           {typeof row.skillCount === "number" ? (
             <span className="external-dir-meta-item">
-              {row.skillCount === 1 ? "1 skill found" : `${row.skillCount} skills found`}
+              {row.skillCount === 1
+                ? t("1 skill found")
+                : t("{skillCount} skills found", { skillCount: row.skillCount })}
             </span>
           ) : row.presence === "missing" ? (
             <span className="external-dir-meta-item">
@@ -322,7 +324,7 @@ function DirRow({
         <button
           type="button"
           className="external-dir-remove"
-          aria-label={`Remove ${row.rawPath}`}
+          aria-label={t("Remove {rawPath}", { rawPath: row.rawPath })}
           title={t("Remove directory")}
           disabled={busy}
           onClick={onRemove}

@@ -8,17 +8,27 @@ import { Switch } from "../ui/Switch";
 export function semanticSentence(status: AskIndexStatusDto | null) {
   if (!status) return "";
   if (!status.settings.semantic) {
-    return "Off. Questions match your notes by their words only, and no passage is kept as a vector.";
+    return t(
+      "Off. Questions match your notes by their words only, and no passage is kept as a vector.",
+    );
   }
   if (status.passages === 0) {
-    return "On. No passage cut yet; the first pass runs in the background after a note changes.";
+    return t("On. No passage cut yet; the first pass runs in the background after a note changes.");
   }
-  const passages = status.passages === 1 ? "1 passage" : `${status.passages} passages`;
-  const embedded =
-    status.embedded === status.passages
-      ? "all embedded"
-      : `${status.embedded} embedded so far, the rest waits for the next pass`;
-  return `On. ${passages} cut from your notes, ${embedded}.`;
+  if (status.embedded === status.passages) {
+    return status.passages === 1
+      ? t("On. 1 passage cut from your notes, all embedded.")
+      : t("On. {count} passages cut from your notes, all embedded.", { count: status.passages });
+  }
+  return status.passages === 1
+    ? t(
+        "On. 1 passage cut from your notes, {embedded} embedded so far, the rest waits for the next pass.",
+        { embedded: status.embedded },
+      )
+    : t(
+        "On. {count} passages cut from your notes, {embedded} embedded so far, the rest waits for the next pass.",
+        { count: status.passages, embedded: status.embedded },
+      );
 }
 
 /**

@@ -98,6 +98,9 @@ targets:
         CFBundleVersion: "1.43.0"
     entitlements:
       path: os-june_iOS/os-june_iOS.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.xyz.carpediem.subrosa
     scheme:
       environmentVariables:
         RUST_BACKTRACE: full
@@ -160,6 +163,9 @@ targets:
               NSExtensionActivationSupportsAudioWithMaxCount: 1
     entitlements:
       path: ShareExtension/ShareExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.xyz.carpediem.subrosa
     settings:
       base:
         PRODUCT_NAME: Sub Rosa

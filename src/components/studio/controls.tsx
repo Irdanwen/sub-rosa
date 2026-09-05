@@ -5,7 +5,7 @@ import { t } from "../../lib/i18n";
 import type { ReactNode } from "react";
 import { formatCredits } from "../../lib/studio/catalog";
 import type { MediaModel } from "../../lib/studio/types";
-import { Select } from "../ui/Select";
+import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
 
 /** A labeled form row in the controls column. */
 export function StudioField({
@@ -59,16 +59,7 @@ export function PillGroup<T extends string>({
   );
 }
 
-/** One-line descriptor for a model: tier plus its privacy posture ("private"
- * = zero retention, "anonymized" = provider may keep anonymized prompts). */
-export function modelDescriptor(model: MediaModel): string {
-  const parts = [model.tier, model.privacy].filter(
-    (entry): entry is string => typeof entry === "string" && entry.length > 0,
-  );
-  return parts.join(" · ");
-}
-
-/** Model picker fed by the merged catalog; shows tier + privacy as a suffix. */
+/** Searchable model picker fed by the merged catalog's published metadata. */
 export function ModelSelect({
   models,
   value,
@@ -81,18 +72,12 @@ export function ModelSelect({
   ariaLabel: string;
 }) {
   return (
-    <Select
+    <MediaModelPicker
       value={value}
       placeholder={t("Choose a model")}
       ariaLabel={ariaLabel}
       onChange={onChange}
-      options={models.map((model) => {
-        const descriptor = modelDescriptor(model);
-        return {
-          value: model.id,
-          label: descriptor ? `${model.name} (${descriptor})` : model.name,
-        };
-      })}
+      options={models.filter((model) => !model.offline).map(mediaModelOption)}
     />
   );
 }

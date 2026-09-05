@@ -85,6 +85,7 @@ export function AgentScreen({
   const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     const sessions = listAgentTasks()
@@ -118,10 +119,15 @@ export function AgentScreen({
 
   const archive = useCallback(
     async (taskId: string) => {
-      const folderId = archiveFolderId ?? (await ensureArchiveFolder());
-      if (!folderId) return;
-      await assignSessionToFolder(taskId, folderId).catch(() => undefined);
-      refresh();
+      setActionError(null);
+      try {
+        const folderId = archiveFolderId ?? (await ensureArchiveFolder());
+        if (!folderId) throw new Error(t("Couldn't archive this chat."));
+        await assignSessionToFolder(taskId, folderId);
+        await refresh();
+      } catch (err) {
+        setActionError(friendlyErrorMessage(err, t("Couldn't archive this chat.")));
+      }
     },
     [archiveFolderId, ensureArchiveFolder, refresh],
   );
@@ -129,16 +135,26 @@ export function AgentScreen({
   const restore = useCallback(
     async (taskId: string) => {
       if (!archiveFolderId) return;
-      await removeSessionFromFolder(taskId, archiveFolderId).catch(() => undefined);
-      refresh();
+      setActionError(null);
+      try {
+        await removeSessionFromFolder(taskId, archiveFolderId);
+        await refresh();
+      } catch (err) {
+        setActionError(friendlyErrorMessage(err, t("Couldn't restore this chat.")));
+      }
     },
     [archiveFolderId, refresh],
   );
 
   const remove = useCallback(
     async (taskId: string) => {
-      await deleteAgentTask(taskId).catch(() => undefined);
-      refresh();
+      setActionError(null);
+      try {
+        await deleteAgentTask(taskId);
+        await refresh();
+      } catch (err) {
+        setActionError(friendlyErrorMessage(err, t("Couldn't delete this chat.")));
+      }
     },
     [refresh],
   );
@@ -159,7 +175,7 @@ export function AgentScreen({
         <button type="button" className="mobile-note-row" onClick={() => onOpenSession(task.id)}>
           <span className="mobile-note-row-body">
             <span className="mobile-note-row-title">
-              {task.title.trim() || task.prompt.trim() || "New chat"}
+              {task.title.trim() || task.prompt.trim() || t("New chat")}
             </span>
             <span className="mobile-note-row-subtitle">
               {task.messages.at(-1)?.content?.slice(0, 80) ?? ""}
@@ -188,6 +204,11 @@ export function AgentScreen({
         }
       />
       <PullToRefresh className="mobile-list-scroll" onRefresh={refresh}>
+        {actionError ? (
+          <p className="mobile-dictation-error" role="alert">
+            {actionError}
+          </p>
+        ) : null}
         {loading ? (
           <ul className="mobile-note-list" aria-hidden>
             {[0, 1, 2].map((row) => (
@@ -233,7 +254,9 @@ export function AgentScreen({
                   className="mobile-archived-toggle"
                   onClick={() => setShowArchived((value) => !value)}
                 >
-                  {showArchived ? "Hide archived" : `Archived (${archived.length})`}
+                  {showArchived
+                    ? t("Hide archived")
+                    : t("Archived ({count})", { count: archived.length })}
                 </button>
                 {showArchived ? (
                   <ul className="mobile-note-list">
@@ -261,6 +284,13 @@ export function AgentScreen({
   );
 }
 
+function hasAttachmentMarkers(content: string): boolean {
+  return content.includes("[Image: ") || content.includes("[File: ");
+}
+
+const INTERRUPTED_ATTACHMENT_MESSAGE =
+  "This message was interrupted. Attach your files again and send a new message.";
+
 type AgentSessionScreenProps = {
   sessionId?: string;
   /** Absent when the conversation is the Chat tab's root screen. */
@@ -285,6 +315,9 @@ export function AgentSessionScreen({
   const [task, setTask] = useState<AgentTaskDto | null>(null);
   const [draft, setDraft] = useState("");
   const [running, setRunning] = useState(false);
+  const runningRef = useRef(false);
+  const [loadingTask, setLoadingTask] = useState(Boolean(sessionId));
+  const [taskLoadFailed, setTaskLoadFailed] = useState(false);
   const [stage, setStage] = useState<AgentLiteStatusDto | null>(null);
   // The reply as it is being written. Rendered as a live assistant bubble and
   // cleared by the done event, which carries the persisted message.
@@ -309,6 +342,11 @@ export function AgentSessionScreen({
   const [dictating, setDictating] = useState(false);
   const knownIdsRef = useRef<Set<string> | null>(null);
   const taskIdRef = useRef<string | undefined>(sessionId);
+  const taskRevisionRef = useRef(0);
+  const loadRequestRef = useRef(0);
+  const mountedRef = useRef(true);
+  const currentSessionRef = useRef(sessionId);
+  currentSessionRef.current = sessionId;
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // Whether the reader is at (or near) the newest message. Auto-scroll only
   // follows new content while pinned, so scrolling up to reread history is
@@ -324,16 +362,74 @@ export function AgentSessionScreen({
   const lastStepKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      loadRequestRef.current += 1;
+    };
+  }, []);
+
+  const loadTask = useCallback(async () => {
     if (!sessionId) return;
-    getAgentTask(sessionId)
-      .then((loaded) => {
-        setTask(loaded);
-        // Restore the model this session last ran with, so reopening a chat
-        // keeps its model rather than snapping back to the global default.
-        if (loaded.model) setModel(loaded.model);
-      })
-      .catch((err: unknown) => setError(messageFromError(err)));
+    const request = ++loadRequestRef.current;
+    taskIdRef.current = sessionId;
+    const isCurrent = () =>
+      mountedRef.current &&
+      request === loadRequestRef.current &&
+      currentSessionRef.current === sessionId;
+    setLoadingTask(true);
+    setTaskLoadFailed(false);
+    try {
+      const loaded = await getAgentTask(sessionId);
+      if (!isCurrent()) return;
+      setTask(loaded);
+      taskIdRef.current = loaded.id;
+      const awaitingReply = loaded.messages.at(-1)?.role === "user";
+      const active = awaitingReply && ["queued", "running", "paused"].includes(loaded.status);
+      runningRef.current = active;
+      setRunning(active);
+      const missingAttachments = hasAttachmentMarkers(loaded.messages.at(-1)?.content ?? "");
+      setCanRetry(awaitingReply && loaded.status === "failed" && !missingAttachments);
+      setError(
+        loaded.status === "failed"
+          ? missingAttachments
+            ? t(INTERRUPTED_ATTACHMENT_MESSAGE)
+            : (loaded.lastError ?? null)
+          : null,
+      );
+      if (loaded.model) setModel(loaded.model);
+    } catch (err) {
+      if (!isCurrent()) return;
+      setError(messageFromError(err));
+      setTaskLoadFailed(true);
+    } finally {
+      if (isCurrent()) setLoadingTask(false);
+    }
   }, [sessionId]);
+
+  const refreshAfterFailure = useCallback((taskId: string) => {
+    const revision = taskRevisionRef.current;
+    const session = currentSessionRef.current;
+    void getAgentTask(taskId)
+      .then((loaded) => {
+        if (
+          !mountedRef.current ||
+          revision !== taskRevisionRef.current ||
+          currentSessionRef.current !== session ||
+          taskIdRef.current !== taskId
+        )
+          return;
+        setTask(loaded);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    // A newly created task is already in memory. Reloading it here could
+    // overwrite a reply that arrives before the history request resolves.
+    if (sessionId && taskIdRef.current === sessionId && task) return;
+    void loadTask();
+  }, [loadTask, sessionId, task]);
 
   useEffect(() => {
     fetchMediaCatalog()
@@ -343,7 +439,7 @@ export function AgentSessionScreen({
 
   useEffect(() => {
     const unlistenStatus = listen<AgentLiteStatusDto>(AGENT_LITE_STATUS_EVENT, (event) => {
-      if (event.payload.taskId !== taskIdRef.current) return;
+      if (!mountedRef.current || event.payload.taskId !== taskIdRef.current) return;
       // A soft tick per stage change: the phone reports progress in the hand
       // without the screen (a stage repeat stays silent).
       const stepKey = `${event.payload.stage}|${event.payload.detail ?? ""}`;
@@ -351,6 +447,8 @@ export function AgentSessionScreen({
         lastStepKeyRef.current = stepKey;
         hapticSelection();
       }
+      runningRef.current = true;
+      setRunning(true);
       setStage(event.payload);
       setSteps((prev) => {
         const last = prev.at(-1);
@@ -363,18 +461,34 @@ export function AgentSessionScreen({
     const unlistenDelta = listen<{ taskId: string; text: string }>(
       AGENT_LITE_DELTA_EVENT,
       (event) => {
-        if (event.payload.taskId !== taskIdRef.current) return;
+        if (!mountedRef.current || event.payload.taskId !== taskIdRef.current) return;
         setStreamed((current) => current + event.payload.text);
       },
     );
     const unlistenDone = listen<AgentTaskDto>(AGENT_LITE_DONE_EVENT, (event) => {
-      if (event.payload.id !== taskIdRef.current) return;
+      if (!mountedRef.current || event.payload.id !== taskIdRef.current) return;
+      taskRevisionRef.current += 1;
+      loadRequestRef.current += 1;
+      setLoadingTask(false);
+      setTaskLoadFailed(false);
       lastStepKeyRef.current = null;
       setTask(event.payload);
       setStage(null);
       setSteps([]);
       setStreamed("");
+      runningRef.current = false;
       setRunning(false);
+      const missingAttachments =
+        retryAttachmentsRef.current.length === 0 &&
+        hasAttachmentMarkers(event.payload.messages.at(-1)?.content ?? "");
+      setCanRetry(event.payload.status === "failed" && !missingAttachments);
+      setError(
+        event.payload.status === "failed"
+          ? missingAttachments
+            ? t(INTERRUPTED_ATTACHMENT_MESSAGE)
+            : (event.payload.lastError ?? null)
+          : null,
+      );
       // Fire the "reply is ready" haptic here, off the canonical completion
       // signal, rather than off the invoke resolving: it lands reliably even
       // if the reply reached us through the event first. Errors are signalled
@@ -523,7 +637,17 @@ export function AgentSessionScreen({
 
   const send = useCallback(async () => {
     const content = draft.trim();
-    if ((!content && attachments.length === 0) || running) return;
+    if (
+      (!content && attachments.length === 0) ||
+      runningRef.current ||
+      loadingTask ||
+      taskLoadFailed
+    )
+      return;
+    runningRef.current = true;
+    taskRevisionRef.current += 1;
+    const submittedDraft = draft;
+    let persistedTaskId: string | undefined;
     // Persisted history keeps a readable marker per attachment; the payloads
     // ride along for this turn only.
     const markers = attachments
@@ -531,6 +655,7 @@ export function AgentSessionScreen({
       .join(" ");
     const stored = [content, markers].filter(Boolean).join("\n") || markers;
     const turnAttachments = attachments;
+    retryAttachmentsRef.current = turnAttachments;
     setDraft("");
     setAttachments([]);
     setError(null);
@@ -561,6 +686,7 @@ export function AgentSessionScreen({
         });
         setTask(current);
       }
+      persistedTaskId = current.id;
       // An image turn routes to a vision-capable model even when the chosen
       // chat model is text-only, so attaching a photo just works.
       const turnModel = resolveTurnModel({
@@ -581,34 +707,45 @@ export function AgentSessionScreen({
     } catch (err) {
       hapticNotify("error");
       setError(messageFromError(err));
-      if (taskIdRef.current) {
+      if (persistedTaskId) {
         // The message is persisted but unanswered: offer a re-run (which can
         // use a freshly chosen model), keeping this turn's attachment payloads.
         retryAttachmentsRef.current = turnAttachments;
         setCanRetry(true);
-        getAgentTask(taskIdRef.current)
-          .then(setTask)
-          .catch(() => undefined);
+        refreshAfterFailure(persistedTaskId);
       } else {
-        // Task creation itself failed, so nothing was persisted. Restore the
-        // composer so the user's message and attachments are never lost.
-        setDraft(content);
-        setAttachments(turnAttachments);
+        // A failed write in an EXISTING chat is just as unsaved as a failed
+        // new chat. Preserve any next draft entered while the write waited.
+        setDraft((current) => (current ? `${submittedDraft}\n${current}` : submittedDraft));
+        setAttachments((current) => [...turnAttachments, ...current]);
       }
     } finally {
+      runningRef.current = false;
       setRunning(false);
       setStage(null);
       setSteps([]);
       setStreamed("");
     }
-  }, [draft, attachments, running, task, model, models, onSessionCreated]);
+  }, [
+    draft,
+    attachments,
+    loadingTask,
+    taskLoadFailed,
+    task,
+    model,
+    models,
+    onSessionCreated,
+    refreshAfterFailure,
+  ]);
 
   // Re-run the last (failed) turn without retyping. The message is already
   // persisted, so this only re-issues the run — and it uses the CURRENT model,
   // so switching the picker then retrying continues the chat on another model.
   const retryTurn = useCallback(async () => {
     const taskId = taskIdRef.current;
-    if (!taskId || running) return;
+    if (!taskId || runningRef.current) return;
+    runningRef.current = true;
+    taskRevisionRef.current += 1;
     setError(null);
     setCanRetry(false);
     setStreamed("");
@@ -634,26 +771,27 @@ export function AgentSessionScreen({
       hapticNotify("error");
       setError(messageFromError(err));
       setCanRetry(true);
-      getAgentTask(taskId)
-        .then(setTask)
-        .catch(() => undefined);
+      refreshAfterFailure(taskId);
     } finally {
+      runningRef.current = false;
       setRunning(false);
       setStage(null);
       setSteps([]);
       setStreamed("");
     }
-  }, [running, model, models]);
+  }, [model, models, refreshAfterFailure]);
 
   const stageLabel = stageText(stage?.stage ?? "thinking");
   // Prefer the catalog's display name ("Claude Opus 4.7") over the raw id.
   const activeModelLabel =
-    models.find((entry) => entry.id === model)?.name || shortModelLabel(model) || "Default model";
+    models.find((entry) => entry.id === model)?.name ||
+    shortModelLabel(model) ||
+    t("Default model");
 
   return (
     <div className="mobile-screen-root mobile-chat">
       <StackHeader
-        title={task?.title.trim() || "New chat"}
+        title={task?.title.trim() || t("New chat")}
         onBack={onBack}
         backLabel={t("Chats")}
         trailing={
@@ -693,7 +831,8 @@ export function AgentSessionScreen({
         }
       />
       <div className="mobile-chat-scroll" ref={scrollRef} onScroll={handleScroll}>
-        {!task?.messages.length && !running ? (
+        {loadingTask ? <Spinner aria-label={t("Loading")} /> : null}
+        {!task?.messages.length && !running && !loadingTask && !taskLoadFailed ? (
           <div className="mobile-chat-hero">
             <span className="mobile-chat-hero-mark" aria-hidden>
               <BrandGradientMark />
@@ -706,7 +845,7 @@ export function AgentSessionScreen({
              * capability. These name what it can actually do now: read a note
              * in full, search the web, and write back. */}
             <div className="mobile-chat-suggestions">
-              {SUGGESTIONS.map((suggestion) => (
+              {suggestions().map((suggestion) => (
                 <button
                   key={suggestion}
                   type="button"
@@ -788,7 +927,11 @@ export function AgentSessionScreen({
         {error ? (
           <div className="mobile-chat-error" role="alert">
             <p className="mobile-dictation-error">{error}</p>
-            {canRetry ? (
+            {taskLoadFailed ? (
+              <button type="button" className="mobile-chat-retry" onClick={() => void loadTask()}>
+                {t("Try again")}
+              </button>
+            ) : canRetry ? (
               <button type="button" className="mobile-chat-retry" onClick={() => void retryTurn()}>
                 {t("Try again")}
               </button>
@@ -818,7 +961,7 @@ export function AgentSessionScreen({
                 key={`${entry.name}-${index}`}
                 type="button"
                 className="mobile-chat-attachment"
-                aria-label={`Remove ${entry.name}`}
+                aria-label={t("Remove {name}", { name: entry.name })}
                 onClick={() => setAttachments((current) => current.filter((_, i) => i !== index))}
               >
                 {entry.kind === "image" ? (
@@ -894,7 +1037,7 @@ export function AgentSessionScreen({
               type="button"
               className="mobile-composer-round"
               data-active={dictating ? "true" : undefined}
-              aria-label={dictating ? "Stop dictation" : "Dictate"}
+              aria-label={dictating ? t("Stop dictation") : t("Dictate")}
               onClick={() => void toggleDictation()}
             >
               <IconMicrophone size={17} />
@@ -903,7 +1046,12 @@ export function AgentSessionScreen({
               type="button"
               className="mobile-chat-send"
               aria-label={t("Send")}
-              disabled={(!draft.trim() && attachments.length === 0) || running}
+              disabled={
+                (!draft.trim() && attachments.length === 0) ||
+                running ||
+                loadingTask ||
+                taskLoadFailed
+              }
               onClick={() => void send()}
             >
               <IconArrowUp size={18} />
@@ -919,7 +1067,7 @@ export function AgentSessionScreen({
             name: entry.name,
             subtitle:
               entry.supportsVision || entry.traits?.some((trait) => trait.includes("vision"))
-                ? "vision · reads images"
+                ? t("Vision · reads images")
                 : undefined,
           }))}
           selectedId={model}
@@ -939,20 +1087,19 @@ function shortModelLabel(modelId: string): string {
   return modelId.length > 18 ? `${modelId.slice(0, 17)}…` : modelId;
 }
 
-const STAGE_TEXT: Record<string, string> = {
-  "searching-notes": "Searching your notes",
-  "searching-web": "Searching the web",
-  "searching-memory": "Recalling your memories",
-  "searching-places": "Finding places",
-  "searching-calendar": "Checking your calendar",
-  "reading-note": "Reading a note",
-  "writing-note": "Writing to your notes",
-  remembering: "Remembering that",
-  "reading-page": "Reading a page",
-};
-
 function stageText(stage: AgentLiteStatusDto["stage"]): string {
-  return STAGE_TEXT[stage] ?? "Thinking";
+  const labels: Record<string, string> = {
+    "searching-notes": t("Searching your notes"),
+    "searching-web": t("Searching the web"),
+    "searching-memory": t("Recalling your memories"),
+    "searching-places": t("Finding places"),
+    "searching-calendar": t("Checking your calendar"),
+    "reading-note": t("Reading a note"),
+    "writing-note": t("Writing to your notes"),
+    remembering: t("Remembering that"),
+    "reading-page": t("Reading a page"),
+  };
+  return labels[stage] ?? t("Thinking");
 }
 
 /** Copies a finished reply to the clipboard, with a brief confirmation. */
@@ -977,7 +1124,7 @@ function CopyReplyButton({ text }: { text: string }) {
       aria-label={t("Copy reply")}
     >
       {copied ? <IconCheckmark1Small size={13} /> : <IconClipboard size={13} />}
-      {copied ? "Copied" : "Copy"}
+      {copied ? t("Copied") : t("Copy")}
     </button>
   );
 }
@@ -1015,25 +1162,20 @@ async function downscaleImageFile(file: File, maxDim = 2048): Promise<string> {
 /** Time-of-day greeting in the device language (French or English). */
 /** Openers for an empty chat. Each one exercises a different tool, so the
  * first reply also teaches what the assistant reaches for. */
-const SUGGESTIONS = [
-  "Summarise my last meeting",
-  "What did I work on this week?",
-  "Remember that I prefer short replies",
-];
+function suggestions(): string[] {
+  return [
+    t("Summarise my last meeting"),
+    t("What did I work on this week?"),
+    t("Remember that I prefer short replies"),
+  ];
+}
 
 function greeting(): string {
   const hour = new Date().getHours();
-  const french = (navigator.language || "").toLowerCase().startsWith("fr");
-  if (french) {
-    if (hour < 5) return "Bonne nuit";
-    if (hour < 12) return "Bonjour";
-    if (hour < 18) return "Bon après-midi";
-    return "Bonsoir";
-  }
-  if (hour < 5) return "Good night";
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
+  if (hour < 5) return t("Good night");
+  if (hour < 12) return t("Good morning");
+  if (hour < 18) return t("Good afternoon");
+  return t("Good evening");
 }
 
 /** Progressive reveal of a fresh reply — the backend is not streaming, so the

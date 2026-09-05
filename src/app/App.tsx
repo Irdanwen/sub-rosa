@@ -10,6 +10,7 @@ import { EASE_OUT } from "../lib/motion";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { BrandMark } from "../components/brand/Marks";
+import { useDesktopBootstrap } from "./useDesktopBootstrap";
 import { StartupFailure } from "../components/brand/StartupFailure";
 import { CarpeDiemGate } from "../components/carpe-diem/CarpeDiemGate";
 import { RailSwitchBanner } from "../components/carpe-diem/RailSwitchBanner";
@@ -65,7 +66,6 @@ import { Spinner } from "../components/ui/Spinner";
 import {
   assignNoteToFolder,
   assignSessionToFolder,
-  bootstrapApp,
   checkRecordingSourceReadiness,
   createFolder,
   createNote,
@@ -139,12 +139,7 @@ import {
   setAgentHudEnabled,
   type AgentHudVisibilityChangedDetail,
 } from "../lib/agent-hud-settings";
-import type {
-  BootstrapResponse,
-  NoteDto,
-  RecordingStatusDto,
-  HermesSessionInfo,
-} from "../lib/tauri";
+import type { NoteDto, RecordingStatusDto, HermesSessionInfo } from "../lib/tauri";
 import type {
   NoteListItemDto,
   RecordingSourceMode,
@@ -242,7 +237,6 @@ export function App() {
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
   const [sidebarResizing, setSidebarResizing] = useState(false);
   const [sidebarTransition, setSidebarTransition] = useState<"none" | "smooth">("none");
-  const [bootstrapped, setBootstrapped] = useState(false);
   // macOS launches on a fresh agent session. The Windows installer does not
   // bundle Hermes yet, so Windows starts on meeting notes instead of promising
   // a turnkey agent runtime.
@@ -506,6 +500,11 @@ export function App() {
   // the permission prompts while it's on screen.
   const appBlocked =
     carpeDiemLoading || !!carpeDiemError || carpeDiemRequired || onboardingRequired;
+  const { bootstrapped, bootstrapError, retryBootstrap } = useDesktopBootstrap(
+    appBlocked,
+    dispatch,
+    setActiveView,
+  );
   const publishAgentMenuBarState = useCallback(() => {
     void emitAgentMenuBarState(
       buildAgentMenuBarState({
@@ -1587,39 +1586,6 @@ export function App() {
     void dictationHelperCommand({ type: "get_permission_status" }).catch(() => undefined);
   }, []);
 
-  useEffect(() => {
-    if (appBlocked) return;
-    bootstrapApp()
-      .then(async (payload) => {
-        const seeded = withFakeRecovery(payload);
-        dispatch({ type: "bootstrapLoaded", payload: seeded.payload });
-        if (seeded.fakeNote) {
-          dispatch({ type: "noteLoaded", note: seeded.fakeNote });
-          // The fake-recovery dev flow inspects the notes list, so it skips
-          // the agent landing.
-          setActiveView("notes");
-          setBootstrapped(true);
-          return;
-        }
-        // The app lands on the agent view, but a note is still selected
-        // up-front: the menu-bar meeting-start event records into the
-        // selected note without any further user input.
-        if (seeded.payload.notes.length === 0) {
-          const note = await createNote(undefined);
-          dispatch({ type: "noteLoaded", note });
-          setBootstrapped(true);
-          return;
-        }
-        const firstNoteId = seeded.payload.notes[0]?.id;
-        if (firstNoteId) {
-          const note = await getNote(firstNoteId);
-          dispatch({ type: "noteLoaded", note });
-        }
-        setBootstrapped(true);
-      })
-      .catch((err: unknown) => setError(messageFromError(err)));
-  }, [appBlocked]);
-
   // Probe with "microphonePlusSystem" on mount so sourceReadiness always
   // has the system source. Onboarding's permissions screen normally fires
   // the native TCC prompt in context; for users who skipped that step the
@@ -2696,7 +2662,7 @@ export function App() {
 
   // Blank-window guard (#853): if the sidecar probe stalled or errored,
   // surface a retryable card instead of an empty shell.
-  if (carpeDiemError) {
+  if (carpeDiemError || (!appBlocked && bootstrapError)) {
     return (
       <main className="account-gate-shell">
         <div
@@ -2705,7 +2671,10 @@ export function App() {
           data-tauri-drag-region
           onPointerDown={handleTitlebarPointerDown}
         />
-        <StartupFailure message={carpeDiemError} onRetry={refreshCarpeDiem} />
+        <StartupFailure
+          message={carpeDiemError ?? bootstrapError ?? ""}
+          onRetry={carpeDiemError ? refreshCarpeDiem : retryBootstrap}
+        />
       </main>
     );
   }
@@ -2807,7 +2776,7 @@ export function App() {
       <button
         type="button"
         className="chrome-sidebar-toggle"
-        aria-label={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+        aria-label={sidebarCollapsed ? t("Show sidebar") : t("Hide sidebar")}
         aria-pressed={sidebarCollapsed}
         onClick={() => {
           setSidebarTransition("none");
@@ -3229,7 +3198,7 @@ export function App() {
                 <div className="note-shell">
                   {originFolder ? (
                     <BreadcrumbBar
-                      backLabel={`Back to ${originFolder.name}`}
+                      backLabel={t("Back to {name}", { name: originFolder.name })}
                       onBack={() => {
                         setActiveView("folders");
                         dispatch({
@@ -3572,7 +3541,7 @@ function UpdateRelaunchCard({
         type="button"
         className="update-relaunch-card"
         disabled={relaunching}
-        aria-label={`Relaunch to update to Sub Rosa ${payload.version}`}
+        aria-label={t("Relaunch to update to Sub Rosa {version}", { version: payload.version })}
         onClick={onRelaunch}
       >
         <span className="update-relaunch-mark" aria-hidden>
@@ -3582,7 +3551,7 @@ function UpdateRelaunchCard({
           <span
             className={relaunching ? "update-relaunch-title text-shimmer" : "update-relaunch-title"}
           >
-            {relaunching ? "Relaunching…" : "Relaunch to update"}
+            {relaunching ? t("Relaunching…") : t("Relaunch to update")}
           </span>
           <span className={status ? "update-relaunch-status" : undefined}>{meta}</span>
         </span>
@@ -3628,7 +3597,7 @@ function UpdateStatusCard({
         <button
           type="button"
           className="update-status-close"
-          aria-label={preparing ? "Hide update progress" : "Dismiss update status"}
+          aria-label={preparing ? t("Hide update progress") : t("Dismiss update status")}
           onClick={onDismiss}
         >
           <IconCrossSmall size={12} aria-hidden />
@@ -3783,77 +3752,6 @@ function startingRecordingStatus(
     livePreviewEnabled: false,
     sources,
     warnings: [],
-  };
-}
-
-// Dev-only helper: pass `?fake-recovery=1` in the URL to inject a fake
-// recoverable recording so the inline recovery prompt can be iterated
-// on without crashing a real recording. No-op in production builds.
-function withFakeRecovery(payload: BootstrapResponse): {
-  payload: BootstrapResponse;
-  fakeNote?: NoteDto;
-} {
-  if (!import.meta.env.DEV) return { payload };
-  let enabled = false;
-  try {
-    enabled =
-      new URLSearchParams(window.location.search).get("fake-recovery") === "1" ||
-      window.location.hash.toLowerCase() === "#fake-recovery" ||
-      localStorage.getItem("os-june:dev:fake-recovery") === "1";
-  } catch {
-    return { payload };
-  }
-  if (!enabled) return { payload };
-
-  const noteId = "fake-recovery-note";
-  const sessionId = "fake-recovery-session";
-  const now = new Date().toISOString();
-  const fakeListItem = {
-    id: noteId,
-    title: t("Team sync"),
-    preview: "Recovered from an interrupted recording",
-    processingStatus: "recoverable" as const,
-    folderIds: [],
-    createdAt: now,
-    updatedAt: now,
-  };
-  const fakeNote: NoteDto = {
-    ...fakeListItem,
-    generatedContent: "",
-    editedContent: "",
-  };
-  return {
-    payload: {
-      ...payload,
-      notes: [fakeListItem, ...payload.notes],
-      activeRecoveries: [
-        {
-          sessionId,
-          noteId,
-          sourceMode: "microphonePlusSystem",
-          startedAt: now,
-          partialPathPresent: true,
-          finalPathPresent: false,
-          bytesFound: 2_400_000,
-          sources: [
-            {
-              source: "microphone",
-              partialPathPresent: true,
-              finalPathPresent: false,
-              bytesFound: 1_200_000,
-            },
-            {
-              source: "system",
-              partialPathPresent: true,
-              finalPathPresent: false,
-              bytesFound: 1_200_000,
-            },
-          ],
-        },
-        ...payload.activeRecoveries,
-      ],
-    },
-    fakeNote,
   };
 }
 

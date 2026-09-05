@@ -754,7 +754,7 @@ export function AssembleStudio({
                       className="studio-input"
                       inputMode="decimal"
                       value={String(cut.inSeconds)}
-                      aria-label={`Clip ${index + 1} start seconds`}
+                      aria-label={t("Clip {index} start seconds", { index: index + 1 })}
                       onChange={(event) => {
                         const value = Number(event.target.value.replace(",", "."));
                         patchCut(cut.key, {
@@ -768,9 +768,9 @@ export function AssembleStudio({
                     <input
                       className="studio-input"
                       inputMode="decimal"
-                      placeholder={duration !== undefined ? formatSeconds(duration) : "end"}
+                      placeholder={duration !== undefined ? formatSeconds(duration) : t("end")}
                       value={cut.outSeconds !== undefined ? String(cut.outSeconds) : ""}
-                      aria-label={`Clip ${index + 1} end seconds`}
+                      aria-label={t("Clip {index} end seconds", { index: index + 1 })}
                       onChange={(event) => {
                         const raw = event.target.value.trim();
                         if (!raw) {
@@ -793,7 +793,9 @@ export function AssembleStudio({
           })}
           <Select
             value={null}
-            placeholder={cuts.length > 0 ? "Add another clip" : "Add a clip from your gallery"}
+            placeholder={
+              cuts.length > 0 ? t("Add another clip") : t("Add a clip from your gallery")
+            }
             ariaLabel={t("Add a clip")}
             onChange={(path) => {
               const artifact = galleryVideos.find((entry) => entry.path === path);
@@ -813,7 +815,7 @@ export function AssembleStudio({
         >
           <Select
             value={null}
-            placeholder={loadingProduction ? "Opening..." : "Open a production"}
+            placeholder={loadingProduction ? t("Opening...") : t("Open a production")}
             ariaLabel={t("Open a production")}
             onChange={(runId) => void openProduction(runId)}
             options={productions.map((run) => ({
@@ -825,7 +827,11 @@ export function AssembleStudio({
       ) : null}
       <StudioField
         label={t("Sound")}
-        hint={sounds.length > 0 ? `${sounds.length} on 3 lanes` : "Dialogue, effects, music"}
+        hint={
+          sounds.length > 0
+            ? t("{count} on 3 lanes", { count: sounds.length })
+            : t("Dialogue, effects, music")
+        }
       >
         <div className="studio-cutlist">
           {sounds.map((sound, index) => (
@@ -838,7 +844,7 @@ export function AssembleStudio({
                   <button
                     type="button"
                     className="studio-icon-button"
-                    aria-label={`Remove sound ${index + 1}`}
+                    aria-label={t("Remove sound {index}", { index: index + 1 })}
                     onClick={() =>
                       setSounds((current) => current.filter((entry) => entry.key !== sound.key))
                     }
@@ -853,7 +859,7 @@ export function AssembleStudio({
                   <Select
                     value={sound.lane}
                     placeholder={t("Music")}
-                    ariaLabel={`Sound ${index + 1} lane`}
+                    ariaLabel={t("Sound {index} lane", { index: index + 1 })}
                     onChange={(value) => patchSound(sound.key, { lane: value as AudioLane })}
                     options={AUDIO_LANES.map((lane) => ({ value: lane, label: LANE_LABELS[lane] }))}
                   />
@@ -864,7 +870,7 @@ export function AssembleStudio({
                     className="studio-input"
                     inputMode="decimal"
                     value={String(sound.atSeconds)}
-                    aria-label={`Sound ${index + 1} start seconds`}
+                    aria-label={t("Sound {index} start seconds", { index: index + 1 })}
                     onChange={(event) => {
                       const value = Number(event.target.value.replace(",", "."));
                       patchSound(sound.key, {
@@ -875,7 +881,7 @@ export function AssembleStudio({
                 </label>
               </div>
               <SliderField
-                label={`Sound ${index + 1} level`}
+                label={t("Sound {index} level", { index: index + 1 })}
                 min={0}
                 max={1}
                 step={0.05}
@@ -887,7 +893,9 @@ export function AssembleStudio({
           ))}
           <Select
             value={null}
-            placeholder={sounds.length > 0 ? "Add another sound" : "Add a sound from your gallery"}
+            placeholder={
+              sounds.length > 0 ? t("Add another sound") : t("Add a sound from your gallery")
+            }
             ariaLabel={t("Add a sound")}
             onChange={(path) => {
               const artifact = galleryAudio.find((entry) => entry.path === path);
@@ -961,7 +969,7 @@ export function AssembleStudio({
         disabled={cuts.length === 0 || writingTimeline || timelineBlockers.length > 0}
         onClick={() => void runTimelineExport()}
       >
-        {writingTimeline ? "Writing the timeline..." : "Export timeline"}
+        {writingTimeline ? t("Writing the timeline...") : t("Export timeline")}
       </button>
       <button
         type="button"
@@ -969,7 +977,7 @@ export function AssembleStudio({
         disabled={cuts.length === 0 || judging}
         onClick={() => void runJudge()}
       >
-        {judging ? "Watching it..." : "Review the cut"}
+        {judging ? t("Watching it...") : t("Review the cut")}
       </button>
       {timelineBlockers.length > 0 ? (
         <p className="studio-queue-hint">{timelineBlockers.join(" ")}</p>
@@ -1014,7 +1022,7 @@ export function AssembleStudio({
               className="btn btn-secondary"
               onClick={() => (previewing ? stopPreview() : void playPreview())}
             >
-              {previewing ? "Stop preview" : "Play preview"}
+              {previewing ? t("Stop preview") : t("Play preview")}
             </button>
           </div>
         </div>

@@ -21,7 +21,10 @@ export function FirstNoteStep({
   return (
     <StepCard
       title={t("Your first note")}
-      subtitle={`Everything ${PRODUCT_NAME} does starts from a note. Record a meeting now, or bring in something you already have.`}
+      subtitle={t(
+        "Everything {product} does starts from a note. Record a meeting now, or bring in something you already have.",
+        { product: PRODUCT_NAME },
+      )}
     >
       <div className="onboarding-first-note">
         <button type="button" className="onboarding-choice" onClick={() => onChoose("record")}>

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { CarpeDiemGate } from "../components/carpe-diem/CarpeDiemGate";
 
@@ -65,6 +65,18 @@ describe("the Carpe Diem gate", () => {
     screen.getByRole("button", { name: "Try again" }).click();
     expect(carpeDiemRestartSidecar).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeNull();
+  });
+
+  it("shows a failed restart and lets you retry it without an unhandled rejection", async () => {
+    const { carpeDiemRestartSidecar } = await import("../lib/tauri");
+    vi.mocked(carpeDiemRestartSidecar).mockRejectedValueOnce({ message: "Connection unavailable" });
+    render(<CarpeDiemGate reason="failed" />);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Connection unavailable");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled());
   });
 
   it("does not offer a restart when nothing is configured yet", () => {

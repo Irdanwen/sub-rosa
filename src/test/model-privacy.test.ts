@@ -13,7 +13,7 @@ import type { VeniceModelDto } from "../lib/tauri";
 const model = (partial: Partial<VeniceModelDto>): Partial<VeniceModelDto> => partial;
 
 describe("model privacy labels", () => {
-  it("uses e2ee mode over private — the stronger claim wins", () => {
+  it("keeps the published privacy policy when a capability claims stronger protection", () => {
     expect(
       modelPrivacyBadge({
         privacy: "private",
@@ -21,14 +21,17 @@ describe("model privacy labels", () => {
         capabilities: ["e2ee"],
       }),
     ).toMatchObject({
-      mode: "e2ee",
-      label: "E2EE",
-      description: E2EE_MODEL_DESCRIPTION,
+      mode: "private",
+      label: "Private mode",
+      description: PRIVATE_MODEL_DESCRIPTION,
     });
   });
 
   it("reads the e2ee signal from privacy, traits, or capabilities", () => {
-    expect(modelPrivacyBadge({ privacy: "e2ee", traits: [] })?.mode).toBe("e2ee");
+    expect(modelPrivacyBadge({ privacy: "e2ee", traits: [] })).toMatchObject({
+      mode: "e2ee",
+      description: E2EE_MODEL_DESCRIPTION,
+    });
     expect(modelPrivacyBadge({ privacy: "", traits: ["e2ee"] })?.mode).toBe("e2ee");
     expect(modelPrivacyBadge({ privacy: "", traits: [], capabilities: ["E2EE"] })?.mode).toBe(
       "e2ee",
@@ -53,6 +56,22 @@ describe("model privacy labels", () => {
 
   it("does not label models without a privacy signal", () => {
     expect(modelPrivacyBadge({ privacy: "OpenAI", traits: ["prompt"] })).toBe(undefined);
+  });
+
+  it("never upgrades anonymized requests from stale private or encrypted traits", () => {
+    expect(
+      modelPrivacyBadge({
+        privacy: " Anonymized ",
+        traits: ["private", "e2ee"],
+        capabilities: ["e2ee"],
+      }),
+    ).toMatchObject({ mode: "anonymous" });
+  });
+
+  it("makes no claim for an unknown explicit policy, even with private traits", () => {
+    expect(
+      modelPrivacyBadge({ privacy: "new-policy", traits: ["private", "e2ee"] }),
+    ).toBeUndefined();
   });
 });
 

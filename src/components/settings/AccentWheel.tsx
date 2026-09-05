@@ -190,7 +190,7 @@ export function AccentWheel({
         className="accent-wheel-trigger"
         aria-haspopup="true"
         aria-expanded={phase === "open"}
-        aria-label={`Accent color: ${selected.label}. Change`}
+        aria-label={t("Accent color: {label}. Change", { label: accentLabel(selected.id) })}
         style={{ "--swatch": selected.value } as CSSProperties}
         onClick={() => (mounted ? close() : open())}
       />
@@ -208,7 +208,7 @@ export function AccentWheel({
               role="tooltip"
               style={{ ...tipAnchor(tipWedge.mid), transform: tipXform }}
             >
-              {tipWedge.preset.label}
+              {accentLabel(tipWedge.preset.id)}
             </span>
           ) : null}
           <svg
@@ -249,7 +249,7 @@ export function AccentWheel({
                   d={d}
                   role="radio"
                   aria-checked={preset.id === ringValue}
-                  aria-label={preset.label}
+                  aria-label={accentLabel(preset.id)}
                   tabIndex={0}
                   style={{ "--i": i, "--wedge": preset.value } as CSSProperties}
                   onClick={() => pick(preset.id)}
@@ -271,4 +271,17 @@ export function AccentWheel({
       ) : null}
     </div>
   );
+}
+
+function accentLabel(id: BrandId) {
+  const labels: Record<BrandId, string> = {
+    rose: t("Rose"),
+    clay: t("Clay"),
+    amber: t("Amber"),
+    gold: t("Gold"),
+    sage: t("Sage"),
+    blue: t("Blue"),
+    plum: t("Plum"),
+  };
+  return labels[id];
 }

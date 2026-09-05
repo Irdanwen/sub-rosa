@@ -63,7 +63,7 @@ export function DictationPracticeStep({
             className="btn btn-secondary"
             onClick={() => void (capture.capturing ? capture.cancel() : capture.start())}
           >
-            {capture.capturing ? "Cancel" : "Change key"}
+            {capture.capturing ? t("Cancel") : t("Change key")}
           </button>
         </div>
         <div className="onboarding-practice-card">

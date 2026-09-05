@@ -40,7 +40,7 @@ export function FolderScreen({
   return (
     <div className="mobile-screen-root">
       <StackHeader
-        title={folder?.name ?? "Folder"}
+        title={folder?.name ?? t("Folder")}
         onBack={onBack}
         backLabel={t("Notes")}
         trailing={
@@ -58,11 +58,11 @@ export function FolderScreen({
         {notes.length === 0 ? (
           <EmptyState
             icon={isArchiveFolder ? <IconArrowInbox size={28} /> : <IconFolder2 size={28} />}
-            title={isArchiveFolder ? "Nothing archived" : "No notes in this folder"}
+            title={isArchiveFolder ? t("Nothing archived") : t("No notes in this folder")}
             description={
               isArchiveFolder
-                ? "Swipe a note left in the main list to archive it."
-                : "New notes land here when you assign them to this folder."
+                ? t("Swipe a note left in the main list to archive it.")
+                : t("New notes land here when you assign them to this folder.")
             }
           />
         ) : (
@@ -74,7 +74,7 @@ export function FolderScreen({
                   <SwipeableRow
                     actions={[
                       {
-                        label: isArchiveFolder ? "Restore" : "Remove",
+                        label: isArchiveFolder ? t("Restore") : t("Remove"),
                         tone: "neutral",
                         onAction: () => onRemoveFromFolder(note.id),
                       },

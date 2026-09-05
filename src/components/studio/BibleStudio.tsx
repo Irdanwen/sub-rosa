@@ -276,7 +276,7 @@ export function BibleStudio({
           type="text"
           value={draft.name}
           aria-label={t("Name")}
-          placeholder={draft.kind === "location" ? "The alley" : "Nera"}
+          placeholder={draft.kind === "location" ? t("The alley") : t("Nera")}
           onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
         />
       </StudioField>
@@ -312,7 +312,7 @@ export function BibleStudio({
       disabled={!draft.name.trim() || busy}
       onClick={() => void save()}
     >
-      {draft.id ? "Save changes" : "Add to the bible"}
+      {draft.id ? t("Save changes") : t("Add to the bible")}
     </button>
   );
 
@@ -323,7 +323,7 @@ export function BibleStudio({
       {attaching ? (
         <GalleryPicker
           offerBible={false}
-          title={`Pick a ${BIBLE_ROLE_LABELS[attaching.role].toLowerCase()}`}
+          title={t("Pick a {role}", { role: BIBLE_ROLE_LABELS[attaching.role].toLowerCase() })}
           description={t("Anything already in your gallery can stand in for this.")}
           kinds={attaching.role === "voice" ? ["speech", "music"] : ["image"]}
           resolveData={false}
@@ -391,7 +391,7 @@ export function BibleStudio({
                           disabled={auditioning !== undefined}
                           onClick={() => void audition(entry)}
                         >
-                          {auditioning === entry.id ? "Auditioning..." : "Audition voices"}
+                          {auditioning === entry.id ? t("Auditioning...") : t("Audition voices")}
                         </button>
                       ) : null}
                       <button
@@ -436,7 +436,7 @@ export function BibleStudio({
                             <img src={artifactSrc(artifact)} alt={reference.label || entry.name} />
                           ) : (
                             <span className="bible-ref-file">
-                              {artifact ? artifact.fileName : "missing"}
+                              {artifact ? artifact.fileName : t("missing")}
                             </span>
                           )}
                           <span className="bible-ref-role">
@@ -446,7 +446,10 @@ export function BibleStudio({
                             <button
                               type="button"
                               className="studio-icon-button"
-                              aria-label={`Move ${entry.name} reference ${index + 1} earlier`}
+                              aria-label={t("Move {name} reference {index} earlier", {
+                                name: entry.name,
+                                index: index + 1,
+                              })}
                               disabled={index === 0}
                               onClick={() => void move(entry, reference.id, -1)}
                             >
@@ -456,7 +459,10 @@ export function BibleStudio({
                               <button
                                 type="button"
                                 className="studio-icon-button"
-                                aria-label={`Redraw ${entry.name} reference ${index + 1}`}
+                                aria-label={t("Redraw {name} reference {index}", {
+                                  name: entry.name,
+                                  index: index + 1,
+                                })}
                                 disabled={drawing !== undefined}
                                 onClick={() => void draw(entry, reference.role, reference.id)}
                               >
@@ -466,7 +472,10 @@ export function BibleStudio({
                             <button
                               type="button"
                               className="studio-icon-button"
-                              aria-label={`Remove ${entry.name} reference ${index + 1}`}
+                              aria-label={t("Remove {name} reference {index}", {
+                                name: entry.name,
+                                index: index + 1,
+                              })}
                               onClick={async () => {
                                 await removeBibleRef(reference.id);
                                 await reload();
@@ -483,12 +492,12 @@ export function BibleStudio({
                         value={null}
                         placeholder={
                           drawing?.startsWith(`${entry.id}:`)
-                            ? "Drawing..."
+                            ? t("Drawing...")
                             : referenceCost === undefined
-                              ? "Draw a reference"
-                              : `Draw a reference (${referenceCost} cr)`
+                              ? t("Draw a reference")
+                              : t("Draw a reference ({credits} cr)", { credits: referenceCost })
                         }
-                        ariaLabel={`Draw a reference for ${entry.name}`}
+                        ariaLabel={t("Draw a reference for {name}", { name: entry.name })}
                         onChange={(role) => void draw(entry, role as BibleRole)}
                         options={ROLES_BY_KIND[entry.kind]
                           .filter(canGenerate)
@@ -497,7 +506,7 @@ export function BibleStudio({
                       <Select
                         value={null}
                         placeholder={t("Use one I have")}
-                        ariaLabel={`Attach a reference to ${entry.name}`}
+                        ariaLabel={t("Attach a reference to {name}", { name: entry.name })}
                         onChange={(role) =>
                           setAttaching({ entryId: entry.id, role: role as BibleRole })
                         }

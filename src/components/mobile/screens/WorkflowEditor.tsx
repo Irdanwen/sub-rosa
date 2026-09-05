@@ -187,7 +187,7 @@ export function WorkflowEditor({
       } catch (err) {
         hapticNotify("error");
         if (err instanceof WorkflowRunError) setResults(new Map(err.results));
-        setError(err instanceof Error ? err.message : "The workflow failed.");
+        setError(err instanceof Error ? t(err.message) : t("The workflow failed."));
       } finally {
         setRunning(false);
       }
@@ -242,7 +242,7 @@ export function WorkflowEditor({
                   className="mobile-workflow-step-title"
                   value={node.label}
                   placeholder={schema.label}
-                  aria-label={`${schema.label} name`}
+                  aria-label={t("{step} name", { step: schema.label })}
                   disabled={running}
                   onChange={(event) => rename(node.id, event.target.value)}
                 />
@@ -333,10 +333,12 @@ export function WorkflowEditor({
       {estimate.credits > 0 || estimate.metered > 0 ? (
         <p className="mobile-workflow-cost">
           {estimate.credits > 0
-            ? `One run: about ${formatCredits(estimate.credits)}${
-                estimate.metered > 0 ? " plus usage" : ""
-              }`
-            : "One run: usage priced"}
+            ? estimate.metered > 0
+              ? t("One run: about {credits} plus usage", {
+                  credits: formatCredits(estimate.credits),
+                })
+              : t("One run: about {credits}", { credits: formatCredits(estimate.credits) })
+            : t("One run: usage priced")}
         </p>
       ) : null}
 
@@ -347,7 +349,7 @@ export function WorkflowEditor({
           onClick={persist}
           disabled={running || steps.length === 0}
         >
-          {savedTick ? "Saved" : "Save"}
+          {savedTick ? t("Saved") : t("Save")}
         </button>
         <button
           type="button"
@@ -355,7 +357,7 @@ export function WorkflowEditor({
           onClick={run}
           disabled={running || steps.length === 0}
         >
-          {running ? <Spinner /> : "Run flow"}
+          {running ? <Spinner /> : t("Run flow")}
         </button>
       </div>
 
@@ -421,14 +423,21 @@ export function WorkflowEditor({
  * with the template runner, whose runs spend just the same. */
 export function runCostDescription(estimate: WorkflowCostEstimate): string {
   if (estimate.credits > 0 && estimate.metered > 0) {
-    return `One run is expected to spend at least ${formatCredits(estimate.credits)}; ${
-      estimate.metered
-    } step${estimate.metered === 1 ? " is" : "s are"} usage priced on top.`;
+    return estimate.metered === 1
+      ? t("One run is expected to spend at least {credits}; 1 step is usage priced on top.", {
+          credits: formatCredits(estimate.credits),
+        })
+      : t(
+          "One run is expected to spend at least {credits}; {count} steps are usage priced on top.",
+          { credits: formatCredits(estimate.credits), count: estimate.metered },
+        );
   }
   if (estimate.credits > 0) {
-    return `One run is expected to spend about ${formatCredits(estimate.credits)}.`;
+    return t("One run is expected to spend about {credits}.", {
+      credits: formatCredits(estimate.credits),
+    });
   }
-  return "This flow bills by usage; no flat figure is published for its steps.";
+  return t("This flow bills by usage; no flat figure is published for its steps.");
 }
 
 /**
@@ -586,7 +595,7 @@ function ParamField({
           className="mobile-workflow-select mobile-workflow-picker"
           onClick={() => setPickerOpen(true)}
         >
-          {label || "Choose from the gallery"}
+          {label || t("Choose from the gallery")}
         </button>
         {pickerOpen ? (
           <ArtifactSheet
@@ -621,7 +630,7 @@ function ParamField({
           className="mobile-workflow-select mobile-workflow-picker"
           onClick={() => setPickerOpen(true)}
         >
-          {label || "Choose a note"}
+          {label || t("Choose a note")}
         </button>
         {pickerOpen ? (
           <NoteSheet
@@ -649,7 +658,7 @@ function ParamField({
           className="mobile-workflow-select mobile-workflow-picker"
           onClick={() => setPickerOpen(true)}
         >
-          {currentName || current || "Choose a model"}
+          {currentName || current || t("Choose a model")}
         </button>
         {pickerOpen ? (
           <ModelSheet
@@ -687,7 +696,7 @@ function ParamField({
           className="mobile-workflow-select mobile-workflow-picker"
           onClick={() => setPickerOpen(true)}
         >
-          {current || "Choose"}
+          {current || t("Choose")}
         </button>
         {pickerOpen ? (
           <OptionSheet
@@ -783,10 +792,10 @@ function ParamField({
             }}
           >
             {placed
-              ? `${INPUT_MARKER} is placed`
+              ? t("{marker} is placed", { marker: INPUT_MARKER })
               : textSources.length === 1
-                ? `Insert ${INPUT_MARKER} (${textSources[0]})`
-                : `Insert ${INPUT_MARKER}`}
+                ? t("Insert {marker} ({name})", { marker: INPUT_MARKER, name: textSources[0] })
+                : t("Insert {marker}", { marker: INPUT_MARKER })}
           </button>
         ) : null}
         {param.description ? (
@@ -945,7 +954,9 @@ function NoteSheet({
                   }}
                 >
                   <span>
-                    <span className="mobile-sheet-item-title">{note.title || "Untitled note"}</span>
+                    <span className="mobile-sheet-item-title">
+                      {note.title || t("Untitled note")}
+                    </span>
                     {note.preview ? (
                       <span className="mobile-sheet-item-subtitle">{note.preview}</span>
                     ) : null}

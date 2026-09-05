@@ -136,7 +136,7 @@ export function ToolsetsView({
             />
           ) : isErrored ? (
             <ErrorState
-              message={state.error ?? "Could not load toolsets from Hermes."}
+              message={state.error ?? t("Could not load your toolsets.")}
               retryable={state.retryable}
               onRetry={state.refresh}
             />

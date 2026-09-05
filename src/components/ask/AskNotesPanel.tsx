@@ -210,7 +210,9 @@ export function AskNotesPanel({
             aria-expanded={showSent}
             onClick={() => setShowSent((value) => !value)}
           >
-            {showSent ? "Hide what was sent" : `What was sent (${result.sent.length} passages)`}
+            {showSent
+              ? t("Hide what was sent")
+              : t("What was sent ({count} passages)", { count: result.sent.length })}
           </button>
           <form
             className="ask-panel-follow-up"

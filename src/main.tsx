@@ -1,6 +1,7 @@
 // First, before any component module evaluates: see i18n-boot.
 import "./lib/i18n-boot";
-import React, { Suspense, lazy } from "react";
+import React from "react";
+import { recoverableView } from "./app/recoverable-view";
 import ReactDOM from "react-dom/client";
 import { Agentation } from "agentation";
 import { useLocaleVersion } from "./lib/i18n-react";
@@ -70,21 +71,30 @@ if (import.meta.env.DEV) {
 // stacks instead of the desktop sidebar + tab strip. Same IPC, same reducer,
 // same feature components underneath. Each shell is its own chunk, so the
 // desktop never parses the phone's screens and the phone never parses the
-// desktop's; the boot curtain in index.html covers the load.
-const App = lazy(() => import("./app/App").then((module) => ({ default: module.App })));
-const MobileApp = lazy(() =>
-  import("./app/mobile/MobileApp").then((module) => ({ default: module.MobileApp })),
+// desktop's; the boot curtain covers the first paint, then a loading state
+// remains visible for any longer chunk load.
+const App = recoverableView(
+  async () => {
+    const module = await import("./app/App");
+    return { default: module.App };
+  },
+  {
+    fullScreen: true,
+  },
+);
+const MobileApp = recoverableView(
+  async () => {
+    const module = await import("./app/mobile/MobileApp");
+    return { default: module.MobileApp };
+  },
+  { fullScreen: true },
 );
 const Shell = isMobilePlatform() ? MobileApp : App;
 
 /** Re-mounts the shell when the language changes, so every sentence follows. */
 function LocaleRoot() {
   const version = useLocaleVersion();
-  return (
-    <Suspense fallback={null}>
-      <Shell key={version} />
-    </Suspense>
-  );
+  return <Shell key={version} />;
 }
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
@@ -95,8 +105,9 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 );
 
 // Drop the curtain painted by index.html, one frame after the shell has had a
-// chance to paint over it. Two frames, not zero: removing it in the same tick
-// as `render` uncovers a root React has committed but the compositor has not
+// chance to paint over it (or show its loading state). Two frames, not zero:
+// removing it in the same tick as `render` uncovers a root React has committed
+// but the compositor has not
 // drawn yet, which is the flash the curtain exists to prevent.
 requestAnimationFrame(() =>
   requestAnimationFrame(() => {

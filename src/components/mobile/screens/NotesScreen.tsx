@@ -211,11 +211,11 @@ export function NotesScreen({
         {visibleNotes.length === 0 ? (
           <EmptyState
             icon={query ? <IconMagnifyingGlass size={28} /> : <IconMicrophone size={28} />}
-            title={query ? "No matches" : "No notes yet"}
+            title={query ? t("No matches") : t("No notes yet")}
             description={
               query
-                ? "Try a different search."
-                : "Tap the record button to capture your first meeting."
+                ? t("Try a different search.")
+                : t("Tap the record button to capture your first meeting.")
             }
           />
         ) : (
@@ -254,7 +254,7 @@ export function NotesScreen({
       </button>
       {rowMenu ? (
         <ActionSheet
-          title={rowMenu.title.trim() || "New note"}
+          title={rowMenu.title.trim() || t("New note")}
           subtitle={t("What would you like to do with this note?")}
           actions={[
             // Only what this screen can actually do. Moving to a project lives

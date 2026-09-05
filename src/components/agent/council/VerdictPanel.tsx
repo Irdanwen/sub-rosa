@@ -169,7 +169,7 @@ export function VerdictPanel({
       {latest?.status === "failed" ? (
         <div className="council-notice council-failed" role="alert">
           <h3 className="council-notice-title">{t("The reading stopped")}</h3>
-          <p>{latest.lastError ?? "Something went wrong."}</p>
+          <p>{latest.lastError ?? t("Something went wrong.")}</p>
           <div className="council-actions">
             <button
               type="button"
@@ -282,9 +282,9 @@ function VerdictRound({ verdict }: { verdict: CouncilVerdict }) {
 }
 
 function findingLabel(kind: string): string {
-  if (kind === "letter") return "Satisfied in appearance only";
-  if (kind === "skipped") return "Asked for and not done";
-  return "Changed without being asked";
+  if (kind === "letter") return t("Satisfied in appearance only");
+  if (kind === "skipped") return t("Asked for and not done");
+  return t("Changed without being asked");
 }
 
 function StatusIcon({ status }: { status: CriterionStatus }) {

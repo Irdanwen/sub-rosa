@@ -90,12 +90,12 @@ export function MicTestControl({
 
 function micTestDescription(state: MicTestState) {
   if (state === "recording") {
-    return "Recording 5-second sample.";
+    return t("Recording 5-second sample.");
   }
   if (state === "ready") {
-    return "Sample ready. Check volume.";
+    return t("Sample ready. Check volume.");
   }
-  return "Check your microphone.";
+  return t("Check your microphone.");
 }
 
 function formatMicTestTime(milliseconds: number, durationSeconds: number) {

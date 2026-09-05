@@ -356,10 +356,14 @@ export function CouncilSitting({
           <WorkingDots />
           <span>
             {waiting.length > 0
-              ? `Reading it independently. ${waiting.length} of ${
-                  cycle.seats.filter((seat) => seat.role === "position").length
-                } still to answer. They run at once, so the round takes as long as the slowest of them.`
-              : "Merging what they said, then the objection seat gets its turn."}
+              ? t(
+                  "Reading it independently. {count} of {count2} still to answer. They run at once, so the round takes as long as the slowest of them.",
+                  {
+                    count: waiting.length,
+                    count2: cycle.seats.filter((seat) => seat.role === "position").length,
+                  },
+                )
+              : t("Merging what they said, then the objection seat gets its turn.")}
           </span>
         </p>
       ) : null}
@@ -373,8 +377,14 @@ export function CouncilSitting({
           role="status"
         >
           {silence >= STALLED_AFTER_S
-            ? `Nothing has come back for ${formatDuration(silence)}. A seat has most likely stopped answering — dismissing this ends the sitting, and nothing further is charged.`
-            : `Still waiting after ${formatDuration(silence)}. Some models take a while on a long request; this is not yet unusual.`}
+            ? t(
+                "Nothing has come back for {value}. A seat has most likely stopped answering. Dismissing this ends the sitting, and nothing further is charged.",
+                { value: formatDuration(silence) },
+              )
+            : t(
+                "Still waiting after {value}. Some models take a while on a long request; this is not yet unusual.",
+                { value: formatDuration(silence) },
+              )}
         </p>
       ) : null}
 
@@ -502,8 +512,10 @@ export function CouncilSitting({
         <>
           <p className="council-status" role="status">
             {cycle.status === "settled"
-              ? "This mandate has been judged. It is what the reading answered."
-              : "The agent is working under this mandate. It is what the reading at the end will answer."}
+              ? t("This mandate has been judged. It is what the reading answered.")
+              : t(
+                  "The agent is working under this mandate. It is what the reading at the end will answer.",
+                )}
           </p>
           <MandateEditor mandate={mandate} disabled onChange={() => {}} />
         </>
@@ -512,7 +524,7 @@ export function CouncilSitting({
       {cycle.status === "failed" ? (
         <div className="council-notice council-failed" role="alert">
           <h3 className="council-notice-title">{t("The sitting stopped")}</h3>
-          <p>{cycle.lastError ?? "Something went wrong."}</p>
+          <p>{cycle.lastError ?? t("Something went wrong.")}</p>
         </div>
       ) : null}
 

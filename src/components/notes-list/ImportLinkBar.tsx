@@ -202,7 +202,7 @@ function IngestRow({ ingest, onDiscard }: { ingest: IngestDto; onDiscard: () => 
       <button
         type="button"
         className="import-link-dismiss"
-        aria-label={failed ? "Dismiss" : "Stop fetching"}
+        aria-label={failed ? t("Dismiss") : t("Stop fetching")}
         onClick={onDiscard}
       >
         <IconCrossMedium size={13} />

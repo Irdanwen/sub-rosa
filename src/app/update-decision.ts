@@ -1,3 +1,4 @@
+import { t } from "../lib/i18n";
 // DownloadEvent is owned by the IPC boundary (lib/updater.ts); re-exported here
 // so existing importers keep working without app/ reaching back up into lib/.
 import type { DownloadEvent } from "../lib/updater";
@@ -189,5 +190,5 @@ export function releaseNoteLines(notes: string | undefined, limit = 4): string[]
 function messageFromUnknown(error: unknown) {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
-  return "Update failed.";
+  return t("Update failed.");
 }

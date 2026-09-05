@@ -105,7 +105,7 @@ export function NoteDetailScreen({
               disabled={!note}
               onClick={() => {
                 if (!note) return;
-                const title = note.title.trim() || "New note";
+                const title = note.title.trim() || t("New note");
                 const body = note.editedContent ?? note.generatedContent ?? "";
                 void shareText(`# ${title}\n\n${body}`).catch(() => undefined);
               }}

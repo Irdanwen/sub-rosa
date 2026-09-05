@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconPause } from "central-icons-filled/IconPause";
 import { IconPlay } from "central-icons-filled/IconPlay";
 import { IconStop } from "central-icons-filled/IconStop";
@@ -48,8 +49,8 @@ export function RecorderBar({ status, onPause, onResume, onDone }: RecorderBarPr
         className="recorder-stop"
         disabled={!controlsEnabled}
         onClick={() => onDone(status.sessionId)}
-        aria-label={controlsEnabled ? "Done" : "Working"}
-        title={controlsEnabled ? "Done" : "Working"}
+        aria-label={controlsEnabled ? t("Done") : t("Working")}
+        title={controlsEnabled ? t("Done") : t("Working")}
       >
         <IconStop size={14} />
       </button>

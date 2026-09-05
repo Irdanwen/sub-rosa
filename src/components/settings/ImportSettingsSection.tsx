@@ -56,8 +56,17 @@ export function ImportSettingsSection() {
               <h3 className="settings-row-title">{t("Use yt-dlp for streaming platform pages")}</h3>
               <p className="settings-row-description">
                 {status?.available
-                  ? `Found at ${status.path}${status.version ? `, version ${status.version}` : ""}. Sub Rosa never installs or updates it.`
-                  : "Not found on this machine. Sub Rosa never installs it, so this stays off until you have it."}
+                  ? status.version
+                    ? t(
+                        "Found at {path}, version {version}. Sub Rosa never installs or updates it.",
+                        { path: status.path ?? t("Unknown path"), version: status.version },
+                      )
+                    : t("Found at {path}. Sub Rosa never installs or updates it.", {
+                        path: status.path ?? t("Unknown path"),
+                      })
+                  : t(
+                      "Not found on this machine. Sub Rosa never installs it, so this stays off until you have it.",
+                    )}
               </p>
             </div>
             <div className="settings-row-control">
@@ -74,12 +83,16 @@ export function ImportSettingsSection() {
             <div className="settings-row">
               <div className="settings-row-info">
                 <h3 className="settings-row-title">
-                  {status.available ? "Captions first" : "Nothing to use yet"}
+                  {status.available ? t("Captions first") : t("Nothing to use yet")}
                 </h3>
                 <p className="settings-row-description">
                   {status.available
-                    ? "When a page publishes captions they are read instead of transcribing the audio: no transcription cost, and the chapters keep their timings."
-                    : "The switch is on but yt-dlp is not installed, so platform links are still refused."}
+                    ? t(
+                        "When a page publishes captions they are read instead of transcribing the audio: no transcription cost, and the chapters keep their timings.",
+                      )
+                    : t(
+                        "The switch is on but yt-dlp is not installed, so platform links are still refused.",
+                      )}
                 </p>
               </div>
             </div>

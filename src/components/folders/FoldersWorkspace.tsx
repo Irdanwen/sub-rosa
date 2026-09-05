@@ -279,7 +279,7 @@ function FolderList({
           if (!deleteFolderTarget) return;
           return onDeleteFolder(deleteFolderTarget.id, false);
         }}
-        title={`Delete "${deleteFolderTarget?.name ?? ""}"?`}
+        title={t('Delete "{name}"?', { name: deleteFolderTarget?.name ?? "" })}
         description={t("Meeting notes and sessions in this project stay in your library.")}
         confirmLabel={t("Delete project")}
         destructive
@@ -336,7 +336,7 @@ function SortDropdown({ value, onChange }: { value: SortKey; onChange: (value: S
         onClick={() => setOpen((prev) => !prev)}
       >
         <IconSortArrowUpDown size={13} />
-        <span>{current?.label ?? "Sort"}</span>
+        <span>{current?.label ?? t("Sort")}</span>
         <IconChevronDownSmall size={12} />
       </button>
       {open ? (
@@ -425,7 +425,7 @@ function FolderCard({
       data-drop-active={dropActive || undefined}
       role="button"
       tabIndex={0}
-      aria-label={`Open ${folder.name}`}
+      aria-label={t("Open {name}", { name: folder.name })}
       onClick={onOpen}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -474,7 +474,9 @@ function FolderCard({
             <span className="folder-card-footer-icon" aria-hidden>
               <IconNoteText size={11} />
             </span>
-            {folderNotes.length} {folderNotes.length === 1 ? "meeting note" : "meeting notes"}
+            {folderNotes.length === 1
+              ? t("1 meeting note")
+              : t("{count} meeting notes", { count: folderNotes.length })}
           </span>
           {folderSessions.length > 0 ? (
             <>
@@ -483,7 +485,9 @@ function FolderCard({
                 <span className="folder-card-footer-icon" aria-hidden>
                   <IconBubble3 size={11} />
                 </span>
-                {folderSessions.length} {folderSessions.length === 1 ? "session" : "sessions"}
+                {folderSessions.length === 1
+                  ? t("1 session")
+                  : t("{count} sessions", { count: folderSessions.length })}
               </span>
             </>
           ) : null}
@@ -495,7 +499,7 @@ function FolderCard({
         ref={menuButtonRef}
         type="button"
         className="folder-card-menu"
-        aria-label={`Actions for ${folder.name}`}
+        aria-label={t("Actions for {name}", { name: folder.name })}
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -673,7 +677,7 @@ function FolderDetail({
   return (
     <section className="folder-detail" aria-label={folder.name}>
       <BreadcrumbBar
-        backLabel={folderBackTarget?.label ?? "Back to projects"}
+        backLabel={folderBackTarget?.label ?? t("Back to projects")}
         onBack={folderBackTarget?.onBack ?? (() => onSelectFolder(undefined))}
         items={[
           { label: t("Projects"), onClick: () => onSelectFolder(undefined) },
@@ -683,7 +687,7 @@ function FolderDetail({
           <button
             type="button"
             className="ghost-icon-button"
-            aria-label={`Actions for ${folder.name}`}
+            aria-label={t("Actions for {name}", { name: folder.name })}
             aria-haspopup="menu"
             aria-expanded={menu !== null}
             onClick={(event) => {
@@ -756,14 +760,18 @@ function FolderDetail({
             <span className="folder-detail-meta-pill" aria-hidden>
               <IconNoteText size={12} />
             </span>
-            {folderNotes.length} {folderNotes.length === 1 ? "meeting note" : "meeting notes"}
+            {folderNotes.length === 1
+              ? t("1 meeting note")
+              : t("{count} meeting notes", { count: folderNotes.length })}
             {folderSessions.length > 0 ? (
               <>
                 <span className="metadata-dot" aria-hidden />
                 <span className="folder-detail-meta-pill" aria-hidden>
                   <IconBubble3 size={12} />
                 </span>
-                {folderSessions.length} {folderSessions.length === 1 ? "session" : "sessions"}
+                {folderSessions.length === 1
+                  ? t("1 session")
+                  : t("{count} sessions", { count: folderSessions.length })}
               </>
             ) : null}
             <span className="metadata-dot" aria-hidden />
@@ -873,7 +881,7 @@ function FolderDetail({
         open={deleteOpen}
         onClose={() => setDeleteOpen(false)}
         onConfirm={() => onDeleteFolder(folder.id, false)}
-        title={`Delete "${folder.name}"?`}
+        title={t('Delete "{name}"?', { name: folder.name })}
         description={t("Meeting notes and sessions in this project stay in your library.")}
         confirmLabel={t("Delete project")}
         destructive
@@ -960,7 +968,7 @@ function FolderSessionRow({
   onRemoveFromFolder: () => void;
 }) {
   const [menu, setMenu] = useState<{ right: number; top: number } | null>(null);
-  const title = session.title?.trim() || session.preview?.trim() || "Untitled session";
+  const title = session.title?.trim() || session.preview?.trim() || t("Untitled session");
 
   useEffect(() => {
     if (!menu) return;
@@ -988,7 +996,7 @@ function FolderSessionRow({
           <span className="folder-note-body">
             <span className="folder-note-title">{title}</span>
             <span className="folder-note-subtitle">
-              {session.preview?.trim() || "No messages yet"}
+              {session.preview?.trim() || t("No messages yet")}
             </span>
           </span>
         </button>
@@ -997,7 +1005,7 @@ function FolderSessionRow({
           <button
             type="button"
             className="folder-note-menu"
-            aria-label={`Actions for ${title}`}
+            aria-label={t("Actions for {name}", { name: title })}
             aria-haspopup="menu"
             aria-expanded={menu !== null}
             onClick={(event) => {
@@ -1247,9 +1255,11 @@ function FolderNoteRow({
             <IconNoteText size={14} />
           </span>
           <span className="folder-note-body">
-            <span className="folder-note-title">{note.title.trim() || "New note"}</span>
+            <span className="folder-note-title">{note.title.trim() || t("New note")}</span>
             <span className="folder-note-subtitle">
-              {note.preview.trim() ? note.preview : `Updated ${formatRelative(note.updatedAt)}`}
+              {note.preview.trim()
+                ? note.preview
+                : t("Updated {when}", { when: formatRelative(note.updatedAt) })}
             </span>
           </span>
         </button>
@@ -1258,7 +1268,9 @@ function FolderNoteRow({
           <button
             type="button"
             className="folder-note-menu"
-            aria-label={`Actions for ${note.title.trim() || "this meeting note"}`}
+            aria-label={t("Actions for {name}", {
+              name: note.title.trim() || t("this meeting note"),
+            })}
             aria-haspopup="menu"
             aria-expanded={menu !== null}
             onClick={(event) => {
@@ -1327,7 +1339,7 @@ function FolderNoteRow({
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
         onConfirm={onDelete}
-        title={`Delete "${note.title.trim() || "New note"}"?`}
+        title={t('Delete "{name}"?', { name: note.title.trim() || t("New note") })}
         description={t("This cannot be undone.")}
         confirmLabel={t("Delete meeting note")}
         destructive
@@ -1379,10 +1391,10 @@ function formatRelative(iso: string): string {
   const minute = 60_000;
   const hour = 60 * minute;
   const day = 24 * hour;
-  if (diff < minute) return "just now";
-  if (diff < hour) return `${Math.floor(diff / minute)}m ago`;
-  if (diff < day) return `${Math.floor(diff / hour)}h ago`;
-  if (diff < 7 * day) return `${Math.floor(diff / day)}d ago`;
+  if (diff < minute) return t("just now");
+  if (diff < hour) return t("{count}m ago", { count: Math.floor(diff / minute) });
+  if (diff < day) return t("{count}h ago", { count: Math.floor(diff / hour) });
+  if (diff < 7 * day) return t("{count}d ago", { count: Math.floor(diff / day) });
   return new Date(iso).toLocaleDateString(intlLocale(), {
     month: "short",
     day: "numeric",

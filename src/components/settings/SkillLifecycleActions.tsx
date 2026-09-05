@@ -9,7 +9,6 @@ import { IconTrashCan } from "central-icons/IconTrashCan";
 import { useState } from "react";
 import {
   availableActions,
-  lifecycleActionLabel,
   type HermesSkillInfo,
   type SkillActionAvailability,
   type SkillLifecycleAction,
@@ -130,7 +129,8 @@ function LifecycleActionButton({
     return (
       <span className="skill-lifecycle-action-failed" role="alert">
         <IconExclamationCircle size={13} ariaHidden />
-        {actionState?.error ?? `Could not ${action} ${skill.name}.`}
+        {actionState?.error ??
+          t("The action on {name} could not be completed.", { name: skill.name })}
         <button
           type="button"
           className="skill-lifecycle-retry"
@@ -152,7 +152,7 @@ function LifecycleActionButton({
         <button
           type="button"
           className="skill-lifecycle-clear"
-          aria-label={`Dismiss ${action} result`}
+          aria-label={t("Dismiss action result")}
           onClick={onClear}
         >
           {t("Dismiss")}
@@ -215,7 +215,7 @@ function ConfirmAction({
     <div
       className="skill-lifecycle-confirm"
       role="dialog"
-      aria-label={`Confirm ${availability.action}`}
+      aria-label={t("Confirm {action}", { action: lifecycleActionLabel(availability.action) })}
       aria-modal="false"
     >
       <p className="skill-lifecycle-confirm-message">
@@ -233,9 +233,9 @@ function ConfirmAction({
           onClick={onConfirm}
         >
           {availability.action === "delete"
-            ? "Delete"
+            ? t("Delete")
             : availability.action === "uninstall"
-              ? "Uninstall"
+              ? t("Uninstall")
               : lifecycleActionLabel(availability.action)}
         </button>
       </div>
@@ -247,18 +247,18 @@ function ConfirmAction({
 function runningLabel(action: SkillLifecycleAction, progress?: number): string {
   const verb =
     action === "update"
-      ? "Updating"
+      ? t("Updating")
       : action === "uninstall"
-        ? "Uninstalling"
+        ? t("Uninstalling")
         : action === "delete"
-          ? "Deleting"
+          ? t("Deleting")
           : action === "audit"
-            ? "Auditing"
+            ? t("Auditing")
             : action === "check"
-              ? "Checking"
+              ? t("Checking")
               : action === "reset"
-                ? "Resetting"
-                : "Restoring";
+                ? t("Resetting")
+                : t("Restoring");
   return progress !== undefined ? `${verb} ${Math.round(progress)}%` : `${verb}...`;
 }
 
@@ -266,18 +266,37 @@ function runningLabel(action: SkillLifecycleAction, progress?: number): string {
 function doneLabel(action: SkillLifecycleAction): string {
   switch (action) {
     case "update":
-      return "Updated";
+      return t("Updated");
     case "uninstall":
-      return "Uninstalled";
+      return t("Uninstalled");
     case "delete":
-      return "Deleted";
+      return t("Deleted");
     case "audit":
-      return "Audited";
+      return t("Audited");
     case "check":
-      return "Checked";
+      return t("Checked");
     case "reset":
-      return "Reset";
+      return t("Reset");
     case "restore":
-      return "Restored";
+      return t("Restored");
+  }
+}
+
+function lifecycleActionLabel(action: SkillLifecycleAction): string {
+  switch (action) {
+    case "check":
+      return t("Check for updates");
+    case "update":
+      return t("Update");
+    case "audit":
+      return t("Audit");
+    case "uninstall":
+      return t("Uninstall");
+    case "delete":
+      return t("Delete");
+    case "reset":
+      return t("Reset to shipped version");
+    case "restore":
+      return t("Restore from upstream");
   }
 }

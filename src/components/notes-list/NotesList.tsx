@@ -421,11 +421,15 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
           await onDeleteNotes(selectedNoteIds);
           resetSelection();
         }}
-        title={`Delete ${selectedCount} ${selectedCount === 1 ? "note" : "notes"}?`}
+        title={
+          selectedCount === 1
+            ? t("Delete 1 note?")
+            : t("Delete {count} notes?", { count: selectedCount })
+        }
         description={t(
           "This cannot be undone. Audio, transcripts, and generated notes for these notes will be removed.",
         )}
-        confirmLabel={selectedCount === 1 ? "Delete note" : "Delete notes"}
+        confirmLabel={selectedCount === 1 ? t("Delete note") : t("Delete notes")}
         destructive
       />
     </section>
@@ -491,7 +495,7 @@ function AllNoteRow({
           <input
             type="checkbox"
             checked={checked}
-            aria-label={`Select ${title}`}
+            aria-label={t("Select {name}", { name: title })}
             onChange={onToggleSelected}
           />
           <span className="folder-note-select-box" aria-hidden>
@@ -512,7 +516,7 @@ function AllNoteRow({
           <button
             type="button"
             className="folder-note-menu"
-            aria-label={`Actions for ${title}`}
+            aria-label={t("Actions for {name}", { name: title })}
             aria-haspopup="menu"
             aria-expanded={menu !== null}
             onClick={(event) => {
@@ -566,7 +570,7 @@ function AllNoteRow({
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
         onConfirm={onDelete}
-        title={`Delete "${title}"?`}
+        title={t('Delete "{name}"?', { name: title })}
         description={t("This cannot be undone.")}
         confirmLabel={t("Delete note")}
         destructive

@@ -68,8 +68,8 @@ export function ProposalCard({ block }: { block: ProposalChatBlock }) {
   };
 
   return (
-    <section className="chat-block" aria-label={block.title || "Suggested follow-ups"}>
-      <h4 className="chat-block-title">{block.title || "Suggested follow-ups"}</h4>
+    <section className="chat-block" aria-label={block.title || t("Suggested follow-ups")}>
+      <h4 className="chat-block-title">{block.title || t("Suggested follow-ups")}</h4>
       <ul className="chat-block-rows">
         {block.actions.map((action) => {
           const detail = done[action.id];
@@ -97,7 +97,7 @@ export function ProposalCard({ block }: { block: ProposalChatBlock }) {
                     disabled={busy !== null}
                     onClick={() => void run(action)}
                   >
-                    {busy === action.id ? <DotSpinner /> : "Add"}
+                    {busy === action.id ? <DotSpinner /> : t("Add")}
                   </button>
                 )}
               </div>

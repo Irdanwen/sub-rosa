@@ -36,12 +36,14 @@ vi.mock("../components/studio/WorkflowStudio", () => ({
 beforeEach(() => window.localStorage.clear());
 
 describe("the studio's tabs", () => {
-  it("puts Film first, because it is what the other tabs are for", () => {
+  it("opens the choice of creative outcomes for a first visit", () => {
     render(<StudioView />);
     expect(screen.queryByText("Films")).not.toBeInTheDocument();
     expect(screen.getByText("Film")).toBeInTheDocument();
     expect(screen.getByText("Bible")).toBeInTheDocument();
-    // And it is where somebody with no saved choice lands.
+    expect(screen.getByRole("heading", { name: "What will you make?" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Create an image/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Film" }));
     expect(screen.getByText("film tab")).toBeInTheDocument();
   });
 

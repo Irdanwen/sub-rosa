@@ -64,6 +64,8 @@ import {
 import { PROCESSING_DEMO_NOTE_ID, shouldPollProcessingStatus } from "../processing-polling";
 import { createInitialState, notesReducer } from "../state/app-state";
 import { useMobileNav } from "./nav";
+import { useMobileBootstrap } from "./useMobileBootstrap";
+import { Spinner } from "../../components/ui/Spinner";
 
 /** Just under the shell's own patience with the sidecar, so the wait is named
  * before it is abandoned. Keep below SIDECAR_STATUS_TIMEOUT_MS in App.tsx. */
@@ -281,13 +283,9 @@ export function MobileApp() {
     !carpeDiemLoading && (!carpeDiem.hasApiKey || carpeDiem.status === "failed");
 
   // --- Bootstrap once the gate clears. ---
-  const bootstrapped = useRef(false);
+  const bootstrap = useMobileBootstrap(carpeDiemLoading || carpeDiemRequired, dispatch);
   useEffect(() => {
-    if (carpeDiemLoading || carpeDiemRequired || bootstrapped.current) return;
-    bootstrapped.current = true;
-    bootstrapApp()
-      .then((payload) => dispatch({ type: "bootstrapLoaded", payload }))
-      .catch((err: unknown) => setError(messageFromError(err)));
+    if (carpeDiemLoading || carpeDiemRequired) return;
     checkRecordingSourceReadiness("microphoneOnly")
       .then(setSourceReadiness)
       .catch(() => undefined);
@@ -720,6 +718,29 @@ export function MobileApp() {
     );
   }
 
+  if (bootstrap.loading) {
+    return (
+      <div className="mobile-shell view-recovery view-recovery-full">
+        <Spinner aria-label={t("Loading notes")} />
+      </div>
+    );
+  }
+  if (bootstrap.error) {
+    return (
+      <div className="mobile-shell view-recovery view-recovery-full">
+        <div className="view-recovery-content">
+          <div role="alert">
+            <h1>{t("Your notes could not be opened")}</h1>
+            <p>{bootstrap.error}</p>
+          </div>
+          <button type="button" className="btn btn-secondary" onClick={bootstrap.retry}>
+            {t("Try again")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // --- Screen selection ---
   const top = nav.top;
   let screen: React.ReactNode;
@@ -947,7 +968,7 @@ function ShellLoading() {
         <BrandGradientMark />
       </span>
       <p className="mobile-shell-loading-line" aria-live="polite">
-        {slow ? "Still starting the local engine." : "Starting up"}
+        {slow ? t("Still starting the local engine.") : t("Starting up")}
       </p>
     </div>
   );

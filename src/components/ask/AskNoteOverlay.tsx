@@ -42,7 +42,7 @@ export function AskNoteOverlay({
           className="ask-panel ask-prompt"
           role="dialog"
           aria-modal="true"
-          aria-label={`Ask ${name}`}
+          aria-label={t("Ask {name}", { name })}
           tabIndex={-1}
           onSubmit={(event) => {
             event.preventDefault();

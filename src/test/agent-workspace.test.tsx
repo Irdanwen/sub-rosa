@@ -16,7 +16,7 @@ import {
 } from "../components/agent/AgentWorkspace";
 import {
   ANONYMOUS_MODEL_DESCRIPTION,
-  E2EE_MODEL_DESCRIPTION,
+  PRIVATE_MODEL_DESCRIPTION,
   PROVIDER_MODEL_SETTINGS_CHANGED_EVENT,
 } from "../lib/model-privacy";
 import { AGENT_SESSION_STATUS_EVENT, type AgentSessionStatusDetail } from "../lib/agent-events";
@@ -2461,7 +2461,7 @@ describe("AgentWorkspace", () => {
     expect(screen.queryByText("Private mode")).not.toBeInTheDocument();
   });
 
-  it("labels e2ee models over private and explains the mode on hover", async () => {
+  it("honors the published private policy over e2ee capabilities and explains it on hover", async () => {
     mocks.providerModelSettings.mockResolvedValue({
       settings: {
         transcriptionProvider: "venice",
@@ -2489,13 +2489,13 @@ describe("AgentWorkspace", () => {
     const user = userEvent.setup();
     render(<AgentWorkspace initialSession={existingSession} />);
 
-    const badge = await screen.findByText("E2EE");
-    expect(screen.queryByText("Private mode")).not.toBeInTheDocument();
+    const badge = await screen.findByText("Private mode");
+    expect(screen.queryByText("E2EE")).not.toBeInTheDocument();
 
     // The hover callout replaces the native title tooltip.
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     await user.hover(badge);
-    expect(await screen.findByRole("tooltip")).toHaveTextContent(E2EE_MODEL_DESCRIPTION);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(PRIVATE_MODEL_DESCRIPTION);
     await user.unhover(badge);
     await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
   });

@@ -56,7 +56,7 @@ export function EditFolderDialog({ open, onClose, folder, onSave }: EditFolderDi
             className="primary-action primary-solid"
             disabled={submitting || name.trim().length === 0}
           >
-            {submitting ? "Saving…" : "Save"}
+            {submitting ? t("Saving…") : t("Save")}
           </button>
         </>
       }

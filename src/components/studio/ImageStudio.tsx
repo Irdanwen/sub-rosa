@@ -178,7 +178,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
           const first = settled.find(
             (result): result is PromiseRejectedResult => result.status === "rejected",
           );
-          throw first?.reason ?? new MediaError("The generation failed.", { status: 200 });
+          throw first?.reason ?? new MediaError(t("The generation failed."), { status: 200 });
         }
         if (failed.length > 0) {
           setError(
@@ -210,7 +210,9 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
       }
       await registerResults(images, model.id, usedPrompt, format);
     } catch (generateError) {
-      setError(generateError instanceof Error ? generateError.message : "The generation failed.");
+      setError(
+        generateError instanceof Error ? generateError.message : t("The generation failed."),
+      );
     } finally {
       setBusy(false);
     }
@@ -251,7 +253,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
       setEditSources([`data:image/png;base64,${image}`]);
       setEditPrompt("");
     } catch (editError) {
-      setError(editError instanceof Error ? editError.message : "The edit failed.");
+      setError(editError instanceof Error ? editError.message : t("The edit failed."));
     } finally {
       setBusy(false);
     }
@@ -276,7 +278,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
       }
       await registerResults([response.bodyBase64], "upscaler", "Upscale");
     } catch (upscaleError) {
-      setError(upscaleError instanceof Error ? upscaleError.message : "The upscale failed.");
+      setError(upscaleError instanceof Error ? upscaleError.message : t("The upscale failed."));
     } finally {
       setBusy(false);
     }
@@ -290,7 +292,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
       const image = await removeBackground(sourceDataUri);
       await registerResults([image], "background-remover", "Background removed");
     } catch (cutoutError) {
-      setError(cutoutError instanceof Error ? cutoutError.message : "The cutout failed.");
+      setError(cutoutError instanceof Error ? cutoutError.message : t("The cutout failed."));
     } finally {
       setBusy(false);
     }
@@ -426,7 +428,11 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
           ) : null}
           <StudioField
             label={t("Compare models")}
-            hint={comparing ? `${compareModels.length + 1} render side by side` : "Optional"}
+            hint={
+              comparing
+                ? t("{count} render side by side", { count: compareModels.length + 1 })
+                : t("Optional")
+            }
           >
             <div className="studio-upload">
               {compareModels.length > 0 ? (
@@ -436,7 +442,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
                       key={entry.id}
                       type="button"
                       className="studio-compare-chip"
-                      aria-label={`Stop comparing with ${entry.name}`}
+                      aria-label={t("Stop comparing with {model}", { model: entry.name })}
                       onClick={() =>
                         setCompareIds((current) => current.filter((id) => id !== entry.id))
                       }
@@ -522,8 +528,8 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
             label={t("Source images")}
             hint={
               editSources.length > 1
-                ? `Combining ${editSources.length}, in this order`
-                : `Add up to ${MAX_COMPOSE_IMAGES} to combine`
+                ? t("Combining {count}, in this order", { count: editSources.length })
+                : t("Add up to {count} to combine", { count: MAX_COMPOSE_IMAGES })
             }
           >
             <div className="studio-upload">
@@ -531,7 +537,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
                 <div className="studio-edit-sources">
                   {editSources.map((source, index) => (
                     <div key={`${index}-${source.slice(-24)}`} className="studio-edit-source">
-                      <img src={source} alt={`Source ${index + 1}`} />
+                      <img src={source} alt={t("Source {count}", { count: index + 1 })} />
                       {editSources.length > 1 ? (
                         <span className="studio-edit-source-index">
                           {t("Image {number}", { number: index + 1 })}
@@ -540,7 +546,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
                       <button
                         type="button"
                         className="studio-edit-source-remove"
-                        aria-label={`Remove source ${index + 1}`}
+                        aria-label={t("Remove source {count}", { count: index + 1 })}
                         onClick={() =>
                           setEditSources((current) => current.filter((_, i) => i !== index))
                         }
@@ -558,7 +564,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
                     className="btn btn-secondary"
                     onClick={() => editInputRef.current?.click()}
                   >
-                    {editSources.length > 0 ? "Add another image" : "Choose an image"}
+                    {editSources.length > 0 ? t("Add another image") : t("Choose an image")}
                   </button>
                   <button
                     type="button"
@@ -603,8 +609,10 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
               value={editPrompt}
               placeholder={
                 editSources.length > 1
-                  ? "Describe how to combine them, e.g. the jacket from image 2 on the person in image 1"
-                  : "Describe the change"
+                  ? t(
+                      "Describe how to combine them, e.g. the jacket from image 2 on the person in image 1",
+                    )
+                  : t("Describe the change")
               }
               onChange={(event) => setEditPrompt(event.target.value)}
             />
@@ -623,7 +631,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
                   className="btn btn-secondary"
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  {sourceDataUri ? "Replace image" : "Choose an image"}
+                  {sourceDataUri ? t("Replace image") : t("Choose an image")}
                 </button>
                 <button
                   type="button"
@@ -684,16 +692,16 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
       {busy ? <Spinner aria-hidden /> : null}
       <span>
         {busy
-          ? "Working…"
+          ? t("Working…")
           : isGenerate
-            ? "Generate"
+            ? t("Generate")
             : mode === "edit"
               ? editSources.length > 1
-                ? "Combine images"
-                : "Apply edit"
+                ? t("Combine images")
+                : t("Apply edit")
               : mode === "cutout"
-                ? "Remove background"
-                : "Upscale"}
+                ? t("Remove background")
+                : t("Upscale")}
       </span>
       {isGenerate && !busy ? <CostHint credits={totalCost} /> : null}
     </button>
@@ -706,8 +714,10 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
           onClose={() => setPicking(undefined)}
           description={
             picking === "compose"
-              ? "Pick an image you have already produced. It joins the sources in the order you add them."
-              : "Pick an image you have already produced."
+              ? t(
+                  "Pick an image you have already produced. It joins the sources in the order you add them.",
+                )
+              : t("Pick an image you have already produced.")
           }
           onPick={(dataUri) => {
             if (picking === "compose") {

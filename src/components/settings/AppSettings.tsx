@@ -614,7 +614,9 @@ export function AppSettings({
       const next = await setDictationMicrophone(id, name);
       setSettings(next);
       setMicOpen(false);
-      setStatus(name ? `Microphone set to ${name}.` : "Microphone set to auto-detect.");
+      setStatus(
+        name ? t("Microphone set to {name}.", { name }) : t("Microphone set to auto-detect."),
+      );
     } catch (error) {
       setStatus(messageFromError(error));
     }
@@ -715,10 +717,10 @@ export function AppSettings({
       dispatchProviderModelSettingsChanged({ mode, modelId });
       setStatus(
         mode === "transcription"
-          ? "Transcription model updated."
+          ? t("Transcription model updated.")
           : mode === "image"
-            ? "Image model updated."
-            : "Text model updated.",
+            ? t("Image model updated.")
+            : t("Text model updated."),
       );
     } catch (error) {
       setStatus(messageFromError(error));
@@ -742,21 +744,23 @@ export function AppSettings({
       setLanguageOpen(false);
       setStatus(
         language
-          ? `Default transcription language set to ${languageLabel(language)}.`
-          : "Default transcription language set to auto-detect.",
+          ? t("Default transcription language set to {language}.", {
+              language: languageLabel(language),
+            })
+          : t("Default transcription language set to auto-detect."),
       );
     } catch (error) {
       setStatus(messageFromError(error));
     }
   }
 
-  const microphoneName = settings.microphone.name ?? "Auto-detect";
+  const microphoneName = settings.microphone.name ?? t("Auto-detect");
   const microphoneDescription = settings.microphone.id
-    ? "Input device used for dictation."
+    ? t("Input device used for dictation.")
     : defaultMicrophone?.name
-      ? `Auto-detect uses ${defaultMicrophone.name}.`
-      : "Auto-detect uses the current system input.";
-  const microphoneOptions = [{ id: undefined, name: "Auto-detect" }, ...microphones];
+      ? t("Auto-detect uses {name}.", { name: defaultMicrophone.name })
+      : t("Auto-detect uses the current system input.");
+  const microphoneOptions = [{ id: undefined, name: t("Auto-detect") }, ...microphones];
   const selectedMicrophoneIndex = Math.max(
     0,
     microphoneOptions.findIndex((option) => (option.id ?? "") === (settings.microphone.id ?? "")),
@@ -1403,7 +1407,10 @@ export function AppSettings({
                         <InlineNotice
                           aria-label={t("Switch to stable now")}
                           eyebrow={t("Switch to stable now?")}
-                          body={`Installs ${reconcileVersion}, replacing your release candidate build. You'll get ${baseVersion()} when it reaches stable.`}
+                          body={t(
+                            "Installs {reconcileVersion}, replacing your release candidate build. You'll get {version} when it reaches stable.",
+                            { reconcileVersion: reconcileVersion, version: baseVersion() },
+                          )}
                           actions={
                             <>
                               <button
@@ -1634,8 +1641,10 @@ function PermissionsSettingsSection({
       </h2>
       <p className="settings-group-description">
         {macLikePlatform
-          ? "macOS access used for recording audio, pasting dictation, and capturing system sound."
-          : "Access used for recording audio."}
+          ? t(
+              "macOS access used for recording audio, pasting dictation, and capturing system sound.",
+            )
+          : t("Access used for recording audio.")}
       </p>
       <div className="settings-card">
         <div className="settings-rows">
@@ -1703,7 +1712,7 @@ function PermissionRow({
           type="button"
           className="btn btn-secondary"
           disabled={actionDisabled}
-          aria-label={`Manage ${title} permission`}
+          aria-label={t("Manage {title} permission", { title: title })}
           onClick={onManage}
         >
           {t("Manage")}
@@ -1797,7 +1806,7 @@ function ModelRow({
           type="button"
           className="model-summary-button"
           onClick={onOpen}
-          aria-label={`Change ${title.toLowerCase()} model`}
+          aria-label={t("Change {value} model", { value: title.toLowerCase() })}
         >
           <span className="model-summary-logo" aria-hidden>
             <ProviderLogo provider={model.provider} id={model.id} name={model.name} />
@@ -1900,13 +1909,13 @@ function ShortcutRow({
           disabled={disabled}
           onClick={capturing ? onCancel : onChange}
         >
-          {capturing ? "Cancel" : "Change"}
+          {capturing ? t("Cancel") : t("Change")}
         </button>
         {canReset ? (
           <button
             type="button"
             className="btn btn-secondary"
-            aria-label={`Reset ${title} shortcut to default`}
+            aria-label={t("Reset {title} shortcut to default", { title: title })}
             onClick={onReset}
           >
             {t("Reset")}
@@ -1918,7 +1927,7 @@ function ShortcutRow({
 }
 
 function shortcutKindLabel(kind: DictationShortcutKind) {
-  return kind === "toggle" ? "Toggle dictation" : "Push to talk";
+  return kind === "toggle" ? t("Toggle dictation") : t("Push to talk");
 }
 
 function shortcutForKind(settings: DictationSettingsDto, kind: DictationShortcutKind) {

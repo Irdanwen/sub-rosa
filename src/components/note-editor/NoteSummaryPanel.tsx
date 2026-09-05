@@ -173,7 +173,7 @@ export function NoteSummaryPanel({
             onClick={() => void copySummary(summary)}
           >
             <IconClipboard size={13} />
-            {copied ? "Copied" : "Copy"}
+            {copied ? t("Copied") : t("Copy")}
           </button>
           <button type="button" className="primary-action" onClick={() => void start()}>
             <IconRotate size={13} />
@@ -256,10 +256,10 @@ function SummaryProgress({ summary }: { summary: NoteSummaryDto }) {
       <DotSpinner className="note-summary-spinner" />
       <span>
         {merging
-          ? "Putting it together"
+          ? t("Putting it together")
           : total > 1
-            ? `Reading part ${done + 1} of ${total}`
-            : "Reading the recording"}
+            ? t("Reading part {part} of {total}", { part: done + 1, total })
+            : t("Reading the recording")}
       </span>
     </div>
   );
@@ -276,7 +276,7 @@ function SummaryInvitation({
     return (
       <div className="note-summary-empty">
         <IconBookSimple size={22} />
-        <p>{plan.reason ?? "This recording cannot be summarized."}</p>
+        <p>{plan.reason ?? t("This recording cannot be summarized.")}</p>
       </div>
     );
   }
@@ -292,8 +292,15 @@ function SummaryInvitation({
       {plan ? (
         <p className="note-summary-cost">
           {plan.chunkCount > 1
-            ? `About ${formatMinutes(plan.transcriptChars)} of speech, read in ${plan.chunkCount} passes (${plan.modelCalls} model calls).`
-            : `About ${formatMinutes(plan.transcriptChars)} of speech (${plan.modelCalls} model calls).`}
+            ? t("About {duration} of speech, read in {parts} passes ({calls} model calls).", {
+                duration: formatMinutes(plan.transcriptChars),
+                parts: plan.chunkCount,
+                calls: plan.modelCalls,
+              })
+            : t("About {duration} of speech ({calls} model calls).", {
+                duration: formatMinutes(plan.transcriptChars),
+                calls: plan.modelCalls,
+              })}
         </p>
       ) : null}
       <button type="button" className="primary-action primary-solid" onClick={() => void onStart()}>

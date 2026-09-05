@@ -58,7 +58,9 @@ export function StudioScreen() {
     fetchMediaCatalog()
       .then(setCatalog)
       .catch((err: unknown) =>
-        setCatalogError(err instanceof Error ? err.message : "The model catalog is unavailable."),
+        setCatalogError(
+          err instanceof Error ? t(err.message) : t("The model catalog is unavailable."),
+        ),
       );
   }, []);
 
@@ -179,14 +181,14 @@ export function StudioScreen() {
             onClick={() => setMode(entry)}
           >
             {entry === "image"
-              ? "Image"
+              ? t("Image")
               : entry === "video"
-                ? "Video"
+                ? t("Video")
                 : entry === "audio"
-                  ? "Audio"
+                  ? t("Audio")
                   : entry === "flows"
-                    ? "Flows"
-                    : "Library"}
+                    ? t("Flows")
+                    : t("Gallery")}
           </button>
         ))}
       </div>

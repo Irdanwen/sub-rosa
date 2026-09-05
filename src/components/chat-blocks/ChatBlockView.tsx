@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import { IconArrowUpRight } from "central-icons/IconArrowUpRight";
 import { IconGlobe } from "central-icons/IconGlobe";
 import { IconNoteText } from "central-icons/IconNoteText";
@@ -30,7 +31,7 @@ export function ChatBlockView({ block }: { block: ChatBlock }) {
 /** The user's own notes, cited as rows that open the note in the app. */
 function NotesCard({ block }: { block: NotesChatBlock }) {
   return (
-    <section className="chat-block" aria-label={block.title || "From your notes"}>
+    <section className="chat-block" aria-label={block.title || t("From your notes")}>
       {block.title ? <h4 className="chat-block-title">{block.title}</h4> : null}
       <ul className="chat-block-rows">
         {block.notes.map((note) => (
@@ -38,7 +39,7 @@ function NotesCard({ block }: { block: NotesChatBlock }) {
             <button
               type="button"
               className="chat-block-row"
-              title={`Open ${note.title}`}
+              title={t("Open {name}", { name: note.title })}
               onClick={() => requestOpenNoteFromChat(note.id)}
             >
               <span className="chat-block-row-icon" aria-hidden>
@@ -76,7 +77,7 @@ export function ChatBlockSkeleton() {
 
 function LinkPreviewCard({ block }: { block: LinksChatBlock }) {
   return (
-    <section className="chat-block" aria-label={block.title || "Sources"}>
+    <section className="chat-block" aria-label={block.title || t("Sources")}>
       {block.title ? <h4 className="chat-block-title">{block.title}</h4> : null}
       <ul className="chat-block-rows">
         {block.links.map((link) => (

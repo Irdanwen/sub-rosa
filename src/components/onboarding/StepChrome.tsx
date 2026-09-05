@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { t } from "../../lib/i18n";
 import { BrandGradientMark } from "../brand/Marks";
 import { BrandPrimaryButton } from "../ui/BrandPrimaryButton";
 
@@ -50,11 +51,11 @@ export function StepCard({
  * optional quiet skip beneath. Never two competing buttons.
  */
 export function StepActions({
-  continueLabel = "Continue",
+  continueLabel = t("Continue"),
   continueDisabled,
   onContinue,
   onSkip,
-  skipLabel = "Skip for now",
+  skipLabel = t("Skip for now"),
 }: {
   continueLabel?: string;
   continueDisabled?: boolean;

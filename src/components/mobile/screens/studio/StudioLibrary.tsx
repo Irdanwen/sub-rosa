@@ -19,13 +19,16 @@ import { markMediaPlayback } from "./StudioControls";
 
 /** What each gallery bucket is called, in the one place both the picker and
  * the tiles read it from. */
-export const KIND_LABELS: Record<ArtifactKind, string> = {
-  image: "Images",
-  video: "Videos",
-  music: "Music",
-  speech: "Speech",
-  sfx: "Effects",
-};
+function kindLabel(kind: ArtifactKind): string {
+  const labels: Record<ArtifactKind, string> = {
+    image: t("Images"),
+    video: t("Videos"),
+    music: t("Music"),
+    speech: t("Speech"),
+    sfx: t("Effects"),
+  };
+  return labels[kind];
+}
 
 /**
  * The gallery: what the studio has already made.
@@ -153,7 +156,7 @@ export function Library({
           className="mobile-chip-button"
           onClick={() => (selecting ? exitSelection() : setSelecting(true))}
         >
-          {selecting ? "Done" : "Select"}
+          {selecting ? t("Done") : t("Select")}
         </button>
       </div>
       {kinds.length > 1 ? (
@@ -171,7 +174,7 @@ export function Library({
                 setFilter(entry);
               }}
             >
-              {entry === "all" ? "All" : KIND_LABELS[entry]}
+              {entry === "all" ? t("All") : kindLabel(entry)}
             </button>
           ))}
         </div>
@@ -219,7 +222,13 @@ export function Library({
             disabled={selected.size === 0 || deleting}
             onClick={() => void deleteSelected()}
           >
-            {deleting ? <Spinner /> : `Delete${selected.size ? ` (${selected.size})` : ""}`}
+            {deleting ? (
+              <Spinner />
+            ) : selected.size ? (
+              t("Delete ({count})", { count: selected.size })
+            ) : (
+              t("Delete")
+            )}
           </button>
         </div>
       ) : null}
@@ -245,7 +254,7 @@ export function AudioTile({
       onClick={onOpen}
     >
       <IconAudio size={20} aria-hidden />
-      <span>{artifact.prompt?.slice(0, 48) || KIND_LABELS[artifact.kind]}</span>
+      <span>{artifact.prompt?.slice(0, 48) || kindLabel(artifact.kind)}</span>
     </button>
   );
 }
@@ -339,14 +348,14 @@ export function Gallery({
         }
         title={
           kind === "image"
-            ? "No images yet"
+            ? t("No images yet")
             : kind === "video"
-              ? "No videos yet"
+              ? t("No videos yet")
               : kind === "speech"
-                ? "No narrations yet"
+                ? t("No narrations yet")
                 : kind === "sfx"
-                  ? "No sound effects yet"
-                  : "No tracks yet"
+                  ? t("No sound effects yet")
+                  : t("No tracks yet")
         }
         description={t("Everything you generate stays on this device.")}
       />
@@ -361,7 +370,11 @@ export function Gallery({
           type="search"
           value={query}
           placeholder={
-            isAudioKind ? "Search audio" : kind === "video" ? "Search videos" : "Search images"
+            isAudioKind
+              ? t("Search audio")
+              : kind === "video"
+                ? t("Search videos")
+                : t("Search images")
           }
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -370,7 +383,7 @@ export function Gallery({
           className="mobile-chip-button"
           onClick={() => (selecting ? exitSelection() : setSelecting(true))}
         >
-          {selecting ? "Done" : "Select"}
+          {selecting ? t("Done") : t("Select")}
         </button>
       </div>
       {filtered.length === 0 ? (
@@ -411,7 +424,13 @@ export function Gallery({
             disabled={selected.size === 0 || deleting}
             onClick={() => void deleteSelected()}
           >
-            {deleting ? <Spinner /> : `Delete${selected.size ? ` (${selected.size})` : ""}`}
+            {deleting ? (
+              <Spinner />
+            ) : selected.size ? (
+              t("Delete ({count})", { count: selected.size })
+            ) : (
+              t("Delete")
+            )}
           </button>
         </div>
       ) : null}
@@ -470,7 +489,7 @@ export function LibraryCell({
               }}
             />
           ) : (
-            <img src={thumbnail.src} alt={artifact.prompt || "Generated image"} />
+            <img src={thumbnail.src} alt={artifact.prompt || t("Generated image")} />
           )
         ) : (
           <span className="mobile-studio-cell-loading" aria-hidden />
@@ -493,7 +512,7 @@ export function LibraryCell({
       </button>
       <span className="mobile-library-caption">
         <span className="mobile-library-prompt">
-          {artifact.prompt?.trim() || "No prompt recorded"}
+          {artifact.prompt?.trim() || t("No prompt recorded")}
         </span>
         <span className="mobile-library-meta">
           {[artifact.model, formatNoteTime(new Date(artifact.createdAt).toISOString())]
@@ -536,7 +555,7 @@ export function GalleryCell({
           // Only a clip that decoded no picture lands here; see `LibraryCell`.
           <video src={`${thumbnail.src}#t=0.1`} muted playsInline preload="metadata" />
         ) : (
-          <img src={thumbnail.src} alt={artifact.prompt ?? "Generated image"} />
+          <img src={thumbnail.src} alt={artifact.prompt ?? t("Generated image")} />
         )
       ) : (
         <span className="mobile-studio-cell-loading" aria-hidden />
@@ -574,12 +593,12 @@ export function MusicRow({
           className="mobile-studio-row-check"
           data-on={selected ? "true" : undefined}
           onClick={onToggle}
-          aria-label={selected ? "Deselect track" : "Select track"}
+          aria-label={selected ? t("Deselect track") : t("Select track")}
         >
           {selected ? <IconCheckmark1Small size={14} /> : null}
         </button>
       ) : null}
-      <span className="mobile-note-row-title">{artifact.prompt?.slice(0, 60) || "Track"}</span>
+      <span className="mobile-note-row-title">{artifact.prompt?.slice(0, 60) || t("Track")}</span>
       {src ? (
         <audio
           src={src}

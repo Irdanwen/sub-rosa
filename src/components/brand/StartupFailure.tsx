@@ -1,5 +1,6 @@
 import { t } from "../../lib/i18n";
 import { useState } from "react";
+import { messageFromError } from "../../lib/errors";
 import { PRODUCT_NAME } from "../../lib/branding";
 import { BrandPrimaryButton } from "../ui/BrandPrimaryButton";
 import { BrandGradientMark } from "./Marks";
@@ -20,11 +21,15 @@ type Props = {
  */
 export function StartupFailure({ message, onRetry }: Props) {
   const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
 
   async function handleRetry() {
     setRetrying(true);
+    setRetryError(null);
     try {
       await onRetry();
+    } catch (error: unknown) {
+      setRetryError(messageFromError(error));
     } finally {
       setRetrying(false);
     }
@@ -39,10 +44,12 @@ export function StartupFailure({ message, onRetry }: Props) {
         <h1 className="welcome-title">
           {t("{PRODUCT_NAME} could not finish starting", { PRODUCT_NAME })}
         </h1>
-        <p className="welcome-subtitle">{message}</p>
+        <p className="welcome-subtitle" role="alert">
+          {retryError ?? message}
+        </p>
         <div className="welcome-providers">
           <BrandPrimaryButton disabled={retrying} onClick={() => void handleRetry()}>
-            {retrying ? "Trying again..." : "Try again"}
+            {retrying ? t("Trying again...") : t("Try again")}
           </BrandPrimaryButton>
         </div>
       </div>
