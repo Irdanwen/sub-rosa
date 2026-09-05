@@ -80,11 +80,14 @@ dans l'Info.plist. Pour uploader un nouveau build local :
    (le plist = method app-store-connect + destination upload + teamID ; la session Xcode
    authentifie). Le build apparaît ensuite dans TestFlight après le traitement Apple.
 
-**Pour la CI** (`ios-release.yml`) : l'export utilise une signature **manuelle** avec
+**Pour la CI** (`ios-release.yml`) : l'export utilise les assets importés, avec
 le certificat Apple Distribution importé (`IOS_DIST_CERT_P12`, base64, et
 `IOS_DIST_CERT_PASSWORD`), `APPLE_TEAM_ID` et les deux profils App Store importés
-(`IOS_PROVISION_PROFILE` et `IOS_SHARE_PROVISION_PROFILE`, base64). La lane les mappe
-aux noms « Sub Rosa App Store » et « Sub Rosa Share App Store ». Elle ne crée pas ces
+(`IOS_PROVISION_PROFILE` et `IOS_SHARE_PROVISION_PROFILE`, base64). Pour des profils
+créés manuellement, la lane mappe leurs UUID. Les profils marqués `IsXcodeManaged`
+imposent `signingStyle=automatic` : Xcode refuse leur usage en mode manuel, même
+avec le bon UUID et certificat. La lane sélectionne donc le mode selon ce champ.
+Elle ne crée pas ces
 assets par signature cloud. Les secrets `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` et
 `APPLE_API_KEY_P8` (`.p8` en base64) authentifient l'accès App Store Connect et l'upload.
 
@@ -111,12 +114,36 @@ livrer une entrée du partage qui ne marche pas.
    « Sub Rosa Share App Store », avec le même certificat de distribution ;
    son base64 va dans le secret `IOS_SHARE_PROVISION_PROFILE`.
 
-Les noms des profils sont ceux que `ExportOptions-asc.plist` mappe dans la
-lane (`provisioningProfiles`). En local, `pnpm tauri ios build --export-method
+Les noms proposés ci-dessus sont indicatifs : l'export manuel mappe leurs UUID ;
+l'export automatique sélectionne les profils gérés par Xcode. En local, `pnpm tauri ios build --export-method
 debugging` signe les deux cibles avec l'équipe `H6N5V777LL` en automatique une
 fois le groupe créé.
 
 **Vérification du 2026-09-05** : les entitlements de l'app et de l'extension déclarent
 maintenant `group.xyz.carpediem.subrosa`, y compris dans les propriétés de `project.yml`
 qui les régénèrent. Les deux profils de distribution doivent autoriser ce même App Group ;
-leur conformité reste à vérifier côté provisioning, elle n'est pas prouvée par le dépôt.
+leur conformité a été vérifiée dans l'IPA App Store 1.62.0 : les deux profils
+autorisent ce groupe, excluent les appareils de développement et incluent le
+certificat de distribution utilisé par la CI. Les deux secrets de profil ont été
+remplacés par ces profils renouvelés. La clé App Store Connect n'a pas changé.
+
+### Envoi local vérifié le 2026-09-05
+
+La session Apple déjà enregistrée dans Xcode a pu créer les profils de l'app et
+de l'extension avec App Groups, signer l'IPA et envoyer **1.62.0 (1.62.0)**.
+Résultat à 18:28:58 CEST : `Upload succeeded`, puis `EXPORT SUCCEEDED` ; le
+paquet est passé au traitement Apple. Aucune clé `.p8` locale n'était nécessaire.
+
+Après `pnpm tauri ios build --export-method app-store-connect`, créer un plist
+d'export avec `method=app-store-connect`, `destination=upload`,
+`teamID=H6N5V777LL`, `signingStyle=automatic`,
+`manageAppVersionAndBuildNumber=false` et `uploadSymbols=true`, puis appeler
+`xcodebuild -exportArchive` comme au §9 avec `-allowProvisioningUpdates`.
+Toujours vérifier la version des deux bundles et leurs profils dans l'IPA avant
+l'envoi. Ne pas relancer un upload de la même version/build après un succès.
+
+La lane CI accepte `upload=false` pour vérifier l'archive et l'export signé sans
+envoyer un doublon. Le défaut reste `true`. Ne pas inclure `Externals` dans les
+sources de `project.yml` : `libapp.a` est une dépendance de liaison, jamais une
+ressource à copier. Deux archives debug/release copiées sous le même nom font
+échouer le build Xcode (`Multiple commands produce .../libapp.a`).

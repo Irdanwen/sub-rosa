@@ -982,6 +982,12 @@ liste exacte des passages envoyés sous la réponse
   `MobileApp` ouvre la note créée. `ios-release.yml` : secret
   `IOS_SHARE_PROVISION_PROFILE` + mapping dans ExportOptions ; étapes ASC
   dans `HANDOFF.md`.
+- Release 1.62.0 : retirer `Externals` des sources XcodeGen et les deux
+  `libapp.a in Resources` du projet committé ; garder `libapp.a in Frameworks`.
+  Les profils renouvelés par Xcode imposent l'export automatique ; la lane lit
+  `IsXcodeManaged`, réserve les UUID à l'export manuel et accepte `upload=false` pour valider la signature
+  sans envoyer un build déjà livré. Les deux profils App Store avec App Groups
+  ont été vérifiés et installés dans les secrets GitHub le 2026-09-05.
 
 ## Préparation à la diffusion (2026-09-05)
 

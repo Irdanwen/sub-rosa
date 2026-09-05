@@ -25,6 +25,10 @@ on:
         description: "Branch or tag to build (default: main)"
         required: false
         default: "main"
+      upload:
+        description: "Upload to TestFlight (disable to verify signing and export only)"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -134,6 +138,14 @@ jobs:
           mkdir -p "$PROFILES_DIR"
           printf '%s' "$IOS_PROVISION_PROFILE" | base64 --decode > "$PROFILES_DIR/subrosa-appstore.mobileprovision"
           printf '%s' "$IOS_SHARE_PROVISION_PROFILE" | base64 --decode > "$PROFILES_DIR/subrosa-share-appstore.mobileprovision"
+          # Profiles renewed through Xcode have managed names. Resolve the
+          # installed UUIDs instead of requiring a portal-created display name.
+          APP_PROFILE_UUID=$(security cms -D -i "$PROFILES_DIR/subrosa-appstore.mobileprovision" | plutil -extract UUID raw -o - -)
+          SHARE_PROFILE_UUID=$(security cms -D -i "$PROFILES_DIR/subrosa-share-appstore.mobileprovision" | plutil -extract UUID raw -o - -)
+          echo "IOS_PROFILE_UUID=$APP_PROFILE_UUID" >> "$GITHUB_ENV"
+          echo "IOS_SHARE_PROFILE_UUID=$SHARE_PROFILE_UUID" >> "$GITHUB_ENV"
+          security cms -D -i "$PROFILES_DIR/subrosa-appstore.mobileprovision" > "$RUNNER_TEMP/app-profile.plist"
+          security cms -D -i "$PROFILES_DIR/subrosa-share-appstore.mobileprovision" > "$RUNNER_TEMP/share-profile.plist"
 
       # Archive through the Tauri CLI (not a raw `xcodebuild archive`): the Xcode
       # "Build Rust Code" phase runs `tauri ios xcode-script`, which needs the
@@ -153,11 +165,11 @@ jobs:
           pnpm tauri ios build --export-method app-store-connect --verbose || \
             echo "Tauri's own export failed (expected); exporting the xcarchive manually."
 
-      # Export the archive with manual signing against the imported Apple
-      # Distribution identity + installed App Store profile — re-signs the app
-      # for upload (replacing Tauri's placeholder archive signature). No
-      # -allowProvisioningUpdates / API key: manual signing needs neither.
-      - name: Export IPA (manual App Store signing)
+      # Re-sign with the imported identity and installed App Store profiles.
+      # Match the signing style to the profile origin: Xcode-managed profiles
+      # require automatic selection, portal-created profiles allow UUID mapping.
+      # No provisioning updates or cloud credentials are granted to this step.
+      - name: Export IPA (installed App Store signing assets)
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
@@ -165,37 +177,36 @@ jobs:
           if [ -z "$ARCHIVE" ]; then echo "No xcarchive produced by Tauri." >&2; exit 1; fi
           echo "Exporting archive: $ARCHIVE"
           mkdir -p build
-          cat > build/ExportOptions-asc.plist <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>app-store-connect</string>
-            <key>destination</key>
-            <string>export</string>
-            <key>signingStyle</key>
-            <string>manual</string>
-            <key>teamID</key>
-            <string>${APPLE_TEAM_ID}</string>
-            <key>signingCertificate</key>
-            <string>Apple Distribution</string>
-            <key>provisioningProfiles</key>
-            <dict>
-              <key>xyz.carpediem.subrosa</key>
-              <string>Sub Rosa App Store</string>
-              <key>xyz.carpediem.subrosa.share</key>
-              <string>Sub Rosa Share App Store</string>
-            </dict>
-          </dict>
-          </plist>
-          PLIST
+          python3 - <<'PY'
+          import os, pathlib, plistlib
+          temp = pathlib.Path(os.environ["RUNNER_TEMP"])
+          profiles = [plistlib.loads((temp / name).read_bytes()) for name in ("app-profile.plist", "share-profile.plist")]
+          # Xcode rejects managed profiles under manual signing even when
+          # their UUID and certificate match. Automatic selection can reuse
+          # these installed profiles and the imported distribution identity.
+          managed = any(profile.get("IsXcodeManaged", False) for profile in profiles)
+          options = {
+              "method": "app-store-connect", "destination": "export",
+              "signingStyle": "automatic" if managed else "manual",
+              "teamID": os.environ["APPLE_TEAM_ID"],
+              "manageAppVersionAndBuildNumber": False,
+          }
+          if not managed:
+              options["signingCertificate"] = "Apple Distribution"
+              options["provisioningProfiles"] = {
+                  "xyz.carpediem.subrosa": os.environ["IOS_PROFILE_UUID"],
+                  "xyz.carpediem.subrosa.share": os.environ["IOS_SHARE_PROFILE_UUID"],
+              }
+          pathlib.Path("build/ExportOptions-asc.plist").write_bytes(plistlib.dumps(options))
+          print("Export signing style:", options["signingStyle"])
+          PY
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE" \
             -exportOptionsPlist build/ExportOptions-asc.plist \
             -exportPath build/export
 
       - name: Upload to TestFlight
+        if: ${{ inputs.upload }}
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
