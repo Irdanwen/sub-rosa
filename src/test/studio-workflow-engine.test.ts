@@ -967,3 +967,29 @@ describe("assemble node", () => {
     await expect(runWorkflow(orphan, { storage: fakeStorage() })).rejects.toThrow(WorkflowRunError);
   });
 });
+
+it("keeps the recognized JPEG format when an image node requested PNG", async () => {
+  mediaJsonMock.mockResolvedValue({ images: ["SlBFRw=="] });
+  const storage = fakeStorage({
+    save: vi.fn(async () => ({
+      artifactId: "rose.jpg",
+      src: "asset://rose.jpg",
+      mimeType: "image/jpeg",
+    })),
+  });
+  const results = await runWorkflow(
+    workflow(
+      [
+        node("rose", "image", { model: "flux-2-max", prompt: "copper rose" }),
+        node("out", "output"),
+      ],
+      [edge("rose", "out")],
+    ),
+    { storage },
+  );
+  expect(results.get("out")?.output).toMatchObject({
+    kind: "image",
+    mimeType: "image/jpeg",
+    artifactId: "rose.jpg",
+  });
+});

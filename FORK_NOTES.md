@@ -1010,7 +1010,9 @@ liste exacte des passages envoyés sous la réponse
   sauvegardes base64 et les téléchargements : ne pas réintroduire une extension
   fondée seulement sur le format demandé ou sur la présence d’ID3. Les formats
   audio associés restent reconnus dans la galerie, les blobs mobiles et les
-  entrées des flux. `catalog.ts` traduit et localise les estimations de crédits.
+  entrées des flux. `workflow/engine.ts` reçoit le type MIME reconnu du stockage
+  natif et le transmet aux sorties ; `workflow-run.ts` le restaure aussi à la
+  reprise. `catalog.ts` traduit et localise les estimations de crédits.
 - `src-tauri/tests/note_passages.rs` fixe l’heure d’indexation de son jeu de
   données avant une édition simulée : le test ne doit pas expirer à une date
   de calendrier réelle.

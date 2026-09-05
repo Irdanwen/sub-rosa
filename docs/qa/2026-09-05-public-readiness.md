@@ -36,7 +36,9 @@ la sortie.
   de reconnaissance. Elle saute les métadonnées ID3 avant d’identifier un
   FLAC ; ID3 ne signifie pas MP3. Les octets sont conservés, sans conversion.
   Les FLAC restent audio lors de la reconstruction de la galerie et reçoivent
-  le bon type MIME dans les lectures mobiles et les entrées des flux.
+  le bon type MIME dans les lectures mobiles et les entrées des flux. Les
+  sorties des nœuds image, retouche, narration et musique conservent ce type
+  reconnu, ainsi que les sorties audio rechargées après une reprise.
 - Les estimations de crédits utilisent désormais la langue choisie :
   « 1,6 crédits » en français, avec le singulier approprié.
 - Les deux cibles iOS ont l’App Group dans leurs entitlements et dans la
@@ -47,7 +49,7 @@ la sortie.
 
 | Contrôle | Résultat |
 | --- | --- |
-| Vitest, `--maxWorkers=2` | 250 suites, 4 089 tests réussis, 2 ignorés |
+| Vitest, `--maxWorkers=2` | 250 suites, 4 091 tests réussis, 2 ignorés |
 | TypeScript et build Vite | Réussis ; avertissement de taille du chunk App conservé |
 | Biome et son ratchet | Réussis ; 627 avertissements existants, contre 631 au départ |
 | Rust natif, `cargo test --all-targets` | 985 tests réussis, 1 ignoré |

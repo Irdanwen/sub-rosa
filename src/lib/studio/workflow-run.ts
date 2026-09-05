@@ -66,7 +66,11 @@ async function save(
     payload.url !== undefined
       ? await saveArtifactFromUrl(payload.url, extension, meta)
       : await saveArtifactFromBase64(payload.base64 ?? "", extension, meta);
-  return { artifactId: artifact.id, src: await decodableSrc(artifact) };
+  return {
+    artifactId: artifact.id,
+    src: await decodableSrc(artifact),
+    mimeType: mimeForFile(artifact.fileName),
+  };
 }
 
 async function loadAsset(artifactId: string): Promise<LoadedAsset> {
@@ -94,6 +98,7 @@ async function loadAsset(artifactId: string): Promise<LoadedAsset> {
   return {
     kind,
     src: await decodableSrc(artifact),
+    mimeType: mimeForFile(artifact.fileName),
     artifactId: artifact.id,
     parentId: artifact.parentId,
     parentHandoffSeconds: artifact.parentHandoffSeconds,
@@ -132,6 +137,8 @@ function mimeForFile(fileName: string): string {
   if (extension === "aac") return "audio/aac";
   if (extension === "ogg" || extension === "opus") return "audio/ogg";
   if (extension === "png") return "image/png";
+  if (extension === "webp") return "image/webp";
+  if (extension === "gif") return "image/gif";
   if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
   return "video/mp4";
 }
@@ -252,7 +259,7 @@ async function rehydrate(stored: StoredOutput, storage: WorkflowStorage): Promis
       const asset = await storage.loadAsset(stored.artifactId);
       return {
         kind: "audio",
-        mimeType: stored.mimeType,
+        mimeType: asset.mimeType ?? stored.mimeType,
         source: stored.source,
         artifactId: stored.artifactId,
         src: asset.src,
@@ -392,7 +399,11 @@ function durableMediaRunner(
     });
     await invoke("media_job_dismiss", { id: jobId }).catch(() => undefined);
     pendingJobs.delete(nodeId);
-    return { artifactId: artifact.id, src: await decodableSrc(artifact) };
+    return {
+      artifactId: artifact.id,
+      src: await decodableSrc(artifact),
+      mimeType: mimeForFile(artifact.fileName),
+    };
   };
 }
 
