@@ -25,6 +25,10 @@ on:
         description: "Branch or tag to build (default: main)"
         required: false
         default: "main"
+      upload:
+        description: "Upload to TestFlight (disable to verify signing and export only)"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -134,6 +138,12 @@ jobs:
           mkdir -p "$PROFILES_DIR"
           printf '%s' "$IOS_PROVISION_PROFILE" | base64 --decode > "$PROFILES_DIR/subrosa-appstore.mobileprovision"
           printf '%s' "$IOS_SHARE_PROVISION_PROFILE" | base64 --decode > "$PROFILES_DIR/subrosa-share-appstore.mobileprovision"
+          # Profiles renewed through Xcode have managed names. Resolve the
+          # installed UUIDs instead of requiring a portal-created display name.
+          APP_PROFILE_UUID=$(security cms -D -i "$PROFILES_DIR/subrosa-appstore.mobileprovision" | plutil -extract UUID raw -o - -)
+          SHARE_PROFILE_UUID=$(security cms -D -i "$PROFILES_DIR/subrosa-share-appstore.mobileprovision" | plutil -extract UUID raw -o - -)
+          echo "IOS_PROFILE_UUID=$APP_PROFILE_UUID" >> "$GITHUB_ENV"
+          echo "IOS_SHARE_PROFILE_UUID=$SHARE_PROFILE_UUID" >> "$GITHUB_ENV"
 
       # Archive through the Tauri CLI (not a raw `xcodebuild archive`): the Xcode
       # "Build Rust Code" phase runs `tauri ios xcode-script`, which needs the
@@ -176,6 +186,8 @@ jobs:
             <string>export</string>
             <key>signingStyle</key>
             <string>manual</string>
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
             <key>teamID</key>
             <string>${APPLE_TEAM_ID}</string>
             <key>signingCertificate</key>
@@ -183,9 +195,9 @@ jobs:
             <key>provisioningProfiles</key>
             <dict>
               <key>xyz.carpediem.subrosa</key>
-              <string>Sub Rosa App Store</string>
+              <string>${IOS_PROFILE_UUID}</string>
               <key>xyz.carpediem.subrosa.share</key>
-              <string>Sub Rosa Share App Store</string>
+              <string>${IOS_SHARE_PROFILE_UUID}</string>
             </dict>
           </dict>
           </plist>
@@ -196,6 +208,7 @@ jobs:
             -exportPath build/export
 
       - name: Upload to TestFlight
+        if: ${{ inputs.upload }}
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
