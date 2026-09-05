@@ -80,11 +80,14 @@ dans l'Info.plist. Pour uploader un nouveau build local :
    (le plist = method app-store-connect + destination upload + teamID ; la session Xcode
    authentifie). Le build apparaît ensuite dans TestFlight après le traitement Apple.
 
-**Pour la CI** (`ios-release.yml`) : l'export utilise une signature **manuelle** avec
+**Pour la CI** (`ios-release.yml`) : l'export utilise les assets importés, avec
 le certificat Apple Distribution importé (`IOS_DIST_CERT_P12`, base64, et
 `IOS_DIST_CERT_PASSWORD`), `APPLE_TEAM_ID` et les deux profils App Store importés
-(`IOS_PROVISION_PROFILE` et `IOS_SHARE_PROVISION_PROFILE`, base64). La lane les mappe
-aux UUID décodés depuis les profils installés, sans imposer leur nom. Elle ne crée pas ces
+(`IOS_PROVISION_PROFILE` et `IOS_SHARE_PROVISION_PROFILE`, base64). Pour des profils
+créés manuellement, la lane mappe leurs UUID. Les profils marqués `IsXcodeManaged`
+imposent `signingStyle=automatic` : Xcode refuse leur usage en mode manuel, même
+avec le bon UUID et certificat. La lane sélectionne donc le mode selon ce champ.
+Elle ne crée pas ces
 assets par signature cloud. Les secrets `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` et
 `APPLE_API_KEY_P8` (`.p8` en base64) authentifient l'accès App Store Connect et l'upload.
 
@@ -111,8 +114,8 @@ livrer une entrée du partage qui ne marche pas.
    « Sub Rosa Share App Store », avec le même certificat de distribution ;
    son base64 va dans le secret `IOS_SHARE_PROVISION_PROFILE`.
 
-Les noms proposés ci-dessus sont indicatifs : `ExportOptions-asc.plist` mappe
-les UUID des profils installés (`provisioningProfiles`). En local, `pnpm tauri ios build --export-method
+Les noms proposés ci-dessus sont indicatifs : l'export manuel mappe leurs UUID ;
+l'export automatique sélectionne les profils gérés par Xcode. En local, `pnpm tauri ios build --export-method
 debugging` signe les deux cibles avec l'équipe `H6N5V777LL` en automatique une
 fois le groupe créé.
 
