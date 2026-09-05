@@ -31,7 +31,9 @@ targets:
     sources:
       - path: Sources
       - path: Assets.xcassets
-      - path: Externals
+      # Rust static libraries are linked below, never copied into the app.
+      # Including this directory as sources makes XcodeGen copy both debug
+      # and release libapp.a to the same resource path after a local build.
       - path: os-june_iOS
       - path: assets
         buildPhase: resources

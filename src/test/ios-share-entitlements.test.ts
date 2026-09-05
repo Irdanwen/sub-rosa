@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import appEntitlements from "../../src-tauri/gen/apple/os-june_iOS/os-june_iOS.entitlements?raw";
 import shareEntitlements from "../../src-tauri/gen/apple/ShareExtension/ShareExtension.entitlements?raw";
 import projectSpec from "../../src-tauri/gen/apple/project.yml?raw";
+import xcodeProject from "../../src-tauri/gen/apple/os-june.xcodeproj/project.pbxproj?raw";
 import shareController from "../../src-tauri/gen/apple/ShareExtension/ShareViewController.swift?raw";
 import shareInbox from "../../src-tauri/src/share_inbox.rs?raw";
 
@@ -9,6 +10,13 @@ const group = "group.xyz.carpediem.subrosa";
 const entitlement = "com.apple.security.application-groups";
 
 describe("iOS share inbox access", () => {
+  it("links Rust without copying static libraries into the app resources", () => {
+    expect(xcodeProject).toContain("libapp.a in Frameworks");
+    expect(xcodeProject).not.toContain("libapp.a in Resources");
+    expect(projectSpec).not.toMatch(/^\s*- path: Externals\s*$/m);
+    expect(projectSpec).toContain("- framework: libapp.a");
+  });
+
   for (const [target, plist] of [
     ["os-june_iOS", appEntitlements],
     ["os-june_Share", shareEntitlements],

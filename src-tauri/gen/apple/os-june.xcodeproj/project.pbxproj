@@ -17,8 +17,6 @@
 		AD9E89DDEBE7AC249FBEAB57 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D5CAB75BC7DC88080646C311 /* MetalKit.framework */; };
 		AF705FD2C7C51D344A9B5DCC /* os-june_Share.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B501A0FE1B0E3F34555700D5 /* os-june_Share.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		BC27FCDD5F6FDC1E85674AE5 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CB6E12545C407CBF2B0C56C5 /* QuartzCore.framework */; };
-		C413A339AA53F8182889AE28 /* libapp.a in Resources */ = {isa = PBXBuildFile; fileRef = 449ACF0A1B0A0D726A440F3C /* libapp.a */; };
-		D31EAD3F9AFADBEA19CFFDB8 /* libapp.a in Resources */ = {isa = PBXBuildFile; fileRef = B5FEFE00995C220B5ADE2982 /* libapp.a */; };
 		E487255D0DEED8754C37CACF /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 97402B24C9614C6337EC3588 /* UIKit.framework */; };
 		F1A2E3E180D3FE38E0121CCD /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DE8A0A12265F59FA4DA79CF0 /* Metal.framework */; };
 		F4602FB838D573A90EF45C4C /* BackgroundTasks.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B76EEEBB63C88177C2EFC897 /* BackgroundTasks.framework */; };
@@ -670,8 +668,6 @@
 				F9724BD8486E43856C3B6C99 /* Assets.xcassets in Resources */,
 				6D2CC85D961DFD9334548BF4 /* LaunchScreen.storyboard in Resources */,
 				A90A29DAE8055903AC2496C1 /* assets in Resources */,
-				C413A339AA53F8182889AE28 /* libapp.a in Resources */,
-				D31EAD3F9AFADBEA19CFFDB8 /* libapp.a in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -739,7 +735,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "os-june_iOS/os-june_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = H6N5V777LL;
+				DEVELOPMENT_TEAM = "H6N5V777LL";
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -940,7 +936,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "os-june_iOS/os-june_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = H6N5V777LL;
+				DEVELOPMENT_TEAM = "H6N5V777LL";
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				FRAMEWORK_SEARCH_PATHS = (
