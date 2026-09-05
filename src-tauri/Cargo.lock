@@ -4183,7 +4183,7 @@ dependencies = [
 
 [[package]]
 name = "os-june"
-version = "1.61.1"
+version = "1.62.0"
 dependencies = [
  "age",
  "anyhow",
