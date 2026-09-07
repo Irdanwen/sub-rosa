@@ -81,7 +81,7 @@ sha2 = "0.11"
 # 0.5.5 is the documented, widely-deployed API and needs no MSRV bump.
 # Defaults already cover FLAC/Vorbis/PCM/ADPCM in OGG, MKV/WebM and WAV; the
 # rest are the containers and codecs an import actually arrives in.
-symphonia = { version = "0.5.5", features = ["aac", "aiff", "alac", "caf", "isomp4", "mp3"] }
+symphonia = { version = "0.6.1", features = ["aac", "aiff", "alac", "caf", "isomp4", "mp3"] }
 sqlx = { package = "sqlx-core", version = "0.8", default-features = false, features = ["_rt-tokio", "chrono", "uuid"] }
 sqlx-sqlite = { version = "0.8", default-features = false, features = ["bundled", "chrono", "uuid"] }
 tauri = { version = "2.8.0", features = ["protocol-asset", "macos-private-api", "tray-icon", "image-png"] }
