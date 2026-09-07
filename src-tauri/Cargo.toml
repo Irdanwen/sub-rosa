@@ -61,7 +61,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 rand = "0.9"
 # Parses podcast feeds so an enclosure can be fetched (ADR-0028). Already in
 # the tree transitively, so pinning it here adds no new crate to the lockfile.
-quick-xml = "0.41"
+quick-xml = "0.42"
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "cookies"] }
 # Pure-Rust FFT for the echo-rejection similarity gate (GCC-PHAT lag estimation).
 rustfft = "6.2"
