@@ -1093,6 +1093,130 @@ fn normalize_api_key(raw: &str) -> Result<String, AppError> {
     Ok(value.to_string())
 }
 
+/// The URL and key form one atomic keychain value after vault activation.
+/// Updating them in separate files leaves a crash window which sends the new
+/// key to the old endpoint (or the old key to the new endpoint).
+fn credential_error() -> AppError {
+    AppError::new(
+        "carpe_diem_keychain",
+        "Your system credential store is unavailable.",
+    )
+}
+
+fn decode_active_credential(
+    raw: Result<String, keyring::Error>,
+) -> Result<Option<Credential>, AppError> {
+    let raw = match raw {
+        Ok(raw) => zeroize::Zeroizing::new(raw),
+        Err(keyring::Error::NoEntry) => return Ok(None),
+        Err(_) => return Err(credential_error()),
+    };
+    let value: serde_json::Value = serde_json::from_str(&raw).map_err(|_| credential_error())?;
+    let base = value["base_url"].as_str().ok_or_else(credential_error)?;
+    let key = value["api_key"].as_str().ok_or_else(credential_error)?;
+    let base = validate_base_url(base).map_err(|_| credential_error())?;
+    if key.chars().count() > MAX_API_KEY_CHARS {
+        return Err(credential_error());
+    }
+    Ok(Some((base, Redacted::new(key.to_string()))))
+}
+
+fn active_credential() -> Result<Option<Credential>, AppError> {
+    decode_active_credential(
+        keyring::Entry::new(KEYCHAIN_SERVICE, ACTIVE_CREDENTIAL)
+            .and_then(|entry| entry.get_password()),
+    )
+}
+fn store_active_credential(base: &str, key: &Redacted<String>) -> Result<(), AppError> {
+    let value = zeroize::Zeroizing::new(
+        serde_json::json!({"base_url":base,"api_key":key.expose_str()}).to_string(),
+    );
+    keyring::Entry::new(KEYCHAIN_SERVICE, ACTIVE_CREDENTIAL)
+        .and_then(|entry| entry.set_password(&value))
+        .map_err(|_| {
+            AppError::new(
+                "carpe_diem_keychain",
+                "Your system credential store is unavailable.",
+            )
+        })
+}
+
+/// Free authenticated validation precedes atomic activation. Public /models
+/// cannot validate a credential. This path supports Carpe Diem /credits only.
+pub(crate) async fn restore_account_credential(
+    app: &AppHandle,
+    base: &str,
+    key: &str,
+) -> Result<(), AppError> {
+    let base_url = validate_base_url(base)?;
+    let key = Redacted::new(normalize_api_key(key)?);
+    if !key.expose_str().starts_with("cdm_") {
+        return Err(AppError::new(
+            "carpe_diem_verification_unsupported",
+            "This vault requires a Carpe Diem key.",
+        ));
+    }
+    let client = crate::http_client::credentialed(TEST_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| {
+            AppError::new(
+                "carpe_diem_credits_unreachable",
+                "Your connection could not be verified.",
+            )
+        })?;
+    let mut response = client
+        .get(format!("{}/credits", catalog_base_url_of(&base_url)))
+        .bearer_auth(key.expose_str())
+        .send()
+        .await
+        .map_err(|_| {
+            AppError::new(
+                "carpe_diem_credits_unreachable",
+                "Your connection could not be verified.",
+            )
+        })?;
+    if !response.status().is_success() {
+        return Err(AppError::new(
+            "carpe_diem_key_invalid",
+            "The service did not accept this key. Your previous key is unchanged.",
+        ));
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| credential_error())? {
+        if bytes.len() + chunk.len() > 65_536 {
+            return Err(AppError::new(
+                "carpe_diem_credits_failed",
+                "The credits response was too large.",
+            ));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let body: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| {
+        AppError::new(
+            "carpe_diem_credits_failed",
+            "The service did not return a valid credits response.",
+        )
+    })?;
+    if body
+        .get("availableCredits")
+        .and_then(serde_json::Value::as_f64)
+        .is_none()
+    {
+        return Err(AppError::new(
+            "carpe_diem_credits_failed",
+            "The service did not return a valid credits response.",
+        ));
+    }
+    {
+        let _guard = CREDENTIAL_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        store_active_credential(&base_url, &key)?;
+        replace_mirror(CarpeDiemSettings { base_url });
+    }
+    super::sidecar::on_settings_changed(app);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -1361,128 +1485,4 @@ mod tests {
             branding::CARPE_DIEM_DEFAULT_BASE_URL
         );
     }
-}
-
-/// The URL and key form one atomic keychain value after vault activation.
-/// Updating them in separate files leaves a crash window which sends the new
-/// key to the old endpoint (or the old key to the new endpoint).
-fn credential_error() -> AppError {
-    AppError::new(
-        "carpe_diem_keychain",
-        "Your system credential store is unavailable.",
-    )
-}
-
-fn decode_active_credential(
-    raw: Result<String, keyring::Error>,
-) -> Result<Option<Credential>, AppError> {
-    let raw = match raw {
-        Ok(raw) => zeroize::Zeroizing::new(raw),
-        Err(keyring::Error::NoEntry) => return Ok(None),
-        Err(_) => return Err(credential_error()),
-    };
-    let value: serde_json::Value = serde_json::from_str(&raw).map_err(|_| credential_error())?;
-    let base = value["base_url"].as_str().ok_or_else(credential_error)?;
-    let key = value["api_key"].as_str().ok_or_else(credential_error)?;
-    let base = validate_base_url(base).map_err(|_| credential_error())?;
-    if key.chars().count() > MAX_API_KEY_CHARS {
-        return Err(credential_error());
-    }
-    Ok(Some((base, Redacted::new(key.to_string()))))
-}
-
-fn active_credential() -> Result<Option<Credential>, AppError> {
-    decode_active_credential(
-        keyring::Entry::new(KEYCHAIN_SERVICE, ACTIVE_CREDENTIAL)
-            .and_then(|entry| entry.get_password()),
-    )
-}
-fn store_active_credential(base: &str, key: &Redacted<String>) -> Result<(), AppError> {
-    let value = zeroize::Zeroizing::new(
-        serde_json::json!({"base_url":base,"api_key":key.expose_str()}).to_string(),
-    );
-    keyring::Entry::new(KEYCHAIN_SERVICE, ACTIVE_CREDENTIAL)
-        .and_then(|entry| entry.set_password(&value))
-        .map_err(|_| {
-            AppError::new(
-                "carpe_diem_keychain",
-                "Your system credential store is unavailable.",
-            )
-        })
-}
-
-/// Free authenticated validation precedes atomic activation. Public /models
-/// cannot validate a credential. This path supports Carpe Diem /credits only.
-pub(crate) async fn restore_account_credential(
-    app: &AppHandle,
-    base: &str,
-    key: &str,
-) -> Result<(), AppError> {
-    let base_url = validate_base_url(base)?;
-    let key = Redacted::new(normalize_api_key(key)?);
-    if !key.expose_str().starts_with("cdm_") {
-        return Err(AppError::new(
-            "carpe_diem_verification_unsupported",
-            "This vault requires a Carpe Diem key.",
-        ));
-    }
-    let client = crate::http_client::credentialed(TEST_TIMEOUT)
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| {
-            AppError::new(
-                "carpe_diem_credits_unreachable",
-                "Your connection could not be verified.",
-            )
-        })?;
-    let mut response = client
-        .get(format!("{}/credits", catalog_base_url_of(&base_url)))
-        .bearer_auth(key.expose_str())
-        .send()
-        .await
-        .map_err(|_| {
-            AppError::new(
-                "carpe_diem_credits_unreachable",
-                "Your connection could not be verified.",
-            )
-        })?;
-    if !response.status().is_success() {
-        return Err(AppError::new(
-            "carpe_diem_key_invalid",
-            "The service did not accept this key. Your previous key is unchanged.",
-        ));
-    }
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| credential_error())? {
-        if bytes.len() + chunk.len() > 65_536 {
-            return Err(AppError::new(
-                "carpe_diem_credits_failed",
-                "The credits response was too large.",
-            ));
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    let body: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| {
-        AppError::new(
-            "carpe_diem_credits_failed",
-            "The service did not return a valid credits response.",
-        )
-    })?;
-    if body
-        .get("availableCredits")
-        .and_then(serde_json::Value::as_f64)
-        .is_none()
-    {
-        return Err(AppError::new(
-            "carpe_diem_credits_failed",
-            "The service did not return a valid credits response.",
-        ));
-    }
-    {
-        let _guard = CREDENTIAL_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        store_active_credential(&base_url, &key)?;
-        replace_mirror(CarpeDiemSettings { base_url });
-    }
-    super::sidecar::on_settings_changed(app);
-    Ok(())
 }
