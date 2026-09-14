@@ -33,7 +33,7 @@ accurately — read them, but apply these fork overrides:
   branding, the sidecar, or the release pipeline.
 - **Releases + updates.** Source repo: `Irdanwen/sub-rosa` (public → free CI). Tagging
   `vX.Y.Z` runs `.github/workflows/release.yml`: signed **and notarized** macOS (aarch64 +
-  x86_64, x86_64 cross-compiled on Apple Silicon) + unsigned Windows NSIS + Tauri updater
+  x86_64, built on matching native runners) + unsigned Windows NSIS + Tauri updater
   artifacts, published to the **public** `Irdanwen/sub-rosa-releases` (the updater endpoint).
   Notarization requires deep-signing the bundled Hermes runtime + the Swift helpers (see the
   signing steps in the workflow). Bump the version by editing `tauri.conf.json`,
