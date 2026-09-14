@@ -71,11 +71,9 @@ jobs:
             target: aarch64-apple-darwin
             config: src-tauri/tauri.macos.conf.json
             updater_target: darwin-aarch64
-          # x86_64 is CROSS-compiled on an Apple Silicon runner (macos-14):
-          # macos-13 Intel runners are scarce/deprecated and queue for a long
-          # time. Apple Silicon can build + sign the x86_64 target thanks to the
-          # universal macOS SDK.
-          - os: macos-14
+          # Python and its native extensions are installed for the host by uv.
+          # Cross-compiling Rust alone ships an ARM runtime in an Intel app.
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             config: src-tauri/tauri.macos.conf.json
             updater_target: darwin-x86_64
@@ -129,9 +127,16 @@ jobs:
         if: runner.os == 'macOS'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./scripts/bundle-hermes-runtime.sh
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          expected="${RELEASE_TARGET%%-*}"
+          [ "$expected" != aarch64 ] || expected=arm64
+          test "$(uname -m)" = "$expected"
+          ./scripts/bundle-hermes-runtime.sh
       - name: Verify bundled Hermes runtime (macOS)
         if: runner.os == 'macOS'
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
           for expected in \
@@ -147,6 +152,30 @@ jobs:
             echo "::error::the bundled Hermes runtime is the placeholder, not the runtime."
             exit 1
           fi
+          python3 - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+
+          expected = os.environ["RELEASE_TARGET"].split("-")[0].replace("aarch64", "arm64")
+          runtime = Path(".tauri-hermes/hermes")
+          python = runtime / "python/current/bin/python3.11"
+          assert python.is_file(), "Bundled Python is missing"
+          magic = {bytes.fromhex(value) for value in ("feedface", "cefaedfe", "feedfacf", "cffaedfe", "cafebabe", "bebafeca", "cafebabf", "bfbafeca")}
+          checked = 0
+          for path in runtime.rglob("*"):
+              if not path.is_file() or path.is_symlink():
+                  continue
+              with path.open("rb") as source:
+                  is_macho = source.read(4) in magic
+              if is_macho:
+                  subprocess.run(["lipo", str(path), "-verify_arch", expected], check=True)
+                  checked += 1
+          assert checked > 0, "No native runtime binaries found"
+          actual = subprocess.check_output([str(python), "-c", "import platform; print(platform.machine())"], text=True).strip()
+          assert actual == expected, f"Bundled Python is {actual}, expected {expected}"
+          print(f"Verified {checked} native runtime binaries for {expected}")
+          PY
           echo "bundled Hermes runtime: $(du -sh .tauri-hermes/hermes | cut -f1)"
       - name: Build bundled Hermes runtime (Windows)
         if: runner.os == 'Windows'
