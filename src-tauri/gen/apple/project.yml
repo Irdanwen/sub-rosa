@@ -50,7 +50,8 @@ targets:
       properties:
         LSRequiresIPhoneOS: true
         UILaunchStoryboardName: LaunchScreen
-        ITSAppUsesNonExemptEncryption: false
+        # The vault uses Rust AES-GCM beyond OS TLS. Complete export compliance
+        # in App Store Connect; do not carry forward the former TLS-only waiver.
         # Recording a note or a dictation.
         NSMicrophoneUsageDescription:
           Sub Rosa records microphone audio locally so it can transcribe and generate your notes.
@@ -96,8 +97,8 @@ targets:
         # ships - but they must not contradict the plist either, or a reader
         # (and a regeneration) inherits a version from another era. A test
         # pins the two files to each other; keep them equal.
-        CFBundleShortVersionString: 1.62.0
-        CFBundleVersion: "1.62.0"
+        CFBundleShortVersionString: 1.63.0
+        CFBundleVersion: "1.63.0"
     entitlements:
       path: os-june_iOS/os-june_iOS.entitlements
       properties:
@@ -151,8 +152,8 @@ targets:
       path: ShareExtension/Info.plist
       properties:
         CFBundleDisplayName: Sub Rosa
-        CFBundleShortVersionString: 1.62.0
-        CFBundleVersion: "1.62.0"
+        CFBundleShortVersionString: 1.63.0
+        CFBundleVersion: "1.63.0"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
