@@ -24,6 +24,7 @@ use crate::redacted::Redacted;
 
 const SETTINGS_FILE: &str = "carpe-diem.json";
 const KEYCHAIN_ACCOUNT: &str = "api-key";
+const ACTIVE_CREDENTIAL: &str = "active-credential";
 // Dedicated keychain service (separate from the dormant OS Accounts store) so
 // the Carpe Diem key is clearly scoped. Debug builds use a `-dev` service to
 // keep development credentials isolated from a release install.
@@ -34,6 +35,8 @@ const KEYCHAIN_SERVICE: &str = "xyz.carpediem.subrosa-dev.carpe-diem";
 const MAX_API_KEY_CHARS: usize = 4_096;
 const MAX_BASE_URL_CHARS: usize = 2_048;
 const TEST_TIMEOUT: Duration = Duration::from_secs(20);
+
+static CREDENTIAL_LOCK: Mutex<()> = Mutex::new(());
 
 static SETTINGS: OnceLock<Mutex<CarpeDiemSettings>> = OnceLock::new();
 
@@ -147,6 +150,14 @@ pub fn setup(app: &mut tauri::App) {
 /// aggregator. Endpoints absent from `/router` derive their base from
 /// [`catalog_base_url`] / [`operator_root`] instead.
 pub fn base_url() -> String {
+    let _guard = CREDENTIAL_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    if let Ok(Some((base, _))) = active_credential() {
+        return base;
+    }
+    legacy_base_url()
+}
+
+fn legacy_base_url() -> String {
     let guard = mirror().lock().unwrap_or_else(|poison| poison.into_inner());
     let value = guard.base_url.trim().trim_end_matches('/').to_string();
     drop(guard);
@@ -183,7 +194,7 @@ pub fn default_catalog_base_url() -> String {
 
 /// Pure core of [`operator_root`] (see it for semantics). Split out so it is
 /// testable without touching the process-global settings mirror.
-fn operator_root_of(base: &str) -> String {
+pub(crate) fn operator_root_of(base: &str) -> String {
     let base = base.trim_end_matches('/');
     base.strip_suffix("/router")
         .or_else(|| base.strip_suffix("/v1"))
@@ -192,7 +203,7 @@ fn operator_root_of(base: &str) -> String {
 }
 
 /// Pure core of [`catalog_base_url`] (see it for semantics).
-fn catalog_base_url_of(base: &str) -> String {
+pub(crate) fn catalog_base_url_of(base: &str) -> String {
     let base = base.trim_end_matches('/');
     match base.strip_suffix("/router") {
         Some(root) => format!("{root}/v1"),
@@ -207,9 +218,10 @@ fn catalog_base_url_of(base: &str) -> String {
 /// while debugging. Reading it is `expose_str()`, which is deliberately a word
 /// that shows up in review.
 pub fn api_key() -> Option<Redacted<String>> {
-    // Debug convenience: inject the key via env for `pnpm tauri:dev` without
-    // touching the OS keychain (mirrors June's OS_JUNE_DEV_PLAINTEXT_TOKEN_STORE
-    // escape hatch). Never compiled into release builds.
+    credentials().map(|(_, key)| key)
+}
+
+fn legacy_api_key() -> Option<Redacted<String>> {
     #[cfg(debug_assertions)]
     if let Ok(key) = std::env::var("SUBROSA_DEV_API_KEY") {
         let key = key.trim().to_string();
@@ -223,6 +235,50 @@ pub fn api_key() -> Option<Redacted<String>> {
         .map(|key| key.trim().to_string())
         .filter(|key| !key.is_empty())
         .map(Redacted::new)
+}
+
+type Credential = (String, Redacted<String>);
+
+fn credential_snapshot(
+    active: Result<Option<Credential>, AppError>,
+    legacy: impl FnOnce() -> Option<Credential>,
+) -> Option<Credential> {
+    match active {
+        Ok(Some((base, key))) => (!key.is_empty()).then_some((base, key)),
+        Ok(None) => legacy(),
+        // A locked, unavailable or corrupt paired slot must never resurrect a
+        // legacy key, especially after the destination has changed.
+        Err(_) => None,
+    }
+}
+
+#[cfg(debug_assertions)]
+fn override_active_credential(
+    active: Result<Option<Credential>, AppError>,
+    injected: Option<String>,
+) -> Result<Option<Credential>, AppError> {
+    active.map(|pair| {
+        pair.map(|(base, key)| {
+            let key = injected
+                .map(|k| k.trim().to_string())
+                .filter(|k| !k.is_empty())
+                .map(Redacted::new)
+                .unwrap_or(key);
+            (base, key)
+        })
+    })
+}
+
+/// Snapshot destination and key under the same lock used for activation and
+/// legacy settings writes. Only an explicit NoEntry permits legacy fallback.
+pub fn credentials() -> Option<Credential> {
+    let _guard = CREDENTIAL_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let active = active_credential();
+    #[cfg(debug_assertions)]
+    let active = override_active_credential(active, std::env::var("SUBROSA_DEV_API_KEY").ok());
+    credential_snapshot(active, || {
+        legacy_api_key().map(|key| (legacy_base_url(), key))
+    })
 }
 
 /// Whether the app has enough configuration to run (a key is present).
@@ -244,13 +300,19 @@ pub fn carpe_diem_set_base_url(
     request: SetBaseUrlRequest,
 ) -> Result<CarpeDiemSettingsDto, AppError> {
     let base_url = validate_base_url(&request.base_url)?;
-    persist(
-        &state.config_path,
-        &CarpeDiemSettings {
-            base_url: base_url.clone(),
-        },
-    )?;
-    replace_mirror(CarpeDiemSettings { base_url });
+    {
+        let _guard = CREDENTIAL_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some((_, key)) = active_credential()? {
+            store_active_credential(&base_url, &key)?;
+        }
+        persist(
+            &state.config_path,
+            &CarpeDiemSettings {
+                base_url: base_url.clone(),
+            },
+        )?;
+        replace_mirror(CarpeDiemSettings { base_url });
+    }
     super::sidecar::on_settings_changed(&app);
     Ok(dto())
 }
@@ -261,27 +323,39 @@ pub async fn carpe_diem_set_api_key(
     request: SetApiKeyRequest,
 ) -> Result<CarpeDiemSettingsDto, AppError> {
     let key = normalize_api_key(&request.api_key)?;
-    tokio::task::spawn_blocking(move || {
-        keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-            .and_then(|entry| entry.set_password(&key))
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        let _guard = CREDENTIAL_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some((base, _)) = active_credential()? {
+            store_active_credential(&base, &Redacted::new(key))
+        } else {
+            keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+                .and_then(|entry| entry.set_password(&key))
+                .map_err(|_| credential_error())
+        }
     })
     .await
-    .map_err(|error| AppError::new("carpe_diem_keychain", error.to_string()))?
-    .map_err(|error| AppError::new("carpe_diem_keychain", error.to_string()))?;
+    .map_err(|_| credential_error())??;
     super::sidecar::on_settings_changed(&app);
     Ok(dto())
 }
 
 #[tauri::command]
 pub async fn carpe_diem_clear_api_key(app: AppHandle) -> Result<CarpeDiemSettingsDto, AppError> {
-    tokio::task::spawn_blocking(|| {
+    tokio::task::spawn_blocking(|| -> Result<(), AppError> {
+        let _guard = CREDENTIAL_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let base = active_credential()?
+            .map(|(base, _)| base)
+            .unwrap_or_else(legacy_base_url);
+        // Always tombstone, including legacy-only installs. A failed legacy
+        // delete must not make a cleared credential usable again.
+        store_active_credential(&base, &Redacted::new(String::new()))?;
         if let Ok(entry) = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT) {
-            // Absent entry is not an error — clearing an unset key is a no-op.
             let _ = entry.delete_credential();
         }
+        Ok(())
     })
     .await
-    .map_err(|error| AppError::new("carpe_diem_keychain", error.to_string()))?;
+    .map_err(|_| credential_error())??;
     super::sidecar::on_settings_changed(&app);
     // Nothing else to tell: the key is only ever used from this process now.
     Ok(dto())
@@ -334,8 +408,7 @@ pub async fn carpe_diem_probe_upstream() -> Result<UpstreamReachability, AppErro
 
 #[tauri::command]
 pub async fn carpe_diem_test_connection() -> Result<TestConnectionResult, AppError> {
-    let base = base_url();
-    let Some(key) = api_key() else {
+    let Some((base, key)) = credentials() else {
         return Ok(TestConnectionResult {
             ok: false,
             model_count: None,
@@ -350,7 +423,7 @@ pub async fn carpe_diem_test_connection() -> Result<TestConnectionResult, AppErr
     let base = base.trim_end_matches('/').to_string();
     // The catalog lives only on the `/v1` rail; the chat probe below uses the
     // inference rail (`base`) so the test exercises whatever chat actually hits.
-    let catalog = catalog_base_url();
+    let catalog = catalog_base_url_of(&base);
 
     // 1) Reachability + catalog size (public on Carpe Diem, so proves the URL).
     let model_count = match client
@@ -430,7 +503,7 @@ pub async fn carpe_diem_test_connection() -> Result<TestConnectionResult, AppErr
 
 #[tauri::command]
 pub async fn carpe_diem_get_credits() -> Result<CarpeDiemCreditsDto, AppError> {
-    let Some(key) = api_key() else {
+    let Some((base, key)) = credentials() else {
         return Err(AppError::new(
             "carpe_diem_no_api_key",
             "No Carpe Diem API key is stored yet.",
@@ -442,7 +515,7 @@ pub async fn carpe_diem_get_credits() -> Result<CarpeDiemCreditsDto, AppError> {
         .map_err(|error| AppError::new("carpe_diem_http_client", error.to_string()))?;
     // Billing (`/credits`, `/prepaid/*`, `/api_keys/rate_limits`) and pricing
     // live only on the `/v1` rail, never `/router`.
-    let base = catalog_base_url();
+    let base = catalog_base_url_of(&base);
 
     // Route by key prefix (the fork's rule): `cdm_` keys talk to Carpe Diem;
     // any other key is a Venice key pointed straight at api.venice.ai, which
@@ -699,7 +772,7 @@ pub fn carpe_diem_open_dashboard() -> Result<(), AppError> {
 /// Shared setup for the billing commands: the base URL, a `cdm_` key, and an
 /// HTTP client. Rejects Venice keys (no payment rails there).
 fn billing_ctx() -> Result<(String, Redacted<String>, reqwest::Client), AppError> {
-    let Some(key) = api_key() else {
+    let Some((base, key)) = credentials() else {
         return Err(AppError::new(
             "carpe_diem_no_api_key",
             "No Carpe Diem API key is stored yet.",
@@ -712,7 +785,7 @@ fn billing_ctx() -> Result<(String, Redacted<String>, reqwest::Client), AppError
         ));
     }
     // Billing endpoints (`/credits`, `/prepaid/*`) live only on the `/v1` rail.
-    let base = catalog_base_url();
+    let base = catalog_base_url_of(&base);
     let client = crate::http_client::credentialed(TEST_TIMEOUT)
         .build()
         .map_err(|error| AppError::new("carpe_diem_http_client", error.to_string()))?;
@@ -1020,8 +1093,192 @@ fn normalize_api_key(raw: &str) -> Result<String, AppError> {
     Ok(value.to_string())
 }
 
+/// The URL and key form one atomic keychain value after vault activation.
+/// Updating them in separate files leaves a crash window which sends the new
+/// key to the old endpoint (or the old key to the new endpoint).
+fn credential_error() -> AppError {
+    AppError::new(
+        "carpe_diem_keychain",
+        "Your system credential store is unavailable.",
+    )
+}
+
+fn decode_active_credential(
+    raw: Result<String, keyring::Error>,
+) -> Result<Option<Credential>, AppError> {
+    let raw = match raw {
+        Ok(raw) => zeroize::Zeroizing::new(raw),
+        Err(keyring::Error::NoEntry) => return Ok(None),
+        Err(_) => return Err(credential_error()),
+    };
+    let value: serde_json::Value = serde_json::from_str(&raw).map_err(|_| credential_error())?;
+    let base = value["base_url"].as_str().ok_or_else(credential_error)?;
+    let key = value["api_key"].as_str().ok_or_else(credential_error)?;
+    let base = validate_base_url(base).map_err(|_| credential_error())?;
+    if key.chars().count() > MAX_API_KEY_CHARS {
+        return Err(credential_error());
+    }
+    Ok(Some((base, Redacted::new(key.to_string()))))
+}
+
+fn active_credential() -> Result<Option<Credential>, AppError> {
+    decode_active_credential(
+        keyring::Entry::new(KEYCHAIN_SERVICE, ACTIVE_CREDENTIAL)
+            .and_then(|entry| entry.get_password()),
+    )
+}
+fn store_active_credential(base: &str, key: &Redacted<String>) -> Result<(), AppError> {
+    let value = zeroize::Zeroizing::new(
+        serde_json::json!({"base_url":base,"api_key":key.expose_str()}).to_string(),
+    );
+    keyring::Entry::new(KEYCHAIN_SERVICE, ACTIVE_CREDENTIAL)
+        .and_then(|entry| entry.set_password(&value))
+        .map_err(|_| {
+            AppError::new(
+                "carpe_diem_keychain",
+                "Your system credential store is unavailable.",
+            )
+        })
+}
+
+/// Free authenticated validation precedes atomic activation. Public /models
+/// cannot validate a credential. This path supports Carpe Diem /credits only.
+pub(crate) async fn restore_account_credential(
+    app: &AppHandle,
+    base: &str,
+    key: &str,
+) -> Result<(), AppError> {
+    let base_url = validate_base_url(base)?;
+    let key = Redacted::new(normalize_api_key(key)?);
+    if !key.expose_str().starts_with("cdm_") {
+        return Err(AppError::new(
+            "carpe_diem_verification_unsupported",
+            "This vault requires a Carpe Diem key.",
+        ));
+    }
+    let client = crate::http_client::credentialed(TEST_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| {
+            AppError::new(
+                "carpe_diem_credits_unreachable",
+                "Your connection could not be verified.",
+            )
+        })?;
+    let mut response = client
+        .get(format!("{}/credits", catalog_base_url_of(&base_url)))
+        .bearer_auth(key.expose_str())
+        .send()
+        .await
+        .map_err(|_| {
+            AppError::new(
+                "carpe_diem_credits_unreachable",
+                "Your connection could not be verified.",
+            )
+        })?;
+    if !response.status().is_success() {
+        return Err(AppError::new(
+            "carpe_diem_key_invalid",
+            "The service did not accept this key. Your previous key is unchanged.",
+        ));
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| credential_error())? {
+        if bytes.len() + chunk.len() > 65_536 {
+            return Err(AppError::new(
+                "carpe_diem_credits_failed",
+                "The credits response was too large.",
+            ));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let body: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| {
+        AppError::new(
+            "carpe_diem_credits_failed",
+            "The service did not return a valid credits response.",
+        )
+    })?;
+    if body
+        .get("availableCredits")
+        .and_then(serde_json::Value::as_f64)
+        .is_none()
+    {
+        return Err(AppError::new(
+            "carpe_diem_credits_failed",
+            "The service did not return a valid credits response.",
+        ));
+    }
+    {
+        let _guard = CREDENTIAL_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        store_active_credential(&base_url, &key)?;
+        replace_mirror(CarpeDiemSettings { base_url });
+    }
+    super::sidecar::on_settings_changed(app);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    #[cfg(debug_assertions)]
+    fn debug_override_keeps_the_atomic_destination_and_fails_closed() {
+        let pair = override_active_credential(
+            Ok(Some((
+                "https://configured.example/v1".into(),
+                Redacted::new("stored".into()),
+            ))),
+            Some("test-key".into()),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(pair.0, "https://configured.example/v1");
+        assert_eq!(pair.1.expose_str(), "test-key");
+        assert!(
+            override_active_credential(Err(credential_error()), Some("test-key".into())).is_err()
+        );
+    }
+
+    #[test]
+    fn credential_store_errors_and_corruption_never_read_legacy_secret() {
+        for active in [
+            decode_active_credential(Err(keyring::Error::NoEntry)),
+            decode_active_credential(Ok("invalid json".into())),
+            decode_active_credential(Ok(r#"{"base_url":"https://new.example/v1"}"#.into())),
+            Err(credential_error()),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let read = std::cell::Cell::new(false);
+            let result = credential_snapshot(active.1, || {
+                read.set(true);
+                Some((
+                    "https://legacy.example/v1".into(),
+                    Redacted::new("legacy-secret".into()),
+                ))
+            });
+            assert_eq!(read.get(), active.0 == 0);
+            assert_eq!(result.is_some(), active.0 == 0);
+        }
+    }
+
+    #[test]
+    fn paired_credentials_and_clear_tombstone_do_not_resurrect_legacy() {
+        for key in ["new-secret", ""] {
+            let raw =
+                serde_json::json!({"base_url":"https://new.example/v1","api_key":key}).to_string();
+            let result =
+                credential_snapshot(decode_active_credential(Ok(raw)), || panic!("legacy read"));
+            if key.is_empty() {
+                assert!(result.is_none());
+            } else {
+                let (base, key) = result.unwrap();
+                assert_eq!(base, "https://new.example/v1");
+                assert_eq!(key.expose_str(), "new-secret");
+            }
+        }
+    }
+
     use super::*;
 
     /// The key rides on every request to this base, so the scheme is not a

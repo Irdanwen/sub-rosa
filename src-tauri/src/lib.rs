@@ -2,6 +2,7 @@
 // runtime (spawned as a subprocess — forbidden on iOS), the dictation
 // helper, meeting detection, and the Tauri updater. The mobile (iOS) build
 // compiles only the shared core below.
+pub mod account;
 pub mod actions;
 #[cfg(desktop)]
 pub mod agent_hud;
@@ -461,6 +462,34 @@ pub fn run() {
             memory::memory_delete,
             memory::memory_clear,
             memory::extract::memory_extract,
+            account::account_status,
+            account::conversations::account_conversations_list,
+            account::conversations::account_conversation_get,
+            account::conversations::account_conversation_prepare,
+            account::conversations::account_conversation_bind,
+            account::pairing::account_pairing_start,
+            account::pairing::account_pairing_approve,
+            account::pairing::account_pairing_exchange,
+            account::pairing::account_pairing_cancel,
+            account::account_configure,
+            account::account_login_start,
+            account::account_login_exchange,
+            account::account_devices,
+            account::account_revoke_device,
+            account::account_logout,
+            account::account_delete,
+            account::account_vault_create,
+            account::account_vault_unlock,
+            account::account_vault_recovery_kit,
+            account::account_vault_confirm_recovery,
+            account::account_sync_set_enabled,
+            account::account_sync_now,
+            account::account_sync_conflicts,
+            account::account_sync_restore_conflict,
+            account::account_sync_resolve_conflict,
+            account::account_sync_conflict_preview,
+            account::account_vault_share_carpe_diem,
+            account::account_vault_restore_carpe_diem,
             carpe_diem::settings::carpe_diem_get_settings,
             carpe_diem::settings::carpe_diem_set_base_url,
             carpe_diem::settings::carpe_diem_set_api_key,
@@ -638,6 +667,34 @@ pub fn run() {
         memory::memory_delete,
         memory::memory_clear,
         memory::extract::memory_extract,
+        account::account_status,
+        account::conversations::account_conversations_list,
+        account::conversations::account_conversation_get,
+        account::conversations::account_conversation_prepare,
+        account::conversations::account_conversation_bind,
+        account::pairing::account_pairing_start,
+        account::pairing::account_pairing_approve,
+        account::pairing::account_pairing_exchange,
+        account::pairing::account_pairing_cancel,
+        account::account_configure,
+        account::account_login_start,
+        account::account_login_exchange,
+        account::account_devices,
+        account::account_revoke_device,
+        account::account_logout,
+        account::account_delete,
+        account::account_vault_create,
+        account::account_vault_unlock,
+        account::account_vault_recovery_kit,
+        account::account_vault_confirm_recovery,
+        account::account_sync_set_enabled,
+        account::account_sync_now,
+        account::account_sync_conflicts,
+        account::account_sync_restore_conflict,
+        account::account_sync_resolve_conflict,
+        account::account_sync_conflict_preview,
+        account::account_vault_share_carpe_diem,
+        account::account_vault_restore_carpe_diem,
         carpe_diem::settings::carpe_diem_get_settings,
         carpe_diem::settings::carpe_diem_set_base_url,
         carpe_diem::settings::carpe_diem_set_api_key,
@@ -709,6 +766,7 @@ pub fn run() {
             // On desktop the sidecar is a child process; on mobile it runs
             // in-process (subprocess spawning is forbidden on iOS).
             carpe_diem::settings::setup(app);
+            account::setup(app.handle());
             carpe_diem::sidecar::setup(app);
             diagnostics::mark("sidecar setup");
             memory::setup(app);

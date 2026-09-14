@@ -1,0 +1,270 @@
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import {
+  AccountSettingsSection,
+  accountError,
+} from "../components/settings/AccountSettingsSection";
+import type { AccountStatus } from "../lib/account";
+
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), openExternalUrl: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("../lib/tauri", () => ({ openExternalUrl: mocks.openExternalUrl }));
+
+const local: AccountStatus = {
+  server_url: "https://accounts.example.com",
+  account: null,
+  device_id: null,
+  vault_unlocked: false,
+  vault_exists: null,
+  recovery_confirmed: false,
+  recovery_available: false,
+  sync_enabled: false,
+  pending_changes: 0,
+  conflicts: 0,
+  last_synced_at: null,
+};
+const connected: AccountStatus = {
+  ...local,
+  account: { id: "account-1", email: "person@example.com", created_at: "2026-09-14T09:00:00Z" },
+  device_id: "device-1",
+  vault_exists: true,
+  vault_unlocked: true,
+  recovery_confirmed: true,
+  recovery_available: true,
+};
+let state: AccountStatus;
+let handlers: Record<string, (args?: Record<string, unknown>) => unknown>;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  state = { ...local };
+  handlers = {};
+  mocks.invoke.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+    if (handlers[command]) return handlers[command](args);
+    if (command === "account_status") return state;
+    if (command === "account_devices")
+      return [
+        {
+          id: "device-1",
+          name: "Phone",
+          created_at: "2026-09-14T09:00:00Z",
+          last_seen_at: null,
+          revoked_at: null,
+        },
+      ];
+    if (command === "account_sync_conflicts") return [];
+    return undefined;
+  });
+});
+afterEach(() => vi.useRealTimers());
+
+describe("Account settings", () => {
+  it.each([
+    ["sync_file_too_large", "A file exceeds the sync size limit"],
+    ["sync_object_too_large", "Some content exceeds the sync size limit"],
+    ["account_network", "The sync service is unavailable"],
+    ["secret-in-unrecognized-server-code", "Synchronization could not finish"],
+  ])("shows durable %s without reporting synchronization complete", async (code, message) => {
+    state = {
+      ...connected,
+      sync_enabled: true,
+      pending_changes: 0,
+      last_synced_at: "2026-09-14T09:00:00Z",
+      last_sync_error: code,
+    };
+    render(<AccountSettingsSection />);
+    expect(
+      await screen.findByText("Some items could not sync. Your local copies are preserved."),
+    ).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(message))).toBeInTheDocument();
+    expect(screen.queryByText(/Last synced:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(code)).not.toBeInTheDocument();
+  });
+  it("allows pausing sync while the vault is locked", async () => {
+    state = {
+      ...connected,
+      sync_enabled: true,
+      vault_unlocked: false,
+      last_sync_error: "vault_locked",
+    };
+    handlers.account_sync_set_enabled = () => ({ ...state, sync_enabled: false });
+    render(<AccountSettingsSection />);
+    const pause = await screen.findByRole("button", { name: "Pause sync" });
+    expect(pause).not.toBeDisabled();
+    await userEvent.click(pause);
+    expect(mocks.invoke).toHaveBeenCalledWith("account_sync_set_enabled", { enabled: false });
+  });
+
+  it("keeps account setup optional and asks the native process to start browser sign-in", async () => {
+    const user = userEvent.setup();
+    handlers.account_login_start = () => ({
+      request_id: "login-1",
+      verification_uri: "https://accounts.example.com/device",
+      user_code: "ABCD-1234",
+      expires_at: "2099-01-01T00:00:00Z",
+      interval_seconds: 5,
+    });
+    render(<AccountSettingsSection />);
+    await screen.findByLabelText("Name this device");
+    await user.type(screen.getByLabelText("Name this device"), "My phone");
+    await user.click(screen.getByRole("button", { name: "Sign in or create an account" }));
+    expect(await screen.findByText("ABCD-1234")).toBeInTheDocument();
+    expect(mocks.invoke).toHaveBeenCalledWith("account_login_start", { deviceName: "My phone" });
+    expect(mocks.openExternalUrl).toHaveBeenCalledWith("https://accounts.example.com/device");
+    expect(mocks.invoke.mock.calls.some(([name]) => name === "account_sync_set_enabled")).toBe(
+      false,
+    );
+  });
+
+  it("polls approval using only the opaque request id and stops on cancellation", async () => {
+    handlers.account_login_start = () => ({
+      request_id: "login-1",
+      verification_uri: "https://accounts.example.com/device",
+      user_code: "ABCD-1234",
+      expires_at: "2099-01-01T00:00:00Z",
+      interval_seconds: 5,
+    });
+    handlers.account_login_exchange = () => Promise.reject({ code: "authorization_pending" });
+    render(<AccountSettingsSection />);
+    await screen.findByLabelText("Name this device");
+    vi.useFakeTimers();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Sign in or create an account" }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(mocks.invoke).toHaveBeenCalledWith("account_login_exchange", { requestId: "login-1" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
+    });
+    expect(
+      mocks.invoke.mock.calls.filter(([name]) => name === "account_login_exchange"),
+    ).toHaveLength(1);
+  });
+
+  it("requires explicit consent before enabling sync and waits for native confirmation", async () => {
+    state = { ...connected };
+    handlers.account_sync_set_enabled = () => {
+      state = { ...state, sync_enabled: true };
+      return state;
+    };
+    const user = userEvent.setup();
+    render(<AccountSettingsSection />);
+    const enable = await screen.findByRole("button", { name: "Enable encrypted sync" });
+    expect(enable).toBeDisabled();
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(enable);
+    expect(mocks.invoke).toHaveBeenCalledWith("account_sync_set_enabled", { enabled: true });
+    expect(await screen.findByRole("button", { name: "Pause sync" })).toBeInTheDocument();
+  });
+
+  it("requires recovery confirmation retained by native storage before sharing or sync", async () => {
+    state = { ...connected, recovery_confirmed: false };
+    handlers.account_vault_recovery_kit = () => ({ recovery_key: "a-random-recovery-key" });
+    handlers.account_vault_confirm_recovery = () => {
+      state = { ...state, recovery_confirmed: true };
+      return state;
+    };
+    const user = userEvent.setup();
+    render(<AccountSettingsSection />);
+    await screen.findByText("person@example.com");
+    expect(screen.getByRole("checkbox")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Share this device's key" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Show my recovery key" }));
+    await screen.findByLabelText("Enter the saved key to confirm");
+    expect(screen.getByRole("button", { name: "I have saved my recovery key" })).toBeDisabled();
+    await user.type(
+      screen.getByLabelText("Enter the saved key to confirm"),
+      "a-random-recovery-key",
+    );
+    await user.click(screen.getByRole("button", { name: "I have saved my recovery key" }));
+    expect(mocks.invoke).toHaveBeenCalledWith("account_vault_confirm_recovery", {
+      recoveryKey: "a-random-recovery-key",
+    });
+    await waitFor(() =>
+      expect(screen.queryByDisplayValue("a-random-recovery-key")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("checkbox")).not.toBeDisabled();
+  });
+
+  it("shares an existing key without reading credentials into JavaScript", async () => {
+    state = { ...connected };
+    const user = userEvent.setup();
+    render(<AccountSettingsSection />);
+    await user.click(await screen.findByRole("button", { name: "Share this device's key" }));
+    expect(mocks.invoke).toHaveBeenCalledWith("account_vault_share_carpe_diem");
+    expect(
+      await screen.findByText("Your saved Carpe Diem key has been shared through your vault."),
+    ).toBeInTheDocument();
+  });
+
+  it("requires confirmation before replacing this device's key", async () => {
+    state = { ...connected };
+    const user = userEvent.setup();
+    render(<AccountSettingsSection />);
+    await user.click(await screen.findByRole("button", { name: "Use the key from my vault" }));
+    expect(
+      mocks.invoke.mock.calls.some(([name]) => name === "account_vault_restore_carpe_diem"),
+    ).toBe(false);
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Use this key" }),
+    );
+    expect(mocks.invoke).toHaveBeenCalledWith("account_vault_restore_carpe_diem");
+  });
+
+  it("keeps a failed account deletion visible and never reports success", async () => {
+    state = { ...connected };
+    handlers.account_delete = () =>
+      Promise.reject({ code: "recent_auth_required", message: "secret-token" });
+    const user = userEvent.setup();
+    render(<AccountSettingsSection />);
+    await user.click(await screen.findByRole("button", { name: "Delete my account" }));
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Delete my account" }),
+    );
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    expect(await screen.findByText("Sign in again, then retry this action.")).toBeInTheDocument();
+    expect(screen.queryByText("secret-token")).not.toBeInTheDocument();
+    expect(screen.getByText("person@example.com")).toBeInTheDocument();
+  });
+
+  it("preserves conflict copies and asks native storage to restore a separate note", async () => {
+    state = { ...connected, conflicts: 1 };
+    handlers.account_sync_conflicts = () => [
+      { id: "conflict-1", kind: "note", object_id: "note-1", created_at: "2026-09-14T09:00:00Z" },
+    ];
+    const user = userEvent.setup();
+    render(<AccountSettingsSection />);
+    handlers.account_sync_conflict_preview = () => ({
+      local_preview: "Local",
+      remote_preview: "Remote",
+      kind: "note",
+      deleted: false,
+    });
+    await user.click(await screen.findByRole("button", { name: "Review versions" }));
+    await user.click(await screen.findByRole("radio", { name: "Keep both as separate notes" }));
+    await user.click(screen.getByRole("button", { name: "Confirm my choice" }));
+    expect(mocks.invoke).toHaveBeenCalledWith("account_sync_resolve_conflict", {
+      conflictId: "conflict-1",
+      resolution: "copy",
+    });
+  });
+
+  it("offers retry when local account status cannot load", async () => {
+    handlers.account_status = () => Promise.reject(new Error("internal-secret"));
+    render(<AccountSettingsSection />);
+    expect(await screen.findByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(screen.queryByText("internal-secret")).not.toBeInTheDocument();
+  });
+
+  it("redacts unexpected error payloads", () => {
+    expect(accountError({ code: "http_error", message: "Bearer secret" })).not.toContain("secret");
+    expect(accountError({ code: "invalid_recovery_key" })).toBe(
+      "This recovery key could not unlock your vault. Check it and try again.",
+    );
+  });
+});

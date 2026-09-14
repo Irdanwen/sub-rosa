@@ -1,3 +1,4 @@
+import { useAccountSyncUpdated } from "../../../lib/account-sync-events";
 import { t } from "../../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -113,6 +114,7 @@ export function AgentScreen({
     return Promise.all([sessions, folders]).finally(() => setLoading(false));
   }, [archiveFolderId]);
 
+  useAccountSyncUpdated(refresh);
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -406,6 +408,9 @@ export function AgentSessionScreen({
       if (isCurrent()) setLoadingTask(false);
     }
   }, [sessionId]);
+  useAccountSyncUpdated(async () => {
+    if (!runningRef.current) await loadTask();
+  });
 
   const refreshAfterFailure = useCallback((taskId: string) => {
     const revision = taskRevisionRef.current;

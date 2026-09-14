@@ -11,6 +11,7 @@ export type MobileTab = "notes" | "dictation" | "agent" | "studio" | "settings";
 
 /** The settings detail screens the root list pushes to. */
 export type SettingsSection =
+  | "account"
   | "memory"
   | "connection"
   | "usage"

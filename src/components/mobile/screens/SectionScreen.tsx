@@ -14,6 +14,7 @@ import { ModelSheet } from "../ModelSheet";
 import { APP_COMMIT_HASH, APP_VERSION } from "../../../app/build-info";
 import { usePlatformCapabilities } from "../../../lib/platform-capabilities";
 import { PrivacySettingsSection } from "../../settings/PrivacySettingsSection";
+import { AccountSettingsSection } from "../../settings/AccountSettingsSection";
 import { ArchiveSection } from "../../settings/ArchiveSection";
 import { SettingsGroup, SettingsRow } from "../SettingsList";
 import { StackHeader } from "../StackHeader";
@@ -221,6 +222,14 @@ export function ModelsScreen({ onBack }: { onBack: () => void }) {
           onClose={() => setPicking(null)}
         />
       ) : null}
+    </SectionScreen>
+  );
+}
+
+export function AccountScreen({ onBack }: { onBack: () => void }) {
+  return (
+    <SectionScreen title={t("Account and sync")} onBack={onBack}>
+      <AccountSettingsSection />
     </SectionScreen>
   );
 }

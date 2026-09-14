@@ -1,11 +1,15 @@
 {
   "name": "os-june",
-  "version": "1.62.0",
+  "version": "1.63.0",
   "private": true,
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@9.15.4",
   "scripts": {
+    "dev:website": "pnpm --filter @subrosa/website dev",
+    "build:website": "pnpm --filter @subrosa/website build",
+    "test:cloud": "cargo test --manifest-path subrosa-cloud/Cargo.toml --workspace --locked",
+    "website:releases": "node website/scripts/update-releases.mjs",
     "dev": "vite",
     "tauri": "tauri",
     "tauri:dev": "node scripts/tauri-dev.mjs",
@@ -59,6 +63,7 @@
     "central-icons": "npm:@central-icons-react/round-outlined-radius-3-stroke-2@1.1.233",
     "central-icons-filled": "npm:@central-icons-react/round-filled-radius-3-stroke-2@1.1.241",
     "framer-motion": "^12.43.0",
+    "qrcode.react": "4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "unicode-animations": "^1.0.3"

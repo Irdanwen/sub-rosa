@@ -323,11 +323,10 @@ fn start_or_mark_unconfigured(app: &AppHandle) {
 fn spawn_sidecar(app: &AppHandle) {
     stop_child(app);
 
-    let Some(key) = settings::api_key() else {
+    let Some((base_url, key)) = settings::credentials() else {
         set_status(app, SidecarStatus::Unconfigured, None, None);
         return;
     };
-    let base_url = settings::base_url();
 
     let port = match free_port() {
         Ok(port) => port,

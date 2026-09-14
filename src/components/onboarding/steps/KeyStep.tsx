@@ -1,3 +1,4 @@
+import { AccountSetupOffer } from "../../settings/AccountSettingsSection";
 import { t } from "../../../lib/i18n";
 import { CARPE_DIEM_DASHBOARD_URL, PRODUCT_NAME } from "../../../lib/branding";
 import { CarpeDiemSettings } from "../../settings/CarpeDiemSettings";
@@ -31,6 +32,7 @@ export function KeyStep({
       wide
     >
       <CarpeDiemSettings compact />
+      <AccountSetupOffer />
       <p className="welcome-terms" aria-live="polite">
         {ready ? (
           t("Connected. Your key works and the engine is running.")

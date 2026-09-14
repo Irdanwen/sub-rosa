@@ -1,6 +1,6 @@
 [package]
 name = "os-june"
-version = "1.62.0"
+version = "1.63.0"
 publish = false
 description = "Sub Rosa"
 authors = ["Open Software Network"]
@@ -44,6 +44,7 @@ tauri-build = { version = "2.4.0", features = [] }
 
 [dependencies]
 anyhow = "1.0"
+aes-gcm = "0.10"
 base64 = "0.22"
 # The archive (Settings › Import / export): a tar stream, optionally wrapped
 # in age with a passphrase. Both are pure Rust and compile for iOS.

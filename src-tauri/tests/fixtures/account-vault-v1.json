@@ -1,0 +1,10 @@
+{
+  "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "aad": "subrosa:vault:v1:11111111-1111-4111-8111-111111111111",
+  "plaintext": "{\"v\":1,\"key\":\"__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA\"}",
+  "envelope": {
+    "v": 1,
+    "nonce": "AAECAwQFBgcICQoL",
+    "ciphertext": "PCCgOf_U7jnmJO6pi8snMrTv2GSGTXIaUlTc80VZOO1NaJaz8LQl_Q7WSZjm6B0VjDVVwgq_l79-tVcC3wFWnW70acnOvK83tb9b"
+  }
+}

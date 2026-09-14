@@ -1,0 +1,149 @@
+.account-settings {
+  display: grid;
+  gap: var(--sp-6);
+  min-width: 0;
+}
+.account-card {
+  display: grid;
+  gap: var(--sp-5);
+  padding: var(--sp-6);
+  min-width: 0;
+}
+.account-form {
+  display: grid;
+  gap: var(--sp-5);
+}
+.account-field {
+  display: grid;
+  gap: var(--sp-3);
+  font-size: var(--fs-md);
+}
+.account-field input,
+.account-field textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: var(--sp-5);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+}
+.account-field textarea {
+  resize: vertical;
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.account-field input:focus-visible,
+.account-field textarea:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: var(--sp-px);
+}
+.account-actions,
+.account-heading-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+}
+.account-heading-row strong {
+  overflow-wrap: anywhere;
+}
+.account-login-code {
+  font-size: var(--fs-display);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  padding-block: var(--sp-5);
+}
+.account-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+.account-consent input {
+  flex-shrink: 0;
+  accent-color: var(--brand);
+}
+.account-device {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-5);
+  border-top: 1px solid var(--border);
+  padding-block: var(--sp-5);
+  min-width: 0;
+}
+.account-device strong {
+  overflow-wrap: anywhere;
+}
+.account-setup-offer {
+  text-align: start;
+  margin-block: var(--sp-6);
+}
+.account-setup-offer summary {
+  cursor: pointer;
+  font-size: var(--fs-md);
+  padding-block: var(--sp-5);
+}
+.account-setup-offer > .account-settings {
+  margin-top: var(--sp-6);
+}
+
+/* QR scanners require a light quiet zone regardless of the app theme. */
+.account-pairing-qr {
+  width: fit-content;
+  max-width: 100%;
+  padding: var(--sp-4);
+  border-radius: var(--r-md);
+  background: white;
+}
+.account-pairing-qr svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+.portable-conversations {
+  display: grid;
+  gap: var(--sp-5);
+  padding: var(--sp-6);
+  min-width: 0;
+}
+.portable-history {
+  max-height: 45vh;
+  overflow: auto;
+  display: grid;
+  gap: var(--sp-5);
+}
+.portable-message {
+  padding: var(--sp-5);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.portable-message p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-md);
+}
+.portable-conversation-row {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+  color: var(--foreground);
+  border: none;
+  text-align: start;
+  cursor: pointer;
+}
+.portable-entry {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--sp-3) var(--sp-6);
+  flex-shrink: 0;
+}
