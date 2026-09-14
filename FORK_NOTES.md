@@ -1070,7 +1070,8 @@ actuellement proposées au téléchargement ne contiennent pas cette branche.
 3. Conflits attendus sur les fichiers listés « modifiés » ci-dessus (surtout `tauri.conf.json`, `lib.rs`,
    `os_accounts.rs`, scripts de build). Résoudre en gardant la logique fork (module `carpe_diem/`, branding).
 4. CI verte (`pnpm check`, `typecheck`, `test`, `test:rust`, `test:june-api`) → PR → merge.
-# Release packaging addendum (2026-09-14)
+
+## Release packaging addendum (2026-09-14)
 
 macOS Intel releases use the native `macos-15-intel` runner. Cross-compiling
 Rust on ARM left the bundled Python and native Hermes extensions on ARM;

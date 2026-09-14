@@ -6,10 +6,13 @@ La 1.63.0 ajoute AES-256-GCM dans Rust pour le coffre de synchronisation,
 au-delà de TLS fourni par le système. L'ancienne déclaration automatique
 `ITSAppUsesNonExemptEncryption=false` a été retirée de l'app et de sa source
 XcodeGen : le raisonnement « HTTPS seulement » ci-dessous est historique.
-L'envoi du build peut aboutir avec une demande de conformité dans TestFlight.
+Le build 1.63.0 a été envoyé avec succès le 14 septembre 2026 et Apple le
+déclare `VALID`. La distribution interne et externe reste bloquée par
+`MISSING_EXPORT_COMPLIANCE` : voir [les preuves de release](docs/release-1.63.0.md).
 Renseigner la déclaration réelle dans App Store Connect avant de distribuer
 le build ; ne pas cocher une exemption sur la seule base de l'ancienne release.
-Le descriptif technique est dans `docs/accounts-sync-contract.md`.
+Le [descriptif technique préparé pour la déclaration](docs/testflight-encryption-1.63.0.md)
+résume les algorithmes effectivement embarqués, y compris le transport Rustls.
 Référence : [documentation Apple](https://developer.apple.com/help/app-store-connect/reference/app-information/export-compliance-documentation-for-encryption).
 
 ---

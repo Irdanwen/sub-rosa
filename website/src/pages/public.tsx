@@ -14,8 +14,8 @@ export function Downloads() {
       <p className="lede">
         {import.meta.env.VITE_PREVIEW_ONLY === "1"
           ? t(
-              "Download the current app for local use. Account features will arrive with a future app release and the opening of the account service.",
-              "Téléchargez l’app actuelle pour travailler localement. Les fonctions de compte arriveront avec une prochaine version de l’app et l’ouverture du service de compte.",
+              "Start locally with your Carpe Diem key. Version 1.63.0 adds optional encrypted sync with a configured account service. Public account registration is not open yet.",
+              "Commencez localement avec votre clé Carpe Diem. La version 1.63.0 ajoute la synchronisation chiffrée facultative avec un service de compte configuré. Les inscriptions publiques ne sont pas encore ouvertes.",
             )
           : t(
               "Download the app for your device. You can start locally, then connect your account when you are ready.",
@@ -105,8 +105,8 @@ export function Information({ path }: { path: string }) {
           </li>
           <li>
             {t(
-              "Connect your Sub Rosa account from Settings to enable encrypted sync.",
-              "Connectez votre compte Sub Rosa depuis les Réglages pour activer la synchronisation chiffrée.",
+              "If you have a Sub Rosa account service, enter its HTTPS address in Settings to connect your devices with encrypted sync.",
+              "Si vous disposez d’un service de compte Sub Rosa, saisissez son adresse HTTPS dans les Réglages pour connecter vos appareils avec la synchronisation chiffrée.",
             )}
           </li>
         </ol>
@@ -203,11 +203,11 @@ export function Information({ path }: { path: string }) {
             "Le service stocke l’identité de votre compte, les appareils connectés, les informations de session et de sécurité, ainsi que les contenus chiffrés. Les adresses réseau, horaires et volumes de transfert sont visibles pour les opérateurs d’infrastructure. Le texte des notes et votre clé Carpe Diem enregistrée sont chiffrés avant l’envoi.",
           )}
         </p>
-        <h2>{t("Cookies and preferences", "Cookies et préférences")}</h2>
+        <h2>{t("Cookies", "Cookies")}</h2>
         <p>
           {t(
-            "The account uses essential session and request-protection cookies. Your language preference is saved on this browser. This website does not include advertising trackers or session replay.",
-            "Le compte utilise des cookies essentiels de session et de protection des requêtes. Votre préférence de langue est enregistrée dans ce navigateur. Ce site n’intègre ni traqueur publicitaire ni enregistrement de session.",
+            "The account uses essential session and request-protection cookies. This website does not include advertising trackers or session replay.",
+            "Le compte utilise des cookies essentiels de session et de protection des requêtes. Ce site n’intègre ni traqueur publicitaire ni enregistrement de session.",
           )}
         </p>
         <h2>{t("Export and deletion", "Export et suppression")}</h2>

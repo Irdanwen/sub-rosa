@@ -1,25 +1,25 @@
 {
-  "version": "v1.62.0",
-  "published_at": "2026-09-05T16:33:31Z",
-  "release_url": "https://github.com/Irdanwen/sub-rosa-releases/releases/tag/v1.62.0",
+  "version": "v1.63.0",
+  "published_at": "2026-09-14T14:05:50Z",
+  "release_url": "https://github.com/Irdanwen/sub-rosa-releases/releases/tag/v1.63.0",
   "assets": [
     {
       "platform": "mac-arm",
-      "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/v1.62.0/darwin-aarch64-Sub.Rosa_1.62.0_aarch64.dmg",
-      "bytes": 152058659,
-      "sha256": "b68991a1427fc65cc85307278a8ae61a3afecc507f26de4136ecae3f6d465574"
+      "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/v1.63.0/darwin-aarch64-Sub.Rosa_1.63.0_aarch64.dmg",
+      "bytes": 152743344,
+      "sha256": "104b4f2ec84ba2350ac12bcdb69fe36df45a79c5fed2108feea94b371614078c"
     },
     {
       "platform": "mac-intel",
-      "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/v1.62.0/darwin-x86_64-Sub.Rosa_1.62.0_x64.dmg",
-      "bytes": 153326774,
-      "sha256": "33029514d3be4999ac444f25c69e826e6e5bafedc582264c00af115bdba851bf"
+      "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/v1.63.0/darwin-x86_64-Sub.Rosa_1.63.0_x64.dmg",
+      "bytes": 155116513,
+      "sha256": "a1f194db490d4a68597265e783e4cae2c63a0e6758795427256c14fa115652ee"
     },
     {
       "platform": "windows",
-      "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/v1.62.0/windows-x86_64-Sub.Rosa_1.62.0_x64-setup.exe",
-      "bytes": 106830197,
-      "sha256": "247e29ab76a564f191bb9605fa4ad361d74ce96fc1c5146fbe4143408bb1d65e"
+      "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/v1.63.0/windows-x86_64-Sub.Rosa_1.63.0_x64-setup.exe",
+      "bytes": 107368702,
+      "sha256": "a98783b19574f3aa5b85b2ea1afd75d07d92833841b893295e39ba7293525534"
     }
   ]
 }
