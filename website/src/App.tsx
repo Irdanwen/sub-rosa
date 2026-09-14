@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
-import { setLanguage, t, useLanguage } from "./lib/i18n";
+import { t } from "./lib/i18n";
 import { AccountPage } from "./pages/account";
 import { Downloads, Information } from "./pages/public";
 import "./style.css";
 import { registerAccountNavigation } from "./lib/webmcp";
 
 export function App({ initialPath }: { initialPath?: string }) {
-  const language = useLanguage();
   const [path, setPath] = useState(initialPath ?? location.pathname + location.search);
   useEffect(
     () =>
@@ -49,13 +48,13 @@ export function App({ initialPath }: { initialPath?: string }) {
     };
   }, []);
   useEffect(() => {
-    document.documentElement.lang = language;
+    document.documentElement.lang = "en";
     document.title = path.startsWith("/account")
       ? `${t("Your account", "Votre compte")} · Sub Rosa`
       : path === "/downloads"
         ? `${t("Download", "Télécharger")} · Sub Rosa`
         : "Sub Rosa";
-  }, [path, language]);
+  }, [path]);
   return (
     <>
       <a className="skip" href="#main">
@@ -70,14 +69,6 @@ export function App({ initialPath }: { initialPath?: string }) {
           <a href="/downloads">{t("Download", "Télécharger")}</a>
           <a href="/privacy">{t("Privacy", "Confidentialité")}</a>
           <a href="/account">{t("Sign in", "Se connecter")}</a>
-          <button
-            className="language"
-            type="button"
-            onClick={() => setLanguage(language === "fr" ? "en" : "fr")}
-            aria-label={t("Read in French", "Lire en anglais")}
-          >
-            {language === "fr" ? "EN" : "FR"}
-          </button>
         </nav>
       </header>
       <main id="main" tabIndex={-1}>
@@ -126,26 +117,6 @@ export function App({ initialPath }: { initialPath?: string }) {
                 </a>
               </div>
               <p className="quiet">macOS · Windows · iPhone</p>
-            </section>
-            <section className="product wrap" aria-label={t("Inside Sub Rosa", "Dans Sub Rosa")}>
-              <div className="product-caption">
-                <span>
-                  {t(
-                    "From the first word to your next creation",
-                    "Du premier mot à votre prochaine création",
-                  )}
-                </span>
-                <span>Sub Rosa / Studio</span>
-              </div>
-              <img
-                src="/studio.png"
-                alt={t(
-                  "Sub Rosa Studio, with image, video, narration and music creation tools",
-                  "Le Studio Sub Rosa et ses outils de création d’images, de vidéos, de narration et de musique",
-                )}
-                width="1755"
-                height="1440"
-              />
             </section>
             <section className="features wrap">
               <article>

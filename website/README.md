@@ -1,8 +1,24 @@
 # Sub Rosa website
 
 The public pages and account UI share the repository's React/Vite toolchain and
-single pnpm lockfile. Public pages are prerendered at build time. No external
-fonts, analytics, browser session recording or third-party executable scripts.
+single pnpm lockfile. Public pages are prerendered in English at build time.
+The website remains English regardless of browser locale or a previously saved
+French preference. The native apps keep their own language settings.
+No external font requests, analytics, browser session recording or third-party
+executable scripts.
+
+## Visual identity
+
+The website follows CarpeDiem's Roman Editorial Luxe system from
+`frontend/app/globals.css`, `frontend/tailwind.config.js` and `app/layout.tsx`:
+ivory/paper surfaces, bronze accents, fine borders, Cormorant Garamond headings
+and Inter body text. The midnight ink/aged gold palette follows the system's
+dark preference. The website owns its tokens in `src/style.css`; this does not
+change the native apps' theme or Sub Rosa's name and mark.
+
+Latin font subsets were copied from the CarpeDiem build and are served locally
+from `public/fonts/`, with their SIL Open Font License notices. The former
+French-language Studio screenshot is no longer rendered on the English site.
 
 ## Local development
 
