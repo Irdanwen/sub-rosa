@@ -10,6 +10,16 @@ n’est pas ouvert en production. Le site privé présente le produit et les
 téléchargements actuels ; son écran Compte explique cette limite et ne demande
 aucun secret. Les vrais parcours de compte sont testés contre le service local.
 
+Aperçu privé publié : [Sub Rosa](https://sub-rosa.ardanwen.chatgpt.site), version 3
+du site, déploiement confirmé le 14 septembre 2026. L’accès nécessite la connexion
+ChatGPT du propriétaire. Cette publication statique n’héberge pas le service Rust.
+Les applications proposées au téléchargement sont les versions déjà publiées,
+sans les nouveaux comptes de cette branche.
+
+Implémentation enregistrée dans le commit `6490f8cf`, sur un worktree distinct
+du dossier de travail initial. La branche applicative n’a été ni poussée,
+ni fusionnée, ni taguée pour une release.
+
 ## Ce qui est implémenté
 
 | Parcours | Réalisation |

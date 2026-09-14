@@ -1,6 +1,6 @@
 # Sub Rosa : comptes, synchronisation et site
 
-Date : 14 septembre 2026. Statut : conception initiale, suivie d’une implémentation en cours de validation.
+Date : 14 septembre 2026. Statut : conception initiale, suivie d’une implémentation validée localement ; ouverture publique non réalisée.
 
 Les notes ci-dessous évaluent la conception, pas une certification du logiciel.
 Les décisions effectivement implémentées et leurs écarts sont consignés dans
