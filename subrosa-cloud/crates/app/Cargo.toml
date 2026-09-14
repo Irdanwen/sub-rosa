@@ -1,0 +1,24 @@
+[package]
+name = "subrosa-cloud"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+subrosa-api.workspace = true
+subrosa-config.workspace = true
+subrosa-domain.workspace = true
+subrosa-persistence.workspace = true
+subrosa-providers.workspace = true
+subrosa-services.workspace = true
+anyhow.workspace = true
+axum.workspace = true
+clap.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

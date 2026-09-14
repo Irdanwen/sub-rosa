@@ -162,6 +162,14 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
           </button>
         ) : null}
 
+        <SettingsGroup title={t("Account")}>
+          <SettingsLinkRow
+            label={t("Account and sync")}
+            value={t("Optional")}
+            onClick={() => onOpen("account")}
+          />
+        </SettingsGroup>
+
         <SettingsGroup title={t("Appearance")}>
           <SettingsRow label={t("Theme")} align="stack">
             <div

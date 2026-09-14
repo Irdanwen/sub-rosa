@@ -1,0 +1,142 @@
+name: Accounts and site
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: accounts-site-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      cloud: ${{ steps.paths.outputs.cloud }}
+      website: ${{ steps.paths.outputs.website }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect scoped changes
+        id: paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python3 - <<'PY'
+          import os, subprocess
+          base = os.environ.get('BASE_SHA', '')
+          all_changed = os.environ['EVENT_NAME'] == 'workflow_dispatch' or not base or set(base) == {'0'}
+          paths = [] if all_changed else subprocess.check_output(['git', 'diff', '--name-only', base, 'HEAD', '--'], text=True).splitlines()
+          workflow = '.github/workflows/accounts-site.yml' in paths
+          cloud = all_changed or workflow or any(p.startswith('subrosa-cloud/') for p in paths)
+          website = all_changed or workflow or any(p.startswith('website/') or p in {'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml'} for p in paths)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'cloud={str(cloud).lower()}\nwebsite={str(website).lower()}\n')
+          PY
+
+  cloud:
+    name: Account service checks
+    needs: changes
+    if: needs.changes.outputs.cloud == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: subrosa-cloud
+    env:
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: '1'
+      SUBROSA_TEST_DATABASE_URL: postgres://postgres:local-ci-only@127.0.0.1:55439/postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read pinned Rust toolchain
+        id: toolchain
+        run: |
+          python3 - <<'PY'
+          import os, tomllib
+          with open('rust-toolchain.toml', 'rb') as source:
+              version = tomllib.load(source)['toolchain']['channel']
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'version={version}\n')
+          PY
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9
+        with:
+          toolchain: ${{ steps.toolchain.outputs.version }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16
+        with:
+          workspaces: subrosa-cloud -> target
+          key: account-service
+      - name: Start isolated test PostgreSQL
+        run: |
+          docker run --detach --name subrosa-test-postgres \
+            --env POSTGRES_USER=postgres --env POSTGRES_PASSWORD=local-ci-only \
+            --publish 127.0.0.1:55439:5432 postgres:17.6 -c max_connections=200
+          for attempt in $(seq 1 30); do
+            if docker exec subrosa-test-postgres pg_isready -U postgres >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec subrosa-test-postgres pg_isready -U postgres
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Real database and OIDC integration tests
+        run: cargo test --workspace --locked
+      - name: Build non-root container without publishing
+        run: docker build --tag subrosa-cloud:ci .
+      - name: Stop test database
+        if: always()
+        run: docker rm --force subrosa-test-postgres || true
+
+  website:
+    name: Website build
+    needs: changes
+    if: needs.changes.outputs.website == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Install locked workspace
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck and build website
+        run: pnpm build:website
+
+  summary:
+    name: Accounts and site checks passed
+    needs: [changes, cloud, website]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all applicable checks
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          CLOUD_REQUIRED: ${{ needs.changes.outputs.cloud }}
+          CLOUD_RESULT: ${{ needs.cloud.result }}
+          SITE_REQUIRED: ${{ needs.changes.outputs.website }}
+          SITE_RESULT: ${{ needs.website.result }}
+        run: |
+          test "$CHANGES" = success
+          if [ "$CLOUD_REQUIRED" = true ]; then test "$CLOUD_RESULT" = success; fi
+          if [ "$SITE_REQUIRED" = true ]; then test "$SITE_RESULT" = success; fi

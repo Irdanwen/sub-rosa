@@ -1,3 +1,4 @@
+import { useAccountLibrarySync } from "../useAccountLibrarySync";
 import { t } from "../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -24,6 +25,7 @@ import { ConnectionScreen } from "../../components/mobile/screens/ConnectionScre
 import { MemoryScreen } from "../../components/mobile/screens/MemoryScreen";
 import {
   AboutScreen,
+  AccountScreen,
   ArchiveScreen,
   ModelsScreen,
   PrivacyScreen,
@@ -131,6 +133,7 @@ export function MobileApp() {
   const [liveTranscriptEvents, setLiveTranscriptEvents] = useState<LiveTranscriptEventDto[]>([]);
   const [sourceReadiness, setSourceReadiness] = useState<RecordingSourceReadinessDto | undefined>();
   const nav = useMobileNav();
+  useAccountLibrarySync(dispatch, nav.top?.view === "note" ? nav.top.noteId : undefined);
   // The Chat tab roots on a conversation, not the history list. The active
   // session id lives here rather than in the screen because navigation
   // remounts screens; the epoch key forces a clean remount when the
@@ -818,7 +821,9 @@ export function MobileApp() {
     );
   } else if (top?.view === "settings-section") {
     screen =
-      top.section === "memory" ? (
+      top.section === "account" ? (
+        <AccountScreen onBack={nav.pop} />
+      ) : top.section === "memory" ? (
         <MemoryScreen onBack={nav.pop} />
       ) : top.section === "usage" ? (
         <UsageScreen onBack={nav.pop} />

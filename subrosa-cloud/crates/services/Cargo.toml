@@ -1,0 +1,23 @@
+[package]
+name = "subrosa-services"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+subrosa-domain.workspace = true
+subrosa-config.workspace = true
+subrosa-persistence.workspace = true
+base64.workspace = true
+chrono.workspace = true
+rand.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+uuid.workspace = true
+tracing.workspace = true

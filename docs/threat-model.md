@@ -4,10 +4,11 @@ What Sub Rosa protects, from whom, and what it deliberately does not protect
 against. One page, so that a reader outside the project can check the claims
 rather than take them.
 
-The short version: **everything you write, say, and record stays on your
-machine, except the requests you make of a model, which go to the endpoint you
-configured and nowhere else.** The rest of this page is what that sentence
-costs.
+In local mode, **everything you write, say, and record stays on your machine,
+except model requests to the endpoint you configured.** If you explicitly enable
+account synchronisation, encrypted copies also leave for your configured account
+service. That service sees identity and transport metadata, not plaintext notes
+or the provider key. The limits below apply to both modes.
 
 ## Assets
 
@@ -19,16 +20,22 @@ costs.
 | The local backend's bearer token | Process memory only, for one run | Someone talks to the inference backend as you |
 | An exported archive (`.subrosa`, `.subrosa.age`) | Wherever you saved it | In the clear it is your notes; sealed with a passphrase it is safe to carry (ADR-0042) |
 | The signing keys for releases | GitHub Actions secrets, never in the repo | Someone ships an update that is not ours |
+| Account sessions and vault key | Native keyring; an unlocked browser tab holds its key only in memory | Account access or decryption of synced content |
+| Recovery kit | The user's chosen secure storage; only its encrypted envelope is on the service | Loss can prevent recovery; theft enables decryption after account access |
+| Synced content | Encrypted revisions in PostgreSQL and encrypted file chunks in object storage | Metadata exposure; content stays encrypted without the client key |
 
 ## Boundaries
 
 Five, and each is a place where something is checked rather than assumed.
 
-1. **The keychain.** The API key never enters the webview; the settings DTO
+1. **The keychain.** The native API key never enters the app webview; the settings DTO
    carries `hasApiKey: bool` and nothing else. In Rust it moves as
    `Redacted<String>`, whose `Debug` prints a mask, so a struct printed while
    debugging cannot leak it. Reading it is `expose_str()`, which is visible in
    review. `tests/no_secret_in_logs.rs` holds this.
+   The optional website accepts a provider key into its password field and
+   encrypts it before upload. Its delivered JavaScript can access secrets
+   while the vault is unlocked, a separate web delivery trust boundary.
 
 2. **Loopback plus a bearer.** The backend binds `127.0.0.1` on an ephemeral
    port with a 256-bit token generated per run. The token lives in process
@@ -87,6 +94,19 @@ Five, and each is a place where something is checked rather than assumed.
 ## Out of scope
 
 Named, because a threat model that claims everything protects nothing.
+
+- **Compromised account website code.** A malicious web deployment can steal a
+  key as it is entered or unlocked. No third-party scripts, a strict CSP and
+  deployment controls reduce the risk; they cannot eliminate it.
+- **Cryptographic isolation after device revocation.** Revocation blocks the
+  device's sessions immediately at the service. It does not rotate the vault
+  root or erase past copies. A revoked device obtaining ciphertext through
+  another leak can still decrypt it. Replace a lost provider key at Carpe Diem.
+  See [ADR-0050](adr/0050-vault-admission-uses-an-out-of-band-secret.md).
+- **A dishonest sync service withholding or replaying history.** Authenticated
+  encryption rejects content and metadata tampering. It does not prove global
+  completeness or freshness to an installation with no previously trusted
+  cursor. There is no independent transparency witness in this version.
 
 - **An attacker who already runs code as you.** They can read the app's files,
   attach a debugger, and ask the keychain for the key with the app's own

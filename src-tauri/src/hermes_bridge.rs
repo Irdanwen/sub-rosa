@@ -2541,19 +2541,11 @@ fn hermes_api_status(error: &AppError, status_code: u16) -> bool {
 
 #[tauri::command]
 pub async fn hermes_bridge_session_messages(
+    app: AppHandle,
     bridge: State<'_, HermesBridge>,
     request: HermesSessionMessagesRequest,
 ) -> Result<serde_json::Value, AppError> {
-    hermes_api_json(
-        &bridge,
-        reqwest::Method::GET,
-        &format!(
-            "/api/sessions/{}/messages",
-            urlencoding::encode(&request.session_id)
-        ),
-        None,
-    )
-    .await
+    crate::account::conversations::read_hermes(&app, &bridge, &request.session_id).await
 }
 
 #[tauri::command]
@@ -3452,7 +3444,7 @@ fn await_starts_quiesced(bridge: &HermesBridge, timeout: Duration) {
 /// Sends a dashboard API request to any live runtime process, sandboxed
 /// first. Sessions, skills, and platform state all live in the shared
 /// Hermes home, so either process answers these identically.
-async fn hermes_api_json(
+pub(crate) async fn hermes_api_json(
     bridge: &State<'_, HermesBridge>,
     method: reqwest::Method,
     path: &str,

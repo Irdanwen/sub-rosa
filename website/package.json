@@ -1,0 +1,24 @@
+{
+  "name": "@subrosa/website",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 1430 --strictPort",
+    "build": "tsc --noEmit && vite build && node scripts/prerender.mjs",
+    "build:preview": "VITE_PREVIEW_ONLY=1 pnpm build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "qrcode.react": "4.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.3"
+  }
+}

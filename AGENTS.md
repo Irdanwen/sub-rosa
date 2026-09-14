@@ -23,8 +23,9 @@ accurately — read them, but apply these fork overrides:
   `OS_JUNE_LOCAL_DEV*`). All fork logic lives in `src-tauri/src/carpe_diem/` (branding,
   keychain settings + IPC, the sidecar manager), `src/lib/branding.ts`, and
   `src/components/{carpe-diem/, settings/CarpeDiemSettings.tsx}`.
-- **Onboarding = paste base_URL + `cdm_` key** (no `.env`, no sign-in). A first-run gate
-  blocks the app until a key is stored. In debug, inject the key with
+- **Local onboarding = paste base_URL + `cdm_` key** (no `.env`). Optional account
+  setup can restore an encrypted configuration instead. The first-run inference
+  gate requires a stored key. In debug, inject the key with
   `SUBROSA_DEV_API_KEY=cdm_… pnpm tauri:dev` (dev-only keychain bypass).
 - **Read [`FORK_NOTES.md`](FORK_NOTES.md)** (every upstream file the fork modified + how to
   re-merge, plus product decisions like the curated-model-set and the macOS Hermes/helper
@@ -39,8 +40,10 @@ accurately — read them, but apply these fork overrides:
   `src-tauri/Cargo.toml`, and `package.json` by hand — `scripts/bump-version.mjs`'s
   `import.meta.url` guard breaks on the space in the "Sub Rosa" path.
   `.github/workflows/upstream-sync.yml` opens PRs to track upstream June.
-- **Non-goals (unchanged from June):** OS Accounts, billing, hosted June API, TEE attestation
-  of the local backend. Local mode only; confidentiality comes from Carpe Diem's own backend.
+- **Non-goals:** OS Accounts, hosted June API/inference, TEE attestation of the
+  local backend, server custody of the user's provider key. The optional Sub Rosa
+  account service below stores identity and ciphertext; it does not replace the
+  local sidecar or Carpe Diem's inference boundary.
 - **Product autonomy is enforced, not just intended
   ([ADR-0017](docs/adr/0017-product-autonomy-from-june.md)).** Nothing the user sees names
   June or Open Software, and the binary contacts none of their infrastructure: OS Accounts
@@ -51,6 +54,28 @@ accurately — read them, but apply these fork overrides:
   reintroduces `opensoftware.co`, `os-june-releases`, `You are June` or `made by Open
   Software` outside its allowlist — when an upstream sync trips it, drop the change rather
   than adopting it or widening the allowlist.
+
+## Optional accounts and encrypted sync (2026-09-14)
+
+- Read [ADR-0049](docs/adr/0049-accounts-synchronise-ciphertext-without-hosting-inference.md),
+  [ADR-0050](docs/adr/0050-vault-admission-uses-an-out-of-band-secret.md) and
+  [the wire contract](docs/accounts-sync-contract.md) before changing this boundary.
+- `subrosa-cloud/` is an independent seven-crate Rust service for identity,
+  sessions and opaque encrypted storage. It never runs inference or decrypts the
+  provider key. OIDC/passkeys are configured at deployment, not invented locally.
+- `src-tauri/src/account/` owns native tokens/keyring, recovery, pairing, durable
+  outbox, revision conflicts, portable conversations and encrypted file chunks.
+  Shared commands belong in both handler lists. Native work follows ADR-0018.
+- Incoming execution state is history, not an instruction to re-run a paid job.
+  Desktop conversation continuation creates a fresh runtime and explicit new turn.
+- `website/` is the React/Vite site and account UI. It shares the root pnpm
+  lockfile. Browser account requests assert the expected account ID; cookies never
+  silently change the account to which an unlocked tab writes ciphertext.
+- Synchronisation is optional. Existing data stays local until consent. Revocation
+  blocks service sessions, but cannot erase downloaded data and does not rotate
+  the current shared vault root. Do not claim stronger guarantees than ADR-0050.
+- Local QA is not a production launch. Hosting, issuer registration, a real app
+  release, protected storage, recovery drills and independent review remain gates.
 
 ## iOS app (fork addition, 2026-07-05)
 

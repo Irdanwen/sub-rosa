@@ -1,0 +1,31 @@
+# Copy into a secret-managed config.toml, mounted read-only with mode 0600.
+# These .invalid hosts intentionally cannot be used as a deployed environment.
+bind = "0.0.0.0:8088"
+public_url = "https://account.example.invalid"
+development = false
+database_url = "postgres://subrosa:REPLACE@database.example.invalid/subrosa?sslmode=verify-full"
+account_quota_bytes = 5368709120
+
+[oidc]
+issuer = "https://identity.example.invalid"
+client_id = "REPLACE_WITH_REGISTERED_CLIENT"
+client_secret = "REPLACE_WITH_SECRET_MANAGER_VALUE"
+
+[storage]
+kind = "s3"
+bucket = "REPLACE_WITH_PRIVATE_BUCKET"
+region = "eu-west-3"
+# Prefer workload identity / instance roles. For a compatible provider, explicitly
+# set endpoint, access_key and secret_key through the secret manager instead.
+# endpoint = "https://objects.example.invalid"
+
+# Keep this bucket and signing-key ring OUTSIDE database/ciphertext restore sets.
+# Grant create/read/list, not delete; enforce Object Lock and independent retention.
+[deletion_ledger]
+active_key_id = "v1"
+[deletion_ledger.signing_keys]
+v1 = "REPLACE_WITH_BASE64URL_OF_32_RANDOM_BYTES_GENERATED_LOCALLY"
+[deletion_ledger.storage]
+kind = "s3"
+bucket = "REPLACE_WITH_SEPARATE_DELETION_LEDGER_BUCKET"
+region = "eu-west-3"

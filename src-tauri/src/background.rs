@@ -68,6 +68,7 @@ pub async fn sweep(app: &AppHandle) {
     // Passages and their vectors for "Ask your notes" (ADR-0046): cut what
     // changed, embed what is pending, a bounded amount per pass.
     crate::ask::semantic::catch_up(app).await;
+    crate::account::sync::resume(app).await;
 }
 
 /// Fire-and-forget [`sweep`], for call sites that are not async (app setup, the

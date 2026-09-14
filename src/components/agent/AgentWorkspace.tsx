@@ -1,3 +1,9 @@
+import { PortableConversationsDialog } from "./PortableConversationsDialog";
+import {
+  accountConversationPrepare,
+  accountConversationBind,
+  accountConversationGet,
+} from "../../lib/account";
 import { intlLocale, t } from "../../lib/i18n";
 import {
   advanceHeroGreeting,
@@ -1217,6 +1223,7 @@ export function AgentWorkspace({
   const [continuity] = useState(() => sessionContinuity);
   const [tasks, setTasks] = useState<AgentTaskDto[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
+  const [portableConversationsOpen, setPortableConversationsOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<AgentPanel>("chat");
   const [draft, setDraft] = useState("");
   // The message's single category tag, mirrored from the composer's chip. Null
@@ -4620,6 +4627,40 @@ export function AgentWorkspace({
     return unlisten;
   }
 
+  async function continuePortableConversation(taskId: string, newMessage: string) {
+    if (submitting) throw new Error("conversation_busy");
+    setSubmitting(true);
+    try {
+      const prepared = await accountConversationPrepare(taskId, newMessage);
+      // A new runtime starts with the app's ordinary sandbox and workspace.
+      // Neither the source device nor a past message can grant permissions.
+      fullModeDraftRef.current = false;
+      setFullModeDraft(false);
+      workingDirDraftRef.current = null;
+      setWorkingDirDraft(null);
+      newSessionModeRef.current = true;
+      setNewSessionMode(true);
+      selectedHermesSessionIdRef.current = undefined;
+      setSelectedHermesSessionId(undefined);
+      setSelectedTaskId(undefined);
+      setActivePanel("chat");
+      await submitHermesSession(prepared.prompt, undefined, {
+        displayContent: prepared.display_content,
+        titleContent: prepared.title,
+        beforePrompt: async ({ storedSessionId }) => {
+          await accountConversationBind(prepared.task_id, storedSessionId);
+          const history = await accountConversationGet(prepared.task_id);
+          setHermesSessionMessages((current) => ({
+            ...current,
+            [storedSessionId]: history.messages,
+          }));
+        },
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function submitHermesSession(
     content: string,
     explicitSession?: HermesSessionInfo,
@@ -7769,6 +7810,20 @@ export function AgentWorkspace({
       data-artifact-panel={artifactPanel ? "open" : undefined}
       data-hero={heroMode ? "true" : undefined}
     >
+      <div className="portable-entry">
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => setPortableConversationsOpen(true)}
+        >
+          {t("Conversations from your devices")}
+        </button>
+      </div>
+      <PortableConversationsDialog
+        open={portableConversationsOpen}
+        onClose={() => setPortableConversationsOpen(false)}
+        onContinue={continuePortableConversation}
+      />
       {/* Feature 11: the Agent activity drawer and its toggle. One top-level
           surface so it shows every session's live activity, not
           just the selected one. The toggle is hidden while the drawer is open
