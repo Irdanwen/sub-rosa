@@ -1032,6 +1032,31 @@ liste exacte des passages envoyés sous la réponse
 
 ---
 
+## Comptes optionnels, synchronisation et site (2026-09-14)
+
+L’implémentation ajoute `subrosa-cloud/`, `website/` et `src-tauri/src/account/`.
+Les frontières et limites sont décrites dans ADR-0049/0050 et
+`docs/accounts-sync-contract.md`. Aucun changement d’API d’inférence n’est ajouté
+à `june-api/`, aucun compte OS Accounts n’est réintroduit.
+
+Points de relecture lors d’un cherry-pick :
+
+- `lib.rs` et `background.rs` : setup/commandes partagées et sweep natif.
+- `db/migrations.rs`, migration 023 : outbox atomique, révisions et conflits.
+- `carpe_diem/settings.rs` : URL + clé activées ensemble dans le trousseau ;
+  validation authentifiée gratuite avant restauration d’une configuration.
+- `carpe_diem/media.rs`, `sidecar.rs`, `memory/recall.rs` : instantané cohérent
+  des identifiants et de leur destination ; fichiers Studio finis enregistrés.
+- `hermes_bridge.rs` : miroir borné de l’historique visible, sans importer les
+  outils, autorisations, sessions runtime ou rôles cachés.
+- Shells desktop/mobile, réglages et onboarding : compte optionnel, consentement,
+  reprise de bibliothèque et revue des conflits ; textes via le catalogue.
+- La CI `accounts-site.yml` vérifie le service, PostgreSQL, le conteneur et le site.
+  Elle ne déploie pas et ne publie aucune nouvelle application.
+
+Le site privé de prévisualisation n’ouvre pas de comptes réels. Les versions
+actuellement proposées au téléchargement ne contiennent pas cette branche.
+
 ## Procédure de synchronisation upstream (voir aussi `.github/workflows/upstream-sync.yml`)
 
 > **Remplacée le 2026-09-02 par [ADR-0040](docs/adr/0040-upstream-is-a-source-of-patches-not-a-merge-base.md).**

@@ -60,6 +60,7 @@ import { getStoredTheme, setStoredTheme, type ThemePreference } from "../../lib/
 import { DEFAULT_BRAND, getStoredBrand, setStoredBrand, type BrandId } from "../../lib/brand";
 import { AccentWheel } from "./AccentWheel";
 import { CarpeDiemSettings } from "./CarpeDiemSettings";
+import { AccountSettingsSection } from "./AccountSettingsSection";
 import { AutomationsSection } from "./AutomationsSection";
 import { MomentsSettingsSection } from "./MomentsSettingsSection";
 import { PlacesSettingsSection } from "./PlacesSettingsSection";
@@ -162,6 +163,7 @@ const MIC_TEST_DURATION_SECONDS = 5;
 
 export type SettingsTab =
   | "general"
+  | "account"
   | "carpe-diem"
   | "shortcuts"
   | "dictation"
@@ -184,6 +186,7 @@ export type SettingsTab =
 
 export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: t("General") },
+  { id: "account", label: t("Account and sync") },
   { id: "carpe-diem", label: t("Carpe Diem") },
   { id: "shortcuts", label: t("Shortcuts") },
   { id: "dictation", label: t("Dictation") },
@@ -877,6 +880,7 @@ export function AppSettings({
         id={`settings-panel-${activeTab}`}
         aria-labelledby={`settings-tab-${activeTab}`}
       >
+        {activeTab === "account" ? <AccountSettingsSection /> : null}
         {activeTab === "carpe-diem" ? (
           <>
             <CarpeDiemSettings />

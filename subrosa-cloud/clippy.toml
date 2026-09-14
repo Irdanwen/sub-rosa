@@ -1,0 +1,2 @@
+msrv = "1.95"
+disallowed-methods = [{ path = "std::env::var", reason = "use typed config" }, { path = "std::env::set_var", reason = "never mutate process secrets" }]

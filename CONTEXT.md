@@ -958,6 +958,33 @@ Settings and applied before the first render. Distinct from the
 transcription language (what the model should expect to hear).
 _Avoid:_ "locale" in copy (the person picks a language, not a locale).
 
+## Account and synchronisation vocabulary
+
+These terms describe the optional account implementation, not a production launch.
+See [ADR-0049](docs/adr/0049-accounts-synchronise-ciphertext-without-hosting-inference.md)
+and [ADR-0050](docs/adr/0050-vault-admission-uses-an-out-of-band-secret.md).
+
+**Sub Rosa account**: the identity shared by the website and the apps.
+Distinct from the user's Carpe Diem account, credits, API key, and local sidecar session.
+
+**Vault**: the client-encrypted content and provider configuration,
+decryptable by approved devices or through the recovery kit. Signing in to an
+account alone does not confer the ability to decrypt its vault.
+
+**Approved device**: an installation explicitly given access to the vault key
+through recovery or pairing. A browser can be admitted too, with the web delivery trust boundary
+described in the proposal. Revocation cannot erase previously downloaded data.
+
+**Synchronisation**: exchanging durable, versioned user data between devices,
+including conflict handling and deletions. Distinct from archive import/export.
+
+**Work continuity**: retrieving the same user-visible history and results and
+continuing compatible work on another device. Distinct from transferring a
+live runtime or executing a task on a hosted service.
+
+**Execution owner**: the device authorised to advance a particular task. Sharing
+its progress does not authorise every receiving device to run that task again.
+
 ## Flagged ambiguities
 
 - **"proxy"** usually means **June API** (the thing in front of OpenAI /
@@ -966,8 +993,9 @@ _Avoid:_ "locale" in copy (the person picks a language, not a locale).
   stripping — qualify when you mean that.)
 - **"transcribe"** is overloaded between **dictation** (short, latency-
   critical) and **note transcription** (long, batch). Always qualify which.
-- **"credits"** always means OS Accounts credits (integers, `$1 = 1000
-  credits`). Never use it for upstream provider cost (which is dollars).
+- **"credits"** in this fork means the units reported by Carpe Diem, distinct
+  from a cost reported in USDC. Sub Rosa accounts do not own a separate credit
+  balance. Do not apply the upstream OS Accounts integer conversion here.
 - **"the session id"** is ambiguous — say **stored** (persistent, UI-facing) or
   **runtime** (live process) session id.
 - **"the model"** never means Hermes — Hermes is the runtime; the model is the

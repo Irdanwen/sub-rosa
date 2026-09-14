@@ -1,3 +1,4 @@
+import { accountStatus, type AccountStatus } from "../../lib/account";
 import { t } from "../../lib/i18n";
 import { IconGlobe } from "central-icons/IconGlobe";
 import { IconLock } from "central-icons/IconLock";
@@ -26,6 +27,18 @@ export function PrivacySettingsSection() {
   const [hosts, setHosts] = useState<EgressHost[]>([]);
   const [baseUrl, setBaseUrl] = useState<string>();
   const [error, setError] = useState<string>();
+  const [account, setAccount] = useState<AccountStatus | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void accountStatus()
+      .then((next) => {
+        if (!cancelled) setAccount(next ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -49,7 +62,7 @@ export function PrivacySettingsSection() {
       </h2>
       <p className="settings-group-description">
         {t(
-          "Every address this app can reach, and why. Anything not on this list is not something the app can contact: the list is checked against the code when the app is built.",
+          "The built-in destinations are checked against the app’s code. Your configured Carpe Diem and account service addresses are shown here too.",
         )}
       </p>
 
@@ -68,14 +81,44 @@ export function PrivacySettingsSection() {
           <IconLock size={18} />
         </div>
         <div>
-          <h3 className="settings-row-title">{t("Your notes stay here")}</h3>
+          <h3 className="settings-row-title">{t("Your local library and encrypted copies")}</h3>
           <p className="settings-row-description">
             {t(
-              "Recordings, transcripts, notes, and what the app remembers about you are stored on this machine and are never uploaded. Your key is held in the system keychain, and the app never shows it to the screen or writes it to a log.",
+              "Your library is stored on this device. AI requests send the content needed for the task to your configured provider. If you enable account sync, supported data is encrypted before upload. Your Carpe Diem key is kept in the system keychain and shared only when you choose to use your encrypted vault.",
             )}
           </p>
         </div>
       </div>
+
+      {account?.server_url ? (
+        <div className="settings-card">
+          <div className="settings-card-header">
+            <IconShieldCheck size={15} ariaHidden />
+            <h3 className="settings-row-title">{t("Your account service")}</h3>
+          </div>
+          <ul className="privacy-hosts">
+            <li className="privacy-host">
+              <code className="privacy-host-name">
+                {hostOf(account.server_url) ?? account.server_url}
+              </code>
+              <span className="privacy-host-reason">
+                {account.sync_enabled
+                  ? t(
+                      "Encrypted sync is enabled. Your account service receives encrypted data, device and sign-in information, and transport metadata such as dates and sizes.",
+                    )
+                  : t(
+                      "Used when you sign in, manage devices, or share your encrypted key. Automatic content sync is currently paused.",
+                    )}
+              </span>
+            </li>
+          </ul>
+          <p className="settings-row-description">
+            {t(
+              "The account service cannot decrypt your vault. It can see your account identity and transport metadata. A device or an unlocked browser can read data you authorize it to access.",
+            )}
+          </p>
+        </div>
+      ) : null}
 
       <div className="settings-card">
         <div className="settings-card-header">

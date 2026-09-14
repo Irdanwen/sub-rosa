@@ -205,6 +205,11 @@ export const SETTINGS_SIDEBAR_GROUPS: {
         icon: <IconSettingsGear4 size={16} />,
       },
       {
+        id: "account",
+        label: t("Account and sync"),
+        icon: <IconShieldCheck size={16} />,
+      },
+      {
         id: "carpe-diem",
         label: t("Carpe Diem"),
         icon: <IconServer1 size={16} />,

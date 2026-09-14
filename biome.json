@@ -1,7 +1,20 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
   "files": {
-    "includes": ["src/**", "scripts/**", "*.json", "*.ts", "*.mjs", "!**/*.min.js", "!**/dist"],
+    "includes": [
+      "src/**",
+      "scripts/**",
+      "website/src/**",
+      "website/scripts/**",
+      "website/*.ts",
+      "website/*.json",
+      "*.json",
+      "*.ts",
+      "*.mjs",
+      "!**/*.min.js",
+      "!**/dist",
+      "!**/node_modules"
+    ],
     "ignoreUnknown": true
   },
   "formatter": {

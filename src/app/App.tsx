@@ -1,3 +1,4 @@
+import { useAccountLibrarySync } from "./useAccountLibrarySync";
 import { t } from "../lib/i18n";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
@@ -1842,6 +1843,8 @@ export function App() {
 
   /** Reload the notes list. A fetched link creates its note in Rust, on a task
    * that outlives the click, so nothing else would ever tell the list. */
+  useAccountLibrarySync(dispatch, state.selectedNoteId);
+
   const refreshNotesList = useCallback(async () => {
     try {
       const response = await listNotes();

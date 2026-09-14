@@ -103,7 +103,7 @@ pub(super) async fn send(
             format!("Path {path} is not allowed on the media proxy."),
         ));
     }
-    let Some(key) = settings::api_key() else {
+    let Some((credential_base, key)) = settings::credentials() else {
         return Err(AppError::new(
             "media_no_api_key",
             "No API key is stored yet.",
@@ -111,7 +111,11 @@ pub(super) async fn send(
     };
     // Media (`/image/*`, `/video/*`, `/audio/*`, catalogs) lives only on the
     // `/v1` rail — the `/router` aggregator does not serve these paths.
-    let url = format!("{}{}", settings::catalog_base_url(), path);
+    let url = format!(
+        "{}{}",
+        settings::catalog_base_url_of(&credential_base),
+        path
+    );
     let mut builder = media_http_client()
         .request(method, &url)
         .bearer_auth(key.expose_str());
@@ -281,7 +285,7 @@ pub struct TextPriceDto {
 /// the field the whole cost readout was totalled from.
 #[tauri::command]
 pub async fn carpe_diem_text_pricing() -> Result<Vec<TextPriceDto>, AppError> {
-    let Some(key) = settings::api_key() else {
+    let Some((credential_base, key)) = settings::credentials() else {
         return Err(AppError::new(
             "media_no_api_key",
             "No API key is stored yet.",
@@ -292,7 +296,7 @@ pub async fn carpe_diem_text_pricing() -> Result<Vec<TextPriceDto>, AppError> {
         return Ok(Vec::new());
     }
     let client = media_http_client();
-    let operator_root = settings::operator_root();
+    let operator_root = settings::operator_root_of(&credential_base);
     let pricing = fetch_json(client, &format!("{operator_root}/pricing"), None).await?;
     Ok(text_prices(&pricing))
 }
@@ -324,7 +328,7 @@ fn text_prices(pricing: &serde_json::Value) -> Vec<TextPriceDto> {
 
 #[tauri::command]
 pub async fn carpe_diem_media_catalog() -> Result<MediaCatalogDto, AppError> {
-    let Some(key) = settings::api_key() else {
+    let Some((credential_base, key)) = settings::credentials() else {
         return Err(AppError::new(
             "media_no_api_key",
             "No API key is stored yet.",
@@ -335,8 +339,8 @@ pub async fn carpe_diem_media_catalog() -> Result<MediaCatalogDto, AppError> {
     if key.expose_str().starts_with("cdm_") {
         // The catalog lives on the `/v1` rail and pricing at the operator root;
         // neither is served under the `/router` aggregator.
-        let catalog = settings::catalog_base_url();
-        let operator_root = settings::operator_root();
+        let catalog = settings::catalog_base_url_of(&credential_base);
+        let operator_root = settings::operator_root_of(&credential_base);
         let models_url = format!("{catalog}/models");
         let pricing_url = format!("{operator_root}/pricing");
         let (primary, venice, pricing) = tokio::join!(
@@ -657,6 +661,7 @@ pub(super) async fn save_base64(
     tokio::fs::write(&path, bytes)
         .await
         .map_err(|error| AppError::new("media_artifact_write_failed", error.to_string()))?;
+    crate::account::studio::completed(app, &path).await;
     Ok(ArtifactDto {
         path: path.to_string_lossy().to_string(),
         file_name,
@@ -683,12 +688,17 @@ pub(super) async fn download(
     let extension = validate_extension(extension)?;
     // Media artifacts are produced and served on the `/v1` rail; resolve
     // relative URLs against it, not the `/router` inference rail.
-    let base = settings::catalog_base_url();
+    let credential = settings::credentials();
+    let base = credential
+        .as_ref()
+        .map_or_else(settings::catalog_base_url, |(base, _)| {
+            settings::catalog_base_url_of(base)
+        });
     let url = resolve_media_url(&base, source);
     let mut builder = download_http_client().get(&url);
     // Only attach the key to the backend's own host — a signed CDN URL on
     // another host must not receive it.
-    if let (Some(key), true) = (settings::api_key(), same_host(&base, &url)) {
+    if let (Some(key), true) = (credential.map(|(_, key)| key), same_host(&base, &url)) {
         builder = builder.bearer_auth(key.expose_str());
     }
     let mut response = builder
@@ -742,6 +752,7 @@ pub(super) async fn download(
     } else {
         (path, file_name)
     };
+    crate::account::studio::completed(app, &path).await;
     Ok(ArtifactDto {
         path: path.to_string_lossy().to_string(),
         file_name,

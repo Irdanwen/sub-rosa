@@ -18,6 +18,7 @@ const EMPTY_LEDGER = {
 
 const invokeMock = vi.fn(async (command: string, _args?: unknown) => {
   if (command === "egress_ledger") return EMPTY_LEDGER;
+  if (command === "account_status") return account;
   if (command === "declared_egress") return declared;
   if (command === "carpe_diem_get_settings") return settings;
   return undefined;
@@ -31,9 +32,11 @@ import { PrivacySettingsSection } from "../components/settings/PrivacySettingsSe
 
 let declared: Array<{ host: string; reach: string; reason: string }> = [];
 let settings: Record<string, unknown> = {};
+let account: Record<string, unknown> | null = null;
 
 beforeEach(() => {
   invokeMock.mockClear();
+  account = null;
   declared = [
     { host: "127.0.0.1", reach: "always", reason: "The local backend on your own machine." },
     { host: "carpe-diem.xyz", reach: "always", reason: "The default address for your requests." },
@@ -64,6 +67,14 @@ describe("Settings > Privacy", () => {
     // the user has pointed the app somewhere else.
     expect(await screen.findByText(/my-own-endpoint\.example/)).toBeInTheDocument();
     expect(screen.queryByText("The default address for your requests.")).toBeNull();
+  });
+
+  it("shows the configured account destination with encryption and metadata limits", async () => {
+    account = { server_url: "https://sync.example.net", sync_enabled: true };
+    render(<PrivacySettingsSection />);
+    expect(await screen.findByText("sync.example.net")).toBeInTheDocument();
+    expect(screen.getByText(/Encrypted sync is enabled/)).toBeInTheDocument();
+    expect(screen.getByText(/The account service cannot decrypt your vault/)).toBeInTheDocument();
   });
 
   it("writes no host of its own", async () => {

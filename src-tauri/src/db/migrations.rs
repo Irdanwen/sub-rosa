@@ -344,6 +344,43 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
         include_str!("../../migrations/022_note_passages.sql"),
     )
     .await?;
+    replay(
+        _pool,
+        "023_accounts_sync.sql",
+        include_str!("../../migrations/023_accounts_sync.sql"),
+    )
+    .await?;
+    for table in [
+        "account_sync_outbox",
+        "account_sync_inbox",
+        "account_sync_conflicts",
+    ] {
+        ensure_column(
+            _pool,
+            table,
+            "resolved_revisions",
+            "TEXT NOT NULL DEFAULT '[]'",
+        )
+        .await?;
+    }
+    ensure_column(
+        _pool,
+        "account_file_manifests",
+        "source_kind",
+        "TEXT NOT NULL DEFAULT 'audio'",
+    )
+    .await?;
+    ensure_column(
+        _pool,
+        "account_file_uploads",
+        "source_kind",
+        "TEXT NOT NULL DEFAULT 'audio'",
+    )
+    .await?;
+    ensure_column(_pool, "account_file_uploads", "source_path", "TEXT").await?;
+    ensure_column(_pool, "account_file_uploads", "source_format", "TEXT").await?;
+    ensure_column(_pool, "account_sync_control", "last_sync_error", "TEXT").await?;
+    crate::account::sync::install(_pool).await?;
     crate::diagnostics::mark("migrations");
 
     Ok(())

@@ -1,5 +1,19 @@
 # HANDOFF — Ce que le fork Sub Rosa attend de l'humain
 
+## Mise à jour du 14 septembre 2026 : coffre chiffré et export iOS
+
+La 1.63.0 ajoute AES-256-GCM dans Rust pour le coffre de synchronisation,
+au-delà de TLS fourni par le système. L'ancienne déclaration automatique
+`ITSAppUsesNonExemptEncryption=false` a été retirée de l'app et de sa source
+XcodeGen : le raisonnement « HTTPS seulement » ci-dessous est historique.
+L'envoi du build peut aboutir avec une demande de conformité dans TestFlight.
+Renseigner la déclaration réelle dans App Store Connect avant de distribuer
+le build ; ne pas cocher une exemption sur la seule base de l'ancienne release.
+Le descriptif technique est dans `docs/accounts-sync-contract.md`.
+Référence : [documentation Apple](https://developer.apple.com/help/app-store-connect/reference/app-information/export-compliance-documentation-for-encryption).
+
+---
+
 Éléments qui **ne peuvent pas** être produits automatiquement (comptes, certificats, secrets). Chacun est
 référencé par le **nom de secret GitHub** attendu par la CI. **Aucun secret n'est jamais commité.**
 

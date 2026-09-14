@@ -115,13 +115,12 @@ pub fn spawn_backfill(app: &tauri::AppHandle) {
 
 /// One `/embeddings` call for a batch of inputs, in input order.
 pub(crate) async fn embed(texts: &[String]) -> Result<Vec<Vec<f32>>, AppError> {
-    let Some(key) = crate::carpe_diem::settings::api_key() else {
+    let Some((base, key)) = crate::carpe_diem::settings::credentials() else {
         return Err(AppError::new(
             "memory_embeddings_no_key",
             "No Carpe Diem API key is stored yet.",
         ));
     };
-    let base = crate::carpe_diem::settings::base_url();
     let client = crate::http_client::credentialed(EMBEDDING_TIMEOUT)
         .build()
         .map_err(|error| AppError::new("memory_embeddings_client", error.to_string()))?;

@@ -1,3 +1,4 @@
+import { AccountSetupOffer } from "../settings/AccountSettingsSection";
 import { t } from "../../lib/i18n";
 import { useState } from "react";
 import { messageFromError } from "../../lib/errors";
@@ -74,6 +75,7 @@ export function CarpeDiemGate({
         </p>
 
         <CarpeDiemSettings compact />
+        <AccountSetupOffer />
 
         {failed ? (
           <div className="welcome-providers">
