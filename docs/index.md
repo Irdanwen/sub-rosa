@@ -87,6 +87,8 @@ feature specs). Full index: [spec/index.md](../spec/index.md).
 
 ## Release & ops runbooks
 
+- [release-1.63.0.md](release-1.63.0.md) — signed desktop release, Intel packaging correction and Apple TestFlight status.
+- [testflight-encryption-1.63.0.md](testflight-encryption-1.63.0.md) — technical encryption description for the outstanding Apple declaration.
 - [release-macos.md](release-macos.md) / [release-windows.md](release-windows.md) — the release runbooks
 - [desktop-release-runner.md](desktop-release-runner.md) — Mac Studio self-hosted runner setup for signed desktop releases
 - [reproducible-builds.md](reproducible-builds.md) — June API source → TEE trust chain (Phase A shipped). **Does not apply to this fork**: June API runs as an embedded sidecar, not a deployed image; the `build-june-api`, `june-api-watchdog` and `promote-june-api` workflows were removed on 2026-09-02

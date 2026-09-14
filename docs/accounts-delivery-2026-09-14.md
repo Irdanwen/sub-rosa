@@ -1,24 +1,28 @@
 # Livraison comptes, synchronisation et site
 
-Date : 14 septembre 2026. Branche : `codex/accounts-sync-site`.
+Date : 14 septembre 2026. Application : `v1.63.0`. Site : version 5.
 
 ## État du produit
 
-L’implémentation est disponible dans le dépôt et validée localement. Elle n’est
-pas intégrée à une version publiée de l’application et le service de comptes
-n’est pas ouvert en production. Le site privé présente le produit et les
+L’implémentation est intégrée à la [version 1.63.0 publiée](https://github.com/Irdanwen/sub-rosa-releases/releases/tag/v1.63.0)
+pour macOS et Windows. Le build iOS est reçu et valide chez Apple, mais attend
+la déclaration de chiffrement avant distribution TestFlight. Le service de
+comptes n’est pas ouvert en production. Le site privé présente le produit et les
 téléchargements actuels ; son écran Compte explique cette limite et ne demande
 aucun secret. Les vrais parcours de compte sont testés contre le service local.
 
-Aperçu privé publié : [Sub Rosa](https://sub-rosa.ardanwen.chatgpt.site), version 3
-du site, déploiement confirmé le 14 septembre 2026. L’accès nécessite la connexion
+Aperçu privé publié : [Sub Rosa](https://sub-rosa.ardanwen.chatgpt.site), version 5
+du site, en anglais et avec la charte Carpe Diem, déploiement confirmé le
+14 septembre 2026 à 14:07:48 UTC. L’accès nécessite la connexion
 ChatGPT du propriétaire. Cette publication statique n’héberge pas le service Rust.
-Les applications proposées au téléchargement sont les versions déjà publiées,
-sans les nouveaux comptes de cette branche.
+Les téléchargements et leurs empreintes correspondent à la version 1.63.0.
+Les fonctions de compte exigent un service HTTPS configuré ; le mode local
+reste utilisable avec la clé Carpe Diem existante.
 
-Implémentation enregistrée dans le commit `6490f8cf`, sur un worktree distinct
-du dossier de travail initial. La branche applicative n’a été ni poussée,
-ni fusionnée, ni taguée pour une release.
+L’implémentation a été intégrée par la PR #102 ; le tag `v1.63.0` pointe sur
+`90f1a10045a82f6432e20a8958da6c203890d088`. Le pipeline Intel corrigé par la
+PR #103 a reconstruit ce tag sans le déplacer. Voir les
+[preuves de release et TestFlight](release-1.63.0.md).
 
 ## Ce qui est implémenté
 
@@ -35,7 +39,7 @@ ni fusionnée, ni taguée pour une release.
 | Fichiers | Blocs chiffrés immuables, téléchargement reprenable, empreinte vérifiée, chemins reconstruits localement. |
 | Statistiques | Tentatives et volumes par jour/modèle/appareil ; mesures de tokens/coût effectivement reçues ; solde fournisseur daté. Couverture partielle annoncée. |
 | Révocation/suppression | Contrôle de session à chaque requête, refresh rejoué révoquant sa famille, effacement inscrit dans un ledger indépendant signé avant suppression. |
-| Site | Français/anglais, pages publiques prérendues, téléchargements vérifiés, compte, appareils, sécurité, consommation, aide et confidentialité. |
+| Site | Anglais, charte Carpe Diem, pages publiques prérendues, téléchargements vérifiés, compte, appareils, sécurité, consommation, aide et confidentialité. |
 
 ## Vérifications réalisées
 
@@ -77,8 +81,8 @@ donne les tests reproductibles et le périmètre exact des objets transférés.
    informations publiques. Aucun nom ou engagement juridique n’a été inventé.
 4. Valider le conteneur, S3, Object Lock, sauvegardes et restauration en cible,
    charge, supervision et rotation des secrets d’exploitation.
-5. Faire relire le protocole de coffre indépendamment et effectuer les essais
-   Mac/iPhone physiques, puis produire la nouvelle version signée des apps.
+5. Faire relire le protocole de coffre indépendamment, effectuer les essais
+   Mac/iPhone physiques et compléter la déclaration Apple avant distribution iOS.
 
 ## Écarts explicites par rapport à la cible 10/10
 
