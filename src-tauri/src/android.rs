@@ -8,7 +8,7 @@ use std::{any::Any, sync::OnceLock};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use keyring::credential::{Credential, CredentialApi, CredentialBuilderApi};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use tauri::plugin::{Builder, PluginHandle, PluginInvokeError, TauriPlugin};
+use tauri::plugin::{mobile::PluginInvokeError, Builder, PluginHandle, TauriPlugin};
 use zeroize::Zeroizing;
 
 use crate::domain::types::AppError;
