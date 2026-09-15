@@ -49,6 +49,16 @@ src-tauri/binaries/
 # Sub Rosa fork: Tauri updater private key (human moves to GitHub secret)
 .tauri-keys/
 
+# Android generated local state and signing material.
+src-tauri/gen/android/.gradle/
+src-tauri/gen/android/**/build/
+src-tauri/gen/android/local.properties
+src-tauri/gen/android/keystore.properties
+src-tauri/gen/android/app/src/main/jniLibs/
+src-tauri/gen/android/app/src/main/assets/
+*.jks
+*.keystore
+
 # Python bytecode (MCP scripts compiled during local checks)
 __pycache__/
 *.pyc

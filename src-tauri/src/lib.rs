@@ -8,6 +8,10 @@ pub mod actions;
 pub mod agent_hud;
 pub mod agent_lite;
 pub mod agent_notes;
+#[cfg(target_os = "android")]
+pub mod android;
+#[cfg(target_os = "android")]
+pub mod android_exports;
 pub mod app_paths;
 pub mod archive;
 pub mod ask;
@@ -167,6 +171,12 @@ pub fn run() {
     providers::load_local_env();
     let context = tauri::generate_context!();
     let mut builder = tauri::Builder::default();
+    #[cfg(target_os = "android")]
+    {
+        builder = builder
+            .plugin(android::init())
+            .plugin(tauri_plugin_fs::init());
+    }
 
     // Single-instance MUST register before the deep-link plugin so it owns
     // the second-launch handoff: when a deep link fires while the app is
@@ -651,6 +661,10 @@ pub fn run() {
         photos_ios::save_to_photos,
         #[cfg(target_os = "ios")]
         share_ios::share_text,
+        #[cfg(target_os = "android")]
+        android_exports::save_to_photos,
+        #[cfg(target_os = "android")]
+        android_exports::share_text,
         #[cfg(target_os = "ios")]
         audio::ios_session::set_playback_audio_session,
         providers::provider_model_settings,

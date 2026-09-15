@@ -2375,12 +2375,11 @@ export async function agentLiteRun(
   return invoke<AgentTaskDto>("agent_lite_run", { request: { taskId, model, attachments } });
 }
 
-/** iOS only: save a Studio artifact to the photo library. */
+/** Mobile only: save a Studio artifact to the system photo library. */
 export async function saveToPhotos(path: string, kind: "image" | "video") {
   return invoke<void>("save_to_photos", { request: { path, kind } });
 }
 
-/** iOS only: open the system share sheet with a text payload. */
 // iOS only: flips the shared AVAudioSession into the playback category before
 // Studio media plays (so audio survives the lock screen and the silent
 // switch) and releases it once playback stops. Desktop has no such command.
@@ -2388,6 +2387,7 @@ export async function setPlaybackAudioSession(active: boolean) {
   return invoke<void>("set_playback_audio_session", { active });
 }
 
+/** Mobile only: open the system share sheet with a text payload. */
 export async function shareText(text: string) {
   return invoke<void>("share_text", { request: { text } });
 }

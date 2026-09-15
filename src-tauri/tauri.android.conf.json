@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [{ "label": "main", "title": "Sub Rosa" }],
+    "security": { "capabilities": ["mobile-main"] }
+  },
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "externalBin": null,
+    "resources": null,
+    "android": { "minSdkVersion": 29 }
+  },
+  "plugins": { "updater": null }
+}

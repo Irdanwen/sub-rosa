@@ -1,0 +1,5 @@
+<resources>
+    <string name="subrosa_recording_channel">Microphone recording</string>
+    <string name="subrosa_recording_title">Sub Rosa is recording</string>
+    <string name="subrosa_recording_description">Tap to return to your recording.</string>
+</resources>
