@@ -68,6 +68,10 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          # The action's default also lists the legacy `tools` package, which
+          # Google removed from the SDK repository: sdkmanager fails on it.
+          packages: platform-tools
       - name: Install Android SDK and NDK
         run: |
           sdkmanager "platforms;android-36" "build-tools;$ANDROID_BUILD_TOOLS_VERSION" "ndk;$ANDROID_NDK_VERSION"
