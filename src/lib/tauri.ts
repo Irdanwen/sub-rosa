@@ -1,6 +1,5 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { safeExternalHref } from "./external-link";
-import { isIosPlatform } from "./mobile";
 
 // Re-exported so modules that build their own command calls (e.g. the Hermes
 // admin Rust transport) route through the same `invoke` the rest of the app's
@@ -2385,7 +2384,6 @@ export async function saveToPhotos(path: string, kind: "image" | "video") {
 // Studio media plays (so audio survives the lock screen and the silent
 // switch) and releases it once playback stops. Desktop has no such command.
 export async function setPlaybackAudioSession(active: boolean) {
-  if (!isIosPlatform()) return;
   return invoke<void>("set_playback_audio_session", { active });
 }
 

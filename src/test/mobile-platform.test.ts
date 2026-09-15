@@ -20,16 +20,20 @@ describe("mobile platform boundaries", () => {
 
   it("does not invoke the iOS audio session from Android", async () => {
     mocks.platform.mockReturnValue("android");
-    const { setPlaybackAudioSession } = await import("../lib/tauri");
-    await setPlaybackAudioSession(true);
-    await setPlaybackAudioSession(false);
+    const { markMediaPlayback } = await import(
+      "../components/mobile/screens/studio/StudioControls"
+    );
+    markMediaPlayback(true);
+    markMediaPlayback(false);
     expect(mocks.invoke).not.toHaveBeenCalled();
   });
 
   it("keeps the native iOS audio session transitions", async () => {
     mocks.platform.mockReturnValue("ios");
-    const { setPlaybackAudioSession } = await import("../lib/tauri");
-    await setPlaybackAudioSession(true);
+    const { markMediaPlayback } = await import(
+      "../components/mobile/screens/studio/StudioControls"
+    );
+    markMediaPlayback(true);
     expect(mocks.invoke).toHaveBeenCalledWith("set_playback_audio_session", { active: true });
   });
 
