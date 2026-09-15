@@ -27,6 +27,7 @@ import {
   accountSyncConflicts,
 } from "../../lib/account";
 import { errorCode } from "../../lib/errors";
+import { isMobilePlatform } from "../../lib/mobile";
 import { t, intlLocale } from "../../lib/i18n";
 import { openExternalUrl } from "../../lib/tauri";
 import { InlineNotice } from "../ui/InlineNotice";
@@ -59,7 +60,7 @@ export function AccountSettingsSection() {
     const next = await accountStatus();
     if (mounted.current) {
       setStatus(next);
-      setServerUrl(next.server_url ?? "");
+      setServerUrl(next.server_url ?? next.default_server_url);
     }
     return next;
   }, []);
@@ -185,7 +186,9 @@ export function AccountSettingsSection() {
 
   async function startLogin() {
     await accountConfigure(serverUrl.trim());
-    const next = await accountLoginStart(deviceName.trim() || t("My device"));
+    const next = await accountLoginStart(
+      deviceName.trim() || (isMobilePlatform() ? t("My iPhone") : t("My computer")),
+    );
     if (mounted.current) setLogin(next);
     await openExternalUrl(next.verification_uri);
   }
@@ -252,33 +255,6 @@ export function AccountSettingsSection() {
                 void run(startLogin);
               }}
             >
-              <label className="account-field">
-                <span>{t("Account service address")}</span>
-                <input
-                  type="url"
-                  value={serverUrl}
-                  required
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  disabled={busy}
-                  onChange={(event) => setServerUrl(event.target.value)}
-                />
-              </label>
-              <p className="settings-row-description">
-                {t("Use the HTTPS address provided by your Sub Rosa account service.")}
-              </p>
-              <label className="account-field">
-                <span>{t("Name this device")}</span>
-                <input
-                  value={deviceName}
-                  maxLength={100}
-                  autoComplete="off"
-                  placeholder={t("My device")}
-                  disabled={busy}
-                  onChange={(event) => setDeviceName(event.target.value)}
-                />
-              </label>
               <button
                 type="submit"
                 className="primary-action primary-solid"
@@ -286,6 +262,39 @@ export function AccountSettingsSection() {
               >
                 {busy ? t("Connecting…") : t("Sign in or create an account")}
               </button>
+              <p className="settings-row-description">
+                {t("Continue securely at {address}.", { address: serverUrl })}
+              </p>
+              <details className="account-advanced">
+                <summary>{t("Advanced settings")}</summary>
+                <label className="account-field">
+                  <span>{t("Account service address")}</span>
+                  <input
+                    type="url"
+                    value={serverUrl}
+                    required
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    disabled={busy}
+                    onChange={(event) => setServerUrl(event.target.value)}
+                  />
+                </label>
+                <p className="settings-row-description">
+                  {t("Use the HTTPS address provided by your Sub Rosa account service.")}
+                </p>
+                <label className="account-field">
+                  <span>{t("Name this device")}</span>
+                  <input
+                    value={deviceName}
+                    maxLength={100}
+                    autoComplete="off"
+                    placeholder={isMobilePlatform() ? t("My iPhone") : t("My computer")}
+                    disabled={busy}
+                    onChange={(event) => setDeviceName(event.target.value)}
+                  />
+                </label>
+              </details>
             </form>
           ) : (
             <div className="account-form">
@@ -780,7 +789,7 @@ export function AccountSetupOffer() {
       className="account-setup-offer"
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary>{t("Already have a Sub Rosa account? Restore your key")}</summary>
+      <summary>{t("Create a Sub Rosa account or sign in")}</summary>
       {open ? <AccountSettingsSection /> : null}
     </details>
   );

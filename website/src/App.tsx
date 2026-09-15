@@ -4,13 +4,23 @@ import { AccountPage } from "./pages/account";
 import { Downloads, Information } from "./pages/public";
 import "./style.css";
 import { registerAccountNavigation } from "./lib/webmcp";
+import { accountsUnavailable, siteHref, sitePaths } from "./lib/paths";
+
+const currentPath = () => (sitePaths.route(location.pathname) ?? "/not-found") + location.search;
 
 export function App({ initialPath }: { initialPath?: string }) {
-  const [path, setPath] = useState(initialPath ?? location.pathname + location.search);
+  const [path, setPath] = useState(initialPath ?? currentPath());
+  const pathname = path.split("?")[0];
+  const accountPath = pathname === "/account" || pathname.startsWith("/account/");
   useEffect(
     () =>
       registerAccountNavigation((next) => {
-        history.pushState(null, "", next);
+        const href = siteHref(next);
+        if (sitePaths.accountOrigin) {
+          location.assign(href);
+          return;
+        }
+        history.pushState(null, "", href);
         setPath(next);
         window.scrollTo(0, 0);
       }),
@@ -18,7 +28,7 @@ export function App({ initialPath }: { initialPath?: string }) {
   );
   useEffect(() => {
     const changed = () => {
-      setPath(location.pathname + location.search);
+      setPath(currentPath());
       window.scrollTo(0, 0);
     };
     const click = (event: MouseEvent) => {
@@ -34,7 +44,7 @@ export function App({ initialPath }: { initialPath?: string }) {
       const link = (event.target as Element | null)?.closest("a");
       if (!link || link.target || link.hasAttribute("download")) return;
       const url = new URL(link.href);
-      if (url.origin !== location.origin || url.pathname.startsWith("/auth/") || url.hash) return;
+      if (!sitePaths.handles(url, location.origin)) return;
       event.preventDefault();
       history.pushState(null, "", url.pathname + url.search);
       changed();
@@ -49,49 +59,63 @@ export function App({ initialPath }: { initialPath?: string }) {
   }, []);
   useEffect(() => {
     document.documentElement.lang = "en";
-    document.title = path.startsWith("/account")
+    document.title = accountPath
       ? `${t("Your account", "Votre compte")} · Sub Rosa`
-      : path === "/downloads"
+      : pathname === "/downloads"
         ? `${t("Download", "Télécharger")} · Sub Rosa`
         : "Sub Rosa";
-  }, [path]);
+  }, [accountPath, pathname]);
   return (
     <>
       <a className="skip" href="#main">
         {t("Skip to content", "Aller au contenu")}
       </a>
       <header className="header wrap">
-        <a className="brand" href="/" aria-label="Sub Rosa">
-          <img src="/rose.png" alt="" width="36" height="36" />
+        <a className="brand" href={siteHref("/")} aria-label="Sub Rosa">
+          <img src={siteHref("/rose.png")} alt="" width="36" height="36" />
           Sub Rosa
         </a>
         <nav aria-label={t("Main navigation", "Navigation principale")}>
-          <a href="/downloads">{t("Download", "Télécharger")}</a>
-          <a href="/privacy">{t("Privacy", "Confidentialité")}</a>
-          <a href="/account">{t("Sign in", "Se connecter")}</a>
+          <a href={siteHref("/downloads")}>{t("Download", "Télécharger")}</a>
+          <a href={siteHref("/privacy")}>{t("Privacy", "Confidentialité")}</a>
+          <a href={siteHref("/account")}>{t("Sign in", "Se connecter")}</a>
         </nav>
       </header>
       <main id="main" tabIndex={-1}>
-        {path.startsWith("/account") && import.meta.env.VITE_PREVIEW_ONLY === "1" ? (
+        {accountPath && (accountsUnavailable || !sitePaths.hostsAccounts) ? (
           <section className="page wrap prose">
-            <p className="eyebrow">{t("Private preview", "Aperçu privé")}</p>
-            <h1>{t("Your account is being prepared.", "Votre compte se prépare.")}</h1>
+            <p className="eyebrow">{t("Your account", "Votre compte")}</p>
+            <h1>
+              {accountsUnavailable || !sitePaths.accountOrigin
+                ? t("Accounts are coming soon.", "Les comptes seront bientôt disponibles.")
+                : t("Continue to your account.", "Accédez à votre compte.")}
+            </h1>
             <p className="lede">
-              {t(
-                "This preview shows the website. Account creation and encrypted sync are available in the local test environment and will open here once the account service is deployed.",
-                "Cet aperçu présente le site. La création de compte et la synchronisation chiffrée fonctionnent dans l’environnement de test local et seront ouvertes ici après le déploiement du service de compte.",
-              )}
+              {accountsUnavailable || !sitePaths.accountOrigin
+                ? t(
+                    "You can download Sub Rosa and work locally today. Account registration and encrypted sync will open once setup is complete.",
+                    "Vous pouvez télécharger Sub Rosa et travailler localement dès maintenant. Les inscriptions et la synchronisation chiffrée ouvriront lorsque la configuration sera terminée.",
+                  )
+                : t(
+                    "Sign in or create an account on the dedicated Sub Rosa account website.",
+                    "Connectez-vous ou créez un compte sur le site dédié aux comptes Sub Rosa.",
+                  )}
             </p>
-            <a className="button primary" href="/downloads">
+            {!accountsUnavailable && sitePaths.accountOrigin && (
+              <a className="button primary" href={siteHref("/account")}>
+                {t("Continue to your account", "Accéder à votre compte")}
+              </a>
+            )}
+            <a className="button" href={siteHref("/downloads")}>
               {t("Download the current app", "Télécharger l’app actuelle")}
             </a>
           </section>
-        ) : path.startsWith("/account") ? (
+        ) : accountPath ? (
           <AccountPage path={path} />
-        ) : path === "/downloads" ? (
+        ) : pathname === "/downloads" ? (
           <Downloads />
-        ) : path !== "/" ? (
-          <Information path={path} />
+        ) : pathname !== "/" ? (
+          <Information path={pathname} />
         ) : (
           <>
             <section className="hero wrap">
@@ -108,11 +132,11 @@ export function App({ initialPath }: { initialPath?: string }) {
                 )}
               </p>
               <div className="actions">
-                <a className="button primary" href="/downloads">
+                <a className="button primary" href={siteHref("/downloads")}>
                   {t("Download Sub Rosa", "Télécharger Sub Rosa")}
                   <span aria-hidden="true">↗</span>
                 </a>
-                <a className="text-link" href="/account?intent=signup">
+                <a className="text-link" href={siteHref("/account?intent=signup")}>
                   {t("Create an account", "Créer un compte")} <span aria-hidden="true">→</span>
                 </a>
               </div>
@@ -152,7 +176,7 @@ export function App({ initialPath }: { initialPath?: string }) {
             </section>
             <section className="closing wrap">
               <h2>{t("Your work. Your space.", "Votre travail. Votre espace.")}</h2>
-              <a className="button primary" href="/downloads">
+              <a className="button primary" href={siteHref("/downloads")}>
                 {t("Get the app", "Obtenir l’app")} <span aria-hidden="true">↗</span>
               </a>
             </section>
@@ -160,13 +184,13 @@ export function App({ initialPath }: { initialPath?: string }) {
         )}
       </main>
       <footer className="footer wrap">
-        <a className="brand" href="/">
+        <a className="brand" href={siteHref("/")}>
           Sub Rosa
         </a>
         <div>
-          <a href="/help">{t("Help", "Aide")}</a>
-          <a href="/privacy">{t("Privacy", "Confidentialité")}</a>
-          <a href="/security">{t("Security", "Sécurité")}</a>
+          <a href={siteHref("/help")}>{t("Help", "Aide")}</a>
+          <a href={siteHref("/privacy")}>{t("Privacy", "Confidentialité")}</a>
+          <a href={siteHref("/security")}>{t("Security", "Sécurité")}</a>
           <a href="https://github.com/Irdanwen/sub-rosa-releases/releases">
             {t("Release notes", "Notes de version")}
           </a>

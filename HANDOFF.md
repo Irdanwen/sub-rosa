@@ -1,5 +1,16 @@
 # HANDOFF — Ce que le fork Sub Rosa attend de l'humain
 
+## Mise à jour du 15 septembre 2026 : site public sur le VPS
+
+Le site anglais est publié sur **https://furetier.com/subrosa/** avec HTTPS et
+téléchargements 1.63.0. Les inscriptions restent fermées : l'accès DNS au
+sous-domaine, l'envoi des e-mails de vérification/récupération, le stockage S3 et
+les sauvegardes indépendantes, ainsi que les coordonnées de l'opérateur manquent.
+Le VPS partagé doit aussi disposer de la mémoire nécessaire aux nouveaux services.
+Voir [la livraison et les preuves](docs/vps-site-delivery-2026-09-15.md).
+L'app prépare une adresse de compte par défaut, mais ce changement n'est pas
+publié avant que le service correspondant fonctionne réellement.
+
 ## Mise à jour du 14 septembre 2026 : coffre chiffré et export iOS
 
 La 1.63.0 ajoute AES-256-GCM dans Rust pour le coffre de synchronisation,

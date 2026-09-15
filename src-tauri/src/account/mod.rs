@@ -41,6 +41,7 @@ pub struct Account {
 }
 #[derive(Serialize)]
 pub struct AccountStatus {
+    pub default_server_url: &'static str,
     pub server_url: Option<String>,
     pub account: Option<Account>,
     pub device_id: Option<String>,
@@ -117,6 +118,10 @@ fn remove_secret(base: &str, id: &str, kind: &str) -> Result<(), AppError> {
         Err(_) => Err(error("account_keychain")),
     }
 }
+/// Used only after the person chooses account sign-in. Local-only startup does
+/// not configure this origin, create an account, or contact the service.
+const DEFAULT_ACCOUNT_SERVER: &str = "https://subrosa.furetier.com";
+
 pub fn validate_server(value: &str) -> Result<String, AppError> {
     let url = reqwest::Url::parse(value.trim()).map_err(|_| error("account_server_invalid"))?;
     let loopback = matches!(
@@ -371,6 +376,7 @@ pub async fn account_status(app: AppHandle) -> Result<AccountStatus, AppError> {
         _ => None,
     };
     Ok(AccountStatus {
+        default_server_url: DEFAULT_ACCOUNT_SERVER,
         server_url: row.get("server_url"),
         account: s.as_ref().map(|s| s.account.clone()),
         device_id: if s.is_some() {
@@ -431,14 +437,10 @@ pub async fn account_login_start(
 ) -> Result<DeviceLogin, AppError> {
     let _guard = SESSION_LOCK.lock().await;
     let pool = pool(&app).await?;
-    let base: Option<String> = query("SELECT server_url FROM account_sync_control WHERE id=1")
-        .fetch_one(&pool)
-        .await?
-        .get("server_url");
-    let base = base.ok_or_else(|| error("account_not_connected"))?;
     if device_name.trim().is_empty() || device_name.len() > 100 {
         return Err(error("account_device_name_invalid"));
     }
+    let base = login_server(&pool).await?;
     let verifier = crypto::encode(&*crypto::random_key());
     let challenge = crypto::encode(&Sha256::digest(verifier.as_bytes()));
     let result = request(
@@ -467,6 +469,19 @@ pub async fn account_login_start(
         started: Instant::now(),
     });
     Ok(login)
+}
+
+async fn login_server(pool: &SqlitePool) -> Result<String, AppError> {
+    // Preserve a configured or previously account-bound library's exact origin.
+    // This helper is called under SESSION_LOCK, only for explicit sign-in.
+    let base: String = query(
+        "UPDATE account_sync_control SET server_url=coalesce(server_url,?) WHERE id=1 RETURNING server_url",
+    )
+    .bind(DEFAULT_ACCOUNT_SERVER)
+    .fetch_one(pool)
+    .await?
+    .get("server_url");
+    validate_server(&base)
 }
 #[tauri::command]
 pub async fn account_login_exchange(
@@ -844,6 +859,27 @@ pub async fn account_vault_restore_carpe_diem(app: AppHandle) -> Result<AccountS
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn explicit_login_defaults_once_and_preserves_custom_server() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        query("CREATE TABLE account_sync_control (id INTEGER PRIMARY KEY, server_url TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        query("INSERT INTO account_sync_control (id) VALUES (1)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(login_server(&pool).await.unwrap(), DEFAULT_ACCOUNT_SERVER);
+        query("UPDATE account_sync_control SET server_url='https://custom.example.com'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            login_server(&pool).await.unwrap(),
+            "https://custom.example.com"
+        );
+    }
     #[test]
     fn logout_attempts_every_secret_even_when_first_delete_fails() {
         let mut calls = Vec::new();

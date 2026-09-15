@@ -131,3 +131,17 @@ The Studio already has a durable executor.
   the divergence between the two `generate_handler!` lists.
 - The Videomaker server survives as an independent product in its own
   repository. It simply stops being something Sub Rosa depends on.
+
+## Addendum, 15 September 2026: account hosting on the user's domain
+
+The user explicitly requested the public English website on `furetier.com` and
+registration through the website and app. The optional account boundary in
+ADRs 0049 and 0050 does not host film execution or inference. Its provisional
+hostname is `subrosa.furetier.com`; the marketing path is
+`https://furetier.com/subrosa/`.
+
+The hygiene guard now permits these exact account/marketing coordinates while
+continuing to reject the retired studio's hostnames, credential prefix and name.
+Marketing deployment files may use the apex hostname for nginx and TLS setup;
+they are still scanned for retired studio references. The rest of this decision
+stands: no remote film service, wallet, paid-job ownership or execution is restored.
