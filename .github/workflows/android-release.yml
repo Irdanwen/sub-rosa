@@ -1,0 +1,181 @@
+name: Android release
+
+# Signed installation APK + Play Console AAB. See docs/release-android.md.
+# Dispatch only: desktop tags do not publish an untested Android build.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or tag to build
+        required: true
+        default: main
+      publish:
+        description: Publish a public Android prerelease with the APK and AAB
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+env:
+  ANDROID_NDK_VERSION: 28.2.13676358
+  ANDROID_BUILD_TOOLS_VERSION: 36.0.0
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Validate ref
+        env:
+          INPUT_REF: ${{ inputs.ref }}
+        run: |
+          if [[ ! "$INPUT_REF" =~ ^[A-Za-z0-9._/-]{1,120}$ ]]; then
+            echo "Invalid branch or tag." >&2
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Check signing secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing GitHub secret: $name (see docs/release-android.md)." >&2
+              exit 1
+            fi
+          done
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+      - name: Install Android SDK and NDK
+        run: |
+          sdkmanager "platforms;android-36" "build-tools;$ANDROID_BUILD_TOOLS_VERSION" "ndk;$ANDROID_NDK_VERSION"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: 1.95.0
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Set Android build number
+        run: |
+          # Seconds since 2020: increases for a rerun of an old release too.
+          # The global concurrency group serializes this release lane.
+          version_code=$(( $(date -u +%s) - 1577836800 ))
+          if (( version_code <= 0 || version_code > 2100000000 )); then
+            echo "Android version code is outside the Play Console range." >&2
+            exit 1
+          fi
+          echo "ANDROID_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
+          node -e 'process.stdout.write(JSON.stringify({bundle:{android:{versionCode:Number(process.argv[1])}}}))' \
+            "$version_code" > "$RUNNER_TEMP/android-version.json"
+
+      - name: Decode Android signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/subrosa-android.jks"
+          test -s "$RUNNER_TEMP/subrosa-android.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/subrosa-android.jks" >> "$GITHUB_ENV"
+
+      - name: Build signed APK and AAB
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: pnpm tauri android build --ci --target aarch64 --apk --aab --config "$RUNNER_TEMP/android-version.json"
+
+      - name: Verify and collect packages
+        run: |
+          shopt -s globstar nullglob
+          apks=(src-tauri/gen/android/app/build/outputs/apk/**/release/*.apk)
+          aabs=(src-tauri/gen/android/app/build/outputs/bundle/**/release/*.aab)
+          # Tauri's flavor names may place Release directly in the directory name.
+          if (( ${#aabs[@]} == 0 )); then
+            aabs=(src-tauri/gen/android/app/build/outputs/bundle/*Release/*.aab)
+          fi
+          if (( ${#apks[@]} != 1 || ${#aabs[@]} != 1 )); then
+            echo "Expected one release APK and one release AAB." >&2
+            exit 1
+          fi
+          build_tools="$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS_VERSION"
+          "$build_tools/apksigner" verify --verbose --print-certs "${apks[0]}"
+          "$build_tools/zipalign" -c -P 16 4 "${apks[0]}"
+          LC_ALL=C jarsigner -verify "${aabs[0]}" > "$RUNNER_TEMP/aab-verification.txt"
+          cat "$RUNNER_TEMP/aab-verification.txt"
+          grep -q 'jar verified\.' "$RUNNER_TEMP/aab-verification.txt"
+          if grep -q 'unsigned entries' "$RUNNER_TEMP/aab-verification.txt"; then
+            echo "The AAB contains unsigned entries." >&2
+            exit 1
+          fi
+          version=$(node -p 'require("./package.json").version')
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]
+          echo "ANDROID_VERSION=$version" >> "$GITHUB_ENV"
+          mkdir -p build/android-release
+          cp "${apks[0]}" "build/android-release/subrosa-$version-$ANDROID_VERSION_CODE-arm64.apk"
+          cp "${aabs[0]}" "build/android-release/subrosa-$version-$ANDROID_VERSION_CODE-arm64.aab"
+          git rev-parse HEAD > build/android-release/source-commit.txt
+          printf 'Sub Rosa %s\nAndroid versionCode: %s\nArchitecture: arm64-v8a\n' \
+            "$version" "$ANDROID_VERSION_CODE" > build/android-release/build-info.txt
+          cd build/android-release
+          sha256sum ./*.apk ./*.aab > SHA256SUMS.txt
+
+      - name: Retain signed packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: subrosa-android-${{ env.ANDROID_VERSION_CODE }}
+          path: build/android-release/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish Android prerelease
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+        run: |
+          test -n "$GH_TOKEN" || { echo "Missing RELEASES_REPO_TOKEN." >&2; exit 1; }
+          cat > "$RUNNER_TEMP/android-release-notes.md" <<'EOF'
+          Android test build for phones using arm64-v8a.
+
+          Download the APK on your Android phone and open it to install Sub Rosa.
+          Android may ask you to allow this download source to install apps.
+          The AAB is for Google Play Console; it cannot be installed directly.
+
+          This is an Android prerelease. See build-info.txt for its build number
+          and source-commit.txt for the source revision.
+          EOF
+          gh release create "android-v$ANDROID_VERSION-$ANDROID_VERSION_CODE" \
+            --repo Irdanwen/sub-rosa-releases \
+            --title "Sub Rosa $ANDROID_VERSION for Android (build $ANDROID_VERSION_CODE)" \
+            --prerelease --latest=false \
+            --notes-file "$RUNNER_TEMP/android-release-notes.md" \
+            build/android-release/*
+
+      - name: Remove signing key
+        if: ${{ always() }}
+        run: rm -f "$RUNNER_TEMP/subrosa-android.jks"

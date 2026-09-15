@@ -100,6 +100,8 @@ struct ActiveRecording {
     system_live_preview: Option<SystemLivePreviewController>,
     live_preview_enabled: bool,
     _stream: cpal::Stream,
+    #[cfg(target_os = "android")]
+    _android_recording: crate::android::RecordingGuard,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,7 +137,11 @@ pub fn microphone_permission_state() -> (String, Option<String>) {
             _ => ("unknown".to_string(), None),
         };
     }
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(target_os = "android")]
+    {
+        return crate::android::microphone_permission_state();
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
         let host = cpal::default_host();
         if host.default_input_device().is_some() {
@@ -202,6 +208,9 @@ pub fn start_capture(
         super::ios_session::ensure_record_permission()?;
         super::ios_session::configure_for_recording()?;
     }
+
+    #[cfg(target_os = "android")]
+    let android_recording = crate::android::RecordingGuard::start()?;
 
     let host = cpal::default_host();
     let device = host.default_input_device().ok_or_else(|| {
@@ -436,6 +445,8 @@ pub fn start_capture(
         system_live_preview,
         live_preview_enabled,
         _stream: stream,
+        #[cfg(target_os = "android")]
+        _android_recording: android_recording,
     });
 
     Ok(StartedRecording {

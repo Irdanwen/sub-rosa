@@ -1,0 +1,5 @@
+<resources>
+    <string name="subrosa_recording_channel">Enregistrement du microphone</string>
+    <string name="subrosa_recording_title">Sub Rosa enregistre</string>
+    <string name="subrosa_recording_description">Touchez pour revenir à votre enregistrement.</string>
+</resources>

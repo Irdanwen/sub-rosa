@@ -584,12 +584,23 @@ pub async fn import_archive(
     let picked = rx
         .await
         .map_err(|error| AppError::new("archive_import_failed", error.to_string()))?;
-    let Some(source) = picked.and_then(|path| path.into_path().ok()) else {
+    #[cfg(not(target_os = "android"))]
+    let picked = picked.and_then(|path| path.into_path().ok());
+    let Some(source) = picked else {
         return Ok(ImportArchiveResult {
             summary: None,
             needs_passphrase: false,
         });
     };
+    #[cfg(target_os = "android")]
+    let bytes = {
+        use tauri_plugin_fs::FsExt;
+        // Android's document picker returns a granted content URI, not a
+        // filesystem path. The plugin opens its descriptor through ContentResolver.
+        app.fs().read(source)
+    }
+    .map_err(|error| AppError::new("archive_import_failed", error.to_string()))?;
+    #[cfg(not(target_os = "android"))]
     let bytes = std::fs::read(&source)
         .map_err(|error| AppError::new("archive_import_failed", error.to_string()))?;
     let passphrase = request

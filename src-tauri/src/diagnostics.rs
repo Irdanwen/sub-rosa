@@ -62,7 +62,7 @@ pub fn startup_marks() -> Vec<(String, u64)> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlatformCapabilities {
-    /// A name the webview can show ("macOS", "Windows", "iOS").
+    /// A name the webview can show ("macOS", "Windows", "iOS", "Android").
     pub platform: &'static str,
     /// System-audio capture through the out-of-process helper (ADR-0004).
     pub system_audio: bool,
@@ -131,7 +131,27 @@ pub const fn capabilities() -> PlatformCapabilities {
             updater: true,
         }
     }
-    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows")))]
+    #[cfg(target_os = "android")]
+    {
+        PlatformCapabilities {
+            platform: "Android",
+            system_audio: false,
+            hud: false,
+            dictation_hotkey: false,
+            spotlight: false,
+            calendar: false,
+            meeting_detection: false,
+            share: true,
+            hermes_agent: false,
+            updater: false,
+        }
+    }
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows",
+        target_os = "android"
+    )))]
     {
         PlatformCapabilities {
             platform: "Linux",
