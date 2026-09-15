@@ -92,6 +92,13 @@
 .account-setup-offer > .account-settings {
   margin-top: var(--sp-6);
 }
+.account-advanced summary {
+  cursor: pointer;
+  font-size: var(--fs-md);
+}
+.account-advanced > :not(summary) {
+  margin-top: var(--sp-5);
+}
 
 /* QR scanners require a light quiet zone regardless of the app theme. */
 .account-pairing-qr {

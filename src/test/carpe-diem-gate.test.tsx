@@ -29,6 +29,8 @@ describe("the Carpe Diem gate", () => {
 
     expect(screen.getByRole("heading", { name: "Welcome to Sub Rosa" })).toBeInTheDocument();
     expect(screen.getByText(/Need a key\?/)).toBeInTheDocument();
+    expect(screen.getByText("Create a Sub Rosa account or sign in")).toBeInTheDocument();
+    expect(screen.getByTestId("settings")).toBeInTheDocument();
   });
 
   it("says what happened when the engine failed", () => {
