@@ -2,6 +2,15 @@ import { platform } from "@tauri-apps/plugin-os";
 
 let cached: boolean | null = null;
 
+/** Native iOS capabilities must not be inferred from the shared mobile shell. */
+export function isIosPlatform(): boolean {
+  try {
+    return platform() === "ios";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Whether the app is running inside the mobile (iOS/Android) shell.
  *

@@ -1,4 +1,5 @@
 import { t } from "../../../../lib/i18n";
+import { messageFromError } from "../../../../lib/errors";
 import { useModalFocus } from "../../../../lib/modal-focus";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
@@ -84,8 +85,8 @@ export function Lightbox({
       setSaved(true);
       hapticNotify("success");
       window.setTimeout(() => setSaved(false), 1600);
-    } catch {
-      // iOS shows its own permission UI; a failed save stays silent here.
+    } catch (err) {
+      setError(messageFromError(err));
     }
   }, [artifact]);
 

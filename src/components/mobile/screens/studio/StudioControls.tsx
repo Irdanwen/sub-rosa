@@ -2,7 +2,7 @@ import { t } from "../../../../lib/i18n";
 import { IconChevronDownSmall } from "central-icons/IconChevronDownSmall";
 import { type ReactNode, useState } from "react";
 import { hapticSelection } from "../../../../lib/haptics";
-import { isMobilePlatform } from "../../../../lib/mobile";
+import { isIosPlatform } from "../../../../lib/mobile";
 import { setPlaybackAudioSession } from "../../../../lib/tauri";
 import { Switch } from "../../../ui/Switch";
 
@@ -23,7 +23,7 @@ import { Switch } from "../../../ui/Switch";
  * keeps generated music/video audible past the lock screen and the silent
  * switch. No-op off iOS (the command only exists there). */
 export function markMediaPlayback(active: boolean) {
-  if (!isMobilePlatform()) return;
+  if (!isIosPlatform()) return;
   void setPlaybackAudioSession(active).catch(() => undefined);
 }
 

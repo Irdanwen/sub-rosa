@@ -1,6 +1,6 @@
 # Sub Rosa
 
-Sub Rosa is a Tauri desktop and iOS app that records meetings/dictation,
+Sub Rosa is a Tauri desktop, iOS and Android app that records meetings/dictation,
 transcribes the audio, turns the transcript into structured notes, and hosts an
 AI agent you can chat with over those notes. It has **no account and no hosted
 service**: the user supplies a **Carpe Diem** key, the app runs **June API** as
@@ -21,7 +21,7 @@ lines are binding. Implementation, endpoints, and code shape live under
 
 **Sub Rosa (the app)**:
 The user-facing Tauri desktop product — the macOS `.app` users install, and
-the iPhone app. The bundle identifier is `xyz.carpediem.subrosa`. Technical
+the iPhone and Android apps. The bundle identifier is `xyz.carpediem.subrosa`. Technical
 identifiers stay upstream's: the binary on disk and the Cargo package are both
 `os-june` (see [ADR-0017](docs/adr/0017-product-autonomy-from-june.md)).
 _Avoid_: June (the upstream product this forks), notetaker, OS Notetaker.

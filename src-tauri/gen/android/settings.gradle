@@ -1,0 +1,5 @@
+include ':app'
+include ':subrosa-native'
+project(':subrosa-native').projectDir = file('../../android')
+
+apply from: 'tauri.settings.gradle'

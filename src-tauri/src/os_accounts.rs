@@ -123,6 +123,7 @@ pub fn load_local_env() {
 /// Opens a URL in the user's default browser. The webview installs no
 /// new-window handler, so `target="_blank"` anchors are silently dropped and
 /// every outbound link has to route through here.
+#[cfg(not(target_os = "android"))]
 pub(crate) fn open_in_browser(url: &str) -> Result<(), AppError> {
     let mut command = browser_open_command(url);
     let mut child = command
@@ -133,6 +134,12 @@ pub(crate) fn open_in_browser(url: &str) -> Result<(), AppError> {
     std::thread::spawn(move || {
         let _ = child.wait();
     });
+    Ok(())
+}
+
+#[cfg(target_os = "android")]
+pub(crate) fn open_in_browser(url: &str) -> Result<(), AppError> {
+    crate::android::invoke::<serde_json::Value>("openUrl", serde_json::json!({ "url": url }))?;
     Ok(())
 }
 
@@ -150,7 +157,7 @@ fn browser_open_command(url: &str) -> std::process::Command {
     command
 }
 
-#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "android")))]
 fn browser_open_command(url: &str) -> std::process::Command {
     let mut command = std::process::Command::new("xdg-open");
     command.arg(url);

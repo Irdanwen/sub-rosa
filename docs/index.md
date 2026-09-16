@@ -87,6 +87,9 @@ feature specs). Full index: [spec/index.md](../spec/index.md).
 
 ## Release & ops runbooks
 
+- [release-android.md](release-android.md) — signed Android APK and AAB builds, local tooling and test distribution
+- [adr/0051](adr/0051-android-uses-the-mobile-core-and-a-native-credential-store.md) — Android shares the mobile core and uses Android Keystore and native system bridges
+
 - [release-1.63.0.md](release-1.63.0.md) — signed desktop release, Intel packaging correction and Apple TestFlight status.
 - [testflight-encryption-1.63.0.md](testflight-encryption-1.63.0.md) — technical encryption description for the outstanding Apple declaration.
 - [release-macos.md](release-macos.md) / [release-windows.md](release-windows.md) — the release runbooks

@@ -44,6 +44,8 @@ struct ActiveDictation {
     writer: Arc<Mutex<Option<WavWriter<BufWriter<File>>>>>,
     peak: Arc<Mutex<f32>>,
     _stream: cpal::Stream,
+    #[cfg(target_os = "android")]
+    _android_recording: crate::android::RecordingGuard,
 }
 
 // Single dictation at a time behind a process-wide mutex; the stream is only
@@ -99,6 +101,9 @@ fn start_dictation_capture() -> Result<MobileDictationStatusDto, AppError> {
         crate::audio::ios_session::ensure_record_permission()?;
         crate::audio::ios_session::configure_for_recording()?;
     }
+
+    #[cfg(target_os = "android")]
+    let android_recording = crate::android::RecordingGuard::start()?;
 
     let host = cpal::default_host();
     let device = host.default_input_device().ok_or_else(|| {
@@ -183,6 +188,8 @@ fn start_dictation_capture() -> Result<MobileDictationStatusDto, AppError> {
         writer,
         peak,
         _stream: stream,
+        #[cfg(target_os = "android")]
+        _android_recording: android_recording,
     });
     Ok(status)
 }
@@ -231,6 +238,9 @@ pub async fn mobile_dictation_stop(
             "No dictation is recording.",
         ));
     };
+    drop(dictation._stream);
+    #[cfg(target_os = "android")]
+    drop(dictation._android_recording);
     // Finalize the WAV (drop the writer to flush the header) and release the
     // audio session before the network round-trips.
     if let Ok(mut writer) = dictation.writer.lock() {
