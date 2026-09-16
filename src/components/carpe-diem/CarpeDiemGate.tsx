@@ -65,7 +65,7 @@ export function CarpeDiemGate({
               )
             : mobile
               ? t(
-                  "{product} turns your meetings into notes, right on your iPhone. Create an account to connect your devices, or use your Carpe Diem key locally.",
+                  "{product} turns your meetings into notes, right on your phone. Create an account to connect your devices, or use your Carpe Diem key locally.",
                   { product: PRODUCT_NAME },
                 )
               : t(
