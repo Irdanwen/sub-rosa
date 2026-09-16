@@ -42,7 +42,9 @@ pnpm website:releases
 ```
 
 The release updater reads the public GitHub release API and verifies official
-asset paths, sizes and digests. It does not invent an iPhone download URL. Update
+asset paths, sizes and digests. It also picks the newest Android prerelease
+(`android-vX.Y.Z-<build>`) for the APK card, or none. It does not invent an
+iPhone download URL. Update
 the manifest when publishing a release; publishing a website does not release
 new desktop/iOS binaries.
 

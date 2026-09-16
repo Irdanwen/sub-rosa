@@ -2,7 +2,17 @@ import { t, number } from "../lib/i18n";
 import releases from "../releases.json";
 import { accountsUnavailable, siteHref } from "../lib/paths";
 
+/** The newest Android test build, from its own prerelease; absent until one is published. */
+type AndroidDownload = {
+  version: string;
+  build: number;
+  url: string;
+  bytes: number;
+  sha256: string | null;
+};
+
 export function Downloads() {
+  const android = releases.android as AndroidDownload | null;
   const titles: Record<string, string> = {
     "mac-arm": "Mac · Apple Silicon",
     "mac-intel": "Mac · Intel",
@@ -63,6 +73,37 @@ export function Downloads() {
             )}
           </article>
         ))}
+        {android ? (
+          <article className="card" key="android">
+            <h2>Android · 64 bits</h2>
+            <p className="muted">
+              {t(
+                "For phones running Android 10 or later. A test build you install directly, outside Google Play.",
+                "Pour les téléphones sous Android 10 ou plus récent. Une version de test à installer directement, hors Google Play.",
+              )}
+            </p>
+            <a className="button primary" href={android.url}>
+              {t("Download", "Télécharger")} <span aria-hidden="true">↓</span>
+            </a>
+            <span className="download-meta">
+              {number(android.bytes / 1e6, 1)} MB · {android.version} · {t("build", "build")}{" "}
+              {android.build}
+            </span>
+            <p className="quiet">
+              {t(
+                "Android may ask you to allow installs from your browser. Later builds update this one in place.",
+                "Android peut vous demander d’autoriser les installations depuis votre navigateur. Les versions suivantes mettent celle-ci à jour.",
+              )}
+            </p>
+            {android.sha256 && (
+              <details>
+                <summary>{t("Verify download", "Vérifier le téléchargement")}</summary>
+                <p className="quiet">SHA-256</p>
+                <code className="hash">{android.sha256}</code>
+              </details>
+            )}
+          </article>
+        ) : null}
       </div>
       <article className="card row">
         <div>
