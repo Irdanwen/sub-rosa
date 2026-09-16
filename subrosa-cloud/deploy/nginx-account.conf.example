@@ -1,0 +1,93 @@
+# Account origin. Like Caddyfile.example, this file names a placeholder host:
+# substitute the real account hostname when installing, for example
+#   sed 's/account.example.invalid/<account host>/g' nginx-account.conf.example \
+#     > /etc/nginx/sites-available/subrosa-account
+# The account website at the root, the account service under
+# /api, /auth, /livez and /readyz, and Keycloak's consumer endpoints under /id.
+# This is the proxy contract of docs/vps-account-stack.md: HTTPS terminates
+# here, no Docker port is public, X-Forwarded-* are replaced, Host is exact,
+# and Keycloak's admin, master-realm and management paths never leave the host.
+# Enable only after DNS, the certificate and the account stack exist. Nginx
+# stays managed separately from the stack; never edit another application's vhost.
+
+limit_req_zone $binary_remote_addr zone=subrosa_account:10m rate=10r/s;
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name account.example.invalid;
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        try_files $uri =404;
+    }
+    location / { return 308 https://account.example.invalid$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name account.example.invalid;
+    ssl_certificate /etc/letsencrypt/live/account.example.invalid/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/account.example.invalid/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # The account website is built with VITE_ACCOUNT_ORIGIN=https://account.example.invalid
+    # and a root base, and published as its own release directory, apart from the
+    # marketing subpath under /srv/subrosa.
+    root /srv/subrosa-account/www/current;
+    server_tokens off;
+    # Query strings carry OIDC state; cookies and Authorization carry sessions.
+    access_log off;
+    client_max_body_size 33m;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header X-Frame-Options DENY always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port 443;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_read_timeout 60s;
+
+    # Account service (loopback only; PROXY_TRUSTED_ADDRESSES names this proxy).
+    location ~ ^/(api|auth)/ {
+        limit_req zone=subrosa_account burst=30 nodelay;
+        proxy_pass http://127.0.0.1:18088;
+    }
+    location = /livez { proxy_pass http://127.0.0.1:18088; }
+    location = /readyz { proxy_pass http://127.0.0.1:18088; }
+
+    # Keycloak: consumer endpoints only. Administration goes through a private
+    # tunnel to 127.0.0.1:18080, never through this vhost.
+    location ^~ /id/admin/ { return 404; }
+    location ^~ /id/realms/master/ { return 404; }
+    location ^~ /id/metrics { return 404; }
+    location ^~ /id/health { return 404; }
+    location ^~ /id/realms/subrosa/ {
+        limit_req zone=subrosa_account burst=30 nodelay;
+        proxy_pass http://127.0.0.1:18080;
+    }
+    location ^~ /id/resources/ { proxy_pass http://127.0.0.1:18080; }
+    location ^~ /id/js/ { proxy_pass http://127.0.0.1:18080; }
+    location ^~ /id/ { return 404; }
+
+    # Account website. The CSP applies to our pages only: Keycloak's pages send
+    # their own, and add_header in a location replaces the inherited set, so the
+    # five headers above are repeated here on purpose.
+    location / {
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header X-Frame-Options DENY always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" always;
+        try_files $uri $uri/ /index.html;
+    }
+}

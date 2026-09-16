@@ -1,0 +1,91 @@
+name: Account service images
+
+# Builds the account service and the Keycloak image once, on a build runner,
+# and publishes both to GHCR with immutable digests. The VPS never builds:
+# docs/vps-account-stack.md requires CLOUD_IMAGE to be a registry digest and
+# starts Keycloak with --no-build. Dispatch only; nothing deploys from here.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or tag to build
+        required: true
+        default: main
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: account-images
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Validate ref
+        env:
+          INPUT_REF: ${{ inputs.ref }}
+        run: |
+          if [[ ! "$INPUT_REF" =~ ^[A-Za-z0-9._/-]{1,120}$ ]]; then
+            echo "Invalid branch or tag." >&2
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Build and publish both images
+        run: |
+          owner=$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          revision=$(git rev-parse HEAD)
+          short=$(git rev-parse --short=12 HEAD)
+          source="https://github.com/$GITHUB_REPOSITORY"
+
+          cloud="ghcr.io/$owner/subrosa-cloud:$short"
+          docker build --pull \
+            --label "org.opencontainers.image.source=$source" \
+            --label "org.opencontainers.image.revision=$revision" \
+            --tag "$cloud" subrosa-cloud
+          docker push "$cloud"
+          cloud_digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$cloud")
+
+          keycloak="ghcr.io/$owner/subrosa-keycloak:26.7.3-$short"
+          docker build --pull \
+            --file subrosa-cloud/deploy/vps/Keycloak.Dockerfile \
+            --label "org.opencontainers.image.source=$source" \
+            --label "org.opencontainers.image.revision=$revision" \
+            --tag "$keycloak" subrosa-cloud/deploy/vps
+          docker push "$keycloak"
+          keycloak_digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$keycloak")
+
+          {
+            echo "SOURCE_REVISION=$revision"
+            echo "CLOUD_IMAGE=$cloud_digest"
+            echo "KEYCLOAK_IMAGE=$keycloak_digest"
+          } | tee images.env
+          {
+            echo '## Published images'
+            echo
+            echo '```'
+            cat images.env
+            echo '```'
+            echo
+            echo 'Copy `CLOUD_IMAGE` into the private `stack.env`; pull and tag the Keycloak digest as `subrosa-keycloak:26.7.3` on the host.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain the digests
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: account-images-${{ github.run_id }}
+          path: images.env
+          if-no-files-found: error
+          retention-days: 90
