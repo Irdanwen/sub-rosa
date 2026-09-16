@@ -31,7 +31,9 @@ if (import.meta.env.DEV) {
 
 initTheme();
 initBrand();
-installNativeContextMenuGuard();
+// Mobile keeps the WebView long-press menu on editable fields: without it,
+// Android has no way to paste into an input (the gate’s key field included).
+installNativeContextMenuGuard({ allowEditableFields: isMobilePlatform() });
 if (isMobilePlatform()) {
   void import("./lib/dynamic-type").then(({ initDynamicType }) => initDynamicType());
 }
