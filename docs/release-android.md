@@ -109,6 +109,11 @@ Pour donner un lien public aux testeurs, relancer le workflow avec
 `publish=true` après validation. La préversion publique contient l'APK et son
 empreinte ; les testeurs n'ont pas besoin d'accéder aux artefacts Actions.
 
+Le site public propose la préversion Android la plus récente : `pnpm website:releases`
+régénère `website/src/releases.json` à partir des releases publiques (la carte
+Android disparaît s'il n'existe aucune préversion), puis reconstruire et déployer
+le site.
+
 ## Distribuer par Google Play en test interne
 
 Le canal **Test interne** de Google Play Console permet de distribuer l'app à
