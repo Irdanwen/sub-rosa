@@ -1,4 +1,8 @@
-# Account origin: the account website at the root, the account service under
+# Account origin. Like Caddyfile.example, this file names a placeholder host:
+# substitute the real account hostname when installing, for example
+#   sed 's/account.example.invalid/<account host>/g' nginx-account.conf.example \
+#     > /etc/nginx/sites-available/subrosa-account
+# The account website at the root, the account service under
 # /api, /auth, /livez and /readyz, and Keycloak's consumer endpoints under /id.
 # This is the proxy contract of docs/vps-account-stack.md: HTTPS terminates
 # here, no Docker port is public, X-Forwarded-* are replaced, Host is exact,
@@ -11,24 +15,24 @@ limit_req_zone $binary_remote_addr zone=subrosa_account:10m rate=10r/s;
 server {
     listen 80;
     listen [::]:80;
-    server_name subrosa.furetier.com;
+    server_name account.example.invalid;
     location ^~ /.well-known/acme-challenge/ {
         root /var/www/certbot;
         try_files $uri =404;
     }
-    location / { return 308 https://subrosa.furetier.com$request_uri; }
+    location / { return 308 https://account.example.invalid$request_uri; }
 }
 
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
-    server_name subrosa.furetier.com;
-    ssl_certificate /etc/letsencrypt/live/subrosa.furetier.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/subrosa.furetier.com/privkey.pem;
+    server_name account.example.invalid;
+    ssl_certificate /etc/letsencrypt/live/account.example.invalid/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/account.example.invalid/privkey.pem;
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
-    # The account website is built with VITE_ACCOUNT_ORIGIN=https://subrosa.furetier.com
+    # The account website is built with VITE_ACCOUNT_ORIGIN=https://account.example.invalid
     # and a root base, and published as its own release directory, apart from the
     # marketing subpath under /srv/subrosa.
     root /srv/subrosa-account/www/current;

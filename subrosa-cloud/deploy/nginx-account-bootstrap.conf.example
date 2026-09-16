@@ -1,11 +1,12 @@
-# First install for the account origin, once the DNS record A subrosa exists.
+# First install for the account origin, once its DNS record exists. Substitute
+# account.example.invalid with the real account hostname (see nginx-account.conf.example).
 # Obtain the certificate with
-#   certbot certonly --webroot -w /var/www/certbot -d subrosa.furetier.com
+#   certbot certonly --webroot -w /var/www/certbot -d account.example.invalid
 # then replace this file with nginx-account.conf. Never replace another vhost.
 server {
     listen 80;
     listen [::]:80;
-    server_name subrosa.furetier.com;
+    server_name account.example.invalid;
     location ^~ /.well-known/acme-challenge/ {
         root /var/www/certbot;
         try_files $uri =404;
