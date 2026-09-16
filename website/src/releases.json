@@ -21,5 +21,14 @@
       "bytes": 107368702,
       "sha256": "a98783b19574f3aa5b85b2ea1afd75d07d92833841b893295e39ba7293525534"
     }
-  ]
+  ],
+  "android": {
+    "version": "v1.63.0",
+    "build": 211649360,
+    "published_at": "2026-09-15T15:41:52Z",
+    "release_url": "https://github.com/Irdanwen/sub-rosa-releases/releases/tag/android-v1.63.0-211649360",
+    "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/android-v1.63.0-211649360/subrosa-1.63.0-211649360-arm64.apk",
+    "bytes": 56102327,
+    "sha256": "929c95f2b0b5ec4ed559630b86e5863e73255040083b0ad2ea7eae08d0b7527c"
+  }
 }
