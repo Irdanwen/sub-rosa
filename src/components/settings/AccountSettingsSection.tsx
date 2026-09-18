@@ -201,7 +201,10 @@ export function AccountSettingsSection() {
       deviceName.trim() || (isMobilePlatform() ? t("My iPhone") : t("My computer")),
     );
     if (mounted.current) setLogin(next);
-    await openExternalUrl(next.verification_uri);
+    const opened = await openExternalUrl(next.verification_uri);
+    if (!opened && mounted.current) {
+      setNotice(t("Your browser did not open. Open this address yourself to continue."));
+    }
   }
 
   async function confirmAction() {
@@ -313,6 +316,7 @@ export function AccountSettingsSection() {
                 {t("Approve this code in your browser only if it matches:")}
               </p>
               <code className="account-login-code">{login.user_code}</code>
+              <p className="settings-row-description account-login-uri">{login.verification_uri}</p>
               <p role="status" className="settings-row-description">
                 {t("Waiting for your approval. This request expires at {time}.", {
                   time: formatAccountDate(login.expires_at),
