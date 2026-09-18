@@ -175,6 +175,36 @@ jobs:
           pnpm tauri ios build --export-method app-store-connect --verbose || \
             echo "Tauri's own export failed (expected); exporting the xcarchive manually."
 
+      # Tauri's archive rewrites CFBundleVersion from tauri.conf.json ("Updated
+      # CFBundleVersion ... to 1.65.2"), undoing the stamp above, so the counter
+      # has to be written into the archive itself. Export re-signs the bundle and
+      # sets manageAppVersionAndBuildNumber to false, so it keeps what is written
+      # here.
+      - name: Stamp the build number into the archive
+        env:
+          SUBROSA_IOS_BUILD: ${{ github.run_number }}
+        run: |
+          ARCHIVE=$(find src-tauri/gen/apple/build -name '*.xcarchive' -print | head -1)
+          if [ -z "$ARCHIVE" ]; then echo "No xcarchive produced by Tauri." >&2; exit 1; fi
+          BUILD=$(node scripts/print-ios-build.mjs)
+          echo "Build number for this delivery: $BUILD"
+          stamped=0
+          for plist in "$ARCHIVE"/Products/Applications/*.app/Info.plist \
+                       "$ARCHIVE"/Products/Applications/*.app/PlugIns/*.appex/Info.plist; do
+            [ -f "$plist" ] || continue
+            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$plist"
+            echo "  $plist -> $BUILD"
+            stamped=$((stamped + 1))
+          done
+          # The app and its share extension. Fewer means the archive layout moved
+          # and the delivery would go out carrying the version it must not reuse.
+          if [ "$stamped" -lt 2 ]; then
+            echo "::error::Stamped $stamped bundles, expected the app and its extension" >&2
+            exit 1
+          fi
+          /usr/libexec/PlistBuddy -c "Set :ApplicationProperties:CFBundleVersion $BUILD" \
+            "$ARCHIVE/Info.plist" || true
+
       # Re-sign with the imported identity and installed App Store profiles.
       # Match the signing style to the profile origin: Xcode-managed profiles
       # require automatic selection, portal-created profiles allow UUID mapping.
