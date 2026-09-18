@@ -155,6 +155,11 @@ jobs:
       # Tauri (unset)" cert with the team unset), so we let it archive and export
       # the resulting xcarchive ourselves below. Tolerate Tauri's export failure
       # as long as it leaves a valid xcarchive.
+      - name: Stamp the iOS bundles with the app version
+        run: |
+          node scripts/sync-ios-version.mjs
+          git --no-pager diff --stat -- src-tauri/gen/apple || true
+
       - name: Archive via Tauri (Rust build + xcarchive)
         env:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
