@@ -150,7 +150,14 @@ pub struct TokenResponse {
 }
 #[async_trait]
 pub trait IdentityProvider: Send + Sync {
-    fn authorization_url(&self, attempt: &LoginAttempt, state: &str) -> Result<String>;
+    /// `register` sends the browser to the provider's sign-up surface instead of
+    /// its sign-in one. Same client, same PKCE, same redirect.
+    fn authorization_url(
+        &self,
+        attempt: &LoginAttempt,
+        state: &str,
+        register: bool,
+    ) -> Result<String>;
     async fn exchange(&self, attempt: &LoginAttempt, code: &str) -> Result<Identity>;
 }
 #[async_trait]
