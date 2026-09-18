@@ -127,7 +127,9 @@ services:
         target: /config
         volume: { subpath: runtime }
     read_only: true
-    tmpfs: [/tmp:rw,noexec,nosuid,size=16m]
+    # Quoted: in a YAML flow sequence the commas would split the mount options
+    # into separate entries and Docker rejects "noexec" as a mount path.
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
     ports: ["127.0.0.1:18088:8088"]
     networks: [database, outbound]
     depends_on: { postgres: { condition: service_healthy }, keycloak: { condition: service_healthy } }
