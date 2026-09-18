@@ -238,14 +238,36 @@ jobs:
           security default-keychain -s "$KC"
           HERMES=.tauri-hermes/hermes
           if [ -d "$HERMES" ]; then
+            # `--timestamp` reaches Apple, so it fails the way any network call
+            # fails. Swallowing that shipped five unsigned Python extensions
+            # into 1.65.2 and the build only learned of it at notarization,
+            # under a message that named neither the files nor the cause.
+            # Retry the hiccup, then stop: a partially signed runtime must not
+            # reach Apple, and every Mach-O found has to be a Mach-O signed.
+            found=0
             count=0
             while IFS= read -r f; do
-              if file "$f" | grep -q "Mach-O"; then
-                codesign --force --timestamp --options runtime \
-                  --sign "$APPLE_SIGNING_IDENTITY" "$f" && count=$((count+1)) || true
-              fi
+              file "$f" | grep -q "Mach-O" || continue
+              found=$((found+1))
+              for attempt in 1 2 3; do
+                if codesign --force --timestamp --options runtime \
+                     --sign "$APPLE_SIGNING_IDENTITY" "$f"; then
+                  count=$((count+1))
+                  break
+                fi
+                if [ "$attempt" = 3 ]; then
+                  echo "::error::could not sign $f after 3 attempts." \
+                       "Signing the bundled runtime needs Apple's timestamp service."
+                  exit 1
+                fi
+                sleep $((attempt * 5))
+              done
             done < <(find "$HERMES" -type f | awk '{ print gsub(/\//,"/") "\t" $0 }' | sort -rn | cut -f2-)
-            echo "pre-signed $count Mach-O files in the Hermes runtime"
+            echo "pre-signed $count of $found Mach-O files in the Hermes runtime"
+            if [ "$count" != "$found" ]; then
+              echo "::error::signed $count of $found runtime binaries." >&2
+              exit 1
+            fi
           fi
 
       - name: Build + sign app (tauri-action)
