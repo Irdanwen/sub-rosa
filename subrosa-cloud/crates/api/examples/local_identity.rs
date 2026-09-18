@@ -186,6 +186,7 @@ async fn main() -> Result<()> {
             endpoint: None,
             access_key: None,
             secret_key: None,
+            conditional_writes: true,
         },
         account_quota_bytes: 1024 * 1024 * 1024,
     };

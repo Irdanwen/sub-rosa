@@ -44,6 +44,16 @@ pub struct Storage {
     pub access_key: Option<Secret>,
     #[serde(default)]
     pub secret_key: Option<Secret>,
+    /// A conditional write is the safety net that stops one id ever holding two different
+    /// ciphertexts. Not every S3-compatible bucket implements it: Backblaze answers 501, and
+    /// the retry that follows costs an upload its whole transaction. Where the bucket cannot
+    /// do it, the provider checks for the object first and compares digests instead, which is
+    /// sound here because the repository already refuses a second digest under a known id.
+    #[serde(default = "enabled")]
+    pub conditional_writes: bool,
+}
+fn enabled() -> bool {
+    true
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Ledger {
@@ -122,6 +132,12 @@ impl Config {
             {
                 return Err("deletion ledger requires a distinct private S3 bucket");
             }
+            // The ledger is append-only because the bucket refuses a write onto a key that
+            // exists. Turn that off and every record becomes forgeable in silence, so the
+            // relaxation the ciphertext bucket is allowed must never reach this one.
+            if !self.development && !ledger.storage.conditional_writes {
+                return Err("deletion ledger requires conditional writes");
+            }
             if let Some(endpoint) = &ledger.storage.endpoint {
                 let url = Url::parse(endpoint).map_err(|_| "invalid ledger endpoint")?;
                 if url.scheme() != "https" {
@@ -175,6 +191,7 @@ mod tests {
                 endpoint: None,
                 access_key: None,
                 secret_key: None,
+                conditional_writes: true,
             },
             deletion_ledger: None,
             account_quota_bytes: 1024 * 1024,
@@ -190,5 +207,51 @@ mod tests {
         assert!(config.validate().is_err());
         config.public_url = "http://127.0.0.1:1430".into();
         assert!(config.validate().is_err());
+    }
+
+    /// The ciphertext bucket may relax the conditional write because the repository refuses a
+    /// second digest under a known id. The ledger has no such second opinion.
+    #[test]
+    fn the_ledger_may_not_relax_the_conditional_write() {
+        let mut ledger = Ledger {
+            active_key_id: "v1".into(),
+            signing_keys: [(
+                "v1".to_string(),
+                Secret("0123456789012345678901234567890123456789012".into()),
+            )]
+            .into_iter()
+            .collect(),
+            storage: Storage {
+                kind: "s3".into(),
+                directory: String::new(),
+                bucket: "ledger".into(),
+                region: "eu-west-1".into(),
+                endpoint: Some("https://s3.eu-west-1.amazonaws.com".into()),
+                access_key: None,
+                secret_key: None,
+                conditional_writes: true,
+            },
+        };
+        let production = |ledger: &Ledger| {
+            let mut config = development();
+            config.development = false;
+            config.public_url = "https://account.example.invalid".into();
+            config.oidc.issuer = "https://id.example.invalid".into();
+            config.storage = Storage {
+                kind: "s3".into(),
+                directory: String::new(),
+                bucket: "ciphertext".into(),
+                region: "eu-central-003".into(),
+                endpoint: Some("https://s3.eu-central-003.backblazeb2.com".into()),
+                access_key: None,
+                secret_key: None,
+                conditional_writes: false,
+            };
+            config.deletion_ledger = Some(ledger.clone());
+            config.validate()
+        };
+        assert!(production(&ledger).is_ok(), "the bulk bucket may relax it");
+        ledger.storage.conditional_writes = false;
+        assert!(production(&ledger).is_err(), "the ledger may not");
     }
 }

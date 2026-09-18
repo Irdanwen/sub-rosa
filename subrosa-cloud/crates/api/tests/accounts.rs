@@ -91,6 +91,7 @@ impl Fixture {
                 endpoint: None,
                 access_key: None,
                 secret_key: None,
+                conditional_writes: true,
             },
             account_quota_bytes: 1024 * 1024,
         };
@@ -997,6 +998,7 @@ async fn independent_signed_ledger_reapplies_erasure_after_database_restore() ->
             endpoint: None,
             access_key: None,
             secret_key: None,
+            conditional_writes: true,
         },
         active_key_id: "test-v1".into(),
         signing_keys: std::collections::BTreeMap::from([(
