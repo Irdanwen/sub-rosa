@@ -165,6 +165,8 @@ ALTER SCHEMA public OWNER TO keycloak;
             lines += ["", f"[{section}]", 'kind = "s3"']
             for field in ("bucket", "region", "endpoint", "access_key", "secret_key"):
                 lines.append(f"{field} = {q(storage.get(field) or ('https://unconfigured.invalid' if field == 'endpoint' else 'UNCONFIGURED'))}")
+            if not section.startswith("deletion") and storage.get("conditional_writes") is False:
+                lines.append("conditional_writes = false")
         write(private / (prefix + ".toml"), "\n".join(lines) + "\n")
 
 
