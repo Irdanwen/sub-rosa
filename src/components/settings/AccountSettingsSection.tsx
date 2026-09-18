@@ -3,6 +3,7 @@ import { AccountPairingSection } from "./AccountPairingSection";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { accountNextStep } from "../../lib/account-next-step";
+import { accountSyncError } from "../../lib/account-sync-error";
 import { AccountNextStep } from "./AccountNextStep";
 import { IconShieldCheck } from "central-icons/IconShieldCheck";
 import {
@@ -819,33 +820,4 @@ export function AccountSetupOffer() {
       {open ? <AccountSettingsSection /> : null}
     </details>
   );
-}
-
-/** Never expose native/server error details or filenames through sync status. */
-export function accountSyncError(code: string): string {
-  switch (code) {
-    case "sync_file_too_large":
-      return t(
-        "A file exceeds the sync size limit and remains on this device. Use a smaller copy to sync it.",
-      );
-    case "sync_object_too_large":
-      return t(
-        "Some content exceeds the sync size limit and remains on this device. Reduce its size to sync it.",
-      );
-    case "account_network":
-    case "sync_timeout":
-      return t(
-        "The sync service is unavailable or did not respond in time. Your changes will retry automatically.",
-      );
-    case "account_not_connected":
-      return t("Sign in again to resume synchronization.");
-    case "vault_locked":
-      return t("Open your vault to resume synchronization.");
-    case "sync_file_unavailable":
-      return t(
-        "A file could not be read on this device. Check that it is available, then try again.",
-      );
-    default:
-      return t("Synchronization could not finish. Your local copies are preserved. Try again.");
-  }
 }
