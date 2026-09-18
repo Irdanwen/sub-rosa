@@ -117,6 +117,25 @@ impl Repository {
             })
             .collect())
     }
+    /// A label, not a credential: renaming never touches what the device may do.
+    /// A revoked device keeps the name it had, so the list stays readable.
+    pub async fn rename_device(&self, owner: Uuid, id: Uuid, name: &str) -> Result<()> {
+        let count = sqlx::query(
+            "UPDATE devices SET name=$1 WHERE account_id=$2 AND id=$3 AND revoked_at IS NULL",
+        )
+        .bind(name)
+        .bind(owner)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(db)?
+        .rows_affected();
+        if count == 0 {
+            Err(Error::NotFound)
+        } else {
+            Ok(())
+        }
+    }
     pub async fn revoke_device(&self, owner: Uuid, id: Uuid) -> Result<()> {
         let mut tx = self.pool.begin().await.map_err(db)?;
         let count=sqlx::query("UPDATE devices SET revoked_at=COALESCE(revoked_at,now()) WHERE account_id=$1 AND id=$2").bind(owner).bind(id).execute(&mut *tx).await.map_err(db)?.rows_affected();

@@ -596,3 +596,14 @@ th {
   overflow-wrap: anywhere;
   font-size: 0.8rem;
 }
+
+/* Renaming replaces the name in place, so the row does not jump. */
+.device-rename {
+  display: grid;
+  gap: 10px;
+  max-width: 320px;
+}
+.device-rename label {
+  display: grid;
+  gap: 5px;
+}
