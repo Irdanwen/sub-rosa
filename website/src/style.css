@@ -336,6 +336,44 @@ h2 {
 .card h2 {
   font-size: 28px;
 }
+.card-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.card-heading h2 {
+  margin: 0;
+}
+/* Whether a key is stored is the first thing this card has to answer. */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.status-pill::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border-hover);
+}
+.status-pill[data-on="true"] {
+  border-color: var(--accent-line);
+  background: var(--accent-faint);
+  color: var(--brand);
+}
+.status-pill[data-on="true"]::before {
+  background: var(--brand);
+}
 .muted {
   color: var(--muted);
 }
