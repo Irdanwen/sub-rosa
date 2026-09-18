@@ -594,6 +594,10 @@ function Devices() {
   const [error, setError] = useState("");
   const [confirm, setConfirm] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Two machines both called "Mon ordinateur" is the default name doing its
+  // job badly. The list is only useful if you can say which one is which.
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
   const refresh = useCallback(async () => {
     try {
       setDevices(await api<Device[]>("/api/v1/devices"));
@@ -606,6 +610,21 @@ function Devices() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  const rename = async (id: string) => {
+    const name = draft.trim();
+    if (!name) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/api/v1/devices/${id}/name`, { method: "POST", body: JSON.stringify({ name }) });
+      setRenaming(null);
+      await refresh();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
   const revoke = async (id: string) => {
     setBusy(true);
     try {
@@ -641,7 +660,37 @@ function Devices() {
           {devices.map((device) => (
             <div className="row" key={device.id}>
               <div>
-                <strong>{device.name}</strong>
+                {renaming === device.id ? (
+                  <form
+                    className="device-rename"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void rename(device.id);
+                    }}
+                  >
+                    <label>
+                      <span className="quiet">{t("Device name", "Nom de l’appareil")}</span>
+                      <input
+                        value={draft}
+                        onChange={(event) => setDraft(event.target.value)}
+                        maxLength={80}
+                        // biome-ignore lint/a11y/noAutofocus: the field replaces the name you clicked.
+                        autoFocus
+                        required
+                      />
+                    </label>
+                    <div className="actions">
+                      <button className="button primary" disabled={busy} type="submit">
+                        {t("Save", "Enregistrer")}
+                      </button>
+                      <button className="button" onClick={() => setRenaming(null)} type="button">
+                        {t("Cancel", "Annuler")}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <strong>{device.name}</strong>
+                )}
                 <p className="quiet">
                   {device.last_seen_at ? date(device.last_seen_at) : date(device.created_at)}
                   {device.revoked_at && ` · ${t("Revoked", "Révoqué")}`}
@@ -662,10 +711,23 @@ function Devices() {
                       {t("Cancel", "Annuler")}
                     </button>
                   </div>
-                ) : (
-                  <button className="button" onClick={() => setConfirm(device.id)} type="button">
-                    {t("Revoke", "Révoquer")}
-                  </button>
+                ) : renaming === device.id ? null : (
+                  <div className="actions">
+                    <button
+                      className="button"
+                      onClick={() => {
+                        setDraft(device.name);
+                        setConfirm(null);
+                        setRenaming(device.id);
+                      }}
+                      type="button"
+                    >
+                      {t("Rename", "Renommer")}
+                    </button>
+                    <button className="button" onClick={() => setConfirm(device.id)} type="button">
+                      {t("Revoke", "Révoquer")}
+                    </button>
+                  </div>
                 ))}
             </div>
           ))}

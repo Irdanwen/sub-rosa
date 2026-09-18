@@ -69,6 +69,10 @@ pub fn router(service: Service) -> Router {
         .route("/api/v1/session/refresh", post(refresh_session))
         .route("/api/v1/devices", get(devices))
         .route("/api/v1/devices/{id}", axum::routing::delete(revoke_device))
+        .route(
+            "/api/v1/devices/{id}/name",
+            axum::routing::post(rename_device),
+        )
         .route("/api/v1/device-login", post(start_device))
         .route("/api/v1/device-login/approve", post(approve))
         .route("/api/v1/device-login/exchange", post(exchange_device))
@@ -333,6 +337,27 @@ async fn revoke_device(
     Service::recent(&a)?;
     s.repository.revoke_device(a.account.id, id).await?;
     Ok(ok(json!({"revoked":true})).into_response())
+}
+#[derive(Deserialize)]
+struct DeviceName {
+    name: String,
+}
+/// Renaming is a label change on a device you already own, so it asks for a
+/// browser session but not the step-up that revoking does: nothing it can do
+/// changes, and a name you cannot correct is how the list became unreadable.
+async fn rename_device(
+    State(s): State<Arc<Service>>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(body): Json<DeviceName>,
+) -> Result<Response> {
+    let a = session(&s, &h, true).await?;
+    let name = body.name.trim();
+    if name.is_empty() || name.chars().count() > 80 || name.chars().any(char::is_control) {
+        return Err(Error::Invalid.into());
+    }
+    s.repository.rename_device(a.account.id, id, name).await?;
+    Ok(ok(json!({"name": name})).into_response())
 }
 #[derive(Deserialize)]
 struct DeviceStart {
