@@ -37,34 +37,58 @@ export type AccountConflict = {
   created_at: string;
 };
 
-export const accountStatus = () => invoke<AccountStatus>("account_status");
+/**
+ * Every command that answers with a status publishes it, so a surface that is
+ * not the account panel — the sidebar footer naming who you are — does not sit
+ * on whatever was true when it mounted.
+ */
+const watchers = new Set<(status: AccountStatus) => void>();
+
+export function onAccountStatus(watcher: (status: AccountStatus) => void) {
+  watchers.add(watcher);
+  return () => {
+    watchers.delete(watcher);
+  };
+}
+
+function published(status: AccountStatus) {
+  for (const watcher of watchers) watcher(status);
+  return status;
+}
+
+// Keep the call shape a command with no arguments actually has, rather than
+// handing the bridge an explicit undefined.
+const statusCommand = (command: string, args?: Record<string, unknown>) =>
+  (args === undefined ? invoke<AccountStatus>(command) : invoke<AccountStatus>(command, args)).then(
+    published,
+  );
+
+export const accountStatus = () => statusCommand("account_status");
 export const accountConfigure = (serverUrl: string) =>
-  invoke<AccountStatus>("account_configure", { serverUrl });
+  statusCommand("account_configure", { serverUrl });
 export const accountLoginStart = (deviceName: string) =>
   invoke<AccountLogin>("account_login_start", { deviceName });
 export const accountLoginExchange = (requestId: string) =>
-  invoke<AccountStatus>("account_login_exchange", { requestId });
-export const accountLogout = () => invoke<AccountStatus>("account_logout");
+  statusCommand("account_login_exchange", { requestId });
+export const accountLogout = () => statusCommand("account_logout");
 export const accountDevices = () => invoke<AccountDevice[]>("account_devices");
 export const accountRevokeDevice = (deviceId: string) =>
   invoke<void>("account_revoke_device", { deviceId });
 export const accountDelete = () => invoke<void>("account_delete");
 export const accountVaultCreate = () => invoke<{ recovery_key: string }>("account_vault_create");
 export const accountVaultUnlock = (recoveryKey: string) =>
-  invoke<AccountStatus>("account_vault_unlock", { recoveryKey });
+  statusCommand("account_vault_unlock", { recoveryKey });
 export const accountSyncSetEnabled = (enabled: boolean) =>
-  invoke<AccountStatus>("account_sync_set_enabled", { enabled });
-export const accountSyncNow = () => invoke<AccountStatus>("account_sync_now");
+  statusCommand("account_sync_set_enabled", { enabled });
+export const accountSyncNow = () => statusCommand("account_sync_now");
 export const accountSyncConflicts = () => invoke<AccountConflict[]>("account_sync_conflicts");
 export const accountSyncRestoreConflict = (conflictId: string) =>
-  invoke<AccountStatus>("account_sync_restore_conflict", { conflictId });
-export const accountVaultShareCarpeDiem = () =>
-  invoke<AccountStatus>("account_vault_share_carpe_diem");
-export const accountVaultRestoreCarpeDiem = () =>
-  invoke<AccountStatus>("account_vault_restore_carpe_diem");
+  statusCommand("account_sync_restore_conflict", { conflictId });
+export const accountVaultShareCarpeDiem = () => statusCommand("account_vault_share_carpe_diem");
+export const accountVaultRestoreCarpeDiem = () => statusCommand("account_vault_restore_carpe_diem");
 
 export const accountVaultConfirmRecovery = (recoveryKey: string) =>
-  invoke<AccountStatus>("account_vault_confirm_recovery", { recoveryKey });
+  statusCommand("account_vault_confirm_recovery", { recoveryKey });
 export const accountVaultRecoveryKit = () =>
   invoke<{ recovery_key: string }>("account_vault_recovery_kit");
 export type AccountPairing = { request_id: string; transfer_code: string; expires_at: string };
@@ -72,7 +96,7 @@ export const accountPairingStart = () => invoke<AccountPairing>("account_pairing
 export const accountPairingApprove = (transferCode: string) =>
   invoke<void>("account_pairing_approve", { transferCode });
 export const accountPairingExchange = (requestId: string) =>
-  invoke<AccountStatus>("account_pairing_exchange", { requestId });
+  statusCommand("account_pairing_exchange", { requestId });
 export const accountPairingCancel = (requestId: string) =>
   invoke<void>("account_pairing_cancel", { requestId });
 export type PortableConversationSummary = {
@@ -114,4 +138,4 @@ export const accountSyncConflictPreview = (conflictId: string) =>
 export const accountSyncResolveConflict = (
   conflictId: string,
   resolution: "keep_local" | "use_remote" | "copy",
-) => invoke<AccountStatus>("account_sync_resolve_conflict", { conflictId, resolution });
+) => statusCommand("account_sync_resolve_conflict", { conflictId, resolution });

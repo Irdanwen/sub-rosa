@@ -7,7 +7,7 @@ import { CategoryIcon } from "../agent/composer/CategoryIcon";
 import type { ReportCategory } from "../agent/composer/reportCategory";
 import { useCarpeDiemCredits } from "../../lib/carpe-diem-credits";
 import type { CarpeDiemCreditsDto } from "../../lib/tauri";
-import { accountStatus } from "../../lib/account";
+import { accountStatus, onAccountStatus } from "../../lib/account";
 
 // The user's name is the settings entry point: clicking it opens a small
 // popover whose actions open the settings page or sign out.
@@ -40,9 +40,12 @@ export function SidebarIdentity({
   const credits = useCarpeDiemCredits();
   const [email, setEmail] = useState<string | null>(null);
   useEffect(() => {
+    const show = (status: { account: { email: string } | null }) =>
+      setEmail(status.account?.email ?? null);
     accountStatus()
-      .then((status) => setEmail(status.account?.email ?? null))
+      .then(show)
       .catch(() => undefined);
+    return onAccountStatus(show);
   }, []);
   const balance = credits ? creditsLabel(credits) : null;
   const label = email ?? t("Sign in");
