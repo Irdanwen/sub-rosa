@@ -7,10 +7,18 @@ import {
 } from "../components/settings/AccountSettingsSection";
 import type { AccountStatus } from "../lib/account";
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), openExternalUrl: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  openExternalUrl: vi.fn(),
+  carpeDiemGetSettings: vi.fn(async () => ({ hasApiKey: false })),
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
-vi.mock("../lib/tauri", () => ({ openExternalUrl: mocks.openExternalUrl }));
+vi.mock("../lib/tauri", () => ({
+  openExternalUrl: mocks.openExternalUrl,
+  // The guided step asks whether this device already holds a key.
+  carpeDiemGetSettings: mocks.carpeDiemGetSettings,
+}));
 
 const local: AccountStatus = {
   default_server_url: "https://subrosa.furetier.com",

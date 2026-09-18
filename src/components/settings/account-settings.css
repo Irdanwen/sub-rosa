@@ -154,3 +154,14 @@
   padding: var(--sp-3) var(--sp-6);
   flex-shrink: 0;
 }
+
+/* The guided step sits above the panel and says which control matters now. */
+.account-next-step {
+  border-left: 3px solid var(--primary, currentColor);
+}
+.account-next-step-position {
+  margin: 0 0 4px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
