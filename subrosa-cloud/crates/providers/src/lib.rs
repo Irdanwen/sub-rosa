@@ -209,6 +209,7 @@ async fn bounded_json<T: serde::de::DeserializeOwned>(
 }
 pub struct StorageProvider {
     store: Arc<dyn ObjectStore>,
+    conditional: bool,
 }
 impl StorageProvider {
     pub fn new(config: &Config) -> Result<Self> {
@@ -235,7 +236,10 @@ impl StorageProvider {
         } else {
             return Err(Error::Unavailable);
         };
-        Ok(Self { store })
+        Ok(Self {
+            store,
+            conditional: config.storage.conditional_writes,
+        })
     }
 }
 #[async_trait]
@@ -243,6 +247,24 @@ impl BlobStore for StorageProvider {
     async fn put(&self, key: &str, content: Vec<u8>) -> Result<()> {
         let digest = Sha256::digest(&content);
         let path = Path::from(key);
+        if !self.conditional {
+            // The bucket cannot refuse a write that would overwrite. Read first, and let a
+            // matching digest stand for the success a retry is really asking for.
+            if self.store.head(&path).await.is_ok() {
+                let old = self.get(key).await?;
+                return if Sha256::digest(old) == digest {
+                    Ok(())
+                } else {
+                    Err(Error::Conflict)
+                };
+            }
+            return self
+                .store
+                .put(&path, content.into())
+                .await
+                .map(|_| ())
+                .map_err(|_| Error::Unavailable);
+        }
         match self
             .store
             .put_opts(
@@ -341,5 +363,45 @@ mod sign_up_endpoint_tests {
             rewritten("https://id.example.test/protocol/openid-connect/auth?kept=1"),
             "https://id.example.test/protocol/openid-connect/registrations?kept=1"
         );
+    }
+}
+
+#[cfg(test)]
+mod unconditional_put_tests {
+    use super::{BlobStore, StorageProvider};
+    use object_store::memory::InMemory;
+    use std::sync::Arc;
+    use subrosa_domain::Error;
+
+    fn store() -> StorageProvider {
+        StorageProvider {
+            store: Arc::new(InMemory::new()),
+            conditional: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_first_write_lands() {
+        let s = store();
+        assert!(s.put("a/1", b"hello".to_vec()).await.is_ok());
+        assert_eq!(s.get("a/1").await.ok(), Some(b"hello".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn a_retry_of_the_same_bytes_succeeds() {
+        let s = store();
+        let _ = s.put("a/1", b"hello".to_vec()).await;
+        assert!(s.put("a/1", b"hello".to_vec()).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn different_bytes_under_a_known_id_are_refused() {
+        let s = store();
+        let _ = s.put("a/1", b"hello".to_vec()).await;
+        assert!(matches!(
+            s.put("a/1", b"goodbye".to_vec()).await,
+            Err(Error::Conflict)
+        ));
+        assert_eq!(s.get("a/1").await.ok(), Some(b"hello".to_vec()));
     }
 }
