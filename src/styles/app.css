@@ -6572,6 +6572,26 @@ input:focus-visible,
   padding: 0;
 }
 
+/* The footer identity stacks the account over its balance. */
+.sidebar-identity-lines {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  text-align: left;
+}
+.sidebar-identity-lines .sidebar-nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-identity-sub {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .sidebar-footer {
   display: flex;
   flex: 0 0 auto;

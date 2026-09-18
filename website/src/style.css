@@ -351,6 +351,13 @@ h2 {
   padding: 18px;
   border-radius: 9px;
 }
+/* A notice that offers a way out puts its action under the sentence. */
+.notice > p {
+  margin: 0 0 14px;
+}
+.notice > p:last-child {
+  margin-bottom: 0;
+}
 .form {
   display: grid;
   gap: 18px;

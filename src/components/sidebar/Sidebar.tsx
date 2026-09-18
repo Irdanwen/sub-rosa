@@ -67,6 +67,7 @@ import { useForcedEmptyStates } from "../../lib/empty-states-demo";
 import { useRecordingPresenceBounds } from "../../lib/recording-presence-bounds";
 import { isPrimaryShortcut, primaryShortcutLabel } from "../../lib/platform";
 import { useCarpeDiemCredits } from "../../lib/carpe-diem-credits";
+import { accountStatus } from "../../lib/account";
 import type {
   CarpeDiemCreditsDto,
   HermesSessionInfo,
@@ -109,6 +110,8 @@ type SidebarProps = {
   // Notes when not wired, e.g. unit tests).
   onExitSettings?: () => void;
   onReportIssue?: (category: ReportCategory) => void;
+  /** Opens Settings on the account tab, from the footer identity. */
+  onOpenAccount?: () => void;
   onSelectNote: (noteId: string) => void;
   onDeleteNote: (noteId: string) => void;
   onOpenMoveDialog: (noteId: string) => void;
@@ -332,6 +335,7 @@ export function Sidebar({
   onChangeView,
   onExitSettings,
   onReportIssue,
+  onOpenAccount,
   onSelectNote,
   onDeleteNote,
   onOpenMoveDialog,
@@ -1241,6 +1245,14 @@ export function Sidebar({
       <footer className="sidebar-footer">
         {footerAccessory}
         <SidebarIdentity
+          onOpenAccount={
+            onOpenAccount
+              ? () => {
+                  setIdentityMenuOpen(false);
+                  onOpenAccount();
+                }
+              : undefined
+          }
           menuOpen={identityMenuOpen}
           onToggleMenu={() => setIdentityMenuOpen((open) => !open)}
           onCloseMenu={() => setIdentityMenuOpen(false)}
@@ -1732,20 +1744,28 @@ function SidebarIdentity({
   onToggleMenu,
   onCloseMenu,
   onOpenSettings,
+  onOpenAccount,
   onReportIssue,
 }: {
   menuOpen: boolean;
   onToggleMenu: () => void;
   onCloseMenu: () => void;
   onOpenSettings: () => void;
+  onOpenAccount?: () => void;
   onReportIssue?: (category: ReportCategory) => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
-  // The footer shows the Carpe Diem balance with the current price factor.
-  // Until it loads (or when no key is stored) it falls back to a plain label:
-  // there is no account name to show, because there is no account.
+  // Who you are signed in as belongs in the window, not three clicks into
+  // Settings. The Carpe Diem balance keeps its place, underneath.
   const credits = useCarpeDiemCredits();
-  const label = credits ? creditsLabel(credits) : "Credits";
+  const [email, setEmail] = useState<string | null>(null);
+  useEffect(() => {
+    accountStatus()
+      .then((status) => setEmail(status.account?.email ?? null))
+      .catch(() => undefined);
+  }, []);
+  const balance = credits ? creditsLabel(credits) : null;
+  const label = email ?? t("Sign in");
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -1770,16 +1790,25 @@ function SidebarIdentity({
         className="sidebar-nav-item sidebar-identity"
         aria-haspopup="menu"
         aria-expanded={menuOpen}
-        aria-label={t("{label}, app menu", { label: label })}
+        aria-label={t("{label}, app menu", { label: email ?? t("Sign in") })}
         onClick={onToggleMenu}
       >
         <span className="sidebar-nav-icon">
-          {credits ? <IconCreditCard1 size={18} /> : <IconPeople size={18} />}
+          {email ? <IconPeople size={18} /> : <IconCreditCard1 size={18} />}
         </span>
-        <span className="sidebar-nav-label">{label}</span>
+        <span className="sidebar-identity-lines">
+          <span className="sidebar-nav-label">{label}</span>
+          {balance ? <span className="sidebar-identity-sub">{balance}</span> : null}
+        </span>
       </button>
       {menuOpen ? (
         <div className="sidebar-identity-menu" role="menu">
+          {onOpenAccount ? (
+            <button type="button" role="menuitem" onClick={onOpenAccount}>
+              <IconPeople size={14} />
+              {email ? t("Account and sync") : t("Sign in or create an account")}
+            </button>
+          ) : null}
           <button type="button" role="menuitem" onClick={onOpenSettings}>
             <IconSettingsGear4 size={14} />
             {t("Settings")}

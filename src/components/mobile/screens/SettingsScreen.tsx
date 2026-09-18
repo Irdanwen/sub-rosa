@@ -19,6 +19,7 @@ import {
 } from "../../../lib/tauri";
 import { type ThemePreference, getStoredTheme, setStoredTheme } from "../../../lib/theme";
 import { useCarpeDiem } from "../../settings/CarpeDiemSettings";
+import { accountStatus } from "../../../lib/account";
 import {
   SettingsActionRow,
   SettingsGroup,
@@ -65,10 +66,19 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
   const [language, setLanguage] = useState<LocaleChoice>(() => localeChoice());
   const [version, setVersion] = useState<string | null>(null);
   const [memorySummary, setMemorySummary] = useState<string | null>(null);
+  const [accountEmail, setAccountEmail] = useState<string | null>(null);
 
   useEffect(() => {
     getVersion()
       .then(setVersion)
+      .catch(() => undefined);
+  }, []);
+
+  // Name the account on the row itself: which one you are signed in to should
+  // not require opening the screen to find out.
+  useEffect(() => {
+    accountStatus()
+      .then((s) => setAccountEmail(s.account?.email ?? null))
       .catch(() => undefined);
   }, []);
 
@@ -165,7 +175,7 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
         <SettingsGroup title={t("Account")}>
           <SettingsLinkRow
             label={t("Account and sync")}
-            value={t("Optional")}
+            value={accountEmail ?? t("Not signed in")}
             onClick={() => onOpen("account")}
           />
         </SettingsGroup>
