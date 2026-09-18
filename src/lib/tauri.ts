@@ -887,14 +887,14 @@ export async function renderMapCard(request: {
  * `open_url.rs`), and Rust re-checks whatever gets through. This is the only
  * place in the app that may call `window.open`.
  */
-export async function openExternalUrl(url: string) {
+/** Returns whether the link left the app; swallowing that made Windows sign-in look dead. */
+export async function openExternalUrl(url: string): Promise<boolean> {
   const target = safeExternalHref(url);
-  if (!target) return;
-  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-    await invoke<void>("open_external_url", { url: target }).catch(() => {});
-  } else {
-    window.open(target, "_blank", "noopener");
-  }
+  if (!target) return false;
+  if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window))
+    return window.open(target, "_blank", "noopener") !== null;
+  const handed = await invoke<void>("open_external_url", { url: target }).catch(() => null);
+  return handed !== null;
 }
 
 /** One address the app can reach, and why. Mirrors `egress::EgressHost`. */

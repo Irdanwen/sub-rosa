@@ -2925,6 +2925,7 @@
   "Your active rail is out of funds, so requests will fail. Your prepaid account still has {balance}, so switch rails above.": "Your active rail is out of funds, so requests will fail. Your prepaid account still has {balance}, so switch rails above.",
   "Your balance is too low. {action} to continue.": "Your balance is too low. {action} to continue.",
   "Your balance ran out. Your recording is saved locally, so {action} and retry.": "Your balance ran out. Your recording is saved locally, so {action} and retry.",
+  "Your browser did not open. Open this address yourself to continue.": "Your browser did not open. Open this address yourself to continue.",
   "Your Carpe Diem balance is too low, or your active payment rail is empty. Check Carpe Diem in Settings (prepaid account and credits are billed separately).": "Your Carpe Diem balance is too low, or your active payment rail is empty. Check Carpe Diem in Settings (prepaid account and credits are billed separately).",
   "Your Carpe Diem balance is too low, or your active payment rail is out of funds. Open Settings and check Carpe Diem (prepaid account and credits are billed separately).": "Your Carpe Diem balance is too low, or your active payment rail is out of funds. Open Settings and check Carpe Diem (prepaid account and credits are billed separately).",
   "Your Carpe Diem key ({prefix}…). Stored in your system keychain, never on disk in plain text.": "Your Carpe Diem key ({prefix}…). Stored in your system keychain, never on disk in plain text.",

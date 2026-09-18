@@ -123,7 +123,50 @@ pub fn load_local_env() {
 /// Opens a URL in the user's default browser. The webview installs no
 /// new-window handler, so `target="_blank"` anchors are silently dropped and
 /// every outbound link has to route through here.
-#[cfg(not(target_os = "android"))]
+/// Windows gets the shell API rather than a spawned `explorer.exe`: Explorer
+/// returns success whether or not it handed the URL anywhere, refuses the job
+/// outright when the app runs elevated, and can decide a quoted argument was
+/// meant to be a path. `ShellExecuteW` is what the shell itself uses, and it
+/// says whether a handler took the URL.
+#[cfg(target_os = "windows")]
+pub(crate) fn open_in_browser(url: &str) -> Result<(), AppError> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    fn wide(value: &str) -> Vec<u16> {
+        OsStr::new(value)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    }
+    let verb = wide("open");
+    let target = wide(url);
+    // Documented contract: a value above 32 means a handler took it. Anything
+    // at or below is one of the ShellExecute error codes.
+    let handled = unsafe {
+        ShellExecuteW(
+            None,
+            PCWSTR(verb.as_ptr()),
+            PCWSTR(target.as_ptr()),
+            PCWSTR::null(),
+            PCWSTR::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if handled.0 as usize > 32 {
+        Ok(())
+    } else {
+        Err(AppError::new(
+            "browser_open_failed",
+            "No application answered for this link.",
+        ))
+    }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "windows")))]
 pub(crate) fn open_in_browser(url: &str) -> Result<(), AppError> {
     let mut command = browser_open_command(url);
     let mut child = command
@@ -146,13 +189,6 @@ pub(crate) fn open_in_browser(url: &str) -> Result<(), AppError> {
 #[cfg(target_os = "macos")]
 fn browser_open_command(url: &str) -> std::process::Command {
     let mut command = std::process::Command::new("open");
-    command.arg(url);
-    command
-}
-
-#[cfg(target_os = "windows")]
-fn browser_open_command(url: &str) -> std::process::Command {
-    let mut command = std::process::Command::new("explorer.exe");
     command.arg(url);
     command
 }

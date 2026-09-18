@@ -165,3 +165,9 @@
   font-size: 12px;
   letter-spacing: 0.02em;
 }
+
+/* The sign-in address, so a browser that refuses to open is not a dead end. */
+.account-login-uri {
+  overflow-wrap: anywhere;
+  user-select: text;
+}
