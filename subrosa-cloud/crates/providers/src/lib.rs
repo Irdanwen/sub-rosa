@@ -88,9 +88,17 @@ impl OidcProvider {
 }
 #[async_trait]
 impl IdentityProvider for OidcProvider {
-    fn authorization_url(&self, attempt: &LoginAttempt, state: &str) -> Result<String> {
+    fn authorization_url(
+        &self,
+        attempt: &LoginAttempt,
+        state: &str,
+        register: bool,
+    ) -> Result<String> {
         let mut url =
             Url::parse(&self.discovery.authorization_endpoint).map_err(|_| Error::Unavailable)?;
+        if register {
+            sign_up_endpoint(&mut url);
+        }
         url.query_pairs_mut()
             .append_pair("response_type", "code")
             .append_pair("client_id", &self.config.oidc.client_id)
@@ -279,3 +287,59 @@ impl BlobStore for StorageProvider {
 
 mod ledger;
 pub use ledger::LedgerProvider;
+
+/// The discovery document only advertises the sign-in endpoint. Its sign-up
+/// sibling differs by the last path segment, so rewrite that and nothing else.
+/// An endpoint shaped otherwise is left alone: sign-in still works, and we never
+/// invent a path the provider has not published.
+fn sign_up_endpoint(url: &mut Url) {
+    if url.path_segments().and_then(|mut s| s.next_back()) != Some("auth") {
+        return;
+    }
+    let path = url.path().to_string();
+    url.set_path(&format!(
+        "{}registrations",
+        &path[..path.len() - "auth".len()]
+    ));
+}
+
+#[cfg(test)]
+mod sign_up_endpoint_tests {
+    use super::sign_up_endpoint;
+    use url::Url;
+
+    fn rewritten(raw: &str) -> String {
+        let Ok(mut url) = Url::parse(raw) else {
+            unreachable!("the test inputs are literal, valid URLs")
+        };
+        sign_up_endpoint(&mut url);
+        url.into()
+    }
+
+    #[test]
+    fn swaps_only_the_last_segment() {
+        assert_eq!(
+            rewritten("https://id.example.test/id/realms/subrosa/protocol/openid-connect/auth"),
+            "https://id.example.test/id/realms/subrosa/protocol/openid-connect/registrations"
+        );
+    }
+
+    #[test]
+    fn leaves_an_unfamiliar_endpoint_alone() {
+        for raw in [
+            "https://id.example.test/authorize",
+            "https://id.example.test/oauth2/v2/authorization",
+            "https://id.example.test/auth/extra",
+        ] {
+            assert_eq!(rewritten(raw), raw, "{raw}");
+        }
+    }
+
+    #[test]
+    fn keeps_the_query_string() {
+        assert_eq!(
+            rewritten("https://id.example.test/protocol/openid-connect/auth?kept=1"),
+            "https://id.example.test/protocol/openid-connect/registrations?kept=1"
+        );
+    }
+}

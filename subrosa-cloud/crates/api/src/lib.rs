@@ -256,7 +256,8 @@ async fn login(State(s): State<Arc<Service>>, Query(q): Query<LoginQuery>) -> Re
     {
         return Err(Error::Invalid.into());
     }
-    let (url, browser) = s.login(&q.return_to).await?;
+    let register = q.intent.as_deref() == Some("signup");
+    let (url, browser) = s.login(&q.return_to, register).await?;
     let mut r = Redirect::to(&url).into_response();
     set_cookie(
         &mut r,

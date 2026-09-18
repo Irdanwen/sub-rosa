@@ -50,7 +50,7 @@ impl Service {
         self.ledger = ledger;
         self
     }
-    pub async fn login(&self, return_to: &str) -> Result<(String, Secret)> {
+    pub async fn login(&self, return_to: &str, register: bool) -> Result<(String, Secret)> {
         let allowed = matches!(return_to, "/account" | "/account/" | "/account/devices");
         let verify = return_to
             .strip_prefix("/account/devices/verify?code=")
@@ -67,7 +67,9 @@ impl Service {
             nonce: random_secret(),
             return_to: return_to.into(),
         };
-        let url = self.identity.authorization_url(&attempt, state.expose())?;
+        let url = self
+            .identity
+            .authorization_url(&attempt, state.expose(), register)?;
         self.repository.save_attempt(&attempt).await?;
         Ok((url, browser))
     }
