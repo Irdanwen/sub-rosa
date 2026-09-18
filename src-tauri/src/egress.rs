@@ -87,6 +87,11 @@ pub const DECLARED_EGRESS: &[EgressHost] = &[
         "The Python launcher the agent needs on Windows, downloaded once and checked against a known fingerprint.",
     ),
     host(
+        "subrosa.furetier.com",
+        Reach::WhenAsked,
+        "Your optional Sub Rosa account and encrypted sync, only after you choose to connect your devices.",
+    ),
+    host(
         "api.github.com",
         Reach::WhenAsked,
         "Filing a report, with your own account, when you send one.",

@@ -50,12 +50,39 @@ new desktop/iOS binaries.
 
 ## Deployment
 
+The default build serves the complete website at the root of its dedicated
+account origin. For a temporary marketing subpage on an existing domain:
+
+```sh
+VITE_SITE_BASE=/subrosa/ VITE_ACCOUNTS_UNAVAILABLE=1 pnpm build:website
+```
+
+Mount `website/dist/` at `/subrosa/`, redirect `/subrosa` to `/subrosa/`, and
+resolve public routes to their prerendered `index.html`. Account routes beneath
+the prefix may fall back to the main `index.html`; they show the availability
+page and never mount the account UI or call the shared host's API. Other
+unmatched routes should return 404. Fonts, scripts, styles and navigation all
+honor the prefix. Configure the web server's response headers explicitly; the
+root-oriented `_headers` and `_redirects` files are examples for root hosting,
+not configuration consumed by a VPS web server.
+
+Once the dedicated HTTPS account website and its service are ready, build the
+marketing site with `VITE_SITE_BASE=/subrosa/` and
+`VITE_ACCOUNT_ORIGIN=https://your-account-domain` instead. This origin accepts
+no path, credentials or query string. Account links navigate to that separate
+origin; browser API calls remain same-origin, never cross-origin. Build the
+dedicated account website with neither of these variables. Do not set the
+account origin on its own root deployment. `VITE_ACCOUNTS_UNAVAILABLE=1` is for
+a publicly available website awaiting account setup; `VITE_PREVIEW_ONLY=1`
+continues to disable account access for the private preview.
+
 Serve `dist/` over HTTPS and route `/auth/*` and `/api/*` to `subrosa-cloud` on the
 same origin. Use the cloud Caddy example and configure the exact OIDC redirect
 URI. Apply `public/_headers` on the chosen hosting platform; that file is a
 hosting configuration, not an HTML substitute for HTTP security headers.
 
-No account service URL, secret or token is compiled into browser assets.
+Only the optional public account website origin is compiled into browser assets;
+no secret or token is compiled into them.
 Cookies must remain HttpOnly/Secure in production, with exact-Origin CSRF.
 An arbitrary static hosting service cannot run the Rust service. The Sites
 owner-only preview uses `pnpm --filter @subrosa/website build:preview`, which

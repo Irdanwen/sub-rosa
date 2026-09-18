@@ -4,7 +4,11 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { createServer } from "vite";
 
-const server = await createServer({ server: { middlewareMode: true }, appType: "custom" });
+const server = await createServer({
+  mode: "production",
+  server: { middlewareMode: true },
+  appType: "custom",
+});
 try {
   const { App } = await server.ssrLoadModule("/src/App.tsx");
   const template = await readFile("dist/index.html", "utf8");

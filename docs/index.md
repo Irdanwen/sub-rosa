@@ -129,6 +129,8 @@ tasks / contracts / checklists`.
 - [plan-comptes-synchronisation-site-2026-09-14.md](plan-comptes-synchronisation-site-2026-09-14.md) — conception initiale : compte Sub Rosa, coffre chiffré, continuité entre appareils et site ; premier plan noté 7/10 puis cible 10/10. Voir les ADR et le contrat pour les décisions effectivement implémentées.
 - [accounts-sync-contract.md](accounts-sync-contract.md) — identity, sessions, encrypted sync and pairing wire contract.
 - [accounts-delivery-2026-09-14.md](accounts-delivery-2026-09-14.md) — implementation, local evidence and remaining public-launch gates.
+- [vps-site-delivery-2026-09-15.md](vps-site-delivery-2026-09-15.md) — public English website on the VPS, HTTPS/browser evidence, rollback and outstanding registration dependencies.
+- [vps-account-stack.md](vps-account-stack.md) — isolated account-service deployment preparation, identity, database privileges, secret handling and activation prerequisites.
 - [adr/0049](adr/0049-accounts-synchronise-ciphertext-without-hosting-inference.md) — optional encrypted account service; local inference stays local.
 - [adr/0050](adr/0050-vault-admission-uses-an-out-of-band-secret.md) — recovery and device pairing, explicit web trust and revocation limits.
 - [plan-films-locaux-2026-08-24.md](plan-films-locaux-2026-08-24.md) — design: film production becomes local, Videomaker is removed (finishes ADR-0017)

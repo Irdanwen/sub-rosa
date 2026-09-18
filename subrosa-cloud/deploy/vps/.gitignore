@@ -1,0 +1,3 @@
+# Never generate live material here; bootstrap also writes this exclusion to its output.
+private/
+__pycache__/
