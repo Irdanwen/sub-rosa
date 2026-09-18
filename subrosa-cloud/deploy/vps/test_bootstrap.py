@@ -82,6 +82,32 @@ class BootstrapTest(unittest.TestCase):
             bootstrap.write(env_path, old_env)
             bootstrap.write(op_path, old_op)
 
+    def test_the_ciphertext_bucket_can_declare_it_cannot_write_conditionally(self):
+        # Backblaze answers 501 to If-None-Match, which cost every attached file
+        # its upload. The setting reaches the rendered config only for the bucket
+        # that holds ciphertext; the ledger is append-only because its own bucket
+        # refuses to overwrite, so it must never inherit the relaxation.
+        op_path = self.directory / "operator.json"
+        old_op = op_path.read_text()
+        try:
+            op = json.loads(old_op)
+            for field, suffix in [("storage", "data"), ("deletion_ledger_storage", "ledger")]:
+                op[field] = {"bucket": "test-" + suffix, "region": "eu-west-3", "endpoint": "https://objects.example.com", "access_key": "test-" + suffix, "secret_key": "fixture-only", "conditional_writes": False}
+            bootstrap.write(op_path, json.dumps(op))
+            bootstrap.render(self.directory)
+            rendered = (self.directory / "private" / "runtime.toml").read_text()
+            storage, ledger = rendered.split("[deletion_ledger]")
+            self.assertIn("conditional_writes = false", storage)
+            self.assertNotIn("conditional_writes", ledger)
+
+            op["storage"]["conditional_writes"] = True
+            bootstrap.write(op_path, json.dumps(op))
+            bootstrap.render(self.directory)
+            self.assertNotIn("conditional_writes", (self.directory / "private" / "runtime.toml").read_text())
+        finally:
+            bootstrap.write(op_path, old_op)
+            bootstrap.render(self.directory)
+
     def test_tls_certificate_matches_only_private_database_host(self):
         private = self.directory / "private"
         good = subprocess.run(["openssl", "verify", "-CAfile", str(private / "postgres-ca.crt"), "-verify_hostname", "postgres", str(private / "postgres.crt")], capture_output=True)
