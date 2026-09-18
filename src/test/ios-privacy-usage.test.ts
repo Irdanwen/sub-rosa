@@ -77,23 +77,30 @@ describe("iOS privacy usage descriptions", () => {
   it("gives every iOS bundle the version the app ships", () => {
     // `tauri ios build` stamps the app from tauri.conf.json and leaves the
     // share extension alone, so the extension shipped 1.63.0 inside a 1.65.2
-    // app and App Store Connect answered ITMS-90473. Pin all of them to the
-    // one source; `pnpm ios:version` rewrites them.
-    const plistVersions = (raw: string) =>
-      [
-        ...raw.matchAll(
-          /<key>CFBundle(?:ShortVersionString|Version)<\/key>\s*<string>([^<]+)<\/string>/g,
-        ),
-      ].map((match) => match[1]);
-    const specVersions = [
-      ...projectSpec.matchAll(/CFBundle(?:ShortVersionString|Version):\s*"?([\d.]+)"?/g),
+    // app and App Store Connect answered ITMS-90473. Pin the version a person
+    // reads to the one source; `pnpm ios:version` rewrites them.
+    const shortVersions = [
+      ...infoPlist.matchAll(/<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/g),
+      ...shareExtensionPlist.matchAll(
+        /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/g,
+      ),
+      ...projectSpec.matchAll(/CFBundleShortVersionString:\s*"?([\d.]+)"?/g),
     ].map((match) => match[1]);
-    const found = [
-      ...plistVersions(infoPlist),
-      ...plistVersions(shareExtensionPlist),
-      ...specVersions,
-    ];
-    expect(found.length).toBeGreaterThanOrEqual(6);
-    expect([...new Set(found)]).toEqual([tauriConfig.version]);
+    expect(shortVersions.length).toBeGreaterThanOrEqual(3);
+    expect([...new Set(shortVersions)]).toEqual([tauriConfig.version]);
+  });
+
+  it("gives every iOS bundle one build number", () => {
+    // CFBundleVersion is a counter Apple requires to be unique and rising, so
+    // it is not the app version: a delivery rejected for signing could never be
+    // sent again under its own version. CI stamps the run number into all three
+    // at once, and they are worthless unless they agree with each other.
+    const buildNumbers = [
+      ...infoPlist.matchAll(/<key>CFBundleVersion<\/key>\s*<string>([^<]+)<\/string>/g),
+      ...shareExtensionPlist.matchAll(/<key>CFBundleVersion<\/key>\s*<string>([^<]+)<\/string>/g),
+      ...projectSpec.matchAll(/CFBundleVersion:\s*"?([\d.]+)"?/g),
+    ].map((match) => match[1]);
+    expect(buildNumbers.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(buildNumbers).size).toBe(1);
   });
 });
