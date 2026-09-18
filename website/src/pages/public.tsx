@@ -1,5 +1,6 @@
 import { t, number } from "../lib/i18n";
 import releases from "../releases.json";
+import { accountsUnavailable, siteHref } from "../lib/paths";
 
 /** The newest Android test build, from its own prerelease; absent until one is published. */
 type AndroidDownload = {
@@ -22,7 +23,7 @@ export function Downloads() {
       <p className="eyebrow">Sub Rosa {releases.version}</p>
       <h1>{t("Make it your space.", "Faites-en votre espace.")}</h1>
       <p className="lede">
-        {import.meta.env.VITE_PREVIEW_ONLY === "1"
+        {accountsUnavailable
           ? t(
               "Start locally with your Carpe Diem key. Version 1.63.0 adds optional encrypted sync with a configured account service. Public account registration is not open yet.",
               "Commencez localement avec votre clé Carpe Diem. La version 1.63.0 ajoute la synchronisation chiffrée facultative avec un service de compte configuré. Les inscriptions publiques ne sont pas encore ouvertes.",
@@ -275,7 +276,7 @@ export function Information({ path }: { path: string }) {
           "Cette adresse ne correspond à aucune page Sub Rosa.",
         )}
       </p>
-      <a className="button" href="/">
+      <a className="button" href={siteHref("/")}>
         {t("Back to home", "Retour à l’accueil")}
       </a>
     </section>

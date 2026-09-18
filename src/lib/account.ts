@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 /** Native account credentials and encryption keys never enter web storage. */
 export type AccountStatus = {
+  default_server_url: string;
   server_url: string | null;
   account: { id: string; email: string; created_at: string } | null;
   device_id: string | null;

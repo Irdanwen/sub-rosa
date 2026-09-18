@@ -13,6 +13,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("../lib/tauri", () => ({ openExternalUrl: mocks.openExternalUrl }));
 
 const local: AccountStatus = {
+  default_server_url: "https://subrosa.furetier.com",
   server_url: "https://accounts.example.com",
   account: null,
   device_id: null,
@@ -61,6 +62,47 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("Account settings", () => {
+  it("opens public registration without setup or enabling sync for a new library", async () => {
+    state = { ...local, server_url: null };
+    handlers.account_login_start = () => ({
+      request_id: "login-public",
+      verification_uri: `${state.default_server_url}/device`,
+      user_code: "PUBLIC-1234",
+      expires_at: "2099-01-01T00:00:00Z",
+      interval_seconds: 5,
+    });
+    const user = userEvent.setup();
+    render(<AccountSettingsSection />);
+    const signup = await screen.findByRole("button", { name: "Sign in or create an account" });
+    expect(signup).toBeEnabled();
+    expect(screen.getByLabelText("Account service address")).not.toBeVisible();
+    expect(mocks.invoke).not.toHaveBeenCalledWith("account_configure", expect.anything());
+    await user.click(signup);
+    expect(await screen.findByText("PUBLIC-1234")).toBeInTheDocument();
+    expect(mocks.invoke).toHaveBeenCalledWith("account_configure", {
+      serverUrl: state.default_server_url,
+    });
+    expect(mocks.invoke).toHaveBeenCalledWith("account_login_start", { deviceName: "My computer" });
+    expect(mocks.openExternalUrl).toHaveBeenCalledWith(`${state.default_server_url}/device`);
+    expect(mocks.invoke).not.toHaveBeenCalledWith("account_sync_set_enabled", expect.anything());
+  });
+
+  it("keeps the existing custom service and makes its destination visible before login", async () => {
+    handlers.account_login_start = () => ({
+      request_id: "login-custom",
+      verification_uri: `${local.server_url}/device`,
+      user_code: "CUSTOM-1234",
+      expires_at: "2099-01-01T00:00:00Z",
+      interval_seconds: 5,
+    });
+    const user = userEvent.setup();
+    render(<AccountSettingsSection />);
+    await screen.findByText(`Continue securely at ${local.server_url}.`);
+    await user.click(screen.getByRole("button", { name: "Sign in or create an account" }));
+    expect(await screen.findByText("CUSTOM-1234")).toBeInTheDocument();
+    expect(mocks.invoke).toHaveBeenCalledWith("account_configure", { serverUrl: local.server_url });
+  });
+
   it.each([
     ["sync_file_too_large", "A file exceeds the sync size limit"],
     ["sync_object_too_large", "Some content exceeds the sync size limit"],
@@ -108,6 +150,7 @@ describe("Account settings", () => {
     });
     render(<AccountSettingsSection />);
     await screen.findByLabelText("Name this device");
+    await user.click(screen.getByText("Advanced settings"));
     await user.type(screen.getByLabelText("Name this device"), "My phone");
     await user.click(screen.getByRole("button", { name: "Sign in or create an account" }));
     expect(await screen.findByText("ABCD-1234")).toBeInTheDocument();

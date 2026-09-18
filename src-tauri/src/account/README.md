@@ -8,6 +8,11 @@ and iOS; every IPC command is registered in both handler lists.
 
 ## Identity and vault
 
+New libraries use `https://subrosa.furetier.com` when the person chooses to sign
+in or create an account. Merely opening the app or account settings does not
+configure the service or contact it. Advanced settings retain custom HTTPS
+services and device naming; existing libraries retain their configured origin.
+
 `mod.rs` performs the device authorization flow with native PKCE state. Browser
 login provisions the account through the configured service. Access tokens last
 15 minutes; the keyring stores the access and rotating refresh token as one JSON

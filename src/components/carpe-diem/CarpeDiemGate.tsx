@@ -65,17 +65,17 @@ export function CarpeDiemGate({
               )
             : mobile
               ? t(
-                  "{product} turns your meetings into notes, right on your phone. Paste your Carpe Diem key to get started.",
+                  "{product} turns your meetings into notes, right on your phone. Create an account to connect your devices, or use your Carpe Diem key locally.",
                   { product: PRODUCT_NAME },
                 )
               : t(
-                  "{product} turns your meetings into notes on your computer. Connect your Carpe Diem key to get started: no terminal, no config files.",
+                  "{product} turns your meetings into notes on your computer. Create an account to connect your devices, or use your Carpe Diem key locally.",
                   { product: PRODUCT_NAME },
                 )}
         </p>
 
-        <CarpeDiemSettings compact />
         <AccountSetupOffer />
+        <CarpeDiemSettings compact />
 
         {failed ? (
           <div className="welcome-providers">

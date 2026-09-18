@@ -1,0 +1,143 @@
+name: subrosa-accounts
+x-log: &log
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+x-locked: &locked
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  logging: *log
+services:
+  prepare-secrets:
+    image: postgres:17.11-bookworm
+    user: "0:0"
+    entrypoint: ["/bin/sh", "/prepare-secrets.sh"]
+    network_mode: none
+    read_only: true
+    volumes:
+      - "${STACK_PRIVATE_DIR:?Run bootstrap first}:/source:ro"
+      - private:/prepared
+      - ./prepare-secrets.sh:/prepare-secrets.sh:ro
+    mem_limit: 64m
+    logging: *log
+    restart: "no"
+  postgres:
+    image: postgres:17.11-bookworm
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD_FILE: /run/private/postgres-password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    command: ["postgres", "-c", "ssl=on", "-c", "ssl_cert_file=/run/private/postgres.crt", "-c", "ssl_key_file=/run/private/postgres.key", "-c", "hba_file=/etc/postgresql/pg_hba.conf", "-c", "max_connections=60", "-c", "shared_buffers=96MB", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=32MB", "-c", "log_statement=none", "-c", "log_min_error_statement=panic"]
+    volumes:
+      - database:/var/lib/postgresql/data
+      - private:/run/private:ro
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-subrosa.sh:ro
+      - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    networks: [database]
+    depends_on: { prepare-secrets: { condition: service_completed_successfully } }
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    shm_size: 128m
+    mem_limit: ${POSTGRES_MEMORY:-384m}
+    logging: *log
+    restart: unless-stopped
+  keycloak:
+    <<: *locked
+    build: { context: ., dockerfile: Keycloak.Dockerfile }
+    image: subrosa-keycloak:26.7.3
+    environment:
+      KC_HOSTNAME: "${IDENTITY_BASE:?Run bootstrap first}"
+      KC_HOSTNAME_STRICT: "true"
+      KC_HTTP_RELATIVE_PATH: "${IDENTITY_PATH:-/id}"
+      KC_HTTP_ENABLED: "true"
+      # Do not inherit /id for the container-local /health/ready check.
+      KC_HTTP_MANAGEMENT_RELATIVE_PATH: /
+      KC_HTTP_MANAGEMENT_HOST: 127.0.0.1
+      KC_HTTP_MANAGEMENT_SCHEME: http
+      KC_PROXY_HEADERS: xforwarded
+      KC_PROXY_TRUSTED_ADDRESSES: "${PROXY_TRUSTED_ADDRESSES:?Set actual bridge gateway or proxy address}"
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak?sslmode=verify-full&sslrootcert=/run/private/postgres-ca.crt
+      KC_DB_USERNAME: keycloak
+      KC_DB_POOL_INITIAL_SIZE: "2"
+      KC_DB_POOL_MIN_SIZE: "2"
+      KC_DB_POOL_MAX_SIZE: "10"
+      KC_CACHE: local
+      JAVA_OPTS_KC_HEAP: -XX:InitialRAMPercentage=25 -XX:MaxRAMPercentage=65
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,uid=1000,gid=0,mode=0700
+      - /opt/keycloak/data:rw,nosuid,size=64m,uid=1000,gid=0,mode=0700
+    volumes:
+      - private:/run/private:ro
+      - ./keycloak-start.sh:/opt/subrosa/keycloak-start.sh:ro
+    ports: ["127.0.0.1:18080:8080"]
+    networks: [database, outbound]
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck:
+      test: ["CMD", "/bin/bash", "-ec", "exec 3<>/dev/tcp/127.0.0.1/9000; printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3; IFS= read -r line <&3; [[ $$line == *' 200 '* ]]"]
+      interval: 15s
+      timeout: 5s
+      start_period: 120s
+      retries: 12
+    mem_limit: ${KEYCLOAK_MEMORY:-2048m}
+    restart: unless-stopped
+  migrate:
+    <<: *locked
+    image: "${CLOUD_IMAGE:?Set tested immutable cloud image}"
+    profiles: [operations]
+    user: "10002:10002"
+    working_dir: /config
+    command: [migrate]
+    volumes:
+      - private:/run/private:ro
+      - type: volume
+        source: private
+        target: /config
+        volume: { subpath: migration }
+    networks: [database]
+    depends_on: { postgres: { condition: service_healthy } }
+    read_only: true
+    mem_limit: 384m
+  grant-runtime:
+    <<: *locked
+    image: postgres:17.11-bookworm
+    profiles: [operations]
+    user: "10002:10002"
+    entrypoint: [psql, "postgresql://subrosa_migrator@postgres:5432/subrosa?sslmode=verify-full&sslrootcert=/run/private/postgres-ca.crt", --no-psqlrc, --set, ON_ERROR_STOP=1, --file, /grant-runtime.sql]
+    environment: { PGPASSFILE: /run/private/migrator.pgpass }
+    volumes:
+      - private:/run/private:ro
+      - ./grant-runtime.sql:/grant-runtime.sql:ro
+    networks: [database]
+    mem_limit: 64m
+  api:
+    <<: *locked
+    image: "${CLOUD_IMAGE:?Set tested immutable cloud image}"
+    profiles: [application]
+    user: "10001:10001"
+    working_dir: /config
+    command: [serve]
+    volumes:
+      - private:/run/private:ro
+      - type: volume
+        source: private
+        target: /config
+        volume: { subpath: runtime }
+    read_only: true
+    # Quoted: in a YAML flow sequence the commas would split the mount options
+    # into separate entries and Docker rejects "noexec" as a mount path.
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    ports: ["127.0.0.1:18088:8088"]
+    networks: [database, outbound]
+    depends_on: { postgres: { condition: service_healthy }, keycloak: { condition: service_healthy } }
+    mem_limit: ${API_MEMORY:-384m}
+    restart: unless-stopped
+networks:
+  database: { internal: true }
+  outbound: {}
+volumes:
+  database: {}
+  private: {}
