@@ -156,6 +156,11 @@ jobs:
       # the resulting xcarchive ourselves below. Tolerate Tauri's export failure
       # as long as it leaves a valid xcarchive.
       - name: Stamp the iOS bundles with the app version
+        # The run number is the build counter. Apple refuses a CFBundleVersion it
+        # has already seen, so a delivery rejected for any reason could never be
+        # sent again if the build number were the app version.
+        env:
+          SUBROSA_IOS_BUILD: ${{ github.run_number }}
         run: |
           node scripts/sync-ios-version.mjs
           git --no-pager diff --stat -- src-tauri/gen/apple || true
@@ -219,6 +224,20 @@ jobs:
           IPA=$(find build/export src-tauri/gen/apple/build -name '*.ipa' -print | head -1)
           if [ -z "$IPA" ]; then echo "No .ipa to upload." >&2; exit 1; fi
           echo "Uploading $IPA to TestFlight"
-          # altool reads the key from ~/private_keys/AuthKey_<APPLE_API_KEY_ID>.p8
+          # altool reads the key from ~/private_keys/AuthKey_<APPLE_API_KEY_ID>.p8.
+          # It prints its rejections and still exits zero, which once let a whole
+          # release report success while App Store Connect had refused the build.
+          # Read the verdict rather than the exit code.
+          set +e
           xcrun altool --upload-app --type ios --file "$IPA" \
-            --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
+            --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER" \
+            --output-format json >altool.json 2>altool.log
+          status=$?
+          set -e
+          cat altool.log
+          cat altool.json
+          if [ "$status" -ne 0 ] || grep -q '"product-errors"' altool.json \
+            || grep -qE '^[0-9-]+ [0-9:.]+ ERROR' altool.log; then
+            echo "::error::App Store Connect refused the upload" >&2
+            exit 1
+          fi
