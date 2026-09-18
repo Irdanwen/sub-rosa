@@ -39,7 +39,8 @@
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
     "i18n:extract": "node scripts/i18n/extract.mjs",
-    "i18n:check": "node scripts/i18n/extract.mjs --check"
+    "i18n:check": "node scripts/i18n/extract.mjs --check",
+    "ios:version": "node scripts/sync-ios-version.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

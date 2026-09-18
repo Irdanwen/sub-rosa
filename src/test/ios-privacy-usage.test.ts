@@ -13,6 +13,8 @@ import { describe, expect, it } from "vitest";
 // vite, so the paths stay correct wherever the runner is invoked from.
 import infoPlist from "../../src-tauri/gen/apple/os-june_iOS/Info.plist?raw";
 import projectSpec from "../../src-tauri/gen/apple/project.yml?raw";
+import shareExtensionPlist from "../../src-tauri/gen/apple/ShareExtension/Info.plist?raw";
+import tauriConfig from "../../src-tauri/tauri.conf.json";
 
 /** Each protected resource the app actually reaches for, and what reaches it. */
 const REQUIRED_USAGE_KEYS: Array<{ key: string; reachedBy: string }> = [
@@ -72,17 +74,26 @@ describe("iOS privacy usage descriptions", () => {
     expect(projectSpec).toContain("CFBundleURLTypes:");
   });
 
-  it("keeps the two files from disagreeing about the version", () => {
-    // Neither value ships — `tauri ios build` stamps the real one from
-    // tauri.conf.json — but they drifted thirty minor versions apart, which
-    // is how a regeneration silently hands a build the wrong era. Pin them
-    // to each other: cheap, and it never needs touching at bump time.
-    const plistVersion = /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/.exec(
-      infoPlist,
-    )?.[1];
-    const specVersion = /CFBundleShortVersionString:\s*([^\s]+)/.exec(projectSpec)?.[1];
-    expect(plistVersion).toBeDefined();
-    expect(specVersion).toBeDefined();
-    expect(plistVersion).toBe(specVersion);
+  it("gives every iOS bundle the version the app ships", () => {
+    // `tauri ios build` stamps the app from tauri.conf.json and leaves the
+    // share extension alone, so the extension shipped 1.63.0 inside a 1.65.2
+    // app and App Store Connect answered ITMS-90473. Pin all of them to the
+    // one source; `pnpm ios:version` rewrites them.
+    const plistVersions = (raw: string) =>
+      [
+        ...raw.matchAll(
+          /<key>CFBundle(?:ShortVersionString|Version)<\/key>\s*<string>([^<]+)<\/string>/g,
+        ),
+      ].map((match) => match[1]);
+    const specVersions = [
+      ...projectSpec.matchAll(/CFBundle(?:ShortVersionString|Version):\s*"?([\d.]+)"?/g),
+    ].map((match) => match[1]);
+    const found = [
+      ...plistVersions(infoPlist),
+      ...plistVersions(shareExtensionPlist),
+      ...specVersions,
+    ];
+    expect(found.length).toBeGreaterThanOrEqual(6);
+    expect([...new Set(found)]).toEqual([tauriConfig.version]);
   });
 });
