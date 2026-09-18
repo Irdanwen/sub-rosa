@@ -516,6 +516,15 @@ function VerifyDevice() {
       setDone(true);
     } catch (err) {
       if (err instanceof ApiError && err.status === 403 && code.length === 8) setStale(true);
+      else if (err instanceof ApiError && err.status === 404)
+        // Expired, already used, or never issued: the service cannot tell them
+        // apart without saying which codes exist, and the answer is the same.
+        setError(
+          t(
+            "This code is no longer valid. A code lasts ten minutes and works once. Start again in the app to get a new one.",
+            "Ce code n’est plus valide. Un code dure dix minutes et ne sert qu’une fois. Recommencez dans l’app pour en obtenir un nouveau.",
+          ),
+        );
       else setError(errorMessage(err));
     } finally {
       setBusy(false);
