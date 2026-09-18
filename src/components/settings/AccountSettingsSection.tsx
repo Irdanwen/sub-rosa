@@ -2,6 +2,8 @@ import { AccountConflictReview } from "./AccountConflictReview";
 import { AccountPairingSection } from "./AccountPairingSection";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { accountNextStep } from "../../lib/account-next-step";
+import { AccountNextStep } from "./AccountNextStep";
 import { IconShieldCheck } from "central-icons/IconShieldCheck";
 import {
   type AccountStatus,
@@ -29,7 +31,7 @@ import {
 import { errorCode } from "../../lib/errors";
 import { isMobilePlatform } from "../../lib/mobile";
 import { t, intlLocale } from "../../lib/i18n";
-import { openExternalUrl } from "../../lib/tauri";
+import { carpeDiemGetSettings, openExternalUrl } from "../../lib/tauri";
 import { InlineNotice } from "../ui/InlineNotice";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import "./account-settings.css";
@@ -38,6 +40,7 @@ import "./account-settings.css";
  * Only the short-lived login is polled here. Durable synchronization is native. */
 export function AccountSettingsSection() {
   const [status, setStatus] = useState<AccountStatus | null>(null);
+  const [hasLocalKey, setHasLocalKey] = useState(false);
   const [serverUrl, setServerUrl] = useState("");
   const [deviceName, setDeviceName] = useState("");
   const [login, setLogin] = useState<AccountLogin | null>(null);
@@ -184,6 +187,14 @@ export function AccountSettingsSection() {
     }
   }
 
+  // The last guided step asks whether this device has a Carpe Diem key of its
+  // own. Failing to read it only costs the step its certainty, never the panel.
+  useEffect(() => {
+    carpeDiemGetSettings()
+      .then((settings) => setHasLocalKey(settings.hasApiKey))
+      .catch(() => undefined);
+  }, []);
+
   async function startLogin() {
     await accountConfigure(serverUrl.trim());
     const next = await accountLoginStart(
@@ -324,6 +335,17 @@ export function AccountSettingsSection() {
         </div>
       ) : (
         <>
+          <AccountNextStep
+            step={accountNextStep({
+              signedIn: true,
+              vaultExists: status.vault_exists,
+              vaultUnlocked: status.vault_unlocked,
+              recoveryConfirmed: status.recovery_confirmed,
+              hasLocalKey,
+            })}
+            busy={busy}
+            onRestoreKey={() => setConfirmation({ kind: "restore-key" })}
+          />
           <div className="settings-card account-card">
             <div className="account-heading-row">
               <IconShieldCheck size={20} />
