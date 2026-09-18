@@ -479,23 +479,44 @@ function VaultGate({ account, onOpen }: { account: Account; onOpen: (key: Key) =
   );
 }
 
+/** Codes are eight characters from an alphabet without look-alikes, so we can
+ * accept whatever shape someone types or pastes: spacing, dashes, lower case. */
+function tidyCode(raw: string) {
+  return raw
+    .toUpperCase()
+    .split("")
+    .filter((c) => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".includes(c))
+    .join("")
+    .slice(0, 8);
+}
+
 function VerifyDevice() {
-  const [code, setCode] = useState(new URLSearchParams(location.search).get("code") ?? "");
+  const [code, setCode] = useState(
+    tidyCode(new URLSearchParams(location.search).get("code") ?? ""),
+  );
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Approving a device needs an authentication minutes old. Rather than leave
+  // that as a red dead end, offer the trip back with the code still in hand.
+  const [stale, setStale] = useState(false);
+  const resumeHref = `/auth/login?intent=signin&return_to=${encodeURIComponent(
+    `/account/devices/verify?code=${code}`,
+  )}`;
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError("");
+    setStale(false);
     try {
       await api("/api/v1/device-login/approve", {
         method: "POST",
-        body: JSON.stringify({ user_code: code.trim() }),
+        body: JSON.stringify({ user_code: code }),
       });
       setDone(true);
     } catch (err) {
-      setError(errorMessage(err));
+      if (err instanceof ApiError && err.status === 403 && code.length === 8) setStale(true);
+      else setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -506,8 +527,8 @@ function VerifyDevice() {
       {done ? (
         <p role="status">
           {t(
-            "Your app is connected. You can return to it now.",
-            "Votre app est connectée. Vous pouvez y retourner.",
+            "Your app is connected. Go back to it and open your vault with your recovery kit; your notes and your Carpe Diem key follow from there.",
+            "Votre app est connectée. Retournez-y et ouvrez votre coffre avec votre kit de récupération ; vos notes et votre clé Carpe Diem suivent ensuite.",
           )}
         </p>
       ) : (
@@ -522,18 +543,34 @@ function VerifyDevice() {
             {t("Code shown in the app", "Code affiché dans l’app")}
             <input
               value={code}
-              onChange={(e) => setCode(e.target.value)}
+              onChange={(e) => setCode(tidyCode(e.target.value))}
               autoComplete="one-time-code"
-              maxLength={32}
+              autoCapitalize="characters"
+              spellCheck={false}
+              inputMode="text"
+              maxLength={8}
               required
             />
           </label>
+          {stale && (
+            <div role="alert" className="notice">
+              <p>
+                {t(
+                  "Connecting an app needs a fresh sign-in. Sign in again and you will come back here with this code ready.",
+                  "Connecter une app demande une connexion récente. Reconnectez-vous : vous reviendrez ici avec ce code prêt.",
+                )}
+              </p>
+              <a className="button primary" href={resumeHref}>
+                {t("Sign in again and continue", "Se reconnecter et continuer")}
+              </a>
+            </div>
+          )}
           {error && (
             <p role="alert" className="error">
               {error}
             </p>
           )}
-          <button className="button primary" disabled={busy} type="submit">
+          <button className="button primary" disabled={busy || code.length !== 8} type="submit">
             {t("Authorize this app", "Autoriser cette app")}
           </button>
         </form>

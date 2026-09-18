@@ -1,5 +1,5 @@
 import { AgentSessionContextMenu, formatSessionTime, NoteContextMenu } from "./sidebar-context";
-import { intlLocale, t } from "../../lib/i18n";
+import { t } from "../../lib/i18n";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { IconZap } from "central-icons/IconZap";
 import { IconBubble3 } from "central-icons/IconBubble3";
@@ -14,14 +14,12 @@ import { IconBug } from "central-icons/IconBug";
 import { IconArchive1 } from "central-icons/IconArchive1";
 import { IconCircleInfo } from "central-icons/IconCircleInfo";
 import { IconFolderShared } from "central-icons/IconFolderShared";
-import { IconCreditCard1 } from "central-icons/IconCreditCard1";
 import { IconDotGrid1x3Vertical } from "central-icons/IconDotGrid1x3Vertical";
 import { IconImport } from "central-icons/IconImport";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconMicrophoneSparkle } from "central-icons/IconMicrophoneSparkle";
 import { IconNoteText } from "central-icons/IconNoteText";
-import { IconPeople } from "central-icons/IconPeople";
 import { IconPlugin2 } from "central-icons/IconPlugin2";
 import { IconToolbox } from "central-icons/IconToolbox";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
@@ -47,7 +45,6 @@ import {
   markAgentNewSessionPending,
   type AgentSessionsChangedDetail,
 } from "../agent/AgentWorkspace";
-import { CategoryIcon } from "../agent/composer/CategoryIcon";
 import { JuneWordmark } from "../brand/JuneWordmark";
 import type { ReportCategory } from "../agent/composer/reportCategory";
 import {
@@ -66,9 +63,8 @@ import { NOTE_DND_MIME } from "../../lib/dnd";
 import { useForcedEmptyStates } from "../../lib/empty-states-demo";
 import { useRecordingPresenceBounds } from "../../lib/recording-presence-bounds";
 import { isPrimaryShortcut, primaryShortcutLabel } from "../../lib/platform";
-import { useCarpeDiemCredits } from "../../lib/carpe-diem-credits";
+import { SidebarIdentity } from "./SidebarIdentity";
 import type {
-  CarpeDiemCreditsDto,
   HermesSessionInfo,
   NoteListItemDto,
   RecordingStatusDto,
@@ -109,6 +105,8 @@ type SidebarProps = {
   // Notes when not wired, e.g. unit tests).
   onExitSettings?: () => void;
   onReportIssue?: (category: ReportCategory) => void;
+  /** Opens Settings on the account tab, from the footer identity. */
+  onOpenAccount?: () => void;
   onSelectNote: (noteId: string) => void;
   onDeleteNote: (noteId: string) => void;
   onOpenMoveDialog: (noteId: string) => void;
@@ -332,6 +330,7 @@ export function Sidebar({
   onChangeView,
   onExitSettings,
   onReportIssue,
+  onOpenAccount,
   onSelectNote,
   onDeleteNote,
   onOpenMoveDialog,
@@ -1241,6 +1240,14 @@ export function Sidebar({
       <footer className="sidebar-footer">
         {footerAccessory}
         <SidebarIdentity
+          onOpenAccount={
+            onOpenAccount
+              ? () => {
+                  setIdentityMenuOpen(false);
+                  onOpenAccount();
+                }
+              : undefined
+          }
           menuOpen={identityMenuOpen}
           onToggleMenu={() => setIdentityMenuOpen((open) => !open)}
           onCloseMenu={() => setIdentityMenuOpen(false)}
@@ -1715,106 +1722,6 @@ function normalizeCommandQuery(value: string) {
 
 function isSearchShortcut(event: KeyboardEvent) {
   return event.key.toLowerCase() === "k" && isPrimaryShortcut(event);
-}
-
-// The user's name is the settings entry point: clicking it opens a small
-// popover whose actions open the settings page or sign out.
-// The report shortcuts in the account menu: the same set as the composer's
-// "+" popover, minus attaching a file. Action-phrased to read as menu verbs.
-const REPORT_MENU_ITEMS: { category: ReportCategory; label: string }[] = [
-  { category: "bug", label: t("Report a bug") },
-  { category: "feedback", label: t("Send feedback") },
-  { category: "feature", label: t("Request a feature") },
-];
-
-function SidebarIdentity({
-  menuOpen,
-  onToggleMenu,
-  onCloseMenu,
-  onOpenSettings,
-  onReportIssue,
-}: {
-  menuOpen: boolean;
-  onToggleMenu: () => void;
-  onCloseMenu: () => void;
-  onOpenSettings: () => void;
-  onReportIssue?: (category: ReportCategory) => void;
-}) {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  // The footer shows the Carpe Diem balance with the current price factor.
-  // Until it loads (or when no key is stored) it falls back to a plain label:
-  // there is no account name to show, because there is no account.
-  const credits = useCarpeDiemCredits();
-  const label = credits ? creditsLabel(credits) : "Credits";
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    function onPointer(event: MouseEvent) {
-      if (!wrapRef.current?.contains(event.target as Node)) onCloseMenu();
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onCloseMenu();
-    }
-    window.addEventListener("mousedown", onPointer);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onPointer);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [menuOpen, onCloseMenu]);
-
-  return (
-    <div className="sidebar-identity-wrap" ref={wrapRef}>
-      <button
-        type="button"
-        className="sidebar-nav-item sidebar-identity"
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        aria-label={t("{label}, app menu", { label: label })}
-        onClick={onToggleMenu}
-      >
-        <span className="sidebar-nav-icon">
-          {credits ? <IconCreditCard1 size={18} /> : <IconPeople size={18} />}
-        </span>
-        <span className="sidebar-nav-label">{label}</span>
-      </button>
-      {menuOpen ? (
-        <div className="sidebar-identity-menu" role="menu">
-          <button type="button" role="menuitem" onClick={onOpenSettings}>
-            <IconSettingsGear4 size={14} />
-            {t("Settings")}
-          </button>
-          {onReportIssue
-            ? REPORT_MENU_ITEMS.map((item) => (
-                <button
-                  key={item.category}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => onReportIssue(item.category)}
-                >
-                  <span className="sidebar-report-icon" data-category={item.category}>
-                    <CategoryIcon category={item.category} size={14} />
-                  </span>
-                  {item.label}
-                </button>
-              ))
-            : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-// "1,234 credits · ×0.42" — the spendable balance plus the current Carpe Diem
-// price factor (the fraction of the upstream rate billed today). The factor is
-// omitted when the public pricing endpoint didn't answer.
-function creditsLabel(credits: CarpeDiemCreditsDto) {
-  const amount = Math.floor(credits.availableCredits).toLocaleString(intlLocale());
-  // The balance follows the active rail; flag a prepaid balance so it isn't
-  // mistaken for the (possibly larger, unused) credits pool.
-  const railHint = credits.rail === "prepaid" ? " · prepaid" : "";
-  const factor = credits.priceMultiplier != null ? ` · ×${credits.priceMultiplier.toFixed(2)}` : "";
-  return `${amount} credits${railHint}${factor}`;
 }
 
 function readPinnedAgentSessionIds() {

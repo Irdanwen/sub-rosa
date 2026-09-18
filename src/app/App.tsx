@@ -2805,6 +2805,10 @@ export function App() {
         activeView={activeView}
         settingsTab={settingsTab}
         onSettingsTabChange={setSettingsTab}
+        onOpenAccount={() => {
+          setSettingsTab("account");
+          openSettings();
+        }}
         onChangeView={(view) => {
           if (takeNewTabIntent()) {
             openTab({ view });
