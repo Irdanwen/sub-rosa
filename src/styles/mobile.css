@@ -1177,82 +1177,6 @@
   background: linear-gradient(to top, oklch(0.1448 0 89.88 / 45%), transparent);
 }
 
-/* The screen's own chrome rides above the ground. */
-.mobile-chat > .mobile-stack-header,
-.mobile-chat > .mobile-chat-scroll,
-.mobile-chat > .mobile-chat-composer-stack {
-  position: relative;
-  z-index: 1;
-}
-
-/* The palette for this subtree comes from tokens.css, which lists
- * `.mobile-chat[data-ambient="true"]` alongside `[data-theme="dark"]`.
- *
- * What has to be repeated here is the handful of tokens DERIVED from those —
- * a custom property is computed on the element that declares it, so anything
- * `:root` builds out of --card, --muted or --foreground keeps its light value
- * inside a subtree no matter what the subtree says. Redeclaring them here
- * re-derives them against the ink palette. src/test/chat-ambient-theme.test.ts
- * fails if a fifth one appears and is not listed. */
-.mobile-chat[data-ambient="true"] {
-  --brand-tint: color-mix(in oklch, var(--brand) 12%, var(--card));
-  --brand-tint-strong: color-mix(in oklch, var(--brand) 20%, var(--card));
-  --ring-focus: color-mix(in oklch, var(--foreground) 30%, transparent);
-  --surface-subtle: color-mix(in oklch, var(--muted) 65%, transparent);
-  /* Vibrancy: a flat grey has no room on this ground. The clip's own light
-   * means nothing quieter than #d6d6d6 clears 4.5:1 even where it is darkest,
-   * and nothing but white clears it in the bright band. So the secondary tone
-   * is lifted here, and quietness comes from size rather than from lightness. */
-  --muted-foreground: #d6d6d6;
-  /* Redeclaring --foreground is not enough for anything that INHERITS its
-   * colour rather than reading the token: `color` came down from body, which
-   * resolved the light value long before this subtree changed the token. The
-   * header title is the one that gives it away, dark on the brightest part of
-   * the image. Re-stating `color` here restarts inheritance from the ink
-   * palette for the whole subtree. */
-  color: var(--foreground);
-}
-
-.mobile-chat[data-ambient="true"] .mobile-chat-composer-card,
-.mobile-chat[data-ambient="true"] .mobile-chat-suggestion {
-  background: oklch(1 0 0 / 8%);
-  border: 1px solid oklch(1 0 0 / 16%);
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  /* Vibrancy: a flat grey over a changing background loses its edges. Slightly
-   * heavier and slightly tracked-out text holds up where a lighter weight
-   * would dissolve into the light. */
-  color: var(--sr-on-ink);
-}
-
-.mobile-chat[data-ambient="true"] .mobile-chat-suggestion {
-  font-weight: var(--fw-medium);
-}
-
-/* The one line of secondary text that stands directly on the image rather than
- * on a surface, and it sits in its brightest band. Even the lifted tone above
- * does not clear the floor there, so it takes the full foreground and stays
- * quiet by being small. */
-.mobile-chat[data-ambient="true"] .mobile-chat-hero-hint {
-  color: var(--foreground);
-}
-
-.mobile-chat[data-ambient="true"] .mobile-chat-composer-card {
-  box-shadow: 0 8px 28px oklch(0 0 0 / 28%);
-}
-
-/* prefers-reduced-transparency asks for frostier, not more see-through: the
- * glass becomes a solid dark surface and the blur goes. The component also
- * drops the <video> for its poster under the same query. */
-@media (prefers-reduced-transparency: reduce) {
-  .mobile-chat[data-ambient="true"] .mobile-chat-composer-card,
-  .mobile-chat[data-ambient="true"] .mobile-chat-suggestion {
-    background: oklch(0.1913 0 89.88 / 96%);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .mobile-chat-ambient {
     transition: none;
@@ -3234,50 +3158,6 @@
   text-align: center;
 }
 
-/* The opening arrives in order — mark, greeting, line, then the three
- * openers — rather than all at once. 50ms apart: longer reads as slow, and a
- * group entrance is decorative, so nothing here blocks a tap while it plays.
- * A first chat is a rare screen, which is where the delight budget lives; the
- * tab bar, seen a hundred times a day, animates nothing. */
-.mobile-chat-hero > * {
-  opacity: 0;
-  transform: translateY(8px);
-  animation: mobile-hero-in var(--t-slow) var(--ease-out) forwards;
-}
-
-.mobile-chat-hero > *:nth-child(2) {
-  animation-delay: 50ms;
-}
-
-.mobile-chat-hero > *:nth-child(3) {
-  animation-delay: 100ms;
-}
-
-.mobile-chat-hero > *:nth-child(4) {
-  animation-delay: 150ms;
-}
-
-@keyframes mobile-hero-in {
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Reduced motion keeps the arrival legible and drops the travel. */
-@media (prefers-reduced-motion: reduce) {
-  .mobile-chat-hero > * {
-    transform: none;
-    animation: mobile-hero-fade var(--t-slow) var(--ease-out) forwards;
-  }
-
-  @keyframes mobile-hero-fade {
-    to {
-      opacity: 1;
-    }
-  }
-}
-
 .mobile-chat-hero-mark {
   display: inline-flex;
   width: 56px;
@@ -3310,6 +3190,63 @@
   /* Two even lines rather than a long one and an orphan. */
   text-wrap: balance;
   color: var(--muted-foreground);
+}
+
+/* The opening arrives in order — mark, greeting, line, then the three
+ * openers — rather than all at once. 50ms apart: longer reads as slow, and a
+ * group entrance is decorative, so nothing here blocks a tap while it plays.
+ * A first chat is a rare screen, which is where the delight budget lives; the
+ * tab bar, seen a hundred times a day, animates nothing.
+ *
+ * The four children are named rather than matched with `> *`: a universal
+ * selector is less specific than every class before it in the file, so it can
+ * never be ordered correctly, and naming them says which four actually stagger.
+ * The block sits after all four base rules for the same reason. */
+.mobile-chat-hero-mark,
+.mobile-chat-hero-greeting,
+.mobile-chat-hero-hint,
+.mobile-chat-suggestions {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: mobile-hero-in var(--t-slow) var(--ease-out) forwards;
+}
+
+/* Reduced motion keeps the arrival legible and drops the travel. Only the
+ * animation NAME is swapped, never `animation: none` — the shorthand would
+ * also clear the per-child delay below. */
+@media (prefers-reduced-motion: reduce) {
+  .mobile-chat-hero-mark,
+  .mobile-chat-hero-greeting,
+  .mobile-chat-hero-hint,
+  .mobile-chat-suggestions {
+    transform: none;
+    animation-name: mobile-hero-fade;
+  }
+}
+
+.mobile-chat-hero-greeting {
+  animation-delay: 50ms;
+}
+
+.mobile-chat-hero-hint {
+  animation-delay: 100ms;
+}
+
+.mobile-chat-suggestions {
+  animation-delay: 150ms;
+}
+
+@keyframes mobile-hero-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mobile-hero-fade {
+  to {
+    opacity: 1;
+  }
 }
 
 .mobile-chat-composer-card {
@@ -3454,6 +3391,90 @@
 
 .mobile-chat-attachments {
   padding: var(--sp-2) var(--mobile-gutter) 0;
+}
+
+/* --- The opening ground: what stands on it ---------------------------------
+ *
+ * Placed here, after every base rule it overrides, rather than next to the
+ * ground itself. An override that precedes what it overrides works by
+ * specificity alone, which is the thing that makes a long stylesheet stop
+ * being readable — and Biome's descending-specificity rule is right to say so.
+ */
+
+/* The screen's own chrome rides above the ground. */
+.mobile-chat > .mobile-stack-header,
+.mobile-chat > .mobile-chat-scroll,
+.mobile-chat > .mobile-chat-composer-stack {
+  position: relative;
+  z-index: 1;
+}
+
+/* The palette for this subtree comes from tokens.css, which lists
+ * `.mobile-chat[data-ambient="true"]` alongside `[data-theme="dark"]`.
+ *
+ * What has to be repeated here is the handful of tokens DERIVED from those —
+ * a custom property is computed on the element that declares it, so anything
+ * `:root` builds out of --card, --muted or --foreground keeps its light value
+ * inside a subtree no matter what the subtree says. Redeclaring them here
+ * re-derives them against the ink palette. src/test/chat-ambient-theme.test.ts
+ * fails if a fifth one appears and is not listed. */
+.mobile-chat[data-ambient="true"] {
+  --brand-tint: color-mix(in oklch, var(--brand) 12%, var(--card));
+  --brand-tint-strong: color-mix(in oklch, var(--brand) 20%, var(--card));
+  --ring-focus: color-mix(in oklch, var(--foreground) 30%, transparent);
+  --surface-subtle: color-mix(in oklch, var(--muted) 65%, transparent);
+  /* Vibrancy: a flat grey has no room on this ground. The clip's own light
+   * means nothing quieter than #d6d6d6 clears 4.5:1 even where it is darkest,
+   * and nothing but white clears it in the bright band. So the secondary tone
+   * is lifted here, and quietness comes from size rather than from lightness. */
+  --muted-foreground: #d6d6d6;
+  /* Redeclaring --foreground is not enough for anything that INHERITS its
+   * colour rather than reading the token: `color` came down from body, which
+   * resolved the light value long before this subtree changed the token. The
+   * header title is the one that gives it away, dark on the brightest part of
+   * the image. Re-stating `color` here restarts inheritance from the ink
+   * palette for the whole subtree. */
+  color: var(--foreground);
+}
+
+.mobile-chat[data-ambient="true"] .mobile-chat-composer-card,
+.mobile-chat[data-ambient="true"] .mobile-chat-suggestion {
+  background: oklch(1 0 0 / 8%);
+  border: 1px solid oklch(1 0 0 / 16%);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  /* Vibrancy: a flat grey over a changing background loses its edges. Slightly
+   * heavier and slightly tracked-out text holds up where a lighter weight
+   * would dissolve into the light. */
+  color: var(--sr-on-ink);
+}
+
+.mobile-chat[data-ambient="true"] .mobile-chat-suggestion {
+  font-weight: var(--fw-medium);
+}
+
+/* The one line of secondary text that stands directly on the image rather than
+ * on a surface, and it sits in its brightest band. Even the lifted tone above
+ * does not clear the floor there, so it takes the full foreground and stays
+ * quiet by being small. */
+.mobile-chat[data-ambient="true"] .mobile-chat-hero-hint {
+  color: var(--foreground);
+}
+
+.mobile-chat[data-ambient="true"] .mobile-chat-composer-card {
+  box-shadow: 0 8px 28px oklch(0 0 0 / 28%);
+}
+
+/* prefers-reduced-transparency asks for frostier, not more see-through: the
+ * glass becomes a solid dark surface and the blur goes. The component also
+ * drops the <video> for its poster under the same query. */
+@media (prefers-reduced-transparency: reduce) {
+  .mobile-chat[data-ambient="true"] .mobile-chat-composer-card,
+  .mobile-chat[data-ambient="true"] .mobile-chat-suggestion {
+    background: oklch(0.1913 0 89.88 / 96%);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 /* --- Memory settings ------------------------------------------------------------ */

@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Workflow canvas preview</title>
+    <style>
+      body { margin: 0; padding: 16px; background: var(--background, #fff); }
+      #root { max-width: 1400px; margin: 0 auto; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      // Dev-only preview harness (not committed): fake the Tauri bridge, seed a
+      // saved workflow, mount the WorkflowStudio canvas alone.
+      // Stand-in gallery files. `convertFileSrc` is identity here, so a data
+      // URI in the path slot is exactly what the <img> ends up with.
+      const HERO = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='320'><rect width='320' height='320' fill='%23c9b8a4'/><circle cx='160' cy='120' r='58' fill='%233d3a35'/><rect x='96' y='190' width='128' height='120' rx='16' fill='%233d3a35'/><text x='160' y='305' font-family='sans-serif' font-size='18' fill='%23fff' text-anchor='middle'>model sheet</text></svg>";
+      const PLATE = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='480' height='270'><rect width='480' height='270' fill='%23223047'/><rect y='190' width='480' height='80' fill='%23111a28'/><circle cx='390' cy='70' r='34' fill='%23e8c07a'/><text x='240' y='150' font-family='sans-serif' font-size='22' fill='%23dfe6f0' text-anchor='middle'>street plate</text></svg>";
+      const listeners = new Map();
+      let callbackId = 1;
+      window.__TAURI_INTERNALS__ = {
+        transformCallback(cb) {
+          const id = callbackId++;
+          listeners.set(id, cb);
+          return id;
+        },
+        unregisterCallback(id) {
+          listeners.delete(id);
+        },
+        convertFileSrc(p) {
+          return p;
+        },
+        async invoke(cmd, args = {}) {
+          console.log("[preview invoke]", cmd, args);
+          switch (cmd) {
+            case "plugin:event|listen":
+              return args.handler ?? null;
+            case "plugin:event|unlisten":
+              return null;
+            case "carpe_diem_media_list_artifacts":
+              return [
+                { path: HERO, fileName: "hero.png", bytes: 1000, modifiedMs: 1 },
+                { path: PLATE, fileName: "plate.png", bytes: 1200, modifiedMs: 2 },
+                { path: "/gallery/clip.mp4", fileName: "clip.mp4", bytes: 2000, modifiedMs: 3 },
+              ];
+            case "list_notes":
+              return {
+                items: [
+                  {
+                    id: "n1",
+                    title: "Production bible",
+                    preview: "Every shot at dusk, warm palette.",
+                    processingStatus: "succeeded",
+                    folderIds: [],
+                    createdAt: "2026-08-01T10:00:00Z",
+                    updatedAt: "2026-08-01T10:00:00Z",
+                  },
+                ],
+              };
+            default:
+              return null;
+          }
+        },
+      };
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+        unregisterListener() {},
+      };
+
+      const [{ createRoot }, React, workflowLib] = await Promise.all([
+        import("react-dom/client"),
+        import("react"),
+        import("/src/lib/studio/workflow/index.ts"),
+      ]);
+      await import("/src/styles/app.css");
+      await import("/src/styles/studio.css");
+
+      const template = workflowLib
+        .templateWorkflows()
+        .find((entry) => entry.id === "template-short-film");
+      const seeded = {
+        ...template,
+        id: "preview-wf",
+        createdAt: Date.now() - 1000,
+        updatedAt: Date.now() - 1000,
+      };
+      const node = (id, type, label, x, y, params = {}) => ({
+        id,
+        type,
+        label,
+        position: { x, y },
+        params: { ...workflowLib.defaultParams(type), ...params },
+      });
+      const edge = (source, target, targetPort) => ({
+        id: `${source}-${target}${targetPort ? `-${targetPort}` : ""}`,
+        source,
+        target,
+        targetPort,
+      });
+      const gated = {
+        id: "preview-gate-wf",
+        name: "Two takes, director pick",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        nodes: [
+          node("scene", "textInput", "Scene", 0, 120, {
+            text: "A red kite escapes over rooftops at dawn.",
+          }),
+          node("take1", "video", "Take 1", 300, 0, {
+            model: "kling-2.5-turbo-pro-text-to-video",
+            duration: "5s",
+            prompt: "{{input}} Wide shot, slow pan.",
+          }),
+          node("take2", "video", "Take 2", 300, 420, {
+            model: "kling-2.5-turbo-pro-text-to-video",
+            duration: "5s",
+            prompt: "{{input}} Close on the kite, handheld.",
+          }),
+          node("pick", "gate", "Director pick", 620, 210, {
+            note: "Choose the take that flies better.",
+          }),
+          node("film", "assemble", "Final cut", 920, 210),
+          node("out", "output", "Film", 1200, 210),
+        ],
+        edges: [
+          edge("scene", "take1", "prompt"),
+          edge("scene", "take2", "prompt"),
+          edge("take1", "pick"),
+          edge("take2", "pick"),
+          edge("pick", "film", "clips"),
+          edge("take2", "film", "clips"),
+          edge("film", "out"),
+        ],
+      };
+      // Reference-to-video: closed frame ports, two named assets in reference
+      // order, model-driven pickers, and a prompt with an upstream text input.
+      const referenceShot = {
+        id: "preview-reference-wf",
+        name: "Reference shot",
+        createdAt: Date.now() + 1,
+        updatedAt: Date.now() + 1,
+        nodes: [
+          node("brief", "textInput", "Brief", 0, 40, {
+            text: "The courier crosses the avenue as the streetlights come on.",
+          }),
+          node("hero", "asset", "Hero sheet", 0, 260, {
+            assetKind: "image",
+            artifactId: "hero.png",
+            assetLabel: "Character model sheet on a plain cream backdrop",
+          }),
+          node("plate", "asset", "Street plate", 0, 470, {
+            assetKind: "image",
+            artifactId: "plate.png",
+            assetLabel: "Full-bleed 16:9 image. Style: hand-drawn, dusk",
+          }),
+          node("shot", "video", "Wide shot", 420, 180, {
+            model: "seedance-2-5-reference-to-video-basic",
+            modelDirection: "reference",
+            duration: "8s",
+            aspectRatio: "16:9",
+            resolution: "720p",
+            prompt: "Refer to <Subject 1> in <Image 1> to generate ",
+          }),
+          node("out", "output", "", 800, 240),
+        ],
+        edges: [
+          edge("brief", "shot", "prompt"),
+          edge("hero", "shot", "references"),
+          edge("plate", "shot", "references"),
+          edge("shot", "out"),
+        ],
+      };
+      localStorage.setItem(
+        "os-june:studio-workflows",
+        JSON.stringify([referenceShot, gated, seeded]),
+      );
+
+      const { WorkflowStudio } = await import("/src/components/studio/WorkflowStudio.tsx");
+      const catalog = {
+        backend: "carpe-diem",
+        models: [
+          { id: "qwen3-next-80b", mediaType: "text", name: "Qwen3 Next 80B", offline: false },
+          {
+            id: "seedream-v4",
+            mediaType: "image",
+            name: "Seedream v4",
+            offline: false,
+            costCredits: 4,
+          },
+          { id: "tts-kokoro", mediaType: "tts", name: "Kokoro", offline: false },
+          {
+            id: "ace-step-15",
+            mediaType: "music",
+            name: "ACE Step 1.5",
+            offline: false,
+            pricing: {
+              durations: {
+                short: { usd: 0.2, min_seconds: 1, max_seconds: 60 },
+                long: { usd: 0.4, min_seconds: 61, max_seconds: 240 },
+              },
+            },
+          },
+          {
+            id: "kling-2.5-turbo-pro-text-to-video",
+            mediaType: "video",
+            name: "Kling 2.5 Turbo Pro (text)",
+            offline: false,
+            costCredits: 35,
+          },
+          {
+            id: "kling-2.5-turbo-pro-image-to-video",
+            mediaType: "imageToVideo",
+            name: "Kling 2.5 Turbo Pro (image)",
+            offline: false,
+            costCredits: 35,
+          },
+          {
+            id: "seedance-2-5-reference-to-video-basic",
+            mediaType: "referenceToVideo",
+            name: "Seedance 2.5 R2V",
+            offline: false,
+            costCredits: 60,
+          },
+          {
+            id: "wan-2-7-image-to-video",
+            mediaType: "imageToVideo",
+            name: "Wan 2.7 (image)",
+            offline: false,
+            costCredits: 20,
+            constraints: { aspect_ratios: [] },
+          },
+        ],
+      };
+      createRoot(document.getElementById("root")).render(
+        React.createElement(WorkflowStudio, { catalog }),
+      );
+    </script>
+  </body>
+</html>
