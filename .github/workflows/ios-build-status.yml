@@ -12,7 +12,7 @@ on:
         required: false
         default: "5"
       answer_compliance_for:
-        description: "Build version to answer export compliance for, e.g. 1.65.64 (leave empty to only report)"
+        description: "Build versions to answer export compliance for, comma separated, e.g. 1.65.0,1.65.1 (leave empty to only report)"
         required: false
         default: ""
 
@@ -58,9 +58,12 @@ jobs:
           def get(path):
               return call(path)
 
-          # Naming the build is what keeps this from sweeping: an answer is a
-          # declaration, and it is given to one delivery at a time.
-          answer_for = (os.environ.get("ANSWER_FOR") or "").strip()
+          # Naming each build is what keeps this from sweeping: an answer is a
+          # declaration, so there is no wildcard and no "every unanswered one".
+          # A version that matches nothing is a typo, and saying so beats
+          # leaving a build held while the run reports success.
+          answer_for = {v.strip() for v in (os.environ.get("ANSWER_FOR") or "").split(",") if v.strip()}
+          answered = set()
 
           apps = get("apps")["data"]
           for app in apps:
@@ -78,7 +81,9 @@ jobs:
                   a = build["attributes"]
                   print(f"  build {a.get('version')}  uploaded {a.get('uploadedDate')}")
                   print(f"    processing: {a.get('processingState')}   expired: {a.get('expired')}")
-                  if answer_for and a.get("version") == answer_for \
+                  if a.get("version") in answer_for:
+                      answered.add(a.get("version"))
+                  if a.get("version") in answer_for \
                           and a.get("usesNonExemptEncryption") is None:
                       call(f"builds/{build['id']}", "PATCH", {
                           "data": {"type": "builds", "id": build["id"],
@@ -91,4 +96,10 @@ jobs:
                            if answer is None
                            else f"answered usesNonExemptEncryption={answer}"))
               print()
+
+          missing = answer_for - answered
+          if missing:
+              raise SystemExit(
+                  "These versions were not found in the builds listed; widen limit "
+                  f"or check the version: {', '.join(sorted(missing))}")
           PY
