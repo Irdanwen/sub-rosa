@@ -74,6 +74,14 @@ describe("iOS privacy usage descriptions", () => {
     expect(projectSpec).toContain("CFBundleURLTypes:");
   });
 
+  it("answers the export compliance question in the bundle", () => {
+    // Without it App Store Connect holds every build as "missing compliance"
+    // and TestFlight never hands it to a tester: builds 1.63.0 through 1.65.64
+    // all sat VALID and undelivered. The answer matches the one already given
+    // by hand for every build up to 1.62.0.
+    expect(infoPlist).toMatch(/<key>ITSAppUsesNonExemptEncryption<\/key>\s*<(true|false)\/>/);
+  });
+
   it("gives every iOS bundle the version the app ships", () => {
     // `tauri ios build` stamps the app from tauri.conf.json and leaves the
     // share extension alone, so the extension shipped 1.63.0 inside a 1.65.2
