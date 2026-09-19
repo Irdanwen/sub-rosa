@@ -11,6 +11,10 @@ on:
         description: "How many recent builds to report"
         required: false
         default: "5"
+      answer_compliance_for:
+        description: "Build version to answer export compliance for, e.g. 1.65.64 (leave empty to only report)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -26,6 +30,7 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           LIMIT: ${{ inputs.limit }}
+          ANSWER_FOR: ${{ inputs.answer_compliance_for }}
         run: |
           python3 -m pip install --quiet pyjwt cryptography
           python3 - <<'PY'
@@ -39,12 +44,23 @@ jobs:
               key, algorithm="ES256",
               headers={"kid": os.environ["APPLE_API_KEY_ID"], "typ": "JWT"})
 
-          def get(path):
+          def call(path, method="GET", body=None):
               request = urllib.request.Request(
                   "https://api.appstoreconnect.apple.com/v1/" + path,
-                  headers={"Authorization": "Bearer " + token})
+                  method=method,
+                  data=None if body is None else json.dumps(body).encode(),
+                  headers={"Authorization": "Bearer " + token,
+                           **({} if body is None else {"Content-Type": "application/json"})})
               with urllib.request.urlopen(request) as response:
-                  return json.load(response)
+                  raw = response.read()
+                  return json.loads(raw) if raw else {}
+
+          def get(path):
+              return call(path)
+
+          # Naming the build is what keeps this from sweeping: an answer is a
+          # declaration, and it is given to one delivery at a time.
+          answer_for = (os.environ.get("ANSWER_FOR") or "").strip()
 
           apps = get("apps")["data"]
           for app in apps:
@@ -62,6 +78,13 @@ jobs:
                   a = build["attributes"]
                   print(f"  build {a.get('version')}  uploaded {a.get('uploadedDate')}")
                   print(f"    processing: {a.get('processingState')}   expired: {a.get('expired')}")
+                  if answer_for and a.get("version") == answer_for \
+                          and a.get("usesNonExemptEncryption") is None:
+                      call(f"builds/{build['id']}", "PATCH", {
+                          "data": {"type": "builds", "id": build["id"],
+                                   "attributes": {"usesNonExemptEncryption": False}}})
+                      a = get(f"builds/{build['id']}")["data"]["attributes"]
+                      print("    answered export compliance for this build")
                   answer = a.get("usesNonExemptEncryption")
                   print("    export compliance: "
                         + ("not answered, TestFlight will hold this build"
