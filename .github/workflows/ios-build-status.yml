@@ -1,0 +1,62 @@
+name: iOS build status (TestFlight)
+
+# Asks App Store Connect what it actually thinks of the builds we uploaded.
+# A delivery can succeed and still never reach a tester: a build held for
+# export compliance, still processing, or expired looks identical from the
+# release lane, which only ever sees the upload succeed.
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "How many recent builds to report"
+        required: false
+        default: "5"
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Ask App Store Connect
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          python3 -m pip install --quiet pyjwt cryptography
+          python3 - <<'PY'
+          import base64, json, os, time, urllib.request
+
+          key = base64.b64decode(os.environ["APPLE_API_KEY_P8"]).decode()
+          import jwt
+          token = jwt.encode(
+              {"iss": os.environ["APPLE_API_ISSUER"], "iat": int(time.time()),
+               "exp": int(time.time()) + 600, "aud": "appstoreconnect-v1"},
+              key, algorithm="ES256",
+              headers={"kid": os.environ["APPLE_API_KEY_ID"], "typ": "JWT"})
+
+          def get(path):
+              request = urllib.request.Request(
+                  "https://api.appstoreconnect.apple.com/v1/" + path,
+                  headers={"Authorization": "Bearer " + token})
+              with urllib.request.urlopen(request) as response:
+                  return json.load(response)
+
+          apps = get("apps")["data"]
+          for app in apps:
+              print(f"App: {app['attributes']['name']} ({app['attributes']['bundleId']})")
+              limit = int(os.environ.get("LIMIT") or 5)
+              builds = get(f"apps/{app['id']}/builds?limit={limit}")["data"]
+              if not builds:
+                  print("  No builds.")
+              for build in builds:
+                  a = build["attributes"]
+                  print(f"  build {a.get('version')}  uploaded {a.get('uploadedDate')}")
+                  print(f"    processing: {a.get('processingState')}   expired: {a.get('expired')}")
+                  print(f"    export compliance missing: {a.get('usesNonExemptEncryption') is None}")
+              print()
+          PY
