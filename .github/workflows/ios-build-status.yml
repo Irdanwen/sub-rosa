@@ -62,6 +62,10 @@ jobs:
                   a = build["attributes"]
                   print(f"  build {a.get('version')}  uploaded {a.get('uploadedDate')}")
                   print(f"    processing: {a.get('processingState')}   expired: {a.get('expired')}")
-                  print(f"    export compliance missing: {a.get('usesNonExemptEncryption') is None}")
+                  answer = a.get("usesNonExemptEncryption")
+                  print("    export compliance: "
+                        + ("not answered, TestFlight will hold this build"
+                           if answer is None
+                           else f"answered usesNonExemptEncryption={answer}"))
               print()
           PY
