@@ -1,0 +1,153 @@
+/*
+ * Sub Rosa — shared design primitives.
+ *
+ * The values the apps and the website agree on. Semantics live in the
+ * consumers: src/styles/tokens.css maps these into an oklch theme built around
+ * a runtime-themeable accent; website/src/style.css maps them into flat hex.
+ * See docs/design/charte.md for the charter, ADR-0052 for why it is split this
+ * way, and src/test/contrast.test.ts for the pairs that are enforced.
+ *
+ * Names say what a value IS, never where it is used. Nothing here may
+ * reference a consumer's variable.
+ */
+
+:root {
+  /* Type ---------------------------------------------------------------
+   * Three families, all self-hosted, all open-licensed (OFL), latin subsets.
+   * The apps serve them from public/fonts/, the website from its own
+   * public/fonts/ — same files, same subsets. */
+  --sr-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --sr-font-serif: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
+  --sr-font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas,
+    monospace;
+
+  /* Inter's stylistic sets: cv02 single-storey g, cv03 tailed l, cv04 dotted
+   * zero, cv11 single-storey a. Carpe Diem and the website already ship this
+   * exact string; it is what makes the three surfaces set type identically. */
+  --sr-font-features-sans: "cv02", "cv03", "cv04", "cv11";
+
+  /* Ink and paper ------------------------------------------------------
+   * Carpe Diem's two grounds. The cream is a warm paper (chroma 0.012 at hue
+   * 80), not a neutral grey — that warmth is the brand, and it must survive
+   * even when an accent other than gold is selected. */
+  --sr-cream: #f5f0e8;
+  --sr-cream-raised: #faf8f4;
+  --sr-ink: #0a0a0a;
+  --sr-ink-raised: #141414;
+
+  /* Text on each ground. 15.62:1 and 18.64:1 — both AAA with room to spare. */
+  --sr-on-cream: #1a1815;
+  --sr-on-ink: #f8f8f8;
+
+  /* Secondary and tertiary text.
+   * The tertiary light tone is the one correction to Carpe Diem's own ramp:
+   * its #9a9490 measures 2.64:1 on cream, which is not readable. Darkened
+   * until it clears 4:1 while staying clearly quieter than the secondary. */
+  /* A shade darker than the source system's #6b6560. That one clears the page
+   * ground at 5.06:1 but only manages 4.47:1 on --muted, the quiet fill it
+   * routinely sits on in the app — three hundredths short, which is exactly
+   * the kind of miss a charter without arithmetic ships. */
+  --sr-on-cream-muted: #655f57;  /* 5.56:1 on cream, 4.92:1 on the quiet fill */
+  --sr-on-cream-dim: #78726d;    /* 4.18:1 (Carpe Diem ships 2.64:1 here) */
+  --sr-on-ink-muted: #999999;    /* 6.95:1 */
+  --sr-on-ink-dim: #7a7a7a;      /* 4.66:1 (Carpe Diem ships 3.45:1 here) */
+
+  /* Gold, in two roles -------------------------------------------------
+   * This split is the charter's central correction. Carpe Diem uses ONE gold
+   * for both, and #c9973f measures 2.32:1 on its own cream — so links, doc
+   * headings and the primary button label all fail on the light theme.
+   *
+   * DISPLAY gold is the gold you recognise: ornament, seals, rules, very large
+   * display type, and the whole dark theme. It is a surface and a shape, and
+   * it is never asked to carry body text on cream.
+   *
+   * INK gold is the same family pushed until it carries text: links, labels,
+   * button fills. 7.14:1 on cream, 13.78:1 on ink.
+   *
+   * The apps derive ink gold from whatever accent is selected rather than
+   * hardcoding it, so the wheel stays safe — see --sr-ink-mix-* below. */
+  --sr-gold-display: #c9973f;
+  --sr-gold-display-dark: #e8d5b5;
+  --sr-gold-ink: #6f471b;
+  --sr-gold-ink-hover: #583612;
+  --sr-gold-ink-dark: #e8d5b5;
+  --sr-gold-ink-dark-hover: #d4c4a0;
+
+  /* The recipe the apps use to keep a themeable accent readable. Applied as
+   * color-mix(in oklch, <accent> var(--sr-ink-mix-light), black) on light and
+   * ...var(--sr-ink-mix-dark), white) on dark. Verified across all seven
+   * accent presets in both themes; the worst pair lands at 6.78:1. */
+  --sr-ink-mix-light: 62%;
+  --sr-ink-mix-dark: 58%;
+
+  /* Imperial red -------------------------------------------------------
+   * The deep red is Carpe Diem's, and it is right as a fill and a rule. As
+   * TEXT it only works on cream (8.19:1); on ink it measures 2.13:1, which is
+   * why error copy in the dark theme needs the lifted tone. */
+  --sr-imperial: #8b1a1a;
+  --sr-imperial-on-ink: #f0a5a5;
+
+  /* State --------------------------------------------------------------
+   * Carpe Diem has no state tokens at all, which is how `green` and `emerald`
+   * both ended up meaning success. One value per state per ground. */
+  --sr-success: #1f6b3f;
+  --sr-success-on-ink: #6fce7e;
+  --sr-warning: #8a5a10;
+  --sr-warning-on-ink: #e0a852;
+  --sr-danger: var(--sr-imperial);
+  --sr-danger-on-ink: var(--sr-imperial-on-ink);
+  --sr-info: #2e6b8b;
+  --sr-info-on-ink: #88b3d6;
+
+  /* Code ---------------------------------------------------------------
+   * Syntax colours for fenced code, one value per ground. The source system
+   * paints keywords in its display gold, which measures 2.32:1 on cream and
+   * is why that one is not copied here. Comments are not listed: they use the
+   * secondary text tone, because a comment is quiet prose. */
+  --sr-code-keyword: #6b4c8b;
+  --sr-code-keyword-on-ink: #b79cf0;
+  --sr-code-string: #2f6b43;
+  --sr-code-string-on-ink: #6fce7e;
+  --sr-code-number: #8a5a10;
+  --sr-code-number-on-ink: #e0a852;
+
+  /* Motion -------------------------------------------------------------
+   * Built-in CSS easings are too weak for UI, and cubic-bezier(.4, 0, .2, 1)
+   * — the Material/Tailwind default Carpe Diem uses for everything — is the
+   * same problem wearing a custom-curve costume.
+   *
+   * ease-in is absent on purpose: it starts slow, delaying the exact instant
+   * the user is watching. There is no UI case for it. */
+  --sr-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --sr-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --sr-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* Durations. UI motion stays under 300ms: a 180ms dropdown reads as more
+   * responsive than a 400ms one. --sr-t-slow is the ceiling for anything a
+   * person triggers, not a starting point. */
+  --sr-t-fast: 100ms;   /* press feedback */
+  --sr-t-med: 160ms;    /* hover, small popovers */
+  --sr-t-slow: 240ms;   /* dropdowns, sheets, screen transitions */
+  --sr-stagger: 50ms;   /* between items of a group entrance (30-80ms) */
+
+  /* Type rhythm --------------------------------------------------------
+   * Tracking is size-specific, never one blanket value: large type reads too
+   * loose as it grows and wants negative tracking; body wants none. Cormorant
+   * is a light old-style face and drifts further than a grotesque, so display
+   * tracking here is tighter than it would be for a sans. */
+  --sr-tracking-display: -0.02em;
+  --sr-tracking-title: -0.012em;
+  --sr-tracking-body: 0;
+  /* Small type set in capitals is the one place that wants positive tracking.
+   * Carpe Diem calls this "roman" and it is the most identifying thing about
+   * the system. UI labels do not use it — sentence case is the rule
+   * (spec/sentence-case.md); it is for the website's eyebrows and seals. */
+  --sr-tracking-roman: 0.08em;
+  --sr-tracking-roman-wide: 0.12em;
+
+  /* Leading tracks size inversely: tight on display, comfortable on body. */
+  --sr-leading-display: 1.08;
+  --sr-leading-title: 1.2;
+  --sr-leading-body: 1.6;
+}

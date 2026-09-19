@@ -1081,3 +1081,79 @@ Mach-O runtime file with `lipo -verify_arch` before signing. Keep these gates
 when merging upstream workflow changes. The original v1.63.0 tag is immutable;
 the corrected workflow rebuilds that tag through `workflow_dispatch` before
 the draft is published.
+
+## La charte graphique (2026-09-19)
+
+Les trois surfaces (site, desktop, mobile) partagent enfin une charte, dérivée
+du système « Roman Editorial Luxe » de Carpe Diem et corrigée là où il échoue.
+Décision : [ADR-0052](docs/adr/0052-the-surfaces-share-primitives-not-a-stylesheet.md).
+Charte : [docs/design/charte.md](docs/design/charte.md).
+
+### Fichiers ajoutés
+
+- `packages/design/primitives.css` (+ `package.json`, `README.md`) — les valeurs
+  partagées, paquet du workspace `@subrosa/design`. Aucune étape de build.
+- `docs/design/charte.md` — la charte, avec la note attribuée au système d'origine
+  et le détail de chaque correction.
+- `public/fonts/` — Inter, Cormorant Garamond et JetBrains Mono, sous-ensembles
+  latins, licences OFL à côté.
+- `public/ambient/chat-ambient.mp4` (411 Ko) + `.jpg` — la boucle du chat mobile,
+  **étalonnée à l'encodage** : un voile d'encre chaude mesuré sur la bande haute
+  (le clip est clair en haut, sombre en bas ; le texte blanc y tombait à 1,7:1),
+  nul en dessous de la moitié pour ne pas aplatir la profondeur de l'eau. Cuit
+  dans l'asset plutôt qu'empilé en CSS : une couche au lieu de trois, pas de
+  banding sur un grand dégradé, et le poster correspond exactement à la vidéo.
+  Le voile a été calculé **en espace gamma** — ffmpeg compose là, pas en lumière
+  linéaire, et un calcul linéaire sur-assombrit largement.
+- `src/components/mobile/ChatAmbient.tsx`
+- `src/test/contrast.test.ts`, `src/test/motion-tokens.test.ts`,
+  `src/test/chat-ambient-theme.test.ts` — les portes.
+
+### Fichiers upstream modifiés
+
+- `src/styles/tokens.css` — importe les primitives ; fonds recalés sur crème et
+  encre ; **nouveau `--brand-ink`** (l'accent poussé jusqu'à porter du texte,
+  dérivé de `--brand`) ; `--warm-strong` en devient un alias ; tokens d'état
+  (`--warning` et `--info` n'existaient pas, alors que `app.css` lisait déjà
+  `--warning` trois fois) ; courbes de motion retendues. Le bloc
+  `[data-theme="dark"]` porte un second sélecteur,
+  `.mobile-chat[data-ambient="true"]`.
+- `src/styles/fonts.css` — les trois familles remplacées.
+- `src/lib/brand.ts` — `gold` (#c9973f) en tête et par défaut ; l'invariant des
+  préréglages n'est plus « contraste sur blanc » mais la recette `--brand-ink`,
+  vérifiée par test.
+- `src/lib/motion.ts` — deux courbes retendues, verrouillées par test.
+- `index.html` — `user-scalable=no` retiré, `interactive-widget` ajouté, deux
+  `theme-color`, table d'accents et rideau de démarrage réalignés.
+- `src/styles/{app,mobile,hud,agent-hud,meeting-hud}.css`, `src/app/mobile/nav.ts`,
+  `src/components/mobile/screens/AgentScreen.tsx`,
+  `src/components/agent/AgentWorkspace.tsx`, `src/hud.ts`,
+  `src-tauri/src/meeting_hud.rs`.
+- `website/src/style.css`, `website/index.html`, `pnpm-workspace.yaml`.
+
+### Pièges
+
+- **Cinq copies de la valeur d'accent** : `tokens.css` (le `@property` et le
+  `:root`), le bootstrap pré-paint d'`index.html`, `brand.ts`, et les trois
+  feuilles de HUD. Aucune ne peut lire les autres (fenêtres séparées, script
+  avant le bundle).
+- **Une sixième copie de la courbe `--ease-out`, en Rust** :
+  `meeting_hud.rs` la passe à Core Animation en flottants nus, parce que le
+  cadre de la fenêtre tourne en natif pendant que son contenu bouge en CSS.
+  `motion-tokens.test.ts` la verrouille.
+- **Un token dérivé ne se recalcule pas dans un sous-arbre.** Une propriété
+  personnalisée est calculée sur l'élément qui la déclare : `--brand-tint`,
+  déclarée sur `:root` à partir de `--card`, garde sa valeur claire dans un
+  sous-arbre qui a redéfini `--card`. Quatre tokens sont concernés, redéclarés
+  dans le bloc ambiant de `mobile.css` ; `chat-ambient-theme.test.ts` échoue si
+  un cinquième apparaît.
+- **`color` est hérité, pas lu.** Redéfinir `--foreground` dans un sous-arbre ne
+  change pas la couleur d'un texte qui l'a héritée de `body`. Le bloc ambiant
+  redit `color: var(--foreground)` pour cette raison.
+- **Les chiffres tabulaires ne sont plus gratuits.** Inter est proportionnelle
+  par défaut, l'ancienne famille était tabulaire. Tout ce qui défile ou
+  s'aligne déclare déjà `tabular-nums` (plus de 50 sites) — vérifié, rien à
+  reprendre, mais une nouvelle surface numérique doit le déclarer.
+- Les trois `.woff2` sous licence commerciale sortent de l'arbre mais **restent
+  dans l'historique git** ; la réécriture n'a pas été faite.
+

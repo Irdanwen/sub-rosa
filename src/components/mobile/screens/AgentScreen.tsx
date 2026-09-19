@@ -45,6 +45,7 @@ import {
   suggestAgentSessionTitle,
 } from "../../../lib/tauri";
 import { BrandGradientMark } from "../../brand/Marks";
+import { ChatAmbient } from "../ChatAmbient";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { EmptyState } from "../../ui/EmptyState";
 import { Spinner } from "../../ui/Spinner";
@@ -786,6 +787,13 @@ export function AgentSessionScreen({
     }
   }, [model, models, refreshAfterFailure]);
 
+  // An empty chat, with nothing loading and nothing failed. Both the greeting
+  // and the ambient ground key off this, so it is named rather than repeated.
+  const showHero = !task?.messages.length && !running && !loadingTask && !taskLoadFailed;
+  // Whether the opening's image is still on screen — true through its fade out,
+  // which is longer than the greeting it replaces.
+  const [ambientPresent, setAmbientPresent] = useState(showHero);
+
   const stageLabel = stageText(stage?.stage ?? "thinking");
   // Prefer the catalog's display name ("Claude Opus 4.7") over the raw id.
   const activeModelLabel =
@@ -794,7 +802,19 @@ export function AgentSessionScreen({
     t("Default model");
 
   return (
-    <div className="mobile-screen-root mobile-chat">
+    // data-ambient re-grounds the whole screen while the opening plays: the
+    // light is dark whatever theme the app is in, so the header, the greeting
+    // and the composer switch to on-ink tones for as long as it is there
+    // (mobile.css). It is a hero section, and a hero section brings its own
+    // ground with it.
+    //
+    // It follows the image's own presence rather than showHero, because the
+    // image outlives the greeting by the length of its fade.
+    <div
+      className="mobile-screen-root mobile-chat"
+      data-ambient={ambientPresent ? "true" : undefined}
+    >
+      <ChatAmbient active={showHero} onPresenceChange={setAmbientPresent} />
       <StackHeader
         title={task?.title.trim() || t("New chat")}
         onBack={onBack}
@@ -837,7 +857,7 @@ export function AgentSessionScreen({
       />
       <div className="mobile-chat-scroll" ref={scrollRef} onScroll={handleScroll}>
         {loadingTask ? <Spinner aria-label={t("Loading")} /> : null}
-        {!task?.messages.length && !running && !loadingTask && !taskLoadFailed ? (
+        {showHero ? (
           <div className="mobile-chat-hero">
             <span className="mobile-chat-hero-mark" aria-hidden>
               <BrandGradientMark />

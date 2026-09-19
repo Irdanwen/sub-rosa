@@ -561,9 +561,10 @@ function sampleImageBytes(): Uint8Array {
   if (context) {
     const gradient = context.createLinearGradient(0, 0, 480, 320);
     // Canvas can't read CSS custom properties; resolve the live accent so
-    // the sample tracks the selected brand color instead of a frozen rose.
+    // the sample tracks the selected brand color instead of a frozen one. The
+    // fallback is DEFAULT_BRAND's value (src/lib/brand.ts).
     const brand =
-      getComputedStyle(document.documentElement).getPropertyValue("--brand").trim() || "#936862";
+      getComputedStyle(document.documentElement).getPropertyValue("--brand").trim() || "#c9973f";
     gradient.addColorStop(0, brand);
     gradient.addColorStop(1, "#f4e3d7");
     context.fillStyle = gradient;

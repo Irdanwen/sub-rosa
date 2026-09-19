@@ -2,7 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- No maximum-scale / user-scalable=no: blocking zoom is an accessibility
+         failure, and it was only there to hide a 15px input that made iOS zoom
+         on focus. The inputs are 16px on a coarse pointer instead, which is the
+         actual cause. interactive-widget makes the Android keyboard shrink the
+         layout viewport the way iOS already does, so a bottom-pinned composer
+         reacts to it. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <!-- The status bar and browser chrome take their colour from here. One
+         value per scheme, matched to the ground at the top of the app. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f0e8" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0a0a" />
     <title>Sub Rosa</title>
     <script>
       // Pre-paint theme bootstrap. Keep in sync with src/lib/theme.ts; the
@@ -22,17 +35,17 @@
           // src/lib/brand.ts so a non-default accent doesn't flash rose first.
           var brand = localStorage.getItem("os-june:brand");
           var brands = {
+            gold: "#c9973f",
             rose: "#936862",
             clay: "#9d5728",
             amber: "#8b6e4d",
-            gold: "#8f6b2e",
             sage: "#607d65",
             blue: "#597893",
             plum: "#886885",
           };
           document.documentElement.style.setProperty(
             "--brand",
-            brands[brand] || brands.rose,
+            brands[brand] || brands.gold,
           );
         } catch (e) {}
       })();
@@ -65,8 +78,8 @@
             color-mix(in oklch, var(--brand) 14%, transparent),
             transparent 70%
           ),
-          #f2efec;
-        transition: opacity 260ms cubic-bezier(0.22, 1, 0.36, 1);
+          #f5f0e8;
+        transition: opacity 260ms cubic-bezier(0.23, 1, 0.32, 1);
       }
 
       [data-theme="dark"] #boot {
@@ -76,7 +89,7 @@
             color-mix(in oklch, var(--brand) 20%, transparent),
             transparent 70%
           ),
-          #1a1614;
+          #0a0a0a;
       }
 
       /* A single breath, so a curtain that stays up for more than an instant
@@ -87,7 +100,7 @@
         height: 46px;
         border-radius: 50%;
         background: color-mix(in oklch, var(--brand) 34%, transparent);
-        animation: boot-breathe 1600ms cubic-bezier(0.65, 0, 0.35, 1) infinite;
+        animation: boot-breathe 1600ms cubic-bezier(0.77, 0, 0.175, 1) infinite;
       }
 
       #boot[data-leaving] {

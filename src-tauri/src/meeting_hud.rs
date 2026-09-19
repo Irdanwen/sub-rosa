@@ -55,7 +55,7 @@ const VERTICAL_PILL_LENGTH: f64 = 62.0;
 const WINDOW_SIZE: LogicalSize<f64> = LogicalSize::new(76.0, 76.0);
 
 /// How long the quarter turn takes. The easing matches the app's `--ease-out`
-/// token (cubic-bezier(0.22, 1, 0.36, 1)) so the HUD moves like the rest of
+/// token (cubic-bezier(0.23, 1, 0.32, 1)) so the HUD moves like the rest of
 /// the UI even though this animation runs in Core Animation, not CSS.
 const TURN_SECS: f64 = 0.32;
 
@@ -559,6 +559,10 @@ unsafe fn install_frost(hud: &WebviewWindow) {
 }
 
 /// The `--ease-out` token from tokens.css as a CAMediaTimingFunction.
+/// Keep these four numbers equal to `--sr-ease-out` in
+/// packages/design/primitives.css: this window's frame is turned by Core
+/// Animation while its contents are moved by CSS, and the two have to be on
+/// the same curve or the pill visibly shears mid-turn.
 /// `functionWithControlPoints::::` has bare colons `msg_send!` can't spell,
 /// hence `send_message`.
 #[cfg(target_os = "macos")]
@@ -571,7 +575,7 @@ unsafe fn ease_out_timing() -> *mut AnyObject {
     };
     (timing_class as *const AnyClass as *mut AnyObject).send_message(
         sel!(functionWithControlPoints::::),
-        (0.22f32, 1.0f32, 0.36f32, 1.0f32),
+        (0.23f32, 1.0f32, 0.32f32, 1.0f32),
     )
 }
 

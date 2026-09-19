@@ -491,7 +491,7 @@ function measureWindowSize() {
 // the native motion finishes).
 async function syncWindowToPill(options?: { animate?: boolean; morph?: boolean }) {
   if (!hud) return;
-  // ABC Diatype may still be loading on the window's first show; measuring
+  // The UI face may still be loading on the window's first show; measuring
   // with the fallback font bakes the wrong width into the window frame.
   if (typeof document.fonts?.ready?.then === "function") {
     if (document.fonts.status === "loading") {

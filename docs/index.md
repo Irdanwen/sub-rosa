@@ -59,6 +59,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0046-semantic-retrieval-embeds-passages-and-is-a-setting.md](adr/0046-semantic-retrieval-embeds-passages-and-is-a-setting.md) — "Ask your notes" finds meaning as well as words: notes cut into passages, BGE-M3 vectors filled in the background (rows first, ADR 0018), reciprocal rank fusion with the lexical half; a Privacy setting, on by default, off forgets the vectors; every call in the ledger
 - [adr/0047-copy-is-keyed-by-its-english-sentence.md](adr/0047-copy-is-keyed-by-its-english-sentence.md) — the app in the person's language: the English sentence is the key, `fr.json` is complete or the test is red, backend messages go through the same door, the language is a device choice applied before the first render
 - [adr/0048-the-share-sheet-drops-into-an-inbox-the-app-reads.md](adr/0048-the-share-sheet-drops-into-an-inbox-the-app-reads.md) — the iOS share extension writes a manifest (link, file or text) into the app group inbox and opens `subrosa://share/<id>`; the app validates it and uses the import rails it already has; two profiles and one group, with the App Store Connect steps in HANDOFF.md
+- [adr/0052-the-surfaces-share-primitives-not-a-stylesheet.md](adr/0052-the-surfaces-share-primitives-not-a-stylesheet.md) — the app and the website share design values (`@subrosa/design`), never a stylesheet: each keeps its own semantics; the gold splits into a display tone and a text tone because one gold measured 2.32:1 on its own cream; `src/test/contrast.test.ts` is the gate that keeps it true
 
 ## Enforceable rules (spec/)
 
@@ -67,6 +68,11 @@ feature specs). Full index: [spec/index.md](../spec/index.md).
 
 - UI copy: [spec/sentence-case](../spec/sentence-case.md), [spec/no-typographic-dashes](../spec/no-typographic-dashes.md)
 - UI styling: [spec/icons-central-only](../spec/icons-central-only.md), [spec/design-tokens](../spec/design-tokens.md)
+
+## Design
+
+- [design/charte.md](design/charte.md) — the charter: two grounds, one gold in two roles, the three typefaces, the motion curves, and why each correction was made to the system it derives from
+- [packages/design/primitives.css](../packages/design/primitives.css) — the values themselves, shared by the apps and the website
 
 ## Subsystems
 
