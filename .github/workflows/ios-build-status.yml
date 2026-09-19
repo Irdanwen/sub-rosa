@@ -51,18 +51,16 @@ jobs:
               print(f"App: {app['attributes']['name']} ({app['attributes']['bundleId']})")
               limit = int(os.environ.get("LIMIT") or 5)
               # Unsorted, the API hands back an arbitrary page and the build you
-              # just delivered may simply not be on it.
+              # just delivered may simply not be on it. The builds collection
+              # takes the app as a filter and sorts on the upload date.
               builds = get(
-                  f"apps/{app['id']}/builds?limit={limit}&sort=-uploadedDate"
-                  "&include=preReleaseVersion")["data"]
+                  f"builds?filter[app]={app['id']}&limit={limit}"
+                  "&sort=-uploadedDate")["data"]
               if not builds:
                   print("  No builds.")
               for build in builds:
                   a = build["attributes"]
-                  train = (build.get("relationships", {}).get("preReleaseVersion", {})
-                           .get("data") or {}).get("id")
-                  print(f"  build {a.get('version')}  uploaded {a.get('uploadedDate')}"
-                        f"  train {train}")
+                  print(f"  build {a.get('version')}  uploaded {a.get('uploadedDate')}")
                   print(f"    processing: {a.get('processingState')}   expired: {a.get('expired')}")
                   print(f"    export compliance missing: {a.get('usesNonExemptEncryption') is None}")
               print()
