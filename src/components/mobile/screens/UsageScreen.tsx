@@ -67,7 +67,7 @@ export function UsageScreen({ onBack }: { onBack: () => void }) {
   return (
     <div className="mobile-screen">
       <StackHeader title={t("Usage")} onBack={onBack} />
-      <div className="mobile-screen-body">
+      <div className="mobile-scroll">
         {measured ? (
           <>
             <SettingsGroup title={t("Since launch")}>
