@@ -1,32 +1,38 @@
 // Brand accent preference. The whole UI derives from the --brand token
 // (src/styles/tokens.css) via var(--brand) and color-mix, so overriding that
 // one custom property at runtime recolors buttons, washes, hovers, and the
-// recorder accent in one shot. Seven curated "dusty" presets, each pre-checked
-// for white-text contrast (>= 4.5:1) so the send glyph stays legible on every
-// one. The in-app logo mark stays fixed dusty rose so the brand identity is
-// constant while the accent varies; the native dock icon swaps to the selected
-// accent in Tauri builds.
+// recorder accent in one shot.
+//
+// Each value here is a DISPLAY tone: it is a wash, a tint and a mark, and it is
+// never asked to carry text. Everything that does carry text reads --brand-ink,
+// which tokens.css derives from this value per theme. That split is why these
+// can be the saturated, recognisable tones rather than the darkened ones a
+// foreground would force — and src/test/contrast.test.ts runs the derivation
+// over every preset in both themes, so adding one is no longer a coin flip.
+//
+// The native dock icon swaps to the selected accent in Tauri builds.
 //
 // Keep the storage key + the id->hex map in sync with the pre-paint bootstrap
 // in index.html, which sets --brand before the bundle runs to avoid a flash.
 
 import { invoke } from "@tauri-apps/api/core";
 
-export type BrandId = "rose" | "clay" | "amber" | "gold" | "sage" | "blue" | "plum";
+export type BrandId = "gold" | "rose" | "clay" | "amber" | "sage" | "blue" | "plum";
 
 export const BRAND_PRESETS: { id: BrandId; label: string; value: string }[] = [
+  // The house gold (--sr-gold-display). First in the list and the default,
+  // because it is the accent the website and Carpe Diem already wear.
+  { id: "gold", label: "Gold", value: "#c9973f" },
   { id: "rose", label: "Rose", value: "#936862" },
   { id: "clay", label: "Clay", value: "#9d5728" },
   { id: "amber", label: "Amber", value: "#8b6e4d" },
-  // Champagne gold — the most chromatic preset, still 4.87:1 against white.
-  { id: "gold", label: "Gold", value: "#8f6b2e" },
   { id: "sage", label: "Sage", value: "#607d65" },
   { id: "blue", label: "Blue", value: "#597893" },
   { id: "plum", label: "Plum", value: "#886885" },
 ];
 
 const STORAGE_KEY = "os-june:brand";
-export const DEFAULT_BRAND: BrandId = "rose";
+export const DEFAULT_BRAND: BrandId = "gold";
 
 function presetFor(id: string | null) {
   return BRAND_PRESETS.find((preset) => preset.id === id) ?? BRAND_PRESETS[0];

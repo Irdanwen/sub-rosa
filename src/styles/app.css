@@ -19,6 +19,10 @@
 
 html {
   height: 100%;
+  /* No font inflation when a phone is turned to landscape: the webview would
+   * otherwise scale text up on its own and the measured layout stops matching
+   * what is on screen. */
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -1441,7 +1445,11 @@ input:focus-visible,
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-sm);
   padding: var(--sp-3);
-  background: var(--surface);
+  /* Was var(--surface), a token that has never existed: with no fallback the
+   * declaration is invalid at computed-value time, so this field has been
+   * rendering with no background at all. --background is what the app's other
+   * fields use — a field reads as recessed into its card. */
+  background: var(--background);
   color: var(--foreground);
   font: inherit;
   line-height: 1.45;
@@ -1590,7 +1598,8 @@ input:focus-visible,
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-sm);
   padding: 0 var(--sp-3);
-  background: var(--surface);
+  /* See the clarify textarea above: var(--surface) does not exist. */
+  background: var(--background);
   color: var(--foreground);
   font: inherit;
   /* Mono so the (masked) length reads consistently. */
@@ -2725,7 +2734,7 @@ input:focus-visible,
   color: var(--foreground);
   font-family: var(--font-serif);
   font-size: var(--fs-xl);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5695,7 +5704,7 @@ input:focus-visible,
 .agent-hero-title {
   margin: 0;
   font-family: var(--font-serif);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   font-size: var(--fs-display);
   /* Display type tightens as it grows (tracking is size-derived): loose
    * default leading + zero tracking read gangly at 30px serif. */
@@ -7981,7 +7990,7 @@ input:focus-visible,
   color: var(--foreground);
   font-family: var(--font-serif);
   font-size: var(--fs-display);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   letter-spacing: 0;
   line-height: 1.15;
 }
@@ -8528,8 +8537,8 @@ input:focus-visible,
  * — the width of the number. The nesting step is the same for both, and that
  * is what the eye follows down a mixed list.
  *
- * No `tabular-nums` here: ABC Diatype renders tabular figures with a gap
- * before the period, so `3.` reads as `3 .`. */
+ * No `tabular-nums` here: tabular figures put a gap before the period, so
+ * `3.` reads as `3 .`. */
 .note-preview ol {
   margin: 0 0 var(--sp-4);
   padding-left: 22px;
@@ -9059,11 +9068,21 @@ input:focus-visible,
 .selection-toolbar button:hover {
   background: color-mix(in oklch, var(--brand) 16%, transparent);
   color: var(--warm-strong);
-  transform: translateY(-1px);
 }
 
-.selection-toolbar button:hover svg {
-  transform: scale(1.14);
+/* Hover motion only for real pointers. Touch fakes a hover on the first tap
+ * and leaves it there until the next one somewhere else, so the lift and the
+ * glyph's give would latch — the toolbar would look pressed by nobody. The
+ * tint above stays ungated: a stuck colour is a far quieter wrong than a
+ * stuck displacement, and on touch the press feedback is :active below. */
+@media (hover: hover) and (pointer: fine) {
+  .selection-toolbar button:hover {
+    transform: translateY(-1px);
+  }
+
+  .selection-toolbar button:hover svg {
+    transform: scale(1.14);
+  }
 }
 
 .selection-toolbar button:active {
@@ -9145,10 +9164,14 @@ input:focus-visible,
 }
 
 /* Under the pointer the sparkle stops twinkling and simply turns: two loops
- * fighting over one transform would read as a stutter. */
-.selection-toolbar-ai:hover svg {
-  animation: none;
-  transform: rotate(45deg) scale(1.14);
+ * fighting over one transform would read as a stutter. Pointer-gated with the
+ * rest of the toolbar's hover motion — on touch the sparkle would stop and
+ * stay turned after a tap. */
+@media (hover: hover) and (pointer: fine) {
+  .selection-toolbar-ai:hover svg {
+    animation: none;
+    transform: rotate(45deg) scale(1.14);
+  }
 }
 
 @keyframes selection-sparkle-twinkle {
@@ -10681,7 +10704,7 @@ input:focus-visible,
   color: var(--foreground);
   font-family: var(--font-serif);
   font-size: var(--fs-display);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   letter-spacing: 0;
   line-height: 1.15;
 }
@@ -11475,7 +11498,7 @@ input:focus-visible,
   color: var(--foreground);
   font-family: var(--font-serif);
   font-size: var(--fs-xl);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   line-height: 1.32;
   letter-spacing: 0;
 }
@@ -14200,9 +14223,12 @@ input:focus-visible,
   display: grid;
   gap: 2px;
   padding: var(--sp-3);
+  /* Neither --radius-md nor --surface exists; both were silently dropping,
+   * leaving this option square and unfilled. The radius scale is --r-*, and
+   * the selected state below lays a tint over this surface. */
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface);
+  border-radius: var(--r-md);
+  background: var(--card);
   text-align: left;
   cursor: pointer;
 }
@@ -16328,7 +16354,7 @@ input:focus-visible,
   margin: 0;
   font-family: var(--font-serif);
   font-size: var(--fs-2xl);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   color: var(--foreground);
 }
 
@@ -16779,7 +16805,7 @@ input:focus-visible,
   gap: var(--sp-2);
   margin: 0;
   font-family: var(--font-serif);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   font-size: var(--fs-xl);
   line-height: var(--control-lg);
 }
@@ -16873,7 +16899,7 @@ input:focus-visible,
   background: transparent;
   color: var(--foreground);
   font-family: var(--font-serif);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   font-size: var(--fs-2xl);
   line-height: 1.2;
 }
@@ -17166,7 +17192,7 @@ input:focus-visible,
   gap: var(--sp-2);
   margin: 0;
   font-family: var(--font-serif);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   font-size: var(--fs-xl);
   line-height: var(--control-lg);
 }
@@ -17290,7 +17316,7 @@ input:focus-visible,
   gap: var(--sp-3);
   margin: 0 0 var(--sp-2);
   font-family: var(--font-serif);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   font-size: var(--fs-display);
   letter-spacing: 0;
   line-height: 1.1;
@@ -17406,7 +17432,7 @@ input:focus-visible,
   margin: 0 0 var(--sp-2);
   font-family: var(--font-serif);
   font-size: var(--fs-lg);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   letter-spacing: 0;
   color: var(--foreground);
 }
@@ -18220,7 +18246,7 @@ input:focus-visible,
   margin: 0 calc(-1 * var(--sp-2));
   padding: 2px var(--sp-2);
   font-family: var(--font-serif);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   font-size: var(--fs-display);
   letter-spacing: 0;
   line-height: 1.1;
@@ -18248,7 +18274,7 @@ input:focus-visible,
   background: transparent;
   color: var(--foreground);
   font-family: var(--font-serif);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   font-size: var(--fs-display);
   letter-spacing: 0;
   line-height: 1.1;
@@ -18894,7 +18920,7 @@ input:focus-visible,
 .empty-state-title {
   margin: 0;
   font-family: var(--font-serif);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   font-size: var(--fs-xl);
   letter-spacing: 0;
 }
@@ -19065,7 +19091,7 @@ input:focus-visible,
    * cap-height sitting low against the button). */
   font-family: var(--font-serif);
   font-size: var(--fs-xl);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   line-height: var(--control-lg);
   color: var(--foreground);
 }
@@ -20253,7 +20279,7 @@ input:focus-visible,
   margin: 0;
   font-family: var(--font-serif);
   font-size: var(--fs-display);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   letter-spacing: 0;
   /* The serif inherits the body's 1.5 otherwise — two-line titles read as
      two strangers. */

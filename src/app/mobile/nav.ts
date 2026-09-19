@@ -42,7 +42,13 @@ const EMPTY_STACKS: Record<MobileTab, MobileRoute[]> = {
   settings: [],
 };
 
-export function useMobileNav(initialTab: MobileTab = "notes") {
+/**
+ * The app opens on Chat. It is the one screen that is useful before you have
+ * done anything — it asks a question rather than showing an empty list — and it
+ * is the surface the rest of the app feeds. Notes is one tap away and keeps its
+ * own stack, so nothing is further from reach than it was.
+ */
+export function useMobileNav(initialTab: MobileTab = "agent") {
   const [nav, setNav] = useState<MobileNav>({ tab: initialTab, stacks: EMPTY_STACKS });
 
   const switchTab = useCallback((tab: MobileTab) => {

@@ -1,15 +1,21 @@
 /*
- * OS Notetaker design tokens.
+ * Sub Rosa design tokens — the app's semantic layer.
  *
- * Source of truth for both the desktop UI and tests. We mirror Fellow's
- * token names where it makes sense (background/foreground/card/sidebar/
- * border/ring) so designers can move between repos without re-learning
- * the language. The "inset card" layout (sidebar tint outside, white card
- * inside) is the same trick Fellow's shadcn SidebarInset uses.
+ * Source of truth for the desktop and mobile UI, and for the tests. The token
+ * NAMES (background/foreground/card/sidebar/border/ring) keep the shape they
+ * were forked with, so the "inset card" layout still reads the way it did.
+ * The VALUES come from @subrosa/design: the palette, the typefaces and the
+ * motion curves the website and Carpe Diem use, mapped here into oklch so the
+ * whole theme can be recoloured by changing one custom property.
+ *
+ * Read docs/design/charte.md before changing a colour. Pairs that carry text
+ * are enforced by src/test/contrast.test.ts, which exists because the system
+ * these values come from has no such gate and shipped a 2.32:1 accent.
  *
  * Casing rule for any UI label authored against these tokens: sentence
  * case ("Notes"), never SHOUTY CAPS. See CLAUDE.md.
  */
+@import "@subrosa/design/primitives.css";
 
 /* The live sidebar width. Registered as an animatable <length> (a plain custom
  * property can't tween) so the collapse/reopen snap can interpolate this ONE
@@ -33,16 +39,17 @@
 @property --brand {
   syntax: "<color>";
   inherits: true;
-  initial-value: #936862;
+  /* Literal on purpose: @property can't reference another custom property.
+   * This is --sr-gold-display; change both together, and the pre-paint
+   * bootstrap in index.html with them. */
+  initial-value: #c9973f;
 }
 
 :root {
   /* Type ------------------------------------------------------------- */
-  --font-sans:
-    "ABC Diatype", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
-  --font-serif: "Martina Plantijn", "Iowan Old Style", Georgia, serif;
-  --font-mono: "Berkeley Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-sans: var(--sr-font-sans);
+  --font-serif: var(--sr-font-serif);
+  --font-mono: var(--sr-font-mono);
 
   --fs-xs: 11px;
   --fs-sm: 12px;
@@ -52,18 +59,21 @@
   --fs-2xl: 20px;
   --fs-display: 30px;
 
-  /* Diatype ships Regular (400) and Medium (600) only, and font-synthesis is
-   * off — intermediate weights silently resolve to Regular. "Medium" anywhere
-   * in the app means this token. */
-  --fw-medium: 600;
+  /* "Medium" anywhere in the app means this token. Inter is a variable face,
+   * so unlike the two-cut family this replaced, 500 is a real weight and is
+   * the one that actually reads as Medium — 600 is SemiBold and would make
+   * every emphasised label in the app heavier than it was. */
+  --fw-medium: 500;
 
   /* Tracking + leading are size-derived, never one blanket value: display
    * sizes tighten (letters drift apart as type grows), body stays neutral.
-   * Pair these with --fs-2xl/--fs-display wherever those sizes are used. */
-  --tracking-display: -0.015em;
-  --tracking-2xl: -0.01em;
-  --leading-display: 1.1;
-  --leading-2xl: 1.2;
+   * Pair these with --fs-2xl/--fs-display wherever those sizes are used.
+   * Display tracking is tighter than it was: Cormorant is a light old-style
+   * face and drifts further at size than the grotesque it replaced. */
+  --tracking-display: var(--sr-tracking-display);
+  --tracking-2xl: var(--sr-tracking-title);
+  --leading-display: var(--sr-leading-display);
+  --leading-2xl: var(--sr-leading-title);
 
   /* Spacing ---------------------------------------------------------- */
   --sp-px: 2px;
@@ -183,35 +193,54 @@
    * --foreground; dark theme inherits the same recipe. */
   --ring-focus: color-mix(in oklch, var(--foreground) 30%, transparent);
 
-  /* Surface neutrals carry a sliver of --brand so the whole backdrop tints
-   * to whatever accent is selected (rose = warm greys, blue = cool greys,
-   * etc.). Text/foreground tokens stay pure neutral for legibility; only
-   * fills, cards, borders, and the sidebar pick up the wash. */
-  --background: color-mix(in oklch, oklch(95.13% 0.0015 84.59), var(--brand) 3%);
-  --foreground: oklch(27.24% 0.0015 84.59);
-  --card: color-mix(in oklch, oklch(100% 0 none), var(--brand) 2%);
-  --card-foreground: oklch(27.24% 0.0015 84.59);
-  --popover: color-mix(in oklch, oklch(100% 0 none), var(--brand) 2%);
-  --popover-foreground: oklch(27.24% 0.0015 84.59);
-  --primary: oklch(34% 0.008 84.59);
-  --primary-foreground: oklch(100% 0 none);
-  --secondary: color-mix(in oklch, oklch(97.03% 0 none), var(--brand) 3%);
-  --secondary-foreground: oklch(20.44% 0 none);
-  --muted: color-mix(in oklch, oklch(92.87% 0.0015 84.59), var(--brand) 4%);
-  --muted-foreground: oklch(55.8% 0.0015 84.59);
-  --accent: color-mix(in oklch, oklch(97.03% 0 none), var(--brand) 3%);
-  --accent-foreground: oklch(20.44% 0 none);
-  --destructive: oklch(57% 0.22 27);
-  --destructive-soft: oklch(95% 0.025 27);
-  --success: oklch(48% 0.12 150);
-  --border: color-mix(in oklch, oklch(86.91% 0.0015 84.59), var(--brand) 5%);
-  --input: color-mix(in oklch, oklch(86.91% 0.0015 84.59), var(--brand) 5%);
-  --ring: oklch(75% 0.0015 84.59);
+  /* The ground is Carpe Diem's paper, not a neutral grey: a warm cream at
+   * chroma 0.012, hue 80 (--sr-cream). Surfaces then carry a sliver of
+   * --brand on top, so the backdrop also tints to whatever accent is
+   * selected. The two layers do different jobs — the cream is the brand and
+   * survives an accent change, the wash is the accent. Text/foreground tokens
+   * stay near-neutral for legibility; only fills, cards, borders, and the
+   * sidebar pick up the wash. */
+  --background: color-mix(in oklch, oklch(95.68% 0.0119 79.78), var(--brand) 3%);
+  --foreground: oklch(21.02% 0.0066 78.18);
+  --card: color-mix(in oklch, oklch(97.96% 0.0057 84.57), var(--brand) 2%);
+  --card-foreground: oklch(21.02% 0.0066 78.18);
+  --popover: color-mix(in oklch, oklch(97.96% 0.0057 84.57), var(--brand) 2%);
+  --popover-foreground: oklch(21.02% 0.0066 78.18);
+  --primary: oklch(30% 0.008 78.18);
+  --primary-foreground: oklch(97.96% 0.0057 84.57);
+  --secondary: color-mix(in oklch, oklch(96.8% 0.008 82), var(--brand) 3%);
+  --secondary-foreground: oklch(21.02% 0.0066 78.18);
+  --muted: color-mix(in oklch, oklch(92.5% 0.013 79.78), var(--brand) 4%);
+  --muted-foreground: oklch(48.86% 0.0147 75.24);
+  --accent: color-mix(in oklch, oklch(96.8% 0.008 82), var(--brand) 3%);
+  --accent-foreground: oklch(21.02% 0.0066 78.18);
+  /* State. One value per state per ground, all of them checked against the
+   * ground they sit on (src/test/contrast.test.ts). --destructive is Carpe
+   * Diem's imperial red, which reads at 8.19:1 here; the dark theme cannot
+   * use it as text and lifts it instead. --warning had three consumers in
+   * app.css and no definition at all, so every one of them has been rendering
+   * as plain muted grey. */
+  --destructive: oklch(41.58% 0.1484 26.59);
+  --destructive-soft: oklch(95% 0.025 26.59);
+  --success: oklch(46.99% 0.1024 153.81);
+  --warning: oklch(50.84% 0.1033 71.19);
+  --info: oklch(50.21% 0.0806 234.51);
 
-  --sidebar: color-mix(in oklch, oklch(95.13% 0.0015 84.59), var(--brand) 4%);
-  --sidebar-foreground: oklch(27.24% 0.0015 84.59);
-  --sidebar-accent: color-mix(in oklch, oklch(92.87% 0.0015 84.59), var(--brand) 5%);
-  --sidebar-border: color-mix(in oklch, oklch(86.91% 0.0015 84.59), var(--brand) 5%);
+  /* Fenced code. Themed here rather than in the sheet that uses them: they
+   * were three raw hex values behind a prefers-color-scheme query, which meant
+   * a person on "light" with a dark system read dark syntax colours on a light
+   * bubble. The palette follows data-theme, never the system directly. */
+  --code-keyword: var(--sr-code-keyword);
+  --code-string: var(--sr-code-string);
+  --code-number: var(--sr-code-number);
+  --border: color-mix(in oklch, oklch(88.78% 0.0167 79.35), var(--brand) 5%);
+  --input: color-mix(in oklch, oklch(88.78% 0.0167 79.35), var(--brand) 5%);
+  --ring: oklch(79.43% 0.018 67.57);
+
+  --sidebar: color-mix(in oklch, oklch(95.68% 0.0119 79.78), var(--brand) 4%);
+  --sidebar-foreground: oklch(21.02% 0.0066 78.18);
+  --sidebar-accent: color-mix(in oklch, oklch(92.5% 0.013 79.78), var(--brand) 5%);
+  --sidebar-border: color-mix(in oklch, oklch(88.78% 0.0167 79.35), var(--brand) 5%);
 
   /* Subtle surface + border — the canonical "quiet chip/track/secondary
    * button" fill and the soft 1px outline used on inset cards. Both
@@ -222,11 +251,24 @@
   --body-copy: color-mix(in oklch, var(--foreground) 86%, var(--muted-foreground));
   --popover-border: color-mix(in oklch, var(--foreground) 10%, transparent);
 
-  /* OS June brand mark — a dusty rose clay, the fill behind the logo glyph
-   * and the default accent. Themeable: the Appearance picker overrides this
-   * one value at runtime and everything below derives from it, so the whole
-   * UI recolors. The logo art (mark + app icon) stays this fixed rose. */
-  --brand: #936862;
+  /* The accent. Themeable: the Appearance picker overrides this one value at
+   * runtime and everything below derives from it, so the whole UI recolors.
+   *
+   * This is DISPLAY gold (--sr-gold-display) — the gold you recognise. It is a
+   * surface and a shape: washes, tints, the mark's gradient, the dock icon. It
+   * is never asked to carry text on the light ground, where it measures
+   * 2.32:1. That is what --brand-ink below is for. */
+  --brand: #c9973f;
+
+  /* The accent, pushed until it carries text: links, emphasised labels,
+   * button fills, the active tab. Derived from --brand rather than hardcoded,
+   * so the Appearance wheel stays readable whatever is picked — the recipe is
+   * verified across all seven presets in both themes, worst pair 6.78:1
+   * (src/test/contrast.test.ts).
+   *
+   * black and white are achromatic, so their hue is powerless and the mix
+   * keeps the accent's own hue instead of dragging it toward red. */
+  --brand-ink: color-mix(in oklch, var(--brand) var(--sr-ink-mix-light), black);
 
   /* Recording red. It has to read as "record/stop" at a glance, so it stays
    * red — but at chroma 0.22 it was a fire-engine red sitting in an otherwise
@@ -250,12 +292,16 @@
   /* Warm-accent set for the record button hover state — a soft peach
    * surface and a deeper terracotta foreground. Reusable for any
    * "live/recording" primary action that wants a warmer feel. */
-  /* The warm/recorder accent family now derives from --brand so the recorder
+  /* The warm/recorder accent family derives from --brand so the recorder
    * controls (and every warm surface) track the selected accent. A light
-   * brand-tinted surface + a deepened brand foreground. The live "recording"
-   * red stays --record on purpose. */
+   * brand-tinted surface + the brand's ink for anything that carries text or
+   * reads as a foreground. The live "recording" red stays --record on purpose.
+   *
+   * --warm-strong is the app's 151-consumer foreground accent, so it IS
+   * --brand-ink: the old color-mix(--brand 88%, black) was a shade darker than
+   * the accent and nothing guaranteed it cleared a contrast floor. */
   --warm-soft: color-mix(in oklch, var(--brand) 16%, var(--card));
-  --warm-strong: color-mix(in oklch, var(--brand) 88%, black);
+  --warm-strong: var(--brand-ink);
   /* New-session hero wash — the warm gradient pooling at the bottom of the
    * intro screen, with a 1px inset rim that keeps its edge crisp against the
    * shell. The brand tint works over both cards (a subtle glow in dark), but
@@ -275,13 +321,20 @@
    * black wash so the backdrop actually dims what's behind it. */
   --scrim: color-mix(in oklch, var(--foreground) 12%, transparent);
 
-  /* Motion ----------------------------------------------------------- */
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
-  --t-fast: 100ms;
-  --t-med: 160ms;
-  --t-slow: 240ms;
+  /* Motion -----------------------------------------------------------
+   * The names are the app's; the curves are the charter's. --ease-spring was
+   * already exactly the iOS drawer curve, so only the first two moved: both
+   * were a touch too gentle to read as deliberate at these durations.
+   *
+   * There is no --ease-in on purpose. An ease-in starts slow, which delays the
+   * exact instant the user is watching; ease-out at 200ms feels faster than
+   * ease-in at 200ms. Keep src/lib/motion.ts in lockstep with these three. */
+  --ease-out: var(--sr-ease-out);
+  --ease-in-out: var(--sr-ease-in-out);
+  --ease-spring: var(--sr-ease-drawer);
+  --t-fast: var(--sr-t-fast);
+  --t-med: var(--sr-t-med);
+  --t-slow: var(--sr-t-slow);
   transition: --brand 220ms var(--ease-out);
 
   /* Shadows ---------------------------------------------------------- */
@@ -332,41 +385,63 @@
   }
 }
 
-/* Dark theme — port of Fellow's .dark sheet. Always applied via the
- * `data-theme` attribute (set by src/lib/theme.ts and by the inline
- * pre-paint script in index.html), regardless of system preference. */
-[data-theme="dark"] {
+/* Dark theme. Normally applied via the `data-theme` attribute on the root
+ * element (set by src/lib/theme.ts and by the inline pre-paint script in
+ * index.html), regardless of system preference.
+ *
+ * The second selector re-grounds one subtree rather than the document: the
+ * mobile chat's opening plays a dark image behind the greeting, and everything
+ * standing on it has to read on ink whatever theme the app is in. It is listed
+ * here, instead of restating a palette in mobile.css, so the two can never
+ * drift.
+ *
+ * One catch, and src/test/chat-ambient-theme.test.ts is the guard for it:
+ * tokens DERIVED from these (--brand-tint and friends) are declared once on
+ * :root and computed there, so they do not re-derive in a subtree. Those four
+ * are redeclared alongside the ambient rules in mobile.css. */
+[data-theme="dark"],
+.mobile-chat[data-ambient="true"] {
   color-scheme: dark;
 
   /* Same hue, far less of it: a light wash over near-black reads as a block of
    * colour rather than a highlight, and swallows the text. */
   --note-highlight: oklch(72% 0.13 96 / 30%);
 
-  /* Same wash as light, a touch stronger since a tint reads less against
-   * near-black. Foregrounds + alpha hairlines stay neutral. */
-  --background: color-mix(in oklch, oklch(0.165 0.0015 84.59), var(--brand) 6%);
-  --foreground: oklch(0.985 0.0015 84.59);
-  --card: color-mix(in oklch, oklch(0.195 0.0015 84.59), var(--brand) 6%);
-  --card-foreground: oklch(0.985 0.0015 84.59);
-  --popover: color-mix(in oklch, oklch(0.195 0.0015 84.59), var(--brand) 6%);
-  --popover-foreground: oklch(0.985 0.0015 84.59);
+  /* The ground is Carpe Diem's ink (--sr-ink), with the same wash as light but
+   * a touch stronger since a tint reads less against near-black. Foregrounds +
+   * alpha hairlines stay neutral. */
+  --background: color-mix(in oklch, oklch(0.1448 0 89.88), var(--brand) 6%);
+  --foreground: oklch(0.9791 0 89.88);
+  --card: color-mix(in oklch, oklch(0.1913 0 89.88), var(--brand) 6%);
+  --card-foreground: oklch(0.9791 0 89.88);
+  --popover: color-mix(in oklch, oklch(0.1913 0 89.88), var(--brand) 6%);
+  --popover-foreground: oklch(0.9791 0 89.88);
   --primary: oklch(0.86 0.008 84.59);
-  --primary-foreground: oklch(0.216 0.0015 84.59);
+  --primary-foreground: oklch(0.1448 0 89.88);
   --secondary: color-mix(in oklch, oklch(0.268 0.0015 84.59), var(--brand) 7%);
-  --secondary-foreground: oklch(0.985 0.0015 84.59);
+  --secondary-foreground: oklch(0.9791 0 89.88);
   --muted: color-mix(in oklch, oklch(0.268 0.0015 84.59), var(--brand) 7%);
-  --muted-foreground: oklch(0.709 0.0015 84.59);
+  --muted-foreground: oklch(0.683 0 89.88);
   --accent: color-mix(in oklch, oklch(0.268 0.0015 84.59), var(--brand) 7%);
-  --accent-foreground: oklch(0.985 0.0015 84.59);
-  --destructive: oklch(0.704 0.191 22.216);
+  --accent-foreground: oklch(0.9791 0 89.88);
+  /* Imperial red is a fill and a rule here, never text: #8b1a1a measures
+   * 2.13:1 against this ground, which is unreadable. --destructive is the
+   * lifted tone (--sr-imperial-on-ink, 10.02:1); --destructive-soft keeps the
+   * deep red for the surface behind it. */
+  --destructive: oklch(0.7944 0.0892 19.23);
   --destructive-soft: oklch(0.3 0.08 22 / 40%);
-  --success: oklch(0.72 0.14 150);
+  --success: oklch(0.773 0.1449 147.57);
+  --warning: oklch(0.7676 0.1221 75.8);
+  --info: oklch(0.7484 0.0686 243.39);
+  --code-keyword: var(--sr-code-keyword-on-ink);
+  --code-string: var(--sr-code-string-on-ink);
+  --code-number: var(--sr-code-number-on-ink);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(1 0 0 / 18%);
 
-  --sidebar: color-mix(in oklch, oklch(0.14 0.0015 84.59), var(--brand) 6%);
-  --sidebar-foreground: oklch(0.985 0.0015 84.59);
+  --sidebar: color-mix(in oklch, oklch(0.115 0 89.88), var(--brand) 6%);
+  --sidebar-foreground: oklch(0.9791 0 89.88);
   --sidebar-accent: color-mix(in oklch, oklch(0.22 0.0015 84.59), var(--brand) 7%);
   --sidebar-border: oklch(1 0 0 / 8%);
   /* Dark --border is already an 8-10% white alpha, so the light-mode
@@ -376,9 +451,12 @@
   --body-copy: color-mix(in oklch, var(--foreground) 88%, var(--muted-foreground));
   --popover-border: color-mix(in oklch, white 12%, transparent);
   /* Dark inverts the roles: a deep brand-tinted surface + a lifted brand
-   * foreground. Both still derive from --brand so theming cascades. */
+   * foreground. Both still derive from --brand so theming cascades.
+   * --warm-strong stays an alias of --brand-ink; only the recipe flips, mixing
+   * toward white instead of black. */
+  --brand-ink: color-mix(in oklch, var(--brand) var(--sr-ink-mix-dark), white);
   --warm-soft: color-mix(in oklch, var(--brand) 30%, var(--card));
-  --warm-strong: color-mix(in oklch, var(--brand) 55%, white);
+  --warm-strong: var(--brand-ink);
   /* See the light-theme note: the wash tint carries over, the rim becomes a
    * faint white inner highlight (kin to this theme's --shadow-inset). */
   --hero-wash-rim: oklch(100% 0 none / 8%);

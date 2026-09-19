@@ -20,6 +20,7 @@
   --fs-lg: calc(16px * var(--dynamic-type, 1));
   --fs-xl: calc(18px * var(--dynamic-type, 1));
   --fs-2xl: calc(22px * var(--dynamic-type, 1));
+  --fs-display: calc(34px * var(--dynamic-type, 1));
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   position: fixed;
@@ -451,9 +452,10 @@
  * preview rather than competing with it. */
 .mobile-note-row-duration {
   flex-shrink: 0;
-  /* Proportional figures on purpose: ABC Diatype's tabular default puts a
-   * fixed-width cell around each digit, which strands "8" from "min". Nothing
-   * here lines up in a column, so the prose figures are the right ones. */
+  /* Proportional figures on purpose: a fixed-width cell around each digit
+   * strands "8" from "min". Nothing here lines up in a column, so the prose
+   * figures are the right ones. Stated rather than inherited, so a change of
+   * typeface cannot quietly turn this column-ish. */
   font-variant-numeric: proportional-nums;
   color: var(--muted-foreground);
 }
@@ -1097,6 +1099,88 @@
 .mobile-chat {
   display: flex;
   flex-direction: column;
+  /* The ambient ground is positioned against this. */
+  position: relative;
+}
+
+/* iOS zooms the page when focus lands on a control whose text is under 16px,
+ * and it does not zoom back out on blur — the person is left looking at a
+ * cropped, drifted layout. The shell's body scale is 15px, so every control
+ * gets the floor explicitly.
+ *
+ * This is the fix; `user-scalable=no` in the viewport meta was the symptom
+ * being hidden, and blocking zoom is an accessibility failure. The two changes
+ * belong together: remove the flag without this and the zoom comes back.
+ *
+ * Gated on a coarse pointer so the desktop preview (?mobile=1) keeps the scale
+ * it is designed at. */
+@media (pointer: coarse) {
+  .mobile-shell input,
+  .mobile-shell textarea,
+  .mobile-shell select {
+    font-size: max(16px, var(--fs-md));
+  }
+}
+
+/* --- The opening ground (see components/mobile/ChatAmbient.tsx) ------------
+ *
+ * Light through water, behind the greeting, for as long as the chat is empty.
+ * It is a hero section, so it brings its own ground: everything over it reads
+ * on ink whatever theme the app is in, which is what the token block below
+ * does. The alternative — tinting the video to the theme — would have made a
+ * cream-mode screen that is neither the image nor the palette.
+ */
+
+.mobile-chat-ambient {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity var(--t-slow) var(--ease-out);
+}
+
+/* The chat has arrived: the ground leaves the way it came, and the element is
+ * dropped once this has run. */
+.mobile-chat-ambient[data-leaving="true"] {
+  opacity: 0;
+}
+
+.mobile-chat-ambient-clip,
+.mobile-chat-ambient-still {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* The still is a background-image, so it needs the same framing rules. */
+  background-position: center;
+  background-size: cover;
+}
+
+/* The clip is graded at encode time — a measured veil over its bright upper
+ * band, nothing below the halfway line — so that white type clears 4.5:1
+ * everywhere on it. Baked in rather than stacked in CSS: one layer instead of
+ * three, no banding on a wide gradient, and the poster matches the video
+ * exactly instead of being a lighter still under the same overlay.
+ *
+ * This is the one thing CSS still has to do. `object-fit: cover` crops the
+ * long edge, so on a viewport wider than the clip's 9:16 it takes a bite out
+ * of the top and bottom and the baked gradient no longer lines up with the
+ * frame. A light pool of ink at the foot keeps the composer settled whatever
+ * the crop, and is too faint to read as a second veil when it does line up. */
+.mobile-chat-ambient-scrim {
+  position: absolute;
+  inset: auto 0 0;
+  height: 26%;
+  background: linear-gradient(to top, oklch(0.1448 0 89.88 / 45%), transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-chat-ambient {
+    transition: none;
+  }
 }
 
 .mobile-chat-scroll {
@@ -1474,15 +1558,20 @@
   font-size: var(--fs-sm);
 }
 
+/* Destructive, and quiet about it. This read `var(--danger, #e5484d)`, and
+ * --danger has never existed in this app — so the button has always been a
+ * bright red from another palette. The state pair adapts per ground on its
+ * own, which a solid fill could not: the dark theme's --destructive is a
+ * lifted tone meant to carry text, and white on it is unreadable. */
 .mobile-studio-delete-selected {
   min-height: 34px;
   padding: 0 var(--sp-4);
   border-radius: var(--r-pill);
-  border: none;
-  background: var(--danger, #e5484d);
-  color: #fff;
+  border: 1px solid var(--destructive-soft);
+  background: var(--destructive-soft);
+  color: var(--destructive);
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--fw-medium);
   cursor: pointer;
 }
 
@@ -1960,19 +2049,35 @@
   color: var(--foreground);
   font-size: var(--fs-md);
   text-align: center;
+  /* Feedback on press, not on release. A button that only changes on click
+   * responds when the finger leaves, which reads as lag even at 0ms. */
+  transition:
+    transform var(--t-fast) var(--ease-out),
+    background-color var(--t-fast) var(--ease-out);
 }
 
 .mobile-chat-suggestion:active {
   background: var(--muted);
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-chat-suggestion {
+    transition: background-color var(--t-fast) var(--ease-out);
+  }
+
+  .mobile-chat-suggestion:active {
+    transform: none;
+  }
 }
 
 /* --- Simple markdown (chat bubbles) --------------------------------------------- */
 
-/* ABC Diatype's default figures are tabular (wide fixed-width cells), which
- * strands the dot with air around it in numbered-list markers and decimals
- * ("3 .", "0 . 46"). Prose reads better in proportional figures anyway, and
- * font-variant-numeric is inherited and honored by the decimal ::marker, so
- * this closes the gap for both the marker and body text. */
+/* Prose reads in proportional figures: tabular cells (wide, fixed-width)
+ * strand the dot with air around it in numbered-list markers and decimals
+ * ("3 .", "0 . 46"). font-variant-numeric is inherited and honored by the
+ * decimal ::marker, so this covers both the marker and body text. Asserted
+ * rather than left to the typeface's default, which has changed once already. */
 .simple-markdown {
   font-variant-numeric: proportional-nums;
   font-feature-settings:
@@ -2084,26 +2189,14 @@
   font-style: italic;
 }
 .simple-markdown .tok-string {
-  color: #46a758;
+  color: var(--code-string);
 }
 .simple-markdown .tok-number {
-  color: #d5901f;
+  color: var(--code-number);
 }
 .simple-markdown .tok-keyword {
-  color: #8e6fd8;
-  font-weight: 600;
-}
-
-@media (prefers-color-scheme: dark) {
-  .simple-markdown .tok-string {
-    color: #6fce7e;
-  }
-  .simple-markdown .tok-number {
-    color: #e0a852;
-  }
-  .simple-markdown .tok-keyword {
-    color: #b79cf0;
-  }
+  color: var(--code-keyword);
+  font-weight: var(--fw-medium);
 }
 
 /* Pipe tables: scroll horizontally rather than overflow the bubble. */
@@ -2142,9 +2235,9 @@
   background: var(--brand-tint);
   color: var(--foreground);
   font-size: var(--fs-xs);
-  /* Proportional (not tabular) figures: ABC Diatype's tabular cells leave the
-   * decimal dots stranded ("0 . 46 credits · x0 . 93"). The pill sizes to its
-   * content, so the width jitter tabular-nums would prevent is a non-issue. */
+  /* Proportional (not tabular) figures: tabular cells leave the decimal dots
+   * stranded ("0 . 46 credits · x0 . 93"). The pill sizes to its content, so
+   * the width jitter tabular-nums would prevent is a non-issue. */
   font-variant-numeric: proportional-nums;
   font-feature-settings:
     "tnum" 0,
@@ -2399,7 +2492,11 @@
 }
 
 .mobile-action-sheet-item[data-destructive] .mobile-sheet-item-title {
-  color: var(--record);
+  /* --destructive, not --record: the recorder's red says "recording", and it
+   * is tuned to be a filled disc rather than text — it reads 3.97:1 here,
+   * under the charter's floor. --destructive is the state colour, and it has a
+   * value per ground. */
+  color: var(--destructive);
 }
 
 .mobile-action-sheet-cancel {
@@ -3063,8 +3160,8 @@
 
 .mobile-chat-hero-mark {
   display: inline-flex;
-  width: 44px;
-  height: 44px;
+  width: 56px;
+  height: 56px;
 }
 
 .mobile-chat-hero-mark svg {
@@ -3072,18 +3169,84 @@
   height: 100%;
 }
 
+/* The one moment on this screen that gets the serif, and the only place in the
+ * mobile shell that uses display size. Tracking is negative because letters
+ * drift apart as type grows, and Cormorant drifts further than most. */
 .mobile-chat-hero-greeting {
   margin: 0;
   font-family: var(--font-serif);
-  font-weight: 400;
-  font-size: var(--fs-2xl);
+  font-weight: 500;
+  font-size: var(--fs-display);
+  line-height: var(--leading-display);
+  letter-spacing: var(--tracking-display);
   color: var(--foreground);
 }
 
 .mobile-chat-hero-hint {
   margin: 0;
-  font-size: var(--fs-sm);
+  max-width: 34ch;
+  font-size: var(--fs-lg);
+  line-height: 1.45;
+  /* Two even lines rather than a long one and an orphan. */
+  text-wrap: balance;
   color: var(--muted-foreground);
+}
+
+/* The opening arrives in order — mark, greeting, line, then the three
+ * openers — rather than all at once. 50ms apart: longer reads as slow, and a
+ * group entrance is decorative, so nothing here blocks a tap while it plays.
+ * A first chat is a rare screen, which is where the delight budget lives; the
+ * tab bar, seen a hundred times a day, animates nothing.
+ *
+ * The four children are named rather than matched with `> *`: a universal
+ * selector is less specific than every class before it in the file, so it can
+ * never be ordered correctly, and naming them says which four actually stagger.
+ * The block sits after all four base rules for the same reason. */
+.mobile-chat-hero-mark,
+.mobile-chat-hero-greeting,
+.mobile-chat-hero-hint,
+.mobile-chat-suggestions {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: mobile-hero-in var(--t-slow) var(--ease-out) forwards;
+}
+
+/* Reduced motion keeps the arrival legible and drops the travel. Only the
+ * animation NAME is swapped, never `animation: none` — the shorthand would
+ * also clear the per-child delay below. */
+@media (prefers-reduced-motion: reduce) {
+  .mobile-chat-hero-mark,
+  .mobile-chat-hero-greeting,
+  .mobile-chat-hero-hint,
+  .mobile-chat-suggestions {
+    transform: none;
+    animation-name: mobile-hero-fade;
+  }
+}
+
+.mobile-chat-hero-greeting {
+  animation-delay: 50ms;
+}
+
+.mobile-chat-hero-hint {
+  animation-delay: 100ms;
+}
+
+.mobile-chat-suggestions {
+  animation-delay: 150ms;
+}
+
+@keyframes mobile-hero-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mobile-hero-fade {
+  to {
+    opacity: 1;
+  }
 }
 
 .mobile-chat-composer-card {
@@ -3228,6 +3391,90 @@
 
 .mobile-chat-attachments {
   padding: var(--sp-2) var(--mobile-gutter) 0;
+}
+
+/* --- The opening ground: what stands on it ---------------------------------
+ *
+ * Placed here, after every base rule it overrides, rather than next to the
+ * ground itself. An override that precedes what it overrides works by
+ * specificity alone, which is the thing that makes a long stylesheet stop
+ * being readable — and Biome's descending-specificity rule is right to say so.
+ */
+
+/* The screen's own chrome rides above the ground. */
+.mobile-chat > .mobile-stack-header,
+.mobile-chat > .mobile-chat-scroll,
+.mobile-chat > .mobile-chat-composer-stack {
+  position: relative;
+  z-index: 1;
+}
+
+/* The palette for this subtree comes from tokens.css, which lists
+ * `.mobile-chat[data-ambient="true"]` alongside `[data-theme="dark"]`.
+ *
+ * What has to be repeated here is the handful of tokens DERIVED from those —
+ * a custom property is computed on the element that declares it, so anything
+ * `:root` builds out of --card, --muted or --foreground keeps its light value
+ * inside a subtree no matter what the subtree says. Redeclaring them here
+ * re-derives them against the ink palette. src/test/chat-ambient-theme.test.ts
+ * fails if a fifth one appears and is not listed. */
+.mobile-chat[data-ambient="true"] {
+  --brand-tint: color-mix(in oklch, var(--brand) 12%, var(--card));
+  --brand-tint-strong: color-mix(in oklch, var(--brand) 20%, var(--card));
+  --ring-focus: color-mix(in oklch, var(--foreground) 30%, transparent);
+  --surface-subtle: color-mix(in oklch, var(--muted) 65%, transparent);
+  /* Vibrancy: a flat grey has no room on this ground. The clip's own light
+   * means nothing quieter than #d6d6d6 clears 4.5:1 even where it is darkest,
+   * and nothing but white clears it in the bright band. So the secondary tone
+   * is lifted here, and quietness comes from size rather than from lightness. */
+  --muted-foreground: #d6d6d6;
+  /* Redeclaring --foreground is not enough for anything that INHERITS its
+   * colour rather than reading the token: `color` came down from body, which
+   * resolved the light value long before this subtree changed the token. The
+   * header title is the one that gives it away, dark on the brightest part of
+   * the image. Re-stating `color` here restarts inheritance from the ink
+   * palette for the whole subtree. */
+  color: var(--foreground);
+}
+
+.mobile-chat[data-ambient="true"] .mobile-chat-composer-card,
+.mobile-chat[data-ambient="true"] .mobile-chat-suggestion {
+  background: oklch(1 0 0 / 8%);
+  border: 1px solid oklch(1 0 0 / 16%);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  /* Vibrancy: a flat grey over a changing background loses its edges. Slightly
+   * heavier and slightly tracked-out text holds up where a lighter weight
+   * would dissolve into the light. */
+  color: var(--sr-on-ink);
+}
+
+.mobile-chat[data-ambient="true"] .mobile-chat-suggestion {
+  font-weight: var(--fw-medium);
+}
+
+/* The one line of secondary text that stands directly on the image rather than
+ * on a surface, and it sits in its brightest band. Even the lifted tone above
+ * does not clear the floor there, so it takes the full foreground and stays
+ * quiet by being small. */
+.mobile-chat[data-ambient="true"] .mobile-chat-hero-hint {
+  color: var(--foreground);
+}
+
+.mobile-chat[data-ambient="true"] .mobile-chat-composer-card {
+  box-shadow: 0 8px 28px oklch(0 0 0 / 28%);
+}
+
+/* prefers-reduced-transparency asks for frostier, not more see-through: the
+ * glass becomes a solid dark surface and the blur goes. The component also
+ * drops the <video> for its poster under the same query. */
+@media (prefers-reduced-transparency: reduce) {
+  .mobile-chat[data-ambient="true"] .mobile-chat-composer-card,
+  .mobile-chat[data-ambient="true"] .mobile-chat-suggestion {
+    background: oklch(0.1913 0 89.88 / 96%);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 /* --- Memory settings ------------------------------------------------------------ */

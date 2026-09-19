@@ -29,10 +29,10 @@
   --border: oklch(1 0 0 / 12%);
   --destructive: oklch(0.704 0.191 22.216);
   --success: oklch(0.72 0.14 150);
-  /* The selected accent, defaulting to dusty rose. subscribeBrand() (see
+  /* The selected accent, defaulting to the house gold. subscribeBrand() (see
    * src/lib/brand.ts) overrides this from the stored preference and live-syncs
    * it when the accent changes in the main window. */
-  --brand: #936862;
+  --brand: #c9973f;
   /* The accent lifted for legibility on the dark glass — derived from --brand
    * so the June mark + shimmer track the selected accent. */
   --attention: color-mix(in oklch, var(--brand) 62%, white);

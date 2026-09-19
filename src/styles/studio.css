@@ -25,7 +25,7 @@
   margin: 0;
   font-family: var(--font-serif);
   font-size: var(--fs-display);
-  font-weight: 400;
+  font-weight: var(--fw-medium);
   color: var(--foreground);
   /* Display type: size-derived negative tracking + tight leading. */
   letter-spacing: var(--tracking-display);

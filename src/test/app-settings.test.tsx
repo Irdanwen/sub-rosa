@@ -5,6 +5,7 @@ import { AppSettings } from "../components/settings/AppSettings";
 import type { DictationSettingsDto } from "../lib/tauri";
 import { APP_COMMIT_HASH, APP_VERSION } from "../app/build-info";
 import { AGENT_HUD_ENABLED_KEY } from "../lib/agent-hud-settings";
+import { BRAND_PRESETS, DEFAULT_BRAND } from "../lib/brand";
 import { MESSAGING_PLATFORMS_LOAD_TIMEOUT_MS } from "../lib/hermes-messaging";
 import { PROVIDER_MODEL_SETTINGS_CHANGED_EVENT } from "../lib/model-privacy";
 
@@ -395,6 +396,9 @@ describe("AppSettings", () => {
     });
   });
 
+  const defaultAccentLabel =
+    BRAND_PRESETS.find((preset) => preset.id === DEFAULT_BRAND)?.label ?? "";
+
   it("shows an accent reset button after choosing a non-default accent", () => {
     vi.useFakeTimers();
     try {
@@ -413,7 +417,9 @@ describe("AppSettings", () => {
         }),
       ).not.toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole("button", { name: "Accent color: Rose. Change" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: `Accent color: ${defaultAccentLabel}. Change` }),
+      );
       fireEvent.click(screen.getByRole("radio", { name: "Clay" }));
 
       act(() => {
@@ -436,9 +442,9 @@ describe("AppSettings", () => {
 
       fireEvent.click(resetButton);
 
-      expect(localStorage.getItem("os-june:brand")).toBe("rose");
+      expect(localStorage.getItem("os-june:brand")).toBe(DEFAULT_BRAND);
       expect(
-        screen.getByRole("button", { name: "Accent color: Rose. Change" }),
+        screen.getByRole("button", { name: `Accent color: ${defaultAccentLabel}. Change` }),
       ).toBeInTheDocument();
       expect(
         screen.queryByRole("button", {

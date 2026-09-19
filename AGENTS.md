@@ -409,6 +409,27 @@ the Spec Kit workflow skills (`speckit-*`). `make skills-update` /
 `skills-restore` / `skills-sync` (thin wrappers over `npx skills`) refresh,
 restore from the lockfile, or re-link them.
 
+**Design and motion** come from a second vendored set
+([emilkowalski/skills](https://github.com/emilkowalski/skills)): `animate` and
+its `RECIPES.md`, `review-animations` (+ `STANDARDS.md`), `improve-animations`,
+`find-animation-opportunities`, `animation-vocabulary`, `emil-design-eng`,
+`apple-design`, `mobile-native`, `pick-ui-library`, `prototype`, `ask-sonner`,
+`animate-expo` and `write-swift`. The two that bind day to day:
+
+- **`animate` / `review-animations`** hold the curve and duration tables that
+  [`packages/design/primitives.css`](packages/design/primitives.css) implements.
+  Before adding motion, run their gate: what is it for, and how often is it
+  seen? Something seen a hundred times a day gets none.
+- **`mobile-native`** is the platform layer for the phone shells — hover gating,
+  tap highlight, `dvh`, 16px inputs, `touch-action`, safe areas. Its hard rule
+  that matters most here: **test on real hardware**, because none of what it
+  covers reproduces in a simulator or in device emulation.
+
+`animate-expo` and `write-swift` are inert for this repo (no React Native; the
+Swift helpers are small), and `ask-sonner` describes a library the app does not
+use — they come with the set and are left in place rather than pruned, so an
+upstream refresh is a clean pull.
+
 ## Build, test, lint
 
 Package manager: `pnpm`, and `pnpm-lock.yaml` is the only lockfile

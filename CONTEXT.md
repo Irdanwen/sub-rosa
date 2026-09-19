@@ -985,6 +985,36 @@ live runtime or executing a task on a hosted service.
 **Execution owner**: the device authorised to advance a particular task. Sharing
 its progress does not authorise every receiving device to run that task again.
 
+## Charter vocabulary
+
+The visual charter is [docs/design/charte.md](docs/design/charte.md); the values
+live in `packages/design/primitives.css`, and
+[ADR-0052](docs/adr/0052-the-surfaces-share-primitives-not-a-stylesheet.md) says
+why they are shared as values rather than as a stylesheet.
+
+**Display gold** — the recognisable gold (`--sr-gold-display`). Ornament, rules,
+seals, very large display type, and the whole dark theme. It is a surface and a
+shape; it never carries body text on the light ground, where it measures 2.32:1.
+_Avoid:_ calling it "the accent" without saying which of the two.
+
+**Ink gold** — the same family pushed until it carries text (`--sr-gold-ink`):
+links, emphasised labels, button fills. In the apps it is `--brand-ink`, derived
+from whatever accent is selected so the Appearance wheel cannot produce an
+unreadable one.
+
+**Accent** — the one themeable colour a person picks in Appearance (`--brand`).
+Distinct from both golds: it is the input the two are read or derived from.
+_Avoid:_ "brand colour" (the mark and the app icon are fixed; the accent is not).
+
+**Ground** — the surface a screen is composed on: cream or ink. A screen may
+bring its own, which is what the chat's opening does.
+_Avoid:_ "background" when you mean which of the two palettes applies.
+
+**The opening** — the mobile chat's empty state: the ambient clip, the greeting,
+and the three openers. It exists only while the chat is empty and leaves at the
+first message.
+_Avoid:_ "splash" (it is not a loading screen; it is the chat), "hero" in UI copy.
+
 ## Flagged ambiguities
 
 - **"proxy"** usually means **June API** (the thing in front of OpenAI /

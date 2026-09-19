@@ -4,44 +4,41 @@
  * uses the tokens must import this file or it silently falls back to
  * system fonts. Faces only download once a rule uses them, so unused
  * families cost nothing on small overlay pages.
+ *
+ * The three families are the charter's (docs/design/charte.md): the same
+ * files, the same latin subsets, that the website serves. All three are
+ * open-licensed — the licences sit next to the files in public/fonts/ — which
+ * is also why they can live in a public repository at all.
  */
 
 @font-face {
-  font-family: "ABC Diatype";
-  src: url("/ABCDiatype-Regular.woff2") format("woff2");
-  font-weight: 400;
+  font-family: Inter;
+  src: url("/fonts/inter-latin.woff2") format("woff2");
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "ABC Diatype";
-  src: url("/ABCDiatype-Medium.woff2") format("woff2");
-  font-weight: 600;
+  font-family: "Cormorant Garamond";
+  src: url("/fonts/cormorant-garamond-latin.woff2") format("woff2");
+  font-weight: 400 700;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Martina Plantijn";
-  src: url("/martina-plantijn-light.woff2") format("woff2");
-  font-weight: 300 400;
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains-mono-latin.woff2") format("woff2");
+  font-weight: 100 800;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Berkeley Mono";
-  src: url("/BerkeleyMono-Regular.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Berkeley Mono";
-  src: url("/BerkeleyMono-Oblique.woff2") format("woff2");
-  font-weight: 400;
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains-mono-latin-italic.woff2") format("woff2");
+  font-weight: 100 800;
   font-style: italic;
   font-display: swap;
 }

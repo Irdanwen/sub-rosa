@@ -1,3 +1,8 @@
+/* The charter's values (docs/design/charte.md, ADR-0052). The site keeps its
+   own semantics — flat hex, no accent picker, theme by media query — and takes
+   only the values from the shared primitives, exactly as the apps do. */
+@import "@subrosa/design/primitives.css";
+
 @font-face {
   font-family: Inter;
   font-style: normal;
@@ -13,23 +18,25 @@
   src: url("/fonts/cormorant-garamond-latin.woff2") format("woff2");
 }
 :root {
-  /* CarpeDiem/frontend/app/globals.css: Roman Editorial Luxe palette.
-     Website tokens are independent of the native apps' visual theme. */
-  --font-body: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Cormorant Garamond", Georgia, serif;
-  --background: #f7f4ed;
-  --foreground: #1a1815;
-  --muted: #4f4b44;
-  --brand: #6f471b;
-  --brand-hover: #583612;
-  --surface: #fdfbf7;
+  --font-body: var(--sr-font-sans);
+  --font-display: var(--sr-font-serif);
+  --background: var(--sr-cream);
+  --foreground: var(--sr-on-cream);
+  --muted: var(--sr-on-cream-muted);
+  /* Ink gold, not display gold: every use of --brand here carries text or is a
+     button fill. Display gold measures 2.32:1 on this ground. */
+  --brand: var(--sr-gold-ink);
+  --brand-hover: var(--sr-gold-ink-hover);
+  --surface: var(--sr-cream-raised);
   --border: #e0d9ce;
   --border-hover: #c4bab0;
+  /* The gold wash is display gold on purpose — it is a tint behind content,
+     never a foreground. */
   --accent-faint: rgb(201 151 63 / 7%);
   --accent-line: rgb(201 151 63 / 25%);
   --halo-top: rgb(201 151 63 / 10%);
   --halo-bottom: rgb(201 151 63 / 7%);
-  --danger: #8b1a1a;
+  --danger: var(--sr-danger);
   --danger-surface: rgb(139 26 26 / 8%);
   --danger-border: rgb(139 26 26 / 35%);
   --radius: 12px;
@@ -38,25 +45,27 @@
   color: var(--foreground);
   background: var(--background);
   font-synthesis: none;
-  line-height: 1.6;
+  line-height: var(--sr-leading-body);
   font-size: 16px;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #121312;
-    --foreground: #f8f8f8;
+    --background: var(--sr-ink);
+    --foreground: var(--sr-on-ink);
     --muted: #beb7ac;
-    --brand: #e8d5b5;
-    --brand-hover: #d4c4a0;
-    --surface: #1a1b19;
+    --brand: var(--sr-gold-ink-dark);
+    --brand-hover: var(--sr-gold-ink-dark-hover);
+    --surface: var(--sr-ink-raised);
     --border: #333333;
     --border-hover: #56514a;
     --accent-faint: rgb(232 213 181 / 6%);
     --accent-line: rgb(232 213 181 / 20%);
     --halo-top: rgb(232 213 181 / 5%);
     --halo-bottom: rgb(232 213 181 / 8%);
-    --danger: #f0a5a5;
+    /* Imperial red is unreadable on this ground (2.13:1); the lifted tone
+       carries the words. */
+    --danger: var(--sr-danger-on-ink);
     --danger-surface: rgb(139 26 26 / 15%);
     --danger-border: #9b5050;
     color-scheme: dark;
@@ -71,7 +80,7 @@ body {
     radial-gradient(circle at 50% 0%, var(--halo-top), transparent 35%),
     radial-gradient(circle at 0% 100%, var(--halo-bottom), transparent 28%), var(--background);
   -webkit-font-smoothing: antialiased;
-  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  font-feature-settings: var(--sr-font-features-sans);
 }
 ::selection {
   background: var(--accent-line);
@@ -315,7 +324,7 @@ h2 {
 }
 .page {
   padding-block: 60px 100px;
-  min-height: 60vh;
+  min-height: 60svh;
 }
 .page h1 {
   font-size: 52px;
