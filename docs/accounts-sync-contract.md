@@ -58,7 +58,7 @@ Refresh consumes its token once and stores the next hash in the same transaction
 }
 ```
 
-`resolved_revisions` is optional and defaults to `[]`. A push has 1 to 100 operations, at most four MiB of ciphertext in total and at most one MiB of ciphertext per operation. Unknown kinds, invalid UUIDs or more than 64 resolution acknowledgements are rejected. Kinds are `note`, `folder`, `transcript`, `memory`, `conversation`, `settings`, `usage`, `artifact`, `tombstone`; `kind` is a routing class, never a title.
+`resolved_revisions` is optional and defaults to `[]`. A push has 1 to 100 operations, at most four MiB of ciphertext in total and at most one MiB of ciphertext per operation. Unknown kinds, invalid UUIDs or more than 64 resolution acknowledgements are rejected. Kinds are `note`, `folder`, `transcript`, `memory`, `conversation`, `settings`, `usage`, `artifact`, `tombstone`, `errand`; `kind` is a routing class, never a title. `errand` is the one kind whose object is an instruction rather than a record: one device asking another of the same account to fetch a link ([ADR 0054](adr/0054-an-errand-runs-on-the-device-that-has-the-means.md)). It is opaque here like every other kind, the service never runs it, and the device it names ignores it unless that machine's owner switched errands on.
 
 The result is `{ results: [{ operation_id, revision, sequence, conflict }] }`. The server assigns a revision UUID and per-account monotonic sequence. The entire batch is atomic. An identical retry of `(account, operation_id)` returns its original result; changing its authenticated body/ciphertext under that ID returns 409. Freeze the encrypted payload, nonce, parent and operation ID durably before first transmission.
 

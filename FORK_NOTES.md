@@ -1231,3 +1231,45 @@ touche `june-api/` (ADR-0027) ni upstream : le partage vit dans
 serveur l'accepte déjà (jusqu'à 2049 positions), mais un téléversement de
 plusieurs centaines de Mo doit être une **ligne durable** (ADR-0018), pas une
 commande qui tourne deux minutes. Cette ligne n'est pas écrite.
+
+
+## Le coursier : un lien confié à l'appareil qui sait le lire (2026-09-20, ADR-0054)
+
+Le téléphone ne peut pas lire une page de plateforme (`ingest/extractor.rs` est
+`#![cfg(desktop)]`). On ne déplace pas l'extracteur, **on déplace le travail**.
+
+- **Dixième `kind`** : `subrosa-cloud/migrations/0006_errands.sql` reprend la
+  contrainte `revisions_kind_check` (nom réel en base, vérifié) et
+  `crates/domain` ajoute `"errand"` à `KINDS`. Le serveur doit partir **avant**
+  les apps, sinon le push est refusé comme kind inconnu.
+- **App** : `src-tauri/migrations/025_errands.sql` (`account_errands` synchronisée,
+  `account_errand_runs` **jamais** synchronisée), entrée dans `TABLES` de
+  `account/sync.rs`, module `src-tauri/src/errands/`, appel dans
+  `background::sweep` **après** `ingest::resume_unfinished` (la file d'import
+  finit le travail, la passe des courses ne fait que le constater).
+- **5 commandes partagées** dans les deux `generate_handler!`.
+- **Site/UI** : `ImportLinkBar` propose « Envoyer à <appareil> » quand le lien
+  est refusé ici et qu'un autre appareil existe ; `ImportSettingsSection` porte
+  l'interrupteur, à côté de celui de l'extracteur et éteint par défaut.
+
+⚠️ **Le piège central, à ne pas « corriger »** : `account/sync.rs::apply()`
+aplatit tout état entrant (`agent_tasks` → `completed`, `ingests` → `done`) —
+c'est la règle « l'état reçu est de l'histoire » d'ADR-0049. `account_errands`
+en est **délibérément absente**, et un commentaire à cet endroit le dit. Ce qui
+tient l'exception : la course nomme un appareil, la machine doit avoir accepté,
+le registre local `account_errand_runs` la rend à usage unique, et elle périme
+à 7 jours.
+
+⚠️ **Pourquoi un drapeau synchronisé ne suffirait pas** : une ligne peut
+légitimement revenir à `requested` (révision ancienne arrivée tard, conflit
+résolu dans l'autre sens, bibliothèque restaurée). Chacun de ces cas
+rachèterait la même transcription. D'où un registre **local**, écrit **avant**
+tout travail payant. Le test
+`a_second_sweep_cannot_buy_the_same_import_again` est le garde.
+
+**Non fait, et pourquoi** : le chaînage global du journal, que le plan plaçait
+ici. La forme naïve est fausse pour ce produit — deux appareils qui écrivent en
+même temps se chaîneraient chacun sur une tête différente, donc **toute**
+écriture concurrente deviendrait un conflit. Détecter une rétention demande des
+compteurs par appareil et une détection de trous, c'est un chantier à part. Le
+rejeu d'une *course* est fermé par le registre ci-dessus.

@@ -1371,3 +1371,57 @@ async fn a_share_reads_without_a_session_expires_and_gives_its_bytes_back() -> R
     assert_eq!(blobs, 0);
     Ok(())
 }
+
+/// The tenth kind is accepted, carried and returned like any other.
+///
+/// It exists because one device asks another to fetch a link (ADR 0054), and
+/// the whole point is that this side cannot tell: the ciphertext is opaque,
+/// nothing here runs it, and `errand` is a routing class and nothing more. The
+/// test earns its place by proving the migration reached the CHECK constraint
+/// — a typo in the constraint's name would fail only in production, on the
+/// first phone that tried.
+#[tokio::test]
+async fn an_errand_is_carried_like_any_other_kind() -> Result<()> {
+    let f = Fixture::new().await?;
+    let alice = f.login("alice").await?;
+    let object = Uuid::new_v4();
+    let mut errand = operation(object, None, "sealed-errand");
+    errand.kind = "errand".into();
+    let (status, pushed) = f
+        .json(
+            "POST",
+            "/api/v1/sync",
+            &alice,
+            json!({ "operations": [errand] }),
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(pushed["data"]["results"][0]["conflict"], json!(false));
+
+    let (status, page) = f
+        .json("GET", "/api/v1/sync?after=0&kind=errand", &alice, json!({}))
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(page["data"]["changes"][0]["kind"], json!("errand"));
+    assert_eq!(
+        page["data"]["changes"][0]["ciphertext"],
+        json!("sealed-errand")
+    );
+
+    // A kind nobody allowlisted is still refused, so the tenth was added
+    // rather than the gate removed.
+    let mut invented = operation(Uuid::new_v4(), None, "sealed");
+    invented.kind = "instruction".into();
+    assert_eq!(
+        f.json(
+            "POST",
+            "/api/v1/sync",
+            &alice,
+            json!({ "operations": [invented] })
+        )
+        .await?
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    Ok(())
+}

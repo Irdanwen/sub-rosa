@@ -33,6 +33,7 @@ pub mod dictation_mobile;
 pub mod domain;
 pub mod egress;
 pub mod egress_ledger;
+mod errands;
 #[cfg(desktop)]
 pub mod hermes_bridge;
 pub mod hermes_image_fit;
@@ -499,6 +500,11 @@ pub fn run() {
             account::account_sync_resolve_conflict,
             account::account_sync_conflict_preview,
             account::account_revoke_share,
+            errands::errand_cancel,
+            errands::errand_list,
+            errands::errand_request,
+            errands::errand_set_enabled,
+            errands::errand_settings,
             account::account_share_note,
             account::account_shares,
             account::account_vault_share_carpe_diem,
@@ -711,6 +717,11 @@ pub fn run() {
         account::account_sync_resolve_conflict,
         account::account_sync_conflict_preview,
         account::account_revoke_share,
+        errands::errand_cancel,
+        errands::errand_list,
+        errands::errand_request,
+        errands::errand_set_enabled,
+        errands::errand_settings,
         account::account_share_note,
         account::account_shares,
         account::account_vault_share_carpe_diem,

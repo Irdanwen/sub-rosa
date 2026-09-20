@@ -176,6 +176,10 @@ pub const KINDS: &[&str] = &[
     "usage",
     "artifact",
     "tombstone",
+    // The one kind that is an instruction rather than a record: a device asking
+    // another of the same account's devices to fetch a link (ADR 0054). Opaque
+    // here like every other kind; the service neither reads it nor runs it.
+    "errand",
 ];
 
 /// A share as its owner sees it. Nothing here describes what was shared: the

@@ -1000,6 +1000,16 @@ after the `#` is the key, it never reaches the service, and it is what makes
 the link a bearer credential rather than an address.
 _Avoid:_ "share URL" when only the address is meant (half a link opens nothing).
 
+**Errand**: one of your devices asking another of your devices to fetch a
+link, because that one has the extractor and this one cannot
+([ADR-0054](docs/adr/0054-an-errand-runs-on-the-device-that-has-the-means.md)).
+Addressed to a named device, accepted only where its owner switched errands
+on, run once, and perishable. The only synchronised object that is an
+instruction rather than a record.
+_Avoid:_ "job" or "task" (those are Studio's and the agent's, and both are
+records of work already done), "remote import" (nothing is remote: the import
+happens on your own machine), "queue" (an errand is addressed, not taken).
+
 **Web reader**: the account website showing your own notes, read only, decrypted
 in that tab. Same page and same decryptor as the share viewer, different door.
 _Avoid:_ "web app", "web client" (it neither writes nor syncs).

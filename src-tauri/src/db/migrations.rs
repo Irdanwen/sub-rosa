@@ -356,6 +356,12 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
         include_str!("../../migrations/024_shares.sql"),
     )
     .await?;
+    replay(
+        _pool,
+        "025_errands.sql",
+        include_str!("../../migrations/025_errands.sql"),
+    )
+    .await?;
     for table in [
         "account_sync_outbox",
         "account_sync_inbox",

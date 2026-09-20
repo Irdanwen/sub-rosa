@@ -13,6 +13,15 @@ import {
   previewIngestLink,
   startLinkIngest,
 } from "../../lib/tauri";
+import {
+  type Errand,
+  errandCancel,
+  errandList,
+  errandRequest,
+  type ErrandTarget,
+  errandTargets,
+  onErrands,
+} from "../../lib/errands";
 import { DotSpinner } from "../DotSpinner";
 
 /**
@@ -46,6 +55,12 @@ export function ImportLinkBar({
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [ingests, setIngests] = useState<IngestDto[]>([]);
+  // The devices that could read a link this one cannot. Loaded once: the
+  // answer is empty for most people and the list is not worth a request per
+  // keystroke.
+  const [targets, setTargets] = useState<ErrandTarget[]>([]);
+  const [errands, setErrands] = useState<Errand[]>([]);
+  const [sending, setSending] = useState(false);
   const previewToken = useRef(0);
   // Held in a ref so the listener can be mounted once: re-subscribing on every
   // render would drop events in the gap.
@@ -56,6 +71,11 @@ export function ImportLinkBar({
     void listActiveIngests()
       .then(setIngests)
       .catch(() => {});
+    void errandTargets().then(setTargets);
+    void errandList()
+      .then(setErrands)
+      .catch(() => {});
+    return onErrands(setErrands);
   }, []);
 
   useEffect(() => {
@@ -120,7 +140,30 @@ export function ImportLinkBar({
     }
   }, [folderId, starting, url]);
 
+  // Hand the link to a device that can read it. The extractor does not move
+  // and neither does the link: the errand travels encrypted and the other
+  // machine fetches it itself (ADR-0054).
+  const send = useCallback(
+    async (deviceId: string) => {
+      const trimmed = url.trim();
+      if (!trimmed || sending) return;
+      setSending(true);
+      try {
+        await errandRequest(trimmed, deviceId, folderId);
+        setUrl("");
+        setPreview(null);
+        setError(null);
+      } catch (err) {
+        setError(messageFromError(err));
+      } finally {
+        setSending(false);
+      }
+    },
+    [folderId, sending, url],
+  );
+
   const blocked = Boolean(preview && !preview.fetchable);
+  const open = errands.filter((errand) => errand.state !== "done");
 
   return (
     <div className="import-link">
@@ -170,11 +213,36 @@ export function ImportLinkBar({
         <p className="import-link-hint import-link-blocked">{preview.reason}</p>
       ) : null}
 
+      {blocked && targets.length > 0 ? (
+        <div className="import-link-handoff">
+          <p className="import-link-hint">
+            {t("One of your other devices may be able to read it:")}
+          </p>
+          <div className="import-link-targets">
+            {targets.map((target) => (
+              <button
+                key={target.id}
+                type="button"
+                className="primary-action"
+                disabled={sending}
+                onClick={() => void send(target.id)}
+              >
+                {t("Send to {device}", { device: target.name })}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {error ? (
         <p className="import-link-hint import-link-blocked" role="alert">
           {error}
         </p>
       ) : null}
+
+      {open.map((errand) => (
+        <ErrandRow key={errand.id} errand={errand} onDismiss={() => void errandCancel(errand.id)} />
+      ))}
 
       {ingests.map((ingest) => (
         <IngestRow
@@ -183,6 +251,34 @@ export function ImportLinkBar({
           onDiscard={() => void discardIngest(ingest.id)}
         />
       ))}
+    </div>
+  );
+}
+
+/** An errand, from the asking side: who has it, and what came back. */
+function ErrandRow({ errand, onDismiss }: { errand: Errand; onDismiss: () => void }) {
+  const waiting = errand.state === "requested";
+  return (
+    <div className="import-link-row" data-failed={waiting ? undefined : "true"}>
+      {waiting ? <DotSpinner className="import-link-spinner" /> : null}
+      <span className="import-link-label" title={errand.url}>
+        {errand.url}
+      </span>
+      <span className="import-link-status">
+        {errand.state === "requested"
+          ? t("Waiting for your other device")
+          : errand.state === "expired"
+            ? t("Not picked up in time")
+            : (errand.message ?? t("Declined"))}
+      </span>
+      <button
+        type="button"
+        className="import-link-dismiss"
+        aria-label={waiting ? t("Withdraw") : t("Dismiss")}
+        onClick={onDismiss}
+      >
+        <IconCrossMedium size={13} />
+      </button>
     </div>
   );
 }

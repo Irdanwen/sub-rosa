@@ -208,6 +208,25 @@ const TABLES: &[Table] = &[
             "model",
         ],
     },
+    // An errand travels as an ordinary revision: the service carries it without
+    // being able to read the link inside, and the device it names is the only
+    // one that acts on it (ADR-0054).
+    Table {
+        name: "account_errands",
+        kind: "errand",
+        columns: &[
+            "id",
+            "device_id",
+            "url",
+            "folder_id",
+            "requested_by",
+            "requested_at",
+            "state",
+            "note_id",
+            "message",
+            "updated_at",
+        ],
+    },
     Table {
         name: "agent_messages",
         kind: "conversation",
@@ -674,6 +693,15 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
     if t.name == "ingests" {
         row.insert("status".into(), json!("done"));
     }
+    // `account_errands` is deliberately absent from these coercions, and it is
+    // the only table that is. Every other incoming row describes work another
+    // device already did, so arriving in a running state would make this
+    // machine redo it — hence the flattening above. An errand is the opposite:
+    // it is a person asking this device to do something, so flattening it to a
+    // terminal state would be flattening the feature (ADR-0054). What keeps
+    // that safe lives in `crate::errands`: the row names one device, the
+    // machine must have errands switched on, a local unsynchronised ledger
+    // makes it single use, and it perishes after a week.
     if t.name == "recording_sessions" {
         row.insert("status".into(), json!("completed"));
     }

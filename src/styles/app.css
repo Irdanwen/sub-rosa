@@ -24662,3 +24662,17 @@ input:focus-visible,
 .dialog-share-error {
   color: var(--destructive);
 }
+
+/* A link this machine cannot read, offered to one that can (ADR-0054). Sits
+   under the refusal, because the refusal is still the true answer here: the
+   link is not being fetched, it is being handed on. */
+.import-link-handoff {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.import-link-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
