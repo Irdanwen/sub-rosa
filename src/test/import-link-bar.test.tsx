@@ -16,6 +16,19 @@ const mocks = vi.hoisted(() => ({
   startLinkIngest: vi.fn(),
   listActiveIngests: vi.fn(),
   discardIngest: vi.fn(),
+  errandTargets: vi.fn(),
+  errandRequest: vi.fn(),
+  errandList: vi.fn(),
+  errandCancel: vi.fn(),
+}));
+
+vi.mock("../lib/errands", () => ({
+  ERRAND_EVENT: "june://errand",
+  errandTargets: (...args: unknown[]) => mocks.errandTargets(...args),
+  errandRequest: (...args: unknown[]) => mocks.errandRequest(...args),
+  errandList: (...args: unknown[]) => mocks.errandList(...args),
+  errandCancel: (...args: unknown[]) => mocks.errandCancel(...args),
+  onErrands: () => () => {},
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -72,6 +85,10 @@ beforeEach(() => {
   mocks.startLinkIngest.mockReset().mockResolvedValue(ingest());
   mocks.listActiveIngests.mockReset().mockResolvedValue([]);
   mocks.discardIngest.mockReset().mockResolvedValue(undefined);
+  mocks.errandTargets.mockReset().mockResolvedValue([]);
+  mocks.errandRequest.mockReset().mockResolvedValue(undefined);
+  mocks.errandList.mockReset().mockResolvedValue([]);
+  mocks.errandCancel.mockReset().mockResolvedValue(undefined);
 });
 
 describe("ImportLinkBar", () => {
@@ -199,5 +216,76 @@ describe("ImportLinkBar", () => {
     await userEvent.click(await screen.findByRole("button", { name: /stop fetching/i }));
 
     expect(mocks.discardIngest).toHaveBeenCalledWith("ingest-1");
+  });
+});
+
+describe("handing a link to another device", () => {
+  const blocked = () =>
+    preview({
+      url: "https://www.youtube.com/watch?v=x",
+      kind: "platformPage",
+      host: "www.youtube.com",
+      fetchable: false,
+      reason: "www.youtube.com does not publish a file this app can fetch.",
+    });
+
+  it("offers a device that could read what this one cannot", async () => {
+    mocks.previewIngestLink.mockResolvedValue(blocked());
+    mocks.errandTargets.mockResolvedValue([{ id: "device-1", name: "MacBook" }]);
+    render(<ImportLinkBar folderId="folder-7" />);
+
+    await userEvent.type(
+      screen.getByPlaceholderText(/paste a podcast or media link/i),
+      "https://www.youtube.com/watch?v=x",
+    );
+    const send = await screen.findByRole("button", { name: /send to macbook/i });
+    await userEvent.click(send);
+
+    await waitFor(() =>
+      expect(mocks.errandRequest).toHaveBeenCalledWith(
+        "https://www.youtube.com/watch?v=x",
+        "device-1",
+        "folder-7",
+      ),
+    );
+    // The link never leaves this machine by the fetch path: the refusal stands
+    // and nothing was downloaded here.
+    expect(mocks.startLinkIngest).not.toHaveBeenCalled();
+  });
+
+  it("says nothing about other devices when there are none", async () => {
+    mocks.previewIngestLink.mockResolvedValue(blocked());
+    render(<ImportLinkBar />);
+
+    await userEvent.type(
+      screen.getByPlaceholderText(/paste a podcast or media link/i),
+      "https://www.youtube.com/watch?v=x",
+    );
+    expect(
+      await screen.findByText(/does not publish a file this app can fetch/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /send to/i })).not.toBeInTheDocument();
+  });
+
+  it("shows which device is holding an errand, and lets it be withdrawn", async () => {
+    mocks.errandList.mockResolvedValue([
+      {
+        id: "errand-1",
+        deviceId: "device-1",
+        url: "https://www.youtube.com/watch?v=x",
+        folderId: null,
+        requestedBy: "iPhone",
+        requestedAt: new Date().toISOString(),
+        state: "requested",
+        noteId: null,
+        message: null,
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+    render(<ImportLinkBar />);
+
+    expect(await screen.findByText(/waiting for your other device/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /withdraw/i }));
+    expect(mocks.errandCancel).toHaveBeenCalledWith("errand-1");
   });
 });

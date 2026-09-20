@@ -6,6 +6,7 @@ import {
   ingestExtractorStatus,
   ingestSetExtractorEnabled,
 } from "../../lib/tauri";
+import { errandSetEnabled, errandSettings } from "../../lib/errands";
 import { Switch } from "../ui/Switch";
 
 /**
@@ -17,6 +18,7 @@ import { Switch } from "../ui/Switch";
  */
 export function ImportSettingsSection() {
   const [status, setStatus] = useState<ExtractorStatus | null>(null);
+  const [errands, setErrands] = useState<boolean | null>(null);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
 
@@ -24,6 +26,21 @@ export function ImportSettingsSection() {
     void ingestExtractorStatus()
       .then(setStatus)
       .catch((err) => setError(messageFromError(err)));
+    void errandSettings()
+      .then((value) => setErrands(value.enabled))
+      .catch(() => setErrands(false));
+  }, []);
+
+  const toggleErrands = useCallback(async (enabled: boolean) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      setErrands((await errandSetEnabled(enabled)).enabled);
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setBusy(false);
+    }
   }, []);
 
   const toggle = useCallback(async (enabled: boolean) => {
@@ -97,6 +114,27 @@ export function ImportSettingsSection() {
               </div>
             </div>
           ) : null}
+
+          {/* The machine that runs an errand is the machine that pays for it,
+              so the decision belongs here and starts as no (ADR-0054). */}
+          <div className="settings-row">
+            <div className="settings-row-info">
+              <h3 className="settings-row-title">{t("Run links sent from your other devices")}</h3>
+              <p className="settings-row-description">
+                {t(
+                  "Your phone can hand a link to this computer when it cannot read it itself. The link arrives encrypted, this machine fetches it, and the note comes back through your account. It uses this machine's credits, which is why it is off until you say otherwise.",
+                )}
+              </p>
+            </div>
+            <div className="settings-row-control">
+              <Switch
+                checked={errands === true}
+                disabled={errands === null || busy}
+                onCheckedChange={(enabled) => void toggleErrands(enabled)}
+                aria-label={t("Run links sent from your other devices")}
+              />
+            </div>
+          </div>
         </div>
       </div>
 

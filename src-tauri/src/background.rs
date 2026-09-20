@@ -43,6 +43,10 @@ pub async fn sweep(app: &AppHandle) {
     // A link the user pasted whose download never finished. Cross-platform:
     // the desktop gets killed mid-download too.
     crate::ingest::resume_unfinished(app).await;
+    // A link one of your devices asked another to fetch. After the ingest
+    // sweep on purpose: an errand that started before the app died is
+    // finished by that queue, and this pass only has to notice and close it.
+    crate::errands::run_pending(app).await;
     // A long-form summary is a dozen model calls over several minutes, which
     // on iOS is several lifetimes of a foreground session. Cross-platform on
     // purpose: the desktop gets killed too.
