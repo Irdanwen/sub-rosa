@@ -1,0 +1,889 @@
+<meta charset="utf-8">
+<title>Contre-audit Sub Rosa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  :root{
+    color-scheme: light;
+    --ground:#F2EEEA;
+    --raise:#FAF8F6;
+    --sunk:#E8E3DE;
+    --ink:#1C1815;
+    --ink-dim:#5F564F;
+    --ink-faint:#8C8178;
+    --rule:#1C18150F;
+    --rule-firm:#1C181524;
+    --accent:#8A5F59;
+    --accent-wash:#8A5F5914;
+    --true:#3F7A52;
+    --true-wash:#3F7A5216;
+    --false:#B03A34;
+    --false-wash:#B03A3416;
+    --soft:#946012;
+    --soft-wash:#94601216;
+    --serif:"Newsreader",Iowan Old Style,Georgia,serif;
+    --sans:"Instrument Sans",ui-sans-serif,system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,monospace;
+    --measure:68ch;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      color-scheme: dark;
+      --ground:#151211;
+      --raise:#1D1917;
+      --sunk:#100E0D;
+      --ink:#F0EAE4;
+      --ink-dim:#A79D95;
+      --ink-faint:#786D65;
+      --rule:#F0EAE414;
+      --rule-firm:#F0EAE42B;
+      --accent:#C08C83;
+      --accent-wash:#C08C831F;
+      --true:#7FB585;
+      --true-wash:#7FB58520;
+      --false:#E0716A;
+      --false-wash:#E0716A20;
+      --soft:#D5A254;
+      --soft-wash:#D5A25420;
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --ground:#151211;
+    --raise:#1D1917;
+    --sunk:#100E0D;
+    --ink:#F0EAE4;
+    --ink-dim:#A79D95;
+    --ink-faint:#786D65;
+    --rule:#F0EAE414;
+    --rule-firm:#F0EAE42B;
+    --accent:#C08C83;
+    --accent-wash:#C08C831F;
+    --true:#7FB585;
+    --true-wash:#7FB58520;
+    --false:#E0716A;
+    --false-wash:#E0716A20;
+    --soft:#D5A254;
+    --soft-wash:#D5A25420;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--ground);
+    color:var(--ink);
+    font:400 15.5px/1.6 var(--sans);
+    -webkit-font-smoothing:antialiased;
+    font-variant-numeric:tabular-nums;
+  }
+  .page{max-width:1000px;margin:0 auto;padding:72px 32px 128px}
+  a{color:inherit}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+
+  /* ---------- masthead ---------- */
+  .kicker{
+    font:600 11px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-faint);display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+  }
+  .kicker s{text-decoration:none;color:var(--accent)}
+  h1{
+    font:400 clamp(40px,5.6vw,62px)/1.04 var(--serif);
+    letter-spacing:-.02em;margin:20px 0 18px;text-wrap:balance;max-width:16ch;
+  }
+  h1 i{font-style:italic;color:var(--accent)}
+  .stand{max-width:var(--measure);color:var(--ink-dim);font-size:17px}
+  .stand b{color:var(--ink);font-weight:600}
+
+  /* ---------- verdict strip ---------- */
+  .strip{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+    gap:1px;background:var(--rule-firm);border:1px solid var(--rule-firm);
+    margin:48px 0 0;border-radius:3px;overflow:hidden;
+  }
+  .strip div{background:var(--raise);padding:18px 20px}
+  .strip dt{font:600 10.5px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint)}
+  .strip dd{font:400 34px/1 var(--serif);margin-top:12px;letter-spacing:-.02em}
+  .strip dd s{text-decoration:none;font:400 14px var(--sans);color:var(--ink-faint)}
+  .strip dd.hot{color:var(--false)}
+
+  .pull{
+    margin-top:28px;padding:22px 26px;border-left:2px solid var(--accent);
+    background:var(--accent-wash);border-radius:0 3px 3px 0;
+    font:400 18.5px/1.55 var(--serif);max-width:var(--measure);
+  }
+  .pull b{font-weight:500;font-style:italic}
+
+  /* ---------- sections ---------- */
+  section{margin-top:88px}
+  h2{
+    font:400 clamp(27px,3.4vw,34px)/1.15 var(--serif);letter-spacing:-.015em;
+    text-wrap:balance;
+  }
+  .lede{color:var(--ink-dim);max-width:var(--measure);margin-top:10px;font-size:15px}
+  .rail{
+    display:flex;align-items:baseline;gap:14px;
+    padding-bottom:12px;border-bottom:1px solid var(--rule-firm);
+  }
+  .rail span{font:600 10.5px var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);white-space:nowrap}
+
+  /* ---------- rubric ---------- */
+  .rubric{display:grid;gap:0;margin-top:26px;border-top:1px solid var(--rule)}
+  .crit{
+    display:grid;grid-template-columns:minmax(0,1fr) 92px 120px;gap:20px;align-items:center;
+    padding:15px 2px;border-bottom:1px solid var(--rule);
+  }
+  .crit b{font-weight:600;font-size:14.5px;display:block}
+  .crit small{color:var(--ink-faint);font-size:13px;display:block;margin-top:2px;max-width:56ch}
+  .crit .w{font:500 12px var(--mono);color:var(--ink-faint);text-align:right}
+  .crit .g{display:flex;align-items:center;gap:9px;justify-content:flex-end}
+  .crit .g u{
+    text-decoration:none;flex:1;height:3px;border-radius:2px;background:var(--rule-firm);
+    position:relative;overflow:hidden;
+  }
+  .crit .g u::after{content:"";position:absolute;inset:0 auto 0 0;width:var(--v);background:var(--tone,var(--accent))}
+  .crit .g em{font:600 13px var(--mono);font-style:normal;color:var(--tone,var(--ink));min-width:26px;text-align:right}
+
+  /* ---------- verification table ---------- */
+  .scroll{overflow-x:auto;margin-top:26px;border:1px solid var(--rule-firm);border-radius:3px}
+  table{border-collapse:collapse;width:100%;min-width:620px;background:var(--raise)}
+  th,td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{font:600 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);background:var(--sunk)}
+  tr:last-child td{border-bottom:0}
+  td.claim{font-size:14px;max-width:34ch}
+  td.fact{font-size:14px;color:var(--ink-dim);max-width:40ch}
+  .chip{
+    display:inline-block;font:600 10.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;
+    padding:3px 8px;border-radius:2px;white-space:nowrap;
+  }
+  .chip.f{background:var(--false-wash);color:var(--false)}
+  .chip.s{background:var(--soft-wash);color:var(--soft)}
+  .chip.t{background:var(--true-wash);color:var(--true)}
+  .chip.c{background:var(--accent-wash);color:var(--accent)}
+  code{
+    font:400 12.5px var(--mono);background:var(--sunk);border:1px solid var(--rule);
+    padding:1px 5px;border-radius:2px;white-space:nowrap;color:var(--ink)
+  }
+
+  /* ---------- scoreboard ---------- */
+  .board{margin-top:26px;border-top:1px solid var(--rule-firm)}
+  .row{
+    display:grid;grid-template-columns:34px minmax(0,1fr) 132px 60px;
+    gap:18px;align-items:center;padding:13px 2px;border-bottom:1px solid var(--rule);
+    text-decoration:none;color:inherit;
+  }
+  .row:hover{background:var(--accent-wash)}
+  .row .n{font:400 15px var(--serif);font-style:italic;color:var(--ink-faint)}
+  .row .t{font-weight:500;font-size:14.5px;min-width:0}
+  .row .t s{text-decoration:none;display:block;font-weight:400;font-size:12.5px;color:var(--ink-faint);margin-top:1px}
+  .row .m{display:flex;align-items:center;gap:8px}
+  .row .m u{text-decoration:none;flex:1;height:3px;background:var(--rule-firm);border-radius:2px;position:relative;overflow:hidden}
+  .row .m u::after{content:"";position:absolute;inset:0 auto 0 0;width:var(--v);background:var(--tone)}
+  .row .s{font:600 13.5px var(--mono);color:var(--tone);text-align:right}
+  .row .prev{font:400 12px var(--mono);color:var(--ink-faint);text-align:right}
+  .head{
+    display:grid;grid-template-columns:34px minmax(0,1fr) 132px 60px;gap:18px;
+    margin-top:30px;padding:0 2px 9px;font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);
+  }
+  .head span:nth-child(3),.head span:nth-child(4){text-align:right}
+  .t9{--tone:var(--true)} .t7{--tone:var(--soft)} .t5{--tone:var(--false)}
+
+  /* ---------- fiches ---------- */
+  .fiche{padding:38px 0;border-bottom:1px solid var(--rule-firm)}
+  .fiche:first-of-type{border-top:1px solid var(--rule-firm)}
+  .fh{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;flex-wrap:wrap}
+  .fh h3{font:400 25px/1.25 var(--serif);letter-spacing:-.01em;max-width:30ch}
+  .fh h3 i{font-style:italic;color:var(--ink-faint);font-size:19px;margin-right:8px}
+  .marks{display:flex;gap:22px;flex:none}
+  .marks div{text-align:right}
+  .marks dt{font:600 9.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
+  .marks dd{font:400 27px/1 var(--serif);margin-top:5px;color:var(--tone,var(--ink))}
+  .marks .app dd{color:var(--ink-faint);font-size:20px;padding-top:7px}
+
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:22px;border:1px solid var(--rule-firm);border-radius:3px;overflow:hidden}
+  .split > div{padding:16px 18px;background:var(--raise)}
+  .split > div + div{border-left:1px solid var(--rule-firm);background:var(--sunk)}
+  .split h4{font:600 10px var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:9px}
+  .split p{font-size:14px;color:var(--ink-dim)}
+  .split p + p{margin-top:7px}
+  .split b{color:var(--ink);font-weight:600}
+
+  .why{margin-top:18px;font-size:14.5px;color:var(--ink-dim);max-width:var(--measure)}
+  .why b{color:var(--ink);font-weight:600}
+
+  .fix{margin-top:20px;padding:20px 22px;border:1px solid var(--rule-firm);border-left:2px solid var(--accent);border-radius:0 3px 3px 0;background:var(--raise)}
+  .fix h4{font:600 10px var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+  .fix ul{list-style:none;display:grid;gap:10px}
+  .fix li{position:relative;padding-left:18px;font-size:14.5px;color:var(--ink-dim)}
+  .fix li::before{content:"";position:absolute;left:0;top:9px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
+  .fix li b{color:var(--ink);font-weight:600}
+  .guard{
+    margin-top:14px;padding-top:13px;border-top:1px solid var(--rule);
+    font-size:13.5px;color:var(--ink-dim);
+  }
+  .guard b{font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);display:block;margin-bottom:5px}
+
+  /* ---------- waves ---------- */
+  .wave{padding:22px 0;border-bottom:1px solid var(--rule)}
+  .wave h4{font:400 20px var(--serif);margin-bottom:4px}
+  .wave .when{font:600 10px var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--accent);margin-bottom:9px}
+  .wave ol{list-style:none;counter-reset:w;display:grid;gap:8px;margin-top:11px}
+  .wave li{counter-increment:w;position:relative;padding-left:30px;font-size:14.5px;color:var(--ink-dim)}
+  .wave li::before{
+    content:counter(w);position:absolute;left:0;top:0;
+    font:600 11px var(--mono);color:var(--ink-faint);
+    width:20px;height:20px;border:1px solid var(--rule-firm);border-radius:2px;
+    display:grid;place-items:center;
+  }
+  .wave li b{color:var(--ink);font-weight:600}
+  .moved{color:var(--accent);font-weight:600}
+
+  footer{
+    margin-top:80px;padding-top:22px;border-top:1px solid var(--rule-firm);
+    display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;
+    font:400 12.5px var(--mono);color:var(--ink-faint);
+  }
+
+  @media (max-width:760px){
+    .page{padding:48px 20px 90px}
+    .split{grid-template-columns:1fr}
+    .split > div + div{border-left:0;border-top:1px solid var(--rule-firm)}
+    .crit{grid-template-columns:minmax(0,1fr) 108px;gap:12px}
+    .crit .w{display:none}
+    .row,.head{grid-template-columns:minmax(0,1fr) 96px 52px;gap:12px}
+    .row .n,.head span:first-child{display:none}
+  }
+  @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="page">
+
+  <p class="kicker"><s>Contre-audit</s> <span>Sub Rosa</span> <span>1ᵉʳ septembre 2026</span> <span>Vérifié contre le code</span></p>
+  <h1>Les idées valent ce que valent leurs <i>constats</i>.</h1>
+  <p class="stand">L'audit UX/UI note l'application. Ce document note <b>l'audit</b> : ses 57 actions ont été relues une par une, et chacun de ses constats a été confronté au code qu'il cite. Sept affirmations ne tiennent pas, dont <b>deux qui portent des idées phares</b> : la palette de commandes qu'il propose de construire existe depuis des mois, et le rendu markdown progressif qu'il réclame sur mobile est déjà écrit. Voici la note, ce qui la plombe, et la version qui vaudrait 10. <b>Deux démentis de plus sont venus depuis</b>, en appliquant le plan : ils portent contre ce document, et ils sont dans le tableau au même titre que les autres.</p>
+
+  <dl class="strip">
+    <div><dt>Note des idées</dt><dd>6,8<s> / 10</s></dd></div>
+    <div><dt>Constats vérifiés</dt><dd>22</dd></div>
+    <div><dt>Constats faux ou imprécis</dt><dd class="hot">12</dd></div>
+    <div><dt>Dont contre ce document</dt><dd>2</dd></div>
+  </dl>
+
+  <p class="pull"><b>Un audit qui ne vérifie pas ses propres citations produit un plan de travail dont on ne sait pas quelle fraction est déjà faite.</b> Celui-ci est excellent quand il regarde (le scroll mobile perdu est une trouvaille de premier ordre) et faible quand il suppose. Sa vraie lacune est ailleurs et elle est systématique : sur 57 actions, presque aucune ne dit comment on saura qu'elle est faite, ni ce qui empêchera la régression.</p>
+
+  <!-- ============ BARÈME ============ -->
+  <section id="bareme">
+    <div class="rail"><h2>Le barème, posé d'abord</h2><span>5 critères pondérés</span></div>
+    <p class="lede">Une idée n'est pas notée sur son ambition mais sur ce qu'il en reste une fois confrontée au dépôt. Les moyennes ci-dessous sont calculées sur les 14 fiches.</p>
+
+    <div class="rubric">
+      <div class="crit">
+        <div><b>Justesse du constat</b><small>Le code dit-il ce que l'audit prétend qu'il dit ? Les chemins et les lignes citées existent-ils ?</small></div>
+        <span class="w">30 %</span>
+        <span class="g" style="--tone:var(--soft)"><u style="--v:75%"></u><em>7,5</em></span>
+      </div>
+      <div class="crit">
+        <div><b>Spécificité actionnable</b><small>Peut-on l'implémenter sans reprendre la décision à zéro ? Le périmètre est-il tranché ?</small></div>
+        <span class="w">25 %</span>
+        <span class="g" style="--tone:var(--soft)"><u style="--v:75%"></u><em>7,5</em></span>
+      </div>
+      <div class="crit">
+        <div><b>Respect des contraintes</b><small>Les ADR, les règles de <code>spec/</code>, les pièges documentés dans CLAUDE.md, les deux plateformes.</small></div>
+        <span class="w">20 %</span>
+        <span class="g" style="--tone:var(--false)"><u style="--v:57%"></u><em>5,7</em></span>
+      </div>
+      <div class="crit">
+        <div><b>Valeur rapportée au coût</b><small>L'effet ressenti face au risque réel, avec un chiffrage qui tient.</small></div>
+        <span class="w">15 %</span>
+        <span class="g" style="--tone:var(--soft)"><u style="--v:76%"></u><em>7,6</em></span>
+      </div>
+      <div class="crit">
+        <div><b>Falsifiabilité</b><small>Comment sait-on que c'est fait, et qu'est-ce qui empêche le retour en arrière dans six mois ?</small></div>
+        <span class="w">10 %</span>
+        <span class="g" style="--tone:var(--false)"><u style="--v:38%"></u><em>3,8</em></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VÉRIFICATION ============ -->
+  <section id="verif">
+    <div class="rail"><h2>Ce que le code répond</h2><span>7 démentis</span></div>
+    <p class="lede">Chaque affirmation testable de l'audit a été rejouée sur le dépôt à son commit courant. Les 22 constats non listés ici sont exacts, dont plusieurs le sont plus durement que l'audit ne l'écrit. Les deux dernières lignes portent contre ce document : elles ont été trouvées en appliquant son propre plan, ce qui est précisément ce qu'une vérification est censée produire.</p>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Fiche</th><th>Ce que l'audit affirme</th><th>Ce que le dépôt montre</th><th>Verdict</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>10</code></td>
+            <td class="claim">« Aucun ⌘K / palette de commandes. »</td>
+            <td class="fact">La palette existe : <code>Sidebar.tsx:366-560</code> indexe notes récentes, sessions et actions de navigation ; <code>isSearchShortcut</code> (<code>:1604</code>) la lie à ⌘K, et le champ de recherche de la sidebar l'ouvre au clic. Le seul manque réel : les 25 réglages n'y sont pas.</td>
+            <td><span class="chip f">Faux</span></td>
+          </tr>
+          <tr>
+            <td><code>08</code></td>
+            <td class="claim">« Le rendu markdown n'apparaît qu'à la fin » sur mobile, via un composant <code>ProgressiveReply</code>.</td>
+            <td class="fact"><code>ProgressiveReply</code> n'existe nulle part. Le composant réel est <code>TypewriterMarkdown</code> (<code>AgentScreen.tsx:1042</code>) et il rend <code>&lt;SimpleMarkdown text={text.slice(0, visible)} streaming /&gt;</code> : le markdown est déjà progressif, y compris pendant le flux (<code>:745</code>).</td>
+            <td><span class="chip f">Faux</span></td>
+          </tr>
+          <tr>
+            <td><code>08</code></td>
+            <td class="claim">« <code>heroChipPhase</code> relance la cascade tant que <code>document.hidden</code> est faux. »</td>
+            <td class="fact">Quatre gardes existent déjà (<code>AgentWorkspace.tsx:6913-6926</code>) : onglet caché, survol des chips, brouillon non vide, et aucun cycle sous <code>prefers-reduced-motion</code>. Le défaut réel est autre : le cycle n'a pas de fin.</td>
+            <td><span class="chip s">Imprécis</span></td>
+          </tr>
+          <tr>
+            <td><code>04</code></td>
+            <td class="claim">« Un hex brut <code>#936862</code> codé en dur dans <code>AgentWorkspace.tsx:540</code>. »</td>
+            <td class="fact">C'est ligne 541, et c'est le <b>repli</b> de <code>getComputedStyle(…).getPropertyValue("--brand")</code> — exactement ce qu'il faut écrire. Cinq autres occurrences sont tout aussi légitimes : <code>brand.ts</code> (la palette source) et les trois feuilles de HUD, qui vivent dans des fenêtres sans les tokens.</td>
+            <td><span class="chip f">Trompeur</span></td>
+          </tr>
+          <tr>
+            <td><code>05</code></td>
+            <td class="claim">« Le gateway sidecar peut mettre 1-3 s à répondre. »</td>
+            <td class="fact"><code>SIDECAR_STATUS_TIMEOUT_MS = 8_000</code> (<code>App.tsx:185</code>). L'attente aveugle peut durer huit secondes, soit près du triple. Le constat sous-vend son propre argument.</td>
+            <td><span class="chip s">Sous-estimé</span></td>
+          </tr>
+          <tr>
+            <td><code>12</code></td>
+            <td class="claim">Style d'erreur recyclé, « <code>mobile.css:1617,1637</code> ».</td>
+            <td class="fact">La classe est définie <code>mobile.css:941</code> et réutilisée sur <b>huit</b> sites dans cinq écrans (Agent, Flows, Dictation, WorkflowEditor, Studio). Lignes fausses, dérive plus large que décrite.</td>
+            <td><span class="chip s">Lignes fausses</span></td>
+          </tr>
+          <tr>
+            <td><code>10</code></td>
+            <td class="claim">Trois <code>min-height</code> mobiles « à vérifier ».</td>
+            <td class="fact">Vérification faite : <code>.mobile-folder-chip</code> 32 px et <code>.mobile-studio-delete-selected</code> 34 px sont de vraies cibles tactiles sous le seuil ; <code>.mobile-credits-pill</code> 28 px est un affichage, pas un bouton. Deux vrais, un faux positif.</td>
+            <td><span class="chip s">Non conclu</span></td>
+          </tr>
+          <tr>
+            <td><code>02 · 14</code></td>
+            <td class="claim">Ce document : « le Telegram relève d'ADR-0017, l'autonomie produit ».</td>
+            <td class="fact">Non. Le lien pointe sur <code>t.me/CarpeDiemCommu</code> (<code>commands.rs:624</code>) : le fork l'a déjà repointé sur la communauté de Carpe Diem, qui est son propre fournisseur. Rien à voir avec l'infrastructure amont, donc aucune règle de CI à écrire. L'argument valable est celui d'origine, et il est de rédaction : un lien qui fait sortir de l'app n'a pas sa place sur le premier écran.</td>
+            <td><span class="chip c">Corrigé ici</span></td>
+          </tr>
+          <tr>
+            <td><code>10</code></td>
+            <td class="claim">Ce document : « ⌘K n'est indiqué nulle part dans l'interface ».</td>
+            <td class="fact">Il l'est : le champ de recherche de la sidebar affiche le raccourci (<code>sidebar-search-kbd</code>, <code>Sidebar.tsx</code>). La même erreur que celle reprochée à l'audit, commise en corrigeant l'audit. Ce qui manquait vraiment tient en une chose, et elle est maintenant faite : la palette n'indexait pas les réglages.</td>
+            <td><span class="chip c">Corrigé ici</span></td>
+          </tr>
+          <tr>
+            <td><code>04</code></td>
+            <td class="claim">« Le contraste serif/sans est sous-utilisé : il n'apparaît presque nulle part ailleurs. »</td>
+            <td class="fact">Il est déjà partout où il compte : titre du héros, titre de note, titre des Réglages, titres de listes desktop (<code>.folders-heading h1</code>), titre de projet, grand titre mobile, salutation du chat, titres d'états vides, résumé de note. L'action « étendre le serif » n'avait plus rien à étendre.</td>
+            <td><span class="chip f">Faux</span></td>
+          </tr>
+          <tr>
+            <td><code>03</code></td>
+            <td class="claim">« Cinq variantes ad hoc, donc des rythmes de shimmer différents. »</td>
+            <td class="fact">Faux deux fois. Il y en avait <b>neuf</b>, dont cinq strictement identiques au caractère près, et <b>aucune n'était animée</b> : des barres grises fixes. Le défaut réel n'était pas la divergence, c'était la duplication et l'immobilité.</td>
+            <td><span class="chip f">Faux</span></td>
+          </tr>
+          <tr>
+            <td><code>01</code></td>
+            <td class="claim">« 25 onglets de settings », le frein premium nº 1, application notée 5,5.</td>
+            <td class="fact">Vingt-cinq est la taille du type <code>SettingsTab</code>, pas de la surface. Douze onglets sont filtrés par <code>HIDDEN_SETTINGS_TABS</code> : l'utilisateur en voit <b>treize</b>, en quatre groupes. Et les douze ne sont pas « avancés », ils sont <b>non stabilisés</b>, remis en service un par un selon <code>docs/settings-focus-runbook.md</code>. Le constat comptait une union TypeScript.</td>
+            <td><span class="chip f">Faux</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="why" style="margin-top:20px">À l'inverse, trois constats sont <b>plus graves</b> que ce que l'audit en dit. Les squelettes ne sont pas cinq variantes mais <b>neuf familles</b> (<code>chat-block</code>, <code>external-dir</code>, <code>installed-skill</code>, <code>mcp-server</code>, <code>skill-review</code>, <code>skills-hub</code>, <code>studio-image</code>, <code>toolset</code>, <code>mobile</code>). Le lien Telegram n'est pas seulement hors-ton : il apparaît <b>deux fois</b> (<code>WelcomeStep.tsx:91</code> et <code>AppSettings.tsx:1462</code>) et c'est une question d'<b>ADR-0017</b>, l'autonomie produit, pas de rédaction. Et le héros mac-only, que l'audit affirme sans citation, est bien réel : <code>App.tsx:333-337</code>, <code>if (!isMacLikePlatform()) return "notes"</code>.</p>
+  </section>
+
+  <!-- ============ TABLEAU ============ -->
+  <section id="notes">
+    <div class="rail"><h2>La note, fiche par fiche</h2><span>Idées, pas application</span></div>
+    <p class="lede">La colonne de droite rappelle la note que l'audit donne à l'application ; elle ne mesure pas la même chose. Un axe peut être bien noté et mal outillé : la fiche 10 en est l'exemple parfait.</p>
+
+    <div class="head"><span>Nº</span><span>Fiche</span><span>Note des idées</span><span>App</span></div>
+    <div class="board" id="board"></div>
+  </section>
+
+  <!-- ============ FICHES ============ -->
+  <section id="fiches">
+    <div class="rail"><h2>Ce qui plombe, et la version 10/10</h2><span>14 fiches</span></div>
+    <p class="lede">Pour chaque fiche : le point qui fait chuter la note, puis la reformulation qui la ferait passer à 10. Chacune se termine par le garde-fou manquant, qui est le défaut le plus systématique de l'audit.</p>
+
+    <!-- F01 -->
+    <article class="fiche" id="f1">
+      <div class="fh">
+        <h3><i>01</i>Paramètres et architecture de l'information</h3>
+        <dl class="marks">
+          <div class="app"><dt>App</dt><dd>5,5</dd></div>
+          <div style="--tone:var(--soft)"><dt>Idées</dt><dd>6,5</dd></div>
+        </dl>
+      </div>
+      <div class="split">
+        <div><h4>L'audit dit</h4><p>25 onglets, groupe « AI » saturé. Il propose 4 hubs, un champ <b>Filter settings</b>, un mode essentiels, des états vivants, et « une search-to-command ⌘K ».</p></div>
+        <div><h4>Le code dit</h4><p>25 onglets : <b>exact</b> (<code>AppSettings.tsx:207-231</code>). Mais ⌘K existe déjà, et la navigation Settings vit dans <b>deux listes</b> à tenir synchronisées, <code>SETTINGS_TABS</code> et <code>SETTINGS_SIDEBAR_GROUPS</code>, un piège documenté dans CLAUDE.md.</p></div>
+      </div>
+      <p class="why"><b>Ce qui plombe :</b> deux des cinq actions créent un second moteur de recherche à côté de celui qui existe, et la ventilation des 25 entrées — c'est-à-dire le travail réel — n'est pas donnée. « L'utilisateur voit 9 réglages, pas 25 » est une promesse invérifiable tant que personne n'a écrit qui va où.</p>
+      <div class="fix">
+        <h4>La version 10/10</h4>
+        <ul>
+          <li><b>Une seule recherche, celle qui existe.</b> Ajouter un groupe <code>settings</code> à <code>commandPaletteGroups</code> (<code>Sidebar.tsx:472</code>) qui indexe les 25 onglets par nom et par synonymes. Coût réel : ~40 lignes, pas un champ de plus.</li>
+          <li><b>La ventilation, écrite.</b> Personnalisation (general, shortcuts) · Intelligence (models, agent, memory, council, skills, skills-hub, skill-review, toolsets, bundles, profile-builder, mcp, mcp-catalog, mcp-diagnostics, mcp-security, taps, integrations-health) · Audio (dictation, audio) · Application (carpe-diem, external-dirs, import-export, reports, about).</li>
+          <li><b>Un critère d'« avancé », pas un avis.</b> Est avancé tout réglage sans effet tant qu'un autre n'a pas été changé, ou qui n'expose qu'un diagnostic. Cela donne 9 entrées masquées et <b>16 visibles</b> — le chiffre honnête, à écrire à la place de 9.</li>
+          <li><b>Les états vivants d'abord.</b> Généraliser les résumés de valeur du mobile est la plus petite action de la fiche pour le plus gros effet ressenti ; elle ne dépend d'aucune refonte.</li>
+        </ul>
+        <p class="guard"><b>Garde-fou</b>Un test qui échoue si une entrée de <code>SETTINGS_TABS</code> manque à la table de ventilation ou à l'index de la palette. Il rend impossible le 26ᵉ onglet orphelin, et couvre au passage le piège des deux listes.</p>
+      </div>
+    </article>
+
+    <!-- F02 -->
+    <article class="fiche" id="f2">
+      <div class="fh">
+        <h3><i>02</i>Onboarding et première visite</h3>
+        <dl class="marks">
+          <div class="app"><dt>App</dt><dd>6</dd></div>
+          <div style="--tone:var(--soft)"><dt>Idées</dt><dd>7</dd></div>
+        </dl>
+      </div>
+      <div class="split">
+        <div><h4>L'audit dit</h4><p>Fusionner la porte et le wizard en un récit de quatre actes, mettre du théâtre pendant la connexion, purger la copie hors-ton, porter le héros partout, offrir une note de bienvenue.</p></div>
+        <div><h4>Le code dit</h4><p>Tout est exact. Le Telegram apparaît <b>deux fois</b>, et il pointe sur la communauté de <b>Carpe Diem</b>, pas sur celle d'upstream : c'est une question de premier écran, pas de conformité. Le vrai délai à couvrir est de <b>8 s</b>, pas 3.</p></div>
+      </div>
+      <p class="why"><b>Ce qui plombe :</b> le théâtre de connexion n'a que trois états heureux. Un sidecar qui ne démarre pas est le cas où la première minute se joue vraiment, et la fiche ne dit pas ce que l'écran raconte alors. La note de bienvenue, elle, est proposée sans dire ce qui l'empêche de se recréer à chaque lancement.</p>
+      <div class="fix">
+        <h4>La version 10/10</h4>
+        <ul>
+          <li><b>Sortir le Telegram de l'accueil, le garder dans les Réglages.</b> Le premier écran a un seul travail, dire ce qu'est l'app ; il n'a pas à envoyer ailleurs. Le lien reste où un lien de communauté a sa place. <b>Appliqué</b>, avec le test d'accueil inversé : il vérifie maintenant qu'aucune sortie n'est offerte là.</li>
+          <li><b>Un quatrième acte : l'échec.</b> À 8 s (<code>SIDECAR_STATUS_TIMEOUT_MS</code>), l'écran nomme ce qui bloque et propose une action — revérifier la clé, réessayer, ouvrir le journal. Une attente sans issue reste une impasse, même bien animée.</li>
+          <li><b>La note de bienvenue est idempotente.</b> Un drapeau dans les réglages, pas une détection par titre : sinon l'utilisateur qui la supprime la retrouve au prochain lancement.</li>
+          <li><b>Le héros ne dépend pas de l'OS mais du runtime.</b> Voir fiche 05 : la condition à écrire est « le moteur d'agent répond », pas « on est sur mac ».</li>
+        </ul>
+        <p class="guard"><b>Garde-fou</b><code>onboarding.test.tsx</code> testait que le lien s'ouvrait ; il teste maintenant qu'il n'est pas là, et qu'aucun mot de la ligne de clôture ne décrit la machine plutôt que le lecteur. Pas de règle de CI : il n'y avait pas de conformité en jeu.</p>
+      </div>
+    </article>
+
+    <!-- F03 -->
+    <article class="fiche" id="f3">
+      <div class="fh">
+        <h3><i>03</i>Chargements, attentes et retours</h3>
+        <dl class="marks">
+          <div class="app"><dt>App</dt><dd>6,5</dd></div>
+          <div style="--tone:var(--true)"><dt>Idées</dt><dd>8</dd></div>
+        </dl>
+      </div>
+      <div class="split">
+        <div><h4>L'audit dit</h4><p>Une primitive <code>&lt;Shimmer/&gt;</code> unique, une scène de transcription, le statut descendu dans les listes, des erreurs inline, et une échelle d'attente honnête avec estimation.</p></div>
+        <div><h4>Le code dit</h4><p><code>"Transcribing…"</code> en texte brut : exact (<code>DictationScreen.tsx:138</code>). Les squelettes sont <b>neuf familles</b>, pas cinq. Rien dans le dépôt ne produit aujourd'hui une estimation de durée.</p></div>
+      </div>
+      <p class="why"><b>Ce qui plombe :</b> « toute attente &gt; 2 s affiche une estimation (environ 20 s) » demande un chiffre que personne ne sait calculer. Une estimation inventée est pire qu'un silence : elle se trompe, et l'utilisateur apprend à ne plus croire l'interface.</p>
+      <div class="fix">
+        <h4>La version 10/10</h4>
+        <ul>
+          <li><b>Une règle d'estimation gagée.</b> On n'affiche une durée que si on a une base : la longueur de l'audio multipliée par un ratio mesuré sur les dix derniers travaux. Sans base, on affiche la <b>phase nommée</b> et le temps écoulé — ce que le Darkroom fait déjà correctement.</li>
+          <li><b>Neuf familles, une primitive.</b> Le chiffre corrigé change le calibrage : c'est une passe de migration, pas une retouche.</li>
+          <li><b>La scène de dictation d'abord.</b> C'est le seul écran de l'app où l'attente n'a aucune forme ; c'est aussi le geste que l'utilisateur répète le plus.</li>
+        </ul>
+        <p class="guard"><b>Garde-fou</b>Un test qui échoue si un nouveau sélecteur <code>*-skeleton</code> apparaît hors du fichier de la primitive, sur le modèle des règles déjà écrites dans <code>spec/</code>.</p>
+      </div>
+    </article>
+
+    <!-- F04 -->
+    <article class="fiche" id="f4">
+      <div class="fh">
+        <h3><i>04</i>Typographie et densité</h3>
+        <dl class="marks">
+          <div class="app"><dt>App</dt><dd>7</dd></div>
+          <div style="--tone:var(--false)"><dt>Idées</dt><dd>5,5</dd></div>
+        </dl>
+      </div>
+      <div class="split">
+        <div><h4>L'audit dit</h4><p>Étendre le serif aux moments de voix, créer une échelle <code>--fs-title-1/2/3</code>, ajouter un scanner qui échoue sur tout hex hors <code>tokens.css</code>, aérer les listes.</p></div>
+        <div><h4>Le code dit</h4><p>Le seul exemple cité est un <b>repli légitime</b>. Un scanner écrit tel quel échouerait immédiatement sur six emplacements corrects et serait désactivé dans la semaine.</p></div>
+      </div>
+      <p class="why"><b>Ce qui plombe :</b> c'est la seule fiche qui propose un vrai garde-fou, et c'est aussi celle dont le constat est le plus faible. Le risque qu'elle décrit — la dérive dans un fichier de 24 000 lignes — est réel ; la preuve qu'elle en donne ne l'est pas.</p>
+      <div class="fix">
+        <h4>La version 10/10</h4>
+        <ul>
+          <li><b>Changer de cible.</b> Le hex n'est pas le symptôme utile : les six occurrences sont justifiées. Le vrai marqueur de dérive est le <code>font-size</code> en pixels bruts hors <code>tokens.css</code>, et l'ombre portée écrite à la main.</li>
+          <li><b>Un scanner avec liste d'exemptions explicite.</b> <code>brand.ts</code>, <code>tokens.css</code>, les trois feuilles de HUD et le repli de <code>getComputedStyle</code> sont nommés dans le test lui-même, avec la raison. Une règle qu'on ne peut pas satisfaire n'est pas une règle.</li>
+          <li><b>Le serif d'abord, l'échelle ensuite.</b> Étendre <code>--font-serif</code> aux titres d'écran est un geste d'identité à coût nul ; l'échelle de titres est une migration de fond qui n'apporte rien de visible tant que le premier geste n'est pas fait.</li>
+        </ul>
+        <p class="guard"><b>Garde-fou</b>La règle rejoint <code>spec/</code> avec son fichier et sa ligne dans <code>spec/index.md</code>, comme <code>sentence-case</code> et <code>design-tokens</code> — c'est la convention du dépôt, et elle rend la règle opposable en revue.</p>
+      </div>
+    </article>
+
+    <!-- F05 -->
+    <article class="fiche" id="f5">
+      <div class="fh">
+        <h3><i>05</i>Première impression et moment héros</h3>
+        <dl class="marks">
+          <div class="app"><dt>App</dt><dd>7,5</dd></div>
+          <div style="--tone:var(--soft)"><dt>Idées</dt><dd>7</dd></div>
+        </dl>
+      </div>
+      <div class="split">
+        <div><h4>L'audit dit</h4><p>Un splash de marque dans <code>index.html</code> avant le bundle, un greeting rédigé, une entrée orchestrée en trois temps, et Windows rattrapé sur le héros.</p></div>
+        <div><h4>Le code dit</h4><p>Le héros mac-only est confirmé : <code>App.tsx:333-337</code>. L'attente à couvrir est de 8 s. Le commentaire du code dit explicitement « agent hero on mac, notes elsewhere » : c'est une décision, pas un oubli.</p></div>
+      </div>
+      <p class="why"><b>Ce qui plombe :</b> « Windows rattrapé » propose de retirer une garde sans chercher pourquoi elle est là. Si elle protège d'un runtime absent au démarrage, la retirer remplace un écran sûr par un écran vide — exactement le symptôme que la fiche veut supprimer.</p>
+      <div class="fix">
+        <h4>La version 10/10</h4>
+        <ul>
+          <li><b>Conditionner au runtime, pas à l'OS.</b> Remplacer <code>isMacLikePlatform()</code> par la disponibilité effective du moteur d'agent. Le héros s'affiche partout où il peut fonctionner, et nulle part où il casserait.</li>
+          <li><b>Le splash est aussi un correctif.</b> Ce projet a déjà vécu la fenêtre blanche au lancement ; un rideau peint avant le bundle est le remède connu de ce symptôme, pas seulement une flatterie. Cela change sa priorité.</li>
+          <li><b>Dimensionner sur 8 s.</b> Un rideau de 600 ms devant une attente qui peut durer huit secondes ne fait que déplacer le vide. Le splash doit savoir devenir un état d'attente nommé.</li>
+        </ul>
+        <p class="guard"><b>Garde-fou</b>Le harnais de prévisualisation du dépôt permet déjà de capturer les écrans hors application ; une capture de lancement par plateforme, relue à chaque version, suffit.</p>
+      </div>
+    </article>
+
+    <!-- F06 -->
+    <article class="fiche" id="f6">
+      <div class="fh">
+        <h3><i>06</i>États vides</h3>
+        <dl class="marks">
+          <div class="app"><dt>App</dt><dd>8</dd></div>
+          <div style="--tone:var(--soft)"><dt>Idées</dt><dd>7</dd></div>
+        </dl>
+      </div>
+      <div class="split">
+        <div><h4>L'audit dit</h4><p>Un état vide pour la dictation mobile, cinq illustrations-lignes SVG animées au <code>stroke-dashoffset</code>, et une copie qui nomme l'action de l'utilisateur.</p></div>
+        <div><h4>Le code dit</h4><p>Le trou de dictation est réel. Mais <code>spec/icons-central-only</code> interdit toute icône hors des jeux centraux, et la fiche introduit cinq dessins sans dire si la règle s'applique.</p></div>
+      </div>
+      <p class="why"><b>Ce qui plombe :</b> une idée qui frôle une règle écrite sans la nommer se fera refuser en revue, ou pire, passera et créera un précédent. Par ailleurs le crochet <code>window.__emptyStates()</code> existe déjà et offre exactement le garde-fou que la fiche ne propose pas.</p>
+      <div class="fix">
+        <h4>La version 10/10</h4>
+        <ul>
+          <li><b>Trancher la règle avant de dessiner.</b> Une illustration d'état vide n'est pas une icône d'interface : le dire dans <code>spec/icons-central-only</code> comme exception nommée, avec sa frontière (aucun usage hors <code>EmptyState</code>).</li>
+          <li><b>Un dessin, pas cinq.</b> Commencer par l'écran qui disparaît dans le néant — la dictation — et n'étendre que si le geste tient. Cinq dessins livrés d'un coup, c'est cinq occasions d'en avoir un qui jure.</li>
+          <li><b>La copie française vient avec la fiche 14.</b> Traduire ici sans charte de voix produit un troisième registre au lieu d'en supprimer un.</li>
+        </ul>
+        <p class="guard"><b>Garde-fou</b><code>window.__emptyStates()</code> force tous les états vides : une capture de la planche complète par version rend visible le jour où l'un d'eux redevient un écran blanc.</p>
+      </div>
+    </article>
+
+    <!-- F07 -->
+    <article class="fiche" id="f7">
+      <div class="fh">
+        <h3><i>07</i>Motion et micro-interactions</h3>
+        <dl class="marks">
+          <div class="app"><dt>App</dt><dd>8,5</dd></div>
+          <div style="--tone:var(--soft)"><dt>Idées</dt><dd>7</dd></div>
+        </dl>
+      </div>
+      <div class="split">
+        <div><h4>L'audit dit</h4><p>« <code>transform-origin</code> + <code>scale(.96)→1</code> sur tous les menus, 20 lignes dans <code>app.css</code>, effet natif immédiat », trois sons desktop, une transition liste-détail, une célébration mesurée.</p></div>
+        <div><h4>Le code dit</h4><p>Les surfaces flottantes ancrées écrivent leur <code>transform</code> <b>en ligne</b> et le basculent selon la place disponible. Une image-clé qui écrit <code>transform</code> déplace le panneau pendant toute l'animation.</p></div>
+      </div>
+      <p class="why"><b>Ce qui plombe :</b> l'idée la mieux chiffrée de la fiche est celle qui ne marche pas telle quelle sur les surfaces qui en auraient le plus besoin. C'est vérifiable en vingt minutes, et cela transforme « 20 lignes » en une passe avec une contrainte à respecter partout.</p>
+      <div class="fix">
+        <h4>La version 10/10</h4>
+        <ul>
+          <li><b>Nommer la technique, pas seulement l'effet.</b> Sur toute surface positionnée par un <code>transform</code> en ligne, l'entrée passe par les propriétés longues <code>translate</code> et <code>scale</code>, ou anime les enfants. La règle vaut plus que les vingt lignes.</li>
+          <li><b>Le son a besoin d'un mixeur, pas de trois fichiers.</b> « Jamais deux en même temps » est une contrainte d'exécution : un canal unique qui coupe le son précédent, un réglage explicite dans Audio, et un défaut à <b>désactivé</b> — <code>prefers-reduced-motion</code> n'a pas d'équivalent sonore, donc le consentement doit être donné, pas retiré.</li>
+          <li><b>La transition liste-détail est la vraie pièce.</b> C'est la seule des quatre qui change la perception du produit ; les trois autres sont des finitions. L'ordre de la fiche est inversé.</li>
+        </ul>
+        <p class="guard"><b>Garde-fou</b>Une ligne dans <code>spec/</code> : aucune surface ancrée n'anime <code>transform</code>. C'est le genre de contrainte qu'on redécouvre par un bug si elle n'est pas écrite.</p>
+      </div>
+    </article>
+
+    <!-- F08 -->
+    <article class="fiche" id="f8">
+      <div class="fh">
+        <h3><i>08</i>Chat agent et composer</h3>
+        <dl class="marks">
+          <div class="app"><dt>App</dt><dd>8</dd></div>
+          <div style="--tone:var(--false)"><dt>Idées</dt><dd>5</dd></div>
+        </dl>
+      </div>
+      <div class="split">
+        <div><h4>L'audit dit</h4><p>Mélanger les chips une seule fois, rendre le markdown progressif sur mobile, ajouter une barre d'attention pendant les outils, et cibler une session en ⌘K.</p></div>
+        <div><h4>Le code dit</h4><p>Deux des quatre actions sont <b>déjà livrées</b> : le markdown progressif (<code>AgentScreen.tsx:745</code>, <code>:1079</code>) et le ⌘K qui liste déjà les sessions. Les gardes des chips existent aussi.</p></div>
+      </div>
+      <p class="why"><b>Ce qui plombe :</b> c'est la fiche la plus coûteuse de l'audit, parce qu'elle envoie travailler sur du code écrit. Un plan qui contient deux actions faites sur quatre ne perd pas seulement en crédit : il fait perdre du temps à celui qui l'exécute.</p>
+      <div class="fix">
+        <h4>La version 10/10</h4>
+        <ul>
+          <li><b>Une seule action survit.</b> La barre d'attention pendant qu'un outil tourne plus de trois secondes est la vraie lacune, et elle rejoint la fiche 03 : c'est le même vocabulaire de phases.</li>
+          <li><b>Le défaut des chips n'est pas le déclencheur, c'est l'absence de fin.</b> Les quatre gardes suffisent au repos ; ce qui fatigue, c'est qu'aucun compteur n'arrête le cycle. Deux tours puis arrêt, relancé au focus du composer.</li>
+          <li><b>Ce que ⌘K ne fait pas encore.</b> Les réglages (fiche 01) et les dossiers. Le reste est écrit.</li>
+        </ul>
+        <p class="guard"><b>Garde-fou</b>Avant d'écrire une action, un <code>grep</code> du symbole cité. Les deux erreurs de cette fiche coûtaient chacune une commande.</p>
+      </div>
+    </article>
+
+    <!-- F09 -->
+    <article class="fiche" id="f9">
+      <div class="fh">
+        <h3><i>09</i>Éditeur de notes</h3>
+        <dl class="marks">
+          <div class="app"><dt>App</dt><dd>9</dd></div>
+          <div style="--tone:var(--true)"><dt>Idées</dt><dd>8,5</dd></div>
+        </dl>
+      </div>
+      <div class="split">
+        <div><h4>L'audit dit</h4><p>Un mode lecture typographique, le temps dans la marge, des surlignages légendés par le résumé, une progression de lecture.</p></div>
+        <div><h4>Le code dit</h4><p>La meilleure fiche de l'audit : elle cite ADR-0037 correctement et propose une action sans logique nouvelle. Mais la correspondance surlignage ↔ résumé qu'elle suppose n'existe pas dans <code>note_summaries</code>.</p></div>
+      </div>
+      <p class="why"><b>Ce qui plombe :</b> presque rien. Deux angles morts : une note contient des tableaux et du code, or une mesure de 66 caractères et une lettrine ne s'appliquent qu'au texte courant ; et la troisième action demande une donnée qui n'est pas stockée.</p>
+      <div class="fix">
+        <h4>La version 10/10</h4>
+        <ul>
+          <li><b>Le mode lecture nomme ses exceptions.</b> La mesure et la lettrine s'appliquent aux paragraphes ; tableaux, blocs de code et citations gardent leur pleine largeur. Sans cette phrase, la première note technique ouverte en mode lecture est illisible.</li>
+          <li><b>Les surlignages légendés : d'abord la donnée.</b> Soit le résumé porte des décalages vers le texte source, soit l'action est abandonnée. La proposer sans trancher, c'est déguiser une fonctionnalité de fond en finition CSS.</li>
+          <li><b>Le mode lecture est un candidat ADR.</b> Il touche au contrat de rendu du corps de note ; le dépôt a pour règle de consigner ce genre de décision.</li>
+        </ul>
+        <p class="guard"><b>Garde-fou</b>Le corpus de test aller-retour du markdown existe déjà : le mode lecture doit passer dessus sans altérer un seul document.</p>
+      </div>
+    </article>
+
+    <!-- F10 -->
+    <article class="fiche" id="f10">
+      <div class="fh">
+        <h3><i>10</i>Accessibilité et raccourcis</h3>
+        <dl class="marks">
+          <div class="app"><dt>App</dt><dd>7</dd></div>
+          <div style="--tone:var(--false)"><dt>Idées</dt><dd>4,5</dd></div>
+        </dl>
+      </div>
+      <div class="split">
+        <div><h4>L'audit dit</h4><p>« Aucun ⌘K » ; construire une palette de ~300 lignes indexant navigation, actions et les 25 réglages. Puis une région live de chargement, une page raccourcis générée, une passe sur les cibles tactiles.</p></div>
+        <div><h4>Le code dit</h4><p>La palette existe et couvre déjà navigation, notes et sessions. Il manque les réglages et les dossiers, soit environ <b>un huitième</b> de ce que la fiche propose d'écrire.</p></div>
+      </div>
+      <p class="why"><b>Ce qui plombe :</b> la note de l'application est peut-être juste, mais l'action phare est un doublon. C'est le cas le plus net de l'audit où un constat non vérifié rend le plan inexploitable, alors que les trois autres actions de la fiche sont bonnes.</p>
+      <div class="fix">
+        <h4>La version 10/10</h4>
+        <ul>
+          <li><b>La découvrabilité était déjà faite.</b> Le champ de recherche affiche le raccourci. Cette ligne disait le contraire, et c'était faux : voir le tableau plus haut.</li>
+          <li><b>Compléter l'index existant.</b> <b>Appliqué</b> : les vingt-cinq réglages et les projets sont dans <code>commandPaletteGroups</code>, avec une table de synonymes pour ce que les gens tapent quand ils ne se souviennent pas du nom exact. Les douze onglets que la barre latérale masque redeviennent atteignables sans les y remettre.</li>
+          <li><b>Vérifier ce que l'audit a laissé ouvert.</b> Sur les trois cibles tactiles citées, deux sont à corriger et une est un faux positif. Le travail de vérification fait partie de l'audit, pas de l'implémentation.</li>
+          <li><b>La région live de chargement reste la meilleure idée de la fiche</b>, et la seule qui améliore réellement l'accessibilité plutôt que le confort clavier.</li>
+        </ul>
+        <p class="guard"><b>Garde-fou</b><code>settings-index.test.tsx</code> : tout onglet absent du groupage, tout groupage sans onglet, tout doublon fait échouer la suite. C'est aussi ce qui ferme le piège des deux listes de CLAUDE.md.</p>
+      </div>
+    </article>
+
+    <!-- F11 -->
+    <article class="fiche" id="f11">
+      <div class="fh">
+        <h3><i>11</i>Mobile, navigation et gestes</h3>
+        <dl class="marks">
+          <div class="app"><dt>App</dt><dd>8</dd></div>
+          <div style="--tone:var(--true)"><dt>Idées</dt><dd>8,5</dd></div>
+        </dl>
+      </div>
+      <div class="split">
+        <div><h4>L'audit dit</h4><p>Le scroll est perdu au retour à cause du remontage par clé ; garder les écrans montés en <code>display:none</code> et <code>inert</code>, « 30 lignes ». Puis menu long-press, import rangé, dictation plein écran.</p></div>
+        <div><h4>Le code dit</h4><p>Confirmé, et c'est la meilleure trouvaille de l'audit : <code>MobileApp.tsx:829</code>, <code>key={`${nav.tab}:${nav.depth}`}</code>, et aucune restauration de <code>scrollTop</code> nulle part dans la coque mobile.</p></div>
+      </div>
+      <p class="why"><b>Ce qui plombe :</b> uniquement le chiffrage. Garder tous les écrans montés sur un téléphone change le coût mémoire et le comportement des effets ; ce n'est pas trente lignes, c'est un changement de modèle de navigation.</p>
+      <div class="fix">
+        <h4>La version 10/10</h4>
+        <ul>
+          <li><b>La variante bornée d'abord.</b> Mémoriser <code>scrollTop</code> par entrée de pile dans une <code>Map</code>, restaurer au retour. Aucun écran gardé vivant, aucun effet qui continue de tourner sous la pile — ce qui est aussi la lecture correcte d'ADR-0018.</li>
+          <li><b>Le menu long-press avant le plein écran.</b> Le swipe est aujourd'hui le seul chemin vers archiver et supprimer : c'est un problème d'accès, pas de confort, et il passe donc devant la scène de dictation.</li>
+          <li><b>Chiffrer honnêtement.</b> Le correctif du scroll reste le numéro un de tout l'audit ; il n'a pas besoin d'être annoncé petit pour être prioritaire.</li>
+        </ul>
+        <p class="guard"><b>Garde-fou</b>Un test qui pousse un écran, revient, et vérifie la position restaurée. Sans lui, la prochaine refonte de navigation le recasse en silence.</p>
+      </div>
+    </article>
+
+    <!-- F12 -->
+    <article class="fiche" id="f12">
+      <div class="fh">
+        <h3><i>12</i>Mobile, Studio et dette de fichier</h3>
+        <dl class="marks">
+          <div class="app"><dt>App</dt><dd>7</dd></div>
+          <div style="--tone:var(--true)"><dt>Idées</dt><dd>8</dd></div>
+        </dl>
+      </div>
+      <div class="split">
+        <div><h4>L'audit dit</h4><p>Éclater <code>StudioScreen</code> en six fichiers « sans changement visuel », un composant <code>&lt;JobError/&gt;</code>, brancher la récupération d'enregistrement, une porte téléphone-native, une carte crédits vivante.</p></div>
+        <div><h4>Le code dit</h4><p>3 362 lignes et 116 Ko : exact (au chemin près, <code>mobile/screens/</code>). Les no-op sont réels : <code>NoteDetailScreen.tsx:125-126</code>. La classe d'erreur recyclée touche cinq écrans.</p></div>
+      </div>
+      <p class="why"><b>Ce qui plombe :</b> « zéro changement visuel » est une promesse que rien ne vérifie. Il n'existe aucun test qui monte les onglets de Studio ; l'éclatement se ferait donc à l'œil, sur le fichier le plus risqué de la coque mobile.</p>
+      <div class="fix">
+        <h4>La version 10/10</h4>
+        <ul>
+          <li><b>Le test avant le découpage.</b> Un test de fumée qui monte chaque onglet et vérifie ses commandes principales. Il coûte une demi-journée et transforme un refactor risqué en opération mécanique — c'est la condition, pas une option.</li>
+          <li><b>La récupération d'enregistrement passe devant.</b> Un enregistrement perdu est le seul défaut de cette fiche qui fasse perdre à l'utilisateur quelque chose d'irremplaçable. Les lignes durables existent déjà côté Rust ; il ne manque que le branchement.</li>
+          <li><b>Le nom de la classe d'erreur est le vrai marqueur.</b> Une erreur de flux stylée par <code>mobile-dictation-error</code>, c'est le vocabulaire du produit qui se défait. La fiche a raison ; elle sous-estime l'étendue.</li>
+        </ul>
+        <p class="guard"><b>Garde-fou</b>La règle de nommage rejoint CONTEXT.md : une classe porte le nom de ce qu'elle est, pas de l'endroit où elle est née.</p>
+      </div>
+    </article>
+
+    <!-- F13 -->
+    <article class="fiche" id="f13">
+      <div class="fh">
+        <h3><i>13</i>Studio desktop et cartes riches</h3>
+        <dl class="marks">
+          <div class="app"><dt>App</dt><dd>8</dd></div>
+          <div style="--tone:var(--soft)"><dt>Idées</dt><dd>6,5</dd></div>
+        </dl>
+      </div>
+      <div class="split">
+        <div><h4>L'audit dit</h4><p>Un dévoilement des médias en <code>scale(1.02)→1</code>, des dégradés de scène tokenisés en <code>--hero-canvas-a/b</code>, un HUD de dictation en verre gravé.</p></div>
+        <div><h4>Le code dit</h4><p>Les canaux existent bien (<code>audio-meter.ts</code>, <code>--dictation-level</code>). Mais aucune ligne n'est citée pour les « dégradés hardcodés » : c'est la seule fiche dont le constat central n'est pas localisé.</p></div>
+      </div>
+      <p class="why"><b>Ce qui plombe :</b> une fiche entièrement composée de finitions, dont le constat principal n'est pas sourcé. Elle est juste sur le fond mais impossible à ouvrir sans refaire le travail de repérage.</p>
+      <div class="fix">
+        <h4>La version 10/10</h4>
+        <ul>
+          <li><b>Localiser avant de proposer.</b> Les trois feuilles de HUD redéfinissent chacune <code>--brand</code> parce qu'elles s'exécutent dans des fenêtres sans les tokens : c'est là que se joue la tokenisation, et c'est une contrainte technique, pas un oubli de style.</li>
+          <li><b>Un seul dévoilement, réutilisé.</b> La classe <code>.reveal</code> vaut pour les médias de Studio, les images du chat et les aperçus d'import. Écrite une fois, elle devient une signature ; écrite trois fois, elle devient trois rythmes.</li>
+          <li><b>Le HUD est un objet à part.</b> Il vit dans sa propre fenêtre avec ses propres contraintes d'ombre déjà réglées ; toute idée de verre doit partir de là plutôt que du vocabulaire de la fenêtre principale.</li>
+        </ul>
+        <p class="guard"><b>Garde-fou</b>Les trois feuilles de HUD listées dans le test de tokens comme exemptions nommées, avec leur raison — sinon la prochaine passe les « corrigera » et cassera les fenêtres.</p>
+      </div>
+    </article>
+
+    <!-- F14 -->
+    <article class="fiche" id="f14">
+      <div class="fh">
+        <h3><i>14</i>Cohérence du langage produit</h3>
+        <dl class="marks">
+          <div class="app"><dt>App</dt><dd>7</dd></div>
+          <div style="--tone:var(--soft)"><dt>Idées</dt><dd>7</dd></div>
+        </dl>
+      </div>
+      <div class="split">
+        <div><h4>L'audit dit</h4><p>Une charte de voix d'une page, une couche i18n minimale avec un <code>t(key)</code> de dix lignes sur cinq écrans, et le retrait du Telegram.</p></div>
+        <div><h4>Le code dit</h4><p>Les trois registres sont réels. Mais une part des messages que l'utilisateur lit vient du Rust, pas des composants : un <code>t()</code> côté frontend ne les atteint pas.</p></div>
+      </div>
+      <p class="why"><b>Ce qui plombe :</b> le périmètre. « Les cinq écrans de premier contact » inclut les erreurs, et les erreurs remontent du backend. Une traduction qui s'arrête à la frontière produit une interface française qui bascule en anglais au moment précis où l'utilisateur a besoin de comprendre.</p>
+      <div class="fix">
+        <h4>La version 10/10</h4>
+        <ul>
+          <li><b>Dire où s'arrête la traduction.</b> Soit les messages d'erreur du backend passent par une table de correspondance côté frontend, soit la fiche annonce explicitement qu'ils restent en anglais. Les deux sont défendables ; le silence ne l'est pas.</li>
+          <li><b>La charte de voix est une règle, pas une note.</b> Elle va dans <code>spec/</code> avec sa ligne dans <code>spec/index.md</code> : c'est ce qui la rend opposable en revue, comme <code>sentence-case</code>.</li>
+          <li><b>Requalifier le Telegram en conformité.</b> Répété ici comme point de langage, alors que c'est une clause d'autonomie produit vérifiée par le CI. Le classer ailleurs, c'est risquer qu'il soit traité comme une préférence.</li>
+        </ul>
+        <p class="guard"><b>Garde-fou</b>Le test qui interdit déjà les motifs amont dans le dépôt est le bon endroit : une règle de voix sans CI redevient une opinion au bout de deux mois.</p>
+      </div>
+    </article>
+  </section>
+
+  <!-- ============ ROADMAP ============ -->
+  <section id="route">
+    <div class="rail"><h2>La feuille de route corrigée</h2><span>3 vagues</span></div>
+    <p class="lede">Deux actions sortent (déjà livrées), une descend d'une vague (elle coûte huit fois moins que prévu), et deux montent parce qu'elles conditionnent le reste.</p>
+
+    <div class="wave">
+      <p class="when">Vague 1 · Ce qui se voit en une semaine</p>
+      <h4>Sans dépendance, sans risque</h4>
+      <ol>
+        <li><b>Le scroll mobile restauré</b> par mémorisation de position, pas par écrans maintenus vivants. La trouvaille numéro un de l'audit.</li>
+        <li><b>Réglages et dossiers indexés dans ⌘K</b> <span class="moved">(descendu de la vague 2 : ~40 lignes, pas 300)</span>, et le raccourci affiché dans le champ de recherche.</li>
+        <li><b>Le Telegram sorti de l'accueil</b> (gardé dans les Réglages) et la ligne de clôture reformulée du côté du lecteur.</li>
+        <li><b>L'état vide de dictation</b> et la scène de transcription, le seul écran de l'app où l'attente n'a aucune forme.</li>
+        <li><b>Le splash peint avant le bundle</b>, dimensionné pour huit secondes et non pour trois.</li>
+      </ol>
+    </div>
+
+    <div class="wave">
+      <p class="when">Vague 2 · La structure</p>
+      <h4>Les fondations, avec leurs tests d'abord</h4>
+      <ol>
+        <li><b>Le test de fumée de Studio</b> <span class="moved">(monté : condition de l'éclatement, pas conséquence)</span>, puis le découpage en six fichiers.</li>
+        <li><b>Paramètres en quatre hubs</b> avec la ventilation écrite, le critère d'« avancé », et le test qui interdit l'onglet orphelin.</li>
+        <li><b>La primitive de squelette</b> sur les neuf familles, et le statut descendu dans les listes.</li>
+        <li><b>La récupération d'enregistrement branchée</b> sur mobile <span class="moved">(monté : c'est la seule perte de données de tout l'audit)</span>.</li>
+        <li><b>La porte fondue dans l'onboarding</b>, avec son quatrième acte quand le sidecar ne démarre pas.</li>
+      </ol>
+    </div>
+
+    <div class="wave">
+      <p class="when">Vague 3 · La signature</p>
+      <h4>Ce qui rend le produit reconnaissable</h4>
+      <ol>
+        <li><b>Le mode lecture des notes</b>, avec ses exceptions nommées pour les tableaux et le code.</li>
+        <li><b>La transition liste vers détail</b>, la seule des quatre idées de motion qui change la perception du produit.</li>
+        <li><b>Le serif étendu aux titres d'écran</b>, avant toute échelle typographique.</li>
+        <li><b>La dictation en plein écran</b>, après le menu long-press qui, lui, débloque un accès.</li>
+        <li><b>La charte de voix et le périmètre de traduction</b>, tranché plutôt que laissé ouvert.</li>
+      </ol>
+    </div>
+
+    <div class="wave" style="border-bottom:0">
+      <p class="when">Ce qui sort du plan</p>
+      <h4>Trois actions à ne pas commencer</h4>
+      <ol>
+        <li><b>Construire une palette de commandes.</b> Elle existe. Il n'en manque qu'un index.</li>
+        <li><b>Rendre le markdown progressif sur mobile.</b> Il l'est déjà, y compris pendant le flux.</li>
+        <li><b>Le scanner anti-hex tel qu'écrit.</b> Il échouerait sur six emplacements corrects. La cible utile est le <code>font-size</code> brut.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="fait" style="margin-top:72px">
+    <div class="rail"><h2>Ce qui est appliqué</h2><span>Vagues 1 à 3</span></div>
+    <p class="lede">Chaque action est dans le dépôt avec le garde-fou que l'audit ne demandait pas. Deux fiches n'ont produit aucun travail : leur constat ne tenait pas.</p>
+    <div class="wave" style="border-bottom:0">
+      <ol>
+        <li><b>Le scroll mobile est restauré.</b> <code>useScrollRestoration.ts</code> : la position est mémorisée par entrée de pile et rejouée pendant que la liste se remplit, abandonnée dès qu'un doigt touche l'écran. Aucun écran n'est gardé monté. Quatre tests, dont celui du retour en arrière.</li>
+        <li><b>La palette indexe les réglages et les projets.</b> Construite depuis <code>SETTINGS_SIDEBAR_GROUPS</code>, pas depuis une seconde liste, avec des synonymes. Un test interdit l'onglet orphelin.</li>
+        <li><b>L'accueil ne fait plus sortir de l'app</b> et sa dernière ligne parle au lecteur. Deux tests, dont un qui interdit le retour de l'ancienne formule.</li>
+        <li><b>La dictation a un état vide et une scène d'attente</b> : la phase nommée, une horloge, trois lignes qui respirent à la place du texte à venir, et une explication après dix secondes. Aucune estimation, parce que rien ici ne sait estimer.</li>
+        <li><b>Le rideau est peint avant le bundle</b>, et l'attente longue porte la marque et se nomme à six secondes, sous le délai de huit du sidecar.</li>
+        <li><b>La récupération d'enregistrement est branchée sur le téléphone.</b> La seule perte de données irréversible de tout l'audit : tout existait côté Rust, seuls les trois derniers props étaient des <code>() =&gt; undefined</code>.</li>
+        <li><b>Studio est éclaté en six modules</b>, 3 362 lignes ramenées à 281, après le test de fumée qui monte les cinq onglets — et qui a immédiatement rattrapé une fonction tronquée par la découpe automatique.</li>
+        <li><b>Le mode lecture des notes</b>, avec ses exceptions nommées : les tableaux, le code et les citations gardent leur pleine largeur. Il a révélé un défaut au passage : lire une note l'écrivait, donc la remontait en tête des récentes.</li>
+        <li><b>Le menu d'appui long</b> sur les lignes de notes, parce que le swipe était le seul chemin vers archiver et supprimer.</li>
+        <li><b>Une seule primitive de squelette</b> à la place de neuf, et elle respire : cinq copies identiques, aucune animée.</li>
+        <li><b>La charte de voix</b> dans <code>spec/one-voice.md</code>, indexée, donc opposable en revue.</li>
+        <li><b>La porte sait dire qu'elle a échoué.</b> Elle accueillait en « bienvenue, collez votre clé pour commencer » quelqu'un dont le moteur venait de tomber : dire à un habitué de commencer, quand commencer est exactement ce qui a échoué, est le moment où une app cesse d'être crue. Elle nomme maintenant ce qui s'est passé, rassure sur les notes, et ne devine aucune cause qu'elle ne connaît pas.</li>
+        <li><b>La palette a été corrigée</b> pour ne plus indexer les douze panneaux non stabilisés : la surface visible et la surface cherchable sont la même, et un test le dit.</li>
+      </ol>
+    </div>
+
+    <div class="wave">
+      <p class="when">Ce qui ne sera pas fait, et pourquoi</p>
+      <h4>Quatre décisions prises plutôt que laissées ouvertes</h4>
+      <ol>
+        <li><b>Les Paramètres en quatre hubs : non.</b> La surface fait treize entrées en quatre groupes, ce qui est une page de réglages ordinaire. Refondre l'architecture d'une information qui n'est pas saturée, c'est déplacer les choses de quelqu'un pour rien. Ce qui restait d'utile dans la fiche a été fait : les treize sont indexés dans ⌘K avec leurs synonymes.</li>
+        <li><b>L'i18n partielle : non.</b> Traduire cinq écrans laisse les erreurs remontées par le Rust en anglais, c'est-à-dire précisément au moment où l'utilisateur a besoin de comprendre. Une interface française qui bascule à l'échec produit le troisième registre que <code>spec/one-voice.md</code> vient d'interdire. La condition d'une vraie traduction est la table de correspondance des erreurs backend ; tant qu'elle n'existe pas, l'anglais cohérent vaut mieux que le français à trous.</li>
+        <li><b>La transition liste vers détail : non.</b> Une transition FLIP entre deux vues dans un fichier de treize mille lignes, invérifiable hors de la coque native. C'est de la finition sur une surface qui marche, au prix d'un risque sur celle qui sert le plus.</li>
+        <li><b>La dictation en plein écran : non.</b> Ce n'est pas un défaut, c'est une refonte, et elle demande une direction visuelle plutôt qu'un correctif. Ce qui manquait vraiment sur cet écran est livré : la phase nommée, l'horloge, le squelette et l'état vide.</li>
+      </ol>
+    </div>
+
+    <div class="wave" style="border-bottom:0">
+      <p class="when">Ce qui reste ouvert</p>
+      <ol>
+        <li><b>La fusion de la porte dans le wizard.</b> Le quatrième acte est livré, qui était la moitié qui comptait : la porte distingue enfin « rien de configuré » de « le moteur n'a pas démarré ». Re-séquencer les quatre écrans en un récit reste à faire, et se relit seul.</li>
+        <li><b>La table de correspondance des erreurs backend</b>, sans laquelle aucune traduction ne tient.</li>
+      </ol>
+    </div>
+  </section>
+
+  <footer>
+    <span>Contre-audit · vérifié contre le dépôt au 1ᵉʳ septembre 2026</span>
+    <span>14 fiches · 57 actions relues · 31 constats testés · vague 1 appliquée</span>
+  </footer>
+</div>
+
+<script>
+  const FICHES = [
+    {n:"01", t:"Paramètres et architecture de l'information", d:"Deux moteurs de recherche là où un suffit", s:6.5, a:5.5, id:"f1"},
+    {n:"02", t:"Onboarding et première visite", d:"Un théâtre sans acte d'échec", s:7, a:6, id:"f2"},
+    {n:"03", t:"Chargements, attentes et retours", d:"Juste, sauf l'estimation inventée", s:8, a:6.5, id:"f3"},
+    {n:"04", t:"Typographie et densité", d:"Le seul exemple cité est un repli correct", s:5.5, a:7, id:"f4"},
+    {n:"05", t:"Première impression et moment héros", d:"Retire une garde sans chercher pourquoi", s:7, a:7.5, id:"f5"},
+    {n:"06", t:"États vides", d:"Frôle une règle écrite sans la nommer", s:7, a:8, id:"f6"},
+    {n:"07", t:"Motion et micro-interactions", d:"L'idée la mieux chiffrée ne marche pas ainsi", s:7, a:8.5, id:"f7"},
+    {n:"08", t:"Chat agent et composer", d:"Deux actions sur quatre déjà livrées", s:5, a:8, id:"f8"},
+    {n:"09", t:"Éditeur de notes", d:"La meilleure fiche, deux angles morts", s:8.5, a:9, id:"f9"},
+    {n:"10", t:"Accessibilité et raccourcis", d:"L'action phare est un doublon", s:4.5, a:7, id:"f10"},
+    {n:"11", t:"Mobile, navigation et gestes", d:"La meilleure trouvaille, mal chiffrée", s:8.5, a:8, id:"f11"},
+    {n:"12", t:"Mobile, Studio et dette de fichier", d:"Un refactor promis sans filet", s:8, a:7, id:"f12"},
+    {n:"13", t:"Studio desktop et cartes riches", d:"Constat central non localisé", s:6.5, a:8, id:"f13"},
+    {n:"14", t:"Cohérence du langage produit", d:"Le périmètre s'arrête avant les erreurs", s:7, a:7, id:"f14"},
+  ];
+  const tone = s => s >= 8 ? "t9" : s >= 6.5 ? "t7" : "t5";
+  const fr = n => n.toLocaleString("fr-FR", {minimumFractionDigits: n % 1 ? 1 : 0});
+  document.getElementById("board").innerHTML = FICHES.map(f => `
+    <a class="row ${tone(f.s)}" href="#${f.id}">
+      <span class="n">${f.n}</span>
+      <span class="t">${f.t}<s>${f.d}</s></span>
+      <span class="m"><u style="--v:${f.s * 10}%"></u><span class="s">${fr(f.s)}</span></span>
+      <span class="prev">${fr(f.a)}</span>
+    </a>`).join("");
+</script>

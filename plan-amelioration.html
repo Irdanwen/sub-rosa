@@ -1,0 +1,677 @@
+<title>Ce qui manque encore à Sub Rosa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#ECEFF3;--paper:#FFFFFF;--ink:#1B222B;--ink-2:#414B57;--soft:#6B7684;--line:#D3DAE2;
+  --accent:#3E5C76;--accent-ink:#2C4257;--accent-soft:#E2E9F0;
+  --ok:#2F7D5B;--ok-soft:#E0EFE7;--no:#A8483E;--no-soft:#F3E2DF;--warn:#8F6420;--warn-soft:#F4EAD5;
+  --gold:#A8843A;--code-bg:#E5EAEF;--shadow:0 1px 0 rgba(27,34,43,.06),0 10px 30px -18px rgba(27,34,43,.25);
+  --serif:"Fraunces","Iowan Old Style","Charter",Georgia,serif;
+  --sans:"Source Sans 3","Source Sans Pro",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+  --mono:"IBM Plex Mono","SF Mono",Menlo,Consolas,monospace;
+  --measure:70ch;
+  color-scheme:light dark;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#14181E;--paper:#1C2229;--ink:#E6EAEF;--ink-2:#BCC5CF;--soft:#8A94A1;--line:#2C3540;
+    --accent:#8FB0CC;--accent-ink:#B9D1E5;--accent-soft:#22303D;
+    --ok:#6CC49A;--ok-soft:#1D3A2D;--no:#E08A80;--no-soft:#3E2724;--warn:#D9A85A;--warn-soft:#3A2E19;
+    --gold:#D4B063;--code-bg:#252D36;--shadow:0 1px 0 rgba(0,0,0,.3),0 10px 30px -18px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#14181E;--paper:#1C2229;--ink:#E6EAEF;--ink-2:#BCC5CF;--soft:#8A94A1;--line:#2C3540;
+  --accent:#8FB0CC;--accent-ink:#B9D1E5;--accent-soft:#22303D;
+  --ok:#6CC49A;--ok-soft:#1D3A2D;--no:#E08A80;--no-soft:#3E2724;--warn:#D9A85A;--warn-soft:#3A2E19;
+  --gold:#D4B063;--code-bg:#252D36;--shadow:0 1px 0 rgba(0,0,0,.3),0 10px 30px -18px rgba(0,0,0,.6);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.55;font-variant-numeric:tabular-nums}
+a{color:var(--accent-ink);text-decoration-thickness:1px;text-underline-offset:3px}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+code{font-family:var(--mono);font-size:.86em;background:var(--code-bg);padding:.08em .35em;border-radius:4px;color:var(--ink)}
+pre{font-family:var(--mono);font-size:.84rem;line-height:1.5;background:var(--code-bg);padding:14px 16px;border-radius:6px;overflow-x:auto;margin:0}
+pre code{background:none;padding:0;font-size:inherit}
+.wrap{max-width:var(--measure);margin:0 auto;padding:0 24px}
+h1,h2,h3{font-family:var(--serif);font-weight:600;line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:clamp(2.1rem,5.2vw,3.2rem);font-variation-settings:"opsz" 144;letter-spacing:-.01em}
+h2{font-size:1.7rem;margin:0 0 6px}
+h3{font-size:1.2rem}
+p{margin:0 0 1em}
+.eyebrow{font-family:var(--mono);font-size:.74rem;letter-spacing:.09em;text-transform:uppercase;color:var(--soft);margin:0 0 14px}
+.lede{font-size:1.18rem;line-height:1.5;color:var(--ink-2);max-width:60ch;margin:18px 0 0}
+header.hero{padding:64px 0 36px;border-bottom:1px solid var(--line)}
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:10px;margin:32px 0 0}
+.strip>div{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:12px 14px;min-width:0}
+.strip .k{font-family:var(--mono);font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);line-height:1.3}
+.strip .v{font-family:var(--serif);font-size:1.55rem;font-weight:600;margin-top:4px;line-height:1.1;white-space:nowrap}
+.strip .v.gold{color:var(--gold)}
+section{padding:44px 0 8px}
+section+section{border-top:1px solid var(--line)}
+.intro{color:var(--ink-2);max-width:62ch}
+/* barème */
+table{border-collapse:collapse;width:100%;font-size:.95rem}
+th,td{text-align:left;vertical-align:top;padding:9px 10px;border-bottom:1px solid var(--line)}
+th{font-family:var(--mono);font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);font-weight:500}
+td.n{font-family:var(--mono);white-space:nowrap}
+.tbl{overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:4px 8px;margin:14px 0 22px}
+.bar{position:relative;height:8px;background:var(--code-bg);border-radius:4px;overflow:hidden;min-width:110px}
+.bar i{position:absolute;inset:0;width:var(--w);background:var(--accent);border-radius:4px}
+.bar.gold i{background:var(--gold)}
+/* défauts */
+ol.defects{padding-left:0;list-style:none;counter-reset:d;margin:14px 0 0}
+ol.defects li{counter-increment:d;display:grid;grid-template-columns:2.4rem 1fr;gap:0 10px;padding:12px 0;border-top:1px solid var(--line)}
+ol.defects li::before{content:counter(d,decimal-leading-zero);font-family:var(--mono);color:var(--soft);font-size:.85rem;padding-top:3px}
+ol.defects b{font-weight:600}
+ol.defects .fix{color:var(--ink-2);margin-top:4px}
+ol.defects .fix::before{content:"Corrigé en v2 : ";font-family:var(--mono);font-size:.72rem;letter-spacing:.05em;text-transform:uppercase;color:var(--ok)}
+/* paliers */
+.tier{margin:26px 0 8px}
+.tier-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 16px;margin:0 0 6px}
+.tier-head .when{font-family:var(--mono);font-size:.78rem;color:var(--accent-ink);background:var(--accent-soft);padding:3px 9px;border-radius:999px}
+.tier p.why{color:var(--ink-2);margin:0 0 14px;max-width:62ch}
+.act{background:var(--paper);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);padding:18px 20px 14px;margin:0 0 14px}
+.act header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;margin-bottom:10px}
+.act .id{font-family:var(--mono);font-size:.78rem;color:var(--soft)}
+.act h3{flex:1 1 20ch}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-family:var(--mono);font-size:.7rem;letter-spacing:.03em;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--ink-2);white-space:nowrap}
+.chip.cost{background:var(--accent-soft);border-color:transparent;color:var(--accent-ink)}
+.chip.dep{background:var(--warn-soft);border-color:transparent;color:var(--warn)}
+.chip.adr{background:var(--ok-soft);border-color:transparent;color:var(--ok)}
+.act dl{margin:0;display:grid;grid-template-columns:5.6rem 1fr;gap:6px 12px;font-size:.96rem}
+.act dt{font-family:var(--mono);font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);padding-top:4px}
+.act dd{margin:0}
+.act dd ul{margin:0;padding-left:1.1em}
+.act dd li{margin:0 0 3px}
+.act dd.gate{border-left:3px solid var(--ok);padding-left:10px}
+.act dd.risk{color:var(--ink-2)}
+@media (max-width:560px){.act dl{grid-template-columns:1fr;gap:2px 0}.act dt{padding-top:8px}}
+/* refus */
+.refuse{list-style:none;padding:0;margin:12px 0 0}
+.refuse li{display:grid;grid-template-columns:1fr;gap:2px;padding:11px 0;border-top:1px solid var(--line)}
+.refuse b{font-weight:600}
+.refuse span{color:var(--ink-2)}
+/* verify */
+.first{background:var(--accent-soft);border-radius:8px;padding:16px 20px;margin:14px 0 22px}
+.first p{margin:0 0 8px}
+footer{border-top:1px solid var(--line);padding:30px 0 60px;color:var(--soft);font-size:.9rem;display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media (max-width:560px){footer{grid-template-columns:1fr}}
+footer b{color:var(--ink-2);font-weight:600}
+.check{color:var(--ok);font-weight:600}
+@media (prefers-reduced-motion:no-preference){.bar i{transition:width .6s cubic-bezier(.22,1,.36,1)}}
+</style>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Plan d'amélioration · 2 septembre 2026 · base v1.58.0 (<code>c8666a0c</code>)</p>
+    <h1>Ce qui manque encore à Sub Rosa, et dans quel ordre le construire</h1>
+    <p class="lede">L'application est saine : zéro vulnérabilité critique, 1 197 tests Rust, 224 suites front, une CI verte. Ce plan ne cherche donc pas ce qui est cassé. Il cherche ce qui manque, le range par douleur et par coût, et donne à chaque action une porte qu'une commande peut vérifier. Il a d'abord été écrit d'un jet, noté contre un barème posé avant la note, puis corrigé jusqu'à ce que le barème soit satisfait.</p>
+    <div class="strip">
+      <div><div class="k">Paliers</div><div class="v">5</div></div>
+      <div><div class="k">Actions</div><div class="v">35</div></div>
+      <div><div class="k">Refus motivés</div><div class="v">13</div></div>
+      <div><div class="k">Défauts de la v1</div><div class="v">11</div></div>
+      <div><div class="k">Note v1 → v2</div><div class="v gold">5,5 → 10</div></div>
+    </div>
+  </div>
+</header>
+
+<section id="execution">
+  <div class="wrap">
+    <p class="eyebrow">Exécution · 2 au 5 septembre 2026 · v1.59.0 à v1.61.1 publiées · 35 actions sur 35</p>
+    <h2>Ce qui est fait, ce qui reste</h2>
+    <p class="intro">Le plan a été exécuté lot par lot, chaque lot noté puis corrigé avant le suivant, la CI verte à chaque poussée. La v1.59.0 (macOS notarisé, Windows, mise à jour automatique) embarque le plan ; la v1.60.0, taguée le soir même, ajoute la recherche par le sens, la réponse en flux, « Ask this note » et les questions de suite. La source vivante de cet état est <code>docs/roadmap.md</code>, cochée porte par porte.</p>
+    <div class="strip">
+      <div><div class="k">Paliers clos</div><div class="v">0 · 1 · 2 · 3 · 4</div></div>
+      <div><div class="k">Actions faites</div><div class="v">35 / 35</div></div>
+      <div><div class="k">ADR écrites</div><div class="v">9</div></div>
+      <div><div class="k">Tests</div><div class="v">241 suites · 780 Rust</div></div>
+      <div><div class="k">Version</div><div class="v gold">1.58.0 → 1.61.1</div></div>
+    </div>
+    <div class="tbl"><table>
+      <thead><tr><th>Palier</th><th>État</th><th>Ce qui a changé</th></tr></thead>
+      <tbody>
+        <tr><td><b>0 · Sans code</b></td><td>Fait</td><td>Ruleset sur <code>main</code> avec vérifications requises, Dependabot groupé avec ses raisons, digest upstream, alertes traitées.</td></tr>
+        <tr><td><b>1 · La chaîne</b></td><td>Fait</td><td>iOS et Windows compilent sur chaque PR, couverture en cliquet (front 75,8, Rust 54,4), notes de version générées, chaîne d'approvisionnement sur horloge, secrets du sidecar sur stdin.</td></tr>
+        <tr><td><b>2 · Ce que l'utilisateur sent</b></td><td>Fait</td><td>Recherche FTS5 accentuée, un seul premier lancement, archive portable chiffrable (ADR-0042), hors-ligne dit et rattrapé, diagnostic expurgé, page Stockage (l'état de l'agent est montré, pas purgé : c'est voulu), capacités par plateforme lues depuis Rust là où c'est une capacité.</td></tr>
+        <tr><td><b>3 · La structure</b></td><td>Fait, un chantier continu</td><td>Cinq parcours applicatifs sur pont factice, cliquets de taille et d'avertissements, un seul hook clavier/focus (spec <code>modal-focus</code>), chargement à la demande (shells, Réglages, Studio, chunks vendeurs), six specs Rust, documentation remise d'accord (ADR 0003 → 0045, addendum 0011). Le découpage des gros fichiers se fait à chaque ajout, pas en une fois.</td></tr>
+        <tr><td><b>4 · Après</b></td><td>Fait</td><td>Notifications quand elles servent, modèle d'extraction mémoire, ADR dictation, démarrage mesuré et registre de migrations, export Markdown, Rapports et Modèles sur iPhone. Le 5 septembre : l'app en français (4.1, ADR-0047 : la phrase anglaise est la clé, 1 928 phrases dont les erreurs du moteur, catalogue et garde en test) et l'extension de partage iOS (4.2, ADR-0048 : une boîte de réception dans l'App Group, compilée ; la signature attend quatre gestes dans App Store Connect, écrits dans HANDOFF.md).</td></tr>
+        <tr><td><b>Signatures</b></td><td>Faites, et dépassées</td><td>S.1 le registre de ce qui est parti (ADR-0043). S.2 « Ask your notes » avec citations (ADR-0044), puis par le sens avec des passages embarqués en arrière-plan (ADR-0046), en flux avec annulation, sur les deux écrans ; l'agent desktop cherche avec la même discipline.</td></tr>
+      </tbody>
+    </table></div>
+    <p class="intro">Ce que l'exécution a appris, au-delà du plan : la recherche qui exige tous les mots d'une question ne trouve rien, et il a fallu la refaire deux fois (mots de contenu, puis sens) ; un fichier au-dessus du cliquet ne grossit plus, donc chaque ajout naît dans son module ; une réponse qui met dix secondes doit s'écrire sous les yeux.</p>
+  </div>
+</section>
+
+<section id="bareme">
+  <div class="wrap">
+    <p class="eyebrow">1 · Le barème, posé avant la note</p>
+    <h2>Cinq critères, deux points chacun</h2>
+    <p class="intro">On note un plan, pas une application. Un plan vaut par ce qu'il permet de commencer demain matin et par ce qu'il permet de prouver ensuite.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Critère</th><th>Ce que vaut 2 / 2</th><th>Ce que vaut 0</th></tr></thead>
+      <tbody>
+        <tr><td><b>Ancrage</b></td><td>Chaque action repose sur un fait vérifié dans le dépôt, la CI ou les données : un chemin, un nombre, un run.</td><td>Une supposition, une impression, un « probablement ».</td></tr>
+        <tr><td><b>Hiérarchie</b></td><td>L'ordre suit la douleur et le coût ; les dépendances sont nommées ; ce qu'on ne fera pas est écrit avec sa raison.</td><td>Une liste par domaine, sans avant ni après.</td></tr>
+        <tr><td><b>Falsifiabilité</b></td><td>Chaque action a une porte : une commande, un test ou une métrique qui dit si c'est fini.</td><td>« Améliorer », « décider », « réduire ».</td></tr>
+        <tr><td><b>Cohérence</b></td><td>Respecte les ADR acceptées, les non-objectifs du fork et les specs ; nomme les ADR à écrire et celles à ne pas rouvrir.</td><td>Une action qui re-litige une décision écrite sans le dire.</td></tr>
+        <tr><td><b>Exécutabilité</b></td><td>Lots dimensionnés, premier pas concret, risque nommé, vérification par lot.</td><td>Il faut relire le dépôt pour savoir par où commencer.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section id="v1">
+  <div class="wrap">
+    <p class="eyebrow">2 · La première version, notée</p>
+    <h2>Trente-quatre items rangés par domaine : 5,5 / 10</h2>
+    <p class="intro">Le premier jet listait, sous quatre têtes (outillage, qualité du code, produit, refus), tout ce que les quatre rapports d'exploration avaient fait remonter. Il était large et presque entièrement vrai. Il n'était pas un plan.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Critère</th><th>v1</th><th></th><th>Pourquoi</th></tr></thead>
+      <tbody>
+        <tr><td>Ancrage</td><td class="n">1,5</td><td><div class="bar" style="--w:75%"><i></i></div></td><td>Deux items sans mesure (« réduire le DMG de 145 Mo », « améliorer le démarrage »), un item qui ignore la raison écrite dans le code (notifications desktop).</td></tr>
+        <tr><td>Hiérarchie</td><td class="n">1,0</td><td><div class="bar" style="--w:50%"><i></i></div></td><td>Ordre par domaine ; aucune dépendance ; les refus sans raison ; un item déjà à moitié fait.</td></tr>
+        <tr><td>Falsifiabilité</td><td class="n">0,5</td><td><div class="bar" style="--w:25%"><i></i></div></td><td>Vingt-sept items sur trente-quatre sans condition de fin.</td></tr>
+        <tr><td>Cohérence</td><td class="n">1,0</td><td><div class="bar" style="--w:50%"><i></i></div></td><td>Trois items contredisent une décision écrite ; les ADR à produire ne sont pas nommées ; un item est impossible tel quel.</td></tr>
+        <tr><td>Exécutabilité</td><td class="n">1,5</td><td><div class="bar" style="--w:75%"><i></i></div></td><td>Les items sont concrets, mais sans coût, sans risque et sans premier pas.</td></tr>
+        <tr><td><b>Total</b></td><td class="n"><b>5,5</b></td><td><div class="bar gold" style="--w:55%"><i></i></div></td><td></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section id="defauts">
+  <div class="wrap">
+    <p class="eyebrow">3 · Les défauts, nommés</p>
+    <h2>Onze défauts, et ce que la v2 en a fait</h2>
+    <ol class="defects">
+      <li><div><b>Sans porte.</b> « Décider des onglets masqués », « réduire », « améliorer » : rien ne disait quand c'était fini.<div class="fix">chacune des 35 actions porte une ligne <em>Porte</em> qu'une commande ou un test tranche.</div></div></li>
+      <li><div><b>Rangé par domaine, pas par douleur.</b> Le premier item était une permission GitHub, le seizième une recherche que l'utilisateur attend tous les jours ; rien ne disait lequel venait d'abord.<div class="fix">cinq paliers par coût, du palier 0 qui ne demande aucun code au palier 4 qui n'a de sens qu'après le reste.</div></div></li>
+      <li><div><b>Deux items sans mesure.</b> « Réduire le DMG (145 Mo) » sans savoir ce qui pèse ; « améliorer le démarrage » sans chrono.<div class="fix">le premier sort du plan (§ 5), le second devient « mesurer d'abord » (4.7) avec la mesure comme porte.</div></div></li>
+      <li><div><b>Trois items contre une décision écrite.</b> La reprise automatique hors ligne contredit ADR-0018 ; « le français sur les écrans principaux » est l'i18n partielle que le contre-audit a refusée ; le streaming réel traverse le point chaud de <code>june-api</code> que l'ADR-0027 interdit au fork.<div class="fix">2.3 devient un état affiché et une reprise en un geste ; 4.1 devient l'i18n en entier, après le découpage ; le streaming sort du plan avec sa raison.</div></div></li>
+      <li><div><b>Un item déjà à moitié fait.</b> « Reconstruire le sidecar en dev » : <code>scripts/tauri-dev.mjs:42</code> lance déjà <code>build-sidecar.mjs --check</code> et avertit, par choix (« warn, never block »).<div class="fix">retiré. Le comportement actuel est une décision documentée.</div></div></li>
+      <li><div><b>Un item impossible tel quel.</b> « Tests E2E Playwright » : <code>tauri-driver</code> n'existe pas sur macOS, et <code>docs/qa/agent-driven-integration.md</code> nomme ce qui ne s'automatise pas.<div class="fix">3.1 devient cinq parcours au niveau de <code>App</code> avec le pont Tauri factice, visant la classe de bug « livré cassé en v1.50.0 ».</div></div></li>
+      <li><div><b>Un item qui ignorait la raison dans le code.</b> « Notifications desktop » alors que <code>src/lib/notifications.ts:15</code> explique pourquoi il n'y en a pas.<div class="fix">4.4 répond à la raison : prévenir seulement quand la fenêtre n'est pas devant et que le travail a duré.</div></div></li>
+      <li><div><b>Aucune dépendance.</b> On aurait pu extraire les chaînes d'un fichier qu'on allait découper.<div class="fix">six dépendances explicites, portées en pastille sur les actions concernées.</div></div></li>
+      <li><div><b>Ni coût ni risque.</b><div class="fix">chaque action porte un coût (heure, session, jour, semaine) et une ligne <em>Risque</em>.</div></div></li>
+      <li><div><b>Des refus sans raison.</b> Quatre lignes : « chiffrement au repos, conseil mobile, ffmpeg, sync cloud ».<div class="fix">treize refus, chacun avec la décision qui le porte (§ 5).</div></div></li>
+      <li><div><b>Aucune ADR nommée.</b> La recherche FTS5 rouvre une clause d'ADR-0009 ; l'archive crée une frontière ; le suivi upstream conditionne un item du modèle de menace.<div class="fix">cinq écrits d'architecture nommés : addendum 0009, ADR-0040 archive, décision upstream, ADR dictation, addendum 0011.</div></div></li>
+    </ol>
+  </div>
+</section>
+
+<section id="plan">
+  <div class="wrap">
+    <p class="eyebrow">4 · Le plan, version 10 / 10</p>
+    <h2>Cinq paliers, du plus court au plus long</h2>
+    <p class="intro">Chaque action se lit de la même façon : ce que le dépôt montre aujourd'hui, ce qu'on fait, la porte qui dit que c'est fini, le coût, le risque. Les pastilles jaunes sont des dépendances ; les vertes, un écrit d'architecture à produire.</p>
+
+    <!-- ===================== PALIER 0 ===================== -->
+    <div class="tier">
+      <div class="tier-head"><h3>Palier 0 · Sans code</h3><span class="when">une heure</span></div>
+      <p class="why">Cinq réglages que personne n'a faits parce qu'ils ne passent pas par une PR. Ils protègent tout le reste.</p>
+
+      <article class="act">
+        <header><span class="id">0.1</span><h3>Protéger <code>main</code> et allumer les scanners</h3><div class="chips"><span class="chip cost">20 min</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd><code>gh api repos/Irdanwen/sub-rosa/branches/main/protection</code> répond « Branch not protected », <code>rulesets</code> renvoie une liste vide, et <code>security_and_analysis</code> a le secret scanning, la protection au push, les alertes et les mises à jour de sécurité Dependabot tous à <code>disabled</code>. Le dépôt est public. <code>docs/github-security-readiness.md</code> demande chacun de ces réglages et dit encore « repo privé ».</dd>
+          <dt>Fait</dt><dd>Un ruleset sur <code>main</code> : pas de force-push, pas de suppression, checks <code>desktop</code>, <code>june-api</code> et <code>repository hygiene</code> requis sur tout push. Pas d'obligation de PR : le rituel de release pousse directement (38 versions en 30 jours), on le garde. Les quatre scanners à <code>enabled</code>. Le doc mis à jour.</dd>
+          <dt>Porte</dt><dd class="gate"><code>gh api repos/Irdanwen/sub-rosa/rulesets --jq length</code> ≥ 1 ; <code>gh api repos/Irdanwen/sub-rosa --jq .security_and_analysis</code> sans aucun <code>disabled</code>.</dd>
+          <dt>Risque</dt><dd class="risk">Un push qui rate un check ne part plus : c'est le but. Le premier tag après le ruleset sert de test.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">0.2</span><h3>Débloquer la synchronisation upstream</h3><div class="chips"><span class="chip cost">30 min</span><span class="chip dep">ouvre 1.6</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>Cinq échecs consécutifs du 3 au 31 août. Le log dit exactement : « refusing to allow a GitHub App to create or update workflow <code>.github/workflows/build-clovy-api.yml</code> without <code>workflows</code> permission ». La branche de sync porte des fichiers de workflow upstream, que le token de l'app ne peut pas pousser. La base du fork est <code>bce09361</code> (1<sup>er</sup> juillet) ; l'upstream est au 13 août.</dd>
+          <dt>Fait</dt><dd>Dans <code>upstream-sync.yml</code>, après le merge et avant le push : <code>git checkout main -- .github/workflows &amp;&amp; git commit</code>. Le fork n'adopte de toute façon jamais un workflow upstream tel quel (il en a supprimé plusieurs, FORK_NOTES § Autonomie). Aucun PAT à créer.</dd>
+          <dt>Porte</dt><dd class="gate"><code>gh run list --workflow=upstream-sync.yml --limit 1</code> vert au lundi suivant, et une PR <code>upstream-sync</code> ouverte.</dd>
+          <dt>Risque</dt><dd class="risk">La PR ouverte contiendra deux mois d'upstream d'un coup, avec <code>venice.rs</code> comme point chaud. Elle se traite en 1.6, pas ici.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">0.3</span><h3>Un seul lockfile</h3><div class="chips"><span class="chip cost">10 min</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd><code>bun.lock</code> (104 Ko) et <code>pnpm-lock.yaml</code> (134 Ko) coexistent ; <code>packageManager</code> dit <code>pnpm@9.15.4</code>. Deux résolutions possibles selon le poste.</dd>
+          <dt>Fait</dt><dd>Supprimer <code>bun.lock</code>. Ajouter à <code>repository-hygiene.yml</code> un refus de tout second lockfile (<code>bun.lock</code>, <code>yarn.lock</code>, <code>package-lock.json</code>).</dd>
+          <dt>Porte</dt><dd class="gate"><code>ls bun.lock</code> échoue ; une PR qui le réintroduit rend <code>repository hygiene</code> rouge.</dd>
+          <dt>Risque</dt><dd class="risk">Aucun : les scripts sont annoncés « runner-agnostic », et la CI n'utilise que pnpm.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">0.4</span><h3>Enterrer les workflows d'un serveur que le fork n'a pas</h3><div class="chips"><span class="chip cost">20 min</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>Sur ce fork, <code>june-api</code> est un sidecar, pas un serveur. Trois workflows le supposent déployé : <code>build-june-api.yml</code> (inerte, GHCR refuse l'owner en majuscules), <code>june-api-watchdog.yml</code> (sonde un endpoint upstream, deux issues fermées #36 et #50), <code>promote-june-api.yml</code>. <code>docs/reproducible-builds.md</code> attend une Phase B sur la même image.</dd>
+          <dt>Fait</dt><dd>Supprimer les trois workflows. Dans <code>docs/index.md</code>, marquer <code>reproducible-builds.md</code> « ne s'applique pas au fork : le backend est embarqué ».</dd>
+          <dt>Porte</dt><dd class="gate"><code>ls .github/workflows | wc -l</code> = 10 ; aucun lien mort dans <code>docs/index.md</code>.</dd>
+          <dt>Risque</dt><dd class="risk">Nul : les trois sont en <code>workflow_dispatch</code> seul.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">0.5</span><h3><code>HANDOFF.md</code> dit vrai</h3><div class="chips"><span class="chip cost">10 min</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>§ 3 affiche « ⏳ notarisation encore requise » alors que <code>release.yml</code> notarise (CLAUDE.md, et huit releases cette semaine) ; § 6 affiche « ⏳ token de publication » alors que <code>sub-rosa-releases</code> reçoit chaque tag.</dd>
+          <dt>Fait</dt><dd>Passer les deux en <code>✅</code> avec la date. Garder ⏳ sur les icônes définitives et ➖ sur les licences tierces, qui sont réellement ouverts.</dd>
+          <dt>Porte</dt><dd class="gate">Aucun ⏳ sur un item que la CI prouve livré.</dd>
+          <dt>Risque</dt><dd class="risk">Aucun.</dd>
+        </dl>
+      </article>
+    </div>
+
+    <!-- ===================== PALIER 1 ===================== -->
+    <div class="tier">
+      <div class="tier-head"><h3>Palier 1 · Le flux redevient sûr</h3><span class="when">une semaine</span></div>
+      <p class="why">Ce qui rend chaque lot suivant moins risqué : des dépendances à jour, trois cibles qui compilent, une couverture qui ne peut que monter, des lints qui tiennent.</p>
+
+      <article class="act">
+        <header><span class="id">1.1</span><h3>Solder le backlog Dependabot</h3><div class="chips"><span class="chip cost">2 jours</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>41 PR ouvertes, la plus ancienne du 1<sup>er</sup> juillet. La seule PR humaine, #69 « Sweep the dependency backlog, holding the two that break things » (29 juillet), n'a jamais été fusionnée. Majeurs en attente : <code>sqlx-sqlite</code> 0.8 → 0.9, <code>cpal</code> 0.15 → 0.18, <code>rand</code> 0.8 → 0.9, <code>tauri</code> 2.8 → 2.11, <code>jsonwebtoken</code> 9 → 11, <code>jsdom</code> 25 → 30, <code>biome</code> 2.4 → 2.5, le groupe React 19.</dd>
+          <dt>Fait</dt><dd><ul>
+            <li>Rebaser et fusionner #69 ; fermer les PR qu'elle couvre.</li>
+            <li>Un lot par majeur restant, chacun passé par <code>make verify</code> et <code>cargo check --target aarch64-apple-ios --lib</code>.</li>
+            <li>Dans <code>.github/dependabot.yml</code> : grouper mineurs et patchs en une PR hebdomadaire par écosystème, et activer l'auto-merge sur les patchs de devDependencies quand les checks sont verts.</li>
+            <li>Chaque majeur refusé a une ligne d'<code>ignore</code> avec sa raison.</li></ul></dd>
+          <dt>Porte</dt><dd class="gate"><code>gh pr list --author app/dependabot --json createdAt</code> ne contient aucune PR de plus de 14 jours ; <code>pnpm outdated</code> et <code>cargo outdated</code> n'affichent aucun majeur sans ligne d'ignore.</dd>
+          <dt>Risque</dt><dd class="risk"><code>cpal</code> 0.18 touche la capture sur les trois plateformes : un test au micro réel sur macOS et iOS avant de fusionner. <code>sqlx-sqlite</code> 0.9 : relire <code>db/migrations.rs</code>, qui découpe les fichiers sur <code>;</code>.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">1.2</span><h3>iOS et Windows compilent sur chaque PR</h3><div class="chips"><span class="chip cost">1 jour</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd><code>ios-release.yml</code> est en <code>workflow_dispatch</code> seul ; le job <code>windows-rust</code> de <code>desktop.yml</code> est gardé par <code>if: github.event_name == 'workflow_dispatch'</code>. Une PR ne compile ni pour iOS ni pour Windows. CLAUDE.md demande à la main un <code>cargo check</code> iOS que rien n'impose.</dd>
+          <dt>Fait</dt><dd>Deux jobs sur PR, filtrés sur <code>src-tauri/**</code> et <code>june-api/**</code> : <code>ios-check</code> (macOS, <code>cargo check --target aarch64-apple-ios --lib</code> et <code>-sim</code>) et <code>windows-check</code> (<code>windows-latest</code>, <code>cargo check</code> + <code>pnpm build</code>). Les deux ajoutés aux checks requis du ruleset (0.1).</dd>
+          <dt>Porte</dt><dd class="gate">Une PR qui casse <code>gen/apple</code> ou un <code>cfg(windows)</code> est rouge avant merge ; les deux jobs figurent dans <code>gh api repos/Irdanwen/sub-rosa/rulesets/&lt;id&gt;</code>.</dd>
+          <dt>Risque</dt><dd class="risk">Minutes CI doublées sur les PR Rust. Le filtre de chemins et le cache cargo par cible les contiennent.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">1.3</span><h3>La couverture devient un cliquet</h3><div class="chips"><span class="chip cost">1 jour</span><span class="chip dep">avant 3.2</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>L'outillage est payé et inutilisé : <code>@vitest/coverage-v8</code> configuré dans <code>vite.config.ts</code>, <code>cargo-llvm-cov</code> dans deux scripts, <code>coverage.yml</code> en dispatch seul, aucun seuil, aucun upload.</dd>
+          <dt>Fait</dt><dd><code>coverage.yml</code> sur PR. Un fichier <code>coverage-floor.json</code> (lignes couvertes en % pour <code>src/</code> et <code>src-tauri/</code>) : le job échoue sous le plancher, et un script relève le plancher quand la mesure monte. Le plancher initial est la mesure du jour.</dd>
+          <dt>Porte</dt><dd class="gate">Une PR qui supprime un test sans en ajouter est rouge ; <code>coverage-floor.json</code> n'a jamais baissé dans <code>git log -p</code>.</dd>
+          <dt>Risque</dt><dd class="risk">Le runner vitest peut sortir non nul sur le teardown de <code>hud-meeting.test.ts</code> : juger sur le compte d'échecs du rapport JSON, comme aujourd'hui.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">1.4</span><h3>Une release dit ce qu'elle change</h3><div class="chips"><span class="chip cost">1 jour</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd><code>release.yml:306</code> publie avec <code>--notes "Sub Rosa $TAG"</code>, une chaîne littérale. <code>scripts/generate-release-changelog.mjs</code> n'est appelé nulle part. Aucun <code>CHANGELOG.md</code>. Les messages de commit sont pourtant déjà des phrases lisibles, et l'updateur Tauri sait afficher le champ <code>notes</code> de <code>latest.json</code>.</dd>
+          <dt>Fait</dt><dd>Le script produit les notes depuis les commits entre deux tags (hors <code>chore(release)</code>), <code>release.yml</code> les passe à <code>gh release create</code> et au manifeste, et le dialogue de mise à jour (<code>updates.rs</code>, <code>app/update-decision</code>) les affiche. <code>CHANGELOG.md</code> est regénéré à chaque tag.</dd>
+          <dt>Porte</dt><dd class="gate"><code>gh release view v1.59.0 --repo Irdanwen/sub-rosa-releases --json body --jq .body</code> non vide ; <code>latest.json</code> a un champ <code>notes</code> ; un test front rend ces notes dans le dialogue.</dd>
+          <dt>Risque</dt><dd class="risk">Un message de commit trop technique arrive tel quel devant l'utilisateur. La spec <code>one-voice</code> s'applique désormais aussi aux messages de commit.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">1.5</span><h3>Le Rust du desktop sous les mêmes lints que le backend</h3><div class="chips"><span class="chip cost">2 jours</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd><code>june-api/Cargo.toml</code> déclare <code>[workspace.lints]</code> : <code>pedantic</code>, <code>unwrap_used</code>, <code>expect_used</code>, <code>panic</code>, <code>print_stdout</code>. <code>src-tauri/Cargo.toml</code> n'a aucune section <code>[lints]</code> pour 70 922 lignes. Hors tests : 4 <code>unwrap</code>, 14 <code>expect</code>, 22 <code>#[allow]</code>, 72 <code>unsafe</code> tous en pont FFI.</dd>
+          <dt>Fait</dt><dd>La même section, sauf <code>unsafe_code = "forbid"</code> remplacé par <code>unsafe_op_in_unsafe_fn = "deny"</code> (le FFI est légitime). Les 18 sites traités ou justifiés par un <code>#[allow]</code> commenté. <code>pedantic</code> d'abord en <code>warn</code>, puis règle par règle en <code>deny</code>.</dd>
+          <dt>Porte</dt><dd class="gate"><code>cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings</code> vert avec la section présente ; chaque <code>#[allow(</code> de <code>src-tauri/src</code> est suivi d'un commentaire (test <code>allow_has_reason</code>).</dd>
+          <dt>Risque</dt><dd class="risk"><code>pedantic</code> sur 71 000 lignes produit des centaines d'avis : c'est pour cela qu'on l'active en <code>warn</code> et qu'on ferme les règles une à une.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">1.6</span><h3>Décider du suivi upstream, une fois</h3><div class="chips"><span class="chip cost">une session</span><span class="chip dep">après 0.2</span><span class="chip adr">ADR ou addendum</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>La sync est cassée depuis cinq semaines et le fork n'a jamais fusionné l'upstream depuis sa base : il cherry-picke (la récupération v1.25.2 a rapporté six correctifs réels : fenêtre blanche, ⌘K, cycle de vie macOS). L'upstream ralentit (dernier commit le 13 août). Le modèle de menace laisse la clé Carpe Diem dans l'environnement du sidecar avec une seule justification : « Revisit if the app stops tracking upstream ».</dd>
+          <dt>Fait</dt><dd>Traiter la PR ouverte par 0.2 en une session. Si elle passe le garde <code>repository hygiene</code> sans élargir l'allowlist : continuer, en cadence mensuelle, procédure FORK_NOTES § 13. Sinon : cesser de suivre, l'écrire dans une ADR, et alors passer la clé par stdin dans <code>sidecar.rs</code> (la seule modification de <code>june-api</code> que le modèle de menace autorise à ce moment-là).</dd>
+          <dt>Porte</dt><dd class="gate">Un fichier daté dans <code>docs/adr/</code> qui tranche ; FORK_NOTES § 13 mis à jour ; si « cesser » : <code>tests/no_secrets_in_process_env.rs</code> étendu au sidecar lui-même.</dd>
+          <dt>Risque</dt><dd class="risk">Décider « continuer » sans tenir la cadence ramène au point de départ. La porte est la cadence, pas la décision.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">1.7</span><h3>Le log de dictée cesse de grossir</h3><div class="chips"><span class="chip cost">1 h</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd><code>dictation-events.log</code> pèse 6,8 Mo sur ce poste ; <code>dictation.rs:56</code> nomme le fichier et aucun <code>rotate</code>, <code>truncate</code> ou plafond n'existe. Le log du sidecar, lui, tourne déjà.</dd>
+          <dt>Fait</dt><dd>La même rotation que le sidecar : taille maximale, une archive.</dd>
+          <dt>Porte</dt><dd class="gate">Test <code>dictation_log_rotates</code> : écrire deux fois la taille maximale laisse un fichier ≤ maximum et une archive.</dd>
+          <dt>Risque</dt><dd class="risk">Aucun.</dd>
+        </dl>
+      </article>
+    </div>
+
+    <!-- ===================== PALIER 2 ===================== -->
+    <div class="tier">
+      <div class="tier-head"><h3>Palier 2 · Ce que l'utilisateur sent chaque jour</h3><span class="when">deux semaines</span></div>
+      <p class="why">Neuf manques que l'inventaire produit a fait apparaître, chacun visible depuis la fenêtre et non depuis le dépôt.</p>
+
+      <article class="act">
+        <header><span class="id">2.1</span><h3>Une recherche qui lit les notes</h3><div class="chips"><span class="chip cost">3 jours</span><span class="chip adr">addendum ADR-0009</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd><code>list_notes</code> plafonne à 100 (<code>commands.rs:108</code>) et la recherche est un filtre client sur ce tableau (<code>NotesList.tsx:113</code>, <code>NotesScreen.tsx:112</code>) : la cent-unième note est invisible. La seule recherche Rust, <code>search_note_context</code>, fait des <code>LIKE</code> limités à 20 pour agent-lite, avec le commentaire « FTS5 is a later upgrade ». Aucune table FTS dans les 19 migrations. ADR-0009 : « Revisit only if document-import lands » ; les imports sont livrés depuis v1.45.0, la condition est remplie. La palette ⌘K (<code>Sidebar.tsx:366-560</code>) indexe réglages, projets et récents, pas le contenu.</dd>
+          <dt>Fait</dt><dd><ul>
+            <li>Migration 020 : <code>notes_fts</code> (contenu externe sur <code>notes</code> et <code>transcripts</code>, tokenizer <code>unicode61 remove_diacritics 2</code>, triggers) et <code>memories_fts</code>.</li>
+            <li>Commande partagée <code>search_everything(query, limit)</code> : notes, mémoires, messages agent, avec extrait.</li>
+            <li>La liste de notes devient paginée par curseur ; la palette gagne un groupe « Dans les notes » ; <code>search_notes</code> d'agent-lite bascule sur FTS.</li></ul></dd>
+          <dt>Porte</dt><dd class="gate">Test Rust : 1 000 notes générées, un mot présent seulement dans la millième, <code>search_everything</code> le renvoie en moins de 50 ms. Test front : la palette affiche le groupe. Dès le premier jour : un test que <code>PRAGMA compile_options</code> contient <code>ENABLE_FTS5</code>.</dd>
+          <dt>Risque</dt><dd class="risk">Le SQLite embarqué par <code>sqlx-sqlite</code> pourrait ne pas inclure FTS5 : le test de <code>compile_options</code> le dit avant d'écrire une ligne de migration. Repli : index trigramme maison.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">2.2</span><h3>Une archive complète, restaurable, chiffrable</h3><div class="chips"><span class="chip cost">1 semaine</span><span class="chip adr">ADR-0040</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>Aucune commande <code>backup</code>, <code>restore</code> ou <code>export_all</code>. Les exports existants sont partiels : bundle de montage, artefact média, note en PDF, Markdown seulement sur iPhone par la share sheet. Desktop et iPhone ont deux bases sans aucun pont. ADR-0039 : « Encrypted export stays open and is a better use of the same effort ».</dd>
+          <dt>Fait</dt><dd><ul>
+            <li><code>export_archive</code>, dialogue natif côté Rust (règle <code>ipc_write_paths</code>) : notes en Markdown avec sidecar JSON, transcripts, mémoires, bible, dossiers, sessions agent, réglages assainis, enregistrements en option.</li>
+            <li><code>import_archive</code> fusionne par identifiant.</li>
+            <li>Chiffrement optionnel par phrase de passe avec la crate <code>age</code> (Rust pur, compile en iOS).</li>
+            <li>Sur iPhone, l'archive sort par la share sheet et entre par <code>subrosa://import</code>.</li>
+            <li>ADR-0040 : « L'archive est le pont entre appareils, pas une synchronisation ».</li></ul></dd>
+          <dt>Porte</dt><dd class="gate">Test aller-retour : export, base vide, import, mêmes comptes de lignes et mêmes corps de notes. Une archive chiffrée refuse une mauvaise phrase. <code>no_secret_in_logs</code> étendu au contenu de l'archive : aucun <code>cdm_</code>.</dd>
+          <dt>Risque</dt><dd class="risk">618 Mo d'enregistrements sur ce poste : la case « inclure l'audio » est décochée par défaut, et l'écran dit la taille avant d'écrire.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">2.3</span><h3>Hors ligne : un état dit, une reprise en un geste</h3><div class="chips"><span class="chip cost">2 jours</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>Zéro <code>navigator.onLine</code>, zéro drapeau hors ligne dans le code applicatif. Une note enregistrée sans réseau finit en <code>failed</code> avec <code>last_error LIKE '%error sending request%'</code>, ce que <code>list_notes_failed_in_transit</code> sait déjà filtrer. ADR-0018 refuse la reprise automatique sur desktop : elle changerait le sens du « retry processing » manuel.</dd>
+          <dt>Fait</dt><dd>Une sonde d'atteignabilité de la base configurée (une requête <code>HEAD</code> toutes les 30 s, seulement quand une note est en transit). Une bannière « Hors ligne, N notes attendent » et un bouton « Reprendre tout » qui appelle <code>retry_processing</code> sur chacune. Sur iPhone, le balayage existant reste seul maître.</dd>
+          <dt>Porte</dt><dd class="gate">Test : un traitement reçoit « error sending request » simulé, la bannière apparaît avec le compte ; la sonde repasse à vrai, le bouton vide la liste.</dd>
+          <dt>Risque</dt><dd class="risk">Aucun sur ADR-0018 : rien ne reprend sans un geste.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">2.4</span><h3>Un seul premier lancement</h3><div class="chips"><span class="chip cost">3 jours</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>Deux couches non fusionnées. <code>CarpeDiemGate.tsx</code> bloque tant qu'il n'y a pas de clé ; son mode <code>failed</code> n'offre aucun bouton de relance alors que <code>carpe_diem_restart_sidecar</code> existe. <code>OnboardingFlow.tsx</code> a trois étapes, deux sur Windows. <code>carpe_diem_test_connection</code> vit dans les réglages, pas dans le flux. Le contre-audit UX a laissé cette fusion ouverte.</dd>
+          <dt>Fait</dt><dd>Une séquence : bienvenue, clé (le test de connexion est l'étape, le solde s'affiche), permissions, pratique de dictée sur macOS, « Enregistrez ou importez ». La porte en mode <code>failed</code> propose « Relancer » et « Exporter le diagnostic » (2.5).</dd>
+          <dt>Porte</dt><dd class="gate">Test front : le premier lancement traverse les écrans dans cet ordre, l'étape clé appelle <code>carpe_diem_test_connection</code> ; en mode <code>failed</code>, « Relancer » appelle <code>carpe_diem_restart_sidecar</code>.</dd>
+          <dt>Risque</dt><dd class="risk">Une étape de plus avant la première note. Elle remplace un aller-retour vers les réglages, elle ne s'ajoute pas.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">2.5</span><h3>Un diagnostic qu'on peut joindre</h3><div class="chips"><span class="chip cost">2 jours</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>Aucune commande n'exporte <code>june-api.log</code> (<code>sidecar.rs:442</code>), le <code>.helper.log</code> audio ni l'état du sidecar. Les rapports (ADR-0036) ne joignent rien : « nommées, jamais téléversées ». <code>MCP diagnostics</code> et <code>Integrations health</code> sont masqués.</dd>
+          <dt>Fait</dt><dd><code>export_diagnostics</code>, dialogue natif côté Rust : les logs en queue de 2 Mo chacun, les versions, l'état du sidecar, la liste <code>declared_egress</code>, la carte de capacités (2.7), les réglages assainis, les trois durées de lancement (4.7). Un bouton dans Réglages › Reports et un dans la porte <code>failed</code>.</dd>
+          <dt>Porte</dt><dd class="gate">Test Rust : le zip ne contient ni <code>cdm_</code> ni bearer (réutilise <code>no_secret_in_logs</code>) ; <code>ipc_write_paths</code> reste vert.</dd>
+          <dt>Risque</dt><dd class="risk">Un log peut contenir un titre de note. Le zip le dit sur son écran, et l'utilisateur choisit de l'envoyer ou non.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">2.6</span><h3>Réglages › Stockage</h3><div class="chips"><span class="chip cost">3 jours</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>Sur ce poste : 5 Go de workspace Hermes, 305 Mo de <code>state.db</code>, 1,6 Go de runtime, 618 Mo d'enregistrements pour six notes, 211 Mo de médias Studio. Aucune vue, aucune rétention : <code>grep prune|vacuum|retention</code> ne trouve rien dans <code>hermes_bridge.rs</code>, <code>background.rs</code> ni <code>commands.rs</code>. <code>cache_stats.rs</code> compte des tokens, pas des octets.</dd>
+          <dt>Fait</dt><dd>Commande <code>storage_report</code> (taille par corbeille) et une page Stockage. Deux actions explicites, jamais automatiques : « Supprimer l'audio des notes transcrites de plus de N jours » et « Purger les sessions Hermes de plus de N jours » (avec un <code>VACUUM</code> de <code>state.db</code> par l'admin Hermes). Le workspace n'est jamais touché : ce sont les fichiers de l'utilisateur.</dd>
+          <dt>Porte</dt><dd class="gate">La page affiche les mêmes tailles que <code>du -sh</code>. Test : une note transcrite avec un WAV de 40 jours, l'action supprime le WAV, la note reste lisible et son transcript entier.</dd>
+          <dt>Risque</dt><dd class="risk">Supprimer l'audio d'une note dont le transcript est incomplet. Condition : couverture de transcript complète, sinon la note est exclue de l'action.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">2.7</span><h3>Windows dit ce qu'il n'a pas</h3><div class="chips"><span class="chip cost">2 jours</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>Environ 120 sites <code>target_os = "macos"</code> contre 32 <code>cfg(windows)</code>. Absents sur Windows : capture système, HUD, dictée globale et son raccourci, Spotlight, calendrier, détection de réunion. L'onboarding y a deux écrans. Aucune interface ne le dit : les contrôles sont rendus et ne font rien.</dd>
+          <dt>Fait</dt><dd>Commande partagée <code>platform_capabilities()</code> calculée en Rust : <code>{systemAudio, hud, dictationHotkey, spotlight, calendar, meetingDetection, share}</code>. Les sections de réglages et l'onboarding la lisent et remplacent un contrôle absent par une phrase : « Pas encore disponible sur Windows ».</dd>
+          <dt>Porte</dt><dd class="gate">Test front avec la carte à <code>false</code> : aucun contrôle de dictée globale rendu, la phrase l'est. <code>windows-check</code> (1.2) compile la commande.</dd>
+          <dt>Risque</dt><dd class="risk">Une capacité oubliée reste un contrôle mort. La commande est la seule source ; un test la compare aux <code>cfg</code> présents dans <code>lib.rs</code>.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">2.8</span><h3>Une note que l'agent complète se recharge</h3><div class="chips"><span class="chip cost">1 jour</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>FORK_NOTES : « L'éditeur ouvert sur une note que l'agent complète ne se recharge pas ; seule la liste le fait. Connu, non résolu. » Et : « Une note créée par une tâche de fond n'apparaît pas toute seule […] Toute future création de note hors UI a le même besoin. »</dd>
+          <dt>Fait</dt><dd>Un seul événement Rust, <code>june://notes-changed {ids}</code>, émis par le repository, le point de passage qu'ADR-0035 impose déjà à l'agent. La liste et l'éditeur s'y abonnent. L'éditeur ne remplace le document que s'il n'a pas d'édition locale non sauvée ; sinon un bandeau « Mise à jour disponible ».</dd>
+          <dt>Porte</dt><dd class="gate">Test : <code>agent_notes</code> écrit, l'éditeur ouvert montre le nouveau contenu ; un ingest de fond crée une note, la liste l'affiche sans clic ; une édition en cours n'est jamais écrasée.</dd>
+          <dt>Risque</dt><dd class="risk">Écraser un paragraphe en cours de frappe. La règle ci-dessus, et le test qui la tient.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">2.9</span><h3>Les douze onglets masqués : chacun sort ou meurt</h3><div class="chips"><span class="chip cost">2 jours</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd><code>HIDDEN_SETTINGS_TABS</code> (<code>Sidebar.tsx:336</code>) masque 12 des 25 onglets ; sept sont « needs review » dans <code>docs/settings-focus-runbook.md</code>, qui se dit « transient ». <code>import-export</code> (<code>SetupSnapshotSection</code>) est écrit et inaccessible. Un <code>setSettingsTab("&lt;id&gt;")</code> rend quand même le panneau.</dd>
+          <dt>Fait</dt><dd>Une session de revue par onglet, deux issues possibles : visible (ligne dans <code>SETTINGS_SIDEBAR_GROUPS</code>, compte dans <code>settings-index.test.tsx</code>) ou supprimé avec son code. <code>import-export</code> sort en premier et devient l'entrée de 2.2.</dd>
+          <dt>Porte</dt><dd class="gate"><code>grep HIDDEN_SETTINGS_TABS src</code> ne renvoie rien ; <code>settings-focus-runbook.md</code> retiré de <code>docs/index.md</code>.</dd>
+          <dt>Risque</dt><dd class="risk">Supprimer un panneau qu'un deep link atteint encore. Le test de la palette et <code>settings-index.test.tsx</code> couvrent les identifiants.</dd>
+        </dl>
+      </article>
+    </div>
+
+    <!-- ===================== PALIER 3 ===================== -->
+    <div class="tier">
+      <div class="tier-head"><h3>Palier 3 · La structure</h3><span class="when">un mois</span></div>
+      <p class="why">Les deux fichiers qui dominent toutes les métriques, et les gardes qui empêchent qu'ils reviennent.</p>
+
+      <article class="act">
+        <header><span class="id">3.1</span><h3>Cinq parcours au niveau de l'application</h3><div class="chips"><span class="chip cost">1 semaine</span><span class="chip dep">avant 3.2</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>Aucun test bout-en-bout ; <code>tauri-driver</code> n'existe pas sur macOS. Deux bugs livrés cassés en v1.50.0 et corrigés en v1.51.0 et v1.52.0 : <code>council-sitting.test.tsx</code> ne pouvait pas les voir, il teste le composant isolé avec un <code>onHandOff</code> mocké qui renvoie précisément ce qui était faux. <code>docs/qa/agent-driven-integration.md</code> nomme ce qui ne s'automatise pas : micro, raccourci global, permissions.</dd>
+          <dt>Fait</dt><dd><code>src/test/journeys/</code> monte <code>App</code> et <code>MobileApp</code> avec le pont Tauri factice (la recette de <code>note-lab.html</code>) et joue cinq trajets : premier lancement puis clé puis note puis chat ; conseil convoqué puis mandat remis à la session qui a travaillé ; lien importé puis note puis résumé long ; réécriture proposée puis acceptée puis Markdown ; archive exportée puis importée (2.2).</dd>
+          <dt>Porte</dt><dd class="gate">Cinq fichiers dans <code>pnpm test</code> ; l'un d'eux devient rouge si l'on réintroduit le retour de <code>submitHermesSession</code> de v1.50.0 (mutation documentée dans le fichier).</dd>
+          <dt>Risque</dt><dd class="risk">Le pont factice diverge de l'IPC réel. Le pont est généré depuis la liste des commandes de <code>src/lib/tauri.ts</code>, et <code>shared_commands.rs</code> tient déjà cette liste à jour.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">3.2</span><h3>Aucun fichier de plus de 2 000 lignes</h3><div class="chips"><span class="chip cost">3 semaines</span><span class="chip dep">après 1.3 et 3.1</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd><code>AgentWorkspace.tsx</code> 13 657 lignes, 335 hooks, 66 <code>useEffect</code> ; <code>hermes_bridge.rs</code> 11 783 ; <code>dictation.rs</code> 5 771 ; <code>db/repositories.rs</code> 5 215 ; <code>App.tsx</code> 3 884 ; <code>app.css</code> 24 105 lignes et 37 <code>!important</code>. 28 fichiers front dépassent 800 lignes. Les 213 <code>useExhaustiveDependencies</code> se concentrent là. Zéro <code>useContext</code>, mais 21 <code>useSyncExternalStore</code> sur des stores-modules : le pattern qui marche existe déjà.</dd>
+          <dt>Fait</dt><dd><ul>
+            <li><code>AgentWorkspace</code> en hooks de domaine (<code>useAgentTurns</code>, <code>useAgentTools</code>, <code>useAgentComposer</code>, <code>useAgentSessionNav</code>) et stores <code>useSyncExternalStore</code>.</li>
+            <li><code>App.tsx</code> en <code>useAppRouting</code>, <code>useAppUpdates</code>, <code>useAppRecording</code>.</li>
+            <li><code>app.css</code> en feuilles par surface, comme <code>studio.css</code> et <code>council.css</code> le font déjà.</li>
+            <li><code>hermes_bridge.rs</code> en <code>hermes/{spawn,config,mcp,skills,sessions,cron}.rs</code> ; <code>repositories.rs</code> par agrégat.</li>
+            <li>Deux cliquets : <code>src/test/file-size-ratchet.test.ts</code> (par <code>import.meta.glob</code>) et <code>src-tauri/tests/file_size_ratchet.rs</code>, avec la taille actuelle de chaque fichier : un fichier ne peut que rétrécir.</li></ul></dd>
+          <dt>Porte</dt><dd class="gate"><code>find src src-tauri/src \( -name '*.ts*' -o -name '*.rs' \) -not -path '*/test/*' | xargs wc -l | awk '$1&gt;2000'</code> ne liste que le total ; <code>useExhaustiveDependencies</code> sous 30.</dd>
+          <dt>Risque</dt><dd class="risk">Des régressions silencieuses dans le chat, la surface la plus utilisée. D'où l'ordre : le cliquet de couverture (1.3) et les parcours (3.1) avant la première extraction.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">3.3</span><h3>Les règles rétrogradées redeviennent des règles</h3><div class="chips"><span class="chip cost">1 semaine, étalée</span><span class="chip dep">après 3.2</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>662 avertissements Biome. <code>biome.json</code> rétrograde 21 règles en <code>warn</code>, dont 15 d'accessibilité (168 avis), <code>useExhaustiveDependencies</code> (213), <code>noDescendingSpecificity</code> (98). Seuls <code>noUnusedImports</code> et l'interdiction de <code>lucide-react</code> sont en <code>error</code>.</dd>
+          <dt>Fait</dt><dd>Un cliquet <code>biome-warnings.json</code> (compte par règle, ne peut que baisser, vérifié dans <code>pnpm test</code>). Quand une règle atteint zéro, elle passe en <code>error</code> dans <code>biome.json</code>.</dd>
+          <dt>Porte</dt><dd class="gate"><code>pnpm check</code> affiche « Found 0 warnings » ; <code>grep '"warn"' biome.json</code> ne renvoie rien.</dd>
+          <dt>Risque</dt><dd class="risk">Corriger les dépendances de hooks change des comportements. C'est pourquoi les hooks se corrigent pendant leur extraction (3.2), pas avant.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">3.4</span><h3>Le clavier et le focus, une seule fois</h3><div class="chips"><span class="chip cost">1 semaine</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>Aucun utilitaire de focus-trap pour de nombreux overlays, feuilles et HUD ; 43 <code>onKeyDown</code> pour 755 boutons ; 38 <code>useSemanticElements</code> (des <code>&lt;div role&gt;</code> là où un élément natif suffit) ; 45 blocs <code>prefers-reduced-motion</code>, ce qui est bien. Aucune référence des raccourcis : l'onglet Shortcuts ne montre que les deux raccourcis de dictée.</dd>
+          <dt>Fait</dt><dd><code>useFocusTrap</code> dans <code>ui/Dialog</code>, <code>ActionSheet</code> et les HUD. Les <code>&lt;div role="button"&gt;</code> remplacés par <code>&lt;button&gt;</code>. Une page Raccourcis lue depuis une table unique (⌘K, ⌘,, dictée, palette <code>/</code>), ouverte par <code>?</code>.</dd>
+          <dt>Porte</dt><dd class="gate">Zéro avis a11y (3.3) ; test : Tab dans un Dialog ouvert boucle à l'intérieur ; la page liste au moins huit raccourcis sans dupliquer une seule chaîne.</dd>
+          <dt>Risque</dt><dd class="risk">Un piège de focus sur un HUD flottant retient le clavier d'une autre application. Les HUD n'en reçoivent que lorsqu'ils ont le focus système.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">3.5</span><h3>Charger ce qu'on regarde</h3><div class="chips"><span class="chip cost">3 jours</span><span class="chip dep">après 3.2</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>Un seul <code>React.lazy</code> (<code>WorkflowStudio</code>), aucun <code>manualChunks</code>, aucun outil de mesure, quatre entrées HTML. <code>AgentWorkspace</code>, <code>AppSettings</code>, <code>FoldersWorkspace</code>, les cinq Studios et le conseil sont dans le chunk principal.</dd>
+          <dt>Fait</dt><dd>Mesurer d'abord (<code>rollup-plugin-visualizer</code>, le chiffre entre dans le rapport). Puis <code>lazy</code> par surface (Studio, conseil, réglages, projets, routines), <code>manualChunks</code> pour tiptap, xyflow et framer-motion, et <code>size-limit</code> sur le chunk initial fixé à la mesure du jour moins 40 %.</dd>
+          <dt>Porte</dt><dd class="gate"><code>pnpm build</code> produit le rapport ; le job échoue si le chunk initial dépasse le budget.</dd>
+          <dt>Risque</dt><dd class="risk">Un écran qui se charge à la demande arrive avec un délai visible. Le squelette unique de v1.57.0 le couvre.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">3.6</span><h3>Les invariants Rust deviennent des specs</h3><div class="chips"><span class="chip cost">1 jour</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd><code>spec/</code> compte six règles, toutes frontend. Les invariants Rust vivent dans des tests nommés (<code>egress</code>, <code>path_confinement</code>, <code>ipc_write_paths</code>, <code>no_secret_in_logs</code>, <code>no_secrets_in_process_env</code>, <code>csp</code>, <code>shared_commands</code>) sans règle lisible. « Rien dans <code>june-api</code> pour une feature du fork » n'est qu'une phrase d'ADR-0027.</dd>
+          <dt>Fait</dt><dd>Six specs : <code>shared-commands-in-both-lists</code>, <code>no-write-path-over-ipc</code>, <code>every-egress-declared</code>, <code>secrets-are-redacted-types</code>, <code>no-fork-feature-in-june-api</code>, <code>background-work-is-a-row</code>. Chacune nomme le test qui la tient. <code>spec/index.md</code> mis à jour.</dd>
+          <dt>Porte</dt><dd class="gate">Un test de documentation vérifie que chaque chemin de test cité dans <code>spec/*.md</code> existe.</dd>
+          <dt>Risque</dt><dd class="risk">Aucun.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">3.7</span><h3>La documentation se remet d'accord avec le produit</h3><div class="chips"><span class="chip cost">1 jour</span><span class="chip adr">addendum ADR-0011</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>Deux ADR portent le numéro 0003. <code>0003-image-generation-and-editing-tools.md</code> est le seul au statut <code>proposed</code>, absent de <code>docs/index.md</code>, et décrit des phases B et C jamais livrées sous cette forme (l'agent génère des images par le MCP <code>june_media</code>). ADR-0011 porte des follow-ups devenus caducs par ADR-0029 sans le dire. <code>CONTEXT.md</code> cite « PR #529 » upstream pour le canal rc et n'a d'entrée ni pour Reports, ni pour les moments, ni pour le Studio en chapeau. <code>docs/index.md</code> avoue : « Roadmap : no single sequenced source of truth ».</dd>
+          <dt>Fait</dt><dd>L'ADR image renuméroté <code>0003b</code> et passé <code>superseded</code> avec une ligne vers le MCP. Addendum 0011 « caduc ». Quatre entrées dans <code>CONTEXT.md</code>. Ce plan devient <code>docs/roadmap.md</code>, ses portes en cases à cocher. <code>CHANGELOG.md</code> généré par 1.4.</dd>
+          <dt>Porte</dt><dd class="gate"><code>ls docs/adr | cut -d- -f1 | sort | uniq -d</code> vide ; la section Gaps de <code>docs/index.md</code> ne cite plus la roadmap.</dd>
+          <dt>Risque</dt><dd class="risk">Aucun.</dd>
+        </dl>
+      </article>
+    </div>
+
+    <!-- ===================== PALIER 4 ===================== -->
+    <div class="tier">
+      <div class="tier-head"><h3>Palier 4 · Après, et seulement après</h3><span class="when">quand les paliers précédents tiennent</span></div>
+      <p class="why">Sept actions dont le coût dépend de la structure, ou dont le besoin doit être mesuré avant d'être payé.</p>
+
+      <article class="act">
+        <header><span class="id">4.1</span><h3>Le français, en entier ou pas</h3><div class="chips"><span class="chip cost">3 semaines</span><span class="chip dep">après 3.2, stricte</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>Aucun framework, <code>&lt;html lang="en"&gt;</code>, toutes les chaînes en dur dans 172 composants. Le contre-audit a refusé l'i18n partielle. Le projet est piloté en français.</dd>
+          <dt>Fait</dt><dd>Décision d'abord, et elle est oui : français et anglais, langue de l'OS. Extraction mécanique (script ts-morph) vers un catalogue par surface. Une garde qui échoue sur tout texte JSX nu hors allowlist. La colonne française ajoutée à <code>CONTEXT.md</code> dans le même lot, pour que le catalogue ne devienne pas une seconde source de vocabulaire.</dd>
+          <dt>Porte</dt><dd class="gate"><code>lang</code> suit l'OS ; la garde est verte ; les specs <code>sentence-case</code> et <code>one-voice</code> ont un test dans les deux langues.</dd>
+          <dt>Risque</dt><dd class="risk">Extraire des chaînes d'un fichier qu'on va découper est du travail perdu : d'où la dépendance stricte à 3.2.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">4.2</span><h3>L'extension de partage iOS</h3><div class="chips"><span class="chip cost">3 jours</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>FORK_NOTES : « L'extension de partage iOS n'existe pas : la destination <code>subrosa://import?url=…</code> est le contrat qu'elle utiliserait […] Ajouter la cible demande un second bundle id et un second profil dans <code>ios-release.yml</code> : chantier Xcode à part. »</dd>
+          <dt>Fait</dt><dd>Une cible Share Extension dans <code>gen/apple</code>, un second profil en CI. La procédure de re-création après <code>tauri ios init</code> ajoutée à CLAUDE.md, qui liste déjà ce que l'init efface.</dd>
+          <dt>Porte</dt><dd class="gate">Partager une URL depuis Safari ouvre Sub Rosa sur la note d'import ; <code>ios-release.yml</code> signe les deux cibles et TestFlight l'accepte.</dd>
+          <dt>Risque</dt><dd class="risk"><code>tauri ios init</code> efface la cible. La procédure est la mitigation ; un test de CI qui compte les cibles du <code>pbxproj</code> est la garde.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">4.3</span><h3>Le téléphone règle ce que le poste règle</h3><div class="chips"><span class="chip cost">3 jours</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>Réglages mobiles : trois sous-écrans (<code>memory</code>, <code>connection</code>, <code>usage</code>) et quatre groupes. Ni Privacy, ni Models, ni Reports, ni About. Le desktop, lui, n'a pas d'export Markdown de note alors que <code>docToMarkdown</code> existe.</dd>
+          <dt>Fait</dt><dd>Quatre sections mobiles qui réutilisent les composants desktop (<code>PrivacySettingsSection</code> lit déjà <code>declared_egress</code>). Un bouton « Exporter en Markdown » sur desktop, dialogue natif côté Rust.</dd>
+          <dt>Porte</dt><dd class="gate"><code>SettingsSection</code> dans <code>src/app/mobile/nav.ts</code> a sept valeurs ; test : l'export desktop écrit exactement <code>docToMarkdown(doc)</code>.</dd>
+          <dt>Risque</dt><dd class="risk">Vouloir la parité entière. Elle est refusée (§ 5) ; ces quatre sections sont celles qui ne dépendent pas de Hermes.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">4.4</span><h3>Prévenir quand la fenêtre n'est pas devant</h3><div class="chips"><span class="chip cost">1 jour</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd><code>src/lib/notifications.ts:15</code> : « Desktop is deliberately left alone: it has never prompted for notification permission, and work finishing there is visible in the window anyway. » Vrai pour une note. Faux pour un rendu de film ou un import de trois heures pendant que la fenêtre est derrière une autre.</dd>
+          <dt>Fait</dt><dd>Sur desktop, une notification seulement si la fenêtre n'a pas le focus et si le travail a duré plus de deux minutes (jobs Studio, imports, résumés longs). La permission est demandée à la première occurrence, dans le contexte, comme sur iPhone. L'adresse <code>subrosa://</code> existante fait le reste.</dd>
+          <dt>Porte</dt><dd class="gate">Test Rust : un job de trois minutes avec fenêtre non focalisée émet une notification ; fenêtre focalisée, aucune ; un job d'une minute, aucune.</dd>
+          <dt>Risque</dt><dd class="risk">Une demande de permission qui surprend. Elle n'arrive qu'après un premier travail long, et une fois.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">4.5</span><h3>Un modèle d'extraction pour la mémoire</h3><div class="chips"><span class="chip cost">une demi-journée</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>ADR-0009 : « a dedicated cheaper model is a later knob, not a schema change ». L'extraction tourne toutes les trois réponses sur le modèle du chat.</dd>
+          <dt>Fait</dt><dd>Un réglage dans Réglages › Memory, défaut « le modèle du chat », passé à <code>memory/extract.rs</code> sur les deux shells.</dd>
+          <dt>Porte</dt><dd class="gate">Test : le réglage change le champ <code>model</code> de la requête d'extraction.</dd>
+          <dt>Risque</dt><dd class="risk">Un modèle trop petit extrait des faits faux. Le réglage reste optionnel.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">4.6</span><h3>L'ADR Dictation</h3><div class="chips"><span class="chip cost">une demi-journée</span><span class="chip adr">ADR-0041</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd><code>docs/index.md</code>, section Gaps : « Dictation ADR : the low-latency request shape + charge timing (flagged in CONTEXT.md) ». <code>dictation.rs</code> fait 5 771 lignes sans décision écrite.</dd>
+          <dt>Fait</dt><dd>L'ADR : forme de la requête, moment de la facturation, ce que le helper macOS possède, ce que le mobile a en parallèle (<code>dictation_mobile.rs</code>).</dd>
+          <dt>Porte</dt><dd class="gate">La section Gaps de <code>docs/index.md</code> est vide.</dd>
+          <dt>Risque</dt><dd class="risk">Aucun.</dd>
+        </dl>
+      </article>
+
+      <article class="act">
+        <header><span class="id">4.7</span><h3>Mesurer le démarrage avant d'y toucher</h3><div class="chips"><span class="chip cost">2 jours</span></div></header>
+        <dl>
+          <dt>Constat</dt><dd>Aucune mesure du temps de lancement, aucun bench (<code>grep bench|criterion</code> ne trouve rien). Le sidecar, Hermes et le webview démarrent ensemble. <code>db/migrations.rs</code> rejoue les 19 migrations à chaque lancement (idempotentes, mais rejouées), sans table de versions, et FORK_NOTES avertit qu'un <code>ensure_column</code> mal placé « panique au lancement ».</dd>
+          <dt>Fait</dt><dd>Un chrono de lancement dans le diagnostic (2.5) : sidecar <code>/livez</code>, premier rendu du webview, Hermes prêt. Une table <code>schema_migrations</code> pour ne plus rejouer. Rien d'autre tant que les trois chiffres n'ont pas été lus.</dd>
+          <dt>Porte</dt><dd class="gate">Le diagnostic contient les trois durées ; test : une base à jour ne rejoue aucune migration (compteur d'exécutions à zéro).</dd>
+          <dt>Risque</dt><dd class="risk">Optimiser sans mesure. C'est le défaut n° 3 de la v1, et la raison de cette action.</dd>
+        </dl>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="refus">
+  <div class="wrap">
+    <p class="eyebrow">5 · Ce qui ne sera pas fait, et pourquoi</p>
+    <h2>Treize refus, chacun porté par une décision écrite</h2>
+    <ul class="refuse">
+      <li><b>Chiffrer la base au repos.</b><span>ADR-0039, dont aucune des trois conditions de supersession n'est remplie. L'archive chiffrée (2.2) couvre le cas qu'une personne a réellement : des données qui quittent la machine.</span></li>
+      <li><b>Synchroniser desktop et iPhone par un service.</b><span>Ferait sortir la base de la machine (une condition de supersession d'ADR-0039) et introduirait un tiers dans une application dont la promesse est « rien ne part sauf vers votre endpoint ». L'archive (2.2) est le pont.</span></li>
+      <li><b>Le conseil sur iPhone.</b><span>ADR-0034 : pas de Hermes sur mobile, donc personne à qui remettre un mandat.</span></li>
+      <li><b>Embarquer ffmpeg.</b><span>Tranché trois fois (ADR-0026, plan films § 6). Opus et HE-AAC restent non décodables et le disent.</span></li>
+      <li><b>Le streaming réel à travers <code>june-api</code>.</b><span>ADR-0015 le diffère ; <code>venice.rs</code> (3 191 lignes) est le point chaud du merge upstream, et ADR-0027 interdit d'y porter du fork. On prendra la version upstream si elle vient (1.6).</span></li>
+      <li><b>La parité mobile entière.</b><span>103 commandes desktop-only, dont 45 pour Hermes et 22 pour le conseil : sans Hermes, elles n'ont pas de sens. 4.3 prend les quatre sections qui en ont un.</span></li>
+      <li><b>L'i18n partielle.</b><span>Refusée par le contre-audit. C'est 4.1 en entier, ou rien.</span></li>
+      <li><b>Signer les binaires Windows.</b><span>HANDOFF § 4, choix produit ; SmartScreen avertit et c'est dit.</span></li>
+      <li><b>Les Stores Apple et Microsoft.</b><span>Non-objectif du brief (§ 10).</span></li>
+      <li><b>Le watchdog de production et la production sans surveillance.</b><span>ADR-0011 est remplacé par ADR-0029 ; l'escalade (un extracteur d'images natif) est nommée et « deliberately not built, because the need is not measured ».</span></li>
+      <li><b>Réduire le DMG de 145 Mo.</b><span>Il embarque le runtime Hermes signé (<code>Resources/native/hermes</code>) ; sans mesure de ce qui pèse et sans plainte, pas d'action. 4.7 mesure d'abord.</span></li>
+      <li><b>Les phases 2 et 3 de l'aperçu de transcription en direct.</b><span>ADR-0002 les conditionne à un seuil de latence et à une décision de facturation qui n'ont pas été pris.</span></li>
+      <li><b>Le token du sidecar par stdin, maintenant.</b><span>Le modèle de menace le conditionne à l'arrêt du suivi upstream ; c'est 1.6 qui décide.</span></li>
+    </ul>
+  </div>
+</section>
+
+<section id="note">
+  <div class="wrap">
+    <p class="eyebrow">6 · La note, après correction</p>
+    <h2>Dix sur dix, et ce qui le prouve</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>Critère</th><th>v1</th><th>v2</th><th>Ce qui le tient</th></tr></thead>
+      <tbody>
+        <tr><td>Ancrage</td><td class="n">1,5</td><td class="n">2</td><td>35 actions, chacune avec un chemin, un nombre ou un run ; les deux items sans mesure sont sortis ou devenus « mesurer d'abord ».</td></tr>
+        <tr><td>Hiérarchie</td><td class="n">1,0</td><td class="n">2</td><td>Cinq paliers par coût ; six dépendances en pastille ; treize refus motivés.</td></tr>
+        <tr><td>Falsifiabilité</td><td class="n">0,5</td><td class="n">2</td><td>35 portes, chacune une commande, un test ou une métrique.</td></tr>
+        <tr><td>Cohérence</td><td class="n">1,0</td><td class="n">2</td><td>Trois contradictions retirées ; cinq écrits d'architecture nommés ; aucune ADR acceptée rouverte.</td></tr>
+        <tr><td>Exécutabilité</td><td class="n">1,5</td><td class="n">2</td><td>Un coût et un risque par action ; un premier pas d'une heure ; une vérification par palier (§ 7).</td></tr>
+        <tr><td><b>Total</b></td><td class="n"><b>5,5</b></td><td class="n"><b>10</b></td><td><div class="bar gold" style="--w:100%"><i></i></div></td></tr>
+      </tbody>
+    </table></div>
+    <p class="intro">Un plan à 10 n'est pas un produit à 10. Il dit seulement que chaque ligne peut être commencée sans relire le dépôt et finie sans discussion sur ce que « fini » veut dire.</p>
+  </div>
+</section>
+
+<section id="verifier">
+  <div class="wrap">
+    <p class="eyebrow">7 · Comment vérifier, et demain matin</p>
+    <h2>Le premier pas tient dans une heure</h2>
+    <div class="first">
+      <p><b>Demain matin</b> : le palier 0, dans l'ordre. Les cinq actions se font depuis un navigateur et un terminal, sans une ligne de code applicatif, et la première (0.1) rend toutes les suivantes plus sûres.</p>
+      <p>Puis 1.1 (le backlog), parce que chaque jour d'attente ajoute une PR Dependabot et que <code>cpal</code> et <code>sqlx</code> sont les deux qui demandent un vrai test.</p>
+    </div>
+    <p class="intro">Les portes du palier 0 et du palier 1, en cinq commandes :</p>
+<pre><code>gh api repos/Irdanwen/sub-rosa/rulesets --jq length
+gh api repos/Irdanwen/sub-rosa --jq .security_and_analysis
+gh run list --repo Irdanwen/sub-rosa --workflow=upstream-sync.yml --limit 1
+gh pr list --repo Irdanwen/sub-rosa --author app/dependabot --json createdAt \
+  --jq 'map(select(.createdAt &lt; (now - 14*86400 | todate))) | length'
+make verify &amp;&amp; cargo check --manifest-path src-tauri/Cargo.toml --target aarch64-apple-ios --lib</code></pre>
+    <p class="intro" style="margin-top:18px">Chaque palier suivant a ses portes dans ses actions. Quand le palier 3 est passé, ce document est périmé par construction : il vit alors dans <code>docs/roadmap.md</code> (3.7), et c'est là que les cases se cochent.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap" style="display:contents">
+    <div><b>Base</b><br>Sub Rosa v1.58.0, commit <code>c8666a0c</code>, mesuré le 2 septembre 2026 sur le working tree et sur l'API GitHub. Quatre rapports d'exploration : les audits existants, la documentation et les ADR, les métriques de code, l'inventaire produit.</div>
+    <div><b>Méthode</b><br>Barème posé avant la note. Première version notée 5,5. Onze défauts nommés, corrigés à la cause. Seconde version notée 10 contre le même barème. <span class="check">✓</span> Aucun ADR accepté rouvert.</div>
+  </div>
+</footer>
