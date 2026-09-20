@@ -16,6 +16,8 @@ import { shareText } from "../../../lib/tauri";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { Spinner } from "../../ui/Spinner";
 import { NoteEditor } from "../../note-editor/NoteEditor";
+import { ShareNoteDialog } from "../../share/ShareNoteDialog";
+import { useCanShare } from "../../share/useCanShare";
 import { AskNoteOverlay } from "../../ask/AskNoteOverlay";
 import { StackHeader } from "../StackHeader";
 
@@ -80,6 +82,10 @@ export function NoteDetailScreen({
   const [confirmDelete, setConfirmDelete] = useState(false);
   // "Ask this note": a question answered from this note alone (ADR-0044).
   const [asking, setAsking] = useState(false);
+  // Making a link to this note (ADR-0053). Absent without an account: a share
+  // needs somewhere to put the ciphertext.
+  const [sharing, setSharing] = useState(false);
+  const canShare = useCanShare();
 
   return (
     <div className="mobile-screen-root mobile-note-detail">
@@ -131,6 +137,9 @@ export function NoteDetailScreen({
           onClose={() => setAsking(false)}
         />
       ) : null}
+      {note ? (
+        <ShareNoteDialog noteId={note.id} open={sharing} onClose={() => setSharing(false)} />
+      ) : null}
       <div className="mobile-note-detail-scroll">
         {note ? (
           <NoteEditor
@@ -160,6 +169,7 @@ export function NoteDetailScreen({
             onRemoveFolder={onRemoveFolder}
             onCreateAndAssignFolder={onCreateAndAssignFolder}
             onTabChange={onTabChange}
+            onShare={canShare ? () => setSharing(true) : undefined}
           />
         ) : (
           <section className="editor-empty" role="status" aria-label={t("Opening note")}>

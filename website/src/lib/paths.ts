@@ -28,6 +28,10 @@ export function createSitePaths(base = "/", accountOrigin = "") {
     const path = route(url.pathname);
     if (!path) return false;
     if (["/", "/downloads", "/privacy", "/security", "/help"].includes(path)) return true;
+    // A share link is a fresh page load: it reads its key from the fragment,
+    // which `handles` refuses to intercept anyway, and it must not inherit the
+    // state of whatever tab the reader clicked from.
+    if (path.startsWith("/s/")) return false;
     return !accountOrigin && (path === "/account" || path.startsWith("/account/"));
   };
   return {

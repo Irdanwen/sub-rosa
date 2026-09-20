@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { t } from "./lib/i18n";
 import { AccountPage } from "./pages/account";
 import { Downloads, Information } from "./pages/public";
+import { SharePage } from "./pages/share";
 import "./style.css";
 import { registerAccountNavigation } from "./lib/webmcp";
 import { accountsUnavailable, siteHref, sitePaths } from "./lib/paths";
@@ -12,6 +13,9 @@ export function App({ initialPath }: { initialPath?: string }) {
   const [path, setPath] = useState(initialPath ?? currentPath());
   const pathname = path.split("?")[0];
   const accountPath = pathname === "/account" || pathname.startsWith("/account/");
+  // A share link is not an account page. It carries its own key, it needs no
+  // session, and it must render the same whether or not one exists.
+  const sharePath = pathname.startsWith("/s/");
   useEffect(
     () =>
       registerAccountNavigation((next) => {
@@ -59,12 +63,14 @@ export function App({ initialPath }: { initialPath?: string }) {
   }, []);
   useEffect(() => {
     document.documentElement.lang = "en";
-    document.title = accountPath
-      ? `${t("Your account", "Votre compte")} · Sub Rosa`
-      : pathname === "/downloads"
-        ? `${t("Download", "Télécharger")} · Sub Rosa`
-        : "Sub Rosa";
-  }, [accountPath, pathname]);
+    document.title = sharePath
+      ? `${t("Shared with you", "Partagé avec vous")} · Sub Rosa`
+      : accountPath
+        ? `${t("Your account", "Votre compte")} · Sub Rosa`
+        : pathname === "/downloads"
+          ? `${t("Download", "Télécharger")} · Sub Rosa`
+          : "Sub Rosa";
+  }, [accountPath, sharePath, pathname]);
   return (
     <>
       <a className="skip" href="#main">
@@ -82,7 +88,9 @@ export function App({ initialPath }: { initialPath?: string }) {
         </nav>
       </header>
       <main id="main" tabIndex={-1}>
-        {accountPath && (accountsUnavailable || !sitePaths.hostsAccounts) ? (
+        {sharePath ? (
+          <SharePage path={path} />
+        ) : accountPath && (accountsUnavailable || !sitePaths.hostsAccounts) ? (
           <section className="page wrap prose">
             <p className="eyebrow">{t("Your account", "Votre compte")}</p>
             <h1>

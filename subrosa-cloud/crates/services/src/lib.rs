@@ -7,7 +7,7 @@ use std::sync::Arc;
 use subrosa_config::Config;
 use subrosa_domain::{
     BlobStore, DeviceLogin, DeviceRequest, Error, IdentityProvider, KINDS, LoginAttempt, Operation,
-    OperationResult, Result, Secret, Session, TokenResponse,
+    OperationResult, Result, Secret, Session, Share, TokenResponse,
 };
 use subrosa_persistence::{AppendParams, BlobParams, Repository, VaultParams};
 use uuid::Uuid;
@@ -19,6 +19,35 @@ pub struct Service {
     storage: Arc<dyn BlobStore>,
     ledger: Option<Arc<dyn subrosa_domain::DeletionLedger>>,
 }
+/// Where sign-in may send the browser back to. An allowlist rather than a shape
+/// test, because the parameter is attacker-supplied and an open redirect on the
+/// account origin would be handed a fresh session on arrival.
+///
+/// Every page the site can show a "sign in again" link from has to be here. It
+/// was not, and the link under the account deletion form — the one page where
+/// the step-up matters most — answered `invalid_request` instead of signing
+/// anybody in.
+const RETURN_TO: &[&str] = &[
+    "/account",
+    "/account/",
+    "/account/devices",
+    "/account/library",
+    "/account/provider",
+    "/account/security",
+    "/account/usage",
+];
+
+/// How many shares one account may have answering at once. A bound on the
+/// public surface, not a product limit anybody should reach: the links expire.
+const MAX_LIVE_SHARES: usize = 200;
+
+/// What the owner asks for. The key is not here, and never will be.
+pub struct NewShare {
+    pub id: Uuid,
+    pub expires_at: chrono::DateTime<Utc>,
+    pub blob_ids: Vec<Uuid>,
+}
+
 pub fn hash(value: impl AsRef<[u8]>) -> Vec<u8> {
     Sha256::digest(value).to_vec()
 }
@@ -51,7 +80,7 @@ impl Service {
         self
     }
     pub async fn login(&self, return_to: &str, register: bool) -> Result<(String, Secret)> {
-        let allowed = matches!(return_to, "/account" | "/account/" | "/account/devices");
+        let allowed = RETURN_TO.contains(&return_to);
         let verify = return_to
             .strip_prefix("/account/devices/verify?code=")
             .is_some_and(valid_code);
@@ -320,6 +349,43 @@ impl Service {
             .get(&format!("{}/{id}", session.account.id))
             .await
     }
+    /// Publishes blobs the account already uploaded as one readable share.
+    ///
+    /// The deadline is bounded on both sides. A share that expires immediately
+    /// is a mistake; one that never expires is the thing ADR 0050 says cannot
+    /// be taken back, left running forever. Thirty days is the longest the
+    /// surface offers, so the longest the API accepts.
+    pub async fn create_share(&self, session: &Session, p: NewShare) -> Result<Share> {
+        let live = self.repository.shares(session.account.id).await?.len();
+        if p.blob_ids.is_empty() || p.blob_ids.len() > 2049 || live >= MAX_LIVE_SHARES {
+            return Err(Error::Invalid);
+        }
+        let window = p.expires_at - Utc::now();
+        if window < chrono::TimeDelta::minutes(1) || window > chrono::TimeDelta::days(30) {
+            return Err(Error::Invalid);
+        }
+        self.repository
+            .create_share(subrosa_persistence::ShareParams {
+                owner: session.account.id,
+                id: p.id,
+                expires_at: p.expires_at,
+                blob_ids: &p.blob_ids,
+            })
+            .await
+    }
+    /// Reads one piece of a share for whoever holds the link.
+    ///
+    /// There is no session here on purpose: a share is opened by a key the
+    /// service never had. What it must not become is a way to read arbitrary
+    /// bytes, so the position is resolved against this share and the owner it
+    /// names, never against a blob id the caller chose.
+    pub async fn share_blob(&self, id: Uuid, position: i32) -> Result<Vec<u8>> {
+        if position < 0 {
+            return Err(Error::Invalid);
+        }
+        let (owner, blob) = self.repository.share_blob(id, position).await?;
+        self.storage.get(&format!("{owner}/{blob}")).await
+    }
     pub async fn delete_account(&self, session: &Session) -> Result<()> {
         Self::recent(session)?;
         if let Some(ledger) = &self.ledger {
@@ -374,6 +440,9 @@ pub async fn maintain(
             cursor = page.cursor;
         }
     }
+    // Expired and revoked shares stop answering the moment the clock passes
+    // them; this is what hands their bytes back to the quota.
+    repository.release_shares().await?;
     repository.prune_auth().await?;
     for key in repository.cleanup_keys().await? {
         storage.delete(&key).await?;

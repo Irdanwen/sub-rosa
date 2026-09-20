@@ -8,12 +8,13 @@ JSON field names are snake_case. Successful JSON responses are `{ "data": T }`; 
 
 | Method and route | Contract |
 | --- | --- |
-| `GET /auth/login?intent=signin\|signup&return_to=/account` | Starts external OIDC. Allowed return paths: `/account`, `/account/`, `/account/devices`, `/account/devices/verify?code=XXXXXXXX` with a valid device code. No external return URLs. `signin` and `signup` share the configured identity provider; account creation/passkey UX belongs to it. |
+| `GET /auth/login?intent=signin\|signup&return_to=/account` | Starts external OIDC. Allowed return paths: `/account`, `/account/`, `/account/devices`, `/account/library`, `/account/provider`, `/account/security`, `/account/usage`, and `/account/devices/verify?code=XXXXXXXX` with a valid device code. No external return URLs. `signin` and `signup` share the configured identity provider; account creation/passkey UX belongs to it. |
 | `GET /auth/callback?state=...&code=...` | Consumes a ten-minute login attempt bound to its browser cookie; verifies code, S256 PKCE, signed ID token, exact issuer/audience, nonce, verified email and fresh `auth_time`. Maps `(issuer, subject)` to an internal UUID, never merges by email. Returns a 303 redirect with browser cookies. |
 | `POST /auth/logout` | Invalidates the current session. Native logout also revokes its refresh family. Clears browser cookies when present. |
 | `GET /api/v1/me` | `{ id, email, created_at }`. Dates are RFC3339. |
 | `DELETE /api/v1/me` | Requires authentication within five minutes. Persists independent signed deletion intent before deleting account rows, authorizations, sessions and encrypted-data references. Blob removal is a durable retry queue. Returns `{ deleted: true }` only after database erasure commits. |
 | `GET /api/v1/devices` | Array of `{ id, name, created_at, last_seen_at, revoked_at }`. This list contains native device authorizations. |
+| `POST /api/v1/devices/{id}/name` | Renames a device you own. A browser session and CSRF, but no step-up: a label change alters nothing the device may do, and a name you cannot correct is how the list became unreadable. `{ name }`, at most 80 characters, no control characters. |
 | `DELETE /api/v1/devices/{id}` | Requires authentication within five minutes. Revokes the device's sessions/refresh families and pairing requests. Returns `{ revoked: true }`. Past downloaded data and provider credentials cannot be remotely erased. |
 
 The server uses confidential-client OIDC, exact registered callback, `client_secret_basic`, `openid email`, PKCE S256 and `max_age=0`. ID tokens must use RS256 or ES256 with a matching trusted discovery JWKS key. The OIDC client secret exists only at the service. Passkeys are supplied by the production identity provider and do not implicitly decrypt the vault.
@@ -108,6 +109,9 @@ Associated data is the exact UTF-8 string:
 | Synced object, encrypted under the vault key | `subrosa:object:v1:{account_uuid}:{kind}:{object_uuid}` |
 | File chunk, encrypted under the vault key | `subrosa:blob:v1:{account_uuid}:{blob_uuid}` |
 | Pairing envelope, encrypted under transfer secret | `subrosa:pairing:v1:{account_uuid}:{request_uuid}` |
+| Share piece, encrypted under a key generated for that share | `subrosa:share:v1:{share_uuid}:{position}` |
+
+A share context names no account, and that is deliberate. Its key is generated for one share and travels in a URL fragment, so there is no account for a reader to learn and nothing to confuse with another share: a different identifier or a different position fails to authenticate. Position 0 is the sealed head, which names every other piece and carries its digest.
 
 The decrypted recovery-vault and pairing bodies are `{ "v": 1, "key": "base64url_vault_key" }`. Recovery and admission are independent of login. The service receives neither recovery nor vault keys. The current v1 uses the vault key with separate authenticated contexts; it does not claim independently rotated content/provider/statistics subkeys or forward secrecy after revocation.
 
@@ -131,6 +135,27 @@ The transferred secret authenticates admission independently of the relay. A com
 The native v1 file codec in [`account/files.rs`](../src-tauri/src/account/files.rs) uses one-MiB plaintext chunks and a two-GiB file limit. Each chunk is an encrypted envelope string encoded as UTF-8 bytes for blob upload. Its `{ id, bytes, sha256 }` manifest entry contains the **plaintext** byte length and base64url SHA-256 digest inside an encrypted `artifact` object. Manifests contain no persisted absolute path. They validate total lengths, duplicate chunk IDs and at most 2048 chunks. The receiving device authenticates/decrypts each chunk, verifies digest/length, persists progress and renames the staged file only after completion. Upload IDs and ciphertext are durable before PUT, so response-loss retries send identical bytes. Audio and Studio file formats/source kinds remain local codec allowlists; the service does not decode imported or generated files.
 
 The service reserves quota through a committed blob intent before object storage I/O. An account lock protects upload/finalization against account deletion. A crash after PUT leaves a durable intent, so retry or erasure can locate the ciphertext. Default quota is five GiB across encrypted history, vault and blobs. Storage/quota policy is operator-configured, not a financial billing API.
+
+## Shares
+
+A share publishes blobs the account already uploaded as one object anybody
+holding the link may read. See [ADR 0053](adr/0053-a-share-is-a-dated-envelope-the-server-cannot-open.md).
+
+| Method and route | Contract |
+| --- | --- |
+| `POST /api/v1/shares` | `{ id, expires_at, blob_ids }`. `expires_at` is mandatory and must fall between one minute and thirty days from now. One to 2049 blob ids, each owned by this account, each distinct, and none already claimed by another share: a repeat is `409 conflict`, an unknown or foreign id is `404 not_found`. At most 200 live shares per account. Returns `{ id, created_at, expires_at, blobs, bytes }`. |
+| `GET /api/v1/shares` | The account's live shares, newest first. Nothing in a row says what was shared. |
+| `DELETE /api/v1/shares/{id}` | Stops the service answering immediately. No step-up: revoking only ever takes something away. |
+| `GET /api/v1/shares/{id}/preview` | **No session.** `{ v: 1, blobs, bytes, expires_at }` for a live share, `404 not_found` otherwise. Never a title, a file name or an account. |
+| `GET /api/v1/shares/{id}/blobs/{position}` | **No session.** The sealed piece at that position, `application/octet-stream` with attachment disposition. Positions are resolved against this share, so no blob id can be named by a caller. |
+
+These are the only two routes that answer without a session. The key that opens
+what they return lives in the URL fragment and never reaches the service.
+
+Expired and revoked shares are released by maintenance: their storage keys join
+the durable deletion queue, their rows are removed, and their bytes are returned
+to the account quota. A share's blobs are exclusive to it, so a share of a file
+stores a second copy of that file rather than pointing at the library's.
 
 ## Errors, operational boundaries and verification
 

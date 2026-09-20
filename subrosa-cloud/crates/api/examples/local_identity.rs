@@ -189,6 +189,7 @@ async fn main() -> Result<()> {
             conditional_writes: true,
         },
         account_quota_bytes: 1024 * 1024 * 1024,
+        trusted_proxies: Vec::new(),
     };
     config.validate().map_err(anyhow::Error::msg)?;
     let storage = Arc::new(StorageProvider::new(&config)?);

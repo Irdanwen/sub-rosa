@@ -616,3 +616,76 @@ th {
   display: grid;
   gap: 5px;
 }
+
+/* A note body, read rather than edited. The rhythm follows .prose, but a note
+   is not a marketing page: it carries headings the writer chose, so the scale
+   stays close to the body text instead of announcing each one. */
+.reader {
+  max-width: 68ch;
+  overflow-wrap: anywhere;
+}
+.reader > * + * {
+  margin-top: 14px;
+}
+.reader h2 {
+  font-size: 22px;
+  margin-top: 28px;
+}
+.reader h3,
+.reader h4,
+.reader h5,
+.reader h6 {
+  font-size: 17px;
+  margin-top: 22px;
+}
+.reader ul,
+.reader ol {
+  padding-left: 22px;
+  display: grid;
+  gap: 6px;
+}
+.reader li {
+  list-style: revert;
+}
+.reader blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 14px;
+  color: var(--muted);
+}
+.reader pre {
+  overflow-x: auto;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.reader code {
+  font-size: 0.9em;
+}
+.reader hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.note-list {
+  display: grid;
+  gap: 8px;
+}
+.note-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 16px 18px;
+  color: inherit;
+  cursor: pointer;
+}
+.note-row:hover {
+  border-color: var(--brand);
+}

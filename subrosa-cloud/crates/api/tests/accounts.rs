@@ -94,6 +94,7 @@ impl Fixture {
                 conditional_writes: true,
             },
             account_quota_bytes: 1024 * 1024,
+            trusted_proxies: Vec::new(),
         };
         config.validate().map_err(anyhow::Error::msg)?;
         let provider = Arc::new(OidcProvider::discover(config.clone()).await?);
@@ -1203,5 +1204,170 @@ async fn account_context_header_prevents_cross_tab_vault_contamination() -> Resu
         f.json("GET", "/api/v1/me", &alice, json!({})).await?.0,
         StatusCode::OK
     );
+    Ok(())
+}
+
+/// A share answers without a session and stops answering on its own.
+///
+/// The four things that have to hold, because the link is the only credential:
+/// a reader reaches pieces by position and never by blob id, so one share can
+/// never be walked into another; revoking is immediate; an expiry is mandatory
+/// and bounded; and release hands the bytes back to the quota rather than
+/// leaving them billed forever, which is the garbage collection the service
+/// otherwise has none of.
+#[tokio::test]
+async fn a_share_reads_without_a_session_expires_and_gives_its_bytes_back() -> Result<()> {
+    let f = Fixture::new().await?;
+    let alice = f.login("alice").await?;
+    let bob = f.login("bob").await?;
+    let upload = async |browser: &Browser, id: Uuid, data: &'static str| -> Result<StatusCode> {
+        Ok(f.call(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/api/v1/blobs/{id}"))
+                .header(header::COOKIE, &browser.cookie)
+                .header(header::ORIGIN, "http://127.0.0.1:8787")
+                .header("x-csrf-token", &browser.csrf)
+                .header(header::CONTENT_TYPE, "application/octet-stream")
+                .body(Body::from(data))?,
+        )
+        .await?
+        .status())
+    };
+    let head = Uuid::new_v4();
+    let chunk = Uuid::new_v4();
+    let stranger = Uuid::new_v4();
+    assert_eq!(upload(&alice, head, "sealed-head").await?, StatusCode::OK);
+    assert_eq!(upload(&alice, chunk, "sealed-chunk").await?, StatusCode::OK);
+    assert_eq!(upload(&bob, stranger, "not-alices").await?, StatusCode::OK);
+    let used: i64 = sqlx::query_scalar("SELECT used_bytes FROM accounts WHERE email=$1")
+        .bind("alice@example.test")
+        .fetch_one(&f.pool)
+        .await?;
+    assert_eq!(
+        used,
+        i64::try_from("sealed-head".len() + "sealed-chunk".len())?
+    );
+
+    let id = Uuid::new_v4();
+    let soon = (Utc::now() + chrono::TimeDelta::hours(24)).to_rfc3339();
+    // A deadline is not optional, and thirty days is the end of the scale.
+    for (expires, expected) in [
+        (
+            (Utc::now() - chrono::TimeDelta::hours(1)).to_rfc3339(),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            (Utc::now() + chrono::TimeDelta::days(400)).to_rfc3339(),
+            StatusCode::BAD_REQUEST,
+        ),
+    ] {
+        let body = json!({"id":id,"expires_at":expires,"blob_ids":[head,chunk]});
+        assert_eq!(
+            f.json("POST", "/api/v1/shares", &alice, body).await?.0,
+            expected
+        );
+    }
+    // Another account's blob is not shareable, and neither is the same blob twice.
+    for ids in [json!([head, stranger]), json!([head, head])] {
+        let body = json!({"id":id,"expires_at":soon,"blob_ids":ids});
+        assert_eq!(
+            f.json("POST", "/api/v1/shares", &alice, body).await?.0,
+            StatusCode::NOT_FOUND
+        );
+    }
+    let (status, created) = f
+        .json(
+            "POST",
+            "/api/v1/shares",
+            &alice,
+            json!({"id":id,"expires_at":soon,"blob_ids":[head,chunk]}),
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(created["data"]["blobs"], json!(2));
+
+    // No cookie, no bearer, no CSRF: the link is the whole credential.
+    let public = async |uri: String| -> Result<(StatusCode, Vec<u8>)> {
+        let r = f
+            .call(Request::builder().uri(uri).body(Body::empty())?)
+            .await?;
+        let status = r.status();
+        Ok((status, to_bytes(r.into_body(), 1 << 20).await?.to_vec()))
+    };
+    let (status, body) = public(format!("/api/v1/shares/{id}/preview")).await?;
+    assert_eq!(status, StatusCode::OK);
+    let preview: Value = serde_json::from_slice(&body)?;
+    assert_eq!(preview["data"]["blobs"], json!(2));
+    assert_eq!(
+        public(format!("/api/v1/shares/{id}/blobs/0")).await?.1,
+        b"sealed-head"
+    );
+    assert_eq!(
+        public(format!("/api/v1/shares/{id}/blobs/1")).await?.1,
+        b"sealed-chunk"
+    );
+    // Positions outside the share, and a second share's positions, are absent.
+    assert_eq!(
+        public(format!("/api/v1/shares/{id}/blobs/2")).await?.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        public(format!("/api/v1/shares/{}/preview", Uuid::new_v4()))
+            .await?
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    // A blob already promised to one share cannot be promised to another.
+    assert_eq!(
+        f.json(
+            "POST",
+            "/api/v1/shares",
+            &alice,
+            json!({"id":Uuid::new_v4(),"expires_at":soon,"blob_ids":[chunk]})
+        )
+        .await?
+        .0,
+        StatusCode::CONFLICT
+    );
+    // Only the owner may revoke.
+    assert_eq!(
+        f.json("DELETE", &format!("/api/v1/shares/{id}"), &bob, json!({}))
+            .await?
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        f.json("DELETE", &format!("/api/v1/shares/{id}"), &alice, json!({}))
+            .await?
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        public(format!("/api/v1/shares/{id}/blobs/0")).await?.0,
+        StatusCode::NOT_FOUND
+    );
+    // Maintenance is what actually frees it: the row goes, the storage keys go
+    // on the durable queue, and the quota comes back.
+    f.service.maintenance().await?;
+    let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM shares")
+        .fetch_one(&f.pool)
+        .await?;
+    assert_eq!(remaining, 0);
+    let used: i64 = sqlx::query_scalar("SELECT used_bytes FROM accounts WHERE email=$1")
+        .bind("alice@example.test")
+        .fetch_one(&f.pool)
+        .await?;
+    assert_eq!(used, 0);
+    let blobs: i64 = sqlx::query_scalar("SELECT count(*) FROM blobs WHERE account_id=$1")
+        .bind(
+            sqlx::query_scalar::<_, Uuid>("SELECT id FROM accounts WHERE email=$1")
+                .bind("alice@example.test")
+                .fetch_one(&f.pool)
+                .await?,
+        )
+        .fetch_one(&f.pool)
+        .await?;
+    assert_eq!(blobs, 0);
     Ok(())
 }

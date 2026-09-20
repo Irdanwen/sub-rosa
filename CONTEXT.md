@@ -985,6 +985,25 @@ live runtime or executing a task on a hosted service.
 **Execution owner**: the device authorised to advance a particular task. Sharing
 its progress does not authorise every receiving device to run that task again.
 
+**Share**: one note published as an envelope the service cannot open, readable
+by whoever holds its link, until a deadline it is given when it is made
+([ADR-0053](docs/adr/0053-a-share-is-a-dated-envelope-the-server-cannot-open.md)).
+Distinct from the **share inbox**, which is how something gets *in* from the
+phone's share sheet, and from **synchronisation**, which carries your own work
+between your own devices.
+_Avoid:_ "public note" (it is not listed or findable, only reachable),
+"published" (nothing is published), "shared folder", "collaboration" (a share
+is read once by someone else, not a second author).
+
+**Share link**: the whole URL, including everything after the `#`. The part
+after the `#` is the key, it never reaches the service, and it is what makes
+the link a bearer credential rather than an address.
+_Avoid:_ "share URL" when only the address is meant (half a link opens nothing).
+
+**Web reader**: the account website showing your own notes, read only, decrypted
+in that tab. Same page and same decryptor as the share viewer, different door.
+_Avoid:_ "web app", "web client" (it neither writes nor syncs).
+
 ## Charter vocabulary
 
 The visual charter is [docs/design/charte.md](docs/design/charte.md); the values
