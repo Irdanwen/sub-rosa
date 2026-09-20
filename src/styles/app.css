@@ -24601,3 +24601,64 @@ input:focus-visible,
 .ask-panel-follow-up {
   margin-top: 4px;
 }
+
+/* Making a link to a note. A deadline is picked before the link exists, so the
+   three choices are the first thing in the dialog and there is no fourth. */
+.share-windows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.share-windows legend {
+  padding: 0;
+  margin-bottom: var(--sp-2);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.share-window {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  cursor: pointer;
+}
+
+.share-window[data-active] {
+  border-color: var(--ring);
+  background: var(--accent);
+}
+
+.share-result {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* The link is long and it is the payload: it wraps nowhere and scrolls
+   instead, so a partial copy is impossible to make by eye. */
+.share-link {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--control-lg);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+.dialog-share-error {
+  color: var(--destructive);
+}

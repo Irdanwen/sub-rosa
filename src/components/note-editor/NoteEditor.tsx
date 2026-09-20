@@ -9,6 +9,7 @@ import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
 import { IconArrowDownWall } from "central-icons/IconArrowDownWall";
 import { IconMarkdown } from "central-icons/IconMarkdown";
 import { IconBookSimple } from "central-icons/IconBookSimple";
+import { IconChainLink1 } from "central-icons/IconChainLink1";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { IconProjects } from "central-icons/IconProjects";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
@@ -63,6 +64,9 @@ type NoteEditorProps = {
   onExportPdf?: () => void;
   /** Save the note as a Markdown file (desktop; the phone shares instead). */
   onExportMarkdown?: () => void;
+  /** Make a link a reader opens in a browser. Absent when there is no account
+   * to hold the ciphertext: a share needs somewhere to put it. */
+  onShare?: () => void;
   /** "Ask this note": a question answered from this note alone, cited. */
   onAskNote?: () => void;
   onContentChange: (noteId: string, content: string) => void;
@@ -155,6 +159,7 @@ export function NoteEditor({
   onTitleChange,
   onExportPdf,
   onExportMarkdown,
+  onShare,
   onAskNote,
   onContentChange,
   onSourceModeChange,
@@ -496,6 +501,17 @@ export function NoteEditor({
             title={t("Ask this note")}
           >
             <IconSparkle3 aria-hidden="true" />
+          </button>
+        ) : null}
+        {onShare ? (
+          <button
+            type="button"
+            className="note-header-actions note-share"
+            onClick={onShare}
+            aria-label={t("Share this note")}
+            title={t("Share this note")}
+          >
+            <IconChainLink1 aria-hidden="true" />
           </button>
         ) : null}
         {onExportMarkdown ? (

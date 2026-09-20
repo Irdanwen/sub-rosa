@@ -4,6 +4,7 @@ pub mod conversations;
 pub mod crypto;
 mod files;
 pub mod pairing;
+pub mod shares;
 pub(crate) mod studio;
 mod summaries;
 pub mod sync;
@@ -90,6 +91,9 @@ fn error(code: &str) -> AppError {
                 "Save and confirm your recovery kit before enabling synchronization."
             }
             "authorization_pending" => "Approve this device in your browser.",
+            "share_window_invalid" => "Choose how long the link should work.",
+            "share_too_large" => "This is too large to share as a link.",
+            "share_failed" => "The link could not be created.",
             _ => "The account operation could not be completed.",
         },
     )
@@ -845,6 +849,22 @@ pub async fn account_sync_restore_conflict(
 ) -> Result<AccountStatus, AppError> {
     sync::restore_conflict(&app, &conflict_id).await?;
     account_status(app).await
+}
+#[tauri::command]
+pub async fn account_share_note(
+    app: AppHandle,
+    note_id: String,
+    window_hours: i64,
+) -> Result<shares::ShareLink, AppError> {
+    shares::create_note_share(&app, &note_id, window_hours).await
+}
+#[tauri::command]
+pub async fn account_shares(app: AppHandle) -> Result<Vec<shares::ShareSummary>, AppError> {
+    shares::list_shares(&app).await
+}
+#[tauri::command]
+pub async fn account_revoke_share(app: AppHandle, share_id: String) -> Result<(), AppError> {
+    shares::revoke_share(&app, &share_id).await
 }
 #[tauri::command]
 pub async fn account_vault_share_carpe_diem(app: AppHandle) -> Result<AccountStatus, AppError> {

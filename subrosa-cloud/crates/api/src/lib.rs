@@ -78,9 +78,18 @@ pub fn router(service: Service) -> Router {
         .route("/api/v1/device-login/exchange", post(exchange_device))
         .route("/api/v1/sync", get(changes).post(append))
         .route("/api/v1/vault", get(vault).put(save_vault))
+        .route("/api/v1/shares", get(shares).post(create_share))
+        .route("/api/v1/shares/{id}", axum::routing::delete(revoke_share))
         .layer(DefaultBodyLimit::max(5 * 1024 * 1024));
     Router::new()
         .merge(api)
+        // The only two routes that answer without a session. They are readable
+        // because the caller holds a link, and safe because what they return is
+        // sealed under a key generated for that one share, which lives in the
+        // URL fragment and therefore never arrives here. Neither reveals a
+        // title, a file name, an account or another share.
+        .route("/api/v1/shares/{id}/preview", get(share_preview))
+        .route("/api/v1/shares/{id}/blobs/{position}", get(share_blob))
         .route(
             "/api/v1/blobs/{id}",
             get(blob)
@@ -102,22 +111,50 @@ pub fn router(service: Service) -> Router {
 }
 static REQUEST_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(16);
 
+/// Who to charge a request to.
+///
+/// The peer address is the truth when the service is reached directly. Behind an
+/// ingress it is the ingress, always, and charging it would give the whole
+/// Internet one shared budget — the per-address limit would stop protecting the
+/// account and start denying it. So the forwarded address is read, but only from
+/// a peer the operator named in `trusted_proxies`: a header from anywhere else is
+/// an assertion by a stranger about their own identity and is ignored.
+///
+/// The deployed ingress sets `X-Forwarded-For: $remote_addr`, replacing whatever
+/// the client sent, so exactly one address is expected. Anything else is a proxy
+/// chain this has not been reasoned about, and falls back to the peer rather than
+/// guessing which hop to believe.
+fn client_address(service: &Service, request: &Request) -> String {
+    let Some(peer) = request.extensions().get::<ConnectInfo<SocketAddr>>() else {
+        return "local-test".to_string();
+    };
+    let peer = peer.0.ip();
+    if service.config.trusted_proxies.contains(&peer)
+        && let Some(forwarded) = request
+            .headers()
+            .get("x-forwarded-for")
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+            .filter(|value| !value.contains(','))
+            .and_then(|value| value.parse::<std::net::IpAddr>().ok())
+    {
+        return forwarded.to_string();
+    }
+    peer.to_string()
+}
+
 async fn guard(State(s): State<Arc<Service>>, request: Request, next: Next) -> Response {
     let Ok(_slot) = REQUEST_SLOTS.try_acquire() else {
         return ApiError(Error::RateLimited).into_response();
     };
     let path = request.uri().path().to_owned();
     if path != "/livez" && path != "/readyz" {
-        let peer = request
-            .extensions()
-            .get::<ConnectInfo<SocketAddr>>()
-            .map_or_else(|| "local-test".to_string(), |c| c.0.ip().to_string());
+        let peer = client_address(&s, &request);
         let limit = if path.starts_with("/auth/") || path == "/api/v1/device-login" {
             30
         } else {
             600
         };
-        // Do not trust forwarding headers from the public Internet. The ingress applies real client IP limits.
         if let Err(e) = s
             .repository
             .rate_limit(
@@ -477,6 +514,62 @@ async fn upload_blob(
     }
     let bytes = s.upload_blob(&a, id, body.to_vec()).await?;
     Ok(ok(json!({"id":id,"bytes":bytes})).into_response())
+}
+#[derive(Deserialize)]
+struct NewShareBody {
+    id: Uuid,
+    expires_at: chrono::DateTime<chrono::Utc>,
+    blob_ids: Vec<Uuid>,
+}
+async fn create_share(
+    State(s): State<Arc<Service>>,
+    h: HeaderMap,
+    Json(b): Json<NewShareBody>,
+) -> Result<Response> {
+    let a = session(&s, &h, true).await?;
+    Ok(ok(s
+        .create_share(
+            &a,
+            subrosa_services::NewShare {
+                id: b.id,
+                expires_at: b.expires_at,
+                blob_ids: b.blob_ids,
+            },
+        )
+        .await?)
+    .into_response())
+}
+async fn shares(State(s): State<Arc<Service>>, h: HeaderMap) -> Result<Response> {
+    let a = session(&s, &h, false).await?;
+    Ok(ok(s.repository.shares(a.account.id).await?).into_response())
+}
+/// Revoking is not a step-up action. It only ever takes something away, and a
+/// link the owner regrets should cost one tap to stop, not a second sign-in.
+async fn revoke_share(
+    State(s): State<Arc<Service>>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Response> {
+    let a = session(&s, &h, true).await?;
+    s.repository.revoke_share(a.account.id, id).await?;
+    Ok(ok(json!({"revoked":true})).into_response())
+}
+async fn share_preview(State(s): State<Arc<Service>>, Path(id): Path<Uuid>) -> Result<Response> {
+    Ok(ok(s.repository.share_preview(id).await?).into_response())
+}
+async fn share_blob(
+    State(s): State<Arc<Service>>,
+    Path((id, position)): Path<(Uuid, i32)>,
+) -> Result<Response> {
+    let bytes = s.share_blob(id, position).await?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/octet-stream"),
+            (header::CONTENT_DISPOSITION, "attachment"),
+        ],
+        bytes,
+    )
+        .into_response())
 }
 async fn ready(State(s): State<Arc<Service>>) -> Result<Response> {
     s.repository.healthy().await?;

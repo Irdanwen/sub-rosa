@@ -804,6 +804,12 @@ export function accountError(cause: unknown): string {
       return t("Configure Carpe Diem on this device before sharing its key.");
     case "account_conflict":
       return t("Your account changed on another device. Refresh and try again.");
+    case "share_window_invalid":
+      return t("Choose how long the link should work.");
+    case "share_too_large":
+      return t("This note is too large to share as a link.");
+    case "share_failed":
+      return t("The link could not be created. Try again.");
     default:
       return t("Your account request could not be completed. Check your connection and try again.");
   }

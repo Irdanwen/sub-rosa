@@ -19,6 +19,17 @@ pub struct Config {
     pub deletion_ledger: Option<Ledger>,
     #[serde(default = "quota")]
     pub account_quota_bytes: i64,
+    /// Addresses of the reverse proxies whose `X-Forwarded-For` may be believed.
+    ///
+    /// Empty means the peer address *is* the client, which is right when nothing
+    /// sits in front. It is wrong the moment an ingress does: every request then
+    /// arrives from the same loopback address and the per-address budget becomes
+    /// one shared budget for the whole Internet, which is a denial of service
+    /// against the account rather than a defence of it. A proxy that is not
+    /// listed here is never believed, so a forged header from the outside buys
+    /// nothing.
+    #[serde(default)]
+    pub trusted_proxies: Vec<std::net::IpAddr>,
 }
 fn quota() -> i64 {
     5 * 1024 * 1024 * 1024
@@ -99,6 +110,16 @@ impl Config {
             || self.account_quota_bytes < 1024 * 1024
         {
             return Err("invalid client ID or quota");
+        }
+        // An unspecified address matches nothing in a peer comparison, so listing
+        // one is never what the operator meant: it reads as "trust anybody" and
+        // silently trusts nobody. Refuse it rather than let it look configured.
+        if self
+            .trusted_proxies
+            .iter()
+            .any(std::net::IpAddr::is_unspecified)
+        {
+            return Err("a trusted proxy must be a specific address");
         }
         if self.storage.kind != "s3" && !(self.development && self.storage.kind == "local") {
             return Err("production requires S3 storage");
@@ -195,7 +216,19 @@ mod tests {
             },
             deletion_ledger: None,
             account_quota_bytes: 1024 * 1024,
+            trusted_proxies: Vec::new(),
         }
+    }
+
+    /// The header is only ever read from an address the operator named, and an
+    /// unspecified address is a configuration that looks permissive and is not.
+    #[test]
+    fn a_trusted_proxy_must_be_a_specific_address() {
+        let mut config = development();
+        config.trusted_proxies = vec![std::net::IpAddr::from([172, 18, 0, 1])];
+        assert!(config.validate().is_ok());
+        config.trusted_proxies = vec![std::net::IpAddr::from([0, 0, 0, 0])];
+        assert!(config.validate().is_err());
     }
     #[test]
     fn development_cookie_and_storage_exceptions_cannot_escape_loopback() {

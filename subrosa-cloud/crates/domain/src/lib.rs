@@ -178,6 +178,28 @@ pub const KINDS: &[&str] = &[
     "tombstone",
 ];
 
+/// A share as its owner sees it. Nothing here describes what was shared: the
+/// title, the kind and the file name are inside the sealed head, under a key
+/// this service never receives.
+#[derive(Clone, Debug, Serialize)]
+pub struct Share {
+    pub id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub blobs: i32,
+    pub bytes: i64,
+}
+
+/// What a reader learns before they have the key: how many pieces to ask for,
+/// how large they are together, and when the service stops answering.
+#[derive(Clone, Debug, Serialize)]
+pub struct SharePreview {
+    pub v: u8,
+    pub blobs: i32,
+    pub bytes: i64,
+    pub expires_at: DateTime<Utc>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeletionRecord {
     pub version: u32,

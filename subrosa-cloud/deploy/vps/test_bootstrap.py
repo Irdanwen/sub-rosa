@@ -50,6 +50,28 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(realm["webAuthnPolicyPasswordlessRpId"], "accounts.example.com")
         self.assertEqual(realm["webAuthnPolicyPasswordlessUserVerificationRequirement"], "required")
 
+    def test_the_rendered_runtime_names_the_ingress_it_is_told_to_trust(self):
+        """The deployment regenerates this file on every start, so a setting
+        that is not rendered here does not exist in production however carefully
+        it was typed into the container. Without the address, every request
+        looks like it came from the bridge gateway and the whole Internet
+        shares one rate-limit bucket."""
+        env = self.directory / "stack.env"
+        previous = env.read_text()
+        try:
+            bootstrap.write(env, previous.replace("REPLACE_WITH_ACTUAL_DOCKER_GATEWAY_IP", "172.20.0.1"))
+            bootstrap.render(self.directory)
+            rendered = (self.directory / "private/runtime.toml").read_text()
+            self.assertIn('trusted_proxies = ["172.20.0.1"]', rendered)
+            # A placeholder is not an address, and trusting it would be worse
+            # than trusting nothing: it would read as configured.
+            bootstrap.write(env, previous)
+            bootstrap.render(self.directory)
+            self.assertIn("trusted_proxies = []", (self.directory / "private/runtime.toml").read_text())
+        finally:
+            bootstrap.write(env, previous)
+            bootstrap.render(self.directory)
+
     def test_missing_storage_blocks_application_even_when_identity_is_configured(self):
         env = self.directory / "stack.env"
         previous = env.read_text()

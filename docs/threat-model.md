@@ -107,6 +107,13 @@ Named, because a threat model that claims everything protects nothing.
   encryption rejects content and metadata tampering. It does not prove global
   completeness or freshness to an installation with no previously trusted
   cursor. There is no independent transparency witness in this version.
+- **Anyone who obtains a share link.** A share link is a bearer credential: the
+  key that opens it is in the fragment, so whoever has the whole URL can read
+  that one object, and nothing else. Its history, the message that carried it
+  and the clipboard it passed through all hold it. Revoking stops the service
+  answering and reaches no copy already downloaded, which is why a deadline is
+  mandatory and why the surface offers no link that never expires. See
+  [ADR-0053](adr/0053-a-share-is-a-dated-envelope-the-server-cannot-open.md).
 
 - **An attacker who already runs code as you.** They can read the app's files,
   attach a debugger, and ask the keychain for the key with the app's own

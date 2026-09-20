@@ -60,6 +60,8 @@ import { TabBar, type TabItem } from "../components/tabs/TabBar";
 import { defaultNav, makeTabId, navEquals, type Tab, type TabNav } from "./tabs/tabs";
 import { agentSessionTabTitle, tabMeta } from "./tab-meta";
 import { AskNoteOverlay } from "../components/ask/AskNoteOverlay";
+import { ShareNoteDialog } from "../components/share/ShareNoteDialog";
+import { useCanShare } from "../components/share/useCanShare";
 import { exportNoteMarkdown } from "../lib/note-export";
 import { BreadcrumbBar } from "../components/ui/BreadcrumbBar";
 import { Dialog } from "../components/ui/Dialog";
@@ -337,6 +339,8 @@ export function App() {
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
   // "Ask this note": the note whose header asked, until the overlay closes.
   const [askNoteId, setAskNoteId] = useState<string | null>(null);
+  const [shareNoteId, setShareNoteId] = useState<string | null>(null);
+  const canShare = useCanShare();
   const [preparingUpdate, setPreparingUpdate] = useState(false);
   const [relaunchingUpdate, setRelaunchingUpdate] = useState(false);
   const [updateProgress, setUpdateProgress] = useState<UpdateInstallProgress | null>(null);
@@ -3277,6 +3281,7 @@ export function App() {
                       onTitleChange={(title) => void handleUpdateNote({ title })}
                       onExportPdf={() => exportNoteAsPdf(selectedNote.title)}
                       onExportMarkdown={() => void exportNoteMarkdown(selectedNote.id)}
+                      onShare={canShare ? () => setShareNoteId(selectedNote.id) : undefined}
                       onAskNote={() => setAskNoteId(selectedNote.id)}
                       onContentChange={(sourceNoteId, editedContent) => {
                         // Blur fired by an editor that was already torn
@@ -3380,6 +3385,9 @@ export function App() {
           </AnimatePresence>
         </section>
       </div>
+      {shareNoteId ? (
+        <ShareNoteDialog noteId={shareNoteId} open={true} onClose={() => setShareNoteId(null)} />
+      ) : null}
       {askNoteId ? (
         <AskNoteOverlay
           noteId={askNoteId}

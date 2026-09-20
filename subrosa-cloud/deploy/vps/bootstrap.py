@@ -99,6 +99,18 @@ def render(directory):
     origin(s["account_origin"])
     origin(s["identity_base"], True)
     value = lambda name: read_private(private / name).strip()
+    # The API sits behind nginx, so every request reaches it from the bridge
+    # gateway. Without naming that address the per-address rate limit charges
+    # the whole Internet to one bucket, which denies the account rather than
+    # defending it. Keycloak is already told the same address, so it is read
+    # from the same line instead of inventing a second place to get it wrong.
+    proxies = [
+        part.strip()
+        for line in read_private(directory / "stack.env").splitlines()
+        if line.startswith("PROXY_TRUSTED_ADDRESSES=")
+        for part in line.split("=", 1)[1].strip().strip("\"'").split(",")
+        if part.strip() and not part.strip().startswith("REPLACE_")
+    ]
     sql = f"""CREATE ROLE subrosa_migrator LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD '{value('migration-password')}';
 CREATE ROLE subrosa_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION CONNECTION LIMIT 20 PASSWORD '{value('runtime-password')}';
 CREATE ROLE keycloak LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION CONNECTION LIMIT 15 PASSWORD '{value('keycloak-password')}';
@@ -158,7 +170,7 @@ ALTER SCHEMA public OWNER TO keycloak;
     for role, prefix in [("subrosa_runtime", "runtime"), ("subrosa_migrator", "migration")]:
         db = f"postgresql://{role}:{quote(value(prefix + '-password'), safe='')}@postgres:5432/subrosa?sslmode=verify-full&sslrootcert=/run/private/postgres-ca.crt"
         q = json.dumps
-        lines = ["bind = \"0.0.0.0:8088\"", f"public_url = {q(s['account_origin'])}", "development = false", f"database_url = {q(db)}", "account_quota_bytes = 5368709120", "", "[oidc]", f"issuer = {q(s['identity_base'] + '/realms/subrosa')}", "client_id = \"subrosa-cloud\"", f"client_secret = {q(value('oidc-client-secret'))}"]
+        lines = ["bind = \"0.0.0.0:8088\"", f"public_url = {q(s['account_origin'])}", "development = false", f"database_url = {q(db)}", "account_quota_bytes = 5368709120", f"trusted_proxies = {json.dumps(proxies)}", "", "[oidc]", f"issuer = {q(s['identity_base'] + '/realms/subrosa')}", "client_id = \"subrosa-cloud\"", f"client_secret = {q(value('oidc-client-secret'))}"]
         for section, storage in [("storage", op["storage"]), ("deletion_ledger.storage", op["deletion_ledger_storage"])]:
             if section.startswith("deletion"):
                 lines += ["", "[deletion_ledger]", 'active_key_id = "v1"', "[deletion_ledger.signing_keys]", f"v1 = {q(value('ledger-signing-key'))}"]

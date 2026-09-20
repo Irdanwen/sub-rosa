@@ -1157,3 +1157,77 @@ Charte : [docs/design/charte.md](docs/design/charte.md).
 - Les trois `.woff2` sous licence commerciale sortent de l'arbre mais **restent
   dans l'historique git** ; la réécriture n'a pas été faite.
 
+
+## Partager une note, et lire ses notes dans un navigateur (2026-09-19, ADR-0053)
+
+Deux portes, un seul déchiffreur, sur l'origine du compte. Rien de tout cela ne
+touche `june-api/` (ADR-0027) ni upstream : le partage vit dans
+`subrosa-cloud/`, `src-tauri/src/account/` et `website/`.
+
+**Serveur** (`subrosa-cloud/`)
+
+- `migrations/0005_shares.sql` : `shares` (échéance **NOT NULL**) et
+  `share_blobs` (unique sur `(account_id, blob_id)` — l'exclusivité est une
+  contrainte, pas un espoir : le service ne peut pas lire les manifestes qui
+  lui diraient qui d'autre utilise un blob).
+- `crates/domain` : `Share`, `SharePreview`. `crates/persistence` :
+  `create_share`, `shares`, `revoke_share`, `share_preview`, `share_blob`,
+  `release_shares`. `crates/services` : `NewShare`, bornes d'échéance
+  (1 minute à 30 jours), `MAX_LIVE_SHARES`.
+- `crates/api` : `POST|GET /api/v1/shares`, `DELETE /api/v1/shares/{id}`, et
+  les **deux seules routes sans session** du service,
+  `GET /api/v1/shares/{id}/preview` et `/blobs/{position}`. La lecture se fait
+  **par position**, jamais par id de blob.
+- `release_shares` est appelé par `maintain()` : c'est la ramasse-miettes que
+  `subrosa-cloud/README.md:79` annonçait comme absente, et la raison pour
+  laquelle un partage peut coûter du quota.
+
+**Rate-limit derrière l'ingress (prérequis, pas un bonus)**
+
+- `config` gagne `trusted_proxies`, `api::client_address` ne croit
+  `X-Forwarded-For` que depuis une adresse nommée. Sans ça, tout le trafic
+  tombait dans un seul seau (`crates/api/src/lib.rs:111-120` avant), ce qui
+  n'est visible qu'à charge réelle — et les nouvelles routes publiques y
+  exposaient l'ouverture.
+- ⚠️ **Piège de déploiement** : `deploy/vps/bootstrap.py` régénère
+  `runtime.toml` à chaque `stack.py start`. Le réglage est donc rendu depuis
+  `PROXY_TRUSTED_ADDRESSES` de `stack.env` (la même adresse que Keycloak), pas
+  saisi à la main dans le conteneur. `test_bootstrap.py` échoue si le rendu
+  l'oublie.
+- Corrigé au passage : l'allowlist `return_to` de `crates/services`
+  (constante `RETURN_TO`) ignorait `/account/security`, donc le lien « se
+  reconnecter » sous le formulaire de **suppression de compte** répondait 400.
+
+**App** (`src-tauri/`)
+
+- `src/account/shares.rs` : clé fraîche par partage, AAD
+  `subrosa:share:v1:{share_id}:{position}`, téléversement par la route blob
+  ordinaire puis `POST /api/v1/shares`. `migrations/024_shares.sql` garde le
+  **titre en local** — le service ne sait pas ce qu'il détient, donc une liste
+  de liens serait une liste d'identifiants ; un lien fait sur un autre appareil
+  s'affiche sans titre, et c'est le coût assumé.
+- Trois commandes partagées (`account_share_note`, `account_shares`,
+  `account_revoke_share`) dans les **deux** `generate_handler!`.
+- `ShareNoteDialog.tsx` + `useCanShare.ts` : un partage demande un compte, pas
+  la synchronisation et pas le coffre ouvert — la clé d'un partage n'a rien à
+  voir avec la clé de coffre.
+
+**Site** (`website/`)
+
+- `src/pages/share.tsx` (`/s/{id}#k=…`) et `src/pages/library.tsx`
+  (`/account/library`, lecture seule) partagent `lib/vault.ts` et
+  `lib/markdown.tsx`.
+- `lib/markdown.tsx` est **volontairement distinct** de
+  `src/lib/simple-markdown.tsx` : ce dernier route chaque lien par une commande
+  Rust (aucun webview n'honore `target="_blank"`), rend les blocs `subrosa:*`
+  et importe les icônes de l'app. Partager le composant serait la couche
+  sémantique unique qu'ADR-0052 refuse. (Au passage : la faille « `href` non
+  filtré » de `audit-securite.html` est corrigée depuis — `safeExternalHref`
+  est en place.)
+- Le vhost pose déjà `no-referrer` et une CSP `default-src 'self'` : les deux
+  choses dont une clé en fragment a besoin.
+
+**Non fait, et pourquoi** : partager un **fichier** (enregistrement, film). Le
+serveur l'accepte déjà (jusqu'à 2049 positions), mais un téléversement de
+plusieurs centaines de Mo doit être une **ligne durable** (ADR-0018), pas une
+commande qui tourne deux minutes. Cette ligne n'est pas écrite.

@@ -139,3 +139,24 @@ export const accountSyncResolveConflict = (
   conflictId: string,
   resolution: "keep_local" | "use_remote" | "copy",
 ) => statusCommand("account_sync_resolve_conflict", { conflictId, resolution });
+
+/** How long a share link answers. The same three the Rust side accepts, and
+ * the service rejects anything else: an expiry is a decision, not a default. */
+export const SHARE_WINDOWS = [24, 24 * 7, 24 * 30] as const;
+export type ShareWindow = (typeof SHARE_WINDOWS)[number];
+export type ShareLink = { id: string; url: string; expires_at: string };
+export type ShareSummary = {
+  id: string;
+  title: string;
+  note_id: string | null;
+  created_at: string;
+  expires_at: string;
+  bytes: number;
+};
+/** The returned URL carries the key in its fragment. It is the one secret the
+ * app hands to the interface on purpose, because copying it is the feature. */
+export const accountShareNote = (noteId: string, windowHours: ShareWindow) =>
+  invoke<ShareLink>("account_share_note", { noteId, windowHours });
+export const accountShares = () => invoke<ShareSummary[]>("account_shares");
+export const accountRevokeShare = (shareId: string) =>
+  invoke<void>("account_revoke_share", { shareId });

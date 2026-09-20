@@ -4,7 +4,7 @@ use futures_util::TryStreamExt;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use subrosa_domain::{
     Account, Change, Device, DeviceRequest, Error, Identity, JournalPage, LoginAttempt, Operation,
-    OperationResult, Result, Secret, Session, Vault,
+    OperationResult, Result, Secret, Session, Share, SharePreview, Vault,
 };
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
@@ -613,6 +613,170 @@ impl Repository {
         .rows_affected();
         if n == 0 { Err(Error::NotFound) } else { Ok(()) }
     }
+    /// Claims already-uploaded blobs for a new share.
+    ///
+    /// The blobs exist before the share does, because the upload route is the
+    /// ordinary authenticated one and a lost response has to be retryable. What
+    /// this adds is exclusivity: the unique index on `(account_id, blob_id)`
+    /// rejects a blob another share already holds, which is what later lets
+    /// release delete bytes without reading a manifest it has no key for.
+    pub async fn create_share(&self, p: ShareParams<'_>) -> Result<Share> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        lock_account(&mut tx, p.owner).await?;
+        let bytes: Option<i64> = sqlx::query_scalar(
+            "SELECT SUM(bytes) FROM blobs WHERE account_id=$1 AND id=ANY($2::uuid[])",
+        )
+        .bind(p.owner)
+        .bind(p.blob_ids)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(db)?;
+        let counted: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM blobs WHERE account_id=$1 AND id=ANY($2::uuid[])",
+        )
+        .bind(p.owner)
+        .bind(p.blob_ids)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(db)?;
+        // Every position must resolve to a blob this account owns, and the ids
+        // must be distinct: a share that names the same blob twice would free
+        // it twice on release.
+        if counted != i64::try_from(p.blob_ids.len()).unwrap_or(i64::MAX) {
+            return Err(Error::NotFound);
+        }
+        let bytes = bytes.unwrap_or_default();
+        let blobs = i32::try_from(p.blob_ids.len()).map_err(|_| Error::Invalid)?;
+        sqlx::query(
+            "INSERT INTO shares(id,account_id,expires_at,blobs,bytes) VALUES($1,$2,$3,$4,$5)",
+        )
+        .bind(p.id)
+        .bind(p.owner)
+        .bind(p.expires_at)
+        .bind(blobs)
+        .bind(bytes)
+        .execute(&mut *tx)
+        .await
+        .map_err(db)?;
+        for (position, blob) in p.blob_ids.iter().enumerate() {
+            let position = i32::try_from(position).map_err(|_| Error::Invalid)?;
+            if sqlx::query("INSERT INTO share_blobs(share_id,position,account_id,blob_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
+                .bind(p.id)
+                .bind(position)
+                .bind(p.owner)
+                .bind(blob)
+                .execute(&mut *tx)
+                .await
+                .map_err(db)?
+                .rows_affected()
+                == 0
+            {
+                return Err(Error::Conflict);
+            }
+        }
+        let created: DateTime<Utc> =
+            sqlx::query_scalar("SELECT created_at FROM shares WHERE id=$1")
+                .bind(p.id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(db)?;
+        tx.commit().await.map_err(db)?;
+        Ok(Share {
+            id: p.id,
+            created_at: created,
+            expires_at: p.expires_at,
+            blobs,
+            bytes,
+        })
+    }
+    pub async fn shares(&self, owner: Uuid) -> Result<Vec<Share>> {
+        Ok(sqlx::query("SELECT id,created_at,expires_at,blobs,bytes FROM shares WHERE account_id=$1 AND revoked_at IS NULL AND expires_at>now() ORDER BY created_at DESC LIMIT 200")
+            .bind(owner)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db)?
+            .iter()
+            .map(|row| Share {
+                id: row.get("id"),
+                created_at: row.get("created_at"),
+                expires_at: row.get("expires_at"),
+                blobs: row.get("blobs"),
+                bytes: row.get("bytes"),
+            })
+            .collect())
+    }
+    /// Stops the service answering, now. The bytes go on the release queue that
+    /// maintenance drains, rather than being deleted inline, so a storage
+    /// outage cannot make a revocation fail.
+    pub async fn revoke_share(&self, owner: Uuid, id: Uuid) -> Result<()> {
+        let n = sqlx::query("UPDATE shares SET revoked_at=now() WHERE id=$1 AND account_id=$2 AND revoked_at IS NULL")
+            .bind(id)
+            .bind(owner)
+            .execute(&self.pool)
+            .await
+            .map_err(db)?
+            .rows_affected();
+        if n == 0 { Err(Error::NotFound) } else { Ok(()) }
+    }
+    /// Read by anybody holding the link. Deliberately says nothing a stranger
+    /// could not already infer from the ciphertext they are about to fetch.
+    pub async fn share_preview(&self, id: Uuid) -> Result<SharePreview> {
+        let row = sqlx::query("SELECT blobs,bytes,expires_at FROM shares WHERE id=$1 AND revoked_at IS NULL AND expires_at>now()")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db)?
+            .ok_or(Error::NotFound)?;
+        Ok(SharePreview {
+            v: 1,
+            blobs: row.get("blobs"),
+            bytes: row.get("bytes"),
+            expires_at: row.get("expires_at"),
+        })
+    }
+    /// Resolves a position, never a blob id: the reader cannot name bytes, only
+    /// ask for the next piece of the share they already hold a link to.
+    pub async fn share_blob(&self, id: Uuid, position: i32) -> Result<(Uuid, Uuid)> {
+        let row = sqlx::query("SELECT sb.account_id,sb.blob_id FROM share_blobs sb JOIN shares s ON s.id=sb.share_id WHERE sb.share_id=$1 AND sb.position=$2 AND s.revoked_at IS NULL AND s.expires_at>now()")
+            .bind(id)
+            .bind(position)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db)?
+            .ok_or(Error::NotFound)?;
+        Ok((row.get("account_id"), row.get("blob_id")))
+    }
+    /// Drains expired and revoked shares: the storage keys go on the same
+    /// durable deletion queue account removal uses, the rows go, and the bytes
+    /// come back off the quota. This is the garbage collection the service
+    /// otherwise has none of, and the reason a share can cost quota at all.
+    pub async fn release_shares(&self) -> Result<()> {
+        loop {
+            let Some(row) = sqlx::query("SELECT id,account_id FROM shares WHERE revoked_at IS NOT NULL OR expires_at<=now() ORDER BY expires_at LIMIT 1")
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(db)?
+            else {
+                return Ok(());
+            };
+            let (id, owner): (Uuid, Uuid) = (row.get("id"), row.get("account_id"));
+            let mut tx = self.pool.begin().await.map_err(db)?;
+            lock_account(&mut tx, owner).await?;
+            let freed:Option<i64>=sqlx::query_scalar("WITH gone AS (DELETE FROM blobs b USING share_blobs sb WHERE sb.share_id=$1 AND b.account_id=sb.account_id AND b.id=sb.blob_id RETURNING b.account_id,b.id,b.bytes), queued AS (INSERT INTO blob_deletions(key) SELECT account_id::text||'/'||id::text FROM gone ON CONFLICT DO NOTHING) SELECT SUM(bytes) FROM gone").bind(id).fetch_one(&mut *tx).await.map_err(db)?;
+            sqlx::query("UPDATE accounts SET used_bytes=GREATEST(0,used_bytes-$2) WHERE id=$1")
+                .bind(owner)
+                .bind(freed.unwrap_or_default())
+                .execute(&mut *tx)
+                .await
+                .map_err(db)?;
+            sqlx::query("DELETE FROM shares WHERE id=$1")
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .map_err(db)?;
+            tx.commit().await.map_err(db)?;
+        }
+    }
     pub async fn prune_auth(&self) -> Result<()> {
         for q in [
             "DELETE FROM pairing_requests WHERE expires_at<now()",
@@ -646,6 +810,12 @@ pub struct VaultParams<'a> {
     pub expected: i64,
     pub envelope: &'a serde_json::Value,
     pub quota: i64,
+}
+pub struct ShareParams<'a> {
+    pub owner: Uuid,
+    pub id: Uuid,
+    pub expires_at: DateTime<Utc>,
+    pub blob_ids: &'a [Uuid],
 }
 pub struct BlobParams<'a> {
     pub owner: Uuid,

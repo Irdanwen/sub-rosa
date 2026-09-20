@@ -125,10 +125,11 @@ export function revisionHeads(changes: Change[]): Change[] {
   return changes.filter((change) => !parents.has(change.revision));
 }
 
-export async function readChanges(
-  signal?: AbortSignal,
-  kind?: "settings" | "usage",
-): Promise<Change[]> {
+/** The kinds a browser reads. Bounded on purpose: the page holds a decryption
+ * key, so what it is allowed to pull is a decision, not a parameter. */
+export type ReadableKind = "settings" | "usage" | "note";
+
+export async function readChanges(signal?: AbortSignal, kind?: ReadableKind): Promise<Change[]> {
   let cursor = 0;
   let bytes = 0;
   const changes: Change[] = [];

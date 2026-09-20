@@ -12,6 +12,7 @@ import {
 } from "../lib/api";
 import { date, number, t } from "../lib/i18n";
 import { decryptObject, prepareObject, prepareVault, sendObject, unlockVault } from "../lib/vault";
+import { Library } from "./library";
 import { PairApproval, PairReceiver } from "./pairing";
 
 type Key = Uint8Array<ArrayBuffer>;
@@ -184,6 +185,7 @@ export function AccountPage({ path }: { path: string }) {
   const tabs = [
     ["/account", t("Overview", "Vue d’ensemble")],
     ["/account/provider", "Carpe Diem"],
+    ["/account/library", t("Notes", "Notes")],
     ["/account/usage", t("Usage", "Consommation")],
     ["/account/devices", t("Devices", "Appareils")],
     ["/account/security", t("Security", "Sécurité")],
@@ -255,7 +257,9 @@ export function AccountPage({ path }: { path: string }) {
               {section === "/account/pair" && vaultKey && (
                 <PairApproval accountId={account.id} vaultKey={vaultKey} />
               )}
-              {section === "/account/provider" && vaultKey ? (
+              {section === "/account/library" && vaultKey ? (
+                <Library account={account} vaultKey={vaultKey} />
+              ) : section === "/account/provider" && vaultKey ? (
                 <Provider account={account} vaultKey={vaultKey} />
               ) : section === "/account/usage" && vaultKey ? (
                 <Usage account={account} vaultKey={vaultKey} />
