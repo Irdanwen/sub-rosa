@@ -623,8 +623,10 @@ impl Repository {
     pub async fn create_share(&self, p: ShareParams<'_>) -> Result<Share> {
         let mut tx = self.pool.begin().await.map_err(db)?;
         lock_account(&mut tx, p.owner).await?;
-        let bytes: Option<i64> = sqlx::query_scalar(
-            "SELECT SUM(bytes) FROM blobs WHERE account_id=$1 AND id=ANY($2::uuid[])",
+        // PostgreSQL sums a bigint into numeric, which does not decode as i64.
+        // The cast is the difference between a 404 and an opaque 503.
+        let bytes: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(bytes),0)::bigint FROM blobs WHERE account_id=$1 AND id=ANY($2::uuid[])",
         )
         .bind(p.owner)
         .bind(p.blob_ids)
@@ -645,7 +647,6 @@ impl Repository {
         if counted != i64::try_from(p.blob_ids.len()).unwrap_or(i64::MAX) {
             return Err(Error::NotFound);
         }
-        let bytes = bytes.unwrap_or_default();
         let blobs = i32::try_from(p.blob_ids.len()).map_err(|_| Error::Invalid)?;
         sqlx::query(
             "INSERT INTO shares(id,account_id,expires_at,blobs,bytes) VALUES($1,$2,$3,$4,$5)",
@@ -762,10 +763,10 @@ impl Repository {
             let (id, owner): (Uuid, Uuid) = (row.get("id"), row.get("account_id"));
             let mut tx = self.pool.begin().await.map_err(db)?;
             lock_account(&mut tx, owner).await?;
-            let freed:Option<i64>=sqlx::query_scalar("WITH gone AS (DELETE FROM blobs b USING share_blobs sb WHERE sb.share_id=$1 AND b.account_id=sb.account_id AND b.id=sb.blob_id RETURNING b.account_id,b.id,b.bytes), queued AS (INSERT INTO blob_deletions(key) SELECT account_id::text||'/'||id::text FROM gone ON CONFLICT DO NOTHING) SELECT SUM(bytes) FROM gone").bind(id).fetch_one(&mut *tx).await.map_err(db)?;
+            let freed:i64=sqlx::query_scalar("WITH gone AS (DELETE FROM blobs b USING share_blobs sb WHERE sb.share_id=$1 AND b.account_id=sb.account_id AND b.id=sb.blob_id RETURNING b.account_id,b.id,b.bytes), queued AS (INSERT INTO blob_deletions(key) SELECT account_id::text||'/'||id::text FROM gone ON CONFLICT DO NOTHING) SELECT COALESCE(SUM(bytes),0)::bigint FROM gone").bind(id).fetch_one(&mut *tx).await.map_err(db)?;
             sqlx::query("UPDATE accounts SET used_bytes=GREATEST(0,used_bytes-$2) WHERE id=$1")
                 .bind(owner)
-                .bind(freed.unwrap_or_default())
+                .bind(freed)
                 .execute(&mut *tx)
                 .await
                 .map_err(db)?;
