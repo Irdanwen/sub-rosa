@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="fr" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sub Rosa — Audit sécurité & plan de durcissement</title>
+<style>
+  :root{
+    --brand:#936862;
+    --bg:oklch(16.5% 0.006 60);
+    --bg-raise:oklch(19.5% 0.008 60);
+    --card:oklch(21% 0.008 60);
+    --fg:oklch(96% 0.005 60);
+    --fg-dim:oklch(70% 0.01 60);
+    --fg-faint:oklch(52% 0.01 60);
+    --line:oklch(100% 0 0 / 9%);
+    --line-strong:oklch(100% 0 0 / 16%);
+    --gold:oklch(82% 0.13 85);
+    --good:oklch(72% 0.14 150);
+    --warn:oklch(78% 0.14 85);
+    --bad:oklch(68% 0.19 25);
+    --serif:"Iowan Old Style","Martina Plantijn",Georgia,serif;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"Berkeley Mono","SFMono-Regular",Consolas,monospace;
+    --ease:cubic-bezier(.22,1,.36,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:
+      radial-gradient(1200px 700px at 70% -10%, color-mix(in oklch, var(--brand) 14%, transparent), transparent 60%),
+      radial-gradient(900px 600px at 0% 100%, color-mix(in oklch, var(--gold) 6%, transparent), transparent 55%),
+      var(--bg);
+    color:var(--fg);
+    font:15px/1.65 var(--sans);
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:color-mix(in oklch, var(--brand) 45%, transparent)}
+  .wrap{max-width:1060px;margin:0 auto;padding:64px 28px 120px}
+
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:10px;
+    font:600 11px/1 var(--sans);letter-spacing:.18em;text-transform:uppercase;
+    color:var(--gold);
+  }
+  .eyebrow::before{content:"";width:28px;height:1px;background:var(--gold);opacity:.7}
+  h1{
+    font:400 clamp(38px,6vw,64px)/1.05 var(--serif);
+    letter-spacing:-.015em;margin:18px 0 14px;text-wrap:balance;
+  }
+  h1 em{font-style:italic;color:color-mix(in oklch, var(--brand) 55%, var(--fg))}
+  .lede{max-width:660px;color:var(--fg-dim);font-size:16.5px}
+  .lede b{color:var(--fg);font-weight:600}
+
+  .meta-grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+    gap:14px;margin:44px 0 10px;
+  }
+  .meta{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:18px 20px;position:relative;overflow:hidden;
+  }
+  .meta::after{content:"";position:absolute;inset:0 0 auto 0;height:1px;
+    background:linear-gradient(90deg,transparent,oklch(100% 0 0/18%),transparent)}
+  .meta .k{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-faint);font-weight:600}
+  .meta .v{font:400 30px/1.15 var(--serif);margin-top:8px}
+  .meta .v small{font-size:14px;color:var(--fg-dim);font-family:var(--sans)}
+  .verdict{
+    margin:26px 0 0;padding:20px 24px;border-radius:14px;
+    border:1px solid color-mix(in oklch, var(--good) 35%, var(--line));
+    background:color-mix(in oklch, var(--good) 6%, var(--bg-raise));
+    font:italic 400 17.5px/1.6 var(--serif);
+  }
+
+  section{margin-top:88px}
+  h2{font:400 clamp(26px,3.5vw,36px)/1.15 var(--serif);letter-spacing:-.01em;margin-bottom:6px;text-wrap:balance}
+  h2 + .sub{color:var(--fg-dim);max-width:680px;margin-bottom:28px}
+  .board{display:grid;gap:10px}
+  .axis{
+    display:grid;grid-template-columns:44px 1fr 120px;gap:16px;align-items:center;
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:14px 18px;cursor:pointer;text-decoration:none;color:inherit;
+    transition:border-color .2s var(--ease),transform .2s var(--ease),background .2s var(--ease);
+  }
+  .axis:hover{border-color:var(--line-strong);transform:translateY(-1px);background:color-mix(in oklch, var(--card) 92%, var(--brand) 8%)}
+  .axis .num{font:italic 400 22px var(--serif);color:var(--fg-faint)}
+  .axis .name{font-weight:600;font-size:14.5px}
+  .axis .name small{display:block;font-weight:400;color:var(--fg-faint);font-size:12.5px;margin-top:1px}
+  .score{display:flex;align-items:center;gap:10px}
+  .bar{flex:1;height:4px;border-radius:2px;background:oklch(100% 0 0/8%);overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:2px;background:var(--sc);width:0;transition:width 1.1s var(--ease) .15s}
+  .score b{font:600 14px var(--mono);color:var(--sc);min-width:46px;text-align:right}
+  .sc-10{--sc:var(--good)} .sc-8{--sc:oklch(78% 0.12 130)} .sc-7{--sc:var(--warn)} .sc-5{--sc:var(--bad)}
+
+  .card{--sc:var(--warn);background:var(--card);border:1px solid var(--line);border-radius:18px;padding:34px 36px;margin-bottom:22px}
+  .card[data-sc="10"],.card[data-sc="9"]{--sc:var(--good)}
+  .card[data-sc="8"]{--sc:oklch(78% 0.12 130)}
+  .card[data-sc="7"]{--sc:var(--warn)}
+  .card header{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:4px}
+  .card h3{font:400 25px/1.2 var(--serif);letter-spacing:-.01em}
+  .pill{
+    font:600 13px var(--mono);padding:5px 12px;border-radius:99px;white-space:nowrap;
+    background:color-mix(in oklch, var(--sc) 16%, transparent);color:var(--sc);
+    border:1px solid color-mix(in oklch, var(--sc) 35%, transparent);
+  }
+  .scope{font:600 10.5px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--fg-faint);margin:2px 0 18px}
+  .scope span{color:var(--gold)}
+  .card h4{font:600 12px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--fg-faint);margin:26px 0 10px}
+  .card h4:first-of-type{margin-top:0}
+  ul.find{list-style:none;display:grid;gap:9px}
+  ul.find li{position:relative;padding-left:20px;color:var(--fg-dim);font-size:14.5px}
+  ul.find li::before{content:"";position:absolute;left:2px;top:9px;width:7px;height:7px;border-radius:50%;background:color-mix(in oklch, var(--sc) 70%, transparent)}
+  ul.find li b{color:var(--fg);font-weight:600}
+  .sev{
+    display:inline-block;font:600 10px var(--sans);letter-spacing:.1em;text-transform:uppercase;
+    padding:1px 7px;border-radius:99px;margin-left:6px;vertical-align:1px;
+  }
+  .sev-info{background:color-mix(in oklch, var(--good) 18%, transparent);color:var(--good)}
+  .sev-low{background:color-mix(in oklch, var(--warn) 20%, transparent);color:var(--warn)}
+  .sev-med{background:color-mix(in oklch, var(--bad) 20%, transparent);color:var(--bad)}
+  code{
+    font:12.5px var(--mono);background:oklch(100% 0 0/7%);border:1px solid var(--line);
+    padding:1.5px 6px;border-radius:5px;color:color-mix(in oklch, var(--gold) 70%, var(--fg));white-space:nowrap;
+  }
+  ol.plan{list-style:none;counter-reset:p;display:grid;gap:12px;margin-top:4px}
+  ol.plan li{
+    counter-increment:p;position:relative;padding:14px 16px 14px 52px;
+    background:var(--bg-raise);border:1px solid var(--line);border-radius:11px;
+  }
+  ol.plan li::before{
+    content:counter(p);position:absolute;left:14px;top:13px;width:26px;height:26px;border-radius:50%;
+    display:grid;place-items:center;font:600 12.5px var(--mono);
+    color:color-mix(in oklch, var(--brand) 60%, white);
+    background:color-mix(in oklch, var(--brand) 22%, transparent);
+    border:1px solid color-mix(in oklch, var(--brand) 45%, transparent);
+  }
+  ol.plan b{display:block;font-size:14.5px;margin-bottom:2px}
+  ol.plan p{font-size:13.5px;color:var(--fg-dim)}
+  ol.plan p code{font-size:11.5px}
+  .gain{
+    margin-top:14px;padding:12px 16px;border-radius:10px;font-size:13.5px;
+    background:color-mix(in oklch, var(--good) 8%, var(--bg-raise));
+    border:1px solid color-mix(in oklch, var(--good) 30%, var(--line));
+  }
+  .gain b{color:var(--good);font-weight:600}
+  pre{
+    background:oklch(13% 0.006 60);border:1px solid var(--line);border-radius:11px;
+    padding:16px 18px;overflow-x:auto;font:12.5px/1.6 var(--mono);color:oklch(88% 0.01 60);margin-top:12px;
+  }
+  pre .c{color:oklch(58% 0.02 60);font-style:italic}
+
+  .phase{border-left:2px solid color-mix(in oklch, var(--brand) 50%, transparent);padding:2px 0 26px 26px;position:relative}
+  .phase::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;
+    background:var(--brand);box-shadow:0 0 0 4px color-mix(in oklch, var(--brand) 25%, transparent)}
+  .phase .tag{display:inline-block;font:600 10.5px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--gold);margin-bottom:6px}
+  .phase h4{font:400 20px var(--serif);margin-bottom:8px}
+  .phase p{color:var(--fg-dim);font-size:14px;max-width:700px}
+  .phase p b{color:var(--fg)}
+  footer{margin-top:90px;padding-top:26px;border-top:1px solid var(--line);color:var(--fg-faint);font-size:12.5px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  @media (max-width:640px){
+    .wrap{padding:44px 18px 90px}
+    .card{padding:24px 20px}
+    .axis{grid-template-columns:1fr 90px}
+    .axis .num{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ================= HERO ================= -->
+  <p class="eyebrow">Audit sécurité · Septembre 2026</p>
+  <h1>La confidentialité est le produit.<br>Le socle est <em>déjà sérieux</em>.</h1>
+  <p class="lede">Sub Rosa promet que les prompts, l'audio et les notes ne quittent pas le contrôle de l'utilisateur — et le code tient cette promesse : secrets en keychain jamais exposés au webview, SQL entièrement paramétré, CSP stricte sans <code>eval</code> ni <code>innerHTML</code> de données modèle, CORS en deny-all, backend qui échoue fermé. L'audit relève <b>zéro vulnérabilité critique</b> et <b>trois axes de durcissement réels</b> : le <code>http://</code> accepté pour la clé, l'héritage du token sidecar par les processus enfants, et l'absence de scan CVE continu.</p>
+
+  <div class="meta-grid">
+    <div class="meta"><div class="k">Note globale</div><div class="v">8,6<small> / 10</small></div></div>
+    <div class="meta"><div class="k">Axes audités</div><div class="v">13</div></div>
+    <div class="meta"><div class="k">Vulnérabilités critiques</div><div class="v">0</div></div>
+    <div class="meta"><div class="k">Correctifs de durcissement</div><div class="v">31</div></div>
+  </div>
+
+  <p class="verdict">« Un produit de confidentialité se juge à ce qu'il refuse de faire : ne pas logger la clé, ne pas suivre une redirection, ne pas démarrer si le backend local manque. Sub Rosa refuse déjà les trois. Il reste à rendre ces refus mesurables en continu. »</p>
+
+  <!-- ================= SCOREBOARD ================= -->
+  <section id="board">
+    <h2>Tableau des scores</h2>
+    <p class="sub">Chaque axe est noté sur l'état actuel du code, preuves à l'appui, puis décomposé avec le plan exact pour atteindre 10/10.</p>
+    <div class="board" id="board-list"></div>
+  </section>
+
+  <!-- ================= FICHES ================= -->
+  <section id="fiches">
+    <h2>Les fiches d'audit</h2>
+    <p class="sub">Constat fondé sur le code réel (chemins cités), sévérité par constat, puis plan d'action. Aucune finding inventée : tout est vérifié dans le dépôt.</p>
+
+    <!-- 01 -->
+    <div class="card" id="s1" data-sc="9">
+      <header><h3>01 · Stockage des secrets (keychain)</h3><span class="pill">9 / 10</span></header>
+      <p class="scope">Desktop + iOS <span>·</span> Le coffre-fort est bien construit</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li><b>Sain.</b> La clé <code>cdm_</code> vit dans le keychain OS via <code>keyring</code>, service dédié <code>xyz.carpediem.subrosa.carpe-diem</code> (suffixe <code>-dev</code> en debug) — <code>settings.rs:29-32</code>.</li>
+        <li>Elle n'est <b>jamais renvoyée au webview</b> : le DTO n'expose que <code>has_api_key</code> (<code>settings.rs:54-72</code>). Le token issue-report et la clé Google Places suivent le même régime.</li>
+        <li><span class="sev sev-low">Faible</span> <code>validate_base_url</code> accepte <code>http://</code> (<code>settings.rs:893</code>) — un utilisateur distrait peut faire transiter son bearer en clair.</li>
+        <li><span class="sev sev-info">Info</span> Le bypass debug <code>SUBROSA_DEV_API_KEY</code> est <code>#[cfg(debug_assertions)]</code> — absent du binaire release. Propre.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Refuser <code>http://</code> hors loopback</b><p>Dans <code>validate_base_url</code> : <code>https://</code> obligatoire, sauf <code>http://127.0.0.1</code>/<code>localhost</code> (utile en dev). Un avertissement explicite au collage d'un base non chiffré, pas une erreur silencieuse.</p></li>
+        <li><b>Test d'inventaire keychain</b><p>Un test Rust qui liste les services créés par l'app et échoue si un secret atterrit ailleurs que dans un service keychain dédié — garantit que le futur code n'introduit pas de fichier plat de secrets.</p></li>
+        <li><b>Rotation guidée</b><p>Dans les réglages Connexion : un bouton « Remplacer la clé » qui écrit la nouvelle puis vérifie via <code>/v1/credits</code> <i>avant</i> de supprimer l'ancienne — une rotation sans fenêtre d'échec.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> impossible, même en se forçant, de stocker ou transmettre la clé hors d'un canal chiffré — et la rotation devient un geste de routine.</div>
+    </div>
+
+    <!-- 02 -->
+    <div class="card" id="s2" data-sc="8">
+      <header><h3>02 · Le sidecar (token, port, variables d'environnement)</h3><span class="pill">8 / 10</span></header>
+      <p class="scope">Desktop + mobile <span>·</span> Le cœur de l'architecture</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li><b>Sain.</b> Bind forcé sur <code>127.0.0.1</code> (<code>sidecar.rs:489</code>, mobile dur-codé dans <code>embed/src/lib.rs:58</code>), port éphémère, bearer éphémère UUIDv4 vérifié sur chaque route (<code>LocalDevTokenVerifier</code>), CORS deny-all (<code>CorsLayer::new()</code>).</li>
+        <li><span class="sev sev-med">Moyen</span> Le token et la clé vivent dans <b>l'environnement des processus</b> : <code>OS_JUNE_LOCAL_DEV_BEARER_TOKEN</code> est hérité par <i>tous</i> les enfants (Hermes, helpers de dictation) via <code>sidecar.rs:339-342, 495-496</code>. Hermes est sandboxé (<code>sandbox-exec</code>), mais tout compromis d'un enfant donne accès au sidecar « as user ».</li>
+        <li><span class="sev sev-info">Info</span> Le port est exposé via l'event de statut au webview — nécessaire, mais accroît l'importance du token.</li>
+        <li><span class="sev sev-info">Info</span> Le token est un UUIDv4 (122 bits CSPRNG) : correct ; 256 bits hex serait plus défensif.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Laver l'environnement des enfants non autorisés</b><p>Les spawns de Hermes/helpers passent une env <i>explicitement construite</i> (allowlist) qui retire <code>OS_JUNE_LOCAL_DEV*</code> et <code>JUNE__UPSTREAMS__*</code>, sauf pour le sidecar lui-même. 20 lignes dans le wrapper de spawn — réduit le blast radius d'un enfant compromis à zéro.</p></li>
+        <li><b>Passer le token par stdin, pas par env</b><p>Le sidecar lit son token en première ligne de stdin au démarrage (option déjà naturelle dans <code>june-embed</code>). L'env ne contient plus aucun secret ; les secrets n'apparaissent plus dans <code>ps eww</code>.</p></li>
+        <li><b>Token 256 bits</b><p>Remplacer <code>Uuid::new_v4()</code> par <code>rand::random::<[u8;32]>()</code> encodé hex. Trivial, aligné sur la convention des tokens locaux.</p></li>
+        <li><b>Pin par génération documenté</b><p>Le compteur de génération qui invalide les health checks obsolètes existe déjà — ajouter un test qui prouve qu'un token d'une génération précédente est refusé après redémarrage du sidecar.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> aucun secret ne transite par l'environnement de processus, et la compromission d'un helper ne donne plus aucun accès au moteur d'inférence.</div>
+    </div>
+
+    <!-- 03 -->
+    <div class="card" id="s3" data-sc="8">
+      <header><h3>03 · CSP & durcissement du webview</h3><span class="pill">8 / 10</span></header>
+      <p class="scope">Desktop <span>·</span> La muraille du webview</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li><b>Sain.</b> <code>script-src 'self'</code> + un hash sha256 épinglé, <code>object-src 'none'</code>, <code>base-uri 'none'</code>, <code>frame-ancestors 'none'</code> (<code>tauri.conf.json:80</code>). Aucun <code>eval</code>, aucun chargement de script distant dans <code>src/</code>.</li>
+        <li><span class="sev sev-low">Faible</span> <code>connect-src http://127.0.0.1:* ws://127.0.0.1:*</code> : conséquence assumée du port aléatoire du sidecar, mais un XSS dans le webview pourrait sonder <b>les autres services locaux</b> de la machine.</li>
+        <li><span class="sev sev-info">Info</span> <code>style-src 'unsafe-inline'</code> — usage Tauri standard, risque résiduel faible mais inutile à long terme.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Resserrer <code>connect-src</code></b><p>Épingler le schéma authentifié : au lieu de tout loopback, n'autoriser que <code>ipc:</code> + le schéma d'asset + un connect du côté Rust (le webview parle au sidecar <i>via les commandes Rust</i> pour tout sauf le streaming, déjà vrai en grande partie). Chaque retrait de portée est une victoire permanente.</p></li>
+        <li><b>Sortir les styles inline du chemin principal</b><p>Transférer progressivement les styles inline dans les feuilles, puis tenter <code>style-src 'self'</code> avec un rapport d'exception. Faible priorité, mais le 10/10 se joue sur ces derniers pourcents.</p></li>
+        <li><b>Un test CSP en CI</b><p>Un test qui parse <code>tauri.conf.json</code> et échoue si la CSP s'élargit (nouveau <code>unsafe-eval</code>, <code>*</code>, retrait de <code>frame-ancestors</code>). La CSP devient une propriété gardée, pas une config oubliée.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> même un XSS hypothétique dans le webview ne peut ni exécuter du code, ni joindre un autre service local, ni charger une ressource distante.</div>
+    </div>
+
+    <!-- 04 -->
+    <div class="card" id="s4" data-sc="9">
+      <header><h3>04 · Rendu markdown & injection (XSS)</h3><span class="pill">9 / 10</span></header>
+      <p class="scope">Desktop + mobile <span>·</span> La sortie du modèle n'écrit pas d'HTML</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li><b>Sain.</b> Zéro <code>dangerouslySetInnerHTML</code> dans <code>src/</code> ; les deux moteurs markdown (<code>simple-markdown.tsx</code>, le renderer desktop <code>AgentWorkspace.tsx:12569-12635</code>) émettent des nœuds React échappés par construction. Pas de <code>marked</code>/<code>react-markdown</code> avec pass HTML.</li>
+        <li>La note round-tripe par le <i>document</i> ProseMirror, jamais par le DOM (ADR-0037) ; <code>isAllowedUri</code> bloque <code>javascript:</code> dans les notes (<code>extensions.ts:46-47</code>).</li>
+        <li>Les blocs <code>subrosa:*</code> exigent <code>safeHttpsUrl()</code> et dégradent en bloc de code sinon (<code>chat-blocks.ts:131-141</code>).</li>
+        <li><span class="sev sev-low">Faible</span> <code>simple-markdown.tsx:341,357</code> : le matcher mobile accepte n'importe quel href entre parenthèses — un <code>[text](javascript:alert(1))</code> sorti d'un modèle rend une ancre cliquable <i>sans garde https</i> (le desktop, lui, ne matche que <code>https?://</code>).</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Uniformiser la garde https sur mobile</b><p>Appliquer le même filtre que le desktop dans <code>renderInline()</code> : seul un href <code>https://</code> devient une ancre ; tout le reste reste du texte. Aligner les deux moteurs — et ajouter un test de corpus commun <i>mobile = desktop</i>.</p></li>
+        <li><b>Valider <code>window.open</code> des artefacts url</b><p><code>AgentWorkspace.tsx:6764</code> passe <code>artifact.path</code> (URL rapportée par un outil) directement à <code>window.open</code>. Passer par <code>openExternalUrl</code> comme partout — un seul point de contrôle pour toute navigation.</p></li>
+        <li><b>Corpus anti-XSS exécuté en test</b><p>Un vitest qui passe une liste de charges (<code>javascript:</code>, <code>data:</code>, <code>onerror=</code>, liens imbriqués, caractères unicode homoglyphes) aux deux renderers et asserte qu'aucune ancre non-https et aucun attribut d'événement n'en sort. Le correctif devient une propriété permanente.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> aucune sortie de modèle — chat, note, artefact — ne peut déclencher une navigation ou un script, prouvé par un corpus de tests partagé.</div>
+    </div>
+
+    <!-- 05 -->
+    <div class="card" id="s5" data-sc="8">
+      <header><h3>05 · Ouverture de liens & deep links</h3><span class="pill">8,5 / 10</span></header>
+      <p class="scope">Desktop + mobile <span>·</span> La frontière du navigateur</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li><b>Sain.</b> Double contrôle : le frontend ne passe que du https (<code>openExternalUrl</code>) et le Rust re-valide schéma + rejet des caractères de contrôle (<code>open_url.rs:14-30</code>). <code>rel="noreferrer"</code> partout.</li>
+        <li><b>Sain.</b> Les deep links <code>subrosa://</code> sont traités comme hostiles par conception (<code>destinations.ts:18-21</code>) : un seul segment, ids <code>^[\w-]{1,64}$</code>, query ≤ 200 chars, <code>..</code> rejeté <i>avant</i> normalisation, re-vérification Rust, suite de tests dédiée.</li>
+        <li><span class="sev sev-low">Faible</span> <code>McpServersSection.tsx:664-673</code> rend <code>login.authUrl</code> (contrôlé par le serveur MCP) comme href sans validation de schéma côté webview.</li>
+        <li><span class="sev sev-low">Faible</span> <code>onRecoverRecording</code> et les commandes fichier Hermes restent à tracer complètement (voir fiche 10).</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Valider <code>authUrl</code> comme tout lien</b><p>Passer <code>login.authUrl</code> par le même garde https + re-validation Rust. Un point d'entrée de moins qui croit « connaître son serveur » : tout ce qui traverse IPC est hostile, y compris ce qui vient d'un serveur qu'on a choisi.</p></li>
+        <li><b>Allowlist de schémas centralisée</b><p>Une constante unique <code>ALLOWED_OPEN_SCHEMES = ["https:"]</code> consommée par open_external_url, les renderers, les artefacts et MCP — un seul endroit à faire évoluer, un seul à tester.</p></li>
+        <li><b>Fuzz des destinations</b><p>Générer 10 000 deep links aléatoires dans un test (<code>subrosa://import?url=…</code> inclus) et asserter que <code>parseDestination</code> ne produit jamais de commande hors de son enum. Le parseur est déjà strict ; le fuzz le prouve en continu.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> une seule porte de sortie vers le navigateur, une seule porte d'entrée via deep link, toutes deux allowlistées et fuzzées.</div>
+    </div>
+
+    <!-- 06 -->
+    <div class="card" id="s6" data-sc="9">
+      <header><h3>06 · SSRF & fetch réseau</h3><span class="pill">9 / 10</span></header>
+      <p class="scope">Desktop + sidecar <span>·</span> Le produit ne scrute pas, il ne rapporte pas</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li><b>Sain.</b> Aucun forwarding d'URL arbitraire : l'upstream est fixé au spawn ; les model ids sont whitelistés contre la table de prix (<code>require_priced_model</code> dans tous les handlers) — le client ne peut pas faire du sidecar un relais arbitraire.</li>
+        <li><b>Sain.</b> Le fetch web a de vraies défenses : HTTPS-only, préflight DNS exigeant des IP toutes publiques, checks NAT64/IPv6 locaux, tests étendus (<code>web.rs:204-329</code>).</li>
+        <li><b>Sain.</b> <code>june_api_url()</code> échoue fermé, sans fallback distant (<code>june_api.rs:1300-1316</code>) — les prompts ne peuvent pas atterrir silencieusement ailleurs (ADR-0017).</li>
+        <li><span class="sev sev-info">Info</span> Les routes de santé (<code>/livez</code>, <code>/verify</code>) sont non authentifiées par design — contenu statique HTML-échappé, testé pour ne rien révéler de plus.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Préflight DNS pour le proxy média Studio</b><p>Le proxy Carpe Diem (<code>media.rs</code>) est allowlisté par chemin — ajouter le même préflight DNS public-IP que <code>web.rs</code> pour l'hôte résolu, pour que les deux chemins réseau partagent la même règle.</p></li>
+        <li><b>Un test « l'app ne parle qu'à sa liste »</b><p>Un test d'intégration qui intercepte le réseau (ou lit la constante des bases autorisées) et échoue si un nouveau domaine entre en egress sans passer par <code>validate_base_url</code> ou la allowlist. L'inventaire des destinations devient une propriété testée.</p></li>
+        <li><b>Timeouts et tailles bornées partout</b><p>Vérifier que chaque client reqwest porte un timeout + une limite de taille de réponse (le fetch web le fait ; auditer memory/recall et media). Un service local qui n'expire jamais est un DoS de soi-même.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> aucun chemin réseau ne peut être retourné contre la machine de l'utilisateur, et l'app reste incapable de contacter autre chose que ce que l'utilisateur a configuré.</div>
+    </div>
+
+    <!-- 07 -->
+    <div class="card" id="s7" data-sc="9">
+      <header><h3>07 · SQL & intégrité des données locales</h3><span class="pill">9,5 / 10</span></header>
+      <p class="scope">Desktop + mobile <span>·</span> La base locale</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li><b>Sain.</b> sqlx partout, tout passe par <code>.bind()</code> ; les seuls <code>format!</code> dans le SQL interpolent des constantes de compilation (<code>MEMORY_COLUMNS</code>, placeholders <code>?</code>). Les LIKE échappent <code>\ % _</code> avec <code>ESCAPE '\'</code> (<code>repositories.rs:587-593</code>).</li>
+        <li>Migrations versionnées 001-019, découpe sur <code>;</code> documentée, <code>Cargo.lock</code> commis — reproductible.</li>
+        <li><span class="sev sev-info">Info</span> La base n'est pas chiffrée au repos (SQLCipher absent). Cohérent avec la menace visée (le réseau, pas le vol de disque — le keychain protège la clé), mais un gap face à la menace « laptop saisi ».</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Une règle lint anti-SQL-dynamique</b><p>Un test qui scanne <code>src-tauri/src/db/</code> pour tout <code>format!</code> contenant <code>SELECT/INSERT/UPDATE/DELETE</code> avec une variable non constante — échoue à la compilation CI. Le pattern actuel est bon ; le rendre intouchable.</p></li>
+        <li><b>SQLCipher en option documentée</b><p>Migrer la base vers SQLCipher (clé dérivée via le keychain, clé de chiffrement locale distincte de la clé API) OU documenter explicitement l'ADR de non-chiffrement avec la menace écartée. Les deux valent 10/10 ; l'oubli de la question, non.</p></li>
+        <li><b>Export chiffré</b><p>L'export de notes en clair est une feature ; offrir un export chiffré (mot de passe, AES-GCM via age ou équivalent) pour l'archivage. La confidentialité jusqu'au bout du cycle de vie.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> l'injection est structurellement impossible et prouvée en CI, et le repos n'est plus une exception non-discutée.</div>
+    </div>
+
+    <!-- 07b -->
+    <div class="card" id="s8" data-sc="9">
+      <header><h3>08 · Updateur & signature</h3><span class="pill">9 / 10</span></header>
+      <p class="scope">Desktop <span>·</span> Le canal de mise à jour</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li><b>Sain.</b> Clé publique minisign épinglée dans <code>tauri.conf.json:113</code> ; endpoint GitHub public dédié (<code>sub-rosa-releases</code>) ; le frontend ne fetch jamais d'URL de mise à jour — tout vit en Rust (<code>updater.ts</code> n'appelle que des commandes).</li>
+        <li>La comparaison de versions centralise la logique anti-downgrade avec tests (<code>updates.rs:440-511</code>). macOS signé + notarisé, Windows NSIS signé — secrets uniquement en <code>secrets.*</code> GitHub.</li>
+        <li><span class="sev sev-info">Info</span> L'override runtime de l'endpoint est restreint aux deux constantes (stable/rc) — pas d'URL arbitraire.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Tester le rejet d'update non signé</b><p>Un test bout-en-bout (fixture latest.json signée par une mauvaise clé) qui asserte le refus. La signature est le pivot de tout le modèle de confiance — elle mérite son test négatif.</p></li>
+        <li><b>Rétention des signatures</b><p>Conserver les manifests <code>latest.json</code> historiques signés dans le repo de releases : un utilisateur en v1.2 doit toujours pouvoir remonter un chemin de mises à jour signées, même si l'endpoint actuel a changé.</p></li>
+        <li><b>Transparence de provenance</b><p>Afficher dans l'écran de mise à jour la version cible, sa date et le canal — l'utilisateur confirme vers quoi il met à jour. La sécurité se vit aussi dans la clarté.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> le canal de mise à jour, déjà signé, devient testé négativement et lisible par l'utilisateur.</div>
+    </div>
+
+    <!-- 08b -->
+    <div class="card" id="s9" data-sc="7">
+      <header><h3>09 · Supply chain & CI sécurité</h3><span class="pill">7 / 10</span></header>
+      <p class="scope">Dépôt + GitHub Actions <span>·</span> Le maillon manquant est la surveillance</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li><b>Sain.</b> <code>repository-hygiene.yml</code> : actions externes épinglées sur SHA 40 caractères, scan de <code>.env</code>/clés privées, garde-fous de fork (ADR-0017). <code>Cargo.lock</code> commis. Aucun secret dans le dépôt (grep <code>cdm_/sk-/ghp_</code> : une seule string de test, qui <i>vérifie la rédaction</i>).</li>
+        <li><b>Sain.</b> TLS via <code>rustls</code> partout, pas d'openssl-sys (<code>Cargo.toml:39</code> des deux workspaces).</li>
+        <li><span class="sev sev-med">Moyen</span> <b>Aucun scan de vulnérabilités</b> : ni <code>cargo audit</code>, ni <code>cargo-deny</code>, ni Dependabot dans les workflows ou le Makefile. Les CVE connues des dépendances ne sont jamais vérifiées.</li>
+        <li><span class="sev sev-low">Faible</span> Le runtime Hermes est téléchargé au lancement depuis une URL GitHub épinglée (<code>hermes_bridge.rs:44,53</code>) — l'intégrité repose sur l'URL épinglée ; la vérification de hash post-téléchargement est à confirmer.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Un job <code>cargo-audit</code> hebdomadaire</b><p>Workflow mensuel + sur <code>pull_request</code> (path-filter Cargo) : <code>cargo audit</code> sur les deux lockfiles, échec sur CVE moyenne+. Le gap n°1 de l'audit, et il coûte 30 lignes de YAML.</p></li>
+        <li><b>cargo-deny pour les licences et les sources</b><p>Interdire les crates à sources floues,.dupliquer les advisories, geler les déps <code>wildcard</code>. L'app porte un runtime d'agent : sa chaîne de dépendances mérite le même traitement que son code.</p></li>
+        <li><b>Hachage vérifié du runtime Hermes</b><p>Épingler le <i>hash</i> de l'archive (pas seulement l'URL) dans le code, vérifier après téléchargement, échouer fermé sinon. Le pin par hash transforme un téléchargement en intégrité vérifiable.</p></li>
+        <li><b>Dependabot minimal</b><p><code>dependabot.yml</code> pour les deux workspaces Cargo + npm, hebdomadaire. Complète l'audit passif par la remontée proactive.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> la supply chain est scanée en continu — une CVE publiée un mardi est détectée le mercredi, pas à la prochaine release.</div>
+    </div>
+
+    <!-- 09 -->
+    <div class="card" id="s10" data-sc="8">
+      <header><h3>10 · Surface IPC & confinement des chemins</h3><span class="pill">8 / 10</span></header>
+      <p class="scope">Desktop + mobile <span>·</span> ~250 commandes, une seule à compléter</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li><b>Sain.</b> Capabilities Tauri minimales : les fenêtres HUD ne peuvent invoquer que des events (<code>hud.json</code>), pas de plugin fs/shell/http, SQLite hors webview.</li>
+        <li><b>Sain.</b> Les commandes média verrouillent les chemins : <code>is_within_gallery</code>, rejet de <code>ParentDir</code>, allowlist d'extensions, tests dédiés (<code>media.rs:859-880</code>). L'export timeline écrit sous les répertoires app. L'ingest de liens a des tests SSRF/traversal.</li>
+        <li><span class="sev sev-low">Faible</span> <code>download_hermes_bridge_file</code> / <code>save_hermes_bridge_file</code> / <code>copy_hermes_bridge_file_to_clipboard</code> (<code>lib.rs:284-291</code>) : opèrent sur le snapshot du répertoire Hermes — le confinement de chemin n'est <b>pas prouvé par test</b>, et le fichier fait ~11k lignes.</li>
+        <li><span class="sev sev-info">Info</span> Aucune commande n'exécute un shell construit depuis l'IPC ; les appels process sont des binaires fixes avec args structurés.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Prouver le confinement Hermes par test</b><p>Reprendre le pattern des tests médias : une commande de bridge qui tente <code>../../</code> hors du working dir doit échouer, et ce test vit à côté des autres (<code>tests/</code>). Trois commandes, trois tests.</p></li>
+        <li><b>Un helper <code>confined_path()</code> unique</b><p>Factoriser la vérification (racine + canonicalisation + rejet de <code>..</code>) dans une fonction unique utilisée par média, timeline, bridge et export. Un seul endroit à auditer pour toujours.</p></li>
+        <li><b>Inventaire IPC testé</b><p>Le test <code>shared_commands.rs</code> existe pour la parité desktop/mobile — l'étendre : toute nouvelle commande qui prend un chemin doit référencer le confinement utilisé, sinon échec de build. La surface IPC est gardée par la compilation.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> chaque commande qui touche le disque passe par le même confinement testé, et l'ajout d'une commande non confinée échoue en CI.</div>
+    </div>
+
+    <!-- 10 -->
+    <div class="card" id="s11" data-sc="9">
+      <header><h3>11 · Journalisation & fuite de secrets</h3><span class="pill">9 / 10</span></header>
+      <p class="scope">Transversal <span>·</span> Ce que l'app écrit sur disque</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li><b>Sain.</b> Les providers june-api ne loggent que <code>%url %status %error</code> et les longueurs de corps — jamais de headers ni de clés (<code>venice.rs:105-147</code>). Les erreurs remontent des codes génériques, pas les corps upstream.</li>
+        <li><b>Sain.</b> Le stdout/stderr du sidecar va dans <code>june-api.log</code> du répertoire logs — vérifié sans clé.</li>
+        <li><span class="sev sev-low">Faible</span> Aucun garde-fou automatique : un futur <code>tracing::debug!(&quot;{req:?}&quot;)</code> imprimerait des headers sans que rien ne l'attrape.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Un test anti-fuite sur les logs</b><p>Un test d'intégration qui exerce les chemins d'erreur des providers avec une clé factice et asserte qu'elle n'apparaît nulle part dans les logs produits. La propriété « la clé n'est jamais loggée » devient exécutable.</p></li>
+        <li><b>Redaction structurelle</b><p>Un type <code>Redacted&lt;String&gt;</code> (Debug/Display masqués) pour tout secret qui circule dans la config runtime — l'oubli de masquage devient une erreur de compilation, pas une révision manuelle.</p></li>
+        <li><b>Rotation du log sidecar</b><p>Borner <code>june-api.log</code> (taille + nombre de fichiers) : un log qui grossit indéfiniment est à la fois un problème de disque et une surface de rétention.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> impossible de fuiter un secret par log par accident — le compilateur et les tests en garantissent la propriété.</div>
+    </div>
+
+    <!-- 11 -->
+    <div class="card" id="s12" data-sc="9">
+      <header><h3>12 · iOS & mobile</h3><span class="pill">9 / 10</span></header>
+      <p class="scope">iPhone <span>·</span> Le keychain jusqu'au bout</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li><b>Sain.</b> La clé <code>cdm_</code> vit dans le Keychain iOS via <code>keyring</code> ; le sidecar embarqué reçoit la clé en mémoire via <code>EmbedOptions</code> — pas d'env, pas d'UserDefaults (<code>sidecar.rs:382-388</code>).</li>
+        <li><b>Sain.</b> Le localStorage ne contient que de l'état UI (galerie = index de chemins, jamais de bytes, jamais de secrets). <code>Info.plist</code> : permissions décrites et scopées, BGTask ids alignés avec <code>ios_background.rs</code>.</li>
+        <li><span class="sev sev-low">Faible</span> Les artefacts média transissent en base64 <code>data:</code> dans le webview iOS — correct, mais de gros <code>data:</code> URLs consomment de la mémoire webview et affaiblissent les marges de rendu ; la limite de taille par artefact mérite d'être explicite.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Plafond de taille des data URLs</b><p>Refuser ou paginer au-delà d'un seuil (ex. 25 Mo) avec un message clair — protège à la fois la mémoire du webview et la lisibilité de la surface d'attaque.</p></li>
+        <li><b>Keychain access control documenté</b><p>Vérifier et documenter les attributs keychain iOS (<code>kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly</code>) : le secret ne quitte pas l'appareil, même via une sauvegarde iCloud non chiffrée.</p></li>
+        <li><b>Exclusion de sauvegarde pour les médias</b><p>Marquer le répertoire galerie <code>isExcludedFromBackup</code> — les rendus générés ne méritent pas de gonfler un backup iCloud, et la règle réduit la copie hors appareil.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> le téléphone ne détient rien que le keychain ne protège, et rien de lisible ne quitte l'appareil par une voie passive (backup, log, data URL démesurée).</div>
+    </div>
+
+    <!-- 12 -->
+    <div class="card" id="s13" data-sc="8">
+      <header><h3>13 · Menace produit : la promesse de confidentialité</h3><span class="pill">8 / 10</span></header>
+      <p class="scope">Transversal <span>·</span> Le modèle de menace visible par l'utilisateur</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li><b>Sain.</b> L'architecture défend la promesse : pas d'OS Accounts, pas de hosted API, <code>june_api_url()</code> sans fallback distant, <code>/verify</code> décrit le loopback, ADR-0017 verrouille l'autonomie produit.</li>
+        <li><span class="sev sev-med">Moyen</span> La promesse n'est <b>ni testée ni mesurable</b> : rien en CI n'échoue si un chemin réseau sort de l'inventaire des destinations autorisées, rien ne prouve qu'un prompt ne peut pas atteindre un endpoint non déclaré.</li>
+        <li><span class="sev sev-info">Info</span> La télémétrie de cache passe par des headers bornés (ADR-0023) — documenté, mais l'utilisateur n'a nulle part où <i>voir</i> ce qui part.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Un test « egress zero-surprise »</b><p>Un test d'intégration qui détourne le DNS/reqwest vers un collecteur et exerce tous les flux (chat, dictation, memory, studio, updater) — tout host non inscrit dans la liste déclarée fait échouer le test. La promesse « rien ne part ailleurs » devient une assertion, pas un argument.</p></li>
+        <li><b>Une page « Ce qui part, ce qui reste »</b><p>Dans les réglages, un écran lisible : le base Carpe Diem (vos demandes), l'updater (vérification signée), le reste — tout — local. Cohérent avec <code>/verify</code> ; transforme l'architecture en preuve visible.</p></li>
+        <li><b>Modèle de menace écrit</b><p>Un <code>docs/threat-model.md</code> d'une page : actifs (clé, prompts, audio, notes), frontières (keychain, loopback+token, webview sandboxé, upstream), menaces hors périmètre (root local, disque chiffré OS). C'est le document qui rend l'audit reproductible par un tiers.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> la confidentialité n'est plus une affirmation marketing mais une propriété testée en CI et démontrable à l'utilisateur en une page.</div>
+    </div>
+
+  </section>
+
+  <!-- ================= ROADMAP ================= -->
+  <section id="roadmap">
+    <h2>Feuille de route</h2>
+    <p class="sub">Séquencée par rapport risque/effort : d'abord ce qui ferme les trous réels, ensuite ce qui rend les propriétés permanentes.</p>
+
+    <div class="phase">
+      <span class="tag">Vague 1 · Fermer les trous réels — une session</span>
+      <h4>Trois correctifs, toutes petites, toutes réelles</h4>
+      <p><b>1.</b> <code>https://</code> obligatoire hors loopback dans <code>validate_base_url</code> (fiche 01) · <b>2.</b> Garde https uniforme dans le renderer markdown mobile + <code>window.open</code> validé (fiche 04) · <b>3.</b> Workflow <code>cargo-audit</code> mensuel + Dependabot (fiche 09) — le moyen le plus élevé de l'audit disparaît en 30 lignes de YAML.</p>
+    </div>
+
+    <div class="phase">
+      <span class="tag">Vague 2 · Réduire le blast radius — une semaine</span>
+      <h4>Le secret quitte l'environnement des processus</h4>
+      <p><b>1.</b> Env allowlistée pour les enfants non-sidecar (fiche 02) · <b>2.</b> Token 256 bits, puis passage par stdin (fiche 02) · <b>3.</b> Confinement <code>confined_path()</code> factorisé + tests des commandes Hermes (fiche 10) · <b>4.</b> <code>authUrl</code> MCP validé par l'allowlist centrale (fiche 05) · <b>5.</b> Allowlist de schémas unique (fiche 05).</p>
+    </div>
+
+    <div class="phase">
+      <span class="tag">Vague 3 · Rendre les propriétés mesurables — deux semaines</span>
+      <h4>De « c'est bien fait » à « c'est prouvé en continu »</h4>
+      <p><b>1.</b> Test egress zéro-surprise + page « Ce qui part, ce qui reste » + modèle de menace écrit (fiche 13) · <b>2.</b> Corpus anti-XSS commun desktop/mobile (fiche 04) · <b>3.</b> Test négatif de l'updateur + rétention des signatures (fiche 08) · <b>4.</b> Test d'inventaire keychain + <code>Redacted&lt;T&gt;</code> (fiches 01 et 11) · <b>5.</b> Test CSP en CI (fiche 03) · <b>6.</b> SQLCipher en ADR documenté + export chiffré (fiche 07) · <b>7.</b> Hash vérifié du runtime Hermes (fiche 09).</p>
+    </div>
+
+    <div class="phase">
+      <span class="tag">Garde-fous permanents</span>
+      <h4>Une règle par surface, exécutée par la machine</h4>
+      <p>Toute nouvelle commande disque passe par <code>confined_path()</code> (fiche 10) ; toute nouvelle destination réseau passe la liste déclarée (fiche 13) ; tout nouveau secret passe par le keychain (fiche 01) ; tout secret loggable est un <code>Redacted&lt;T&gt;</code> (fiche 11) — et <code>make verify</code> reste le sas avant chaque livraison.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>Sub Rosa · Audit sécurité · Généré le 1ᵉʳ septembre 2026</span>
+    <span>Fondé sur le code réel : sidecar.rs · settings.rs · june-api (api/providers/embed) · tauri.conf.json · capabilities · workflows</span>
+  </footer>
+</div>
+
+<script>
+  const AXES = [
+    {n:"01", name:"Stockage des secrets (keychain)", s:9, d:"Keychain dédié, jamais au webview ; http:// accepté", id:"s1"},
+    {n:"02", name:"Sidecar : token, port, env", s:8, d:"Loopback + bearer ; token hérité par les enfants", id:"s2"},
+    {n:"03", name:"CSP & durcissement webview", s:8, d:"Script-src épinglé ; connect-src tout loopback", id:"s3"},
+    {n:"04", name:"Rendu markdown & XSS", s:9, d:"Zéro innerHTML ; href non-https sur mobile", id:"s4"},
+    {n:"05", name:"Liens & deep links", s:8, d:"Double validation https ; authUrl MCP brute", id:"s5"},
+    {n:"06", name:"SSRF & fetch réseau", s:9, d:"Whitelist modèles, préflight DNS, fail-closed", id:"s6"},
+    {n:"07", name:"SQL & données locales", s:9.5, d:"Paramétré partout ; pas de chiffrement au repos", id:"s7"},
+    {n:"08", name:"Updateur & signature", s:9, d:"Minisign épinglé ; test négatif manquant", id:"s8"},
+    {n:"09", name:"Supply chain & CI", s:7, d:"Hygiène forte ; ni cargo-audit ni Dependabot", id:"s9"},
+    {n:"10", name:"Surface IPC & chemins", s:8, d:"Confinement testé média ; bridge Hermes à prouver", id:"s10"},
+    {n:"11", name:"Journalisation & fuites", s:9, d:"Logs propres ; aucune redaction structurelle", id:"s11"},
+    {n:"12", name:"iOS & mobile", s:9, d:"Keychain natif ; data URLs non plafonnées", id:"s12"},
+    {n:"13", name:"Promesse de confidentialité", s:8, d:"Architecture solide ; rien n'est testé ni montré", id:"s13"},
+  ];
+  function cls(s){return s>=9?"sc-10":s>=7.5?"sc-8":s>=6.5?"sc-7":"sc-5"}
+  const board = document.getElementById("board-list");
+  board.innerHTML = AXES.map(a=>`
+    <a class="axis ${cls(a.s)}" href="#${a.id}" style="text-decoration:none;color:inherit">
+      <span class="num">${a.n}</span>
+      <span class="name">${a.name}<small>${a.d}</small></span>
+      <span class="score"><span class="bar"><i data-w="${a.s*10}"></i></span><b>${a.s.toLocaleString("fr-FR")} / 10</b></span>
+    </a>`).join("");
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    document.querySelectorAll(".bar i").forEach(i=>i.style.width=i.dataset.w+"%");
+  }));
+</script>
+</body>
+</html>

@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="fr" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sub Rosa — Audit UX/UI & plan premium</title>
+<style>
+  :root{
+    --brand:#936862;
+    --brand-soft:color-mix(in oklch, var(--brand) 30%, #1a1512);
+    --bg:oklch(16.5% 0.006 60);
+    --bg-raise:oklch(19.5% 0.008 60);
+    --card:oklch(21% 0.008 60);
+    --fg:oklch(96% 0.005 60);
+    --fg-dim:oklch(70% 0.01 60);
+    --fg-faint:oklch(52% 0.01 60);
+    --line:oklch(100% 0 0 / 9%);
+    --line-strong:oklch(100% 0 0 / 16%);
+    --gold:oklch(82% 0.13 85);
+    --good:oklch(72% 0.14 150);
+    --warn:oklch(78% 0.14 85);
+    --bad:oklch(68% 0.19 25);
+    --serif:"Iowan Old Style","Martina Plantijn",Georgia,serif;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"Berkeley Mono","SFMono-Regular",Consolas,monospace;
+    --ease:cubic-bezier(.22,1,.36,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:
+      radial-gradient(1200px 700px at 70% -10%, color-mix(in oklch, var(--brand) 16%, transparent), transparent 60%),
+      radial-gradient(900px 600px at 0% 100%, color-mix(in oklch, var(--brand) 8%, transparent), transparent 55%),
+      var(--bg);
+    color:var(--fg);
+    font:15px/1.65 var(--sans);
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:color-mix(in oklch, var(--brand) 45%, transparent)}
+  .wrap{max-width:1060px;margin:0 auto;padding:64px 28px 120px}
+
+  /* ---------- Hero ---------- */
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:10px;
+    font:600 11px/1 var(--sans);letter-spacing:.18em;text-transform:uppercase;
+    color:var(--gold);
+  }
+  .eyebrow::before{content:"";width:28px;height:1px;background:var(--gold);opacity:.7}
+  h1{
+    font:400 clamp(38px,6vw,64px)/1.05 var(--serif);
+    letter-spacing:-.015em;margin:18px 0 14px;
+    text-wrap:balance;
+  }
+  h1 em{font-style:italic;color:color-mix(in oklch, var(--brand) 55%, var(--fg))}
+  .lede{max-width:640px;color:var(--fg-dim);font-size:16.5px}
+  .lede b{color:var(--fg);font-weight:600}
+
+  .meta-grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+    gap:14px;margin:44px 0 10px;
+  }
+  .meta{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:18px 20px;position:relative;overflow:hidden;
+  }
+  .meta::after{content:"";position:absolute;inset:0 0 auto 0;height:1px;
+    background:linear-gradient(90deg,transparent,oklch(100% 0 0/18%),transparent)}
+  .meta .k{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-faint);font-weight:600}
+  .meta .v{font:400 30px/1.15 var(--serif);margin-top:8px}
+  .meta .v small{font-size:14px;color:var(--fg-dim);font-family:var(--sans)}
+  .verdict{
+    margin:26px 0 0;padding:20px 24px;border-radius:14px;
+    border:1px solid color-mix(in oklch, var(--gold) 35%, var(--line));
+    background:color-mix(in oklch, var(--gold) 7%, var(--bg-raise));
+    font:italic 400 17.5px/1.6 var(--serif);color:var(--fg);
+  }
+
+  /* ---------- Scoreboard ---------- */
+  section{margin-top:88px}
+  h2{
+    font:400 clamp(26px,3.5vw,36px)/1.15 var(--serif);letter-spacing:-.01em;
+    margin-bottom:6px;text-wrap:balance;
+  }
+  h2 + .sub{color:var(--fg-dim);max-width:680px;margin-bottom:28px}
+  .board{display:grid;gap:10px}
+  .axis{
+    display:grid;grid-template-columns:44px 1fr 120px;gap:16px;align-items:center;
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:14px 18px;cursor:pointer;transition:border-color .2s var(--ease),transform .2s var(--ease),background .2s var(--ease);
+  }
+  .axis:hover{border-color:var(--line-strong);transform:translateY(-1px);background:color-mix(in oklch, var(--card) 92%, var(--brand) 8%)}
+  .axis .num{font:italic 400 22px var(--serif);color:var(--fg-faint)}
+  .axis .name{font-weight:600;font-size:14.5px}
+  .axis .name small{display:block;font-weight:400;color:var(--fg-faint);font-size:12.5px;margin-top:1px}
+  .score{display:flex;align-items:center;gap:10px}
+  .bar{flex:1;height:4px;border-radius:2px;background:oklch(100% 0 0/8%);overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:2px;background:var(--sc);width:0;transition:width 1.1s var(--ease) .15s}
+  .score b{font:600 14px var(--mono);color:var(--sc);min-width:46px;text-align:right}
+  .sc-10{--sc:var(--good)} .sc-8{--sc:oklch(78% 0.12 130)} .sc-7{--sc:var(--warn)}
+  .sc-6{--sc:oklch(80% 0.13 65)} .sc-5{--sc:var(--bad)}
+
+  /* ---------- Detail cards ---------- */
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:18px;
+    padding:34px 36px;margin-bottom:22px;
+  }
+  .card header{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:4px}
+  .card h3{font:400 25px/1.2 var(--serif);letter-spacing:-.01em}
+  .pill{
+    font:600 13px var(--mono);padding:5px 12px;border-radius:99px;white-space:nowrap;
+    background:color-mix(in oklch, var(--sc) 16%, transparent);color:var(--sc);
+    border:1px solid color-mix(in oklch, var(--sc) 35%, transparent);
+  }
+  .sc-10,.sc-8,.sc-7,.sc-6,.sc-5{--sc:inherit}
+  .card{--sc:var(--warn)}
+  .card[data-sc="10"],.card[data-sc="9"]{--sc:var(--good)}
+  .card[data-sc="8"]{--sc:oklch(78% 0.12 130)}
+  .card[data-sc="7"]{--sc:var(--warn)}
+  .card[data-sc="6"]{--sc:oklch(80% 0.13 65)}
+  .card[data-sc="5"]{--sc:var(--bad)}
+  .scope{font:600 10.5px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--fg-faint);margin:2px 0 18px}
+  .scope span{color:var(--gold)}
+  .card h4{
+    font:600 12px var(--sans);letter-spacing:.12em;text-transform:uppercase;
+    color:var(--fg-faint);margin:26px 0 10px;
+  }
+  .card h4:first-of-type{margin-top:0}
+  ul.find{list-style:none;display:grid;gap:9px}
+  ul.find li{position:relative;padding-left:20px;color:var(--fg-dim);font-size:14.5px}
+  ul.find li::before{content:"";position:absolute;left:2px;top:9px;width:7px;height:7px;border-radius:50%;
+    background:color-mix(in oklch, var(--sc) 70%, transparent)}
+  ul.find li b{color:var(--fg);font-weight:600}
+  code{
+    font:12.5px var(--mono);background:oklch(100% 0 0/7%);border:1px solid var(--line);
+    padding:1.5px 6px;border-radius:5px;color:color-mix(in oklch, var(--gold) 70%, var(--fg));
+    white-space:nowrap;
+  }
+  .path{font:11.5px var(--mono);color:var(--fg-faint)}
+
+  /* Plan 10/10 */
+  ol.plan{list-style:none;counter-reset:p;display:grid;gap:12px;margin-top:4px}
+  ol.plan li{
+    counter-increment:p;position:relative;padding:14px 16px 14px 52px;
+    background:var(--bg-raise);border:1px solid var(--line);border-radius:11px;
+  }
+  ol.plan li::before{
+    content:counter(p);position:absolute;left:14px;top:13px;
+    width:26px;height:26px;border-radius:50%;display:grid;place-items:center;
+    font:600 12.5px var(--mono);color:var(--brand-soft);
+    color:color-mix(in oklch, var(--brand) 60%, white);
+    background:color-mix(in oklch, var(--brand) 22%, transparent);
+    border:1px solid color-mix(in oklch, var(--brand) 45%, transparent);
+  }
+  ol.plan b{display:block;font-size:14.5px;margin-bottom:2px}
+  ol.plan p{font-size:13.5px;color:var(--fg-dim)}
+  ol.plan p code{font-size:11.5px}
+  .gain{
+    margin-top:14px;padding:12px 16px;border-radius:10px;font-size:13.5px;
+    background:color-mix(in oklch, var(--good) 8%, var(--bg-raise));
+    border:1px solid color-mix(in oklch, var(--good) 30%, var(--line));
+  }
+  .gain b{color:var(--good);font-weight:600}
+
+  /* ---------- Snippet ---------- */
+  pre{
+    background:oklch(13% 0.006 60);border:1px solid var(--line);border-radius:11px;
+    padding:16px 18px;overflow-x:auto;font:12.5px/1.6 var(--mono);color:oklch(88% 0.01 60);
+    margin-top:12px;
+  }
+  pre .c{color:oklch(58% 0.02 60);font-style:italic}
+  pre .k{color:color-mix(in oklch, var(--brand) 55%, oklch(80% 0.05 40))}
+  pre .s{color:var(--gold)}
+
+  /* ---------- Roadmap ---------- */
+  .phase{border-left:2px solid color-mix(in oklch, var(--brand) 50%, transparent);padding:2px 0 26px 26px;position:relative}
+  .phase::before{
+    content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;
+    background:var(--brand);box-shadow:0 0 0 4px color-mix(in oklch, var(--brand) 25%, transparent);
+  }
+  .phase .tag{
+    display:inline-block;font:600 10.5px var(--sans);letter-spacing:.14em;text-transform:uppercase;
+    color:var(--gold);margin-bottom:6px;
+  }
+  .phase h4{font:400 20px var(--serif);margin-bottom:8px}
+  .phase p{color:var(--fg-dim);font-size:14px;max-width:680px}
+  .phase p b{color:var(--fg)}
+  footer{margin-top:90px;padding-top:26px;border-top:1px solid var(--line);
+    color:var(--fg-faint);font-size:12.5px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  @media (max-width:640px){
+    .wrap{padding:44px 18px 90px}
+    .card{padding:24px 20px}
+    .axis{grid-template-columns:1fr 90px}
+    .axis .num{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ================= HERO ================= -->
+  <p class="eyebrow">Audit UX · UI · Septembre 2026</p>
+  <h1>Sub Rosa mérite d'être <em>inoubliable</em>,<br>pas seulement impeccable.</h1>
+  <p class="lede">Le socle est remarquable : tokens oklch dérivés d'un accent vivant, système de motion Apple-grade, états vides conçus comme des surfaces à part entière. Mais l'audit révèle <b>trois gisements de premium</b> : une architecture de Paramètres saturée, des temps d'attente sous-feed backés, et une première visite qui ne raconte pas encore une histoire. Voici le chemin, axe par axe, jusqu'au 10/10.</p>
+
+  <div class="meta-grid">
+    <div class="meta"><div class="k">Note globale pondérée</div><div class="v">7,4<small> / 10</small></div></div>
+    <div class="meta"><div class="k">Axes audités</div><div class="v">14</div></div>
+    <div class="meta"><div class="k">Actions vers 10/10</div><div class="v">57</div></div>
+    <div class="meta"><div class="k">Quick wins identifiés</div><div class="v">9</div></div>
+  </div>
+
+  <p class="verdict">« Un produit premium ne se remarque pas — il se ressent. Sub Rosa a déjà les os ; il lui manque la peau : quelques secondes de theatre, une IA d'information maîtrisée, et le silence dans les zones qui crient trop fort. »</p>
+
+  <!-- ================= SCOREBOARD ================= -->
+  <section id="board">
+    <h2>Tableau des scores</h2>
+    <p class="sub">Chaque axe est noté sur l'état actuel, puis décomposé dans sa fiche avec le plan exact pour atteindre 10/10. Cliquez pour naviguer.</p>
+    <div class="board" id="board-list"></div>
+  </section>
+
+  <!-- ================= FICHES ================= -->
+  <section id="fiches">
+    <h2>Les fiches d'audit</h2>
+    <p class="sub">Constat fondé sur le code réel (chemins de fichiers cités), puis plan d'action chiffré. Les extraits CSS/TS sont prêts à coller.</p>
+
+    <!-- 1 -->
+    <div class="card" id="a1" data-sc="6">
+      <header><h3>01 · Paramètres & architecture de l'information</h3><span class="pill">5,5 / 10</span></header>
+      <p class="scope">Desktop <span>·</span> Le frein premium n°1</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li><b>25 onglets de settings</b> (<code>AppSettings.tsx:207-232</code>), dont le groupe « AI » en contient à lui seul ~12 : MCP diagnostics, Pending skill changes, Skills hub, Toolsets, Bundles, Councils… C'est une IA pour power-users, pas une expérience soignée.</li>
+        <li>La découverte se fait par l'énumération : l'utilisateur doit <b>lire 25 lignes</b> pour savoir ce qui existe.</li>
+        <li>Le retour en arrière (back-button memory) est bien fait — le problème est purement structurel.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Hiérarchie à 2 niveaux avec pages « hub »</b><p>4 destinations racine : <code>Personnalisation</code>, <b>Intelligence</b> (une page hub avec cartes Models / Agent / Mémoire / Compétences / Intégrations), <b>Audio & enregistrement</b>, <b>Application</b>. Les 25 entrées actuelles deviennent des cartes cliquables avec icône + description d'une ligne + état visible (ex. « Mémoire — 42 souvenirs »). Plus jamais de tap-à-aveugle.</p></li>
+        <li><b>Recherche de réglages</b><p>Un champ <code>Filter settings…</code> en haut de la sidebar Paramètres qui filtre les entrées et saute au réglage. Standard des apps premium (Linear, Things 3) ; ici indispensable à cette densité.</p></li>
+        <li><b>Mode « essentiels » par défaut</b><p>Un toggle « Afficher les options avancées » masque MCP diagnostics, Team taps, Bundles, Profile builder derrière « Avancé ». L'utilisateur 90 % voit 9 réglages, pas 25.</p></li>
+        <li><b>États vivants dans les lignes</b><p>Généraliser les value-summaries de la version mobile (<code>SettingsList.tsx</code> fait déjà « Memory · 42 ») : chaque ligne de hub affiche son état réel — clé connectée, modèle actif, dernière sauvegarde. Le réglage devient un tableau de bord.</p></li>
+        <li><b>Une search-to-command</b><p>Réutiliser le moteur du filtre pour un <code>⌘K</code> global (voir fiche 10) qui atteint n'importe quel réglage en tapant trois lettres.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> l'utilisateur trouve n'importe quoi en ≤ 5 secondes, sans jamais se sentir noyé. La densité devient une profondeur, pas un mur.</div>
+    </div>
+
+    <!-- 2 -->
+    <div class="card" id="a2" data-sc="6">
+      <header><h3>02 · Onboarding & première visite</h3><span class="pill">6 / 10</span></header>
+      <p class="scope">Desktop + mobile <span>·</span> La première impression est la seule non-répétable</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li>Le vrai first-run fait <b>4 écrans sur 2 surfaces</b> : <code>CarpeDiemGate</code> bloque l'app <i>avant</i> le wizard de bienvenue (<code>WelcomeStep.tsx</code>). L'utilisateur colle une clé avant de savoir <i>pourquoi</i>.</li>
+        <li>Copie hors-ton : lien <b>Telegram</b> (« Rejoignez la communauté ») et la phrase dev-speak « Inference runs on Carpe Diem, under their terms » sur l'écran d'accueil (<code>WelcomeStep.tsx:84-94</code>).</li>
+        <li>Mobile : la porte réutilise la carte desktop dans un wrapper scrollable (<code>mobile-gate-scroll</code>) — collage, pas conception ; et « Coller la clé → attendre le sidecar » est un seul écran sans progression.</li>
+        <li>Windows atterrit sur Notes : le moment héros (l'écran d'accueil animé) est <b>mac-only</b>.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Fusionner porte + wizard en un seul récit</b><p>« Bienvenue » (ce que c'est, 3 lignes) → « Votre clé » (coller <code>cdm_…</code>) → « Connexion » (le sidecar démarre, avec une animation de sceau qui s'ouvre) → Permissions → Pratique de dictée. La clé devient <b>le chapitre 2 d'une histoire</b>, pas un barrage.</p></li>
+        <li><b>Theatre pendant la connexion</b><p>Au lieu du spinner : un écran « Première mise en service » qui montre les 3 étapes réelles (clé vérifiée → moteur local prêt → souvenirs vides et prêts) avec des checks qui tombent au fur et à mesure. Le temps d'attente devient une démonstration de confiance.</p></li>
+        <li><b>Purger la copie off-brand</b><p>Retirer le lien Telegram de l'onboarding (le remplacer par « Documentation » ou rien), reformuler en français utilisateur : « Vos demandes sont traitées par Carpe Diem, un service que vous contrôlez avec votre clé » — pas « under their terms ».</p></li>
+        <li><b>Héros universel</b><p>Porter l'écran d'accueil agent (greeting + chips) sur Windows et sur mobile (écran Chat au premier lancement) : la même scène d'ouverture partout.</p></li>
+        <li><b>Un cadeau de fin</b><p>Dernière étape : « Votre première note est déjà là » — pré-créer une note « Bienvenue dans Sub Rosa » expliquant en 5 puces ce que l'app sait faire, pour que la première interaction soit une <i>découverte</i> et non un <i>écran blanc</i>.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> la première visite raconte une histoire en 4 actes, dont l'utilisateur ressort en sachant déjà ce que l'app fera pour lui.</div>
+    </div>
+
+    <!-- 3 -->
+    <div class="card" id="a3" data-sc="6">
+      <header><h3>03 · Chargements, attentes & feedback</h3><span class="pill">6,5 / 10</span></header>
+      <p class="scope">Desktop + mobile <span>·</span> Là où l'app semble « morte »</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li>Dictation mobile : la transcription en cours est un <b>texte brut « Transcribing… »</b> sans spinner ni progression (<code>DictationScreen.tsx</code>) — le traitement le plus faible de toute l'app.</li>
+        <li>Les skeletons existent mais en <b>5 variantes ad hoc</b> (<code>installed-skill-skeleton</code>, <code>studio-image-skeleton</code>…) — pas de primitive partagée, donc des rythmes de shimmer différents.</li>
+        <li>Notes list : pas d'indicateur de traitement par ligne, alors que la tab bar sait déjà qu'une session « working » (<code>status: working</code>) — l'info existe, elle ne se propage pas.</li>
+        <li>Mobile : les erreurs de chargement de notes tombent sur la bannière auto-effaçante de 6 s (<code>MobileErrorBanner</code>) — l'utilisateur rate l'information et reste devant une liste vide.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Une primitive <code>&lt;Shimmer/&gt;</code> unique</b><p>Un composant + une classe CSS partagés (durée, easing, amplitude de balayage) ; les 5 variantes deviennent des compositions du même atome. Le shimmer devient une signature, pas un bricolage.</p></li>
+        <li><b>Dictation : une scène, pas un texte</b><p>Pendant la transcription : la carte de résultat en squelette dont les lignes « s'écrivent » (3 barres de shimmer décalées), un timer discret et un bouton Annuler réel. Le halo du micro passe en mode « traitement » (respiration plus lente).</p></li>
+        <li><b>Le statut descend dans les listes</b><p>Brancher <code>is_processing</code> sur les lignes de notes : un point qui respire + un liseré de progression sur la carte. La liste devient vivante pendant un import ou une transcription.</p></li>
+        <li><b>Erreurs persistantes inline</b><p>Sur mobile, toute liste qui échoue obtient son EmptyState « retry » (le pattern du chat, <code>AgentScreen.tsx</code>) plutôt que la bannière éphémère. La bannière reste pour les erreurs transitoires seulement.</p></li>
+        <li><b>Échelle d'attente honnête</b><p>Toute attente &gt; 2 s affiche une estimation (« environ 20 s »), &gt; 10 s affiche ce qui se passe (« Décodage de l'audio… »). Le <code>Darkroom</code> de Studio fait déjà ça — généraliser son vocabulaire de phases à imports, longform et dictation.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> aucune seconde d'attente n'est aveugle ; l'app paraît toujours occupée, jamais figée, et chaque phase a un nom.</div>
+    </div>
+
+    <!-- 4 -->
+    <div class="card" id="a4" data-sc="7">
+      <header><h3>04 · Typographie & densité</h3><span class="pill">7 / 10</span></header>
+      <p class="scope">Desktop <span>·</span> La voix du produit</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li>Le système de tokens typo est <b>exemplaire</b> (tracking et leading dérivés par taille, <code>--fw-medium</code> documenté) — mais il n'est exploité qu'à 3/4 de son potentiel : la hiérarchie des listes de notes et des settings repose surtout sur la graisse, pas sur l'échelle.</li>
+        <li><code>app.css : 23 661 lignes</code> en un seul fichier : le risque n°1 de dérive typo et de duplication. Déjà un hex brut <code>#936862</code> codé en dur dans <code>AgentWorkspace.tsx:540</code>.</li>
+        <li>Le contraste serif/sans (le serif pour les titres d'EmptyState) est un vrai geste d'identité — <b>sous-utilisé</b> : il n'apparaît presque nulle part ailleurs.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Étendre le serif aux moments « voix »</b><p>Le serif devient la voix des titres d'écrans (Notes, Sessions), des hero greetings et des réponses de confirmation. Trois emplacements, un même geste : <code>font-family: var(--font-serif)</code> sur <code>.screen-title</code>, <code>.hero-greeting</code>, <code>.empty-state-title</code>. C'est ce qui rendra Sub Rosa reconnaissable entre mille.</p></li>
+        <li><b>Une échelle de titres officielle</b><p>Ajouter <code>--fs-title-1/2/3</code> aux tokens et convertir les titres existants. Toute taille de titre hors échelle devient une revue de code obligatoire (comme la règle sentence-case).</p></li>
+        <li><b>Scanner anti-dérive</b><p>Un test vitest qui échoue si un <code>#[0-9a-f]{3,6}</code> apparaît hors de <code>tokens.css</code> dans <code>src/</code>, et un lint qui signale tout <code>font-size</code> brut hors tokens. Le 23k-lignes ne se refactorera pas en un jour ; l'interdiction d'ajouter du hors-système, elle, est immédiate.</p></li>
+        <li><b>Respiration des listes</b><p>Passer les listes de notes de <code>--sp-3</code> à <code>--sp-4</code> de padding vertical par carte, et aligner les méta-données (heure, dossier) sur une baseline commune. La densité reste, l'oppression disparaît.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> la typographie devient un langage à deux voix (serif = les moments d'âme, sans = le travail), appliqué sans exception.</div>
+    </div>
+
+    <!-- 5 -->
+    <div class="card" id="a5" data-sc="7">
+      <header><h3>05 · Première impression & moment héros</h3><span class="pill">7,5 / 10</span></header>
+      <p class="scope">Desktop <span>·</span> Déjà fort — il manque le réveil</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li>L'écran d'accueil agent est <b>le meilleur moment de l'app</b> : greetings rotatifs persistés, deck de suggestions qui se re-mélange avec cascade 300 ms, et un <b>glissé FLIP du composer</b> du centre vers le dock au premier envoi (<code>AgentWorkspace.tsx:6942-6968</code>). Rares sont les apps desktop qui ont ce niveau de théâtre.</li>
+        <li>Mais <b>avant ce moment</b> : le lancement est un écran statique. Le gateway sidecar peut mettre 1-3 s à répondre (<code>SIDECAR_STATUS_TIMEOUT_MS</code>) — ces secondes sont un <b>noir sans âme</b> sur mobile (<code>mobile-shell-loading</code> = un anneau CSS sans marque).</li>
+        <li>La fenêtre s'ouvre sur le greeting <i>texte</i> ; rien ne dit « cette app vit ».</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Un splash qui est déjà Sub Rosa</b><p>50 lignes de CSS dans <code>index.html</code> (avant le bundle) : le monogramme ⚑ rose qui se dessine en 600 ms puis se fond pendant le chargement réel. Le « noir sans âme » devient un rideau. Mobile : le même, avec l'anneau de progression intégré <i>dans</i> la rose, pas à côté.</p></li>
+        <li><b>Le greeting devient une réplique</b><p>Un personnage d'accueil par moment de la journée avec 2 variantes écrites en français propre (« Bonsoir Morgan. Trois notes attendent d'être relues. »). Les données existent déjà (notes en attente, <code>HERO_GREETING_INDEX_KEY</code>) — il ne manque que la rédaction et le comptage.</p></li>
+        <li><b>Orchestration d'entrée</b><p>Au premier paint après login : le héros apparaît en 3 temps — titre (0 ms), composer (120 ms), chips (240 ms) — au lieu d'un seul fondu. Déjà à moitié fait pour les chips ; généraliser à toute la scène via une classe <code>.enter-stagger</code>.</p></li>
+        <li><b>Windows rattrapé</b><p>Le lancement Windows atterrit sur le même héros (fiable, sans Hermes) plutôt que sur la liste de notes — le « wow » ne doit pas dépendre de l'OS.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> chaque lancement est une entrée en scène de 1,5 s — dessin, respiration, réplique — et non un écran de plus.</div>
+    </div>
+
+    <!-- 6 -->
+    <div class="card" id="a6" data-sc="8">
+      <header><h3>06 · États vides</h3><span class="pill">8 / 10</span></header>
+      <p class="scope">Desktop + mobile <span>·</span> Déjà une surface conçue</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li><code>EmptyState</code> partagé (glyphe, <b>titre serif</b>, description, action, footer), utilisé partout y compris dans 10+ sections de settings — rare et excellent.</li>
+        <li>La copie a de la personnalité : « Put Sub Rosa to work », « Capture your first meeting ». Un hook dev <code>window.__emptyStates()</code> prouve qu'ils sont traités comme une surface.</li>
+        <li>Deux trous : la <b>dictation mobile n'a pas d'état vide</b> (le groupe d'historique disparaît simplement), et la copie n'est pas localisée en français.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>L'état vide dictation</b><p>Un EmptyState « Votre journal vocal commence ici » + bouton d'enregistrement dans la carte, pour couvrir le seul écran qui disparaît dans le néant.</p></li>
+        <li><b>Du glyphe à l'illustration minimale</b><p>Remplacer les glyphes abstraits par 5 illustrations-lignes SVG (notes, micro, chat, studio, recherche) dans une <code>&lt;EmptyStateArt/&gt;</code> — un tracé continu animé au stroke-dashoffset (600 ms, <code>--ease-out</code>). Une signature visuelle qu'aucun concurrent n'a, pour un coût de ~2 Ko.</p></li>
+        <li><b>L'action suggère la prochaine étape, pas la vôtre</b><p>Revoir la copy : chaque état vide propose l'action <i>que l'utilisateur veut faire</i> (« Enregistrer une réunion »), pas la nomenclature interne (« Nouvelle note »). Tester chaque phrase à voix haute : si ça sonne comme un outil, reformuler.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> chaque vide devient une invitation dessinée, cohérente, avec sa propre illustration animée.</div>
+    </div>
+
+    <!-- 7 -->
+    <div class="card" id="a7" data-sc="8">
+      <header><h3>07 · Motion & micro-interactions</h3><span class="pill">8,5 / 10</span></header>
+      <p class="scope">Desktop + mobile <span>·</span> Le socle est quasi au niveau</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li>Système exemplaire : courbes partagées (<code>--ease-spring</code>), <code>rubberband()</code> Apple-style, <code>useReducedMotion()</code> respecté partout, fade de scrollbar personnalisé, edge-swipe back avec momentum (<code>MobileApp.tsx:146-237</code>) digne d'iOS natif, haptiques systématiques sur mobile.</li>
+        <li>Desktop : <b>pas de son hors enregistrement</b> — les sons d'arrivée d'artefact ou de fin de transcription n'existent pas, alors que <code>recording-sounds.ts</code> prouve que le canal est maîtrisé.</li>
+        <li>Les transitions d'apparition des popovers/menus sont fonctionnelles mais pas <i>orchestrées</i> (pas de scale+fade depuis le point d'origine).</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Les popovers naissent de leur bouton</b><p>Utiliser <code>transform-origin</code> + un <code>scale(.96)→1</code> avec <code>--ease-spring</code> sur tous les menus/context-menus, ancré sur la position du déclencheur. 20 lignes dans <code>app.css</code>, effet « natif » immédiat.</p></li>
+        <li><b>Un design sonore discret (desktop)</b><p>Réutiliser le canal mp3 : 3 sons de 200 ms (fin de transcription — un « plink » boisé ; artefact prêt ; sauvegarde auto). Volume 0.35, désactivable dans Audio, jamais deux en même temps. Le son est la haptique du desktop.</p></li>
+        <li><b>Continuité entre liste et détail</b><p>Partager la transition FLIP déjà écrite pour le héros : cliquer une note fait glisser sa carte vers le détail (startViewTransition ou FLIP manuel). C'est LE saut de premium perçu sur desktop.</p></li>
+        <li><b>Célébration mesurée</b><p>Un import long qui réussit : le liseré de progression se dissout en 3 impulsions de <code>--brand</code> et la note apparaît. Une fois par job, jamais un confetti-carnaval.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> une grammaire de motion complète — entrées orchestrées, origines reliées, son en soutien — invisible quand elle marche, inoubliable quand on la cherche.</div>
+    </div>
+
+    <!-- 8 -->
+    <div class="card" id="a8" data-sc="8">
+      <header><h3>08 · Chat agent & composer</h3><span class="pill">8 / 10</span></header>
+      <p class="scope">Desktop + mobile <span>·</span> Le cœur fonctionnel</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li>Très complet : slash-commands, @-mentions en chips, images, modes de session, et un <b>feedback d'outils humain</b> — <code>agent-tool-labels.ts</code> traduit les noms bruts en phrases (« Using a tool. »), avec drawer d'activité, timeline d'artefacts et panneau d'usage.</li>
+        <li>Mobile : la réponse n'est pas streamée — un effet machine à écrire local (<code>ProgressiveReply</code>) la révèle. L'astuce est bonne mais <b>le rendu markdown n'apparaît qu'à la fin</b>.</li>
+        <li>Le deck de chips du héros se re-mélange toutes les quelques secondes — sur un grand écran, c'est un mouvement <i>permanent</i> dans le coin de l'œil ; certains utilisateurs s'en fatiguent.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Le mélange des chips ne tourne qu'une fois</b><p>Mélanger au montage + au focus du composer, jamais en boucle pendant que l'utilisateur lit. (Actuellement <code>heroChipPhase</code> relance la cascade tant que <code>document.hidden</code> est faux.)</p></li>
+        <li><b>Markdown progressif sur mobile</b><p>Rendre les blocs déjà révélés en markdown au fil de l'eau (chunk par chunk terminé) plutôt qu'un switch final : grep le buffer à chaque tick pour détecter les frontières de blocs terminés (<code>\n\n</code>). Le texte long gagne un vrai rendu.</p></li>
+        <li><b>Une barre d'attention pendant les outils</b><p>Quand un outil tourne &gt; 3 s, afficher une micro-carte repliable avec l'étiquette humaine + un spinner fin + le temps écoulé — au lieu du simple « Using a tool… » statique. L'attente devient une scène (cf. fiche 03).</p></li>
+        <li><b>Le raccourci ⌘K cible une session</b><p>Voir fiche 10 : la palette liste les sessions récentes, les notes mentionnables et les actions — le chat devient le centre commandable du produit.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> la conversation se lit comme un document vivant, chaque attente est expliquée, et tout le produit est atteignable depuis le composer.</div>
+    </div>
+
+    <!-- 9 -->
+    <div class="card" id="a9" data-sc="9">
+      <header><h3>09 · Éditeur de notes</h3><span class="pill">9 / 10</span></header>
+      <p class="scope">Desktop + mobile <span>·</span> Référence du projet</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li>Le module rewrite est <b>un modèle du genre</b> : proposition jamais appliquée (<code>RewritePanel.tsx</code>), Remplacer vs Insérer ci-dessous, discard en un tap, <code>aria-live</code>/<code>aria-busy</code>, étiquettes humaines (« Corrigé », « Reformulé »…), variante dockée mobile.</li>
+        <li>La barre flottante (<code>SelectionToolbar</code>) + palette de blocs + <code>NoteSummaryPanel</code> avec reprise par partie : l'outillage écrit est complet.</li>
+        <li><b>Il manque la <i>signature de lecture</i></b> : la note finie ressemble à un document générique. C'est ici que Sub Rosa peut devenir « le plus bel endroit où lire ses propres notes ».</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Le mode lecture typographique</b><p>Un bouton « Lecture » : le contenu passe en <code>--font-serif</code>, mesure <code>66ch</code>, interlignage 1.7, drop-cap sur le premier paragraphe, titres avec le petit filet <code>--brand</code>. Zéro logique nouvelle — une classe CSS + le round-trip markdown existant garantit la fidélité (ADR-0037).</p></li>
+        <li><b>Le temps dans la marge</b><p>Afficher l'heure de chaque interlocuteur en marge fine (desktop, largeur ≥ 1000px), comme un relevé. Les transcriptions deviennent des archives lisibles.</p></li>
+        <li><b>Highlights légendés</b><p>Survoler un <code>==marqué==</code> révèle pourquoi il a été surligné (extrait du résumé) quand le <code>note_summaries</code> existe — le surlignage devient une nav.</p></li>
+        <li><b>Progression de lecture</b><p>Une fine ligne <code>--brand</code> en haut du panneau pendant le scroll d'une note &gt; 2 écrans. 5 lignes de JS.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> l'éditeur, déjà irréprochable en écriture, devient un plaisir de lecture — la note transpirée devient une page que l'on rouvre volontiers.</div>
+    </div>
+
+    <!-- 10 -->
+    <div class="card" id="a10" data-sc="7">
+      <header><h3>10 · Accessibilité & raccourcis</h3><span class="pill">7 / 10</span></header>
+      <p class="scope">Desktop + mobile <span>·</span> Bonnes fondations, découvrabilité nulle</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li>Solide : <code>aria-live</code> dans 15+ composants, 40 règles <code>focus-visible</code>, narration de l'onboarding, <code>KeycapShortcut</code> avec aria-label, cibles tactiles ≥ 44 px disciplinées côté mobile, Dynamic Type clampé 0.9–1.4.</li>
+        <li><b>Aucun ⌘K / palette de commandes</b> : les raccourcis ⌘T/⌘W/⌘1-9 existent (<code>App.tsx:903-937</code>) mais ne se découvrent que dans Settings. Le pouvoir utilisateur est là, invisible.</li>
+        <li>Gap mobile : les skeletons <code>aria-hidden</code> ne sont <b>jamais annoncés</b> par une live region (« Chargement… ») ; <code>KeycapShortcut</code> ne l'annonce pas quand il change.</li>
+        <li>Mobile : quelques <code>min-height</code> 28-34 px sur des éléments potentiellement interactifs (lignes 281, 1428, 2089 de <code>mobile.css</code>) à vérifier.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>La palette de commandes ⌘K</b><p>Un overlay unique (rôle <code>dialog</code>, focus trap, flèches, fuzz match) indexant : navigation (notes, dossiers, sessions), actions (nouvelle note, dictée, réglages…), et les 25 réglages par nom. Le raccourci-existence gap se résout d'un coup : tout ce que l'app peut faire devient tapable en 3 lettres. ~300 lignes, zéro backend.</p></li>
+        <li><b>Une live region de chargement globale</b><p><code>&lt;div aria-live="polite" class="sr-only"&gt;</code> mise à jour par les squelettes partagés (fiche 03) : « 3 éléments en cours de chargement ». Mobile inclus.</p></li>
+        <li><b>Une page « Raccourcis » vivante</b><p>Remplacer la liste statique par la liste générée depuis le registre de la palette (source unique), avec la détection ⌘/Ctrl selon la plateforme.</p></li>
+        <li><b>Pass cibles tactiles mobiles</b><p>Auditer les 3 lignes citées de <code>mobile.css</code> : soit passer à 44 px, soit expliciter <code>pointer-events: none</code> sur le parent interactif.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> le produit devient pilotable au clavier de bout en bout et « lisible » par VoiceOver pendant chaque chargement.</div>
+    </div>
+
+    <!-- 11 -->
+    <div class="card" id="a11" data-sc="8">
+      <header><h3>11 · Mobile — navigation & gestes</h3><span class="pill">8 / 10</span></header>
+      <p class="scope">iPhone <span>·</span> Presque natif, un bug d'architecture à corriger</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li>Le geste : edge-swipe back avec suivi du doigt, ombre de profondeur, momentum, seuils de commit — du niveau iOS natif. PullToRefresh en rubber-band avec haptic d'armement, SwipeableRow avec vitesse, ModelSheet en drag-dismiss. Très haut niveau.</li>
+        <li><b>Bug structurel</b> : chaque push/pop/tab remonte l'écran entier via <code>key={tab}:{depth}</code> (<code>MobileApp.tsx</code>) — la <b>position de scroll est perdue en revenant</b> sur une liste. C'est le premier détail qu'un utilisateur d'iPhone remarque, même sans le nommer.</li>
+        <li>La <code>ImportLinkBar</code> est toujours visible au-dessus de la liste de notes : du bruit vertical permanent pour une action rare.</li>
+        <li>Le swipe est le <b>seul</b> chemin vers archiver/supprimer — pas de menu long-press.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Garder l'écran vivant sous la pile</b><p>Rendre les écrans non-actifs <code>display:none</code> + <code>inert</code> au lieu de les démonter (ou mémoriser <code>scrollTop</code> et le restaurer au pop). C'est le correctif n°1 de tout l'audit mobile — 30 lignes dans <code>MobileApp.tsx</code>.</p></li>
+        <li><b>Le menu long-press</b><p>Un sheet contextuel iOS natif-feeling sur appui long d'une ligne de note (Ouvrir / Renommer / Déplacer / Archiver / Supprimer) — réutiliser les primitives de <code>ModelSheet</code> (drag-dismiss, velocity). Swipe et menu coexistent, comme dans Notes d'Apple.</p></li>
+        <li><b>L'import se range</b><p><code>ImportLinkBar</code> : icône « + » dans le header qui déplie la barre (auto-repli après usage ou annulation). La liste gagne 44 px d'air.</p></li>
+        <li><b>La dictation devient un plein écran</b><p>La vue d'enregistrement passe en plein écran immersif (comme l'appDictation iOS) : micro central, forme d'onde qui réagit au niveau (<code>--dictation-level</code> existe déjà), temps en grande typo serif. L'action la plus « magique » de l'app mérite sa scène.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> la navigation devient indiscernable d'une app native Apple — et l'écran d'enregistrement devient le geste signature de Sub Rosa.</div>
+    </div>
+
+    <!-- 12 -->
+    <div class="card" id="a12" data-sc="7">
+      <header><h3>12 · Mobile — Studio, erreurs & dette de fichier</h3><span class="pill">7 / 10</span></header>
+      <p class="scope">iPhone <span>·</span> La plus grosse dette de l'app est ici</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li><b><code>StudioScreen.tsx : 3 362 lignes, 118 Ko</code></b> — le monolithe de la coque mobile. Chaque retouche y est risquée ; c'est la même trajectoire que <code>AgentWorkspace.tsx</code> (13,6k) côté desktop.</li>
+        <li>La « Darkroom » (phase, durée, ETA, « You can leave this tab ») est <b>un excellent modèle</b> de communication de job durable (ADR-0018) — mais les erreurs réutilisent <code>mobile-dictation-error</code> comme style générique (naming drift, <code>mobile.css:1617,1637</code>).</li>
+        <li>Les callbacks desktop passés au <code>NoteEditor</code> sont stubés en no-op sur mobile (<code>onTopUp</code>, <code>onRecoverRecording</code>) — la récupération d'enregistrement est <b>silencieusement morte</b> sur iPhone.</li>
+        <li>Le gate mobile réutilise la carte de bienvenue desktop : pas une mise en page téléphone-native.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Éclater StudioScreen en 6 fichiers</b><p>Un fichier par onglet (<code>StudioImagePanel.tsx</code>, <code>StudioVideoPanel.tsx</code>…) + <code>Darkroom.tsx</code> + <code>StudioLibrary.tsx</code>. Zéro changement visuel, toute la dette d'un coup — condition des 6 autres actions de cette fiche.</p></li>
+        <li><b>Un composant <code>&lt;JobError/&gt;</code></b><p>Le remplacement de la classe recyclée : carte rouge douce, message, bouton « Réessayer » (le pattern ADR-0018 : le job est une ligne durable, le retry reprend là où il s'est arrêté). Utilisé par Studio, imports et longform.</p></li>
+        <li><b>Brancher la récupération d'enregistrement</b><p>Implémenter <code>onRecoverRecording</code> sur mobile (les <code>pending_dictations</code> existent déjà — le sweep Rust <code>background::sweep</code> est prêt). Un enregistrement perdu qui se récupère est un argument premium en soi.</p></li>
+        <li><b>Le gate téléphone-native</b><p>Un écran plein, une grande typo serif, le champ clé en autocomplétion de mot de passe, un bouton « Coller depuis le presse-papiers » (détection <code>cdm_</code> dans le clipboard), et une barre de progression 3 étapes pendant le démarrage du sidecar. La première minute mobile passe de « formulaire de dév » à « rituel ».</p></li>
+        <li><b>La carte crédits devient vivante</b><p>Dans Settings : un sparkline des 14 derniers jours d'usage (les données <code>carpe-diem-billing.ts</code> existent) + le solde en typo serif. Le compréhensible-premium de l'abonnement.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> la coque mobile gagne la robustesse d'un shell écrit pour durer, et chaque échec devient une reprise plutôt qu'une impasse.</div>
+    </div>
+
+    <!-- 13 -->
+    <div class="card" id="a13" data-sc="8">
+      <header><h3>13 · Studio desktop & cartes riches</h3><span class="pill">8 / 10</span></header>
+      <p class="scope">Desktop <span>·</span> La vitrine créative</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li>Studio, artefacts, HUDs, cartes de chat : le socle visuel est riche et cohérent (timeline d'artefacts, calques <code>studio.css</code>).</li>
+        <li>La galerie multimédia manque d'un <b>moment de révélation</b> : une image générée arrive par simple remplacement de skeleton — pas de transition de dévoilement.</li>
+        <li>Les fonds HUD/canvas utilisent des dégradés hardcodés dans le composant (fallback hex) — un candidat naturel à un token <code>--hero-canvas</code>.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Le dévoilement « chamber »</b><p>Quand un média est prêt : fondu croisé du squelette vers l'image avec un <code>scale(1.02)→1</code> + une impulsion de liseré <code>--brand</code>. 15 lignes de CSS via une classe <code>.reveal</code>. Chaque génération devient un petit déballage.</p></li>
+        <li><b>Tokeniser les dégradés de scène</b><p><code>--hero-canvas-a/b</code> dérivés de <code>--brand</code> dans <code>tokens.css</code>, consommés par le HUD, le hero et le gate — le canvas du produit suit l'accent choisi par l'utilisateur, partout.</p></li>
+        <li><b>Le HUD dictation en verre gravé</b><p>Bord 1px <code>--hero-wash-rim</code> + backdrop-blur + micro-oscillation de l'onde au niveau vocal (le canal <code>audio-meter.ts</code> existe). Le HUD devient l'objet que l'on laisse sur l'écran avec plaisir.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> chaque contenu généré arrive avec un rituel visuel cohérent, et les scènes du produit réagissent à l'accent personnel de l'utilisateur.</div>
+    </div>
+
+    <!-- 14 -->
+    <div class="card" id="a14" data-sc="7">
+      <header><h3>14 · Cohérence du langage produit</h3><span class="pill">7 / 10</span></header>
+      <p class="scope">Transversal <span>·</span> Le premium se dit aussi en mots</p>
+      <h4>Constat</h4>
+      <ul class="find">
+        <li>Les règles de style écrites (sentence case, pas de tirets typographiques, icônes centrales) sont <b>réellement respectées</b> — rare.</li>
+        <li>Mais la <b>voix</b> varie : « Put Sub Rosa to work » (ton marketing), « Inference runs on Carpe Diem, under their terms » (ton légal-dev), greetings poétiques, et un lien Telegram dans l'onboarding. Trois registres dans une même heure d'usage.</li>
+        <li>L'app est entièrement en anglais, y compris sur un iPhone configuré en français.</li>
+      </ul>
+      <h4>Plan vers 10/10</h4>
+      <ol class="plan">
+        <li><b>Une charte de voix d'une page</b><p>3 règles : (1) on parle à « vous », (2) on nomme l'action de l'utilisateur, jamais la mécanique (« vos demandes sont traitées localement » plutôt que « inference runs on… »), (3) l'humour max = une pointe, jamais dans les erreurs. À ranger dans <code>spec/</code> comme les autres règles.</p></li>
+        <li><b>Une couche i18n minimale</b><p>Extraire les chaînes des 5 écrans de premier contact (gate, onboarding, états vides, héros, erreurs) vers un <code>strings.json</code> avec <code>fr</code> et <code>en</code>. Pas de framework i18n lourd : un <code>t(key)</code> de 10 lignes, typé. Le français natif est un différenciateur premium immédiat pour le public visé.</p></li>
+        <li><b>Supprimer le Telegram de l'onboarding</b><p>(Déjà couvert par fiche 02 — répété ici car c'est aussi un enjeu de langage.) Le lien final devient « Documentation » ou disparaît.</p></li>
+      </ol>
+      <div class="gain"><b>Effet 10/10 :</b> une seule voix, française et posée, du premier écran à la dernière erreur — l'app parle comme une personne de confiance.</div>
+    </div>
+
+  </section>
+
+  <!-- ================= ROADMAP ================= -->
+  <section id="roadmap">
+    <h2>Feuille de route</h2>
+    <p class="sub">Séquencée pour que chaque tranche livre un ressenti complet, pas un chantier ouvert.</p>
+
+    <div class="phase">
+      <span class="tag">Vague 1 · Le visible en une semaine</span>
+      <h4>Quick wins — effet immédiat, risque minimal</h4>
+      <p><b>1.</b> Splash de marque dans <code>index.html</code> (fiche 05) · <b>2.</b> Correction du scroll perdu mobile (fiche 11) · <b>3.</b> <code>transform-origin</code> sur les popovers (fiche 07) et tokens <code>--hero-canvas</code> (fiche 13) · <b>4.</b> Retrait du Telegram + reformulation de la copie onboarding (fiches 02 et 14) · <b>5.</b> État vide dictation mobile + scène « Transcription » (fiches 06 et 03) · <b>6.</b> Le <code>.reveal</code> des médias Studio (fiche 13) · <b>7.</b> Chips du héros : mix au focus seulement (fiche 08).</p>
+    </div>
+
+    <div class="phase">
+      <span class="tag">Vague 2 · La structure</span>
+      <h4>Refontes d'IA et de fondations — 2 semaines</h4>
+      <p><b>1.</b> Paramètres en 4 hubs + « Avancé » + recherche (fiche 01, la plus grosse victoire de l'audit) · <b>2.</b> Éclatement <code>StudioScreen</code> + <code>&lt;JobError/&gt;</code> (fiche 12) · <b>3.</b> Primitive <code>&lt;Shimmer/&gt;</code> + statuts dans les listes (fiche 03) · <b>4.</b> Palette ⌘K + registre de raccourcis (fiche 10) · <b>5.</b> Fusion du gate dans l'onboarding (fiche 02).</p>
+    </div>
+
+    <div class="phase">
+      <span class="tag">Vague 3 · La signature</span>
+      <h4>Ce qui rendra Sub Rosa unique — 3 semaines</h4>
+      <p><b>1.</b> Mode lecture typographique des notes (fiche 09) · <b>2.</b> Illustrations-lignes animées des états vides (fiche 06) · <b>3.</b> Dictation plein écran mobile avec forme d'onde (fiche 11) · <b>4.</b> Design sonore desktop (3 sons, fiche 07) · <b>5.</b> Serif étendu aux voix de l'app + échelle de titres (fiche 04) · <b>6.</b> i18n fr/en des 5 surfaces de premier contact (fiche 14) · <b>7.</b> Gate mobile natif + récupération d'enregistrement (fiche 12).</p>
+    </div>
+
+    <div class="phase">
+      <span class="tag">Garde-fous permanents</span>
+      <h4>Empêcher la régression, pas seulement réparer</h4>
+      <p>Le test anti-hex et l'échelle de titres obligatoire (fiche 04) ; la règle « toute erreur a un état inline avec Réessayer » (fiche 03) ; la charte de voix dans <code>spec/</code> (fiche 14) ; et le passage <code>make verify</code> avant chaque livraison, comme toujours.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>Sub Rosa · Audit UX/UI · Généré le 1ᵉʳ septembre 2026</span>
+    <span>Fondé sur le code réel : tokens.css · app.css (23,6k l.) · AgentWorkspace.tsx (13,6k l.) · coque mobile</span>
+  </footer>
+</div>
+
+<script>
+  const AXES = [
+    {n:"01", name:"Paramètres & architecture de l'information", s:5.5, d:"25 onglets, groupe « AI » saturé", id:"a1"},
+    {n:"02", name:"Onboarding & première visite", s:6, d:"4 écrans sur 2 surfaces, copie off-brand", id:"a2"},
+    {n:"03", name:"Chargements & feedback", s:6.5, d:"« Transcribing… » en texte brut, 5 squelettes ad hoc", id:"a3"},
+    {n:"04", name:"Typographie & densité", s:7, d:"Système excellent, serif sous-utilisé, app.css monolithique", id:"a4"},
+    {n:"05", name:"Première impression & héros", s:7.5, d:"Meilleur moment de l'app, mais un lancement sans âme", id:"a5"},
+    {n:"06", name:"États vides", s:8, d:"Surface conçue et partagée, 2 trous", id:"a6"},
+    {n:"07", name:"Motion & micro-interactions", s:8.5, d:"Socle Apple-grade, popovers et son à orchestrer", id:"a7"},
+    {n:"08", name:"Chat agent & composer", s:8, d:"Feedback d'outils humain, chips en boucle", id:"a8"},
+    {n:"09", name:"Éditeur de notes", s:9, d:"Rewrite exemplaire, il manque le plaisir de lecture", id:"a9"},
+    {n:"10", name:"Accessibilité & raccourcis", s:7, d:"ARIA solide, aucun ⌘K", id:"a10"},
+    {n:"11", name:"Mobile · navigation & gestes", s:8, d:"Gestes natifs, scroll perdu au pop", id:"a11"},
+    {n:"12", name:"Mobile · Studio & dette", s:7, d:"StudioScreen 3 362 lignes, erreurs recyclées", id:"a12"},
+    {n:"13", name:"Studio desktop & médias", s:8, d:"Socle riche, révélation sans rituel", id:"a13"},
+    {n:"14", name:"Cohérence du langage produit", s:7, d:"Règles respectées, 3 registres de voix, tout en anglais", id:"a14"},
+  ];
+  function cls(s){return s>=9?"sc-10":s>=7.5?"sc-8":s>=6.5?"sc-7":s>=5.5?"sc-6":"sc-5"}
+  const board = document.getElementById("board-list");
+  board.innerHTML = AXES.map(a=>`
+    <a class="axis ${cls(a.s)}" href="#${a.id}" style="text-decoration:none;color:inherit">
+      <span class="num">${a.n}</span>
+      <span class="name">${a.name}<small>${a.d}</small></span>
+      <span class="score"><span class="bar"><i data-w="${a.s*10}"></i></span><b>${a.s.toLocaleString("fr-FR")} / 10</b></span>
+    </a>`).join("");
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    document.querySelectorAll(".bar i").forEach(i=>i.style.width=i.dataset.w+"%");
+  }));
+</script>
+</body>
+</html>
