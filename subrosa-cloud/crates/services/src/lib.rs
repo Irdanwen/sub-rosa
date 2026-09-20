@@ -6,8 +6,9 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use subrosa_config::Config;
 use subrosa_domain::{
-    BlobStore, DeviceLogin, DeviceRequest, Error, IdentityProvider, KINDS, LoginAttempt, Operation,
-    OperationResult, Result, Secret, Session, Share, TokenResponse,
+    BlobStore, DeviceLogin, DeviceRequest, Error, IdentityProvider, KINDS, Landing, LoginAttempt,
+    NativeLogin, Operation, OperationResult, Result, Secret, Session, Share, StartedDevice,
+    TokenResponse,
 };
 use subrosa_persistence::{AppendParams, BlobParams, Repository, VaultParams};
 use uuid::Uuid;
@@ -40,6 +41,21 @@ const RETURN_TO: &[&str] = &[
 /// How many shares one account may have answering at once. A bound on the
 /// public surface, not a product limit anybody should reach: the links expire.
 const MAX_LIVE_SHARES: usize = 200;
+
+/// The one page a native sign-in ever lands on. It is a constant, not a
+/// parameter: a service that accepts a destination is a service that can be
+/// pointed somewhere else.
+const NATIVE_RETURN: &str = "/account/devices/return";
+
+/// What the app asks for when it wants a session. `native` picks the sign-in
+/// that comes back by itself; the rest is the code flow that still answers.
+pub struct StartDevice<'a> {
+    pub challenge: &'a str,
+    pub name: &'a str,
+    pub native: bool,
+    pub device_id: Option<Uuid>,
+    pub device_secret: Option<&'a str>,
+}
 
 /// What the owner asks for. The key is not here, and never will be.
 pub struct NewShare {
@@ -95,6 +111,7 @@ impl Service {
             verifier: random_secret(),
             nonce: random_secret(),
             return_to: return_to.into(),
+            native_request_id: None,
         };
         let url = self
             .identity
@@ -102,12 +119,7 @@ impl Service {
         self.repository.save_attempt(&attempt).await?;
         Ok((url, browser))
     }
-    pub async fn callback(
-        &self,
-        state: &str,
-        browser: &str,
-        code: &str,
-    ) -> Result<(String, Secret)> {
+    pub async fn callback(&self, state: &str, browser: &str, code: &str) -> Result<Landing> {
         if state.len() > 128 || code.len() > 4096 {
             return Err(Error::Invalid);
         }
@@ -116,11 +128,33 @@ impl Service {
             .consume_attempt(&hash(state), &hash(browser))
             .await?;
         let identity = self.identity.exchange(&attempt, code).await?;
+        // Which flow is finishing comes from the row this single-use state just
+        // consumed. Nothing the caller supplied is consulted.
+        if let Some(request_id) = attempt.native_request_id {
+            let return_code = random_secret();
+            self.repository
+                .native_callback(&identity, request_id, &hash(return_code.expose()))
+                .await?;
+            // Every part the app needs rides in the fragment, which reaches
+            // neither this service nor a Referer header, the same discipline the
+            // pairing QR already uses.
+            return Ok(Landing::Native {
+                return_to: format!(
+                    "{}{}#c={}&r={request_id}",
+                    self.config.public_url,
+                    attempt.return_to,
+                    return_code.expose()
+                ),
+            });
+        }
         let token = random_secret();
         self.repository
             .browser_session(&identity, &hash(token.expose()))
             .await?;
-        Ok((attempt.return_to, token))
+        Ok(Landing::Browser {
+            return_to: attempt.return_to,
+            token,
+        })
     }
     pub async fn authenticate(&self, token: &str, browser: bool) -> Result<Session> {
         if token.len() != 43 {
@@ -135,16 +169,48 @@ impl Service {
             Ok(())
         }
     }
-    pub async fn start_device(&self, challenge: &str, name: &str) -> Result<DeviceLogin> {
+    pub async fn start_device(&self, p: StartDevice<'_>) -> Result<StartedDevice> {
         let challenge = URL_SAFE_NO_PAD
-            .decode(challenge)
+            .decode(p.challenge)
             .map_err(|_| Error::Invalid)?;
         if challenge.len() != 32
-            || name.trim().is_empty()
-            || name.len() > 80
-            || name.chars().any(char::is_control)
+            || p.name.trim().is_empty()
+            || p.name.len() > 80
+            || p.name.chars().any(char::is_control)
         {
             return Err(Error::Invalid);
+        }
+        // Naming a device to reuse is proved before the request exists, so an
+        // unproved id never reaches the exchange.
+        let rebind_device_id = match (p.device_id, p.device_secret) {
+            (Some(id), Some(secret)) => {
+                Some(self.repository.device_for_secret(id, &hash(secret)).await?)
+            }
+            _ => None,
+        };
+        let id = Uuid::now_v7();
+        if p.native {
+            let handle = random_secret();
+            let expires = self
+                .repository
+                .create_device_request(&DeviceRequest {
+                    request_id: id,
+                    challenge,
+                    code_hash: None,
+                    start_hash: Some(hash(handle.expose())),
+                    name: p.name.into(),
+                    rebind_device_id,
+                })
+                .await?;
+            return Ok(StartedDevice::Native(NativeLogin {
+                request_id: id,
+                start_url: format!(
+                    "{}/auth/native/start?request={}",
+                    self.config.public_url,
+                    handle.expose()
+                ),
+                expires_at: expires,
+            }));
         }
         let mut random = [0u8; 8];
         OsRng.fill_bytes(&mut random);
@@ -152,17 +218,18 @@ impl Service {
             .iter()
             .map(|b| char::from(b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[usize::from(*b) % 32]))
             .collect();
-        let id = Uuid::now_v7();
         let expires = self
             .repository
             .create_device_request(&DeviceRequest {
                 request_id: id,
                 challenge,
-                code_hash: hash(&code),
-                name: name.into(),
+                code_hash: Some(hash(&code)),
+                start_hash: None,
+                name: p.name.into(),
+                rebind_device_id,
             })
             .await?;
-        Ok(DeviceLogin {
+        Ok(StartedDevice::Code(DeviceLogin {
             request_id: id,
             verification_uri: format!(
                 "{}/account/devices/verify?code={code}",
@@ -171,7 +238,34 @@ impl Service {
             user_code: code,
             expires_at: expires,
             interval_seconds: 5,
-        })
+        }))
+    }
+    /// Turns a start link into an authorization redirect. It creates an attempt
+    /// and nothing else: no session, no approval, and no return code until the
+    /// person has actually authenticated.
+    pub async fn native_login(&self, handle: &str) -> Result<(String, Secret)> {
+        if handle.len() != 43 {
+            return Err(Error::Invalid);
+        }
+        let request_id = self
+            .repository
+            .device_request_by_start(&hash(handle))
+            .await?;
+        let state = random_secret();
+        let browser = random_secret();
+        let attempt = LoginAttempt {
+            state_hash: hash(state.expose()),
+            browser_hash: hash(browser.expose()),
+            verifier: random_secret(),
+            nonce: random_secret(),
+            return_to: NATIVE_RETURN.into(),
+            native_request_id: Some(request_id),
+        };
+        let url = self
+            .identity
+            .authorization_url(&attempt, state.expose(), false)?;
+        self.repository.save_attempt(&attempt).await?;
+        Ok((url, browser))
     }
     pub async fn approve(&self, session: &Session, code: &str) -> Result<()> {
         if !session.browser {
@@ -184,21 +278,63 @@ impl Service {
         }
         self.repository.approve_device(session, &hash(code)).await
     }
-    pub async fn exchange_device(&self, id: Uuid, verifier: &str) -> Result<TokenResponse> {
+    pub async fn exchange_device(
+        &self,
+        id: Uuid,
+        verifier: &str,
+        return_code: Option<&str>,
+    ) -> Result<TokenResponse> {
         if !(43..=128).contains(&verifier.len())
             || !verifier
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b))
+            || return_code.is_some_and(|c| c.len() != 43)
         {
             return Err(Error::Invalid);
         }
         let access = random_secret();
         let refresh = random_secret();
+        let device_secret = random_secret();
+        let return_hash = return_code.map(hash);
         let issued = self
             .repository
             .exchange_device(subrosa_persistence::DeviceExchangeParams {
                 request_id: id,
                 challenge: &hash(verifier),
+                return_hash: return_hash.as_deref(),
+                access_hash: &hash(access.expose()),
+                refresh_hash: &hash(refresh.expose()),
+                device_secret_hash: &hash(device_secret.expose()),
+            })
+            .await?;
+        Ok(TokenResponse {
+            access_token: access,
+            refresh_token: refresh,
+            expires_at: issued.expires_at,
+            refresh_expires_at: issued.refresh_expires_at,
+            device_id: issued.device_id,
+            device_secret: Some(device_secret),
+            account: issued.account,
+        })
+    }
+    /// The whole point of the device secret: a session again, without a
+    /// browser, for as long as the device is not revoked.
+    pub async fn renew_session(&self, device_id: Uuid, secret: &str) -> Result<TokenResponse> {
+        if secret.len() != 43 {
+            return Err(Error::Unauthorized);
+        }
+        // Bounded per device as well as per address, so one machine cannot grind
+        // at a secret while a shared address keeps working for everybody else.
+        self.repository
+            .rate_limit(&hash(format!("renew:{device_id}")), 10)
+            .await?;
+        let access = random_secret();
+        let refresh = random_secret();
+        let issued = self
+            .repository
+            .renew_session(subrosa_persistence::RenewParams {
+                device_id,
+                secret_hash: &hash(secret),
                 access_hash: &hash(access.expose()),
                 refresh_hash: &hash(refresh.expose()),
             })
@@ -209,8 +345,20 @@ impl Service {
             expires_at: issued.expires_at,
             refresh_expires_at: issued.refresh_expires_at,
             device_id: issued.device_id,
+            device_secret: None,
             account: issued.account,
         })
+    }
+    pub async fn renounce(&self, device_id: Uuid, secret: &str) -> Result<()> {
+        if secret.len() != 43 {
+            return Err(Error::Unauthorized);
+        }
+        self.repository
+            .rate_limit(&hash(format!("renew:{device_id}")), 10)
+            .await?;
+        self.repository
+            .renounce_device(device_id, &hash(secret))
+            .await
     }
     pub async fn refresh_session(&self, token: &str) -> Result<TokenResponse> {
         if token.len() != 43 {
@@ -232,6 +380,7 @@ impl Service {
             expires_at: issued.expires_at,
             refresh_expires_at: issued.refresh_expires_at,
             device_id: issued.device_id,
+            device_secret: None,
             account: issued.account,
         })
     }

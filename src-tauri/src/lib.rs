@@ -482,9 +482,13 @@ pub fn run() {
             account::pairing::account_pairing_approve,
             account::pairing::account_pairing_exchange,
             account::pairing::account_pairing_cancel,
+            account::pairing::account_pairing_resume,
             account::account_configure,
             account::account_login_start,
             account::account_login_exchange,
+            account::login::account_login_open,
+            account::login::account_login_cancel,
+            account::login::account_login_pending,
             account::account_devices,
             account::account_revoke_device,
             account::account_logout,
@@ -699,9 +703,13 @@ pub fn run() {
         account::pairing::account_pairing_approve,
         account::pairing::account_pairing_exchange,
         account::pairing::account_pairing_cancel,
+        account::pairing::account_pairing_resume,
         account::account_configure,
         account::account_login_start,
         account::account_login_exchange,
+        account::login::account_login_open,
+        account::login::account_login_cancel,
+        account::login::account_login_pending,
         account::account_devices,
         account::account_revoke_device,
         account::account_logout,
@@ -850,6 +858,10 @@ pub fn run() {
                 // dictations, and chat turns. The retries wait for the sidecar
                 // via the request-side heal.
                 background::sweep_detached(app);
+                // A suspension can outlast an access token. Renewing here means
+                // the account screen is right the moment it is looked at.
+                let handle = app.clone();
+                tauri::async_runtime::spawn(async move { account::keep_alive(&handle).await });
             }
             tauri::RunEvent::Exit => {
                 #[cfg(desktop)]

@@ -43,7 +43,11 @@ export type Destination =
   /** Something shared in from another app through the share sheet: the id
    * names a manifest the extension wrote in the app group inbox, and the
    * Rust side reads and validates it before anything is made (ADR-0048). */
-  | { kind: "share"; itemId: string };
+  | { kind: "share"; itemId: string }
+  /** The end of a sign-in that started in the app. The Rust side spends the
+   * return code the link carries; what reaches here is only "show them their
+   * account", deliberately without the query. */
+  | { kind: "account" };
 
 /** App-generated ids (notes, sessions) are opaque tokens, never paths. */
 const ID_RE = /^[\w-]{1,64}$/;
@@ -93,6 +97,11 @@ export function parseDestination(raw: string): Destination | null {
       return { kind: "record" };
     case "share":
       return ID_RE.test(segment) ? { kind: "share", itemId: segment } : null;
+    // `subrosa://auth/callback?request=…&code=…` finishes a sign-in. The return
+    // code is spent natively and must not cross into the webview, so the query
+    // is dropped here rather than carried and ignored later.
+    case "auth":
+      return segment === "callback" ? { kind: "account" } : null;
     case "import": {
       const target = url.searchParams.get("url")?.trim();
       // Only web links, and only ones short enough to be real. The Rust side

@@ -19,7 +19,7 @@ export function AccountNextStep({
   const copy: Record<Exclude<AccountStep["id"], "done">, { title: string; detail: string }> = {
     "sign-in": {
       title: t("Sign in to your account"),
-      detail: t("Approve this device in your browser, then come back here."),
+      detail: t("The page opens in your browser and brings you back here."),
     },
     "create-vault": {
       title: t("Create your vault"),
@@ -29,7 +29,9 @@ export function AccountNextStep({
     },
     "open-vault": {
       title: t("Open your vault"),
-      detail: t("Enter your recovery key below. Signing in alone cannot unlock your data."),
+      detail: t(
+        "Use a device that is already open, or your recovery key. Signing in alone cannot unlock your data.",
+      ),
     },
     "confirm-recovery": {
       title: t("Confirm your recovery key"),

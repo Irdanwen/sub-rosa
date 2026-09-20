@@ -439,6 +439,12 @@ export function MobileApp() {
         nav.switchTab("notes");
         void startLinkIngest(destination.url).catch((err) => setError(messageFromError(err)));
         break;
+      // A sign-in that finished in Safari. Rust has already spent the return
+      // code; this only shows the person where they landed.
+      case "account":
+        nav.switchTab("settings");
+        nav.push({ view: "settings-section", section: "account" });
+        break;
       // Shared through the share sheet: the extension left a manifest in
       // the app group inbox; Rust reads it and makes the note or starts the
       // fetch, and the notes tab is where either shows itself.

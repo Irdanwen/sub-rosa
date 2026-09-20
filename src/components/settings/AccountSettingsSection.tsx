@@ -9,12 +9,16 @@ import { IconShieldCheck } from "central-icons/IconShieldCheck";
 import {
   type AccountStatus,
   type AccountLogin,
+  type AccountNativeLogin,
   type AccountDevice,
   type AccountConflict,
   accountStatus,
   accountConfigure,
   accountLoginStart,
   accountLoginExchange,
+  accountLoginOpen,
+  accountLoginPending,
+  accountLoginCancel,
   accountLogout,
   accountDevices,
   accountRevokeDevice,
@@ -45,6 +49,7 @@ export function AccountSettingsSection() {
   const [serverUrl, setServerUrl] = useState("");
   const [deviceName, setDeviceName] = useState("");
   const [login, setLogin] = useState<AccountLogin | null>(null);
+  const [native, setNative] = useState<AccountNativeLogin | null>(null);
   const [devices, setDevices] = useState<AccountDevice[] | null>(null);
   const [conflicts, setConflicts] = useState<AccountConflict[]>([]);
   const [busy, setBusy] = useState(false);
@@ -84,6 +89,18 @@ export function AccountSettingsSection() {
     const subscription = listen("subrosa://sync-updated", () => {
       if (!cancelled) void refresh().catch(() => {});
     }).catch(() => () => {});
+    // A native sign-in finishes in Rust, off a deep link, with nothing for this
+    // screen to poll. It says so, and the panel catches up.
+    const finished = listen("subrosa://account-updated", () => {
+      if (cancelled) return;
+      setNative(null);
+      void refresh().catch(() => {});
+    }).catch(() => () => {});
+    const failed = listen<string>("subrosa://account-login-failed", (event) => {
+      if (cancelled) return;
+      setNative(null);
+      setError(accountError({ code: event.payload }));
+    }).catch(() => () => {});
     const resumed = () => {
       if (document.visibilityState === "visible") void refresh().catch(() => {});
     };
@@ -91,9 +108,26 @@ export function AccountSettingsSection() {
     return () => {
       cancelled = true;
       document.removeEventListener("visibilitychange", resumed);
-      void subscription.then((unlisten) => unlisten()).catch(() => {});
+      for (const pending of [subscription, finished, failed]) {
+        void pending.then((unlisten) => unlisten()).catch(() => {});
+      }
     };
   }, [refresh]);
+
+  // A sign-in can outlive the window that started it: the person quits while
+  // they are in the browser. The verifier is durable, so the waiting state is
+  // too, rather than showing a fresh button that would strand the request.
+  useEffect(() => {
+    let cancelled = false;
+    void accountLoginPending()
+      .then((pending) => {
+        if (!cancelled && pending) setNative(pending);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadDevices = useCallback(async () => {
     const next = await accountDevices();
@@ -196,16 +230,37 @@ export function AccountSettingsSection() {
       .catch(() => undefined);
   }, []);
 
+  function chosenDeviceName() {
+    return deviceName.trim() || (isMobilePlatform() ? t("My iPhone") : t("My computer"));
+  }
+
+  /** The ordinary way in: the real page opens, and it hands the app back. */
   async function startLogin() {
     await accountConfigure(serverUrl.trim());
-    const next = await accountLoginStart(
-      deviceName.trim() || (isMobilePlatform() ? t("My iPhone") : t("My computer")),
-    );
+    const next = await accountLoginOpen(chosenDeviceName());
+    if (mounted.current) setNative(next);
+    const opened = await openExternalUrl(next.start_url);
+    if (!opened && mounted.current) {
+      setNotice(t("Your browser did not open. Open this address yourself to continue."));
+    }
+  }
+
+  /** The fallback, for when nothing comes back: a code approved on the site. */
+  async function startCodeLogin() {
+    await accountConfigure(serverUrl.trim());
+    await accountLoginCancel();
+    if (mounted.current) setNative(null);
+    const next = await accountLoginStart(chosenDeviceName());
     if (mounted.current) setLogin(next);
     const opened = await openExternalUrl(next.verification_uri);
     if (!opened && mounted.current) {
       setNotice(t("Your browser did not open. Open this address yourself to continue."));
     }
+  }
+
+  async function cancelLogin() {
+    await accountLoginCancel();
+    if (mounted.current) setNative(null);
   }
 
   async function confirmAction() {
@@ -258,11 +313,40 @@ export function AccountSettingsSection() {
         </button>
       ) : !status.account ? (
         <div className="settings-card account-card">
-          <h3 className="settings-row-title">{t("Continue on another device")}</h3>
+          <h3 className="settings-row-title">{t("Sign in to Sub Rosa")}</h3>
           <p className="settings-row-description">
-            {t("Sign in or create an account in your browser, then approve the code shown here.")}
+            {t(
+              "The page opens in your browser. Enter your address and password there, and it brings you straight back here.",
+            )}
           </p>
-          {!login ? (
+          {native ? (
+            <div className="account-form">
+              <p role="status" className="settings-row-description">
+                {t("Finish signing in in your browser. This screen updates by itself.")}
+              </p>
+              <p className="settings-row-description">
+                {t("This request expires at {time}.", {
+                  time: formatAccountDate(native.expires_at),
+                })}
+              </p>
+              <div className="account-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => void openExternalUrl(native.start_url)}
+                >
+                  {t("Reopen the page")}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => void run(cancelLogin)}
+                >
+                  {t("Cancel")}
+                </button>
+              </div>
+            </div>
+          ) : (
             <form
               className="account-form"
               onSubmit={(event) => {
@@ -275,7 +359,7 @@ export function AccountSettingsSection() {
                 className="primary-action primary-solid"
                 disabled={busy || !serverUrl.trim()}
               >
-                {busy ? t("Connecting…") : t("Sign in or create an account")}
+                {busy ? t("Opening…") : t("Sign in or create an account")}
               </button>
               <p className="settings-row-description">
                 {t("Continue securely at {address}.", { address: serverUrl })}
@@ -311,32 +395,59 @@ export function AccountSettingsSection() {
                 </label>
               </details>
             </form>
-          ) : (
-            <div className="account-form">
-              <p className="settings-row-description">
-                {t("Approve this code in your browser only if it matches:")}
-              </p>
-              <code className="account-login-code">{login.user_code}</code>
-              <p className="settings-row-description account-login-uri">{login.verification_uri}</p>
-              <p role="status" className="settings-row-description">
-                {t("Waiting for your approval. This request expires at {time}.", {
-                  time: formatAccountDate(login.expires_at),
-                })}
-              </p>
-              <div className="account-actions">
+          )}
+          {/* The way in when the page cannot hand the app back: a browser that
+              refuses to open a scheme, or a desktop that never registered one.
+              It is a declared fallback, not a leftover. */}
+          <details className="account-advanced">
+            <summary>{t("The page did not come back?")}</summary>
+            {login ? (
+              <div className="account-form">
+                <p className="settings-row-description">
+                  {t("Approve this code in your browser only if it matches:")}
+                </p>
+                <code className="account-login-code">{login.user_code}</code>
+                <p className="settings-row-description account-login-uri">
+                  {login.verification_uri}
+                </p>
+                <p role="status" className="settings-row-description">
+                  {t("Waiting for your approval. This request expires at {time}.", {
+                    time: formatAccountDate(login.expires_at),
+                  })}
+                </p>
+                <div className="account-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => void openExternalUrl(login.verification_uri)}
+                  >
+                    {t("Open sign-in page")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setLogin(null)}
+                  >
+                    {t("Cancel")}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="account-form">
+                <p className="settings-row-description">
+                  {t("Sign in on the website instead, and approve a code shown here.")}
+                </p>
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  onClick={() => void openExternalUrl(login.verification_uri)}
+                  disabled={busy || !serverUrl.trim()}
+                  onClick={() => void run(startCodeLogin)}
                 >
-                  {t("Open sign-in page")}
-                </button>
-                <button type="button" className="btn btn-secondary" onClick={() => setLogin(null)}>
-                  {t("Cancel")}
+                  {t("Show me a code")}
                 </button>
               </div>
-            </div>
-          )}
+            )}
+          </details>
         </div>
       ) : (
         <>
@@ -447,6 +558,22 @@ export function AccountSettingsSection() {
               </>
             ) : (
               <div className="account-form">
+                {/* Both ways in, in one place, with the one that types nothing
+                    first. A recovery key pulled out of a password manager and
+                    pasted is the moment it is most likely to leak, so the
+                    order here is a security choice, not a layout one. */}
+                {status.vault_exists === true ? (
+                  <>
+                    <AccountPairingSection
+                      unlocked={false}
+                      serverUrl={status.server_url}
+                      onUnlocked={refresh}
+                    />
+                    <p className="settings-row-description">
+                      {t("Or, if you have your recovery key:")}
+                    </p>
+                  </>
+                ) : null}
                 <form
                   className="account-form"
                   onSubmit={(event) => {
@@ -498,13 +625,13 @@ export function AccountSettingsSection() {
             )}
           </AccountCard>
 
-          {status.vault_exists !== false && !newRecoveryKey ? (
+          {/* The half that hands access over lives here, on a device that is
+              already open. The half that asks for it moved into the vault
+              card, next to the recovery key, so a new device never has to go
+              looking in another section for the easier way in. */}
+          {status.vault_unlocked && status.recovery_confirmed && !newRecoveryKey ? (
             <AccountCard title={t("Connect your devices")}>
-              <AccountPairingSection
-                unlocked={status.vault_unlocked && status.recovery_confirmed}
-                serverUrl={status.server_url}
-                onUnlocked={refresh}
-              />
+              <AccountPairingSection unlocked serverUrl={status.server_url} onUnlocked={refresh} />
             </AccountCard>
           ) : null}
 
@@ -644,6 +771,18 @@ export function AccountSettingsSection() {
                           ? t("Last seen: {time}", { time: formatAccountDate(device.last_seen_at) })
                           : t("No recent activity")}
                       </p>
+                      {/* A device authorization does not expire, so how often
+                          it renewed itself is what makes a copied one visible:
+                          two copies cut each other off, and the count climbs
+                          on a device nobody touched (ADR 0056). */}
+                      {device.renewed_at ? (
+                        <p className="settings-row-description">
+                          {t("Reconnected on its own {count} times, last on {time}.", {
+                            count: String(device.renew_count ?? 0),
+                            time: formatAccountDate(device.renewed_at),
+                          })}
+                        </p>
+                      ) : null}
                     </div>
                     <button
                       type="button"
@@ -796,6 +935,12 @@ export function accountError(cause: unknown): string {
       return t("Save and confirm your recovery key before sharing your data.");
     case "account_login_expired":
       return t("This sign-in request expired. Start again to get a new code.");
+    case "account_login_unsolicited":
+      return t("A sign-in finished that this app did not start. Nothing was connected.");
+    case "account_offline":
+      return t("Your account service could not be reached. Your work is safe and will sync later.");
+    case "account_revoked":
+      return t("This device was signed out from your account. Sign in again to reconnect it.");
     case "vault_credential_missing":
       return t(
         "Your vault has no Carpe Diem key yet. Share it from a device where it is configured.",

@@ -6,6 +6,15 @@ export type AccountStatus = {
   server_url: string | null;
   account: { id: string; email: string; created_at: string } | null;
   device_id: string | null;
+  /**
+   * How this device stands with the service, which is a different question
+   * from whether the vault is open. "renewable" means there is no live session
+   * but this device can mint one on its own, without a browser.
+   */
+  connection: "none" | "connected" | "renewable";
+  device_authorized: boolean;
+  login_pending: boolean;
+  pairing_pending: boolean;
   vault_unlocked: boolean;
   recovery_confirmed: boolean;
   recovery_available: boolean;
@@ -29,6 +38,15 @@ export type AccountDevice = {
   created_at: string;
   last_seen_at: string | null;
   revoked_at: string | null;
+  /** A cloned device secret shows itself as renewals nobody made. */
+  renewed_at?: string | null;
+  renew_count?: number;
+};
+/** A sign-in that returns by itself. No user code: nothing here is read out. */
+export type AccountNativeLogin = {
+  request_id: string;
+  start_url: string;
+  expires_at: string;
 };
 export type AccountConflict = {
   id: string;
@@ -66,6 +84,11 @@ const statusCommand = (command: string, args?: Record<string, unknown>) =>
 export const accountStatus = () => statusCommand("account_status");
 export const accountConfigure = (serverUrl: string) =>
   statusCommand("account_configure", { serverUrl });
+export const accountLoginOpen = (deviceName: string) =>
+  invoke<AccountNativeLogin>("account_login_open", { deviceName });
+export const accountLoginPending = () => invoke<AccountNativeLogin | null>("account_login_pending");
+export const accountLoginCancel = () => invoke<void>("account_login_cancel");
+/** The fallback flow, kept for when the page cannot hand the app back. */
 export const accountLoginStart = (deviceName: string) =>
   invoke<AccountLogin>("account_login_start", { deviceName });
 export const accountLoginExchange = (requestId: string) =>
@@ -99,6 +122,9 @@ export const accountPairingExchange = (requestId: string) =>
   statusCommand("account_pairing_exchange", { requestId });
 export const accountPairingCancel = (requestId: string) =>
   invoke<void>("account_pairing_cancel", { requestId });
+/** Picks a request back up after a reload, with the same code, instead of
+ * stranding it until it expires. */
+export const accountPairingResume = () => invoke<AccountPairing | null>("account_pairing_resume");
 export type PortableConversationSummary = {
   id: string;
   title: string;

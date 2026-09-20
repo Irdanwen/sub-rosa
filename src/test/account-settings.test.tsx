@@ -11,8 +11,20 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   openExternalUrl: vi.fn(),
   carpeDiemGetSettings: vi.fn(async () => ({ hasApiKey: false })),
+  listeners: new Map<string, (event: { payload: unknown }) => void>(),
 }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (event: string, handler: (event: { payload: unknown }) => void) => {
+    mocks.listeners.set(event, handler);
+    return () => mocks.listeners.delete(event);
+  }),
+}));
+/** The native side finishes a sign-in and says so; nothing here polls. */
+const emit = async (event: string, payload?: unknown) => {
+  await act(async () => {
+    mocks.listeners.get(event)?.({ payload });
+  });
+};
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("../lib/tauri", () => ({
   openExternalUrl: mocks.openExternalUrl,
@@ -25,6 +37,10 @@ const local: AccountStatus = {
   server_url: "https://accounts.example.com",
   account: null,
   device_id: null,
+  connection: "none",
+  device_authorized: false,
+  login_pending: false,
+  pairing_pending: false,
   vault_unlocked: false,
   vault_exists: null,
   recovery_confirmed: false,
@@ -38,6 +54,8 @@ const connected: AccountStatus = {
   ...local,
   account: { id: "account-1", email: "person@example.com", created_at: "2026-09-14T09:00:00Z" },
   device_id: "device-1",
+  connection: "connected",
+  device_authorized: true,
   vault_exists: true,
   vault_unlocked: true,
   recovery_confirmed: true,
@@ -48,6 +66,7 @@ let handlers: Record<string, (args?: Record<string, unknown>) => unknown>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.listeners.clear();
   state = { ...local };
   handlers = {};
   mocks.invoke.mockImplementation(async (command: string, args: Record<string, unknown>) => {
@@ -72,12 +91,10 @@ afterEach(() => vi.useRealTimers());
 describe("Account settings", () => {
   it("opens public registration without setup or enabling sync for a new library", async () => {
     state = { ...local, server_url: null };
-    handlers.account_login_start = () => ({
+    handlers.account_login_open = () => ({
       request_id: "login-public",
-      verification_uri: `${state.default_server_url}/device`,
-      user_code: "PUBLIC-1234",
+      start_url: `${state.default_server_url}/auth/native/start?request=handle`,
       expires_at: "2099-01-01T00:00:00Z",
-      interval_seconds: 5,
     });
     const user = userEvent.setup();
     render(<AccountSettingsSection />);
@@ -86,28 +103,33 @@ describe("Account settings", () => {
     expect(screen.getByLabelText("Account service address")).not.toBeVisible();
     expect(mocks.invoke).not.toHaveBeenCalledWith("account_configure", expect.anything());
     await user.click(signup);
-    expect(await screen.findByText("PUBLIC-1234")).toBeInTheDocument();
+    // No code to read out: the page comes back on its own.
+    expect(
+      await screen.findByText("Finish signing in in your browser. This screen updates by itself."),
+    ).toBeInTheDocument();
     expect(mocks.invoke).toHaveBeenCalledWith("account_configure", {
       serverUrl: state.default_server_url,
     });
-    expect(mocks.invoke).toHaveBeenCalledWith("account_login_start", { deviceName: "My computer" });
-    expect(mocks.openExternalUrl).toHaveBeenCalledWith(`${state.default_server_url}/device`);
+    expect(mocks.invoke).toHaveBeenCalledWith("account_login_open", { deviceName: "My computer" });
+    expect(mocks.openExternalUrl).toHaveBeenCalledWith(
+      `${state.default_server_url}/auth/native/start?request=handle`,
+    );
     expect(mocks.invoke).not.toHaveBeenCalledWith("account_sync_set_enabled", expect.anything());
   });
 
   it("keeps the existing custom service and makes its destination visible before login", async () => {
-    handlers.account_login_start = () => ({
+    handlers.account_login_open = () => ({
       request_id: "login-custom",
-      verification_uri: `${local.server_url}/device`,
-      user_code: "CUSTOM-1234",
+      start_url: `${local.server_url}/auth/native/start?request=handle`,
       expires_at: "2099-01-01T00:00:00Z",
-      interval_seconds: 5,
     });
     const user = userEvent.setup();
     render(<AccountSettingsSection />);
     await screen.findByText(`Continue securely at ${local.server_url}.`);
     await user.click(screen.getByRole("button", { name: "Sign in or create an account" }));
-    expect(await screen.findByText("CUSTOM-1234")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Finish signing in in your browser. This screen updates by itself."),
+    ).toBeInTheDocument();
     expect(mocks.invoke).toHaveBeenCalledWith("account_configure", { serverUrl: local.server_url });
   });
 
@@ -147,29 +169,73 @@ describe("Account settings", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("account_sync_set_enabled", { enabled: false });
   });
 
-  it("keeps account setup optional and asks the native process to start browser sign-in", async () => {
+  it("keeps account setup optional and asks the native process to open the sign-in page", async () => {
     const user = userEvent.setup();
-    handlers.account_login_start = () => ({
+    handlers.account_login_open = () => ({
       request_id: "login-1",
-      verification_uri: "https://accounts.example.com/device",
-      user_code: "ABCD-1234",
+      start_url: "https://accounts.example.com/auth/native/start?request=handle",
       expires_at: "2099-01-01T00:00:00Z",
-      interval_seconds: 5,
     });
     render(<AccountSettingsSection />);
     await screen.findByLabelText("Name this device");
     await user.click(screen.getByText("Advanced settings"));
     await user.type(screen.getByLabelText("Name this device"), "My phone");
     await user.click(screen.getByRole("button", { name: "Sign in or create an account" }));
-    expect(await screen.findByText("ABCD-1234")).toBeInTheDocument();
-    expect(mocks.invoke).toHaveBeenCalledWith("account_login_start", { deviceName: "My phone" });
-    expect(mocks.openExternalUrl).toHaveBeenCalledWith("https://accounts.example.com/device");
+    expect(
+      await screen.findByText("Finish signing in in your browser. This screen updates by itself."),
+    ).toBeInTheDocument();
+    expect(mocks.invoke).toHaveBeenCalledWith("account_login_open", { deviceName: "My phone" });
+    expect(mocks.openExternalUrl).toHaveBeenCalledWith(
+      "https://accounts.example.com/auth/native/start?request=handle",
+    );
     expect(mocks.invoke.mock.calls.some(([name]) => name === "account_sync_set_enabled")).toBe(
       false,
     );
   });
 
-  it("polls approval using only the opaque request id and stops on cancellation", async () => {
+  it("finishes on the event the native side sends, without ever polling", async () => {
+    const user = userEvent.setup();
+    handlers.account_login_open = () => ({
+      request_id: "login-1",
+      start_url: "https://accounts.example.com/auth/native/start?request=handle",
+      expires_at: "2099-01-01T00:00:00Z",
+    });
+    render(<AccountSettingsSection />);
+    await user.click(await screen.findByRole("button", { name: "Sign in or create an account" }));
+    await screen.findByText("Finish signing in in your browser. This screen updates by itself.");
+    // The return code is spent in Rust. Nothing in this screen asks for it.
+    expect(mocks.invoke.mock.calls.some(([name]) => name === "account_login_exchange")).toBe(false);
+    state = { ...connected };
+    await emit("subrosa://account-updated");
+    expect(await screen.findByText("person@example.com")).toBeInTheDocument();
+  });
+
+  it("says plainly when a sign-in it did not start comes back", async () => {
+    render(<AccountSettingsSection />);
+    await screen.findByRole("button", { name: "Sign in or create an account" });
+    await emit("subrosa://account-login-failed", "account_login_unsolicited");
+    expect(
+      await screen.findByText(
+        "A sign-in finished that this app did not start. Nothing was connected.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("picks a sign-in back up after the window that started it went away", async () => {
+    handlers.account_login_pending = () => ({
+      request_id: "login-1",
+      start_url: "https://accounts.example.com/auth/native/start?request=handle",
+      expires_at: "2099-01-01T00:00:00Z",
+    });
+    render(<AccountSettingsSection />);
+    // The same request, not a fresh one that would strand it.
+    expect(
+      await screen.findByText("Finish signing in in your browser. This screen updates by itself."),
+    ).toBeInTheDocument();
+    expect(mocks.invoke.mock.calls.some(([name]) => name === "account_login_open")).toBe(false);
+  });
+
+  it("falls back to a code, polling only the opaque request id, and stops on cancellation", async () => {
     handlers.account_login_start = () => ({
       request_id: "login-1",
       verification_uri: "https://accounts.example.com/device",
@@ -182,7 +248,10 @@ describe("Account settings", () => {
     await screen.findByLabelText("Name this device");
     vi.useFakeTimers();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Sign in or create an account" }));
+      fireEvent.click(screen.getByText("The page did not come back?"));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Show me a code" }));
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000);

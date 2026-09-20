@@ -72,6 +72,11 @@ pub struct Device {
     pub created_at: DateTime<Utc>,
     pub last_seen_at: DateTime<Utc>,
     pub revoked_at: Option<DateTime<Utc>>,
+    /// A cloned device secret shows up as a renewal war: each renewal revokes
+    /// the other's family. These two fields are how the legitimate owner sees
+    /// it happening, which is why there is no secret rotation (ADR 0056).
+    pub renewed_at: Option<DateTime<Utc>>,
+    pub renew_count: i32,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Operation {
@@ -123,6 +128,10 @@ pub struct LoginAttempt {
     pub verifier: Secret,
     pub nonce: Secret,
     pub return_to: String,
+    /// Set when this round trip finishes a native sign-in. It is written when
+    /// the attempt is created and read back from the row the single-use state
+    /// consumes, so nothing an attacker can supply decides the branch.
+    pub native_request_id: Option<Uuid>,
 }
 #[derive(Debug, Serialize)]
 pub struct DeviceLogin {
@@ -136,9 +145,45 @@ pub struct DeviceLogin {
 pub struct DeviceRequest {
     pub request_id: Uuid,
     pub challenge: Vec<u8>,
-    pub code_hash: Vec<u8>,
+    /// A code the person reads out of the app and approves in a browser.
+    pub code_hash: Option<Vec<u8>>,
+    /// A handle the app sends the browser to. Exactly one of the two is set.
+    pub start_hash: Option<Vec<u8>>,
     pub name: String,
+    /// The device row this login should reuse instead of creating another,
+    /// proven by its device secret at start. Signing in again on the same
+    /// machine is not a new device.
+    pub rebind_device_id: Option<Uuid>,
 }
+/// What the app gets when it asks for a sign-in that comes back by itself.
+/// There is no user code here on purpose: nothing about this flow is meant to
+/// be read aloud or retyped.
+#[derive(Debug, Serialize)]
+pub struct NativeLogin {
+    pub request_id: Uuid,
+    pub start_url: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+/// Untagged so the code flow keeps the exact response shape apps 1.63 to 1.68
+/// already parse, and a native start is simply a different set of fields.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum StartedDevice {
+    Code(DeviceLogin),
+    Native(NativeLogin),
+}
+
+/// Where the OIDC round trip leaves the browser. A browser sign-in gets a
+/// session cookie; a native one gets a page that hands the return code to the
+/// app and nothing else. The native branch deliberately leaves no 12 hour
+/// session behind in a browser that may not be the person's own.
+#[derive(Debug)]
+pub enum Landing {
+    Browser { return_to: String, token: Secret },
+    Native { return_to: String },
+}
+
 #[derive(Debug, Serialize)]
 pub struct TokenResponse {
     pub access_token: Secret,
@@ -146,6 +191,11 @@ pub struct TokenResponse {
     pub refresh_expires_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
     pub device_id: Uuid,
+    /// Present when this exchange admitted the device. It renews sessions
+    /// without a browser until the device is revoked, and it is never rotated:
+    /// a lost rotation response would lock the device out for good.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_secret: Option<Secret>,
     pub account: Account,
 }
 #[async_trait]

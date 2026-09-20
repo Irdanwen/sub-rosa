@@ -67,6 +67,8 @@ pub fn router(service: Service) -> Router {
         .merge(pairing::routes())
         .route("/api/v1/me", get(me).delete(delete_me))
         .route("/api/v1/session/refresh", post(refresh_session))
+        .route("/api/v1/session/renew", post(renew_session))
+        .route("/api/v1/session/renounce", post(renounce_device))
         .route("/api/v1/devices", get(devices))
         .route("/api/v1/devices/{id}", axum::routing::delete(revoke_device))
         .route(
@@ -97,6 +99,7 @@ pub fn router(service: Service) -> Router {
                 .layer(DefaultBodyLimit::max(32 * 1024 * 1024)),
         )
         .route("/auth/login", get(login))
+        .route("/auth/native/start", get(native_start))
         .route("/auth/callback", get(callback))
         .route("/auth/logout", post(logout))
         .route("/livez", get(|| async { ok(json!({"status":"ok"})) }))
@@ -321,25 +324,58 @@ async fn callback(
     Query(q): Query<CallbackQuery>,
 ) -> Result<Response> {
     let browser = cookie(&h, s.config.flow_cookie()).ok_or(Error::Unauthorized)?;
-    let (return_to, token) = s.callback(&q.state, browser, &q.code).await?;
-    let mut r = Redirect::to(&return_to).into_response();
+    match s.callback(&q.state, browser, &q.code).await? {
+        // Signing an app in leaves the browser nothing. Approving a device used
+        // to hand a twelve hour session with step-up powers to whatever browser
+        // happened to be open.
+        subrosa_domain::Landing::Native { return_to } => {
+            let mut r = Redirect::to(&return_to).into_response();
+            set_cookie(&mut r, &s, s.config.flow_cookie(), "", true, 0)?;
+            Ok(r)
+        }
+        subrosa_domain::Landing::Browser { return_to, token } => {
+            let mut r = Redirect::to(&return_to).into_response();
+            set_cookie(
+                &mut r,
+                &s,
+                s.config.session_cookie(),
+                token.expose(),
+                true,
+                43200,
+            )?;
+            set_cookie(
+                &mut r,
+                &s,
+                "subrosa_csrf",
+                &csrf_for(token.expose()),
+                false,
+                43200,
+            )?;
+            set_cookie(&mut r, &s, s.config.flow_cookie(), "", true, 0)?;
+            Ok(r)
+        }
+    }
+}
+#[derive(Deserialize)]
+struct NativeStartQuery {
+    request: String,
+}
+/// The link the app opens. It carries a handle, never a destination: the page
+/// this returns to is a constant in the service.
+async fn native_start(
+    State(s): State<Arc<Service>>,
+    Query(q): Query<NativeStartQuery>,
+) -> Result<Response> {
+    let (url, browser) = s.native_login(&q.request).await?;
+    let mut r = Redirect::to(&url).into_response();
     set_cookie(
         &mut r,
         &s,
-        s.config.session_cookie(),
-        token.expose(),
+        s.config.flow_cookie(),
+        browser.expose(),
         true,
-        43200,
+        600,
     )?;
-    set_cookie(
-        &mut r,
-        &s,
-        "subrosa_csrf",
-        &csrf_for(token.expose()),
-        false,
-        43200,
-    )?;
-    set_cookie(&mut r, &s, s.config.flow_cookie(), "", true, 0)?;
     Ok(r)
 }
 async fn logout(State(s): State<Arc<Service>>, h: HeaderMap) -> Result<Response> {
@@ -400,12 +436,29 @@ async fn rename_device(
 struct DeviceStart {
     challenge: String,
     device_name: String,
+    /// Absent for every app shipped before this flow existed, which is exactly
+    /// what keeps them on the code flow they know.
+    #[serde(default)]
+    native: bool,
+    #[serde(default)]
+    device_id: Option<Uuid>,
+    #[serde(default)]
+    device_secret: Option<String>,
 }
 async fn start_device(
     State(s): State<Arc<Service>>,
     Json(b): Json<DeviceStart>,
 ) -> Result<Response> {
-    Ok(ok(s.start_device(&b.challenge, &b.device_name).await?).into_response())
+    Ok(ok(s
+        .start_device(subrosa_services::StartDevice {
+            challenge: &b.challenge,
+            name: &b.device_name,
+            native: b.native,
+            device_id: b.device_id,
+            device_secret: b.device_secret.as_deref(),
+        })
+        .await?)
+    .into_response())
 }
 #[derive(Deserialize)]
 struct Approve {
@@ -424,12 +477,41 @@ async fn approve(
 struct Exchange {
     request_id: Uuid,
     verifier: String,
+    /// Required for a native request and refused for a code one. The app half
+    /// and the machine half have to meet here or nothing is issued.
+    #[serde(default)]
+    return_code: Option<String>,
 }
 async fn exchange_device(
     State(s): State<Arc<Service>>,
     Json(b): Json<Exchange>,
 ) -> Result<Response> {
-    Ok(ok(s.exchange_device(b.request_id, &b.verifier).await?).into_response())
+    Ok(ok(s
+        .exchange_device(b.request_id, &b.verifier, b.return_code.as_deref())
+        .await?)
+    .into_response())
+}
+#[derive(Deserialize)]
+struct DeviceProof {
+    device_id: Uuid,
+    device_secret: String,
+}
+/// Neither a cookie nor a bearer, like refresh: the proof is the device secret
+/// itself. What comes back can never satisfy the step-up, because the family it
+/// mints inherits the instant the device was first admitted.
+async fn renew_session(
+    State(s): State<Arc<Service>>,
+    Json(b): Json<DeviceProof>,
+) -> Result<Response> {
+    Ok(ok(s.renew_session(b.device_id, &b.device_secret).await?).into_response())
+}
+/// Signing out from the device itself. No step-up, because it only takes away.
+async fn renounce_device(
+    State(s): State<Arc<Service>>,
+    Json(b): Json<DeviceProof>,
+) -> Result<Response> {
+    s.renounce(b.device_id, &b.device_secret).await?;
+    Ok(ok(json!({"revoked":true})).into_response())
 }
 #[derive(Deserialize)]
 struct Cursor {

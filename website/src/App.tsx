@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { t } from "./lib/i18n";
 import { AccountPage } from "./pages/account";
+import { ReturnToApp } from "./pages/return";
 import { Downloads, Information } from "./pages/public";
 import { SharePage } from "./pages/share";
 import "./style.css";
@@ -16,6 +17,10 @@ export function App({ initialPath }: { initialPath?: string }) {
   // A share link is not an account page. It carries its own key, it needs no
   // session, and it must render the same whether or not one exists.
   const sharePath = pathname.startsWith("/s/");
+  // A sign-in that started in the app ends here. It has to render before every
+  // account branch: the native callback leaves no session on purpose, so the
+  // account page would greet it with its own sign-in hero instead.
+  const returnPath = pathname === "/account/devices/return";
   useEffect(
     () =>
       registerAccountNavigation((next) => {
@@ -90,6 +95,8 @@ export function App({ initialPath }: { initialPath?: string }) {
       <main id="main" tabIndex={-1}>
         {sharePath ? (
           <SharePage path={path} />
+        ) : returnPath ? (
+          <ReturnToApp />
         ) : accountPath && (accountsUnavailable || !sitePaths.hostsAccounts) ? (
           <section className="page wrap prose">
             <p className="eyebrow">{t("Your account", "Votre compte")}</p>

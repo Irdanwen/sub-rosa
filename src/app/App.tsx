@@ -1514,6 +1514,13 @@ export function App() {
         setActiveView("notes");
         void startLinkIngest(destination.url).catch((err) => setError(messageFromError(err)));
         break;
+      // A sign-in that finished in the browser. The native side has already
+      // spent the return code; landing here is only so the person sees the
+      // result of what they just did.
+      case "account":
+        setSettingsTab("account");
+        openSettings();
+        break;
     }
   };
   useEffect(() => subscribeToDestinations((d) => handleDestinationRef.current(d)), []);

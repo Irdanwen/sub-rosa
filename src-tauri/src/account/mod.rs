@@ -3,6 +3,7 @@
 pub mod conversations;
 pub mod crypto;
 mod files;
+pub mod login;
 pub mod pairing;
 pub mod shares;
 pub(crate) mod studio;
@@ -25,6 +26,10 @@ use zeroize::Zeroizing;
 const SERVICE: &str = "xyz.carpediem.subrosa-dev.accounts";
 #[cfg(not(debug_assertions))]
 const SERVICE: &str = "xyz.carpediem.subrosa.accounts";
+/// The proof that lets this device mint a session again without a browser. It
+/// is not rotated: a lost rotation response would strand the device for good
+/// (ADR 0056).
+const DEVICE: &str = "device";
 static LOGIN: OnceLock<Mutex<Option<PendingLogin>>> = OnceLock::new();
 static SESSION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static REFRESH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -46,6 +51,13 @@ pub struct AccountStatus {
     pub server_url: Option<String>,
     pub account: Option<Account>,
     pub device_id: Option<String>,
+    /// "none", "connected" or "renewable". "renewable" is the state that did
+    /// not exist before: no live session, but this device holds a secret that
+    /// mints one without a browser, so the panel keeps working.
+    pub connection: &'static str,
+    pub device_authorized: bool,
+    pub login_pending: bool,
+    pub pairing_pending: bool,
     pub vault_unlocked: bool,
     pub vault_exists: Option<bool>,
     pub recovery_confirmed: bool,
@@ -81,6 +93,12 @@ fn error(code: &str) -> AppError {
         code,
         match code {
             "account_not_connected" => "Connect your account to continue.",
+            "account_offline" => {
+                "Your account service could not be reached. Your work is safe and will sync later."
+            }
+            "account_revoked" => {
+                "This device was signed out from your account. Sign in again to reconnect it."
+            }
             "account_network" => {
                 "Your account service could not be reached. Your local work is safe."
             }
@@ -158,10 +176,14 @@ pub(super) async fn session(pool: &SqlitePool) -> Result<Session, AppError> {
             .ok_or_else(|| error("account_not_connected"))?,
     )
     .map_err(|_| error("account_not_connected"))?;
-    let stored =
-        get_secret(&base, &account.id, "session")?.ok_or_else(|| error("account_not_connected"))?;
+    let device: Option<String> = row.get("device_id");
+    // Every path that used to end in "sign in again in a browser" now tries the
+    // device secret first. That is the whole of ADR 0056 from this side.
+    let Some(stored) = get_secret(&base, &account.id, "session")? else {
+        return renew(pool, &base, account, device.as_deref()).await;
+    };
     // Pre-refresh builds stored just an access token. They remain usable until
-    // server expiry, then require a fresh device login to obtain a token pair.
+    // server expiry, then fall through to a renewal or a fresh sign-in.
     let Ok(mut bundle) = serde_json::from_str::<Value>(stored.expose_str()) else {
         return Ok(Session {
             base,
@@ -171,7 +193,7 @@ pub(super) async fn session(pool: &SqlitePool) -> Result<Session, AppError> {
     };
     if bundle["refresh_in_flight"] == true {
         remove_secret(&base, &account.id, "session")?;
-        return Err(error("account_not_connected"));
+        return renew(pool, &base, account, device.as_deref()).await;
     }
     if refresh_due(&bundle)? {
         let refresh = Redacted::new(
@@ -198,12 +220,12 @@ pub(super) async fn session(pool: &SqlitePool) -> Result<Session, AppError> {
         )
         .await;
         let Ok(next) = next else {
-            // A lost response may have consumed this refresh token. Retrying
-            // it would revoke the family: require browser reauthentication.
+            // A lost response may have consumed this refresh token. Retrying it
+            // would revoke the family, so the family is abandoned and the device
+            // secret mints a new one instead.
             remove_secret(&base, &account.id, "session")?;
-            return Err(error("account_not_connected"));
+            return renew(pool, &base, account, device.as_deref()).await;
         };
-        let device: Option<String> = row.get("device_id");
         if next["account"]["id"] != account.id || next["device_id"].as_str() != device.as_deref() {
             remove_secret(&base, &account.id, "session")?;
             return Err(error("account_response_invalid"));
@@ -227,6 +249,164 @@ pub(super) async fn session(pool: &SqlitePool) -> Result<Session, AppError> {
         account,
         token,
     })
+}
+/// A session again, from the device secret, with no browser anywhere. Three
+/// outcomes worth telling apart: there is no secret to use, the service cannot
+/// be reached, or the service refused the proof.
+async fn renew(
+    pool: &SqlitePool,
+    base: &str,
+    account: Account,
+    device: Option<&str>,
+) -> Result<Session, AppError> {
+    let (Some(device), Some(secret)) = (device, get_secret(base, &account.id, DEVICE)?) else {
+        return Err(error("account_not_connected"));
+    };
+    // A restart loop must not become a request loop. The stamp is written
+    // before the attempt and cleared when one succeeds, so only consecutive
+    // failures are held back.
+    let last: Option<String> =
+        query("SELECT renew_attempted_at FROM account_sync_control WHERE id=1")
+            .fetch_one(pool)
+            .await?
+            .get("renew_attempted_at");
+    let now = chrono::Utc::now();
+    if last
+        .as_deref()
+        .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
+        .is_some_and(|at| now.signed_duration_since(at).num_seconds() < 30)
+    {
+        return Err(error("account_offline"));
+    }
+    query("UPDATE account_sync_control SET renew_attempted_at=? WHERE id=1")
+        .bind(now.to_rfc3339())
+        .execute(pool)
+        .await?;
+    let next = request(
+        base,
+        None,
+        reqwest::Method::POST,
+        "/api/v1/session/renew",
+        Some(json!({"device_id":device,"device_secret":secret.expose_str()})),
+    )
+    .await;
+    let next = match next {
+        Ok(next) => next,
+        Err(failure) if failure.code == "account_network" => return Err(error("account_offline")),
+        Err(_) => {
+            // The proof was refused: this device was signed out or revoked from
+            // somewhere else. Access goes, the vault key stays where it is.
+            let _ = remove_secret(base, &account.id, DEVICE);
+            let _ = remove_secret(base, &account.id, "session");
+            return Err(error("account_revoked"));
+        }
+    };
+    if next["account"]["id"] != account.id || next["device_id"].as_str() != Some(device) {
+        return Err(error("account_response_invalid"));
+    }
+    validate_session_bundle(&next)?;
+    put_secret(
+        base,
+        &account.id,
+        "session",
+        &Zeroizing::new(next.to_string()),
+    )?;
+    query("UPDATE account_sync_control SET renew_attempted_at=NULL WHERE id=1")
+        .execute(pool)
+        .await?;
+    let token = Redacted::new(
+        next["access_token"]
+            .as_str()
+            .ok_or_else(|| error("account_response_invalid"))?
+            .to_string(),
+    );
+    Ok(Session {
+        base: base.to_string(),
+        account,
+        token,
+    })
+}
+/// Writes everything an exchange just earned: the token bundle, the device
+/// secret that makes this the last browser visit, and the account binding.
+/// Shared by the native sign-in and the code flow so they cannot drift.
+pub(super) async fn install_session(
+    pool: &SqlitePool,
+    base: &str,
+    bound: &Option<String>,
+    result: &Value,
+) -> Result<(), AppError> {
+    let account: Account = serde_json::from_value(result["account"].clone())
+        .map_err(|_| error("account_response_invalid"))?;
+    if bound.as_ref().is_some_and(|id| *id != account.id) {
+        return Err(error("account_bound"));
+    }
+    validate_session_bundle(result)?;
+    let device = result["device_id"]
+        .as_str()
+        .ok_or_else(|| error("account_response_invalid"))?;
+    // One home for the device secret. It is stripped from the session bundle so
+    // a rotated session never quietly carries a second copy of it.
+    let mut bundle = result.clone();
+    let secret = bundle
+        .as_object_mut()
+        .and_then(|b| b.remove("device_secret"));
+    put_secret(
+        base,
+        &account.id,
+        "session",
+        &Zeroizing::new(bundle.to_string()),
+    )?;
+    if let Some(secret) = secret.as_ref().and_then(Value::as_str) {
+        crypto::decode_key(secret).map_err(|_| error("account_response_invalid"))?;
+        put_secret(
+            base,
+            &account.id,
+            DEVICE,
+            &Zeroizing::new(secret.to_string()),
+        )?;
+    }
+    query("UPDATE account_sync_control SET account_id=?,account_json=?,device_id=?,renew_attempted_at=NULL WHERE id=1")
+        .bind(&account.id)
+        .bind(serde_json::to_string(&account).map_err(|_| error("account_response_invalid"))?)
+        .bind(device)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+/// Asks whether this account has a vault yet, so the panel offers "open" or
+/// "create" rather than guessing. Best effort on purpose: a sign-in that
+/// already stored its credentials must not be reported as failed because one
+/// extra probe did not answer. Both ways in call it, so neither drifts.
+pub(super) async fn note_vault_presence(pool: &SqlitePool) {
+    let Ok(s) = session(pool).await else {
+        return;
+    };
+    let exists = match call(&s, reqwest::Method::GET, "/api/v1/vault", None).await {
+        Ok(_) => Some(true),
+        Err(e) if e.code == "vault_not_found" => Some(false),
+        Err(_) => return,
+    };
+    let _ = query("UPDATE account_sync_control SET vault_exists=? WHERE id=1")
+        .bind(exists)
+        .execute(pool)
+        .await;
+}
+/// Keeps a connected account reachable even while synchronisation is paused.
+/// Pausing stops data moving, not the identity: the explicit act ADR 0049 asks
+/// for was signing in, and it already happened.
+pub(crate) async fn keep_alive(app: &AppHandle) {
+    let Ok(pool) = pool(app).await else {
+        return;
+    };
+    let Ok(row) = query("SELECT account_id FROM account_sync_control WHERE id=1")
+        .fetch_one(&pool)
+        .await
+    else {
+        return;
+    };
+    if row.get::<Option<String>, _>("account_id").is_some() {
+        let _ = session(&pool).await;
+    }
 }
 fn validate_session_bundle(bundle: &Value) -> Result<(), AppError> {
     for field in [
@@ -259,9 +439,42 @@ fn refresh_due(bundle: &Value) -> Result<bool, AppError> {
 }
 
 pub(super) fn vault_key(session: &Session) -> Result<Zeroizing<[u8; 32]>, AppError> {
-    let value = get_secret(&session.base, &session.account.id, "vault")?
-        .ok_or_else(|| error("vault_locked"))?;
+    vault_key_for(&session.base, &session.account.id)
+}
+/// Whether the vault is open is a question about this device's keyring, not
+/// about whether a session happens to be alive right now. Tying the two
+/// together is what made a signed-out app claim a locked vault and send people
+/// looking for a recovery key they never needed.
+fn vault_key_for(base: &str, account_id: &str) -> Result<Zeroizing<[u8; 32]>, AppError> {
+    let value = get_secret(base, account_id, "vault")?.ok_or_else(|| error("vault_locked"))?;
     crypto::decode_key(value.expose_str())
+}
+/// What the screen should say about reaching the service. "renewable" is the
+/// state that used to be indistinguishable from a locked vault: there is no
+/// live session, but this device can get one back on its own.
+fn connection_state(bound: bool, connected: bool, device: bool) -> &'static str {
+    match (bound, connected, device) {
+        // The library keeps its account binding after signing out, on purpose,
+        // so a binding with no credential left is not a signed-in device: it is
+        // the state that shows the sign-in card.
+        (false, _, _) | (true, false, false) => "none",
+        (true, true, _) => "connected",
+        (true, false, true) => "renewable",
+    }
+}
+/// True while the stored bundle still has usable time on it. A pre-refresh
+/// bare token cannot say, and is taken at its word until the service disagrees.
+fn session_live(stored: &Redacted<String>) -> bool {
+    match serde_json::from_str::<Value>(stored.expose_str()) {
+        Ok(bundle) => {
+            bundle["refresh_in_flight"] != true
+                && bundle["expires_at"]
+                    .as_str()
+                    .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
+                    .is_some_and(|at| at > chrono::Utc::now())
+        }
+        Err(_) => true,
+    }
 }
 pub(super) async fn request(
     base: &str,
@@ -357,48 +570,52 @@ pub async fn account_status(app: AppHandle) -> Result<AccountStatus, AppError> {
     let row = query("SELECT * FROM account_sync_control WHERE id=1")
         .fetch_one(&pool)
         .await?;
-    // Observing status and pausing synchronization never refresh or contact
-    // the network. Actual account operations validate/refresh their session.
-    let s = match (
-        row.get::<Option<String>, _>("server_url"),
-        row.get::<Option<String>, _>("account_json"),
-    ) {
-        (Some(base), Some(raw)) => serde_json::from_str::<Account>(&raw)
+    // Observing status never refreshes and never contacts the network. Identity
+    // comes from the database; whether there is a way back to the service, and
+    // whether the vault is open, are two separate keyring questions.
+    let base: Option<String> = row.get("server_url");
+    let account = row
+        .get::<Option<String>, _>("account_json")
+        .and_then(|raw| serde_json::from_str::<Account>(&raw).ok());
+    let identity = base.clone().zip(account.clone());
+    let device_authorized = identity.as_ref().is_some_and(|(base, account)| {
+        get_secret(base, &account.id, DEVICE)
             .ok()
-            .and_then(|account| {
-                let stored = get_secret(&base, &account.id, "session").ok().flatten()?;
-                let token = match serde_json::from_str::<Value>(stored.expose_str()) {
-                    Ok(bundle) => Redacted::new(bundle["access_token"].as_str()?.to_string()),
-                    Err(_) => stored,
-                };
-                Some(Session {
-                    base,
-                    account,
-                    token,
-                })
-            }),
-        _ => None,
-    };
+            .flatten()
+            .is_some()
+    });
+    let connected = identity.as_ref().is_some_and(|(base, account)| {
+        get_secret(base, &account.id, "session")
+            .ok()
+            .flatten()
+            .is_some_and(|stored| session_live(&stored))
+    });
+    let connection = connection_state(identity.is_some(), connected, device_authorized);
+    // Whether there is a credential decides what the panel shows. Whether the
+    // vault is open is asked separately, of the keyring, and stays true across
+    // a session this device can get back on its own.
+    let signed_in = connection != "none";
     Ok(AccountStatus {
         default_server_url: DEFAULT_ACCOUNT_SERVER,
         server_url: row.get("server_url"),
-        account: s.as_ref().map(|s| s.account.clone()),
-        device_id: if s.is_some() {
-            row.get("device_id")
-        } else {
-            None
-        },
-        vault_unlocked: s.as_ref().is_some_and(|s| vault_key(s).is_ok()),
+        device_id: if signed_in { row.get("device_id") } else { None },
+        connection,
+        device_authorized,
+        login_pending: base.as_deref().is_some_and(login::has_pending),
+        pairing_pending: identity
+            .as_ref()
+            .is_some_and(|(base, account)| pairing::has_pending(base, &account.id)),
+        vault_unlocked: identity
+            .as_ref()
+            .is_some_and(|(base, account)| vault_key_for(base, &account.id).is_ok()),
         vault_exists: row.get::<Option<i64>, _>("vault_exists").map(|x| x != 0),
         recovery_confirmed: row.get::<i64, _>("recovery_confirmed") != 0,
-        recovery_available: s.as_ref().is_some_and(|s| {
-            ["recovery", "pending-recovery"].iter().any(|kind| {
-                get_secret(&s.base, &s.account.id, kind)
-                    .ok()
-                    .flatten()
-                    .is_some()
-            })
+        recovery_available: identity.as_ref().is_some_and(|(base, account)| {
+            ["recovery", "pending-recovery"]
+                .iter()
+                .any(|kind| get_secret(base, &account.id, kind).ok().flatten().is_some())
         }),
+        account: if signed_in { account } else { None },
         sync_enabled: row.get::<i64, _>("enabled") != 0,
         pending_changes: query("SELECT (SELECT count(*) FROM account_sync_outbox)+(SELECT count(*) FROM account_file_uploads WHERE completed=0)+(SELECT count(*) FROM account_file_downloads WHERE completed=0)+(SELECT count(*) FROM account_sync_inbox WHERE applied=0) AS n")
             .fetch_one(&pool)
@@ -525,40 +742,18 @@ pub async fn account_login_exchange(
         Some(json!({"request_id":request_id,"verifier":verifier.expose_str()})),
     )
     .await?;
-    let account: Account = serde_json::from_value(result["account"].clone())
-        .map_err(|_| error("account_response_invalid"))?;
-    if row
-        .get::<Option<String>, _>("account_id")
-        .is_some_and(|id| id != account.id)
-    {
-        return Err(error("account_bound"));
-    }
-    validate_session_bundle(&result)?;
-    let device = result["device_id"]
-        .as_str()
-        .ok_or_else(|| error("account_response_invalid"))?;
-    let bundle = Zeroizing::new(result.to_string());
-    put_secret(&base, &account.id, "session", &bundle)?;
-    query("UPDATE account_sync_control SET account_id=?,account_json=?,device_id=? WHERE id=1")
-        .bind(&account.id)
-        .bind(serde_json::to_string(&account).map_err(|_| error("account_response_invalid"))?)
-        .bind(device)
-        .execute(&pool)
-        .await?;
+    install_session(
+        &pool,
+        &base,
+        &row.get::<Option<String>, _>("account_id"),
+        &result,
+    )
+    .await?;
     *LOGIN
         .get_or_init(|| Mutex::new(None))
         .lock()
         .map_err(|_| error("account_busy"))? = None;
-    let s = session(&pool).await?;
-    let exists = match call(&s, reqwest::Method::GET, "/api/v1/vault", None).await {
-        Ok(_) => Some(true),
-        Err(e) if e.code == "vault_not_found" => Some(false),
-        Err(_) => None,
-    };
-    query("UPDATE account_sync_control SET vault_exists=? WHERE id=1")
-        .bind(exists)
-        .execute(&pool)
-        .await?;
+    note_vault_presence(&pool).await;
     account_status(app).await
 }
 #[tauri::command]
@@ -620,16 +815,39 @@ pub async fn account_logout(app: AppHandle) -> Result<AccountStatus, AppError> {
                     Err(_) => Some(stored),
                 },
             );
+        // Read the device proof before the slots go: signing out on the device
+        // itself needs no step-up, which is what makes it actually work. The
+        // old path asked the service to revoke by bearer, and that route wants
+        // an authentication under five minutes old, so signing out later in the
+        // day silently left the device listed as live.
+        let device = row.get::<Option<String>, _>("device_id");
+        let proof = device
+            .as_deref()
+            .and_then(|_| get_secret(&base, &id, DEVICE).ok().flatten());
         let cleanup = clear_all_secrets(|kind| remove_secret(&base, &id, kind));
-        if let (Some(token), Some(device)) = (token, row.get::<Option<String>, _>("device_id")) {
-            let _ = request(
-                &base,
-                Some(&token),
-                reqwest::Method::DELETE,
-                &format!("/api/v1/devices/{device}"),
-                None,
-            )
-            .await;
+        login::forget_pending(&base);
+        match (device.as_deref(), proof.as_ref(), token.as_ref()) {
+            (Some(device), Some(proof), _) => {
+                let _ = request(
+                    &base,
+                    None,
+                    reqwest::Method::POST,
+                    "/api/v1/session/renounce",
+                    Some(json!({"device_id":device,"device_secret":proof.expose_str()})),
+                )
+                .await;
+            }
+            (Some(device), None, Some(token)) => {
+                let _ = request(
+                    &base,
+                    Some(token),
+                    reqwest::Method::DELETE,
+                    &format!("/api/v1/devices/{device}"),
+                    None,
+                )
+                .await;
+            }
+            _ => {}
         }
         cleanup?;
     }
@@ -644,6 +862,7 @@ fn clear_all_secrets(mut remove: impl FnMut(&str) -> Result<(), AppError>) -> Re
         "recovery",
         "pending-recovery",
         "pending-vault",
+        DEVICE,
         "pairing-request",
     ] {
         if let Err(failure) = remove(kind) {
@@ -901,6 +1120,41 @@ mod tests {
         );
     }
     #[test]
+    fn a_renewable_device_is_still_a_signed_in_one() {
+        // What this replaced: any device whose session had lapsed read as
+        // signed out, so an expired access token sent a perfectly authorised
+        // device back through a browser instead of letting it renew itself.
+        assert_eq!(connection_state(true, false, true), "renewable");
+        assert_eq!(connection_state(true, true, false), "connected");
+        // And the states that must keep showing the sign-in card: no binding,
+        // and a binding whose credentials were cleared by signing out.
+        assert_eq!(connection_state(false, false, false), "none");
+        assert_eq!(connection_state(true, false, false), "none");
+        // Holding a device secret never claims a live session on its own.
+        assert_eq!(connection_state(true, true, true), "connected");
+    }
+
+    #[test]
+    fn a_session_counts_as_live_only_while_it_has_time_left() {
+        let bundle = |expires: &str, in_flight: bool| {
+            Redacted::new(
+                json!({"access_token":"a","refresh_token":"r","expires_at":expires,
+                       "refresh_expires_at":expires,"refresh_in_flight":in_flight})
+                .to_string(),
+            )
+        };
+        let future = (chrono::Utc::now() + chrono::Duration::minutes(10)).to_rfc3339();
+        let past = (chrono::Utc::now() - chrono::Duration::minutes(10)).to_rfc3339();
+        assert!(session_live(&bundle(&future, false)));
+        assert!(!session_live(&bundle(&past, false)));
+        // A refresh whose answer never came is not something to report as live.
+        assert!(!session_live(&bundle(&future, true)));
+        // A pre-refresh build stored a bare token and cannot say; it is taken
+        // at its word until the service disagrees.
+        assert!(session_live(&Redacted::new("legacy-access-token".into())));
+    }
+
+    #[test]
     fn logout_attempts_every_secret_even_when_first_delete_fails() {
         let mut calls = Vec::new();
         let result = clear_all_secrets(|kind| {
@@ -920,6 +1174,9 @@ mod tests {
                 "recovery",
                 "pending-recovery",
                 "pending-vault",
+                // Signing out has to take the device secret too, or the next
+                // launch would quietly let this device back in.
+                "device",
                 "pairing-request"
             ]
         );
@@ -950,8 +1207,31 @@ mod tests {
 /// The timer merely re-drives durable rows. Launch/resume/background sweeps
 /// independently recover the same rows if iOS suspends this timer.
 pub fn setup(app: &AppHandle) {
+    // A sign-in that finished in the browser arrives here: at cold launch as
+    // the URL that started the app, and afterwards through the single-instance
+    // handoff the plugin order in `lib.rs` exists to preserve. Both reach the
+    // same handler, and neither is gated to desktop: the phone shells are where
+    // this matters most.
+    {
+        use tauri_plugin_deep_link::DeepLinkExt;
+        if let Ok(Some(urls)) = app.deep_link().get_current() {
+            for url in urls {
+                login::on_deep_link(app, url.as_str());
+            }
+        }
+        let handle = app.clone();
+        app.deep_link().on_open_url(move |event| {
+            for url in event.urls() {
+                login::on_deep_link(&handle, url.as_str());
+            }
+        });
+    }
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        // Before anything is asked of it: a connected account whose
+        // synchronisation is paused still deserves a live session, so the
+        // screen tells the truth without waiting for the first action.
+        keep_alive(&app).await;
         let mut interval = tokio::time::interval(Duration::from_secs(5));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
