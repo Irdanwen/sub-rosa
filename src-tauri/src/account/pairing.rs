@@ -133,6 +133,59 @@ pub async fn account_pairing_start(app: AppHandle) -> Result<PairingRequest, App
     })
 }
 
+/// Whether a request this device started is still waiting. Read from the
+/// keyring only, so the status screen can offer to pick it back up.
+pub(super) fn has_pending(base: &str, account_id: &str) -> bool {
+    get_secret(base, account_id, PENDING)
+        .ok()
+        .flatten()
+        .and_then(|stored| serde_json::from_str::<StoredWire>(stored.expose_str()).ok())
+        .is_some_and(|wire| valid_expiry(&wire.expires_at).is_ok())
+}
+
+/// Picks up a request that outlived the screen that started it. The secret was
+/// written to the keyring before the first network call precisely so this is
+/// possible; without it, reloading the window stranded the request until it
+/// expired, because nothing ever read that slot back.
+#[tauri::command]
+pub async fn account_pairing_resume(app: AppHandle) -> Result<Option<PairingRequest>, AppError> {
+    let _guard = SESSION_LOCK.lock().await;
+    let pool = pool(&app).await?;
+    let row = query("SELECT server_url,account_id FROM account_sync_control WHERE id=1")
+        .fetch_one(&pool)
+        .await?;
+    let (Some(base), Some(account_id)) = (
+        row.get::<Option<String>, _>("server_url"),
+        row.get::<Option<String>, _>("account_id"),
+    ) else {
+        return Ok(None);
+    };
+    let Some(stored) = get_secret(&base, &account_id, PENDING)? else {
+        return Ok(None);
+    };
+    let Ok(wire) = serde_json::from_str::<StoredWire>(stored.expose_str()) else {
+        remove_secret(&base, &account_id, PENDING)?;
+        return Ok(None);
+    };
+    if valid_expiry(&wire.expires_at).is_err() {
+        remove_secret(&base, &account_id, PENDING)?;
+        return Ok(None);
+    }
+    // Rebuilt locally from what is already here: no request leaves this device.
+    let secret = Redacted::new(wire.secret);
+    let code = Zeroizing::new(
+        serde_json::to_vec(
+            &json!({"request_id":wire.request_id,"account_id":account_id,"secret":secret.expose_str()}),
+        )
+        .map_err(|_| invalid())?,
+    );
+    Ok(Some(PairingRequest {
+        request_id: wire.request_id,
+        transfer_code: format!("{PREFIX}{}", crypto::encode(&code)),
+        expires_at: wire.expires_at,
+    }))
+}
+
 #[tauri::command]
 pub async fn account_pairing_approve(
     app: AppHandle,

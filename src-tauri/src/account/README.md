@@ -13,17 +13,42 @@ in or create an account. Merely opening the app or account settings does not
 configure the service or contact it. Advanced settings retain custom HTTPS
 services and device naming; existing libraries retain their configured origin.
 
-`mod.rs` performs the device authorization flow with native PKCE state. Browser
-login provisions the account through the configured service. Access tokens last
-15 minutes; the keyring stores the access and rotating refresh token as one JSON
-value. Refresh is serialized, account/device identity is verified, and a durable
-in-flight marker prevents replay after a lost response. Such a loss requires
-browser sign-in again. Credentials are never passed through environment variables
-or returned to the webview. The configured root must be HTTPS (debug builds also
-accept exact loopback HTTP), and redirects are disabled.
+`login.rs` opens the real sign-in page and the browser hands the session back
+through `subrosa://auth/callback` (ADR 0055). The exchange needs two halves that
+travel on two channels: the PKCE verifier, written to the keyring before the
+browser opens and never sent until the exchange, and a 256-bit return code the
+service creates only at the callback and delivers only in the deep link. A
+stolen start link holds the first without the second; an application squatting
+the scheme holds the second without the first. A link answering a request this
+app did not start reports `account_login_unsolicited` and connects nothing. The
+eight character code flow in `mod.rs` remains as a declared fallback, and apps
+shipped before this send no `native` flag and are unaffected.
+
+`mod.rs` keeps the session alive. Access tokens last 15 minutes; the keyring
+stores the access and rotating refresh token as one JSON value. Refresh is
+serialized, account/device identity is verified, and a durable in-flight marker
+prevents replay after a lost response. Such a loss no longer requires a browser:
+the `device` slot holds a 256-bit secret, handed back by the exchange, that
+mints a new family through `/api/v1/session/renew` until the device is revoked
+(ADR 0056). It is never rotated, and a renewal inherits the device's original
+admission instant, so it can never satisfy the five minute step-up that guards
+revocation and deletion. Renewals are stamped at most once every 30 seconds
+(`renew_attempted_at`) so a restart loop cannot become a request loop. Signing
+out uses `/api/v1/session/renounce`, which needs no step-up, instead of a bearer
+revocation that quietly failed after five minutes. Credentials are never passed
+through environment variables or returned to the webview. The configured root
+must be HTTPS (debug builds also accept exact loopback HTTP), and redirects are
+disabled.
+
+`account_status` answers from SQLite and the keyring, never the network, and
+reports `connection` as `none`, `connected`, `renewable` or `expired`. A lapsed
+session and a locked vault are different things: the vault key lives in the
+keyring with no auto-lock, so a device whose session ran out is still unlocked.
 
 The OS keyring contains separate account/server-scoped slots for sessions, the
-vault key, recovery material, and pending enrollment. SQLite holds account
+device secret, the vault key, recovery material, and pending enrollment. A
+sign-in with no account yet uses the literal `pending` in place of an account
+id, which cannot collide with the UUIDs every other slot is keyed by. SQLite holds account
 metadata and received ciphertext; ordinary document outbox snapshots remain
 plaintext like the existing local library. Provider-secret snapshots are encrypted
 before SQLite insertion. End-to-end encryption protects the service boundary, not
@@ -48,7 +73,11 @@ transfer code. The approving device encrypts the key with that secret and AAD
 `subrosa:pairing:v1:<account>:<request>`. The service never receives the secret.
 A paired device need not hold the recovery kit. The code must travel through a
 channel the user trusts; possessing it grants admission when an unlocked device
-approves it.
+approves it. `account_pairing_resume` rebuilds a pending request locally, with
+no network call, so a reloaded window no longer strands it until it expires. On
+a locked device the requesting half is offered inside the vault card, above the
+recovery key, because a recovery key is most likely to leak at the moment it is
+taken out to be pasted (ADR 0057).
 
 Carpe Diem credentials have their own encrypted settings object. Explicit restore
 validates the proposed key using authenticated, free `/credits`, with a bounded

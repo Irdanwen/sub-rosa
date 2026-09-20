@@ -48,6 +48,12 @@ struct Browser {
     cookie: String,
     csrf: String,
 }
+/// What the return page would hand to the deep link, and nothing else: no
+/// token, no session, and no use at all without the app's PKCE verifier.
+struct NativeReturn {
+    return_code: String,
+    request_id: String,
+}
 impl Fixture {
     async fn new() -> Result<Self> {
         let settings: TestConfig = Figment::from(Serialized::defaults(TestConfig {
@@ -136,28 +142,7 @@ impl Fixture {
         assert_eq!(query.get("code_challenge_method"), Some(&"S256".into()));
         let state = query.get("state").context("state")?;
         let nonce = query.get("nonce").context("nonce")?;
-        Mock::given(method("GET"))
-            .and(path("/jwks"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(&self.signing.jwks))
-            .mount(&self.idp)
-            .await;
-        let now = Utc::now().timestamp();
-        let mut header = Header::new(Algorithm::RS256);
-        header.kid = Some("test-key".into());
-        let token = encode(
-            &header,
-            &json!({"iss":self.idp.uri(),"aud":"test-client","sub":subject,"email":format!("{subject}@example.test"),"email_verified":true,"nonce":nonce,"iat":now,"exp":now+300,"auth_time":now}),
-            &self.signing.encoding_key,
-        )?;
-        let code = Uuid::new_v4().to_string();
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .and(wiremock::matchers::body_string_contains(format!(
-                "code={code}"
-            )))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"id_token":token})))
-            .mount(&self.idp)
-            .await;
+        let code = self.idp_code(subject, nonce).await?;
         let r = self
             .call(
                 Request::builder()
@@ -201,6 +186,117 @@ impl Fixture {
         Ok(Browser {
             cookie: format!("{session}; subrosa_csrf={csrf}"),
             csrf,
+        })
+    }
+    /// Signs an id token for `subject` and arms the token endpoint for the
+    /// authorization code it returns.
+    async fn idp_code(&self, subject: &str, nonce: &str) -> Result<String> {
+        Mock::given(method("GET"))
+            .and(path("/jwks"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&self.signing.jwks))
+            .mount(&self.idp)
+            .await;
+        let now = Utc::now().timestamp();
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some("test-key".into());
+        let token = encode(
+            &header,
+            &json!({"iss":self.idp.uri(),"aud":"test-client","sub":subject,"email":format!("{subject}@example.test"),"email_verified":true,"nonce":nonce,"iat":now,"exp":now+300,"auth_time":now}),
+            &self.signing.encoding_key,
+        )?;
+        let code = Uuid::new_v4().to_string();
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(wiremock::matchers::body_string_contains(format!(
+                "code={code}"
+            )))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"id_token":token})))
+            .mount(&self.idp)
+            .await;
+        Ok(code)
+    }
+    /// A request with neither cookie nor bearer, the way the app reaches the
+    /// three routes that authenticate by proof rather than by session.
+    async fn public(&self, path: &str, body: Value) -> Result<(StatusCode, Value)> {
+        decode_response(
+            self.call(
+                Request::builder()
+                    .method("POST")
+                    .uri(path)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(serde_json::to_vec(&body)?))?,
+            )
+            .await?,
+        )
+        .await
+    }
+    /// Walks a native sign-in as far as the return page and hands back what the
+    /// deep link would have carried. Asserts on the way that the browser keeps
+    /// no session: that is the whole difference from approving a code.
+    async fn native_sign_in(&self, subject: &str, start: Value) -> Result<NativeReturn> {
+        let url = Url::parse(start["start_url"].as_str().context("start_url")?)?;
+        let r = self
+            .call(
+                Request::builder()
+                    .uri(format!(
+                        "{}?{}",
+                        url.path(),
+                        url.query().context("start query")?
+                    ))
+                    .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(r.status(), StatusCode::SEE_OTHER);
+        let flow = r
+            .headers()
+            .get(header::SET_COOKIE)
+            .context("flow cookie")?
+            .to_str()?
+            .split(';')
+            .next()
+            .context("cookie pair")?
+            .to_owned();
+        let authorize = Url::parse(
+            r.headers()
+                .get(header::LOCATION)
+                .context("redirect")?
+                .to_str()?,
+        )?;
+        let query: std::collections::HashMap<_, _> = authorize.query_pairs().into_owned().collect();
+        let state = query.get("state").context("state")?.clone();
+        let nonce = query.get("nonce").context("nonce")?.clone();
+        let code = self.idp_code(subject, &nonce).await?;
+        let r = self
+            .call(
+                Request::builder()
+                    .uri(format!("/auth/callback?state={state}&code={code}"))
+                    .header(header::COOKIE, &flow)
+                    .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(r.status(), StatusCode::SEE_OTHER);
+        assert!(
+            !r.headers()
+                .get_all(header::SET_COOKIE)
+                .iter()
+                .any(|v| v.to_str().unwrap_or("").starts_with("subrosa_session=")),
+            "a native return must not leave a browser session behind"
+        );
+        let location = r
+            .headers()
+            .get(header::LOCATION)
+            .context("return")?
+            .to_str()?
+            .to_owned();
+        let (page, fragment) = location.split_once('#').context("fragment")?;
+        assert!(page.ends_with("/account/devices/return"));
+        let parts: std::collections::HashMap<_, _> = fragment
+            .split('&')
+            .filter_map(|pair| pair.split_once('='))
+            .collect();
+        Ok(NativeReturn {
+            return_code: (*parts.get("c").context("return code")?).to_owned(),
+            request_id: (*parts.get("r").context("request id")?).to_owned(),
         })
     }
     async fn json(
@@ -1424,4 +1520,399 @@ async fn an_errand_is_carried_like_any_other_kind() -> Result<()> {
         StatusCode::BAD_REQUEST
     );
     Ok(())
+}
+
+/// A start body for a native sign-in. The verifier stays with the caller, the
+/// way it stays inside the app.
+fn native_start(verifier: &str, name: &str) -> Value {
+    json!({
+        "challenge": URL_SAFE_NO_PAD.encode(hash(verifier)),
+        "device_name": name,
+        "native": true,
+    })
+}
+
+#[tokio::test]
+async fn a_native_sign_in_comes_back_to_the_app_and_leaves_the_browser_nothing() -> Result<()> {
+    let f = Fixture::new().await?;
+    let verifier = "n".repeat(43);
+    let (status, start) = f
+        .public(
+            "/api/v1/device-login",
+            native_start(&verifier, "Alice laptop"),
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    // Nothing to read aloud: a native request has no user code at all, so there
+    // is no code for anybody to be talked into approving.
+    assert!(start["data"]["user_code"].is_null());
+    assert!(start["data"]["start_url"].is_string());
+    let returned = f.native_sign_in("alice", start["data"].clone()).await?;
+    assert_eq!(returned.request_id, start["data"]["request_id"]);
+    let (status, token) = f
+        .public(
+            "/api/v1/device-login/exchange",
+            json!({"request_id":start["data"]["request_id"],"verifier":verifier,"return_code":returned.return_code}),
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        bearer_status(&f, &token["data"]["access_token"]).await?,
+        StatusCode::OK
+    );
+    // The device secret is the thing that makes this the last browser visit.
+    assert_eq!(
+        token["data"]["device_secret"]
+            .as_str()
+            .context("device secret")?
+            .len(),
+        43
+    );
+    // One use only, both halves spent together.
+    let (replay, _) = f
+        .public(
+            "/api/v1/device-login/exchange",
+            json!({"request_id":start["data"]["request_id"],"verifier":verifier,"return_code":returned.return_code}),
+        )
+        .await?;
+    assert_eq!(replay, StatusCode::UNAUTHORIZED);
+    Ok(())
+}
+
+/// The attack the eight character code used to stop, and the one a scheme
+/// squatter would try. Each attacker holds one half and finishes nothing.
+#[tokio::test]
+async fn neither_half_of_a_native_login_is_enough_alone() -> Result<()> {
+    let f = Fixture::new().await?;
+
+    // Mallory starts a request, keeps her verifier, and gets Alice to open the
+    // real link on the real domain. Alice authenticates; the return code goes
+    // to Alice's machine, never to Mallory.
+    let mallory_verifier = "m".repeat(43);
+    let (_, start) = f
+        .public(
+            "/api/v1/device-login",
+            native_start(&mallory_verifier, "Mallory laptop"),
+        )
+        .await?;
+    f.native_sign_in("alice", start["data"].clone()).await?;
+    let (stolen, _) = f
+        .public(
+            "/api/v1/device-login/exchange",
+            json!({"request_id":start["data"]["request_id"],"verifier":mallory_verifier}),
+        )
+        .await?;
+    assert_eq!(stolen, StatusCode::UNAUTHORIZED);
+
+    // And the mirror image: holding the return code without the verifier that
+    // started the request is worth nothing either.
+    let verifier = "v".repeat(43);
+    let (_, start) = f
+        .public("/api/v1/device-login", native_start(&verifier, "Phone"))
+        .await?;
+    let returned = f.native_sign_in("bob", start["data"].clone()).await?;
+    let (squatted, _) = f
+        .public(
+            "/api/v1/device-login/exchange",
+            json!({"request_id":start["data"]["request_id"],"verifier":"z".repeat(43),"return_code":returned.return_code}),
+        )
+        .await?;
+    assert_eq!(squatted, StatusCode::UNAUTHORIZED);
+    // Both halves, presented together, still work afterwards.
+    let (ok, _) = f
+        .public(
+            "/api/v1/device-login/exchange",
+            json!({"request_id":start["data"]["request_id"],"verifier":verifier,"return_code":returned.return_code}),
+        )
+        .await?;
+    assert_eq!(ok, StatusCode::OK);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_code_request_refuses_a_return_code_and_a_native_one_demands_it() -> Result<()> {
+    let f = Fixture::new().await?;
+    let alice = f.login("alice").await?;
+    let verifier = "c".repeat(43);
+    let (_, start) = f
+        .json(
+            "POST",
+            "/api/v1/device-login",
+            &alice,
+            json!({"challenge":URL_SAFE_NO_PAD.encode(hash(&verifier)),"device_name":"Code flow"}),
+        )
+        .await?;
+    let (approved, _) = f
+        .json(
+            "POST",
+            "/api/v1/device-login/approve",
+            &alice,
+            json!({"user_code":start["data"]["user_code"]}),
+        )
+        .await?;
+    assert_eq!(approved, StatusCode::OK);
+    // A code request has no return code to present, so offering one is refused
+    // rather than ignored.
+    let (mixed, _) = f
+        .public(
+            "/api/v1/device-login/exchange",
+            json!({"request_id":start["data"]["request_id"],"verifier":verifier,"return_code":"q".repeat(43)}),
+        )
+        .await?;
+    assert_eq!(mixed, StatusCode::UNAUTHORIZED);
+    // Ten wrong answers consume the request rather than letting it be ground at.
+    for _ in 0..10 {
+        let _ = f
+            .public(
+                "/api/v1/device-login/exchange",
+                json!({"request_id":start["data"]["request_id"],"verifier":"w".repeat(43)}),
+            )
+            .await?;
+    }
+    let (burned, _) = f
+        .public(
+            "/api/v1/device-login/exchange",
+            json!({"request_id":start["data"]["request_id"],"verifier":verifier}),
+        )
+        .await?;
+    assert_eq!(burned, StatusCode::UNAUTHORIZED);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_device_renews_without_a_browser_and_never_becomes_recent() -> Result<()> {
+    let f = Fixture::new().await?;
+    let verifier = "d".repeat(43);
+    let (_, start) = f
+        .public("/api/v1/device-login", native_start(&verifier, "Laptop"))
+        .await?;
+    let returned = f.native_sign_in("alice", start["data"].clone()).await?;
+    let (_, token) = f
+        .public(
+            "/api/v1/device-login/exchange",
+            json!({"request_id":start["data"]["request_id"],"verifier":verifier,"return_code":returned.return_code}),
+        )
+        .await?;
+    let device = token["data"]["device_id"].clone();
+
+    // Straight after signing in, the step-up is satisfied.
+    assert_eq!(
+        bearer_delete(&f, &token["data"]["access_token"], &device).await?,
+        StatusCode::OK
+    );
+
+    // Sign in again to get a live device, then renew it with no browser at all.
+    let verifier = "e".repeat(43);
+    let (_, start) = f
+        .public("/api/v1/device-login", native_start(&verifier, "Laptop"))
+        .await?;
+    let returned = f.native_sign_in("alice", start["data"].clone()).await?;
+    let (_, token) = f
+        .public(
+            "/api/v1/device-login/exchange",
+            json!({"request_id":start["data"]["request_id"],"verifier":verifier,"return_code":returned.return_code}),
+        )
+        .await?;
+    let device = token["data"]["device_id"].clone();
+    let secret = token["data"]["device_secret"].as_str().context("secret")?;
+
+    // Age the admission past the step-up window, the way an ordinary device
+    // ages between one launch and the next.
+    let device_uuid = Uuid::parse_str(device.as_str().context("device")?)?;
+    sqlx::query("UPDATE devices SET authenticated_at=now()-interval '1 hour' WHERE id=$1")
+        .bind(device_uuid)
+        .execute(&f.pool)
+        .await?;
+
+    let (status, renewed) = f
+        .public(
+            "/api/v1/session/renew",
+            json!({"device_id":device,"device_secret":secret}),
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        bearer_status(&f, &renewed["data"]["access_token"]).await?,
+        StatusCode::OK
+    );
+    // Renewing hands back no new secret: there is nothing to rotate.
+    assert!(renewed["data"]["device_secret"].is_null());
+
+    // The point of ADR 0056: a renewal inherits the instant the device was
+    // admitted and never refreshes it, so it hands back a working session but
+    // never a second step-up window. Revoking still means going to a browser.
+    assert_eq!(
+        bearer_delete(&f, &renewed["data"]["access_token"], &device).await?,
+        StatusCode::FORBIDDEN
+    );
+    let still_old: bool = sqlx::query_scalar(
+        "SELECT authenticated_at < now()-interval '30 minutes' FROM devices WHERE id=$1",
+    )
+    .bind(device_uuid)
+    .fetch_one(&f.pool)
+    .await?;
+    assert!(still_old, "a renewal must not move authenticated_at");
+    Ok(())
+}
+
+#[tokio::test]
+async fn renewing_retires_the_previous_family_and_revocation_destroys_the_secret() -> Result<()> {
+    let f = Fixture::new().await?;
+    let verifier = "f".repeat(43);
+    let (_, start) = f
+        .public("/api/v1/device-login", native_start(&verifier, "Phone"))
+        .await?;
+    let returned = f.native_sign_in("alice", start["data"].clone()).await?;
+    let (_, token) = f
+        .public(
+            "/api/v1/device-login/exchange",
+            json!({"request_id":start["data"]["request_id"],"verifier":verifier,"return_code":returned.return_code}),
+        )
+        .await?;
+    let device = token["data"]["device_id"].clone();
+    let secret = token["data"]["device_secret"]
+        .as_str()
+        .context("secret")?
+        .to_owned();
+    let (_, renewed) = f
+        .public(
+            "/api/v1/session/renew",
+            json!({"device_id":device,"device_secret":secret}),
+        )
+        .await?;
+    assert_eq!(
+        bearer_status(&f, &renewed["data"]["access_token"]).await?,
+        StatusCode::OK
+    );
+    // Exactly one live family per device: the generation it replaced is gone,
+    // which is how a cloned secret announces itself.
+    let (stale, _) = f
+        .public(
+            "/api/v1/session/refresh",
+            json!({"refresh_token":token["data"]["refresh_token"]}),
+        )
+        .await?;
+    assert_eq!(stale, StatusCode::UNAUTHORIZED);
+
+    // Signing out on the device itself needs no step-up and takes the secret
+    // with it, so the device cannot readmit itself.
+    let (status, _) = f
+        .public(
+            "/api/v1/session/renounce",
+            json!({"device_id":device,"device_secret":secret}),
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    let (after, _) = f
+        .public(
+            "/api/v1/session/renew",
+            json!({"device_id":device,"device_secret":secret}),
+        )
+        .await?;
+    assert_eq!(after, StatusCode::UNAUTHORIZED);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_restored_database_leaves_no_device_able_to_readmit_itself() -> Result<()> {
+    let f = Fixture::new().await?;
+    let verifier = "g".repeat(43);
+    let (_, start) = f
+        .public("/api/v1/device-login", native_start(&verifier, "Phone"))
+        .await?;
+    let returned = f.native_sign_in("alice", start["data"].clone()).await?;
+    let (_, token) = f
+        .public(
+            "/api/v1/device-login/exchange",
+            json!({"request_id":start["data"]["request_id"],"verifier":verifier,"return_code":returned.return_code}),
+        )
+        .await?;
+    f.service.repository.invalidate_restored_sessions().await?;
+    let (after, _) = f
+        .public(
+            "/api/v1/session/renew",
+            json!({"device_id":token["data"]["device_id"],"device_secret":token["data"]["device_secret"]}),
+        )
+        .await?;
+    assert_eq!(after, StatusCode::UNAUTHORIZED);
+    Ok(())
+}
+
+#[tokio::test]
+async fn signing_in_again_on_the_same_machine_reuses_its_device_row() -> Result<()> {
+    let f = Fixture::new().await?;
+    let verifier = "h".repeat(43);
+    let (_, start) = f
+        .public("/api/v1/device-login", native_start(&verifier, "Laptop"))
+        .await?;
+    let returned = f.native_sign_in("alice", start["data"].clone()).await?;
+    let (_, first) = f
+        .public(
+            "/api/v1/device-login/exchange",
+            json!({"request_id":start["data"]["request_id"],"verifier":verifier,"return_code":returned.return_code}),
+        )
+        .await?;
+
+    let verifier = "i".repeat(43);
+    let mut body = native_start(&verifier, "Laptop");
+    body["device_id"] = first["data"]["device_id"].clone();
+    body["device_secret"] = first["data"]["device_secret"].clone();
+    let (status, start) = f.public("/api/v1/device-login", body).await?;
+    assert_eq!(status, StatusCode::OK);
+    let returned = f.native_sign_in("alice", start["data"].clone()).await?;
+    let (_, second) = f
+        .public(
+            "/api/v1/device-login/exchange",
+            json!({"request_id":start["data"]["request_id"],"verifier":verifier,"return_code":returned.return_code}),
+        )
+        .await?;
+    assert_eq!(second["data"]["device_id"], first["data"]["device_id"]);
+
+    // One machine, one row: the list stays readable and errands addressed to
+    // this device stay deliverable.
+    let devices = f
+        .call(
+            Request::builder()
+                .uri("/api/v1/devices")
+                .header(
+                    header::AUTHORIZATION,
+                    format!(
+                        "Bearer {}",
+                        second["data"]["access_token"].as_str().context("access")?
+                    ),
+                )
+                .body(Body::empty())?,
+        )
+        .await?;
+    let (_, listed) = decode_response(devices).await?;
+    assert_eq!(listed["data"].as_array().context("devices")?.len(), 1);
+
+    // A wrong secret is refused at the start, so an unproved id never reaches
+    // the exchange.
+    let mut body = native_start(&"j".repeat(43), "Laptop");
+    body["device_id"] = first["data"]["device_id"].clone();
+    body["device_secret"] = json!("k".repeat(43));
+    assert_eq!(
+        f.public("/api/v1/device-login", body).await?.0,
+        StatusCode::UNAUTHORIZED
+    );
+    Ok(())
+}
+
+async fn bearer_delete(f: &Fixture, token: &Value, device: &Value) -> Result<StatusCode> {
+    Ok(f.call(
+        Request::builder()
+            .method("DELETE")
+            .uri(format!(
+                "/api/v1/devices/{}",
+                device.as_str().context("device")?
+            ))
+            .header(
+                header::AUTHORIZATION,
+                format!("Bearer {}", token.as_str().context("access")?),
+            )
+            .body(Body::empty())?,
+    )
+    .await?
+    .status())
 }

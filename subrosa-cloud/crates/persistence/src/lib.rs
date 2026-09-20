@@ -58,7 +58,7 @@ impl Repository {
         }
     }
     pub async fn save_attempt(&self, a: &LoginAttempt) -> Result<()> {
-        sqlx::query("INSERT INTO login_attempts(state_hash,browser_hash,verifier,nonce,return_to) VALUES($1,$2,$3,$4,$5)").bind(&a.state_hash).bind(&a.browser_hash).bind(a.verifier.expose()).bind(a.nonce.expose()).bind(&a.return_to).execute(&self.pool).await.map_err(db)?;
+        sqlx::query("INSERT INTO login_attempts(state_hash,browser_hash,verifier,nonce,return_to,native_request_id) VALUES($1,$2,$3,$4,$5,$6)").bind(&a.state_hash).bind(&a.browser_hash).bind(a.verifier.expose()).bind(a.nonce.expose()).bind(&a.return_to).bind(a.native_request_id).execute(&self.pool).await.map_err(db)?;
         Ok(())
     }
     pub async fn consume_attempt(&self, state: &[u8], browser: &[u8]) -> Result<LoginAttempt> {
@@ -69,6 +69,7 @@ impl Repository {
             verifier: Secret(r.get("verifier")),
             nonce: Secret(r.get("nonce")),
             return_to: r.get("return_to"),
+            native_request_id: r.get("native_request_id"),
         })
     }
     pub async fn browser_session(&self, identity: &Identity, token_hash: &[u8]) -> Result<Account> {
@@ -114,6 +115,8 @@ impl Repository {
                 created_at: r.get("created_at"),
                 last_seen_at: r.get("last_seen_at"),
                 revoked_at: r.get("revoked_at"),
+                renewed_at: r.get("renewed_at"),
+                renew_count: r.get("renew_count"),
             })
             .collect())
     }
@@ -138,7 +141,9 @@ impl Repository {
     }
     pub async fn revoke_device(&self, owner: Uuid, id: Uuid) -> Result<()> {
         let mut tx = self.pool.begin().await.map_err(db)?;
-        let count=sqlx::query("UPDATE devices SET revoked_at=COALESCE(revoked_at,now()) WHERE account_id=$1 AND id=$2").bind(owner).bind(id).execute(&mut *tx).await.map_err(db)?.rows_affected();
+        // Clearing the secret is the point: revoking a device that could renew
+        // itself without a browser would otherwise only pause it.
+        let count=sqlx::query("UPDATE devices SET revoked_at=COALESCE(revoked_at,now()),secret_hash=NULL WHERE account_id=$1 AND id=$2").bind(owner).bind(id).execute(&mut *tx).await.map_err(db)?.rows_affected();
         if count == 0 {
             return Err(Error::NotFound);
         }
@@ -158,7 +163,7 @@ impl Repository {
         tx.commit().await.map_err(db)
     }
     pub async fn create_device_request(&self, r: &DeviceRequest) -> Result<DateTime<Utc>> {
-        sqlx::query_scalar("INSERT INTO device_requests(id,challenge,code_hash,name) VALUES($1,$2,$3,$4) RETURNING expires_at").bind(r.request_id).bind(&r.challenge).bind(&r.code_hash).bind(&r.name).fetch_one(&self.pool).await.map_err(db)
+        sqlx::query_scalar("INSERT INTO device_requests(id,challenge,code_hash,start_hash,name,rebind_device_id) VALUES($1,$2,$3,$4,$5,$6) RETURNING expires_at").bind(r.request_id).bind(&r.challenge).bind(&r.code_hash).bind(&r.start_hash).bind(&r.name).bind(r.rebind_device_id).fetch_one(&self.pool).await.map_err(db)
     }
     pub async fn approve_device(&self, session: &Session, code: &[u8]) -> Result<()> {
         let n=sqlx::query("UPDATE device_requests SET account_id=$1,authenticated_at=$2 WHERE code_hash=$3 AND account_id IS NULL AND NOT consumed AND expires_at>now()").bind(session.account.id).bind(session.authenticated_at).bind(code).execute(&self.pool).await.map_err(db)?.rows_affected();
@@ -167,11 +172,27 @@ impl Repository {
     pub async fn exchange_device(&self, p: DeviceExchangeParams<'_>) -> Result<IssuedSession> {
         let mut tx = self.pool.begin().await.map_err(db)?;
         let r=sqlx::query("SELECT *,last_poll>now()-interval '5 seconds' AS too_fast FROM device_requests WHERE id=$1 AND expires_at>now() AND NOT consumed FOR UPDATE").bind(p.request_id).fetch_optional(&mut *tx).await.map_err(db)?.ok_or(Error::Unauthorized)?;
-        if !bool::from(
+        // A request that ended in the browser is finished by its return code, a
+        // request that showed a user code is finished without one, and neither
+        // accepts the other. The verifier proves which app started it; the
+        // return code proves which machine finished it. One half is never
+        // enough, which is what replaced the human approval tap (ADR 0055).
+        let expected: Option<Vec<u8>> = r.get("return_hash");
+        let matches = bool::from(
             r.get::<Vec<u8>, _>("challenge")
                 .as_slice()
                 .ct_eq(p.challenge),
-        ) {
+        ) && match (expected, p.return_hash) {
+            (Some(expected), Some(given)) => bool::from(expected.as_slice().ct_eq(given)),
+            (None, None) => true,
+            _ => false,
+        };
+        if !matches {
+            // Roll the read back, then count the failure on its own so it
+            // survives. Polling with the right credentials is not a failure, so
+            // a legitimate wait never approaches the bound.
+            drop(tx);
+            sqlx::query("UPDATE device_requests SET attempts=attempts+1,consumed=(attempts+1>=10) WHERE id=$1").bind(p.request_id).execute(&self.pool).await.map_err(db)?;
             return Err(Error::Unauthorized);
         }
         if r.get::<Option<bool>, _>("too_fast") == Some(true) {
@@ -194,13 +215,43 @@ impl Repository {
                 .map_err(db)?
                 .ok_or(Error::Unauthorized)?,
         );
-        let device_id = Uuid::now_v7();
         let family = Uuid::now_v7();
         let authenticated_at = r.get::<DateTime<Utc>, _>("authenticated_at");
-        sqlx::query("INSERT INTO devices(id,account_id,name) VALUES($1,$2,$3)")
+        // Signing in again on a machine that already has a row is not a new
+        // device. Reusing it keeps the list readable and keeps errands
+        // addressed to this device deliverable. It grants nothing extra: the
+        // exchange still required a fresh OIDC authentication just now.
+        let rebind: Option<Uuid> = r.get("rebind_device_id");
+        let reused = match rebind {
+            Some(id) => sqlx::query_scalar::<_, Uuid>("UPDATE devices SET name=$3,last_seen_at=now(),secret_hash=$4,authenticated_at=$5,revoked_at=NULL WHERE id=$1 AND account_id=$2 AND revoked_at IS NULL RETURNING id").bind(id).bind(owner).bind(r.get::<String,_>("name")).bind(p.device_secret_hash).bind(authenticated_at).fetch_optional(&mut *tx).await.map_err(db)?,
+            None => None,
+        };
+        let device_id = if let Some(id) = reused {
+            id
+        } else {
+            let id = Uuid::now_v7();
+            sqlx::query("INSERT INTO devices(id,account_id,name,secret_hash,authenticated_at) VALUES($1,$2,$3,$4,$5)")
+                .bind(id)
+                .bind(owner)
+                .bind(r.get::<String, _>("name"))
+                .bind(p.device_secret_hash)
+                .bind(authenticated_at)
+                .execute(&mut *tx)
+                .await
+                .map_err(db)?;
+            id
+        };
+        // A reused row may still carry families from the session it is
+        // replacing. Retire them rather than leaving two live generations.
+        sqlx::query(
+            "UPDATE session_families SET revoked_at=COALESCE(revoked_at,now()) WHERE device_id=$1",
+        )
+        .bind(device_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(db)?;
+        sqlx::query("DELETE FROM sessions WHERE device_id=$1")
             .bind(device_id)
-            .bind(owner)
-            .bind(r.get::<String, _>("name"))
             .execute(&mut *tx)
             .await
             .map_err(db)?;
@@ -283,6 +334,111 @@ impl Repository {
             expires_at,
             refresh_expires_at,
         })
+    }
+    /// Resolves the opaque handle in a native start link to the request it
+    /// belongs to. Following this link starts an authentication and nothing
+    /// else: it grants no session, and the code that finishes the request is
+    /// not created until the person has actually signed in.
+    pub async fn device_request_by_start(&self, start_hash: &[u8]) -> Result<Uuid> {
+        sqlx::query_scalar("SELECT id FROM device_requests WHERE start_hash=$1 AND account_id IS NULL AND NOT consumed AND expires_at>now()").bind(start_hash).fetch_optional(&self.pool).await.map_err(db)?.ok_or(Error::NotFound)
+    }
+    /// The native end of the OIDC round trip: create or find the account, then
+    /// bind this authentication to the waiting request together with the hash
+    /// of the return code. No session row is written, so the browser this ran
+    /// in keeps nothing.
+    pub async fn native_callback(
+        &self,
+        identity: &Identity,
+        request_id: Uuid,
+        return_hash: &[u8],
+    ) -> Result<Account> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        let row=sqlx::query("INSERT INTO accounts(id,issuer,subject,email) VALUES($1,$2,$3,$4) ON CONFLICT(issuer,subject) DO UPDATE SET email=EXCLUDED.email RETURNING id,email,created_at").bind(Uuid::now_v7()).bind(&identity.issuer).bind(&identity.subject).bind(&identity.email).fetch_one(&mut *tx).await.map_err(db)?;
+        let a = account(&row);
+        let n=sqlx::query("UPDATE device_requests SET account_id=$1,authenticated_at=$2,return_hash=$3 WHERE id=$4 AND account_id IS NULL AND NOT consumed AND start_hash IS NOT NULL AND expires_at>now()").bind(a.id).bind(identity.authenticated_at).bind(return_hash).bind(request_id).execute(&mut *tx).await.map_err(db)?.rows_affected();
+        if n == 0 {
+            return Err(Error::NotFound);
+        }
+        // A rebind is only honoured for the account that just authenticated.
+        sqlx::query("UPDATE device_requests SET rebind_device_id=NULL WHERE id=$1 AND rebind_device_id IS NOT NULL AND rebind_device_id NOT IN (SELECT id FROM devices WHERE account_id=$2 AND revoked_at IS NULL)").bind(request_id).bind(a.id).execute(&mut *tx).await.map_err(db)?;
+        tx.commit().await.map_err(db)?;
+        Ok(a)
+    }
+    /// Proves a device secret without spending it, so a start request can name
+    /// the row it means to reuse.
+    pub async fn device_for_secret(&self, id: Uuid, secret_hash: &[u8]) -> Result<Uuid> {
+        let stored: Option<Vec<u8>> = sqlx::query_scalar(
+            "SELECT secret_hash FROM devices WHERE id=$1 AND revoked_at IS NULL",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?
+        .flatten();
+        match stored {
+            Some(stored) if bool::from(stored.as_slice().ct_eq(secret_hash)) => Ok(id),
+            _ => Err(Error::Unauthorized),
+        }
+    }
+    /// A device that holds its secret mints a new token family without a
+    /// browser. The family inherits the device's original admission instant,
+    /// never `now()`, so a renewed session can never satisfy the five minute
+    /// step-up that guards revocation and deletion (ADR 0056).
+    pub async fn renew_session(&self, p: RenewParams<'_>) -> Result<IssuedSession> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        let r=sqlx::query("SELECT d.account_id,d.authenticated_at,d.secret_hash,a.email,a.created_at FROM devices d JOIN accounts a ON a.id=d.account_id WHERE d.id=$1 AND d.revoked_at IS NULL AND d.secret_hash IS NOT NULL FOR UPDATE OF d").bind(p.device_id).fetch_optional(&mut *tx).await.map_err(db)?.ok_or(Error::Unauthorized)?;
+        if !bool::from(
+            r.get::<Vec<u8>, _>("secret_hash")
+                .as_slice()
+                .ct_eq(p.secret_hash),
+        ) {
+            return Err(Error::Unauthorized);
+        }
+        let owner: Uuid = r.get("account_id");
+        let a = Account {
+            id: owner,
+            email: r.get("email"),
+            created_at: r.get("created_at"),
+        };
+        let authenticated_at: DateTime<Utc> = r.get("authenticated_at");
+        // Exactly one live family per device. A cloned secret therefore shows
+        // up as each copy cutting the other off, which renew_count makes
+        // visible in the device list.
+        sqlx::query("UPDATE session_families SET revoked_at=COALESCE(revoked_at,now()) WHERE device_id=$1 AND revoked_at IS NULL").bind(p.device_id).execute(&mut *tx).await.map_err(db)?;
+        sqlx::query("DELETE FROM sessions WHERE device_id=$1")
+            .bind(p.device_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        let family = Uuid::now_v7();
+        let refresh_expires_at=sqlx::query_scalar("INSERT INTO session_families(id,account_id,device_id,authenticated_at,expires_at) VALUES($1,$2,$3,$4,now()+interval '30 days') RETURNING expires_at").bind(family).bind(owner).bind(p.device_id).bind(authenticated_at).fetch_one(&mut *tx).await.map_err(db)?;
+        sqlx::query("INSERT INTO refresh_tokens(token_hash,family_id) VALUES($1,$2)")
+            .bind(p.refresh_hash)
+            .bind(family)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        let expires_at=sqlx::query_scalar("INSERT INTO sessions(token_hash,account_id,device_id,browser,authenticated_at,expires_at,family_id) VALUES($1,$2,$3,false,$4,now()+interval '15 minutes',$5) RETURNING expires_at").bind(p.access_hash).bind(owner).bind(p.device_id).bind(authenticated_at).bind(family).fetch_one(&mut *tx).await.map_err(db)?;
+        sqlx::query("UPDATE devices SET renewed_at=now(),renew_count=renew_count+1,last_seen_at=now() WHERE id=$1").bind(p.device_id).execute(&mut *tx).await.map_err(db)?;
+        tx.commit().await.map_err(db)?;
+        Ok(IssuedSession {
+            account: a,
+            device_id: p.device_id,
+            expires_at,
+            refresh_expires_at,
+        })
+    }
+    /// Signing out on the device itself. It proves the same secret a renewal
+    /// would use, and asks for no step-up because it only takes access away.
+    pub async fn renounce_device(&self, id: Uuid, secret_hash: &[u8]) -> Result<()> {
+        let owner: Uuid = sqlx::query_scalar("SELECT account_id FROM devices WHERE id=$1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db)?
+            .ok_or(Error::NotFound)?;
+        self.device_for_secret(id, secret_hash).await?;
+        self.revoke_device(owner, id).await
     }
     pub async fn changes(&self, p: PageParams<'_>) -> Result<JournalPage> {
         let mut tx = self.pool.begin().await.map_err(db)?;
@@ -538,7 +694,7 @@ impl Repository {
             "DELETE FROM session_families",
             "DELETE FROM device_requests",
             "DELETE FROM login_attempts",
-            "UPDATE devices SET revoked_at=COALESCE(revoked_at,now())",
+            "UPDATE devices SET revoked_at=COALESCE(revoked_at,now()),secret_hash=NULL",
         ] {
             sqlx::query(query).execute(&mut *tx).await.map_err(db)?;
         }
@@ -844,6 +1000,15 @@ pub struct PageParams<'a> {
 pub struct DeviceExchangeParams<'a> {
     pub request_id: Uuid,
     pub challenge: &'a [u8],
+    /// `Some` only for a native request, and then it is required.
+    pub return_hash: Option<&'a [u8]>,
+    pub access_hash: &'a [u8],
+    pub refresh_hash: &'a [u8],
+    pub device_secret_hash: &'a [u8],
+}
+pub struct RenewParams<'a> {
+    pub device_id: Uuid,
+    pub secret_hash: &'a [u8],
     pub access_hash: &'a [u8],
     pub refresh_hash: &'a [u8],
 }

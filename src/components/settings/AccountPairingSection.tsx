@@ -6,6 +6,7 @@ import {
   accountPairingApprove,
   accountPairingExchange,
   accountPairingCancel,
+  accountPairingResume,
 } from "../../lib/account";
 import { errorCode } from "../../lib/errors";
 import { t } from "../../lib/i18n";
@@ -28,6 +29,22 @@ export function AccountPairingSection({
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [approved, setApproved] = useState(false);
+
+  // The secret was written to the keyring before the first network call so a
+  // request could outlive the screen that started it. Nothing ever read that
+  // slot back, so reloading the window stranded the request until it expired.
+  useEffect(() => {
+    if (unlocked) return;
+    let cancelled = false;
+    void accountPairingResume()
+      .then((pending) => {
+        if (!cancelled && pending) setRequest(pending);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [unlocked]);
 
   useEffect(() => {
     if (!request) return;

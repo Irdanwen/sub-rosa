@@ -94,6 +94,19 @@ describe("destination addresses", () => {
     expect(parseDestination(undefined as unknown as string)).toBeNull();
   });
 
+  it("drops the query of a sign-in callback rather than carrying it inward", () => {
+    // The return code finishes the sign-in natively. It must not cross into the
+    // webview at all, so what the parser hands on is only "show the account".
+    const parsed = parseDestination(
+      "subrosa://auth/callback?request=0192f3c4-5d6e-7f80-9123-456789abcdef&code=secret",
+    );
+    expect(parsed).toEqual({ kind: "account" });
+    expect(JSON.stringify(parsed)).not.toContain("secret");
+    for (const bad of ["subrosa://auth", "subrosa://auth/elsewhere", "subrosa://auth/callback/x"]) {
+      expect(parseDestination(bad), bad).toBeNull();
+    }
+  });
+
   it("is case-insensitive on the scheme and the host", () => {
     expect(parseDestination("SUBROSA://STUDIO")).toEqual({ kind: "studio" });
   });
