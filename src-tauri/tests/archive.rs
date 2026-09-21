@@ -23,6 +23,84 @@ async fn repos() -> Repositories {
     Repositories::new(pool)
 }
 
+#[tokio::test]
+async fn assistant_files_and_snapshot_permissions_survive_an_archive() {
+    use os_june_lib::assistants::{runtime::snapshot_for_task, save, AssistantDefinition};
+    use sqlx::query::query;
+    let source = repos().await;
+    let definition = save(
+        &source.pool,
+        AssistantDefinition {
+            name: "Private writer".into(),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let reference = uuid::Uuid::new_v4().to_string();
+    let file_name = format!("{reference}.png");
+    query("INSERT INTO assistant_references(id,assistant_id,name,format,status,file_name,created_at,updated_at) VALUES(?,?,'Cover','png','ready',?,'now','now')").bind(&reference).bind(&definition.id).bind(&file_name).execute(&source.pool).await.unwrap();
+    let task = uuid::Uuid::new_v4().to_string();
+    query("INSERT INTO agent_tasks(id,title,prompt,status,safety_profile,created_at,updated_at) VALUES(?,'Writer','Hello','completed','custom_assistant','now','now')").bind(&task).execute(&source.pool).await.unwrap();
+    query("INSERT INTO assistant_conversations(task_id,assistant_id,snapshot_json,created_at) VALUES(?,?,?,'now')").bind(&task).bind(&definition.id).bind(serde_json::json!({"definition":definition,"references":[]}).to_string()).execute(&source.pool).await.unwrap();
+    let source_dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(source_dir.path().join("assistant-references")).unwrap();
+    std::fs::write(
+        source_dir
+            .path()
+            .join("assistant-references")
+            .join(&file_name),
+        b"image bytes",
+    )
+    .unwrap();
+    let orphan_name = format!("{}.txt", uuid::Uuid::new_v4());
+    std::fs::write(
+        source_dir
+            .path()
+            .join("assistant-references")
+            .join(&orphan_name),
+        b"Removed private reference",
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    let manifest = write_tar(
+        &source.pool,
+        &ExportOptions {
+            app_version: "test".into(),
+            include_recordings: false,
+            recordings_dir: Some(source_dir.path().join("recordings")),
+        },
+        &mut bytes,
+    )
+    .await
+    .unwrap();
+    assert_eq!(manifest.format, 2);
+    let archive = read_tar(bytes.as_slice()).unwrap();
+    assert_eq!(archive.assistant_files.len(), 1);
+    assert!(!archive
+        .assistant_files
+        .iter()
+        .any(|(name, _)| name == &orphan_name));
+    let destination = repos().await;
+    let dir = tempfile::tempdir().unwrap();
+    apply(
+        &destination.pool,
+        &archive,
+        Some(&dir.path().join("recordings")),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        std::fs::read(dir.path().join("assistant-references").join(file_name)).unwrap(),
+        b"image bytes"
+    );
+    let restored = snapshot_for_task(&destination.pool, &task)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!restored.definition.allow_notes && !restored.definition.allow_memory);
+}
+
 async fn seed(repos: &Repositories) -> (String, String) {
     let folder = repos.create_folder("Projets", None).await.expect("folder");
     let note = repos
@@ -61,7 +139,7 @@ async fn an_archive_restores_the_same_notes_folders_and_memories() {
     let manifest = write_tar(&source.pool, &options(), &mut bytes)
         .await
         .expect("write");
-    assert_eq!(manifest.format, 1);
+    assert_eq!(manifest.format, 2);
     assert!(!manifest.includes_recordings);
 
     let archive = read_tar(bytes.as_slice()).expect("read");
@@ -105,6 +183,49 @@ async fn importing_twice_changes_nothing() {
     let notes = target.list_notes(None, 100, None).await.expect("list");
     assert_eq!(notes.items.len(), 1);
     assert_eq!(target.list_memories().await.expect("memories").len(), 1);
+}
+
+#[tokio::test]
+async fn an_older_assistant_archive_keeps_references_added_since_export() {
+    use os_june_lib::assistants::{save, AssistantDefinition};
+    use sqlx::query::query;
+    let target = repos().await;
+    query("PRAGMA foreign_keys = ON")
+        .execute(&target.pool)
+        .await
+        .unwrap();
+    let definition = save(
+        &target.pool,
+        AssistantDefinition {
+            name: "Writer".into(),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    query("INSERT INTO assistant_references(id,assistant_id,name,format,status,text,created_at,updated_at) VALUES('old',?,'Old brief','txt','ready','Original','now','now')")
+        .bind(&definition.id).execute(&target.pool).await.unwrap();
+    let mut bytes = Vec::new();
+    write_tar(&target.pool, &options(), &mut bytes)
+        .await
+        .unwrap();
+    let archive = read_tar(bytes.as_slice()).unwrap();
+    query("INSERT INTO assistant_references(id,assistant_id,name,format,status,text,created_at,updated_at) VALUES('new',?,'New brief','txt','ready','Keep this local addition','later','later')")
+        .bind(&definition.id).execute(&target.pool).await.unwrap();
+
+    for _ in 0..2 {
+        apply(&target.pool, &archive, None).await.unwrap();
+        let references = os_june_lib::assistants::list_references(&target.pool, &definition.id)
+            .await
+            .unwrap();
+        assert_eq!(references.len(), 2);
+        assert!(
+            references
+                .iter()
+                .any(|reference| reference.id == "new"
+                    && reference.text == "Keep this local addition")
+        );
+    }
 }
 
 #[tokio::test]

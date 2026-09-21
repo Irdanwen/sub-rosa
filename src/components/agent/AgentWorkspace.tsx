@@ -1,3 +1,5 @@
+import { openAssistants } from "../assistants/AssistantLauncher";
+import "../../styles/chat-reading.css";
 import { PortableConversationsDialog } from "./PortableConversationsDialog";
 import {
   accountConversationPrepare,
@@ -7812,6 +7814,9 @@ export function AgentWorkspace({
       data-hero={heroMode ? "true" : undefined}
     >
       <div className="portable-entry">
+        <button type="button" className="btn btn-secondary" onClick={() => openAssistants()}>
+          {t("My assistants")}
+        </button>
         <button
           type="button"
           className="btn btn-secondary"

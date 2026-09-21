@@ -26,6 +26,10 @@ pub fn chat(session_id: Option<&str>) -> String {
     }
 }
 
+pub fn assistant(task_id: &str) -> String {
+    format!("{SCHEME}assistant/{task_id}")
+}
+
 pub fn dictation() -> String {
     format!("{SCHEME}dictation")
 }
@@ -48,6 +52,7 @@ mod tests {
     fn addresses_match_the_shapes_the_shell_parses() {
         assert_eq!(note("note-abc"), "subrosa://note/note-abc");
         assert_eq!(chat(Some("task-1")), "subrosa://chat/task-1");
+        assert_eq!(assistant("task-1"), "subrosa://assistant/task-1");
         assert_eq!(chat(None), "subrosa://chat");
         assert_eq!(chat(Some("")), "subrosa://chat");
         assert_eq!(dictation(), "subrosa://dictation");

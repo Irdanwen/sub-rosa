@@ -305,7 +305,9 @@ function useDurableJobs(
     (incoming: MediaJob[]) => {
       // Workflow-run renders are not this surface's to file or dismiss: the
       // durable runner is waiting on those rows (ADR-0021).
-      const mine = incoming.filter((job) => job.kind === kind && job.source !== "workflow");
+      const mine = incoming.filter(
+        (job) => job.kind === kind && job.source !== "workflow" && job.source !== "assistant",
+      );
       setJobs((current) => {
         const byId = new Map(current.map((job) => [job.id, job]));
         for (const job of mine) byId.set(job.id, job);
@@ -339,7 +341,9 @@ function useDurableJobs(
   const reconcile = useCallback(async () => {
     try {
       const all = await invoke<MediaJob[]>("media_job_list");
-      const mine = all.filter((job) => job.kind === kind && job.source !== "workflow");
+      const mine = all.filter(
+        (job) => job.kind === kind && job.source !== "workflow" && job.source !== "assistant",
+      );
       setJobs((current) => {
         const known = new Set(mine.map((job) => job.id));
         // Anything the list no longer carries is settled: keep only rows still

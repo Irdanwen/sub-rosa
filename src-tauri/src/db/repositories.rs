@@ -13,6 +13,7 @@ use sqlx::query::query;
 use sqlx::row::Row;
 use sqlx_sqlite::SqlitePool;
 use uuid::Uuid;
+mod conversations;
 pub mod passages;
 const DICTATION_HISTORY_RETENTION_DAYS: i64 = 7;
 
@@ -1368,62 +1369,6 @@ impl Repositories {
         .await?;
         tx.commit().await?;
         self.get_agent_task(&task_id).await
-    }
-
-    /// Duplicate a chat onto another model: a new task carrying the source
-    /// transcript verbatim, bound to `model` (falling back to the source's own
-    /// model when none is given). Lets a conversation branch onto a different
-    /// model while the original stays untouched. Only messages are copied — tool
-    /// events are per-run and do not shape the model's view of the history.
-    pub async fn fork_agent_task(
-        &self,
-        source_task_id: &str,
-        model: Option<&str>,
-    ) -> Result<AgentTaskDto, sqlx::error::Error> {
-        let source = self.get_agent_task(source_task_id).await?;
-        let now = timestamp();
-        let new_task_id = Uuid::new_v4().to_string();
-        let model = model
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-            .or(source.model.clone());
-
-        let mut tx = self.pool.begin().await?;
-        // A fork is an idle snapshot to continue from, never active work, so it
-        // opens 'completed' rather than inheriting a transient running/queued
-        // status from the source (which would read as a phantom running task).
-        query(
-            "INSERT INTO agent_tasks
-             (id, title, prompt, status, safety_profile, progress_summary, model, created_at, updated_at)
-             VALUES (?, ?, ?, 'completed', ?, 'Forked to another model.', ?, ?, ?)",
-        )
-        .bind(&new_task_id)
-        .bind(&source.title)
-        .bind(&source.prompt)
-        .bind(source.safety_profile.as_db())
-        .bind(model)
-        .bind(&now)
-        .bind(&now)
-        .execute(&mut *tx)
-        .await?;
-        // Preserve order by carrying each message's original created_at (agent
-        // messages sort by created_at ASC), so the fork reads as the same thread.
-        for message in &source.messages {
-            query(
-                "INSERT INTO agent_messages (id, task_id, role, content, created_at)
-                 VALUES (?, ?, ?, ?, ?)",
-            )
-            .bind(Uuid::new_v4().to_string())
-            .bind(&new_task_id)
-            .bind(message.role.as_db())
-            .bind(&message.content)
-            .bind(&message.created_at)
-            .execute(&mut *tx)
-            .await?;
-        }
-        tx.commit().await?;
-        self.get_agent_task(&new_task_id).await
     }
 
     pub async fn get_agent_task(&self, task_id: &str) -> Result<AgentTaskDto, sqlx::error::Error> {
@@ -4994,7 +4939,7 @@ fn dictation_history_item_from_row(row: sqlx_sqlite::SqliteRow) -> DictationHist
     }
 }
 
-fn agent_task_from_row(row: sqlx_sqlite::SqliteRow) -> AgentTaskDto {
+pub(crate) fn agent_task_from_row(row: sqlx_sqlite::SqliteRow) -> AgentTaskDto {
     AgentTaskDto {
         id: row.get("id"),
         title: row.get("title"),

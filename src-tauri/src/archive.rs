@@ -34,7 +34,8 @@ use tauri::AppHandle;
 
 use crate::domain::types::AppError;
 
-pub const ARCHIVE_FORMAT_VERSION: u32 = 1;
+// Earlier readers would drop assistant snapshots and widen task permissions.
+pub const ARCHIVE_FORMAT_VERSION: u32 = 2;
 
 fn json_error(error: serde_json::Error) -> AppError {
     AppError::new("archive_invalid", error.to_string())
@@ -56,7 +57,10 @@ pub const ARCHIVED_TABLES: &[&str] = &[
     "dictionary_entries",
     "dictation_history",
     "memories",
+    "assistants",
+    "assistant_references",
     "agent_tasks",
+    "assistant_conversations",
     "agent_messages",
     "agent_tool_events",
     "bible_entries",
@@ -160,7 +164,26 @@ pub async fn restore_table(
             .map(|c| c.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        let sql = format!("INSERT OR REPLACE INTO {table} ({names}) VALUES ({placeholders})");
+        // REPLACE deletes the parent first and cascades into references added
+        // since this archive. Restore its fields without deleting its children.
+        let sql = if table == "assistants" {
+            let updates = cols
+                .iter()
+                .filter(|column| column.as_str() != "id")
+                .map(|column| format!("{column}=excluded.{column}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let conflict = if updates.is_empty() {
+                "DO NOTHING".to_owned()
+            } else {
+                format!("DO UPDATE SET {updates}")
+            };
+            format!(
+                "INSERT INTO {table} ({names}) VALUES ({placeholders}) ON CONFLICT(id) {conflict}"
+            )
+        } else {
+            format!("INSERT OR REPLACE INTO {table} ({names}) VALUES ({placeholders})")
+        };
         let mut statement = query(&sql);
         for col in &cols {
             statement = match &row[*col] {
@@ -210,6 +233,7 @@ pub async fn write_tar<W: Write>(
     options: &ExportOptions,
     out: W,
 ) -> Result<Manifest, AppError> {
+    let _references = crate::assistants::reference_lifecycle_lock().await;
     let mut builder = tar::Builder::new(out);
     let manifest = Manifest {
         format: ARCHIVE_FORMAT_VERSION,
@@ -261,6 +285,23 @@ pub async fn write_tar<W: Write>(
             append_dir(&mut builder, dir, Path::new("recordings"))?;
         }
     }
+    if let Some(root) = options.recordings_dir.as_ref().and_then(|p| p.parent()) {
+        let dir = root.join("assistant-references");
+        if dir.is_dir() {
+            // Interrupted cleanup must never make removed private bytes part
+            // of an export. Only current references and saved chats own files.
+            for name in crate::assistants::retained_reference_files(pool).await? {
+                let path = crate::assistants::reference_file(&dir, &name)?;
+                if path.is_file() {
+                    builder
+                        .append_path_with_name(&path, Path::new("assistant-references").join(name))
+                        .map_err(|error| {
+                            AppError::new("archive_write_failed", error.to_string())
+                        })?;
+                }
+            }
+        }
+    }
     builder
         .finish()
         .map_err(|error| AppError::new("archive_write_failed", error.to_string()))?;
@@ -301,6 +342,7 @@ pub struct Archive {
     pub tables: BTreeMap<String, Vec<ArchiveRow>>,
     /// Recording files, path under `recordings/` → bytes.
     pub recordings: Vec<(PathBuf, Vec<u8>)>,
+    pub assistant_files: Vec<(String, Vec<u8>)>,
 }
 
 /// Read a tar stream produced by [`write_tar`].
@@ -309,16 +351,28 @@ pub fn read_tar<R: Read>(input: R) -> Result<Archive, AppError> {
     let mut manifest: Option<Manifest> = None;
     let mut tables: BTreeMap<String, Vec<ArchiveRow>> = BTreeMap::new();
     let mut recordings = Vec::new();
+    let mut assistant_files = Vec::new();
     let entries = archive
         .entries()
         .map_err(|error| AppError::new("archive_read_failed", error.to_string()))?;
     for entry in entries {
         let mut entry =
             entry.map_err(|error| AppError::new("archive_read_failed", error.to_string()))?;
+        // Directory headers are not files; symlinks never restore external
+        // targets into either recordings or private assistant references.
+        if !entry.header().entry_type().is_file() {
+            continue;
+        }
         let path = entry
             .path()
             .map_err(|error| AppError::new("archive_read_failed", error.to_string()))?
             .to_path_buf();
+        if path.starts_with("assistant-references") && entry.size() > 20 * 1024 * 1024 {
+            return Err(AppError::new(
+                "archive_invalid",
+                "Reference file is too large.",
+            ));
+        }
         let mut bytes = Vec::new();
         entry
             .read_to_end(&mut bytes)
@@ -343,6 +397,18 @@ pub fn read_tar<R: Read>(input: R) -> Result<Archive, AppError> {
                 rows.push(serde_json::from_str::<ArchiveRow>(line).map_err(json_error)?);
             }
             tables.insert(name, rows);
+        } else if let Ok(rest) = path.strip_prefix("assistant-references") {
+            let name = rest
+                .to_str()
+                .ok_or_else(|| AppError::new("archive_invalid", "Invalid reference filename."))?;
+            crate::assistants::reference_file(Path::new("."), name)?;
+            if bytes.len() > 20 * 1024 * 1024 {
+                return Err(AppError::new(
+                    "archive_invalid",
+                    "Reference file is too large.",
+                ));
+            }
+            assistant_files.push((name.to_owned(), bytes));
         } else if let Ok(rest) = path.strip_prefix("recordings") {
             if !bytes.is_empty() {
                 recordings.push((rest.to_path_buf(), bytes));
@@ -365,6 +431,7 @@ pub fn read_tar<R: Read>(input: R) -> Result<Archive, AppError> {
         manifest,
         tables,
         recordings,
+        assistant_files,
     })
 }
 
@@ -399,6 +466,18 @@ pub async fn apply(
         }
     }
     if let Some(dir) = recordings_dir {
+        if let Some(root) = dir.parent() {
+            let references = root.join("assistant-references");
+            std::fs::create_dir_all(&references)
+                .map_err(|e| AppError::new("archive_restore_failed", e.to_string()))?;
+            for (name, bytes) in &archive.assistant_files {
+                let target = crate::assistants::reference_file(&references, name)?;
+                if !target.exists() {
+                    std::fs::write(target, bytes)
+                        .map_err(|e| AppError::new("archive_restore_failed", e.to_string()))?;
+                }
+            }
+        }
         for (relative, bytes) in &archive.recordings {
             if relative
                 .components()

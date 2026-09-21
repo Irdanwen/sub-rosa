@@ -121,6 +121,20 @@ pub(super) async fn step(
     // One bounded chunk in each direction per sweep. Durable rows retain the
     // remainder across an iOS suspension without trusting a JavaScript future.
     let gallery = crate::carpe_diem::media::artifacts_dir(app)?;
+    let references = crate::assistants::references_dir(app)?;
+    let candidates=query("WITH refs AS (SELECT id,file_name,format FROM assistant_references UNION SELECT json_extract(j.value,'$.id'),json_extract(j.value,'$.file_name'),json_extract(j.value,'$.format') FROM assistant_conversations c,json_each(c.snapshot_json,'$.references') j) SELECT id,file_name,format FROM refs r WHERE file_name IS NOT NULL AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=r.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=r.id) LIMIT 20").fetch_all(pool).await?;
+    for row in candidates {
+        let name: String = row.get("file_name");
+        let path = crate::assistants::reference_file(&references, &name)?;
+        let Ok(meta) = tokio::fs::metadata(&path).await else {
+            continue;
+        };
+        if meta.len() == 0 || meta.len() > 20 * 1024 * 1024 {
+            continue;
+        }
+        query("INSERT OR IGNORE INTO account_file_uploads(artifact_id,manifest_id,bytes,modified,source_kind,source_path,source_format) VALUES(?,?,?,?,'assistant',?,?)")
+            .bind(row.get::<String,_>("id")).bind(uuid::Uuid::new_v4().to_string()).bind(meta.len() as i64).bind(modified(&meta)?).bind(name).bind(row.get::<String,_>("format")).execute(pool).await?;
+    }
     let inventory = super::studio::inventory(app, pool, &gallery).await;
     upload_one(pool, s, key, &paths, &gallery).await?;
     download_one(pool, s, key, &root, &gallery).await?;
@@ -137,11 +151,13 @@ pub(super) async fn upload_one(
     paths: &AppPaths,
     gallery: &std::path::Path,
 ) -> Result<(), AppError> {
-    let Some(row)=query("SELECT u.*,COALESCE(a.path,u.source_path) AS path,COALESCE(a.format,u.source_format) AS format FROM account_file_uploads u LEFT JOIN audio_artifacts a ON a.id=u.artifact_id WHERE u.completed=0 AND (a.id IS NOT NULL OR u.source_kind='studio') ORDER BY u.rowid LIMIT 1").fetch_optional(pool).await? else{return Ok(());};
+    let Some(row)=query("SELECT u.*,COALESCE(a.path,u.source_path) AS path,COALESCE(a.format,u.source_format) AS format FROM account_file_uploads u LEFT JOIN audio_artifacts a ON a.id=u.artifact_id WHERE u.completed=0 AND (a.id IS NOT NULL OR u.source_kind IN ('studio','assistant')) ORDER BY u.rowid LIMIT 1").fetch_optional(pool).await? else{return Ok(());};
     let artifact: String = row.get("artifact_id");
     let source_kind: String = row.get("source_kind");
     let raw: String = row.get("path");
-    let path = if source_kind == "studio" {
+    let path = if source_kind == "assistant" {
+        crate::assistants::reference_file(&paths.data_dir.join("assistant-references"), &raw)?
+    } else if source_kind == "studio" {
         let file = std::path::Path::new(&raw);
         if file.components().count() != 1 {
             return Err(file_error());
@@ -248,7 +264,7 @@ pub(super) async fn download_one(
     root: &std::path::Path,
     gallery: &std::path::Path,
 ) -> Result<(), AppError> {
-    let Some(row)=query("SELECT m.*,COALESCE(d.next_chunk,0) AS next_chunk FROM account_file_manifests m LEFT JOIN audio_artifacts a ON a.id=m.artifact_id LEFT JOIN account_file_downloads d ON d.manifest_id=m.id WHERE ((m.source_kind='audio' AND a.path='') OR (m.source_kind='studio' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=m.artifact_id))) AND COALESCE(d.completed,0)=0 ORDER BY m.rowid LIMIT 1").fetch_optional(pool).await? else{return Ok(());};
+    let Some(row)=query("SELECT m.*,COALESCE(d.next_chunk,0) AS next_chunk FROM account_file_manifests m LEFT JOIN audio_artifacts a ON a.id=m.artifact_id LEFT JOIN account_file_downloads d ON d.manifest_id=m.id WHERE ((m.source_kind='audio' AND a.path='') OR (m.source_kind IN ('studio','assistant') AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=m.artifact_id))) AND COALESCE(d.completed,0)=0 ORDER BY m.rowid LIMIT 1").fetch_optional(pool).await? else{return Ok(());};
     let id: String = row.get("id");
     uuid::Uuid::parse_str(&id).map_err(|_| file_error())?;
     let chunks = manifest_chunks(&row.get::<String, _>("chunks_json"), row.get("bytes"))?;
@@ -264,7 +280,13 @@ pub(super) async fn download_one(
         return Err(error("sync_blob_invalid"));
     }
     let studio = row.get::<String, _>("source_kind") == "studio";
-    let dir = if studio {
+    let assistant = row.get::<String, _>("source_kind") == "assistant";
+    if assistant && row.get::<i64, _>("bytes") > 20 * 1024 * 1024 {
+        return Err(file_error());
+    }
+    let dir = if assistant {
+        root.join("assistant-references")
+    } else if studio {
         gallery.to_path_buf()
     } else {
         root.join("recordings").join("synced")
@@ -276,15 +298,30 @@ pub(super) async fn download_one(
     // sniffable by the existing audio decoder regardless of the .audio suffix.
     let artifact: String = row.get("artifact_id");
     uuid::Uuid::parse_str(&artifact).map_err(|_| file_error())?;
-    let extension = if studio {
+    let extension = if assistant {
+        crate::assistants::reference_extension(&row.get::<String, _>("format"))?.to_owned()
+    } else if studio {
         super::studio::extension(&row.get::<String, _>("format"))?
     } else {
         "audio".into()
     };
-    let target = dir.join(format!(
-        "{}.{extension}",
-        if studio { &artifact } else { &id }
-    ));
+    let target = if assistant {
+        let reference = query("SELECT file_name FROM assistant_references WHERE id=? UNION SELECT json_extract(j.value,'$.file_name') FROM assistant_conversations c,json_each(c.snapshot_json,'$.references') j WHERE json_extract(j.value,'$.id')=? LIMIT 1")
+            .bind(&artifact)
+            .bind(&artifact)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(file_error)?;
+        let file_name = reference
+            .get::<Option<String>, _>("file_name")
+            .ok_or_else(file_error)?;
+        crate::assistants::reference_file(&dir, &file_name)?
+    } else {
+        dir.join(format!(
+            "{}.{extension}",
+            if studio { &artifact } else { &id }
+        ))
+    };
     let staging = root.join("account-sync-staging");
     tokio::fs::create_dir_all(&staging)
         .await

@@ -1,0 +1,43 @@
+/* Conversation typography shared by the two shells, with the existing theme. */
+.agent-workspace .agent-assistant-turn-body {
+  max-width: 100%;
+  font-size: var(--fs-xl);
+  line-height: 1.75;
+  gap: var(--sp-6);
+}
+.agent-workspace .agent-user-turn {
+  margin-block: var(--sp-6);
+}
+.agent-workspace .agent-user-turn-body {
+  padding: var(--sp-6) var(--sp-7);
+  border-radius: var(--r-2xl);
+  font-size: var(--fs-xl);
+  line-height: 1.65;
+  background: var(--muted);
+}
+.agent-workspace .agent-composer-box {
+  border-radius: var(--r-2xl);
+}
+.mobile-chat .mobile-chat-bubble {
+  line-height: 1.75;
+  margin-block: var(--sp-6);
+}
+.mobile-chat .mobile-chat-bubble[data-role="user"] {
+  padding: var(--sp-5) var(--sp-6);
+  border-radius: var(--r-2xl);
+  background: var(--muted);
+}
+.mobile-chat .mobile-chat-bubble[data-role="assistant"] {
+  background: transparent;
+  border: 0;
+  padding-inline: 0;
+  max-width: 100%;
+}
+.mobile-chat .mobile-chat-composer-card {
+  border-radius: var(--r-2xl);
+}
+@media (pointer: coarse) {
+  .agent-turn-actions {
+    opacity: 1;
+  }
+}

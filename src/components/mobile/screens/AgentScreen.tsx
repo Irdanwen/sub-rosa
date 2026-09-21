@@ -1,3 +1,5 @@
+import { openAssistants } from "../../assistants/AssistantLauncher";
+import "../../../styles/chat-reading.css";
 import { useAccountSyncUpdated } from "../../../lib/account-sync-events";
 import { t } from "../../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
@@ -206,6 +208,11 @@ export function AgentScreen({
           </button>
         }
       />
+      <div className="assistants-entry">
+        <button type="button" className="mobile-chip-button" onClick={() => openAssistants()}>
+          {t("My assistants")}
+        </button>
+      </div>
       <PullToRefresh className="mobile-list-scroll" onRefresh={refresh}>
         {actionError ? (
           <p className="mobile-dictation-error" role="alert">
@@ -855,6 +862,11 @@ export function AgentSessionScreen({
           </>
         }
       />
+      <div className="assistants-entry">
+        <button type="button" className="mobile-chip-button" onClick={() => openAssistants()}>
+          {t("My assistants")}
+        </button>
+      </div>
       <div className="mobile-chat-scroll" ref={scrollRef} onScroll={handleScroll}>
         {loadingTask ? <Spinner aria-label={t("Loading")} /> : null}
         {showHero ? (

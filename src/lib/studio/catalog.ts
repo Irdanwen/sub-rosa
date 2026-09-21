@@ -6,6 +6,7 @@
 import { intlLocale, t } from "../i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { probedConstraints } from "./model-constraints";
+import inputRules from "./model-input-rules.json";
 import type { MediaCatalog, MediaModel, MediaType } from "./types";
 
 const CATALOG_TTL_MS = 5 * 60 * 1000;
@@ -543,10 +544,10 @@ export function soundEffectsModels(catalog: MediaCatalog): MediaModel[] {
   return modelsOfType(catalog, "music").filter((model) => isSoundEffectsModel(model.id));
 }
 
-/** Per-model music input rules. The catalogs don't publish these, so this is
- * the one place they are hardcoded (matched by id substring, most specific
- * first). Unknown models get the permissive default so new backends models
- * stay usable. */
+/** Per-model music input rules, shared by Studio and native assistant proposals.
+ * Catalogs do not publish these. IDs match by substring, most specific first.
+ * The measured table includes elevenlabs-music rejecting dedicated lyrics,
+ * unlike its documentation. Unknown models retain the permissive default. */
 export interface MusicCapabilities {
   /** Whether the model accepts a dedicated lyrics prompt. */
   lyrics: "required" | "optional" | "none";
@@ -554,32 +555,7 @@ export interface MusicCapabilities {
   durationSeconds?: { min: number; max: number; step: number };
 }
 
-const MUSIC_CAPABILITIES: Array<{ match: string; caps: MusicCapabilities }> = [
-  {
-    match: "ace-step",
-    caps: {
-      lyrics: "optional",
-      instrumental: true,
-      durationSeconds: { min: 60, max: 210, step: 30 },
-    },
-  },
-  // elevenlabs-music rejects lyrics_prompt with a 400 (unlike its Venice docs).
-  { match: "elevenlabs-music", caps: { lyrics: "none", instrumental: true } },
-  { match: "minimax-music", caps: { lyrics: "required", instrumental: false } },
-  { match: "lyria", caps: { lyrics: "none", instrumental: true } },
-  {
-    match: "stable-audio",
-    caps: { lyrics: "none", instrumental: true, durationSeconds: { min: 5, max: 180, step: 5 } },
-  },
-  {
-    match: "sound-effects",
-    caps: { lyrics: "none", instrumental: true, durationSeconds: { min: 1, max: 22, step: 1 } },
-  },
-  {
-    match: "mmaudio",
-    caps: { lyrics: "none", instrumental: true, durationSeconds: { min: 1, max: 30, step: 1 } },
-  },
-];
+const MUSIC_CAPABILITIES = inputRules.music as Array<{ match: string; caps: MusicCapabilities }>;
 
 export function musicCapabilities(modelId: string): MusicCapabilities {
   const id = modelId.toLowerCase();

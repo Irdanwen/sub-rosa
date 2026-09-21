@@ -34,11 +34,12 @@ pub async fn sweep(app: &AppHandle) {
     // Studio generations already queued (and paid for) upstream: poll, download
     // and file them in the gallery.
     crate::carpe_diem::jobs::resume_all(app).await;
+    crate::assistants::resume_unfinished(app).await;
+    crate::assistants::media::resume(app).await;
     // A dictation whose transcription never came back.
     #[cfg(mobile)]
     crate::dictation_mobile::resume_pending(app).await;
     // A chat turn cut off between the user's message and the reply.
-    #[cfg(mobile)]
     crate::agent_lite::resume_interrupted_turns(app).await;
     // A link the user pasted whose download never finished. Cross-platform:
     // the desktop gets killed mid-download too.

@@ -7,6 +7,7 @@ import { requestOpenNoteFromChat } from "../../lib/chat-blocks-nav";
 import { openExternalUrl } from "../../lib/tauri";
 import { PlacesCard } from "./PlacesCard";
 import { ProposalCard } from "./ProposalCard";
+import { AssistantMediaCard } from "./AssistantMediaCard";
 
 /**
  * Renders one parsed chat block (see src/lib/chat-blocks.ts). Shared by the
@@ -15,6 +16,8 @@ import { ProposalCard } from "./ProposalCard";
  */
 export function ChatBlockView({ block }: { block: ChatBlock }) {
   switch (block.kind) {
+    case "media":
+      return <AssistantMediaCard key={block.proposalId} id={block.proposalId} />;
     case "links":
       return <LinkPreviewCard block={block} />;
     case "places":

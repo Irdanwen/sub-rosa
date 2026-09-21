@@ -13,6 +13,43 @@ struct Table {
 }
 const TABLES: &[Table] = &[
     Table {
+        name: "assistants",
+        kind: "settings",
+        columns: &[
+            "id",
+            "name",
+            "description",
+            "instructions",
+            "model",
+            "opening_message",
+            "tools_json",
+            "allow_notes",
+            "allow_memory",
+            "avatar_ref",
+            "cover_ref",
+            "revision",
+            "created_at",
+            "updated_at",
+        ],
+    },
+    Table {
+        name: "assistant_references",
+        kind: "artifact",
+        columns: &[
+            "id",
+            "assistant_id",
+            "name",
+            "format",
+            "text",
+            "status",
+            "error",
+            "note_id",
+            "file_name",
+            "created_at",
+            "updated_at",
+        ],
+    },
+    Table {
         name: "ingests",
         kind: "artifact",
         columns: &[
@@ -242,6 +279,14 @@ const TABLES: &[Table] = &[
 ];
 const UUID_SQL:&str="(lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-4'||substr(lower(hex(randomblob(2))),2)||'-a'||substr(lower(hex(randomblob(2))),2)||'-'||lower(hex(randomblob(6))))";
 fn table(name: &str) -> Result<&'static Table, AppError> {
+    // A distinct authenticated wire codec is mandatory: older clients ignore
+    // unknown extra fields on agent_tasks and default unknown safety profiles.
+    // They must reject the entire conversation rather than lose its permissions.
+    let name = if name == "assistant_conversations" {
+        "agent_tasks"
+    } else {
+        name
+    };
     TABLES
         .iter()
         .find(|t| t.name == name)
@@ -258,7 +303,9 @@ fn row_json(t: &Table, prefix: &str) -> String {
     )
 }
 fn snapshot_body(t: &Table, prefix: &str) -> String {
-    if t.name == "notes" {
+    if t.name == "agent_tasks" {
+        format!("json_object('table',CASE WHEN {prefix}safety_profile='custom_assistant' THEN 'assistant_conversations' ELSE 'agent_tasks' END,'row',{},'assistant_snapshot',json((SELECT snapshot_json FROM assistant_conversations WHERE task_id={prefix}id)))",row_json(t,prefix))
+    } else if t.name == "notes" {
         format!(
             "json_object('table','notes','row',{},'summary',{})",
             row_json(t, prefix),
@@ -275,15 +322,36 @@ fn snapshot_body(t: &Table, prefix: &str) -> String {
 /// Installed only after the additive schema migration. The trigger body is
 /// executed as one SQLite statement, not fed to the legacy semicolon splitter.
 pub async fn install(pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
+    // Upgrade existing task triggers so a portable conversation always travels
+    // with its permissions, including on previously initialized databases.
+    for action in ["insert", "update", "delete"] {
+        query(&format!(
+            "DROP TRIGGER IF EXISTS account_sync_agent_tasks_{action}"
+        ))
+        .execute(pool)
+        .await?;
+    }
     for t in TABLES {
         for (action, prefix, deleted) in [
             ("INSERT", "NEW.", 0),
             ("UPDATE", "NEW.", 0),
             ("DELETE", "OLD.", 1),
         ] {
-            let sql=format!("CREATE TRIGGER IF NOT EXISTS account_sync_{}_{} AFTER {} ON {} WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) VALUES ({UUID_SQL},{prefix}id,'{}',{},{deleted}); END",t.name,action.to_lowercase(),action,t.name,t.kind,snapshot_body(t,prefix));
+            let gate = if t.name == "agent_tasks" && action == "INSERT" {
+                " AND NEW.safety_profile<>'custom_assistant'"
+            } else {
+                ""
+            };
+            let sql=format!("CREATE TRIGGER IF NOT EXISTS account_sync_{}_{} AFTER {} ON {} WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1){gate} BEGIN INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) VALUES ({UUID_SQL},{prefix}id,'{}',{},{deleted}); END",t.name,action.to_lowercase(),action,t.name,t.kind,snapshot_body(t,prefix));
             query(&sql).execute(pool).await?;
         }
+    }
+    let tasks = TABLES
+        .iter()
+        .find(|t| t.name == "agent_tasks")
+        .ok_or_else(|| sqlx::error::Error::Protocol("task schema missing".into()))?;
+    for action in ["INSERT", "UPDATE"] {
+        query(&format!("CREATE TRIGGER IF NOT EXISTS account_assistant_snapshot_{} AFTER {} ON assistant_conversations WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},agent_tasks.id,'conversation',{},0 FROM agent_tasks WHERE agent_tasks.id=NEW.task_id; END",action.to_lowercase(),action,snapshot_body(tasks,"agent_tasks."))).execute(pool).await?;
     }
     let notes = TABLES
         .iter()
@@ -652,6 +720,12 @@ async fn head_and_applied(conn: &mut SqliteConnection, c: &Change) -> Result<(),
     mark_applied(conn, &c.revision).await
 }
 async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<bool, AppError> {
+    if body["table"] == "assistant_conversations"
+        && !c.deleted
+        && body.get("assistant_snapshot").map_or(true, Value::is_null)
+    {
+        return Err(error("sync_format_invalid"));
+    }
     if body["table"] == "carpe_diem_settings" {
         query("INSERT INTO account_sync_settings(id,ciphertext,revision) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET ciphertext=excluded.ciphertext,revision=excluded.revision").bind(&c.object_id).bind(&c.ciphertext).bind(&c.revision).execute(conn).await?;
         return Ok(true);
@@ -681,6 +755,9 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
     // A received execution state is history, never authorization to run work.
     if t.name == "agent_tasks" {
         row.insert("status".into(), json!("completed"));
+        if body.get("assistant_snapshot").is_some_and(|v| !v.is_null()) {
+            row.insert("safety_profile".into(), json!("custom_assistant"));
+        }
     }
     if t.name == "notes"
         && !matches!(
@@ -706,6 +783,10 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
         row.insert("status".into(), json!("completed"));
     }
     let artifact_table = if t.name == "account_file_manifests"
+        && row.get("source_kind").and_then(Value::as_str) == Some("assistant")
+    {
+        "assistant_references"
+    } else if t.name == "account_file_manifests"
         && row.get("source_kind").and_then(Value::as_str) == Some("studio")
     {
         "account_studio_files"
@@ -713,6 +794,7 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
         "audio_artifacts"
     };
     for (field, parent) in [
+        ("assistant_id", "assistants"),
         ("note_id", "notes"),
         ("task_id", "agent_tasks"),
         ("folder_id", "folders"),
@@ -720,12 +802,20 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
         ("recording_session_id", "recording_sessions"),
         ("audio_artifact_id", "audio_artifacts"),
     ] {
+        // A reference is an immutable note snapshot, not a dependency on the
+        // continuing existence of the original note.
+        if t.name == "assistant_references" && field == "note_id" {
+            continue;
+        }
         if let Some(id) = row.get(field).and_then(Value::as_str) {
-            let found = query(&format!("SELECT 1 FROM {parent} WHERE id=?"))
+            let mut found = query(&format!("SELECT 1 FROM {parent} WHERE id=?"))
                 .bind(id)
                 .fetch_optional(&mut *conn)
                 .await?
                 .is_some();
+            if !found && field == "artifact_id" && artifact_table == "assistant_references" {
+                found=query("SELECT 1 FROM assistant_conversations c,json_each(c.snapshot_json,'$.references') j WHERE json_extract(j.value,'$.id')=? LIMIT 1").bind(id).fetch_optional(&mut *conn).await?.is_some();
+            }
             if !found {
                 return Ok(false);
             }
@@ -769,6 +859,15 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
             };
         }
         q.execute(&mut *conn).await?;
+        if t.name == "agent_tasks" {
+            if let Some(snapshot) = body.get("assistant_snapshot").filter(|v| !v.is_null()) {
+                let parsed: crate::assistants::runtime::AssistantSnapshot =
+                    serde_json::from_value(snapshot.clone())
+                        .map_err(|_| error("sync_format_invalid"))?;
+                query("INSERT INTO assistant_conversations(task_id,assistant_id,snapshot_json,created_at) VALUES(?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET assistant_id=excluded.assistant_id,snapshot_json=excluded.snapshot_json")
+                    .bind(&c.object_id).bind(&parsed.definition.id).bind(snapshot.to_string()).bind(row.get("created_at").and_then(Value::as_str).unwrap_or_default()).execute(&mut *conn).await?;
+            }
+        }
         if t.name == "notes" {
             if let Some(summary) = body.get("summary") {
                 super::summaries::apply(conn, &c.object_id, summary).await?;
@@ -1275,6 +1374,86 @@ mod tests {
             deleted: false,
             operation_id: Some(op),
         }
+    }
+    #[tokio::test]
+    async fn portable_assistant_snapshot_is_journaled_and_applied_without_execution() {
+        let pool = database().await;
+        let definition = crate::assistants::save(
+            &pool,
+            crate::assistants::AssistantDefinition {
+                name: "Writer".into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let task = uuid::Uuid::new_v4().to_string();
+        query("INSERT INTO agent_tasks(id,title,prompt,status,safety_profile,created_at,updated_at) VALUES(?,'Writer','Hello','running','custom_assistant','now','now')").bind(&task).execute(&pool).await.unwrap();
+        let reference_id = uuid::Uuid::new_v4().to_string();
+        let snapshot = json!({"definition":definition,"references":[{"id":reference_id,"assistant_id":definition.id,"name":"Cover","format":"png","text":"","status":"ready","error":null,"note_id":null,"file_name":format!("{reference_id}.png"),"created_at":"now","updated_at":"now"}]});
+        query("INSERT INTO assistant_conversations(task_id,assistant_id,snapshot_json,created_at) VALUES(?,?,?,'now')").bind(&task).bind(&definition.id).bind(snapshot.to_string()).execute(&pool).await.unwrap();
+        let body: String = query(
+            "SELECT body FROM account_sync_outbox WHERE object_id=? ORDER BY rowid DESC LIMIT 1",
+        )
+        .bind(&task)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .get("body");
+        let body: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(
+            body["table"], "assistant_conversations",
+            "old clients must reject this unknown codec rather than drop permissions"
+        );
+        assert_eq!(body["assistant_snapshot"], snapshot);
+        let destination = database().await;
+        let c = Change {
+            sequence: 1,
+            resolved_revisions: vec![],
+            object_id: task.clone(),
+            revision: uuid::Uuid::new_v4().to_string(),
+            parent_revision: None,
+            kind: "conversation".into(),
+            ciphertext: String::new(),
+            deleted: false,
+            operation_id: Some(uuid::Uuid::new_v4().to_string()),
+        };
+        let mut tx = destination.begin().await.unwrap();
+        assert!(apply(&mut tx, &c, &body).await.unwrap());
+        tx.commit().await.unwrap();
+        let actual = crate::assistants::runtime::snapshot_for_task(&destination, &task)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!actual.definition.allow_notes && !actual.definition.allow_memory);
+        assert_eq!(actual.definition.name, "Writer");
+        let row = query("SELECT status,safety_profile FROM agent_tasks WHERE id=?")
+            .bind(task)
+            .fetch_one(&destination)
+            .await
+            .unwrap();
+        assert_eq!(row.get::<String, _>("status"), "completed");
+        assert_eq!(row.get::<String, _>("safety_profile"), "custom_assistant");
+        // A conversation's images still transfer after deleting its original
+        // profile: the snapshot itself owns the authenticated file dependency.
+        let manifest_id = uuid::Uuid::new_v4().to_string();
+        let manifest = Change {
+            object_id: manifest_id.clone(),
+            kind: "artifact".into(),
+            ..c
+        };
+        let body = json!({"table":"account_file_manifests","row":{"id":manifest_id,"artifact_id":reference_id,"bytes":10,"format":"png","chunks_json":"[]","created_at":"now","source_kind":"assistant"}});
+        let mut tx = destination.begin().await.unwrap();
+        assert!(apply(&mut tx, &manifest, &body).await.unwrap());
+        tx.commit().await.unwrap();
+        assert_eq!(
+            query("SELECT count(*) AS n FROM account_sync_outbox")
+                .fetch_one(&destination)
+                .await
+                .unwrap()
+                .get::<i64, _>("n"),
+            0
+        );
     }
     #[tokio::test]
     async fn oversized_object_is_retained_and_reported_before_network() {

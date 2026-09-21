@@ -66,6 +66,8 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0056-an-authorised-device-renews-without-a-browser.md](adr/0056-an-authorised-device-renews-without-a-browser.md) — a device secret that outlives its token families, never rotates, never makes a session recent again, and dies with revocation or a database restore
 - [adr/0057-pairing-is-offered-before-the-recovery-key.md](adr/0057-pairing-is-offered-before-the-recovery-key.md) — on a locked device the panel offers the device you already have first, because a recovery key leaks when it is taken out to be pasted
 
+- [adr/0058](adr/0058-assistants-are-portable-definitions-with-native-permissions.md) — portable assistants, native per-conversation permissions, local references and explicit multimedia generation.
+
 ## Enforceable rules (spec/)
 
 Coding rules that should fail review if violated (distinct from the `specs/`
@@ -119,6 +121,8 @@ not the upstream fix lands.
 - [reports/2026-07-29-carpe-diem-router-rail.md](reports/2026-07-29-carpe-diem-router-rail.md) — `/router` vs `/v1`: `stream_options` rejected with 400 on externally-routed requests, no Carpe fallback on that 4xx, and no SSE on `/router` at all (pairs with the 2026-07-29 addendum to [ADR-0015](adr/0015-normalize-carpe-diem-router-responses.md))
 
 ## QA
+
+- [qa/assistants-2026-09-21.md](qa/assistants-2026-09-21.md) - private assistants, desktop/mobile walkthroughs, permission and paid-generation regression coverage, remaining live checks
 
 - [qa/2026-09-05-public-readiness.md](qa/2026-09-05-public-readiness.md) — Studio discovery, model choice, recovery, localization, paid multimodal trials, artifact format fixes and remaining release checks
 

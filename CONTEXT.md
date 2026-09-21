@@ -218,6 +218,24 @@ audio interval a chapter is anchored to), bookmark.
 
 ### Agent runtime (Hermes)
 
+**Assistant (custom)**:
+A reusable private definition with its own name, instructions, selected references
+and allowed tools. Stored locally and optionally synchronised as ciphertext.
+Custom assistants use the native constrained loop on desktop and mobile; the
+desktop general assistant continues to use Hermes. Starting a conversation takes
+a snapshot of the definition and references. Applying a later version is explicit.
+_Avoid_: Mind, persona, Hermes profile (that is runtime administration).
+
+**Assistant reference**:
+A file or dated copy of a selected note attached to one assistant. Attaching a
+note does not grant access to the note corpus. Refreshing a copy is explicit;
+existing conversations retain their snapshot.
+
+**Generation proposal**:
+The parameters an assistant prepares for an image, edit, upscale, video, music
+or spoken-audio generation. A local durable record, consumed once only by the
+person's explicit Generate action. Synchronised history never authorises spending.
+
 **Automation address**:
 A `subrosa://…` destination shown to the user so a Shortcut can open it.
 Every destination the router understands is automatable this way — the Action

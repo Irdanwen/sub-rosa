@@ -1,6 +1,7 @@
 //! Portable conversation history. Only visible user/assistant text crosses
 //! this seam; runtime identities and tool authorization never become sync data.
 use super::*;
+use crate::assistants::general::ensure_general_continuation;
 use chrono::Utc;
 
 const CONTEXT_PREFIX: &str = "SUBROSA_PORTABLE_HISTORY_V1\n";
@@ -142,6 +143,7 @@ pub async fn account_conversation_get(
 ) -> Result<Conversation, AppError> {
     read_conversation(&pool(&app).await?, &task_id).await
 }
+
 #[tauri::command]
 pub async fn account_conversation_prepare(
     app: AppHandle,
@@ -154,6 +156,7 @@ pub async fn account_conversation_prepare(
         return Err(invalid());
     }
     let pool = pool(&app).await?;
+    ensure_general_continuation(&pool, &task_id).await?;
     let source = read_conversation(&pool, &task_id).await?;
     let prompt = history_prompt(&source.messages, new_message)?;
     let id = uuid::Uuid::new_v4().to_string();
@@ -183,6 +186,7 @@ pub async fn account_conversation_bind(
         return Err(invalid());
     }
     let pool = pool(&app).await?;
+    ensure_general_continuation(&pool, &task_id).await?;
     let rows=query("UPDATE agent_tasks SET hermes_session_id=? WHERE id=? AND (hermes_session_id IS NULL OR hermes_session_id=?) AND EXISTS(SELECT 1 FROM agent_messages WHERE task_id=agent_tasks.id AND external_id LIKE 'portable-copy:%')").bind(&session_id).bind(&task_id).bind(&session_id).execute(&pool).await?;
     if rows.rows_affected() != 1 {
         return Err(invalid());
@@ -502,6 +506,32 @@ mod persistence_tests {
         assert_eq!(changed.len(), 3);
         assert_eq!(changed[0].get::<String, _>("session_id"), "session-12");
     }
+    #[tokio::test]
+    async fn custom_conversations_cannot_be_continued_with_general_runtime_permissions() {
+        let pool = database().await;
+        query("INSERT INTO agent_tasks(id,title,prompt,status,safety_profile,created_at,updated_at) VALUES('custom','Fiction','Hello','completed','custom_assistant','now','now')").execute(&pool).await.unwrap();
+        assert_eq!(
+            ensure_general_continuation(&pool, "custom")
+                .await
+                .unwrap_err()
+                .code,
+            "assistant_use_private_chat"
+        );
+        query("UPDATE agent_tasks SET safety_profile='autonomous_private' WHERE id='custom'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(ensure_general_continuation(&pool, "custom").await.is_ok());
+        query("INSERT INTO assistant_conversations(task_id,assistant_id,snapshot_json,created_at) VALUES('custom','a','{}','now')").execute(&pool).await.unwrap();
+        assert_eq!(
+            ensure_general_continuation(&pool, "custom")
+                .await
+                .unwrap_err()
+                .code,
+            "assistant_use_private_chat"
+        );
+    }
+
     #[tokio::test]
     async fn mobile_reply_to_a_desktop_conversation_remains_discoverable() {
         let pool = database().await;

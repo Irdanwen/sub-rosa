@@ -66,6 +66,20 @@ describe("destination addresses", () => {
     expect(parseDestination("subrosa://record")).toEqual({ kind: "record" });
   });
 
+  it("routes custom assistant notifications separately and rejects malformed ids", () => {
+    const destination = { kind: "assistant", taskId: "private-task-1" } as const;
+    expect(destinationUrl(destination)).toBe("subrosa://assistant/private-task-1");
+    expect(parseDestination(destinationUrl(destination))).toEqual(destination);
+    for (const address of [
+      "subrosa://assistant",
+      "subrosa://assistant/a/b",
+      "subrosa://assistant/../chat/other",
+      "subrosa://assistant/with space",
+    ]) {
+      expect(parseDestination(address)).toBeNull();
+    }
+  });
+
   it("carries a chat query and caps it", () => {
     expect(parseDestination("subrosa://chat?q=what%20did%20I%20say")).toMatchObject({
       kind: "chat",
@@ -161,6 +175,19 @@ describe("subscribeToDestinations", () => {
       { kind: "note", noteId: "n-1" },
       { kind: "chat", sessionId: "task-2", query: undefined },
     ]);
+  });
+
+  it("preserves the custom conversation on cold launch and notification taps", async () => {
+    deepLink.current = ["subrosa://assistant/old-task"];
+    const seen: Destination[] = [];
+    const stop = subscribeToDestinations((destination) => seen.push(destination));
+    await settle();
+    notification.handlers[0]({ extra: { destination: "subrosa://assistant/new-task" } });
+    expect(seen).toEqual([
+      { kind: "assistant", taskId: "old-task" },
+      { kind: "assistant", taskId: "new-task" },
+    ]);
+    stop();
   });
 
   it("ignores a notification with no destination, and unknown addresses", async () => {

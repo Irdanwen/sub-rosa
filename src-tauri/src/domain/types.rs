@@ -879,12 +879,14 @@ pub struct AgentTaskRequest {
 pub enum AgentSafetyProfile {
     #[default]
     AutonomousPrivate,
+    CustomAssistant,
 }
 
 impl AgentSafetyProfile {
     pub fn as_db(self) -> &'static str {
         match self {
             Self::AutonomousPrivate => "autonomous_private",
+            Self::CustomAssistant => "custom_assistant",
         }
     }
 }
@@ -893,6 +895,7 @@ impl From<&str> for AgentSafetyProfile {
     fn from(value: &str) -> Self {
         match value {
             "autonomous_private" | "autonomousPrivate" => Self::AutonomousPrivate,
+            "custom_assistant" | "customAssistant" => Self::CustomAssistant,
             _ => Self::AutonomousPrivate,
         }
     }

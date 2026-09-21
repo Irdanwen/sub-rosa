@@ -315,18 +315,7 @@ pub async fn list_dictionary_entries(app: AppHandle) -> Result<Vec<DictionaryEnt
 
 #[tauri::command]
 pub async fn list_agent_tasks(app: AppHandle) -> Result<AgentTaskListResponse, AppError> {
-    let repos = repositories(&app).await?;
-    repos.complete_agent_tasks_with_assistant_messages().await?;
-    let response = repos.list_agent_tasks().await?;
-    for task in &response.items {
-        if let Err(error) = hydrate_agent_task_from_hermes(&app, &repos, &task.id).await {
-            eprintln!(
-                "failed to hydrate agent task {} from Hermes state: {}",
-                task.id, error.message
-            );
-        }
-    }
-    Ok(repos.list_agent_tasks().await?)
+    crate::assistants::general::list(&app).await
 }
 
 #[tauri::command]
@@ -362,6 +351,7 @@ pub async fn get_agent_task(
     request: GetAgentTaskRequest,
 ) -> Result<AgentTaskDto, AppError> {
     let repos = repositories(&app).await?;
+    crate::assistants::general::ensure_general_continuation(&repos.pool, &request.task_id).await?;
     if let Err(error) = hydrate_agent_task_from_hermes(&app, &repos, &request.task_id).await {
         eprintln!(
             "failed to hydrate agent task {} from Hermes state: {}",
@@ -384,6 +374,7 @@ pub async fn send_agent_message(
         ));
     }
     let repos = repositories(&app).await?;
+    crate::assistants::general::ensure_general_continuation(&repos.pool, &request.task_id).await?;
     repos
         .add_agent_message(&request.task_id, AgentMessageRole::User, content)
         .await?;
@@ -414,6 +405,7 @@ pub async fn save_agent_assistant_message(
         ));
     }
     let repos = repositories(&app).await?;
+    crate::assistants::general::ensure_general_continuation(&repos.pool, &request.task_id).await?;
     repos
         .add_agent_message(&request.task_id, AgentMessageRole::Assistant, content)
         .await?;
@@ -441,6 +433,7 @@ pub async fn save_agent_hermes_session(
         ));
     }
     let repos = repositories(&app).await?;
+    crate::assistants::general::ensure_general_continuation(&repos.pool, &request.task_id).await?;
     repos
         .set_agent_task_hermes_session(&request.task_id, hermes_session_id)
         .await?;
@@ -456,6 +449,7 @@ pub async fn set_agent_task_model(
     request: SetAgentTaskModelRequest,
 ) -> Result<AgentTaskDto, AppError> {
     let repos = repositories(&app).await?;
+    crate::assistants::general::ensure_general_continuation(&repos.pool, &request.task_id).await?;
     repos
         .set_agent_task_model(&request.task_id, Some(request.model.as_str()))
         .await?;
@@ -471,6 +465,8 @@ pub async fn fork_agent_task(
     request: ForkAgentTaskRequest,
 ) -> Result<AgentTaskDto, AppError> {
     let repos = repositories(&app).await?;
+    crate::assistants::general::ensure_general_continuation(&repos.pool, &request.source_task_id)
+        .await?;
     Ok(repos
         .fork_agent_task(&request.source_task_id, request.model.as_deref())
         .await?)
@@ -532,6 +528,7 @@ pub async fn retry_agent_task(
     request: AgentTaskRequest,
 ) -> Result<AgentTaskDto, AppError> {
     let repos = repositories(&app).await?;
+    crate::assistants::general::ensure_general_continuation(&repos.pool, &request.task_id).await?;
     repos
         .update_agent_task_status(
             &request.task_id,
@@ -2223,11 +2220,12 @@ async fn run_agent_runtime_placeholder(repos: &Repositories, task_id: &str) {
         .await;
 }
 
-async fn hydrate_agent_task_from_hermes(
+pub(crate) async fn hydrate_agent_task_from_hermes(
     app: &AppHandle,
     repos: &Repositories,
     task_id: &str,
 ) -> Result<(), AppError> {
+    crate::assistants::general::ensure_general_continuation(&repos.pool, task_id).await?;
     let task = repos.get_agent_task(task_id).await?;
     let paths = app_paths(app)?;
     let hermes_db_path = paths.data_dir.join("hermes").join("state.db");

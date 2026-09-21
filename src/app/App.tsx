@@ -1,3 +1,4 @@
+import { AssistantLauncher, openAssistants } from "../components/assistants/AssistantLauncher";
 import { useAccountLibrarySync } from "./useAccountLibrarySync";
 import { t } from "../lib/i18n";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
@@ -1499,6 +1500,9 @@ export function App() {
         setActiveView("agent");
         break;
       }
+      case "assistant":
+        openAssistants(destination.taskId);
+        break;
       case "dictation":
         setActiveView("dictation");
         break;
@@ -2781,6 +2785,7 @@ export function App() {
         } as CSSProperties
       }
     >
+      <AssistantLauncher />
       <div
         className="titlebar-drag"
         aria-hidden

@@ -124,6 +124,27 @@ The decrypted recovery-vault and pairing bodies are `{ "v": 1, "key": "base64url
 
 An object body contains `{ v: 1, operation_id, parent_revision, deleted, resolved_revisions?, ...payload }`. The client compares these fields against server metadata after AEAD verification. The server-generated revision is unavailable when encrypting a new operation, so it is deliberately not the AEAD identity; the authenticated operation ID is. Native row payloads use `{ table, row }` with an explicit table/column codec allowlist in [`account/sync.rs`](../src-tauri/src/account/sync.rs). A peer cannot send SQL identifiers or arbitrary local paths. Sensitive Carpe Diem settings use the reserved settings object `00000000-0000-4000-8000-000000000001`; they are still encrypted.
 
+## Native assistant codec (21 September 2026)
+
+Assistant definitions use the existing `settings` routing class; attached reference
+rows and encrypted files use `artifact`. Custom conversations use `conversation`
+with the authenticated body table `assistant_conversations`, containing the task
+row and its `assistant_snapshot` (definition, permissions and copied references).
+The snapshot is required for non-deleted objects. Received conversations are
+completed history and never schedule a turn or a paid generation.
+
+This distinct table name deliberately makes older native clients reject the object
+before advancing their cursor. An optional field on `agent_tasks` would be silently
+discarded by older clients, which also default unknown safety profiles to general
+assistant permissions. Update all syncing clients when adopting assistants.
+
+File manifests add native `source_kind: assistant`; names are confined UUID filenames
+and files are capped at 20 MiB. An immutable conversation snapshot can own the file
+dependency even after its library profile/reference is deleted. Paid media proposals
+and execution claims remain local and are not synchronized. No service API or
+routing-kind change is required. Local archives use format 2 to preserve the same
+boundary; new clients still import format 1 archives.
+
 ## Physical device pairing
 
 1. The requesting device creates a request UUID and a random 32-byte transfer secret. It persists its pending secret in the keyring before the first network request.
