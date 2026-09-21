@@ -7622,7 +7622,7 @@ fn render_context_mcp_entry(config: &JuneContextMcpConfig) -> String {
     args:
       - {script_path}
       - {database_path}
-{memory_arg}      - "--proxy={proxy_path}"
+{memory_arg}      - {proxy_arg}
     env:
       PYTHONUNBUFFERED: "1"
     timeout: 30
@@ -7632,7 +7632,10 @@ fn render_context_mcp_entry(config: &JuneContextMcpConfig) -> String {
         command = yaml_string(&config.command),
         script_path = yaml_string(&config.script_path.to_string_lossy()),
         database_path = yaml_string(&config.database_path.to_string_lossy()),
-        proxy_path = config.coordinates_path.to_string_lossy(),
+        proxy_arg = yaml_string(&format!(
+            "--proxy={}",
+            config.coordinates_path.to_string_lossy()
+        )),
     )
 }
 
@@ -8816,6 +8819,9 @@ async fn wait_for_hermes(base_url: &str, token: &str) -> Result<(), AppError> {
         format!("Hermes backend did not become ready: {last_error}"),
     ))
 }
+
+#[cfg(test)]
+mod config_tests;
 
 #[cfg(test)]
 mod tests {
