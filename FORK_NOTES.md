@@ -19,7 +19,7 @@ les synchronisations soutenables. Règle : **préférer l'ajout de fichiers** ; 
 - Le moteur `agent_lite` exécute les assistants personnalisés sur les deux
   plateformes, avec filtrage des outils à la déclaration et à l'exécution.
   Le chat général desktop et l'administration des profils restent Hermes.
-- Les migrations 027-029 et les commandes des deux listes accompagnent ces
+- Les migrations 027-030 et les commandes des deux listes accompagnent ces
   surfaces. La synchronisation utilise les classes chiffrées existantes ; son
   enveloppe spécifique de conversation empêche un ancien client d'ignorer les
   permissions. Les propositions payantes restent locales.
@@ -32,7 +32,9 @@ les synchronisations soutenables. Règle : **préférer l'ajout de fichiers** ; 
   fichiers explicitement ; restaurer un assistant utilise un upsert sans
   suppression du parent pour conserver les références locales plus récentes.
   `references/worker.rs` avance au-delà des fichiers distants manquants, avec
-  des limites de scan et d'extraction par reprise.
+  des limites de scan et d'extraction par reprise. La migration 030 conserve
+  les curseurs locaux d'extraction et de découverte des fichiers à synchroniser
+  entre deux lancements iOS, sans les exporter ni les synchroniser.
 
 ## Architecture du fork (résumé)
 

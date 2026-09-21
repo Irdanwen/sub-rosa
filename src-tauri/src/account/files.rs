@@ -9,8 +9,7 @@ const CHUNK_BYTES: usize = 1024 * 1024;
 const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const ASSISTANT_SCAN_LIMIT: usize = 256;
 const ASSISTANT_STAGE_LIMIT: usize = 20;
-static ASSISTANT_SCAN: tokio::sync::Mutex<Option<(PathBuf, String)>> =
-    tokio::sync::Mutex::const_new(None);
+static ASSISTANT_SCAN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Chunk {
@@ -126,15 +125,7 @@ pub(super) async fn step(
     // remainder across an iOS suspension without trusting a JavaScript future.
     let gallery = crate::carpe_diem::media::artifacts_dir(app)?;
     let references = crate::assistants::references_dir(app)?;
-    {
-        let mut scan = ASSISTANT_SCAN.lock().await;
-        let (scan_root, cursor) = scan.get_or_insert_with(|| (references.clone(), String::new()));
-        if *scan_root != references {
-            *scan_root = references.clone();
-            cursor.clear();
-        }
-        stage_assistant_files(pool, &references, cursor).await?;
-    }
+    stage_assistant_files(pool, &references).await?;
     let inventory = super::studio::inventory(app, pool, &gallery).await;
     upload_one(pool, s, key, &paths, &gallery).await?;
     download_one(pool, s, key, &root, &gallery).await?;
@@ -150,22 +141,27 @@ pub(super) async fn step(
 async fn stage_assistant_files(
     pool: &SqlitePool,
     references: &std::path::Path,
-    cursor: &mut String,
 ) -> Result<(), AppError> {
+    let _scan = ASSISTANT_SCAN.lock().await;
+    let mut cursor: String =
+        query("SELECT upload_cursor FROM assistant_reference_progress WHERE id=1")
+            .fetch_one(pool)
+            .await?
+            .get("upload_cursor");
     let mut scanned = 0;
     let mut staged = 0;
     while scanned < ASSISTANT_SCAN_LIMIT && staged < ASSISTANT_STAGE_LIMIT {
         let candidates=query("WITH refs AS (SELECT id,file_name,format FROM assistant_references UNION SELECT json_extract(j.value,'$.id'),json_extract(j.value,'$.file_name'),json_extract(j.value,'$.format') FROM assistant_conversations c,json_each(c.snapshot_json,'$.references') j) SELECT id,file_name,format FROM refs r WHERE id>? AND file_name IS NOT NULL AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=r.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=r.id) ORDER BY id LIMIT 32")
             .bind(cursor.as_str()).fetch_all(pool).await?;
         if candidates.is_empty() {
-            cursor.clear();
+            save_assistant_scan_cursor(pool, "").await?;
             break;
         }
         for row in candidates {
             if scanned >= ASSISTANT_SCAN_LIMIT || staged >= ASSISTANT_STAGE_LIMIT {
                 break;
             }
-            *cursor = row.get("id");
+            cursor = row.get("id");
             scanned += 1;
             let name: String = row.get("file_name");
             let Ok(path) = crate::assistants::reference_file(references, &name) else {
@@ -181,7 +177,17 @@ async fn stage_assistant_files(
                 .bind(cursor.as_str()).bind(uuid::Uuid::new_v4().to_string()).bind(meta.len() as i64).bind(modified(&meta)?).bind(name).bind(row.get::<String,_>("format")).execute(pool).await?;
             staged += result.rows_affected() as usize;
         }
+        // Staged rows are already durable. A suspension can repeat at most
+        // this page, while a completed scan always resumes after its last id.
+        save_assistant_scan_cursor(pool, &cursor).await?;
     }
+    Ok(())
+}
+async fn save_assistant_scan_cursor(pool: &SqlitePool, cursor: &str) -> Result<(), AppError> {
+    query("UPDATE assistant_reference_progress SET upload_cursor=? WHERE id=1")
+        .bind(cursor)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -460,13 +466,16 @@ mod tests {
     use super::*;
     #[tokio::test]
     async fn missing_assistant_files_do_not_starve_later_uploads() {
-        let pool = sqlx_sqlite::SqlitePoolOptions::new()
+        let directory = tempfile::tempdir().unwrap();
+        let options = sqlx_sqlite::SqliteConnectOptions::new()
+            .filename(directory.path().join("sync.sqlite"))
+            .create_if_missing(true);
+        let mut pool = sqlx_sqlite::SqlitePoolOptions::new()
             .max_connections(1)
-            .connect("sqlite::memory:")
+            .connect_with(options.clone())
             .await
             .unwrap();
         crate::db::migrations::run_migrations(&pool).await.unwrap();
-        let directory = tempfile::tempdir().unwrap();
         query("INSERT INTO assistants(id,name,created_at,updated_at) VALUES('reader','Reader','now','now')")
             .execute(&pool).await.unwrap();
         let mut delayed = String::new();
@@ -492,9 +501,8 @@ mod tests {
         query("INSERT INTO assistant_conversations(task_id,assistant_id,snapshot_json,created_at) VALUES('chat','deleted',?,'now')")
             .bind(json!({"references":[{"id":"z-snapshot","file_name":name,"format":"txt"}]}).to_string())
             .execute(&pool).await.unwrap();
-        let mut cursor = String::new();
         for expected in [0_i64, 20, 26] {
-            stage_assistant_files(&pool, directory.path(), &mut cursor)
+            stage_assistant_files(&pool, directory.path())
                 .await
                 .unwrap();
             let count: i64 = query("SELECT count(*) AS count FROM account_file_uploads")
@@ -503,10 +511,24 @@ mod tests {
                 .unwrap()
                 .get("count");
             assert_eq!(count, expected);
+            // A cold launch owns no Rust cursor or connection from the last pass.
+            pool.close().await;
+            pool = sqlx_sqlite::SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect_with(options.clone())
+                .await
+                .unwrap();
+            crate::db::migrations::run_migrations(&pool).await.unwrap();
         }
+        let cursor: String =
+            query("SELECT upload_cursor FROM assistant_reference_progress WHERE id=1")
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+                .get("upload_cursor");
         assert!(cursor.is_empty());
         std::fs::write(directory.path().join(delayed), "Arrived after metadata").unwrap();
-        stage_assistant_files(&pool, directory.path(), &mut cursor)
+        stage_assistant_files(&pool, directory.path())
             .await
             .unwrap();
         let row=query("SELECT source_kind,source_path,bytes FROM account_file_uploads WHERE artifact_id='remote-0000'")
@@ -515,7 +537,7 @@ mod tests {
         assert_eq!(row.get::<i64, _>("bytes"), 22);
         // Subsequent scans retain the same durable staging rows, never duplicates.
         for _ in 0..3 {
-            stage_assistant_files(&pool, directory.path(), &mut cursor)
+            stage_assistant_files(&pool, directory.path())
                 .await
                 .unwrap();
         }
@@ -525,6 +547,7 @@ mod tests {
             .unwrap()
             .get("count");
         assert_eq!(count, 27);
+        pool.close().await;
     }
 
     #[tokio::test]
