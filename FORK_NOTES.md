@@ -36,6 +36,16 @@ les synchronisations soutenables. Règle : **préférer l'ajout de fichiers** ; 
   les curseurs locaux d'extraction et de découverte des fichiers à synchroniser
   entre deux lancements iOS, sans les exporter ni les synchroniser.
 
+## Correctif de configuration Hermes Windows (2026-09-21, v1.70.2)
+
+`render_context_mcp_entry` dans `src-tauri/src/hermes_bridge.rs` échappe
+l'argument complet `--proxy=...` avec `yaml_string()`. Interpoler le chemin
+Windows brut dans une chaîne YAML entre guillemets doubles rendait toute la
+configuration illisible, y compris le fournisseur d'inférence. Préserver cet
+échappement lors des reprises upstream, ainsi que le test de relecture YAML
+des chemins Windows locaux et UNC, avec et sans mémoire. `serde_yaml` est une
+dépendance de test uniquement.
+
 ## Architecture du fork (résumé)
 
 June parle à un backend `june-api` (crate `june`) qui détient les clés fournisseur et parle aux modèles.
