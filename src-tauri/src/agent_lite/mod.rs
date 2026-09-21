@@ -318,7 +318,7 @@ pub async fn resume_interrupted_turns(app: &AppHandle) {
                 let _ = app
                     .notification()
                     .builder()
-                    .title("Your assistant replied")
+                    .title(crate::carpe_diem::branding::PRODUCT_NAME)
                     .body(answer.chars().take(120).collect::<String>())
                     .extra(crate::destinations::EXTRA_KEY, destination)
                     .show();
