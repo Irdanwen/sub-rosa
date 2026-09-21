@@ -4,14 +4,22 @@ use crate::domain::types::AppError;
 use serde_json::{json, Value};
 use std::sync::OnceLock;
 
-fn rules() -> &'static Value {
-    static RULES: OnceLock<Value> = OnceLock::new();
-    RULES.get_or_init(|| {
-        serde_json::from_str(include_str!(
-            "../../../src/lib/studio/model-input-rules.json"
-        ))
-        .expect("bundled model input rules are valid JSON")
-    })
+fn rules() -> Result<&'static Value, AppError> {
+    static RULES: OnceLock<Result<Value, String>> = OnceLock::new();
+    RULES
+        .get_or_init(|| {
+            serde_json::from_str(include_str!(
+                "../../../src/lib/studio/model-input-rules.json"
+            ))
+            .map_err(|error| error.to_string())
+        })
+        .as_ref()
+        .map_err(|error| {
+            AppError::new(
+                "assistant_media_rules",
+                format!("The bundled model input rules are invalid: {error}"),
+            )
+        })
 }
 
 pub fn prompt_video(id: &str) -> bool {
@@ -27,17 +35,17 @@ pub fn prompt_video(id: &str) -> bool {
     .any(|kind| id.contains(kind))
 }
 
-pub fn requirements(kind: &str, id: &str, published: Option<&Value>) -> Value {
+pub fn requirements(kind: &str, id: &str, published: Option<&Value>) -> Result<Value, AppError> {
     let id = id.to_lowercase();
     let family = if kind == "video" { "video" } else { "music" };
-    let fallback = rules()[family].as_array().and_then(|rows| {
+    let fallback = rules()?[family].as_array().and_then(|rows| {
         rows.iter()
             .find(|row| row["match"].as_str().is_some_and(|name| id.contains(name)))
     });
     if kind != "video" {
-        return fallback
+        return Ok(fallback
             .map(|row| row["caps"].clone())
-            .unwrap_or_else(|| json!({"lyrics":"optional","instrumental":true}));
+            .unwrap_or_else(|| json!({"lyrics":"optional","instrumental":true})));
     }
     let mut result = json!({});
     for (field, stored) in [
@@ -57,7 +65,7 @@ pub fn requirements(kind: &str, id: &str, published: Option<&Value>) -> Value {
             result[field] = choices.clone();
         }
     }
-    result
+    Ok(result)
 }
 
 pub fn prepare(
@@ -67,7 +75,7 @@ pub fn prepare(
     params: &mut Value,
 ) -> Result<(), AppError> {
     if kind == "video" {
-        let fields = requirements(kind, id, published);
+        let fields = requirements(kind, id, published)?;
         for field in ["duration", "aspect_ratio", "resolution"] {
             if let Some(options) = fields[field].as_array() {
                 if let Some(selected) = params.get(field) {
@@ -83,7 +91,7 @@ pub fn prepare(
             }
         }
     } else if kind == "music" {
-        let caps = requirements(kind, id, published);
+        let caps = requirements(kind, id, published)?;
         let lyrics = params["lyrics_prompt"].as_str().unwrap_or("").trim();
         if (caps["lyrics"] == "required" && lyrics.is_empty())
             || (caps["lyrics"] == "none" && params.get("lyrics_prompt").is_some())

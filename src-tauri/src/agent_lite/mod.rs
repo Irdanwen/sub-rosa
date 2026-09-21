@@ -161,7 +161,7 @@ pub async fn agent_lite_run(
     // later profile revision must not turn fictional history into user memory.
     let extraction_allowed = crate::assistants::runtime::snapshot_for_task(&repos.pool, &task_id)
         .await
-        .map(|snapshot| snapshot.is_none_or(|snapshot| snapshot.definition.allow_memory))
+        .map(|snapshot| snapshot.map_or(true, |snapshot| snapshot.definition.allow_memory))
         .unwrap_or(false);
     let result = run_turn(&app, &repos, &task_id, model.as_deref(), &attachments).await;
     match result {
@@ -289,7 +289,7 @@ pub async fn resume_interrupted_turns(app: &AppHandle) {
         let extraction_allowed =
             crate::assistants::runtime::snapshot_for_task(&repos.pool, &task_id)
                 .await
-                .map(|snapshot| snapshot.is_none_or(|snapshot| snapshot.definition.allow_memory))
+                .map(|snapshot| snapshot.map_or(true, |snapshot| snapshot.definition.allow_memory))
                 .unwrap_or(false);
         // Attachment payloads are not persisted. run_turn rejects their
         // surviving markers before inference, asking the user to attach again.
@@ -364,7 +364,7 @@ async fn run_turn(
     let snapshot = crate::assistants::runtime::snapshot_for_task(&repos.pool, task_id).await?;
     let memory_allowed = snapshot
         .as_ref()
-        .is_none_or(|snapshot| snapshot.definition.allow_memory);
+        .map_or(true, |snapshot| snapshot.definition.allow_memory);
     let memory_block = if memory_allowed {
         crate::memory::prompt_block(repos).await
     } else {
@@ -445,7 +445,7 @@ async fn run_turn(
     // be cross-referenced with the user's notes, so instead we offer the tools
     // and fall back once if the route turns out to be one of the strict ones.
     let mut has_images = attachments.iter().any(|a| a.kind == "image");
-    let mut tools_withheld = offered_tools.as_array().is_none_or(Vec::is_empty);
+    let mut tools_withheld = offered_tools.as_array().map_or(true, Vec::is_empty);
     // Streaming is what makes the reply appear as it is written instead of
     // landing whole after ten to thirty seconds. It is also the newer path, so
     // any route that answers a streamed request with nothing usable gets the

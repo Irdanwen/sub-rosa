@@ -175,7 +175,7 @@ pub fn reference_context(snapshot: &AssistantSnapshot, query: &str) -> String {
             }
         }
     }
-    hits.sort_by(|left, right| right.0.cmp(&left.0));
+    hits.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     let passages = hits
         .into_iter()
         .take(5)
@@ -266,16 +266,18 @@ pub async fn media_catalog(snapshot: &AssistantSnapshot) -> Result<serde_json::V
                 "audio" | "music" => Some("music"),
                 _ => None,
             };
-            let requirements = kind.map(|kind| {
-                super::media_settings::requirements(kind, &model.id, model.constraints.as_ref())
-            });
+            let requirements = kind
+                .map(|kind| {
+                    super::media_settings::requirements(kind, &model.id, model.constraints.as_ref())
+                })
+                .transpose()?;
             let mut value = serde_json::json!(model);
             if let Some(requirements) = requirements {
                 value["proposalRules"] = requirements;
             }
-            value
+            Ok(value)
         })
-        .collect();
+        .collect::<Result<Vec<_>, AppError>>()?;
     Ok(
         serde_json::json!({"models":models,"references":snapshot.references.iter().map(|reference|
         serde_json::json!({"id":reference.id,"name":reference.name,"format":reference.format})).collect::<Vec<_>>()}),

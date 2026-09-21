@@ -396,6 +396,9 @@ fn extract(path: &Path, format: &str) -> Result<String, AppError> {
         "pdf" => {
             let pages = pdf_extract::extract_text_from_mem_by_pages(&bytes)
                 .map_err(|_| error("assistant_reference_invalid"))?;
+            if pages.is_empty() {
+                return Err(error("assistant_reference_invalid"));
+            }
             if pages.iter().all(|v| v.trim().is_empty()) {
                 return Err(error("assistant_reference_needs_ocr"));
             }
@@ -684,7 +687,7 @@ pub fn select_reference_context(refs: &[AssistantReference], query_text: &str) -
             }
         }
     }
-    passages.sort_by(|a, b| b.0.cmp(&a.0));
+    passages.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     passages
         .into_iter()
         .take(6)
@@ -696,6 +699,48 @@ pub fn select_reference_context(refs: &[AssistantReference], query_text: &str) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn pdf(catalog_extra: &str) -> Vec<u8> {
+        let content = "BT /F1 12 Tf 72 720 Td (Hello PDF) Tj ET";
+        let objects = [
+            format!("<< /Type /Catalog /Pages 2 0 R {catalog_extra} >>"),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".to_owned(),
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>".to_owned(),
+            format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+        ];
+        let mut bytes = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::new();
+        for (index, object) in objects.iter().enumerate() {
+            offsets.push(bytes.len());
+            bytes.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", index + 1).as_bytes());
+        }
+        let xref = bytes.len();
+        bytes.extend_from_slice(b"xref\n0 6\n0000000000 65535 f \n");
+        for offset in offsets {
+            bytes.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        bytes.extend_from_slice(
+            format!("trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").as_bytes(),
+        );
+        bytes
+    }
+    #[test]
+    fn pdf_extracts_page_text_and_rejects_advisory_nested_catalog() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reference.pdf");
+        std::fs::write(&path, pdf("")).unwrap();
+        let text = extract(&path, "pdf").unwrap();
+        assert!(text.contains("[Page 1]"));
+        assert!(text.contains("Hello PDF"));
+
+        // RUSTSEC-2026-0187: a small PDF must not exhaust the native process stack.
+        let nested = format!("/X {}{}", "[".repeat(10_380), "]".repeat(10_380));
+        std::fs::write(&path, pdf(&nested)).unwrap();
+        assert_eq!(
+            extract(&path, "pdf").unwrap_err().code,
+            "assistant_reference_invalid"
+        );
+    }
     fn office(name: &str, body: &str) -> Vec<u8> {
         use std::io::Write;
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));

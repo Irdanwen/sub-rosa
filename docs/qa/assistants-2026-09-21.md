@@ -26,12 +26,18 @@ dialog flow. They have not been uploaded to a third-party QA service.
 - Full frontend suite: 271 files passed, 4,239 tests passed, 2 skipped.
 - Subsequent focused suite: 80 tests passed, covering the final conversation races,
   media consent, shared Studio input rules and file-size limit.
+- Frontend coverage: 77.79%, above the 75.83% floor. The coverage run encountered
+  one existing contenteditable caret-position flake; the complete AgentWorkspace
+  suite passed on rerun (179 passed, 2 skipped), and the CI frontend suite passed.
 - Typecheck, production frontend build, Biome and warning ratchet passed. Existing
   bundle-size and lint warnings remain.
 - Native tests cover revisions, extraction, account synchronization, archive
   round trips, permission filtering, general-chat isolation, durable completion,
   snapshot forks and a concurrent paid claim followed by reopening SQLite.
 - iOS library checks passed for device and simulator targets.
+- The supply-chain check caught a vulnerable transitive PDF parser in the initial
+  dependency selection. Upgrading `pdf-extract` to 0.12.1 selects patched `lopdf`
+  0.42.0. Both `cargo audit` and `cargo deny` pass without a new advisory exception.
 
 ## Remaining validation
 
