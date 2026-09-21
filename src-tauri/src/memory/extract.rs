@@ -109,6 +109,12 @@ pub fn maybe_extract_after_agent_lite_turn(app: &AppHandle, task_id: String) {
     tauri::async_runtime::spawn(async move {
         let result = async {
             let repos = crate::commands::repositories(&app).await?;
+            if crate::assistants::runtime::snapshot_for_task(&repos.pool, &task_id)
+                .await?
+                .is_some_and(|snapshot| !snapshot.definition.allow_memory)
+            {
+                return Ok::<usize, AppError>(0);
+            }
             let task = repos.get_agent_task(&task_id).await?;
             let messages: Vec<ConversationMessage> = task
                 .messages

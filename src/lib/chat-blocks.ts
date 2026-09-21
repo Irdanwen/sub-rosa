@@ -90,7 +90,13 @@ export type ProposalChatBlock = {
   actions: ProposedAction[];
 };
 
-export type ChatBlock = LinksChatBlock | PlacesChatBlock | NotesChatBlock | ProposalChatBlock;
+export type MediaChatBlock = { kind: "media"; proposalId: string };
+export type ChatBlock =
+  | LinksChatBlock
+  | PlacesChatBlock
+  | NotesChatBlock
+  | ProposalChatBlock
+  | MediaChatBlock;
 
 /** Display caps. Clamping (not rejecting) keeps a slightly-over payload
  * useful; a payload with nothing valid inside still returns null. */
@@ -396,6 +402,10 @@ export function parseChatBlock(info: string, body: string): ChatBlock | null {
   }
   if (payload === null || payload.v !== 1) return null;
   switch (kind) {
+    case "media":
+      return typeof payload.proposalId === "string" && /^[a-f\d-]{36}$/i.test(payload.proposalId)
+        ? { kind: "media", proposalId: payload.proposalId }
+        : null;
     case "links":
       return parseLinks(payload);
     case "places":

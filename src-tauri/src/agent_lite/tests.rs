@@ -423,3 +423,32 @@ fn memory_tools_are_only_advertised_when_memory_is_enabled() {
     // The rest of the surface is unaffected by the memory setting.
     assert!(without_memory.contains(&"read_note".to_string()));
 }
+
+#[tokio::test]
+async fn saving_a_reply_and_completing_its_task_is_atomic() {
+    let pool = sqlx_sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    crate::db::migrations::run_migrations(&pool).await.unwrap();
+    let repos = crate::db::repositories::Repositories::new(pool.clone());
+    let task = repos
+        .create_agent_task("Question", None, Default::default(), None)
+        .await
+        .unwrap();
+    sqlx::query::query("CREATE TRIGGER reject_completion BEFORE UPDATE ON agent_tasks BEGIN SELECT RAISE(ABORT, 'simulated write failure'); END")
+        .execute(&pool).await.unwrap();
+    assert!(persist_answer(&repos, &task.id, "Answer").await.is_err());
+    let unchanged = repos.get_agent_task(&task.id).await.unwrap();
+    assert_eq!(unchanged.messages.len(), 1);
+    assert_eq!(unchanged.status, AgentTaskStatus::Queued);
+    sqlx::query::query("DROP TRIGGER reject_completion")
+        .execute(&pool)
+        .await
+        .unwrap();
+    persist_answer(&repos, &task.id, "Answer").await.unwrap();
+    let completed = repos.get_agent_task(&task.id).await.unwrap();
+    assert_eq!(completed.messages.len(), 2);
+    assert_eq!(completed.status, AgentTaskStatus::Completed);
+}

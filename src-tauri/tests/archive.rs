@@ -23,6 +23,70 @@ async fn repos() -> Repositories {
     Repositories::new(pool)
 }
 
+#[tokio::test]
+async fn assistant_files_and_snapshot_permissions_survive_an_archive() {
+    use os_june_lib::assistants::{runtime::snapshot_for_task, save, AssistantDefinition};
+    use sqlx::query::query;
+    let source = repos().await;
+    let definition = save(
+        &source.pool,
+        AssistantDefinition {
+            name: "Private writer".into(),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let reference = uuid::Uuid::new_v4().to_string();
+    let file_name = format!("{reference}.png");
+    query("INSERT INTO assistant_references(id,assistant_id,name,format,status,file_name,created_at,updated_at) VALUES(?,?,'Cover','png','ready',?,'now','now')").bind(&reference).bind(&definition.id).bind(&file_name).execute(&source.pool).await.unwrap();
+    let task = uuid::Uuid::new_v4().to_string();
+    query("INSERT INTO agent_tasks(id,title,prompt,status,safety_profile,created_at,updated_at) VALUES(?,'Writer','Hello','completed','custom_assistant','now','now')").bind(&task).execute(&source.pool).await.unwrap();
+    query("INSERT INTO assistant_conversations(task_id,assistant_id,snapshot_json,created_at) VALUES(?,?,?,'now')").bind(&task).bind(&definition.id).bind(serde_json::json!({"definition":definition,"references":[]}).to_string()).execute(&source.pool).await.unwrap();
+    let source_dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(source_dir.path().join("assistant-references")).unwrap();
+    std::fs::write(
+        source_dir
+            .path()
+            .join("assistant-references")
+            .join(&file_name),
+        b"image bytes",
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    let manifest = write_tar(
+        &source.pool,
+        &ExportOptions {
+            app_version: "test".into(),
+            include_recordings: false,
+            recordings_dir: Some(source_dir.path().join("recordings")),
+        },
+        &mut bytes,
+    )
+    .await
+    .unwrap();
+    assert_eq!(manifest.format, 2);
+    let archive = read_tar(bytes.as_slice()).unwrap();
+    let destination = repos().await;
+    let dir = tempfile::tempdir().unwrap();
+    apply(
+        &destination.pool,
+        &archive,
+        Some(&dir.path().join("recordings")),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        std::fs::read(dir.path().join("assistant-references").join(file_name)).unwrap(),
+        b"image bytes"
+    );
+    let restored = snapshot_for_task(&destination.pool, &task)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!restored.definition.allow_notes && !restored.definition.allow_memory);
+}
+
 async fn seed(repos: &Repositories) -> (String, String) {
     let folder = repos.create_folder("Projets", None).await.expect("folder");
     let note = repos
@@ -61,7 +125,7 @@ async fn an_archive_restores_the_same_notes_folders_and_memories() {
     let manifest = write_tar(&source.pool, &options(), &mut bytes)
         .await
         .expect("write");
-    assert_eq!(manifest.format, 1);
+    assert_eq!(manifest.format, 2);
     assert!(!manifest.includes_recordings);
 
     let archive = read_tar(bytes.as_slice()).expect("read");

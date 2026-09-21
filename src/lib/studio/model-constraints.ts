@@ -30,6 +30,7 @@
  */
 
 import type { MediaModel, VideoConstraints } from "./types";
+import inputRules from "./model-input-rules.json";
 
 const LEARNED_STORAGE_KEY = "os-june:studio-model-constraints";
 
@@ -39,10 +40,6 @@ export interface ProbedConstraints {
   durations?: string[];
   aspectRatios?: string[];
   resolutions?: string[];
-}
-
-function secondsRange(min: number, max: number): string[] {
-  return Array.from({ length: max - min + 1 }, (_, index) => `${min + index}s`);
 }
 
 /** The aspect ratios every model that takes one offers (read off the
@@ -76,45 +73,7 @@ function takesAspectRatio(modelId: string): boolean {
  * wrong: 2.0 reaches 4k, 2.0 fast stops at 720p, and 1.5 pro at 1080p.
  * Durations are every whole second in range, not just the round ones.
  */
-export const PROBED_VIDEO_CONSTRAINTS: ProbedConstraints[] = [
-  {
-    match: "seedance-1-5-pro",
-    durations: secondsRange(4, 12),
-    aspectRatios: SEEDANCE_RATIOS,
-    resolutions: ["480p", "720p", "1080p"],
-  },
-  {
-    // 2.5 doubles the output range and drops 1080p/4k (Venice's Seedance
-    // guide, read 2026-08-14). Ahead of the generic seedance entry, which
-    // would otherwise cap it at 15s.
-    match: "seedance-2-5",
-    durations: secondsRange(4, 30),
-    aspectRatios: SEEDANCE_RATIOS,
-    resolutions: ["480p", "720p"],
-  },
-  {
-    match: "seedance-2-0-fast",
-    durations: secondsRange(4, 15),
-    aspectRatios: SEEDANCE_RATIOS,
-    resolutions: ["480p", "720p"],
-  },
-  {
-    match: "seedance",
-    durations: secondsRange(4, 15),
-    aspectRatios: SEEDANCE_RATIOS,
-    resolutions: ["480p", "720p", "1080p", "4k"],
-  },
-  // The reference variant takes a shorter list than its image counterpart.
-  { match: "wan-2-7-reference-to-video", durations: ["5s", "10s"] },
-  { match: "wan-2-7", durations: ["5s", "10s", "15s"] },
-  { match: "kling-o3", durations: secondsRange(3, 15) },
-  { match: "kling-v3-4k", durations: secondsRange(3, 15) },
-  { match: "happyhorse", durations: secondsRange(3, 15) },
-  { match: "pixverse-c1", durations: ["3s", "5s", "8s", "10s", "15s"] },
-  { match: "minimax-h3", durations: secondsRange(5, 15) },
-  { match: "longcat", durations: ["5s", "10s", "15s", "20s", "30s"] },
-  { match: "vidu-q3", durations: ["3s", "5s", "8s", "10s", "12s", "14s", "16s"] },
-];
+export const PROBED_VIDEO_CONSTRAINTS: ProbedConstraints[] = inputRules.video;
 
 export function probedConstraints(modelId: string): ProbedConstraints | undefined {
   const id = modelId.toLowerCase();

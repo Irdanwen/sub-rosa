@@ -392,6 +392,24 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
     ensure_column(_pool, "account_file_uploads", "source_path", "TEXT").await?;
     ensure_column(_pool, "account_file_uploads", "source_format", "TEXT").await?;
     ensure_column(_pool, "account_sync_control", "last_sync_error", "TEXT").await?;
+    replay(
+        _pool,
+        "027_assistants.sql",
+        include_str!("../../migrations/027_assistants.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "028_assistant_conversations.sql",
+        include_str!("../../migrations/028_assistant_conversations.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "029_assistant_media.sql",
+        include_str!("../../migrations/029_assistant_media.sql"),
+    )
+    .await?;
     crate::account::sync::install(_pool).await?;
     crate::diagnostics::mark("migrations");
 

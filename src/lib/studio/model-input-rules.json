@@ -1,0 +1,205 @@
+{
+  "video": [
+    {
+      "match": "seedance-1-5-pro",
+      "durations": ["4s", "5s", "6s", "7s", "8s", "9s", "10s", "11s", "12s"],
+      "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+      "resolutions": ["480p", "720p", "1080p"]
+    },
+    {
+      "match": "seedance-2-5",
+      "durations": [
+        "4s",
+        "5s",
+        "6s",
+        "7s",
+        "8s",
+        "9s",
+        "10s",
+        "11s",
+        "12s",
+        "13s",
+        "14s",
+        "15s",
+        "16s",
+        "17s",
+        "18s",
+        "19s",
+        "20s",
+        "21s",
+        "22s",
+        "23s",
+        "24s",
+        "25s",
+        "26s",
+        "27s",
+        "28s",
+        "29s",
+        "30s"
+      ],
+      "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+      "resolutions": ["480p", "720p"]
+    },
+    {
+      "match": "seedance-2-0-fast",
+      "durations": ["4s", "5s", "6s", "7s", "8s", "9s", "10s", "11s", "12s", "13s", "14s", "15s"],
+      "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+      "resolutions": ["480p", "720p"]
+    },
+    {
+      "match": "seedance",
+      "durations": ["4s", "5s", "6s", "7s", "8s", "9s", "10s", "11s", "12s", "13s", "14s", "15s"],
+      "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+      "resolutions": ["480p", "720p", "1080p", "4k"]
+    },
+    {
+      "match": "wan-2-7-reference-to-video",
+      "durations": ["5s", "10s"]
+    },
+    {
+      "match": "wan-2-7",
+      "durations": ["5s", "10s", "15s"]
+    },
+    {
+      "match": "kling-o3",
+      "durations": [
+        "3s",
+        "4s",
+        "5s",
+        "6s",
+        "7s",
+        "8s",
+        "9s",
+        "10s",
+        "11s",
+        "12s",
+        "13s",
+        "14s",
+        "15s"
+      ]
+    },
+    {
+      "match": "kling-v3-4k",
+      "durations": [
+        "3s",
+        "4s",
+        "5s",
+        "6s",
+        "7s",
+        "8s",
+        "9s",
+        "10s",
+        "11s",
+        "12s",
+        "13s",
+        "14s",
+        "15s"
+      ]
+    },
+    {
+      "match": "happyhorse",
+      "durations": [
+        "3s",
+        "4s",
+        "5s",
+        "6s",
+        "7s",
+        "8s",
+        "9s",
+        "10s",
+        "11s",
+        "12s",
+        "13s",
+        "14s",
+        "15s"
+      ]
+    },
+    {
+      "match": "pixverse-c1",
+      "durations": ["3s", "5s", "8s", "10s", "15s"]
+    },
+    {
+      "match": "minimax-h3",
+      "durations": ["5s", "6s", "7s", "8s", "9s", "10s", "11s", "12s", "13s", "14s", "15s"]
+    },
+    {
+      "match": "longcat",
+      "durations": ["5s", "10s", "15s", "20s", "30s"]
+    },
+    {
+      "match": "vidu-q3",
+      "durations": ["3s", "5s", "8s", "10s", "12s", "14s", "16s"]
+    }
+  ],
+  "music": [
+    {
+      "match": "ace-step",
+      "caps": {
+        "lyrics": "optional",
+        "instrumental": true,
+        "durationSeconds": {
+          "min": 60,
+          "max": 210,
+          "step": 30
+        }
+      }
+    },
+    {
+      "match": "elevenlabs-music",
+      "caps": {
+        "lyrics": "none",
+        "instrumental": true
+      }
+    },
+    {
+      "match": "minimax-music",
+      "caps": {
+        "lyrics": "required",
+        "instrumental": false
+      }
+    },
+    {
+      "match": "lyria",
+      "caps": {
+        "lyrics": "none",
+        "instrumental": true
+      }
+    },
+    {
+      "match": "stable-audio",
+      "caps": {
+        "lyrics": "none",
+        "instrumental": true,
+        "durationSeconds": {
+          "min": 5,
+          "max": 180,
+          "step": 5
+        }
+      }
+    },
+    {
+      "match": "sound-effects",
+      "caps": {
+        "lyrics": "none",
+        "instrumental": true,
+        "durationSeconds": {
+          "min": 1,
+          "max": 22,
+          "step": 1
+        }
+      }
+    },
+    {
+      "match": "mmaudio",
+      "caps": {
+        "lyrics": "none",
+        "instrumental": true,
+        "durationSeconds": {
+          "min": 1,
+          "max": 30,
+          "step": 1
+        }
+      }
+    }
+  ]
+}

@@ -68,6 +68,15 @@ pub struct MediaResponseDto {
     pub retry_after_ms: Option<u64>,
 }
 
+/// Some image models deliver bytes inside a JSON envelope, including on retrieve.
+pub(crate) fn image_result(payload: &serde_json::Value) -> Option<&str> {
+    let first = payload.get("images")?.as_array()?.first()?;
+    first
+        .as_str()
+        .or_else(|| first.get("b64_json")?.as_str())
+        .filter(|s| !s.trim().is_empty())
+}
+
 #[tauri::command]
 pub async fn carpe_diem_media_request(
     request: MediaRequestDto,

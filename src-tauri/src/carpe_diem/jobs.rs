@@ -328,6 +328,12 @@ async fn run(
         let Some(payload) = response.json.as_ref() else {
             continue;
         };
+        if let Some(base64) = super::media::image_result(payload) {
+            if !deliver(&app, &job, Payload::Base64(base64.to_string())).await {
+                fail(&app, &id, "The finished file could not be saved.", None).await;
+            }
+            return;
+        }
         match status_of(payload) {
             Some(MediaJobStatus::Completed) => {
                 let Some(url) = url_from(payload, &url_fields) else {

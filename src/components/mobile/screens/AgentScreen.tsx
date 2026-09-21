@@ -1,3 +1,5 @@
+import { AssistantsDialog } from "../../assistants/AssistantsDialog";
+import "../../../styles/chat-reading.css";
 import { useAccountSyncUpdated } from "../../../lib/account-sync-events";
 import { t } from "../../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
@@ -81,6 +83,7 @@ export function AgentScreen({
   archiveFolderId,
   onBack,
 }: AgentScreenProps) {
+  const [assistantsOpen, setAssistantsOpen] = useState(false);
   const [tasks, setTasks] = useState<AgentTaskDto[]>([]);
   const [archivedIds, setArchivedIds] = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState<AgentTaskDto | null>(null);
@@ -191,6 +194,7 @@ export function AgentScreen({
 
   return (
     <div className="mobile-screen-root">
+      <AssistantsDialog open={assistantsOpen} onClose={() => setAssistantsOpen(false)} />
       <StackHeader
         title={t("Chats")}
         large
@@ -206,6 +210,15 @@ export function AgentScreen({
           </button>
         }
       />
+      <div className="assistants-entry">
+        <button
+          type="button"
+          className="mobile-chip-button"
+          onClick={() => setAssistantsOpen(true)}
+        >
+          {t("My assistants")}
+        </button>
+      </div>
       <PullToRefresh className="mobile-list-scroll" onRefresh={refresh}>
         {actionError ? (
           <p className="mobile-dictation-error" role="alert">
@@ -317,6 +330,7 @@ export function AgentSessionScreen({
 }: AgentSessionScreenProps) {
   const [task, setTask] = useState<AgentTaskDto | null>(null);
   const [draft, setDraft] = useState("");
+  const [assistantsOpen, setAssistantsOpen] = useState(false);
   const [running, setRunning] = useState(false);
   const runningRef = useRef(false);
   const [loadingTask, setLoadingTask] = useState(Boolean(sessionId));
@@ -855,6 +869,16 @@ export function AgentSessionScreen({
           </>
         }
       />
+      <AssistantsDialog open={assistantsOpen} onClose={() => setAssistantsOpen(false)} />
+      <div className="assistants-entry">
+        <button
+          type="button"
+          className="mobile-chip-button"
+          onClick={() => setAssistantsOpen(true)}
+        >
+          {t("My assistants")}
+        </button>
+      </div>
       <div className="mobile-chat-scroll" ref={scrollRef} onScroll={handleScroll}>
         {loadingTask ? <Spinner aria-label={t("Loading")} /> : null}
         {showHero ? (

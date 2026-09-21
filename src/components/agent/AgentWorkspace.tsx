@@ -1,3 +1,5 @@
+import { AssistantsDialog } from "../assistants/AssistantsDialog";
+import "../../styles/chat-reading.css";
 import { PortableConversationsDialog } from "./PortableConversationsDialog";
 import {
   accountConversationPrepare,
@@ -1225,6 +1227,7 @@ export function AgentWorkspace({
   const [tasks, setTasks] = useState<AgentTaskDto[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
   const [portableConversationsOpen, setPortableConversationsOpen] = useState(false);
+  const [assistantsOpen, setAssistantsOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<AgentPanel>("chat");
   const [draft, setDraft] = useState("");
   // The message's single category tag, mirrored from the composer's chip. Null
@@ -7811,7 +7814,11 @@ export function AgentWorkspace({
       data-artifact-panel={artifactPanel ? "open" : undefined}
       data-hero={heroMode ? "true" : undefined}
     >
+      <AssistantsDialog open={assistantsOpen} onClose={() => setAssistantsOpen(false)} />
       <div className="portable-entry">
+        <button type="button" className="btn btn-secondary" onClick={() => setAssistantsOpen(true)}>
+          {t("My assistants")}
+        </button>
         <button
           type="button"
           className="btn btn-secondary"

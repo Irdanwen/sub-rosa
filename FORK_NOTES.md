@@ -11,6 +11,23 @@ les synchronisations soutenables. Règle : **préférer l'ajout de fichiers** ; 
 
 ---
 
+## Assistants privés (2026-09-21)
+
+- `src-tauri/src/assistants/` possède les définitions portables, les références
+  extraites localement, les brouillons guidés, les instantanés de conversation et
+  les propositions multimédias à validation explicite (ADR-0058).
+- Le moteur `agent_lite` exécute les assistants personnalisés sur les deux
+  plateformes, avec filtrage des outils à la déclaration et à l'exécution.
+  Le chat général desktop et l'administration des profils restent Hermes.
+- Les migrations 027-029 et les commandes des deux listes accompagnent ces
+  surfaces. La synchronisation utilise les classes chiffrées existantes ; son
+  enveloppe spécifique de conversation empêche un ancien client d'ignorer les
+  permissions. Les propositions payantes restent locales.
+- L'interface partagée vit dans `src/components/assistants/`, les blocs de
+  génération dans `src/components/chat-blocks/`, avec une composition de lecture
+  commune aux chats desktop et mobile. Préserver les tests de consentement,
+  d'isolation et de reprise lors des reprises de correctifs upstream.
+
 ## Architecture du fork (résumé)
 
 June parle à un backend `june-api` (crate `june`) qui détient les clés fournisseur et parle aux modèles.

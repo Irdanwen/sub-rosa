@@ -349,7 +349,7 @@ export type RecoverableSourceDto = {
   lastError?: string;
 };
 
-export type AgentSafetyProfile = "autonomousPrivate";
+export type AgentSafetyProfile = "autonomousPrivate" | "customAssistant";
 
 export type AgentTaskStatus =
   | "draft"

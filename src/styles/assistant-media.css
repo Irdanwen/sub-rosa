@@ -1,0 +1,55 @@
+.assistant-media-list {
+  display: grid;
+  gap: var(--sp-6);
+}
+.assistant-media-card {
+  overflow: hidden;
+}
+.assistant-media-heading,
+.assistant-media-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-5);
+  flex-wrap: wrap;
+}
+.assistant-media-heading > span,
+.assistant-media-confirm > span {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+.assistant-media-card p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.assistant-media-card img,
+.assistant-media-card video {
+  display: block;
+  max-width: 100%;
+  max-height: 28rem;
+  border-radius: var(--r-md);
+  margin-top: var(--sp-5);
+  object-fit: contain;
+}
+.assistant-media-card audio {
+  width: 100%;
+  margin-top: var(--sp-5);
+}
+.assistant-media-card pre {
+  overflow: auto;
+  font-size: var(--fs-xs);
+}
+.assistant-media-card summary {
+  cursor: pointer;
+  color: var(--muted-foreground);
+}
+.assistant-media-settings > div {
+  display: grid;
+  grid-template-columns: minmax(6rem, 1fr) minmax(0, 2fr);
+  gap: var(--sp-5);
+  margin-block: var(--sp-3);
+}
+.assistant-media-settings dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
