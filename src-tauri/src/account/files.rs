@@ -188,12 +188,25 @@ async fn stage_assistant_files(
 // Metadata can outlive the owning assistant. Skip such work without deleting
 // its transfer state: a later synced snapshot can make it relevant again.
 const ASSISTANT_OWNERS: &str = "WITH assistant_owners AS (SELECT id FROM assistant_references UNION SELECT json_extract(j.value,'$.id') AS id FROM assistant_conversations c,json_each(c.snapshot_json,'$.references') j)";
+const ASSISTANT_UPLOAD_ELIGIBLE: &str =
+    "(u.source_kind<>'assistant' OR u.artifact_id IN (SELECT id FROM assistant_owners))";
+const ASSISTANT_DOWNLOAD_ELIGIBLE: &str = "(m.source_kind<>'assistant' OR (m.artifact_id IN (SELECT id FROM assistant_owners) AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=m.artifact_id)))";
+
+/// Retained orphan transfer rows may become useful when metadata arrives, but
+/// must not report waiting work or trigger a sign-out warning in the meantime.
+/// Keep the existing audio/studio count semantics; assistant rows use exactly
+/// the ownership and upload-suppression predicates used by their selectors.
+pub(super) async fn pending_transfers(pool: &SqlitePool) -> Result<i64, AppError> {
+    Ok(query(&format!("{ASSISTANT_OWNERS} SELECT (SELECT count(*) FROM account_file_uploads u WHERE u.completed=0 AND {ASSISTANT_UPLOAD_ELIGIBLE})+(SELECT count(*) FROM account_file_downloads d LEFT JOIN account_file_manifests m ON m.id=d.manifest_id WHERE d.completed=0 AND (m.source_kind IS NULL OR {ASSISTANT_DOWNLOAD_ELIGIBLE})) AS n"))
+        .fetch_one(pool).await?.get("n"))
+}
+
 async fn next_upload(pool: &SqlitePool) -> Result<Option<sqlx_sqlite::SqliteRow>, AppError> {
-    Ok(query(&format!("{ASSISTANT_OWNERS} SELECT u.*,COALESCE(a.path,u.source_path) AS path,COALESCE(a.format,u.source_format) AS format FROM account_file_uploads u LEFT JOIN audio_artifacts a ON a.id=u.artifact_id WHERE u.completed=0 AND (a.id IS NOT NULL OR u.source_kind IN ('studio','assistant')) AND (u.source_kind<>'assistant' OR u.artifact_id IN (SELECT id FROM assistant_owners)) ORDER BY u.rowid LIMIT 1"))
+    Ok(query(&format!("{ASSISTANT_OWNERS} SELECT u.*,COALESCE(a.path,u.source_path) AS path,COALESCE(a.format,u.source_format) AS format FROM account_file_uploads u LEFT JOIN audio_artifacts a ON a.id=u.artifact_id WHERE u.completed=0 AND (a.id IS NOT NULL OR u.source_kind IN ('studio','assistant')) AND {ASSISTANT_UPLOAD_ELIGIBLE} ORDER BY u.rowid LIMIT 1"))
         .fetch_optional(pool).await?)
 }
 async fn next_download(pool: &SqlitePool) -> Result<Option<sqlx_sqlite::SqliteRow>, AppError> {
-    Ok(query(&format!("{ASSISTANT_OWNERS} SELECT m.*,COALESCE(d.next_chunk,0) AS next_chunk FROM account_file_manifests m LEFT JOIN audio_artifacts a ON a.id=m.artifact_id LEFT JOIN account_file_downloads d ON d.manifest_id=m.id WHERE ((m.source_kind='audio' AND a.path='') OR (m.source_kind IN ('studio','assistant') AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=m.artifact_id))) AND COALESCE(d.completed,0)=0 AND (m.source_kind<>'assistant' OR m.artifact_id IN (SELECT id FROM assistant_owners)) ORDER BY m.rowid LIMIT 1"))
+    Ok(query(&format!("{ASSISTANT_OWNERS} SELECT m.*,COALESCE(d.next_chunk,0) AS next_chunk FROM account_file_manifests m LEFT JOIN audio_artifacts a ON a.id=m.artifact_id LEFT JOIN account_file_downloads d ON d.manifest_id=m.id WHERE ((m.source_kind='audio' AND a.path='') OR (m.source_kind IN ('studio','assistant') AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=m.artifact_id))) AND COALESCE(d.completed,0)=0 AND {ASSISTANT_DOWNLOAD_ELIGIBLE} ORDER BY m.rowid LIMIT 1"))
         .fetch_optional(pool).await?)
 }
 
@@ -590,6 +603,72 @@ mod tests {
                 .get::<String, _>("artifact_id"),
             "deleted"
         );
+    }
+
+    #[tokio::test]
+    async fn pending_counts_only_eligible_assistant_transfers_and_preserves_other_kinds() {
+        let pool = sqlx_sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        crate::db::migrations::run_migrations(&pool).await.unwrap();
+        query("INSERT INTO assistants(id,name,created_at,updated_at) VALUES('reader','Reader','now','now')")
+            .execute(&pool).await.unwrap();
+        for id in ["up-live", "down-live"] {
+            query("INSERT INTO assistant_references(id,assistant_id,name,format,file_name,created_at,updated_at) VALUES(?,'reader','Reference','txt','missing.txt','now','now')")
+                .bind(id).execute(&pool).await.unwrap();
+        }
+        query("INSERT INTO agent_tasks(id,title,prompt,status,safety_profile,created_at,updated_at) VALUES('chat','Chat','Hello','completed','custom_assistant','now','now')")
+            .execute(&pool).await.unwrap();
+        query("INSERT INTO assistant_conversations(task_id,assistant_id,snapshot_json,created_at) VALUES('chat','reader',?,'now')")
+            .bind(json!({"references":[{"id":"up-snapshot"},{"id":"down-snapshot"}]}).to_string())
+            .execute(&pool).await.unwrap();
+        for kind in ["orphan", "live", "snapshot", "audio", "studio"] {
+            let source = if matches!(kind, "audio" | "studio") {
+                kind
+            } else {
+                "assistant"
+            };
+            query("INSERT INTO account_file_uploads(artifact_id,manifest_id,bytes,modified,source_kind) VALUES(?,?,1,'now',?)")
+                .bind(format!("up-{kind}")).bind(format!("upload-{kind}")).bind(source).execute(&pool).await.unwrap();
+            query("INSERT INTO account_file_manifests(id,artifact_id,bytes,format,chunks_json,created_at,source_kind) VALUES(?,?,1,'txt','[]','now',?)")
+                .bind(format!("download-{kind}")).bind(format!("down-{kind}")).bind(source).execute(&pool).await.unwrap();
+            query("INSERT INTO account_file_downloads(manifest_id) VALUES(?)")
+                .bind(format!("download-{kind}"))
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        // A duplicate download suppressed by its upload is not eligible work.
+        query("INSERT INTO account_file_manifests(id,artifact_id,bytes,format,chunks_json,created_at,source_kind) VALUES('duplicate','up-live',1,'txt','[]','now','assistant')")
+            .execute(&pool).await.unwrap();
+        query("INSERT INTO account_file_downloads(manifest_id) VALUES('duplicate')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(pending_transfers(&pool).await.unwrap(), 8);
+        // No files exist locally. Arrival of ownership metadata alone makes
+        // the retained assistant work count again, as it does for selection.
+        for id in ["up-orphan", "down-orphan"] {
+            query("INSERT INTO assistant_references(id,assistant_id,name,format,file_name,created_at,updated_at) VALUES(?,'reader','Arrived','txt','missing.txt','now','now')")
+                .bind(id).execute(&pool).await.unwrap();
+        }
+        assert_eq!(pending_transfers(&pool).await.unwrap(), 10);
+        query("DELETE FROM assistant_references WHERE id IN ('up-live','down-live')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(pending_transfers(&pool).await.unwrap(), 8);
+        query("UPDATE account_file_uploads SET completed=1")
+            .execute(&pool)
+            .await
+            .unwrap();
+        query("UPDATE account_file_downloads SET completed=1")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(pending_transfers(&pool).await.unwrap(), 0);
     }
 
     #[test]

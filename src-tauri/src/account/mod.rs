@@ -617,10 +617,11 @@ pub async fn account_status(app: AppHandle) -> Result<AccountStatus, AppError> {
         }),
         account: if signed_in { account } else { None },
         sync_enabled: row.get::<i64, _>("enabled") != 0,
-        pending_changes: query("SELECT (SELECT count(*) FROM account_sync_outbox)+(SELECT count(*) FROM account_file_uploads WHERE completed=0)+(SELECT count(*) FROM account_file_downloads WHERE completed=0)+(SELECT count(*) FROM account_sync_inbox WHERE applied=0) AS n")
-            .fetch_one(&pool)
-            .await?
-            .get("n"),
+        pending_changes: files::pending_transfers(&pool).await?
+            + query("SELECT (SELECT count(*) FROM account_sync_outbox)+(SELECT count(*) FROM account_sync_inbox WHERE applied=0) AS n")
+                .fetch_one(&pool)
+                .await?
+                .get::<i64, _>("n"),
         conflicts: query("SELECT count(*) AS n FROM account_sync_conflicts WHERE resolved=0")
             .fetch_one(&pool)
             .await?
