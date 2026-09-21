@@ -433,6 +433,14 @@ async fn require_snapshot(pool: &SqlitePool, task_id: &str) -> Result<AssistantS
 }
 
 #[tauri::command]
+pub async fn assistant_chat_definition(
+    app: AppHandle,
+    request: TaskRequest,
+) -> Result<AssistantDefinition, AppError> {
+    session_definition(&app, &request.task_id).await
+}
+
+#[tauri::command]
 pub async fn assistant_chat_history(
     app: AppHandle,
     request: TaskRequest,

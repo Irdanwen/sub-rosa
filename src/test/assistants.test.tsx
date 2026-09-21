@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AssistantsDialog } from "../components/assistants/AssistantsDialog";
@@ -65,6 +65,7 @@ beforeEach(() => {
   Element.prototype.scrollTo = vi.fn();
   invoke.mockImplementation(async (command: string, args: Record<string, unknown>) => {
     if (command === "assistant_list") return [assistant];
+    if (command === "assistant_chat_definition") return assistant;
     if (command === "list_venice_models") return { models: [] };
     if (
       command === "assistant_reference_list" ||
@@ -418,5 +419,125 @@ describe("custom assistants", () => {
       await afterSend.promise;
     });
     expect(screen.getByRole("button", { name: "New chat" })).toBeEnabled();
+  });
+  it("shows the selected conversation's saved profile until an explicit revision update", async () => {
+    const current = {
+      ...assistant,
+      name: "Current researcher",
+      instructions: "Current research instructions",
+      allow_notes: true,
+      allow_memory: true,
+    };
+    const original = {
+      ...assistant,
+      name: "Original researcher",
+      instructions: "Original instructions",
+      revision: 1,
+      allow_notes: false,
+      allow_memory: false,
+    };
+    let bound = original;
+    const base = invoke.getMockImplementation();
+    invoke.mockImplementation(async (command, args) => {
+      if (command === "assistant_chat_list") return [task];
+      if (command === "assistant_chat_definition") return bound;
+      if (command === "assistant_chat_apply_revision") {
+        bound = current;
+        return task;
+      }
+      return base?.(command, args);
+    });
+    const user = userEvent.setup();
+    render(<AssistantChat assistant={current} />);
+    expect(
+      screen.getByRole("region", { name: "Conversation with Current researcher" }),
+    ).toBeInTheDocument();
+    fireEvent.change(await screen.findByLabelText("Chat history"), { target: { value: task.id } });
+    expect(
+      await screen.findByRole("region", { name: "Conversation with Original researcher" }),
+    ).toBeInTheDocument();
+    const settings = screen.getByLabelText("Settings for this conversation");
+    await user.click(within(settings).getByText("Settings for this conversation"));
+    expect(within(settings).getByText("Original instructions")).toBeInTheDocument();
+    expect(within(settings).getAllByText("Disabled")).toHaveLength(2);
+    expect(within(settings).queryByText("Current research instructions")).not.toBeInTheDocument();
+    expect(invoke.mock.calls.some(([command]) => command === "assistant_chat_apply_revision")).toBe(
+      false,
+    );
+    await user.click(screen.getByRole("button", { name: "Apply current assistant settings" }));
+    expect(
+      await screen.findByRole("region", { name: "Conversation with Current researcher" }),
+    ).toBeInTheDocument();
+    const updated = await screen.findByLabelText("Settings for this conversation");
+    expect(within(updated).getByText("Current research instructions")).toBeInTheDocument();
+    expect(within(updated).getAllByText("Enabled")).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "New chat" }));
+    expect(screen.queryByLabelText("Settings for this conversation")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Conversation with Current researcher" }),
+    ).toBeInTheDocument();
+  });
+  it("does not relabel a newly selected conversation with a stale definition response", async () => {
+    const pending = deferred<typeof assistant>();
+    const other = { ...task, id: "other", title: "Other conversation" };
+    const base = invoke.getMockImplementation();
+    invoke.mockImplementation(async (command, args) => {
+      if (command === "assistant_chat_list") return [task, other];
+      if (command === "assistant_chat_definition")
+        return args.request.taskId === task.id
+          ? pending.promise
+          : { ...assistant, name: "Second profile", instructions: "Second instructions" };
+      if (command === "assistant_chat_history")
+        return args.request.taskId === task.id ? task : other;
+      return base?.(command, args);
+    });
+    render(<AssistantChat assistant={{ ...assistant, name: "Current profile" }} />);
+    const history = await screen.findByLabelText("Chat history");
+    fireEvent.change(history, { target: { value: task.id } });
+    expect(await screen.findByText("Loading assistant…")).toBeInTheDocument();
+    fireEvent.change(history, { target: { value: other.id } });
+    expect(
+      await screen.findByRole("region", { name: "Conversation with Second profile" }),
+    ).toBeInTheDocument();
+    await act(async () => {
+      pending.resolve({ ...assistant, name: "Stale profile" });
+      await pending.promise;
+    });
+    expect(
+      screen.getByRole("region", { name: "Conversation with Second profile" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Stale profile")).not.toBeInTheDocument();
+  });
+  it("explains that removing a reference preserves older conversation copies", async () => {
+    const base = invoke.getMockImplementation();
+    invoke.mockImplementation(async (command, args) =>
+      command === "assistant_reference_list"
+        ? [
+            {
+              id: "ref",
+              assistant_id: assistant.id,
+              name: "Project brief",
+              format: "txt",
+              status: "ready",
+              text: "Brief",
+              note_id: null,
+            },
+          ]
+        : base?.(command, args),
+    );
+    const user = userEvent.setup();
+    render(<AssistantsDialog open onClose={vi.fn()} />);
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("button", { name: "References" }));
+    await user.click(await screen.findByRole("button", { name: "Remove" }));
+    const confirmation = screen.getByRole("dialog", { name: "Remove this reference?" });
+    expect(
+      within(confirmation).getByText(
+        "New conversations and conversations you explicitly update will no longer use this reference. Existing conversations keep their saved copy.",
+      ),
+    ).toBeInTheDocument();
+    expect(invoke.mock.calls.some(([command]) => command === "assistant_reference_delete")).toBe(
+      false,
+    );
   });
 });

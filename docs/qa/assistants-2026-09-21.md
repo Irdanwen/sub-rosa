@@ -17,6 +17,16 @@ Local evidence remains in the implementation worktree under `.tmp/`:
 - `assistants-desktop-preview.png`, `assistants-mobile-chat.png`
 - `assistants-mobile-editor.png`, `assistants-mobile-question.png`
 - `assistants-desktop-walkthrough.webm`, `assistants-mobile-walkthrough.webm`
+- Review followup: `assistants-review-desktop-snapshot.png`,
+  `assistants-review-mobile-snapshot.png`, `assistants-review-desktop-reference.png`,
+  `assistants-review-mobile-reference.png`, and `assistants-review-{desktop,mobile}.webm`.
+  These cover saved conversation settings, explicit revision updates and the
+  reference-removal explanation.
+
+The review walkthrough also caught a mobile confirmation clipping outside its
+body portal. The shared grid track and card now shrink within the viewport.
+The final run asserted the dialog's actual bounds at 390px width and reported no
+browser errors.
 
 The recordings contain fixture data and do not prove a live provider or native file
 dialog flow. They have not been uploaded to a third-party QA service.
@@ -26,6 +36,10 @@ dialog flow. They have not been uploaded to a third-party QA service.
 - Full frontend suite: 271 files passed, 4,239 tests passed, 2 skipped.
 - Subsequent focused suite: 80 tests passed, covering the final conversation races,
   media consent, shared Studio input rules and file-size limit.
+- Review followup: 45 frontend tests passed for saved conversation settings,
+  stale responses, reference-removal copy, notification routing, media and translations.
+  Native assistants (21), destinations (1) and shared commands (3) passed, along
+  with strict clippy. Notification taps retain their task across a cold shell launch.
 - Frontend coverage: 77.79%, above the 75.83% floor. The coverage run encountered
   one existing contenteditable caret-position flake; the complete AgentWorkspace
   suite passed on rerun (179 passed, 2 skipped), and the CI frontend suite passed.

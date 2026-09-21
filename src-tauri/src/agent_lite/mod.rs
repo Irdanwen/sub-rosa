@@ -286,11 +286,18 @@ pub async fn resume_interrupted_turns(app: &AppHandle) {
             continue;
         }
         let model = task.model;
-        let extraction_allowed =
-            crate::assistants::runtime::snapshot_for_task(&repos.pool, &task_id)
-                .await
-                .map(|snapshot| snapshot.map_or(true, |snapshot| snapshot.definition.allow_memory))
-                .unwrap_or(false);
+        let snapshot = crate::assistants::runtime::snapshot_for_task(&repos.pool, &task_id).await;
+        let destination = if task.safety_profile
+            == crate::domain::types::AgentSafetyProfile::CustomAssistant
+            || snapshot.as_ref().is_ok_and(|snapshot| snapshot.is_some())
+        {
+            crate::destinations::assistant(&task_id)
+        } else {
+            crate::destinations::chat(Some(&task_id))
+        };
+        let extraction_allowed = snapshot
+            .map(|snapshot| snapshot.map_or(true, |snapshot| snapshot.definition.allow_memory))
+            .unwrap_or(false);
         // Attachment payloads are not persisted. run_turn rejects their
         // surviving markers before inference, asking the user to attach again.
         match run_turn(app, &repos, &task_id, model.as_deref(), &[]).await {
@@ -313,10 +320,7 @@ pub async fn resume_interrupted_turns(app: &AppHandle) {
                     .builder()
                     .title("Your assistant replied")
                     .body(answer.chars().take(120).collect::<String>())
-                    .extra(
-                        crate::destinations::EXTRA_KEY,
-                        crate::destinations::chat(Some(&task_id)),
-                    )
+                    .extra(crate::destinations::EXTRA_KEY, destination)
                     .show();
             }
             // Still failing: leave the task running so a later sweep retries

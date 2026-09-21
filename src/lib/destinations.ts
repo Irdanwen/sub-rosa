@@ -30,6 +30,8 @@ export type Destination =
   | { kind: "note"; noteId: string }
   /** Open the chat, optionally on one conversation. */
   | { kind: "chat"; sessionId?: string; query?: string }
+  /** Open a custom assistant conversation with its saved permissions. */
+  | { kind: "assistant"; taskId: string }
   /** Open the dictation surface. */
   | { kind: "dictation" }
   /** Open Studio. */
@@ -89,6 +91,8 @@ export function parseDestination(raw: string): Destination | null {
         query: query ? query.slice(0, MAX_QUERY) : undefined,
       };
     }
+    case "assistant":
+      return ID_RE.test(segment) ? { kind: "assistant", taskId: segment } : null;
     case "dictation":
       return { kind: "dictation" };
     case "studio":
@@ -120,6 +124,8 @@ export function destinationUrl(destination: Destination): string {
   switch (destination.kind) {
     case "note":
       return `${DESTINATION_SCHEME}note/${destination.noteId}`;
+    case "assistant":
+      return `${DESTINATION_SCHEME}assistant/${destination.taskId}`;
     case "import":
       return `${DESTINATION_SCHEME}import?url=${encodeURIComponent(destination.url)}`;
     case "share":

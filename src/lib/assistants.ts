@@ -82,6 +82,8 @@ export const startAssistantChat = (assistantId: string, content: string) =>
   invoke<AgentTaskDto>("assistant_chat_start", { request: { assistantId, content } });
 export const sendAssistantChat = (taskId: string, content: string) =>
   invoke<AgentTaskDto>("assistant_chat_send", { request: { taskId, content } });
+export const getAssistantChatDefinition = (taskId: string) =>
+  invoke<AssistantDefinition>("assistant_chat_definition", { request: { taskId } });
 export const getAssistantChat = (taskId: string) =>
   invoke<AgentTaskDto>("assistant_chat_history", { request: { taskId } });
 export const listAssistantChats = (assistantId: string) =>

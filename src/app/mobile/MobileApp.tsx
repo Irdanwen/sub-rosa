@@ -1,3 +1,4 @@
+import { AssistantLauncher, openAssistants } from "../../components/assistants/AssistantLauncher";
 import { useAccountLibrarySync } from "../useAccountLibrarySync";
 import { t } from "../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
@@ -423,6 +424,9 @@ export function MobileApp() {
       case "chat":
         nav.switchTab("agent");
         if (destination.sessionId) openChatSession(destination.sessionId);
+        break;
+      case "assistant":
+        openAssistants(destination.taskId);
         break;
       case "dictation":
         nav.switchTab("dictation");
@@ -917,6 +921,7 @@ export function MobileApp() {
 
   return (
     <div className="mobile-shell">
+      <AssistantLauncher />
       <MobileErrorBanner error={error} onDismiss={() => setError(null)} />
       <RailSwitchBanner compact />
       {calendarAmbiguity ? (

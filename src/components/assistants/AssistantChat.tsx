@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type AssistantDefinition,
   getAssistantChat,
+  getAssistantChatDefinition,
   retryAssistantChat,
   applyAssistantRevision,
   assistantMediaIds,
@@ -35,6 +36,10 @@ export function AssistantChat({
   initialTask?: AgentTaskDto;
 }) {
   const [task, setTask] = useState<AgentTaskDto | null>(initialTask ?? null);
+  const [conversationAssistant, setConversationAssistant] = useState<AssistantDefinition | null>(
+    null,
+  );
+  const activeAssistant = task ? conversationAssistant : assistant;
   const [history, setHistory] = useState<AgentTaskDto[]>([]);
   const [content, setContent] = useState("");
   const [stream, setStream] = useState("");
@@ -50,6 +55,7 @@ export function AssistantChat({
   const version = useRef(0);
   const historyRequest = useRef(0);
   const taskRequest = useRef(0);
+  const definitionRequest = useRef(0);
   const isCurrent = useCallback(
     (id: string | null, epoch: number) =>
       alive.current && activeId.current === id && version.current === epoch,
@@ -67,10 +73,26 @@ export function AssistantChat({
         setError(messageFromError(err));
     }
   }, [assistant.id, isCurrent]);
+  const readDefinition = useCallback(
+    async (id: string) => {
+      const epoch = version.current;
+      const request = ++definitionRequest.current;
+      try {
+        const definition = await getAssistantChatDefinition(id);
+        if (isCurrent(id, epoch) && request === definitionRequest.current)
+          setConversationAssistant(definition);
+      } catch (err) {
+        if (isCurrent(id, epoch) && request === definitionRequest.current)
+          setError(messageFromError(err));
+      }
+    },
+    [isCurrent],
+  );
   const readTask = useCallback(
     async (id: string) => {
       const epoch = version.current;
       const request = ++taskRequest.current;
+      void readDefinition(id);
       try {
         const loaded = await getAssistantChat(id);
         if (!isCurrent(id, epoch) || request !== taskRequest.current || loaded.id !== id) return;
@@ -83,7 +105,7 @@ export function AssistantChat({
           setError(messageFromError(err));
       }
     },
-    [isCurrent],
+    [isCurrent, readDefinition],
   );
   useEffect(() => {
     alive.current = true;
@@ -108,6 +130,7 @@ export function AssistantChat({
             setStream("");
             setError(payload.lastError ?? null);
             void refreshHistory().catch(() => undefined);
+            void readDefinition(payload.id);
           }),
         ]);
         if (disposed) {
@@ -129,7 +152,7 @@ export function AssistantChat({
       version.current += 1;
       for (const dispose of unsubscribers) dispose();
     };
-  }, [refreshHistory, readTask]);
+  }, [refreshHistory, readTask, readDefinition]);
   useEffect(() => {
     if ((task || stream || steps.length > 0) && pinned.current)
       scroll.current?.scrollTo({ top: scroll.current.scrollHeight });
@@ -163,6 +186,7 @@ export function AssistantChat({
         : await startAssistantChat(assistant.id, message);
       if (!isCurrent(id, epoch)) return;
       activeId.current = result.id;
+      if (!id) setConversationAssistant(null);
       setTask(result);
       setBusy(isRunning(result));
       setError(result.lastError ?? null);
@@ -196,6 +220,7 @@ export function AssistantChat({
         ? retryAssistantChat(id)
         : applyAssistantRevision(id));
       if (!isCurrent(id, epoch) || result.id !== id) return;
+      if (action === "revision") setConversationAssistant(null);
       setTask(result);
       setBusy(isRunning(result));
       setError(result.lastError ?? null);
@@ -213,10 +238,14 @@ export function AssistantChat({
   return (
     <section
       className="assistant-chat"
-      aria-label={t("Conversation with {name}", { name: assistant.name })}
+      aria-label={
+        activeAssistant
+          ? t("Conversation with {name}", { name: activeAssistant.name })
+          : t("Conversation")
+      }
     >
       <header className="assistant-chat-header">
-        <strong>{assistant.name}</strong>
+        <strong>{activeAssistant?.name ?? t("Loading assistant…")}</strong>
         <button
           type="button"
           className="btn btn-secondary"
@@ -225,6 +254,7 @@ export function AssistantChat({
             version.current += 1;
             activeId.current = null;
             setTask(null);
+            setConversationAssistant(null);
             setStream("");
             setSteps([]);
             setError(null);
@@ -245,6 +275,7 @@ export function AssistantChat({
                 version.current += 1;
                 activeId.current = selected.id;
                 setTask(selected);
+                setConversationAssistant(null);
                 setBusy(isRunning(selected));
                 setError(selected.lastError ?? null);
                 setSteps([]);
@@ -261,6 +292,37 @@ export function AssistantChat({
             ))}
           </select>
         </label>
+      )}
+      {task && conversationAssistant && (
+        <details
+          className="assistant-activity assistant-history"
+          aria-label={t("Settings for this conversation")}
+          style={{ maxHeight: "40%", overflowY: "auto" }}
+        >
+          <summary>{t("Settings for this conversation")}</summary>
+          <p>
+            {t("This conversation uses version {revision} of {name}.", {
+              revision: conversationAssistant.revision,
+              name: conversationAssistant.name,
+            })}
+          </p>
+          <dl>
+            <dt>{t("Model")}</dt>
+            <dd>{conversationAssistant.model || t("Default")}</dd>
+            <dt>{t("Tools")}</dt>
+            <dd>
+              {conversationAssistant.tools.length
+                ? conversationAssistant.tools.map(toolLabel).join(", ")
+                : t("None")}
+            </dd>
+            <dt>{t("Access my notes")}</dt>
+            <dd>{conversationAssistant.allow_notes ? t("Enabled") : t("Disabled")}</dd>
+            <dt>{t("Use my personal memory")}</dt>
+            <dd>{conversationAssistant.allow_memory ? t("Enabled") : t("Disabled")}</dd>
+            <dt>{t("Instructions")}</dt>
+            <dd style={{ whiteSpace: "pre-wrap" }}>{conversationAssistant.instructions}</dd>
+          </dl>
+        </details>
       )}
       <div
         className="assistant-chat-scroll"
@@ -415,4 +477,19 @@ function CopyAssistantReply({ content }: { content: string }) {
       {error && <span role="alert">{error}</span>}
     </div>
   );
+}
+
+function toolLabel(tool: AssistantDefinition["tools"][number]) {
+  switch (tool) {
+    case "web":
+      return t("Web search");
+    case "image":
+      return t("Images");
+    case "video":
+      return t("Video");
+    case "music":
+      return t("Music");
+    case "speech":
+      return t("Speech");
+  }
 }

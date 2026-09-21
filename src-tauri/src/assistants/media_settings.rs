@@ -101,8 +101,12 @@ pub fn prepare(
         }
         if let Some(range) = caps.get("durationSeconds") {
             if let Some(duration) = params["duration_seconds"].as_f64() {
-                if duration < range["min"].as_f64().unwrap_or(1.0)
+                let min = range["min"].as_f64().unwrap_or(1.0);
+                let step = range["step"].as_f64().unwrap_or(1.0);
+                if duration < min
                     || duration > range["max"].as_f64().unwrap_or(300.0)
+                    || step <= 0.0
+                    || ((duration - min) / step).fract().abs() > 1e-9
                 {
                     return Err(AppError::new(
                         "assistant_music_duration",
@@ -120,6 +124,27 @@ pub fn prepare(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn music_duration_uses_the_models_discrete_increments() {
+        for duration in [60, 90, 120, 210] {
+            assert!(prepare(
+                "music",
+                "ace-step-15",
+                None,
+                &mut json!({"duration_seconds":duration})
+            )
+            .is_ok());
+        }
+        for duration in [59, 61, 89, 211] {
+            assert!(prepare(
+                "music",
+                "ace-step-15",
+                None,
+                &mut json!({"duration_seconds":duration})
+            )
+            .is_err());
+        }
+    }
     #[test]
     fn missing_seedance_constraints_get_the_shared_studio_defaults() {
         let mut p = json!({});

@@ -8,6 +8,8 @@ import {
   type AssistantDefinition,
   type AssistantConversation,
   listAssistantArchive,
+  getAssistantChatDefinition,
+  getAssistantChat,
   type AssistantReference,
   type AssistantTool,
   addAssistantNote,
@@ -41,15 +43,29 @@ import { AssistantChat } from "./AssistantChat";
 import { assistantQuestions, assistantTemplates } from "./templates";
 import "./assistants.css";
 
-export function AssistantsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AssistantsDialog({
+  open,
+  onClose,
+  initialTaskId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  initialTaskId?: string;
+}) {
   if (!open) return null;
-  return <AssistantsSurface onClose={onClose} />;
+  return <AssistantsSurface onClose={onClose} initialTaskId={initialTaskId} />;
 }
 
 type View = "library" | "create" | "edit" | "chat";
 type Tab = "general" | "instructions" | "references" | "tools";
 
-function AssistantsSurface({ onClose }: { onClose: () => void }) {
+function AssistantsSurface({
+  onClose,
+  initialTaskId,
+}: {
+  onClose: () => void;
+  initialTaskId?: string;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const keyboardInset = useKeyboardInset();
   const [items, setItems] = useState<AssistantDefinition[]>([]);
@@ -99,6 +115,29 @@ function AssistantsSurface({ onClose }: { onClose: () => void }) {
       .then((result) => setModels(result.models))
       .catch((err) => setModelsError(messageFromError(err)));
   }, []);
+
+  useEffect(() => {
+    if (!initialTaskId) return;
+    let cancelled = false;
+    setBusy(true);
+    void Promise.all([getAssistantChat(initialTaskId), getAssistantChatDefinition(initialTaskId)])
+      .then(([task, definition]) => {
+        if (cancelled) return;
+        setDraft(definition);
+        setSaved(definition);
+        setInitialTask(task);
+        setView("chat");
+      })
+      .catch((err) => {
+        if (!cancelled) setError(messageFromError(err));
+      })
+      .finally(() => {
+        if (!cancelled) setBusy(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialTaskId]);
 
   async function perform(action: () => Promise<void>) {
     if (busy) return;
@@ -989,7 +1028,9 @@ function AssistantReferences({
         open={confirmDelete !== null}
         onClose={() => setConfirmDelete(null)}
         title={t("Remove this reference?")}
-        description={t("Future requests will no longer use this reference.")}
+        description={t(
+          "New conversations and conversations you explicitly update will no longer use this reference. Existing conversations keep their saved copy.",
+        )}
         confirmLabel={t("Remove")}
         destructive
         onConfirm={async () => {
