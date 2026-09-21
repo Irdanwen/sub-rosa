@@ -27,6 +27,12 @@ les synchronisations soutenables. Règle : **préférer l'ajout de fichiers** ; 
   génération dans `src/components/chat-blocks/`, avec une composition de lecture
   commune aux chats desktop et mobile. Préserver les tests de consentement,
   d'isolation et de reprise lors des reprises de correctifs upstream.
+- `references/lifecycle.rs` conserve les fichiers appartenant aux références
+  actuelles ou aux instantanés de conversation. Les exports sélectionnent ces
+  fichiers explicitement ; restaurer un assistant utilise un upsert sans
+  suppression du parent pour conserver les références locales plus récentes.
+  `references/worker.rs` avance au-delà des fichiers distants manquants, avec
+  des limites de scan et d'extraction par reprise.
 
 ## Architecture du fork (résumé)
 

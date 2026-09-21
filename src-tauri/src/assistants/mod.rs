@@ -187,15 +187,7 @@ pub async fn assistant_save(
 }
 #[tauri::command]
 pub async fn assistant_delete(app: AppHandle, id: String, revision: i64) -> Result<(), AppError> {
-    let result = query("DELETE FROM assistants WHERE id=? AND revision=?")
-        .bind(id)
-        .bind(revision)
-        .execute(&pool(&app).await?)
-        .await?;
-    if result.rows_affected() != 1 {
-        return Err(error("assistant_conflict"));
-    }
-    Ok(())
+    delete_assistant(&pool(&app).await?, &references_dir(&app)?, &id, revision).await
 }
 #[tauri::command]
 pub async fn assistant_duplicate(
@@ -203,6 +195,7 @@ pub async fn assistant_duplicate(
     id: String,
 ) -> Result<AssistantDefinition, AppError> {
     let pool = pool(&app).await?;
+    let _ownership = reference_lifecycle_lock().await;
     let mut definition = snapshot(&pool, &id).await?;
     let avatar = definition.avatar_ref.take();
     let cover = definition.cover_ref.take();

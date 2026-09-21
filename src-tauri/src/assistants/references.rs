@@ -3,12 +3,15 @@ use base64::Engine;
 use std::{
     io::{Cursor, Read},
     path::{Path, PathBuf},
-    sync::OnceLock,
 };
 
 const MAX_BYTES: u64 = 20 * 1024 * 1024;
 const MAX_TEXT: usize = 240_000;
-static EXTRACTION: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+mod lifecycle;
+mod worker;
+pub use lifecycle::retained_reference_files;
+pub(crate) use lifecycle::{delete_assistant, reference_lifecycle_lock};
+pub use worker::resume_unfinished;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AssistantReference {
     pub id: String,
@@ -136,6 +139,8 @@ pub async fn assistant_reference_from_artifact(
     if meta.len() > MAX_BYTES {
         return Err(error("assistant_reference_too_large"));
     }
+    let _ownership = reference_lifecycle_lock().await;
+    snapshot(&pool, &assistant_id).await?;
     let id = uuid::Uuid::new_v4().to_string();
     let name = format!("{id}.{format}");
     tokio::fs::copy(path, reference_file(&references_dir(&app)?, &name)?)
@@ -144,6 +149,7 @@ pub async fn assistant_reference_from_artifact(
     let now = chrono::Utc::now().to_rfc3339();
     query("INSERT INTO assistant_references(id,assistant_id,name,format,file_name,created_at,updated_at) VALUES(?,?,?,?,?,?,?)")
         .bind(&id).bind(assistant_id).bind(file_name).bind(format).bind(name).bind(&now).bind(&now).execute(&pool).await?;
+    drop(_ownership);
     resume_unfinished(&app).await;
     get(&pool, &id).await
 }
@@ -204,6 +210,8 @@ pub async fn assistant_reference_import(
     if bytes.len() as u64 > MAX_BYTES {
         return Err(error("assistant_reference_too_large"));
     }
+    let _ownership = reference_lifecycle_lock().await;
+    snapshot(&pool, &assistant_id).await?;
     let id = uuid::Uuid::new_v4().to_string();
     let name = format!("{id}.{format}");
     let target = reference_file(&references_dir(&app)?, &name)?;
@@ -214,6 +222,7 @@ pub async fn assistant_reference_import(
     query("INSERT INTO assistant_references(id,assistant_id,name,format,file_name,created_at,updated_at) VALUES(?,?,?,?,?,?,?)")
         .bind(&id).bind(assistant_id).bind(path.file_name().and_then(|v|v.to_str()).unwrap_or("Reference")).bind(format).bind(name).bind(&now).bind(&now).execute(&pool).await?;
     // The queued row survives termination, and the common sweep re-drives it.
+    drop(_ownership);
     resume_unfinished(&app).await;
     Ok(Some(get(&pool, &id).await?))
 }
@@ -274,16 +283,7 @@ pub async fn assistant_reference_refresh_note(
 }
 #[tauri::command]
 pub async fn assistant_reference_delete(app: AppHandle, id: String) -> Result<(), AppError> {
-    let pool = pool(&app).await?;
-    let mut tx = pool.begin().await?;
-    query("UPDATE assistants SET avatar_ref=CASE WHEN avatar_ref=? THEN NULL ELSE avatar_ref END,cover_ref=CASE WHEN cover_ref=? THEN NULL ELSE cover_ref END,revision=revision+1,updated_at=? WHERE avatar_ref=? OR cover_ref=?")
-        .bind(&id).bind(&id).bind(chrono::Utc::now().to_rfc3339()).bind(&id).bind(&id).execute(&mut *tx).await?;
-    query("DELETE FROM assistant_references WHERE id=?")
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
-    Ok(())
+    lifecycle::delete_reference(&pool(&app).await?, &references_dir(&app)?, &id).await
 }
 pub async fn image_data_url(
     app: &AppHandle,
@@ -321,51 +321,6 @@ pub async fn assistant_reference_read(app: AppHandle, id: String) -> Result<Stri
     image_data_url(&app, &reference.assistant_id, &id).await
 }
 
-pub async fn resume_unfinished(app: &AppHandle) {
-    let _claim = EXTRACTION
-        .get_or_init(|| tokio::sync::Mutex::new(()))
-        .lock()
-        .await;
-    let _background = crate::ios_background::BackgroundTask::begin("assistant-references");
-    let Ok(pool) = pool(app).await else {
-        return;
-    };
-    let Ok(root) = references_dir(app) else {
-        return;
-    };
-    let Ok(rows) = query("SELECT * FROM assistant_references WHERE status='queued' LIMIT 8")
-        .fetch_all(&pool)
-        .await
-    else {
-        return;
-    };
-    for row in rows {
-        let reference = decode(row);
-        let Some(name) = reference.file_name else {
-            continue;
-        };
-        let Ok(path) = reference_file(&root, &name) else {
-            continue;
-        };
-        // A remote queued row can arrive before its authenticated file chunks.
-        if !path.is_file() {
-            continue;
-        }
-        let format = reference.format;
-        let outcome = tokio::task::spawn_blocking(move || extract(&path, &format)).await;
-        let (status, text, err) = match outcome {
-            Ok(Ok(text)) => ("ready", text, None),
-            Ok(Err(err)) => ("failed", String::new(), Some(err.message)),
-            Err(_) => (
-                "failed",
-                String::new(),
-                Some(error("assistant_reference_invalid").message),
-            ),
-        };
-        let _=query("UPDATE assistant_references SET status=?,text=?,error=?,updated_at=? WHERE id=? AND status='queued'")
-            .bind(status).bind(text).bind(err).bind(chrono::Utc::now().to_rfc3339()).bind(reference.id).execute(&pool).await;
-    }
-}
 fn extract(path: &Path, format: &str) -> Result<String, AppError> {
     let mut file =
         std::fs::File::open(path).map_err(|_| error("assistant_reference_unavailable"))?;

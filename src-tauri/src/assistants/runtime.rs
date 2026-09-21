@@ -354,6 +354,7 @@ pub async fn assistant_chat_start(
 ) -> Result<AgentTaskDto, AppError> {
     let content = validate_content(&request.content)?;
     let repos = crate::commands::repositories(&app).await?;
+    let _ownership = super::reference_lifecycle_lock().await;
     let snapshot = AssistantSnapshot {
         definition: super::snapshot(&repos.pool, &request.assistant_id).await?,
         references: super::list_references(&repos.pool, &request.assistant_id).await?,
@@ -548,6 +549,7 @@ pub async fn assistant_chat_apply_revision(
             "Finish the current reply before applying an updated assistant.",
         ));
     }
+    let _ownership = super::reference_lifecycle_lock().await;
     let snapshot = AssistantSnapshot {
         definition: super::snapshot(&repos.pool, &previous.definition.id).await?,
         references: super::list_references(&repos.pool, &previous.definition.id).await?,

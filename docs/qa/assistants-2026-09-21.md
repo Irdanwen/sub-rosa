@@ -49,6 +49,11 @@ dialog flow. They have not been uploaded to a third-party QA service.
   round trips, permission filtering, general-chat isolation, durable completion,
   snapshot forks and a concurrent paid claim followed by reopening SQLite.
 - iOS library checks passed for device and simulator targets.
+- Release preparation regressions: 25 native assistant tests and 6 archive
+  tests passed. They cover ownership-aware file deletion, excluding orphan
+  bytes from exports, additive restore with newer local references, and
+  extraction progress beyond missing synchronized files. Version/build-number
+  and iOS extension checks passed (29 frontend tests).
 - The supply-chain check caught a vulnerable transitive PDF parser in the initial
   dependency selection. Upgrading `pdf-extract` to 0.12.1 selects patched `lopdf`
   0.42.0. Both `cargo audit` and `cargo deny` pass without a new advisory exception.

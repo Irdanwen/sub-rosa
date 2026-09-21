@@ -164,7 +164,26 @@ pub async fn restore_table(
             .map(|c| c.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        let sql = format!("INSERT OR REPLACE INTO {table} ({names}) VALUES ({placeholders})");
+        // REPLACE deletes the parent first and cascades into references added
+        // since this archive. Restore its fields without deleting its children.
+        let sql = if table == "assistants" {
+            let updates = cols
+                .iter()
+                .filter(|column| column.as_str() != "id")
+                .map(|column| format!("{column}=excluded.{column}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let conflict = if updates.is_empty() {
+                "DO NOTHING".to_owned()
+            } else {
+                format!("DO UPDATE SET {updates}")
+            };
+            format!(
+                "INSERT INTO {table} ({names}) VALUES ({placeholders}) ON CONFLICT(id) {conflict}"
+            )
+        } else {
+            format!("INSERT OR REPLACE INTO {table} ({names}) VALUES ({placeholders})")
+        };
         let mut statement = query(&sql);
         for col in &cols {
             statement = match &row[*col] {
@@ -214,6 +233,7 @@ pub async fn write_tar<W: Write>(
     options: &ExportOptions,
     out: W,
 ) -> Result<Manifest, AppError> {
+    let _references = crate::assistants::reference_lifecycle_lock().await;
     let mut builder = tar::Builder::new(out);
     let manifest = Manifest {
         format: ARCHIVE_FORMAT_VERSION,
@@ -268,7 +288,18 @@ pub async fn write_tar<W: Write>(
     if let Some(root) = options.recordings_dir.as_ref().and_then(|p| p.parent()) {
         let dir = root.join("assistant-references");
         if dir.is_dir() {
-            append_dir(&mut builder, &dir, Path::new("assistant-references"))?;
+            // Interrupted cleanup must never make removed private bytes part
+            // of an export. Only current references and saved chats own files.
+            for name in crate::assistants::retained_reference_files(pool).await? {
+                let path = crate::assistants::reference_file(&dir, &name)?;
+                if path.is_file() {
+                    builder
+                        .append_path_with_name(&path, Path::new("assistant-references").join(name))
+                        .map_err(|error| {
+                            AppError::new("archive_write_failed", error.to_string())
+                        })?;
+                }
+            }
         }
     }
     builder
