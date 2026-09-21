@@ -5196,7 +5196,16 @@ describe("AgentWorkspace", () => {
     await waitFor(() => expect(mocks.getHermesBridgeSkill).toHaveBeenCalledWith("repo-build-pr"));
 
     await user.click(textbox);
-    await user.type(textbox, " and keep this draft edit");
+    // jsdom cannot place a caret from click coordinates. Explicitly append the
+    // edit so this assertion tests draft preservation, not click positioning.
+    const range = document.createRange();
+    range.selectNodeContents(textbox);
+    range.collapse(false);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    fireEvent(document, new Event("selectionchange"));
+    await user.type(textbox, " and keep this draft edit", { skipClick: true });
     resolveSkillDocument({
       name: "repo-build-pr",
       relativePath: "repo-build-pr/SKILL.md",

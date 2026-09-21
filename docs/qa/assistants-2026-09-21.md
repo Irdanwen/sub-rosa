@@ -57,6 +57,12 @@ dialog flow. They have not been uploaded to a third-party QA service.
 - The supply-chain check caught a vulnerable transitive PDF parser in the initial
   dependency selection. Upgrading `pdf-extract` to 0.12.1 selects patched `lopdf`
   0.42.0. Both `cargo audit` and `cargo deny` pass without a new advisory exception.
+- Release review regressions reopen SQLite and rerun migrations between bounded
+  sweeps to verify upload discovery and extraction advance beyond 256 missing
+  references after a cold launch, then revisit files arriving later. Pending sync
+  counts exclude unowned assistant transfers but retain delayed-metadata rows.
+  The chat caret-position flake now places the selection explicitly before typing;
+  all 179 AgentWorkspace tests pass (2 skipped).
 
 ## Remaining validation
 
