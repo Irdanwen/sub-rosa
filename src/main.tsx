@@ -35,7 +35,11 @@ initBrand();
 // Android has no way to paste into an input (the gate’s key field included).
 installNativeContextMenuGuard({ allowEditableFields: isMobilePlatform() });
 if (isMobilePlatform()) {
+  // Lets mobile.css size the document to the screen before the first paint:
+  // the shell renders inside it, so this cannot wait for React.
+  document.documentElement.dataset.shell = "mobile";
   void import("./lib/dynamic-type").then(({ initDynamicType }) => initDynamicType());
+  void import("./lib/mobile-zoom").then(({ installZoomRecovery }) => installZoomRecovery());
 }
 
 // Console driver for the agent HUD overlay window: __agentHud("demo") etc.

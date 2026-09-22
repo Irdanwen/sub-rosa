@@ -1,3 +1,4 @@
+import { t } from "../../lib/i18n";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import type { ResolvedPos } from "@tiptap/pm/model";
@@ -80,7 +81,7 @@ export function NotePreview({
         Placeholder.configure({
           placeholder:
             emptyPlaceholder ??
-            "Hit record to capture a conversation, or just start typing your thoughts here",
+            t("Hit record to capture a conversation, or just start typing your thoughts here"),
         }),
       ],
       content: initialDoc,

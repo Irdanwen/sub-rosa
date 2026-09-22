@@ -434,96 +434,103 @@ export function NoteEditor({
             invited. Absent on every note without an event, which is the
             behaviour the app has always had. */}
         <MeetingBadge scheduledStart={note.scheduledStart} attendees={note.attendees} />
-        {/* The spoken recap: the note, read out loud, for the walk home. */}
-        <ListenButton
-          noteId={note.id}
-          content={note.editedContent ?? note.generatedContent ?? ""}
-        />
-        <SegmentedControl
-          aria-label={t("Note views")}
-          value={activeTab}
-          options={tabs}
-          onValueChange={(value) => onTabChange(value as NoteTab)}
-        />
-        {/* A note that has been read as shots is a film. The way back to it
-            belongs here, on the note, rather than only in the Studio - a
-            script is an ordinary note and this is where the user is looking
-            at it. */}
-        {filmShotCount !== undefined ? (
-          <button
-            type="button"
-            className="note-header-actions"
-            onClick={() => requestFilmFromNote(note.id)}
-            aria-label={t("Open this note's film")}
-            title={
-              filmShotCount === 1
-                ? t("This note is a film: 1 shot")
-                : t("This note is a film: {count} shots", { count: filmShotCount })
-            }
-          >
-            <IconClapboard aria-hidden="true" />
-          </button>
-        ) : null}
-        {/* Reading, as opposed to writing. Same document, same file: this
-            changes nothing the markdown holds (ADR-0037), only how wide the
-            column is and what it is set in. The caret is put away while it is
-            on, because a mode called reading that you can type into is two
-            modes wearing one name. */}
-        <button
-          type="button"
-          className="note-header-actions"
-          data-active={reading || undefined}
-          onClick={() => setReading((current) => !current)}
-          aria-pressed={reading}
-          aria-label={reading ? t("Stop reading") : t("Read")}
-          title={reading ? t("Back to writing") : t("Read")}
-        >
-          <IconBookSimple aria-hidden="true" />
-        </button>
-        {onExportPdf ? (
-          <button
-            type="button"
-            className="note-header-actions note-export-pdf"
-            onClick={onExportPdf}
-            aria-label={t("Export as PDF")}
-            title={t("Export as PDF")}
-          >
-            <IconArrowDownWall aria-hidden="true" />
-          </button>
-        ) : null}
-        {onAskNote ? (
-          <button
-            type="button"
-            className="note-header-actions note-ask"
-            onClick={onAskNote}
-            aria-label={t("Ask this note")}
-            title={t("Ask this note")}
-          >
-            <IconSparkle3 aria-hidden="true" />
-          </button>
-        ) : null}
-        {onShare ? (
-          <button
-            type="button"
-            className="note-header-actions note-share"
-            onClick={onShare}
-            aria-label={t("Share this note")}
-            title={t("Share this note")}
-          >
-            <IconChainLink1 aria-hidden="true" />
-          </button>
-        ) : null}
-        {onExportMarkdown ? (
-          <button
-            type="button"
-            className="note-header-actions note-export-markdown"
-            onClick={onExportMarkdown}
-            aria-label={t("Export as Markdown")}
-            title={t("Export as Markdown")}
-          >
-            <IconMarkdown aria-hidden="true" />
-          </button>
-        ) : null}
+        {/* The view switch and the note's actions share one row. They used to
+            be header children of a one-column grid, each on its own line,
+            with no screen style at all: a column of grey browser buttons. */}
+        <div className="note-header-row">
+          <SegmentedControl
+            aria-label={t("Note views")}
+            value={activeTab}
+            options={tabs}
+            onValueChange={(value) => onTabChange(value as NoteTab)}
+          />
+          <div className="note-header-toolbar">
+            {/* The spoken recap: the note, read out loud, for the walk home. */}
+            <ListenButton
+              noteId={note.id}
+              content={note.editedContent ?? note.generatedContent ?? ""}
+            />
+            {/* A note that has been read as shots is a film. The way back to it
+                belongs here, on the note, rather than only in the Studio - a
+                script is an ordinary note and this is where the user is looking
+                at it. */}
+            {filmShotCount !== undefined ? (
+              <button
+                type="button"
+                className="note-header-actions ghost-icon-button"
+                onClick={() => requestFilmFromNote(note.id)}
+                aria-label={t("Open this note's film")}
+                title={
+                  filmShotCount === 1
+                    ? t("This note is a film: 1 shot")
+                    : t("This note is a film: {count} shots", { count: filmShotCount })
+                }
+              >
+                <IconClapboard aria-hidden="true" />
+              </button>
+            ) : null}
+            {/* Reading, as opposed to writing. Same document, same file: this
+                changes nothing the markdown holds (ADR-0037), only how wide the
+                column is and what it is set in. The caret is put away while it is
+                on, because a mode called reading that you can type into is two
+                modes wearing one name. */}
+            <button
+              type="button"
+              className="note-header-actions ghost-icon-button"
+              data-active={reading || undefined}
+              onClick={() => setReading((current) => !current)}
+              aria-pressed={reading}
+              aria-label={reading ? t("Stop reading") : t("Read")}
+              title={reading ? t("Back to writing") : t("Read")}
+            >
+              <IconBookSimple aria-hidden="true" />
+            </button>
+            {onExportPdf ? (
+              <button
+                type="button"
+                className="note-header-actions ghost-icon-button note-export-pdf"
+                onClick={onExportPdf}
+                aria-label={t("Export as PDF")}
+                title={t("Export as PDF")}
+              >
+                <IconArrowDownWall aria-hidden="true" />
+              </button>
+            ) : null}
+            {onAskNote ? (
+              <button
+                type="button"
+                className="note-header-actions ghost-icon-button note-ask"
+                onClick={onAskNote}
+                aria-label={t("Ask this note")}
+                title={t("Ask this note")}
+              >
+                <IconSparkle3 aria-hidden="true" />
+              </button>
+            ) : null}
+            {onShare ? (
+              <button
+                type="button"
+                className="note-header-actions ghost-icon-button note-share"
+                onClick={onShare}
+                aria-label={t("Share this note")}
+                title={t("Share this note")}
+              >
+                <IconChainLink1 aria-hidden="true" />
+              </button>
+            ) : null}
+            {onExportMarkdown ? (
+              <button
+                type="button"
+                className="note-header-actions ghost-icon-button note-export-markdown"
+                onClick={onExportMarkdown}
+                aria-label={t("Export as Markdown")}
+                title={t("Export as Markdown")}
+              >
+                <IconMarkdown aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
+        </div>
       </header>
 
       <section className="editor-content">
@@ -625,7 +632,9 @@ export function NoteEditor({
                 emptyPlaceholder={
                   processingLock
                     ? ""
-                    : "Hit record to capture a conversation, or just start typing your thoughts here"
+                    : t(
+                        "Hit record to capture a conversation, or just start typing your thoughts here",
+                      )
                 }
               />
             </div>
