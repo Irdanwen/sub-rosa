@@ -164,7 +164,7 @@ export function AccountPage({ path }: { path: string }) {
           <div className="actions">
             <a
               className="button primary"
-              href={`/auth/login?intent=signin&return_to=${encodeURIComponent(path.startsWith("/account/devices/verify") ? path : "/account")}`}
+              href={`/auth/login?intent=signin&return_to=${encodeURIComponent(path.startsWith("/account/devices/verify") || path.startsWith("/account/top-up") ? path : "/account")}`}
             >
               {t("Sign in", "Se connecter")}
             </a>
@@ -185,6 +185,7 @@ export function AccountPage({ path }: { path: string }) {
   const tabs = [
     ["/account", t("Overview", "Vue d’ensemble")],
     ["/account/provider", "Carpe Diem"],
+    ["/account/top-up", t("Top up", "Recharger")],
     ["/account/library", t("Notes", "Notes")],
     ["/account/usage", t("Usage", "Consommation")],
     ["/account/devices", t("Devices", "Appareils")],
@@ -215,7 +216,9 @@ export function AccountPage({ path }: { path: string }) {
           ))}
         </nav>
         <div className="stack">
-          {section === "/account/devices/verify" ? (
+          {section === "/account/top-up" ? (
+            <TopUp />
+          ) : section === "/account/devices/verify" ? (
             <VerifyDevice />
           ) : section === "/account/devices" ? (
             <>
@@ -298,6 +301,60 @@ export function AccountPage({ path }: { path: string }) {
         </div>
       </div>
     </section>
+  );
+}
+
+/** Where credits are bought. Sub Rosa sells nothing: credits are Carpe Diem's,
+ * bought with a wallet on its deposit page. The app's "Top up" button lands
+ * here, so the page says what happens next before sending anyone elsewhere.
+ * No vault needed: nothing here is personal. */
+const CARPE_DIEM_DEPOSIT_URL = "https://carpe-diem.xyz/dashboard/buyer";
+
+export function TopUp() {
+  return (
+    <article className="card">
+      <h2>{t("Top up your credits", "Recharger vos crédits")}</h2>
+      <p>
+        {t(
+          "Sub Rosa sells nothing. The models run at Carpe Diem, and your credits are bought there, in USDC, from the wallet that owns your key.",
+          "Sub Rosa ne vend rien. Les modèles tournent chez Carpe Diem, et vos crédits s’achètent là-bas, en USDC, depuis le portefeuille qui possède votre clé.",
+        )}
+      </p>
+      <ol className="steps">
+        <li>{t("Open Carpe Diem's deposit page.", "Ouvrez la page de dépôt de Carpe Diem.")}</li>
+        <li>
+          {t(
+            "Connect the wallet that owns your key and choose an amount.",
+            "Connectez le portefeuille qui possède votre clé et choisissez un montant.",
+          )}
+        </li>
+        <li>
+          {t(
+            "Come back to Sub Rosa: the new balance shows within a minute.",
+            "Revenez dans Sub Rosa : le nouveau solde s’affiche en moins d’une minute.",
+          )}
+        </li>
+      </ol>
+      <div className="actions">
+        <a
+          className="button primary"
+          href={CARPE_DIEM_DEPOSIT_URL}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {t("Top up on Carpe Diem", "Recharger sur Carpe Diem")} ↗
+        </a>
+        <a className="button" href="subrosa://">
+          {t("Back to Sub Rosa", "Revenir à Sub Rosa")}
+        </a>
+      </div>
+      <p className="quiet">
+        {t(
+          "Sub Rosa never sees your wallet or your payment. The deposit is between you and Carpe Diem.",
+          "Sub Rosa ne voit jamais votre portefeuille ni votre paiement. Le dépôt se fait entre vous et Carpe Diem.",
+        )}
+      </p>
+    </article>
   );
 }
 
