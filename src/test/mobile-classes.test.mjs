@@ -13,9 +13,6 @@ const HOOKS_WITHOUT_STYLE = new Set([
   // styled; the parent is here to be found, not to be painted.
   "mobile-action-sheet",
   "mobile-reference",
-  // A label in a flex row that should truncate rather than push the status
-  // off the end. Left as it is until someone changes how that row reads.
-  "mobile-flows-step-label",
 ]);
 
 function walk(directory) {

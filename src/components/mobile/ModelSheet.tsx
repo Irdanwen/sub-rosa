@@ -4,7 +4,9 @@ import { IconBranchSimple } from "central-icons/IconBranchSimple";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconStar } from "central-icons/IconStar";
+import { IconStar as IconStarFilled } from "central-icons-filled/IconStar";
 import { useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { hapticSelection } from "../../lib/haptics";
 import { useKeyboardInset } from "../../lib/keyboard-inset";
 import { EASE_OUT_CSS, FLICK_VELOCITY } from "../../lib/motion";
@@ -79,7 +81,15 @@ export function ModelSheet({
   const dragStart = useRef<number | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
   // Focus in, Tab kept inside, Escape closes, focus back (spec/modal-focus.md).
-  useModalFocus(sheetRef, { onClose });
+  // Focus goes to the title, not to the search field: on a phone, focusing a
+  // field raises the keyboard, and a keyboard that comes up unasked made iOS
+  // slide the whole page to keep the field in view. Search is one tap away.
+  // The page behind is locked so a drag in the list never scrolls it.
+  useModalFocus(sheetRef, {
+    onClose,
+    initialFocusSelector: "[data-initial-focus]",
+    lockScroll: true,
+  });
   const backdropRef = useRef<HTMLDivElement | null>(null);
   const dismissing = useRef(false);
   // Track the finger's velocity so release inherits the throw: a flick
@@ -170,10 +180,22 @@ export function ModelSheet({
     });
   };
 
-  return (
-    <div className="mobile-sheet-backdrop" ref={backdropRef} onClick={() => dismiss(dragY, 0.8)}>
+  // Rendered at the shell, not where it was opened: inside a scrolling panel a
+  // fixed layer can end up positioned against a transformed ancestor. The
+  // shell, not the body, so the phone's own rules (the 16px field floor among
+  // them) still reach the search field.
+  const host = document.querySelector(".mobile-shell") ?? document.body;
+  return createPortal(
+    <div
+      className="mobile-sheet-backdrop mobile-sheet-backdrop-tall"
+      ref={backdropRef}
+      onClick={() => dismiss(dragY, 0.8)}
+      // The layer ends where the keyboard begins, so the sheet shrinks to the
+      // room that is left instead of being pushed up under the status bar.
+      style={{ bottom: keyboardInset || undefined }}
+    >
       <div
-        className="mobile-sheet"
+        className="mobile-sheet mobile-model-sheet"
         ref={sheetRef}
         role="dialog"
         aria-modal="true"
@@ -183,7 +205,6 @@ export function ModelSheet({
         style={{
           transform: dragY ? `translateY(${dragY}px)` : undefined,
           transition: dragStart.current !== null ? "none" : undefined,
-          paddingBottom: keyboardInset || undefined,
         }}
       >
         <div
@@ -194,7 +215,9 @@ export function ModelSheet({
           onTouchCancel={onHandleTouchEnd}
         >
           <span className="mobile-sheet-grabber" aria-hidden />
-          <h2 className="mobile-sheet-title">{title}</h2>
+          <h2 className="mobile-sheet-title" data-initial-focus tabIndex={-1}>
+            {title}
+          </h2>
         </div>
         <div className="mobile-search mobile-sheet-search">
           <IconMagnifyingGlass size={16} aria-hidden />
@@ -211,14 +234,21 @@ export function ModelSheet({
           {error ? <li className="mobile-sheet-error">{error}</li> : null}
           {defaultOption && !query ? (
             <li>
-              <button type="button" className="mobile-sheet-item" onClick={() => onSelect("")}>
-                <span>
+              <button
+                type="button"
+                className="mobile-sheet-item"
+                aria-current={!selectedId ? "true" : undefined}
+                onClick={() => onSelect("")}
+              >
+                <span className="mobile-sheet-check" aria-hidden>
+                  {!selectedId ? <IconCheckmark1Small size={16} /> : null}
+                </span>
+                <span className="mobile-sheet-item-text">
                   <span className="mobile-sheet-item-title">{defaultOption.label}</span>
                   {defaultOption.subtitle ? (
                     <span className="mobile-sheet-item-subtitle">{defaultOption.subtitle}</span>
                   ) : null}
                 </span>
-                {!selectedId ? <IconCheckmark1Small size={16} aria-hidden /> : null}
               </button>
             </li>
           ) : null}
@@ -227,13 +257,18 @@ export function ModelSheet({
               <button
                 type="button"
                 className="mobile-sheet-item"
+                aria-current={selectedId === entry.id ? "true" : undefined}
                 onClick={() => onSelect(entry.id)}
               >
-                <span>
+                {/* The tick leads the row: at the far end, beside the star, it
+                    read as a second button. */}
+                <span className="mobile-sheet-check" aria-hidden>
+                  {selectedId === entry.id ? <IconCheckmark1Small size={16} /> : null}
+                </span>
+                <span className="mobile-sheet-item-text">
                   <span className="mobile-sheet-item-title">{entry.name || entry.id}</span>
                   <span className="mobile-sheet-item-subtitle">{entry.subtitle ?? entry.id}</span>
                 </span>
-                {selectedId === entry.id ? <IconCheckmark1Small size={16} aria-hidden /> : null}
               </button>
               {onFork ? (
                 <button
@@ -250,14 +285,16 @@ export function ModelSheet({
                 className="mobile-icon-button mobile-favorite-button"
                 data-active={favorites.has(entry.id) ? "true" : undefined}
                 aria-label={favorites.has(entry.id) ? t("Remove favorite") : t("Add favorite")}
+                aria-pressed={favorites.has(entry.id)}
                 onClick={() => toggleFavorite(entry.id)}
               >
-                <IconStar size={16} />
+                {favorites.has(entry.id) ? <IconStarFilled size={16} /> : <IconStar size={16} />}
               </button>
             </li>
           ))}
         </ul>
       </div>
-    </div>
+    </div>,
+    host,
   );
 }

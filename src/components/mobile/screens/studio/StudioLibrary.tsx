@@ -266,8 +266,8 @@ export function dayLabel(createdAt: number): string {
   const startOf = (value: Date) =>
     new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
   const days = Math.round((startOf(today) - startOf(date)) / 86_400_000);
-  if (days <= 0) return "Today";
-  if (days === 1) return "Yesterday";
+  if (days <= 0) return t("Today");
+  if (days === 1) return t("Yesterday");
   return date.toLocaleDateString(intlLocale(), {
     weekday: days < 7 ? "long" : undefined,
     month: "short",
@@ -276,165 +276,55 @@ export function dayLabel(createdAt: number): string {
   });
 }
 
-export function Gallery({
+/**
+ * The last few things made in this tab, under its form.
+ *
+ * The tab used to end with the whole gallery (search, select, delete, every
+ * tile), a second Gallery tab under the first. Under a form, what helps is what
+ * you just made; the rest is one tap away in Gallery.
+ */
+export function RecentStrip({
   items,
   kind,
   onOpen,
-  onChanged,
+  onSeeAll,
 }: {
   items: StudioArtifact[];
   kind: ArtifactKind;
   onOpen: (artifact: StudioArtifact) => void;
-  onChanged: () => void;
+  onSeeAll: () => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [selecting, setSelecting] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const [deleting, setDeleting] = useState(false);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      (artifact) =>
-        (artifact.prompt ?? "").toLowerCase().includes(q) ||
-        (artifact.model ?? "").toLowerCase().includes(q),
-    );
-  }, [items, query]);
-
-  const toggle = useCallback((path: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
-  }, []);
-
-  const exitSelection = useCallback(() => {
-    setSelecting(false);
-    setSelected(new Set());
-  }, []);
-
-  const deleteSelected = useCallback(async () => {
-    if (selected.size === 0) return;
-    setDeleting(true);
-    const targets = items.filter((artifact) => selected.has(artifact.path));
-    for (const artifact of targets) {
-      try {
-        await deleteArtifact(artifact);
-        evictArtifactDataUrl(artifact.path);
-      } catch {
-        // Leave failures in place; the next refresh reconciles with disk.
-      }
-    }
-    setDeleting(false);
-    hapticNotify("success");
-    exitSelection();
-    onChanged();
-  }, [items, selected, exitSelection, onChanged]);
-
+  if (items.length === 0) return null;
   const isAudioKind = kind === "music" || kind === "speech" || kind === "sfx";
-
-  if (items.length === 0) {
-    return (
-      <EmptyState
-        icon={
-          kind === "music" || kind === "speech" || kind === "sfx" ? (
-            <IconAudio size={28} />
-          ) : (
-            <IconCameraSparkle size={28} />
-          )
-        }
-        title={
-          kind === "image"
-            ? t("No images yet")
-            : kind === "video"
-              ? t("No videos yet")
-              : kind === "speech"
-                ? t("No narrations yet")
-                : kind === "sfx"
-                  ? t("No sound effects yet")
-                  : t("No tracks yet")
-        }
-        description={t("Everything you generate stays on this device.")}
-      />
-    );
-  }
-
+  const recent = items.slice(0, isAudioKind ? 3 : 12);
   return (
-    <div className="mobile-studio-gallery">
-      <div className="mobile-studio-gallery-bar">
-        <input
-          className="mobile-studio-search"
-          type="search"
-          value={query}
-          placeholder={
-            isAudioKind
-              ? t("Search audio")
-              : kind === "video"
-                ? t("Search videos")
-                : t("Search images")
-          }
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <button
-          type="button"
-          className="mobile-chip-button"
-          onClick={() => (selecting ? exitSelection() : setSelecting(true))}
-        >
-          {selecting ? t("Done") : t("Select")}
+    <section className="mobile-studio-recent" aria-label={t("Recent")}>
+      <div className="mobile-studio-recent-head">
+        <h2 className="mobile-studio-recent-title">{t("Recent")}</h2>
+        <button type="button" className="mobile-chip-button" onClick={onSeeAll}>
+          {t("See all")}
         </button>
       </div>
-      {filtered.length === 0 ? (
-        <p className="mobile-studio-empty-hint">
-          {t("No results for “{query}”.", { query: query.trim() })}
-        </p>
-      ) : isAudioKind ? (
+      {isAudioKind ? (
         <ul className="mobile-note-list" aria-label={t("Generated audio")}>
-          {filtered.map((artifact) => (
+          {recent.map((artifact) => (
             <MusicRow
               key={artifact.path}
               artifact={artifact}
-              selecting={selecting}
-              selected={selected.has(artifact.path)}
-              onToggle={() => toggle(artifact.path)}
+              selecting={false}
+              selected={false}
+              onToggle={() => undefined}
             />
           ))}
         </ul>
       ) : (
-        <div className="mobile-studio-grid">
-          {filtered.map((artifact) => (
-            <GalleryCell
-              key={artifact.path}
-              artifact={artifact}
-              selecting={selecting}
-              selected={selected.has(artifact.path)}
-              onOpen={() => (selecting ? toggle(artifact.path) : onOpen(artifact))}
-            />
+        <div className="mobile-studio-recent-strip">
+          {recent.map((artifact) => (
+            <GalleryCell key={artifact.path} artifact={artifact} onOpen={() => onOpen(artifact)} />
           ))}
         </div>
       )}
-      {selecting ? (
-        <div className="mobile-studio-select-bar">
-          <span>{t("{size} selected", { size: selected.size })}</span>
-          <button
-            type="button"
-            className="mobile-studio-delete-selected"
-            disabled={selected.size === 0 || deleting}
-            onClick={() => void deleteSelected()}
-          >
-            {deleting ? (
-              <Spinner />
-            ) : selected.size ? (
-              t("Delete ({count})", { count: selected.size })
-            ) : (
-              t("Delete")
-            )}
-          </button>
-        </div>
-      ) : null}
-    </div>
+    </section>
   );
 }
 

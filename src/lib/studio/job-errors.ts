@@ -11,6 +11,7 @@
 // That is what the HTTP status is for - which is why the durable row now
 // carries it.
 
+import { t } from "../i18n";
 import { seedancePersonMediaCaveat } from "./seedance";
 
 export interface JobFailure {
@@ -54,6 +55,24 @@ function looksModerated(message: string): boolean {
 }
 
 /**
+ * The upstream account ran dry, not the user's credits.
+ *
+ * Venice answers "Insufficient USD or Diem balance to complete request" when
+ * the account a render is billed to cannot pay for it. Behind a Carpe Diem key
+ * that account is the operator's provider, not the person holding the phone:
+ * the app showed the sentence verbatim, with a link to another service's
+ * billing page, next to a pill saying the user had 317 credits left.
+ */
+function looksLikeProviderBalance(message: string): boolean {
+  const text = message.toLowerCase();
+  return (
+    text.includes("usd or diem") ||
+    text.includes("diem balance") ||
+    (text.includes("insufficient") && text.includes("balance") && text.includes("venice"))
+  );
+}
+
+/**
  * What to tell the user about a failed generation.
  *
  * Falls back to the backend's own message rather than inventing one: an
@@ -64,22 +83,46 @@ export function describeJobFailure({
   message,
   status,
   model,
+  backend,
 }: {
   message?: string;
   status?: number;
   /** The model the render was queued against, where the surface knows it. Some
    * refusals only make sense once you know which model refused. */
   model?: string;
+  /** Who the key belongs to. A balance refusal is the user's own with a Venice
+   * key and the operator's provider with a Carpe Diem one. */
+  backend?: "carpe-diem" | "venice";
 }): JobFailure {
   const detail = message?.trim() || undefined;
   const raw = detail ?? "";
+
+  if (looksLikeProviderBalance(raw)) {
+    return backend === "venice"
+      ? {
+          text: t(
+            "Your Venice balance is too low for this render. Add credits to that account, then start it again.",
+          ),
+          retryable: false,
+          detail,
+        }
+      : {
+          text: t(
+            "The provider behind this model has no balance left for this render. Your credits are not the cause: try again later, or pick another model.",
+          ),
+          retryable: false,
+          detail,
+        };
+  }
 
   // 404 and 410 both mean "this job is gone from the backend". The render was
   // never delivered, so nothing is lost by starting over, and the backend
   // itself asks for exactly that.
   if (status === 404 || status === 410 || looksMissing(raw)) {
     return {
-      text: "The backend lost this job before it finished. Nothing was delivered, so starting it again is safe.",
+      text: t(
+        "The backend lost this job before it finished. Nothing was delivered, so starting it again is safe.",
+      ),
       retryable: true,
       detail,
     };
@@ -94,8 +137,12 @@ export function describeJobFailure({
     const publicTier = Boolean(seedancePersonMediaCaveat(model ? { id: model } : undefined));
     return {
       text: publicTier
-        ? "This public model refuses reference media with a recognisable person, whatever you attest. Use a place, an object or a scene as the reference and describe the person in the prompt, or pick a model outside the public tier."
-        : "The model's content filter refused this request. Sending it again unchanged will be refused again: change the reference media, or reword the prompt.",
+        ? t(
+            "This public model refuses reference media with a recognisable person, whatever you attest. Use a place, an object or a scene as the reference and describe the person in the prompt, or pick a model outside the public tier.",
+          )
+        : t(
+            "The model's content filter refused this request. Sending it again unchanged will be refused again: change the reference media, or reword the prompt.",
+          ),
       // Same request, same refusal. The only way through is a different one.
       retryable: false,
       detail,
@@ -103,7 +150,7 @@ export function describeJobFailure({
   }
   if (status === 402) {
     return {
-      text: "Not enough credits to finish this render. Top up, then start it again.",
+      text: t("Not enough credits to finish this render. Top up, then start it again."),
       // Retrying without topping up just spends the same 402 again.
       retryable: false,
       detail,
@@ -114,21 +161,23 @@ export function describeJobFailure({
   // most obviously repeatable failure there is.
   if (status === 0) {
     return {
-      text: "The request never reached the backend. Check the connection, then start it again.",
+      text: t("The request never reached the backend. Check the connection, then start it again."),
       retryable: true,
       detail,
     };
   }
   if (status === 429) {
     return {
-      text: "The backend is rate limiting requests right now. Waiting a moment and starting again usually clears it.",
+      text: t(
+        "The backend is rate limiting requests right now. Waiting a moment and starting again usually clears it.",
+      ),
       retryable: true,
       detail,
     };
   }
   if (status !== undefined && status >= 500) {
     return {
-      text: "The backend failed while rendering this one. That is usually temporary.",
+      text: t("The backend failed while rendering this one. That is usually temporary."),
       retryable: true,
       detail,
     };
@@ -137,7 +186,7 @@ export function describeJobFailure({
   // refused again, so offering a retry would only waste the user's time.
   // `explainConstraintError` handles the ones that name a field.
   if (status === 400) {
-    return { text: detail ?? "The backend refused this request.", retryable: false, detail };
+    return { text: detail ?? t("The backend refused this request."), retryable: false, detail };
   }
-  return { text: detail ?? "The render failed.", retryable: false, detail };
+  return { text: detail ?? t("The render failed."), retryable: false, detail };
 }

@@ -28,7 +28,14 @@ import { Darkroom } from "../../../studio/Darkroom";
 import { JobFailureNotice } from "../../../studio/JobFailureNotice";
 import { Spinner } from "../../../ui/Spinner";
 import { ModelSheet } from "../../ModelSheet";
-import { ModelPickerButton, pickEffective, StudioSetting, StudioToggle } from "./StudioControls";
+import {
+  ModelPickerButton,
+  modelSubtitle,
+  pickEffective,
+  SelectRow,
+  SettingsCard,
+  StudioToggle,
+} from "./StudioControls";
 
 /** Which of the three sound panels is showing. */
 export type AudioMode = "music" | "speech" | "sfx";
@@ -184,29 +191,25 @@ export function SpeechPanel({
           onChange={(event) => setSpeed(Number(event.target.value))}
         />
       </div>
-      <StudioSetting label={t("Format")}>
-        <div className="mobile-pill-row" role="radiogroup" aria-label={t("Audio format")}>
-          {SPEECH_FORMATS.map((entry) => (
-            <button
-              key={entry}
-              type="button"
-              className="mobile-pill"
-              data-active={format === entry ? "true" : undefined}
-              onClick={() => setFormat(entry)}
-            >
-              {entry}
-            </button>
-          ))}
-        </div>
-      </StudioSetting>
-      <button
-        type="button"
-        className="mobile-studio-generate"
-        disabled={!model || !text.trim() || busy}
-        onClick={() => void generate()}
-      >
-        {busy ? <Spinner /> : t("Generate")}
-      </button>
+      <SettingsCard>
+        <SelectRow
+          label={t("Audio format")}
+          value={format}
+          options={[...SPEECH_FORMATS]}
+          onChange={(next) => setFormat(next as typeof format)}
+          format={(option) => option.toUpperCase()}
+        />
+      </SettingsCard>
+      <div className="mobile-studio-generate-bar">
+        <button
+          type="button"
+          className="mobile-studio-generate"
+          disabled={!model || !text.trim() || busy}
+          onClick={() => void generate()}
+        >
+          {busy ? <Spinner /> : t("Generate")}
+        </button>
+      </div>
       {busy ? (
         <button
           type="button"
@@ -223,7 +226,7 @@ export function SpeechPanel({
           entries={models.map((entry) => ({
             id: entry.id,
             name: entry.name,
-            subtitle: [entry.tier, entry.privacy].filter(Boolean).join(" · "),
+            subtitle: modelSubtitle(entry),
           }))}
           selectedId={model?.id ?? ""}
           onSelect={(id) => {
@@ -357,17 +360,19 @@ export function SfxPanel({
           />
         </div>
       ) : null}
-      <button
-        type="button"
-        className="mobile-studio-generate"
-        disabled={!model || !prompt.trim() || busy}
-        onClick={start}
-      >
-        {busy ? <Spinner /> : t("Generate")}
-        {!busy && cost !== undefined ? (
-          <span className="mobile-studio-cost">{formatCredits(cost)}</span>
-        ) : null}
-      </button>
+      <div className="mobile-studio-generate-bar">
+        <button
+          type="button"
+          className="mobile-studio-generate"
+          disabled={!model || !prompt.trim() || busy}
+          onClick={start}
+        >
+          {busy ? <Spinner /> : t("Generate")}
+          {!busy && cost !== undefined ? (
+            <span className="mobile-studio-cost">{formatCredits(cost)}</span>
+          ) : null}
+        </button>
+      </div>
       {waiting ? (
         <Darkroom
           compact
@@ -384,9 +389,11 @@ export function SfxPanel({
           message={job.state.message}
           status={job.state.status}
           model={model?.id}
-          className="mobile-dictation-error"
+          backend={catalog.backend}
+          className="mobile-job-failure"
           retryClassName="mobile-chip-button"
           onRetry={job.canRetry ? job.retry : undefined}
+          onDismiss={job.reset}
         />
       ) : null}
       {pickerOpen ? (
@@ -395,7 +402,7 @@ export function SfxPanel({
           entries={models.map((entry) => ({
             id: entry.id,
             name: entry.name,
-            subtitle: [entry.tier, entry.privacy].filter(Boolean).join(" · "),
+            subtitle: modelSubtitle(entry),
           }))}
           selectedId={model?.id ?? ""}
           onSelect={(id) => {
@@ -520,17 +527,19 @@ export function MusicPanel({
           ) : null}
         </>
       ) : null}
-      <button
-        type="button"
-        className="mobile-studio-generate"
-        disabled={!model || !prompt.trim() || lyricsMissing || busy}
-        onClick={start}
-      >
-        {busy ? <Spinner /> : t("Generate")}
-        {!busy && cost !== undefined ? (
-          <span className="mobile-studio-cost">{formatCredits(cost)}</span>
-        ) : null}
-      </button>
+      <div className="mobile-studio-generate-bar">
+        <button
+          type="button"
+          className="mobile-studio-generate"
+          disabled={!model || !prompt.trim() || lyricsMissing || busy}
+          onClick={start}
+        >
+          {busy ? <Spinner /> : t("Generate")}
+          {!busy && cost !== undefined ? (
+            <span className="mobile-studio-cost">{formatCredits(cost)}</span>
+          ) : null}
+        </button>
+      </div>
       {waiting ? (
         <Darkroom
           compact
@@ -548,9 +557,11 @@ export function MusicPanel({
           message={job.state.message}
           status={job.state.status}
           model={model?.id}
-          className="mobile-dictation-error"
+          backend={catalog.backend}
+          className="mobile-job-failure"
           retryClassName="mobile-chip-button"
           onRetry={job.canRetry ? job.retry : undefined}
+          onDismiss={job.reset}
         />
       ) : null}
       {pickerOpen ? (
@@ -559,7 +570,7 @@ export function MusicPanel({
           entries={models.map((entry) => ({
             id: entry.id,
             name: entry.name,
-            subtitle: [entry.tier, entry.privacy].filter(Boolean).join(" · "),
+            subtitle: modelSubtitle(entry),
           }))}
           selectedId={model?.id ?? ""}
           onSelect={(id) => {

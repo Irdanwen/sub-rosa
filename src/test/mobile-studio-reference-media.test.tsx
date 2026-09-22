@@ -49,6 +49,11 @@ async function openVideoTab() {
   return await screen.findByRole("button", { name: /^Video model/ });
 }
 
+/** Unfold "More options", where reference photos, clips and audio live. */
+async function openMoreOptions() {
+  await userEvent.click(screen.getByRole("button", { name: "More options" }));
+}
+
 /** Pick a family through the model sheet, searching for it the way a user would. */
 async function chooseFamily(picker: HTMLElement, query: string, name: string) {
   await userEvent.click(picker);
@@ -83,6 +88,7 @@ describe("finding seedance 2.5 reference-to-video on a phone", () => {
   it("offers what that model takes: reference photos and audio, never clips", async () => {
     const picker = await openVideoTab();
     await chooseFamily(picker, "rtv", "Seedance 2.5");
+    await openMoreOptions();
 
     // It publishes `audio_input: true` and `video_input: false`.
     expect(screen.getByRole("button", { name: "Add a track" })).toBeTruthy();
@@ -95,6 +101,7 @@ describe("finding seedance 2.5 reference-to-video on a phone", () => {
   it("offers clips on the full tier, which declares a video input", async () => {
     const picker = await openVideoTab();
     await chooseFamily(picker, "seedance-2-0-fast", "Seedance 2.0 Fast (full)");
+    await openMoreOptions();
 
     expect(screen.getByRole("button", { name: "Add a clip" })).toBeTruthy();
     for (const label of ["Reference", "Edit a clip", "Extend a clip", "Stitch clips"]) {
@@ -124,6 +131,7 @@ describe("writing a prompt the router will read", () => {
     // Nothing filled in yet: plain text-to-video, nothing to say.
     expect(within(picker).queryByText(/reference to video/)).toBeNull();
 
+    await openMoreOptions();
     await userEvent.click(screen.getByRole("button", { name: "Add a clip" }));
     // The file input is what a tap opens; feed it the way the webview would.
     const input = document.querySelector<HTMLInputElement>('input[accept="video/*"]');

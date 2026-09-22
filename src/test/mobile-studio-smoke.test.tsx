@@ -62,12 +62,13 @@ async function openTab(name: string) {
 }
 
 describe("the mobile studio", () => {
-  it("offers all five tabs", async () => {
+  it("offers four tabs, and no flows on the phone", async () => {
     render(<StudioScreen />);
 
-    for (const name of ["Image", "Video", "Audio", "Flows", "Gallery"]) {
+    for (const name of ["Image", "Video", "Audio", "Gallery"]) {
       expect(screen.getByRole("tab", { name })).toBeInTheDocument();
     }
+    expect(screen.queryByRole("tab", { name: "Flows" })).toBeNull();
   });
 
   it("opens on the image form with a model to pick", async () => {
@@ -89,15 +90,6 @@ describe("the mobile studio", () => {
 
     const modes = await screen.findByRole("tablist", { name: "Audio mode" });
     expect(modes).toBeInTheDocument();
-  });
-
-  it("renders the flows tab", async () => {
-    render(<StudioScreen />);
-    await openTab("Flows");
-
-    // Nothing is asserted about which flows exist -- only that the panel
-    // mounted rather than throwing on the way in.
-    expect(screen.getByRole("tab", { name: "Flows" })).toHaveAttribute("aria-selected", "true");
   });
 
   it("renders the library, and says so when it is empty", async () => {

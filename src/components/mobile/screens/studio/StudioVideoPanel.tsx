@@ -57,7 +57,14 @@ import { JobFailureNotice } from "../../../studio/JobFailureNotice";
 import { Spinner } from "../../../ui/Spinner";
 import { Switch } from "../../../ui/Switch";
 import { ModelSheet } from "../../ModelSheet";
-import { ModelPickerButton } from "./StudioControls";
+import { videoFamilyOption } from "../../../studio/MediaModelPicker";
+import {
+  formatRenderOption,
+  ModelPickerButton,
+  MoreOptions,
+  SelectRow,
+  SettingsCard,
+} from "./StudioControls";
 import { MediaReferencePicker, ReferencePicker } from "./StudioLightbox";
 
 /** Where the finished clip's URL hides in the retrieve body. */
@@ -391,6 +398,22 @@ export function VideoPanel({
     });
   }, [queueBody, model, prompt, job, handoffFrom]);
 
+  /** Why Generate cannot be pressed yet, said under it rather than left to
+   * a grey button to explain. */
+  const blocker = busy
+    ? undefined
+    : !model
+      ? t("Choose a video model first.")
+      : !prompt.trim()
+        ? t("Describe the video to generate it.")
+        : needsConsent && !consent
+          ? t("Confirm you have the right to use this media.")
+          : undefined;
+  const hasSettings =
+    durationOptions.length > 0 ||
+    videoAspectOptions.length > 0 ||
+    videoResolutionOptions.length > 0;
+
   return (
     <div className="mobile-studio-form">
       <ModelPickerButton
@@ -399,140 +422,11 @@ export function VideoPanel({
         hint={variantHint(family, model)}
         onOpen={() => setPickerOpen(true)}
       />
-      {durationOptions.length > 0 ? (
-        <div className="mobile-pill-row" role="radiogroup" aria-label={t("Duration")}>
-          {durationOptions.map((option) => (
-            <button
-              key={option}
-              type="button"
-              className="mobile-pill"
-              data-active={effectiveDuration === option ? "true" : undefined}
-              onClick={() => setDuration(option)}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {videoAspectOptions.length > 0 ? (
-        <div className="mobile-pill-row" role="radiogroup" aria-label={t("Aspect ratio")}>
-          {videoAspectOptions.map((option) => (
-            <button
-              key={option}
-              type="button"
-              className="mobile-pill"
-              data-active={effectiveVideoAspect === option ? "true" : undefined}
-              onClick={() => setAspectRatio(option)}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {videoResolutionOptions.length > 0 ? (
-        <div className="mobile-pill-row" role="radiogroup" aria-label={t("Resolution")}>
-          {videoResolutionOptions.map((option) => (
-            <button
-              key={option}
-              type="button"
-              className="mobile-pill"
-              data-active={effectiveVideoResolution === option ? "true" : undefined}
-              onClick={() => setResolution(option)}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {family?.imageModel || family?.referenceModel ? (
-        <ReferencePicker
-          references={openingFrame}
-          onChange={(refs) => {
-            setHandoffFrom(undefined);
-            setOpeningFrame(refs.slice(0, 1));
-          }}
-          galleryImages={galleryImages}
-          hint={
-            handoffFrom
-              ? t("Continuing {name} at {position}s of {duration}s.", {
-                  name: handoffFrom.fileName,
-                  position: Math.round(handoffFrom.timeSeconds * 10) / 10,
-                  duration: Math.round(handoffFrom.durationSeconds * 10) / 10,
-                })
-              : t("Optional opening frame: the clip starts from this photo.")
-          }
-        />
-      ) : null}
-      {family?.referenceModel ? (
-        <ReferencePicker
-          references={references}
-          onChange={(refs) => void applyReferences(refs)}
-          galleryImages={galleryImages}
-          error={referenceError}
-          hint={
-            references.length > 0
-              ? // Seedance routes its workflow from the prompt and only reads
-                // its own mention syntax, so naming them is part of the input.
-                isSeedanceModel(family.referenceModel.id)
-                ? t(
-                    "These photos steer style and subject. Name them in the prompt as {mentions}.",
-                    {
-                      mentions: references
-                        .map((_, index) =>
-                          referenceMention(family.referenceModel, "image", index + 1),
-                        )
-                        .join(", "),
-                    },
-                  )
-                : t("These photos steer the style and subject, alongside the opening frame.")
-              : t(
-                  "Optional reference photos: they steer style and subject while the prompt drives the action.",
-                )
-          }
-        />
-      ) : null}
-      {clipsAllowed ? (
-        <MediaReferencePicker
-          kind="video"
-          items={referenceClips}
-          cap={maxReferenceVideos(family?.referenceModel)}
-          gallery={galleryClips}
-          error={clipError}
-          onAdd={addClip}
-          onReject={setClipError}
-          onRemove={removeClip}
-          mentionOf={(index) => referenceMention(family?.referenceModel, "video", index)}
-          hint={
-            referenceClips.length > 0
-              ? t("Name them in the prompt in this order, and start it with what you want done.")
-              : t(
-                  "Optional clips to edit, extend or stitch. They travel with the request, so keep them short.",
-                )
-          }
-        />
-      ) : null}
-      {audioAllowed ? (
-        <MediaReferencePicker
-          kind="audio"
-          items={referenceAudio}
-          cap={maxReferenceAudio(family?.referenceModel)}
-          gallery={galleryTracks}
-          error={audioError}
-          onAdd={addTrack}
-          onReject={setAudioError}
-          onRemove={removeTrack}
-          mentionOf={(index) => referenceMention(family?.referenceModel, "audio", index)}
-          hint={
-            referenceAudio.length > 0
-              ? t("A track never travels alone, so keep a photo or a clip in play.")
-              : t("Optional audio for the render to follow, alongside a photo or a clip.")
-          }
-        />
-      ) : null}
       <textarea
         className="mobile-studio-prompt"
         value={prompt}
         rows={3}
+        aria-label={t("Prompt")}
         placeholder={
           openingFrame.length > 0
             ? t("Describe the motion")
@@ -566,14 +460,142 @@ export function VideoPanel({
         </div>
       ) : null}
       {promptAdvice ? <p className="mobile-workflow-param-hint">{promptAdvice}</p> : null}
-      <textarea
-        className="mobile-studio-prompt"
-        value={negativePrompt}
-        rows={2}
-        placeholder={t("Negative prompt (optional)")}
-        aria-label={t("Negative prompt")}
-        onChange={(event) => setNegativePrompt(event.target.value)}
-      />
+      {hasSettings ? (
+        <SettingsCard>
+          {durationOptions.length > 0 ? (
+            <SelectRow
+              label={t("Duration")}
+              value={effectiveDuration}
+              options={durationOptions}
+              onChange={setDuration}
+              format={formatRenderOption}
+            />
+          ) : null}
+          {videoAspectOptions.length > 0 ? (
+            <SelectRow
+              label={t("Aspect ratio")}
+              value={effectiveVideoAspect}
+              options={videoAspectOptions}
+              onChange={setAspectRatio}
+              format={formatRenderOption}
+            />
+          ) : null}
+          {videoResolutionOptions.length > 0 ? (
+            <SelectRow
+              label={t("Resolution")}
+              value={effectiveVideoResolution}
+              options={videoResolutionOptions}
+              onChange={setResolution}
+            />
+          ) : null}
+        </SettingsCard>
+      ) : null}
+      {family?.imageModel || family?.referenceModel ? (
+        <ReferencePicker
+          label={t("Opening frame")}
+          cap={1}
+          references={openingFrame}
+          onChange={(refs) => {
+            setHandoffFrom(undefined);
+            setOpeningFrame(refs.slice(0, 1));
+          }}
+          galleryImages={galleryImages}
+          hint={
+            handoffFrom
+              ? t("Continuing {name} at {position}s of {duration}s.", {
+                  name: handoffFrom.fileName,
+                  position: Math.round(handoffFrom.timeSeconds * 10) / 10,
+                  duration: Math.round(handoffFrom.durationSeconds * 10) / 10,
+                })
+              : t("Optional opening frame: the clip starts from this photo.")
+          }
+        />
+      ) : null}
+      <MoreOptions
+        defaultOpen={
+          references.length > 0 ||
+          referenceClips.length > 0 ||
+          referenceAudio.length > 0 ||
+          negativePrompt.trim().length > 0
+        }
+      >
+        {family?.referenceModel ? (
+          <ReferencePicker
+            label={t("Add reference photos")}
+            cap={referenceCap}
+            references={references}
+            onChange={(refs) => void applyReferences(refs)}
+            galleryImages={galleryImages}
+            error={referenceError}
+            hint={
+              references.length > 0
+                ? // Seedance routes its workflow from the prompt and only reads
+                  // its own mention syntax, so naming them is part of the input.
+                  isSeedanceModel(family.referenceModel.id)
+                  ? t(
+                      "These photos steer style and subject. Name them in the prompt as {mentions}.",
+                      {
+                        mentions: references
+                          .map((_, index) =>
+                            referenceMention(family.referenceModel, "image", index + 1),
+                          )
+                          .join(", "),
+                      },
+                    )
+                  : t("These photos steer the style and subject, alongside the opening frame.")
+                : t(
+                    "Optional reference photos: they steer style and subject while the prompt drives the action.",
+                  )
+            }
+          />
+        ) : null}
+        {clipsAllowed ? (
+          <MediaReferencePicker
+            kind="video"
+            items={referenceClips}
+            cap={maxReferenceVideos(family?.referenceModel)}
+            gallery={galleryClips}
+            error={clipError}
+            onAdd={addClip}
+            onReject={setClipError}
+            onRemove={removeClip}
+            mentionOf={(index) => referenceMention(family?.referenceModel, "video", index)}
+            hint={
+              referenceClips.length > 0
+                ? t("Name them in the prompt in this order, and start it with what you want done.")
+                : t(
+                    "Optional clips to edit, extend or stitch. They travel with the request, so keep them short.",
+                  )
+            }
+          />
+        ) : null}
+        {audioAllowed ? (
+          <MediaReferencePicker
+            kind="audio"
+            items={referenceAudio}
+            cap={maxReferenceAudio(family?.referenceModel)}
+            gallery={galleryTracks}
+            error={audioError}
+            onAdd={addTrack}
+            onReject={setAudioError}
+            onRemove={removeTrack}
+            mentionOf={(index) => referenceMention(family?.referenceModel, "audio", index)}
+            hint={
+              referenceAudio.length > 0
+                ? t("A track never travels alone, so keep a photo or a clip in play.")
+                : t("Optional audio for the render to follow, alongside a photo or a clip.")
+            }
+          />
+        ) : null}
+        <textarea
+          className="mobile-studio-prompt"
+          value={negativePrompt}
+          rows={2}
+          placeholder={t("Negative prompt (optional)")}
+          aria-label={t("Negative prompt")}
+          onChange={(event) => setNegativePrompt(event.target.value)}
+        />
+      </MoreOptions>
       {needsConsent ? (
         <div className="mobile-toggle-row mobile-studio-consent">
           <Switch
@@ -595,19 +617,6 @@ export function VideoPanel({
         </div>
       ) : null}
       {oversize ? <p className="mobile-dictation-error">{oversize}</p> : null}
-      <button
-        type="button"
-        className="mobile-studio-generate"
-        disabled={
-          !model || !prompt.trim() || (needsConsent && !consent) || busy || Boolean(oversize)
-        }
-        onClick={start}
-      >
-        {busy ? <Spinner /> : t("Generate")}
-        {!busy && quote !== undefined ? (
-          <span className="mobile-studio-cost">{formatCredits(quote)}</span>
-        ) : null}
-      </button>
       {references.length > 0 && model && !isReferenceToVideoModel(model.id) ? (
         <p className="mobile-reference-hint">
           {t("{model} cannot take reference photos, so only the opening frame will be used.", {
@@ -615,9 +624,9 @@ export function VideoPanel({
           })}
         </p>
       ) : null}
-      {requiresOpeningFrame(model?.id) && !openingFrame ? (
-        // The body refuses to build without it, so Generate is already
-        // disabled; this says why rather than leaving a dead button.
+      {requiresOpeningFrame(model?.id) && openingFrame.length === 0 ? (
+        // The body refuses to build without it; this says why rather than
+        // leaving a dead button.
         <p className="mobile-dictation-error">
           {t(
             "{model} starts from a frame, so it needs an opening frame as well as its reference photos.",
@@ -641,24 +650,38 @@ export function VideoPanel({
           message={job.state.message}
           status={job.state.status}
           model={model?.id}
-          className="mobile-dictation-error"
+          backend={catalog.backend}
+          className="mobile-job-failure"
           retryClassName="mobile-chip-button"
           onRetry={job.canRetry ? job.retry : undefined}
+          onDismiss={job.reset}
         />
       ) : null}
+      {/* Stays in reach while the form scrolls: the primary action used to sit
+          below three rows of pills and two text fields. */}
+      <div className="mobile-studio-generate-bar">
+        <button
+          type="button"
+          className="mobile-studio-generate"
+          disabled={
+            !model || !prompt.trim() || (needsConsent && !consent) || busy || Boolean(oversize)
+          }
+          onClick={start}
+        >
+          {busy ? <Spinner /> : t("Generate")}
+          {!busy && quote !== undefined ? (
+            <span className="mobile-studio-cost">{formatCredits(quote)}</span>
+          ) : null}
+        </button>
+        {blocker ? <p className="mobile-studio-generate-hint">{blocker}</p> : null}
+      </div>
       {pickerOpen ? (
         <ModelSheet
           title={t("Video model")}
           entries={familiesForMode.map((entry) => ({
             id: entry.key,
             name: entry.name,
-            subtitle: [
-              entry.textModel ? "text" : undefined,
-              entry.imageModel ? "photo" : undefined,
-              entry.referenceModel ? "reference" : undefined,
-            ]
-              .filter(Boolean)
-              .join(" · "),
+            subtitle: videoFamilyOption(entry).details.join(" · "),
             // One row stands for up to four backend models, so searching what
             // the row shows cannot find a variant by its own name or id.
             keywords: videoFamilySearchTerms(entry),
