@@ -18,8 +18,13 @@ export function ImportSheet({
   onChooseFile,
   onCompleted,
   onClose,
+  initialUrl,
+  onOpenAccount,
 }: {
   onChooseFile: () => void;
+  /** A link handed over by the shell (shared from another app). */
+  initialUrl?: string;
+  onOpenAccount?: () => void;
   onCompleted: (noteId: string) => void;
   onClose: () => void;
 }) {
@@ -55,7 +60,11 @@ export function ImportSheet({
           <span>{t("Choose an audio or video file")}</span>
         </button>
         <p className="mobile-import-sheet-or">{t("or paste a link")}</p>
-        <ImportLinkBar onCompleted={onCompleted} />
+        <ImportLinkBar
+          onCompleted={onCompleted}
+          initialUrl={initialUrl}
+          onOpenAccount={onOpenAccount}
+        />
       </div>
     </div>,
     sheetHost(),

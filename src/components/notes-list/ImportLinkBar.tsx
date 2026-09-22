@@ -22,6 +22,7 @@ import {
   errandTargets,
   onErrands,
 } from "../../lib/errands";
+import { isMobilePlatform } from "../../lib/mobile";
 import { DotSpinner } from "../DotSpinner";
 
 /**
@@ -44,8 +45,15 @@ export function ImportLinkBar({
   folderId,
   onCompleted,
   showField = true,
+  initialUrl,
+  onOpenAccount,
 }: {
   folderId?: string;
+  /** A link handed over by the shell (shared from another app), read as if
+   * it had been pasted. */
+  initialUrl?: string;
+  /** Where to sign in, for a link only another device can read. */
+  onOpenAccount?: () => void;
   /** False shows only what is under way (downloads, errands) and nothing at
    * all when that is nothing: the phone keeps the field in its Import sheet
    * and the progress on the list. */
@@ -55,7 +63,7 @@ export function ImportLinkBar({
    * action, so without this the download finishes and nothing appears. */
   onCompleted?: (noteId: string) => void;
 }) {
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState(initialUrl ?? "");
   const [preview, setPreview] = useState<LinkPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -168,6 +176,11 @@ export function ImportLinkBar({
   );
 
   const blocked = Boolean(preview && !preview.fetchable);
+  // A video page on the phone. The refusal the backend writes ("does not
+  // publish a file this app can fetch") is true and useless: it names what
+  // cannot happen and never what can. Here the answer is the computer
+  // (ADR-0054), so the bar says so, and says how when there is none yet.
+  const phoneVideoPage = blocked && preview?.kind === "platformPage" && isMobilePlatform();
   const open = errands.filter((errand) => errand.state !== "done");
 
   if (!showField && open.length === 0 && ingests.length === 0) return null;
@@ -218,15 +231,41 @@ export function ImportLinkBar({
         </p>
       ) : null}
 
-      {showField && blocked && preview?.reason ? (
+      {showField && phoneVideoPage ? (
+        <div className="import-link-handoff">
+          <p className="import-link-hint">
+            {t(
+              "A video page: the phone cannot read it, but your computer can. Send it the link and the note comes back here.",
+            )}
+          </p>
+          {targets.length === 0 ? (
+            <>
+              <p className="import-link-hint">
+                {t(
+                  "Sign in to your Sub Rosa account on this phone and on your computer. On the computer, in Settings › Import / export, turn on yt-dlp and “Run links sent from your other devices”. The link then goes to it in one tap.",
+                )}
+              </p>
+              {onOpenAccount ? (
+                <button type="button" className="primary-action" onClick={onOpenAccount}>
+                  {t("Open account settings")}
+                </button>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      {showField && blocked && preview?.reason && !phoneVideoPage ? (
         <p className="import-link-hint import-link-blocked">{preview.reason}</p>
       ) : null}
 
       {showField && blocked && targets.length > 0 ? (
         <div className="import-link-handoff">
-          <p className="import-link-hint">
-            {t("One of your other devices may be able to read it:")}
-          </p>
+          {phoneVideoPage ? null : (
+            <p className="import-link-hint">
+              {t("One of your other devices may be able to read it:")}
+            </p>
+          )}
           <div className="import-link-targets">
             {targets.map((target) => (
               <button

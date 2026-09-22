@@ -112,3 +112,21 @@ What keeps the exception from swallowing the rule:
   concurrent write would conflict. Detecting withholding needs per-device
   counters and a gap check, which is a design of its own and is not in this
   change. Replay of an *errand* specifically is closed by the ledger above.
+
+## Addendum (2026-09-22): the server alternative, measured
+
+The rejected alternative was reconsidered on request: fetch YouTube links on
+the account service for the phone. Before building anything, yt-dlp
+(2026.08.19, with Deno for the player challenges) was run in a throwaway
+container on the account VPS. Over IPv4, two public videos out of three
+answered "Sign in to confirm you're not a bot"; the third probed, then its
+audio stream returned 403 and its captions 429. Over the IPv6 range, one of
+two was refused the same way. A data-centre address is not a place YouTube
+lets fetch from, whatever the software, so the decision stands, now on
+evidence as well as on principle, and the phone makes the errand the obvious
+path instead: a video page pasted or shared on the phone opens the import
+sheet, which says the computer can read it and sends it there in one tap, or
+explains how to link one. Getting around the refusal (a proof-of-origin token
+service, rotating addresses, a paid residential proxy) was left aside: each
+is either unreliable or hands the links to a third party.
+

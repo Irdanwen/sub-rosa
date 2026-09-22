@@ -53,6 +53,10 @@ pub struct SharedImport {
     pub note_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ingest_id: Option<String>,
+    /// A video page this device cannot read (`kind: "platform"`): the link,
+    /// handed back so the shell can offer it to a computer that can.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 /// An inbox id is a UUID the extension made: hex and dashes, nothing that
@@ -172,11 +176,24 @@ pub async fn import_shared_item(
     let manifest = parse_manifest(&bytes)?;
     let outcome = match manifest {
         SharedManifest::Link { url } => {
-            let ingest = crate::ingest::start_link_ingest(app.clone(), url, None).await?;
-            SharedImport {
-                kind: "link",
-                note_id: None,
-                ingest_id: Some(ingest.id),
+            match crate::ingest::start_link_ingest(app.clone(), url.clone(), None).await {
+                Ok(ingest) => SharedImport {
+                    kind: "link",
+                    note_id: None,
+                    ingest_id: Some(ingest.id),
+                    url: None,
+                },
+                // A video shared from its app: the phone cannot read it
+                // (ADR-0028), a computer can (ADR-0054). Not an error to put
+                // in a banner, a link to hand over: the shell opens the import
+                // sheet on it, where the errand is offered.
+                Err(error) if error.code == "ingest_needs_extractor" => SharedImport {
+                    kind: "platform",
+                    note_id: None,
+                    ingest_id: None,
+                    url: Some(url),
+                },
+                Err(error) => return Err(error),
             }
         }
         SharedManifest::File { file_name } => {
@@ -215,6 +232,7 @@ pub async fn import_shared_item(
                 kind: "file",
                 note_id: Some(note.id),
                 ingest_id: None,
+                url: None,
             }
         }
         SharedManifest::Text { text } => {
@@ -234,6 +252,7 @@ pub async fn import_shared_item(
                 kind: "text",
                 note_id: Some(note.id),
                 ingest_id: None,
+                url: None,
             }
         }
     };

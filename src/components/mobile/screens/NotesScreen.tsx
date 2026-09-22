@@ -44,6 +44,11 @@ type NotesScreenProps = {
   onMoveNotes: (noteIds: string[], folderId: string | undefined) => void;
   onCreateFolder: (name: string) => Promise<FolderDto | undefined>;
   onRefresh: () => Promise<unknown>;
+  /** A link the shell hands over (shared from another app, a video page this
+   * phone cannot read): the Import sheet opens on it. */
+  importLink?: string | null;
+  onImportLinkTaken?: () => void;
+  onOpenAccount?: () => void;
 };
 
 export function NotesScreen({
@@ -62,6 +67,9 @@ export function NotesScreen({
   onMoveNotes,
   onCreateFolder,
   onRefresh,
+  importLink,
+  onImportLinkTaken,
+  onOpenAccount,
 }: NotesScreenProps) {
   const [query, setQuery] = useState("");
   // Selection: several notes moved, archived or deleted at once. The swipe and
@@ -73,6 +81,13 @@ export function NotesScreen({
   const [confirmDeleteMany, setConfirmDeleteMany] = useState(false);
   const [naming, setNaming] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [importUrl, setImportUrl] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!importLink) return;
+    setImportUrl(importLink);
+    setImporting(true);
+    onImportLinkTaken?.();
+  }, [importLink, onImportLinkTaken]);
   const [askQuestion, setAskQuestion] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<NoteListItemDto | null>(null);
   // The note a long press opened the actions for. The swipe still works; this
@@ -199,7 +214,10 @@ export function NotesScreen({
                   className="mobile-icon-button"
                   aria-label={t("Import")}
                   aria-haspopup="dialog"
-                  onClick={() => setImporting(true)}
+                  onClick={() => {
+                    setImportUrl(undefined);
+                    setImporting(true);
+                  }}
                 >
                   <IconArrowInbox size={20} />
                 </button>
@@ -438,6 +456,8 @@ export function NotesScreen({
       ) : null}
       {importing ? (
         <ImportSheet
+          initialUrl={importUrl}
+          onOpenAccount={onOpenAccount}
           onChooseFile={() => {
             setImporting(false);
             importInputRef.current?.click();
