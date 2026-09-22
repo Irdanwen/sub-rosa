@@ -1280,6 +1280,25 @@ téléphone l'appelait et jetait la réponse.
 | `src-tauri/src/background.rs` | `chat_titles::resume_pending` dans le sweep | Réappliquer |
 | `src-tauri/src/db/migrations.rs` | Migration 031 | Réappliquer |
 
+## YouTube sur le téléphone : la course, rendue visible (2026-09-22)
+
+Le téléphone refusait un lien YouTube par une phrase anglaise construite avec
+`format!` (donc intraduisible), qui disait ce qui était impossible et jamais
+ce qui l'était. La course (ADR-0054) n'apparaissait que si un autre appareil
+était relié, sans jamais dire comment en relier un. Relayer par le serveur a
+été mesuré puis écarté (annexe de l'ADR-0054 : vérification anti-robot sur
+l'adresse du VPS).
+
+- `ImportLinkBar` : sur le téléphone, une page vidéo affiche « l'ordinateur
+  peut la lire », puis soit « Envoyer à <appareil> », soit la marche à suivre
+  (compte des deux côtés, yt-dlp et « Exécuter les liens envoyés par vos
+  autres appareils » dans Réglages › Import / export), avec un bouton vers le
+  compte. Props `initialUrl`, `onOpenAccount`.
+- Un lien vidéo **partagé** depuis une autre app n'est plus une erreur :
+  `import_shared_item` renvoie `kind: "platform"` avec l'`url`, et le shell ouvre
+  la feuille Importer dessus. Même traitement pour `subrosa://import?url=`
+  (prévisualisation d'abord).
+
 ## Procédure de synchronisation upstream (voir aussi `.github/workflows/upstream-sync.yml`)
 
 > **Remplacée le 2026-09-02 par [ADR-0040](docs/adr/0040-upstream-is-a-source-of-patches-not-a-merge-base.md).**

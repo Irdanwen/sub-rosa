@@ -13,7 +13,7 @@ import { MeetingAmbiguityPrompt } from "../../components/calendar/MeetingContext
 import { linkRecordingToMeeting } from "../../lib/calendar-link";
 import type { CalendarEventDto } from "../../lib/tauri";
 import { importMediaFile } from "../../lib/import-media";
-import { startLinkIngest } from "../../lib/tauri";
+import { previewIngestLink, startLinkIngest } from "../../lib/tauri";
 import type { Destination } from "../../lib/destinations";
 import type { IntentRequest } from "../../lib/intents";
 import { importSharedItem } from "../../lib/share-inbox";
@@ -157,6 +157,9 @@ export function MobileApp() {
   // that remounts the library onto it.
   const [assistantTaskId, setAssistantTaskId] = useState<string | undefined>(undefined);
   const [assistantEpoch, setAssistantEpoch] = useState(0);
+  /** A link to open the Import sheet on: a video page this phone cannot
+   * read, which the sheet offers to send to a computer (ADR-0054). */
+  const [importLink, setImportLink] = useState<string | null>(null);
   const keyboardInset = useKeyboardInset();
 
   // Screen-entrance direction: push slides in from the right, pop settles
@@ -484,7 +487,17 @@ export function MobileApp() {
       // itself, so land there rather than starting something invisible.
       case "import":
         nav.switchTab("notes");
-        void startLinkIngest(destination.url).catch((err) => setError(messageFromError(err)));
+        // A video page would only be refused: open the sheet on it instead,
+        // where the link can be sent to a computer that reads it.
+        void previewIngestLink(destination.url)
+          .then((preview) => {
+            if (preview.kind === "platformPage" && !preview.fetchable) {
+              setImportLink(destination.url);
+              return;
+            }
+            return startLinkIngest(destination.url);
+          })
+          .catch((err) => setError(messageFromError(err)));
         break;
       // A sign-in that finished in Safari. Rust has already spent the return
       // code; this only shows the person where they landed.
@@ -499,7 +512,8 @@ export function MobileApp() {
         nav.switchTab("notes");
         void importSharedItem(destination.itemId)
           .then((made) => {
-            if (made.noteId) openNote(made.noteId);
+            if (made.kind === "platform" && made.url) setImportLink(made.url);
+            else if (made.noteId) openNote(made.noteId);
           })
           .catch((err) => setError(messageFromError(err)));
         break;
@@ -997,6 +1011,12 @@ export function MobileApp() {
             onDeleteNote={(noteId) => void handleDeleteNote(noteId)}
             onArchiveNote={(noteId) => void handleArchiveNote(noteId)}
             onMoveNotes={(noteIds, folderId) => void handleMoveNotes(noteIds, folderId)}
+            importLink={importLink}
+            onImportLinkTaken={() => setImportLink(null)}
+            onOpenAccount={() => {
+              nav.switchTab("settings");
+              nav.push({ view: "settings-section", section: "account" });
+            }}
             onCreateFolder={handleCreateFolder}
             onRefresh={handleRefreshNotes}
           />

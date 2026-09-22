@@ -46,6 +46,9 @@ vi.mock("../lib/tauri", () => ({
   discardIngest: (...args: unknown[]) => mocks.discardIngest(...args),
 }));
 
+const platform = vi.hoisted(() => ({ mobile: false }));
+vi.mock("../lib/mobile", () => ({ isMobilePlatform: () => platform.mobile }));
+
 import { ImportLinkBar } from "../components/notes-list/ImportLinkBar";
 
 function preview(overrides: Partial<LinkPreview> = {}): LinkPreview {
@@ -80,6 +83,7 @@ function ingest(overrides: Partial<IngestDto> = {}): IngestDto {
 }
 
 beforeEach(() => {
+  platform.mobile = false;
   listeners.length = 0;
   mocks.previewIngestLink.mockReset().mockResolvedValue(preview());
   mocks.startLinkIngest.mockReset().mockResolvedValue(ingest());
@@ -287,5 +291,42 @@ describe("handing a link to another device", () => {
     expect(await screen.findByText(/waiting for your other device/i)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /withdraw/i }));
     expect(mocks.errandCancel).toHaveBeenCalledWith("errand-1");
+  });
+});
+
+describe("a video page on the phone", () => {
+  const youtube = {
+    url: "https://www.youtube.com/watch?v=abc",
+    kind: "platformPage" as const,
+    host: "www.youtube.com",
+    fetchable: false,
+    reason: "www.youtube.com does not publish a file this app can fetch.",
+  };
+
+  beforeEach(() => {
+    platform.mobile = true;
+    mocks.previewIngestLink.mockResolvedValue(preview(youtube));
+    mocks.listActiveIngests.mockResolvedValue([]);
+    mocks.errandList.mockResolvedValue([]);
+  });
+
+  it("says a computer can read it, and how to link one when there is none", async () => {
+    mocks.errandTargets.mockResolvedValue([]);
+    const onOpenAccount = vi.fn();
+    render(<ImportLinkBar initialUrl={youtube.url} onOpenAccount={onOpenAccount} />);
+    expect(await screen.findByText(/your computer can/)).toBeTruthy();
+    // The backend's refusal names only what cannot happen; it is not shown.
+    expect(screen.queryByText(/does not publish a file/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Open account settings" }));
+    expect(onOpenAccount).toHaveBeenCalled();
+  });
+
+  it("offers the computer in one tap when it is linked", async () => {
+    mocks.errandTargets.mockResolvedValue([{ id: "mac", name: "Mac de Morgan" }]);
+    mocks.errandRequest.mockResolvedValue({});
+    render(<ImportLinkBar initialUrl={youtube.url} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Send to Mac de Morgan" }));
+    expect(mocks.errandRequest).toHaveBeenCalledWith(youtube.url, "mac", undefined);
+    expect(screen.queryByText(/Sign in to your Sub Rosa account/)).toBeNull();
   });
 });
