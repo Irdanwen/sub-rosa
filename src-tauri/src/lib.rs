@@ -42,6 +42,7 @@ pub mod hermes_image_fit;
 pub mod hermes_working_dir;
 pub mod http_client;
 pub mod ingest;
+pub mod intent_inbox;
 pub mod ios_background;
 pub mod june_api;
 #[cfg(target_os = "ios")]
@@ -548,6 +549,7 @@ pub fn run() {
             carpe_diem::settings::carpe_diem_get_billing,
             carpe_diem::settings::carpe_diem_set_rail,
             carpe_diem::settings::carpe_diem_open_dashboard,
+            carpe_diem::settings::carpe_diem_open_top_up,
             carpe_diem::cache_stats::carpe_diem_cache_stats,
             carpe_diem::sidecar::carpe_diem_sidecar_status,
             carpe_diem::sidecar::carpe_diem_restart_sidecar,
@@ -586,6 +588,9 @@ pub fn run() {
         commands::search_everything,
         ask::ask_notes,
         share_inbox::import_shared_item,
+        intent_inbox::take_intent,
+        intent_inbox::take_pending_intents,
+        open_url::open_shortcuts_app,
         ask::ask_cancel,
         ask::semantic::ask_index_status,
         ask::semantic::set_ask_settings,
@@ -793,6 +798,7 @@ pub fn run() {
         carpe_diem::settings::carpe_diem_get_billing,
         carpe_diem::settings::carpe_diem_set_rail,
         carpe_diem::settings::carpe_diem_open_dashboard,
+        carpe_diem::settings::carpe_diem_open_top_up,
         carpe_diem::cache_stats::carpe_diem_cache_stats,
         carpe_diem::sidecar::carpe_diem_sidecar_status,
         carpe_diem::sidecar::carpe_diem_restart_sidecar,
@@ -850,6 +856,10 @@ pub fn run() {
             // Sub Rosa's single-field inputs don't use it. See keyboard_ios.
             #[cfg(target_os = "ios")]
             keyboard_ios::hide_form_assistant_bar();
+            // Links opened without an app handle ("Top up") reach Safari
+            // through the one kept here. See open_url.
+            #[cfg(target_os = "ios")]
+            open_url::remember_app(app.handle());
             // Carpe Diem fork: load settings, then start the june-api sidecar
             // pointed at Carpe Diem (or mark "unconfigured" for onboarding).
             // On desktop the sidecar is a child process; on mobile it runs

@@ -55,6 +55,7 @@ function renderNotes(overrides: Partial<Parameters<typeof NotesScreen>[0]> = {})
     onCreateNote: vi.fn(),
     onImportAudio: vi.fn(),
     onOpenFolder: vi.fn(),
+    onOpenDictation: vi.fn(),
     onDeleteNote: vi.fn(),
     onArchiveNote: vi.fn(),
     onMoveNotes: vi.fn(),

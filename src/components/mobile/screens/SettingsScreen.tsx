@@ -4,13 +4,16 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useEffect, useState } from "react";
 import { PRODUCT_NAME } from "../../../lib/branding";
 import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
-import { AUTOMATION_ADDRESSES } from "../../../lib/automations";
+import { type Automation, AUTOMATION_ADDRESSES } from "../../../lib/automations";
+import { messageFromError } from "../../../lib/errors";
+import { openShortcutsApp } from "../../../lib/intents";
+import { isIosPlatform } from "../../../lib/mobile";
+import { openTopUp } from "../../../lib/top-up";
 import { hapticSelection } from "../../../lib/haptics";
 import { formatCredits } from "../../../lib/studio/catalog";
 import {
   type MomentSettingsDto,
   type SpotlightSettingsDto,
-  carpeDiemOpenDashboard,
   memoryList,
   momentsGetSettings,
   momentsSetSettings,
@@ -20,13 +23,8 @@ import {
 import { type ThemePreference, getStoredTheme, setStoredTheme } from "../../../lib/theme";
 import { useCarpeDiem } from "../../settings/CarpeDiemSettings";
 import { accountStatus } from "../../../lib/account";
-import {
-  SettingsActionRow,
-  SettingsGroup,
-  SettingsLinkRow,
-  SettingsRow,
-  SettingsToggleRow,
-} from "../SettingsList";
+import { SettingsGroup, SettingsLinkRow, SettingsRow, SettingsToggleRow } from "../SettingsList";
+import { ActionSheet } from "../ActionSheet";
 import { StackHeader } from "../StackHeader";
 import type { SettingsSection } from "../../../app/mobile/nav";
 
@@ -109,12 +107,30 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
       cancelled = true;
     };
   }, []);
-  // The router already makes every destination automatable; the only thing
-  // missing is that nobody can guess a URL scheme. Tapping copies one.
+  // A shortcut row used to copy an address, silently: nothing on screen said
+  // anything had happened. It now opens a sheet that says what the action
+  // does and where to find it, with the address as the fallback.
+  const [automation, setAutomation] = useState<Automation | null>(null);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
   const copyAutomation = async (url: string) => {
-    await writeText(url).catch(() => {});
-    hapticSelection();
+    try {
+      await writeText(url);
+      hapticSelection();
+      setNotice({ ok: true, text: t("Address copied") });
+    } catch (err) {
+      setNotice({ ok: false, text: messageFromError(err) });
+    }
   };
+  const ios = isIosPlatform();
+  // "Top up" did nothing on an iPhone: the link went to a process launcher
+  // iOS does not have. It now opens the account site's Top up tab, and says
+  // so when it cannot.
+  const [topUpError, setTopUpError] = useState<string | null>(null);
 
   const [spotlight, setSpotlight] = useState<SpotlightSettingsDto | null>(null);
   useEffect(() => {
@@ -154,10 +170,11 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
           <button
             type="button"
             className="mobile-credits-card"
-            aria-label={t("Carpe Diem balance, opens the dashboard")}
+            aria-label={t("Carpe Diem balance, opens the Top up page")}
             onClick={() => {
               hapticSelection();
-              void carpeDiemOpenDashboard();
+              setTopUpError(null);
+              void openTopUp().catch((err) => setTopUpError(messageFromError(err)));
             }}
           >
             <span className="mobile-credits-main">
@@ -170,6 +187,11 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
             </span>
             <span className="mobile-credits-action">{t("Top up")}</span>
           </button>
+        ) : null}
+        {topUpError ? (
+          <p className="mobile-settings-result" data-ok="false" role="alert">
+            {topUpError}
+          </p>
         ) : null}
 
         <SettingsGroup title={t("Account")}>
@@ -282,19 +304,50 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
         </SettingsGroup>
 
         <SettingsGroup
-          title={t("Shortcuts and Siri")}
-          footer={t(
-            'Put one of these in a Shortcuts "Open URL" action to start a recording from the Action button, from Siri, or from any shortcut you already use.',
-          )}
+          title={t("Shortcuts")}
+          footer={
+            ios
+              ? t(
+                  "In the Shortcuts app, search for Sub Rosa: these actions are there, ready for the Action button, a widget or the Home Screen.",
+                )
+              : t('Put one of these addresses in an "Open URL" shortcut to start it in one tap.')
+          }
         >
-          {AUTOMATION_ADDRESSES.map((automation) => (
-            <SettingsActionRow
-              key={automation.url}
-              label={automation.label}
-              onClick={() => void copyAutomation(automation.url)}
+          {AUTOMATION_ADDRESSES.map((entry) => (
+            <SettingsLinkRow
+              key={entry.url}
+              label={entry.label}
+              onClick={() => setAutomation(entry)}
             />
           ))}
+          {notice ? (
+            <p className="mobile-settings-result" data-ok={notice.ok} role="status">
+              {notice.text}
+            </p>
+          ) : null}
         </SettingsGroup>
+        {automation ? (
+          <ActionSheet
+            title={automation.label}
+            subtitle={automation.detail}
+            actions={[
+              ...(ios
+                ? [
+                    {
+                      label: t("Open Shortcuts"),
+                      onAction: () =>
+                        void openShortcutsApp().catch((err) =>
+                          setNotice({ ok: false, text: messageFromError(err) }),
+                        ),
+                    },
+                  ]
+                : []),
+              { label: t("Copy the address"), onAction: () => void copyAutomation(automation.url) },
+            ]}
+            closeLabel={t("Close")}
+            onClose={() => setAutomation(null)}
+          />
+        ) : null}
 
         <SettingsGroup>
           <SettingsLinkRow

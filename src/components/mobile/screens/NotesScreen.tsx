@@ -7,6 +7,7 @@ import { IconCheckCircle2 } from "central-icons/IconCheckCircle2";
 import { IconFolder2 } from "central-icons/IconFolder2";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconMicrophone } from "central-icons/IconMicrophone";
+import { IconMicrophoneSparkle } from "central-icons/IconMicrophoneSparkle";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { IconPlusSmall } from "central-icons/IconPlusSmall";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -35,6 +36,8 @@ type NotesScreenProps = {
   onCreateNote: () => void;
   onImportAudio: (file: File) => void;
   onOpenFolder: (folderId: string) => void;
+  /** Dictation lives here now that it has no tab of its own. */
+  onOpenDictation: () => void;
   onDeleteNote: (noteId: string) => void;
   onArchiveNote: (noteId: string) => void;
   /** File notes in one folder, or in none (`undefined`). */
@@ -53,6 +56,7 @@ export function NotesScreen({
   onCreateNote,
   onImportAudio,
   onOpenFolder,
+  onOpenDictation,
   onDeleteNote,
   onArchiveNote,
   onMoveNotes,
@@ -365,10 +369,18 @@ export function NotesScreen({
           </button>
         </div>
       ) : (
-        <button type="button" className="mobile-record-fab" onClick={onRecord}>
-          <IconMicrophone size={22} aria-hidden />
-          <span>{t("Record")}</span>
-        </button>
+        // The two voice actions side by side, where a thumb rests: a meeting
+        // to record, or a thought to dictate.
+        <div className="mobile-fab-row">
+          <button type="button" className="mobile-dictate-fab" onClick={onOpenDictation}>
+            <IconMicrophoneSparkle size={20} aria-hidden />
+            <span>{t("Dictate")}</span>
+          </button>
+          <button type="button" className="mobile-record-fab" onClick={onRecord}>
+            <IconMicrophone size={22} aria-hidden />
+            <span>{t("Record")}</span>
+          </button>
+        </div>
       )}
       {rowMenu ? (
         <ActionSheet

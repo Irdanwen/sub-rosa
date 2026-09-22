@@ -1,7 +1,7 @@
 import { t } from "../../lib/i18n";
+import { IconAgents } from "central-icons/IconAgents";
 import { IconBubble3 } from "central-icons/IconBubble3";
 import { IconCameraSparkle } from "central-icons/IconCameraSparkle";
-import { IconMicrophoneSparkle } from "central-icons/IconMicrophoneSparkle";
 import { IconNoteText } from "central-icons/IconNoteText";
 import { IconSettingsGear4 } from "central-icons/IconSettingsGear4";
 import type { ReactNode } from "react";
@@ -18,7 +18,7 @@ type TabBarProps = {
 
 const TABS: Array<{ id: MobileTab; label: string; icon: ReactNode }> = [
   { id: "notes", label: t("Notes"), icon: <IconNoteText size={22} /> },
-  { id: "dictation", label: t("Dictation"), icon: <IconMicrophoneSparkle size={22} /> },
+  { id: "assistants", label: t("Assistants"), icon: <IconAgents size={22} /> },
   { id: "agent", label: t("Chat"), icon: <IconBubble3 size={22} /> },
   { id: "studio", label: t("Studio"), icon: <IconCameraSparkle size={22} /> },
   { id: "settings", label: t("Settings"), icon: <IconSettingsGear4 size={22} /> },

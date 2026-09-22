@@ -166,7 +166,7 @@ pub(crate) fn open_in_browser(url: &str) -> Result<(), AppError> {
     }
 }
 
-#[cfg(not(any(target_os = "android", target_os = "windows")))]
+#[cfg(not(any(target_os = "android", target_os = "windows", target_os = "ios")))]
 pub(crate) fn open_in_browser(url: &str) -> Result<(), AppError> {
     let mut command = browser_open_command(url);
     let mut child = command
@@ -178,6 +178,12 @@ pub(crate) fn open_in_browser(url: &str) -> Result<(), AppError> {
         let _ = child.wait();
     });
     Ok(())
+}
+
+/// iOS cannot spawn a process: the link goes to Safari through UIKit.
+#[cfg(target_os = "ios")]
+pub(crate) fn open_in_browser(url: &str) -> Result<(), AppError> {
+    crate::open_url::open_in_safari_from_anywhere(url)
 }
 
 #[cfg(target_os = "android")]
@@ -193,7 +199,12 @@ fn browser_open_command(url: &str) -> std::process::Command {
     command
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "android")))]
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "android",
+    target_os = "ios"
+)))]
 fn browser_open_command(url: &str) -> std::process::Command {
     let mut command = std::process::Command::new("xdg-open");
     command.arg(url);

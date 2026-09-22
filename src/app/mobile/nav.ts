@@ -7,7 +7,10 @@ import { useCallback, useMemo, useState } from "react";
  * folders, agent, dictation, studio, settings) so deep links and future
  * state sharing stay coherent across shells.
  */
-export type MobileTab = "notes" | "dictation" | "agent" | "studio" | "settings";
+// No "dictation" tab: dictation earned little use for a fifth of the bar. It
+// is a screen pushed from Notes (and the chat composer's mic), and the tab
+// went to the assistants library, which was buried behind a button in Chat.
+export type MobileTab = "notes" | "assistants" | "agent" | "studio" | "settings";
 
 /** The settings detail screens the root list pushes to. */
 export type SettingsSection =
@@ -26,6 +29,8 @@ export type MobileRoute =
   | { view: "folder"; folderId: string }
   | { view: "agent-session"; sessionId?: string }
   | { view: "agent-history" }
+  /** `autoStart` listens on arrival (a Shortcuts action, never a notification). */
+  | { view: "dictation"; autoStart?: boolean }
   | { view: "settings-section"; section: SettingsSection };
 
 export type MobileNav = {
@@ -36,7 +41,7 @@ export type MobileNav = {
 
 const EMPTY_STACKS: Record<MobileTab, MobileRoute[]> = {
   notes: [],
-  dictation: [],
+  assistants: [],
   agent: [],
   studio: [],
   settings: [],

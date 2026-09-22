@@ -1,0 +1,10 @@
+/* Shortcuts actions (SubRosaIntents.swift). Keys are the English text. */
+"New audio note" = "New audio note";
+"Opens Sub Rosa on a new note and starts recording." = "Opens Sub Rosa on a new note and starts recording.";
+"Dictate" = "Dictate";
+"Opens dictation and starts listening." = "Opens dictation and starts listening.";
+"Ask Sub Rosa" = "Ask Sub Rosa";
+"Opens a new chat with your question, and sends it." = "Opens a new chat with your question, and sends it.";
+"Question" = "Question";
+"What do you want to ask?" = "What do you want to ask?";
+"Send now" = "Send now";

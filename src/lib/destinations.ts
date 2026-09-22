@@ -32,8 +32,15 @@ export type Destination =
   | { kind: "chat"; sessionId?: string; query?: string }
   /** Open a custom assistant conversation with its saved permissions. */
   | { kind: "assistant"; taskId: string }
-  /** Open the dictation surface. */
-  | { kind: "dictation" }
+  /** Open the assistants library (the phone's Assistants tab). */
+  | { kind: "assistants" }
+  /** Open the dictation surface; `start` also starts listening. Only an
+   * address can ask for that: a notification tap never turns a microphone on. */
+  | { kind: "dictation"; start?: boolean }
+  /** A request from an iPhone Shortcuts action. The id names a manifest the
+   * app's own intent wrote in the app group inbox; Rust reads and validates
+   * it (`intent_inbox`). Only a manifest can ask for a message to be sent. */
+  | { kind: "intent"; intentId: string }
   /** Open Studio. */
   | { kind: "studio" }
   /** Start a recording. */
@@ -93,8 +100,14 @@ export function parseDestination(raw: string): Destination | null {
     }
     case "assistant":
       return ID_RE.test(segment) ? { kind: "assistant", taskId: segment } : null;
+    case "assistants":
+      return segment ? null : { kind: "assistants" };
     case "dictation":
-      return { kind: "dictation" };
+      return url.searchParams.get("start") === "1"
+        ? { kind: "dictation", start: true }
+        : { kind: "dictation" };
+    case "intent":
+      return ID_RE.test(segment) ? { kind: "intent", intentId: segment } : null;
     case "studio":
       return { kind: "studio" };
     case "record":
@@ -130,6 +143,10 @@ export function destinationUrl(destination: Destination): string {
       return `${DESTINATION_SCHEME}import?url=${encodeURIComponent(destination.url)}`;
     case "share":
       return `${DESTINATION_SCHEME}share/${destination.itemId}`;
+    case "intent":
+      return `${DESTINATION_SCHEME}intent/${destination.intentId}`;
+    case "dictation":
+      return `${DESTINATION_SCHEME}dictation${destination.start ? "?start=1" : ""}`;
     case "chat": {
       const path = destination.sessionId ? `chat/${destination.sessionId}` : "chat";
       const query = destination.query ? `?q=${encodeURIComponent(destination.query)}` : "";
@@ -141,6 +158,35 @@ export function destinationUrl(destination: Destination): string {
 }
 
 type Unsubscribe = () => void;
+
+/**
+ * Launch URLs already acted on in this webview session.
+ *
+ * On iOS the deep-link plugin keeps the last URL it saw for the life of the
+ * process, and `getCurrent` hands it back on every call. A reload of the page
+ * (switching language reloads it) would then replay it: `subrosa://record`
+ * would start a second recording nobody asked for. sessionStorage survives a
+ * reload and not a cold launch, which is exactly the line between the two.
+ */
+const HANDLED_KEY = "subrosa:handled-launch-urls";
+
+function readHandled(): string[] {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(HANDLED_KEY) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((entry) => typeof entry === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function markHandled(url: string) {
+  try {
+    const next = [...readHandled().filter((entry) => entry !== url), url].slice(-20);
+    sessionStorage.setItem(HANDLED_KEY, JSON.stringify(next));
+  } catch {
+    // Without storage the guard is best-effort; the link still works.
+  }
+}
 
 function inTauri() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -173,12 +219,32 @@ export function subscribeToDestinations(handle: (destination: Destination) => vo
     if (destination) handle(destination);
   };
 
+  // The same launch URL can reach both paths at start-up (the plugin emits it
+  // and also keeps it as current); within a moment of each other, it is one
+  // request, not two.
+  let last = { url: "", at: 0 };
+  const dispatchUrl = (raw: unknown, source: "launch" | "open") => {
+    if (typeof raw !== "string") return;
+    if (source === "launch" && readHandled().includes(raw)) return;
+    const now = Date.now();
+    if (raw === last.url && now - last.at < 2_000) return;
+    last = { url: raw, at: now };
+    markHandled(raw);
+    dispatch(raw);
+  };
+
   void import("@tauri-apps/plugin-deep-link")
     .then(async ({ getCurrent, onOpenUrl }) => {
+      // Listen first: a URL that arrives while the launch URL is being read
+      // would otherwise fall between the two.
+      track(
+        await onOpenUrl((urls) => {
+          for (const url of urls) dispatchUrl(url, "open");
+        }),
+      );
       // Cold launch: the URL that started the app, if any.
       const current = await getCurrent().catch(() => null);
-      for (const url of current ?? []) dispatch(url);
-      track(await onOpenUrl((urls) => urls.forEach(dispatch)));
+      for (const url of current ?? []) dispatchUrl(url, "launch");
     })
     .catch(() => {});
 
