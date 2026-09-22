@@ -852,7 +852,14 @@ function Provider({ account, vaultKey }: { account: Account; vaultKey: Key }) {
   };
   return (
     <article className="card">
-      <h2>Carpe Diem</h2>
+      <div className="card-heading">
+        <h2>Carpe Diem</h2>
+        <span className="status-pill" data-on={configured}>
+          {configured
+            ? t("Key saved", "Clé enregistrée")
+            : t("No key yet", "Aucune clé pour l’instant")}
+        </span>
+      </div>
       {(error || conflicted) && (
         <button
           type="button"
@@ -882,8 +889,8 @@ function Provider({ account, vaultKey }: { account: Account; vaultKey: Key }) {
               "Une clé est enregistrée dans votre coffre. Elle n’est jamais réaffichée ici.",
             )
           : t(
-              "Add your key once, then restore it in your apps.",
-              "Ajoutez votre clé une fois, puis restaurez-la dans vos apps.",
+              "No key is saved yet. Add yours once, then restore it in your apps.",
+              "Aucune clé n’est encore enregistrée. Ajoutez la vôtre une fois, puis restaurez-la dans vos apps.",
             )}
       </p>
       <form className="form" onSubmit={(e) => void submit(e)}>
@@ -940,7 +947,7 @@ function Provider({ account, vaultKey }: { account: Account; vaultKey: Key }) {
             ? t("Retry confirmation", "Réessayer la confirmation")
             : t("Save encrypted key", "Enregistrer la clé chiffrée")}
         </button>
-        <a className="text-link" href="https://carpe-diem.xyz" target="_blank" rel="noreferrer">
+        <a className="text-link" href="https://carpe-diem.xyz/key" target="_blank" rel="noreferrer">
           {t("Open Carpe Diem", "Ouvrir Carpe Diem")} ↗
         </a>
       </form>
