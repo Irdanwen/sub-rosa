@@ -19,6 +19,7 @@
 // import.meta.env.DEV.
 
 import { PROCESSING_DEMO_NOTE_ID } from "../app/processing-polling";
+import type { ProcessingPhase, ProcessingProgressDto } from "./note-processing";
 import type { NoteDto, ProcessingStatus, TranscriptDto } from "./tauri";
 
 export type ProcessingProgressDemoApi = {
@@ -149,6 +150,31 @@ function buildTranscripts(count: number): TranscriptDto[] {
   }));
 }
 
+// The live progress cell the Rust side would be publishing at this stage. The
+// indicator reads `processingProgress` before it falls back to the status, so
+// a demo that only set the status would exercise the fallback and never the
+// surface people actually see.
+function demoProgress(status: ProcessingStatus): ProcessingProgressDto | undefined {
+  const startedAt = new Date(Date.now() - 95_000).toISOString();
+  const at = (phase: ProcessingPhase, done: number, total: number | null, agoMs: number) => ({
+    phase,
+    done,
+    total,
+    startedAt,
+    phaseStartedAt: new Date(Date.now() - agoMs).toISOString(),
+  });
+  switch (status) {
+    case "validating":
+      return at("preparing", 0, null, 4_000);
+    case "transcribing":
+      return at("transcribing", 12, 31, 60_000);
+    case "generating":
+      return at("composing", 0, null, 8_000);
+    default:
+      return undefined;
+  }
+}
+
 // Each stage paints a believable slice of the pipeline: the Audio stage has no
 // transcript yet, the Transcript stage shows turns landing one by one, and the
 // Summary stage has the full transcript with the notes body still generating.
@@ -180,6 +206,7 @@ function buildDemoNote(status: ProcessingStatus, queued = 0): NoteDto {
     // the Transcription tab.
     activeTab: "notes",
     queuedRecordings: queued,
+    processingProgress: demoProgress(status),
   };
 }
 
@@ -190,13 +217,14 @@ function buildReadyNote(): NoteDto {
     sourceTranscripts: buildTranscripts(TURNS.length),
     generatedContent: pickGeneratedNotes(),
     queuedRecordings: 0,
+    processingProgress: undefined,
   };
 }
 
 const HELP = [
   "Transcription progress demo (meeting note):",
   '  __processingDemo("validating")     park at the Audio stage',
-  '  __processingDemo("transcribing")   park at the Transcript stage',
+  '  __processingDemo("transcribing")   park at the Transcript stage (12 of 31)',
   '  __processingDemo("generating")     park at the Summary stage',
   '  __processingDemo("transcribing", 3)  ...with 3 recordings queued',
   '  __processingDemo("demo")           scripted Audio -> Summary -> notes reveal',

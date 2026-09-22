@@ -640,21 +640,23 @@ function meetingMenuPosition(trigger: HTMLElement): MenuPosition {
 function statusLabel(status: NoteListItemDto["processingStatus"]) {
   switch (status) {
     case "recording":
-      return "Recording";
+      return t("Recording");
     case "validating":
-      return "Validating";
+      return t("Validating");
     case "transcribing":
-      return "Transcribing";
+      return t("Transcribing");
     case "generating":
-      return "Generating";
+      return t("Generating");
     case "failed":
-      return "Needs attention";
+      return t("Needs attention");
     case "recoverable":
-      return "Recoverable";
+      return t("Recoverable");
+    case "stopped":
+      return t("Stopped");
     case "ready":
-      return "Ready";
+      return t("Ready");
     default:
-      return "Draft";
+      return t("Draft");
   }
 }
 

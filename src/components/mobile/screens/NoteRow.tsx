@@ -84,6 +84,8 @@ function statusLabel(status: NoteListItemDto["processingStatus"]) {
       return t("Needs attention");
     case "recoverable":
       return t("Recoverable");
+    case "stopped":
+      return t("Stopped");
     case "ready":
       return t("Ready");
     default:

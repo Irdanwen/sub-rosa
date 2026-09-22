@@ -403,8 +403,11 @@ describe("NoteEditor", () => {
       />,
     );
 
-    expect(screen.getByRole("status")).toHaveTextContent("Transcribing audio");
-    expect(screen.getByRole("status")).toHaveAttribute("data-status", "transcribing");
+    expect(screen.getByRole("status")).toHaveTextContent("Transcribing the recording");
+    expect(document.querySelector(".note-processing-progress")).toHaveAttribute(
+      "data-status",
+      "transcribing",
+    );
     expect(screen.getByText("Previous system transcript")).toBeInTheDocument();
   });
 
@@ -419,8 +422,11 @@ describe("NoteEditor", () => {
       />,
     );
 
-    expect(screen.getByRole("status")).toHaveTextContent("Transcribing audio");
-    expect(screen.getByRole("status")).toHaveAttribute("data-status", "transcribing");
+    expect(screen.getByRole("status")).toHaveTextContent("Transcribing the recording");
+    expect(document.querySelector(".note-processing-progress")).toHaveAttribute(
+      "data-status",
+      "transcribing",
+    );
     expect(screen.queryByText("No transcript is available yet.")).toBeNull();
   });
 
@@ -665,6 +671,64 @@ describe("NoteEditor", () => {
     expect(onRetry).toHaveBeenCalled();
   });
 
+  const savedAudio = {
+    id: "audio-1",
+    source: "microphone" as const,
+    format: "wav" as const,
+    durationMs: 1200,
+    sizeBytes: 2048,
+    checksum: "abc",
+    createdAt: now,
+  };
+
+  it("offers to resume a note the user stopped, as a status and not an error", async () => {
+    const user = userEvent.setup();
+    const onRetry = vi.fn();
+    const { container } = render(
+      <NoteEditor
+        {...props}
+        onRetry={onRetry}
+        note={note({ processingStatus: "stopped", activeTab: "notes", audio: savedAudio })}
+      />,
+    );
+
+    // Nothing failed: no red banner, no "needs attention", and no spinner.
+    expect(container.querySelector(".note-failure-banner")).toBeNull();
+    expect(container.querySelector(".note-processing-progress")).toBeNull();
+    expect(screen.getByText(/You stopped processing this note/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Resume" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("turns a run that died with the app into a resume, not an endless spinner", () => {
+    // The row still says transcribing, but nothing in this process is working
+    // on it. On the desktop nothing ever will be: there is no resume sweep.
+    const { container } = render(
+      <NoteEditor
+        {...props}
+        note={note({
+          processingStatus: "transcribing",
+          processingStalled: true,
+          activeTab: "notes",
+          audio: savedAudio,
+        })}
+      />,
+    );
+
+    expect(container.querySelector(".note-processing-progress")).toBeNull();
+    expect(screen.getByText(/Processing stopped when the app closed/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resume" })).toBeEnabled();
+  });
+
+  it("cannot resume a stopped note whose recording is gone", () => {
+    render(
+      <NoteEditor {...props} note={note({ processingStatus: "stopped", activeTab: "notes" })} />,
+    );
+    expect(screen.getByText(/nothing to resume/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resume" })).toBeDisabled();
+  });
+
   it("keeps the record button available and hides retry while processing", () => {
     render(
       <NoteEditor
@@ -688,7 +752,7 @@ describe("NoteEditor", () => {
     // Processing is queued per note, so a recording still in flight no longer
     // blocks starting another take.
     expect(screen.getByRole("button", { name: "Record" })).toBeEnabled();
-    expect(screen.getByText("Transcribing audio")).toBeInTheDocument();
+    expect(screen.getByText("Transcribing the recording")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 
@@ -703,8 +767,11 @@ describe("NoteEditor", () => {
       />,
     );
 
-    expect(screen.getByRole("status")).toHaveTextContent("Preparing audio");
-    expect(screen.getByRole("status")).toHaveAttribute("data-status", "validating");
+    expect(screen.getByRole("status")).toHaveTextContent("Preparing the audio");
+    expect(document.querySelector(".note-processing-progress")).toHaveAttribute(
+      "data-status",
+      "validating",
+    );
   });
 
   it("shows a queued count when a follow-up recording is stacked", () => {
@@ -720,10 +787,10 @@ describe("NoteEditor", () => {
       />,
     );
 
-    const status = screen.getByRole("status");
-    expect(status).toHaveTextContent("Generating notes");
-    expect(status).toHaveTextContent("+1");
-    expect(status).toHaveAttribute("data-status", "generating");
+    expect(screen.getByRole("status")).toHaveTextContent("Writing your notes");
+    const badge = document.querySelector(".note-processing-progress");
+    expect(badge).toHaveTextContent("+1");
+    expect(badge).toHaveAttribute("data-status", "generating");
   });
 
   it("starts recording immediately without a consent gate", async () => {
@@ -1057,7 +1124,7 @@ describe("NoteEditor", () => {
     );
 
     expect(screen.getByText("Existing notes stay visible")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Generating notes");
+    expect(screen.getByRole("status")).toHaveTextContent("Writing your notes");
   });
 
   it.each(["transcribing", "generating"] as const)(

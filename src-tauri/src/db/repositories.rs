@@ -354,14 +354,13 @@ impl Repositories {
             })
             .unwrap_or_default();
         let title: String = row.get("title");
+        let status: String = row.get("processing_status");
 
         Ok(NoteDto {
             id: row.get("id"),
             title: title.clone(),
             preview: preview_for(&title, &content),
-            processing_status: ProcessingStatus::from(
-                row.get::<String, _>("processing_status").as_str(),
-            ),
+            processing_status: ProcessingStatus::from(status.as_str()),
             folder_ids,
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
@@ -377,6 +376,7 @@ impl Repositories {
             active_tab: row.get("active_tab"),
             last_error: row.get("last_error"),
             queued_recordings: 0,
+            live: Default::default(),
             calendar_event_id: row.try_get("calendar_event_id").ok().flatten(),
             scheduled_start: row.try_get("scheduled_start").ok().flatten(),
             // Stored as JSON because attendees are a note field, not a table:

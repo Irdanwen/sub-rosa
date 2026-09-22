@@ -383,7 +383,7 @@ describe("notes recording reliability", () => {
     await userEvent.click(screen.getByRole("button", { name: "Meeting notes", current: "page" }));
     await userEvent.click(screen.getByRole("button", { name: /Second note Preview/ }));
     await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-2"));
-    expect(screen.queryByText(/Transcribing audio/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Transcribing the recording/)).not.toBeInTheDocument();
   });
 
   it("shows a sidebar recorder indicator off the recording's note and reopens it on click", async () => {
@@ -715,7 +715,7 @@ describe("notes recording reliability", () => {
     await userEvent.click(screen.getByRole("button", { name: "Done" }));
     await waitFor(() => expect(mocks.finishRecording).toHaveBeenCalledWith("rec-1"));
 
-    await waitFor(() => expect(screen.getByText(/Transcribing audio/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Transcribing the recording/)).toBeInTheDocument());
   });
 
   it("polls newly persisted turns while note transcription remains active", async () => {
@@ -736,7 +736,7 @@ describe("notes recording reliability", () => {
     render(<App />);
     await userEvent.click(await screen.findByRole("button", { name: "Meeting notes" }));
     await userEvent.click(screen.getByRole("button", { name: /First note Preview/ }));
-    await waitFor(() => expect(screen.getByText("Transcribing audio")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Transcribing the recording")).toBeInTheDocument());
 
     expect(screen.queryByText("The first saved turn is visible.")).not.toBeInTheDocument();
     mocks.getNote.mockClear();
@@ -765,7 +765,7 @@ describe("notes recording reliability", () => {
       },
       { timeout: 3_000 },
     );
-    const transcribingStatus = screen.getByText("Transcribing audio");
+    const transcribingStatus = screen.getByText("Transcribing the recording");
     expect(transcribingStatus.closest('[role="status"]')).not.toBeNull();
   });
 
@@ -853,7 +853,7 @@ describe("notes recording reliability", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /Retry/ }));
 
-    await waitFor(() => expect(screen.getByText(/Transcribing audio/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Transcribing the recording/)).toBeInTheDocument());
     expect(container.querySelector(".note-failure-banner")).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "Transcription" }));

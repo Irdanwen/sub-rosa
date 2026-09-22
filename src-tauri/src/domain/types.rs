@@ -102,6 +102,11 @@ pub struct NoteDto {
     /// processing queue at the command layer, not persisted.
     #[serde(default)]
     pub queued_recordings: i64,
+    /// What only the running process knows about this note, filled at the
+    /// command layer and never read from or written to the database.
+    /// Flattened, so the wire shape is two plain fields on the note.
+    #[serde(flatten, default)]
+    pub live: LiveNoteFields,
     /// Calendar context (crate::calendar), when a recording matched an event.
     /// Every field is None for a note with no event, which is every note the
     /// app made before this existed — and any note the user records outside a
@@ -1020,6 +1025,13 @@ pub enum ProcessingStatus {
     Ready,
     Failed,
     Recoverable,
+    /// The user stopped the pipeline. Not `Failed`: nothing went wrong, and
+    /// the mobile resume sweep re-runs failed notes, which would quietly undo
+    /// the one thing the user just asked for. The audio is kept, so it can be
+    /// picked up again. A build older than this one reads "stopped" as
+    /// `Draft` (the `From<&str>` fallback), which is safe: a draft that still
+    /// has its audio and can still be processed.
+    Stopped,
 }
 
 impl ProcessingStatus {
@@ -1033,6 +1045,7 @@ impl ProcessingStatus {
             Self::Ready => "ready",
             Self::Failed => "failed",
             Self::Recoverable => "recoverable",
+            Self::Stopped => "stopped",
         }
     }
 }
@@ -1047,9 +1060,86 @@ impl From<&str> for ProcessingStatus {
             "ready" => Self::Ready,
             "failed" => Self::Failed,
             "recoverable" => Self::Recoverable,
+            "stopped" => Self::Stopped,
             _ => Self::Draft,
         }
     }
+}
+
+/// The sub-step a running pipeline is on.
+///
+/// Distinct from [`ProcessingStatus`], which is the durable row: a note sits
+/// at `transcribing` while the phase moves through `Preparing`,
+/// `DetectingTurns` and `Transcribing`. That gap is what the never-written
+/// `ProcessingStatus::Validating` was reaching for and could not express.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ProcessingPhase {
+    /// Validating, normalising or decoding the audio. No denominator.
+    Preparing,
+    /// Turn detection and echo rejection: minutes of CPU on a long meeting,
+    /// with nothing to count.
+    DetectingTurns,
+    /// The part with a real numerator: chunks, or turns.
+    Transcribing,
+    /// The single model call that writes the note. No denominator.
+    Composing,
+}
+
+impl ProcessingPhase {
+    /// Phases only ever move forwards. Same idea as the frontend's
+    /// `activeProcessingRank`, for the same reason: a late sample from an
+    /// earlier step must not rewind what the reader is looking at.
+    pub fn rank(self) -> u8 {
+        match self {
+            Self::Preparing => 0,
+            Self::DetectingTurns => 1,
+            Self::Transcribing => 2,
+            Self::Composing => 3,
+        }
+    }
+}
+
+/// The part of a note that is a statement about this process, right now.
+///
+/// Grouped so a row read builds it with one `Default::default()` and every
+/// command that hands a note to a screen fills it in one call
+/// (`domain::processing_progress::fill_live_fields`) - which is also what stops
+/// a new live field from silently arriving as its zero value on some paths.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveNoteFields {
+    /// Where the running pipeline has got to. Absent when nothing is running
+    /// on this note in this process.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processing_progress: Option<ProcessingProgressDto>,
+    /// The row says the note is being worked on and nothing in this process
+    /// is working on it: the run died with the app. The desktop has no sweep
+    /// to pick it back up, so the screen has to offer the retry instead.
+    #[serde(default)]
+    pub processing_stalled: bool,
+}
+
+/// How far the pipeline has got on a note, right now, in this process.
+///
+/// Read from `domain::processing_progress` at the command layer and never
+/// persisted - exactly like `NoteDto::queued_recordings`. Absent means no
+/// pipeline is running here, which on a note whose row still says
+/// `transcribing` means the process died mid-run.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessingProgressDto {
+    pub phase: ProcessingPhase,
+    /// Units finished in the current phase. Never decreases.
+    pub done: i64,
+    /// What this phase will do in total, when it is knowable before it starts.
+    /// `None` means draw an indeterminate bar, not a bar at zero.
+    pub total: Option<i64>,
+    /// When the run started (RFC3339). The elapsed clock hangs off this, so it
+    /// survives phase changes and a reloaded webview.
+    pub started_at: String,
+    /// When the current phase started (RFC3339), for a per-phase estimate.
+    pub phase_started_at: String,
 }
 
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

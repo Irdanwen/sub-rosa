@@ -107,6 +107,31 @@ mod tests {
         assert_ne!(token, new_bearer_token(), "two runs must not share a token");
     }
 
+    /// The request-side guard (`sidecar::ensure_ready_for_request`) asks
+    /// `june_api::backend_url_published()` whether there is a backend to talk
+    /// to. This is the invariant that broke: the session moved in here, out of
+    /// the environment, and the guard kept reading `JUNE_API_URL` — so its
+    /// probe was false forever and every desktop request slept out the full
+    /// twenty-second start timeout before going anywhere.
+    ///
+    /// It lives here rather than beside the guard because the session is one
+    /// global and these tests take turns on SERIAL. Only the positive
+    /// direction is asserted: a developer `.env` may legitimately set
+    /// `JUNE_API_URL`, so "no session means no URL" is not true of every
+    /// machine, while "a published session is visible" is true of all of them.
+    #[cfg(desktop)]
+    #[test]
+    fn the_request_guard_probe_sees_a_published_session() {
+        let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+        clear();
+        publish(sample("token-probe"));
+        assert!(
+            crate::june_api::backend_url_published(),
+            "the guard must see the session the request will use"
+        );
+        clear();
+    }
+
     #[test]
     fn a_published_session_is_readable_and_clearable() {
         let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());

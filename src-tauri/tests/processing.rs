@@ -4,7 +4,7 @@
 
 use os_june_lib::domain::{
     processing::manual_notes_for_generation,
-    types::{NoteDto, ProcessingStatus},
+    types::{NoteDto, ProcessingPhase, ProcessingProgressDto, ProcessingStatus},
 };
 
 const NOW: &str = "2026-05-21T10:00:00Z";
@@ -30,6 +30,7 @@ fn note(overrides: impl FnOnce(&mut NoteDto)) -> NoteDto {
         active_tab: Some("notes".to_string()),
         last_error: None,
         queued_recordings: 0,
+        live: Default::default(),
         calendar_event_id: None,
         scheduled_start: None,
         attendees: Vec::new(),
@@ -107,4 +108,49 @@ async fn generation_rejects_empty_transcript() {
     .expect_err("empty transcript should fail");
 
     assert_eq!(err.code, "transcription_empty");
+}
+
+/// The live fields are grouped in Rust (`NoteDto::live`) but the screen reads
+/// them as two plain fields on the note. `#[serde(flatten)]` is the only thing
+/// holding that shape, and nothing else would notice if it went: the frontend
+/// would silently see no progress and no stalled flag, ever.
+#[test]
+fn live_note_fields_travel_as_plain_fields_on_the_note() {
+    let note = note(|note| {
+        note.processing_status = ProcessingStatus::Transcribing;
+        note.live.processing_stalled = true;
+        note.live.processing_progress = Some(ProcessingProgressDto {
+            phase: ProcessingPhase::Transcribing,
+            done: 12,
+            total: Some(31),
+            started_at: NOW.to_string(),
+            phase_started_at: NOW.to_string(),
+        });
+    });
+
+    let json = serde_json::to_value(&note).unwrap();
+    assert!(
+        json.get("live").is_none(),
+        "the grouping must not leak onto the wire"
+    );
+    assert_eq!(json["processingStalled"], serde_json::json!(true));
+    assert_eq!(
+        json["processingProgress"]["phase"],
+        serde_json::json!("transcribing")
+    );
+    assert_eq!(json["processingProgress"]["done"], serde_json::json!(12));
+    assert_eq!(json["processingProgress"]["total"], serde_json::json!(31));
+    assert_eq!(
+        json["processingProgress"]["startedAt"],
+        serde_json::json!(NOW)
+    );
+
+    // And a note with nothing running says so by omission, not with a null.
+    let idle = serde_json::to_value(note_idle()).unwrap();
+    assert!(idle.get("processingProgress").is_none());
+    assert_eq!(idle["processingStalled"], serde_json::json!(false));
+}
+
+fn note_idle() -> NoteDto {
+    note(|_| {})
 }

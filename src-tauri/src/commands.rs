@@ -135,7 +135,7 @@ pub async fn list_notes(
 #[tauri::command]
 pub async fn get_note(app: AppHandle, request: GetNoteRequest) -> Result<NoteDto, AppError> {
     let mut note = repositories(&app).await?.get_note(&request.note_id).await?;
-    note.queued_recordings = processing_queue::queued_behind(&request.note_id);
+    crate::domain::processing_progress::fill_live_fields(&mut note);
     Ok(note)
 }
 
@@ -1087,7 +1087,7 @@ async fn finish_recording_session(
     }
 
     let mut note = repos.get_note(&finished.note_id).await?;
-    note.queued_recordings = processing_queue::queued_behind(&finished.note_id);
+    crate::domain::processing_progress::fill_live_fields(&mut note);
 
     let task_repos = repos.clone();
     let task_note_id = finished.note_id.clone();
@@ -1099,6 +1099,9 @@ async fn finish_recording_session(
     tokio::spawn(async move {
         let queue_lock = ticket.lock();
         let _guard = queue_lock.lock().await;
+        if ticket.stopped() {
+            return; // the user stopped this note while it waited; drop finishes it
+        }
         // Now that earlier jobs on this note are done, read the latest note so
         // generation has the freshest existing content as context.
         let note = match task_repos.get_note(&task_note_id).await {
@@ -1146,13 +1149,7 @@ async fn finish_recording_session(
         };
         match result {
             Err(error) => {
-                let _ = task_repos
-                    .set_note_status(
-                        &task_note_id,
-                        crate::domain::types::ProcessingStatus::Failed,
-                        Some(error.message),
-                    )
-                    .await;
+                crate::note_processing::settle_failed_run(&task_repos, &task_note_id, error).await;
             }
             // A long transcription usually finishes while the app is in the
             // background — which is exactly when the webview is frozen and
@@ -1553,6 +1550,9 @@ pub(crate) async fn import_media_from_path_with_captions(
     tokio::spawn(async move {
         let queue_lock = ticket.lock();
         let _guard = queue_lock.lock().await;
+        if ticket.stopped() {
+            return; // the user stopped this note while it waited; drop finishes it
+        }
         let outcome = match cues {
             Some(cues) => {
                 crate::domain::processing::process_captioned_import(
@@ -1581,9 +1581,7 @@ pub(crate) async fn import_media_from_path_with_captions(
             }
         };
         if let Err(error) = outcome {
-            let _ = task_repos
-                .set_note_status(&task_note_id, ProcessingStatus::Failed, Some(error.message))
-                .await;
+            crate::note_processing::settle_failed_run(&task_repos, &task_note_id, error).await;
         }
         ticket.finish();
     });
@@ -1737,13 +1735,16 @@ pub async fn retry_processing(
     }
 
     let mut note = repos.get_note(&request.note_id).await?;
-    note.queued_recordings = processing_queue::queued_behind(&request.note_id);
+    crate::domain::processing_progress::fill_live_fields(&mut note);
 
     let task_repos = repos.clone();
     let task_note_id = request.note_id.clone();
     tokio::spawn(async move {
         let queue_lock = ticket.lock();
         let _guard = queue_lock.lock().await;
+        if ticket.stopped() {
+            return; // the user stopped this note while it waited; drop finishes it
+        }
         let note = match task_repos.get_note(&task_note_id).await {
             Ok(note) => note,
             Err(_) => {
@@ -1810,9 +1811,7 @@ pub async fn retry_processing(
             .await
         };
         if let Err(error) = result {
-            let _ = task_repos
-                .set_note_status(&task_note_id, ProcessingStatus::Failed, Some(error.message))
-                .await;
+            crate::note_processing::settle_failed_run(&task_repos, &task_note_id, error).await;
         }
         ticket.finish();
     });

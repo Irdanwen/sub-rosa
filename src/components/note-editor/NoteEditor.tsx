@@ -20,7 +20,7 @@ import { IconVolumeFull } from "central-icons/IconVolumeFull";
 import { IconCheckmark1 } from "central-icons-filled/IconCheckmark1";
 import { IconChevronBottom } from "central-icons-filled/IconChevronBottom";
 import { IconMicrophone } from "central-icons-filled/IconMicrophone";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { EASE_OUT } from "../../lib/motion";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Switch } from "../ui/Switch";
@@ -35,6 +35,8 @@ import type {
   TranscriptDto,
 } from "../../lib/tauri";
 import { DotSpinner } from "../DotSpinner";
+import { ProcessingProgressIndicator, processingStageStatus } from "./ProcessingProgressIndicator";
+import { ProcessingResumeNotice } from "./ProcessingResumeNotice";
 import { InlineNotice } from "../ui/InlineNotice";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { RecorderBar } from "../recorder/RecorderBar";
@@ -117,11 +119,6 @@ type RenderedTranscriptTurn = TranscriptDto & {
   preview?: boolean;
   stability?: LiveTranscriptEventDto["stability"];
 };
-
-type ProcessingStageStatus = Extract<
-  NoteDto["processingStatus"],
-  "validating" | "transcribing" | "generating"
->;
 
 const SOURCE_FILTERS = [
   { value: "all", label: t("All") },
@@ -359,7 +356,9 @@ export function NoteEditor({
     );
     return () => window.clearTimeout(timer);
   }, [consentReminderVisible]);
-  const processingStatus = processingStageStatus(note.processingStatus);
+  const processingStatus = note.processingStalled
+    ? null
+    : processingStageStatus(note.processingStatus);
   const processingLock = processingStatus !== null;
   const recordButtonDisabled = recordingDisabled;
   const recordOptionsDisabled = processingLock || recordingDisabled;
@@ -544,6 +543,12 @@ export function NoteEditor({
             onTopUp={onTopUp}
             topUpLabel={topUpLabel}
           />
+        ) : note.processingStatus === "stopped" || note.processingStalled ? (
+          <ProcessingResumeNotice
+            reason={note.processingStatus === "stopped" ? "stopped" : "stalled"}
+            audioPreserved={!!(note.audio || note.audioSources?.length)}
+            onResume={onRetry}
+          />
         ) : null}
         {activeTab === "summary" ? (
           <NoteSummaryPanel noteId={note.id} onJumpToTime={jumpToTime} />
@@ -574,8 +579,11 @@ export function NoteEditor({
               </div>
             ) : showTranscriptProcessing && processingStatus ? (
               <ProcessingProgressIndicator
+                noteId={note.id}
                 className="transcript-processing-progress"
                 status={processingStatus}
+                progress={note.processingProgress}
+                durationMs={note.durationMs}
               />
             ) : null}
             {transcriptCoverageNotice ? (
@@ -626,7 +634,10 @@ export function NoteEditor({
                 notes wipe in above it. */}
             {processingStatus ? (
               <ProcessingProgressIndicator
+                noteId={note.id}
                 status={processingStatus}
+                progress={note.processingProgress}
+                durationMs={note.durationMs}
                 queuedRecordings={queuedRecordings}
                 queuedTooltipId={queuedTooltipId}
               />
@@ -975,93 +986,14 @@ function FolderChip({
   );
 }
 
-function ProcessingProgressIndicator({
-  status,
-  queuedRecordings = 0,
-  queuedTooltipId,
-  className,
-}: {
-  status: ProcessingStageStatus;
-  queuedRecordings?: number;
-  queuedTooltipId?: string;
-  className?: string;
-}) {
-  const reduceMotion = useReducedMotion();
-  const classes = ["note-processing-progress", className].filter(Boolean).join(" ");
-
-  return (
-    <div className={classes} data-status={status} role="status" aria-live="polite">
-      <DotSpinner className="note-processing-progress-spinner" />
-      {/* A departure-board roll: each stage label rises into the one-line
-          window as the previous one lifts out, blurring through the hand-off so
-          the change feels organic rather than a hard cut. popLayout keeps the
-          entering label in flow (so the chip stays sized) while the leaving one
-          is popped out to slide away. Reduced motion drops to a plain
-          crossfade. */}
-      <div className="note-processing-roll">
-        <AnimatePresence initial={false} mode="popLayout">
-          <motion.span
-            key={status}
-            className="note-processing-roll-item"
-            initial={reduceMotion ? { opacity: 0 } : { y: "65%", opacity: 0, filter: "blur(5px)" }}
-            animate={reduceMotion ? { opacity: 1 } : { y: "0%", opacity: 1, filter: "blur(0px)" }}
-            exit={reduceMotion ? { opacity: 0 } : { y: "-65%", opacity: 0, filter: "blur(5px)" }}
-            transition={{
-              duration: reduceMotion ? 0.15 : 0.5,
-              ease: EASE_OUT,
-            }}
-          >
-            {processingStageMessage(status)}
-          </motion.span>
-        </AnimatePresence>
-      </div>
-      {queuedRecordings > 0 && queuedTooltipId ? (
-        <span className="note-generating-count" tabIndex={0} aria-describedby={queuedTooltipId}>
-          +{queuedRecordings}
-          <span className="note-generating-tip" id={queuedTooltipId} role="tooltip">
-            {queuedRecordings > 1
-              ? t("{count} more recordings queued", { count: queuedRecordings })
-              : t("1 more recording queued")}
-          </span>
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
-function processingStageStatus(status: NoteDto["processingStatus"]): ProcessingStageStatus | null {
-  switch (status) {
-    case "validating":
-    case "transcribing":
-    case "generating":
-      return status;
-    default:
-      return null;
-  }
-}
-
-// The stage name as it reads in the rolling label and the spoken status. Kept
-// ellipsis-free: the roll and track motion already carry the "in progress"
-// sense, so the words can stay calm.
-function processingStageMessage(status: ProcessingStageStatus): string {
-  switch (status) {
-    case "validating":
-      return "Preparing audio";
-    case "transcribing":
-      return "Transcribing audio";
-    case "generating":
-      return "Generating notes";
-  }
-}
-
 function processingMessage(status: NoteDto["processingStatus"]): string | null {
   switch (status) {
     case "validating":
-      return "Preparing audio…";
+      return t("Preparing the audio...");
     case "transcribing":
-      return "Transcribing audio…";
+      return t("Transcribing the recording...");
     case "generating":
-      return "Generating notes…";
+      return t("Writing your notes...");
     default:
       return null;
   }

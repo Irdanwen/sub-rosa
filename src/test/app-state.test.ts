@@ -417,3 +417,50 @@ describe("notesReducer", () => {
     expect(state.recordingStatus).toEqual(status);
   });
 });
+
+describe("live processing fields in the reducer", () => {
+  const progress = {
+    phase: "transcribing" as const,
+    done: 8,
+    total: 20,
+    startedAt: "2026-09-22T09:00:00.000Z",
+    phaseStartedAt: "2026-09-22T09:00:00.000Z",
+  };
+
+  function loaded(selected: NoteDto) {
+    return notesReducer(createInitialState(), { type: "noteLoaded", note: selected });
+  }
+
+  it("keeps a working bar through a snapshot that carries no live fields", () => {
+    // An autosave returns a plain row read. It must not blank the bar of a
+    // note that is still being transcribed.
+    let state = loaded(note({ processingStatus: "transcribing", processingProgress: progress }));
+    state = notesReducer(state, {
+      type: "noteUpdated",
+      note: note({ processingStatus: "transcribing", editedContent: "typed" }),
+    });
+    expect(state.selectedNote?.processingProgress).toEqual(progress);
+    expect(state.selectedNote?.editedContent).toBe("typed");
+  });
+
+  it("never pulls the count back when a late sample arrives", () => {
+    let state = loaded(note({ processingStatus: "transcribing", processingProgress: progress }));
+    state = notesReducer(state, {
+      type: "noteUpdated",
+      note: note({
+        processingStatus: "transcribing",
+        processingProgress: { ...progress, done: 3 },
+      }),
+    });
+    expect(state.selectedNote?.processingProgress?.done).toBe(8);
+  });
+
+  it("treats a stopped note as finished, so a stale poll cannot reopen it", () => {
+    let state = loaded(note({ processingStatus: "stopped" }));
+    state = notesReducer(state, {
+      type: "noteUpdated",
+      note: note({ processingStatus: "transcribing", processingProgress: progress }),
+    });
+    expect(state.selectedNote?.processingStatus).toBe("stopped");
+  });
+});
