@@ -1309,7 +1309,7 @@ même temps se chaîneraient chacun sur une tête différente, donc **toute**
 compteurs par appareil et une détection de trous, c'est un chantier à part. Le
 rejeu d'une *course* est fermé par le registre ci-dessus.
 
-## Le traitement d'une note se voit, et va plus vite (2026-09-22)
+## Le traitement d'une note se voit, et va plus vite (2026-09-22, v1.71.0)
 
 Une note restait des minutes en « Transcribing audio » sans un chiffre : on ne
 savait pas si l'app avançait ou si elle était plantée. Deux causes superposées.
