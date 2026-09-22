@@ -345,6 +345,14 @@ h2 {
 .card h2 {
   font-size: 28px;
 }
+
+/* Numbered steps inside a card (the Top up page). */
+.card .steps {
+  margin: 0;
+  padding-left: 1.25em;
+  display: grid;
+  gap: 0.4em;
+}
 .muted {
   color: var(--muted);
 }
