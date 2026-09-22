@@ -1248,6 +1248,38 @@ NotePickerSheet, ImportSheet}.tsx`, `src/components/mobile/sheet-host.ts`,
 | `src-tauri/src/lib.rs` | `intent_inbox`, `open_shortcuts_app`, `carpe_diem_open_top_up`, `remember_app` | Réappliquer |
 | `src/app/App.tsx` | Destination `assistants` | Réappliquer |
 
+## Des titres de conversation qui disent le sujet (2026-09-22)
+
+Un chat était titré une fois, à la création, par les 64 premiers caractères du
+premier message : un historique de demi-phrases, et « [Image: IMG_0042.jpg] »
+pour un chat ouvert par une photo. `suggest_agent_session_title` existait ; le
+téléphone l'appelait et jetait la réponse.
+
+- **`src-tauri/src/chat_titles/`** (`mod.rs`, `prompt.rs` avec
+  `CHAT_TITLE_PROMPT_VERSION`). Un marqueur `agent_task_titles` (migration 031,
+  **locale**, ni synchronisée ni archivée : une colonne sur `agent_tasks`
+  ferait rejeter chaque révision par les versions plus anciennes,
+  `sync.rs` refuse les colonnes inconnues) est écrit dans la transaction de la
+  première réponse (`persist_answer`), seulement pour un chat général (ni
+  assistant personnalisé, ni session Hermes, ni fork). Génération détachée
+  (`BackgroundTask`), reprise par `background::sweep` (ADR-0018), 3 essais.
+- **Compare-and-set** sur le titre attendu : un renommage (commande
+  `rename_agent_task`, deux listes) ou un titre venu d'un autre appareil gagne
+  toujours ; `updated_at` n'est pas touché (l'historique ne se réordonne pas).
+  Événement `june://chat-title`.
+- **La liste** : `list_agent_tasks` renvoie `GeneralTaskList` (la tâche aplatie
+  + `lastMessagePreview` nettoyé + `lastMessageRole`) ; sections Aujourd'hui /
+  Hier / 7 derniers jours / Plus ancien, heure, recherche, « Renommer » au
+  glisser, libellé VoiceOver d'une phrase, titre sur deux lignes.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/commands.rs` | `list_agent_tasks` renvoie `GeneralTaskList` (somme nulle) | Réappliquer |
+| `src-tauri/src/background.rs` | `chat_titles::resume_pending` dans le sweep | Réappliquer |
+| `src-tauri/src/db/migrations.rs` | Migration 031 | Réappliquer |
+
 ## Procédure de synchronisation upstream (voir aussi `.github/workflows/upstream-sync.yml`)
 
 > **Remplacée le 2026-09-02 par [ADR-0040](docs/adr/0040-upstream-is-a-source-of-patches-not-a-merge-base.md).**

@@ -1,5 +1,13 @@
 import "../../../styles/chat-reading.css";
 import { useAccountSyncUpdated } from "../../../lib/account-sync-events";
+import {
+  type ChatSessionItem,
+  type HistorySection,
+  historySection,
+  listChatSessions,
+  onChatTitle,
+  renameAgentTask,
+} from "../../../lib/chat-titles";
 import { t } from "../../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -9,6 +17,7 @@ import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { IconClock } from "central-icons/IconClock";
+import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconPaperclip1 } from "central-icons/IconPaperclip1";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
@@ -36,14 +45,12 @@ import {
   deleteAgentTask,
   forkAgentTask,
   getAgentTask,
-  listAgentTasks,
   listSessionFolders,
   mobileDictationStart,
   mobileDictationStop,
   removeSessionFromFolder,
   sendAgentMessage,
   setAgentTaskModel,
-  suggestAgentSessionTitle,
 } from "../../../lib/tauri";
 import { BrandGradientMark } from "../../brand/Marks";
 import { ChatAmbient } from "../ChatAmbient";
@@ -51,6 +58,8 @@ import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { EmptyState } from "../../ui/EmptyState";
 import { Spinner } from "../../ui/Spinner";
 import { ModelSheet } from "../ModelSheet";
+import { NameSheet } from "../NameSheet";
+import { formatNoteTime } from "./NoteRow";
 import { PullToRefresh } from "../PullToRefresh";
 import { StackHeader } from "../StackHeader";
 import { SwipeableRow } from "../SwipeableRow";
@@ -82,18 +91,20 @@ export function AgentScreen({
   archiveFolderId,
   onBack,
 }: AgentScreenProps) {
-  const [tasks, setTasks] = useState<AgentTaskDto[]>([]);
+  const [tasks, setTasks] = useState<ChatSessionItem[]>([]);
   const [archivedIds, setArchivedIds] = useState<Set<string>>(new Set());
-  const [confirmDelete, setConfirmDelete] = useState<AgentTaskDto | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<ChatSessionItem | null>(null);
+  const [renaming, setRenaming] = useState<ChatSessionItem | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    const sessions = listAgentTasks()
-      .then((response) => {
-        setTasks(response.items);
+    const sessions = listChatSessions()
+      .then((items) => {
+        setTasks(items);
         setLoadError(null);
       })
       .catch((err: unknown) => {
@@ -120,6 +131,16 @@ export function AgentScreen({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  // A title named after the first reply lands while the list is open.
+  useEffect(
+    () =>
+      onChatTitle(({ taskId, title }) =>
+        setTasks((current) =>
+          current.map((task) => (task.id === taskId ? { ...task, title } : task)),
+        ),
+      ),
+    [],
+  );
 
   const archive = useCallback(
     async (taskId: string) => {
@@ -163,32 +184,67 @@ export function AgentScreen({
     [refresh],
   );
 
-  const active = tasks.filter((task) => !archivedIds.has(task.id));
-  const archived = tasks.filter((task) => archivedIds.has(task.id));
+  const rename = useCallback(async (taskId: string, title: string) => {
+    setActionError(null);
+    try {
+      const renamed = await renameAgentTask(taskId, title);
+      setTasks((current) =>
+        current.map((task) => (task.id === taskId ? { ...task, title: renamed.title } : task)),
+      );
+    } catch (err) {
+      setActionError(friendlyErrorMessage(err, t("Couldn't rename this chat.")));
+    }
+  }, []);
 
-  const renderRow = (task: AgentTaskDto, isArchived: boolean) => (
-    <li key={task.id}>
-      <SwipeableRow
-        actions={[
-          isArchived
-            ? { label: t("Restore"), tone: "neutral", onAction: () => void restore(task.id) }
-            : { label: t("Archive"), tone: "neutral", onAction: () => void archive(task.id) },
-          { label: t("Delete"), tone: "destructive", onAction: () => setConfirmDelete(task) },
-        ]}
-      >
-        <button type="button" className="mobile-note-row" onClick={() => onOpenSession(task.id)}>
-          <span className="mobile-note-row-body">
-            <span className="mobile-note-row-title">
-              {task.title.trim() || task.prompt.trim() || t("New chat")}
+  const needle = query.trim().toLowerCase();
+  const matches = (task: ChatSessionItem) =>
+    !needle ||
+    chatTitle(task).toLowerCase().includes(needle) ||
+    (task.lastMessagePreview ?? "").toLowerCase().includes(needle);
+  const active = tasks.filter((task) => !archivedIds.has(task.id) && matches(task));
+  const archived = tasks.filter((task) => archivedIds.has(task.id) && matches(task));
+  const sections = HISTORY_SECTIONS.map((section) => ({
+    ...section,
+    items: active.filter((task) => historySection(task.updatedAt) === section.id),
+  })).filter((section) => section.items.length > 0);
+
+  const renderRow = (task: ChatSessionItem, isArchived: boolean) => {
+    const title = chatTitle(task);
+    const time = formatNoteTime(task.updatedAt);
+    const preview = task.lastMessagePreview
+      ? task.lastMessageRole === "user"
+        ? t("You: {text}", { text: task.lastMessagePreview })
+        : task.lastMessagePreview
+      : "";
+    return (
+      <li key={task.id}>
+        <SwipeableRow
+          actions={[
+            { label: t("Rename"), tone: "neutral", onAction: () => setRenaming(task) },
+            isArchived
+              ? { label: t("Restore"), tone: "neutral", onAction: () => void restore(task.id) }
+              : { label: t("Archive"), tone: "neutral", onAction: () => void archive(task.id) },
+            { label: t("Delete"), tone: "destructive", onAction: () => setConfirmDelete(task) },
+          ]}
+        >
+          <button
+            type="button"
+            className="mobile-note-row mobile-chat-row"
+            // One sentence for VoiceOver: what the chat is, when, and where
+            // it left off, rather than three fragments read one by one.
+            aria-label={[title, time, preview].filter(Boolean).join(", ")}
+            onClick={() => onOpenSession(task.id)}
+          >
+            <span className="mobile-note-row-body">
+              <span className="mobile-note-row-title mobile-chat-row-title">{title}</span>
+              {preview ? <span className="mobile-note-row-subtitle">{preview}</span> : null}
             </span>
-            <span className="mobile-note-row-subtitle">
-              {task.messages.at(-1)?.content?.slice(0, 80) ?? ""}
-            </span>
-          </span>
-        </button>
-      </SwipeableRow>
-    </li>
-  );
+            <span className="mobile-note-row-time">{time}</span>
+          </button>
+        </SwipeableRow>
+      </li>
+    );
+  };
 
   return (
     <div className="mobile-screen-root">
@@ -207,7 +263,20 @@ export function AgentScreen({
           </button>
         }
       />
-      <div className="assistants-entry"></div>
+      {tasks.length > 0 ? (
+        <div className="mobile-search">
+          <IconMagnifyingGlass size={16} aria-hidden />
+          <input
+            type="search"
+            placeholder={t("Search chats")}
+            aria-label={t("Search chats")}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            autoCapitalize="none"
+            autoCorrect="off"
+          />
+        </div>
+      ) : null}
       <PullToRefresh className="mobile-list-scroll" onRefresh={refresh}>
         {actionError ? (
           <p className="mobile-dictation-error" role="alert">
@@ -223,7 +292,7 @@ export function AgentScreen({
               </li>
             ))}
           </ul>
-        ) : loadError && active.length === 0 && archived.length === 0 ? (
+        ) : loadError && tasks.length === 0 ? (
           <EmptyState
             icon={<IconBubble3 size={28} />}
             title={t("Couldn't load your chats")}
@@ -234,7 +303,7 @@ export function AgentScreen({
               </button>
             }
           />
-        ) : active.length === 0 && archived.length === 0 ? (
+        ) : tasks.length === 0 ? (
           <EmptyState
             icon={<IconBubble3 size={28} />}
             title={t("Ask about your notes")}
@@ -249,14 +318,28 @@ export function AgentScreen({
               </button>
             }
           />
+        ) : active.length === 0 && archived.length === 0 ? (
+          <EmptyState
+            icon={<IconMagnifyingGlass size={28} />}
+            title={t("No matches")}
+            description={t("Try a different search.")}
+          />
         ) : (
           <>
-            <ul className="mobile-note-list">{active.map((task) => renderRow(task, false))}</ul>
+            {sections.map((section) => (
+              <section key={section.id} aria-label={section.label}>
+                <h2 className="mobile-list-section-title">{section.label}</h2>
+                <ul className="mobile-note-list">
+                  {section.items.map((task) => renderRow(task, false))}
+                </ul>
+              </section>
+            ))}
             {archived.length > 0 ? (
               <>
                 <button
                   type="button"
                   className="mobile-archived-toggle"
+                  aria-expanded={showArchived}
                   onClick={() => setShowArchived((value) => !value)}
                 >
                   {showArchived
@@ -273,6 +356,20 @@ export function AgentScreen({
           </>
         )}
       </PullToRefresh>
+      {renaming ? (
+        <NameSheet
+          title={t("Rename chat")}
+          label={t("Chat name")}
+          initialValue={chatTitle(renaming)}
+          confirmLabel={t("Rename")}
+          onSubmit={(title) => {
+            const taskId = renaming.id;
+            setRenaming(null);
+            void rename(taskId, title);
+          }}
+          onClose={() => setRenaming(null)}
+        />
+      ) : null}
       <ConfirmDialog
         open={confirmDelete !== null}
         title={t("Delete this chat?")}
@@ -287,6 +384,18 @@ export function AgentScreen({
       />
     </div>
   );
+}
+
+const HISTORY_SECTIONS: Array<{ id: HistorySection; label: string }> = [
+  { id: "today", label: t("Today") },
+  { id: "yesterday", label: t("Yesterday") },
+  { id: "week", label: t("Previous 7 days") },
+  { id: "older", label: t("Older") },
+];
+
+/** What a chat is called: its name, else its first words, else "New chat". */
+function chatTitle(task: Pick<AgentTaskDto, "title" | "prompt">): string {
+  return task.title.trim() || task.prompt.trim() || t("New chat");
 }
 
 function hasAttachmentMarkers(content: string): boolean {
@@ -456,6 +565,17 @@ export function AgentSessionScreen({
       .then((catalog) => setModels(modelsOfType(catalog, "text")))
       .catch((err: unknown) => setModelsError(messageFromError(err)));
   }, []);
+
+  // The title the model names after the first reply replaces the first words
+  // in the header without a reload.
+  useEffect(
+    () =>
+      onChatTitle(({ taskId, title }) => {
+        if (taskId !== taskIdRef.current) return;
+        setTask((current) => (current ? { ...current, title } : current));
+      }),
+    [],
+  );
 
   useEffect(() => {
     const unlistenStatus = listen<AgentLiteStatusDto>(AGENT_LITE_STATUS_EVENT, (event) => {
@@ -696,8 +816,8 @@ export function AgentSessionScreen({
         taskIdRef.current = current.id;
         setTask(current);
         onSessionCreated?.(current.id);
-        // Best-effort title; the chat continues regardless.
-        void suggestAgentSessionTitle(stored).catch(() => undefined);
+        // The title is named by the model after the first reply, in Rust
+        // (crate::chat_titles), and arrives on CHAT_TITLE_EVENT.
       } else {
         current = await sendAgentMessage({
           taskId: current.id,

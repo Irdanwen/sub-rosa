@@ -41,6 +41,8 @@ pub async fn sweep(app: &AppHandle) {
     crate::dictation_mobile::resume_pending(app).await;
     // A chat turn cut off between the user's message and the reply.
     crate::agent_lite::resume_interrupted_turns(app).await;
+    // A chat whose first reply landed but whose title never came back.
+    crate::chat_titles::resume_pending(app).await;
     // A link the user pasted whose download never finished. Cross-platform:
     // the desktop gets killed mid-download too.
     crate::ingest::resume_unfinished(app).await;

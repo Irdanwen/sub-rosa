@@ -279,6 +279,30 @@
   outline: none;
 }
 
+/* A day's heading in a long list (the chat history). */
+.mobile-list-section-title {
+  margin: var(--sp-4) 0 var(--sp-1);
+  padding: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+/* A chat's title can take two lines: a named subject reads whole rather than
+ * stopping mid-word, and the row is a larger target for it. */
+.mobile-chat-row {
+  min-height: 56px;
+}
+
+.mobile-chat-row .mobile-chat-row-title {
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
 .mobile-folder-strip {
   display: flex;
   gap: var(--sp-2);

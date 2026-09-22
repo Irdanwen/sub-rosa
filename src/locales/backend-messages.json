@@ -1,5 +1,6 @@
 [
   "`hermes gateway start` completed, but the gateway is still not running. See logs/gateway-start.log.",
+  "A chat name needs between 1 and 120 characters, on one line.",
   "A dictation is already recording.",
   "A GitHub token has no spaces in it. Paste the token on its own.",
   "A previous recording is still active. Sub Rosa attempted to save it locally; please try again.",
@@ -168,6 +169,7 @@
   "That base URL is not valid.",
   "That breakdown is still stopping. Try again in a moment.",
   "That breakdown was stopped.",
+  "That chat no longer exists.",
   "That cycle is no longer here.",
   "That date could not be read.",
   "That does not look like a Google Places API key.",

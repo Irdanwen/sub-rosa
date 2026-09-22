@@ -169,6 +169,7 @@ pub async fn agent_lite_run(
             persist_answer(&repos, &task_id, &answer).await?;
             let task = repos.get_agent_task(&task_id).await?;
             let _ = app.emit(AGENT_LITE_DONE_EVENT, &task);
+            crate::chat_titles::spawn(&app, task_id.clone());
             // Best-effort memory extraction (every 3rd assistant reply);
             // runs detached so a slow or failing extraction never delays
             // the answer the user is already reading.
@@ -207,6 +208,9 @@ async fn persist_answer(
         .bind(uuid::Uuid::new_v4().to_string()).bind(task_id).bind(answer).bind(&now).execute(&mut *tx).await?;
     sqlx::query::query("UPDATE agent_tasks SET status='completed',progress_summary='Completed.',last_error=NULL,updated_at=?,completed_at=? WHERE id=?")
         .bind(&now).bind(&now).bind(task_id).execute(&mut *tx).await?;
+    // The title marker commits with the first reply, so a chat suspended
+    // before it is named is still named later (crate::chat_titles).
+    crate::chat_titles::mark_first_reply(&mut tx, task_id, &now).await?;
     tx.commit().await?;
     Ok(())
 }
@@ -309,6 +313,7 @@ pub async fn resume_interrupted_turns(app: &AppHandle) {
                 if let Ok(task) = repos.get_agent_task(&task_id).await {
                     let _ = app.emit(AGENT_LITE_DONE_EVENT, &task);
                 }
+                crate::chat_titles::spawn(app, task_id.clone());
                 if extraction_allowed {
                     crate::memory::extract::maybe_extract_after_agent_lite_turn(
                         app,

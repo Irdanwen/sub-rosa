@@ -20,6 +20,7 @@ pub mod audio;
 pub mod background;
 pub mod calendar;
 pub mod carpe_diem;
+pub mod chat_titles;
 pub mod child_env;
 pub mod commands;
 #[cfg(desktop)]
@@ -550,6 +551,7 @@ pub fn run() {
             carpe_diem::settings::carpe_diem_set_rail,
             carpe_diem::settings::carpe_diem_open_dashboard,
             carpe_diem::settings::carpe_diem_open_top_up,
+            chat_titles::rename_agent_task,
             carpe_diem::cache_stats::carpe_diem_cache_stats,
             carpe_diem::sidecar::carpe_diem_sidecar_status,
             carpe_diem::sidecar::carpe_diem_restart_sidecar,
@@ -799,6 +801,7 @@ pub fn run() {
         carpe_diem::settings::carpe_diem_set_rail,
         carpe_diem::settings::carpe_diem_open_dashboard,
         carpe_diem::settings::carpe_diem_open_top_up,
+        chat_titles::rename_agent_task,
         carpe_diem::cache_stats::carpe_diem_cache_stats,
         carpe_diem::sidecar::carpe_diem_sidecar_status,
         carpe_diem::sidecar::carpe_diem_restart_sidecar,

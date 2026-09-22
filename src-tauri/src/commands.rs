@@ -1,5 +1,6 @@
 use crate::{
     app_paths::AppPaths,
+    assistants::general::GeneralTaskList,
     audio::{
         capture::{
             capture_status_for_recovery, finish_active_capture, finish_capture, is_capture_active,
@@ -20,13 +21,12 @@ use crate::{
         },
         processing_queue,
         types::{
-            AgentMessageRole, AgentTaskDto, AgentTaskListResponse, AgentTaskRequest,
-            AgentTaskStatus, AgentToolEventDto, AgentToolEventStatus, AppError,
-            AssignNoteToFolderRequest, AssignSessionToFolderRequest, BootstrapResponse,
-            CheckRecordingSourceReadinessRequest, CreateAgentTaskRequest,
-            CreateDictionaryEntryRequest, CreateFolderRequest, CreateNoteRequest,
-            DeleteDictionaryEntryRequest, DeleteFolderRequest, DeleteNoteRequest,
-            DeleteNotesRequest, DictionaryEntryDto, ExplainAgentApprovalRequest,
+            AgentMessageRole, AgentTaskDto, AgentTaskRequest, AgentTaskStatus, AgentToolEventDto,
+            AgentToolEventStatus, AppError, AssignNoteToFolderRequest,
+            AssignSessionToFolderRequest, BootstrapResponse, CheckRecordingSourceReadinessRequest,
+            CreateAgentTaskRequest, CreateDictionaryEntryRequest, CreateFolderRequest,
+            CreateNoteRequest, DeleteDictionaryEntryRequest, DeleteFolderRequest,
+            DeleteNoteRequest, DeleteNotesRequest, DictionaryEntryDto, ExplainAgentApprovalRequest,
             ExplainAgentApprovalResponse, FinishRecordingResponse, ForkAgentTaskRequest,
             GetAgentTaskRequest, GetNoteRequest, ListNotesRequest, ListNotesResponse,
             MicrophonePermissionResponse, NoteDto, OpenPrivacySettingsRequest, ProcessingStatus,
@@ -314,7 +314,7 @@ pub async fn list_dictionary_entries(app: AppHandle) -> Result<Vec<DictionaryEnt
 }
 
 #[tauri::command]
-pub async fn list_agent_tasks(app: AppHandle) -> Result<AgentTaskListResponse, AppError> {
+pub async fn list_agent_tasks(app: AppHandle) -> Result<GeneralTaskList, AppError> {
     crate::assistants::general::list(&app).await
 }
 
