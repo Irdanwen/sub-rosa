@@ -101,8 +101,8 @@ targets:
         # ships - but they must not contradict the plist either, or a reader
         # (and a regeneration) inherits a version from another era. A test
         # pins the two files to each other; keep them equal.
-        CFBundleShortVersionString: 1.71.0
-        CFBundleVersion: "1.71.0"
+        CFBundleShortVersionString: 1.72.0
+        CFBundleVersion: "1.72.0"
     entitlements:
       path: os-june_iOS/os-june_iOS.entitlements
       properties:
@@ -170,8 +170,8 @@ targets:
       path: ShareExtension/Info.plist
       properties:
         CFBundleDisplayName: Sub Rosa
-        CFBundleShortVersionString: 1.71.0
-        CFBundleVersion: "1.71.0"
+        CFBundleShortVersionString: 1.72.0
+        CFBundleVersion: "1.72.0"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController

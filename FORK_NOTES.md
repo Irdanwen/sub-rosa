@@ -1092,7 +1092,7 @@ Points de relecture lors d’un cherry-pick :
 Le site privé de prévisualisation n’ouvre pas de comptes réels. Les versions
 actuellement proposées au téléchargement ne contiennent pas cette branche.
 
-## Le téléphone tient dans son écran (2026-09-22)
+## Le téléphone tient dans son écran (2026-09-22, v1.72.0)
 
 Trois retours iPhone avaient la même allure (« l'écran bugge ») et trois causes
 distinctes, toutes lisibles dans le code.
@@ -1134,7 +1134,7 @@ bureau**. Elles vivent maintenant dans `.note-header-row` /
 | `src/styles/app.css` | Règles de la rangée d'actions ; `.note-header-toolbar` masquée à l'impression | Réappliquer |
 | `src/main.tsx` | `data-shell="mobile"` + `installZoomRecovery` sur le téléphone | Réappliquer |
 
-## Le Studio du téléphone, en menus (2026-09-22)
+## Le Studio du téléphone, en menus (2026-09-22, v1.72.0)
 
 Retour iPhone : une erreur qui ne partait jamais, un sélecteur de modèles qui
 bougeait ou ne défilait pas, et un formulaire vidéo fait de trois rangées de
@@ -1171,7 +1171,7 @@ notification native n'est traduite aujourd'hui. C'est un chantier transverse
 (une langue confiée à Rust + une table de phrases natives), pas un correctif
 Studio.
 
-## Ranger ses notes depuis le téléphone (2026-09-22)
+## Ranger ses notes depuis le téléphone (2026-09-22, v1.72.0)
 
 Le téléphone savait ouvrir un dossier et y créer une note, rien d'autre : pas
 de déplacement depuis la liste, pas de renommage, pas de suppression, et le
@@ -1207,7 +1207,7 @@ NotePickerSheet, ImportSheet}.tsx`, `src/components/mobile/sheet-host.ts`,
 | `src/components/note-editor/NoteEditor.tsx` | Props `onOpenFolderPicker` et `unlistedFolderIds` transmises à `FolderChip` | Réappliquer |
 | `src/app/App.tsx` | `handleSetNoteFolder` passe par `moveNoteToFolder` | Réappliquer |
 
-## Onglet Assistants, Recharger, Raccourcis iPhone (2026-09-22, ADR-0060)
+## Onglet Assistants, Recharger, Raccourcis iPhone (2026-09-22, ADR-0060, v1.72.0)
 
 - **L'onglet Dictée devient « Assistants ».** `AssistantsScreen` (dans
   `AssistantsDialog.tsx`) rend la bibliothèque comme écran d'onglet : ni
@@ -1248,7 +1248,7 @@ NotePickerSheet, ImportSheet}.tsx`, `src/components/mobile/sheet-host.ts`,
 | `src-tauri/src/lib.rs` | `intent_inbox`, `open_shortcuts_app`, `carpe_diem_open_top_up`, `remember_app` | Réappliquer |
 | `src/app/App.tsx` | Destination `assistants` | Réappliquer |
 
-## Des titres de conversation qui disent le sujet (2026-09-22)
+## Des titres de conversation qui disent le sujet (2026-09-22, v1.72.0)
 
 Un chat était titré une fois, à la création, par les 64 premiers caractères du
 premier message : un historique de demi-phrases, et « [Image: IMG_0042.jpg] »
@@ -1280,7 +1280,7 @@ téléphone l'appelait et jetait la réponse.
 | `src-tauri/src/background.rs` | `chat_titles::resume_pending` dans le sweep | Réappliquer |
 | `src-tauri/src/db/migrations.rs` | Migration 031 | Réappliquer |
 
-## YouTube sur le téléphone : la course, rendue visible (2026-09-22)
+## YouTube sur le téléphone : la course, rendue visible (2026-09-22, v1.72.0)
 
 Le téléphone refusait un lien YouTube par une phrase anglaise construite avec
 `format!` (donc intraduisible), qui disait ce qui était impossible et jamais
