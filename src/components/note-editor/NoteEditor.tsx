@@ -89,6 +89,12 @@ type NoteEditorProps = {
   onRemoveFolder: (folderId: string) => void;
   onCreateAndAssignFolder: (name: string) => void;
   onNavigateToFolder?: (folderId: string) => void;
+  /** Replaces the folder popover with the shell's own picker (the phone's
+   * sheet: a 280px popover anchored after the date ran off a phone screen). */
+  onOpenFolderPicker?: () => void;
+  /** Folders the chip does not name: the phone's Archive is a folder, and a
+   * note filed in a project and then archived is still in that project. */
+  unlistedFolderIds?: string[];
   onTabChange: (tab: NoteTab) => void;
 };
 
@@ -176,6 +182,8 @@ export function NoteEditor({
   onRemoveFolder,
   onCreateAndAssignFolder,
   onNavigateToFolder,
+  onOpenFolderPicker,
+  unlistedFolderIds,
   onTabChange,
 }: NoteEditorProps) {
   const content = note.editedContent ?? note.generatedContent ?? "";
@@ -421,6 +429,8 @@ export function NoteEditor({
             onRemove={onRemoveFolder}
             onCreateAndAssign={onCreateAndAssignFolder}
             onNavigateToFolder={onNavigateToFolder}
+            onOpenPicker={onOpenFolderPicker}
+            unlisted={unlistedFolderIds}
           />
         </div>
         <input
@@ -856,6 +866,8 @@ function FolderChip({
   onRemove,
   onCreateAndAssign,
   onNavigateToFolder,
+  onOpenPicker,
+  unlisted,
 }: {
   folders: FolderDto[];
   folderIds: string[];
@@ -863,6 +875,8 @@ function FolderChip({
   onRemove: (folderId: string) => void;
   onCreateAndAssign: (name: string) => void;
   onNavigateToFolder?: (folderId: string) => void;
+  onOpenPicker?: () => void;
+  unlisted?: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -887,7 +901,7 @@ function FolderChip({
     };
   }, [open]);
 
-  const currentFolderId = folderIds[0];
+  const currentFolderId = folderIds.find((id) => !unlisted?.includes(id));
   const currentFolder = folders.find((folder) => folder.id === currentFolderId);
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -905,9 +919,9 @@ function FolderChip({
         type="button"
         className="move-to-folder-trigger"
         data-assigned={currentFolder !== undefined}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        aria-haspopup={onOpenPicker ? "dialog" : "menu"}
+        aria-expanded={onOpenPicker ? undefined : open}
+        onClick={() => (onOpenPicker ? onOpenPicker() : setOpen((value) => !value))}
       >
         <IconProjects size={14} />
         {currentFolder?.name ?? t("Project")}

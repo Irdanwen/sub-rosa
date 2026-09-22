@@ -1,4 +1,5 @@
 import { intlLocale, t } from "../../../lib/i18n";
+import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { useLongPress } from "../../../lib/long-press";
 import { readablePreview } from "../../../lib/note-preview";
@@ -11,9 +12,19 @@ type NoteRowProps = {
   onSelect: () => void;
   /** Opens the row's actions. Absent where the row is not actionable. */
   onLongPress?: () => void;
+  /** Selection mode: the row toggles instead of opening, and says so. */
+  selecting?: boolean;
+  selected?: boolean;
 };
 
-export function NoteRow({ note, recording, onSelect, onLongPress }: NoteRowProps) {
+export function NoteRow({
+  note,
+  recording,
+  onSelect,
+  onLongPress,
+  selecting = false,
+  selected = false,
+}: NoteRowProps) {
   const longPress = useLongPress(() => onLongPress?.());
   const title = note.title.trim() || t("New note");
   const effectiveStatus =
@@ -38,17 +49,24 @@ export function NoteRow({ note, recording, onSelect, onLongPress }: NoteRowProps
     <button
       type="button"
       className="mobile-note-row"
+      aria-pressed={selecting ? selected : undefined}
       // The browser synthesises a click after a long press; without this the
       // sheet opens and the note opens behind it.
       onClick={() => {
         if (longPress.consumed()) return;
         onSelect();
       }}
-      {...(onLongPress ? longPress.handlers : {})}
+      {...(onLongPress && !selecting ? longPress.handlers : {})}
     >
-      <span className="mobile-note-row-icon" aria-hidden>
-        {recorded ? <IconMicrophone size={16} /> : <IconNoteText size={16} />}
-      </span>
+      {selecting ? (
+        <span className="mobile-select-mark" data-selected={selected || undefined} aria-hidden>
+          {selected ? <IconCheckmark1Small size={14} /> : null}
+        </span>
+      ) : (
+        <span className="mobile-note-row-icon" aria-hidden>
+          {recorded ? <IconMicrophone size={16} /> : <IconNoteText size={16} />}
+        </span>
+      )}
       <span className="mobile-note-row-body">
         <span className="mobile-note-row-title">{title}</span>
         <span className="mobile-note-row-subtitle">

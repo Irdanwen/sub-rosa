@@ -43,8 +43,13 @@ const PREVIEW_DEBOUNCE_MS = 180;
 export function ImportLinkBar({
   folderId,
   onCompleted,
+  showField = true,
 }: {
   folderId?: string;
+  /** False shows only what is under way (downloads, errands) and nothing at
+   * all when that is nothing: the phone keeps the field in its Import sheet
+   * and the progress on the list. */
+  showField?: boolean;
   /** A fetch produced a note. The shell has to be told: the note was created
    * by a background task, and the notes list only reloads on an explicit
    * action, so without this the download finishes and nothing appears. */
@@ -165,35 +170,39 @@ export function ImportLinkBar({
   const blocked = Boolean(preview && !preview.fetchable);
   const open = errands.filter((errand) => errand.state !== "done");
 
+  if (!showField && open.length === 0 && ingests.length === 0) return null;
+
   return (
     <div className="import-link">
-      <form
-        className="import-link-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submit();
-        }}
-      >
-        <label className="import-link-field">
-          <IconChainLink1 size={14} />
-          <input
-            type="url"
-            inputMode="url"
-            placeholder={t("Paste a podcast or media link")}
-            value={url}
-            onChange={(event) => setUrl(event.currentTarget.value)}
-          />
-        </label>
-        <button
-          type="submit"
-          className="primary-action"
-          disabled={!url.trim() || starting || blocked}
+      {showField ? (
+        <form
+          className="import-link-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
         >
-          {t("Fetch")}
-        </button>
-      </form>
+          <label className="import-link-field">
+            <IconChainLink1 size={14} />
+            <input
+              type="url"
+              inputMode="url"
+              placeholder={t("Paste a podcast or media link")}
+              value={url}
+              onChange={(event) => setUrl(event.currentTarget.value)}
+            />
+          </label>
+          <button
+            type="submit"
+            className="primary-action"
+            disabled={!url.trim() || starting || blocked}
+          >
+            {t("Fetch")}
+          </button>
+        </form>
+      ) : null}
 
-      {preview?.fetchable ? (
+      {showField && preview?.fetchable ? (
         <p className="import-link-hint">
           {preview.kind === "feed"
             ? t("A podcast feed on {host}. The newest episode will be fetched.", {
@@ -209,11 +218,11 @@ export function ImportLinkBar({
         </p>
       ) : null}
 
-      {blocked && preview?.reason ? (
+      {showField && blocked && preview?.reason ? (
         <p className="import-link-hint import-link-blocked">{preview.reason}</p>
       ) : null}
 
-      {blocked && targets.length > 0 ? (
+      {showField && blocked && targets.length > 0 ? (
         <div className="import-link-handoff">
           <p className="import-link-hint">
             {t("One of your other devices may be able to read it:")}
@@ -234,7 +243,7 @@ export function ImportLinkBar({
         </div>
       ) : null}
 
-      {error ? (
+      {showField && error ? (
         <p className="import-link-hint import-link-blocked" role="alert">
           {error}
         </p>
@@ -308,10 +317,10 @@ function IngestRow({ ingest, onDiscard }: { ingest: IngestDto; onDiscard: () => 
 }
 
 function describeProgress(ingest: IngestDto): string {
-  if (ingest.status === "pending") return "Resolving";
+  if (ingest.status === "pending") return t("Resolving");
   if (!ingest.bytesTotal) return formatBytes(ingest.bytesDone);
   const percent = Math.min(Math.round((ingest.bytesDone / ingest.bytesTotal) * 100), 100);
-  return `${percent}% of ${formatBytes(ingest.bytesTotal)}`;
+  return t("{percent}% of {size}", { percent, size: formatBytes(ingest.bytesTotal) });
 }
 
 function formatBytes(bytes: number): string {

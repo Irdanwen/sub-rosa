@@ -68,7 +68,6 @@ import { BreadcrumbBar } from "../components/ui/BreadcrumbBar";
 import { Dialog } from "../components/ui/Dialog";
 import { Spinner } from "../components/ui/Spinner";
 import {
-  assignNoteToFolder,
   assignSessionToFolder,
   checkRecordingSourceReadiness,
   createFolder,
@@ -112,6 +111,7 @@ import {
   type AgentSessionStatusDetail,
 } from "../lib/agent-events";
 import { notifyAgentSessionStatus } from "../lib/agent-notifications";
+import { moveNoteToFolder } from "../lib/note-folders";
 import { messageFromError } from "../lib/errors";
 import { parseDictationHelperEvent } from "../lib/dictation-events";
 import { listHermesSessions, titleFromPrompt } from "../lib/hermes-adapter";
@@ -2089,17 +2089,10 @@ export function App() {
   ) {
     const note = state.notes.find((n) => n.id === noteId);
     if (!note) return;
-    if (note.folderIds.length === 1 && note.folderIds[0] === folderId) return;
     try {
-      for (const existing of note.folderIds) {
-        if (existing === folderId) continue;
-        const updated = await removeNoteFromFolder(noteId, existing);
-        dispatch({ type: "noteUpdated", note: updated });
-      }
-      if (!note.folderIds.includes(folderId)) {
-        const updated = await assignNoteToFolder(noteId, folderId);
-        dispatch({ type: "noteUpdated", note: updated });
-      }
+      await moveNoteToFolder(note, folderId, {
+        onUpdated: (updated) => dispatch({ type: "noteUpdated", note: updated }),
+      });
     } catch (err) {
       setError(messageFromError(err));
       if (options?.rethrow) throw err;

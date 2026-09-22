@@ -306,6 +306,13 @@
   white-space: nowrap;
 }
 
+/* The last chip makes a folder rather than opening one. */
+.mobile-folder-chip-new {
+  border-style: dashed;
+  background: none;
+  color: var(--muted-foreground);
+}
+
 /* --- Lists --------------------------------------------------------------- */
 
 .mobile-list-scroll {
@@ -537,6 +544,49 @@
 
 .mobile-record-fab:active {
   transform: scale(0.97);
+}
+
+/* Selection mode takes the FAB's place: what to do with the notes ticked. */
+.mobile-selection-bar {
+  position: absolute;
+  right: var(--mobile-gutter);
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  left: var(--mobile-gutter);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: color-mix(in oklch, var(--background) 88%, transparent);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.14);
+}
+
+.mobile-selection-count {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A round tick in place of a row's icon, in selection mode. */
+.mobile-select-mark {
+  display: inline-grid;
+  flex: 0 0 22px;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+  color: var(--primary-foreground);
+}
+
+.mobile-select-mark[data-selected] {
+  border-color: var(--primary);
+  background: var(--primary);
 }
 
 /* --- Tab bar -------------------------------------------------------------- */
@@ -1068,6 +1118,14 @@
   background: var(--card);
   color: var(--foreground);
   font-size: var(--fs-sm);
+}
+
+.mobile-chip-button:disabled {
+  opacity: 0.45;
+}
+
+.mobile-chip-destructive {
+  color: var(--destructive);
 }
 
 /* One past dictation, inside a grouped card and behind a SwipeableRow. Delete
@@ -1979,6 +2037,82 @@
 .mobile-sheet-item-text {
   flex: 1;
   min-width: 0;
+}
+
+.mobile-folder-sheet .mobile-sheet-item {
+  justify-content: flex-start;
+}
+
+/* "New folder", "Choose a file": an action at the foot of a sheet's list. */
+.mobile-sheet-new {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: 48px;
+  margin-top: var(--sp-2);
+  padding: 0 var(--sp-1);
+  border: none;
+  background: none;
+  color: var(--brand-ink);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.mobile-sheet-empty {
+  margin: var(--sp-2) 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.mobile-sheet-confirm {
+  width: 100%;
+  margin-top: var(--sp-3);
+}
+
+/* One field and its button, for naming a folder or a chat. */
+.mobile-name-field {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.mobile-name-field input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: max(16px, var(--fs-md));
+}
+
+.mobile-import-sheet .import-link {
+  margin-top: var(--sp-1);
+}
+
+/* Thumb-sized in the sheet: the list's 36px row was sized to sit quietly in
+ * the list, which it no longer does. */
+.mobile-import-sheet .import-link-field,
+.mobile-import-sheet .import-link-form .primary-action {
+  height: 44px;
+}
+
+.mobile-import-sheet-or {
+  margin: var(--sp-2) 0 var(--sp-1);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+/* A status line can be a whole sentence (why a link cannot be fetched); on a
+ * phone it wraps instead of running past the edge. */
+.mobile-shell .import-link-status {
+  flex-shrink: 1;
+  min-width: 0;
+  white-space: normal;
 }
 
 /* --- Studio extras --------------------------------------------------------------- */
