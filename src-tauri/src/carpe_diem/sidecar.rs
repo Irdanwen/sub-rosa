@@ -206,9 +206,16 @@ pub async fn ensure_ready_for_request() {
 }
 
 /// Request-side guard (desktop): the sidecar is spawned off the setup thread,
-/// so the first request of a session can run before `JUNE_API_URL` is
+/// so the first request of a session can run before the backend URL is
 /// published and fail with `backend_not_ready` on a perfectly healthy app.
 /// Wait, bounded, for the URL to appear.
+///
+/// Readiness is asked of `june_api::backend_url_published`, the same resolver
+/// the request itself will use. Asking anything else is how this guard broke:
+/// it used to read `JUNE_API_URL` from the environment, and when the session
+/// moved into process memory the variable stopped being written, so the check
+/// was false forever and every request slept the full timeout before going
+/// out. `src-tauri/tests/backend_readiness_guard.rs` keeps it that way.
 ///
 /// Nothing is healed here, unlike the mobile twin: a desktop child process
 /// keeps its listener for the life of the app, so the only gap to close is
@@ -216,17 +223,13 @@ pub async fn ensure_ready_for_request() {
 /// no key stored, or a sidecar that already failed.
 #[cfg(desktop)]
 pub async fn ensure_ready_for_request() {
-    fn url_published() -> bool {
-        std::env::var("JUNE_API_URL").is_ok_and(|value| !value.trim().is_empty())
-    }
-
-    if url_published() || !settings::is_configured() {
+    if crate::june_api::backend_url_published() || !settings::is_configured() {
         return;
     }
     let started = Instant::now();
     while started.elapsed() < REQUEST_START_TIMEOUT {
         tokio::time::sleep(Duration::from_millis(100)).await;
-        if url_published() {
+        if crate::june_api::backend_url_published() {
             return;
         }
         // A failed spawn will never publish a URL; let the request fail now

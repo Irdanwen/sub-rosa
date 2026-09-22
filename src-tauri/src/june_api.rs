@@ -1383,6 +1383,19 @@ fn june_api_url() -> Option<String> {
         })
 }
 
+/// Whether a backend URL resolves right now.
+///
+/// The request-side guard asks this rather than re-deriving the answer, so the
+/// two can no longer drift: that drift is exactly what made every desktop
+/// request sleep for the full start timeout after the session moved out of the
+/// environment and into process memory. One resolver, one truth.
+/// Desktop only: the mobile guard asks a stronger question (it probes
+/// `/livez`, because iOS can reclaim the listener out from under a live URL).
+#[cfg(desktop)]
+pub(crate) fn backend_url_published() -> bool {
+    june_api_url().is_some()
+}
+
 /// `june_api_url()` as the error every request path surfaces when the backend
 /// is not reachable yet. Callers reach this only after `ensure_sidecar_ready`,
 /// so a `None` here means the sidecar genuinely never came up.

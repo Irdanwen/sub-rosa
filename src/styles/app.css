@@ -8711,7 +8711,7 @@ input:focus-visible,
 
 .note-processing-progress {
   display: inline-flex;
-  align-items: center;
+  flex-direction: column;
   gap: var(--sp-2);
   max-width: 100%;
   margin: var(--sp-4) 0 0;
@@ -8721,9 +8721,98 @@ input:focus-visible,
   font-size: var(--fs-md);
   font-weight: 500;
   line-height: 1;
-  pointer-events: none;
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* The badge's first row: what is happening, and for how long. */
+.note-processing-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+/* Elapsed, and what is left when there is an estimate to stand behind.
+ * Tabular figures so a ticking second never shifts the words beside it, and
+ * quiet enough that the step name stays the thing you read. */
+.note-processing-clock {
+  flex: none;
+  margin-left: auto;
+  padding-left: var(--sp-2);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The bar. Three pixels, because it is a reassurance and not a headline. It
+ * fills on a real count when there is one, eases toward a ceiling on a learned
+ * estimate, and sweeps when the honest answer is that nobody knows - never a
+ * bar parked at zero, which reads as broken. Always transform, never width. */
+.note-processing-bar {
+  position: relative;
+  height: 3px;
+  min-width: 10ch;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--muted-foreground) 18%, transparent);
+}
+
+.note-processing-bar-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in oklch, var(--muted-foreground) 70%, var(--foreground));
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 900ms var(--ease-out);
+}
+
+.note-processing-bar[data-indeterminate="true"] .note-processing-bar-fill {
+  width: 40%;
+  transform: none;
+  animation: note-processing-sweep 2.4s var(--ease-in-out) infinite;
+}
+
+/* Stop sits at the end of the badge's first row, sized to the badge rather
+ * than to a toolbar: it is an escape hatch next to a status, not a primary
+ * action, so it must never be the loudest thing on the badge. Scoped under
+ * the row so it outranks `.btn`, which is declared later in this sheet with
+ * the same weight and would otherwise put back its 28px height and full
+ * foreground colour. It takes the free space when there is no clock to. */
+.note-processing-line .note-processing-stop {
+  flex: none;
+  height: 22px;
+  margin-left: auto;
+  padding: 0 var(--sp-2);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.note-processing-clock + .note-processing-stop {
+  margin-left: var(--sp-1);
+}
+
+.note-processing-line .note-processing-stop:hover:not(:disabled) {
+  color: var(--foreground);
+}
+
+/* The resume notice follows the failure banner's placement: above the body,
+ * where the reader looks first when a note did not finish. */
+.processing-resume-notice {
+  margin: 0 0 var(--sp-4);
+}
+
+@keyframes note-processing-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
 }
 
 .transcript-processing-progress {
@@ -8821,6 +8910,18 @@ input:focus-visible,
   .transcript-processing-label,
   .text-shimmer {
     animation: none;
+  }
+
+  .note-processing-bar-fill {
+    transition: none;
+  }
+
+  /* The sweep is the one piece of motion here that carries meaning when there
+     is no count, so it rests rather than disappears: the bar stays, filled to
+     a third, and the words keep saying what is happening. */
+  .note-processing-bar[data-indeterminate="true"] .note-processing-bar-fill {
+    animation: none;
+    width: 33%;
   }
 }
 

@@ -3704,3 +3704,16 @@
   font-size: 15px;
   font-weight: 500;
 }
+
+/* The processing badge's Stop is sized to the badge on the desktop; a finger
+ * needs more than its 22px. The visible pill stays small and the hit area
+ * grows around it, so the badge keeps its shape (mobile-native: 44px). */
+.mobile-note-detail-scroll .note-processing-stop {
+  position: relative;
+}
+
+.mobile-note-detail-scroll .note-processing-stop::after {
+  content: "";
+  position: absolute;
+  inset: -11px -8px;
+}

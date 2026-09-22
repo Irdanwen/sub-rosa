@@ -15,7 +15,7 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, AtomicI64, Ordering},
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
         Arc, LazyLock, Mutex,
     },
 };
@@ -26,6 +26,12 @@ struct NoteQueue {
     lock: Arc<AsyncMutex<()>>,
     /// Jobs queued or running for this note (1 = running, 2 = one waiting, …).
     pending: Arc<AtomicI64>,
+    /// Order of arrival. Each ticket takes the next number.
+    next_seq: Arc<AtomicU64>,
+    /// Tickets numbered below this were stopped before they ran. A watermark
+    /// rather than a flag: a flag cleared by the next enqueue would let a take
+    /// that was already waiting slip through if a new one arrived first.
+    stopped_below: Arc<AtomicU64>,
 }
 
 static QUEUES: LazyLock<Mutex<HashMap<String, NoteQueue>>> =
@@ -38,6 +44,8 @@ pub struct ProcessingTicket {
     lock: Arc<AsyncMutex<()>>,
     pending: Arc<AtomicI64>,
     finished: AtomicBool,
+    seq: u64,
+    stopped_below: Arc<AtomicU64>,
 }
 
 impl ProcessingTicket {
@@ -45,6 +53,13 @@ impl ProcessingTicket {
     /// for any earlier job on the same note to finish before processing.
     pub fn lock(&self) -> Arc<AsyncMutex<()>> {
         self.lock.clone()
+    }
+
+    /// Whether the user stopped this note's processing after this job was
+    /// queued. Read once the lock is held: a job that waited behind the one
+    /// that was stopped should not start as soon as it gets its turn.
+    pub fn stopped(&self) -> bool {
+        self.seq < self.stopped_below.load(Ordering::SeqCst)
     }
 
     /// Mark this job done: drop it from the pending count and prune the note's
@@ -86,6 +101,8 @@ pub fn enqueue(note_id: &str) -> (ProcessingTicket, i64) {
     let queue = map.entry(note_id.to_string()).or_insert_with(|| NoteQueue {
         lock: Arc::new(AsyncMutex::new(())),
         pending: Arc::new(AtomicI64::new(0)),
+        next_seq: Arc::new(AtomicU64::new(0)),
+        stopped_below: Arc::new(AtomicU64::new(0)),
     });
     let depth = queue.pending.fetch_add(1, Ordering::SeqCst) + 1;
     let ticket = ProcessingTicket {
@@ -93,8 +110,36 @@ pub fn enqueue(note_id: &str) -> (ProcessingTicket, i64) {
         lock: queue.lock.clone(),
         pending: queue.pending.clone(),
         finished: AtomicBool::new(false),
+        seq: queue.next_seq.fetch_add(1, Ordering::SeqCst),
+        stopped_below: queue.stopped_below.clone(),
     };
     (ticket, depth)
+}
+
+/// Stop every job already queued for this note. Anything enqueued afterwards
+/// is a new intention - another take the user recorded - and runs normally.
+pub fn stop_pending(note_id: &str) {
+    let map = QUEUES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(queue) = map.get(note_id) {
+        queue
+            .stopped_below
+            .store(queue.next_seq.load(Ordering::SeqCst), Ordering::SeqCst);
+    }
+}
+
+/// Whether anything at all is registered for this note: running, or waiting
+/// its turn behind something that is. Distinct from
+/// [`crate::domain::processing::is_processing`], which only sees the job that
+/// has the lock - a note enqueued a moment ago has no claim yet, and calling
+/// that gap "stalled" would offer the user a retry for work about to start.
+pub fn is_enqueued(note_id: &str) -> bool {
+    let map = QUEUES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    map.get(note_id)
+        .is_some_and(|queue| queue.pending.load(Ordering::SeqCst) > 0)
 }
 
 /// Number of recordings queued *behind* the one currently processing for this
@@ -174,6 +219,38 @@ mod tests {
         assert_eq!(depth, 2);
         second.finish();
         third.finish();
+    }
+
+    #[test]
+    fn stopping_drops_the_takes_already_waiting_but_not_the_next_one() {
+        let (running, _) = enqueue("note-stop-queue");
+        let (waiting, _) = enqueue("note-stop-queue");
+        assert!(!waiting.stopped());
+
+        stop_pending("note-stop-queue");
+        assert!(running.stopped());
+        assert!(
+            waiting.stopped(),
+            "a take queued behind the stopped one must not start when it gets its turn"
+        );
+
+        let (after, _) = enqueue("note-stop-queue");
+        assert!(
+            !after.stopped(),
+            "a take recorded after the stop is a new intention and runs"
+        );
+        running.finish();
+        waiting.finish();
+        after.finish();
+    }
+
+    #[test]
+    fn a_note_is_enqueued_until_its_last_job_finishes() {
+        assert!(!is_enqueued("note-enqueued"));
+        let (ticket, _) = enqueue("note-enqueued");
+        assert!(is_enqueued("note-enqueued"));
+        ticket.finish();
+        assert!(!is_enqueued("note-enqueued"));
     }
 
     #[tokio::test]

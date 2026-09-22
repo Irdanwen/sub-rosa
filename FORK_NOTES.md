@@ -1308,3 +1308,99 @@ même temps se chaîneraient chacun sur une tête différente, donc **toute**
 écriture concurrente deviendrait un conflit. Détecter une rétention demande des
 compteurs par appareil et une détection de trous, c'est un chantier à part. Le
 rejeu d'une *course* est fermé par le registre ci-dessus.
+
+## Le traitement d'une note se voit, et va plus vite (2026-09-22)
+
+Une note restait des minutes en « Transcribing audio » sans un chiffre : on ne
+savait pas si l'app avançait ou si elle était plantée. Deux causes superposées.
+
+**1. Chaque requête dormait vingt secondes.** `carpe_diem/sidecar.rs::ensure_ready_for_request`
+(desktop) testait la disponibilité du backend en lisant `JUNE_API_URL` dans
+l'environnement. `c04da108` (2026-09-02) a déplacé la session en mémoire
+(`carpe_diem/local_session.rs`) et n'écrit plus cette variable : la sonde était
+fausse pour toujours dès qu'une clé était configurée, et la boucle brûlait tout
+`REQUEST_START_TIMEOUT` avant **chaque** requête. Mesuré sur le log sidecar du
+2026-09-21 : 114 écarts sur 114 entre 23,9 s et 28,1 s, 47 min pour 56 min
+d'audio. Correctif : `june_api::backend_url_published()` (desktop) est **le**
+résolveur, et le garde le consulte. Garde-fous :
+`src-tauri/tests/backend_readiness_guard.rs` (balayage de source : seul
+`june_api.rs` lit l'adresse dans l'environnement, et le garde passe par le
+résolveur) + `local_session::tests::the_request_guard_probe_sees_a_published_session`.
+Réserve non levée : un run du 2026-09-09, postérieur à `c04da108`, ne montre
+aucune attente ; la mesure avant/après sur un vrai enregistrement reste à faire.
+
+Effets de bord traités dans le même geste : le nettoyage ASR **par tour**
+(`transcribe_one_turn_job`) est retiré — il était injoignable depuis le
+2026-09-02 (il expirait derrière le garde) et l'aurait redevenu à raison d'un
+appel LLM par tour ; le passage au niveau note garde son budget de 5 s,
+désormais réel. `DEFAULT_TURN_TRANSCRIPTION_CONCURRENCY` 2 → 4.
+
+**2. Rien ne franchissait l'IPC.** `domain/processing_progress.rs` (ajouté) tient
+en mémoire, par note, la phase (`preparing` → `detectingTurns` →
+`transcribing` → `composing`), un compte honnête (chunks sur le chemin micro
+seul, tours sur le multi-sources, en partant des tours déjà en cache) et deux
+horodatages. **Aucun événement** : `domain::processing` ne référence pas
+`tauri::` (ses tests l'appellent sans app), donc la progression sort comme
+`queued_recordings`, par `NoteDto` à la couche commande, lue par le poll d'une
+seconde. Les champs vivants sont groupés dans `NoteDto::live`
+(`LiveNoteFields`, `#[serde(flatten)]` : sur le fil ce sont
+`processingProgress` et `processingStalled`), remplis par
+`processing_progress::fill_live_fields` aux trois sites qui remettaient
+`queued_recordings`.
+
+**3. Arrêter, reprendre.** `note_processing.rs` (ajouté) porte la commande
+partagée `cancel_processing` (dans les **deux** `generate_handler!`) et
+`settle_failed_run`, que les trois `tokio::spawn` de `commands.rs` appellent :
+une erreur `processing_cancelled` pose `ProcessingStatus::Stopped`, pas
+`Failed` — sinon le sweep mobile relancerait ce que l'utilisateur vient
+d'arrêter. L'arrêt est coopératif entre deux chunks ou deux tours (ce qui est en
+vol se termine et est gardé, c'est déjà payé) et immédiat pendant la génération
+(`unless_stopped`, un `select!` contre le `Notify` du run). La file
+(`processing_queue::stop_pending`) écarte aussi les prises en attente, par une
+marque de séquence et non un drapeau. `processingStalled` (statut « en cours »,
+rien ne tourne ici, rien en file) remplace le spinner éternel par une invitation
+à reprendre — le desktop n'a pas de sweep.
+
+### Fichiers ajoutés
+
+`src-tauri/src/domain/{processing_progress.rs, processing_tests.rs}`,
+`src-tauri/src/note_processing.rs`, `src-tauri/tests/backend_readiness_guard.rs`,
+`src/components/note-editor/{ProcessingProgressIndicator.tsx, ProcessingResumeNotice.tsx}`,
+`src/lib/note-processing.ts`, `src/test/note-processing-progress.test.tsx`.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/domain/processing.rs` | Module `tests` (≈1500 lignes) + 3 helpers `#[cfg(test)]` déplacés dans `processing_tests.rs` par `#[path]` ; `ProgressClaim` à chaque entrée ; phases, total et compte ; points d'arrêt ; `unless_stopped` ; nettoyage ASR par tour retiré ; concurrence 4 | Réappliquer l'extraction d'abord (déplacement pur), puis l'instrumentation |
+| `src-tauri/src/domain/processing_queue.rs` | `is_enqueued`, `stop_pending`, `ProcessingTicket::stopped` (marque de séquence) | Réappliquer |
+| `src-tauri/src/domain/types.rs` | `ProcessingStatus::Stopped`, `ProcessingPhase`, `ProcessingProgressDto`, `LiveNoteFields`, `NoteDto::live` | Réappliquer |
+| `src-tauri/src/commands.rs` | `fill_live_fields` aux 3 sites, `settle_failed_run` aux 3 spawns, sortie anticipée si `ticket.stopped()` | Réappliquer |
+| `src-tauri/src/carpe_diem/sidecar.rs`, `src-tauri/src/june_api.rs` | Garde de disponibilité branché sur `backend_url_published` | Fork-only, réappliquer |
+| `src/components/note-editor/NoteEditor.tsx` | Indicateur extrait ; montage de `ProcessingResumeNotice` ; libellés via `t()` | Réappliquer |
+| `src/components/notes-list/NotesList.tsx` | `statusLabel` via `t()` (ne l'était pas) + `Stopped` | Réappliquer |
+| `src/app/state/app-state.ts` | `mergeProcessingProgress` dans `mergeNoteUpdate` ; `stopped` terminal | Réappliquer |
+
+### Pièges
+
+- ⚠️ **Le ratchet de taille.** `processing.rs`, `commands.rs`,
+  `repositories.rs` et `tauri.ts` étaient à une ligne de leur plafond. Toute
+  logique neuve va dans un module neuf ; `repositories.rs` et `commands.rs`
+  sont restés à somme nulle ; `processing.rs` passe de 3936 à 2501 grâce à
+  l'extraction des tests (entrée abaissée d'autant).
+- ⚠️ **Une sonde de disponibilité doit interroger le résolveur**, jamais
+  re-dériver sa réponse. C'est toute la leçon du garde de 20 s.
+- ⚠️ **Le chemin micro seul ne garde rien d'une transcription arrêtée** : il ne
+  persiste qu'à la fin et n'a pas de cache par chunk, donc « Reprendre » refait
+  les chunks. Le multi-sources, lui, réutilise les tours déjà transcrits.
+- ⚠️ **`Stopped` et les versions antérieures** : `From<&str>` retombe sur
+  `Draft` pour un statut inconnu (sûr : un brouillon qui a encore son audio), et
+  `account/sync.rs` aplatit en `ready` comme pour `failed`.
+
+**Non fait, et pourquoi** : la concurrence des chunks du chemin micro seul (par
+vagues, avec un contexte d'une vague en retard) est un vrai arbitrage
+qualité/vitesse qui mérite son ADR — et une mesure *après* le correctif du
+garde, qui suffira peut-être. L'extraction des WAV par tour hors du thread
+async, le subscriber `tracing` de production (tous les `tracing::` du shell
+sont aujourd'hui des no-ops) et le point ambiant « notes » de la tab bar mobile
+restent à faire.

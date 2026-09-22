@@ -60,6 +60,7 @@ pub mod menu_bar;
 pub mod moments;
 pub mod note_ai;
 pub mod note_export;
+pub mod note_processing;
 pub mod open_url;
 pub mod os_accounts;
 pub mod path_confinement;
@@ -407,6 +408,7 @@ pub fn run() {
             set_recording_presence_bounds,
             commands::finish_recording,
             commands::retry_processing,
+            note_processing::cancel_processing,
             commands::recover_recording,
             commands::import_audio_note,
             commands::stage_imported_file,
@@ -683,6 +685,7 @@ pub fn run() {
         commands::get_recording_status,
         commands::finish_recording,
         commands::retry_processing,
+        note_processing::cancel_processing,
         commands::recover_recording,
         commands::import_audio_note,
         commands::stage_imported_file,

@@ -1,5 +1,6 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { safeExternalHref } from "./external-link";
+import type { ProcessingProgressDto } from "./note-processing";
 
 // Re-exported so modules that build their own command calls (e.g. the Hermes
 // admin Rust transport) route through the same `invoke` the rest of the app's
@@ -14,7 +15,8 @@ export type ProcessingStatus =
   | "generating"
   | "ready"
   | "failed"
-  | "recoverable";
+  | "recoverable"
+  | "stopped";
 
 export type FolderDto = {
   id: string;
@@ -266,12 +268,7 @@ export type RecordingStatusDto = {
   warnings?: SourceWarningDto[];
 };
 
-export type RecordingPresenceBoundsDto = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
+export type RecordingPresenceBoundsDto = { x: number; y: number; width: number; height: number };
 
 export type RecordingSessionDto = {
   id: string;
@@ -303,8 +300,7 @@ export type NoteTab = "notes" | "transcription" | "summary";
 
 export type NoteDto = NoteListItemDto & {
   /** Calendar context, when a recording matched an event (crate::calendar).
-   * Absent on every note without one — which is every note the app made
-   * before this existed, and every recording outside a meeting. */
+   * Absent on every note without one. */
   calendarEventId?: string;
   /** When the meeting was scheduled (RFC3339), not when recording started. */
   scheduledStart?: string;
@@ -322,6 +318,10 @@ export type NoteDto = NoteListItemDto & {
   lastError?: string;
   /** Recordings queued behind the one currently processing (0 when none). */
   queuedRecordings?: number;
+  /** How far the running pipeline has got, absent when nothing is running. */
+  processingProgress?: ProcessingProgressDto;
+  /** The status says working, but the run died with the app: offer a resume. */
+  processingStalled?: boolean;
 };
 
 export type TranscriptCoverageDto = {

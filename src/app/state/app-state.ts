@@ -7,6 +7,7 @@ import type {
   RecoverableRecordingDto,
   RecordingStatusDto,
 } from "../../lib/tauri";
+import { mergeProcessingProgress } from "../../lib/note-processing";
 
 export type NotesState = {
   folders: FolderDto[];
@@ -178,14 +179,15 @@ function applyNoteUpdate(state: NotesState, note: NoteDto): NotesState {
 }
 
 function mergeNoteUpdate(state: NotesState, note: NoteDto): NoteDto {
-  const current =
+  // A list item is a NoteDto with every extra field absent, which is exactly
+  // what "we have no live progress for this one" means.
+  const current: NoteDto | undefined =
     state.selectedNote?.id === note.id
       ? state.selectedNote
       : state.notes.find((item) => item.id === note.id);
   if (!current) return note;
 
   const processingStatus = mergeProcessingStatus(current.processingStatus, note.processingStatus);
-  if (processingStatus === note.processingStatus) return note;
   if (
     isTerminalProcessingStatus(current.processingStatus) &&
     !isTerminalProcessingStatus(note.processingStatus)
@@ -193,10 +195,17 @@ function mergeNoteUpdate(state: NotesState, note: NoteDto): NoteDto {
     return current;
   }
 
-  return {
-    ...note,
-    processingStatus,
-  };
+  // Not every snapshot carries progress: an autosave or a folder move returns
+  // a plain row read, with no live fields on it. Blanking a working bar
+  // because the user typed a character would be a lie in the other direction,
+  // so an absent sample keeps the last one for as long as the note is still
+  // being worked on.
+  const processingProgress = mergeProcessingProgress(
+    current.processingProgress,
+    note.processingProgress,
+    !isTerminalProcessingStatus(processingStatus),
+  );
+  return { ...note, processingStatus, processingProgress };
 }
 
 function mergeProcessingStatus(
@@ -222,7 +231,9 @@ function mergeProcessingStatus(
 }
 
 function isTerminalProcessingStatus(status: ProcessingStatus): boolean {
-  return status === "ready" || status === "failed" || status === "recoverable";
+  return (
+    status === "ready" || status === "failed" || status === "recoverable" || status === "stopped"
+  );
 }
 
 function activeProcessingRank(status: ProcessingStatus): number {
