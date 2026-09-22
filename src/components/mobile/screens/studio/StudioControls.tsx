@@ -1,10 +1,13 @@
 import { t } from "../../../../lib/i18n";
 import { IconChevronDownSmall } from "central-icons/IconChevronDownSmall";
+import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
 import { type ReactNode, useState } from "react";
 import { hapticSelection } from "../../../../lib/haptics";
 import { isIosPlatform } from "../../../../lib/mobile";
+import { modelPrivacyBadge } from "../../../../lib/model-privacy";
 import { setPlaybackAudioSession } from "../../../../lib/tauri";
 import { Switch } from "../../../ui/Switch";
+import { OptionSheet } from "../../OptionSheet";
 
 /**
  * The parts every Studio panel is built from.
@@ -42,7 +45,7 @@ export function ModelPickerButton({
   hint?: string;
   onOpen: () => void;
 }) {
-  const chosen = value || "Choose";
+  const chosen = value || t("Choose");
   return (
     <button
       type="button"
@@ -59,6 +62,22 @@ export function ModelPickerButton({
       </span>
     </button>
   );
+}
+
+/** The line under a model's name in a picker: its tier and what happens to
+ * the prompt, in words. The catalog's own values ("standard · anonymized")
+ * were shown as they came, in English. */
+export function modelSubtitle(model: { tier?: string; privacy?: string }): string {
+  const parts: string[] = [];
+  const tier = model.tier?.trim().toLowerCase();
+  if (tier === "standard") parts.push(t("Standard"));
+  else if (tier === "premium") parts.push(t("Premium"));
+  else if (tier) parts.push(tier[0].toUpperCase() + tier.slice(1));
+  const privacy = modelPrivacyBadge({ privacy: model.privacy, traits: [] });
+  if (privacy?.mode === "private") parts.push(t("Zero data retention"));
+  else if (privacy?.mode === "anonymous") parts.push(t("Anonymous mode"));
+  else if (privacy) parts.push(privacy.label);
+  return parts.join(" · ");
 }
 
 /** Strip a `data:...;base64,` prefix so the raw bytes can go to /image/upscale,
@@ -92,6 +111,75 @@ export function StudioSetting({
       {children}
     </div>
   );
+}
+
+/** A group of settings read as one card of rows, the way iOS Settings reads. */
+export function SettingsCard({ children }: { children: ReactNode }) {
+  return <div className="mobile-select-card">{children}</div>;
+}
+
+/**
+ * One setting with a short list of values: its name, what is chosen, a
+ * chevron. A tap brings the list up as a sheet. See `OptionSheet` for why
+ * this replaced the rows of pills.
+ */
+export function SelectRow({
+  label,
+  value,
+  options,
+  onChange,
+  format = (option) => option,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+  /** How a raw option reads ("5s" as "5 s", "auto" as "Auto"). */
+  format?: (option: string) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const shown = format(value);
+  return (
+    <>
+      <button
+        type="button"
+        className="mobile-select-row"
+        aria-haspopup="dialog"
+        aria-label={`${label}, ${shown}`}
+        onClick={() => {
+          hapticSelection();
+          setOpen(true);
+        }}
+      >
+        <span className="mobile-select-row-label">{label}</span>
+        <span className="mobile-select-row-value">
+          {shown}
+          <IconChevronRightSmall size={16} aria-hidden />
+        </span>
+      </button>
+      {open ? (
+        <OptionSheet
+          title={label}
+          options={options.map((option) => ({ value: option, label: format(option) }))}
+          selected={value}
+          onSelect={(next) => {
+            onChange(next);
+            setOpen(false);
+          }}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** How a render setting reads: "5s" as "5 s", "auto" as "Auto". The wire
+ * values stay as they are; only the words change. */
+export function formatRenderOption(option: string): string {
+  if (option === "auto") return t("Auto");
+  const seconds = /^(\d+(?:\.\d+)?)s$/.exec(option);
+  if (seconds) return t("{count} s", { count: seconds[1] });
+  return option;
 }
 
 /** A labelled integer slider with a live value readout (Steps, Variants). */
@@ -165,8 +253,16 @@ export function StudioToggle({
  * The generate form exposed nine controls at once, which pushed the Generate
  * button itself below the fold: the primary action was the one thing you
  * could not see. */
-export function MoreOptions({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false);
+export function MoreOptions({
+  children,
+  defaultOpen = false,
+}: {
+  children: ReactNode;
+  /** Start unfolded, when something inside is already filled in: a choice
+   * hidden behind a closed disclosure is a choice the person forgets. */
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="mobile-studio-more" data-open={open ? "true" : undefined}>
       <button

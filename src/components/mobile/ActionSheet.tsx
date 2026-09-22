@@ -29,11 +29,15 @@ export function ActionSheet({
   subtitle,
   actions,
   onClose,
+  closeLabel,
 }: {
   title: string;
   subtitle?: string;
   actions: SheetAction[];
   onClose: () => void;
+  /** The bottom button's words. "Cancel" when there is something to cancel;
+   * a sheet that only explains closes with "OK". */
+  closeLabel?: string;
 }) {
   // First action focused, Tab kept inside, Escape closes, focus given back
   // (spec/modal-focus.md).
@@ -81,7 +85,7 @@ export function ActionSheet({
           ))}
         </ul>
         <button type="button" className="mobile-action-sheet-cancel" onClick={onClose}>
-          {t("Cancel")}
+          {closeLabel ?? t("Cancel")}
         </button>
       </div>
     </div>

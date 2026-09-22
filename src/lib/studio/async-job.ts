@@ -435,7 +435,9 @@ export function useMediaJob(
   const [dismissed, setDismissed] = useState<string | undefined>(undefined);
   /** A queue call that never produced a job id, so there is no row to carry
    * the message. Cleared by the next attempt. */
-  const [submitError, setSubmitError] = useState<string | undefined>(undefined);
+  const [submitError, setSubmitError] = useState<{ message: string; status?: number } | undefined>(
+    undefined,
+  );
   /** What the last submit asked for, so "start it again" can mean the same
    * request rather than whatever the form happens to hold now. Deliberately
    * not persisted: after a restart the honest answer is that we no longer
@@ -455,7 +457,7 @@ export function useMediaJob(
   } else if (queueing) {
     state = { phase: "queueing" };
   } else if (submitError) {
-    state = { phase: "failed", message: submitError };
+    state = { phase: "failed", message: submitError.message, status: submitError.status };
   } else if (failed) {
     state = {
       phase: "failed",
@@ -468,17 +470,26 @@ export function useMediaJob(
     async (options: StartJobOptions) => {
       setQueueing(true);
       setSubmitError(undefined);
-      setDismissed(undefined);
+      // A new attempt settles the old failure for good. Hiding it only while
+      // the new job ran brought it back the moment that job was filed, and it
+      // came back on every visit after that, because the row outlives the tab.
+      if (failed) void dismiss(failed.id);
+      setDismissed(failed?.id);
       lastOptions.current = options;
       try {
         await start(options);
       } catch (error) {
-        setSubmitError(error instanceof Error ? error.message : "Queueing the generation failed.");
+        setSubmitError({
+          message: error instanceof Error ? error.message : "Queueing the generation failed.",
+          // Kept so a refused queue call reads like the refusal it was: the
+          // status is what tells "no credits" from "no network".
+          status: error instanceof MediaError ? error.status : undefined,
+        });
       } finally {
         setQueueing(false);
       }
     },
-    [start],
+    [start, failed, dismiss],
   );
 
   const cancel = useCallback(() => {

@@ -105,3 +105,24 @@ describe("reading a failed generation", () => {
     expect(describeJobFailure({ message: "   " }).text).toBeTruthy();
   });
 });
+
+describe("a provider balance refusal", () => {
+  const message =
+    "Video generation failed: Insufficient USD or Diem balance to complete request. Visit https://venice.ai/settings/api to add credits.";
+
+  it("is not the user's credits behind a Carpe Diem key", () => {
+    const failure = describeJobFailure({ message, backend: "carpe-diem" });
+    expect(failure.text).toMatch(/provider behind this model/);
+    expect(failure.text).not.toMatch(/venice\.ai/);
+    expect(failure.retryable).toBe(false);
+    expect(failure.detail).toBe(message);
+  });
+
+  it("is the user's own balance with a Venice key", () => {
+    expect(describeJobFailure({ message, backend: "venice" }).text).toMatch(/Your Venice balance/);
+  });
+
+  it("reads as the provider's when the backend is unknown", () => {
+    expect(describeJobFailure({ message }).text).toMatch(/provider behind this model/);
+  });
+});

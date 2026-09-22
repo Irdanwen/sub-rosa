@@ -18,13 +18,15 @@ import { type AudioMode, AudioPanel } from "./studio/StudioAudioPanels";
 import { type ImageMode, ImagePanel } from "./studio/StudioImagePanel";
 import { type VideoHandoff, VideoPanel } from "./studio/StudioVideoPanel";
 import { Lightbox } from "./studio/StudioLightbox";
-import { Gallery, Library } from "./studio/StudioLibrary";
+import { Library, RecentStrip } from "./studio/StudioLibrary";
 import { EmptyState } from "../../ui/EmptyState";
 import { Spinner } from "../../ui/Spinner";
 import { StackHeader } from "../StackHeader";
-import { FlowsPanel } from "./FlowsPanel";
+import { ActionSheet } from "../ActionSheet";
 
-type StudioMode = "image" | "video" | "audio" | "flows" | "library";
+// No "flows" here: the guided workflow editor was unusable at phone size and
+// was removed from the phone. Productions stay a desktop surface.
+type StudioMode = "image" | "video" | "audio" | "library";
 
 // Carpe Diem streams the finished track as the retrieve body (one shot);
 // Venice answers JSON with an `audio_url`. Both shapes must be accepted.
@@ -34,15 +36,16 @@ const _AUDIO_URL_FIELDS = ["audio_url", "url"];
 const AUDIO_ARTIFACT_KINDS: ArtifactKind[] = ["music", "speech", "sfx"];
 
 /**
- * Mobile Studio: image, video, music, and guided flows over the shared studio
- * lib (catalog, async job queue with resume, on-device gallery). The desktop
- * keeps its workflow canvas; everything else is at parity.
+ * Mobile Studio: image, video and sound over the shared studio lib (catalog,
+ * async job queue with resume, on-device gallery). The desktop keeps its
+ * workflow canvas and productions.
  */
 export function StudioScreen() {
   const credits = useCarpeDiemCredits();
   const [catalog, setCatalog] = useState<MediaCatalog | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [mode, setMode] = useState<StudioMode>("image");
+  const [rateOpen, setRateOpen] = useState(false);
   const [artifacts, setArtifacts] = useState<StudioArtifact[]>([]);
   const [preview, setPreview] = useState<StudioArtifact | null>(null);
   // Lifted so the lightbox's "use as reference" can feed the image panel and
@@ -160,17 +163,25 @@ export function StudioScreen() {
         large
         trailing={
           credits ? (
-            <span className="mobile-credits-pill" aria-label={t("Available credits")}>
+            // "x0.43" was the price multiplier as the API names it. Said as
+            // a discount it reads without a manual, and the tap says the rest.
+            <button
+              type="button"
+              className="mobile-credits-pill"
+              aria-label={t("Available credits: {credits}", {
+                credits: formatCredits(credits.availableCredits),
+              })}
+              aria-haspopup="dialog"
+              onClick={() => setRateOpen(true)}
+            >
               {formatCredits(credits.availableCredits)}
-              {typeof credits.priceMultiplier === "number"
-                ? ` · x${credits.priceMultiplier.toFixed(2)}`
-                : ""}
-            </span>
+              {rateBadge(credits.priceMultiplier) ? ` · ${rateBadge(credits.priceMultiplier)}` : ""}
+            </button>
           ) : undefined
         }
       />
       <div className="mobile-segmented" role="tablist" aria-label={t("Studio mode")}>
-        {(["image", "video", "audio", "flows", "library"] as const).map((entry) => (
+        {(["image", "video", "audio", "library"] as const).map((entry) => (
           <button
             key={entry}
             type="button"
@@ -186,9 +197,7 @@ export function StudioScreen() {
                 ? t("Video")
                 : entry === "audio"
                   ? t("Audio")
-                  : entry === "flows"
-                    ? t("Flows")
-                    : t("Gallery")}
+                  : t("Gallery")}
           </button>
         ))}
       </div>
@@ -232,22 +241,29 @@ export function StudioScreen() {
                 onModeChange={setAudioMode}
                 onGenerated={refreshGallery}
               />
-            ) : mode === "flows" ? (
-              <FlowsPanel catalog={catalog} onGenerated={refreshGallery} />
             ) : (
               <Library items={artifacts} onOpen={setPreview} onChanged={refreshGallery} />
             )}
             {galleryKind ? (
-              <Gallery
+              <RecentStrip
                 items={galleryItems}
                 kind={galleryKind}
                 onOpen={setPreview}
-                onChanged={refreshGallery}
+                onSeeAll={() => setMode("library")}
               />
             ) : null}
           </>
         )}
       </div>
+      {rateOpen && credits ? (
+        <ActionSheet
+          title={formatCredits(credits.availableCredits)}
+          subtitle={rateSentence(credits.priceMultiplier)}
+          actions={[]}
+          closeLabel={t("OK")}
+          onClose={() => setRateOpen(false)}
+        />
+      ) : null}
       {preview ? (
         <Lightbox
           artifact={preview}
@@ -265,6 +281,39 @@ export function StudioScreen() {
       ) : null}
     </div>
   );
+}
+
+/** Today's rate as a discount ("-57 %"), or nothing at the base price. */
+function rateBadge(multiplier: number | undefined): string | undefined {
+  if (typeof multiplier !== "number" || !Number.isFinite(multiplier)) return undefined;
+  const percent = Math.round((1 - multiplier) * 100);
+  if (percent === 0) return undefined;
+  return percent > 0
+    ? t("-{percent} %", { percent })
+    : t("+{percent} %", { percent: Math.abs(percent) });
+}
+
+/** What the rate means, for the sheet behind the credits pill. */
+function rateSentence(multiplier: number | undefined): string {
+  const base = t("Credits pay for renders at the provider's price.");
+  if (typeof multiplier !== "number" || !Number.isFinite(multiplier)) return base;
+  const percent = Math.round((1 - multiplier) * 100);
+  if (percent === 0) return `${base} ${t("Today's rate is the base price.")}`;
+  return `${base} ${
+    percent > 0
+      ? t(
+          "Today's rate is {percent}% below the base price. It changes every day at midnight UTC.",
+          {
+            percent,
+          },
+        )
+      : t(
+          "Today's rate is {percent}% above the base price. It changes every day at midnight UTC.",
+          {
+            percent: Math.abs(percent),
+          },
+        )
+  }`;
 }
 
 // --- Video ------------------------------------------------------------------

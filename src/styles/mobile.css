@@ -963,6 +963,27 @@
   text-align: center;
 }
 
+/* A failed render, as a card: what happened and what to do, then the actions.
+ * The backend's own sentence stays on the title attribute for a bug report. */
+.mobile-job-failure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid color-mix(in oklch, var(--destructive) 30%, var(--border));
+  border-radius: var(--r-lg);
+  background: color-mix(in oklch, var(--destructive) 6%, var(--card));
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+.mobile-job-failure .job-failure-text {
+  flex: 1 1 100%;
+}
+
 /* A failed turn shows its message with a one-tap re-run beneath it. */
 .mobile-chat-error {
   display: flex;
@@ -1821,12 +1842,17 @@
   z-index: 70;
   display: flex;
   align-items: flex-end;
+  /* A sheet never climbs under the status bar, however tall it gets. */
+  padding-top: calc(env(safe-area-inset-top) + var(--sp-2));
   background: var(--scrim, rgb(0 0 0 / 0.4));
 }
 
 .mobile-sheet {
   width: 100%;
-  max-height: 70vh;
+  /* dvh, not vh: vh is the tallest the viewport ever gets on iOS, so a 70vh
+   * sheet was taller than the screen it sat on once the toolbar showed. The
+   * 100% keeps it inside its layer when the keyboard shortens that layer. */
+  max-height: min(70dvh, 100%);
   display: flex;
   flex-direction: column;
   /* Translucent material, not an opaque slab: the dimmed screen reads
@@ -1889,10 +1915,16 @@
 }
 
 .mobile-sheet-list {
+  /* The list is the part that gives: without a zero minimum it kept its full
+   * height inside the capped sheet, so it overflowed instead of scrolling and
+   * the last models could not be reached. */
+  flex: 1 1 auto;
+  min-height: 0;
   list-style: none;
   margin: 0;
   padding: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -1920,6 +1952,33 @@
   display: block;
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
+}
+
+/* The model picker is a search surface: it may take most of the screen. */
+.mobile-sheet-backdrop-tall .mobile-sheet {
+  max-height: min(88dvh, 100%);
+}
+
+.mobile-model-sheet .mobile-sheet-item {
+  justify-content: flex-start;
+}
+
+/* The sheet's title takes focus on open so a screen reader starts there, but
+ * it is not a control, and a focus ring around a heading reads as a bug. */
+.mobile-sheet-title[data-initial-focus]:focus {
+  outline: none;
+}
+
+.mobile-sheet-check {
+  display: inline-grid;
+  flex: 0 0 16px;
+  place-items: center;
+  color: var(--brand-ink);
+}
+
+.mobile-sheet-item-text {
+  flex: 1;
+  min-width: 0;
 }
 
 /* --- Studio extras --------------------------------------------------------------- */
@@ -2249,6 +2308,7 @@
   display: inline-flex;
   align-items: center;
   min-height: 28px;
+  border: none;
   padding: 0 var(--sp-3);
   border-radius: var(--r-pill);
   background: var(--brand-tint);
@@ -2436,55 +2496,6 @@
   color: var(--muted-foreground);
 }
 
-/* --- Flows ---------------------------------------------------------------------- */
-
-.mobile-flows-intro {
-  margin: 0;
-  font-size: var(--fs-sm);
-  color: var(--muted-foreground);
-}
-
-.mobile-flows-title {
-  margin: 0;
-  font-family: var(--font-serif);
-  font-size: var(--fs-lg);
-}
-
-.mobile-flows-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  font-size: var(--fs-sm);
-  color: var(--muted-foreground);
-}
-
-.mobile-flows-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.mobile-flows-step {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 44px;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: var(--fs-sm);
-}
-
-.mobile-flows-step[data-status="done"] .mobile-flows-step-status {
-  color: var(--foreground);
-}
-
-.mobile-flows-step[data-status="error"] .mobile-flows-step-status {
-  color: var(--destructive);
-}
-
-.mobile-flows-step-status {
-  color: var(--muted-foreground);
-}
-
 /* The row actions sheet. Same glass as the model picker, different contents:
  * named actions instead of a searchable list, and a cancel that is the size of
  * a thumb because dismissing is the most likely thing you want. */
@@ -2536,276 +2547,11 @@
   font-size: var(--fs-sm);
 }
 
-/* --- Workflows hub + linear editor ------------------------------------------ */
-
-.mobile-flows-section {
-  margin: var(--sp-2) 0 0;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  color: var(--muted-foreground);
-}
-
-.mobile-flows-template {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-
-.mobile-flows-template .mobile-sheet-item {
-  flex: 1;
-  min-width: 0;
-}
-
-.mobile-flows-template-edit {
-  flex: none;
-  padding: var(--sp-1) var(--sp-2);
-  border-radius: var(--r-pill);
-  border: 1px solid var(--border-subtle);
-  background: transparent;
-  color: var(--muted-foreground);
-  font-size: var(--fs-xs);
-  cursor: pointer;
-}
-
-.mobile-workflow-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-
-.mobile-workflow-step {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-md);
-  padding: var(--sp-3);
-  background: var(--card);
-}
-
-.mobile-workflow-step[data-status="running"] {
-  border-color: var(--brand);
-}
-
-.mobile-workflow-step[data-status="error"] {
-  border-color: var(--destructive);
-}
-
-.mobile-workflow-step-head {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-
-.mobile-workflow-step-index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  flex: none;
-  border-radius: var(--r-pill);
-  background: var(--brand-tint);
-  color: var(--foreground);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-}
-
-/* The step's name, editable in place. Reads as a title until it is touched:
-   an unnamed step's type IS its title, so the placeholder is at full
-   strength and the field has no frame of its own. */
-.mobile-workflow-step-title {
-  flex: 1;
-  min-width: 0;
-  font: inherit;
-  font-weight: 600;
-  color: var(--foreground);
-  background: transparent;
-  border: none;
-  padding: 0;
-}
-
-.mobile-workflow-step-title::placeholder {
-  color: var(--foreground);
-  opacity: 1;
-}
-
-.mobile-workflow-step-type {
-  font-size: var(--fs-xs);
-  color: var(--muted-foreground);
-}
-
-/* Places the upstream text where the user wants it in the prompt, rather than
-   letting it be appended at the end. */
-.mobile-workflow-marker {
-  align-self: flex-start;
-  font-variant-numeric: tabular-nums;
-}
-
-/* The gallery item a step points at. Only images preview on iOS: decoding a
-   whole clip to fill a form row is what the thumbnail cache exists to avoid
-   (see `useArtifactPreview`), so a clip keeps its name and nothing more. */
-.mobile-workflow-asset {
-  width: 100%;
-  max-height: 120px;
-  object-fit: cover;
-  border-radius: var(--r-md);
-  background: var(--surface-subtle);
-}
-
-.mobile-workflow-asset-missing {
-  max-height: none;
-  margin: 0;
-  font-size: var(--fs-xs);
-  color: var(--destructive);
-}
-
-.mobile-workflow-step-actions {
-  display: inline-flex;
-  gap: var(--sp-1);
-}
-
-.mobile-workflow-step-actions button {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--muted-foreground);
-  cursor: pointer;
-}
-
-.mobile-workflow-step-actions button::after {
-  content: "";
-  position: absolute;
-  inset: -6px;
-}
-
-.mobile-workflow-step-actions button:disabled {
-  opacity: 0.35;
-}
-
-.mobile-workflow-step-desc {
-  margin: var(--sp-1) 0 var(--sp-2);
-  font-size: var(--fs-xs);
-  color: var(--muted-foreground);
-}
-
-.mobile-workflow-step-params {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-
-.mobile-workflow-param {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  font-size: var(--fs-sm);
-  color: var(--muted-foreground);
-}
-
+/* A quiet line of advice under a Studio field. Named for the workflow editor
+ * it was written for, which the phone no longer has. */
 .mobile-workflow-param-hint {
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
-}
-
-.mobile-workflow-select {
-  height: 38px;
-  padding: 0 var(--sp-3);
-  border-radius: var(--r-md);
-  border: 1px solid var(--border-subtle);
-  background: var(--background);
-  color: var(--foreground);
-  font-size: var(--fs-sm);
-}
-
-/* Button-shaped param pickers (they open a bottom sheet, not a native menu). */
-.mobile-workflow-picker {
-  display: flex;
-  align-items: center;
-  text-align: left;
-  min-height: 44px;
-  height: auto;
-}
-
-.mobile-workflow-add-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-}
-
-.mobile-workflow-cost {
-  margin: 0;
-  font-size: var(--fs-xs);
-  color: var(--muted-foreground);
-  text-align: right;
-}
-
-.mobile-workflow-thumb {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--r-sm);
-  object-fit: cover;
-  flex-shrink: 0;
-}
-
-.mobile-flows-resume {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-
-.mobile-flows-resume-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  padding: var(--sp-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-lg);
-  background: var(--surface-subtle);
-}
-
-.mobile-flows-resume-name {
-  font-size: var(--fs-sm);
-  color: var(--foreground);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mobile-flows-resume-actions {
-  display: flex;
-  gap: var(--sp-2);
-  flex-shrink: 0;
-}
-
-.mobile-workflow-editor-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-
-.mobile-workflow-editor-actions .mobile-studio-generate {
-  flex: 1;
-}
-
-.mobile-workflow-delete {
-  margin-top: var(--sp-2);
-  padding: var(--sp-2);
-  border: none;
-  background: transparent;
-  color: var(--destructive);
-  font-size: var(--fs-sm);
-  cursor: pointer;
 }
 
 /* --- Round-2 device feedback ------------------------------------------------- */
@@ -2878,6 +2624,123 @@
 
 .mobile-studio-generate .mobile-studio-cost {
   opacity: 0.75;
+}
+
+/* The primary action stays in reach while the form scrolls under it. The bar
+ * carries the screen's ground so the fields pass behind it, not through it. */
+.mobile-studio-generate-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0 calc(-1 * var(--mobile-gutter));
+  padding: var(--sp-2) var(--mobile-gutter) var(--sp-3);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--background) 0%, transparent),
+    var(--background) var(--sp-3)
+  );
+}
+
+.mobile-studio-generate-bar .mobile-studio-generate {
+  width: 100%;
+}
+
+.mobile-studio-generate-hint {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+/* What was just made in this tab, under its form: a strip, not the gallery. */
+.mobile-studio-recent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+
+.mobile-studio-recent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mobile-studio-recent-title {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.mobile-studio-recent-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 96px;
+  gap: var(--sp-2);
+  margin: 0 calc(-1 * var(--mobile-gutter));
+  padding: 0 var(--mobile-gutter);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.mobile-studio-recent-strip > * {
+  scroll-snap-align: start;
+}
+
+/* Settings with a short list of values, as one card of rows (see
+ * OptionSheet.tsx): the name on the left, the choice and a chevron on the
+ * right. Replaces a row of pills per setting. */
+.mobile-select-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  overflow: hidden;
+}
+
+.mobile-select-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-height: 48px;
+  padding: 0 var(--sp-3) 0 var(--sp-4);
+  border: none;
+  background: none;
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  text-align: left;
+}
+
+.mobile-select-row + .mobile-select-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.mobile-select-row:active {
+  background: var(--muted);
+}
+
+.mobile-select-row-label {
+  min-width: 0;
+}
+
+.mobile-select-row-value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.mobile-select-row-value > svg {
+  flex-shrink: 0;
 }
 
 /* Model picker rows (button + favorite star side by side). */
@@ -2954,7 +2817,9 @@
 }
 
 .mobile-favorite-button[data-active="true"] {
-  color: var(--record, var(--accent));
+  /* The brand's ink, not the recorder's red: a row of red stars read as a
+   * row of errors. */
+  color: var(--brand-ink);
 }
 
 .mobile-sheet-grid {
@@ -3077,31 +2942,6 @@
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
-}
-
-/* Flow outputs. */
-.mobile-flows-step {
-  flex-wrap: wrap;
-}
-
-.mobile-flows-output {
-  flex-basis: 100%;
-  margin: 0 0 var(--sp-2);
-  font-size: var(--fs-sm);
-  color: var(--muted-foreground);
-}
-
-.mobile-flows-output-image {
-  flex-basis: 100%;
-  max-width: 120px;
-  border-radius: var(--r-md);
-  margin-bottom: var(--sp-2);
-}
-
-.mobile-flows-issues {
-  list-style: none;
-  margin: 0;
-  padding: 0;
 }
 
 /* --- Chat attachments ---------------------------------------------------------- */

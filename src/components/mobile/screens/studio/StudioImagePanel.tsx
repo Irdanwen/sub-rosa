@@ -24,10 +24,14 @@ import type { MediaCatalog, StudioArtifact } from "../../../../lib/studio/types"
 import { Spinner } from "../../../ui/Spinner";
 import { ModelSheet } from "../../ModelSheet";
 import {
+  formatRenderOption,
   ModelPickerButton,
+  modelSubtitle,
   MoreOptions,
   pickEffective,
   rawBase64,
+  SelectRow,
+  SettingsCard,
   SliderSetting,
   StudioSetting,
   StudioToggle,
@@ -443,22 +447,26 @@ export function ImagePanel({
           />
           {mode === "generate" ? (
             <>
-              {aspectOptions.length > 0 ? (
-                <StudioSetting label={t("Aspect ratio")}>
-                  <div className="mobile-pill-row" role="radiogroup" aria-label={t("Aspect ratio")}>
-                    {aspectOptions.map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        className="mobile-pill"
-                        data-active={effectiveAspect === option ? "true" : undefined}
-                        onClick={() => setAspectRatio(option)}
-                      >
-                        {option}
-                      </button>
-                    ))}
-                  </div>
-                </StudioSetting>
+              {aspectOptions.length > 0 || resolutionOptions.length > 0 ? (
+                <SettingsCard>
+                  {aspectOptions.length > 0 ? (
+                    <SelectRow
+                      label={t("Aspect ratio")}
+                      value={effectiveAspect}
+                      options={aspectOptions}
+                      onChange={setAspectRatio}
+                      format={formatRenderOption}
+                    />
+                  ) : null}
+                  {resolutionOptions.length > 0 ? (
+                    <SelectRow
+                      label={t("Resolution")}
+                      value={effectiveResolution}
+                      options={resolutionOptions}
+                      onChange={setResolution}
+                    />
+                  ) : null}
+                </SettingsCard>
               ) : null}
               <MoreOptions>
                 <textarea
@@ -469,23 +477,6 @@ export function ImagePanel({
                   aria-label={t("Negative prompt")}
                   onChange={(event) => setNegativePrompt(event.target.value)}
                 />
-                {resolutionOptions.length > 0 ? (
-                  <StudioSetting label={t("Resolution")}>
-                    <div className="mobile-pill-row" role="radiogroup" aria-label={t("Resolution")}>
-                      {resolutionOptions.map((option) => (
-                        <button
-                          key={option}
-                          type="button"
-                          className="mobile-pill"
-                          data-active={effectiveResolution === option ? "true" : undefined}
-                          onClick={() => setResolution(option)}
-                        >
-                          {option}
-                        </button>
-                      ))}
-                    </div>
-                  </StudioSetting>
-                ) : null}
                 {maxSteps > 1 ? (
                   <SliderSetting
                     label={t("Steps")}
@@ -548,7 +539,7 @@ export function ImagePanel({
                 {styles.length > 0 ? (
                   <ModelPickerButton
                     label={t("Style")}
-                    value={stylePreset || "None"}
+                    value={stylePreset || t("None")}
                     onOpen={() => setStylePickerOpen(true)}
                   />
                 ) : null}
@@ -557,21 +548,15 @@ export function ImagePanel({
                   checked={improvePrompt}
                   onChange={setImprovePrompt}
                 />
-                <StudioSetting label={t("Format")}>
-                  <div className="mobile-pill-row" role="radiogroup" aria-label={t("Image format")}>
-                    {(["png", "webp", "jpeg"] as const).map((entry) => (
-                      <button
-                        key={entry}
-                        type="button"
-                        className="mobile-pill"
-                        data-active={format === entry ? "true" : undefined}
-                        onClick={() => setFormat(entry)}
-                      >
-                        {entry}
-                      </button>
-                    ))}
-                  </div>
-                </StudioSetting>
+                <SettingsCard>
+                  <SelectRow
+                    label={t("Image format")}
+                    value={format}
+                    options={["png", "webp", "jpeg"]}
+                    onChange={(next) => setFormat(next as typeof format)}
+                    format={(option) => option.toUpperCase()}
+                  />
+                </SettingsCard>
                 <StudioToggle
                   label={t("Hide watermark")}
                   checked={hideWatermark}
@@ -585,19 +570,30 @@ export function ImagePanel({
               </MoreOptions>
             </>
           ) : null}
-          <button
-            type="button"
-            className="mobile-studio-generate"
-            disabled={
-              !model || !prompt.trim() || busy || (mode === "edit" && references.length === 0)
-            }
-            onClick={() => void generate()}
-          >
-            {busy ? <Spinner /> : t("Generate")}
-            {!busy && cost !== undefined ? (
-              <span className="mobile-studio-cost">{formatCredits(cost)}</span>
+          <div className="mobile-studio-generate-bar">
+            <button
+              type="button"
+              className="mobile-studio-generate"
+              disabled={
+                !model || !prompt.trim() || busy || (mode === "edit" && references.length === 0)
+              }
+              onClick={() => void generate()}
+            >
+              {busy ? <Spinner /> : t("Generate")}
+              {!busy && cost !== undefined ? (
+                <span className="mobile-studio-cost">{formatCredits(cost)}</span>
+              ) : null}
+            </button>
+            {busy ? null : !model ? (
+              <p className="mobile-studio-generate-hint">{t("Choose an image model first.")}</p>
+            ) : mode === "edit" && references.length === 0 ? (
+              <p className="mobile-studio-generate-hint">{t("Add a photo to edit.")}</p>
+            ) : !prompt.trim() ? (
+              <p className="mobile-studio-generate-hint">
+                {t("Describe the image to generate it.")}
+              </p>
             ) : null}
-          </button>
+          </div>
           {busy && mode === "edit" ? (
             <p className="mobile-studio-progress" data-shimmer="true">
               {references.length > 1
@@ -614,7 +610,7 @@ export function ImagePanel({
           entries={models.map((entry) => ({
             id: entry.id,
             name: entry.name,
-            subtitle: [entry.tier, entry.privacy].filter(Boolean).join(" · "),
+            subtitle: modelSubtitle(entry),
           }))}
           selectedId={mode === "edit" ? editModelId : (model?.id ?? "")}
           defaultOption={
@@ -638,7 +634,7 @@ export function ImagePanel({
             .map((entry) => ({
               id: entry.id,
               name: entry.name,
-              subtitle: [entry.tier, entry.privacy].filter(Boolean).join(" · "),
+              subtitle: modelSubtitle(entry),
             }))}
           selectedId=""
           onSelect={(id) => {

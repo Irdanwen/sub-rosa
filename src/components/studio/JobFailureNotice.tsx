@@ -18,9 +18,11 @@ export function JobFailureNotice({
   message,
   status,
   model,
+  backend,
   className = "studio-error",
   retryClassName = "btn btn-secondary",
   onRetry,
+  onDismiss,
 }: {
   message?: string;
   /** HTTP status behind the failure, when the backend gave one. */
@@ -28,6 +30,8 @@ export function JobFailureNotice({
   /** The model that refused, for the failures that only read correctly once
    * you know which one it was. */
   model?: string;
+  /** Whose account a balance refusal is about (see `describeJobFailure`). */
+  backend?: "carpe-diem" | "venice";
   className?: string;
   retryClassName?: string;
   /**
@@ -36,19 +40,32 @@ export function JobFailureNotice({
    * would re-spend on a guess is worse than offering none.
    */
   onRetry?: () => void;
+  /** Put the failure away for good. A failure is a durable row: without a way
+   * to settle it, it comes back every time the tab is opened. */
+  onDismiss?: () => void;
 }) {
   const constraint = explainConstraintError(message ?? "");
-  const failure = constraint ? undefined : describeJobFailure({ message, status, model });
+  const failure = constraint ? undefined : describeJobFailure({ message, status, model, backend });
   return (
     // The backend's own words stay reachable on hover: the summary is for
     // acting on, the detail is for reporting a bug against.
-    <p className={className} title={failure?.detail}>
-      {constraint ?? failure?.text ?? t("The render failed.")}
+    <p className={className} title={failure?.detail} role="alert">
+      <span className="job-failure-text">
+        {constraint ?? failure?.text ?? t("The render failed.")}
+      </span>
       {failure?.retryable && onRetry ? (
         <>
           {" "}
           <button type="button" className={retryClassName} onClick={onRetry}>
             {t("Start again")}
+          </button>
+        </>
+      ) : null}
+      {onDismiss ? (
+        <>
+          {" "}
+          <button type="button" className={retryClassName} onClick={onDismiss}>
+            {t("Dismiss")}
           </button>
         </>
       ) : null}

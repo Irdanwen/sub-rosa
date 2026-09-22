@@ -22,6 +22,7 @@ import {
 import type { StudioArtifact } from "../../../../lib/studio/types";
 import { saveToPhotos } from "../../../../lib/tauri";
 import { Spinner } from "../../../ui/Spinner";
+import { ActionSheet } from "../../ActionSheet";
 import { GalleryCell } from "./StudioLibrary";
 import { markMediaPlayback } from "./StudioControls";
 
@@ -482,11 +483,17 @@ export function ReferencePicker({
   hint,
   error,
   prepare,
+  label,
+  cap,
 }: {
   references: string[];
   onChange: (refs: string[]) => void;
   galleryImages: StudioArtifact[];
   hint?: string;
+  /** What the add button says ("Opening frame", "Reference photos"...). */
+  label?: string;
+  /** How many photos the slot takes; the add button goes once it is full. */
+  cap?: number;
   /** Why the last photo was refused. Sits with the input rather than in a
    * failure message after the render was billed. */
   error?: string;
@@ -497,6 +504,20 @@ export function ReferencePicker({
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const full = cap !== undefined && references.length >= cap;
+  // Three buttons side by side ("Add a photo", "Take a photo", "From gallery")
+  // for every photo slot made a video form a wall of chips. One button per
+  // slot, and the sources come up when it is tapped.
+  const sources = [
+    { label: t("Choose a photo"), onAction: () => inputRef.current?.click() },
+    ...(isMobilePlatform()
+      ? [{ label: t("Take a photo"), onAction: () => cameraRef.current?.click() }]
+      : []),
+    ...(galleryImages.length > 0
+      ? [{ label: t("From the Studio gallery"), onAction: () => setGalleryOpen(true) }]
+      : []),
+  ];
 
   const readPicked = useCallback(
     (file: File | undefined) => {
@@ -570,29 +591,28 @@ export function ReferencePicker({
           ))}
         </div>
       ) : null}
-      <div className="mobile-reference-actions">
-        <button
-          type="button"
-          className="mobile-chip-button"
-          onClick={() => inputRef.current?.click()}
-        >
-          {t("Add a photo")}
-        </button>
-        {isMobilePlatform() ? (
+      {full ? null : (
+        <div className="mobile-reference-actions">
           <button
             type="button"
             className="mobile-chip-button"
-            onClick={() => cameraRef.current?.click()}
+            aria-haspopup={sources.length > 1 ? "dialog" : undefined}
+            onClick={() => {
+              if (sources.length === 1) sources[0].onAction();
+              else setSourcesOpen(true);
+            }}
           >
-            {t("Take a photo")}
+            {label ?? t("Add a photo")}
           </button>
-        ) : null}
-        {galleryImages.length > 0 ? (
-          <button type="button" className="mobile-chip-button" onClick={() => setGalleryOpen(true)}>
-            {t("From gallery")}
-          </button>
-        ) : null}
-      </div>
+        </div>
+      )}
+      {sourcesOpen ? (
+        <ActionSheet
+          title={label ?? t("Add a photo")}
+          actions={sources}
+          onClose={() => setSourcesOpen(false)}
+        />
+      ) : null}
       {error ? <p className="mobile-dictation-error">{error}</p> : null}
       {hint ? <p className="mobile-reference-hint">{hint}</p> : null}
       {galleryOpen ? (

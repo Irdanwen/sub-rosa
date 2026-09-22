@@ -1134,6 +1134,43 @@ bureau**. Elles vivent maintenant dans `.note-header-row` /
 | `src/styles/app.css` | Règles de la rangée d'actions ; `.note-header-toolbar` masquée à l'impression | Réappliquer |
 | `src/main.tsx` | `data-shell="mobile"` + `installZoomRecovery` sur le téléphone | Réappliquer |
 
+## Le Studio du téléphone, en menus (2026-09-22)
+
+Retour iPhone : une erreur qui ne partait jamais, un sélecteur de modèles qui
+bougeait ou ne défilait pas, et un formulaire vidéo fait de trois rangées de
+pastilles avant le prompt.
+
+- **L'échec qui revenait** était une ligne `media_jobs` relue à chaque montage :
+  `reset()` existait et rien ne l'appelait. `JobFailureNotice` gagne « Fermer »
+  (`onDismiss`), et `useMediaJob.start` solde l'échec précédent
+  (`media_job_dismiss`) au lieu de le masquer le temps du nouveau rendu.
+  `describeJobFailure` passe par `t()` et reconnaît « Insufficient USD or Diem
+  balance » : derrière une clé `cdm_`, c'est le solde du fournisseur, pas les
+  crédits de la personne (`backend` en paramètre).
+- **Le sélecteur de modèles** (`ModelSheet`) : rendu en portail dans
+  `.mobile-shell` (pas `body`, sinon le plancher 16 px des champs ne s'applique
+  plus), calque qui s'arrête au clavier, liste `min-height: 0` qui défile, focus
+  initial sur le titre et non sur la recherche (le clavier qui montait seul
+  faisait glisser la page), coche en tête, sous-titres traduits
+  (`modelSubtitle`), étoile à l'encre de la marque.
+- **Menus déroulants** : `OptionSheet` (feuille de choix, focus modal) et
+  `SelectRow` / `SettingsCard` remplacent les rangées de pastilles ; une seule
+  « Image d'ouverture » ouvre une feuille d'actions ; références, clips, audio
+  et prompt négatif passent sous « Plus d'options » ; Générer est collant et dit
+  pourquoi il est grisé ; une bande « Récents » remplace la galerie complète
+  sous le formulaire ; la pastille de crédits dit « -57 % » au lieu de « x0.43 ».
+- **Parcours retiré du téléphone** (`FlowsPanel.tsx`, `WorkflowEditor.tsx`,
+  leurs tests et leur CSS). Le moteur (`src/lib/studio/workflow*`) et le
+  bureau ne changent pas. Une production lancée sur le téléphone avant la mise
+  à jour ne se reprend plus que sur le bureau.
+
+**Non fait, et pourquoi** : les titres des notifications natives (« Your video
+is ready », « Your generation failed ») restent en anglais. Rust ne connaît pas
+la langue choisie (elle vit dans le `localStorage` de la WebView) et aucune
+notification native n'est traduite aujourd'hui. C'est un chantier transverse
+(une langue confiée à Rust + une table de phrases natives), pas un correctif
+Studio.
+
 ## Procédure de synchronisation upstream (voir aussi `.github/workflows/upstream-sync.yml`)
 
 > **Remplacée le 2026-09-02 par [ADR-0040](docs/adr/0040-upstream-is-a-source-of-patches-not-a-merge-base.md).**
