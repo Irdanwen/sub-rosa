@@ -19,6 +19,7 @@ import { ShareNoteDialog } from "../../share/ShareNoteDialog";
 import { useCanShare } from "../../share/useCanShare";
 import { AskNoteOverlay } from "../../ask/AskNoteOverlay";
 import { ActionSheet } from "../ActionSheet";
+import { FolderPickerSheet } from "../FolderPickerSheet";
 import { StackHeader } from "../StackHeader";
 
 type NoteDetailScreenProps = {
@@ -45,6 +46,10 @@ type NoteDetailScreenProps = {
   onAssignFolder: (folderId: string) => void;
   onRemoveFolder: (folderId: string) => void;
   onCreateAndAssignFolder: (name: string) => void;
+  /** File the note in one folder, or in none. */
+  onMoveToFolder: (folderId: string | undefined) => void;
+  /** The phone's Archive: a state, never offered as a place to file. */
+  archiveFolderId?: string;
   onTabChange: (tab: NoteTab) => void;
 };
 
@@ -77,6 +82,8 @@ export function NoteDetailScreen({
   onAssignFolder,
   onRemoveFolder,
   onCreateAndAssignFolder,
+  onMoveToFolder,
+  archiveFolderId,
   onTabChange,
 }: NoteDetailScreenProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -90,6 +97,8 @@ export function NoteDetailScreen({
   // the question button and a thumb's width from the back button, was one
   // mistaken tap from a confirmation nobody wanted to see.
   const [menuOpen, setMenuOpen] = useState(false);
+  const [pickingFolder, setPickingFolder] = useState(false);
+  const unlisted = archiveFolderId ? [archiveFolderId] : [];
 
   const exportNote = () => {
     if (!note) return;
@@ -134,9 +143,30 @@ export function NoteDetailScreen({
           subtitle={t("What would you like to do with this note?")}
           actions={[
             { label: t("Export note"), onAction: exportNote },
+            {
+              label: t("Move to a folder"),
+              // Opens once this sheet has closed and handed focus back.
+              onAction: () => window.setTimeout(() => setPickingFolder(true), 0),
+            },
             { label: t("Delete note"), destructive: true, onAction: () => setConfirmDelete(true) },
           ]}
           onClose={() => setMenuOpen(false)}
+        />
+      ) : null}
+      {pickingFolder && note ? (
+        <FolderPickerSheet
+          title={t("Move to a folder")}
+          folders={folders.filter((folder) => !unlisted.includes(folder.id))}
+          currentFolderId={note.folderIds.find((id) => !unlisted.includes(id)) ?? null}
+          onPick={(folderId) => {
+            setPickingFolder(false);
+            onMoveToFolder(folderId);
+          }}
+          onCreate={(name) => {
+            setPickingFolder(false);
+            onCreateAndAssignFolder(name);
+          }}
+          onClose={() => setPickingFolder(false)}
         />
       ) : null}
       {asking && note ? (
@@ -178,6 +208,8 @@ export function NoteDetailScreen({
             onAssignFolder={onAssignFolder}
             onRemoveFolder={onRemoveFolder}
             onCreateAndAssignFolder={onCreateAndAssignFolder}
+            onOpenFolderPicker={() => setPickingFolder(true)}
+            unlistedFolderIds={unlisted}
             onTabChange={onTabChange}
             onShare={canShare ? () => setSharing(true) : undefined}
           />

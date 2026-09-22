@@ -1171,6 +1171,42 @@ notification native n'est traduite aujourd'hui. C'est un chantier transverse
 (une langue confiée à Rust + une table de phrases natives), pas un correctif
 Studio.
 
+## Ranger ses notes depuis le téléphone (2026-09-22)
+
+Le téléphone savait ouvrir un dossier et y créer une note, rien d'autre : pas
+de déplacement depuis la liste, pas de renommage, pas de suppression, et le
+seul sélecteur (le popover de 280 px du `NoteEditor`) sortait de l'écran.
+
+- **Un seul dossier par note, sur les deux shells.** `src/lib/note-folders.ts`
+  (`moveNoteToFolder`) : retire les autres dossiers, puis ajoute. Le bureau
+  appliquait déjà la règle dans `App.tsx` ; le téléphone ne faisait qu'ajouter
+  (un deuxième dossier s'ajoutait au premier, et la puce nommait l'ancien).
+  L'« Archive » du téléphone est un dossier géré par nom : `keep` la laisse en
+  place, archiver reste un état par-dessus le projet.
+- **Une feuille pour tout** (`FolderPickerSheet`) : depuis le ⋯ de la note, sa
+  puce (nouvelle prop `onOpenFolderPicker` du `NoteEditor`, sans effet sur le
+  bureau), l'appui long et la sélection multiple de la liste.
+- **Gérer un dossier** : ⋯ dans `FoldersScreen` (Renommer, Ajouter des notes,
+  Supprimer en gardant ou non les notes via `delete_folder(id, delete_notes)`) ;
+  pas de ⋯ sur l'Archive, que renommer casserait. Puce « + Dossier » dans la
+  liste.
+- **Importer** : le champ de lien quitte la liste pour une feuille avec
+  « Choisir un fichier » ; `ImportLinkBar showField={false}` garde sur la liste
+  les téléchargements en cours.
+
+### Fichiers ajoutés
+
+`src/lib/note-folders.ts`, `src/components/mobile/{FolderPickerSheet, NameSheet,
+NotePickerSheet, ImportSheet}.tsx`, `src/components/mobile/sheet-host.ts`,
+`src/test/{note-folders.test.ts, mobile-note-folders.test.tsx}`.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src/components/note-editor/NoteEditor.tsx` | Props `onOpenFolderPicker` et `unlistedFolderIds` transmises à `FolderChip` | Réappliquer |
+| `src/app/App.tsx` | `handleSetNoteFolder` passe par `moveNoteToFolder` | Réappliquer |
+
 ## Procédure de synchronisation upstream (voir aussi `.github/workflows/upstream-sync.yml`)
 
 > **Remplacée le 2026-09-02 par [ADR-0040](docs/adr/0040-upstream-is-a-source-of-patches-not-a-merge-base.md).**

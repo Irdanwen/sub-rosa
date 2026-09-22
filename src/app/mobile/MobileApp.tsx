@@ -40,6 +40,7 @@ import { hapticImpact, hapticNotify } from "../../lib/haptics";
 import { useKeyboardInset } from "../../lib/keyboard-inset";
 import { upsertLiveTranscriptEvent } from "../../lib/live-transcript-preview";
 import { recordingToStatus } from "../../lib/recording-status";
+import { moveNoteToFolder } from "../../lib/note-folders";
 import {
   LIVE_TRANSCRIPT_EVENT,
   type CarpeDiemSidecarStatusDto,
@@ -53,12 +54,14 @@ import {
   checkRecordingSourceReadiness,
   createFolder,
   createNote,
+  deleteFolder,
   deleteNote,
   finishRecording,
   getNote,
   getRecordingStatus,
   pauseRecording,
   removeNoteFromFolder,
+  renameFolder,
   resumeRecording,
   retryProcessing,
   startRecording,
@@ -624,10 +627,44 @@ export function MobileApp() {
     }
   }, [state.selectedNote]);
 
-  const handleSetNoteFolder = useCallback(async (noteId: string, folderId: string) => {
+  // The Archive "state" is an auto-managed folder, so it rides the existing
+  // folder infrastructure (chips, filtering, sync with desktop's data model).
+  const archiveFolder = state.folders.find((folder) => folder.name.toLowerCase() === "archive");
+  const archiveFolderId = archiveFolder?.id;
+
+  /** File a note in one folder, or in none, keeping it archived if it was.
+   * This only added before: a second folder joined the first, and the chip
+   * went on naming the older one. */
+  const handleSetNoteFolder = useCallback(
+    async (noteId: string, folderId: string | undefined) => {
+      const note =
+        state.notes.find((entry) => entry.id === noteId) ??
+        (state.selectedNote?.id === noteId ? state.selectedNote : undefined);
+      if (!note) return;
+      try {
+        await moveNoteToFolder(note, folderId, {
+          keep: archiveFolderId ? [archiveFolderId] : [],
+          onUpdated: (updated) => dispatch({ type: "noteUpdated", note: updated }),
+        });
+      } catch (err) {
+        setError(messageFromError(err));
+      }
+    },
+    [state.notes, state.selectedNote, archiveFolderId],
+  );
+
+  const handleMoveNotes = useCallback(
+    async (noteIds: string[], folderId: string | undefined) => {
+      for (const noteId of noteIds) await handleSetNoteFolder(noteId, folderId);
+      hapticNotify("success");
+    },
+    [handleSetNoteFolder],
+  );
+
+  const handleRenameFolder = useCallback(async (folderId: string, name: string) => {
     try {
-      const note = await assignNoteToFolder(noteId, folderId);
-      dispatch({ type: "noteUpdated", note });
+      const folder = await renameFolder(folderId, name);
+      dispatch({ type: "folderRenamed", folder });
     } catch (err) {
       setError(messageFromError(err));
     }
@@ -642,13 +679,10 @@ export function MobileApp() {
     }
   }, []);
 
-  // The Archive "state" is an auto-managed folder, so it rides the existing
-  // folder infrastructure (chips, filtering, sync with desktop's data model).
-  const archiveFolder = state.folders.find((folder) => folder.name.toLowerCase() === "archive");
   const handleArchiveNote = useCallback(
     async (noteId: string) => {
       try {
-        let folderId = archiveFolder?.id;
+        let folderId = archiveFolderId;
         if (!folderId) {
           const created = await createFolder("Archive");
           dispatch({ type: "folderCreated", folder: created });
@@ -661,7 +695,7 @@ export function MobileApp() {
         setError(messageFromError(err));
       }
     },
-    [archiveFolder?.id],
+    [archiveFolderId],
   );
 
   // The webview file input hands us bytes: iOS grants IT access to the picked
@@ -711,6 +745,22 @@ export function MobileApp() {
       return undefined;
     }
   }, []);
+
+  const handleDeleteFolder = useCallback(
+    async (folderId: string, deleteNotes: boolean) => {
+      try {
+        await deleteFolder(folderId, deleteNotes);
+        dispatch({ type: "folderDeleted", folderId });
+        // Deleted notes are gone on the backend; the list is re-read rather
+        // than patched note by note.
+        if (deleteNotes) await handleRefreshNotes();
+        hapticNotify("success");
+      } catch (err) {
+        setError(messageFromError(err));
+      }
+    },
+    [handleRefreshNotes],
+  );
 
   const microphoneBlocked = useMemo(() => {
     const mic = sourceReadiness?.sources.find((source) => source.source === "microphone");
@@ -791,6 +841,8 @@ export function MobileApp() {
             if (folder) await handleSetNoteFolder(top.noteId, folder.id);
           })();
         }}
+        onMoveToFolder={(folderId) => void handleSetNoteFolder(top.noteId, folderId)}
+        archiveFolderId={archiveFolderId}
         onTabChange={(activeTab) =>
           void updateNote({ noteId: top.noteId, activeTab }).then((note) =>
             dispatch({ type: "noteUpdated", note }),
@@ -821,9 +873,9 @@ export function MobileApp() {
           openChatSession(sessionId);
           nav.pop();
         }}
-        archiveFolderId={archiveFolder?.id}
+        archiveFolderId={archiveFolderId}
         ensureArchiveFolder={async () => {
-          if (archiveFolder?.id) return archiveFolder.id;
+          if (archiveFolderId) return archiveFolderId;
           const created = await handleCreateFolder("Archive");
           return created?.id;
         }}
@@ -857,12 +909,23 @@ export function MobileApp() {
         folder={folder}
         notes={state.notes.filter((note) => note.folderIds.includes(top.folderId))}
         activeRecordingNoteId={recordingNoteId}
-        isArchiveFolder={top.folderId === archiveFolder?.id}
+        isArchiveFolder={top.folderId === archiveFolderId}
         onBack={nav.pop}
         onSelectNote={openNote}
         onCreateNote={() => void handleCreateNote({ folderId: top.folderId })}
         onDeleteNote={(noteId) => void handleDeleteNote(noteId)}
         onRemoveFromFolder={(noteId) => void handleRemoveNoteFromFolder(noteId, top.folderId)}
+        candidates={state.notes.filter(
+          (note) =>
+            !note.folderIds.includes(top.folderId) &&
+            !(archiveFolderId && note.folderIds.includes(archiveFolderId)),
+        )}
+        onAddNotes={(noteIds) => void handleMoveNotes(noteIds, top.folderId)}
+        onRename={(name) => void handleRenameFolder(top.folderId, name)}
+        onDeleteFolder={(deleteNotes) => {
+          nav.pop();
+          void handleDeleteFolder(top.folderId, deleteNotes);
+        }}
       />
     );
   } else {
@@ -873,7 +936,7 @@ export function MobileApp() {
             notes={state.notes}
             folders={state.folders}
             activeRecordingNoteId={recordingNoteId}
-            archiveFolderId={archiveFolder?.id}
+            archiveFolderId={archiveFolderId}
             onSelectNote={openNote}
             onRecord={() => void handleCreateNote({ record: true })}
             onCreateNote={() => void handleCreateNote()}
@@ -881,6 +944,8 @@ export function MobileApp() {
             onOpenFolder={(folderId) => nav.push({ view: "folder", folderId })}
             onDeleteNote={(noteId) => void handleDeleteNote(noteId)}
             onArchiveNote={(noteId) => void handleArchiveNote(noteId)}
+            onMoveNotes={(noteIds, folderId) => void handleMoveNotes(noteIds, folderId)}
+            onCreateFolder={handleCreateFolder}
             onRefresh={handleRefreshNotes}
           />
         );

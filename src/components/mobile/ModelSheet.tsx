@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 import { hapticSelection } from "../../lib/haptics";
 import { useKeyboardInset } from "../../lib/keyboard-inset";
 import { EASE_OUT_CSS, FLICK_VELOCITY } from "../../lib/motion";
+import { sheetHost } from "./sheet-host";
 
 export type ModelSheetEntry = {
   id: string;
@@ -180,11 +181,7 @@ export function ModelSheet({
     });
   };
 
-  // Rendered at the shell, not where it was opened: inside a scrolling panel a
-  // fixed layer can end up positioned against a transformed ancestor. The
-  // shell, not the body, so the phone's own rules (the 16px field floor among
-  // them) still reach the search field.
-  const host = document.querySelector(".mobile-shell") ?? document.body;
+  // Rendered at the shell, not where it was opened (see sheet-host.ts).
   return createPortal(
     <div
       className="mobile-sheet-backdrop mobile-sheet-backdrop-tall"
@@ -295,6 +292,6 @@ export function ModelSheet({
         </ul>
       </div>
     </div>,
-    host,
+    sheetHost(),
   );
 }
