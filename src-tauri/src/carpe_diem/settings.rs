@@ -769,6 +769,19 @@ pub fn carpe_diem_open_dashboard() -> Result<(), AppError> {
     crate::os_accounts::open_in_browser(branding::CARPE_DIEM_DASHBOARD_URL)
 }
 
+/// Opens the "Top up" tab of the Sub Rosa account site. It explains what the
+/// credits are and hands over to Carpe Diem's deposit page, where credits are
+/// bought with a wallet; the app itself sells nothing.
+#[tauri::command]
+pub async fn carpe_diem_open_top_up(app: tauri::AppHandle) -> Result<(), AppError> {
+    let origin = crate::account::site_origin(&app).await;
+    crate::os_accounts::open_in_browser(&top_up_url(&origin))
+}
+
+fn top_up_url(origin: &str) -> String {
+    format!("{}/account/top-up", origin.trim_end_matches('/'))
+}
+
 /// Shared setup for the billing commands: the base URL, a `cdm_` key, and an
 /// HTTP client. Rejects Venice keys (no payment rails there).
 fn billing_ctx() -> Result<(String, Redacted<String>, reqwest::Client), AppError> {
@@ -1219,6 +1232,18 @@ pub(crate) async fn restore_account_credential(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn top_up_lands_on_the_account_sites_top_up_tab() {
+        assert_eq!(
+            super::top_up_url("https://subrosa.furetier.com"),
+            "https://subrosa.furetier.com/account/top-up"
+        );
+        assert_eq!(
+            super::top_up_url("https://example.org/"),
+            "https://example.org/account/top-up"
+        );
+    }
+
     #[test]
     #[cfg(debug_assertions)]
     fn debug_override_keeps_the_atomic_destination_and_fails_closed() {

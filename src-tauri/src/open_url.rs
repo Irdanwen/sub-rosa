@@ -43,6 +43,50 @@ pub async fn open_external_url(app: AppHandle, url: String) -> Result<(), AppErr
     }
 }
 
+/// The app, kept for the links opened without one at hand. `open_in_browser`
+/// is called from a dozen commands that take no `AppHandle` ("Top up", the
+/// community link, an issue report), and on iOS it used to spawn `xdg-open`,
+/// which cannot run there: every one of those buttons did nothing.
+#[cfg(target_os = "ios")]
+static APP: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
+
+/// Called once from the iOS setup hook.
+#[cfg(target_os = "ios")]
+pub fn remember_app(app: &AppHandle) {
+    let _ = APP.set(app.clone());
+}
+
+/// The Shortcuts app, where the app's actions (App Intents) are listed. Its
+/// scheme is not https, so it has its own door rather than a hole in the
+/// https-only rule of `open_external_url`.
+#[tauri::command]
+pub async fn open_shortcuts_app(app: AppHandle) -> Result<(), AppError> {
+    #[cfg(target_os = "ios")]
+    {
+        open_in_safari(app, "shortcuts://".to_string())
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = app;
+        Err(AppError::new(
+            "open_url_unsupported",
+            "The Shortcuts app is only on the iPhone.",
+        ))
+    }
+}
+
+/// Safari, for a caller that has no `AppHandle` (see `APP`).
+#[cfg(target_os = "ios")]
+pub(crate) fn open_in_safari_from_anywhere(url: &str) -> Result<(), AppError> {
+    let app = APP.get().ok_or_else(|| {
+        AppError::new(
+            "open_url_failed",
+            "The link could not be opened yet. Try again in a moment.",
+        )
+    })?;
+    open_in_safari(app.clone(), url.to_string())
+}
+
 /// `UIApplication openURL:` bridged the same way as the share sheet
 /// (share_ios.rs): best-effort UIKit calls on the main thread, nothing to
 /// clean up.

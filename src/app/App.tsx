@@ -1503,6 +1503,9 @@ export function App() {
       case "assistant":
         openAssistants(destination.taskId);
         break;
+      case "assistants":
+        openAssistants();
+        break;
       case "dictation":
         setActiveView("dictation");
         break;

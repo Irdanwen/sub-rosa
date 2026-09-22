@@ -1,4 +1,3 @@
-import { openAssistants } from "../../assistants/AssistantLauncher";
 import "../../../styles/chat-reading.css";
 import { useAccountSyncUpdated } from "../../../lib/account-sync-events";
 import { t } from "../../../lib/i18n";
@@ -208,11 +207,7 @@ export function AgentScreen({
           </button>
         }
       />
-      <div className="assistants-entry">
-        <button type="button" className="mobile-chip-button" onClick={() => openAssistants()}>
-          {t("My assistants")}
-        </button>
-      </div>
+      <div className="assistants-entry"></div>
       <PullToRefresh className="mobile-list-scroll" onRefresh={refresh}>
         {actionError ? (
           <p className="mobile-dictation-error" role="alert">
@@ -311,6 +306,15 @@ type AgentSessionScreenProps = {
   onOpenSession?: (sessionId: string) => void;
   onOpenHistory?: () => void;
   onNewChat?: () => void;
+  /** Text to open the composer with (`subrosa://chat?q=` or a Shortcuts
+   * action). Read once, at mount. */
+  initialDraft?: string;
+  /** Send the initial draft as soon as the chat can. Only a request written
+   * by the app's own Shortcuts action may ask for this: a link from any page
+   * could otherwise make the phone send a message on its owner's behalf. */
+  autoSend?: boolean;
+  /** Told once the initial draft has been taken, so it is not taken again. */
+  onInitialDraftUsed?: () => void;
 };
 
 /** One chat thread: history + composer + live status while agent-lite runs. */
@@ -321,9 +325,12 @@ export function AgentSessionScreen({
   onOpenSession,
   onOpenHistory,
   onNewChat,
+  initialDraft,
+  autoSend = false,
+  onInitialDraftUsed,
 }: AgentSessionScreenProps) {
   const [task, setTask] = useState<AgentTaskDto | null>(null);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialDraft ?? "");
   const [running, setRunning] = useState(false);
   const runningRef = useRef(false);
   const [loadingTask, setLoadingTask] = useState(Boolean(sessionId));
@@ -751,6 +758,17 @@ export function AgentSessionScreen({
     refreshAfterFailure,
   ]);
 
+  // The initial draft is taken once. With `autoSend` it is sent as soon as
+  // the thread is ready; otherwise it waits in the composer for the person.
+  const initialDraftTaken = useRef(false);
+  useEffect(() => {
+    if (initialDraftTaken.current || !initialDraft) return;
+    if (autoSend && (loadingTask || taskLoadFailed)) return;
+    initialDraftTaken.current = true;
+    onInitialDraftUsed?.();
+    if (autoSend) void send();
+  }, [initialDraft, autoSend, loadingTask, taskLoadFailed, onInitialDraftUsed, send]);
+
   // Re-run the last (failed) turn without retyping. The message is already
   // persisted, so this only re-issues the run — and it uses the CURRENT model,
   // so switching the picker then retrying continues the chat on another model.
@@ -862,11 +880,7 @@ export function AgentSessionScreen({
           </>
         }
       />
-      <div className="assistants-entry">
-        <button type="button" className="mobile-chip-button" onClick={() => openAssistants()}>
-          {t("My assistants")}
-        </button>
-      </div>
+      <div className="assistants-entry"></div>
       <div className="mobile-chat-scroll" ref={scrollRef} onScroll={handleScroll}>
         {loadingTask ? <Spinner aria-label={t("Loading")} /> : null}
         {showHero ? (

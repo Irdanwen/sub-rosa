@@ -56,15 +56,29 @@ export function AssistantsDialog({
   return <AssistantsSurface onClose={onClose} initialTaskId={initialTaskId} />;
 }
 
+/**
+ * The same library as a screen of its own: the phone's Assistants tab.
+ *
+ * On the phone the library was reachable only through a small "My assistants"
+ * button inside Chat, a full-screen layer over the tab bar. As a tab it is
+ * not a modal: nothing to close, no focus trap, and the tab bar stays.
+ */
+export function AssistantsScreen({ initialTaskId }: { initialTaskId?: string }) {
+  return <AssistantsSurface embedded onClose={() => undefined} initialTaskId={initialTaskId} />;
+}
+
 type View = "library" | "create" | "edit" | "chat";
 type Tab = "general" | "instructions" | "references" | "tools";
 
 function AssistantsSurface({
   onClose,
   initialTaskId,
+  embedded = false,
 }: {
   onClose: () => void;
   initialTaskId?: string;
+  /** Rendered as a tab's screen rather than as a layer over the app. */
+  embedded?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const keyboardInset = useKeyboardInset();
@@ -94,7 +108,7 @@ function AssistantsSurface({
     if (dirty || (view === "create" && need.trim())) setDiscardTarget("close");
     else onClose();
   };
-  useModalFocus(ref, { onClose: close, lockScroll: true });
+  useModalFocus(ref, { open: !embedded, onClose: close, lockScroll: true });
   const refresh = useCallback(async () => {
     const [definitions, conversations] = await Promise.all([
       listAssistants(),
@@ -210,13 +224,18 @@ function AssistantsSurface({
     });
 
   return (
-    <div className="assistants-backdrop" style={{ bottom: keyboardInset }}>
+    <div
+      className={embedded ? "assistants-embedded" : "assistants-backdrop"}
+      style={embedded ? { paddingBottom: keyboardInset || undefined } : { bottom: keyboardInset }}
+    >
       <div
         className="assistants-surface"
+        data-view={view}
         ref={ref}
-        role="dialog"
-        aria-modal="true"
-        aria-label={t("My assistants")}
+        // A layer is a dialog; a tab's screen is not.
+        {...(embedded
+          ? {}
+          : { role: "dialog", "aria-modal": true, "aria-label": t("My assistants") })}
         tabIndex={-1}
       >
         <header className="assistants-header">
@@ -255,15 +274,17 @@ function AssistantsSurface({
                 </button>
               </>
             )}
-            <button
-              type="button"
-              className="assistant-icon-button"
-              disabled={busy}
-              aria-label={t("Close")}
-              onClick={close}
-            >
-              <IconCrossMedium size={20} />
-            </button>
+            {embedded ? null : (
+              <button
+                type="button"
+                className="assistant-icon-button"
+                disabled={busy}
+                aria-label={t("Close")}
+                onClick={close}
+              >
+                <IconCrossMedium size={20} />
+              </button>
+            )}
           </div>
         </header>
         {error && (

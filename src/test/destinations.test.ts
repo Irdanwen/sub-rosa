@@ -154,6 +154,8 @@ describe("subscribeToDestinations", () => {
     notification.unregister.mockClear();
     // The subscription is a no-op outside Tauri; pretend we are inside it.
     (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    // Each test is a fresh launch: the replay guard lives in sessionStorage.
+    sessionStorage.clear();
   });
 
   /** Lets the two dynamic imports and their awaits settle. */
@@ -253,5 +255,66 @@ describe("the import destination (ADR-0028)", () => {
     expect(parseDestination("subrosa://import")).toBeNull();
     const long = `https://x.com/${"a".repeat(4000)}`;
     expect(parseDestination(`subrosa://import?url=${encodeURIComponent(long)}`)).toBeNull();
+  });
+});
+
+describe("the phone's newer addresses", () => {
+  it("opens the assistants library, and only without an id", () => {
+    expect(parseDestination("subrosa://assistants")).toEqual({ kind: "assistants" });
+    expect(parseDestination("subrosa://assistants/x")).toBeNull();
+    expect(destinationUrl({ kind: "assistants" })).toBe("subrosa://assistants");
+  });
+
+  it("starts dictation only when the address asks", () => {
+    expect(parseDestination("subrosa://dictation")).toEqual({ kind: "dictation" });
+    expect(parseDestination("subrosa://dictation?start=1")).toEqual({
+      kind: "dictation",
+      start: true,
+    });
+    expect(destinationUrl({ kind: "dictation", start: true })).toBe("subrosa://dictation?start=1");
+  });
+
+  it("names a Shortcuts request by id, never by path", () => {
+    expect(parseDestination("subrosa://intent/3f2c1a9e-aa10")).toEqual({
+      kind: "intent",
+      intentId: "3f2c1a9e-aa10",
+    });
+    expect(parseDestination("subrosa://intent/../etc")).toBeNull();
+    expect(parseDestination("subrosa://intent")).toBeNull();
+  });
+});
+
+describe("the launch URL after a reload", () => {
+  beforeEach(() => {
+    deepLink.current = [];
+    deepLink.handlers.length = 0;
+    notification.handlers.length = 0;
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    sessionStorage.clear();
+  });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("is acted on once, not again when the page reloads", async () => {
+    // iOS keeps the last URL as "current" for the life of the process.
+    deepLink.current = ["subrosa://record"];
+    const first: Destination[] = [];
+    const stop = subscribeToDestinations((destination) => first.push(destination));
+    await settle();
+    stop();
+    expect(first).toEqual([{ kind: "record" }]);
+
+    const afterReload: Destination[] = [];
+    subscribeToDestinations((destination) => afterReload.push(destination));
+    await settle();
+    expect(afterReload).toEqual([]);
+  });
+
+  it("is one request when it reaches both paths at start-up", async () => {
+    deepLink.current = ["subrosa://record"];
+    const seen: Destination[] = [];
+    subscribeToDestinations((destination) => seen.push(destination));
+    await settle();
+    deepLink.handlers[0](["subrosa://record"]);
+    expect(seen).toEqual([{ kind: "record" }]);
   });
 });

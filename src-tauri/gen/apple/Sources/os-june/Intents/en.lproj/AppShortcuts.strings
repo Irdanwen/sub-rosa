@@ -1,0 +1,5 @@
+/* Phrases of SubRosaShortcuts.swift. */
+"New audio note in ${applicationName}" = "New audio note in ${applicationName}";
+"Record with ${applicationName}" = "Record with ${applicationName}";
+"Dictate with ${applicationName}" = "Dictate with ${applicationName}";
+"Ask ${applicationName}" = "Ask ${applicationName}";

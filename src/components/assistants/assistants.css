@@ -8,6 +8,13 @@
   background: var(--background);
   color: var(--foreground);
 }
+/* The library as a tab's screen (the phone): no layer. The frame goes with
+ * the narrow-screen rule below, as it does for the layer. */
+.assistants-embedded {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
 .assistants-surface {
   display: flex;
   flex-direction: column;
@@ -592,4 +599,16 @@
   font-size: var(--fs-sm);
   background: transparent;
   color: var(--muted-foreground);
+}
+
+/* As a tab, the library's title reads like every other tab's: the large
+ * serif title, no rule under it. The other views keep their working header. */
+.assistants-embedded .assistants-surface[data-view="library"] .assistants-header {
+  padding-top: var(--sp-4);
+  border-bottom: 0;
+}
+.assistants-embedded .assistants-surface[data-view="library"] .assistants-header strong {
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-medium);
 }

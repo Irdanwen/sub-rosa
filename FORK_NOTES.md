@@ -1207,6 +1207,47 @@ NotePickerSheet, ImportSheet}.tsx`, `src/components/mobile/sheet-host.ts`,
 | `src/components/note-editor/NoteEditor.tsx` | Props `onOpenFolderPicker` et `unlistedFolderIds` transmises à `FolderChip` | Réappliquer |
 | `src/app/App.tsx` | `handleSetNoteFolder` passe par `moveNoteToFolder` | Réappliquer |
 
+## Onglet Assistants, Recharger, Raccourcis iPhone (2026-09-22, ADR-0060)
+
+- **L'onglet Dictée devient « Assistants ».** `AssistantsScreen` (dans
+  `AssistantsDialog.tsx`) rend la bibliothèque comme écran d'onglet : ni
+  couche, ni piège de focus, ni bouton fermer. Les boutons « Mes assistants »
+  du Chat disparaissent sur le téléphone (le bureau garde le dialogue et
+  `AssistantLauncher`). La dictée devient un écran poussé depuis Notes (bouton
+  « Dicter » à côté d'« Enregistrer »), `autoStart` pour une action Raccourcis
+  ou `dictation?start=1`, jamais pour une notification.
+- **Recharger marchait nulle part sur iPhone** : `os_accounts::open_in_browser`
+  lançait `xdg-open`. Sur iOS il passe maintenant par Safari via un
+  `AppHandle` gardé au démarrage (`open_url::remember_app`), ce qui répare
+  aussi « Obtenir une clé », le lien communauté et les rapports. Nouvelle
+  commande `carpe_diem_open_top_up` (deux listes) : `<site du compte>/account/top-up`.
+- **Raccourcis (ADR-0060)** : trois App Intents Swift dans la cible app
+  (`gen/apple/Sources/os-june/Intents`), `intent_inbox.rs` (mobile seul),
+  `useDestinationQueue` (les adresses attendent que le shell soit prêt ;
+  balayage de la boîte au retour au premier plan), garde anti-rejeu de l'URL
+  de lancement dans `destinations.ts`, `chat?q=` pré-remplit sans envoyer.
+  `project.yml` : `SWIFT_VERSION`, `PRODUCT_MODULE_NAME: SubRosaApp`
+  (collision avec le module de l'extension), AppIntents en lien faible,
+  `CFBundleLocalizations`. La ligne « App Intents / Live Activity NON faits »
+  plus haut est dépassée pour les App Intents.
+
+### Pièges
+
+- ⚠️ **`xcodegen generate` réécrit l'`Info.plist`** depuis `project.yml`, qui ne
+  porte pas `ITSAppUsesNonExemptEncryption` (retiré du yml exprès, gardé dans
+  le plist committé). Après une régénération, remettre le plist committé et
+  n'y ajouter que les clés voulues.
+- ⚠️ **Deux modules Swift du même nom** (l'app et l'extension s'appellent
+  « Sub Rosa ») cassent le build dès que l'app compile du Swift.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/os_accounts.rs` | `open_in_browser` iOS vers Safari | Fork-only (shim), réappliquer |
+| `src-tauri/src/lib.rs` | `intent_inbox`, `open_shortcuts_app`, `carpe_diem_open_top_up`, `remember_app` | Réappliquer |
+| `src/app/App.tsx` | Destination `assistants` | Réappliquer |
+
 ## Procédure de synchronisation upstream (voir aussi `.github/workflows/upstream-sync.yml`)
 
 > **Remplacée le 2026-09-02 par [ADR-0040](docs/adr/0040-upstream-is-a-source-of-patches-not-a-merge-base.md).**

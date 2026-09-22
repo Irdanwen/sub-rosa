@@ -162,6 +162,22 @@ pub fn validate_server(value: &str) -> Result<String, AppError> {
     }
     Ok(url.as_str().trim_end_matches('/').to_string())
 }
+/// The account site this library belongs to: the origin it is bound to, or
+/// the default one. Read-only, unlike `login_server`, which binds it.
+pub(crate) async fn site_origin(app: &AppHandle) -> String {
+    let bound = match pool(app).await {
+        Ok(pool) => query("SELECT server_url FROM account_sync_control WHERE id=1")
+            .fetch_optional(&pool)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|row| row.get::<Option<String>, _>("server_url")),
+        Err(_) => None,
+    };
+    bound
+        .and_then(|base| validate_server(&base).ok())
+        .unwrap_or_else(|| DEFAULT_ACCOUNT_SERVER.to_string())
+}
 pub(super) async fn session(pool: &SqlitePool) -> Result<Session, AppError> {
     let _refresh_guard = REFRESH_LOCK.lock().await;
     let row =

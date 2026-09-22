@@ -73,6 +73,10 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: subrosa
             CFBundleURLSchemes: [subrosa]
+        # English and French, the two languages of the app's own catalog: the
+        # Shortcuts actions (Sources/os-june/Intents) read their titles from
+        # the matching .lproj.
+        CFBundleLocalizations: [en, fr]
         # Background execution (see src-tauri/src/ios_background.rs):
         # `audio` keeps a note recording alive with the screen locked,
         # `processing`/`fetch` let BGTaskScheduler wake the app up later to
@@ -117,6 +121,15 @@ targets:
         LIBRARY_SEARCH_PATHS[arch=arm64]: $(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)
         ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: true
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
+        # The Shortcuts actions are Swift in the app target itself (not an
+        # extension: an App Intent that opens the app runs in its process).
+        SWIFT_VERSION: 5.0
+        # The share extension is also named "Sub Rosa", so both would emit a
+        # Sub_Rosa.swiftmodule into the same products folder and the build
+        # fails ("Multiple commands produce"). The extension's name is in its
+        # Info.plist ($(PRODUCT_MODULE_NAME).ShareViewController); the app's
+        # is not referenced anywhere, so the app is the one renamed.
+        PRODUCT_MODULE_NAME: SubRosaApp
       groups: [app]
     dependencies:
       - framework: libapp.a
@@ -131,6 +144,11 @@ targets:
       - sdk: Security.framework
       - sdk: UIKit.framework
       - sdk: WebKit.framework
+      # The Shortcuts actions (iOS 16+). Weak, because the app still runs on
+      # iOS 15, where a strong link to a framework that does not exist stops
+      # the app at launch.
+      - sdk: AppIntents.framework
+        weak: true
       # The share sheet's half of "share to Sub Rosa" (ADR-0048): embedded
       # in the app bundle, signed with its own profile, sharing the app group.
       - target: os-june_Share

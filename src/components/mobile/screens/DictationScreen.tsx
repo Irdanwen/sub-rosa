@@ -42,7 +42,16 @@ function formatSince(ms: number) {
  * The desktop's global-hotkey + paste-injection flow has no iOS equivalent,
  * so the phone treats dictation as a destination screen with history.
  */
-export function DictationScreen() {
+export function DictationScreen({
+  onBack,
+  autoStart = false,
+}: {
+  /** Pushed from Notes (the phone has no Dictation tab any more). */
+  onBack?: () => void;
+  /** Start listening on arrival: a Shortcuts action or `dictation?start=1`.
+   * Never set by a notification tap, which must not turn a microphone on. */
+  autoStart?: boolean;
+} = {}) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [elapsedMs, setElapsedMs] = useState(0);
   const [peak, setPeak] = useState(0);
@@ -111,6 +120,21 @@ export function DictationScreen() {
     }
   }, []);
 
+  // Once per arrival, and only once the page is actually on screen: iOS
+  // refuses to open the microphone for a page that is still in the background.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!autoStart || autoStarted.current) return;
+    const go = () => {
+      if (autoStarted.current || document.visibilityState !== "visible") return;
+      autoStarted.current = true;
+      void start();
+    };
+    go();
+    document.addEventListener("visibilitychange", go);
+    return () => document.removeEventListener("visibilitychange", go);
+  }, [autoStart, start]);
+
   const stop = useCallback(async () => {
     setPhase("processing");
     // The transcription can outlive this screen: if the phone is locked before
@@ -154,7 +178,11 @@ export function DictationScreen() {
 
   return (
     <div className="mobile-screen-root">
-      <StackHeader title={t("Dictation")} large />
+      {onBack ? (
+        <StackHeader title={t("Dictation")} onBack={onBack} backLabel={t("Notes")} />
+      ) : (
+        <StackHeader title={t("Dictation")} large />
+      )}
       <div className="mobile-settings-scroll">
         <div className="mobile-dictation-stage">
           {phase === "recording" ? (

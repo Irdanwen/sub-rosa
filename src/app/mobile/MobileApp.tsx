@@ -1,4 +1,4 @@
-import { AssistantLauncher, openAssistants } from "../../components/assistants/AssistantLauncher";
+import { AssistantsScreen } from "../../components/assistants/AssistantsDialog";
 import { useAccountLibrarySync } from "../useAccountLibrarySync";
 import { t } from "../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
@@ -14,7 +14,8 @@ import { linkRecordingToMeeting } from "../../lib/calendar-link";
 import type { CalendarEventDto } from "../../lib/tauri";
 import { importMediaFile } from "../../lib/import-media";
 import { startLinkIngest } from "../../lib/tauri";
-import { type Destination, subscribeToDestinations } from "../../lib/destinations";
+import type { Destination } from "../../lib/destinations";
+import type { IntentRequest } from "../../lib/intents";
 import { importSharedItem } from "../../lib/share-inbox";
 import { useAmbientActivity } from "./useAmbientActivity";
 import { AgentScreen, AgentSessionScreen } from "../../components/mobile/screens/AgentScreen";
@@ -70,6 +71,7 @@ import {
 import { PROCESSING_DEMO_NOTE_ID, shouldPollProcessingStatus } from "../processing-polling";
 import { createInitialState, notesReducer } from "../state/app-state";
 import { useMobileNav } from "./nav";
+import { useDestinationQueue } from "./useDestinationQueue";
 import { useMobileBootstrap } from "./useMobileBootstrap";
 import { Spinner } from "../../components/ui/Spinner";
 
@@ -148,6 +150,13 @@ export function MobileApp() {
     setAgentSessionId(sessionId);
     setAgentChatEpoch((epoch) => epoch + 1);
   }, []);
+  /** Text waiting for the next fresh chat screen (`chat?q=`, a Shortcuts
+   * action), and whether it may be sent without a tap. */
+  const [pendingChat, setPendingChat] = useState<{ text: string; send: boolean } | null>(null);
+  // The Assistants tab: which conversation a notification asked for, and a key
+  // that remounts the library onto it.
+  const [assistantTaskId, setAssistantTaskId] = useState<string | undefined>(undefined);
+  const [assistantEpoch, setAssistantEpoch] = useState(0);
   const keyboardInset = useKeyboardInset();
 
   // Screen-entrance direction: push slides in from the right, pop settles
@@ -413,12 +422,35 @@ export function MobileApp() {
     events: CalendarEventDto[];
   } | null>(null);
 
-  // Destinations (subrosa://…): a deep link, or the tap on a notification
-  // that carried one — the phone's four notifications each name where they
-  // belong. Mount-once (a resubscribe would re-read the launch URL), so the
-  // handler rides a ref that render keeps fresh.
-  const handleDestinationRef = useRef<(destination: Destination) => void>(() => {});
-  handleDestinationRef.current = (destination: Destination) => {
+  // Destinations (subrosa://…): a deep link, a Shortcuts action, or the tap
+  // on a notification that carried one. They wait until the shell is ready
+  // (see useDestinationQueue), and each lands on the tab it belongs to.
+
+  /** Record from outside the app (a link, a Shortcuts action). Lands on
+   * Notes, where the note will be; shows the recording already running rather
+   * than starting a second one. */
+  const recordFromOutside = () => {
+    nav.switchTab("notes");
+    const running = recordingNoteIdRef.current;
+    if (running) {
+      openNote(running);
+      return;
+    }
+    void handleCreateNote({ record: true });
+  };
+  const openDictation = (autoStart: boolean) => {
+    nav.switchTab("notes");
+    nav.push({ view: "dictation", autoStart });
+  };
+  /** A fresh chat, with text waiting in it. Sent without a tap only when the
+   * request came from the app's own Shortcuts action (`send`). */
+  const askInChat = (text: string | undefined, send: boolean) => {
+    nav.switchTab("agent");
+    openChatSession(undefined);
+    if (text) setPendingChat({ text, send });
+  };
+
+  const handleDestination = (destination: Destination) => {
     switch (destination.kind) {
       case "note":
         nav.switchTab("notes");
@@ -426,19 +458,27 @@ export function MobileApp() {
         break;
       case "chat":
         nav.switchTab("agent");
-        if (destination.sessionId) openChatSession(destination.sessionId);
+        openChatSession(destination.sessionId);
+        // A link's question is written into the composer, never sent: any
+        // page can open an address.
+        if (destination.query) setPendingChat({ text: destination.query, send: false });
         break;
       case "assistant":
-        openAssistants(destination.taskId);
+        setAssistantTaskId(destination.taskId);
+        setAssistantEpoch((epoch) => epoch + 1);
+        nav.switchTab("assistants");
+        break;
+      case "assistants":
+        nav.switchTab("assistants");
         break;
       case "dictation":
-        nav.switchTab("dictation");
+        openDictation(Boolean(destination.start));
         break;
       case "studio":
         nav.switchTab("studio");
         break;
       case "record":
-        void handleCreateNote({ record: true });
+        recordFromOutside();
         break;
       // Shared in from another app. The notes tab is where the download shows
       // itself, so land there rather than starting something invisible.
@@ -465,7 +505,16 @@ export function MobileApp() {
         break;
     }
   };
-  useEffect(() => subscribeToDestinations((d) => handleDestinationRef.current(d)), []);
+  const handleIntent = (request: IntentRequest) => {
+    if (request.action === "record") recordFromOutside();
+    else if (request.action === "dictate") openDictation(true);
+    else askInChat(request.query, Boolean(request.send && request.query));
+  };
+  useDestinationQueue({
+    ready: !carpeDiemLoading && !carpeDiemRequired && !bootstrap.loading && !bootstrap.error,
+    onDestination: handleDestination,
+    onIntent: handleIntent,
+  });
 
   // Notes cited in a chat reply (the subrosa:notes block): the card
   // dispatches one window event, and the shell answers with its own opener —
@@ -881,6 +930,8 @@ export function MobileApp() {
         }}
       />
     );
+  } else if (top?.view === "dictation") {
+    screen = <DictationScreen onBack={nav.pop} autoStart={top.autoStart} />;
   } else if (top?.view === "settings-section") {
     screen =
       top.section === "account" ? (
@@ -942,6 +993,7 @@ export function MobileApp() {
             onCreateNote={() => void handleCreateNote()}
             onImportAudio={(file) => void handleImportAudio(file)}
             onOpenFolder={(folderId) => nav.push({ view: "folder", folderId })}
+            onOpenDictation={() => nav.push({ view: "dictation" })}
             onDeleteNote={(noteId) => void handleDeleteNote(noteId)}
             onArchiveNote={(noteId) => void handleArchiveNote(noteId)}
             onMoveNotes={(noteIds, folderId) => void handleMoveNotes(noteIds, folderId)}
@@ -950,8 +1002,15 @@ export function MobileApp() {
           />
         );
         break;
-      case "dictation":
-        screen = <DictationScreen />;
+      case "assistants":
+        screen = (
+          <div className="mobile-screen-root">
+            <AssistantsScreen
+              key={`assistants-${assistantEpoch}`}
+              initialTaskId={assistantTaskId}
+            />
+          </div>
+        );
         break;
       case "agent":
         // The tab lands straight in a conversation (fresh, or the one already
@@ -964,6 +1023,9 @@ export function MobileApp() {
             onOpenSession={openChatSession}
             onOpenHistory={() => nav.push({ view: "agent-history" })}
             onNewChat={() => openChatSession(undefined)}
+            initialDraft={pendingChat?.text}
+            autoSend={pendingChat?.send}
+            onInitialDraftUsed={() => setPendingChat(null)}
           />
         );
         break;
@@ -986,7 +1048,6 @@ export function MobileApp() {
 
   return (
     <div className="mobile-shell">
-      <AssistantLauncher />
       <MobileErrorBanner error={error} onDismiss={() => setError(null)} />
       <RailSwitchBanner compact />
       {calendarAmbiguity ? (

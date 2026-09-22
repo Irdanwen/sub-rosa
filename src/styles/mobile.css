@@ -546,6 +546,39 @@
   transform: scale(0.97);
 }
 
+/* Dictate and Record, together at the FAB's place. */
+.mobile-fab-row {
+  position: absolute;
+  right: var(--mobile-gutter);
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.mobile-fab-row .mobile-record-fab {
+  position: static;
+}
+
+.mobile-dictate-fab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 52px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.12);
+}
+
+.mobile-dictate-fab:active {
+  transform: scale(0.97);
+}
+
 /* Selection mode takes the FAB's place: what to do with the notes ticked. */
 .mobile-selection-bar {
   position: absolute;

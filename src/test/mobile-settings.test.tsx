@@ -34,6 +34,8 @@ const tauriMocks = vi.hoisted(() => ({
   carpeDiemRestartSidecar: vi.fn(),
 }));
 
+const topUp = vi.hoisted(() => ({ openTopUp: vi.fn(async () => undefined) }));
+vi.mock("../lib/top-up", () => topUp);
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: () => Promise.resolve("1.30.0") }));
 vi.mock("../lib/haptics", () => ({
@@ -107,10 +109,25 @@ describe("mobile settings root", () => {
     await waitFor(() => expect(screen.getByText("Off")).toBeInTheDocument());
   });
 
-  it("makes the balance open the top-up dashboard", async () => {
+  it("makes the balance open the account site's Top up tab", async () => {
     render(<SettingsScreen onOpen={vi.fn()} />);
     await userEvent.click(screen.getByRole("button", { name: /balance/i }));
-    expect(tauriMocks.carpeDiemOpenDashboard).toHaveBeenCalled();
+    expect(topUp.openTopUp).toHaveBeenCalled();
+  });
+
+  it("says so when the Top up page cannot be opened", async () => {
+    topUp.openTopUp.mockRejectedValueOnce(new Error("The link could not be opened yet."));
+    render(<SettingsScreen onOpen={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: /balance/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("could not be opened");
+  });
+
+  it("explains a shortcut instead of copying it silently", async () => {
+    render(<SettingsScreen onOpen={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "New audio note" }));
+    const sheet = screen.getByRole("dialog", { name: "New audio note" });
+    expect(sheet).toHaveTextContent("starts recording");
+    expect(screen.getByRole("button", { name: "Copy the address" })).toBeTruthy();
   });
 });
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { artifactDataUrl, evictArtifactDataUrl } from "../../../lib/artifact-media";
 import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
 import { hapticNotify } from "../../../lib/haptics";
+import { openTopUp } from "../../../lib/top-up";
 import { deleteArtifact, listArtifacts } from "../../../lib/studio/artifacts";
 import {
   fetchMediaCatalog,
@@ -259,7 +260,9 @@ export function StudioScreen() {
         <ActionSheet
           title={formatCredits(credits.availableCredits)}
           subtitle={rateSentence(credits.priceMultiplier)}
-          actions={[]}
+          actions={[
+            { label: t("Top up"), onAction: () => void openTopUp().catch(() => undefined) },
+          ]}
           closeLabel={t("OK")}
           onClose={() => setRateOpen(false)}
         />

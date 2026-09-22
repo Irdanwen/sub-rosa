@@ -1,29 +1,34 @@
 /**
  * The addresses the app answers to, as a list both shells can show.
  *
- * The destination router already makes every one of these usable from
- * Shortcuts (an "Open URL" action), which is what App Intents would buy for
- * these three verbs — without a Swift target, an app group, or a
- * provisioning change. The only thing missing was that nobody can guess a
- * URL scheme, so both shells list them.
+ * On the iPhone the same three verbs are also Shortcuts actions (App Intents,
+ * `gen/apple/Sources/os-june/Intents`): they appear in the Shortcuts app by
+ * themselves, ready for the Action button, a widget or the Home Screen, with
+ * no address to type. The addresses stay for everything else: an "Open URL"
+ * shortcut on another platform, or a link in another app.
  */
 
+import { t } from "./i18n";
 import { destinationUrl } from "./destinations";
 
-export const AUTOMATION_ADDRESSES = [
+export type Automation = { label: string; detail: string; url: string };
+
+export const AUTOMATION_ADDRESSES: readonly Automation[] = [
   {
-    label: "Start recording",
-    detail: "Opens Sub Rosa on a new note and starts capturing.",
+    label: t("New audio note"),
+    detail: t("Opens Sub Rosa on a new note and starts recording."),
     url: destinationUrl({ kind: "record" }),
   },
   {
-    label: "Dictate",
-    detail: "Opens the dictation surface, ready to speak.",
-    url: destinationUrl({ kind: "dictation" }),
+    label: t("Dictate"),
+    detail: t("Opens dictation and starts listening."),
+    url: destinationUrl({ kind: "dictation", start: true }),
   },
   {
-    label: "Ask my notes",
-    detail: "Opens the chat with a question already typed. Replace the text after q=.",
+    label: t("Ask Sub Rosa"),
+    detail: t(
+      "Opens a new chat with the question already typed. From an address, replace the text after q=.",
+    ),
     url: `${destinationUrl({ kind: "chat" })}?q=what%20did%20I%20decide%20about`,
   },
-] as const;
+];

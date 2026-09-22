@@ -47,10 +47,15 @@ fn platform_specific(name: &str) -> bool {
         // The share sheet's inbox (ADR-0048): only the phone has a share
         // extension to fill it.
         "share_inbox::",
+        // Shortcuts actions (App Intents) write into the same app group.
+        "intent_inbox::",
         "keyboard_ios::",
         "ios_background::",
     ];
     const NAMES: &[&str] = &[
+        // The Shortcuts app is an iPhone app; the command only exists in the
+        // phone's list.
+        "open_url::open_shortcuts_app",
         "set_recording_presence_bounds",
         "open_hud_window",
         "close_hud_window",
