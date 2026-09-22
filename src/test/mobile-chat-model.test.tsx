@@ -50,6 +50,14 @@ vi.mock("../lib/studio/catalog", async (importOriginal) => ({
   fetchMediaCatalog: () => Promise.resolve({ backend: "carpe-diem", models: MODELS }),
   modelsOfType: () => MODELS,
 }));
+// The history reads its rows (and their previews) through chat-titles; the
+// fixtures still speak list_agent_tasks' shape.
+vi.mock("../lib/chat-titles", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/chat-titles")>()),
+  listChatSessions: async () => (await tauriMocks.listAgentTasks()).items,
+  renameAgentTask: vi.fn(),
+  onChatTitle: () => () => undefined,
+}));
 vi.mock("../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/tauri")>()),
   ...tauriMocks,
@@ -566,5 +574,58 @@ describe("mobile chat model persistence", () => {
       />,
     );
     expect(await screen.findByRole("button", { name: "Archivées (1)" })).toBeInTheDocument();
+  });
+});
+
+describe("the chat history", () => {
+  beforeEach(() => {
+    for (const mock of Object.values(tauriMocks)) mock.mockReset();
+    tauriMocks.listSessionFolders.mockResolvedValue([]);
+  });
+
+  it("reads as days, with where each chat left off and when", async () => {
+    const now = new Date();
+    const lastWeek = new Date(now.getTime() - 10 * 86_400_000);
+    tauriMocks.listAgentTasks.mockResolvedValue({
+      items: [
+        {
+          ...makeTask({ id: "a", title: "Budget decisions", updatedAt: now.toISOString() }),
+          lastMessagePreview: "Keep the reserve",
+          lastMessageRole: "assistant",
+        },
+        {
+          ...makeTask({
+            id: "b",
+            title: "",
+            prompt: "Trip plan",
+            updatedAt: lastWeek.toISOString(),
+          }),
+          lastMessagePreview: "and Lisbon?",
+          lastMessageRole: "user",
+        },
+      ],
+    });
+    render(<AgentScreen onOpenSession={vi.fn()} ensureArchiveFolder={async () => undefined} />);
+
+    expect(await screen.findByRole("heading", { name: "Today" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Older" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /^Budget decisions, .*Keep the reserve$/ }),
+    ).toBeTruthy();
+    // The person's own last words are marked as theirs.
+    expect(screen.getByText("You: and Lisbon?")).toBeTruthy();
+  });
+
+  it("finds a chat by what it said", async () => {
+    tauriMocks.listAgentTasks.mockResolvedValue({
+      items: [
+        { ...makeTask({ id: "a", title: "Budget" }), lastMessagePreview: "Keep the reserve" },
+        { ...makeTask({ id: "b", title: "Trip" }), lastMessagePreview: "Lisbon in May" },
+      ],
+    });
+    render(<AgentScreen onOpenSession={vi.fn()} ensureArchiveFolder={async () => undefined} />);
+    await userEvent.type(await screen.findByRole("searchbox", { name: "Search chats" }), "lisbon");
+    expect(screen.queryByText("Budget")).toBeNull();
+    expect(screen.getByText("Trip")).toBeTruthy();
   });
 });
