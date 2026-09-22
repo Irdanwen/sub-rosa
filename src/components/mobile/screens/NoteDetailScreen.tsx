@@ -1,7 +1,6 @@
 import { t } from "../../../lib/i18n";
-import { IconArrowBoxRight } from "central-icons/IconArrowBoxRight";
+import { IconDotGrid1x3Horizontal } from "central-icons/IconDotGrid1x3Horizontal";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
-import { IconTrashCan } from "central-icons/IconTrashCan";
 import { useState } from "react";
 import type {
   FolderDto,
@@ -19,6 +18,7 @@ import { NoteEditor } from "../../note-editor/NoteEditor";
 import { ShareNoteDialog } from "../../share/ShareNoteDialog";
 import { useCanShare } from "../../share/useCanShare";
 import { AskNoteOverlay } from "../../ask/AskNoteOverlay";
+import { ActionSheet } from "../ActionSheet";
 import { StackHeader } from "../StackHeader";
 
 type NoteDetailScreenProps = {
@@ -86,6 +86,17 @@ export function NoteDetailScreen({
   // needs somewhere to put the ciphertext.
   const [sharing, setSharing] = useState(false);
   const canShare = useCanShare();
+  // Export and delete live behind one button. A bin in the header, next to
+  // the question button and a thumb's width from the back button, was one
+  // mistaken tap from a confirmation nobody wanted to see.
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const exportNote = () => {
+    if (!note) return;
+    const title = note.title.trim() || t("New note");
+    const body = note.editedContent ?? note.generatedContent ?? "";
+    void shareText(`# ${title}\n\n${body}`).catch(() => undefined);
+  };
 
   return (
     <div className="mobile-screen-root mobile-note-detail">
@@ -107,28 +118,27 @@ export function NoteDetailScreen({
             <button
               type="button"
               className="mobile-icon-button"
-              aria-label={t("Export note")}
+              aria-label={t("More actions")}
+              aria-haspopup="dialog"
               disabled={!note}
-              onClick={() => {
-                if (!note) return;
-                const title = note.title.trim() || t("New note");
-                const body = note.editedContent ?? note.generatedContent ?? "";
-                void shareText(`# ${title}\n\n${body}`).catch(() => undefined);
-              }}
+              onClick={() => setMenuOpen(true)}
             >
-              <IconArrowBoxRight size={18} />
-            </button>
-            <button
-              type="button"
-              className="mobile-icon-button"
-              aria-label={t("Delete note")}
-              onClick={() => setConfirmDelete(true)}
-            >
-              <IconTrashCan size={18} />
+              <IconDotGrid1x3Horizontal size={18} />
             </button>
           </>
         }
       />
+      {menuOpen && note ? (
+        <ActionSheet
+          title={note.title.trim() || t("New note")}
+          subtitle={t("What would you like to do with this note?")}
+          actions={[
+            { label: t("Export note"), onAction: exportNote },
+            { label: t("Delete note"), destructive: true, onAction: () => setConfirmDelete(true) },
+          ]}
+          onClose={() => setMenuOpen(false)}
+        />
+      ) : null}
       {asking && note ? (
         <AskNoteOverlay
           noteId={note.id}

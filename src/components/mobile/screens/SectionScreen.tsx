@@ -2,7 +2,11 @@ import { t } from "../../../lib/i18n";
 import { type ReactNode, useEffect, useState } from "react";
 import { diagnosticsReportText } from "../../../lib/diagnostics-report";
 import { messageFromError } from "../../../lib/errors";
+import { IMAGE_MODELS } from "../../../lib/image-models";
+import { readableModelName } from "../../../lib/model-names";
 import { dispatchProviderModelSettingsChanged } from "../../../lib/model-privacy";
+import { fetchMediaCatalog } from "../../../lib/studio/catalog";
+import type { MediaCatalog } from "../../../lib/studio/types";
 import {
   listVeniceModels,
   type ProviderModelMode,
@@ -140,16 +144,27 @@ export function ModelsScreen({ onBack }: { onBack: () => void }) {
   >({});
   const [error, setError] = useState<string | null>(null);
   const [picking, setPicking] = useState<ProviderModelMode | null>(null);
+  // Only for names: the sidecar reports each id as its own display name.
+  const [published, setPublished] = useState<MediaCatalog | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    fetchMediaCatalog()
+      .then((result) => {
+        if (!cancelled) setPublished(result);
+      })
+      .catch(() => undefined);
     for (const row of MODEL_ROWS) {
       listVeniceModels(row.mode)
         .then((response) => {
           if (cancelled) return;
+          // Image models are not in the catalog the backend serves, so the
+          // picker used to open empty. The desktop's curated list fills it.
+          const models =
+            row.mode === "image" && response.models.length === 0 ? IMAGE_MODELS : response.models;
           setCatalog((current) => ({
             ...current,
-            [row.mode]: { selected: response.selectedModel, models: response.models },
+            [row.mode]: { selected: response.selectedModel, models },
           }));
         })
         .catch((err) => {
@@ -178,21 +193,24 @@ export function ModelsScreen({ onBack }: { onBack: () => void }) {
   const active = picking ? catalog[picking] : undefined;
   return (
     <SectionScreen title={t("Models")} onBack={onBack}>
-      <SettingsGroup title={t("Default models")}>
-        <p className="mobile-settings-note">
-          {t(
-            "What each kind of work starts with. A chat, a flow or a Studio panel can still pick its own model for one run.",
-          )}
-        </p>
+      <SettingsGroup
+        title={t("Default models")}
+        footer={t(
+          "What each kind of work starts with. A chat or a Studio panel can still pick its own model for one run.",
+        )}
+      >
         {error ? <p className="mobile-settings-error">{error}</p> : null}
         {MODEL_ROWS.map((row) => {
           const entry = catalog[row.mode];
-          const name =
-            entry?.models.find((model) => model.id === entry.selected)?.name ??
-            entry?.selected ??
-            "…";
+          const name = entry
+            ? readableModelName(
+                entry.selected,
+                entry.models.find((model) => model.id === entry.selected)?.name,
+                published,
+              )
+            : "…";
           return (
-            <SettingsRow key={row.mode} label={row.label} align="stack">
+            <SettingsRow key={row.mode} label={row.label} detail={row.note} align="stack">
               <button
                 type="button"
                 className="mobile-settings-button"
@@ -202,7 +220,6 @@ export function ModelsScreen({ onBack }: { onBack: () => void }) {
               >
                 {name}
               </button>
-              <p className="mobile-settings-footnote">{row.note}</p>
             </SettingsRow>
           );
         })}
@@ -214,8 +231,7 @@ export function ModelsScreen({ onBack }: { onBack: () => void }) {
           })}
           entries={active.models.map((model) => ({
             id: model.id,
-            name: model.name,
-            subtitle: model.description,
+            name: readableModelName(model.id, model.name, published),
           }))}
           selectedId={active.selected}
           onSelect={(id) => void choose(picking, id)}

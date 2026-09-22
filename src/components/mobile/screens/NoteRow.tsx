@@ -1,6 +1,7 @@
 import { intlLocale, t } from "../../../lib/i18n";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { useLongPress } from "../../../lib/long-press";
+import { readablePreview } from "../../../lib/note-preview";
 import { IconNoteText } from "central-icons/IconNoteText";
 import type { NoteListItemDto } from "../../../lib/tauri";
 
@@ -17,10 +18,10 @@ export function NoteRow({ note, recording, onSelect, onLongPress }: NoteRowProps
   const title = note.title.trim() || t("New note");
   const effectiveStatus =
     note.processingStatus === "recording" && !recording ? "draft" : note.processingStatus;
-  const preview =
-    note.preview.trim() || (recording ? t("Recording") : statusLabel(effectiveStatus));
+  const body = readablePreview(note.preview, note.title);
+  const preview = body || (recording ? t("Recording") : statusLabel(effectiveStatus));
   const processing =
-    !note.preview.trim() &&
+    !body &&
     (effectiveStatus === "transcribing" ||
       effectiveStatus === "generating" ||
       effectiveStatus === "validating");

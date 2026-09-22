@@ -7881,6 +7881,29 @@ input:focus-visible,
   gap: var(--sp-3);
 }
 
+/* The view switch and the note's actions, on one row. When the actions do not
+ * fit beside the switch (a phone) they wrap under it, starting at the left. */
+.note-header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2) var(--sp-3);
+  width: 100%;
+}
+
+.note-header-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.note-header-actions[data-active] {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
 /* Overline — quiet metadata row sitting above the title. Date is plain
  * text; the folder chip is the one actionable affordance. Status (when
  * present) floats to the right end so it never crowds the chip. */
@@ -23669,6 +23692,7 @@ input:focus-visible,
   .error-banner,
   .notice-banner,
   .note-header-actions,
+  .note-header-toolbar,
   .segmented,
   .editor-footer,
   .note-chat-panel,
@@ -24241,6 +24265,12 @@ input:focus-visible,
 .note-listen[data-state="failed"] {
   color: var(--muted-foreground);
   opacity: 0.7;
+}
+
+/* In the note's action row, the pill sits on the row's centre line. */
+.note-header-toolbar .note-listen {
+  align-self: center;
+  margin: 0;
 }
 
 /* Proposed actions. One surface for every kind of action, and the button is

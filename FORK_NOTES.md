@@ -1092,6 +1092,48 @@ Points de relecture lors d’un cherry-pick :
 Le site privé de prévisualisation n’ouvre pas de comptes réels. Les versions
 actuellement proposées au téléchargement ne contiennent pas cette branche.
 
+## Le téléphone tient dans son écran (2026-09-22)
+
+Trois retours iPhone avaient la même allure (« l'écran bugge ») et trois causes
+distinctes, toutes lisibles dans le code.
+
+**1. L'écran « trop large ».** Le facteur mesuré sur les captures (1,067) vaut
+16/15 : un zoom automatique d'iOS au focus d'un champ en `--fs-md` (15 px sur le
+téléphone), jamais défait depuis que `maximum-scale` a quitté le viewport
+(49195fa5, choix d'accessibilité maintenu). Deux déclencheurs passaient sous le
+garde 16 px de `mobile.css` : `.mobile-memory-add input`, déclaré plus tard à
+spécificité égale, et le corps de note (`contenteditable`), que le garde ne
+couvrait pas. Le garde couvre désormais les surfaces riches ;
+`src/test/mobile-input-size.test.mjs` refuse toute règle mobile qui redonne une
+taille sous 16 px à un champ. Filet : `src/lib/mobile-zoom.ts` défait un zoom
+apparu pendant un focus sans geste de pincement. Le `body { min-width: 720px }`
+du bureau est levé sous `:root[data-shell="mobile"]` (posé par `main.tsx`).
+
+**2. L'enregistreur hors écran.** `.editor-footer` se place contre la barre
+latérale du bureau via `--sidebar-w-current`, qui vaut 240 px tant que le shell
+bureau ne le fixe pas, donc toujours sur le téléphone. Le shell mobile le
+remet à zéro, et le pied de note prend les gouttières du téléphone.
+
+**3. Les boutons de note en colonne.** Depuis 84512ea0, les actions de note
+(`.note-header-actions`) n'avaient aucune règle écran, seulement l'impression,
+et `.editor-header` est une grille : un bouton gris par ligne, **aussi sur le
+bureau**. Elles vivent maintenant dans `.note-header-row` /
+`.note-header-toolbar`, sur la ligne du segmenté.
+
+### Fichiers ajoutés
+
+`src/lib/{mobile-zoom.ts, note-preview.ts, model-names.ts}`,
+`src/test/{mobile-input-size.test.mjs, mobile-zoom.test.ts, note-preview.test.ts, model-names.test.ts}`.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src/components/note-editor/NoteEditor.tsx` | Segmenté + actions regroupés dans `.note-header-row` / `.note-header-toolbar`, `ghost-icon-button` sur les actions ; invite de l'éditeur via `t()` | Réappliquer |
+| `src/components/note-editor/NotePreview.tsx` | Invite par défaut via `t()` | Réappliquer |
+| `src/styles/app.css` | Règles de la rangée d'actions ; `.note-header-toolbar` masquée à l'impression | Réappliquer |
+| `src/main.tsx` | `data-shell="mobile"` + `installZoomRecovery` sur le téléphone | Réappliquer |
+
 ## Procédure de synchronisation upstream (voir aussi `.github/workflows/upstream-sync.yml`)
 
 > **Remplacée le 2026-09-02 par [ADR-0040](docs/adr/0040-upstream-is-a-source-of-patches-not-a-merge-base.md).**

@@ -275,7 +275,7 @@
   border: none;
   background: none;
   color: var(--foreground);
-  font-size: var(--fs-md);
+  font-size: max(16px, var(--fs-md));
   outline: none;
 }
 
@@ -1120,6 +1120,25 @@
   .mobile-shell select {
     font-size: max(16px, var(--fs-md));
   }
+
+  /* A rich-text surface zooms the same way, and the note body is one. Its
+   * designed size is --fs-lg, 16px times the iOS text-size factor, which falls
+   * under 16px as soon as Larger Text is set below the default. */
+  .mobile-shell [contenteditable="true"] {
+    font-size: max(16px, var(--fs-lg));
+  }
+}
+
+/* The phone shell is `position: fixed; inset: 0`, so the document behind it
+ * must be exactly as wide as the screen. app.css gives the desktop body a
+ * 720px floor; left in place here, it hands WebKit a page wider than the
+ * viewport to scale against, and one zoom later the tab bar is cut off at the
+ * right. Nothing on the document itself scrolls (the shell's screens do), so
+ * clipping it sideways costs nothing. */
+:root[data-shell="mobile"],
+:root[data-shell="mobile"] body {
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 /* --- The opening ground (see components/mobile/ChatAmbient.tsx) ------------
@@ -1299,7 +1318,7 @@
   background: var(--card);
   color: var(--foreground);
   font-family: var(--font-sans);
-  font-size: var(--fs-md);
+  font-size: max(16px, var(--fs-md));
   resize: none;
   outline: none;
 }
@@ -2804,10 +2823,46 @@
   align-self: center;
 }
 
+/* The note footer is placed against the desktop sidebar: its left edge is
+ * max(--sidebar-w-current, gutter) + inset, and that width is 240px unless the
+ * desktop shell sets it, which the phone never does. The recorder pill started
+ * 264px from the left and ran 40px off the right edge, dragging the consent
+ * note with it. The phone has no sidebar, so the width is zero in the shell,
+ * and the footer takes the same gutters as every other screen. */
+.mobile-shell {
+  --sidebar-w-current: 0px;
+}
+
+.mobile-note-detail .editor-footer {
+  left: var(--mobile-gutter);
+  right: var(--mobile-gutter);
+  bottom: calc(var(--sp-4) + env(safe-area-inset-bottom));
+  padding: 0;
+}
+
+.mobile-note-detail .record-consent-note {
+  max-width: calc(100vw - 2 * var(--mobile-gutter));
+}
+
 /* The desktop display-size title (30px serif in a single-line input) clips
  * long titles on a phone width; step it down so most titles fit. */
 .mobile-note-detail .note-title {
   font-size: var(--fs-2xl);
+  /* iOS gives a text field its native appearance, inner padding included,
+   * which set the title in from the date line above it. */
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 0;
+}
+
+/* The note's actions at thumb size. */
+.mobile-note-detail .note-header-actions {
+  width: 44px;
+  height: 44px;
+}
+
+.mobile-note-detail .note-header-toolbar .note-listen {
+  min-height: 44px;
 }
 
 .mobile-note-detail .record-consent-note-surface .inline-notice-message {
@@ -3492,7 +3547,8 @@
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--card);
-  font-size: var(--fs-md);
+  /* Same floor as every field in the shell: this rule outranks it. */
+  font-size: max(16px, var(--fs-md));
 }
 
 .mobile-memory-add button {
