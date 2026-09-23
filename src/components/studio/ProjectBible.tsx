@@ -29,7 +29,7 @@ export function ProjectBible({
   onChange: (entries: ProjectBibleEntry[]) => void;
   artifacts: StudioArtifact[];
   catalog: MediaCatalog;
-  onArtifact: (artifact: StudioArtifact) => void;
+  onArtifact: (artifactId: string) => void;
   onGenerate: (entryId: string, role: BibleRole) => void;
   busy: boolean;
 }) {
@@ -79,10 +79,8 @@ export function ProjectBible({
         };
     onChange([...entries, next]);
     if (source) {
-      for (const artifactId of new Set(next.refs.map((ref) => ref.artifactId))) {
-        const artifact = artifacts.find((item) => item.id === artifactId);
-        if (artifact) onArtifact(artifact);
-      }
+      for (const artifactId of new Set(next.refs.map((ref) => ref.artifactId)))
+        onArtifact(artifactId);
     }
     setSelected(id);
     setRole(ROLES_BY_KIND[next.kind][0]);
@@ -305,7 +303,7 @@ export function ProjectBible({
           onPick={(_, artifact) => {
             if (entry.refs.some((ref) => ref.artifactId === artifact.id && ref.role === activeRole))
               return;
-            onArtifact(artifact);
+            onArtifact(artifact.id);
             update({
               refs: [
                 ...entry.refs,

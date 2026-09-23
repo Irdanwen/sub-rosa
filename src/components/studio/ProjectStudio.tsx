@@ -482,17 +482,25 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setReopenConfirm(false);
     await open(stored);
   };
-  const addArtifact = (artifact: StudioArtifact) => {
+  const addArtifact = (artifactId: string) => {
     const target = current.current;
     if (!target) return;
     editDocument((document) => ({
       ...document,
-      artifactIds: [...new Set([...document.artifactIds, artifact.id])],
+      artifactIds: [...new Set([...document.artifactIds, artifactId])],
     }));
-    void saveArtifactMetadata({
-      id: artifact.id,
-      projectIds: [...new Set([...(artifact.projectIds ?? []), target.id])],
-    })
+    void listArtifactMetadata()
+      .then((metadata) =>
+        saveArtifactMetadata({
+          id: artifactId,
+          projectIds: [
+            ...new Set([
+              ...(metadata.find((item) => item.id === artifactId)?.projectIds ?? []),
+              target.id,
+            ]),
+          ],
+        }),
+      )
       .then(refreshArtifacts)
       .catch(report);
   };

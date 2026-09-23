@@ -246,7 +246,7 @@ describe("project bible", () => {
       <ProjectBible
         entries={[]}
         onChange={fixtures.onChange}
-        artifacts={[artifact("portrait.png")]}
+        artifacts={[]}
         catalog={catalog}
         onArtifact={onArtifact}
         onGenerate={vi.fn()}
@@ -259,7 +259,7 @@ describe("project bible", () => {
     fireEvent.change(screen.getByLabelText("Copy from your library"), {
       target: { value: "entry" },
     });
-    expect(onArtifact).toHaveBeenCalledWith(expect.objectContaining({ id: "portrait.png" }));
+    expect(onArtifact).toHaveBeenCalledWith("portrait.png");
     expect(fixtures.onChange.mock.lastCall?.[0][0].refs[0]).toMatchObject({
       artifactId: "portrait.png",
       role: "portrait",
