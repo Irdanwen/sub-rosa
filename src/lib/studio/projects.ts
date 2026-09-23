@@ -35,7 +35,10 @@ export interface ProjectRun {
 }
 export interface ProjectDocument {
   schemaVersion: 1;
+  /** Source note, copied into this project's script but never edited by Studio. */
   noteId?: string;
+  /** Studio-owned note used only to run the durable script reader. */
+  readingNoteId?: string;
   script: string;
   shots: ProjectShot[];
   bible: ProjectBibleEntry[];

@@ -12,7 +12,12 @@ import {
   type ShotListDto,
 } from "../../lib/tauri";
 import { listArtifacts } from "../../lib/studio/artifacts";
-import { BIBLE_ROLE_LABELS, type BibleRole } from "../../lib/studio/bible";
+import {
+  BIBLE_KINDS,
+  BIBLE_ROLE_LABELS,
+  type BibleKind,
+  type BibleRole,
+} from "../../lib/studio/bible";
 import { createEditorClip, fps } from "../../lib/studio/editor/document";
 import { mediaSeconds } from "../../lib/studio/reference-media";
 import { artifactSrc } from "../../lib/studio/artifacts";
@@ -153,8 +158,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setRunStates({});
     setReading(false);
     window.localStorage.setItem(LAST_PROJECT, value.id);
-    if (value.document.noteId) {
-      const row = await shotList(value.document.noteId);
+    const readingNoteId = value.document.readingNoteId;
+    if (readingNoteId) {
+      const row = await shotList(readingNoteId);
       if (current.current?.id !== value.id) return;
       setReading(row?.status === "running" || row?.status === "pending");
       if (row) acceptReading(row);
@@ -296,16 +302,40 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     };
   }, []);
   const acceptReading = (row: ShotListDto) => {
-    if (row.noteId !== current.current?.document.noteId) return;
+    const active = current.current;
+    if (!active || row.noteId !== active.document.readingNoteId) return;
     setReading(row.status === "pending" || row.status === "running");
     if (row.status === "failed") {
       setError(row.lastError || t("The script could not be read."));
       return;
     }
-    if (row.status !== "ready" || !row.shotsJson || current.current.document.shots.length) return;
+    if (row.status !== "ready" || !row.shotsJson || active.document.shots.length) return;
     try {
-      const parsed = JSON.parse(row.shotsJson);
-      const shots: Shot[] = Array.isArray(parsed) ? parsed : parsed.shots;
+      const parsed: unknown = JSON.parse(row.shotsJson);
+      const body =
+        parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : undefined;
+      const shots = Array.isArray(parsed)
+        ? (parsed as Shot[])
+        : Array.isArray(body?.shots)
+          ? (body.shots as Shot[])
+          : [];
+      const cast = Array.isArray(body?.cast)
+        ? body.cast.flatMap((entry) => {
+            if (!entry || typeof entry !== "object") return [];
+            const member = entry as Record<string, unknown>;
+            const name = typeof member.name === "string" ? member.name.trim() : "";
+            if (!name || !BIBLE_KINDS.includes(member.kind as BibleKind)) return [];
+            return [
+              {
+                name,
+                kind: member.kind as BibleKind,
+                traits: typeof member.traits === "string" ? member.traits : "",
+              },
+            ];
+          })
+        : [];
       editDocument((document) => ({
         ...document,
         shots: shots.map((shot, index) => ({
@@ -315,6 +345,35 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           title: shot.scene || t("Shot {number}", { number: index + 1 }),
           mode: shot.continues ? "continuation" : "text",
         })),
+        bible: [
+          ...document.bible,
+          ...cast
+            .filter(
+              (member, index) =>
+                !document.bible.some(
+                  (entry) =>
+                    entry.name.trim().toLowerCase() === member.name.toLowerCase() &&
+                    entry.kind === member.kind,
+                ) &&
+                !cast
+                  .slice(0, index)
+                  .some(
+                    (entry) =>
+                      entry.name.toLowerCase() === member.name.toLowerCase() &&
+                      entry.kind === member.kind,
+                  ),
+            )
+            .map((member) => ({
+              id: crypto.randomUUID(),
+              name: member.name,
+              kind: member.kind,
+              traits: member.traits,
+              note: "",
+              refs: [],
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            })),
+        ],
       }));
       setSection("shots");
     } catch (cause) {
@@ -349,7 +408,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           name: t("{name} copy", { name: source.name }),
           revision: 0,
           archived: false,
-          document: { ...structuredClone(source.document), runs: [] },
+          document: { ...structuredClone(source.document), readingNoteId: undefined, runs: [] },
         }
       : newProject();
     const stored = await saveProject(next, null);
@@ -630,7 +689,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setBusy(true);
     setError("");
     try {
-      let noteId = current.current.document.noteId;
+      let noteId = current.current.document.readingNoteId;
       if (!noteId) {
         const note = await createNote();
         noteId = note.id;
@@ -640,7 +699,10 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         title: current.current.name,
         editedContent: current.current.document.script,
       });
-      await edit((previous) => ({ ...previous, document: { ...previous.document, noteId } }));
+      await edit((previous) => ({
+        ...previous,
+        document: { ...previous.document, readingNoteId: noteId },
+      }));
       acceptReading(await buildShotList(noteId));
     } catch (cause) {
       report(cause);
@@ -1170,6 +1232,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 editDocument((document) => ({
                   ...document,
                   noteId: note.id,
+                  readingNoteId: undefined,
                   script: full.editedContent ?? full.generatedContent ?? "",
                 })),
               )

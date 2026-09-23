@@ -149,6 +149,50 @@ const mount = async () => {
 };
 
 describe("project production confirmation", () => {
+  it("reads an imported script through a project-owned note and keeps the returned cast", async () => {
+    project.document.noteId = "source-note";
+    project.document.script = "A pianist enters the hall.";
+    project.document.shots = [];
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "shot_list") return null;
+      if (command === "create_note") return { id: "project-reading" };
+      if (command === "update_note") return { id: "project-reading" };
+      if (command === "build_shot_list")
+        return {
+          noteId: "project-reading",
+          status: "ready",
+          shotsJson: JSON.stringify({
+            cast: [{ name: "Mira", kind: "character", traits: "Silver coat" }],
+            shots: [{ scene: "Hall", action: "Mira enters" }],
+          }),
+        };
+      return null;
+    });
+
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Script" }));
+    fireEvent.click(screen.getByRole("button", { name: "Break into shots" }));
+
+    await waitFor(() => expect(project.document.shots).toHaveLength(1));
+    expect(project.document.noteId).toBe("source-note");
+    expect(project.document.readingNoteId).toBe("project-reading");
+    expect(mocks.invoke).not.toHaveBeenCalledWith("shot_list", { noteId: "source-note" });
+    expect(mocks.invoke).toHaveBeenCalledWith("update_note", {
+      request: {
+        noteId: "project-reading",
+        title: "Concert",
+        editedContent: "A pianist enters the hall.",
+      },
+    });
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "update_note",
+      expect.objectContaining({ request: expect.objectContaining({ noteId: "source-note" }) }),
+    );
+    expect(project.document.bible).toMatchObject([
+      { name: "Mira", kind: "character", traits: "Silver coat", refs: [] },
+    ]);
+  });
+
   it("removes a dismissed run without blocking restoration of later productions", async () => {
     project.document.runs = [
       { id: "dismissed-run", shotSignatures: {} },
@@ -217,7 +261,7 @@ describe("project production confirmation", () => {
   });
 
   it("re-enables script editing when leaving a project whose shot list is still reading", async () => {
-    project.document.noteId = "note-one";
+    project.document.readingNoteId = "note-one";
     mocks.invoke.mockImplementation(async (command) =>
       command === "shot_list" ? { noteId: "note-one", status: "pending" } : null,
     );
@@ -236,6 +280,7 @@ describe("project production confirmation", () => {
   it("duplicates a film without linking the copy to the original production runs", async () => {
     const originalShots = structuredClone(project.document.shots);
     project.document.runs = [{ id: "original-run", shotSignatures: {} }];
+    project.document.readingNoteId = "original-reading";
     mocks.invoke.mockImplementation(async (command) =>
       command === "workflow_run_get" ? { run: { status: "completed" }, nodes: [] } : null,
     );
@@ -246,6 +291,7 @@ describe("project production confirmation", () => {
     const copy = mocks.save.mock.calls.at(-1)?.[0] as StudioProject;
     expect(copy.id).not.toBe("project-1");
     expect(copy.document.runs).toEqual([]);
+    expect(copy.document.readingNoteId).toBeUndefined();
     expect(copy.document.shots).toEqual(originalShots);
   });
 
