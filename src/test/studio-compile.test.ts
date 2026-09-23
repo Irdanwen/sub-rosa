@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { applyLocale } from "../lib/i18n";
 import type { BibleEntry } from "../lib/studio/bible";
 import {
   compileShotList,
@@ -195,6 +196,28 @@ describe("nearestOption", () => {
 });
 
 describe("compiling", () => {
+  it("localizes generated workflow labels while preserving custom names", () => {
+    applyLocale("fr");
+    try {
+      const result = compileShotList({
+        name: "Concert",
+        shots: [shot({ scene: "", dialogue: "Encore ?" })],
+        catalog,
+        withScore: true,
+        gateBeforeAssemble: true,
+      });
+      const labels = result.workflow?.nodes.map((entry) => entry.label) ?? [];
+      expect(labels).toContain("Plan 1");
+      expect(labels).toContain("Réplique 1");
+      expect(labels).toContain("Avant le montage");
+      expect(labels).toContain("Consigne musicale");
+      expect(labels).toContain("Musique");
+      expect(labels).toContain("Le film");
+    } finally {
+      applyLocale("en");
+    }
+  });
+
   it("builds a graph the existing validator accepts", () => {
     // The whole bet of this file: no second runtime. If the canvas will not
     // run it, it is a bug here, not a run to attempt.

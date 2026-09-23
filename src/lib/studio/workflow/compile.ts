@@ -668,7 +668,7 @@ export function compileShotList(input: CompileInput): CompileResult {
       // where it was taken is what keeps the cut on movement (ADR-0019).
       const frameId = `handoff-${stableId}`;
       nodes.push(
-        node(frameId, "lastFrame", `Handoff ${index}`, level - 1, index, {
+        node(frameId, "lastFrame", t("Handoff {number}", { number: index }), level - 1, index, {
           position: "handoff",
         }),
       );
@@ -691,7 +691,7 @@ export function compileShotList(input: CompileInput): CompileResult {
       node(
         videoId,
         "video",
-        entry.shot.title || entry.shot.scene || `Shot ${index + 1}`,
+        entry.shot.title || entry.shot.scene || t("Shot {number}", { number: index + 1 }),
         level,
         index,
         {
@@ -718,20 +718,29 @@ export function compileShotList(input: CompileInput): CompileResult {
       const ttsId = `line-${stableId}`;
       const textId = `dialogue-${stableId}`;
       nodes.push(
-        node(textId, "textInput", entry.shot.speaker || "Dialogue", level - 1, index + 0.5, {
+        node(textId, "textInput", entry.shot.speaker || t("Dialogue"), level - 1, index + 0.5, {
           text: entry.shot.dialogue.trim(),
         }),
       );
       edges.push(edge(textId, ttsId, "text"));
       nodes.push(
-        node(ttsId, "tts", `${entry.shot.speaker || "Line"} ${index + 1}`, level, index + 0.5, {
-          model: tts.id,
-          text: entry.shot.dialogue.trim(),
-          voice: donor?.label ?? "",
-          // Just inside the shot rather than exactly on the cut: a line that
-          // starts on the frame the shot does reads as a mistake.
-          startAt: (shotStartSeconds + DIALOGUE_LEAD_IN_SECONDS).toFixed(2),
-        }),
+        node(
+          ttsId,
+          "tts",
+          entry.shot.speaker
+            ? `${entry.shot.speaker} ${index + 1}`
+            : t("Line {number}", { number: index + 1 }),
+          level,
+          index + 0.5,
+          {
+            model: tts.id,
+            text: entry.shot.dialogue.trim(),
+            voice: donor?.label ?? "",
+            // Just inside the shot rather than exactly on the cut: a line that
+            // starts on the frame the shot does reads as a mistake.
+            startAt: (shotStartSeconds + DIALOGUE_LEAD_IN_SECONDS).toFixed(2),
+          },
+        ),
       );
       ttsIds.push(ttsId);
     }
@@ -748,8 +757,8 @@ export function compileShotList(input: CompileInput): CompileResult {
   if (input.gateBeforeAssemble) {
     const gateId = "gate-cut";
     nodes.push(
-      node(gateId, "gate", "Before the cut", finalLevel - 1, 0, {
-        note: "Look over the shots before they are cut together.",
+      node(gateId, "gate", t("Before the cut"), finalLevel - 1, 0, {
+        note: t("Look over the shots before they are cut together."),
       }),
     );
     for (const videoId of videoIds) edges.push(edge(videoId, gateId));
@@ -768,13 +777,13 @@ export function compileShotList(input: CompileInput): CompileResult {
     if (music) {
       const musicId = "score";
       nodes.push(
-        node("score-prompt", "textInput", "Score prompt", finalLevel - 2, 1, {
+        node("score-prompt", "textInput", t("Score prompt"), finalLevel - 2, 1, {
           text: `Score for ${input.name}.`,
         }),
       );
       edges.push(edge("score-prompt", musicId, "prompt"));
       nodes.push(
-        node(musicId, "music", "Score", finalLevel - 1, 1, {
+        node(musicId, "music", t("Score"), finalLevel - 1, 1, {
           model: music.id,
           prompt: `Score for ${input.name}.`,
         }),
@@ -786,7 +795,7 @@ export function compileShotList(input: CompileInput): CompileResult {
   }
 
   const outputId = "output";
-  nodes.push(node(outputId, "output", "The film", finalLevel + 1, 0));
+  nodes.push(node(outputId, "output", t("The film"), finalLevel + 1, 0));
   edges.push(edge(assembleId, outputId));
 
   // Flat published prices only. A metered node counts zero, which is why the

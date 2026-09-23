@@ -950,7 +950,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                     >
                       <span className="project-card-mark">{t("Film")}</span>
                       <h3>{item.name}</h3>
-                      <small>{new Date(item.updatedAt).toLocaleDateString()}</small>
+                      <small>{new Date(item.updatedAt).toLocaleDateString(intlLocale())}</small>
                     </button>
                     <div className="project-actions">
                       <button

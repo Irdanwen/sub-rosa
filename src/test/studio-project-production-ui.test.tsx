@@ -202,6 +202,21 @@ const mount = async () => {
 };
 
 describe("project production confirmation", () => {
+  it("shows project dates in the selected app language", async () => {
+    applyLocale("fr");
+    try {
+      localStorage.removeItem("os-june:studio-project");
+      project.updatedAt = "2026-09-23T12:00:00.000Z";
+      render(<ProjectStudio catalog={catalog} />);
+      await screen.findByText("Concert");
+      expect(document.querySelector(".project-card small")?.textContent).toBe(
+        new Date(project.updatedAt).toLocaleDateString("fr-FR"),
+      );
+    } finally {
+      applyLocale("en");
+    }
+  });
+
   it("formats quoted totals and steps in the app language", async () => {
     applyLocale("fr");
     try {
