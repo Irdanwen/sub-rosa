@@ -242,9 +242,15 @@ pub async fn media_job_queue(
     let response =
         super::media::send("POST", &request.queue_path, Some(&request.queue_body)).await?;
     if !response.ok {
-        let message = backend_error(&response);
-        fail(&app, &request.job_id, &message, Some(response.status)).await;
-        return Err(AppError::new("media_job_queue_failed", message));
+        if definite_queue_rejection(response.status) {
+            let message = backend_error(&response);
+            fail(&app, &request.job_id, &message, Some(response.status)).await;
+            return Err(AppError::new("media_job_queue_failed", message));
+        }
+        // An edge or provider may answer after accepting the paid request.
+        // Keep the pre-submit row uncertain so neither the image surface nor
+        // a resumed film silently purchases the same work again.
+        return Err(AppError::new("media_job_submission_uncertain", uncertain));
     }
     let queue_id = response
         .json
@@ -644,9 +650,26 @@ fn backend_error(response: &super::media::MediaResponseDto) -> String {
         .unwrap_or_else(|| format!("The backend returned status {}.", response.status))
 }
 
+fn definite_queue_rejection(status: u16) -> bool {
+    matches!(
+        status,
+        400 | 401 | 402 | 403 | 404 | 410 | 413 | 415 | 422 | 429 | 451
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_explicit_queue_rejections_can_be_retried_after_a_new_quote() {
+        for status in [400, 401, 402, 403, 404, 410, 413, 415, 422, 429, 451] {
+            assert!(definite_queue_rejection(status), "{status}");
+        }
+        for status in [408, 499, 500, 502, 503, 504] {
+            assert!(!definite_queue_rejection(status), "{status}");
+        }
+    }
 
     #[test]
     fn normalizes_the_status_spellings_the_backends_use() {
