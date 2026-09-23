@@ -227,6 +227,10 @@ export function ProjectShots({
             className="btn btn-secondary"
             disabled={busy}
             onClick={() => {
+              if (document.shots.some((shot) => shot.id === removed.shot.id)) {
+                setRemoved(undefined);
+                return;
+              }
               const shots = [...document.shots];
               shots.splice(removed.index, 0, removed.shot);
               onChange(shots);

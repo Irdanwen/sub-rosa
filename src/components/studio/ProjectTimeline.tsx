@@ -46,6 +46,9 @@ interface Props {
   onChange: (value: EditorDocument) => void;
   artifacts: StudioArtifact[];
   onExportArtifact: (artifact: StudioArtifact) => Promise<void>;
+  exportDisabled: boolean;
+  onExportStart: () => boolean;
+  onExportEnd: () => void;
 }
 function timecode(frame: number, rate: number): string {
   const seconds = Math.floor(frame / rate),
@@ -131,7 +134,15 @@ function NumberField({
   );
 }
 
-export function ProjectTimeline({ value, onChange, artifacts, onExportArtifact }: Props) {
+export function ProjectTimeline({
+  value,
+  onChange,
+  artifacts,
+  onExportArtifact,
+  exportDisabled,
+  onExportStart,
+  onExportEnd,
+}: Props) {
   const [selectedId, setSelectedId] = useState<string>();
   const [frame, setFrame] = useState(0),
     [playing, setPlaying] = useState(false),
@@ -354,6 +365,7 @@ export function ProjectTimeline({ value, onChange, artifacts, onExportArtifact }
     );
   }
   async function exportVideo(interchange = false) {
+    if (exportDisabled || !onExportStart()) return;
     setBusy(true);
     setError(undefined);
     setStatus(undefined);
@@ -411,6 +423,7 @@ export function ProjectTimeline({ value, onChange, artifacts, onExportArtifact }
       setBusy(false);
       setProgress(undefined);
       abort.current = undefined;
+      onExportEnd();
     }
   }
   async function exportInterchange() {
@@ -418,6 +431,7 @@ export function ProjectTimeline({ value, onChange, artifacts, onExportArtifact }
       await exportVideo(true);
       return;
     }
+    if (exportDisabled || !onExportStart()) return;
     setBusy(true);
     setError(undefined);
     try {
@@ -434,6 +448,7 @@ export function ProjectTimeline({ value, onChange, artifacts, onExportArtifact }
       setError(messageFromError(cause));
     } finally {
       setBusy(false);
+      onExportEnd();
     }
   }
   function finishDrag() {
@@ -477,7 +492,7 @@ export function ProjectTimeline({ value, onChange, artifacts, onExportArtifact }
         <div className="project-timeline-actions">
           <button
             type="button"
-            disabled={!duration || busy || problems.length > 0}
+            disabled={!duration || busy || exportDisabled || problems.length > 0}
             onClick={() => void exportVideo()}
           >
             {t("Export film")}
@@ -1176,7 +1191,7 @@ export function ProjectTimeline({ value, onChange, artifacts, onExportArtifact }
         )}
         <button
           type="button"
-          disabled={busy || !duration || problems.length > 0}
+          disabled={busy || exportDisabled || !duration || problems.length > 0}
           onClick={() => void exportInterchange()}
         >
           {exchangeProblems.length ? t("Render and export bundle") : t("Export montage bundle")}

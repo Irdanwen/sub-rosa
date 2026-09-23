@@ -107,6 +107,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const [saved, setSaved] = useState(true);
   const [error, setErrorState] = useState("");
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const exportingRef = useRef(false);
+  const productionBusy = useRef(false);
   const [reading, setReading] = useState(false);
   const [archived, setArchived] = useState(false);
   const [search, setSearch] = useState("");
@@ -580,6 +583,10 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   };
   const prepare = async (shotId?: string, image = false) => {
     if (!current.current) return;
+    if (exportingRef.current) {
+      report(new Error(t("Wait for montage export to finish before generating.")));
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -614,6 +621,11 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     }
   };
   const produce = async (ready: ReadyQuote) => {
+    if (exportingRef.current) {
+      setQuote(undefined);
+      report(new Error(t("Wait for montage export to finish before generating.")));
+      return;
+    }
     const origin = current.current;
     if (!origin || origin.id !== ready.projectId || epoch.current !== ready.version) {
       setQuote(undefined);
@@ -624,6 +636,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     }
     setQuote(undefined);
     setBusy(true);
+    productionBusy.current = true;
     setError("");
     setProgress({});
     const controller = new AbortController();
@@ -684,6 +697,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         setRunStates((previous) => ({ ...previous, [run.id]: cancelled ? "cancelled" : "failed" }));
     } finally {
       if (abort.current === controller) abort.current = undefined;
+      productionBusy.current = false;
       setBusy(false);
       await refreshArtifacts().catch(report);
     }
@@ -943,9 +957,11 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       artifacts={media}
       projects={projects}
       projectId={project?.id}
-      readOnly={busy || mediaSaving}
+      readOnly={busy || mediaSaving || exporting}
       onMetadata={async (artifact, title, projectIds) => {
         if (busy) throw new Error(t("Wait for production to finish before editing media."));
+        if (exportingRef.current)
+          throw new Error(t("Wait for montage export to finish before editing media."));
         const projectId = current.current?.id;
         const version = epoch.current;
         setMediaSaving(true);
@@ -1170,7 +1186,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
             <button
               type="button"
               className="btn btn-ghost"
-              disabled={busy || mediaSaving}
+              disabled={busy || mediaSaving || exporting}
               onClick={() => void back().catch(report)}
             >
               {t("All projects")}
@@ -1179,7 +1195,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               key={`${project.id}:${openSession}`}
               aria-label={t("Project name")}
               defaultValue={project.name}
-              disabled={busy || mediaSaving}
+              disabled={busy || mediaSaving || exporting}
               onBlur={(event) => {
                 const name = event.target.value.trim() || t("Untitled project");
                 event.target.value = name;
@@ -1192,7 +1208,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
             <button
               type="button"
               className="btn btn-primary"
-              disabled={busy || mediaSaving || !project.document.shots.length}
+              disabled={busy || mediaSaving || exporting || !project.document.shots.length}
               onClick={() => void prepare()}
             >
               {t("Quote production")}
@@ -1212,7 +1228,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 type="button"
                 key={key}
                 aria-current={section === key ? "page" : undefined}
-                disabled={mediaSaving || (busy && key === "media")}
+                disabled={
+                  mediaSaving || (busy && key === "media") || (exporting && key === "media")
+                }
                 onClick={() => setSection(key)}
               >
                 {label}
@@ -1394,6 +1412,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           ) : null}
           {section === "shots" ? (
             <ProjectShots
+              key={`${project.id}:${openSession}`}
               document={project.document}
               onChange={(shots) => {
                 const referenced = shots
@@ -1427,7 +1446,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               onGenerate={(id) => void prepare(id)}
               onImage={(id) => void prepare(id, true)}
               onBible={() => setSection("bible")}
-              busy={busy}
+              busy={busy || exporting}
             />
           ) : null}
           {section === "bible" ? (
@@ -1461,7 +1480,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               catalog={catalog}
               onArtifact={addArtifact}
               onGenerate={(id, role) => void prepareBible(id, role)}
-              busy={busy}
+              busy={busy || exporting}
             />
           ) : null}
           {section === "media" ? mediaEditor : null}
@@ -1471,7 +1490,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  disabled={busy || !project.document.shots.some((shot) => shot.activeTakeId)}
+                  disabled={
+                    busy || exporting || !project.document.shots.some((shot) => shot.activeTakeId)
+                  }
                   onClick={() => void addSelectedTakes()}
                 >
                   {t("Append selected takes")}
@@ -1483,18 +1504,36 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               <ProjectTimeline
                 key={`${project.id}:${openSession}`}
                 value={project.document.timeline}
+                exportDisabled={busy || mediaSaving || exporting}
+                onExportStart={() => {
+                  if (productionBusy.current || busy || mediaSaving || exportingRef.current)
+                    return false;
+                  exportingRef.current = true;
+                  setExporting(true);
+                  return true;
+                }}
+                onExportEnd={() => {
+                  exportingRef.current = false;
+                  setExporting(false);
+                }}
                 onChange={(timeline) => {
                   if (current.current?.id !== project.id || epoch.current !== timelineEpoch) return;
                   editDocument((document) => ({ ...document, timeline }));
                 }}
                 artifacts={montageArtifacts(project, media)}
                 onExportArtifact={async (artifact) => {
+                  if (productionBusy.current)
+                    throw new Error(t("Wait for production to finish before editing media."));
                   const version = epoch.current;
                   const ownerWriter = writer.current;
                   if (current.current?.id === project.id) await ownerWriter?.flush();
+                  if (productionBusy.current)
+                    throw new Error(t("Wait for production to finish before editing media."));
                   const metadata = (await listArtifactMetadata()).find(
                     (item) => item.id === artifact.id,
                   );
+                  if (productionBusy.current)
+                    throw new Error(t("Wait for production to finish before editing media."));
                   const memberships = [
                     ...new Set([...(metadata?.projectIds ?? []), ...(artifact.projectIds ?? [])]),
                   ];
@@ -1534,11 +1573,12 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           onClose={() => setNotePicker(false)}
           onPick={(note) => {
             const projectId = current.current?.id;
+            const version = epoch.current;
             setNotePicker(false);
             if (!projectId) return;
             void getNote(note.id)
               .then((full) => {
-                if (current.current?.id !== projectId) return;
+                if (current.current?.id !== projectId || epoch.current !== version) return;
                 editDocument((document) => ({
                   ...document,
                   noteId: note.id,
@@ -1547,7 +1587,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 }));
               })
               .catch((cause) => {
-                if (current.current?.id === projectId) report(cause);
+                if (current.current?.id === projectId && epoch.current === version) report(cause);
               });
           }}
         />

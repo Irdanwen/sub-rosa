@@ -3334,6 +3334,8 @@
   "Voices": "Voices",
   "Volume": "Volume",
   "Volume keyframes": "Volume keyframes",
+  "Wait for montage export to finish before editing media.": "Wait for montage export to finish before editing media.",
+  "Wait for montage export to finish before generating.": "Wait for montage export to finish before generating.",
   "Wait for production to finish before editing media.": "Wait for production to finish before editing media.",
   "Wait for the current reply before sending another message.": "Wait for the current reply before sending another message.",
   "Wait for your references to finish processing, or remove failed references before starting this conversation.": "Wait for your references to finish processing, or remove failed references before starting this conversation.",

@@ -151,11 +151,17 @@ vi.mock("../components/studio/ProjectTimeline", () => ({
     value,
     onChange,
     onExportArtifact,
+    exportDisabled,
+    onExportStart,
+    onExportEnd,
   }: {
     artifacts: Array<{ id: string }>;
     value: StudioProject["document"]["timeline"];
     onChange: (value: StudioProject["document"]["timeline"]) => void;
     onExportArtifact: (artifact: StudioArtifact) => Promise<void>;
+    exportDisabled: boolean;
+    onExportStart: () => boolean;
+    onExportEnd: () => void;
   }) => (
     <>
       <output data-testid="timeline-artifacts">
@@ -220,7 +226,9 @@ vi.mock("../components/studio/ProjectTimeline", () => ({
       </button>
       <button
         type="button"
-        onClick={() =>
+        disabled={exportDisabled}
+        onClick={() => {
+          if (!onExportStart()) return;
           void onExportArtifact({
             id: "rendered.mp4",
             kind: "video",
@@ -230,8 +238,8 @@ vi.mock("../components/studio/ProjectTimeline", () => ({
             model: "assembly",
             prompt: "Montage export",
             createdAt: 1,
-          })
-        }
+          }).finally(onExportEnd);
+        }}
       >
         Complete montage export
       </button>
@@ -495,6 +503,32 @@ describe("project production confirmation", () => {
     expect(mocks.save).not.toHaveBeenCalled();
   });
 
+  it("does not overwrite script edits made while a selected note loads", async () => {
+    let finishNote: (note: { editedContent: string }) => void = () => {};
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "get_note")
+        return new Promise((resolve) => {
+          finishNote = resolve;
+        });
+      return null;
+    });
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Script" }));
+    fireEvent.click(screen.getByRole("button", { name: "From your notes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pick selected note" }));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("get_note", {
+        request: { noteId: "picked-note" },
+      }),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "Film script" }), {
+      target: { value: "My newer draft" },
+    });
+    await act(async () => finishNote({ editedContent: "Older note text" }));
+    expect(screen.getByRole("textbox", { name: "Film script" })).toHaveValue("My newer draft");
+    expect(project.document.noteId).toBeUndefined();
+  });
+
   it("updates differently cased shot references when a bible entry is renamed", async () => {
     project.document.bible = [
       {
@@ -587,6 +621,29 @@ describe("project production confirmation", () => {
     expect(project.document.artifactIds).toContain("rendered.mp4");
   });
 
+  it("keeps montage export from filing media during a production", async () => {
+    let finishRun: (() => void) | undefined;
+    mocks.run.mockImplementation(async (_workflow, options) => {
+      await options.onRunRecorded("run-1");
+      await new Promise<void>((resolve) => {
+        finishRun = resolve;
+      });
+      return new Map();
+    });
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Generate shot" }));
+    await screen.findByRole("dialog", { name: "Review generation costs" });
+    fireEvent.click(screen.getByRole("button", { name: /Generate · 10 credits/ }));
+    await waitFor(() => expect(project.document.runs[0]?.id).toBe("run-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Montage" }));
+    const exportButton = screen.getByRole("button", { name: "Complete montage export" });
+    expect(exportButton).toBeDisabled();
+    fireEvent.click(exportButton);
+    expect(mocks.organize).not.toHaveBeenCalled();
+    await act(async () => finishRun?.());
+    await waitFor(() => expect(exportButton).toBeEnabled());
+  });
+
   it("keeps montage edits made while an export reload is pending", async () => {
     project.document.timeline.clips = [
       createEditorClip({
@@ -609,10 +666,14 @@ describe("project production confirmation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Complete montage export" }));
     await waitFor(() => expect(mocks.getProject.mock.calls.length).toBe(priorLoads + 1));
+    expect(screen.getByRole("button", { name: "Quote production" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Trim existing clip" }));
     expect(screen.getByTestId("timeline-first-duration")).toHaveTextContent("20");
     await act(async () => resolveReload(stale));
     expect(screen.getByTestId("timeline-first-duration")).toHaveTextContent("20");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Quote production" })).toBeEnabled(),
+    );
   });
 
   it("appends selected takes after the latest picture edit even when audio runs longer", async () => {
