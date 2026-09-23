@@ -19,7 +19,12 @@ import {
   type BibleKind,
   type BibleRole,
 } from "../../lib/studio/bible";
-import { createEditorClip, fps } from "../../lib/studio/editor/document";
+import {
+  createEditorClip,
+  fps,
+  insertionTrack,
+  type EditorClip,
+} from "../../lib/studio/editor/document";
 import { mediaSeconds } from "../../lib/studio/reference-media";
 import { artifactSrc } from "../../lib/studio/artifacts";
 import { modelsOfType } from "../../lib/studio/catalog";
@@ -290,7 +295,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
             return {
               ...shot,
               takeIds: [...new Set([...shot.takeIds, artifactId])],
-              activeTakeId: shot.activeTakeId ?? artifactId,
+              activeTakeId: artifactId,
               renderedSignature: signatures[shot.id],
             };
           if (shot.id === successor?.id && savedRun?.appliedNodeIds?.includes(`shot-${shot.id}`))
@@ -1554,6 +1559,40 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                   )
                     return;
                   editDocument((document) => ({ ...document, timeline }));
+                }}
+                onAddMedia={async (artifact, seconds): Promise<EditorClip> => {
+                  if (exportingRef.current || current.current?.id !== project.id || !writer.current)
+                    throw new Error(t("This project is no longer available."));
+                  let added!: EditorClip;
+                  await edit((previous) => {
+                    const timeline = previous.document.timeline;
+                    const track = insertionTrack(timeline, artifact.kind);
+                    if (!track) throw new Error(t("Unlock a matching track before adding media."));
+                    const rate = fps(timeline);
+                    added = createEditorClip({
+                      trackId: track.id,
+                      name: artifact.prompt?.slice(0, 60) || artifact.fileName,
+                      artifactId: artifact.id,
+                      duration: Math.max(1, Math.floor(seconds * rate)),
+                      sourceDuration: Math.floor(
+                        (artifact.kind === "image" ? 86400 : seconds) * rate,
+                      ),
+                      start: Math.max(
+                        0,
+                        ...timeline.clips
+                          .filter((clip) => clip.trackId === track.id)
+                          .map((clip) => clip.start + clip.duration),
+                      ),
+                    });
+                    return {
+                      ...previous,
+                      document: {
+                        ...previous.document,
+                        timeline: { ...timeline, clips: [...timeline.clips, added] },
+                      },
+                    };
+                  });
+                  return added;
                 }}
                 artifacts={montageArtifacts(project, media)}
                 onExportArtifact={async (artifact) => {

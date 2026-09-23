@@ -42,6 +42,9 @@ function TimelineHarness() {
       <ProjectTimeline
         value={value}
         onChange={setValue}
+        onAddMedia={async () =>
+          createEditorClip({ trackId: "picture", name: "Unused", duration: 30 })
+        }
         artifacts={[]}
         onExportArtifact={async () => {}}
         exportDisabled={false}

@@ -17,7 +17,6 @@ import {
   duplicateClip,
   durationFrames,
   fps,
-  insertionTrack,
   isLocked,
   removeClip,
   replaceClip,
@@ -44,6 +43,7 @@ import "./project-timeline.css";
 interface Props {
   value: EditorDocument;
   onChange: (value: EditorDocument) => void;
+  onAddMedia: (artifact: StudioArtifact, seconds: number) => Promise<EditorClip>;
   artifacts: StudioArtifact[];
   onExportArtifact: (artifact: StudioArtifact) => Promise<void>;
   exportDisabled: boolean;
@@ -137,6 +137,7 @@ function NumberField({
 export function ProjectTimeline({
   value,
   onChange,
+  onAddMedia,
   artifacts,
   onExportArtifact,
   exportDisabled,
@@ -179,8 +180,6 @@ export function ProjectTimeline({
   }
   const playhead = useRef(frame);
   playhead.current = frame;
-  const current = useRef(value);
-  current.current = value;
   const selected = value.clips.find((clip) => clip.id === selectedId),
     locked = selected ? isLocked(value, selected) : false;
   const rate = fps(value),
@@ -315,22 +314,8 @@ export function ProjectTimeline({
     setError(undefined);
     setBusy(true);
     try {
-      const seconds = await mediaDuration(artifact),
-        doc = current.current;
-      const track = insertionTrack(doc, artifact.kind);
-      if (!track) throw new Error(t("Unlock a matching track before adding media."));
-      const clip = createEditorClip({
-        trackId: track.id,
-        name: artifact.prompt?.slice(0, 60) || artifact.fileName,
-        artifactId: artifact.id,
-        duration: Math.max(1, Math.floor(seconds * fps(doc))),
-        sourceDuration: Math.floor((artifact.kind === "image" ? 86400 : seconds) * fps(doc)),
-        start: Math.max(
-          0,
-          ...doc.clips.filter((c) => c.trackId === track.id).map((c) => c.start + c.duration),
-        ),
-      });
-      commit({ ...doc, clips: [...doc.clips, clip] });
+      const seconds = await mediaDuration(artifact);
+      const clip = await onAddMedia(artifact, seconds);
       setSelectedId(clip.id);
       setFrame(clip.start);
     } catch (cause) {

@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   mediaSeconds: vi.fn(),
   organize: vi.fn(),
   deferredTimelineEdit: vi.fn(),
+  deferredMediaAdd: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => vi.fn()) }));
@@ -158,6 +159,7 @@ vi.mock("../components/studio/ProjectTimeline", () => ({
     value,
     onChange,
     onExportArtifact,
+    onAddMedia,
     exportDisabled,
     onExportStart,
     onExportEnd,
@@ -166,6 +168,7 @@ vi.mock("../components/studio/ProjectTimeline", () => ({
     value: StudioProject["document"]["timeline"];
     onChange: (value: StudioProject["document"]["timeline"]) => void;
     onExportArtifact: (artifact: StudioArtifact) => Promise<void>;
+    onAddMedia: (artifact: StudioArtifact, seconds: number) => Promise<unknown>;
     exportDisabled: boolean;
     onExportStart: () => boolean;
     onExportEnd: () => void;
@@ -208,6 +211,28 @@ vi.mock("../components/studio/ProjectTimeline", () => ({
         }
       >
         Start delayed clip addition
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          mocks.deferredMediaAdd.mockImplementation(() =>
+            onAddMedia(
+              {
+                id: "gallery-image.png",
+                kind: "image",
+                path: "/media/gallery-image.png",
+                fileName: "gallery-image.png",
+                bytes: 1,
+                model: "test",
+                prompt: "Gallery image",
+                createdAt: 0,
+              },
+              5,
+            ),
+          )
+        }
+      >
+        Start measured media addition
       </button>
       <button
         type="button"
@@ -331,6 +356,7 @@ beforeEach(() => {
   mocks.budget.mockReturnValue(vi.fn());
   mocks.mediaSeconds.mockReset().mockResolvedValue(5);
   mocks.deferredTimelineEdit.mockReset();
+  mocks.deferredMediaAdd.mockReset();
   mocks.quote.mockImplementation(async (workflow: Workflow) => ({
     nodes: workflow.nodes
       .filter((node) => node.type === "video")
@@ -843,6 +869,34 @@ describe("project production confirmation", () => {
     expect(project.document.timeline.clips[1]).toMatchObject({ start: 135, duration: 150 });
   });
 
+  it("keeps selected takes when a measured gallery addition finishes later", async () => {
+    project.document.shots[0].activeTakeId = "take.mp4";
+    vi.mocked(listArtifacts).mockResolvedValue([
+      {
+        id: "take.mp4",
+        kind: "video",
+        path: "/media/take.mp4",
+        fileName: "take.mp4",
+        bytes: 1,
+        model: "test",
+        prompt: "take",
+        createdAt: 0,
+      },
+    ]);
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Montage" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start measured media addition" }));
+    fireEvent.click(screen.getByRole("button", { name: "Append selected takes" }));
+    await waitFor(() => expect(project.document.timeline.clips).toHaveLength(1));
+    await act(async () => mocks.deferredMediaAdd());
+    expect(project.document.timeline.clips).toHaveLength(2);
+    expect(project.document.timeline.clips[0].artifactId).toBe("take.mp4");
+    expect(project.document.timeline.clips[1]).toMatchObject({
+      artifactId: "gallery-image.png",
+      start: 150,
+    });
+  });
+
   it.each(["locked", "hidden"] as const)(
     "does not append takes to a %s picture track",
     async (state) => {
@@ -1275,6 +1329,26 @@ describe("project production confirmation", () => {
     fireEvent.click(screen.getByRole("button", { name: /Generate · 10 credits/ }));
     expect(await screen.findByRole("alert")).toHaveTextContent("project save failed");
     expect(saveArtifactMetadata).not.toHaveBeenCalled();
+  });
+
+  it("selects a new retake when its shot signature is replaced", async () => {
+    project.document.shots[0].takeIds = ["old.mp4"];
+    project.document.shots[0].activeTakeId = "old.mp4";
+    mocks.run.mockImplementation(async (_workflow, options) => {
+      await options.onRunRecorded("run-retake");
+      options.onUpdate({
+        nodeId: "shot-s1",
+        status: "done",
+        output: { kind: "video", artifactId: "new.mp4" },
+      });
+      return new Map();
+    });
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Generate shot" }));
+    await screen.findByRole("dialog", { name: "Review generation costs" });
+    fireEvent.click(screen.getByRole("button", { name: /Generate · 10 credits/ }));
+    await waitFor(() => expect(project.document.shots[0].activeTakeId).toBe("new.mp4"));
+    expect(project.document.shots[0].takeIds).toEqual(["old.mp4", "new.mp4"]);
   });
 
   it.each(["in order", "out of order"])(
