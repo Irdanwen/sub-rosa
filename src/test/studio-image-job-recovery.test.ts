@@ -22,8 +22,11 @@ vi.mock("../lib/studio/bible", () => ({
 
 import {
   bibleImageJobSource,
+  dismissStandaloneImageFailure,
   observeStandaloneImageJobs,
+  readStandaloneImageFailures,
   recoverStandaloneImageJob,
+  STUDIO_IMAGE_FAILED_EVENT,
   STUDIO_IMAGE_RECOVERED_EVENT,
 } from "../lib/studio/image-job-recovery";
 
@@ -43,6 +46,7 @@ const completed = (source = "studio"): MediaJob => ({
 });
 
 beforeEach(() => {
+  window.localStorage.clear();
   vi.mocked(invoke).mockReset().mockResolvedValue(undefined);
   vi.mocked(listen).mockReset().mockResolvedValue(vi.fn());
   mocks.register.mockReset().mockReturnValue({ id: "nera.png" });
@@ -52,6 +56,26 @@ beforeEach(() => {
 });
 
 describe("standalone image recovery", () => {
+  it("surfaces a failed image after restart and acknowledges its durable row", async () => {
+    const failed: MediaJob = {
+      ...completed(),
+      status: "failed",
+      error: "Provider refused",
+      artifactPath: undefined,
+      artifactFileName: undefined,
+    };
+    const onFailure = vi.fn();
+    window.addEventListener(STUDIO_IMAGE_FAILED_EVENT, onFailure);
+    await recoverStandaloneImageJob(failed);
+
+    expect(readStandaloneImageFailures()).toEqual([{ id: "job-1", message: "Provider refused" }]);
+    expect(invoke).toHaveBeenCalledWith("media_job_dismiss", { id: "job-1" });
+    expect(onFailure).toHaveBeenCalledTimes(1);
+    dismissStandaloneImageFailure("job-1");
+    expect(readStandaloneImageFailures()).toEqual([]);
+    window.removeEventListener(STUDIO_IMAGE_FAILED_EVENT, onFailure);
+  });
+
   it("adopts a completed gallery image after a cold restart and acknowledges its job", async () => {
     await recoverStandaloneImageJob(completed());
 

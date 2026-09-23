@@ -94,8 +94,10 @@ export async function nativeQueuedImage(
     observe(submitted);
     reconcile();
     const job = await done;
-    if (job.status === "failed")
+    if (job.status === "failed") {
+      await invoke("media_job_dismiss", { id: job.id }).catch(() => undefined);
       throw new MediaError(job.error ?? "The edit failed.", { status: 0 });
+    }
     if (!job.artifactPath)
       throw new MediaError(t("The edit finished but its file is missing."), { status: 0 });
     if (!job.artifactFileName)

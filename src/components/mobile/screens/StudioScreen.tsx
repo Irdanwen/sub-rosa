@@ -6,7 +6,12 @@ import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
 import { hapticNotify } from "../../../lib/haptics";
 import { openTopUp } from "../../../lib/top-up";
 import { deleteArtifact, listArtifacts } from "../../../lib/studio/artifacts";
-import { STUDIO_IMAGE_RECOVERED_EVENT } from "../../../lib/studio/image-job-recovery";
+import {
+  dismissStandaloneImageFailure,
+  readStandaloneImageFailures,
+  STUDIO_IMAGE_FAILED_EVENT,
+  STUDIO_IMAGE_RECOVERED_EVENT,
+} from "../../../lib/studio/image-job-recovery";
 import {
   fetchMediaCatalog,
   formatCredits,
@@ -43,6 +48,12 @@ const AUDIO_ARTIFACT_KINDS: ArtifactKind[] = ["music", "speech", "sfx"];
  * workflow canvas and productions.
  */
 export function StudioScreen() {
+  const [imageFailures, setImageFailures] = useState(readStandaloneImageFailures);
+  useEffect(() => {
+    const refresh = () => setImageFailures(readStandaloneImageFailures());
+    window.addEventListener(STUDIO_IMAGE_FAILED_EVENT, refresh);
+    return () => window.removeEventListener(STUDIO_IMAGE_FAILED_EVENT, refresh);
+  }, []);
   const credits = useCarpeDiemCredits();
   const [catalog, setCatalog] = useState<MediaCatalog | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
@@ -186,6 +197,20 @@ export function StudioScreen() {
           ) : undefined
         }
       />
+      {imageFailures[0] ? (
+        <div className="studio-error studio-image-failure" role="alert">
+          <span>
+            {t("An image could not be generated: {reason}", { reason: imageFailures[0].message })}
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => dismissStandaloneImageFailure(imageFailures[0].id)}
+          >
+            {t("Dismiss")}
+          </button>
+        </div>
+      ) : null}
       <div className="mobile-segmented" role="tablist" aria-label={t("Studio mode")}>
         {(["image", "video", "audio", "library"] as const).map((entry) => (
           <button

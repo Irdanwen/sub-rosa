@@ -54,6 +54,22 @@ beforeEach(() => {
 });
 
 describe("editImage", () => {
+  it("acknowledges a failed native edit while reporting its error", async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "media_job_queue")
+        return {
+          id: (args as { request: { jobId: string } }).request.jobId,
+          status: "failed",
+          error: "Provider refused",
+        };
+      if (command === "media_job_list") return [];
+      return undefined;
+    });
+
+    await expect(editImage("gpt-image-2", "brighten it", IMG)).rejects.toThrow("Provider refused");
+    expect(invoke).toHaveBeenCalledWith("media_job_dismiss", { id: expect.any(String) });
+  });
+
   it("posts a single data URI to /image/edit and returns the image", async () => {
     mediaRawMock.mockResolvedValueOnce(rawImage("OUT"));
     const result = await editImage("seedream-v4-edit", "brighten it", IMG);

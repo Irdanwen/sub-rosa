@@ -367,6 +367,7 @@
   "An assistant for what matters to you": "Un assistant pour ce qui compte pour vous",
   "An assistant that helps me…": "Un assistant qui m’aide à…",
   "An ending image requires image-to-video mode.": "Une image de fin nécessite le mode image vers vidéo.",
+  "An image could not be generated: {reason}": "Une image n’a pas pu être générée : {reason}",
   "An interrupted production:": "Une production interrompue :",
   "An orphaned dictation helper would not exit; retrying.": "Un assistant de dictée orphelin ne voulait pas se fermer ; nouvel essai.",
   "An orphaned Hermes runtime process group would not exit.": "Un groupe de processus Hermes orphelin ne voulait pas se fermer.",

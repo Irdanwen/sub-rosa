@@ -19,7 +19,12 @@ import { StudioStart, type StudioDestination } from "./StudioStart";
 import { ImageStudio } from "./ImageStudio";
 import { VideoStudio } from "./VideoStudio";
 import { useMediaCatalog } from "./useMediaCatalog";
-import { observeStandaloneImageJobs } from "../../lib/studio/image-job-recovery";
+import {
+  dismissStandaloneImageFailure,
+  observeStandaloneImageJobs,
+  readStandaloneImageFailures,
+  STUDIO_IMAGE_FAILED_EVENT,
+} from "../../lib/studio/image-job-recovery";
 
 // The workflow canvas pulls in @xyflow/react; only the Workflows tab pays
 // for it.
@@ -69,6 +74,12 @@ function initialTab(): StudioTab {
 
 export function StudioView() {
   useEffect(() => observeStandaloneImageJobs(), []);
+  const [imageFailures, setImageFailures] = useState(readStandaloneImageFailures);
+  useEffect(() => {
+    const refresh = () => setImageFailures(readStandaloneImageFailures());
+    window.addEventListener(STUDIO_IMAGE_FAILED_EVENT, refresh);
+    return () => window.removeEventListener(STUDIO_IMAGE_FAILED_EVENT, refresh);
+  }, []);
   const [tab, setTab] = useState<StudioTab>(initialTab);
   const [audioMode, setAudioMode] = useState<AudioMode | undefined>();
   const openWorkshop = useCallback((destination: StudioDestination) => {
@@ -138,6 +149,20 @@ export function StudioView() {
           />
         </div>
       </header>
+      {imageFailures[0] ? (
+        <div className="studio-error studio-image-failure" role="alert">
+          <span>
+            {t("An image could not be generated: {reason}", { reason: imageFailures[0].message })}
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => dismissStandaloneImageFailure(imageFailures[0].id)}
+          >
+            {t("Dismiss")}
+          </button>
+        </div>
+      ) : null}
       {loading ? (
         <div className="studio-loading">
           <Spinner aria-label={t("Loading models")} />

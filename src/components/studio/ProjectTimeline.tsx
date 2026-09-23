@@ -28,7 +28,11 @@ import {
   validateEditorDocument,
   valueAt,
 } from "../../lib/studio/editor/document";
-import { editorBundle, interchangeProblems } from "../../lib/studio/editor/interchange";
+import {
+  editorBundle,
+  editorMediaPaths,
+  interchangeProblems,
+} from "../../lib/studio/editor/interchange";
 import { parseCube } from "../../lib/studio/editor/lut";
 import { writeTimelineBundle } from "../../lib/studio/timeline/bundle";
 import type { TimelineFormat } from "../../lib/studio/timeline/types";
@@ -384,9 +388,7 @@ export function ProjectTimeline({ value, onChange, artifacts }: Props) {
               },
             ],
             editorDocument: JSON.stringify(snapshot),
-            additionalMedia: artifacts
-              .filter((a) => snapshot.clips.some((c) => c.artifactId === a.id))
-              .map((a) => a.path),
+            additionalMedia: editorMediaPaths(snapshot, artifacts),
           },
           format,
         );

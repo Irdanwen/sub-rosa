@@ -485,6 +485,13 @@
   border-radius: var(--r-md);
 }
 
+.studio-image-failure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
 .studio-resume {
   display: flex;
   align-items: center;

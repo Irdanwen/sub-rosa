@@ -4,12 +4,48 @@
  * the durable job. It reads on mount/resume and listens while awake. */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { t } from "../i18n";
 import { isQueuedImageJobClaimed, registerDownloadedArtifactDurably } from "./artifacts";
 import { addBibleRef, listBibleEntries } from "./bible";
 import { BIBLE_ROLES, type BibleRole } from "./bible/types";
 import type { MediaJob } from "./async-job";
 
 export const STUDIO_IMAGE_RECOVERED_EVENT = "subrosa:studio-image-recovered";
+export const STUDIO_IMAGE_FAILED_EVENT = "subrosa:studio-image-failed";
+const FAILURE_KEY = "os-june:studio-image-failures";
+const MAX_FAILURES = 10;
+export interface StudioImageFailure {
+  id: string;
+  message: string;
+}
+
+export function readStandaloneImageFailures(): StudioImageFailure[] {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(FAILURE_KEY) ?? "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is StudioImageFailure =>
+        item && typeof item.id === "string" && typeof item.message === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function dismissStandaloneImageFailure(id: string): void {
+  const remaining = readStandaloneImageFailures().filter((item) => item.id !== id);
+  window.localStorage.setItem(FAILURE_KEY, JSON.stringify(remaining));
+  window.dispatchEvent(new Event(STUDIO_IMAGE_FAILED_EVENT));
+}
+
+function rememberFailure(job: MediaJob): void {
+  const failures = readStandaloneImageFailures().filter((item) => item.id !== job.id);
+  failures.push({
+    id: job.id,
+    message: (job.error?.trim() || t("The generation failed.")).slice(0, 500),
+  });
+  window.localStorage.setItem(FAILURE_KEY, JSON.stringify(failures.slice(-MAX_FAILURES)));
+}
 const BIBLE_SOURCE = "bible-ref:";
 const settling = new Set<string>();
 
@@ -28,16 +64,24 @@ function bibleTarget(source?: string): { entryId: string; role: BibleRole } | un
 export async function recoverStandaloneImageJob(job: MediaJob): Promise<void> {
   if (
     job.kind !== "image" ||
-    job.status !== "completed" ||
+    (job.status !== "completed" && job.status !== "failed") ||
     (job.source !== "studio" && !job.source?.startsWith(BIBLE_SOURCE)) ||
-    !job.artifactPath ||
-    !job.artifactFileName ||
+    (job.status === "completed" && (!job.artifactPath || !job.artifactFileName)) ||
     isQueuedImageJobClaimed(job.id) ||
     settling.has(job.id)
   )
     return;
   settling.add(job.id);
   try {
+    if (job.status === "failed") {
+      // Store the notice before acknowledging the row: if storage fails, the
+      // durable row remains available for a later foreground reconciliation.
+      rememberFailure(job);
+      await invoke("media_job_dismiss", { id: job.id });
+      window.dispatchEvent(new Event(STUDIO_IMAGE_FAILED_EVENT));
+      return;
+    }
+    if (!job.artifactPath || !job.artifactFileName) return;
     const artifact = await registerDownloadedArtifactDurably(
       {
         path: job.artifactPath,

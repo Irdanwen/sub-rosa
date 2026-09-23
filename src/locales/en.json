@@ -367,6 +367,7 @@
   "An assistant for what matters to you": "An assistant for what matters to you",
   "An assistant that helps me…": "An assistant that helps me…",
   "An ending image requires image-to-video mode.": "An ending image requires image-to-video mode.",
+  "An image could not be generated: {reason}": "An image could not be generated: {reason}",
   "An interrupted production:": "An interrupted production:",
   "An orphaned dictation helper would not exit; retrying.": "An orphaned dictation helper would not exit; retrying.",
   "An orphaned Hermes runtime process group would not exit.": "An orphaned Hermes runtime process group would not exit.",

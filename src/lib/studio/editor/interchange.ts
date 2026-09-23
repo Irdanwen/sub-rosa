@@ -1,7 +1,24 @@
 import { t } from "../../i18n";
 import type { BundleInput } from "../timeline/bundle";
+import type { AudioLane } from "../timeline/types";
 import type { StudioArtifact } from "../types";
 import { type EditorDocument, PROPERTY_DEFAULTS, fps } from "./document";
+
+/** Every file the editable document still references travels with the bundle,
+ * including muted and hidden clips omitted from the interchange timeline. */
+export function editorMediaPaths(doc: EditorDocument, artifacts: StudioArtifact[]): string[] {
+  const byId = new Map(artifacts.map((artifact) => [artifact.id, artifact]));
+  return [
+    ...new Set(
+      doc.clips.flatMap((clip) => {
+        if (!clip.artifactId) return [];
+        const artifact = byId.get(clip.artifactId);
+        if (!artifact) throw new Error(t("A media file is missing from this montage."));
+        return [artifact.path];
+      }),
+    ),
+  ];
+}
 
 /** The legacy interchange writer supports a contiguous picture spine and
  * placed audio. Refuse richer cuts rather than silently discarding edits. */
@@ -95,14 +112,18 @@ export function editorBundle(
         hasAudio: true,
       };
     });
-  const audio = doc.clips
-    .filter((clip) =>
-      doc.tracks.some(
-        (track) =>
-          track.id === clip.trackId && track.kind === "audio" && !track.muted && !track.hidden,
-      ),
-    )
-    .map((clip) => ({
+  const audio: NonNullable<BundleInput["audio"]> = {};
+  for (const clip of doc.clips) {
+    const track = doc.tracks.find((candidate) => candidate.id === clip.trackId);
+    if (track?.kind !== "audio" || track.muted || track.hidden) continue;
+    const lane: AudioLane =
+      track.id === "music"
+        ? "music"
+        : track.id === "effects" || track.id === "sfx"
+          ? "sfx"
+          : "dialogue";
+    if (!audio[lane]) audio[lane] = [];
+    audio[lane].push({
       artifact: artifactFor(clip.artifactId),
       name: clip.name,
       inSeconds: clip.sourceStart / rate,
@@ -110,11 +131,13 @@ export function editorBundle(
       sourceDurationSeconds: clip.sourceDuration / rate,
       atSeconds: clip.start / rate,
       gain: clip.properties.volume[0]?.value ?? 1,
-    }));
+    });
+  }
   return {
     name,
     clips,
-    audio: { dialogue: audio },
+    audio,
+    additionalMedia: editorMediaPaths(doc, artifacts),
     frameRate: doc.frameRate,
     width: doc.width,
     height: doc.height,

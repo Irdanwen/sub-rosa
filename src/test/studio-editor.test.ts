@@ -163,6 +163,46 @@ describe("cube LUT input", () => {
   });
 });
 describe("editable interchange", () => {
+  it("ships hidden media and keeps dialogue, effects and music on their lanes", () => {
+    const doc = cut();
+    const music = doc.tracks.find((track) => track.id === "music");
+    if (music) music.hidden = true;
+    for (const [trackId, id] of [
+      ["dialogue", "line.wav"],
+      ["effects", "steps.wav"],
+      ["music", "score.wav"],
+    ])
+      doc.clips.push(
+        createEditorClip({
+          id,
+          trackId,
+          name: id,
+          duration: 60,
+          sourceDuration: 120,
+          artifactId: id,
+        }),
+      );
+    const files = ["take.mp4", "line.wav", "steps.wav", "score.wav"].map((id) => ({
+      id,
+      path: `/gallery/${id}`,
+      fileName: id,
+      kind: id === "take.mp4" ? ("video" as const) : ("speech" as const),
+      model: "test",
+      prompt: "test",
+      bytes: 1,
+      createdAt: 0,
+    }));
+    const bundle = editorBundle(doc, files, "Film");
+    expect(bundle.audio?.dialogue?.map((clip) => clip.artifact.id)).toEqual(["line.wav"]);
+    expect(bundle.audio?.sfx?.map((clip) => clip.artifact.id)).toEqual(["steps.wav"]);
+    expect(bundle.audio?.music).toBeUndefined();
+    expect(bundle.additionalMedia).toEqual([
+      "/gallery/take.mp4",
+      "/gallery/line.wav",
+      "/gallery/steps.wav",
+      "/gallery/score.wav",
+    ]);
+  });
   it("lists richer operations and refuses a lossy export", () => {
     const doc = cut();
     doc.clips[0].grade.exposure = 1;
