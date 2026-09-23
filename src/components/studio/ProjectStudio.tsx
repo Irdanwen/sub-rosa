@@ -847,7 +847,13 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     if (!target) return;
     setBusy(true);
     try {
-      const selected: Array<{ title: string; artifactId: string; seconds: number }> = [];
+      const selected: Array<{
+        title: string;
+        artifactId: string;
+        seconds: number;
+        parentId?: string;
+        parentHandoffSeconds?: number;
+      }> = [];
       for (const shot of target.document.shots) {
         const artifact = artifacts.find((item) => item.id === shot.activeTakeId);
         if (!artifact) continue;
@@ -856,7 +862,13 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           throw new Error(
             t("A selected take could not be read. Check the file before adding it to the montage."),
           );
-        selected.push({ title: shot.title, artifactId: artifact.id, seconds });
+        selected.push({
+          title: shot.title,
+          artifactId: artifact.id,
+          seconds,
+          parentId: artifact.parentId,
+          parentHandoffSeconds: artifact.parentHandoffSeconds,
+        });
       }
       if (current.current?.id !== target.id) return;
       await edit((previous) => {
@@ -871,8 +883,18 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
             .filter((clip) => clip.trackId === "picture")
             .map((clip) => clip.start + clip.duration),
         );
-        for (const item of selected) {
-          const duration = Math.max(1, Math.round(item.seconds * rate));
+        for (const [index, item] of selected.entries()) {
+          const next = selected[index + 1];
+          const handoff = next?.parentHandoffSeconds;
+          const outSeconds =
+            next?.parentId === item.artifactId &&
+            typeof handoff === "number" &&
+            Number.isFinite(handoff) &&
+            handoff > 0
+              ? Math.min(item.seconds, handoff)
+              : item.seconds;
+          const sourceDuration = Math.max(1, Math.round(item.seconds * rate));
+          const duration = Math.max(1, Math.min(sourceDuration, Math.round(outSeconds * rate)));
           timeline.clips.push(
             createEditorClip({
               name: item.title,
@@ -880,7 +902,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               trackId: "picture",
               start,
               duration,
-              sourceDuration: duration,
+              sourceDuration,
             }),
           );
           start += duration;

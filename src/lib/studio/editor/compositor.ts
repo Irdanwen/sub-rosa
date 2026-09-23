@@ -104,6 +104,37 @@ function shader(gl: WebGL2RenderingContext, type: number, text: string): WebGLSh
   }
   return result;
 }
+function seekVideo(video: HTMLVideoElement, seconds: number): Promise<void> {
+  const position = Math.max(
+    0,
+    Math.min(
+      seconds,
+      Number.isFinite(video.duration) ? Math.max(0, video.duration - 0.001) : seconds,
+    ),
+  );
+  if (Math.abs(video.currentTime - position) < 0.001) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timeout);
+      video.removeEventListener("seeked", done);
+    };
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error(t("A media file could not be positioned. Try opening it again.")));
+    }, 10000);
+    const done = () => {
+      cleanup();
+      resolve();
+    };
+    video.addEventListener("seeked", done, { once: true });
+    try {
+      video.currentTime = position;
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
+  });
+}
 /** One renderer for both the monitor and captureStream. All effects are applied
  * here, so export cannot accidentally omit a preview-only CSS effect. */
 export class EditorCompositor {
@@ -257,27 +288,28 @@ export class EditorCompositor {
         const video = source.element,
           seconds = sourceFrame(clip, frame - clip.start) / fps(doc);
         if (Math.abs(video.currentTime - seconds) < 0.001) return;
-        await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            video.removeEventListener("seeked", done);
-            reject(new Error(t("A media file could not be positioned. Try opening it again.")));
-          }, 10000);
-          const done = () => {
-            clearTimeout(timeout);
-            resolve();
-          };
-          video.addEventListener("seeked", done, { once: true });
-          video.currentTime = Math.max(
-            0,
-            Math.min(
-              seconds,
-              Number.isFinite(video.duration) ? Math.max(0, video.duration - 0.001) : seconds,
-            ),
-          );
-        });
+        await seekVideo(video, seconds);
       }),
     );
     if (!this.disposed && generation === this.seekGeneration) this.draw(doc, frame, false);
+  }
+  async drawRecorded(doc: EditorDocument, frame: number): Promise<void> {
+    // A newly active or trimmed source needs a decoded frame before the canvas
+    // is captured. Setting currentTime and drawing in the same tick can upload
+    // the previous clip's frame (or a black frame) at the cut.
+    await Promise.all(
+      doc.clips.map(async (clip) => {
+        if (frame < clip.start || frame >= clip.start + clip.duration) return;
+        const source = this.sources.get(clip.id);
+        if (!source || !(source.element instanceof HTMLVideoElement)) return;
+        const video = source.element;
+        const target = sourceFrame(clip, frame - clip.start) / fps(doc);
+        if (this.activeClips.has(clip.id) && Math.abs(video.currentTime - target) <= 0.15) return;
+        video.pause();
+        await seekVideo(video, target);
+      }),
+    );
+    if (!this.disposed) this.draw(doc, frame, true);
   }
   draw(doc: EditorDocument, frame: number, playing: boolean): void {
     if (this.disposed) return;
@@ -529,16 +561,18 @@ export async function recordEditor(
         abort();
         return;
       }
-      const tick = () => {
+      const tick = async () => {
         try {
+          if (settled) return;
           const frame = Math.max(0, ((performance.now() - start) * fps(doc)) / 1000);
           if (frame >= frames) {
             recorder.stop();
             return;
           }
-          renderer.draw(doc, frame, true);
+          await renderer.drawRecorded(doc, frame);
+          if (settled) return;
           options.onProgress?.(frame / frames);
-          raf = requestAnimationFrame(tick);
+          raf = requestAnimationFrame(() => void tick());
         } catch (error) {
           fail(error instanceof Error ? error : new Error(messageFromError(error)));
         }
@@ -554,7 +588,7 @@ export async function recordEditor(
               return;
             }
             recorder.start(1000);
-            tick();
+            void tick();
           };
           wait();
         })

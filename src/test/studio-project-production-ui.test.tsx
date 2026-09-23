@@ -724,6 +724,50 @@ describe("project production confirmation", () => {
     expect(project.document.timeline.clips[2].start).toBe(20);
   });
 
+  it("cuts the predecessor at a selected continuation's handoff", async () => {
+    project.document.shots[0].activeTakeId = "first.mp4";
+    project.document.shots.push({
+      ...newShot(1),
+      id: "s2",
+      modelId: "test-text-to-video",
+      activeTakeId: "second.mp4",
+    });
+    vi.mocked(listArtifacts).mockResolvedValue([
+      {
+        id: "first.mp4",
+        kind: "video",
+        path: "/media/first.mp4",
+        fileName: "first.mp4",
+        bytes: 1,
+        model: "test",
+        prompt: "first",
+        createdAt: 0,
+      },
+      {
+        id: "second.mp4",
+        kind: "video",
+        path: "/media/second.mp4",
+        fileName: "second.mp4",
+        bytes: 1,
+        model: "test",
+        prompt: "second",
+        createdAt: 0,
+        parentId: "first.mp4",
+        parentHandoffSeconds: 4.5,
+      },
+    ]);
+    mocks.mediaSeconds.mockResolvedValue(5);
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Montage" }));
+    fireEvent.click(screen.getByRole("button", { name: "Append selected takes" }));
+    await waitFor(() => expect(project.document.timeline.clips).toHaveLength(2));
+    expect(project.document.timeline.clips[0]).toMatchObject({
+      duration: 135,
+      sourceDuration: 150,
+    });
+    expect(project.document.timeline.clips[1]).toMatchObject({ start: 135, duration: 150 });
+  });
+
   it.each(["locked", "hidden"] as const)(
     "does not append takes to a %s picture track",
     async (state) => {
