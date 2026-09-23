@@ -447,6 +447,23 @@ describe("project production confirmation", () => {
     );
   });
 
+  it("shows the stored project name after discarding a conflicting rename", async () => {
+    project.name = "Original film";
+    await mount();
+    mocks.save.mockRejectedValueOnce("studio_project_conflict");
+    const name = screen.getByRole("textbox", { name: "Project name" });
+    fireEvent.change(name, { target: { value: "Discarded name" } });
+    fireEvent.blur(name);
+    await screen.findByRole("button", { name: "Reopen saved version" });
+    mocks.getProject.mockResolvedValue({ ...project, name: "Saved remotely", revision: 2 });
+    fireEvent.click(screen.getByRole("button", { name: "Reopen saved version" }));
+    const dialog = await screen.findByRole("dialog", { name: "Reopen the saved version?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reopen saved version" }));
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Project name" })).toHaveValue("Saved remotely"),
+    );
+  });
+
   it("keeps a montage clip's media available after removing its project membership", async () => {
     project.document.artifactIds = [];
     project.document.timeline.clips = [
@@ -719,6 +736,64 @@ describe("project production confirmation", () => {
       expect(mocks.resume).toHaveBeenCalledWith(
         "run-1",
         expect.objectContaining({ redoNodeIds: ["shot-s1"], requireExistingOutputs: true }),
+      ),
+    );
+    expect(mocks.budget).toHaveBeenCalledWith(expect.anything(), 22);
+  });
+
+  it("quotes a new synchronous take and warns that the first request may have charged", async () => {
+    project.document.runs = [{ id: "run-1", shotSignatures: {} }];
+    project.document.settings.budget = 30;
+    const definition: Workflow = {
+      id: "graph",
+      name: "Concert",
+      createdAt: 0,
+      updatedAt: 0,
+      edges: [],
+      nodes: [
+        {
+          id: "voice",
+          type: "tts",
+          label: "Line 1",
+          position: { x: 0, y: 0 },
+          params: { model: "tts-kokoro", text: "Hello" },
+        },
+      ],
+    };
+    mocks.quote.mockResolvedValue({
+      nodes: [{ nodeId: "voice", type: "tts", label: "Line 1", kind: "flat", credits: 10 }],
+      credits: 10,
+      metered: 0,
+      quotable: 0,
+    });
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "media_job_list") return [];
+      if (command === "workflow_run_get")
+        return {
+          run: {
+            status: "failed",
+            definition: JSON.stringify(definition),
+            nodeCosts: JSON.stringify({ voice: 8 }),
+          },
+          nodes: [
+            {
+              nodeId: "voice",
+              status: "error",
+              output: JSON.stringify({ submissionStarted: true }),
+            },
+          ],
+        };
+      return null;
+    });
+    await mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Resume production" }));
+    const dialog = await screen.findByRole("dialog", { name: "Review generation costs" });
+    expect(within(dialog).getByText(/may already have been charged/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: /Generate · 10 credits/ }));
+    await waitFor(() =>
+      expect(mocks.resume).toHaveBeenCalledWith(
+        "run-1",
+        expect.objectContaining({ redoNodeIds: ["voice"], requireExistingOutputs: true }),
       ),
     );
     expect(mocks.budget).toHaveBeenCalledWith(expect.anything(), 22);

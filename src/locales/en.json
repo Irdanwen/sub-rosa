@@ -191,6 +191,7 @@
   "A podcast feed on {host}. The newest episode will be fetched.": "A podcast feed on {host}. The newest episode will be fetched.",
   "A previous recording is still active. Sub Rosa attempted to save it locally; please try again.": "A previous recording is still active. Sub Rosa attempted to save it locally; please try again.",
   "A previous request may already have been charged. Check its result before requesting another take.": "A previous request may already have been charged. Check its result before requesting another take.",
+  "A previous request may already have been charged. Check your provider history before confirming this new quote.": "A previous request may already have been charged. Check your provider history before confirming this new quote.",
   "A production needs your attention. Finished takes are preserved.": "A production needs your attention. Finished takes are preserved.",
   "A production that stopped:": "A production that stopped:",
   "A production waiting on you:": "A production waiting on you:",

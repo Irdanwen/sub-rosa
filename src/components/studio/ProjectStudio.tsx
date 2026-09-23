@@ -81,6 +81,7 @@ type ReadyQuote = {
   version: number;
   resumeRun?: ProjectRun;
   redoNodeIds?: string[];
+  uncertainRetry?: boolean;
   acceptedCosts?: Record<string, number>;
   priorSpend?: number;
   workflow: Workflow;
@@ -665,17 +666,34 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       const failedNodeIds: string[] = [];
       const paidNodeIds = new Set<string>();
       const alreadyPaid = new Set<string>();
+      let uncertainRetry = false;
       for (const node of detail.nodes) {
         if (node.status === "done") {
           alreadyPaid.add(node.nodeId);
           continue;
         }
-        let jobId: unknown;
+        let stored: { pendingJobId?: unknown; submissionStarted?: unknown };
         try {
-          jobId = JSON.parse(node.output ?? "{}").pendingJobId;
+          const parsed: unknown = JSON.parse(node.output ?? "{}");
+          if (!parsed || typeof parsed !== "object") continue;
+          stored = parsed;
         } catch {
           continue;
         }
+        if (
+          stored.submissionStarted === true &&
+          workflow.nodes.some(
+            (candidate) =>
+              candidate.id === node.nodeId &&
+              ["image", "imageEdit", "tts", "music", "video", "chat"].includes(candidate.type),
+          )
+        ) {
+          failedNodeIds.push(node.nodeId);
+          paidNodeIds.add(node.nodeId);
+          uncertainRetry = true;
+          continue;
+        }
+        const jobId = stored.pendingJobId;
         if (typeof jobId !== "string") continue;
         const job = jobs.find((item) => item.id === jobId);
         if (!job)
@@ -727,6 +745,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         estimate,
         resumeRun: run,
         redoNodeIds: failedNodeIds,
+        uncertainRetry,
         signatures: run.shotSignatures ?? {},
         acceptedCosts,
         priorSpend,
@@ -1008,7 +1027,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               {t("All projects")}
             </button>
             <input
-              key={project.id}
+              key={`${project.id}:${project.revision}`}
               aria-label={t("Project name")}
               defaultValue={project.name}
               disabled={busy}
@@ -1400,6 +1419,13 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           }
         >
           <div className="dialog-body">
+            {quote.uncertainRetry ? (
+              <p className="project-warning">
+                {t(
+                  "A previous request may already have been charged. Check your provider history before confirming this new quote.",
+                )}
+              </p>
+            ) : null}
             {quote.estimate.nodes
               .filter((node) => node.kind !== "free")
               .map((node) => (

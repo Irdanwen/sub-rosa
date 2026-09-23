@@ -191,6 +191,7 @@
   "A podcast feed on {host}. The newest episode will be fetched.": "Un flux de podcast sur {host}. Le dernier épisode sera récupéré.",
   "A previous recording is still active. Sub Rosa attempted to save it locally; please try again.": "Un enregistrement précédent est encore actif. Sub Rosa a tenté de l'enregistrer localement ; réessayez.",
   "A previous request may already have been charged. Check its result before requesting another take.": "Une demande précédente a peut-être déjà été facturée. Vérifiez son résultat avant de demander une autre prise.",
+  "A previous request may already have been charged. Check your provider history before confirming this new quote.": "Une demande précédente a peut-être déjà été facturée. Vérifiez l'historique de votre fournisseur avant de confirmer ce nouveau devis.",
   "A production needs your attention. Finished takes are preserved.": "Une production nécessite votre attention. Les prises terminées sont conservées.",
   "A production that stopped:": "Une production qui s'est arrêtée :",
   "A production waiting on you:": "Une production qui vous attend :",

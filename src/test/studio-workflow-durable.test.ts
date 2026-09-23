@@ -752,3 +752,31 @@ it("blocks an unresolved synchronous paid request after restart", async () => {
   expect(invokeCalls("media_job_queue")).toHaveLength(0);
   expect(mediaJsonMock).not.toHaveBeenCalled();
 });
+
+it("retries a synchronous paid request only after an explicit redo decision", async () => {
+  const definition = workflow(
+    [node("text", "chat", { model: "chat-model", prompt: "A line" })],
+    [],
+  );
+  mocks.invoke.mockImplementation(async (command) =>
+    command === "workflow_run_get"
+      ? {
+          run: { id: "r1", definition: JSON.stringify(definition) },
+          nodes: [
+            {
+              nodeId: "text",
+              status: "error",
+              output: JSON.stringify({ submissionStarted: true }),
+            },
+          ],
+        }
+      : null,
+  );
+  mediaJsonMock.mockResolvedValue({ choices: [{ message: { content: "Recovered" } }] });
+  const results = await resumeWorkflowRun("r1", {
+    requireExistingOutputs: true,
+    redoNodeIds: ["text"],
+  });
+  expect(results.get("text")?.output).toMatchObject({ kind: "text", text: "Recovered" });
+  expect(mediaJsonMock).toHaveBeenCalledTimes(1);
+});
