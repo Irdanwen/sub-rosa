@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  clipOpacity,
   createEditorClip,
   createEditorDocument,
   durationFrames,
@@ -54,6 +55,20 @@ describe("editable montage document", () => {
     expect(valueAt(trimmed.properties.x, 0)).toBe(50);
     for (let f = 0; f <= 70; f++)
       expect(sourceFrame(trimmed, f)).toBeCloseTo(sourceFrame(doc.clips[0], f + 25), 8);
+  });
+  it("preserves opacity through trimmed and split fades", () => {
+    const doc = cut();
+    doc.clips[0].fadeIn = 40;
+    doc.clips[0].fadeOut = 35;
+    const original = doc.clips[0];
+    const trimmed = trimClip(doc, "clip", 25, 105).clips[0];
+    for (let frame = 0; frame <= trimmed.duration; frame++)
+      expect(clipOpacity(trimmed, frame)).toBeCloseTo(clipOpacity(original, frame + 25), 8);
+    const split = splitClip(doc, "clip", 30);
+    for (let frame = 0; frame <= split.clips[0].duration; frame++)
+      expect(clipOpacity(split.clips[0], frame)).toBeCloseTo(clipOpacity(original, frame), 8);
+    for (let frame = 0; frame <= split.clips[1].duration; frame++)
+      expect(clipOpacity(split.clips[1], frame)).toBeCloseTo(clipOpacity(original, frame + 30), 8);
   });
   it("respects locked tracks for split, trim, duplicate and delete", () => {
     const doc = cut();

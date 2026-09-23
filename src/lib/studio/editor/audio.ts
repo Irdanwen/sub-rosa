@@ -3,7 +3,14 @@ import workletUrl from "signalsmith-stretch?url";
 import { t } from "../../i18n";
 import { readArtifactBase64 } from "../artifacts";
 import type { StudioArtifact } from "../types";
-import { type EditorClip, type EditorDocument, fps, sourceFrame, valueAt } from "./document";
+import {
+  clipFade,
+  type EditorClip,
+  type EditorDocument,
+  fps,
+  sourceFrame,
+  valueAt,
+} from "./document";
 
 // Serve the pinned package as a same-origin module. Do not weaken script-src
 // to blob: just to let the library construct its fallback worklet dynamically.
@@ -24,16 +31,11 @@ export function audioSchedule(
   for (let frame = from; frame < clip.duration; frame++) {
     const a = sourceFrame(clip, frame),
       b = sourceFrame(clip, Math.min(clip.duration, frame + 1));
-    const fade = Math.min(
-      1,
-      clip.fadeIn ? frame / clip.fadeIn : 1,
-      clip.fadeOut ? (clip.duration - frame) / clip.fadeOut : 1,
-    );
     output.push({
       frame: clip.start + frame,
       input: a / rate,
       speed: b - a,
-      gain: valueAt(clip.properties.volume, frame, 1) * fade,
+      gain: valueAt(clip.properties.volume, frame, 1) * clipFade(clip, frame),
     });
   }
   return output;

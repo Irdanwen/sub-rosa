@@ -138,6 +138,39 @@ const mount = async () => {
 };
 
 describe("project production confirmation", () => {
+  it("re-enables script editing when leaving a project whose shot list is still reading", async () => {
+    project.document.noteId = "note-one";
+    mocks.invoke.mockImplementation(async (command) =>
+      command === "shot_list" ? { noteId: "note-one", status: "pending" } : null,
+    );
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Script" }));
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Film script" })).toBeDisabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "All projects" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New project" }));
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Film script" })).not.toBeDisabled(),
+    );
+  });
+
+  it("duplicates a film without linking the copy to the original production runs", async () => {
+    const originalShots = structuredClone(project.document.shots);
+    project.document.runs = [{ id: "original-run", shotSignatures: {} }];
+    mocks.invoke.mockImplementation(async (command) =>
+      command === "workflow_run_get" ? { run: { status: "completed" }, nodes: [] } : null,
+    );
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "All projects" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Duplicate" }));
+    await waitFor(() => expect(mocks.save).toHaveBeenCalled());
+    const copy = mocks.save.mock.calls.at(-1)?.[0] as StudioProject;
+    expect(copy.id).not.toBe("project-1");
+    expect(copy.document.runs).toEqual([]);
+    expect(copy.document.shots).toEqual(originalShots);
+  });
+
   it("does not pay until the quoted production is confirmed and records its owner first", async () => {
     vi.mocked(listArtifactMetadata).mockResolvedValue([
       { id: "take.mp4", title: "Alternate view", projectIds: ["other-project"] },

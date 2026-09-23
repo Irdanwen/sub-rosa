@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{query::query, row::Row};
 use sqlx_sqlite::{SqlitePool, SqliteRow};
+use std::collections::HashSet;
 use tauri::AppHandle;
 
 const MAX_DOCUMENT_BYTES: usize = 8 * 1024 * 1024;
@@ -60,6 +61,14 @@ pub struct SaveArtifactRequest {
     pub title: Option<String>,
     pub project_ids: Option<Vec<String>>,
     pub generation: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrganizeArtifactRequest {
+    pub id: String,
+    pub title: String,
+    pub project_ids: Vec<String>,
 }
 
 fn storage_error(error: impl std::fmt::Display) -> String {
@@ -238,6 +247,83 @@ async fn save_artifact(
     artifact_metadata(&row)
 }
 
+/// Keep the gallery's membership index and every project document in one
+/// transaction. A failed write leaves both representations unchanged.
+async fn organize_artifact(
+    pool: &SqlitePool,
+    mut request: OrganizeArtifactRequest,
+) -> Result<ArtifactMetadata, String> {
+    validate_id(&request.id)?;
+    request.title = request.title.trim().into();
+    if request.title.chars().count() > 500 || request.title.chars().any(char::is_control) {
+        return Err("studio_project_invalid_name".into());
+    }
+    if request.project_ids.len() > 100 {
+        return Err(INVALID_DOCUMENT.into());
+    }
+    for id in &request.project_ids {
+        validate_id(id)?;
+    }
+    request.project_ids.sort();
+    request.project_ids.dedup();
+    let wanted: HashSet<&str> = request.project_ids.iter().map(String::as_str).collect();
+    let ids = serde_json::to_string(&request.project_ids).map_err(storage_error)?;
+    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let mut tx = pool.begin().await.map_err(storage_error)?;
+    let projects = query("SELECT id, revision, document FROM studio_projects ORDER BY id")
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(storage_error)?;
+    for row in projects {
+        let project_id: String = row.try_get("id").map_err(storage_error)?;
+        let revision: i64 = row.try_get("revision").map_err(storage_error)?;
+        if !(1..MAX_REVISION).contains(&revision) {
+            return Err(CONFLICT.into());
+        }
+        let source: String = row.try_get("document").map_err(storage_error)?;
+        let mut document: Value = serde_json::from_str(&source).map_err(storage_error)?;
+        let object = document.as_object_mut().ok_or(INVALID_DOCUMENT)?;
+        let artifacts = object
+            .entry("artifactIds")
+            .or_insert_with(|| Value::Array(vec![]));
+        let array = artifacts.as_array_mut().ok_or(INVALID_DOCUMENT)?;
+        let has = array
+            .iter()
+            .any(|value| value.as_str() == Some(&request.id));
+        let include = wanted.contains(project_id.as_str());
+        if has == include {
+            continue;
+        }
+        if include {
+            array.push(Value::String(request.id.clone()));
+        } else {
+            array.retain(|value| value.as_str() != Some(&request.id));
+        }
+        let json = bounded_json(&document, MAX_DOCUMENT_BYTES)?;
+        let updated = query("UPDATE studio_projects SET revision = revision + 1, updated_at = ?, document = ? WHERE id = ? AND revision = ?")
+            .bind(&now)
+            .bind(json)
+            .bind(&project_id)
+            .bind(revision)
+            .execute(&mut *tx)
+            .await
+            .map_err(storage_error)?;
+        if updated.rows_affected() != 1 {
+            return Err(CONFLICT.into());
+        }
+    }
+    let row = query("INSERT INTO studio_artifact_metadata (id, title, project_ids) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET title = excluded.title, project_ids = excluded.project_ids RETURNING *")
+        .bind(&request.id)
+        .bind(&request.title)
+        .bind(ids)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(storage_error)?;
+    let metadata = artifact_metadata(&row)?;
+    tx.commit().await.map_err(storage_error)?;
+    Ok(metadata)
+}
+
 #[tauri::command]
 pub async fn studio_project_list(app: AppHandle) -> Result<Vec<ProjectSummary>, String> {
     list_projects(&pool(&app).await?).await
@@ -270,6 +356,14 @@ pub async fn studio_artifact_save(
     request: SaveArtifactRequest,
 ) -> Result<ArtifactMetadata, String> {
     save_artifact(&pool(&app).await?, request).await
+}
+
+#[tauri::command]
+pub async fn studio_artifact_organize(
+    app: AppHandle,
+    request: OrganizeArtifactRequest,
+) -> Result<ArtifactMetadata, String> {
+    organize_artifact(&pool(&app).await?, request).await
 }
 
 #[cfg(test)]
@@ -462,5 +556,124 @@ mod tests {
         assert_eq!(get_project(&pool, "film-one").await.unwrap(), Some(saved));
         assert!(get_project(&pool, "missing").await.unwrap().is_none());
         assert_eq!(list_projects(&pool).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn organizing_updates_all_memberships_and_preserves_provenance() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pool = open_database(&dir.path().join("studio.sqlite")).await;
+        save_project(
+            &pool,
+            request(None, json!({"schemaVersion":1,"artifactIds":["clip.mp4"]})),
+        )
+        .await
+        .unwrap();
+        let mut second = request(None, json!({"schemaVersion":1,"artifactIds":[]}));
+        second.id = "film-two".into();
+        save_project(&pool, second).await.unwrap();
+        save_artifact(
+            &pool,
+            SaveArtifactRequest {
+                id: "clip.mp4".into(),
+                title: Some("Old title".into()),
+                project_ids: Some(vec!["film-one".into()]),
+                generation: Some(json!({"prompt":"A stage"})),
+            },
+        )
+        .await
+        .unwrap();
+
+        let metadata = organize_artifact(
+            &pool,
+            OrganizeArtifactRequest {
+                id: "clip.mp4".into(),
+                title: "  New title  ".into(),
+                project_ids: vec!["film-two".into(), "film-two".into()],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(metadata.title, "New title");
+        assert_eq!(metadata.project_ids, vec!["film-two"]);
+        assert_eq!(metadata.generation.unwrap()["prompt"], "A stage");
+        assert_eq!(
+            get_project(&pool, "film-one")
+                .await
+                .unwrap()
+                .unwrap()
+                .document["artifactIds"],
+            json!([])
+        );
+        assert_eq!(
+            get_project(&pool, "film-two")
+                .await
+                .unwrap()
+                .unwrap()
+                .document["artifactIds"],
+            json!(["clip.mp4"])
+        );
+    }
+
+    #[tokio::test]
+    async fn organizing_rolls_back_all_project_updates_on_a_later_failure() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pool = open_database(&dir.path().join("studio.sqlite")).await;
+        save_project(
+            &pool,
+            request(None, json!({"schemaVersion":1,"artifactIds":["clip.mp4"]})),
+        )
+        .await
+        .unwrap();
+        let mut second = request(None, json!({"schemaVersion":1,"artifactIds":[]}));
+        second.id = "film-two".into();
+        save_project(&pool, second).await.unwrap();
+        save_artifact(
+            &pool,
+            SaveArtifactRequest {
+                id: "clip.mp4".into(),
+                title: Some("Old title".into()),
+                project_ids: Some(vec!["film-one".into()]),
+                generation: None,
+            },
+        )
+        .await
+        .unwrap();
+        query("CREATE TRIGGER reject_second BEFORE UPDATE ON studio_projects WHEN NEW.id = 'film-two' BEGIN SELECT RAISE(ABORT, 'blocked'); END")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            organize_artifact(
+                &pool,
+                OrganizeArtifactRequest {
+                    id: "clip.mp4".into(),
+                    title: "New title".into(),
+                    project_ids: vec!["film-two".into()],
+                },
+            )
+            .await
+            .unwrap_err(),
+            STORAGE_ERROR
+        );
+        assert_eq!(
+            get_project(&pool, "film-one")
+                .await
+                .unwrap()
+                .unwrap()
+                .document["artifactIds"],
+            json!(["clip.mp4"])
+        );
+        assert_eq!(
+            get_project(&pool, "film-two")
+                .await
+                .unwrap()
+                .unwrap()
+                .document["artifactIds"],
+            json!([])
+        );
+        let metadata = list_artifacts(&pool).await.unwrap();
+        assert_eq!(metadata[0].title, "Old title");
+        assert_eq!(metadata[0].project_ids, vec!["film-one"]);
     }
 }

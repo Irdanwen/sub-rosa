@@ -36,54 +36,23 @@ beforeEach(() => {
 });
 
 describe("project saves", () => {
-  it("removes gallery membership from the project document before saving metadata", async () => {
-    const project = newProject("Concert");
-    project.id = "film-1";
-    project.revision = 3;
-    project.document.artifactIds = ["clip.mp4", "keep.mp4"];
-    native.invoke.mockImplementation(async (command: string, args?: { id?: string }) => {
-      if (command === "studio_project_list") return [project];
-      if (command === "studio_project_get") return args?.id === project.id ? project : null;
-      if (command === "studio_project_save") return { ...project, revision: 4 };
-      if (command === "studio_artifact_save") return { id: "clip.mp4", projectIds: [] };
-      return null;
+  it("organizes gallery and project membership in one native operation", async () => {
+    native.invoke.mockResolvedValue({ id: "clip.mp4", title: "Clip", projectIds: ["film-1"] });
+    await expect(
+      organizeArtifact({ id: "clip.mp4", title: "Clip", projectIds: ["film-1"] }),
+    ).resolves.toMatchObject({ projectIds: ["film-1"] });
+    expect(native.invoke).toHaveBeenCalledExactlyOnceWith("studio_artifact_organize", {
+      request: { id: "clip.mp4", title: "Clip", projectIds: ["film-1"] },
     });
-
-    await organizeArtifact({ id: "clip.mp4", title: "Clip", projectIds: [] });
-
-    const saved = native.invoke.mock.calls.find(([command]) => command === "studio_project_save");
-    expect(saved?.[1].request).toMatchObject({
-      expectedRevision: 3,
-      document: { artifactIds: ["keep.mp4"] },
-    });
-    const savedAt = native.invoke.mock.calls.findIndex(
-      ([command]) => command === "studio_project_save",
-    );
-    const metadataAt = native.invoke.mock.calls.findIndex(
-      ([command]) => command === "studio_artifact_save",
-    );
-    expect(metadataAt).toBeGreaterThan(savedAt);
   });
 
-  it("adds project membership to its document and keeps metadata untouched on a conflict", async () => {
-    const project = newProject("Concert");
-    project.id = "film-1";
-    project.revision = 2;
-    native.invoke.mockImplementation(async (command: string) => {
-      if (command === "studio_project_list") return [project];
-      if (command === "studio_project_get") return project;
-      if (command === "studio_project_save") throw new Error("studio_project_conflict");
-      return null;
-    });
+  it("surfaces an atomic organizer failure without issuing follow-up writes", async () => {
+    native.invoke.mockRejectedValue(new Error("studio_project_conflict"));
 
     await expect(
       organizeArtifact({ id: "clip.mp4", title: "Clip", projectIds: ["film-1"] }),
     ).rejects.toThrow("studio_project_conflict");
-    const save = native.invoke.mock.calls.find(([command]) => command === "studio_project_save");
-    expect(save?.[1].request).toMatchObject({ document: { artifactIds: ["clip.mp4"] } });
-    expect(native.invoke.mock.calls.some(([command]) => command === "studio_artifact_save")).toBe(
-      false,
-    );
+    expect(native.invoke).toHaveBeenCalledTimes(1);
   });
 
   it("serializes immutable edit snapshots with the returned revision", async () => {

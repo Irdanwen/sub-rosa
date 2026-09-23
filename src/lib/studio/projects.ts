@@ -75,29 +75,11 @@ export const listArtifactMetadata = () => invoke<ArtifactMetadata[]>("studio_art
 export const saveArtifactMetadata = (
   request: Pick<ArtifactMetadata, "id"> & Partial<Omit<ArtifactMetadata, "id">>,
 ) => invoke<ArtifactMetadata>("studio_artifact_save", { request });
-/** The gallery organizer edits membership across both durable records. A
- * project document also lists its media, so changing only gallery metadata
- * would make a removed file reappear on the next project load. */
-export async function organizeArtifact(
+/** The native transaction updates project documents and gallery metadata together. */
+export function organizeArtifact(
   request: Pick<ArtifactMetadata, "id" | "title" | "projectIds">,
 ): Promise<ArtifactMetadata> {
-  const wanted = new Set(request.projectIds);
-  for (const summary of await listProjects()) {
-    const project = await getProject(summary.id);
-    if (!project) continue;
-    const has = project.document.artifactIds.includes(request.id);
-    if (has === wanted.has(project.id)) continue;
-    await saveProject({
-      ...project,
-      document: {
-        ...project.document,
-        artifactIds: has
-          ? project.document.artifactIds.filter((id) => id !== request.id)
-          : [...project.document.artifactIds, request.id],
-      },
-    });
-  }
-  return saveArtifactMetadata(request);
+  return invoke<ArtifactMetadata>("studio_artifact_organize", { request });
 }
 export function saveProject(
   project: StudioProject,

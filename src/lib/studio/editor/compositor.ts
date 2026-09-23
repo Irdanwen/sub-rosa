@@ -7,6 +7,7 @@ import type { StudioArtifact } from "../types";
 import {
   type EditorClip,
   type EditorDocument,
+  clipFade,
   clipOpacity,
   durationFrames,
   fps,
@@ -301,12 +302,7 @@ export class EditorCompositor {
             source.gain.gain.value =
               track.muted || track.hidden
                 ? 0
-                : valueAt(clip.properties.volume, local, 1) *
-                  Math.min(
-                    1,
-                    clip.fadeIn ? local / clip.fadeIn : 1,
-                    clip.fadeOut ? (clip.duration - local) / clip.fadeOut : 1,
-                  );
+                : valueAt(clip.properties.volume, local, 1) * clipFade(clip, local);
           if (playing) {
             const target = sourceFrame(clip, local) / fps(doc);
             media.playbackRate = Math.max(

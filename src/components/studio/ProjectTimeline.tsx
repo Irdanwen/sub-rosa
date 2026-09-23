@@ -726,15 +726,19 @@ export function ProjectTimeline({ value, onChange, artifacts }: Props) {
                   label={t("Fade in (frames)")}
                   value={selected.fadeIn}
                   min={0}
-                  max={selected.duration}
-                  onChange={(fadeIn) => update({ ...selected, fadeIn: Math.round(fadeIn) })}
+                  max={Math.max(selected.duration, selected.fadeIn)}
+                  onChange={(fadeIn) =>
+                    update({ ...selected, fadeIn: Math.round(fadeIn), fadeInOffset: 0 })
+                  }
                 />
                 <NumberField
                   label={t("Fade out (frames)")}
                   value={selected.fadeOut}
                   min={0}
-                  max={selected.duration}
-                  onChange={(fadeOut) => update({ ...selected, fadeOut: Math.round(fadeOut) })}
+                  max={Math.max(selected.duration, selected.fadeOut)}
+                  onChange={(fadeOut) =>
+                    update({ ...selected, fadeOut: Math.round(fadeOut), fadeOutOffset: 0 })
+                  }
                 />
                 {(
                   [

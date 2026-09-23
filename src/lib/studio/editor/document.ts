@@ -40,6 +40,9 @@ export interface EditorClip {
   crop: { left: number; right: number; top: number; bottom: number };
   fadeIn: number;
   fadeOut: number;
+  /** Frames of the original fade already consumed by a head/tail trim. */
+  fadeInOffset?: number;
+  fadeOutOffset?: number;
 }
 export interface EditorTrack {
   id: string;
@@ -221,14 +224,19 @@ export function splitClip(doc: EditorDocument, id: string, at: number): EditorDo
   if (!clip || isLocked(doc, clip)) return doc;
   const cut = Math.round(at) - clip.start;
   if (cut <= 0 || cut >= clip.duration) return doc;
-  const left = { ...clip, duration: cut, fadeOut: 0, properties: slicedProperties(clip, 0, cut) };
+  const left = {
+    ...clip,
+    duration: cut,
+    fadeOutOffset: (clip.fadeOutOffset ?? 0) + clip.duration - cut,
+    properties: slicedProperties(clip, 0, cut),
+  };
   const right = {
     ...clip,
     id: crypto.randomUUID(),
     start: clip.start + cut,
     duration: clip.duration - cut,
     sourceStart: sourceFrame(clip, cut),
-    fadeIn: 0,
+    fadeInOffset: (clip.fadeInOffset ?? 0) + cut,
     properties: slicedProperties(clip, cut, clip.duration),
   };
   return { ...doc, clips: doc.clips.flatMap((c) => (c.id === id ? [left, right] : [c])) };
@@ -251,8 +259,8 @@ export function trimClip(
     sourceStart: sourceFrame(clip, from),
     duration: until - from,
     properties: slicedProperties(clip, from, until),
-    fadeIn: Math.min(clip.fadeIn, until - from),
-    fadeOut: Math.min(clip.fadeOut, until - from),
+    fadeInOffset: (clip.fadeInOffset ?? 0) + from,
+    fadeOutOffset: (clip.fadeOutOffset ?? 0) + clip.duration - until,
   });
 }
 export function removeClip(doc: EditorDocument, id: string, ripple = false): EditorDocument {
@@ -302,13 +310,18 @@ export function snapFrame(
   }
   return best;
 }
-export function clipOpacity(clip: EditorClip, localFrame: number): number {
-  const fade = Math.min(
-    1,
-    clip.fadeIn ? localFrame / clip.fadeIn : 1,
-    clip.fadeOut ? (clip.duration - localFrame) / clip.fadeOut : 1,
+export function clipFade(clip: EditorClip, localFrame: number): number {
+  return Math.max(
+    0,
+    Math.min(
+      1,
+      clip.fadeIn ? (localFrame + (clip.fadeInOffset ?? 0)) / clip.fadeIn : 1,
+      clip.fadeOut ? (clip.duration - localFrame + (clip.fadeOutOffset ?? 0)) / clip.fadeOut : 1,
+    ),
   );
-  return valueAt(clip.properties.opacity, localFrame, 1) * Math.max(0, fade);
+}
+export function clipOpacity(clip: EditorClip, localFrame: number): number {
+  return valueAt(clip.properties.opacity, localFrame, 1) * clipFade(clip, localFrame);
 }
 export function validateEditorDocument(doc: EditorDocument): string[] {
   const errors: string[] = [];

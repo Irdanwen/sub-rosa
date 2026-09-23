@@ -30,6 +30,7 @@ import {
   listArtifactMetadata,
   newProject,
   newShot,
+  organizeArtifact,
   projectError,
   ProjectWriter,
   saveArtifactMetadata,
@@ -143,9 +144,11 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setError("");
     setLibrary(false);
     setProgress({});
+    setReading(false);
     window.localStorage.setItem(LAST_PROJECT, value.id);
     if (value.document.noteId) {
       const row = await shotList(value.document.noteId);
+      if (current.current?.id !== value.id) return;
       setReading(row?.status === "running" || row?.status === "pending");
       if (row) acceptReading(row);
     }
@@ -229,6 +232,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       run: { status: string };
       nodes: Array<{ nodeId: string; status: string; output?: string; error?: string }>;
     }>("workflow_run_get", { id: run.id });
+    if (current.current?.id !== projectId) return;
     setRunStates((previous) => ({ ...previous, [run.id]: detail.run.status }));
     for (const node of detail.nodes) {
       if (node.status !== "done" || !node.output) continue;
@@ -319,6 +323,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           name: t("{name} copy", { name: source.name }),
           revision: 0,
           archived: false,
+          document: { ...structuredClone(source.document), runs: [] },
         }
       : newProject();
     const stored = await saveProject(next, null);
@@ -610,14 +615,18 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       artifacts={media}
       projects={projects}
       projectId={project?.id}
-      onAttach={addArtifact}
       onMetadata={async (artifact, title, projectIds) => {
-        await saveArtifactMetadata({ id: artifact.id, title, projectIds });
-        if (project && !projectIds.includes(project.id))
-          editDocument((document) => ({
-            ...document,
-            artifactIds: document.artifactIds.filter((id) => id !== artifact.id),
-          }));
+        await writer.current?.flush();
+        await organizeArtifact({ id: artifact.id, title, projectIds });
+        if (current.current) {
+          const reloaded = await getProject(current.current.id);
+          if (reloaded) {
+            current.current = reloaded;
+            writer.current = new ProjectWriter(reloaded);
+            setProject(reloaded);
+            setSaved(true);
+          }
+        }
         await refreshArtifacts();
       }}
     />
@@ -637,6 +646,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                   id: crypto.randomUUID(),
                   revision: 0,
                   name: t("{name} copy", { name: project.name }),
+                  document: { ...structuredClone(project.document), runs: [] },
                 };
                 void saveProject(copy, null)
                   .then(async (stored) => {
