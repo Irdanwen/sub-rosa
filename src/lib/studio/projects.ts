@@ -466,7 +466,11 @@ async function importLegacyProductions(bible: readonly BibleEntry[]): Promise<vo
       id,
     );
     project.document.artifactIds = [
-      ...new Set([...referenceIds, ...[...outputs.values()].map((output) => output.artifactId)]),
+      ...new Set([
+        ...referenceIds,
+        ...[...outputs.values()].map((output) => output.artifactId),
+        ...project.document.bible.flatMap((entry) => entry.refs.map((ref) => ref.artifactId)),
+      ]),
     ];
     project.document.runs = [
       {

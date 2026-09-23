@@ -318,10 +318,40 @@ describe("migration recovery boundaries", () => {
     expect(bible[0].refs[0].label).toBe("Front");
   });
 
-  it("recovers video takes and audio from a frozen run without calling execution", async () => {
+  it("recovers takes, audio, and copied bible references from a frozen run", async () => {
     native.listFilms.mockResolvedValue([]);
+    native.listBibleEntries.mockResolvedValue([
+      {
+        id: "person",
+        kind: "character",
+        name: "Baptiste",
+        traits: "Dark jacket",
+        note: "",
+        createdAt: "",
+        updatedAt: "",
+        refs: [
+          {
+            id: "front",
+            entryId: "person",
+            artifactId: "face-one.png",
+            role: "portrait",
+            label: "Front",
+            ordinal: 0,
+          },
+          {
+            id: "side",
+            entryId: "person",
+            artifactId: "face-two.png",
+            role: "profile",
+            label: "Side",
+            ordinal: 1,
+          },
+        ],
+      },
+    ]);
     const graph = {
       nodes: [
+        { id: "portrait-ref", type: "asset", label: "", params: { artifactId: "face-one.png" } },
         {
           id: "shot-1",
           type: "video",
@@ -383,7 +413,12 @@ describe("migration recovery boundaries", () => {
       dialogue: "Good evening",
     });
     expect(saved?.document.shots[1]).toMatchObject({ id: "2", mode: "continuation", takeIds: [] });
-    expect(saved?.document.artifactIds).toEqual(["take-one.mp4", "line.wav"]);
+    expect(saved?.document.artifactIds).toEqual([
+      "face-one.png",
+      "take-one.mp4",
+      "line.wav",
+      "face-two.png",
+    ]);
     expect(saved?.document.runs).toEqual([
       { id: "old-run", shotSignatures: {}, appliedNodeIds: ["shot-1", "line-1"] },
     ]);
