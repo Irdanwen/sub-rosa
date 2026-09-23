@@ -28,6 +28,7 @@ import {
   importLegacyFilms,
   listProjects,
   listArtifactMetadata,
+  montageArtifacts,
   newProject,
   newShot,
   organizeArtifact,
@@ -1091,7 +1092,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 key={project.id}
                 value={project.document.timeline}
                 onChange={(timeline) => editDocument((document) => ({ ...document, timeline }))}
-                artifacts={media.filter((artifact) => artifact.projectIds.includes(project.id))}
+                artifacts={montageArtifacts(project, media)}
               />
             </>
           ) : null}

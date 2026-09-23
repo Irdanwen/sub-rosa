@@ -46,6 +46,41 @@ beforeEach(() => {
 });
 
 describe("isolated project takes", () => {
+  it("uses the selected project model when the shot override is blank", () => {
+    const project = newProject();
+    project.document.settings.videoModelId = "beta-text-to-video";
+    project.document.shots = [
+      { ...newShot(0), id: "target", action: "A pianist bows", modelId: "" },
+    ];
+    const graph = compileProject(
+      project.name,
+      project.document,
+      {
+        ...catalog,
+        models: [
+          {
+            id: "alpha-text-to-video",
+            name: "Alpha",
+            mediaType: "video",
+            offline: false,
+            costCredits: 1,
+          },
+          {
+            id: "beta-text-to-video",
+            name: "Beta",
+            mediaType: "video",
+            offline: false,
+            costCredits: 20,
+          },
+        ],
+      },
+      "target",
+    );
+    expect(graph.nodes.find((node) => node.type === "video")?.params.model).toBe(
+      "beta-text-to-video",
+    );
+  });
+
   it("does not validate or price unrelated unfinished shots", () => {
     const project = newProject();
     const target = {

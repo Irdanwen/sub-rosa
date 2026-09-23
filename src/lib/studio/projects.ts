@@ -142,6 +142,19 @@ export function newProject(name = t("Untitled project")): StudioProject {
     },
   };
 }
+/** A cut keeps its on-disk media even after it is removed from the project's
+ * gallery membership. The timeline needs those files for playback and export. */
+export function montageArtifacts(
+  project: StudioProject,
+  artifacts: readonly StudioArtifact[],
+): StudioArtifact[] {
+  const referenced = new Set(
+    project.document.timeline.clips.map((clip) => clip.artifactId).filter((id) => !!id),
+  );
+  return artifacts.filter(
+    (artifact) => artifact.projectIds?.includes(project.id) || referenced.has(artifact.id),
+  );
+}
 export function shotSignature(shot: ProjectShot, project: ProjectDocument): string {
   const {
     takeIds: _takes,

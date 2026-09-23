@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createEditorClip } from "../lib/studio/editor/document";
+import type { StudioArtifact } from "../lib/studio/types";
 
 const native = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -18,6 +20,7 @@ vi.mock("../lib/tauri", () => ({
 import {
   copyProjectBible,
   importLegacyFilms,
+  montageArtifacts,
   newProject,
   newShot,
   organizeArtifact,
@@ -119,6 +122,34 @@ describe("project saves", () => {
     expect(shotSignature(shot, project.document)).toBe(original);
     shot.action = "The musician exits";
     expect(shotSignature(shot, project.document)).not.toBe(original);
+  });
+  it("keeps media referenced by the montage available after project removal", () => {
+    const project = newProject("Concert");
+    project.id = "film-1";
+    project.document.timeline.clips.push(
+      createEditorClip({
+        id: "clip",
+        trackId: "picture",
+        name: "Take",
+        duration: 60,
+        artifactId: "used.mp4",
+      }),
+    );
+    const artifact = (id: string): StudioArtifact => ({
+      id,
+      projectIds: [],
+      kind: "video",
+      path: id,
+      fileName: id,
+      bytes: 1,
+      model: "test",
+      prompt: "test",
+      createdAt: 0,
+    });
+    const artifacts = [artifact("used.mp4"), artifact("unused.mp4")];
+    expect(montageArtifacts(project, artifacts).map((artifact) => artifact.id)).toEqual([
+      "used.mp4",
+    ]);
   });
 });
 

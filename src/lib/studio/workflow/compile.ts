@@ -407,7 +407,7 @@ export function planShots(
     const explicit = shot.mode !== undefined || shot.modelId !== undefined;
     const mode = shot.mode ?? (chained ? "continuation" : stack.length ? "reference" : "text");
     const direction = mode === "continuation" ? "image" : mode;
-    const chosenId = shot.modelId ?? videoModelId;
+    const chosenId = shot.modelId || videoModelId;
     const videoModels = catalog.models.filter((candidate) =>
       ["video", "imageToVideo", "referenceToVideo"].includes(candidate.mediaType),
     );

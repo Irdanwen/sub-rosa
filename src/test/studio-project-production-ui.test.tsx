@@ -64,7 +64,11 @@ vi.mock("../components/studio/MediaModelPicker", () => ({
 }));
 vi.mock("../components/studio/ProjectBible", () => ({ ProjectBible: () => null }));
 vi.mock("../components/studio/ProjectMedia", () => ({ ProjectMedia: () => null }));
-vi.mock("../components/studio/ProjectTimeline", () => ({ ProjectTimeline: () => null }));
+vi.mock("../components/studio/ProjectTimeline", () => ({
+  ProjectTimeline: ({ artifacts }: { artifacts: Array<{ id: string }> }) => (
+    <output data-testid="timeline-artifacts">{artifacts.map((artifact) => artifact.id).join(",")}</output>
+  ),
+}));
 vi.mock("../components/studio/ProjectShots", () => ({
   ProjectShots: ({ onGenerate }: { onGenerate: (id: string) => void }) => (
     <button type="button" onClick={() => onGenerate("s1")}>
@@ -74,6 +78,8 @@ vi.mock("../components/studio/ProjectShots", () => ({
 }));
 
 import { ProjectStudio } from "../components/studio/ProjectStudio";
+import { listArtifacts } from "../lib/studio/artifacts";
+import { createEditorClip } from "../lib/studio/editor/document";
 import {
   newProject,
   newShot,
@@ -99,6 +105,7 @@ const catalog: MediaCatalog = {
 let project: StudioProject;
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(listArtifacts).mockResolvedValue([]);
   project = newProject("Concert");
   project.id = "project-1";
   project.document.shots = [
@@ -138,6 +145,35 @@ const mount = async () => {
 };
 
 describe("project production confirmation", () => {
+  it("keeps a montage clip's media available after removing its project membership", async () => {
+    project.document.artifactIds = [];
+    project.document.timeline.clips = [
+      createEditorClip({
+        id: "clip",
+        trackId: "picture",
+        name: "Take",
+        duration: 30,
+        artifactId: "used.mp4",
+      }),
+    ];
+    vi.mocked(listArtifacts).mockResolvedValue([
+      {
+        id: "used.mp4",
+        projectIds: [],
+        kind: "video",
+        path: "/media/used.mp4",
+        fileName: "used.mp4",
+        bytes: 1,
+        model: "test",
+        prompt: "test",
+        createdAt: 0,
+      },
+    ]);
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Montage" }));
+    expect(screen.getByTestId("timeline-artifacts")).toHaveTextContent("used.mp4");
+  });
+
   it("re-enables script editing when leaving a project whose shot list is still reading", async () => {
     project.document.noteId = "note-one";
     mocks.invoke.mockImplementation(async (command) =>
