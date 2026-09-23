@@ -9,7 +9,10 @@ const hoisted = vi.hoisted(() => ({
 }));
 
 vi.mock("../lib/studio/generate-image", () => ({ generateImages: hoisted.generateImages }));
-vi.mock("../lib/studio/artifacts", () => ({ saveArtifactFromBase64: hoisted.saveArtifact }));
+vi.mock("../lib/studio/artifacts", () => ({
+  saveArtifactFromBase64: hoisted.saveArtifact,
+  finishQueuedBibleImage: vi.fn(async () => undefined),
+}));
 vi.mock("../lib/studio/bible/index", () => ({ addBibleRef: hoisted.addRef }));
 
 import {

@@ -17,7 +17,9 @@
 
 import { estimateCostCredits, modelsOfType } from "../catalog";
 import { generateImages } from "../generate-image";
-import { saveArtifactFromBase64 } from "../artifacts";
+import { finishQueuedBibleImage, saveArtifactFromBase64 } from "../artifacts";
+import { nativeQueuedImage } from "../edit-image";
+import { bibleImageJobSource } from "../image-job-recovery";
 import type { MediaCatalog, MediaModel, StudioArtifact } from "../types";
 import { addBibleRef } from "./index";
 import type { BibleEntry, BibleKind, BibleRole } from "./types";
@@ -138,7 +140,15 @@ export async function generateReference(
   const ratios = model.constraints?.aspect_ratios;
   if (!ratios || ratios.includes(ratio)) body.aspect_ratio = ratio;
 
-  const images = await generateImages(model.id, body, options.signal);
+  const images = await generateImages(
+    model.id,
+    body,
+    options.signal,
+    options.attach === false
+      ? undefined
+      : (queueBody) =>
+          nativeQueuedImage("/image/generate", queueBody, bibleImageJobSource(entry.id, role)),
+  );
   const base64 = images[0];
   if (!base64) throw new Error("The model returned no picture.");
 
@@ -147,12 +157,19 @@ export async function generateReference(
     model: model.id,
     prompt,
   });
-  if (options.attach !== false)
-    await addBibleRef({
-      entryId: entry.id,
-      artifactId: artifact.id,
-      role,
-      label: role,
-    });
+  if (options.attach !== false) {
+    let attached = false;
+    try {
+      await addBibleRef({
+        entryId: entry.id,
+        artifactId: artifact.id,
+        role,
+        label: role,
+      });
+      attached = true;
+    } finally {
+      await finishQueuedBibleImage(artifact.id, attached);
+    }
+  }
   return { artifact, prompt, model: model.id };
 }

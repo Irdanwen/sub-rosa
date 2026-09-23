@@ -19,6 +19,7 @@ import { StudioStart, type StudioDestination } from "./StudioStart";
 import { ImageStudio } from "./ImageStudio";
 import { VideoStudio } from "./VideoStudio";
 import { useMediaCatalog } from "./useMediaCatalog";
+import { observeStandaloneImageJobs } from "../../lib/studio/image-job-recovery";
 
 // The workflow canvas pulls in @xyflow/react; only the Workflows tab pays
 // for it.
@@ -67,6 +68,7 @@ function initialTab(): StudioTab {
 }
 
 export function StudioView() {
+  useEffect(() => observeStandaloneImageJobs(), []);
   const [tab, setTab] = useState<StudioTab>(initialTab);
   const [audioMode, setAudioMode] = useState<AudioMode | undefined>();
   const openWorkshop = useCallback((destination: StudioDestination) => {

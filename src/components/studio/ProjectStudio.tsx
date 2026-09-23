@@ -61,6 +61,7 @@ import { ProjectBible } from "./ProjectBible";
 import { ProjectMedia } from "./ProjectMedia";
 import { ProjectShots } from "./ProjectShots";
 import { ProjectTimeline } from "./ProjectTimeline";
+import { STUDIO_IMAGE_RECOVERED_EVENT } from "../../lib/studio/image-job-recovery";
 import "./project-studio.css";
 
 type Section = "script" | "shots" | "bible" | "media" | "montage";
@@ -103,6 +104,14 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setArtifacts(items);
     return items;
   };
+  useEffect(() => {
+    const onRecovered = () =>
+      void listArtifacts()
+        .then(setArtifacts)
+        .catch(() => undefined);
+    window.addEventListener(STUDIO_IMAGE_RECOVERED_EVENT, onRecovered);
+    return () => window.removeEventListener(STUDIO_IMAGE_RECOVERED_EVENT, onRecovered);
+  }, []);
   const edit = (change: (previous: StudioProject) => StudioProject) => {
     if (!current.current || !writer.current) return Promise.resolve();
     const next = change(current.current);
@@ -147,6 +156,12 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setProgress((previous) => ({ ...previous, [result.nodeId]: result }));
     const output = result.output;
     if (result.status !== "done" || !output || output.kind === "text" || !output.artifactId) return;
+    if (
+      current.current.document.runs
+        .find((savedRun) => savedRun.id === run.id)
+        ?.appliedNodeIds?.includes(result.nodeId)
+    )
+      return;
     const artifactId = output.artifactId;
     resultWrites.current = resultWrites.current
       .then(async () => {
@@ -160,6 +175,14 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       .catch(report);
     editDocument((document) => ({
       ...document,
+      runs: document.runs.map((savedRun) =>
+        savedRun.id === run.id
+          ? {
+              ...savedRun,
+              appliedNodeIds: [...new Set([...(savedRun.appliedNodeIds ?? []), result.nodeId])],
+            }
+          : savedRun,
+      ),
       artifactIds: [...new Set([...document.artifactIds, artifactId])],
       bible: document.bible.map((entry) => {
         const match = /^bible-(.+)-(portrait|profile|wide|medium|detail)$/.exec(result.nodeId);

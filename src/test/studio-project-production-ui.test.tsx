@@ -158,6 +158,7 @@ describe("project production confirmation", () => {
     expect(mocks.run).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /Generate · 10 credits/ }));
     await waitFor(() => expect(project.document.shots[0].takeIds).toContain("take.mp4"));
+    expect(project.document.runs[0].appliedNodeIds).toContain("shot-s1");
     expect(mocks.run.mock.calls[0][1]).toMatchObject({ requireDurable: true });
     await waitFor(() =>
       expect(saveArtifactMetadata).toHaveBeenCalledWith({
@@ -166,6 +167,37 @@ describe("project production confirmation", () => {
         projectIds: ["other-project", "project-1"],
       }),
     );
+  });
+
+  it("does not restore project membership for a finished take removed from its media library", async () => {
+    project.document.runs = [
+      {
+        id: "run-1",
+        shotSignatures: {},
+        appliedNodeIds: ["shot-s1"],
+      },
+    ];
+    project.document.shots[0].takeIds = ["take.mp4"];
+    project.document.artifactIds = [];
+    mocks.invoke.mockImplementation(async (command) =>
+      command === "workflow_run_get"
+        ? {
+            run: { status: "completed" },
+            nodes: [
+              {
+                nodeId: "shot-s1",
+                status: "done",
+                output: JSON.stringify({ kind: "video", artifactId: "take.mp4" }),
+              },
+            ],
+          }
+        : null,
+    );
+
+    await mount();
+
+    expect(project.document.artifactIds).toEqual([]);
+    expect(saveArtifactMetadata).not.toHaveBeenCalled();
   });
 
   it("re-quotes only unpaid resume steps and waits for confirmation", async () => {

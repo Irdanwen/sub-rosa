@@ -6,6 +6,7 @@ import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
 import { hapticNotify } from "../../../lib/haptics";
 import { openTopUp } from "../../../lib/top-up";
 import { deleteArtifact, listArtifacts } from "../../../lib/studio/artifacts";
+import { STUDIO_IMAGE_RECOVERED_EVENT } from "../../../lib/studio/image-job-recovery";
 import {
   fetchMediaCatalog,
   formatCredits,
@@ -76,6 +77,10 @@ export function StudioScreen() {
   const clearVideoHandoff = useCallback(() => setVideoHandoff(undefined), []);
   useEffect(() => {
     refreshGallery();
+  }, [refreshGallery]);
+  useEffect(() => {
+    window.addEventListener(STUDIO_IMAGE_RECOVERED_EVENT, refreshGallery);
+    return () => window.removeEventListener(STUDIO_IMAGE_RECOVERED_EVENT, refreshGallery);
   }, [refreshGallery]);
 
   const galleryKind: ArtifactKind | undefined =

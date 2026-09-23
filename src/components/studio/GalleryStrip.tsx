@@ -20,7 +20,8 @@ import {
 import type { ArtifactKind, StudioArtifact } from "../../lib/studio/types";
 import { Spinner } from "../ui/Spinner";
 import { FrameCaptureDialog } from "./FrameCaptureDialog";
-import { listProjects, saveArtifactMetadata, type ProjectSummary } from "../../lib/studio/projects";
+import { listProjects, organizeArtifact, type ProjectSummary } from "../../lib/studio/projects";
+import { STUDIO_IMAGE_RECOVERED_EVENT } from "../../lib/studio/image-job-recovery";
 import { Dialog } from "../ui/Dialog";
 
 /** How long the "saved to the gallery" line stays up. Long enough to read
@@ -81,6 +82,11 @@ export function GalleryStrip({
   useEffect(() => {
     void reload();
   }, [reload, epoch]);
+  useEffect(() => {
+    const onRecovered = () => void reload();
+    window.addEventListener(STUDIO_IMAGE_RECOVERED_EVENT, onRecovered);
+    return () => window.removeEventListener(STUDIO_IMAGE_RECOVERED_EVENT, onRecovered);
+  }, [reload]);
 
   useEffect(() => {
     if (!captured) return;
@@ -159,7 +165,7 @@ export function GalleryStrip({
                 type="button"
                 className="btn btn-secondary"
                 onClick={() =>
-                  void saveArtifactMetadata({ id: editing.id, title, projectIds: memberships })
+                  void organizeArtifact({ id: editing.id, title, projectIds: memberships })
                     .then(async () => {
                       await reload();
                       setEditing(undefined);

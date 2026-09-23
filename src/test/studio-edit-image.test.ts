@@ -6,6 +6,8 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => vi.fn()) }))
 vi.mock("../lib/studio/artifacts", () => ({
   readArtifactBase64: vi.fn(async () => "QUEUED"),
   rememberQueuedImage: vi.fn(),
+  claimQueuedImageJob: vi.fn(),
+  releaseQueuedImageJob: vi.fn(),
 }));
 import type { MediaProxyResponse } from "../lib/studio/types";
 
@@ -77,6 +79,7 @@ describe("editImage", () => {
       "QUEUED",
       { path: "/gallery/result.png", fileName: "result.png", bytes: 6 },
       expect.any(String),
+      "studio",
     );
     expect(invoke).toHaveBeenCalledWith(
       "media_job_queue",

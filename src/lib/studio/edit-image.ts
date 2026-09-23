@@ -1,7 +1,12 @@
 import { t } from "../i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { readArtifactBase64, rememberQueuedImage } from "./artifacts";
+import {
+  claimQueuedImageJob,
+  readArtifactBase64,
+  releaseQueuedImageJob,
+  rememberQueuedImage,
+} from "./artifacts";
 import { isAsyncRetrySignal, MediaError, mediaRaw } from "./client";
 import type { MediaProxyResponse } from "./types";
 
@@ -43,8 +48,11 @@ interface NativeImageJob {
 export async function nativeQueuedImage(
   base: string,
   body: Record<string, unknown>,
+  source = "studio",
 ): Promise<string> {
   const jobId = crypto.randomUUID();
+  claimQueuedImageJob(jobId);
+  let handedOff = false;
   let resolveJob: (job: NativeImageJob) => void = () => {};
   const done = new Promise<NativeImageJob>((resolve) => {
     resolveJob = resolve;
@@ -80,7 +88,7 @@ export async function nativeQueuedImage(
         queueBody: body,
         retrievePath: `${base}/retrieve`,
         urlFields: ["image_url", "url"],
-        source: "studio",
+        source,
       },
     });
     observe(submitted);
@@ -90,14 +98,16 @@ export async function nativeQueuedImage(
       throw new MediaError(job.error ?? "The edit failed.", { status: 0 });
     if (!job.artifactPath)
       throw new MediaError(t("The edit finished but its file is missing."), { status: 0 });
+    if (!job.artifactFileName)
+      throw new MediaError(t("The edit finished but its file is missing."), { status: 0 });
     const base64 = await readArtifactBase64({ path: job.artifactPath });
-    if (job.artifactFileName) {
-      rememberQueuedImage(
-        base64,
-        { path: job.artifactPath, fileName: job.artifactFileName, bytes: job.artifactBytes ?? 0 },
-        job.id,
-      );
-    }
+    rememberQueuedImage(
+      base64,
+      { path: job.artifactPath, fileName: job.artifactFileName, bytes: job.artifactBytes ?? 0 },
+      job.id,
+      source,
+    );
+    handedOff = true;
     return base64;
   } catch (error) {
     if (
@@ -110,6 +120,7 @@ export async function nativeQueuedImage(
       throw new Error(t(error.message));
     throw error;
   } finally {
+    if (!handedOff) releaseQueuedImageJob(jobId);
     document.removeEventListener("visibilitychange", onVisible);
     unlisten();
   }

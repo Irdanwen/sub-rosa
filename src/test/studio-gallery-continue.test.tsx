@@ -22,7 +22,7 @@ const projects = vi.hoisted(() => ({ list: vi.fn(), save: vi.fn() }));
 
 vi.mock("../lib/studio/projects", () => ({
   listProjects: projects.list,
-  saveArtifactMetadata: projects.save,
+  organizeArtifact: projects.save,
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save: vi.fn() }));

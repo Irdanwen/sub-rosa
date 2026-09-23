@@ -3,7 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
-import { rememberQueuedImage, saveArtifactFromBase64 } from "../lib/studio/artifacts";
+import {
+  finishQueuedBibleImage,
+  rememberQueuedImage,
+  saveArtifactFromBase64,
+} from "../lib/studio/artifacts";
 
 const metadata = { kind: "image" as const, model: "gpt-image-2", prompt: "A concert" };
 
@@ -62,5 +66,19 @@ describe("queued image gallery handoff", () => {
     expect(invoke).toHaveBeenCalledWith("media_job_dismiss", { id: "a" });
     expect(invoke).toHaveBeenCalledWith("media_job_dismiss", { id: "b" });
     expect(invoke).not.toHaveBeenCalledWith("carpe_diem_media_save_artifact", expect.anything());
+  });
+
+  it("retains a bible job until its generated reference is attached", async () => {
+    rememberQueuedImage(
+      "BIBLE-IMAGE",
+      { path: "/gallery/portrait.png", fileName: "portrait.png", bytes: 7 },
+      "bible-job",
+      "bible-ref:entry-1:portrait",
+    );
+    const artifact = await saveArtifactFromBase64("BIBLE-IMAGE", "png", metadata);
+    expect(invoke).not.toHaveBeenCalledWith("media_job_dismiss", expect.anything());
+
+    await finishQueuedBibleImage(artifact.id, true);
+    expect(invoke).toHaveBeenCalledWith("media_job_dismiss", { id: "bible-job" });
   });
 });

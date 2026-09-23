@@ -38,6 +38,7 @@ import {
 } from "../../lib/studio/bible";
 import { estimateCostCredits, modelsOfType } from "../../lib/studio/catalog";
 import { canGenerate, generateReference, pickPortraitModel } from "../../lib/studio/bible/portrait";
+import { STUDIO_IMAGE_RECOVERED_EVENT } from "../../lib/studio/image-job-recovery";
 import { generateSpeech } from "../../lib/studio/speech";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { EmptyState } from "../ui/EmptyState";
@@ -111,6 +112,11 @@ export function BibleStudio({
 
   useEffect(() => {
     void reload();
+  }, [reload]);
+  useEffect(() => {
+    const onRecovered = () => void reload();
+    window.addEventListener(STUDIO_IMAGE_RECOVERED_EVENT, onRecovered);
+    return () => window.removeEventListener(STUDIO_IMAGE_RECOVERED_EVENT, onRecovered);
   }, [reload]);
   useEffect(() => () => abortRef.current?.abort(), []);
 
