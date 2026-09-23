@@ -934,6 +934,35 @@ describe("project production confirmation", () => {
     );
   });
 
+  it("keeps a render failure visible when an earlier result save finishes later", async () => {
+    let finishSave: (() => void) | undefined;
+    mocks.save.mockImplementation(async (value: StudioProject) => {
+      if (value.document.shots[0]?.takeIds.includes("take.mp4"))
+        await new Promise<void>((resolve) => {
+          finishSave = resolve;
+        });
+      project = value;
+      return value;
+    });
+    mocks.run.mockImplementation(async (_workflow, options) => {
+      await options.onRunRecorded("run-1");
+      options.onUpdate({
+        nodeId: "shot-s1",
+        status: "done",
+        output: { kind: "video", artifactId: "take.mp4" },
+      });
+      throw new Error("Second shot failed");
+    });
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Generate shot" }));
+    await screen.findByRole("dialog", { name: "Review generation costs" });
+    fireEvent.click(screen.getByRole("button", { name: /Generate · 10 credits/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Second shot failed");
+    await waitFor(() => expect(finishSave).toBeDefined());
+    await act(async () => finishSave?.());
+    expect(screen.getByRole("alert")).toHaveTextContent("Second shot failed");
+  });
+
   it("does not restore project membership for a finished take removed from its media library", async () => {
     project.document.runs = [
       {

@@ -104,7 +104,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const [library, setLibrary] = useState(false);
   const [artifacts, setArtifacts] = useState<StudioArtifact[]>([]);
   const [saved, setSaved] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setErrorState] = useState("");
   const [busy, setBusy] = useState(false);
   const [reading, setReading] = useState(false);
   const [archived, setArchived] = useState(false);
@@ -121,6 +121,11 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const finishingReadings = useRef(new Set<string>());
   const epoch = useRef(0);
   const openRequest = useRef(0);
+  const errorVersion = useRef(0);
+  const setError = (message: string) => {
+    ++errorVersion.current;
+    setErrorState(message);
+  };
   const report = (cause: unknown) => setError(projectError(cause));
   const refreshArtifacts = async () => {
     const items = await listArtifacts();
@@ -147,12 +152,13 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setProject(next);
     setSaved(false);
     const version = ++epoch.current;
+    const errorAtSave = errorVersion.current;
     return writer.current
       .save(next)
       .then(() => {
         if (epoch.current === version) {
           setSaved(true);
-          setError("");
+          if (errorVersion.current === errorAtSave) setError("");
         }
       })
       .catch((cause) => {
