@@ -1250,9 +1250,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 type="button"
                 key={key}
                 aria-current={section === key ? "page" : undefined}
-                disabled={
-                  mediaSaving || (busy && key === "media") || (exporting && key === "media")
-                }
+                disabled={mediaSaving || exporting || (busy && key === "media")}
                 onClick={() => setSection(key)}
               >
                 {label}
@@ -1538,7 +1536,12 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                   setExporting(false);
                 }}
                 onChange={(timeline) => {
-                  if (current.current?.id !== project.id || epoch.current !== timelineEpoch) return;
+                  if (
+                    exportingRef.current ||
+                    current.current?.id !== project.id ||
+                    epoch.current !== timelineEpoch
+                  )
+                    return;
                   editDocument((document) => ({ ...document, timeline }));
                 }}
                 artifacts={montageArtifacts(project, media)}

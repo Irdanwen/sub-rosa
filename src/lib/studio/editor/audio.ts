@@ -174,6 +174,12 @@ export class EditorAudio {
       sound.gain.gain.setValueAtTime(0, this.context.currentTime);
     }
   }
+  async suspend(): Promise<void> {
+    await this.context.suspend();
+  }
+  async resume(): Promise<void> {
+    await this.context.resume();
+  }
   dispose() {
     this.disposed = true;
     this.pause();

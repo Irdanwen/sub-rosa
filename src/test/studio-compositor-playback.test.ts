@@ -115,8 +115,11 @@ describe("montage playback", () => {
       }),
     ];
 
-    const drawing = compositor.drawRecorded(doc, 30);
+    const onWait = vi.fn(async (_waiting: boolean) => {});
+    const drawing = compositor.drawRecorded(doc, 30, onWait);
+    await Promise.resolve();
     expect(currentTime).toBeCloseTo(3 / 30);
+    expect(onWait).toHaveBeenCalledWith(true);
     expect(texImage2D).not.toHaveBeenCalled();
     expect(video.play).not.toHaveBeenCalled();
     completeSeek();
@@ -124,6 +127,7 @@ describe("montage playback", () => {
 
     expect(texImage2D).toHaveBeenCalledWith(undefined, 0, undefined, undefined, undefined, video);
     expect(video.play).toHaveBeenCalledOnce();
+    expect(onWait).toHaveBeenLastCalledWith(false);
 
     // A clip starting at zero already has its first frame from loadeddata;
     // assigning currentTime = 0 need not emit a seeked event.
@@ -133,5 +137,17 @@ describe("montage playback", () => {
     texImage2D.mockClear();
     await compositor.drawRecorded(doc, 30);
     expect(texImage2D).toHaveBeenCalledWith(undefined, 0, undefined, undefined, undefined, video);
+
+    // Prime a later cut before recording starts so the cut itself needs no seek.
+    currentTime = 0;
+    doc.clips[0].sourceStart = 6;
+    compositor.pause();
+    const prepared = compositor.prepareRecordCuts(doc);
+    expect(currentTime).toBeCloseTo(6 / 30);
+    completeSeek();
+    await prepared;
+    onWait.mockClear();
+    await compositor.drawRecorded(doc, 30, onWait);
+    expect(onWait).not.toHaveBeenCalled();
   });
 });

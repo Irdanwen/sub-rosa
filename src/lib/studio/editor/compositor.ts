@@ -269,6 +269,12 @@ export class EditorCompositor {
   async startAudio(doc: EditorDocument, frame: number): Promise<number> {
     return this.audio ? this.audio.start(doc, frame) : performance.now();
   }
+  async suspendAudio(): Promise<void> {
+    await this.audio?.suspend();
+  }
+  async resumeAudio(): Promise<void> {
+    await this.audio?.resume();
+  }
   get audioWarnings(): string[] {
     return this.audio?.warnings ?? [];
   }
@@ -293,25 +299,45 @@ export class EditorCompositor {
     );
     if (!this.disposed && generation === this.seekGeneration) this.draw(doc, frame, false);
   }
-  async drawRecorded(doc: EditorDocument, frame: number): Promise<void> {
+  async prepareRecordCuts(doc: EditorDocument): Promise<void> {
+    await Promise.all(
+      doc.clips.map(async (clip) => {
+        const source = this.sources.get(clip.id);
+        if (!source || !(source.element instanceof HTMLVideoElement)) return;
+        source.element.pause();
+        await seekVideo(source.element, sourceFrame(clip, 0) / fps(doc));
+      }),
+    );
+  }
+  async drawRecorded(
+    doc: EditorDocument,
+    frame: number,
+    onWait?: (waiting: boolean) => Promise<void>,
+  ): Promise<void> {
     // A newly active or trimmed source needs a decoded frame before the canvas
     // is captured. Setting currentTime and drawing in the same tick can upload
     // the previous clip's frame (or a black frame) at the cut.
+    const pending = doc.clips.flatMap((clip) => {
+      if (frame < clip.start || frame >= clip.start + clip.duration) return [];
+      const source = this.sources.get(clip.id);
+      if (!source || !(source.element instanceof HTMLVideoElement)) return [];
+      const video = source.element;
+      const target = sourceFrame(clip, frame - clip.start) / fps(doc);
+      if (Math.abs(video.currentTime - target) <= (this.activeClips.has(clip.id) ? 0.15 : 0.001))
+        return [];
+      return [{ video, target }];
+    });
+    if (pending.length) await onWait?.(true);
     await Promise.all(
-      doc.clips.map(async (clip) => {
-        if (frame < clip.start || frame >= clip.start + clip.duration) return;
-        const source = this.sources.get(clip.id);
-        if (!source || !(source.element instanceof HTMLVideoElement)) return;
-        const video = source.element;
-        const target = sourceFrame(clip, frame - clip.start) / fps(doc);
-        if (this.activeClips.has(clip.id) && Math.abs(video.currentTime - target) <= 0.15) return;
+      pending.map(async ({ video, target }) => {
         video.pause();
         await seekVideo(video, target);
       }),
     );
-    if (!this.disposed) this.draw(doc, frame, true);
+    if (!this.disposed) this.draw(doc, frame, true, true);
+    if (pending.length) await onWait?.(false);
   }
-  draw(doc: EditorDocument, frame: number, playing: boolean): void {
+  draw(doc: EditorDocument, frame: number, playing: boolean, recording = false): void {
     if (this.disposed) return;
     const gl = this.gl;
     if (this.canvas.width !== doc.width || this.canvas.height !== doc.height) {
@@ -344,7 +370,12 @@ export class EditorCompositor {
               0.0625,
               Math.min(16, valueAt(clip.properties.speed, local, 1)),
             );
-            if (!this.activeClips.has(clip.id) || Math.abs(media.currentTime - target) > 0.15)
+            if (
+              recording
+                ? Math.abs(media.currentTime - target) >
+                  (this.activeClips.has(clip.id) ? 0.15 : 0.001)
+                : !this.activeClips.has(clip.id) || Math.abs(media.currentTime - target) > 0.15
+            )
               media.currentTime = Math.min(target, Math.max(0, media.duration - 0.001));
             if (media.paused) void media.play().catch(() => {});
           }
@@ -507,6 +538,7 @@ export async function recordEditor(
   try {
     await renderer.prepare(doc, artifacts);
     await renderer.seek(doc, 0);
+    await renderer.prepareRecordCuts(doc);
     const audio = await renderer.enableAudio(doc, true);
     stream = canvas.captureStream(fps(doc));
     audio?.getAudioTracks().forEach((track) => {
@@ -524,6 +556,7 @@ export async function recordEditor(
       let raf = 0;
       let settled = false;
       let start = performance.now();
+      let pausedAt = 0;
       const cleanup = () => {
         cancelAnimationFrame(raf);
         options.signal?.removeEventListener("abort", abort);
@@ -569,7 +602,17 @@ export async function recordEditor(
             recorder.stop();
             return;
           }
-          await renderer.drawRecorded(doc, frame);
+          await renderer.drawRecorded(doc, frame, async (waiting) => {
+            if (waiting) {
+              pausedAt = performance.now();
+              if (recorder.state === "recording") recorder.pause();
+              await renderer.suspendAudio();
+            } else {
+              await renderer.resumeAudio();
+              start += performance.now() - pausedAt;
+              if (recorder.state === "paused") recorder.resume();
+            }
+          });
           if (settled) return;
           options.onProgress?.(frame / frames);
           raf = requestAnimationFrame(() => void tick());

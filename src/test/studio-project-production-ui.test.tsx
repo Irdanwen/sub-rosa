@@ -669,7 +669,7 @@ describe("project production confirmation", () => {
     await waitFor(() => expect(exportButton).toBeEnabled());
   });
 
-  it("keeps montage edits made while an export reload is pending", async () => {
+  it("freezes project navigation and montage edits while an export reload is pending", async () => {
     project.document.timeline.clips = [
       createEditorClip({
         id: "first",
@@ -692,13 +692,15 @@ describe("project production confirmation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Complete montage export" }));
     await waitFor(() => expect(mocks.getProject.mock.calls.length).toBe(priorLoads + 1));
     expect(screen.getByRole("button", { name: "Quote production" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Script" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Trim existing clip" }));
-    expect(screen.getByTestId("timeline-first-duration")).toHaveTextContent("20");
+    expect(screen.getByTestId("timeline-first-duration")).toHaveTextContent("30");
     await act(async () => resolveReload(stale));
-    expect(screen.getByTestId("timeline-first-duration")).toHaveTextContent("20");
+    expect(screen.getByTestId("timeline-first-duration")).toHaveTextContent("30");
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Quote production" })).toBeEnabled(),
     );
+    expect(screen.getByRole("button", { name: "Script" })).toBeEnabled();
   });
 
   it("appends selected takes after the latest picture edit even when audio runs longer", async () => {
