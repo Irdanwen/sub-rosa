@@ -72,6 +72,7 @@ import { ProjectMedia } from "./ProjectMedia";
 import { ProjectShots } from "./ProjectShots";
 import { ProjectTimeline } from "./ProjectTimeline";
 import { STUDIO_IMAGE_RECOVERED_EVENT } from "../../lib/studio/image-job-recovery";
+import { STUDIO_FILM_NOTE_KEY } from "./studio-keys";
 import "./project-studio.css";
 
 type Section = "script" | "shots" | "bible" | "media" | "montage";
@@ -107,6 +108,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const [archived, setArchived] = useState(false);
   const [search, setSearch] = useState("");
   const [notePicker, setNotePicker] = useState(false);
+  const [mediaSaving, setMediaSaving] = useState(false);
   const [openSession, setOpenSession] = useState(0);
   const [reopenConfirm, setReopenConfirm] = useState(false);
   const [quote, setQuote] = useState<ReadyQuote>();
@@ -306,6 +308,30 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         if (cancelled) return;
         setProjects(items);
         setArtifacts(media);
+        const asked = window.localStorage.getItem(STUDIO_FILM_NOTE_KEY);
+        if (asked) {
+          for (const item of items) {
+            const candidate = await getProject(item.id);
+            if (cancelled) return;
+            if (candidate?.document.noteId !== asked) continue;
+            await open(candidate);
+            setSection(candidate.document.shots.length ? "shots" : "script");
+            window.localStorage.removeItem(STUDIO_FILM_NOTE_KEY);
+            return;
+          }
+          const note = await getNote(asked);
+          if (cancelled) return;
+          const linked = newProject(note.title || t("Untitled project"));
+          linked.document.noteId = asked;
+          linked.document.script = note.editedContent ?? note.generatedContent ?? "";
+          const stored = await saveProject(linked, null);
+          if (cancelled) return;
+          setProjects(await listProjects());
+          await open(stored);
+          setSection("script");
+          window.localStorage.removeItem(STUDIO_FILM_NOTE_KEY);
+          return;
+        }
         const id = window.localStorage.getItem(LAST_PROJECT);
         if (id) {
           const last = await getProject(id);
@@ -872,18 +898,25 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       projects={projects}
       projectId={project?.id}
       onMetadata={async (artifact, title, projectIds) => {
-        await writer.current?.flush();
-        await organizeArtifact({ id: artifact.id, title, projectIds });
-        if (current.current) {
-          const reloaded = await getProject(current.current.id);
-          if (reloaded) {
-            current.current = reloaded;
-            writer.current = new ProjectWriter(reloaded);
-            setProject(reloaded);
-            setSaved(true);
+        const projectId = current.current?.id;
+        const version = epoch.current;
+        setMediaSaving(true);
+        try {
+          await writer.current?.flush();
+          await organizeArtifact({ id: artifact.id, title, projectIds });
+          if (projectId && current.current?.id === projectId && epoch.current === version) {
+            const reloaded = await getProject(projectId);
+            if (reloaded && current.current?.id === projectId && epoch.current === version) {
+              current.current = reloaded;
+              writer.current = new ProjectWriter(reloaded);
+              setProject(reloaded);
+              setSaved(true);
+            }
           }
+          await refreshArtifacts();
+        } finally {
+          setMediaSaving(false);
         }
-        await refreshArtifacts();
       }}
     />
   );
@@ -1052,7 +1085,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
             <button
               type="button"
               className="btn btn-ghost"
-              disabled={busy}
+              disabled={busy || mediaSaving}
               onClick={() => void back().catch(report)}
             >
               {t("All projects")}
@@ -1061,7 +1094,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               key={`${project.id}:${openSession}`}
               aria-label={t("Project name")}
               defaultValue={project.name}
-              disabled={busy}
+              disabled={busy || mediaSaving}
               onBlur={(event) => {
                 const name = event.target.value.trim() || t("Untitled project");
                 event.target.value = name;
@@ -1074,7 +1107,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
             <button
               type="button"
               className="btn btn-primary"
-              disabled={busy || !project.document.shots.length}
+              disabled={busy || mediaSaving || !project.document.shots.length}
               onClick={() => void prepare()}
             >
               {t("Quote production")}
@@ -1094,6 +1127,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 type="button"
                 key={key}
                 aria-current={section === key ? "page" : undefined}
+                disabled={mediaSaving}
                 onClick={() => setSection(key)}
               >
                 {label}

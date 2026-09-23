@@ -91,7 +91,35 @@ vi.mock("../components/studio/ProjectBible", () => ({
     </button>
   ),
 }));
-vi.mock("../components/studio/ProjectMedia", () => ({ ProjectMedia: () => null }));
+vi.mock("../components/studio/ProjectMedia", () => ({
+  ProjectMedia: ({
+    onMetadata,
+  }: {
+    onMetadata: (artifact: StudioArtifact, title: string, projectIds: string[]) => Promise<void>;
+  }) => (
+    <button
+      type="button"
+      onClick={() =>
+        void onMetadata(
+          {
+            id: "media-1",
+            kind: "image",
+            path: "/gallery/media-1.png",
+            fileName: "media-1.png",
+            bytes: 1,
+            model: "test",
+            prompt: "test",
+            createdAt: 0,
+          },
+          "Renamed media",
+          ["project-1"],
+        )
+      }
+    >
+      Save media metadata
+    </button>
+  ),
+}));
 vi.mock("../components/studio/ProjectTimeline", () => ({
   ProjectTimeline: ({
     artifacts,
@@ -162,6 +190,7 @@ import {
 import type { MediaCatalog, StudioArtifact } from "../lib/studio/types";
 import type { Workflow } from "../lib/studio/workflow/schema";
 import type { NodeRunResult } from "../lib/studio/workflow/engine";
+import { STUDIO_FILM_NOTE_KEY } from "../components/studio/studio-keys";
 const catalog: MediaCatalog = {
   backend: "carpe-diem",
   models: [
@@ -177,6 +206,7 @@ const catalog: MediaCatalog = {
 let project: StudioProject;
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.removeItem(STUDIO_FILM_NOTE_KEY);
   vi.mocked(listArtifacts).mockResolvedValue([]);
   project = newProject("Concert");
   project.id = "project-1";
@@ -223,6 +253,59 @@ const mount = async () => {
 };
 
 describe("project production confirmation", () => {
+  it("opens the film linked to a note instead of the last-opened project", async () => {
+    const other = newProject("Other film");
+    other.id = "project-2";
+    project.document.noteId = "selected-note";
+    localStorage.setItem(STUDIO_FILM_NOTE_KEY, "selected-note");
+    localStorage.setItem("os-june:studio-project", other.id);
+    mocks.listProjects.mockResolvedValue([other, project]);
+    mocks.getProject.mockImplementation(async (id: string) => (id === other.id ? other : project));
+
+    await mount();
+
+    expect(screen.getByRole("textbox", { name: "Project name" })).toHaveValue("Concert");
+    expect(localStorage.getItem(STUDIO_FILM_NOTE_KEY)).toBeNull();
+  });
+
+  it("creates a project from a selected note when that note has no film yet", async () => {
+    localStorage.setItem(STUDIO_FILM_NOTE_KEY, "selected-note");
+    mocks.listProjects.mockResolvedValue([]);
+    mocks.invoke.mockImplementation(async (command) =>
+      command === "get_note"
+        ? { id: "selected-note", title: "Note film", editedContent: "A quiet hall." }
+        : null,
+    );
+
+    render(<ProjectStudio catalog={catalog} />);
+    expect(await screen.findByRole("textbox", { name: "Film script" })).toHaveValue(
+      "A quiet hall.",
+    );
+    expect(project.document.noteId).toBe("selected-note");
+    expect(project.name).toBe("Note film");
+    expect(localStorage.getItem(STUDIO_FILM_NOTE_KEY)).toBeNull();
+  });
+
+  it("locks project navigation while media organization is being saved", async () => {
+    let finishOrganization: (value: { id: string }) => void = () => {};
+    mocks.organize.mockReturnValue(
+      new Promise((resolve) => {
+        finishOrganization = resolve;
+      }),
+    );
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Media" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save media metadata" }));
+    await waitFor(() => expect(mocks.organize).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Script" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "All projects" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "Project name" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Script" }));
+    expect(screen.getByRole("button", { name: "Media" })).toHaveAttribute("aria-current", "page");
+    await act(async () => finishOrganization({ id: "media-1" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Script" })).toBeEnabled());
+  });
+
   it("does not apply a slowly loaded note to a different film", async () => {
     const second = newProject("Second film");
     second.id = "project-2";
