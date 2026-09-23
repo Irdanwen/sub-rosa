@@ -182,7 +182,7 @@ describe("production reservations", () => {
       "Price unavailable",
     );
     await expect(productionBudget(estimate([10]), Number.NaN)(paidNode("0"))).rejects.toThrow(
-      "project budget",
+      "spend ceiling",
     );
     expect(carpeDiemGetCredits).not.toHaveBeenCalled();
   });

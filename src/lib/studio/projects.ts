@@ -170,7 +170,18 @@ export function shotSignature(shot: ProjectShot, project: ProjectDocument): stri
     imageCandidates: _images,
     ...input
   } = shot;
-  return JSON.stringify({ input, settings: project.settings, bible: project.bible });
+  const previous =
+    shot.mode === "continuation"
+      ? project.shots[project.shots.findIndex((candidate) => candidate.id === shot.id) - 1]
+      : undefined;
+  return JSON.stringify({
+    input,
+    settings: project.settings,
+    bible: project.bible,
+    ...(shot.mode === "continuation"
+      ? { predecessor: { id: previous?.id, activeTakeId: previous?.activeTakeId } }
+      : {}),
+  });
 }
 export function projectError(error: unknown): string {
   const message = messageFromError(error);

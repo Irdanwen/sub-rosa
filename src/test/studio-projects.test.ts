@@ -183,6 +183,19 @@ describe("project saves", () => {
     shot.action = "The musician exits";
     expect(shotSignature(shot, project.document)).not.toBe(original);
   });
+  it("marks a continuation stale when its predecessor or selected take changes", () => {
+    const project = newProject("Concert");
+    const first = { ...newShot(0), id: "first", activeTakeId: "take-one" };
+    const continuation = { ...newShot(1), id: "next", mode: "continuation" as const };
+    const other = { ...newShot(2), id: "other", activeTakeId: "take-three" };
+    project.document.shots = [first, continuation, other];
+    const original = shotSignature(continuation, project.document);
+    first.activeTakeId = "take-two";
+    expect(shotSignature(continuation, project.document)).not.toBe(original);
+    first.activeTakeId = "take-one";
+    project.document.shots = [other, continuation, first];
+    expect(shotSignature(continuation, project.document)).not.toBe(original);
+  });
   it("keeps media referenced by the montage available after project removal", () => {
     const project = newProject("Concert");
     project.id = "film-1";

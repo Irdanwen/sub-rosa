@@ -1278,7 +1278,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                   }
                 />
                 <label className="project-field">
-                  {t("Production budget in credits")}
+                  {t("Spend ceiling")}
                   <input
                     type="number"
                     min={0}
@@ -1543,7 +1543,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
             ) : null}
             {quote.estimate.credits + (quote.priorSpend ?? 0) >
             (project?.document.settings.budget ?? 0) ? (
-              <p className="project-error">{t("This generation exceeds your project budget.")}</p>
+              <p className="project-error">{t("This generation exceeds the spend ceiling.")}</p>
             ) : null}
           </div>
         </Dialog>

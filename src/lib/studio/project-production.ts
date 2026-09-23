@@ -184,7 +184,7 @@ export function productionBudget(estimate: WorkflowCostEstimate, ceiling: number
     if (cost === undefined || !Number.isFinite(cost) || cost < 0)
       throw new Error(t("Price unavailable. Choose another model or try quoting again."));
     if (!Number.isFinite(ceiling) || ceiling < 0 || reserved + cost > ceiling)
-      throw new Error(t("This generation exceeds your project budget."));
+      throw new Error(t("This generation exceeds the spend ceiling."));
     reserved += cost;
     const allocation = reserved;
     openingBalance ??= carpeDiemGetCredits();
