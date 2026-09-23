@@ -22,11 +22,11 @@ import {
   removeClip,
   replaceClip,
   resizeClip,
+  resizeClipLeft,
   setKeyframe,
   snapFrame,
   splitClip,
   titleTrack,
-  trimClip,
   validateEditorDocument,
   valueAt,
 } from "../../lib/studio/editor/document";
@@ -447,9 +447,8 @@ export function ProjectTimeline({ value, onChange, artifacts, onExportArtifact }
         ...clip,
         start: snap ? snapFrame(value, start, clip.id, (rate * 6) / zoom) : start,
       });
-    } else if (drag.mode === "left")
-      commit(trimClip(value, clip.id, Math.max(0, drag.delta), clip.duration));
-    else commit(trimClip(value, clip.id, 0, Math.max(1, clip.duration + Math.min(0, drag.delta))));
+    } else if (drag.mode === "left") commit(resizeClipLeft(value, clip.id, drag.delta));
+    else commit(resizeClip(value, clip.id, clip.duration + drag.delta));
   }
   const media = artifacts.filter((artifact) =>
     `${artifact.fileName} ${artifact.prompt}`.toLowerCase().includes(search.toLowerCase()),

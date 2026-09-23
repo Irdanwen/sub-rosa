@@ -172,6 +172,24 @@ export function valueAt(points: Keyframe[], frame: number, fallback = 0): number
 }
 /** Exact integral of a piecewise-linear speed curve, in source frames. */
 export function sourceOffset(clip: EditorClip, localFrame: number): number {
+  if (localFrame < 0) {
+    const boundaries = [
+      localFrame,
+      ...clip.properties.speed
+        .filter((p) => p.frame > localFrame && p.frame < 0)
+        .map((p) => p.frame),
+      0,
+    ];
+    return -boundaries.slice(1).reduce((total, right, i) => {
+      const left = boundaries[i];
+      return (
+        total +
+        ((right - left) *
+          (valueAt(clip.properties.speed, left, 1) + valueAt(clip.properties.speed, right, 1))) /
+          2
+      );
+    }, 0);
+  }
   const end = Math.max(0, localFrame);
   const boundaries = [
     0,
@@ -218,6 +236,7 @@ function slicedProperties(clip: EditorClip, from: number, until: number): Editor
     Object.entries(clip.properties).map(([key, points]) => [
       key,
       [
+        ...points.filter((p) => p.frame < from).map((p) => ({ ...p, frame: p.frame - from })),
         { frame: 0, value: valueAt(points, from, defaults[key as AnimatedProperty]) },
         ...points
           .filter((p) => p.frame > from && p.frame < until)
@@ -287,13 +306,61 @@ export function trimClip(
 export function resizeClip(doc: EditorDocument, id: string, duration: number): EditorDocument {
   const clip = doc.clips.find((candidate) => candidate.id === id);
   if (!clip || isLocked(doc, clip)) return doc;
-  const next = Math.max(1, Math.round(duration));
+  let next = Math.max(1, Math.round(duration));
   if (next === clip.duration) return doc;
   if (next < clip.duration) return trimClip(doc, id, 0, next);
+  if (clip.artifactId) {
+    let low = clip.duration;
+    let high = next;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (sourceFrame(clip, mid) <= clip.sourceDuration + 0.01) low = mid;
+      else high = mid - 1;
+    }
+    next = low;
+    if (next === clip.duration) return doc;
+  }
   return replaceClip(doc, {
     ...clip,
     duration: next,
     fadeOutOffset: Math.max(0, (clip.fadeOutOffset ?? 0) - (next - clip.duration)),
+  });
+}
+/** Move the left edge in either direction without losing hidden source keys. */
+export function resizeClipLeft(doc: EditorDocument, id: string, delta: number): EditorDocument {
+  const clip = doc.clips.find((candidate) => candidate.id === id);
+  if (!clip || isLocked(doc, clip)) return doc;
+  const frames = Math.round(delta);
+  if (!frames) return doc;
+  if (frames >= 0) return trimClip(doc, id, frames, clip.duration);
+  let low = 0;
+  let high = Math.min(-frames, clip.start);
+  if (clip.artifactId) {
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (sourceFrame(clip, -mid) >= -0.01) low = mid;
+      else high = mid - 1;
+    }
+  } else low = high;
+  if (!low) return doc;
+  const properties = Object.fromEntries(
+    Object.entries(clip.properties).map(([key, points]) => [
+      key,
+      [
+        { frame: 0, value: valueAt(points, -low, defaults[key as AnimatedProperty]) },
+        ...points
+          .map((point) => ({ ...point, frame: point.frame + low }))
+          .filter((point) => point.frame !== 0),
+      ].sort((a, b) => a.frame - b.frame),
+    ]),
+  ) as EditorClip["properties"];
+  return replaceClip(doc, {
+    ...clip,
+    start: clip.start - low,
+    sourceStart: sourceFrame(clip, -low),
+    duration: clip.duration + low,
+    fadeInOffset: Math.max(0, (clip.fadeInOffset ?? 0) - low),
+    properties,
   });
 }
 export function removeClip(doc: EditorDocument, id: string, ripple = false): EditorDocument {

@@ -541,6 +541,33 @@ describe("project production confirmation", () => {
     expect(project.document.timeline.clips[2].start).toBe(20);
   });
 
+  it.each(["locked", "hidden"] as const)(
+    "does not append takes to a %s picture track",
+    async (state) => {
+      project.document.timeline.tracks[0][state] = true;
+      project.document.shots[0].activeTakeId = "take.mp4";
+      vi.mocked(listArtifacts).mockResolvedValue([
+        {
+          id: "take.mp4",
+          kind: "video",
+          path: "/media/take.mp4",
+          fileName: "take.mp4",
+          bytes: 1,
+          model: "test",
+          prompt: "test",
+          createdAt: 0,
+        },
+      ]);
+      await mount();
+      fireEvent.click(screen.getByRole("button", { name: "Montage" }));
+      fireEvent.click(screen.getByRole("button", { name: "Append selected takes" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Unlock and show the picture track before appending takes.",
+      );
+      expect(project.document.timeline.clips).toHaveLength(0);
+    },
+  );
+
   it("reads an imported script through a project-owned note and keeps the returned cast", async () => {
     project.document.noteId = "source-note";
     project.document.script = "A pianist enters the hall.";

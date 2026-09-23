@@ -814,6 +814,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       if (current.current?.id !== target.id) return;
       await edit((previous) => {
         const timeline = structuredClone(previous.document.timeline);
+        const picture = timeline.tracks.find((track) => track.id === "picture");
+        if (!picture || picture.locked || picture.hidden)
+          throw new Error(t("Unlock and show the picture track before appending takes."));
         const rate = fps(timeline);
         let start = Math.max(
           0,

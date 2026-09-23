@@ -9,6 +9,7 @@ import {
   insertionTrack,
   removeClip,
   resizeClip,
+  resizeClipLeft,
   setKeyframe,
   snapFrame,
   sourceFrame,
@@ -125,6 +126,39 @@ describe("editable montage document", () => {
     expect(clipFade(extended, 90)).toBeCloseTo(clipFade(doc.clips[0], 90), 8);
     expect(clipOpacity(extended, 90)).toBeCloseTo(clipOpacity(doc.clips[0], 90), 8);
     expect(sourceFrame(extended, 90)).toBeCloseTo(sourceFrame(doc.clips[0], 90), 8);
+  });
+  it("restores source frames, animation and fades when either trim handle extends", () => {
+    const doc = cut();
+    doc.clips[0].start = 50;
+    doc.clips[0].sourceDuration = 120;
+    doc.clips[0].fadeIn = 30;
+    doc.clips[0].fadeOut = 30;
+    doc.clips[0] = setKeyframe(doc.clips[0], "opacity", 10, 0.4);
+    doc.clips[0] = setKeyframe(doc.clips[0], "opacity", 100, 0.7);
+    const original = doc.clips[0];
+    const trimmed = trimClip(doc, "clip", 20, 90);
+    const restoredLeft = resizeClipLeft(trimmed, "clip", -100);
+    expect(restoredLeft.clips[0].start).toBe(50);
+    expect(restoredLeft.clips[0].duration).toBe(90);
+    const restored = resizeClip(restoredLeft, "clip", 200).clips[0];
+    expect(restored.duration).toBe(120);
+    for (let frame = 0; frame <= 120; frame += 10) {
+      expect(sourceFrame(restored, frame)).toBeCloseTo(sourceFrame(original, frame), 8);
+      expect(clipOpacity(restored, frame)).toBeCloseTo(clipOpacity(original, frame), 8);
+    }
+  });
+  it("restores the source position through a speed ramp after a head trim", () => {
+    const doc = cut();
+    doc.clips[0].start = 40;
+    doc.clips[0] = setKeyframe(doc.clips[0], "speed", 0, 0.75);
+    doc.clips[0] = setKeyframe(doc.clips[0], "speed", 35, 1.5);
+    doc.clips[0] = setKeyframe(doc.clips[0], "speed", 90, 0.8);
+    const original = doc.clips[0];
+    const trimmed = trimClip(doc, "clip", 25, 100);
+    const restored = resizeClipLeft(trimmed, "clip", -25).clips[0];
+    expect(restored.sourceStart).toBeCloseTo(0, 8);
+    for (let frame = 0; frame <= 100; frame += 5)
+      expect(sourceFrame(restored, frame)).toBeCloseTo(sourceFrame(original, frame), 8);
   });
   it("respects locked tracks for split, trim, duplicate and delete", () => {
     const doc = cut();
