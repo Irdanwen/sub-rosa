@@ -90,6 +90,15 @@ describe("openInputPorts on a video node", () => {
     expect(portIds({ model: "kling-2.5-turbo-pro-text-to-video" })).toEqual(["prompt"]);
   });
 
+  it("opens the start frame only for reference variants that require one", () => {
+    expect(portIds({ model: "kling-o3-pro-reference-to-video" })).toEqual([
+      "prompt",
+      "openingFrame",
+      "references",
+    ]);
+    expect(portIds({ model: "seedance-2-0-reference-to-video" })).not.toContain("openingFrame");
+  });
+
   it("keeps every port open for an id that names no direction", () => {
     // Nine of the operator's video models carry no direction in their id, five
     // of them image-to-video. Guessing "text to video" from silence would take

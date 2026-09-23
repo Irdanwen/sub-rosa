@@ -15,12 +15,12 @@ import {
 import { validateWorkflow } from "./workflow/validator";
 import type { Workflow, WorkflowNode } from "./workflow/schema";
 
-export function compileProject(
+export function compileProjectWithNotes(
   name: string,
   document: ProjectDocument,
   catalog: MediaCatalog,
   onlyShotId?: string,
-): Workflow {
+): { workflow: Workflow; notes: string[] } {
   const current = onlyShotId ? document.shots.find((shot) => shot.id === onlyShotId) : undefined;
   if (onlyShotId && !current) throw new Error(t("This shot no longer exists."));
   const previous = current ? document.shots[document.shots.indexOf(current) - 1] : undefined;
@@ -82,7 +82,16 @@ export function compileProject(
   const compiled = { ...workflow, id: crypto.randomUUID(), nodes, edges };
   const validation = validateWorkflow(compiled);
   if (!validation.ok) throw new Error(validation.errors.map((error) => error.message).join("\n"));
-  return compiled;
+  return { workflow: compiled, notes: [...result.warnings, ...result.notes] };
+}
+
+export function compileProject(
+  name: string,
+  document: ProjectDocument,
+  catalog: MediaCatalog,
+  onlyShotId?: string,
+): Workflow {
+  return compileProjectWithNotes(name, document, catalog, onlyShotId).workflow;
 }
 
 export function compileOpeningImage(shot: ProjectShot, name: string): Workflow {

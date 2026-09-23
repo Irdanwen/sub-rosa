@@ -26,7 +26,7 @@ import { modelsOfType } from "../../lib/studio/catalog";
 import {
   compileOpeningImage,
   compileBibleReference,
-  compileProject,
+  compileProjectWithNotes,
   productionBudget,
   quoteProject,
 } from "../../lib/studio/project-production";
@@ -88,6 +88,7 @@ type ReadyQuote = {
   priorSpend?: number;
   workflow: Workflow;
   estimate: WorkflowCostEstimate;
+  notes?: string[];
   signatures: Record<string, string>;
 };
 
@@ -556,10 +557,11 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       const snapshot = current.current;
       const version = epoch.current;
       const selected = snapshot.document.shots.find((shot) => shot.id === shotId);
-      const workflow =
+      const compiled =
         image && selected
-          ? compileOpeningImage(selected, snapshot.name)
-          : compileProject(snapshot.name, snapshot.document, catalog, shotId);
+          ? { workflow: compileOpeningImage(selected, snapshot.name), notes: [] }
+          : compileProjectWithNotes(snapshot.name, snapshot.document, catalog, shotId);
+      const { workflow, notes } = compiled;
       const estimate = await quoteProject(workflow, catalog);
       if (current.current?.id !== snapshot.id || epoch.current !== version)
         throw new Error(
@@ -570,6 +572,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         version,
         workflow,
         estimate,
+        notes,
         signatures: Object.fromEntries(
           snapshot.document.shots.map((shot) => [shot.id, shotSignature(shot, snapshot.document)]),
         ),
@@ -1515,6 +1518,11 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           }
         >
           <div className="dialog-body">
+            {quote.notes?.map((note) => (
+              <p className="project-warning" key={note}>
+                {note}
+              </p>
+            ))}
             {quote.uncertainRetry ? (
               <p className="project-warning">
                 {t(

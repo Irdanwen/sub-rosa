@@ -276,6 +276,20 @@ const mount = async () => {
 };
 
 describe("project production confirmation", () => {
+  it("shows aspect ratio substitutions before a paid render is confirmed", async () => {
+    project.document.settings.aspectRatio = "9:16";
+    const restricted = {
+      ...catalog,
+      models: [{ ...catalog.models[0], constraints: { aspect_ratios: ["16:9"] } }],
+    };
+    render(<ProjectStudio catalog={restricted} />);
+    await screen.findByRole("button", { name: "Generate shot" });
+    fireEvent.click(screen.getByRole("button", { name: "Generate shot" }));
+    const dialog = await screen.findByRole("dialog", { name: t("Review generation costs") });
+    expect(within(dialog).getByText(/9:16/)).toHaveTextContent("16:9");
+    expect(mocks.run).not.toHaveBeenCalled();
+  });
+
   it("keeps an oversized LUT out of the visible and saved project", async () => {
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Montage" }));

@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../lib/tauri", () => ({ carpeDiemGetCredits: vi.fn() }));
 import { carpeDiemGetCredits } from "../lib/tauri";
-import { compileProject, productionBudget } from "../lib/studio/project-production";
+import {
+  compileProject,
+  compileProjectWithNotes,
+  productionBudget,
+} from "../lib/studio/project-production";
 import { newProject, newShot } from "../lib/studio/projects";
 import type { MediaCatalog } from "../lib/studio/types";
 import type { WorkflowCostEstimate } from "../lib/studio/workflow/cost";
@@ -46,6 +50,24 @@ beforeEach(() => {
 });
 
 describe("isolated project takes", () => {
+  it("keeps a substituted aspect ratio visible to the quote", () => {
+    const project = newProject();
+    project.document.settings.aspectRatio = "9:16";
+    project.document.shots = [
+      { ...newShot(0), id: "target", action: "A pianist bows", modelId: "test-text-to-video" },
+    ];
+    const restricted: MediaCatalog = {
+      ...catalog,
+      models: [{ ...catalog.models[0], constraints: { aspect_ratios: ["16:9"] } }],
+    };
+    const result = compileProjectWithNotes(project.name, project.document, restricted, "target");
+    expect(result.workflow.nodes.find((node) => node.type === "video")?.params.aspectRatio).toBe(
+      "16:9",
+    );
+    expect(result.notes.join(" ")).toContain("16:9");
+    expect(result.notes.join(" ")).toContain("9:16");
+  });
+
   it("chooses the cheapest compatible model when the project leaves model choices blank", () => {
     const project = newProject();
     project.document.shots = [{ ...newShot(0), id: "target", action: "A pianist bows" }];

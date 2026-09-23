@@ -15,7 +15,7 @@
 // refuse connections, and make any edge still landing on one an error. See
 // `openInputPorts`, which every surface must read instead of `schema.inputs`.
 
-import { videoDirectionFromId, type VideoDirection } from "../catalog";
+import { requiresOpeningFrame, videoDirectionFromId, type VideoDirection } from "../catalog";
 import { maxReferenceVideos, maxVideoReferences } from "../seedance";
 
 export type WorkflowNodeType =
@@ -217,7 +217,8 @@ function videoDirectionOf(params: Record<string, unknown>): VideoDirection | und
  * a workflow node pins one model, so its ports are that model's contract and
  * nothing else. The frames are the image-to-video contract: the operator
  * documents `image_url` as image-to-video only, and a reference-to-video
- * render steers from `reference_image_urls` instead.
+ * render steers from `reference_image_urls` instead. Kling reference variants
+ * require an opening image too, so only those expose that additional port.
  *
  * Not settled by probing, and deliberately so: the operator's pre-flight
  * (`VIDEO_PARAM_REJECTED`) enumerates every rejected *value* but says nothing
@@ -232,6 +233,10 @@ function videoDirectionOf(params: Record<string, unknown>): VideoDirection | und
 function videoFrameCapacity(params: Record<string, unknown>): number | undefined {
   const direction = videoDirectionOf(params);
   return direction === undefined || direction === "image" ? undefined : 0;
+}
+
+function videoOpeningFrameCapacity(params: Record<string, unknown>): number | undefined {
+  return requiresOpeningFrame(modelIdOf(params)) ? undefined : videoFrameCapacity(params);
 }
 
 /** Reference clips, once a model is in hand. Before that the port stays open
@@ -423,7 +428,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         id: "openingFrame",
         label: "Opening frame",
         kind: "image",
-        maxFor: videoFrameCapacity,
+        maxFor: videoOpeningFrameCapacity,
       },
       { id: "endFrame", label: "End frame", kind: "image", maxFor: videoFrameCapacity },
       {

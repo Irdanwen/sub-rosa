@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { t } from "../../lib/i18n";
 import { artifactSrc } from "../../lib/studio/artifacts";
-import { imageEditModels, videoDirection } from "../../lib/studio/catalog";
+import { imageEditModels, requiresOpeningFrame, videoDirection } from "../../lib/studio/catalog";
 import { maxVideoReferences } from "../../lib/studio/seedance";
 import { effectiveVideoConstraints } from "../../lib/studio/model-constraints";
 import {
@@ -108,6 +108,66 @@ export function ProjectShots({
       </div>
     );
   };
+  const openingComposer = shot ? (
+    <details open>
+      <summary>{t("Create from reference images")}</summary>
+      <div className="project-reference-grid">
+        {shot.imageReferenceIds.map((id) =>
+          imagePreview(id, () =>
+            update({ imageReferenceIds: shot.imageReferenceIds.filter((item) => item !== id) }),
+          ),
+        )}
+      </div>
+      <button
+        type="button"
+        className="btn btn-secondary"
+        disabled={shot.imageReferenceIds.length >= 3}
+        onClick={() => setPicker("imageReference")}
+      >
+        {mode === "reference" ? t("Add image for opening composition") : t("Add reference image")}
+      </button>
+      <MediaModelPicker
+        options={imageEditModels(catalog).map(mediaModelOption)}
+        value={shot.imageModelId}
+        onChange={(imageModelId) => update({ imageModelId })}
+        ariaLabel={t("Image composition model")}
+      />
+      <label className="project-field">
+        {t("Image prompt")}
+        <textarea
+          aria-label={t("Image prompt")}
+          rows={4}
+          value={shot.imagePrompt}
+          onChange={(event) => update({ imagePrompt: event.target.value })}
+        />
+      </label>
+      <button
+        type="button"
+        className="btn btn-primary"
+        disabled={!shot.imageReferenceIds.length || shot.imageReferenceIds.length > 3}
+        onClick={() => onImage(shot.id)}
+      >
+        {t("Quote opening image")}
+      </button>
+      <div className="project-reference-grid">
+        {shot.imageCandidates.map((id) => {
+          const candidate = artifacts.find((item) => item.id === id);
+          return candidate ? (
+            <button
+              type="button"
+              className="project-reference"
+              key={id}
+              aria-pressed={shot.openingArtifactId === id}
+              onClick={() => update({ openingArtifactId: id })}
+            >
+              <img src={artifactSrc(candidate)} alt={t("Opening image candidate")} />
+              <span>{shot.openingArtifactId === id ? t("Selected") : t("Use this image")}</span>
+            </button>
+          ) : null;
+        })}
+      </div>
+    </details>
+  ) : null;
   return (
     <div className="project-shots">
       <aside className="project-shot-list project-panel">
@@ -400,68 +460,7 @@ export function ProjectShots({
                   >
                     {t("Choose opening image")}
                   </button>
-                  <details open>
-                    <summary>{t("Create from reference images")}</summary>
-                    <div className="project-reference-grid">
-                      {shot.imageReferenceIds.map((id) =>
-                        imagePreview(id, () =>
-                          update({
-                            imageReferenceIds: shot.imageReferenceIds.filter((item) => item !== id),
-                          }),
-                        ),
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      disabled={shot.imageReferenceIds.length >= 3}
-                      onClick={() => setPicker("imageReference")}
-                    >
-                      {t("Add reference image")}
-                    </button>
-                    <MediaModelPicker
-                      options={imageEditModels(catalog).map(mediaModelOption)}
-                      value={shot.imageModelId}
-                      onChange={(imageModelId) => update({ imageModelId })}
-                      ariaLabel={t("Image composition model")}
-                    />
-                    <label className="project-field">
-                      {t("Image prompt")}
-                      <textarea
-                        aria-label={t("Image prompt")}
-                        rows={4}
-                        value={shot.imagePrompt}
-                        onChange={(event) => update({ imagePrompt: event.target.value })}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      disabled={!shot.imageReferenceIds.length || shot.imageReferenceIds.length > 3}
-                      onClick={() => onImage(shot.id)}
-                    >
-                      {t("Quote opening image")}
-                    </button>
-                    <div className="project-reference-grid">
-                      {shot.imageCandidates.map((id) => {
-                        const candidate = artifacts.find((item) => item.id === id);
-                        return candidate ? (
-                          <button
-                            type="button"
-                            className="project-reference"
-                            key={id}
-                            aria-pressed={shot.openingArtifactId === id}
-                            onClick={() => update({ openingArtifactId: id })}
-                          >
-                            <img src={artifactSrc(candidate)} alt={t("Opening image candidate")} />
-                            <span>
-                              {shot.openingArtifactId === id ? t("Selected") : t("Use this image")}
-                            </span>
-                          </button>
-                        ) : null;
-                      })}
-                    </div>
-                  </details>
+                  {openingComposer}
                   <details>
                     <summary>{t("Ending image")}</summary>
                     {shot.endingArtifactId
@@ -477,6 +476,24 @@ export function ProjectShots({
               ) : null}
               {mode === "reference" ? (
                 <>
+                  {requiresOpeningFrame(model?.id) ? (
+                    <>
+                      <h3>{t("Opening image")}</h3>
+                      {shot.openingArtifactId
+                        ? imagePreview(shot.openingArtifactId, () =>
+                            update({ openingArtifactId: undefined }),
+                          )
+                        : null}
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => setPicker("opening")}
+                      >
+                        {t("Choose opening image")}
+                      </button>
+                      {openingComposer}
+                    </>
+                  ) : null}
                   <h3>{t("Video references")}</h3>
                   <p className="project-muted">
                     {t("These guide identity and style. They are not an opening frame.")}

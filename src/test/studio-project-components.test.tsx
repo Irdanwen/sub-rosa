@@ -92,6 +92,7 @@ const catalog: MediaCatalog = {
     model("video-text", "video"),
     model("video-image", "imageToVideo"),
     model("video-reference", "referenceToVideo"),
+    model("kling-o3-pro-reference-to-video", "referenceToVideo"),
     model("image-edit", "imageEdit"),
     model("portrait-image", "image"),
   ],
@@ -207,6 +208,27 @@ describe("shot editing", () => {
     fireEvent.click(screen.getByRole("button", { name: "Choose opening image" }));
     fireEvent.click(screen.getByRole("button", { name: "Choose gallery fixture" }));
     expect(fixtures.onChange.mock.lastCall?.[0][0].openingArtifactId).toBe("image-3");
+  });
+
+  it("lets a Kling reference shot choose its required opening image", () => {
+    const onImage = vi.fn();
+    render(
+      <Shots
+        initial={shotDocument({ mode: "reference", modelId: "kling-o3-pro-reference-to-video" })}
+        onImage={onImage}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Opening image" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add image for opening composition" }));
+    fixtures.picked = "image-2";
+    fireEvent.click(screen.getByRole("button", { name: "Choose gallery fixture" }));
+    expect(fixtures.onChange.mock.lastCall?.[0][0].imageReferenceIds).toEqual(["image-2"]);
+    fireEvent.click(screen.getByRole("button", { name: "Quote opening image" }));
+    expect(onImage).toHaveBeenCalledWith("shot-one");
+    fireEvent.click(screen.getByRole("button", { name: "Choose opening image" }));
+    fixtures.picked = "image-1";
+    fireEvent.click(screen.getByRole("button", { name: "Choose gallery fixture" }));
+    expect(fixtures.onChange.mock.lastCall?.[0][0].openingArtifactId).toBe("image-1");
   });
 
   it("keeps over-limit legacy references visible and blocks their generation instead of truncating", () => {

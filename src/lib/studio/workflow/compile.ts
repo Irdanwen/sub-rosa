@@ -38,6 +38,7 @@ import {
   humanizeModelId,
   isSeedanceModel,
   modelsOfType,
+  requiresOpeningFrame,
   videoDirection,
 } from "../catalog";
 import { maxVideoReferences } from "../seedance";
@@ -450,6 +451,10 @@ export function planShots(
       refuse(t("Select at least one reference image."));
       return;
     }
+    if (mode === "reference" && requiresOpeningFrame(model.id) && !shot.openingArtifactId) {
+      refuse(t("Select an opening image for this model before generating video."));
+      return;
+    }
     if (explicit && references.length > maxVideoReferences(model)) {
       refuse(t("This model cannot accept all the selected reference images."));
       return;
@@ -491,7 +496,12 @@ export function planShots(
         : aspectRatio;
     if (ratio !== aspectRatio && ratio) {
       notes.push(
-        `Shot ${index + 1} renders at ${ratio}: ${model.name} does not offer ${aspectRatio}.`,
+        t("Shot {number} renders at {ratio}: {model} does not offer {requested}.", {
+          number: index + 1,
+          ratio,
+          model: model.name,
+          requested: aspectRatio,
+        }),
       );
     }
 
@@ -624,9 +634,14 @@ export function compileShotList(input: CompileInput): CompileResult {
     const elsewhere = routeModels(input.catalog, input.videoModelId).reference;
     if (family && !family.holdsFaces && withFaces > 0 && elsewhere) {
       warnings.push(
-        `${family.label} cannot carry a face from one shot to the next, so the ${withFaces} shot${
-          withFaces === 1 ? "" : "s"
-        } with someone from your bible are made on ${elsewhere.name} instead. The film will change look partway. A family that holds faces keeps it in one.`,
+        t(
+          "{family} cannot carry a face from one shot to the next, so {count} bible shots use {model} instead. The film will change look partway. Choose a family that holds faces to keep one look.",
+          {
+            family: family.label,
+            count: withFaces,
+            model: elsewhere.name,
+          },
+        ),
       );
     }
   }
@@ -676,7 +691,11 @@ export function compileShotList(input: CompileInput): CompileResult {
       edges.push(edge(frameId, videoId, "openingFrame"));
     }
 
-    if (!entry.chained && entry.shot.openingArtifactId && entry.shot.mode === "image") {
+    if (
+      !entry.chained &&
+      entry.shot.openingArtifactId &&
+      (entry.shot.mode === "image" || requiresOpeningFrame(entry.model.id))
+    ) {
       edges.push(edge(assetNode(entry.shot.openingArtifactId, index), videoId, "openingFrame"));
     }
     if (entry.shot.endingArtifactId) {
@@ -790,7 +809,7 @@ export function compileShotList(input: CompileInput): CompileResult {
       );
       edges.push(edge(musicId, assembleId, "music"));
     } else {
-      notes.push("No music model on this account, so the film has no score.");
+      notes.push(t("No music model on this account, so the film has no score."));
     }
   }
 
@@ -835,7 +854,10 @@ export function compileShotList(input: CompileInput): CompileResult {
 
   if (ttsIds.length > 0) {
     notes.push(
-      `${ttsIds.length} spoken line${ttsIds.length === 1 ? "" : "s"}, placed on the shots they belong to. Move one on the canvas if it lands wrong.`,
+      t(
+        "{count} spoken lines are placed with their shots. Adjust their timing in Assemble if needed.",
+        { count: ttsIds.length },
+      ),
     );
   }
 

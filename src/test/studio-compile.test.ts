@@ -608,6 +608,46 @@ describe("editable project shots", () => {
     }
   });
 
+  it("requires and connects an opening frame for Kling reference video", () => {
+    const kling = model("kling-o3-pro-reference-to-video", "referenceToVideo");
+    const input = {
+      name: "Film",
+      catalog: { ...catalog, models: [...catalog.models, kling] },
+      shots: [
+        shot({
+          id: "rtv",
+          mode: "reference" as const,
+          modelId: kling.id,
+          referenceArtifactIds: ["person.png"],
+        }),
+      ],
+    };
+    expect(compileShotList(input).refusal).toContain("opening image");
+    const result = compileShotList({
+      ...input,
+      shots: [{ ...input.shots[0], openingArtifactId: "opening.png" }],
+    });
+    expect(result.refusal).toBeUndefined();
+    expect(result.workflow && validateWorkflow(result.workflow).ok).toBe(true);
+    expect(
+      result.workflow?.edges
+        .filter((edge) => edge.target === "shot-rtv")
+        .map((edge) => edge.targetPort),
+    ).toEqual(["openingFrame", "references"]);
+  });
+
+  it("refuses an automatically routed Kling reference shot without its required frame", () => {
+    const kling = model("kling-o3-pro-reference-to-video", "referenceToVideo");
+    const result = compileShotList({
+      name: "Film",
+      catalog: { ...catalog, models: [kling] },
+      bible: [nera],
+      shots: [shot({ characters: ["Nera"] })],
+    });
+    expect(result.workflow).toBeUndefined();
+    expect(result.refusal).toContain("opening image");
+  });
+
   it("feeds dialogue and score through text nodes so speech never receives empty input", () => {
     const result = compileShotList({
       name: "Concert",
