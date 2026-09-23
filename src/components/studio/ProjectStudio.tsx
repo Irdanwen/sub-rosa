@@ -43,7 +43,11 @@ import {
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import type { Shot } from "../../lib/studio/workflow/compile";
 import type { Workflow } from "../../lib/studio/workflow/schema";
-import { nodeCostMap, type WorkflowCostEstimate } from "../../lib/studio/workflow/cost";
+import {
+  estimateNodeCost,
+  nodeCostMap,
+  type WorkflowCostEstimate,
+} from "../../lib/studio/workflow/cost";
 import type { NodeRunResult } from "../../lib/studio/workflow/engine";
 import {
   activeWorkflowRuns,
@@ -66,6 +70,7 @@ type ReadyQuote = {
   version: number;
   resumeRun?: ProjectRun;
   acceptedCosts?: Record<string, number>;
+  priorSpend?: number;
   workflow: Workflow;
   estimate: WorkflowCostEstimate;
   signatures: Record<string, string>;
@@ -315,7 +320,6 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     }));
     void saveArtifactMetadata({
       id: artifact.id,
-      title: artifact.title ?? "",
       projectIds: [...new Set([...(artifact.projectIds ?? []), target.id])],
     })
       .then(refreshArtifacts)
@@ -374,7 +378,10 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       const options = {
         signal: controller.signal,
         nodeCosts: { ...ready.acceptedCosts, ...nodeCostMap(ready.estimate) },
-        beforeNode: productionBudget(ready.estimate, origin.document.settings.budget),
+        beforeNode: productionBudget(
+          ready.estimate,
+          origin.document.settings.budget - (ready.priorSpend ?? 0),
+        ),
         onUpdate: (result: NodeRunResult) => applyResult(run, result, origin.id),
       };
       if (ready.resumeRun) {
@@ -457,6 +464,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         nodes: Array<{ nodeId: string; status: string; output?: string }>;
       }>("workflow_run_get", { id: run.id });
       const workflow: Workflow = JSON.parse(detail.run.definition);
+      const acceptedCosts: Record<string, number> = detail.run.nodeCosts
+        ? JSON.parse(detail.run.nodeCosts)
+        : {};
       const alreadyPaid = new Set(
         detail.nodes
           .filter((node) => {
@@ -474,6 +484,14 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         nodes: workflow.nodes.filter((node) => !alreadyPaid.has(node.id)),
         edges: workflow.edges.filter((edge) => !alreadyPaid.has(edge.target)),
       };
+      let priorSpend = 0;
+      for (const node of workflow.nodes) {
+        if (!alreadyPaid.has(node.id) || estimateNodeCost(node, catalog).kind === "free") continue;
+        const cost = acceptedCosts[node.id];
+        if (typeof cost !== "number" || !Number.isFinite(cost) || cost < 0)
+          throw new Error(t("Price unavailable. Choose another model or try quoting again."));
+        priorSpend += cost;
+      }
       const estimate = await quoteProject(remaining, catalog);
       if (current.current?.id !== origin.id || epoch.current !== version)
         throw new Error(
@@ -486,7 +504,8 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         estimate,
         resumeRun: run,
         signatures: run.shotSignatures ?? {},
-        acceptedCosts: detail.run.nodeCosts ? JSON.parse(detail.run.nodeCosts) : {},
+        acceptedCosts,
+        priorSpend,
       });
     } catch (cause) {
       report(cause);
@@ -973,7 +992,6 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                   const artifact = artifacts.find((item) => item.id === id);
                   void saveArtifactMetadata({
                     id,
-                    title: artifact?.title ?? "",
                     projectIds: [...new Set([...(artifact?.projectIds ?? []), project.id])],
                   })
                     .then(refreshArtifacts)
@@ -1085,7 +1103,8 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 className="btn btn-primary"
                 disabled={
                   quote.estimate.metered > 0 ||
-                  quote.estimate.credits > (project?.document.settings.budget ?? 0)
+                  quote.estimate.credits + (quote.priorSpend ?? 0) >
+                    (project?.document.settings.budget ?? 0)
                 }
                 onClick={() => void produce(quote)}
               >
@@ -1114,7 +1133,8 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 )}
               </p>
             ) : null}
-            {quote.estimate.credits > (project?.document.settings.budget ?? 0) ? (
+            {quote.estimate.credits + (quote.priorSpend ?? 0) >
+            (project?.document.settings.budget ?? 0) ? (
               <p className="project-error">{t("This generation exceeds your project budget.")}</p>
             ) : null}
           </div>

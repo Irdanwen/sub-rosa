@@ -69,8 +69,9 @@ export const listProjects = () => invoke<ProjectSummary[]>("studio_project_list"
 export const getProject = (id: string) =>
   invoke<StudioProject | null>("studio_project_get", { id });
 export const listArtifactMetadata = () => invoke<ArtifactMetadata[]>("studio_artifact_list");
-export const saveArtifactMetadata = (request: ArtifactMetadata) =>
-  invoke<ArtifactMetadata>("studio_artifact_save", { request });
+export const saveArtifactMetadata = (
+  request: Pick<ArtifactMetadata, "id"> & Partial<Omit<ArtifactMetadata, "id">>,
+) => invoke<ArtifactMetadata>("studio_artifact_save", { request });
 export function saveProject(
   project: StudioProject,
   expectedRevision: number | null = project.revision,

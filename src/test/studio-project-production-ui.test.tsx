@@ -170,6 +170,7 @@ describe("project production confirmation", () => {
 
   it("re-quotes only unpaid resume steps and waits for confirmation", async () => {
     project.document.runs = [{ id: "run-1", shotSignatures: {} }];
+    project.document.settings.budget = 30;
     const definition: Workflow = {
       id: "graph",
       name: "Concert",
@@ -225,6 +226,7 @@ describe("project production confirmation", () => {
         }),
       ),
     );
+    expect(mocks.budget).toHaveBeenCalledWith(expect.anything(), 14);
   });
 
   it("requires a new quote after the draft changes", async () => {
