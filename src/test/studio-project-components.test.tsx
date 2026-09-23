@@ -219,7 +219,7 @@ describe("shot editing", () => {
       />,
     );
     expect(screen.getByRole("heading", { name: "Opening image" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Add image for opening composition" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add source image" }));
     fixtures.picked = "image-2";
     fireEvent.click(screen.getByRole("button", { name: "Choose gallery fixture" }));
     expect(fixtures.onChange.mock.lastCall?.[0][0].imageReferenceIds).toEqual(["image-2"]);

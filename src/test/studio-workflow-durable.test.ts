@@ -691,9 +691,22 @@ describe("paid output recovery", () => {
       "Review a new quote",
     );
     expect(invokeCalls("media_job_queue")).toHaveLength(0);
+    expect(invokeCalls("media_job_dismiss")).toHaveLength(0);
     vi.spyOn(crypto, "randomUUID").mockReturnValue("q2" as ReturnType<Crypto["randomUUID"]>);
     await resumeWorkflowRun("r1", { requireExistingOutputs: true, redoNodeIds: ["clip"] });
     expect((invokeCalls("media_job_queue")[0].request as { jobId: string }).jobId).toBe("q2");
+    expect(invokeCalls("media_job_dismiss")).toEqual([{ id: "q1" }, { id: "q2" }]);
+    const reset = mocks.invoke.mock.calls.findIndex(
+      ([command, args]) =>
+        command === "workflow_run_set_node" &&
+        (args as { request: { status: string; output?: unknown } }).request.status === "pending" &&
+        JSON.stringify((args as { request: { output?: unknown } }).request.output) === "{}",
+    );
+    const dismissed = mocks.invoke.mock.calls.findIndex(
+      ([command, args]) => command === "media_job_dismiss" && (args as { id: string }).id === "q1",
+    );
+    expect(reset).toBeGreaterThan(-1);
+    expect(dismissed).toBeGreaterThan(reset);
   });
 
   it("persists a queue pointer even when submission fails, and a resume cannot re-buy it", async () => {

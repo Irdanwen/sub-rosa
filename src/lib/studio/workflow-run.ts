@@ -655,6 +655,35 @@ export async function resumeWorkflowRun(
   const stale = options.redoNodeIds?.length
     ? descendantsOf(workflow, options.redoNodeIds)
     : undefined;
+  // An explicitly quoted replacement no longer needs a definitive failed
+  // queue row. Clear its pointer durably before dismissing it, so a restart
+  // between this decision and the new queue can still resume the new attempt.
+  if (stale) {
+    const replaced = detail.nodes.flatMap((node) => {
+      if (!stale.has(node.nodeId) || node.status !== "error" || !node.output) return [];
+      try {
+        const pending = (JSON.parse(node.output) as { pendingJobId?: unknown }).pendingJobId;
+        return typeof pending === "string" ? [{ nodeId: node.nodeId, jobId: pending }] : [];
+      } catch {
+        return [];
+      }
+    });
+    if (replaced.length) {
+      const jobs = (await invoke<MediaJobRow[]>("media_job_list")) ?? [];
+      for (const { nodeId, jobId } of replaced) {
+        const job = jobs.find((candidate) => candidate.id === jobId);
+        if (
+          job?.status !== "failed" ||
+          (job.errorStatus == null && job.submissionConfirmed !== true)
+        )
+          continue;
+        await invoke("workflow_run_set_node", {
+          request: { runId, nodeId, status: "pending", output: {} },
+        });
+        await invoke("media_job_dismiss", { id: jobId }).catch(() => undefined);
+      }
+    }
+  }
   for (const node of detail.nodes) {
     if (stale?.has(node.nodeId)) continue;
     const paid = workflow.nodes.some(

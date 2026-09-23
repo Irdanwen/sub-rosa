@@ -276,6 +276,31 @@ const mount = async () => {
 };
 
 describe("project production confirmation", () => {
+  it("keeps the last chosen film when an earlier project read finishes later", async () => {
+    localStorage.removeItem("os-june:studio-project");
+    const second = newProject("Second film");
+    second.id = "project-2";
+    mocks.listProjects.mockResolvedValue([project, second]);
+    let finishFirst: (value: StudioProject) => void = () => {};
+    let finishSecond: (value: StudioProject) => void = () => {};
+    mocks.getProject.mockImplementation(
+      (id: string) =>
+        new Promise<StudioProject>((resolve) => {
+          if (id === project.id) finishFirst = resolve;
+          else finishSecond = resolve;
+        }),
+    );
+    const view = render(<ProjectStudio catalog={catalog} />);
+    await screen.findByText("Second film");
+    const cards = view.container.querySelectorAll<HTMLButtonElement>(".project-card-open");
+    fireEvent.click(cards[0]);
+    fireEvent.click(cards[1]);
+    await act(async () => finishSecond(second));
+    expect(screen.getByRole("textbox", { name: "Project name" })).toHaveValue("Second film");
+    await act(async () => finishFirst(project));
+    expect(screen.getByRole("textbox", { name: "Project name" })).toHaveValue("Second film");
+  });
+
   it("shows aspect ratio substitutions before a paid render is confirmed", async () => {
     project.document.settings.aspectRatio = "9:16";
     const restricted = {

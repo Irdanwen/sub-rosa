@@ -124,7 +124,7 @@ export function ProjectShots({
         disabled={shot.imageReferenceIds.length >= 3}
         onClick={() => setPicker("imageReference")}
       >
-        {mode === "reference" ? t("Add image for opening composition") : t("Add reference image")}
+        {mode === "reference" ? t("Add source image") : t("Add reference image")}
       </button>
       <MediaModelPicker
         options={imageEditModels(catalog).map(mediaModelOption)}

@@ -120,6 +120,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const resultWrites = useRef<Promise<void>>(Promise.resolve());
   const finishingReadings = useRef(new Set<string>());
   const epoch = useRef(0);
+  const openRequest = useRef(0);
   const report = (cause: unknown) => setError(projectError(cause));
   const refreshArtifacts = async () => {
     const items = await listArtifacts();
@@ -173,9 +174,12 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       document: { ...previous.document, readingNoteId: undefined },
     }));
   };
-  const open = async (value: StudioProject) => {
+  const open = async (value: StudioProject, request = ++openRequest.current) => {
+    const version = epoch.current;
     await writer.current?.flush(current.current ?? undefined);
+    if (request !== openRequest.current || version !== epoch.current) return;
     current.current = value;
+    ++epoch.current;
     writer.current = new ProjectWriter(value);
     setProject(value);
     setOpenSession((session) => session + 1);
@@ -312,6 +316,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   };
   useEffect(() => {
     let cancelled = false;
+    const request = ++openRequest.current;
     void (async () => {
       try {
         await importLegacyFilms();
@@ -325,7 +330,8 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
             const candidate = await getProject(item.id);
             if (cancelled) return;
             if (candidate?.document.noteId !== asked) continue;
-            await open(candidate);
+            await open(candidate, request);
+            if (request !== openRequest.current) return;
             setSection(candidate.document.shots.length ? "shots" : "script");
             window.localStorage.removeItem(STUDIO_FILM_NOTE_KEY);
             return;
@@ -338,7 +344,8 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           const stored = await saveProject(linked, null);
           if (cancelled) return;
           setProjects(await listProjects());
-          await open(stored);
+          await open(stored, request);
+          if (request !== openRequest.current) return;
           setSection("script");
           window.localStorage.removeItem(STUDIO_FILM_NOTE_KEY);
           return;
@@ -346,7 +353,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         const id = window.localStorage.getItem(LAST_PROJECT);
         if (id) {
           const last = await getProject(id);
-          if (last && !last.archived && !cancelled) await open(last);
+          if (last && !last.archived && !cancelled) await open(last, request);
         }
       } catch (cause) {
         if (!cancelled) report(cause);
@@ -482,6 +489,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     };
   }, []);
   const create = async (source?: StudioProject) => {
+    const request = ++openRequest.current;
     const next = source
       ? {
           ...structuredClone(source),
@@ -493,12 +501,14 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         }
       : newProject();
     const stored = await saveProject(next, null);
-    await open(stored);
+    await open(stored, request);
     setProjects(await listProjects());
-    setSection(source ? "shots" : "script");
+    if (request === openRequest.current) setSection(source ? "shots" : "script");
   };
   const back = async () => {
+    const request = ++openRequest.current;
     await writer.current?.flush(current.current ?? undefined);
+    if (request !== openRequest.current) return;
     current.current = null;
     writer.current = undefined;
     setProject(null);
@@ -514,17 +524,20 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     }
   };
   const reopenSaved = async () => {
+    const request = ++openRequest.current;
+    const version = epoch.current;
     const id = current.current?.id;
     if (!id) return;
     const stored = await getProject(id);
-    if (current.current?.id !== id) return;
+    if (current.current?.id !== id || request !== openRequest.current || version !== epoch.current)
+      return;
     if (!stored) {
       setError(t("This project is no longer available."));
       return;
     }
     writer.current = undefined;
     setReopenConfirm(false);
-    await open(stored);
+    await open(stored, request);
   };
   const addArtifact = (artifactId: string) => {
     const target = current.current;
@@ -1041,13 +1054,20 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                     <button
                       type="button"
                       className="project-card-open"
-                      onClick={() =>
+                      onClick={() => {
+                        const request = ++openRequest.current;
+                        const version = epoch.current;
                         void getProject(item.id)
                           .then(async (value) => {
-                            if (value) await open(value);
+                            if (
+                              value &&
+                              request === openRequest.current &&
+                              version === epoch.current
+                            )
+                              await open(value, request);
                           })
-                          .catch(report)
-                      }
+                          .catch(report);
+                      }}
                     >
                       <span className="project-card-mark">{t("Film")}</span>
                       <h3>{item.name}</h3>
