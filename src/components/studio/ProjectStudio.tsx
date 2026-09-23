@@ -494,8 +494,8 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       dispose?.();
     };
   }, []);
-  const create = async (source?: StudioProject) => {
-    const request = ++openRequest.current;
+  const create = async (source?: StudioProject, request = ++openRequest.current) => {
+    if (request !== openRequest.current) return;
     const next = source
       ? {
           ...structuredClone(source),
@@ -1083,13 +1083,20 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                       <button
                         type="button"
                         className="btn btn-ghost"
-                        onClick={() =>
+                        onClick={() => {
+                          const request = ++openRequest.current;
+                          const version = epoch.current;
                           void getProject(item.id)
                             .then(async (value) => {
-                              if (value) await create(value);
+                              if (
+                                value &&
+                                request === openRequest.current &&
+                                version === epoch.current
+                              )
+                                await create(value, request);
                             })
-                            .catch(report)
-                        }
+                            .catch(report);
+                        }}
                       >
                         {t("Duplicate")}
                       </button>

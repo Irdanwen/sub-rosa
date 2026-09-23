@@ -301,6 +301,30 @@ describe("project production confirmation", () => {
     expect(screen.getByRole("textbox", { name: "Project name" })).toHaveValue("Second film");
   });
 
+  it("does not open a duplicate after another film was chosen", async () => {
+    localStorage.removeItem("os-june:studio-project");
+    const second = newProject("Second film");
+    second.id = "project-2";
+    mocks.listProjects.mockResolvedValue([project, second]);
+    let finishDuplicate: (value: StudioProject) => void = () => {};
+    mocks.getProject.mockImplementation((id: string) =>
+      id === project.id
+        ? new Promise<StudioProject>((resolve) => {
+            finishDuplicate = resolve;
+          })
+        : Promise.resolve(second),
+    );
+    const view = render(<ProjectStudio catalog={catalog} />);
+    await screen.findByText("Second film");
+    fireEvent.click(screen.getAllByRole("button", { name: "Duplicate" })[0]);
+    const cards = view.container.querySelectorAll<HTMLButtonElement>(".project-card-open");
+    fireEvent.click(cards[1]);
+    expect(await screen.findByRole("textbox", { name: "Project name" })).toHaveValue("Second film");
+    await act(async () => finishDuplicate(project));
+    expect(screen.getByRole("textbox", { name: "Project name" })).toHaveValue("Second film");
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
   it("shows aspect ratio substitutions before a paid render is confirmed", async () => {
     project.document.settings.aspectRatio = "9:16";
     const restricted = {
