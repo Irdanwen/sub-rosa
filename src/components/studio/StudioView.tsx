@@ -13,7 +13,7 @@ import { SegmentedControl } from "../ui/SegmentedControl";
 import { Spinner } from "../ui/Spinner";
 import { AssembleStudio } from "./AssembleStudio";
 import { BibleStudio } from "./BibleStudio";
-import { FilmStudio } from "./FilmStudio";
+import { ProjectStudio } from "./ProjectStudio";
 import { AudioStudio, type AudioMode } from "./AudioStudio";
 import { StudioStart, type StudioDestination } from "./StudioStart";
 import { ImageStudio } from "./ImageStudio";
@@ -28,6 +28,7 @@ const WorkflowStudio = recoverableView(async () => {
 });
 
 type StudioTab =
+  | "projects"
   | "start"
   | "film"
   | "image"
@@ -44,13 +45,11 @@ function initialTab(): StudioTab {
     const saved = window.localStorage.getItem(TAB_STORAGE_KEY);
     // "music" is the tab's pre-audio name; saved values must keep resolving.
     if (saved === "music") return "audio";
-    // "films" was the remote studio, which is gone. Somebody who was last on
-    // that tab lands where film production actually happens now, rather than
-    // on a blank panel or, worse, silently back on Image.
-    // "films" was the remote studio. What replaced it is the Film tab.
-    if (saved === "films") return "film";
+    // Restore old film tabs into the project workspace.
+    if (saved === "films" || saved === "film") return "projects";
     if (
       saved === "start" ||
+      saved === "projects" ||
       saved === "film" ||
       saved === "image" ||
       saved === "video" ||
@@ -64,7 +63,7 @@ function initialTab(): StudioTab {
   } catch {
     // Fall through to the default.
   }
-  return "start";
+  return "projects";
 }
 
 export function StudioView() {
@@ -97,10 +96,6 @@ export function StudioView() {
    * Same shape as the chain hand-over: a request the receiving tab consumes.
    */
   const [pendingProduction, setPendingProduction] = useState<string | undefined>(undefined);
-  const openProduction = useCallback((runId: string) => {
-    setPendingProduction(runId);
-    setTab("assemble");
-  }, []);
   const clearPendingProduction = useCallback(() => setPendingProduction(undefined), []);
 
   useEffect(() => {
@@ -129,8 +124,8 @@ export function StudioView() {
             }}
             aria-label={t("Studio section")}
             options={[
+              { value: "projects", label: t("Projects") },
               { value: "start", label: t("Explore") },
-              { value: "film", label: t("Film") },
               { value: "image", label: t("Image") },
               { value: "video", label: t("Video") },
               { value: "audio", label: t("Audio") },
@@ -155,6 +150,8 @@ export function StudioView() {
             </button>
           }
         />
+      ) : tab === "projects" || tab === "film" ? (
+        <ProjectStudio catalog={catalog} />
       ) : tab === "start" ? (
         <StudioStart catalog={catalog} onOpen={openWorkshop} />
       ) : tab === "image" ? (
@@ -163,8 +160,6 @@ export function StudioView() {
         <VideoStudio catalog={catalog} onAssembleChain={assembleChain} />
       ) : tab === "audio" ? (
         <AudioStudio catalog={catalog} requestedMode={audioMode} />
-      ) : tab === "film" ? (
-        <FilmStudio catalog={catalog} onOpenProduction={openProduction} />
       ) : tab === "bible" ? (
         <BibleStudio catalog={catalog} onMakeAFilm={() => setTab("film")} />
       ) : tab === "assemble" ? (

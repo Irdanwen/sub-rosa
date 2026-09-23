@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => vi.fn()) }));
+vi.mock("../lib/studio/artifacts", () => ({ readArtifactBase64: vi.fn(async () => "QUEUED") }));
 import type { MediaProxyResponse } from "../lib/studio/types";
 
 // Replace the media client so composeImages/editImage routing can be asserted
@@ -27,6 +32,12 @@ function rawImage(base64: string): MediaProxyResponse {
 
 beforeEach(() => {
   mediaJsonMock.mockReset();
+  vi.mocked(invoke).mockReset();
+  vi.mocked(invoke).mockImplementation(async (_command, args) => ({
+    id: (args as { request: { jobId: string } }).request.jobId,
+    status: "completed",
+    artifactPath: "/gallery/result.png",
+  }));
   mediaRawMock.mockReset();
 });
 
@@ -52,7 +63,12 @@ describe("editImage", () => {
 
     const result = await editImage("seedream-v4-edit", "brighten it", IMG);
     expect(result).toBe("QUEUED");
-    expect(mediaJsonMock).toHaveBeenCalledWith("/image/edit/queue", expect.any(Object));
+    expect(invoke).toHaveBeenCalledWith(
+      "media_job_queue",
+      expect.objectContaining({
+        request: expect.objectContaining({ queuePath: "/image/edit/queue" }),
+      }),
+    );
   });
 });
 
@@ -70,32 +86,27 @@ describe("composeImages", () => {
     mediaRawMock.mockResolvedValueOnce(rawImage("COMPOSED"));
 
     const result = await composeImages("seedream-v4-edit", "put 1 into 2", [IMG, IMG2]);
-    expect(result).toBe("COMPOSED");
-    expect(mediaJsonMock).toHaveBeenCalledWith("/image/multi-edit/queue", {
-      model: "seedream-v4-edit",
-      prompt: "put 1 into 2",
-      images: [IMG, IMG2],
-      safe_mode: false,
+    expect(result).toBe("QUEUED");
+    expect(invoke).toHaveBeenCalledWith("media_job_queue", {
+      request: expect.objectContaining({
+        queuePath: "/image/multi-edit/queue",
+        queueBody: {
+          model: "seedream-v4-edit",
+          prompt: "put 1 into 2",
+          images: [IMG, IMG2],
+          safe_mode: false,
+        },
+      }),
     });
-    expect(mediaRawMock).toHaveBeenCalledWith("/image/multi-edit/retrieve", {
-      id: "q9",
-      queue_id: "q9",
-      model: "seedream-v4-edit",
-    });
+    expect(mediaRawMock).not.toHaveBeenCalled();
+    expect(listen).toHaveBeenCalledWith("june://media-job", expect.any(Function));
   });
 
-  it("caps the composition at three source images", async () => {
-    mediaJsonMock.mockResolvedValueOnce({ queue_id: "q", status: "pending" });
-    mediaRawMock.mockResolvedValueOnce(rawImage("OK"));
-
-    await composeImages("seedream-v4-edit", "merge", [
-      IMG,
-      IMG2,
-      IMG3,
-      "data:image/png;base64,DDDD",
-    ]);
-    const body = mediaJsonMock.mock.calls[0][1] as { images: string[] };
-    expect(body.images).toEqual([IMG, IMG2, IMG3]);
+  it("refuses more than three source images without silently dropping one", async () => {
+    await expect(
+      composeImages("seedream-v4-edit", "merge", [IMG, IMG2, IMG3, IMG]),
+    ).rejects.toThrow("at most three");
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   it("drops blank entries before deciding the route", async () => {

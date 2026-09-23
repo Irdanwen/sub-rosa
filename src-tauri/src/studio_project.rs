@@ -1,0 +1,466 @@
+//! Local Studio documents. Media bytes remain in the gallery and are referenced by id.
+//! Revision checks are atomic so another window cannot silently overwrite an edit.
+use chrono::{SecondsFormat, Utc};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use sqlx::{query::query, row::Row};
+use sqlx_sqlite::{SqlitePool, SqliteRow};
+use tauri::AppHandle;
+
+const MAX_DOCUMENT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_GENERATION_BYTES: usize = 256 * 1024;
+const MAX_REVISION: i64 = 9_007_199_254_740_990;
+const CONFLICT: &str = "studio_project_conflict";
+const INVALID_DOCUMENT: &str = "studio_project_invalid_document";
+const INVALID_ID: &str = "studio_project_invalid_id";
+const STORAGE_ERROR: &str = "studio_project_storage_error";
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSummary {
+    pub id: String,
+    pub name: String,
+    pub archived: bool,
+    pub revision: i64,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectRecord {
+    #[serde(flatten)]
+    pub summary: ProjectSummary,
+    pub document: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveProjectRequest {
+    pub id: String,
+    pub name: String,
+    pub archived: bool,
+    pub expected_revision: Option<i64>,
+    pub document: Value,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactMetadata {
+    pub id: String,
+    pub title: String,
+    pub project_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveArtifactRequest {
+    pub id: String,
+    pub title: Option<String>,
+    pub project_ids: Option<Vec<String>>,
+    pub generation: Option<Value>,
+}
+
+fn storage_error(error: impl std::fmt::Display) -> String {
+    tracing::error!("Studio persistence: {error}");
+    STORAGE_ERROR.into()
+}
+
+fn validate_id(id: &str) -> Result<(), String> {
+    if id.is_empty()
+        || id.len() > 256
+        || id.trim() != id
+        || id.chars().any(|c| c.is_control() || c == '/' || c == '\\')
+    {
+        return Err(INVALID_ID.into());
+    }
+    Ok(())
+}
+
+fn bounded_json(value: &Value, limit: usize) -> Result<String, String> {
+    let json = serde_json::to_string(value).map_err(storage_error)?;
+    if json.len() > limit {
+        return Err(INVALID_DOCUMENT.into());
+    }
+    Ok(json)
+}
+
+fn summary(row: &SqliteRow) -> Result<ProjectSummary, String> {
+    Ok(ProjectSummary {
+        id: row.try_get("id").map_err(storage_error)?,
+        name: row.try_get("name").map_err(storage_error)?,
+        archived: row.try_get("archived").map_err(storage_error)?,
+        revision: row.try_get("revision").map_err(storage_error)?,
+        updated_at: row.try_get("updated_at").map_err(storage_error)?,
+    })
+}
+
+fn record(row: &SqliteRow) -> Result<ProjectRecord, String> {
+    let json: String = row.try_get("document").map_err(storage_error)?;
+    Ok(ProjectRecord {
+        summary: summary(row)?,
+        document: serde_json::from_str(&json).map_err(storage_error)?,
+    })
+}
+
+async fn pool(app: &AppHandle) -> Result<SqlitePool, String> {
+    crate::commands::repositories(app)
+        .await
+        .map(|repos| repos.pool)
+        .map_err(|_| STORAGE_ERROR.into())
+}
+
+async fn list_projects(pool: &SqlitePool) -> Result<Vec<ProjectSummary>, String> {
+    query("SELECT id, name, archived, revision, updated_at FROM studio_projects ORDER BY updated_at DESC, id")
+        .fetch_all(pool)
+        .await
+        .map_err(storage_error)?
+        .iter()
+        .map(summary)
+        .collect()
+}
+
+async fn get_project(pool: &SqlitePool, id: &str) -> Result<Option<ProjectRecord>, String> {
+    validate_id(id)?;
+    query("SELECT * FROM studio_projects WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .map_err(storage_error)?
+        .as_ref()
+        .map(record)
+        .transpose()
+}
+
+async fn save_project(
+    pool: &SqlitePool,
+    request: SaveProjectRequest,
+) -> Result<ProjectRecord, String> {
+    validate_id(&request.id)?;
+    let name = request.name.trim();
+    if name.is_empty() || name.chars().count() > 200 || name.chars().any(char::is_control) {
+        return Err("studio_project_invalid_name".into());
+    }
+    if request
+        .document
+        .get("schemaVersion")
+        .and_then(Value::as_u64)
+        != Some(1)
+    {
+        return Err(INVALID_DOCUMENT.into());
+    }
+    let document = bounded_json(&request.document, MAX_DOCUMENT_BYTES)?;
+    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let row = if let Some(revision) = request.expected_revision {
+        if !(1..MAX_REVISION).contains(&revision) {
+            return Err(CONFLICT.into());
+        }
+        query("UPDATE studio_projects SET name = ?, archived = ?, revision = revision + 1, updated_at = ?, document = ? WHERE id = ? AND revision = ? RETURNING *")
+            .bind(name).bind(request.archived).bind(now).bind(document)
+            .bind(request.id).bind(revision)
+            .fetch_optional(pool).await.map_err(storage_error)?
+    } else {
+        query("INSERT INTO studio_projects (id, name, archived, revision, updated_at, document) VALUES (?, ?, ?, 1, ?, ?) ON CONFLICT(id) DO NOTHING RETURNING *")
+            .bind(request.id).bind(name).bind(request.archived).bind(now).bind(document)
+            .fetch_optional(pool).await.map_err(storage_error)?
+    };
+    record(&row.ok_or(CONFLICT)?)
+}
+
+fn artifact_metadata(row: &SqliteRow) -> Result<ArtifactMetadata, String> {
+    let ids: String = row.try_get("project_ids").map_err(storage_error)?;
+    let generation: Option<String> = row.try_get("generation").map_err(storage_error)?;
+    Ok(ArtifactMetadata {
+        id: row.try_get("id").map_err(storage_error)?,
+        title: row.try_get("title").map_err(storage_error)?,
+        project_ids: serde_json::from_str(&ids).map_err(storage_error)?,
+        generation: generation
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()
+            .map_err(storage_error)?,
+    })
+}
+
+async fn list_artifacts(pool: &SqlitePool) -> Result<Vec<ArtifactMetadata>, String> {
+    query("SELECT id, title, project_ids, generation FROM studio_artifact_metadata ORDER BY id")
+        .fetch_all(pool)
+        .await
+        .map_err(storage_error)?
+        .iter()
+        .map(artifact_metadata)
+        .collect()
+}
+
+async fn save_artifact(
+    pool: &SqlitePool,
+    mut request: SaveArtifactRequest,
+) -> Result<ArtifactMetadata, String> {
+    validate_id(&request.id)?;
+    if let Some(title) = &mut request.title {
+        *title = title.trim().into();
+        if title.chars().count() > 500 || title.chars().any(char::is_control) {
+            return Err("studio_project_invalid_name".into());
+        }
+    }
+    if let Some(ids) = &mut request.project_ids {
+        if ids.len() > 100 {
+            return Err(INVALID_DOCUMENT.into());
+        }
+        for id in ids.iter() {
+            validate_id(id)?;
+        }
+        ids.sort();
+        ids.dedup();
+    }
+    let ids = request
+        .project_ids
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(storage_error)?;
+    // A gallery path is transient on iOS and never a persisted identity.
+    if let Some(Value::Object(generation)) = &mut request.generation {
+        generation.remove("path");
+    }
+    let generation = request
+        .generation
+        .as_ref()
+        .map(|value| bounded_json(value, MAX_GENERATION_BYTES))
+        .transpose()?;
+    // Observing a completed job may refresh provenance without changing the
+    // title and memberships the person already edited in another window.
+    let row = query("INSERT INTO studio_artifact_metadata (id, title, project_ids, generation) VALUES (?, COALESCE(?, ''), COALESCE(?, '[]'), ?) ON CONFLICT(id) DO UPDATE SET title = COALESCE(?, studio_artifact_metadata.title), project_ids = COALESCE(?, studio_artifact_metadata.project_ids), generation = COALESCE(excluded.generation, studio_artifact_metadata.generation) RETURNING *")
+        .bind(&request.id).bind(&request.title).bind(&ids).bind(generation)
+        .bind(&request.title).bind(&ids)
+        .fetch_one(pool).await.map_err(storage_error)?;
+    artifact_metadata(&row)
+}
+
+#[tauri::command]
+pub async fn studio_project_list(app: AppHandle) -> Result<Vec<ProjectSummary>, String> {
+    list_projects(&pool(&app).await?).await
+}
+
+#[tauri::command]
+pub async fn studio_project_get(
+    app: AppHandle,
+    id: String,
+) -> Result<Option<ProjectRecord>, String> {
+    get_project(&pool(&app).await?, &id).await
+}
+
+#[tauri::command]
+pub async fn studio_project_save(
+    app: AppHandle,
+    request: SaveProjectRequest,
+) -> Result<ProjectRecord, String> {
+    save_project(&pool(&app).await?, request).await
+}
+
+#[tauri::command]
+pub async fn studio_artifact_list(app: AppHandle) -> Result<Vec<ArtifactMetadata>, String> {
+    list_artifacts(&pool(&app).await?).await
+}
+
+#[tauri::command]
+pub async fn studio_artifact_save(
+    app: AppHandle,
+    request: SaveArtifactRequest,
+) -> Result<ArtifactMetadata, String> {
+    save_artifact(&pool(&app).await?, request).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use sqlx_sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+
+    async fn open_database(path: &std::path::Path) -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(2)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(path)
+                    .create_if_missing(true),
+            )
+            .await
+            .expect("database");
+        for statement in crate::db::migrations::split_sql_statements(include_str!(
+            "../migrations/031_studio_projects.sql"
+        )) {
+            query(&statement).execute(&pool).await.expect("migration");
+        }
+        pool
+    }
+
+    fn request(revision: Option<i64>, document: Value) -> SaveProjectRequest {
+        SaveProjectRequest {
+            id: "film-one".into(),
+            name: " Concert ".into(),
+            archived: false,
+            expected_revision: revision,
+            document,
+        }
+    }
+
+    #[tokio::test]
+    async fn restart_keeps_unknown_document_fields_and_provenance() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("studio.sqlite");
+        let pool = open_database(&path).await;
+        let document =
+            json!({"schemaVersion":1,"shots":[{"id":"shot","futureField":{"nested":true}}]});
+        let saved = save_project(&pool, request(None, document.clone()))
+            .await
+            .expect("create");
+        assert_eq!(saved.summary.revision, 1);
+        assert_eq!(saved.summary.name, "Concert");
+        let metadata = save_artifact(
+            &pool,
+            SaveArtifactRequest {
+                id: "artifact".into(),
+                title: Some("Take 1".into()),
+                project_ids: Some(vec!["film-one".into(), "film-one".into()]),
+                generation: Some(
+                    json!({"prompt":"concert", "model":"model", "sourceArtifactId":"reference"}),
+                ),
+            },
+        )
+        .await
+        .expect("metadata");
+        assert_eq!(metadata.project_ids.len(), 1);
+        let observed = save_artifact(
+            &pool,
+            SaveArtifactRequest {
+                id: "artifact".into(),
+                title: None,
+                project_ids: None,
+                generation: None,
+            },
+        )
+        .await
+        .expect("observe");
+        assert_eq!(observed, metadata);
+
+        pool.close().await;
+        // Reopening also replays the additive migration, without changing saved data.
+        let pool = open_database(&path).await;
+        assert_eq!(
+            get_project(&pool, "film-one").await.expect("read"),
+            Some(saved)
+        );
+        assert_eq!(
+            list_artifacts(&pool).await.expect("artifacts"),
+            vec![metadata]
+        );
+        let renamed = save_artifact(
+            &pool,
+            SaveArtifactRequest {
+                id: "artifact".into(),
+                title: Some("Final take".into()),
+                project_ids: Some(vec![]),
+                generation: None,
+            },
+        )
+        .await
+        .expect("rename");
+        assert_eq!(renamed.generation.as_ref().unwrap()["prompt"], "concert");
+        assert!(renamed.project_ids.is_empty());
+        let refreshed = save_artifact(
+            &pool,
+            SaveArtifactRequest {
+                id: "artifact".into(),
+                title: None,
+                project_ids: None,
+                generation: Some(json!({"prompt":"updated provenance"})),
+            },
+        )
+        .await
+        .expect("refresh");
+        assert_eq!(refreshed.title, "Final take");
+        assert!(refreshed.project_ids.is_empty());
+        let adopted = save_artifact(
+            &pool,
+            SaveArtifactRequest {
+                id: "new-artifact".into(),
+                title: None,
+                project_ids: None,
+                generation: None,
+            },
+        )
+        .await
+        .expect("adopt");
+        assert_eq!(adopted.title, "");
+        assert!(adopted.project_ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn concurrent_edits_allow_one_writer_and_preserve_winner() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pool = open_database(&dir.path().join("studio.sqlite")).await;
+        save_project(&pool, request(None, json!({"schemaVersion":1})))
+            .await
+            .expect("create");
+        assert_eq!(
+            save_project(&pool, request(None, json!({"schemaVersion":1})))
+                .await
+                .unwrap_err(),
+            CONFLICT
+        );
+        let (a, b) = tokio::join!(
+            save_project(
+                &pool,
+                request(Some(1), json!({"schemaVersion":1,"writer":"a"}))
+            ),
+            save_project(
+                &pool,
+                request(Some(1), json!({"schemaVersion":1,"writer":"b"}))
+            )
+        );
+        let winner = match (a, b) {
+            (Ok(saved), Err(error)) | (Err(error), Ok(saved)) => {
+                assert_eq!(error, CONFLICT);
+                saved
+            }
+            other => panic!("Expected one writer: {other:?}"),
+        };
+        assert_eq!(winner.summary.revision, 2);
+        assert_eq!(get_project(&pool, "film-one").await.unwrap(), Some(winner));
+        assert_eq!(
+            save_project(&pool, request(Some(1), json!({"schemaVersion":1})))
+                .await
+                .unwrap_err(),
+            CONFLICT
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_documents_cannot_replace_a_saved_project() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pool = open_database(&dir.path().join("studio.sqlite")).await;
+        let saved = save_project(&pool, request(None, json!({"schemaVersion":1})))
+            .await
+            .unwrap();
+        for document in [
+            json!({}),
+            json!({"schemaVersion":2}),
+            json!({"schemaVersion":1,"huge":"x".repeat(MAX_DOCUMENT_BYTES)}),
+        ] {
+            assert_eq!(
+                save_project(&pool, request(Some(1), document))
+                    .await
+                    .unwrap_err(),
+                INVALID_DOCUMENT
+            );
+        }
+        let mut invalid = request(Some(1), json!({"schemaVersion":1}));
+        invalid.id = "../outside".into();
+        assert_eq!(save_project(&pool, invalid).await.unwrap_err(), INVALID_ID);
+        assert_eq!(get_project(&pool, "film-one").await.unwrap(), Some(saved));
+        assert!(get_project(&pool, "missing").await.unwrap().is_none());
+        assert_eq!(list_projects(&pool).await.unwrap().len(), 1);
+    }
+}

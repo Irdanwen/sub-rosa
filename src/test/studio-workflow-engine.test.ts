@@ -752,6 +752,7 @@ describe("image edit node", () => {
       throw new Error(`Unexpected raw path: ${path}`);
     });
     const storage = imageAssetStorage();
+    const durableMedia = vi.fn(async () => ({ artifactId: "composed", src: "image.png" }));
 
     const results = await runWorkflow(
       workflow(
@@ -763,15 +764,19 @@ describe("image edit node", () => {
         ],
         [edge("a", "edit", "images"), edge("b", "edit", "images"), edge("edit", "out")],
       ),
-      { storage },
+      { storage, durableMedia },
     );
 
-    const queueBody = callsTo("/image/multi-edit/queue")[0]?.[1] as Record<string, unknown>;
+    const request = vi.mocked(durableMedia).mock.calls[0] as unknown as [
+      string,
+      { queueBody: Record<string, unknown> },
+    ];
+    const queueBody = request[1].queueBody;
     expect(queueBody.images).toEqual([
       "data:image/png;base64,SRC-subject",
       "data:image/png;base64,SRC-scene",
     ]);
-    expect(results.get("out")?.output).toMatchObject({ kind: "image", base64: "Q09NUE9TRUQ=" });
+    expect(results.get("out")?.output).toMatchObject({ kind: "image", base64: "SRC-composed" });
   });
 });
 
@@ -991,5 +996,97 @@ it("keeps the recognized JPEG format when an image node requested PNG", async ()
     kind: "image",
     mimeType: "image/jpeg",
     artifactId: "rose.jpg",
+  });
+});
+
+describe("compiled audio compatibility", () => {
+  it("reads historical text params and gives connected text precedence", async () => {
+    mediaBinaryMock.mockResolvedValue({ base64: "AA", contentType: "audio/mpeg" });
+    await runWorkflow(workflow([node("speech", "tts", { text: "Historical dialogue" })], []));
+    expect(mediaBinaryMock).toHaveBeenLastCalledWith(
+      "/audio/speech",
+      expect.objectContaining({ input: "Historical dialogue" }),
+      undefined,
+    );
+    await runWorkflow(
+      workflow(
+        [
+          node("text", "textInput", { text: "Edited dialogue" }),
+          node("speech", "tts", { text: "Historical dialogue" }),
+        ],
+        [edge("text", "speech", "text")],
+      ),
+    );
+    expect(mediaBinaryMock).toHaveBeenLastCalledWith(
+      "/audio/speech",
+      expect.objectContaining({ input: "Edited dialogue" }),
+      undefined,
+    );
+  });
+
+  it("rejects empty speech before any paid request", async () => {
+    await expect(runWorkflow(workflow([node("speech", "tts")], []))).rejects.toThrow(
+      "Add dialogue",
+    );
+    expect(mediaBinaryMock).not.toHaveBeenCalled();
+  });
+
+  it("checks budget only for an uncached paid node and blocks its request", async () => {
+    const beforeNode = vi.fn(async () => {
+      throw new Error("Insufficient credits");
+    });
+    const graph = workflow([node("speech", "tts", { text: "Hello" })], []);
+    await expect(runWorkflow(graph, { beforeNode })).rejects.toThrow("Insufficient credits");
+    expect(mediaBinaryMock).not.toHaveBeenCalled();
+    beforeNode.mockClear();
+    await runWorkflow(graph, {
+      beforeNode,
+      completed: new Map([["speech", { kind: "audio", base64: "AA", mimeType: "audio/mpeg" }]]),
+    });
+    expect(beforeNode).not.toHaveBeenCalled();
+  });
+});
+
+describe("durable generated references", () => {
+  it("hands a heavy image to the native runner and reuses its saved file", async () => {
+    const durableMedia = vi.fn(async () => ({
+      artifactId: "portrait.png",
+      src: "asset://portrait.png",
+    }));
+    const storage: WorkflowStorage = {
+      save: vi.fn(),
+      loadAsset: vi.fn(async () => ({
+        kind: "image" as const,
+        src: "data:image/png;base64,PORTRAIT",
+        base64: "PORTRAIT",
+        mimeType: "image/png",
+        artifactId: "portrait.png",
+      })),
+      loadNote: vi.fn(),
+      readMedia: vi.fn(),
+    };
+    const results = await runWorkflow(
+      workflow(
+        [node("portrait", "image", { model: "gpt-image-2", prompt: "A photographic portrait" })],
+        [],
+      ),
+      { storage, durableMedia },
+    );
+    expect(durableMedia).toHaveBeenCalledWith(
+      "portrait",
+      expect.objectContaining({
+        kind: "image",
+        queuePath: "/image/generate/queue",
+        retrievePath: "/image/generate/retrieve",
+      }),
+      undefined,
+    );
+    expect(mediaJsonMock).not.toHaveBeenCalled();
+    expect(storage.save).not.toHaveBeenCalled();
+    expect(results.get("portrait")?.output).toMatchObject({
+      kind: "image",
+      base64: "PORTRAIT",
+      artifactId: "portrait.png",
+    });
   });
 });

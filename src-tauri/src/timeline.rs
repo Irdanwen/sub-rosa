@@ -36,6 +36,9 @@ pub struct ExportTimelineRequest {
     pub extension: String,
     /// SubRip sidecar, when the cut has subtitles.
     pub subtitles: Option<String>,
+    /// Editable Sub Rosa montage, retained beside the interchange document.
+    #[serde(default)]
+    pub editor_document: Option<String>,
     /// Gallery files to copy into `media/`. Each must already be in the gallery.
     pub media: Vec<String>,
 }
@@ -149,6 +152,29 @@ fn extension_of(raw: &str) -> Result<String, AppError> {
     ))
 }
 
+/// Validate the optional editing sidecar before asking for a destination or
+/// creating files. The native layer keeps unknown editor fields intact.
+fn validate_editor_document(document: Option<&str>) -> Result<(), AppError> {
+    let Some(document) = document else {
+        return Ok(());
+    };
+    if document.len() > 8 * 1024 * 1024 {
+        return Err(AppError::new(
+            "timeline_invalid",
+            "The montage document is too large.",
+        ));
+    }
+    let value: serde_json::Value = serde_json::from_str(document)
+        .map_err(|_| AppError::new("timeline_invalid", "The montage document is invalid."))?;
+    if !value.is_object() {
+        return Err(AppError::new(
+            "timeline_invalid",
+            "The montage document is invalid.",
+        ));
+    }
+    Ok(())
+}
+
 /// Write a self-contained timeline bundle: the document, its subtitles, and a
 /// copy of every clip it references.
 #[tauri::command]
@@ -156,6 +182,7 @@ pub async fn export_timeline_bundle(
     app: AppHandle,
     request: ExportTimelineRequest,
 ) -> Result<ExportedTimelineDto, AppError> {
+    validate_editor_document(request.editor_document.as_deref())?;
     // The folder is picked here, not sent across IPC. A destination from the
     // webview would make this an arbitrary directory-write primitive: the
     // document and the subtitles are generated content, and a bundle folder
@@ -200,6 +227,14 @@ pub async fn export_timeline_bundle(
             .map_err(|error| AppError::new("timeline_write_failed", error.to_string()))?;
     }
 
+    if let Some(editor_document) = request.editor_document.as_ref() {
+        std::fs::write(
+            bundle.join("studio-montage.json"),
+            editor_document.as_bytes(),
+        )
+        .map_err(|error| AppError::new("timeline_write_failed", error.to_string()))?;
+    }
+
     let mut copied = 0usize;
     for source in &sources {
         let Some(file_name) = source.file_name() else {
@@ -227,6 +262,20 @@ pub async fn export_timeline_bundle(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn optional_montage_sidecar_is_bounded_json_and_legacy_requests_still_work() {
+        assert!(validate_editor_document(None).is_ok());
+        assert!(validate_editor_document(Some(r#"{"version":1,"futureField":true}"#)).is_ok());
+        assert!(validate_editor_document(Some("[]")).is_err());
+        assert!(validate_editor_document(Some("not json")).is_err());
+        assert!(validate_editor_document(Some(&" ".repeat(8 * 1024 * 1024 + 1))).is_err());
+        let legacy: ExportTimelineRequest = serde_json::from_value(serde_json::json!({
+            "name": "Old montage", "document":"<xml />", "extension":"xml", "media":[]
+        }))
+        .expect("legacy request");
+        assert!(legacy.editor_document.is_none());
+    }
 
     #[test]
     fn a_bundle_name_keeps_what_a_path_can_carry_and_replaces_what_it_cannot() {

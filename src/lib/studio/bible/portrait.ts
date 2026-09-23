@@ -112,16 +112,25 @@ export async function generateReference(
   entry: BibleEntry,
   role: BibleRole,
   catalog: MediaCatalog,
-  options: { style?: string; aspectRatio?: string; signal?: AbortSignal } = {},
+  options: {
+    style?: string;
+    aspectRatio?: string;
+    signal?: AbortSignal;
+    modelId?: string;
+    prompt?: string;
+    attach?: boolean;
+  } = {},
 ): Promise<GeneratedReference> {
   if (!canGenerate(role)) {
     throw new Error("A voice is not a picture. Audition one instead.");
   }
-  const model = pickPortraitModel(catalog);
+  const model = options.modelId
+    ? modelsOfType(catalog, "image").find((candidate) => candidate.id === options.modelId)
+    : pickPortraitModel(catalog);
   if (!model) {
     throw new Error("No model on this account can draw a picture.");
   }
-  const prompt = portraitPrompt(entry, role, options.style);
+  const prompt = options.prompt?.trim() || portraitPrompt(entry, role, options.style);
   const body: Record<string, unknown> = { prompt, model: model.id };
   // Square for a face, wide for a place: a portrait cropped to 16:9 loses the
   // top of the head, which is the part the identity is carried by.
@@ -138,11 +147,12 @@ export async function generateReference(
     model: model.id,
     prompt,
   });
-  await addBibleRef({
-    entryId: entry.id,
-    artifactId: artifact.id,
-    role,
-    label: role,
-  });
+  if (options.attach !== false)
+    await addBibleRef({
+      entryId: entry.id,
+      artifactId: artifact.id,
+      role,
+      label: role,
+    });
   return { artifact, prompt, model: model.id };
 }

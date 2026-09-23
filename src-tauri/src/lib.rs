@@ -84,6 +84,7 @@ pub mod updates;
 pub mod bible;
 pub mod shotlist;
 pub mod studio_actions;
+pub mod studio_project;
 pub mod timeline;
 pub mod win_console;
 
@@ -495,6 +496,11 @@ pub fn run() {
             updates::relaunch_for_update,
             memory::memory_get_settings,
             memory::memory_set_settings,
+            studio_project::studio_project_list,
+            studio_project::studio_project_get,
+            studio_project::studio_project_save,
+            studio_project::studio_artifact_list,
+            studio_project::studio_artifact_save,
             memory::memory_list,
             memory::memory_add,
             memory::memory_update,
@@ -565,6 +571,7 @@ pub fn run() {
             carpe_diem::media::carpe_diem_media_read_artifact,
             carpe_diem::media::carpe_diem_media_list_artifacts,
             carpe_diem::jobs::media_job_start,
+            carpe_diem::jobs::media_job_queue,
             carpe_diem::jobs::media_job_list,
             carpe_diem::jobs::media_job_stop,
             carpe_diem::jobs::media_job_dismiss,
@@ -745,6 +752,11 @@ pub fn run() {
         providers::generate_image,
         memory::memory_get_settings,
         memory::memory_set_settings,
+        studio_project::studio_project_list,
+        studio_project::studio_project_get,
+        studio_project::studio_project_save,
+        studio_project::studio_artifact_list,
+        studio_project::studio_artifact_save,
         memory::memory_list,
         memory::memory_add,
         memory::memory_update,
@@ -815,6 +827,7 @@ pub fn run() {
         carpe_diem::media::carpe_diem_media_read_artifact,
         carpe_diem::media::carpe_diem_media_list_artifacts,
         carpe_diem::jobs::media_job_start,
+        carpe_diem::jobs::media_job_queue,
         carpe_diem::jobs::media_job_list,
         carpe_diem::jobs::media_job_stop,
         carpe_diem::jobs::media_job_dismiss,

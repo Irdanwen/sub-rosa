@@ -11,6 +11,10 @@ vi.mock("../lib/studio/client", async (importOriginal) => ({
   mediaGet: vi.fn(),
 }));
 
+vi.mock("../lib/studio/edit-image", () => ({ nativeQueuedImage: vi.fn() }));
+import { nativeQueuedImage } from "../lib/studio/edit-image";
+const nativeQueueMock = vi.mocked(nativeQueuedImage);
+
 import { compareBodies, generateImages } from "../lib/studio/generate-image";
 import { MediaError, mediaJson, mediaRaw } from "../lib/studio/client";
 
@@ -28,15 +32,13 @@ function wireHappyQueue() {
     const seed = (body as Record<string, unknown>)?.seed ?? "rand";
     return { queue_id: `q-${seed}` };
   });
-  mediaRawMock.mockImplementation(async (_path: string, body?: unknown) => {
-    const queueId = (body as Record<string, unknown>)?.queue_id;
-    return { status: 200, ok: true, bodyBase64: `img-${queueId}` };
-  });
+  nativeQueueMock.mockImplementation(async (_path, body) => `img-q-${body.seed ?? "rand"}`);
 }
 
 beforeEach(() => {
   mediaJsonMock.mockReset();
   mediaRawMock.mockReset();
+  nativeQueueMock.mockReset();
 });
 
 describe("generateImages — queue variant fan-out", () => {
@@ -51,7 +53,7 @@ describe("generateImages — queue variant fan-out", () => {
 
     // Four images back — not the single image the old code returned.
     expect(images).toHaveLength(4);
-    const queueSubmits = mediaJsonMock.mock.calls.filter(([p]) => p === "/image/generate/queue");
+    const queueSubmits = nativeQueueMock.mock.calls;
     expect(queueSubmits).toHaveLength(4);
     // Each fanned-out job asks the backend for a single variant.
     for (const [, body] of queueSubmits) {
@@ -69,9 +71,9 @@ describe("generateImages — queue variant fan-out", () => {
       seed: 100,
     });
 
-    const seeds = mediaJsonMock.mock.calls
-      .filter(([p]) => p === "/image/generate/queue")
-      .map(([, body]) => (body as Record<string, unknown>).seed);
+    const seeds = nativeQueueMock.mock.calls.map(
+      ([, body]) => (body as Record<string, unknown>).seed,
+    );
     expect(seeds).toEqual([100, 101, 102]);
     // Distinct seeds -> distinct queue ids -> distinct images.
     expect(new Set(images).size).toBe(3);
@@ -82,10 +84,9 @@ describe("generateImages — queue variant fan-out", () => {
       const seed = (body as Record<string, unknown>)?.seed ?? "rand";
       return { queue_id: `q-${seed}` };
     });
-    mediaRawMock.mockImplementation(async (_path: string, body?: unknown) => {
-      const queueId = (body as Record<string, unknown>)?.queue_id;
-      if (queueId === "q-11") throw new MediaError("upstream error", { status: 502 });
-      return { status: 200, ok: true, bodyBase64: `img-${queueId}` };
+    nativeQueueMock.mockImplementation(async (_path, body) => {
+      if (body.seed === 11) throw new MediaError("upstream error", { status: 502 });
+      return `img-q-${body.seed}`;
     });
 
     const images = await generateImages("recraft-v4-pro", {
@@ -101,7 +102,7 @@ describe("generateImages — queue variant fan-out", () => {
 
   it("throws when every variant fails", async () => {
     mediaJsonMock.mockResolvedValue({ queue_id: "q" });
-    mediaRawMock.mockRejectedValue(new MediaError("upstream error", { status: 502 }));
+    nativeQueueMock.mockRejectedValue(new MediaError("upstream error", { status: 502 }));
 
     await expect(
       generateImages("gpt-image-2", { model: "gpt-image-2", prompt: "x", variants: 2 }),
@@ -118,7 +119,7 @@ describe("generateImages — queue variant fan-out", () => {
     });
 
     expect(images).toHaveLength(1);
-    expect(mediaJsonMock.mock.calls.filter(([p]) => p === "/image/generate/queue")).toHaveLength(1);
+    expect(nativeQueueMock.mock.calls).toHaveLength(1);
   });
 
   it("still routes a standard model through the sync path (no queue)", async () => {
@@ -150,7 +151,7 @@ describe("generateImages — queue variant fan-out", () => {
 
     expect(images).toHaveLength(1);
     expect(mediaJsonMock.mock.calls.filter(([p]) => p === "/image/generate")).toHaveLength(0);
-    expect(mediaJsonMock.mock.calls.filter(([p]) => p === "/image/generate/queue")).toHaveLength(1);
+    expect(nativeQueueMock.mock.calls).toHaveLength(1);
   });
 
   it("falls back to the queue when the sync path rejects with 409 MODEL_REQUIRES_ASYNC", async () => {
@@ -165,7 +166,7 @@ describe("generateImages — queue variant fan-out", () => {
       }
       return { queue_id: "q-fallback" };
     });
-    mediaRawMock.mockResolvedValue({ status: 200, ok: true, bodyBase64: "img-q-fallback" });
+    nativeQueueMock.mockResolvedValue("img-q-fallback");
 
     const images = await generateImages("some-new-model", {
       model: "some-new-model",
@@ -174,7 +175,7 @@ describe("generateImages — queue variant fan-out", () => {
     });
 
     expect(images).toEqual(["img-q-fallback"]);
-    expect(mediaJsonMock.mock.calls.filter(([p]) => p === "/image/generate/queue")).toHaveLength(1);
+    expect(nativeQueueMock.mock.calls).toHaveLength(1);
   });
 });
 

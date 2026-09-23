@@ -53,6 +53,10 @@ export interface BundleAudioClip {
 }
 
 export interface BundleInput {
+  /** Original editable project document, retained alongside the interchange file. */
+  editorDocument?: string;
+  /** Source media needed by the original cut when interchange is rendered. */
+  additionalMedia?: string[];
   name: string;
   clips: BundleClip[];
   audio?: Partial<Record<AudioLane, BundleAudioClip[]>>;
@@ -149,7 +153,8 @@ export async function writeTimelineBundle(
       document,
       extension: TIMELINE_FORMAT_EXTENSIONS[format],
       subtitles,
-      media,
+      media: [...new Set([...media, ...(input.additionalMedia ?? [])])],
+      editorDocument: input.editorDocument,
     },
   });
 }

@@ -518,3 +518,106 @@ describe("retaking a shot on another engine", () => {
     ).toBeUndefined();
   });
 });
+
+describe("editable project shots", () => {
+  it("keeps identities and explicit settings when shots are reordered", () => {
+    const a = shot({
+      id: "a",
+      title: "Close-up",
+      prompt: "Exact camera instruction",
+      mode: "text",
+      modelId: catalog.models[0].id,
+      duration: 8,
+    });
+    const b = shot({ id: "b", mode: "text", modelId: catalog.models[0].id });
+    const result = compileShotList({ name: "Film", shots: [b, a], catalog });
+    const filmed = result.workflow?.nodes.find((entry) => entry.id === "shot-a");
+    expect(filmed?.label).toBe("Close-up");
+    expect(filmed?.params.prompt).toBe("Exact camera instruction");
+    expect(filmed?.params.duration).toBe("8s");
+  });
+
+  it("wires image mode to the opening frame and reference mode to references", () => {
+    const result = compileShotList({
+      name: "Film",
+      catalog,
+      shots: [
+        shot({
+          id: "itv",
+          mode: "image",
+          modelId: catalog.models[1].id,
+          openingArtifactId: "opening.png",
+        }),
+        shot({
+          id: "rtv",
+          mode: "reference",
+          modelId: catalog.models[2].id,
+          referenceArtifactIds: ["person.png", "place.png"],
+        }),
+      ],
+    });
+    expect(result.refusal).toBeUndefined();
+    if (!result.workflow) throw new Error("Expected workflow");
+    expect(validateWorkflow(result.workflow).ok).toBe(true);
+    expect(
+      result.workflow?.edges
+        .filter((entry) => entry.target === "shot-itv")
+        .map((entry) => entry.targetPort),
+    ).toEqual(["openingFrame"]);
+    expect(
+      result.workflow?.edges
+        .filter((entry) => entry.target === "shot-rtv")
+        .map((entry) => entry.targetPort),
+    ).toEqual(["references", "references"]);
+  });
+
+  it("refuses unsupported mode, missing images and duration instead of changing choices", () => {
+    for (const overrides of [
+      { mode: "image" as const, modelId: catalog.models[0].id, openingArtifactId: "a.png" },
+      { mode: "image" as const, modelId: catalog.models[1].id },
+      { mode: "reference" as const, modelId: catalog.models[2].id },
+      { mode: "text" as const, modelId: catalog.models[0].id, duration: 17 },
+      { mode: "continuation" as const, modelId: catalog.models[1].id },
+    ]) {
+      const result = compileShotList({ name: "Film", catalog, shots: [shot(overrides)] });
+      expect(result.workflow).toBeUndefined();
+      expect(result.refusal).toContain("Shot 1:");
+    }
+  });
+
+  it("feeds dialogue and score through text nodes so speech never receives empty input", () => {
+    const result = compileShotList({
+      name: "Concert",
+      catalog,
+      withScore: true,
+      shots: [shot({ id: "payment", dialogue: "Encore ?", speaker: "Serveur" })],
+    });
+    const graph = result.workflow;
+    if (!graph) throw new Error("Expected workflow");
+    expect(graph.nodes.find((entry) => entry.id === "dialogue-payment")?.params.text).toBe(
+      "Encore ?",
+    );
+    expect(graph.edges).toContainEqual(
+      expect.objectContaining({
+        source: "dialogue-payment",
+        target: "line-payment",
+        targetPort: "text",
+      }),
+    );
+    expect(graph.edges).toContainEqual(
+      expect.objectContaining({ source: "score-prompt", target: "score", targetPort: "prompt" }),
+    );
+  });
+
+  it("distinguishes unpublished prices from a free production", () => {
+    const result = compileShotList({
+      name: "Film",
+      catalog: {
+        ...catalog,
+        models: catalog.models.map((entry) => ({ ...entry, costCredits: undefined })),
+      },
+      shots: [shot()],
+    });
+    expect(result.unknownPriceNodeIds).toContain("shot-1");
+  });
+});

@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 // Workflow execution: nodes run level by level (Kahn topological order),
 // each level in parallel. Node outputs are typed, never string-tagged, and
 // edges land on named ports — a video node's prompt, opening frame, end frame
@@ -174,7 +175,7 @@ export interface WorkflowStorage {
 /** What a durable render needs queued: everything Rust's job runner asks for,
  * minus the queue id it will get back. */
 export interface DurableRenderRequest {
-  kind: "video" | "music";
+  kind: "video" | "music" | "image";
   model: string;
   prompt: string;
   extension: string;
@@ -188,6 +189,8 @@ export interface DurableRenderRequest {
 }
 
 export interface RunWorkflowOptions {
+  /** Check/reserve budget immediately before an uncached paid node starts. */
+  beforeNode?: (node: WorkflowNode) => Promise<void>;
   signal?: AbortSignal;
   onUpdate?: (result: NodeRunResult) => void;
   storage?: WorkflowStorage;
@@ -562,7 +565,43 @@ async function executeNode(
       if (stylePreset) body.style_preset = stylePreset;
       // Route through generateImages so heavy models land on the async queue
       // instead of bouncing off the sync path's 409/502.
-      const [first] = await generateImages(model, body, signal);
+      let queuedOutput: NodeOutput | undefined;
+      const durableImage = context.durableMedia;
+      const [first] = await generateImages(
+        model,
+        body,
+        signal,
+        durableImage && storage
+          ? async (queueBody) => {
+              const saved = await durableImage(
+                node.id,
+                {
+                  kind: "image",
+                  model,
+                  prompt,
+                  extension: "png",
+                  queuePath: "/image/generate/queue",
+                  queueBody,
+                  retrievePath: "/image/generate/retrieve",
+                  urlFields: ["image_url", "url"],
+                  costCredits: context.costCredits,
+                },
+                signal,
+              );
+              if (!saved.artifactId)
+                throw new Error(t("The generated image finished but its file is missing."));
+              const asset = await storage.loadAsset(saved.artifactId);
+              queuedOutput = {
+                kind: "image",
+                artifactId: saved.artifactId,
+                base64: asset.base64 ?? "",
+                mimeType: asset.mimeType ?? "image/png",
+              };
+              return asset.base64 ?? "";
+            }
+          : undefined,
+      );
+      if (queuedOutput) return queuedOutput;
       if (typeof first !== "string" || first === "") {
         throw new Error("The image backend returned no image.");
       }
@@ -588,8 +627,40 @@ async function executeNode(
         stringParam(params, "prompt") ?? "",
         textInputOf(ports, "prompt"),
       );
-      const sources = imagesOn(ports, "images").slice(0, 3).map(imageDataUri);
+      const sources = imagesOn(ports, "images").map(imageDataUri);
+      if (sources.length > 3) throw new Error(t("Choose at most three reference images."));
       if (sources.length === 0) throw new Error("Connect at least one image to edit.");
+      if (context.durableMedia && storage) {
+        const base = sources.length > 1 ? "/image/multi-edit" : "/image/edit";
+        const saved = await context.durableMedia(
+          node.id,
+          {
+            kind: "image",
+            model,
+            prompt,
+            extension: "png",
+            queuePath: `${base}/queue`,
+            retrievePath: `${base}/retrieve`,
+            urlFields: ["url", "image_url"],
+            queueBody: {
+              model,
+              prompt,
+              safe_mode: false,
+              ...(sources.length > 1 ? { images: sources } : { image: sources[0] }),
+            },
+            costCredits: context.costCredits,
+          },
+          signal,
+        );
+        if (!saved.artifactId) throw new Error(t("The edit finished but its file is missing."));
+        const asset = await storage.loadAsset(saved.artifactId);
+        return {
+          kind: "image",
+          base64: asset.base64 ?? "",
+          mimeType: asset.mimeType ?? "image/png",
+          artifactId: saved.artifactId,
+        };
+      }
       // One image edits, several compose; heavy models queue on their own.
       const edited = await composeImages(model, prompt, sources);
       const saved = storage
@@ -610,7 +681,9 @@ async function executeNode(
 
     case "tts": {
       const model = stringParam(params, "model") ?? "tts-kokoro";
-      const input = textInputOf(ports, "text");
+      const input = textInputOf(ports, "text").trim() || (stringParam(params, "text") ?? "").trim();
+      if (!input || input.length > 50_000)
+        throw new Error(t("Speech requires between 1 and 50,000 characters."));
       const format = stringParam(params, "responseFormat") ?? "mp3";
       const body: Record<string, unknown> = {
         model,
@@ -645,7 +718,9 @@ async function executeNode(
 
     case "music": {
       const model = stringParam(params, "model") ?? "";
-      const prompt = textInputOf(ports, "prompt");
+      const prompt =
+        textInputOf(ports, "prompt").trim() || (stringParam(params, "prompt") ?? "").trim();
+      if (!prompt) throw new Error(t("Add a music prompt before generating the score."));
       const body: Record<string, unknown> = {
         model,
         prompt,
@@ -993,6 +1068,9 @@ export async function runWorkflow(
         update({ nodeId, status: "running" });
         try {
           const ports = portInputs(node, workflow.edges, results, nodeById);
+          if (["image", "imageEdit", "tts", "music", "video", "chat"].includes(node.type)) {
+            await options.beforeNode?.(node);
+          }
           const output =
             node.type === "gate"
               ? await gateDecision(node, workflow.edges, results, options.approvedGates, {

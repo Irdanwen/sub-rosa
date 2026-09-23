@@ -1,0 +1,405 @@
+/* Timeline geometry uses pixel-per-second measurements; other styling follows
+   the app's semantic tokens and remains legible in both colour schemes. */
+.project-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  min-width: 0;
+  color: var(--foreground);
+}
+.project-timeline button,
+.project-timeline input,
+.project-timeline select,
+.project-timeline textarea {
+  font: inherit;
+}
+.project-timeline button {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--secondary);
+  color: var(--foreground);
+  padding: var(--sp-2) var(--sp-4);
+  cursor: pointer;
+}
+.project-timeline button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.project-timeline button:focus-visible,
+.project-timeline input:focus-visible,
+.project-timeline select:focus-visible,
+.project-timeline textarea:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.project-timeline button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--ring);
+}
+.project-timeline input:not([type="checkbox"]):not([type="range"]),
+.project-timeline textarea,
+.project-timeline select {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--background);
+  color: var(--foreground);
+  padding: var(--sp-2) var(--sp-3);
+  min-width: 0;
+  width: 100%;
+}
+.project-timeline h3 {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  margin: 0 0 var(--sp-5);
+}
+.project-timeline p {
+  margin: var(--sp-3) 0;
+}
+.project-timeline-toolbar,
+.project-timeline-cut-toolbar,
+.project-timeline-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-5);
+  flex-wrap: wrap;
+}
+.project-timeline-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.project-timeline-time {
+  font: var(--fs-sm) var(--font-mono);
+  color: var(--muted-foreground);
+}
+.project-timeline-workbench {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.7fr) minmax(280px, 2fr) minmax(215px, 0.85fr);
+  align-items: start;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--card);
+}
+.project-timeline-media,
+.project-timeline-inspector {
+  padding: var(--sp-5);
+  min-width: 0;
+  max-height: 390px;
+  overflow: auto;
+}
+.project-timeline-media {
+  border-right: 1px solid var(--border);
+}
+.project-timeline-inspector {
+  border-left: 1px solid var(--border);
+}
+.project-timeline-help {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.project-timeline-media-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-top: var(--sp-5);
+}
+.project-timeline .project-timeline-media-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  text-align: left;
+  padding: var(--sp-3);
+  background: var(--background);
+  width: 100%;
+}
+.project-timeline-media-item img,
+.project-timeline-media-item video,
+.project-timeline-audio-mark {
+  width: 48px;
+  height: 38px;
+  object-fit: cover;
+  border-radius: var(--r-xs);
+  flex-shrink: 0;
+}
+.project-timeline-audio-mark {
+  display: grid;
+  place-items: center;
+  background: var(--muted);
+  font-size: var(--fs-xl);
+}
+.project-timeline-media-item > span:nth-child(2) {
+  flex: 1;
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.project-timeline-media-item small {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+.project-timeline-monitor {
+  min-width: 0;
+  padding: var(--sp-5);
+}
+.project-timeline-monitor canvas {
+  display: block;
+  width: 100%;
+  height: clamp(220px, 29dvh, 310px);
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  background: var(--foreground);
+  border-radius: var(--r-sm);
+}
+.project-timeline-transport {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--sp-5);
+  padding: var(--sp-5);
+}
+.project-timeline-transport > span {
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+.project-timeline-inspector-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.project-timeline-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-sm);
+}
+.project-timeline-field textarea {
+  min-height: 70px;
+  resize: vertical;
+}
+.project-timeline-inspector details {
+  border-top: 1px solid var(--border);
+  padding: var(--sp-4) 0;
+}
+.project-timeline summary {
+  cursor: pointer;
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-sm);
+  margin-bottom: var(--sp-4);
+}
+.project-timeline-check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+}
+.project-timeline-check input[type="range"] {
+  width: 90px;
+}
+.project-timeline-keyframes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+}
+.project-timeline-keyframes button {
+  font-size: var(--fs-xs);
+  padding: var(--sp-1);
+}
+.project-timeline-curve {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border: 0;
+  padding: 0;
+  gap: var(--sp-1);
+  margin: var(--sp-4) 0;
+}
+.project-timeline-curve legend {
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+.project-timeline .project-timeline-curve input[type="number"] {
+  padding: var(--sp-1);
+  font-size: var(--fs-xs);
+}
+.project-timeline-scroll {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.project-timeline-track-sheet {
+  position: relative;
+}
+.project-timeline-ruler,
+.project-timeline-track-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+}
+.project-timeline-ruler {
+  height: 36px;
+  background: var(--muted);
+}
+.project-timeline-ruler > span {
+  position: sticky;
+  left: 0;
+  padding: var(--sp-4);
+  background: var(--muted);
+  z-index: 3;
+  font-size: var(--fs-xs);
+}
+.project-timeline-ruler input {
+  width: 100%;
+  margin: 0;
+}
+.project-timeline-track-row {
+  min-height: 64px;
+  border-top: 1px solid var(--border);
+}
+.project-timeline-track-label {
+  position: sticky;
+  left: 0;
+  background: var(--card);
+  z-index: 3;
+  border-right: 1px solid var(--border);
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.project-timeline-track-label > div {
+  display: flex;
+  gap: var(--sp-1);
+}
+.project-timeline-track-label button {
+  font-size: var(--fs-xs);
+  padding: var(--sp-1);
+}
+.project-timeline-track-label input {
+  font-size: var(--fs-sm);
+}
+.project-timeline-lane {
+  position: relative;
+  background-color: var(--background);
+  background-image: linear-gradient(to right, var(--border) 1px, transparent 1px);
+}
+.project-timeline-playhead {
+  position: absolute;
+  width: 2px;
+  background: var(--ring);
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.project-timeline-clip {
+  position: absolute;
+  top: var(--sp-3);
+  bottom: var(--sp-3);
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  min-width: 4px;
+  background: var(--secondary);
+}
+.project-timeline-clip.is-audio {
+  background: var(--muted);
+}
+.project-timeline-clip.is-selected {
+  border: 2px solid var(--ring);
+}
+.project-timeline .project-timeline-clip-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  border: 0;
+  padding: var(--sp-2);
+  border-radius: 0;
+  background: transparent;
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  touch-action: none;
+  cursor: grab;
+}
+.project-timeline-clip-body span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  font-size: var(--fs-sm);
+}
+.project-timeline-clip-body small {
+  font: var(--fs-xs) var(--font-mono);
+  color: var(--muted-foreground);
+}
+.project-timeline .project-timeline-trim-handle {
+  flex: 0 0 7px;
+  width: 7px;
+  min-width: 0;
+  padding: 0;
+  background: var(--border);
+  border: 0;
+  border-radius: 0;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.project-timeline-error {
+  color: var(--destructive);
+  font-size: var(--fs-sm);
+}
+.project-timeline-progress {
+  display: flex;
+  gap: var(--sp-5);
+  align-items: center;
+}
+.project-timeline-progress progress {
+  flex: 1;
+}
+.project-timeline-exchange {
+  padding: var(--sp-5);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+}
+.project-timeline-exchange .project-timeline-field {
+  max-width: 300px;
+}
+@media (max-width: 1000px) {
+  .project-timeline-workbench {
+    grid-template-columns: minmax(150px, 0.7fr) minmax(250px, 1.5fr);
+  }
+  .project-timeline-inspector {
+    grid-column: 1 / -1;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    max-height: 350px;
+  }
+  .project-timeline-inspector-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sp-4);
+  }
+}
+@media (max-width: 650px) {
+  .project-timeline-workbench {
+    grid-template-columns: 1fr;
+  }
+  .project-timeline-media {
+    max-height: 190px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .project-timeline-monitor {
+    grid-row: 1;
+  }
+  .project-timeline-inspector-fields {
+    display: block;
+  }
+}

@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 /**
  * A shot list, compiled into a workflow.
  *
@@ -32,13 +33,30 @@ import {
   shotPrompt,
   voiceReference,
 } from "../bible";
-import { estimateCostCredits, humanizeModelId, isSeedanceModel, modelsOfType } from "../catalog";
+import {
+  estimateCostCredits,
+  humanizeModelId,
+  isSeedanceModel,
+  modelsOfType,
+  videoDirection,
+} from "../catalog";
+import { maxVideoReferences } from "../seedance";
 import { effectiveVideoConstraints } from "../model-constraints";
 import type { MediaCatalog, MediaModel } from "../types";
 import { defaultParams, type Workflow, type WorkflowEdge, type WorkflowNode } from "./schema";
 
 /** One shot, exactly as `src-tauri/src/shotlist` produces it. */
 export interface Shot {
+  id?: string;
+  title?: string;
+  prompt?: string;
+  modelId?: string;
+  duration?: number | string;
+  resolution?: string;
+  mode?: "text" | "image" | "reference" | "continuation";
+  openingArtifactId?: string;
+  endingArtifactId?: string;
+  referenceArtifactIds?: string[];
   scene: string;
   action: string;
   camera: string;
@@ -112,6 +130,8 @@ export interface CompileResult {
   warnings: string[];
   /** Sum of the flat prices this account publishes. Metered nodes count zero. */
   estimateCredits: number;
+  /** Paid nodes whose price has not been published. */
+  unknownPriceNodeIds?: string[];
   /** Why nothing was built. */
   refusal?: string;
   /** Choices made on the user's behalf, said out loud. */
@@ -256,7 +276,7 @@ export function retargetShotModel(
   familyId: string,
 ): Workflow | undefined {
   const target = workflow.nodes.find((entry) => entry.id === nodeId);
-  if (!target || target.type !== "video") return undefined;
+  if (target?.type !== "video") return undefined;
   const inputs = workflow.edges.filter((entry) => entry.target === nodeId);
   const routing = routeModels(catalog, familyId);
   const model = inputs.some((entry) => entry.targetPort === "references")
@@ -369,8 +389,9 @@ export function planShots(
   catalog: MediaCatalog,
   aspectRatio: string,
   videoModelId?: string,
-): { planned: PlannedShot[]; notes: string[] } {
+): { planned: PlannedShot[]; notes: string[]; errors: string[] } {
   const routing = routeModels(catalog, videoModelId);
+  const errors: string[] = [];
   const notes: string[] = [];
   const byName = new Map(bible.map((entry) => [entry.name.toLowerCase(), entry]));
   const planned: PlannedShot[] = [];
@@ -380,17 +401,88 @@ export function planShots(
       .map((name) => byName.get(name.trim().toLowerCase()))
       .filter((entry): entry is BibleEntry => entry !== undefined);
     const location = byName.get(shot.location.trim().toLowerCase());
-    const chained = shot.continues && index > 0;
+    const chained = shot.mode ? shot.mode === "continuation" : shot.continues && index > 0;
     const stack = chained ? [] : referenceStack({ characters, location });
 
-    const model =
-      (chained ? routing.fromImage : stack.length > 0 ? routing.reference : routing.text) ??
-      routing.text;
-    if (!model) return;
+    const explicit = shot.mode !== undefined || shot.modelId !== undefined;
+    const mode = shot.mode ?? (chained ? "continuation" : stack.length ? "reference" : "text");
+    const direction = mode === "continuation" ? "image" : mode;
+    const chosenId = shot.modelId ?? videoModelId;
+    const videoModels = catalog.models.filter((candidate) =>
+      ["video", "imageToVideo", "referenceToVideo"].includes(candidate.mediaType),
+    );
+    const model = explicit
+      ? shot.modelId
+        ? videoModels.find((candidate) => candidate.id === shot.modelId && !candidate.offline)
+        : videoModels.find(
+            (candidate) =>
+              !candidate.offline &&
+              videoDirection(candidate) === direction &&
+              (!chosenId || familyStem(candidate.id) === familyStem(chosenId)),
+          )
+      : ((chained ? routing.fromImage : stack.length > 0 ? routing.reference : routing.text) ??
+        routing.text);
+    const refuse = (reason: string) =>
+      errors.push(t("Shot {number}: {reason}", { number: index + 1, reason }));
+    if (!model) {
+      if (explicit) refuse(t("Choose an available model for this mode."));
+      return;
+    }
+    if (explicit && videoDirection(model) !== direction) {
+      refuse(t("The selected model does not support this generation mode."));
+      return;
+    }
+    if (mode === "continuation" && index === 0) {
+      refuse(t("A continuation needs a preceding shot."));
+      return;
+    }
+    if (mode === "image" && !shot.openingArtifactId) {
+      refuse(t("Select an opening image before generating video."));
+      return;
+    }
+    const references =
+      mode === "reference"
+        ? (shot.referenceArtifactIds ?? stack.map((reference) => reference.artifactId))
+        : [];
+    if (explicit && mode === "reference" && references.length === 0) {
+      refuse(t("Select at least one reference image."));
+      return;
+    }
+    if (explicit && references.length > maxVideoReferences(model)) {
+      refuse(t("This model cannot accept all the selected reference images."));
+      return;
+    }
+    if (explicit && shot.endingArtifactId && direction !== "image") {
+      refuse(t("An ending image requires image-to-video mode."));
+      return;
+    }
 
     const constraints = effectiveVideoConstraints(model);
-    const wanted = SECONDS_BY_MOTION[shot.motion] ?? SECONDS_BY_MOTION.medium;
-    const duration = nearestOption(constraints.durations, wanted);
+    const wanted =
+      shot.duration === undefined
+        ? (SECONDS_BY_MOTION[shot.motion] ?? SECONDS_BY_MOTION.medium)
+        : Number.parseFloat(String(shot.duration));
+    const duration =
+      shot.duration !== undefined && constraints.durations === undefined
+        ? String(shot.duration)
+        : nearestOption(constraints.durations, wanted);
+    if (
+      shot.duration !== undefined &&
+      (!Number.isFinite(wanted) ||
+        wanted <= 0 ||
+        (constraints.durations && Number.parseFloat(duration) !== wanted))
+    ) {
+      refuse(t("Choose a duration supported by this model."));
+      return;
+    }
+    if (
+      shot.resolution &&
+      constraints.resolutions &&
+      !constraints.resolutions.includes(shot.resolution)
+    ) {
+      refuse(t("Choose a resolution supported by this model."));
+      return;
+    }
     const ratio =
       constraints.aspect_ratios && !constraints.aspect_ratios.includes(aspectRatio)
         ? (nearestOptionExact(constraints.aspect_ratios, aspectRatio) ?? "")
@@ -410,21 +502,23 @@ export function planShots(
       shot,
       model,
       chained,
-      references: stack.map((reference) => reference.artifactId),
-      prompt: shotPrompt({
-        subject: shot.scene ? `${shot.scene}.` : "",
-        action: shot.action,
-        camera: shot.camera,
-        invariants,
-        stack,
-        model,
-      }).prompt,
+      references,
+      prompt:
+        shot.prompt?.trim() ||
+        shotPrompt({
+          subject: shot.scene ? `${shot.scene}.` : "",
+          action: shot.action,
+          camera: shot.camera,
+          invariants,
+          stack: mode === "reference" ? stack : [],
+          model,
+        }).prompt,
       duration,
       aspectRatio: ratio,
     });
   });
 
-  return { planned, notes };
+  return { planned, notes, errors };
 }
 
 /**
@@ -486,7 +580,15 @@ function nearestOptionExact(options: readonly string[], wanted: string): string 
 export function compileShotList(input: CompileInput): CompileResult {
   const notes: string[] = [];
   const warnings: string[] = [];
-  const shots = input.shots.filter((shot) => shot.action.trim().length > 0);
+  if (input.shots.some((shot) => shot.id && !shot.action.trim() && !shot.prompt?.trim())) {
+    return {
+      estimateCredits: 0,
+      notes,
+      warnings,
+      refusal: t("Add an action or prompt to every shot before generating."),
+    };
+  }
+  const shots = input.shots.filter((shot) => shot.action.trim().length > 0 || shot.prompt?.trim());
   if (shots.length === 0) {
     return { estimateCredits: 0, notes, warnings, refusal: "There are no shots to film." };
   }
@@ -500,14 +602,16 @@ export function compileShotList(input: CompileInput): CompileResult {
   }
 
   const aspectRatio = input.aspectRatio ?? "16:9";
-  const { planned, notes: routingNotes } = planShots(
-    shots,
-    input.bible ?? [],
-    input.catalog,
-    aspectRatio,
-    input.videoModelId,
-  );
+  const {
+    planned,
+    notes: routingNotes,
+    errors,
+  } = planShots(shots, input.bible ?? [], input.catalog, aspectRatio, input.videoModelId);
   notes.push(...routingNotes);
+  const shotIds = shots.map((shot, index) => shot.id ?? String(index + 1));
+  if (new Set(shotIds).size !== shotIds.length)
+    errors.push(t("Each shot needs a unique identifier."));
+  if (errors.length) return { estimateCredits: 0, notes, warnings, refusal: errors.join("\n") };
 
   // A family that cannot hold a face does not lose the bible - the router
   // sends those shots to a family that can. What it loses is the one look:
@@ -553,13 +657,14 @@ export function compileShotList(input: CompileInput): CompileResult {
 
   planned.forEach((entry, index) => {
     const level = 1 + index * 2;
-    const videoId = `shot-${index + 1}`;
+    const stableId = entry.shot.id ?? String(index + 1);
+    const videoId = `shot-${stableId}`;
 
     if (entry.chained && previousVideoId) {
       // The seam: a still taken shortly before the end of the previous shot,
       // which the assemble node then trims the parent's tail to. Recording
       // where it was taken is what keeps the cut on movement (ADR-0019).
-      const frameId = `handoff-${index + 1}`;
+      const frameId = `handoff-${stableId}`;
       nodes.push(
         node(frameId, "lastFrame", `Handoff ${index}`, level - 1, index, {
           position: "handoff",
@@ -569,18 +674,33 @@ export function compileShotList(input: CompileInput): CompileResult {
       edges.push(edge(frameId, videoId, "openingFrame"));
     }
 
+    if (!entry.chained && entry.shot.openingArtifactId && entry.shot.mode === "image") {
+      edges.push(edge(assetNode(entry.shot.openingArtifactId, index), videoId, "openingFrame"));
+    }
+    if (entry.shot.endingArtifactId) {
+      edges.push(edge(assetNode(entry.shot.endingArtifactId, index), videoId, "endFrame"));
+    }
     for (const [order, artifactId] of entry.references.entries()) {
       const assetId = assetNode(artifactId, index * 2 + order);
       edges.push(edge(assetId, videoId, "references"));
     }
 
     nodes.push(
-      node(videoId, "video", entry.shot.scene || `Shot ${index + 1}`, level, index, {
-        model: entry.model.id,
-        prompt: entry.prompt,
-        duration: entry.duration,
-        aspectRatio: entry.aspectRatio,
-      }),
+      node(
+        videoId,
+        "video",
+        entry.shot.title || entry.shot.scene || `Shot ${index + 1}`,
+        level,
+        index,
+        {
+          model: entry.model.id,
+          modelDirection: videoDirection(entry.model),
+          resolution: entry.shot.resolution ?? "",
+          prompt: entry.prompt,
+          duration: entry.duration,
+          aspectRatio: entry.aspectRatio,
+        },
+      ),
     );
     videoIds.push(videoId);
     previousVideoId = videoId;
@@ -593,7 +713,14 @@ export function compileShotList(input: CompileInput): CompileResult {
         (candidate) => candidate.name.toLowerCase() === entry.shot.speaker.trim().toLowerCase(),
       );
       const donor = voiceReference(speaker);
-      const ttsId = `line-${index + 1}`;
+      const ttsId = `line-${stableId}`;
+      const textId = `dialogue-${stableId}`;
+      nodes.push(
+        node(textId, "textInput", entry.shot.speaker || "Dialogue", level - 1, index + 0.5, {
+          text: entry.shot.dialogue.trim(),
+        }),
+      );
+      edges.push(edge(textId, ttsId, "text"));
       nodes.push(
         node(ttsId, "tts", `${entry.shot.speaker || "Line"} ${index + 1}`, level, index + 0.5, {
           model: tts.id,
@@ -639,6 +766,12 @@ export function compileShotList(input: CompileInput): CompileResult {
     if (music) {
       const musicId = "score";
       nodes.push(
+        node("score-prompt", "textInput", "Score prompt", finalLevel - 2, 1, {
+          text: `Score for ${input.name}.`,
+        }),
+      );
+      edges.push(edge("score-prompt", musicId, "prompt"));
+      nodes.push(
         node(musicId, "music", "Score", finalLevel - 1, 1, {
           model: music.id,
           prompt: `Score for ${input.name}.`,
@@ -658,18 +791,18 @@ export function compileShotList(input: CompileInput): CompileResult {
   // figure is always "at least" - the same honesty the cost panel already
   // shows for a hand-built graph.
   const byId = new Map(input.catalog.models.map((model) => [model.id, model]));
+  const unknownPriceNodeIds: string[] = [];
   const estimateCredits = nodes.reduce((sum, entry) => {
     const modelId = typeof entry.params.model === "string" ? entry.params.model : "";
     const model = modelId ? byId.get(modelId) : undefined;
     if (!model) return sum;
     const durationSeconds = Number.parseFloat(String(entry.params.duration ?? "")) || undefined;
-    return (
-      sum +
-      (estimateCostCredits(model, {
-        durationSeconds,
-        multiplier: input.catalog.priceMultiplier,
-      }) ?? 0)
-    );
+    const price = estimateCostCredits(model, {
+      durationSeconds,
+      multiplier: input.catalog.priceMultiplier,
+    });
+    if (price === undefined) unknownPriceNodeIds.push(entry.id);
+    return sum + (price ?? 0);
   }, 0);
 
   if (input.envelopeCredits !== undefined && estimateCredits > input.envelopeCredits) {
@@ -706,6 +839,7 @@ export function compileShotList(input: CompileInput): CompileResult {
       edges,
     },
     estimateCredits,
+    unknownPriceNodeIds,
     notes,
   };
 }

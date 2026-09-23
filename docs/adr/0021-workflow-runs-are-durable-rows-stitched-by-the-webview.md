@@ -105,3 +105,23 @@ consumer must understand, while "several nodes into a gate" is visible on the
 canvas, priced by the cost model per take, and needs no new engine concepts.
 Approvals are per run and never stored in the workflow: a saved graph cannot
 carry a pre-approval, so every production stops at every gate.
+
+## Addendum (2026-09-21): project resumes do not implicitly purchase replacements
+
+The project workspace opts into strict recovery. Before each uncached paid
+step, its node records that submission has started. Finished output writes are
+serialized and awaited before downstream spending. If a synchronous request is
+interrupted between submission and recording its result, strict recovery stops
+and asks the person to inspect the existing result or explicitly request a new
+take. It does not silently repeat the paid call. This can conservatively stop a
+request that was never sent; the alternative risks a second charge without a
+new decision. Legacy workflow callers keep their previous recovery behavior.
+
+Queued image generation and composition now use native media jobs as video and
+music do. The native queue command records a unique local submission claim
+before the paid POST, then stores the provider queue id and starts retrieval.
+An interruption before that id is recorded leaves an uncertain submission, not
+a queue request to retry. Workflow nodes retain pending job ids on failures and
+cancellation, and completed jobs remain available until the run has recorded its
+output. Project resume quotes only unpaid steps and requires confirmation again;
+completed or already queued work is not quoted or submitted as new work.

@@ -27,6 +27,10 @@ const hoisted = vi.hoisted(() => ({
   openDialog: vi.fn(),
 }));
 
+vi.mock("../lib/studio/projects", async (original) => ({
+  ...(await original<typeof import("../lib/studio/projects")>()),
+  listProjects: vi.fn(async () => []),
+}));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: hoisted.invoke }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save: vi.fn(), open: hoisted.openDialog }));
 vi.mock("../lib/studio/artifacts", async (importOriginal) => ({

@@ -118,6 +118,26 @@ describe("generating a reference", () => {
     );
   });
 
+  it("uses the chosen model and prompt without changing the global bible", async () => {
+    const chosen = catalog.models.find((candidate) => candidate.id !== "cheap");
+    if (!chosen) throw new Error("Missing second model fixture");
+    const made = await generateReference(entry(), "portrait", catalog, {
+      modelId: chosen.id,
+      prompt: "A photographic portrait in evening light",
+      attach: false,
+    });
+    expect(made.model).toBe(chosen.id);
+    expect(made.prompt).toBe("A photographic portrait in evening light");
+    expect(hoisted.addRef).not.toHaveBeenCalled();
+  });
+
+  it("does not substitute another model when the chosen model is absent", async () => {
+    await expect(
+      generateReference(entry(), "portrait", catalog, { modelId: "gone" }),
+    ).rejects.toThrow();
+    expect(hoisted.generateImages).not.toHaveBeenCalled();
+  });
+
   it("frames a face square and a place wide", async () => {
     await generateReference(entry(), "portrait", catalog);
     expect(hoisted.generateImages.mock.calls[0][1]).toMatchObject({ aspect_ratio: "1:1" });

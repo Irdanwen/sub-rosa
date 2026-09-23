@@ -332,6 +332,12 @@ describe("the engine honors connection order (the wire contract)", () => {
       bodyBase64: "RURJVA==",
     }));
 
+    const durableMedia = vi.fn(
+      async (_nodeId: string, _request: { queueBody: Record<string, unknown> }) => ({
+        artifactId: "result",
+        src: "result.png",
+      }),
+    );
     await runWorkflow(
       workflow(
         [
@@ -341,12 +347,10 @@ describe("the engine honors connection order (the wire contract)", () => {
         ],
         [edge("scene", "edit", "images"), edge("subject", "edit", "images")],
       ),
-      { storage: imageStorage() },
+      { storage: imageStorage(), durableMedia },
     );
 
-    const body = mediaJsonMock.mock.calls.find(
-      (call) => call[0] === "/image/multi-edit/queue",
-    )?.[1] as Record<string, unknown>;
+    const body = durableMedia.mock.calls[0][1].queueBody;
     // "image 1" is the scene, "image 2" the subject — exactly the connection
     // order, which is what the visible numbering promises.
     expect(body.images).toEqual(["data:image/png;base64,SCEN", "data:image/png;base64,SUBJ"]);

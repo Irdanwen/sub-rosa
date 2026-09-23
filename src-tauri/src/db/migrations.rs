@@ -422,6 +422,12 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
         include_str!("../../migrations/031_agent_task_titles.sql"),
     )
     .await?;
+    replay(
+        _pool,
+        "032_studio_projects.sql",
+        include_str!("../../migrations/032_studio_projects.sql"),
+    )
+    .await?;
     crate::account::sync::install(_pool).await?;
     crate::diagnostics::mark("migrations");
 

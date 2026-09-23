@@ -96,6 +96,7 @@ const DELIVERED_JOB = {
 };
 
 beforeEach(() => {
+  vi.spyOn(crypto, "randomUUID").mockReturnValue("q1" as ReturnType<Crypto["randomUUID"]>);
   mocks.invoke.mockReset();
   mocks.register.mockReset();
   mediaJsonMock.mockReset();
@@ -179,10 +180,10 @@ describe("runAndSaveWorkflow (durable)", () => {
     expect(createRequest.nodeIds).toEqual(["clip", "out"]);
 
     // The render was handed to Rust, tagged as the run's.
-    const started = invokeCalls("media_job_start");
+    const started = invokeCalls("media_job_queue");
     expect(started).toHaveLength(1);
     const startRequest = started[0].request as Record<string, unknown>;
-    expect(startRequest.queueId).toBe("q1");
+    expect(startRequest.jobId).toBe("q1");
     expect(startRequest.source).toBe("workflow");
 
     // The pending-job pointer went down before the wait, and the node
@@ -207,7 +208,7 @@ describe("runAndSaveWorkflow (durable)", () => {
 
     // Delivery filed and acknowledged; the run settled.
     expect(mocks.register).toHaveBeenCalledTimes(1);
-    expect(invokeCalls("media_job_dismiss")).toHaveLength(1);
+    expect(invokeCalls("media_job_dismiss")).toHaveLength(0);
     const finished = invokeCalls("workflow_run_finish");
     expect(finished).toHaveLength(1);
     expect((finished[0].request as Record<string, unknown>).status).toBe("completed");
@@ -596,4 +597,102 @@ describe("dismissWorkflowRun", () => {
     expect(invokeCalls("media_job_dismiss")).toHaveLength(1);
     expect(invokeCalls("workflow_run_dismiss")).toHaveLength(1);
   });
+});
+
+describe("paid output recovery", () => {
+  it("blocks a missing completed paid file instead of purchasing a replacement", async () => {
+    const definition = workflow([node("clip", "video", { model: "m-t2v", prompt: "a shot" })], []);
+    mocks.invoke.mockImplementation(async (command) =>
+      command === "workflow_run_get"
+        ? {
+            run: { id: "r1", definition: JSON.stringify(definition) },
+            nodes: [
+              {
+                nodeId: "clip",
+                status: "done",
+                output: JSON.stringify({ kind: "video", artifactId: "missing.mp4" }),
+              },
+            ],
+          }
+        : null,
+    );
+    await expect(resumeWorkflowRun("r1", { requireExistingOutputs: true })).rejects.toThrow(
+      "paid result is missing",
+    );
+    expect(invokeCalls("media_job_queue")).toHaveLength(0);
+  });
+
+  it("reattaches to a failed node's retained queue pointer", async () => {
+    const definition = workflow([node("clip", "video", { model: "m-t2v", prompt: "a shot" })], []);
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "workflow_run_get")
+        return {
+          run: { id: "r1", definition: JSON.stringify(definition) },
+          nodes: [
+            { nodeId: "clip", status: "error", output: JSON.stringify({ pendingJobId: "q1" }) },
+          ],
+        };
+      if (command === "media_job_list") return [DELIVERED_JOB];
+      return null;
+    });
+    await resumeWorkflowRun("r1", { requireExistingOutputs: true });
+    expect(invokeCalls("media_job_queue")).toHaveLength(0);
+    expect(mocks.register).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists a queue pointer even when submission fails, and a resume cannot re-buy it", async () => {
+    const definition = workflow([node("clip", "video", { model: "m-t2v", prompt: "a shot" })], []);
+    let failedOutput: unknown;
+    mocks.invoke.mockImplementation(async (command, args) => {
+      if (command === "media_job_queue")
+        throw { code: "media_submit", message: "Interrupted submission" };
+      if (command === "workflow_run_set_node") {
+        const request = (args as { request: { status: string; output?: unknown } }).request;
+        if (request.status === "error") failedOutput = request.output;
+      }
+      return null;
+    });
+    await expect(runAndSaveWorkflow(definition, { requireDurable: true })).rejects.toThrow(
+      "Interrupted submission",
+    );
+    expect(failedOutput).toEqual({ pendingJobId: "q1" });
+    mocks.invoke.mockClear();
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "workflow_run_get")
+        return {
+          run: { id: "r1", definition: JSON.stringify(definition) },
+          nodes: [{ nodeId: "clip", status: "error", output: JSON.stringify(failedOutput) }],
+        };
+      if (command === "media_job_list")
+        return [{ ...DELIVERED_JOB, status: "failed", error: "Interrupted submission" }];
+      return null;
+    });
+    await expect(resumeWorkflowRun("r1", { requireExistingOutputs: true })).rejects.toThrow(
+      "Interrupted submission",
+    );
+    expect(invokeCalls("media_job_queue")).toHaveLength(0);
+  });
+});
+
+it("blocks an unresolved synchronous paid request after restart", async () => {
+  const definition = workflow([node("speech", "tts", { text: "Hello", model: "tts-kokoro" })], []);
+  mocks.invoke.mockImplementation(async (command) =>
+    command === "workflow_run_get"
+      ? {
+          run: { id: "r1", definition: JSON.stringify(definition) },
+          nodes: [
+            {
+              nodeId: "speech",
+              status: "error",
+              output: JSON.stringify({ submissionStarted: true }),
+            },
+          ],
+        }
+      : null,
+  );
+  await expect(resumeWorkflowRun("r1", { requireExistingOutputs: true })).rejects.toThrow(
+    "may already have been charged",
+  );
+  expect(invokeCalls("media_job_queue")).toHaveLength(0);
+  expect(mediaJsonMock).not.toHaveBeenCalled();
 });

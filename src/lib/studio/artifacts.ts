@@ -76,6 +76,10 @@ function register(file: ArtifactFile, metadata: ArtifactMetadata): StudioArtifac
     costCredits: metadata.costCredits,
   };
   writeIndex([artifact, ...readIndex().filter((entry) => entry.id !== artifact.id)]);
+  const { path: _path, ...generation } = artifact;
+  void invoke("studio_artifact_save", { request: { id: artifact.id, generation } }).catch(
+    () => undefined,
+  );
   return artifact;
 }
 
@@ -131,7 +135,45 @@ export async function saveArtifactFromResult(
  * reinstalls, so a persisted absolute path can go stale while the file
  * itself is still there. */
 export async function listArtifacts(kind?: ArtifactKind): Promise<StudioArtifact[]> {
-  const index = readIndex();
+  const legacy = readIndex();
+  let durable: Array<{
+    id: string;
+    title: string;
+    projectIds: string[];
+    generation?: Partial<StudioArtifact>;
+  }> = [];
+  try {
+    durable = (await invoke<typeof durable>("studio_artifact_list")) ?? [];
+    const known = new Set(durable.map((entry) => entry.id));
+    for (const artifact of legacy) {
+      if (known.has(artifact.id)) continue;
+      const { path: _path, ...generation } = artifact;
+      await invoke("studio_artifact_save", {
+        request: {
+          id: artifact.id,
+          title: artifact.title ?? "",
+          projectIds: artifact.projectIds ?? [],
+          generation,
+        },
+      });
+    }
+  } catch {
+    /* Older shells retain the legacy gallery path. */
+  }
+  const entries = new Map(legacy.map((entry) => [entry.id, entry]));
+  for (const metadata of durable) {
+    const previous = entries.get(metadata.id);
+    if (!previous && !metadata.generation?.fileName) continue;
+    entries.set(metadata.id, {
+      ...previous,
+      ...metadata.generation,
+      id: metadata.id,
+      path: previous?.path ?? "",
+      title: metadata.title,
+      projectIds: metadata.projectIds,
+    } as StudioArtifact);
+  }
+  const index = [...entries.values()];
   let files: DiskArtifact[] | undefined;
   try {
     files = await invoke<DiskArtifact[]>("carpe_diem_media_list_artifacts");

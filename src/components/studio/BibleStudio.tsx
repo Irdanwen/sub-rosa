@@ -36,12 +36,8 @@ import {
   ROLES_BY_KIND,
   saveBibleEntry,
 } from "../../lib/studio/bible";
-import { modelsOfType } from "../../lib/studio/catalog";
-import {
-  canGenerate,
-  generateReference,
-  portraitCostCredits,
-} from "../../lib/studio/bible/portrait";
+import { estimateCostCredits, modelsOfType } from "../../lib/studio/catalog";
+import { canGenerate, generateReference, pickPortraitModel } from "../../lib/studio/bible/portrait";
 import { generateSpeech } from "../../lib/studio/speech";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { EmptyState } from "../ui/EmptyState";
@@ -50,6 +46,7 @@ import { Spinner } from "../ui/Spinner";
 import { GalleryPicker } from "./GalleryPicker";
 import { GenerationLayout } from "./GenerationLayout";
 import { PillGroup, StudioField } from "./controls";
+import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
 
 /**
  * What an audition says.
@@ -97,6 +94,7 @@ export function BibleStudio({
   );
   const [auditioning, setAuditioning] = useState<string | undefined>(undefined);
   const [drawing, setDrawing] = useState<string | undefined>(undefined);
+  const [referenceModelId, setReferenceModelId] = useState("");
   const [auditions, setAuditions] = useState<Array<{ voice: string; artifact: StudioArtifact }>>(
     [],
   );
@@ -118,7 +116,12 @@ export function BibleStudio({
 
   const ttsModel = useMemo(() => modelsOfType(catalog, "tts")[0], [catalog]);
   // Said on the button rather than after the fact: drawing spends.
-  const referenceCost = useMemo(() => portraitCostCredits(catalog), [catalog]);
+  const referenceModel =
+    modelsOfType(catalog, "image").find((model) => model.id === referenceModelId) ??
+    pickPortraitModel(catalog);
+  const referenceCost = referenceModel
+    ? estimateCostCredits(referenceModel, { multiplier: catalog.priceMultiplier })
+    : undefined;
 
   const save = useCallback(async () => {
     if (!draft.name.trim() || busy) return;
@@ -171,7 +174,7 @@ export function BibleStudio({
       setError(undefined);
       setNotice(undefined);
       try {
-        await generateReference(entry, role, catalog);
+        await generateReference(entry, role, catalog, { modelId: referenceModel?.id });
         // Replacing, not stacking: "I do not like this one" is a different
         // gesture from "here is another angle", and drawing twice used to be
         // read as the second. The old one goes only once the new one exists.
@@ -183,7 +186,7 @@ export function BibleStudio({
         setDrawing(undefined);
       }
     },
-    [catalog, reload],
+    [catalog, reload, referenceModel?.id],
   );
 
   const move = useCallback(
@@ -262,6 +265,14 @@ export function BibleStudio({
 
   const controls = (
     <>
+      <StudioField label={t("Reference image model")}>
+        <MediaModelPicker
+          value={referenceModel?.id ?? ""}
+          options={modelsOfType(catalog, "image").map(mediaModelOption)}
+          onChange={setReferenceModelId}
+          ariaLabel={t("Reference image model")}
+        />
+      </StudioField>
       <StudioField label={t("Kind")}>
         <PillGroup
           ariaLabel={t("Kind")}
