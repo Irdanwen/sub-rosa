@@ -289,7 +289,7 @@ mod tests {
             .await
             .expect("database");
         for statement in crate::db::migrations::split_sql_statements(include_str!(
-            "../migrations/031_studio_projects.sql"
+            "../migrations/032_studio_projects.sql"
         )) {
             query(&statement).execute(&pool).await.expect("migration");
         }

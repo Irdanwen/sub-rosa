@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GalleryStrip } from "../components/studio/GalleryStrip";
@@ -18,6 +18,12 @@ const CLIP: StudioArtifact = {
 const IMAGE: StudioArtifact = { ...CLIP, id: "shot.png", kind: "image", fileName: "shot.png" };
 
 const artifacts = vi.hoisted(() => ({ list: vi.fn() }));
+const projects = vi.hoisted(() => ({ list: vi.fn(), save: vi.fn() }));
+
+vi.mock("../lib/studio/projects", () => ({
+  listProjects: projects.list,
+  saveArtifactMetadata: projects.save,
+}));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save: vi.fn() }));
 vi.mock("../lib/studio/artifacts", async (importOriginal) => ({
@@ -31,6 +37,9 @@ vi.mock("../lib/studio/artifacts", async (importOriginal) => ({
 describe("continue a shot from the gallery", () => {
   beforeEach(() => {
     artifacts.list.mockReset();
+    projects.list.mockReset();
+    projects.save.mockReset();
+    projects.list.mockResolvedValue([]);
   });
 
   it("offers the gesture on a clip and hands the artifact over", async () => {
@@ -64,5 +73,43 @@ describe("continue a shot from the gallery", () => {
     render(<GalleryStrip kind="image" epoch={0} onContinue={vi.fn()} />);
     await waitFor(() => expect(artifacts.list).toHaveBeenCalledWith("image"));
     expect(screen.queryByRole("button", { name: "Continue this shot" })).toBeNull();
+  });
+
+  it("renames a clip and files it under a project without changing the media file", async () => {
+    let entries = [{ ...CLIP, title: "First name", projectIds: [] as string[] }];
+    artifacts.list.mockImplementation(async () => entries);
+    projects.list.mockResolvedValue([
+      { id: "film-1", name: "Concert", archived: false, revision: 1, updatedAt: "" },
+    ]);
+    projects.save.mockImplementation(
+      async (request: { id: string; title: string; projectIds: string[] }) => {
+        entries = entries.map((entry) =>
+          entry.id === request.id
+            ? { ...entry, title: request.title, projectIds: request.projectIds }
+            : entry,
+        );
+        return entries[0];
+      },
+    );
+    render(<GalleryStrip kind="video" epoch={0} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Organize media" }));
+    const dialog = screen.getByRole("dialog", { name: "Organize media" });
+    await userEvent.clear(within(dialog).getByLabelText("Media name"));
+    await userEvent.type(within(dialog).getByLabelText("Media name"), "Final concert take");
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: "Concert" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(projects.save).toHaveBeenCalledWith({
+        id: CLIP.id,
+        title: "Final concert take",
+        projectIds: ["film-1"],
+      }),
+    );
+    await waitFor(() => expect(screen.getByText("Final concert take")).toBeVisible());
+    await userEvent.selectOptions(screen.getByLabelText("Filter by project"), "film-1");
+    expect(screen.getByText("Final concert take")).toBeVisible();
+    expect(artifacts.list).toHaveBeenCalledWith("video");
   });
 });
