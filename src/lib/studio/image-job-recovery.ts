@@ -40,9 +40,16 @@ export function dismissStandaloneImageFailure(id: string): void {
 
 function rememberFailure(job: MediaJob): void {
   const failures = readStandaloneImageFailures().filter((item) => item.id !== job.id);
+  const reason = job.error?.trim() || t("The generation failed.");
   failures.push({
     id: job.id,
-    message: (job.error?.trim() || t("The generation failed.")).slice(0, 500),
+    message: (reason ===
+    "The submission was interrupted. Check your provider history before starting another generation."
+      ? t(
+          "The submission was interrupted. Check your provider history before starting another generation.",
+        )
+      : t(reason)
+    ).slice(0, 500),
   });
   window.localStorage.setItem(FAILURE_KEY, JSON.stringify(failures.slice(-MAX_FAILURES)));
 }

@@ -46,6 +46,36 @@ beforeEach(() => {
 });
 
 describe("isolated project takes", () => {
+  it("chooses the cheapest compatible model when the project leaves model choices blank", () => {
+    const project = newProject();
+    project.document.shots = [{ ...newShot(0), id: "target", action: "A pianist bows" }];
+    const graph = compileProject(
+      project.name,
+      project.document,
+      {
+        ...catalog,
+        models: [
+          {
+            id: "premium-video",
+            name: "Premium",
+            mediaType: "video",
+            offline: false,
+            costCredits: 20,
+          },
+          {
+            id: "simple-video",
+            name: "Simple",
+            mediaType: "video",
+            offline: false,
+            costCredits: 1,
+          },
+        ],
+      },
+      "target",
+    );
+    expect(graph.nodes.find((node) => node.type === "video")?.params.model).toBe("simple-video");
+  });
+
   it("uses the selected project model when the shot override is blank", () => {
     const project = newProject();
     project.document.settings.videoModelId = "beta-text-to-video";

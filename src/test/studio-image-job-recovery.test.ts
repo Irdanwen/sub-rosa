@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MediaJob } from "../lib/studio/async-job";
+import { setLocaleChoice } from "../lib/i18n";
 
 const mocks = vi.hoisted(() => ({
   register: vi.fn(),
@@ -56,6 +57,23 @@ beforeEach(() => {
 });
 
 describe("standalone image recovery", () => {
+  it("translates an interrupted submission notice recovered after restart", async () => {
+    setLocaleChoice("fr");
+    try {
+      await recoverStandaloneImageJob({
+        ...completed(),
+        status: "failed",
+        error:
+          "The submission was interrupted. Check your provider history before starting another generation.",
+        artifactPath: undefined,
+        artifactFileName: undefined,
+      });
+      expect(readStandaloneImageFailures()[0].message).toContain("Vérifiez votre historique");
+    } finally {
+      setLocaleChoice("en");
+    }
+  });
+
   it("surfaces a failed image after restart and acknowledges its durable row", async () => {
     const failed: MediaJob = {
       ...completed(),

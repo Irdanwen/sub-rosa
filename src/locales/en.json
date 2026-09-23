@@ -2968,6 +2968,7 @@
   "The sitting stopped": "The sitting stopped",
   "The slider stops one frame short of the end: seeking to the very last position reads back black on most decoders.": "The slider stops one frame short of the end: seeking to the very last position reads back black on most decoders.",
   "The still is saved to the gallery, where you can export it, edit it, or use it as a reference.": "The still is saved to the gallery, where you can export it, edit it, or use it as a reference.",
+  "The submission was interrupted. Check your provider history before starting another generation.": "The submission was interrupted. Check your provider history before starting another generation.",
   "The submission was interrupted. Check your usage before starting another generation.": "The submission was interrupted. Check your usage before starting another generation.",
   "The switch is on but yt-dlp is not installed, so platform links are still refused.": "The switch is on but yt-dlp is not installed, so platform links are still refused.",
   "The sync service is unavailable or did not respond in time. Your changes will retry automatically.": "The sync service is unavailable or did not respond in time. Your changes will retry automatically.",

@@ -2968,6 +2968,7 @@
   "The sitting stopped": "La séance s'est arrêtée",
   "The slider stops one frame short of the end: seeking to the very last position reads back black on most decoders.": "Le curseur s'arrête une image avant la fin : se placer sur la toute dernière position renvoie du noir sur la plupart des décodeurs.",
   "The still is saved to the gallery, where you can export it, edit it, or use it as a reference.": "L'arrêt sur image est enregistré dans la galerie, où vous pouvez l'exporter, le retoucher ou l'utiliser comme référence.",
+  "The submission was interrupted. Check your provider history before starting another generation.": "L’envoi a été interrompu. Vérifiez votre historique auprès du fournisseur avant de lancer une autre génération.",
   "The submission was interrupted. Check your usage before starting another generation.": "L’envoi a été interrompu. Vérifiez votre consommation avant de lancer une autre génération.",
   "The switch is on but yt-dlp is not installed, so platform links are still refused.": "L’option est activée, mais yt-dlp n’est pas installé ; les liens de plateformes sont donc toujours refusés.",
   "The sync service is unavailable or did not respond in time. Your changes will retry automatically.": "Le service de synchronisation est indisponible ou n’a pas répondu à temps. Vos modifications feront automatiquement l’objet d’une nouvelle tentative.",

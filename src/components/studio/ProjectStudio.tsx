@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
+import { errorCode } from "../../lib/errors";
 import { t } from "../../lib/i18n";
 import {
   buildShotList,
@@ -149,6 +150,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setError("");
     setLibrary(false);
     setProgress({});
+    setRunStates({});
     setReading(false);
     window.localStorage.setItem(LAST_PROJECT, value.id);
     if (value.document.noteId) {
@@ -157,7 +159,23 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       setReading(row?.status === "running" || row?.status === "pending");
       if (row) acceptReading(row);
     }
-    for (const run of value.document.runs) await restoreRun(run);
+    const missing = new Set<string>();
+    for (const run of value.document.runs) {
+      try {
+        await restoreRun(run);
+      } catch (cause) {
+        if (errorCode(cause) !== "workflow_run_missing") throw cause;
+        missing.add(run.id);
+      }
+    }
+    if (missing.size && current.current?.id === value.id)
+      await edit((previous) => ({
+        ...previous,
+        document: {
+          ...previous.document,
+          runs: previous.document.runs.filter((run) => !missing.has(run.id)),
+        },
+      }));
   };
   const applyResult = (run: ProjectRun, result: NodeRunResult, projectId: string) => {
     if (current.current?.id !== projectId) return;

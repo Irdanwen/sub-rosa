@@ -149,6 +149,27 @@ const mount = async () => {
 };
 
 describe("project production confirmation", () => {
+  it("removes a dismissed run without blocking restoration of later productions", async () => {
+    project.document.runs = [
+      { id: "dismissed-run", shotSignatures: {} },
+      { id: "retained-run", shotSignatures: {} },
+    ];
+    mocks.invoke.mockImplementation(async (command, args) => {
+      if (command !== "workflow_run_get") return null;
+      if ((args as { id: string }).id === "dismissed-run")
+        throw { code: "workflow_run_missing", message: "That run no longer exists." };
+      return { run: { status: "completed" }, nodes: [] };
+    });
+
+    await mount();
+
+    await waitFor(() =>
+      expect(project.document.runs.map((run) => run.id)).toEqual(["retained-run"]),
+    );
+    expect(mocks.invoke).toHaveBeenCalledWith("workflow_run_get", { id: "retained-run" });
+    expect(screen.queryByText("That run no longer exists.")).toBeNull();
+  });
+
   it("can explicitly reopen the saved film after a conflicting autosave", async () => {
     project.document.script = "Saved script";
     mocks.save.mockRejectedValueOnce("studio_project_conflict");
