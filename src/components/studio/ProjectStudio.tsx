@@ -263,6 +263,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       report(cause);
     }
   };
+  // The listener reads the active project through current.current. Keeping one
+  // subscription avoids dropping native events between renders.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: listener identity is stable by design
   useEffect(() => {
     let dispose: (() => void) | undefined;
     let cancelled = false;
