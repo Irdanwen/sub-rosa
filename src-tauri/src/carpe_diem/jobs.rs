@@ -138,6 +138,7 @@ pub async fn media_job_start(
         status: MediaJobStatus::Queued,
         error: None,
         error_status: None,
+        submission_confirmed: true,
         artifact_path: None,
         artifact_file_name: None,
         artifact_bytes: None,

@@ -44,6 +44,7 @@ interface Props {
   value: EditorDocument;
   onChange: (value: EditorDocument) => void;
   artifacts: StudioArtifact[];
+  onExportArtifact: (artifact: StudioArtifact) => Promise<void>;
 }
 function timecode(frame: number, rate: number): string {
   const seconds = Math.floor(frame / rate),
@@ -129,7 +130,7 @@ function NumberField({
   );
 }
 
-export function ProjectTimeline({ value, onChange, artifacts }: Props) {
+export function ProjectTimeline({ value, onChange, artifacts, onExportArtifact }: Props) {
   const [selectedId, setSelectedId] = useState<string>();
   const [frame, setFrame] = useState(0),
     [playing, setPlaying] = useState(false),
@@ -370,6 +371,7 @@ export function ProjectTimeline({ value, onChange, artifacts }: Props) {
         result.extension,
         { kind: "video", model: "assembly", prompt: t("Montage export") },
       );
+      await onExportArtifact(artifact);
       if (interchange) {
         const output = await writeTimelineBundle(
           {

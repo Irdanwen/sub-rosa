@@ -60,6 +60,7 @@ import {
 import type { NodeRunResult } from "../../lib/studio/workflow/engine";
 import {
   activeWorkflowRuns,
+  descendantsOf,
   resumeWorkflowRun,
   runAndSaveWorkflow,
 } from "../../lib/studio/workflow-run";
@@ -79,6 +80,7 @@ type ReadyQuote = {
   projectId: string;
   version: number;
   resumeRun?: ProjectRun;
+  redoNodeIds?: string[];
   acceptedCosts?: Record<string, number>;
   priorSpend?: number;
   workflow: Workflow;
@@ -554,7 +556,11 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         onUpdate: (result: NodeRunResult) => applyResult(run, result, origin.id),
       };
       if (ready.resumeRun) {
-        await resumeWorkflowRun(run.id, { ...options, requireExistingOutputs: true });
+        await resumeWorkflowRun(run.id, {
+          ...options,
+          requireExistingOutputs: true,
+          redoNodeIds: ready.redoNodeIds,
+        });
       } else {
         await runAndSaveWorkflow(ready.workflow, {
           ...options,
@@ -636,18 +642,51 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       const acceptedCosts: Record<string, number> = detail.run.nodeCosts
         ? JSON.parse(detail.run.nodeCosts)
         : {};
-      const alreadyPaid = new Set(
-        detail.nodes
-          .filter((node) => {
-            if (node.status === "done") return true;
-            try {
-              return typeof JSON.parse(node.output ?? "{}").pendingJobId === "string";
-            } catch {
-              return false;
-            }
-          })
-          .map((node) => node.nodeId),
-      );
+      const jobs =
+        (await invoke<
+          Array<{
+            id: string;
+            status: string;
+            errorStatus?: number | null;
+            submissionConfirmed?: boolean;
+          }>
+        >("media_job_list")) ?? [];
+      const failedNodeIds: string[] = [];
+      const paidNodeIds = new Set<string>();
+      const alreadyPaid = new Set<string>();
+      for (const node of detail.nodes) {
+        if (node.status === "done") {
+          alreadyPaid.add(node.nodeId);
+          continue;
+        }
+        let jobId: unknown;
+        try {
+          jobId = JSON.parse(node.output ?? "{}").pendingJobId;
+        } catch {
+          continue;
+        }
+        if (typeof jobId !== "string") continue;
+        const job = jobs.find((item) => item.id === jobId);
+        if (!job)
+          throw new Error(
+            t("A paid result is missing. Restore its file or explicitly request a new take."),
+          );
+        if (job.status !== "failed" || job.submissionConfirmed === true)
+          paidNodeIds.add(node.nodeId);
+        if (job.status !== "failed") {
+          alreadyPaid.add(node.nodeId);
+          continue;
+        }
+        if (job.errorStatus == null && job.submissionConfirmed !== true)
+          throw new Error(
+            t(
+              "A previous request may already have been charged. Check its result before requesting another take.",
+            ),
+          );
+        failedNodeIds.push(node.nodeId);
+      }
+      const redo = descendantsOf(workflow, failedNodeIds);
+      for (const id of redo) alreadyPaid.delete(id);
       const remaining = {
         ...workflow,
         nodes: workflow.nodes.filter((node) => !alreadyPaid.has(node.id)),
@@ -655,7 +694,11 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       };
       let priorSpend = 0;
       for (const node of workflow.nodes) {
-        if (!alreadyPaid.has(node.id) || estimateNodeCost(node, catalog).kind === "free") continue;
+        if (
+          (!alreadyPaid.has(node.id) && !paidNodeIds.has(node.id)) ||
+          estimateNodeCost(node, catalog).kind === "free"
+        )
+          continue;
         const cost = acceptedCosts[node.id];
         if (typeof cost !== "number" || !Number.isFinite(cost) || cost < 0)
           throw new Error(t("Price unavailable. Choose another model or try quoting again."));
@@ -672,6 +715,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         workflow,
         estimate,
         resumeRun: run,
+        redoNodeIds: failedNodeIds,
         signatures: run.shotSignatures ?? {},
         acceptedCosts,
         priorSpend,
@@ -1259,6 +1303,32 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 value={project.document.timeline}
                 onChange={(timeline) => editDocument((document) => ({ ...document, timeline }))}
                 artifacts={montageArtifacts(project, media)}
+                onExportArtifact={async (artifact) => {
+                  if (current.current?.id === project.id) await writer.current?.flush();
+                  const metadata = (await listArtifactMetadata()).find(
+                    (item) => item.id === artifact.id,
+                  );
+                  await organizeArtifact({
+                    id: artifact.id,
+                    title: metadata?.title ?? "",
+                    projectIds: [
+                      ...new Set([
+                        ...(metadata?.projectIds ?? artifact.projectIds ?? []),
+                        project.id,
+                      ]),
+                    ],
+                  });
+                  if (current.current?.id === project.id) {
+                    const updated = await getProject(project.id);
+                    if (updated && current.current?.id === project.id) {
+                      current.current = updated;
+                      writer.current = new ProjectWriter(updated);
+                      setProject(updated);
+                      setSaved(true);
+                    }
+                  }
+                  await refreshArtifacts();
+                }}
               />
             </>
           ) : null}

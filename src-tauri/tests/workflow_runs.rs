@@ -159,6 +159,7 @@ async fn media_jobs_carry_their_source() {
         status: MediaJobStatus::Queued,
         error: None,
         error_status: None,
+        submission_confirmed: false,
         artifact_path: None,
         artifact_file_name: None,
         artifact_bytes: None,
@@ -179,6 +180,21 @@ async fn media_jobs_carry_their_source() {
         .expect("get")
         .expect("exists");
     assert_eq!(stored.source.as_deref(), Some("workflow"));
+    assert!(!stored.submission_confirmed);
+    sqlx::query::query("UPDATE media_jobs SET retrieve_body = ? WHERE id = ?")
+        .bind(r#"{"queue_id":"accepted"}"#)
+        .bind("q-1")
+        .execute(&repos.pool)
+        .await
+        .expect("accept queue");
+    assert!(
+        repos
+            .get_media_job("q-1")
+            .await
+            .expect("get accepted")
+            .expect("exists")
+            .submission_confirmed
+    );
     // Rows from before the column existed read back as None.
     let listed = repos.list_media_jobs().await.expect("list");
     assert_eq!(listed.len(), 1);

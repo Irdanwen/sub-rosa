@@ -286,6 +286,8 @@ interface MediaJobRow {
   prompt: string;
   status: "queued" | "processing" | "completed" | "failed";
   error?: string;
+  errorStatus?: number | null;
+  submissionConfirmed?: boolean;
   artifactPath?: string;
   artifactFileName?: string;
   artifactBytes?: number;
@@ -702,7 +704,19 @@ export async function resumeWorkflowRun(
         stored && typeof stored === "object"
           ? (stored as { pendingJobId?: unknown }).pendingJobId
           : undefined;
-      if (typeof pending === "string" && pending) pendingJobs.set(node.nodeId, pending);
+      if (typeof pending === "string" && pending) {
+        if (options.requireExistingOutputs && node.status === "error") {
+          const jobs = (await invoke<MediaJobRow[]>("media_job_list")) ?? [];
+          const job = jobs.find((entry) => entry.id === pending);
+          if (
+            job?.status === "failed" &&
+            (job.errorStatus != null || job.submissionConfirmed === true)
+          ) {
+            throw new Error(t("This generation failed. Review a new quote to make another take."));
+          }
+        }
+        pendingJobs.set(node.nodeId, pending);
+      }
     }
   }
   const costs = detail.run.nodeCosts ? JSON.parse(detail.run.nodeCosts) : undefined;

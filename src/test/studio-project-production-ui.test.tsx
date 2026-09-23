@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   resume: vi.fn(),
   budget: vi.fn(),
   mediaSeconds: vi.fn(),
+  organize: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => vi.fn()) }));
@@ -24,6 +25,7 @@ vi.mock("../lib/studio/projects", async (original) => ({
   saveProject: mocks.save,
   listArtifactMetadata: vi.fn(async () => []),
   saveArtifactMetadata: vi.fn(async () => {}),
+  organizeArtifact: mocks.organize,
   ProjectWriter: class {
     save = mocks.save;
     flush = mocks.flush;
@@ -40,6 +42,7 @@ vi.mock("../lib/studio/project-production", async (original) => ({
   productionBudget: mocks.budget,
 }));
 vi.mock("../lib/studio/workflow-run", () => ({
+  descendantsOf: (_workflow: Workflow, ids: string[]) => new Set(ids),
   activeWorkflowRuns: () => [],
   runAndSaveWorkflow: mocks.run,
   resumeWorkflowRun: mocks.resume,
@@ -72,10 +75,12 @@ vi.mock("../components/studio/ProjectTimeline", () => ({
     artifacts,
     value,
     onChange,
+    onExportArtifact,
   }: {
     artifacts: Array<{ id: string }>;
     value: StudioProject["document"]["timeline"];
     onChange: (value: StudioProject["document"]["timeline"]) => void;
+    onExportArtifact: (artifact: StudioArtifact) => Promise<void>;
   }) => (
     <>
       <output data-testid="timeline-artifacts">
@@ -93,6 +98,23 @@ vi.mock("../components/studio/ProjectTimeline", () => ({
         }
       >
         Trim existing clip
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          void onExportArtifact({
+            id: "rendered.mp4",
+            kind: "video",
+            path: "/gallery/rendered.mp4",
+            fileName: "rendered.mp4",
+            bytes: 5,
+            model: "assembly",
+            prompt: "Montage export",
+            createdAt: 1,
+          })
+        }
+      >
+        Complete montage export
       </button>
     </>
   ),
@@ -115,7 +137,7 @@ import {
   saveArtifactMetadata,
   type StudioProject,
 } from "../lib/studio/projects";
-import type { MediaCatalog } from "../lib/studio/types";
+import type { MediaCatalog, StudioArtifact } from "../lib/studio/types";
 import type { Workflow } from "../lib/studio/workflow/schema";
 import type { NodeRunResult } from "../lib/studio/workflow/engine";
 const catalog: MediaCatalog = {
@@ -147,6 +169,10 @@ beforeEach(() => {
     return value;
   });
   mocks.flush.mockResolvedValue(undefined);
+  mocks.organize.mockImplementation(async (request: { id: string }) => {
+    project.document.artifactIds = [...new Set([...project.document.artifactIds, request.id])];
+    return request;
+  });
   mocks.budget.mockReturnValue(vi.fn());
   mocks.mediaSeconds.mockReset().mockResolvedValue(5);
   mocks.quote.mockImplementation(async (workflow: Workflow) => ({
@@ -175,6 +201,20 @@ const mount = async () => {
 };
 
 describe("project production confirmation", () => {
+  it("files a rendered montage in the film and its gallery membership", async () => {
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Montage" }));
+    fireEvent.click(screen.getByRole("button", { name: "Complete montage export" }));
+    await waitFor(() =>
+      expect(mocks.organize).toHaveBeenCalledWith({
+        id: "rendered.mp4",
+        title: "",
+        projectIds: ["project-1"],
+      }),
+    );
+    expect(project.document.artifactIds).toContain("rendered.mp4");
+  });
+
   it("appends selected takes to the latest montage after an edit during metadata loading", async () => {
     project.document.timeline.clips = [
       createEditorClip({
@@ -491,28 +531,30 @@ describe("project production confirmation", () => {
       })),
     };
     mocks.invoke.mockImplementation(async (command) =>
-      command === "workflow_run_get"
-        ? {
-            run: {
-              status: "failed",
-              definition: JSON.stringify(definition),
-              nodeCosts: JSON.stringify({ "shot-finished": 8, "shot-pending": 8, "shot-s1": 8 }),
-            },
-            nodes: [
-              {
-                nodeId: "shot-finished",
-                status: "done",
-                output: JSON.stringify({ kind: "video", artifactId: "finished.mp4" }),
+      command === "media_job_list"
+        ? [{ id: "paid-job", status: "processing" }]
+        : command === "workflow_run_get"
+          ? {
+              run: {
+                status: "failed",
+                definition: JSON.stringify(definition),
+                nodeCosts: JSON.stringify({ "shot-finished": 8, "shot-pending": 8, "shot-s1": 8 }),
               },
-              {
-                nodeId: "shot-pending",
-                status: "error",
-                output: JSON.stringify({ pendingJobId: "paid-job" }),
-              },
-              { nodeId: "shot-s1", status: "pending" },
-            ],
-          }
-        : null,
+              nodes: [
+                {
+                  nodeId: "shot-finished",
+                  status: "done",
+                  output: JSON.stringify({ kind: "video", artifactId: "finished.mp4" }),
+                },
+                {
+                  nodeId: "shot-pending",
+                  status: "error",
+                  output: JSON.stringify({ pendingJobId: "paid-job" }),
+                },
+                { nodeId: "shot-s1", status: "pending" },
+              ],
+            }
+          : null,
     );
     await mount();
     fireEvent.click(await screen.findByRole("button", { name: "Resume production" }));
@@ -532,6 +574,61 @@ describe("project production confirmation", () => {
       ),
     );
     expect(mocks.budget).toHaveBeenCalledWith(expect.anything(), 14);
+  });
+
+  it("quotes a replacement for a definitively failed render before resuming", async () => {
+    project.document.runs = [{ id: "run-1", shotSignatures: {} }];
+    project.document.settings.budget = 30;
+    const definition: Workflow = {
+      id: "graph",
+      name: "Concert",
+      createdAt: 0,
+      updatedAt: 0,
+      edges: [],
+      nodes: [
+        {
+          id: "shot-s1",
+          type: "video",
+          label: "Shot",
+          position: { x: 0, y: 0 },
+          params: { model: "test-text-to-video", prompt: "A shot" },
+        },
+      ],
+    };
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "media_job_list")
+        return [{ id: "failed-job", status: "failed", submissionConfirmed: true }];
+      if (command === "workflow_run_get")
+        return {
+          run: {
+            status: "failed",
+            definition: JSON.stringify(definition),
+            nodeCosts: JSON.stringify({ "shot-s1": 8 }),
+          },
+          nodes: [
+            {
+              nodeId: "shot-s1",
+              status: "error",
+              output: JSON.stringify({ pendingJobId: "failed-job" }),
+            },
+          ],
+        };
+      return null;
+    });
+    await mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Resume production" }));
+    await screen.findByRole("dialog", { name: "Review generation costs" });
+    expect(mocks.quote.mock.calls.at(-1)?.[0].nodes.map((node: { id: string }) => node.id)).toEqual(
+      ["shot-s1"],
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Generate · 10 credits/ }));
+    await waitFor(() =>
+      expect(mocks.resume).toHaveBeenCalledWith(
+        "run-1",
+        expect.objectContaining({ redoNodeIds: ["shot-s1"], requireExistingOutputs: true }),
+      ),
+    );
+    expect(mocks.budget).toHaveBeenCalledWith(expect.anything(), 22);
   });
 
   it("requires a new quote after the draft changes", async () => {

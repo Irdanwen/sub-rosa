@@ -670,6 +670,32 @@ describe("paid output recovery", () => {
     expect(mocks.register).toHaveBeenCalledTimes(1);
   });
 
+  it("requires a fresh decision for a definitive failed job, then replaces its pointer", async () => {
+    const definition = workflow([node("clip", "video", { model: "m-t2v", prompt: "a shot" })], []);
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "workflow_run_get")
+        return {
+          run: { id: "r1", definition: JSON.stringify(definition) },
+          nodes: [
+            { nodeId: "clip", status: "error", output: JSON.stringify({ pendingJobId: "q1" }) },
+          ],
+        };
+      if (command === "media_job_list")
+        return [
+          { ...DELIVERED_JOB, status: "failed", errorStatus: 422, error: "Rejected" },
+          { ...DELIVERED_JOB, id: "q2" },
+        ];
+      return null;
+    });
+    await expect(resumeWorkflowRun("r1", { requireExistingOutputs: true })).rejects.toThrow(
+      "Review a new quote",
+    );
+    expect(invokeCalls("media_job_queue")).toHaveLength(0);
+    vi.spyOn(crypto, "randomUUID").mockReturnValue("q2" as ReturnType<Crypto["randomUUID"]>);
+    await resumeWorkflowRun("r1", { requireExistingOutputs: true, redoNodeIds: ["clip"] });
+    expect((invokeCalls("media_job_queue")[0].request as { jobId: string }).jobId).toBe("q2");
+  });
+
   it("persists a queue pointer even when submission fails, and a resume cannot re-buy it", async () => {
     const definition = workflow([node("clip", "video", { model: "m-t2v", prompt: "a shot" })], []);
     let failedOutput: unknown;

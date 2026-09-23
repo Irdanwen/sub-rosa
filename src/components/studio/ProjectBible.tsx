@@ -78,6 +78,12 @@ export function ProjectBible({
           updatedAt: new Date().toISOString(),
         };
     onChange([...entries, next]);
+    if (source) {
+      for (const artifactId of new Set(next.refs.map((ref) => ref.artifactId))) {
+        const artifact = artifacts.find((item) => item.id === artifactId);
+        if (artifact) onArtifact(artifact);
+      }
+    }
     setSelected(id);
     setRole(ROLES_BY_KIND[next.kind][0]);
   };

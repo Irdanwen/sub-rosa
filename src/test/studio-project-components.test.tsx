@@ -226,6 +226,46 @@ describe("shot editing", () => {
 });
 
 describe("project bible", () => {
+  it("registers copied library references with the project", async () => {
+    const source = {
+      ...bibleEntry("character"),
+      refs: [
+        {
+          id: "library-ref",
+          entryId: "entry",
+          artifactId: "portrait.png",
+          role: "portrait" as const,
+          label: "Portrait",
+          ordinal: 0,
+        },
+      ],
+    };
+    fixtures.invoke.mockResolvedValueOnce([source]);
+    const onArtifact = vi.fn();
+    render(
+      <ProjectBible
+        entries={[]}
+        onChange={fixtures.onChange}
+        artifacts={[artifact("portrait.png")]}
+        catalog={catalog}
+        onArtifact={onArtifact}
+        onGenerate={vi.fn()}
+        busy={false}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("Copy from your library")).toHaveTextContent("Concert hall"),
+    );
+    fireEvent.change(screen.getByLabelText("Copy from your library"), {
+      target: { value: "entry" },
+    });
+    expect(onArtifact).toHaveBeenCalledWith(expect.objectContaining({ id: "portrait.png" }));
+    expect(fixtures.onChange.mock.lastCall?.[0][0].refs[0]).toMatchObject({
+      artifactId: "portrait.png",
+      role: "portrait",
+    });
+  });
+
   it("uses a compatible role when a location is initially selected", async () => {
     const onGenerate = vi.fn();
     render(

@@ -1281,6 +1281,8 @@ pub struct MediaJobDto {
     /// and only the code says which.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_status: Option<i64>,
+    /// Whether the paid queue accepted this job and returned a retrieval id.
+    pub submission_confirmed: bool,
     /// Absolute path of the finished file in the gallery directory.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub artifact_path: Option<String>,
