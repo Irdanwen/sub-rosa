@@ -395,6 +395,72 @@ describe("project production confirmation", () => {
     ]);
   });
 
+  it.each([
+    ["failed", "The reader failed", "The reader failed"],
+    ["ready", undefined, "The script could not be read."],
+  ])(
+    "keeps the reading error visible after cleaning up a %s result",
+    async (status, lastError, message) => {
+      project.document.shots = [];
+      project.document.script = "A pianist enters the hall.";
+      mocks.invoke.mockImplementation(async (command) => {
+        if (command === "create_note") return { id: "project-reading" };
+        if (command === "build_shot_list") return { noteId: "project-reading", status, lastError };
+        return null;
+      });
+      await mount();
+      fireEvent.click(screen.getByRole("button", { name: "Script" }));
+      fireEvent.click(screen.getByRole("button", { name: "Break into shots" }));
+      await waitFor(() => expect(project.document.readingNoteId).toBeUndefined());
+      expect(await screen.findByRole("alert")).toHaveTextContent(message);
+      expect(mocks.invoke).toHaveBeenCalledWith("delete_notes", {
+        request: { noteIds: ["project-reading"] },
+      });
+    },
+  );
+
+  it("keeps a failed note update owned by its project and reuses it on retry", async () => {
+    project.document.shots = [];
+    project.document.script = "A pianist enters the hall.";
+    let updates = 0;
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "create_note") return { id: "project-reading" };
+      if (command === "update_note" && updates++ === 0) throw new Error("Update failed");
+      if (command === "build_shot_list") return { noteId: "project-reading", status: "pending" };
+      return null;
+    });
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Script" }));
+    fireEvent.click(screen.getByRole("button", { name: "Break into shots" }));
+    await screen.findByText("Update failed");
+    expect(project.document.readingNoteId).toBe("project-reading");
+    fireEvent.click(screen.getByRole("button", { name: "Break into shots" }));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("build_shot_list", { noteId: "project-reading" }),
+    );
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "create_note")).toHaveLength(
+      1,
+    );
+  });
+
+  it("deletes a newly created reading note if its project ownership cannot be saved", async () => {
+    project.document.shots = [];
+    project.document.script = "A pianist enters the hall.";
+    mocks.save.mockRejectedValueOnce(new Error("Project save failed"));
+    mocks.invoke.mockImplementation(async (command) =>
+      command === "create_note" ? { id: "project-reading" } : null,
+    );
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Script" }));
+    fireEvent.click(screen.getByRole("button", { name: "Break into shots" }));
+    await screen.findByText("Project save failed");
+    expect(mocks.invoke).toHaveBeenCalledWith("delete_notes", {
+      request: { noteIds: ["project-reading"] },
+    });
+    expect(project.document.readingNoteId).toBeUndefined();
+    expect(mocks.invoke).not.toHaveBeenCalledWith("update_note", expect.anything());
+  });
+
   it("adds archived projects to the active list when requested", async () => {
     mocks.listProjects.mockResolvedValue([
       project,

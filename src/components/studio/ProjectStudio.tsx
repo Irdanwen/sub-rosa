@@ -327,14 +327,15 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     finishingReadings.current.add(row.noteId);
     try {
       if (row.status === "failed") {
-        setError(row.lastError || t("The script could not be read."));
+        const failure = row.lastError || t("The script could not be read.");
         await finishReadingNote(row.noteId, active.id);
+        if (current.current?.id === active.id) setError(failure);
         return;
       }
       if (row.status !== "ready") return;
       if (!row.shotsJson) {
-        setError(t("The script could not be read."));
         await finishReadingNote(row.noteId, active.id);
+        if (current.current?.id === active.id) setError(t("The script could not be read."));
         return;
       }
       if (active.document.shots.length) {
@@ -801,24 +802,47 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     }
   };
   const readScript = async () => {
-    if (!current.current) return;
+    const origin = current.current;
+    if (!origin) return;
+    const projectId = origin.id;
     setBusy(true);
     setError("");
     try {
-      let noteId = current.current.document.readingNoteId;
+      let noteId = origin.document.readingNoteId;
       if (!noteId) {
         const note = await createNote();
         noteId = note.id;
+        try {
+          if (current.current?.id !== projectId)
+            throw new Error(t("Open the original project to resume this production."));
+          await edit((previous) => ({
+            ...previous,
+            document: { ...previous.document, readingNoteId: note.id },
+          }));
+        } catch (cause) {
+          if (
+            current.current?.id === projectId &&
+            current.current.document.readingNoteId === note.id
+          ) {
+            const restored = {
+              ...current.current,
+              document: { ...current.current.document, readingNoteId: undefined },
+            };
+            current.current = restored;
+            setProject(restored);
+          }
+          await deleteNotes([note.id]).catch(report);
+          throw cause;
+        }
       }
+      const active = current.current;
+      if (!active || active.id !== projectId)
+        throw new Error(t("Open the original project to resume this production."));
       await updateNote({
         noteId,
-        title: current.current.name,
-        editedContent: current.current.document.script,
+        title: active.name,
+        editedContent: active.document.script,
       });
-      await edit((previous) => ({
-        ...previous,
-        document: { ...previous.document, readingNoteId: noteId },
-      }));
       await acceptReading(await buildShotList(noteId));
     } catch (cause) {
       report(cause);
