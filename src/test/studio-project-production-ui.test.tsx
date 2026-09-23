@@ -80,16 +80,23 @@ vi.mock("../components/studio/ProjectBible", () => ({
   ProjectBible: ({
     entries,
     onChange,
+    onArtifact,
   }: {
     entries: StudioProject["document"]["bible"];
     onChange: (entries: StudioProject["document"]["bible"]) => void;
+    onArtifact: (artifactId: string) => void;
   }) => (
-    <button
-      type="button"
-      onClick={() => onChange(entries.map((entry) => ({ ...entry, name: "Morgan" })))}
-    >
-      Rename Bible entry
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => onChange(entries.map((entry) => ({ ...entry, name: "Morgan" })))}
+      >
+        Rename Bible entry
+      </button>
+      <button type="button" onClick={() => onArtifact("reference.png")}>
+        Attach Bible reference
+      </button>
+    </>
   ),
 }));
 vi.mock("../components/studio/ProjectMedia", () => ({
@@ -247,10 +254,28 @@ vi.mock("../components/studio/ProjectTimeline", () => ({
   ),
 }));
 vi.mock("../components/studio/ProjectShots", () => ({
-  ProjectShots: ({ onGenerate }: { onGenerate: (id: string) => void }) => (
-    <button type="button" onClick={() => onGenerate("s1")}>
-      Generate shot
-    </button>
+  ProjectShots: ({
+    onGenerate,
+    onChange,
+    document,
+  }: {
+    onGenerate: (id: string) => void;
+    onChange: (shots: StudioProject["document"]["shots"]) => void;
+    document: StudioProject["document"];
+  }) => (
+    <>
+      <button type="button" onClick={() => onGenerate("s1")}>
+        Generate shot
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          onChange(document.shots.map((shot) => ({ ...shot, openingArtifactId: "reference.png" })))
+        }
+      >
+        Attach shot reference
+      </button>
+    </>
   ),
 }));
 
@@ -722,6 +747,54 @@ describe("project production confirmation", () => {
     expect(project.document.timeline.clips[0].duration).toBe(20);
     expect(project.document.timeline.clips[1].duration).toBe(100);
     expect(project.document.timeline.clips[2].start).toBe(20);
+  });
+
+  it.each([
+    { tab: "Bible", action: "Attach Bible reference" },
+    { tab: "Shots", action: "Attach shot reference" },
+  ])("files a $tab reference only after its project save succeeds", async ({ tab, action }) => {
+    vi.mocked(listArtifactMetadata).mockResolvedValue([]);
+    let finishSave!: () => void;
+    mocks.save.mockImplementation(
+      (value: StudioProject) =>
+        new Promise<StudioProject>((resolve) => {
+          finishSave = () => {
+            project = value;
+            resolve(value);
+          };
+        }),
+    );
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: tab }));
+    fireEvent.click(screen.getByRole("button", { name: action }));
+    expect(saveArtifactMetadata).not.toHaveBeenCalled();
+    await act(async () => finishSave());
+    await waitFor(() =>
+      expect(saveArtifactMetadata).toHaveBeenCalledWith({
+        id: "reference.png",
+        projectIds: ["project-1"],
+      }),
+    );
+  });
+
+  it.each([
+    { tab: "Bible", action: "Attach Bible reference" },
+    { tab: "Shots", action: "Attach shot reference" },
+  ])("does not file a $tab reference when its project save fails", async ({ tab, action }) => {
+    vi.mocked(listArtifactMetadata).mockResolvedValue([]);
+    let failSave!: () => void;
+    mocks.save.mockImplementation(
+      () =>
+        new Promise<StudioProject>((_resolve, reject) => {
+          failSave = () => reject(new Error("storage unavailable"));
+        }),
+    );
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: tab }));
+    fireEvent.click(screen.getByRole("button", { name: action }));
+    await act(async () => failSave());
+    expect(await screen.findByRole("alert")).toHaveTextContent("storage unavailable");
+    expect(saveArtifactMetadata).not.toHaveBeenCalled();
   });
 
   it("cuts the predecessor at a selected continuation's handoff", async () => {

@@ -559,26 +559,26 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setReopenConfirm(false);
     await open(stored, request);
   };
+  const attachArtifactMetadata = async (artifactId: string, projectId: string) => {
+    const metadata = (await listArtifactMetadata()).find((item) => item.id === artifactId);
+    if (metadata?.projectIds.includes(projectId)) return;
+    await saveArtifactMetadata({
+      id: artifactId,
+      projectIds: [...new Set([...(metadata?.projectIds ?? []), projectId])],
+    });
+    await refreshArtifacts();
+  };
   const addArtifact = (artifactId: string) => {
     const target = current.current;
-    if (!target) return;
-    editDocument((document) => ({
-      ...document,
-      artifactIds: [...new Set([...document.artifactIds, artifactId])],
-    }));
-    void listArtifactMetadata()
-      .then((metadata) =>
-        saveArtifactMetadata({
-          id: artifactId,
-          projectIds: [
-            ...new Set([
-              ...(metadata.find((item) => item.id === artifactId)?.projectIds ?? []),
-              target.id,
-            ]),
-          ],
-        }),
-      )
-      .then(refreshArtifacts)
+    if (!target || !writer.current) return;
+    void edit((previous) => ({
+      ...previous,
+      document: {
+        ...previous.document,
+        artifactIds: [...new Set([...previous.document.artifactIds, artifactId])],
+      },
+    }))
+      .then(() => attachArtifactMetadata(artifactId, target.id))
       .catch(report);
   };
   const prepare = async (shotId?: string, image = false) => {
@@ -1437,6 +1437,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               key={`${project.id}:${openSession}`}
               document={project.document}
               onChange={(shots) => {
+                if (current.current?.id !== project.id || !writer.current) return;
                 const referenced = shots
                   .flatMap((shot) => [
                     shot.openingArtifactId,
@@ -1448,20 +1449,18 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 const added = referenced.filter(
                   (id) => !current.current?.document.artifactIds.includes(id),
                 );
-                editDocument((document) => ({
-                  ...document,
-                  shots,
-                  artifactIds: [...new Set([...document.artifactIds, ...referenced])],
-                }));
-                for (const id of new Set(added)) {
-                  const artifact = artifacts.find((item) => item.id === id);
-                  void saveArtifactMetadata({
-                    id,
-                    projectIds: [...new Set([...(artifact?.projectIds ?? []), project.id])],
+                void edit((previous) => ({
+                  ...previous,
+                  document: {
+                    ...previous.document,
+                    shots,
+                    artifactIds: [...new Set([...previous.document.artifactIds, ...referenced])],
+                  },
+                }))
+                  .then(async () => {
+                    for (const id of new Set(added)) await attachArtifactMetadata(id, project.id);
                   })
-                    .then(refreshArtifacts)
-                    .catch(report);
-                }
+                  .catch(report);
               }}
               artifacts={media}
               catalog={catalog}
