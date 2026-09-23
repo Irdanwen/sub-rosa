@@ -94,6 +94,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const [archived, setArchived] = useState(false);
   const [search, setSearch] = useState("");
   const [notePicker, setNotePicker] = useState(false);
+  const [reopenConfirm, setReopenConfirm] = useState(false);
   const [quote, setQuote] = useState<ReadyQuote>();
   const [runStates, setRunStates] = useState<Record<string, string>>({});
   const [progress, setProgress] = useState<Record<string, NodeRunResult>>({});
@@ -124,7 +125,10 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     return writer.current
       .save(next)
       .then(() => {
-        if (epoch.current === version) setSaved(true);
+        if (epoch.current === version) {
+          setSaved(true);
+          setError("");
+        }
       })
       .catch((cause) => {
         report(cause);
@@ -137,7 +141,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     );
   };
   const open = async (value: StudioProject) => {
-    await writer.current?.flush();
+    await writer.current?.flush(current.current ?? undefined);
     current.current = value;
     writer.current = new ProjectWriter(value);
     setProject(value);
@@ -333,12 +337,33 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setSection(source ? "shots" : "script");
   };
   const back = async () => {
-    await writer.current?.flush();
+    await writer.current?.flush(current.current ?? undefined);
     current.current = null;
     writer.current = undefined;
     setProject(null);
     window.localStorage.removeItem(LAST_PROJECT);
     setProjects(await listProjects());
+  };
+  const retrySave = async () => {
+    const version = epoch.current;
+    await writer.current?.flush(current.current ?? undefined);
+    if (version === epoch.current) {
+      setSaved(true);
+      setError("");
+    }
+  };
+  const reopenSaved = async () => {
+    const id = current.current?.id;
+    if (!id) return;
+    const stored = await getProject(id);
+    if (current.current?.id !== id) return;
+    if (!stored) {
+      setError(t("This project is no longer available."));
+      return;
+    }
+    writer.current = undefined;
+    setReopenConfirm(false);
+    await open(stored);
   };
   const addArtifact = (artifact: StudioArtifact) => {
     const target = current.current;
@@ -638,27 +663,43 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         <div className="project-error" role="alert">
           <p>{error}</p>
           {project && !saved ? (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => {
-                const copy = {
-                  ...structuredClone(project),
-                  id: crypto.randomUUID(),
-                  revision: 0,
-                  name: t("{name} copy", { name: project.name }),
-                  document: { ...structuredClone(project.document), runs: [] },
-                };
-                void saveProject(copy, null)
-                  .then(async (stored) => {
-                    writer.current = undefined;
-                    await open(stored);
-                  })
-                  .catch(report);
-              }}
-            >
-              {t("Save a copy")}
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => void retrySave().catch(report)}
+              >
+                {t("Retry save")}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  const copy = {
+                    ...structuredClone(project),
+                    id: crypto.randomUUID(),
+                    revision: 0,
+                    name: t("{name} copy", { name: project.name }),
+                    document: { ...structuredClone(project.document), runs: [] },
+                  };
+                  void saveProject(copy, null)
+                    .then(async (stored) => {
+                      writer.current = undefined;
+                      await open(stored);
+                    })
+                    .catch(report);
+                }}
+              >
+                {t("Save a copy")}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setReopenConfirm(true)}
+              >
+                {t("Reopen saved version")}
+              </button>
+            </>
           ) : null}
           <button type="button" className="btn btn-ghost" onClick={() => setError("")}>
             {t("Dismiss")}
@@ -1172,6 +1213,36 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               <p className="project-error">{t("This generation exceeds your project budget.")}</p>
             ) : null}
           </div>
+        </Dialog>
+      ) : null}
+      {reopenConfirm ? (
+        <Dialog
+          open
+          onClose={() => setReopenConfirm(false)}
+          title={t("Reopen the saved version?")}
+          description={t(
+            "Your unsaved edits in this window will be lost. Save a copy first if you want to keep them.",
+          )}
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setReopenConfirm(false)}
+              >
+                {t("Cancel")}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void reopenSaved().catch(report)}
+              >
+                {t("Reopen saved version")}
+              </button>
+            </>
+          }
+        >
+          <div className="dialog-body" />
         </Dialog>
       ) : null}
     </div>

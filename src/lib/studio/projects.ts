@@ -186,11 +186,15 @@ export class ProjectWriter {
   }
   save(project: StudioProject): Promise<StudioProject> {
     const snapshot = structuredClone(project);
+    // Saves already queued before a failure must not replay out of order.
+    // A later edit is an explicit retry with the full current document.
+    const retryAfterFailure = this.failure !== undefined;
     const next = this.pending.then(async () => {
-      if (this.failure) throw this.failure;
+      if (this.failure !== undefined && !retryAfterFailure) throw this.failure;
       try {
         const saved = await saveProject(snapshot, this.revision);
         this.revision = saved.revision;
+        this.failure = undefined;
         return saved;
       } catch (error) {
         this.failure = error;
@@ -200,9 +204,10 @@ export class ProjectWriter {
     this.pending = next.catch(() => undefined);
     return next;
   }
-  async flush() {
+  async flush(retry?: StudioProject) {
     await this.pending;
-    if (this.failure) throw this.failure;
+    if (this.failure !== undefined && retry) await this.save(retry);
+    if (this.failure !== undefined) throw this.failure;
   }
 }
 

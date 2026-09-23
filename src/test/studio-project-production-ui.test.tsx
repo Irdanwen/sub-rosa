@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getProject: vi.fn(),
   listProjects: vi.fn(),
   save: vi.fn(),
+  flush: vi.fn(),
   quote: vi.fn(),
   run: vi.fn(),
   resume: vi.fn(),
@@ -24,7 +25,7 @@ vi.mock("../lib/studio/projects", async (original) => ({
   saveArtifactMetadata: vi.fn(async () => {}),
   ProjectWriter: class {
     save = mocks.save;
-    flush = async () => {};
+    flush = mocks.flush;
   },
 }));
 vi.mock("../lib/studio/artifacts", () => ({
@@ -120,6 +121,7 @@ beforeEach(() => {
     project = value;
     return value;
   });
+  mocks.flush.mockResolvedValue(undefined);
   mocks.budget.mockReturnValue(vi.fn());
   mocks.quote.mockImplementation(async (workflow: Workflow) => ({
     nodes: workflow.nodes
@@ -147,6 +149,23 @@ const mount = async () => {
 };
 
 describe("project production confirmation", () => {
+  it("can explicitly reopen the saved film after a conflicting autosave", async () => {
+    project.document.script = "Saved script";
+    mocks.save.mockRejectedValueOnce("studio_project_conflict");
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Script" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Film script" }), {
+      target: { value: "Unsaved script" },
+    });
+    await screen.findByRole("button", { name: "Reopen saved version" });
+    fireEvent.click(screen.getByRole("button", { name: "Reopen saved version" }));
+    const dialog = await screen.findByRole("dialog", { name: "Reopen the saved version?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reopen saved version" }));
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Film script" })).toHaveValue("Saved script"),
+    );
+  });
+
   it("keeps a montage clip's media available after removing its project membership", async () => {
     project.document.artifactIds = [];
     project.document.timeline.clips = [

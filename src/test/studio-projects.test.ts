@@ -110,6 +110,44 @@ describe("project saves", () => {
     expect(project.document.script).toBe("Keep my unsaved edit");
   });
 
+  it("retries a later edit after a transient save failure with the whole current draft", async () => {
+    const project = newProject("Concert");
+    project.revision = 1;
+    native.invoke.mockRejectedValueOnce("studio_project_storage_error");
+    native.invoke.mockImplementation(async (_command, args: { request: SaveRequest }) => ({
+      ...args.request,
+      revision: 2,
+    }));
+    const writer = new ProjectWriter(project);
+    project.document.script = "First edit";
+    await expect(writer.save(project)).rejects.toBe("studio_project_storage_error");
+    await expect(writer.flush()).rejects.toBe("studio_project_storage_error");
+    project.document.script = "First edit and a correction";
+    await expect(writer.save(project)).resolves.toMatchObject({ revision: 2 });
+    await expect(writer.flush()).resolves.toBeUndefined();
+    expect(native.invoke).toHaveBeenCalledTimes(2);
+    expect(native.invoke.mock.calls[1][1].request).toMatchObject({
+      expectedRevision: 1,
+      document: { script: "First edit and a correction" },
+    });
+  });
+
+  it("retries a failed draft before navigation but keeps a true revision conflict", async () => {
+    const project = newProject("Concert");
+    project.revision = 1;
+    const writer = new ProjectWriter(project);
+    native.invoke.mockRejectedValueOnce("studio_project_storage_error");
+    native.invoke.mockResolvedValueOnce({ ...project, revision: 2 });
+    await expect(writer.save(project)).rejects.toBe("studio_project_storage_error");
+    await expect(writer.flush(project)).resolves.toBeUndefined();
+    expect(native.invoke).toHaveBeenCalledTimes(2);
+
+    native.invoke.mockRejectedValue("studio_project_conflict");
+    await expect(writer.save(project)).rejects.toBe("studio_project_conflict");
+    await expect(writer.flush(project)).rejects.toBe("studio_project_conflict");
+    expect(native.invoke.mock.calls.at(-1)?.[1].request.expectedRevision).toBe(2);
+  });
+
   it("does not mark input stale when selecting a take, but does after changing its prompt", () => {
     const project = newProject("Concert");
     const shot = newShot(0);
