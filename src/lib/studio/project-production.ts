@@ -22,6 +22,8 @@ export function compileProjectWithNotes(
   catalog: MediaCatalog,
   onlyShotId?: string,
 ): { workflow: Workflow; notes: string[] } {
+  if (document.bible.some((entry) => !entry.name.trim()))
+    throw new Error(t("Give this one a name."));
   if (document.bible.some((entry) => bibleNameInUse(document.bible, entry.name, entry.id)))
     throw new Error(t("Give each bible entry a different name."));
   const current = onlyShotId ? document.shots.find((shot) => shot.id === onlyShotId) : undefined;

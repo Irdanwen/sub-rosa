@@ -38,6 +38,7 @@ export function ProjectBible({
   const [picker, setPicker] = useState(false);
   const [role, setRole] = useState<BibleRole>("portrait");
   const [nameError, setNameError] = useState("");
+  const [nameDraft, setNameDraft] = useState<{ entryId: string; value: string }>();
   useEffect(() => {
     void listBibleEntries()
       .then(setGlobal)
@@ -68,7 +69,7 @@ export function ProjectBible({
   };
   const add = (source?: ProjectBibleEntry) => {
     const id = crypto.randomUUID();
-    const name = uniqueBibleName(entries, source?.name ?? t("New character"));
+    const name = uniqueBibleName(entries, source?.name?.trim() || t("New character"));
     const next: ProjectBibleEntry = source
       ? {
           ...structuredClone(source),
@@ -146,9 +147,18 @@ export function ProjectBible({
             <label className="project-field">
               {t("Name")}
               <input
-                value={entry.name}
+                value={nameDraft?.entryId === entry.id ? nameDraft.value : entry.name}
                 aria-invalid={!!nameError}
-                onChange={(event) => update({ name: event.target.value })}
+                onChange={(event) => {
+                  const name = event.target.value;
+                  if (!name.trim()) {
+                    setNameDraft({ entryId: entry.id, value: name });
+                    setNameError(t("Give this one a name."));
+                    return;
+                  }
+                  setNameDraft(undefined);
+                  update({ name });
+                }}
               />
             </label>
             {nameError && <p role="alert">{nameError}</p>}

@@ -71,6 +71,28 @@ describe("isolated project takes", () => {
     );
   });
 
+  it("refuses an unnamed bible entry before it can match empty shot fields", () => {
+    const project = newProject();
+    project.document.shots = [
+      { ...newShot(0), id: "target", action: "A pianist bows", modelId: "test-text-to-video" },
+    ];
+    project.document.bible = [
+      {
+        id: "unnamed",
+        name: "   ",
+        kind: "character",
+        traits: "Wrong identity",
+        note: "",
+        refs: [],
+        createdAt: "",
+        updatedAt: "",
+      },
+    ];
+    expect(() => compileProject(project.name, project.document, catalog)).toThrow(
+      "Give this one a name.",
+    );
+  });
+
   it("keeps a substituted aspect ratio visible to the quote", () => {
     const project = newProject();
     project.document.settings.aspectRatio = "9:16";
