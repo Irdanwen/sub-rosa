@@ -244,4 +244,11 @@ describe("editable interchange", () => {
     expect(bundle.frameRate).toEqual({ base: 30, ntsc: true });
     expect(bundle.clips[0].inSeconds).toBeCloseTo(1.001);
   });
+  it("keeps a constant volume compatible after trimming and still rejects a ramp", () => {
+    const doc = cut();
+    const trimmed = trimClip(doc, "clip", 0, 60);
+    expect(interchangeProblems(trimmed)).not.toContain("Volume keyframes");
+    doc.clips[0] = setKeyframe(doc.clips[0], "volume", 30, 0.5);
+    expect(interchangeProblems(trimClip(doc, "clip", 0, 60))).toContain("Volume keyframes");
+  });
 });

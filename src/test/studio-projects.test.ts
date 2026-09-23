@@ -24,6 +24,7 @@ import {
   newProject,
   newShot,
   organizeArtifact,
+  projectDocumentFits,
   ProjectWriter,
   shotSignature,
   type StudioProject,
@@ -39,6 +40,27 @@ beforeEach(() => {
 });
 
 describe("project saves", () => {
+  it("rejects a LUT that would exceed the native document limit", () => {
+    const project = newProject("Oversized LUT");
+    const clip = createEditorClip({
+      id: "clip",
+      trackId: "picture",
+      name: "Take",
+      duration: 30,
+      artifactId: "take.mp4",
+    });
+    clip.grade.lut = {
+      name: "High precision cube",
+      size: 65,
+      values: Array(65 ** 3 * 3).fill(0.1234567890123456),
+      domainMin: [0, 0, 0],
+      domainMax: [1, 1, 1],
+    };
+    project.document.timeline.clips = [clip];
+    expect(projectDocumentFits(project.document)).toBe(false);
+    clip.grade.lut = undefined;
+    expect(projectDocumentFits(project.document)).toBe(true);
+  });
   it("organizes gallery and project membership in one native operation", async () => {
     native.invoke.mockResolvedValue({ id: "clip.mp4", title: "Clip", projectIds: ["film-1"] });
     await expect(

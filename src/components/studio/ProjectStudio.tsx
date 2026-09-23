@@ -39,6 +39,7 @@ import {
   newProject,
   newShot,
   organizeArtifact,
+  projectDocumentFits,
   projectError,
   ProjectWriter,
   saveArtifactMetadata,
@@ -135,6 +136,11 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const edit = (change: (previous: StudioProject) => StudioProject) => {
     if (!current.current || !writer.current) return Promise.resolve();
     const next = change(current.current);
+    if (!projectDocumentFits(next.document)) {
+      const cause = new Error(t("This film is too large to save. Reduce its script or LUTs."));
+      report(cause);
+      return Promise.reject(cause);
+    }
     current.current = next;
     setProject(next);
     setSaved(false);

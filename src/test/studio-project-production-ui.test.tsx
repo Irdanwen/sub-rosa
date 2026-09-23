@@ -151,6 +151,28 @@ vi.mock("../components/studio/ProjectTimeline", () => ({
       </button>
       <button
         type="button"
+        onClick={() => {
+          const clip = createEditorClip({
+            id: "large-lut",
+            trackId: "picture",
+            name: "Take",
+            duration: 30,
+            artifactId: "take.mp4",
+          });
+          clip.grade.lut = {
+            name: "High precision cube",
+            size: 65,
+            values: Array(65 ** 3 * 3).fill(0.1234567890123456),
+            domainMin: [0, 0, 0],
+            domainMax: [1, 1, 1],
+          };
+          onChange({ ...value, clips: [clip] });
+        }}
+      >
+        Apply oversized LUT
+      </button>
+      <button
+        type="button"
         onClick={() =>
           void onExportArtifact({
             id: "rendered.mp4",
@@ -253,6 +275,15 @@ const mount = async () => {
 };
 
 describe("project production confirmation", () => {
+  it("keeps an oversized LUT out of the visible and saved project", async () => {
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Montage" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply oversized LUT" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("too large to save");
+    expect(project.document.timeline.clips).toHaveLength(0);
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
   it("opens the film linked to a note instead of the last-opened project", async () => {
     const other = newProject("Other film");
     other.id = "project-2";

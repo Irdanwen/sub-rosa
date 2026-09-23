@@ -64,6 +64,10 @@ export interface ProjectSummary {
 export interface StudioProject extends ProjectSummary {
   document: ProjectDocument;
 }
+/** Match the native studio_project.rs document limit before changing the visible draft. */
+export function projectDocumentFits(document: ProjectDocument): boolean {
+  return new TextEncoder().encode(JSON.stringify(document)).byteLength <= 8 * 1024 * 1024;
+}
 export interface ArtifactMetadata {
   id: string;
   title: string;

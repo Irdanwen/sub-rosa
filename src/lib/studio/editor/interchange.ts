@@ -56,7 +56,8 @@ export function interchangeProblems(
       )
     )
       problems.add(t("Transforms and opacity"));
-    if (clip.properties.volume.length > 1) problems.add(t("Volume keyframes"));
+    if (clip.properties.volume.some((point) => point.value !== clip.properties.volume[0]?.value))
+      problems.add(t("Volume keyframes"));
     if (clip.fadeIn || clip.fadeOut) problems.add(t("Fades"));
     if (Object.values(clip.crop).some((value) => value !== 0)) problems.add(t("Cropping"));
     const grade = clip.grade;
