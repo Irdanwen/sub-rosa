@@ -182,16 +182,18 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setProgress((previous) => ({ ...previous, [result.nodeId]: result }));
     const output = result.output;
     if (result.status !== "done" || !output || output.kind === "text" || !output.artifactId) return;
-    if (
-      current.current.document.runs
-        .find((savedRun) => savedRun.id === run.id)
-        ?.appliedNodeIds?.includes(result.nodeId)
-    )
-      return;
     const artifactId = output.artifactId;
+    const alreadyApplied = current.current.document.runs
+      .find((savedRun) => savedRun.id === run.id)
+      ?.appliedNodeIds?.includes(result.nodeId);
+    // A recovered node can have its applied marker committed while the
+    // detached gallery write was interrupted. Repair that membership only if
+    // the project still owns the media; a deliberate removal stays removed.
+    if (alreadyApplied && !current.current.document.artifactIds.includes(artifactId)) return;
     resultWrites.current = resultWrites.current
       .then(async () => {
         const metadata = (await listArtifactMetadata()).find((item) => item.id === artifactId);
+        if (metadata?.projectIds.includes(projectId)) return;
         await saveArtifactMetadata({
           id: artifactId,
           title: metadata?.title ?? "",
@@ -199,6 +201,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         });
       })
       .catch(report);
+    if (alreadyApplied) return;
     editDocument((document) => ({
       ...document,
       runs: document.runs.map((savedRun) =>

@@ -311,6 +311,39 @@ describe("project production confirmation", () => {
     expect(saveArtifactMetadata).not.toHaveBeenCalled();
   });
 
+  it("repairs a gallery membership lost after the applied marker was saved", async () => {
+    project.document.runs = [{ id: "run-1", shotSignatures: {}, appliedNodeIds: ["shot-s1"] }];
+    project.document.artifactIds = ["take.mp4"];
+    vi.mocked(listArtifactMetadata).mockResolvedValue([
+      { id: "take.mp4", title: "Concert take", projectIds: [] },
+    ]);
+    mocks.invoke.mockImplementation(async (command) =>
+      command === "workflow_run_get"
+        ? {
+            run: { status: "completed" },
+            nodes: [
+              {
+                nodeId: "shot-s1",
+                status: "done",
+                output: JSON.stringify({ kind: "video", artifactId: "take.mp4" }),
+              },
+            ],
+          }
+        : null,
+    );
+
+    await mount();
+
+    await waitFor(() =>
+      expect(saveArtifactMetadata).toHaveBeenCalledWith({
+        id: "take.mp4",
+        title: "Concert take",
+        projectIds: ["project-1"],
+      }),
+    );
+    expect(project.document.runs[0].appliedNodeIds).toEqual(["shot-s1"]);
+  });
+
   it("re-quotes only unpaid resume steps and waits for confirmation", async () => {
     project.document.runs = [{ id: "run-1", shotSignatures: {} }];
     project.document.settings.budget = 30;
