@@ -10,12 +10,14 @@ export function ProjectMedia({
   projectId,
   onMetadata,
   onAttach,
+  readOnly = false,
 }: {
   artifacts: StudioArtifact[];
   projects: ProjectSummary[];
   projectId?: string;
   onMetadata: (artifact: StudioArtifact, title: string, projectIds: string[]) => Promise<void>;
   onAttach?: (artifact: StudioArtifact) => void;
+  readOnly?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState("");
@@ -39,6 +41,7 @@ export function ProjectMedia({
   );
   const preview = artifacts.find((artifact) => artifact.id === selected);
   const save = async (artifact: StudioArtifact, title: string, projectIds: string[]) => {
+    if (readOnly) return false;
     setError("");
     setSaving(true);
     try {
@@ -146,12 +149,12 @@ export function ProjectMedia({
                     <input
                       ref={renameInput}
                       maxLength={500}
-                      disabled={saving}
+                      disabled={saving || readOnly}
                       aria-label={t("Media name")}
                       value={editing.title}
                       onChange={(event) => setEditing({ ...editing, title: event.target.value })}
                     />
-                    <button type="submit" disabled={saving}>
+                    <button type="submit" disabled={saving || readOnly}>
                       {saving ? t("Saving...") : t("Save")}
                     </button>
                     <button type="button" onClick={() => setEditing(undefined)}>
@@ -162,7 +165,7 @@ export function ProjectMedia({
                   <button
                     type="button"
                     className="project-media-name"
-                    disabled={saving}
+                    disabled={saving || readOnly}
                     title={t("Rename")}
                     onClick={() =>
                       setEditing({ id: artifact.id, title: artifact.title || artifact.fileName })
@@ -186,7 +189,7 @@ export function ProjectMedia({
                     <button
                       type="button"
                       className="btn btn-ghost"
-                      disabled={saving}
+                      disabled={saving || readOnly}
                       onClick={async () => {
                         const member = artifact.projectIds?.includes(projectId);
                         const saved = await save(
@@ -205,7 +208,7 @@ export function ProjectMedia({
                     </button>
                   ) : (
                     <select
-                      disabled={saving}
+                      disabled={saving || readOnly}
                       aria-label={t("Add to project")}
                       value=""
                       onChange={(event) => {

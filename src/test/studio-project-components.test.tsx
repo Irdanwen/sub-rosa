@@ -346,6 +346,23 @@ describe("project bible", () => {
 });
 
 describe("project media", () => {
+  it("keeps media organization read-only while production is running", () => {
+    const onMetadata = vi.fn();
+    render(
+      <ProjectMedia
+        artifacts={[artifact("take.mp4", "video")]}
+        projects={[]}
+        projectId="project-a"
+        onMetadata={onMetadata}
+        readOnly
+      />,
+    );
+    expect(screen.getByRole("button", { name: "take.mp4" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove from project" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
+    expect(onMetadata).not.toHaveBeenCalled();
+  });
+
   it("renames a media file while retaining every project membership", async () => {
     const onMetadata = vi.fn(async () => undefined);
     const clip = artifact("take.mp4", "video");

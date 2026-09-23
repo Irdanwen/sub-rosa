@@ -910,7 +910,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       artifacts={media}
       projects={projects}
       projectId={project?.id}
+      readOnly={busy || mediaSaving}
       onMetadata={async (artifact, title, projectIds) => {
+        if (busy) throw new Error(t("Wait for production to finish before editing media."));
         const projectId = current.current?.id;
         const version = epoch.current;
         setMediaSaving(true);
@@ -1140,7 +1142,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 type="button"
                 key={key}
                 aria-current={section === key ? "page" : undefined}
-                disabled={mediaSaving}
+                disabled={mediaSaving || (busy && key === "media")}
                 onClick={() => setSection(key)}
               >
                 {label}

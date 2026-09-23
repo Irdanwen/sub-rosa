@@ -3326,6 +3326,7 @@
   "Voices": "Voix",
   "Volume": "Volume",
   "Volume keyframes": "Images clés du volume",
+  "Wait for production to finish before editing media.": "Attendez la fin de la production avant de modifier les médias.",
   "Wait for the current reply before sending another message.": "Attendez la fin de la réponse avant d'envoyer un autre message.",
   "Wait for your references to finish processing, or remove failed references before starting this conversation.": "Attendez la fin du traitement des références, ou retirez celles en échec avant de démarrer cette conversation.",
   "Waiting": "En attente",
