@@ -13,6 +13,7 @@ import {
   snapFrame,
   sourceFrame,
   splitClip,
+  titleTrack,
   trimClip,
   validateEditorDocument,
   valueAt,
@@ -43,6 +44,28 @@ describe("editable montage document", () => {
     const music = doc.tracks.find((track) => track.id === "music");
     if (music) music.locked = true;
     expect(insertionTrack(doc, "music")).toBeUndefined();
+  });
+
+  it("adds titles only to a visible unlocked overlay track", () => {
+    const doc = createEditorDocument();
+    doc.tracks.push({
+      id: "hidden-titles",
+      name: "Hidden titles",
+      kind: "video",
+      locked: false,
+      muted: false,
+      hidden: true,
+    });
+    expect(titleTrack(doc)).toBeUndefined();
+    doc.tracks.push({
+      id: "visible-titles",
+      name: "Visible titles",
+      kind: "video",
+      locked: false,
+      muted: false,
+      hidden: false,
+    });
+    expect(titleTrack(doc)?.id).toBe("visible-titles");
   });
 
   it("integrates a speed ramp, and preserves the source on both sides of a split", () => {

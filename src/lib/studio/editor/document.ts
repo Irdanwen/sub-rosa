@@ -71,6 +71,11 @@ export function insertionTrack(doc: EditorDocument, kind: ArtifactKind): EditorT
   if (preferred) return !preferred.locked && !preferred.hidden ? preferred : undefined;
   return doc.tracks.find((track) => track.kind === "audio" && !track.locked && !track.hidden);
 }
+export function titleTrack(doc: EditorDocument): EditorTrack | undefined {
+  return doc.tracks.find(
+    (track) => track.kind === "video" && track.id !== "picture" && !track.locked && !track.hidden,
+  );
+}
 const defaults: Record<AnimatedProperty, number> = {
   x: 0,
   y: 0,

@@ -25,6 +25,7 @@ import {
   setKeyframe,
   snapFrame,
   splitClip,
+  titleTrack,
   trimClip,
   validateEditorDocument,
   valueAt,
@@ -318,9 +319,7 @@ export function ProjectTimeline({ value, onChange, artifacts, onExportArtifact }
     }
   }
   function addTitle() {
-    let track = value.tracks.find(
-      (track) => track.kind === "video" && !track.locked && track.id !== "picture",
-    );
+    let track = titleTrack(value);
     let tracks = value.tracks;
     if (!track) {
       track = {
