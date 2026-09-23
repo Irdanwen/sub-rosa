@@ -1165,7 +1165,7 @@ describe("project production confirmation", () => {
     await screen.findByRole("dialog");
     fireEvent.click(screen.getByRole("button", { name: /Generate · 10 credits/ }));
     await waitFor(() => expect(project.document.runs[0]?.id).toBe("run-1"));
-    expect(screen.getByRole("button", { name: "Media", exact: true })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Media" })).toBeDisabled();
     await act(async () => mounted.unmount());
     expect(project.document.runs[0].id).toBe("run-1");
     // A delivery that wins the abort race still belongs to the originating project.
