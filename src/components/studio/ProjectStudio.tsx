@@ -107,6 +107,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const [archived, setArchived] = useState(false);
   const [search, setSearch] = useState("");
   const [notePicker, setNotePicker] = useState(false);
+  const [openSession, setOpenSession] = useState(0);
   const [reopenConfirm, setReopenConfirm] = useState(false);
   const [quote, setQuote] = useState<ReadyQuote>();
   const [runStates, setRunStates] = useState<Record<string, string>>({});
@@ -168,6 +169,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     current.current = value;
     writer.current = new ProjectWriter(value);
     setProject(value);
+    setOpenSession((session) => session + 1);
     setSaved(true);
     setError("");
     setLibrary(false);
@@ -1056,7 +1058,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               {t("All projects")}
             </button>
             <input
-              key={`${project.id}:${project.revision}`}
+              key={`${project.id}:${openSession}`}
               aria-label={t("Project name")}
               defaultValue={project.name}
               disabled={busy}
@@ -1360,7 +1362,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 </span>
               </div>
               <ProjectTimeline
-                key={project.id}
+                key={`${project.id}:${openSession}`}
                 value={project.document.timeline}
                 onChange={(timeline) => editDocument((document) => ({ ...document, timeline }))}
                 artifacts={montageArtifacts(project, media)}

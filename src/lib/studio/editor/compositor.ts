@@ -113,6 +113,7 @@ export class EditorCompositor {
   private curveTexture: WebGLTexture;
   private lutTexture: WebGLTexture;
   private sources = new Map<string, Source>();
+  private activeClips = new Set<string>();
   private curveCache = "";
   private lutCache: EditorClip["grade"]["lut"];
   private audio?: EditorAudio;
@@ -218,6 +219,7 @@ export class EditorCompositor {
       }
       const old = this.sources.get(clip.id);
       if (old) this.releaseSource(old);
+      this.activeClips.delete(clip.id);
       const texture = this.gl.createTexture();
       if (!texture) throw new Error(t("Your device could not start the montage preview."));
       this.sources.set(clip.id, { element, texture });
@@ -226,6 +228,7 @@ export class EditorCompositor {
       if (!doc.clips.some((c) => c.id === id)) {
         this.releaseSource(source);
         this.sources.delete(id);
+        this.activeClips.delete(id);
       }
   }
   async enableAudio(doc: EditorDocument, capture = false): Promise<MediaStream | undefined> {
@@ -309,7 +312,7 @@ export class EditorCompositor {
               0.0625,
               Math.min(16, valueAt(clip.properties.speed, local, 1)),
             );
-            if (Math.abs(media.currentTime - target) > 0.15)
+            if (!this.activeClips.has(clip.id) || Math.abs(media.currentTime - target) > 0.15)
               media.currentTime = Math.min(target, Math.max(0, media.duration - 0.001));
             if (media.paused) void media.play().catch(() => {});
           }
@@ -368,6 +371,7 @@ export class EditorCompositor {
         source.element.pause();
         if (source.gain) source.gain.gain.value = 0;
       }
+    this.activeClips = playing ? active : new Set();
   }
   private setCurves(clip: EditorClip) {
     const gl = this.gl,
@@ -423,6 +427,7 @@ export class EditorCompositor {
     gl.uniform3fv(gl.getUniformLocation(this.program, "domainMax"), lut.domainMax);
   }
   pause() {
+    this.activeClips.clear();
     this.audio?.pause();
     for (const source of this.sources.values())
       if (source.element instanceof HTMLVideoElement) source.element.pause();

@@ -563,6 +563,20 @@ describe("project production confirmation", () => {
     );
   });
 
+  it("remounts the montage after reopening a saved revision", async () => {
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Montage" }));
+    const abandonedEditor = screen.getByTestId("timeline-artifacts");
+    mocks.save.mockRejectedValueOnce("studio_project_conflict");
+    fireEvent.click(screen.getByRole("button", { name: "Trim existing clip" }));
+    await screen.findByRole("button", { name: "Reopen saved version" });
+    mocks.getProject.mockResolvedValue({ ...project, revision: 2 });
+    fireEvent.click(screen.getByRole("button", { name: "Reopen saved version" }));
+    const dialog = await screen.findByRole("dialog", { name: "Reopen the saved version?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reopen saved version" }));
+    await waitFor(() => expect(screen.getByTestId("timeline-artifacts")).not.toBe(abandonedEditor));
+  });
+
   it("shows the stored project name after discarding a conflicting rename", async () => {
     project.name = "Original film";
     await mount();
