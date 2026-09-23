@@ -482,8 +482,14 @@ function restoredShot(
 /** Recover frozen compiled productions, never execute them during migration. */
 async function importLegacyProductions(bible: readonly BibleEntry[]): Promise<void> {
   const runs = await invoke<WorkflowRunSummary[]>("workflow_run_list");
-  if (!Array.isArray(runs)) return;
+  if (!Array.isArray(runs) || !runs.length) return;
+  const ownedRuns = new Set<string>();
+  for (const summary of await listProjects()) {
+    const project = await getProject(summary.id);
+    for (const run of project?.document.runs ?? []) ownedRuns.add(run.id);
+  }
   for (const run of runs) {
+    if (ownedRuns.has(run.id)) continue;
     const id = `legacy-run-${run.id}`;
     if (await getProject(id)) continue;
     const workflow = parseJson(run.definition);
@@ -539,5 +545,6 @@ async function importLegacyProductions(bible: readonly BibleEntry[]): Promise<vo
       },
     ];
     await saveImportedProject(project);
+    ownedRuns.add(run.id);
   }
 }

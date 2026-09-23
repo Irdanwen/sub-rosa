@@ -437,6 +437,7 @@ describe("migration recovery boundaries", () => {
         return [
           { id: "old-run", name: "Concert", definition: JSON.stringify(graph), status: "failed" },
         ];
+      if (command === "studio_project_list") return [];
       if (command === "studio_project_get") return null;
       if (command === "workflow_run_get")
         return {
@@ -478,6 +479,40 @@ describe("migration recovery boundaries", () => {
     expect(saved?.document.runs).toEqual([
       { id: "old-run", shotSignatures: {}, appliedNodeIds: ["shot-1", "line-1"] },
     ]);
+  });
+
+  it("does not import a production already owned by an existing project", async () => {
+    native.listFilms.mockResolvedValue([]);
+    const owner = newProject("Current film");
+    owner.id = "current-film";
+    owner.document.runs = [{ id: "owned-run", shotSignatures: {} }];
+    native.invoke.mockImplementation(async (command: string) => {
+      if (command === "workflow_run_list")
+        return [
+          {
+            id: "owned-run",
+            name: "Current film",
+            definition: JSON.stringify({
+              nodes: [
+                { id: "shot-s1", type: "video", label: "Shot", params: {} },
+                { id: "assemble", type: "assemble", label: "Film", params: {} },
+              ],
+              edges: [],
+            }),
+            status: "failed",
+          },
+        ];
+      if (command === "studio_project_list") return [owner];
+      if (command === "studio_project_get") return owner;
+      throw new Error(`Unexpected migration command: ${command}`);
+    });
+
+    await importLegacyFilms();
+
+    expect(native.invoke).not.toHaveBeenCalledWith("workflow_run_get", { id: "owned-run" });
+    expect(native.invoke.mock.calls.some(([command]) => command === "studio_project_save")).toBe(
+      false,
+    );
   });
 
   it("copies bible identities independently between two projects", () => {
