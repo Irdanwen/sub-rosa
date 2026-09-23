@@ -86,7 +86,11 @@ export async function nativeQueuedImage(
           kind: "image",
           model: body.model,
           prompt: body.prompt,
-          extension: "png",
+          extension:
+            base === "/image/generate" &&
+            (body.format === "webp" || body.format === "jpeg" || body.format === "jpg")
+              ? body.format
+              : "png",
           queuePath: `${base}/queue`,
           queueBody: body,
           retrievePath: `${base}/retrieve`,

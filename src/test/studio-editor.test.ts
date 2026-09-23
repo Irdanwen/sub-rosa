@@ -174,6 +174,24 @@ describe("cube LUT input", () => {
   });
 });
 describe("editable interchange", () => {
+  it("renders an audio-only or hidden-picture montage before interchange export", () => {
+    const audioOnly = createEditorDocument();
+    audioOnly.clips = [
+      createEditorClip({
+        id: "score",
+        trackId: "music",
+        name: "Score",
+        duration: 90,
+        artifactId: "score.wav",
+      }),
+    ];
+    expect(interchangeProblems(audioOnly)).toContain("No visible picture clips");
+    const hiddenPicture = cut();
+    const picture = hiddenPicture.tracks.find((track) => track.id === "picture");
+    if (picture) picture.hidden = true;
+    expect(interchangeProblems(hiddenPicture)).toContain("No visible picture clips");
+  });
+
   it("ships hidden media and keeps dialogue, effects and music on their lanes", () => {
     const doc = cut();
     const music = doc.tracks.find((track) => track.id === "music");

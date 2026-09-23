@@ -23,7 +23,12 @@ vi.mock("../lib/studio/client", async (importOriginal) => ({
 
 import { MediaError, mediaJson, mediaRaw } from "../lib/studio/client";
 import { rememberQueuedImage } from "../lib/studio/artifacts";
-import { composeImages, editImage, removeBackground } from "../lib/studio/edit-image";
+import {
+  composeImages,
+  editImage,
+  nativeQueuedImage,
+  removeBackground,
+} from "../lib/studio/edit-image";
 
 const mediaJsonMock = vi.mocked(mediaJson);
 const mediaRawMock = vi.mocked(mediaRaw);
@@ -54,6 +59,21 @@ beforeEach(() => {
 });
 
 describe("editImage", () => {
+  it.each(["webp", "jpeg"])(
+    "keeps the %s extension for a queued generated image",
+    async (format) => {
+      await nativeQueuedImage("/image/generate", {
+        model: "gpt-image-2",
+        prompt: "A portrait",
+        format,
+      });
+      expect(invoke).toHaveBeenCalledWith(
+        "media_job_queue",
+        expect.objectContaining({ request: expect.objectContaining({ extension: format }) }),
+      );
+    },
+  );
+
   it("settles a provider-rejected queue submission without hiding an uncertain one", async () => {
     let queuedId = "";
     vi.mocked(invoke).mockImplementation(async (command, args) => {

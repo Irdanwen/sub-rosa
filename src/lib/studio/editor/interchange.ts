@@ -33,6 +33,7 @@ export function interchangeProblems(
   const pictures = doc.clips
     .filter((clip) => videoTracks.some((track) => track.id === clip.trackId))
     .sort((a, b) => a.start - b.start);
+  if (!pictures.length) problems.add(t("No visible picture clips"));
   let end = 0;
   for (const clip of pictures) {
     if (clip.start !== end) problems.add(t("Gaps or overlapping clips"));
