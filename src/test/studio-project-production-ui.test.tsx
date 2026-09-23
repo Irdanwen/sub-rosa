@@ -136,6 +136,7 @@ vi.mock("../components/studio/ProjectTimeline", () => ({
       <output data-testid="timeline-artifacts">
         {artifacts.map((artifact) => artifact.id).join(",")}
       </output>
+      <output data-testid="timeline-first-duration">{value.clips[0]?.duration ?? ""}</output>
       <button
         type="button"
         onClick={() =>
@@ -464,6 +465,34 @@ describe("project production confirmation", () => {
     expect(project.document.artifactIds).toContain("rendered.mp4");
   });
 
+  it("keeps montage edits made while an export reload is pending", async () => {
+    project.document.timeline.clips = [
+      createEditorClip({
+        id: "first",
+        trackId: "picture",
+        name: "First",
+        duration: 30,
+        artifactId: "first.mp4",
+      }),
+    ];
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Montage" }));
+    const stale = structuredClone(project);
+    let resolveReload!: (value: StudioProject) => void;
+    const reload = new Promise<StudioProject>((resolve) => {
+      resolveReload = resolve;
+    });
+    const priorLoads = mocks.getProject.mock.calls.length;
+    mocks.getProject.mockReturnValue(reload);
+
+    fireEvent.click(screen.getByRole("button", { name: "Complete montage export" }));
+    await waitFor(() => expect(mocks.getProject.mock.calls.length).toBe(priorLoads + 1));
+    fireEvent.click(screen.getByRole("button", { name: "Trim existing clip" }));
+    expect(screen.getByTestId("timeline-first-duration")).toHaveTextContent("20");
+    await act(async () => resolveReload(stale));
+    expect(screen.getByTestId("timeline-first-duration")).toHaveTextContent("20");
+  });
+
   it("appends selected takes after the latest picture edit even when audio runs longer", async () => {
     project.document.timeline.clips = [
       createEditorClip({
@@ -658,6 +687,42 @@ describe("project production confirmation", () => {
     );
     expect(mocks.invoke).toHaveBeenCalledWith("workflow_run_get", { id: "retained-run" });
     expect(screen.queryByText("That run no longer exists.")).toBeNull();
+  });
+
+  it("does not restore another film's runs after navigating away", async () => {
+    project.document.runs = [
+      { id: "first-run", shotSignatures: {} },
+      { id: "second-run", shotSignatures: {} },
+    ];
+    let releaseFirst!: (value: { run: { status: string }; nodes: [] }) => void;
+    const first = new Promise<{ run: { status: string }; nodes: [] }>((resolve) => {
+      releaseFirst = resolve;
+    });
+    mocks.invoke.mockImplementation(async (command, args) => {
+      if (command !== "workflow_run_get") return null;
+      return (args as { id: string }).id === "first-run"
+        ? first
+        : {
+            run: { status: "completed" },
+            nodes: [
+              {
+                nodeId: "shot-s1",
+                status: "done",
+                output: JSON.stringify({ kind: "video", artifactId: "old-take.mp4" }),
+              },
+            ],
+          };
+    });
+    await mount();
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("workflow_run_get", { id: "first-run" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "All projects" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New project" }));
+    await screen.findByRole("textbox", { name: "Film script" });
+    await act(async () => releaseFirst({ run: { status: "completed" }, nodes: [] }));
+    expect(mocks.invoke).not.toHaveBeenCalledWith("workflow_run_get", { id: "second-run" });
+    expect(project.document.artifactIds).not.toContain("old-take.mp4");
   });
 
   it("can explicitly reopen the saved film after a conflicting autosave", async () => {

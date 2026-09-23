@@ -192,16 +192,18 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       if (row) await acceptReading(row);
       else await finishReadingNote(readingNoteId, value.id);
     }
+    const openingWriter = writer.current;
     const missing = new Set<string>();
     for (const run of value.document.runs) {
+      if (current.current?.id !== value.id || writer.current !== openingWriter) return;
       try {
-        await restoreRun(run);
+        await restoreRun(run, value.id, openingWriter);
       } catch (cause) {
         if (errorCode(cause) !== "workflow_run_missing") throw cause;
         missing.add(run.id);
       }
     }
-    if (missing.size && current.current?.id === value.id)
+    if (missing.size && current.current?.id === value.id && writer.current === openingWriter)
       await edit((previous) => ({
         ...previous,
         document: {
@@ -284,14 +286,16 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       }),
     }));
   };
-  const restoreRun = async (run: ProjectRun) => {
-    const projectId = current.current?.id;
-    if (!projectId) return;
+  const restoreRun = async (
+    run: ProjectRun,
+    projectId: string,
+    openingWriter: ProjectWriter | undefined,
+  ) => {
     const detail = await invoke<{
       run: { status: string };
       nodes: Array<{ nodeId: string; status: string; output?: string; error?: string }>;
     }>("workflow_run_get", { id: run.id });
-    if (current.current?.id !== projectId) return;
+    if (current.current?.id !== projectId || writer.current !== openingWriter) return;
     setRunStates((previous) => ({ ...previous, [run.id]: detail.run.status }));
     for (const node of detail.nodes) {
       if (node.status !== "done" || !node.output) continue;
@@ -1407,7 +1411,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 onChange={(timeline) => editDocument((document) => ({ ...document, timeline }))}
                 artifacts={montageArtifacts(project, media)}
                 onExportArtifact={async (artifact) => {
-                  if (current.current?.id === project.id) await writer.current?.flush();
+                  const version = epoch.current;
+                  const ownerWriter = writer.current;
+                  if (current.current?.id === project.id) await ownerWriter?.flush();
                   const metadata = (await listArtifactMetadata()).find(
                     (item) => item.id === artifact.id,
                   );
@@ -1421,9 +1427,18 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                       ]),
                     ],
                   });
-                  if (current.current?.id === project.id) {
+                  if (
+                    current.current?.id === project.id &&
+                    epoch.current === version &&
+                    writer.current === ownerWriter
+                  ) {
                     const updated = await getProject(project.id);
-                    if (updated && current.current?.id === project.id) {
+                    if (
+                      updated &&
+                      current.current?.id === project.id &&
+                      epoch.current === version &&
+                      writer.current === ownerWriter
+                    ) {
                       current.current = updated;
                       writer.current = new ProjectWriter(updated);
                       setProject(updated);
