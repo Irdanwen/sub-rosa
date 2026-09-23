@@ -64,7 +64,13 @@ vi.mock("../components/ui/Dialog", () => ({
     </section>
   ),
 }));
-vi.mock("../components/studio/NotePicker", () => ({ NotePicker: () => null }));
+vi.mock("../components/studio/NotePicker", () => ({
+  NotePicker: ({ onPick }: { onPick: (note: { id: string }) => void }) => (
+    <button type="button" onClick={() => onPick({ id: "picked-note" })}>
+      Pick selected note
+    </button>
+  ),
+}));
 vi.mock("../components/studio/MediaModelPicker", () => ({
   MediaModelPicker: () => null,
   mediaModelOption: (value: unknown) => value,
@@ -217,6 +223,42 @@ const mount = async () => {
 };
 
 describe("project production confirmation", () => {
+  it("does not apply a slowly loaded note to a different film", async () => {
+    const second = newProject("Second film");
+    second.id = "project-2";
+    second.document.script = "Keep this script.";
+    mocks.listProjects.mockResolvedValue([project, second]);
+    mocks.getProject.mockImplementation(async (id: string) =>
+      id === project.id ? project : second,
+    );
+    let finishNote: (note: { editedContent: string }) => void = () => {};
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "get_note")
+        return new Promise((resolve) => {
+          finishNote = resolve;
+        });
+      return null;
+    });
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Script" }));
+    fireEvent.click(screen.getByRole("button", { name: "From your notes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pick selected note" }));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("get_note", {
+        request: { noteId: "picked-note" },
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "All projects" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Second film/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Project name" })).toHaveValue("Second film"),
+    );
+    await act(async () => finishNote({ editedContent: "Wrong script" }));
+    expect(second.document.script).toBe("Keep this script.");
+    expect(second.document.noteId).toBeUndefined();
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
   it("updates differently cased shot references when a bible entry is renamed", async () => {
     project.document.bible = [
       {

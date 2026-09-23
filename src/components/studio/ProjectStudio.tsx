@@ -1394,17 +1394,22 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         <NotePicker
           onClose={() => setNotePicker(false)}
           onPick={(note) => {
+            const projectId = current.current?.id;
             setNotePicker(false);
+            if (!projectId) return;
             void getNote(note.id)
-              .then((full) =>
+              .then((full) => {
+                if (current.current?.id !== projectId) return;
                 editDocument((document) => ({
                   ...document,
                   noteId: note.id,
                   readingNoteId: undefined,
                   script: full.editedContent ?? full.generatedContent ?? "",
-                })),
-              )
-              .catch(report);
+                }));
+              })
+              .catch((cause) => {
+                if (current.current?.id === projectId) report(cause);
+              });
           }}
         />
       ) : null}
