@@ -1,6 +1,7 @@
 import { t } from "../i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { errorCode } from "../errors";
 import {
   claimQueuedImageJob,
   readArtifactBase64,
@@ -77,20 +78,30 @@ export async function nativeQueuedImage(
   };
   document.addEventListener("visibilitychange", onVisible);
   try {
-    const submitted = await invoke<NativeImageJob>("media_job_queue", {
-      request: {
-        jobId,
-        kind: "image",
-        model: body.model,
-        prompt: body.prompt,
-        extension: "png",
-        queuePath: `${base}/queue`,
-        queueBody: body,
-        retrievePath: `${base}/retrieve`,
-        urlFields: ["image_url", "url"],
-        source,
-      },
-    });
+    let submitted: NativeImageJob;
+    try {
+      submitted = await invoke<NativeImageJob>("media_job_queue", {
+        request: {
+          jobId,
+          kind: "image",
+          model: body.model,
+          prompt: body.prompt,
+          extension: "png",
+          queuePath: `${base}/queue`,
+          queueBody: body,
+          retrievePath: `${base}/retrieve`,
+          urlFields: ["image_url", "url"],
+          source,
+        },
+      });
+    } catch (error) {
+      // The provider explicitly refused this submission. Rust emitted the
+      // failed row while our claim was active, so no other observer owns it.
+      // Leave uncertain transport failures durable for provider-history review.
+      if (errorCode(error) === "media_job_queue_failed")
+        await invoke("media_job_dismiss", { id: jobId }).catch(() => undefined);
+      throw error;
+    }
     observe(submitted);
     reconcile();
     const job = await done;

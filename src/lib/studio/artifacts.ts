@@ -230,18 +230,26 @@ export async function listArtifacts(kind?: ArtifactKind): Promise<StudioArtifact
   }> = [];
   try {
     durable = (await invoke<typeof durable>("studio_artifact_list")) ?? [];
-    const known = new Set(durable.map((entry) => entry.id));
+    const known = new Map(durable.map((entry, index) => [entry.id, index]));
     for (const artifact of legacy) {
-      if (known.has(artifact.id)) continue;
+      const index = known.get(artifact.id);
+      const current = index === undefined ? undefined : durable[index];
+      if (current?.generation) continue;
       const { path: _path, ...generation } = artifact;
-      await invoke("studio_artifact_save", {
+      const migrated = await invoke<(typeof durable)[number]>("studio_artifact_save", {
         request: {
           id: artifact.id,
-          title: artifact.title ?? "",
-          projectIds: artifact.projectIds ?? [],
+          title: current?.title || artifact.title || "",
+          projectIds: current?.projectIds ?? artifact.projectIds ?? [],
           generation,
         },
       });
+      if (index === undefined) {
+        known.set(artifact.id, durable.length);
+        durable.push(migrated);
+      } else {
+        durable[index] = migrated;
+      }
     }
   } catch {
     /* Older shells retain the legacy gallery path. */

@@ -54,6 +54,32 @@ beforeEach(() => {
 });
 
 describe("editImage", () => {
+  it("settles a provider-rejected queue submission without hiding an uncertain one", async () => {
+    let queuedId = "";
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "media_job_queue") {
+        queuedId = (args as { request: { jobId: string } }).request.jobId;
+        throw { code: "media_job_queue_failed", message: "Invalid image" };
+      }
+      if (command === "media_job_list") return [];
+      return undefined;
+    });
+    await expect(editImage("gpt-image-2", "brighten it", IMG)).rejects.toThrow("Invalid image");
+    expect(invoke).toHaveBeenCalledWith("media_job_dismiss", { id: queuedId });
+
+    vi.mocked(invoke).mockClear();
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "media_job_queue")
+        throw { code: "media_transport_failed", message: "Submission interrupted" };
+      if (command === "media_job_list") return [];
+      return undefined;
+    });
+    await expect(editImage("gpt-image-2", "brighten it", IMG)).rejects.toThrow(
+      "Submission interrupted",
+    );
+    expect(invoke).not.toHaveBeenCalledWith("media_job_dismiss", expect.anything());
+  });
+
   it("acknowledges a failed native edit while reporting its error", async () => {
     vi.mocked(invoke).mockImplementation(async (command, args) => {
       if (command === "media_job_queue")
