@@ -5,6 +5,7 @@ import { t } from "../../lib/i18n";
 import {
   buildShotList,
   createNote,
+  deleteNotes,
   getNote,
   shotList,
   SHOT_LIST_EVENT,
@@ -106,6 +107,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const [progress, setProgress] = useState<Record<string, NodeRunResult>>({});
   const abort = useRef<AbortController>();
   const resultWrites = useRef<Promise<void>>(Promise.resolve());
+  const finishingReadings = useRef(new Set<string>());
   const epoch = useRef(0);
   const report = (cause: unknown) => setError(projectError(cause));
   const refreshArtifacts = async () => {
@@ -146,6 +148,15 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       () => undefined,
     );
   };
+  const finishReadingNote = async (noteId: string, projectId: string) => {
+    await deleteNotes([noteId]);
+    if (current.current?.id !== projectId || current.current.document.readingNoteId !== noteId)
+      return;
+    await edit((previous) => ({
+      ...previous,
+      document: { ...previous.document, readingNoteId: undefined },
+    }));
+  };
   const open = async (value: StudioProject) => {
     await writer.current?.flush(current.current ?? undefined);
     current.current = value;
@@ -162,8 +173,8 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     if (readingNoteId) {
       const row = await shotList(readingNoteId);
       if (current.current?.id !== value.id) return;
-      setReading(row?.status === "running" || row?.status === "pending");
-      if (row) acceptReading(row);
+      if (row) await acceptReading(row);
+      else await finishReadingNote(readingNoteId, value.id);
     }
     const missing = new Set<string>();
     for (const run of value.document.runs) {
@@ -301,83 +312,105 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       abort.current?.abort();
     };
   }, []);
-  const acceptReading = (row: ShotListDto) => {
+  const acceptReading = async (row: ShotListDto) => {
     const active = current.current;
     if (!active || row.noteId !== active.document.readingNoteId) return;
     setReading(row.status === "pending" || row.status === "running");
-    if (row.status === "failed") {
-      setError(row.lastError || t("The script could not be read."));
-      return;
-    }
-    if (row.status !== "ready" || !row.shotsJson || active.document.shots.length) return;
+    if (row.status === "pending" || row.status === "running") return;
+    if (finishingReadings.current.has(row.noteId)) return;
+    finishingReadings.current.add(row.noteId);
     try {
-      const parsed: unknown = JSON.parse(row.shotsJson);
-      const body =
-        parsed && typeof parsed === "object" && !Array.isArray(parsed)
-          ? (parsed as Record<string, unknown>)
-          : undefined;
-      const shots = Array.isArray(parsed)
-        ? (parsed as Shot[])
-        : Array.isArray(body?.shots)
-          ? (body.shots as Shot[])
+      if (row.status === "failed") {
+        setError(row.lastError || t("The script could not be read."));
+        await finishReadingNote(row.noteId, active.id);
+        return;
+      }
+      if (row.status !== "ready") return;
+      if (!row.shotsJson) {
+        setError(t("The script could not be read."));
+        await finishReadingNote(row.noteId, active.id);
+        return;
+      }
+      if (active.document.shots.length) {
+        await finishReadingNote(row.noteId, active.id);
+        return;
+      }
+      try {
+        const parsed: unknown = JSON.parse(row.shotsJson);
+        const body =
+          parsed && typeof parsed === "object" && !Array.isArray(parsed)
+            ? (parsed as Record<string, unknown>)
+            : undefined;
+        const shots = Array.isArray(parsed)
+          ? (parsed as Shot[])
+          : Array.isArray(body?.shots)
+            ? (body.shots as Shot[])
+            : [];
+        const cast = Array.isArray(body?.cast)
+          ? body.cast.flatMap((entry) => {
+              if (!entry || typeof entry !== "object") return [];
+              const member = entry as Record<string, unknown>;
+              const name = typeof member.name === "string" ? member.name.trim() : "";
+              if (!name || !BIBLE_KINDS.includes(member.kind as BibleKind)) return [];
+              return [
+                {
+                  name,
+                  kind: member.kind as BibleKind,
+                  traits: typeof member.traits === "string" ? member.traits : "",
+                },
+              ];
+            })
           : [];
-      const cast = Array.isArray(body?.cast)
-        ? body.cast.flatMap((entry) => {
-            if (!entry || typeof entry !== "object") return [];
-            const member = entry as Record<string, unknown>;
-            const name = typeof member.name === "string" ? member.name.trim() : "";
-            if (!name || !BIBLE_KINDS.includes(member.kind as BibleKind)) return [];
-            return [
-              {
-                name,
-                kind: member.kind as BibleKind,
-                traits: typeof member.traits === "string" ? member.traits : "",
-              },
-            ];
-          })
-        : [];
-      editDocument((document) => ({
-        ...document,
-        shots: shots.map((shot, index) => ({
-          ...newShot(index),
-          ...shot,
-          id: crypto.randomUUID(),
-          title: shot.scene || t("Shot {number}", { number: index + 1 }),
-          mode: shot.continues ? "continuation" : "text",
-        })),
-        bible: [
-          ...document.bible,
-          ...cast
-            .filter(
-              (member, index) =>
-                !document.bible.some(
-                  (entry) =>
-                    entry.name.trim().toLowerCase() === member.name.toLowerCase() &&
-                    entry.kind === member.kind,
-                ) &&
-                !cast
-                  .slice(0, index)
-                  .some(
-                    (entry) =>
-                      entry.name.toLowerCase() === member.name.toLowerCase() &&
-                      entry.kind === member.kind,
-                  ),
-            )
-            .map((member) => ({
+        await edit((previous) => ({
+          ...previous,
+          document: {
+            ...previous.document,
+            shots: shots.map((shot, index) => ({
+              ...newShot(index),
+              ...shot,
               id: crypto.randomUUID(),
-              name: member.name,
-              kind: member.kind,
-              traits: member.traits,
-              note: "",
-              refs: [],
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
+              title: shot.scene || t("Shot {number}", { number: index + 1 }),
+              mode: shot.continues ? "continuation" : "text",
             })),
-        ],
-      }));
-      setSection("shots");
-    } catch (cause) {
-      report(cause);
+            bible: [
+              ...previous.document.bible,
+              ...cast
+                .filter(
+                  (member, index) =>
+                    !previous.document.bible.some(
+                      (entry) =>
+                        entry.name.trim().toLowerCase() === member.name.toLowerCase() &&
+                        entry.kind === member.kind,
+                    ) &&
+                    !cast
+                      .slice(0, index)
+                      .some(
+                        (entry) =>
+                          entry.name.toLowerCase() === member.name.toLowerCase() &&
+                          entry.kind === member.kind,
+                      ),
+                )
+                .map((member) => ({
+                  id: crypto.randomUUID(),
+                  name: member.name,
+                  kind: member.kind,
+                  traits: member.traits,
+                  note: "",
+                  refs: [],
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                })),
+            ],
+          },
+        }));
+        setSection("shots");
+      } catch (cause) {
+        report(cause);
+        return;
+      }
+      await finishReadingNote(row.noteId, active.id);
+    } finally {
+      finishingReadings.current.delete(row.noteId);
     }
   };
   // The listener reads the active project through current.current. Keeping one
@@ -388,7 +421,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     let cancelled = false;
     void import("@tauri-apps/api/event")
       .then((api) =>
-        api.listen<ShotListDto>(SHOT_LIST_EVENT, (event) => acceptReading(event.payload)),
+        api.listen<ShotListDto>(SHOT_LIST_EVENT, (event) => {
+          void acceptReading(event.payload).catch(report);
+        }),
       )
       .then((stop) => {
         if (cancelled) stop();
@@ -703,7 +738,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         ...previous,
         document: { ...previous.document, readingNoteId: noteId },
       }));
-      acceptReading(await buildShotList(noteId));
+      await acceptReading(await buildShotList(noteId));
     } catch (cause) {
       report(cause);
     } finally {
@@ -835,7 +870,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               {projects
                 .filter(
                   (item) =>
-                    item.archived === archived &&
+                    (!item.archived || archived) &&
                     item.name.toLowerCase().includes(search.toLowerCase()),
                 )
                 .map((item) => (

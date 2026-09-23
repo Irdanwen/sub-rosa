@@ -175,7 +175,10 @@ describe("project production confirmation", () => {
 
     await waitFor(() => expect(project.document.shots).toHaveLength(1));
     expect(project.document.noteId).toBe("source-note");
-    expect(project.document.readingNoteId).toBe("project-reading");
+    await waitFor(() => expect(project.document.readingNoteId).toBeUndefined());
+    expect(mocks.invoke).toHaveBeenCalledWith("delete_notes", {
+      request: { noteIds: ["project-reading"] },
+    });
     expect(mocks.invoke).not.toHaveBeenCalledWith("shot_list", { noteId: "source-note" });
     expect(mocks.invoke).toHaveBeenCalledWith("update_note", {
       request: {
@@ -191,6 +194,20 @@ describe("project production confirmation", () => {
     expect(project.document.bible).toMatchObject([
       { name: "Mira", kind: "character", traits: "Silver coat", refs: [] },
     ]);
+  });
+
+  it("adds archived projects to the active list when requested", async () => {
+    mocks.listProjects.mockResolvedValue([
+      project,
+      { id: "archived-film", name: "Archived film", archived: true, revision: 1, updatedAt: "" },
+    ]);
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "All projects" }));
+    expect(await screen.findByText("Concert")).toBeVisible();
+    expect(screen.queryByText("Archived film")).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show archived" }));
+    expect(screen.getByText("Concert")).toBeVisible();
+    expect(screen.getByText("Archived film")).toBeVisible();
   });
 
   it("removes a dismissed run without blocking restoration of later productions", async () => {
