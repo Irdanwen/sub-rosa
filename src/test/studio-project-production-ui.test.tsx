@@ -832,6 +832,36 @@ describe("project production confirmation", () => {
     );
   });
 
+  it("keeps the reopened film when an earlier save-a-copy response arrives later", async () => {
+    project.document.script = "Saved script";
+    mocks.save.mockRejectedValueOnce("studio_project_conflict");
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Script" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Film script" }), {
+      target: { value: "Unsaved script" },
+    });
+    await screen.findByRole("button", { name: "Save a copy" });
+    let finishCopy: (value: StudioProject) => void = () => {};
+    mocks.save.mockImplementationOnce(
+      () =>
+        new Promise<StudioProject>((resolve) => {
+          finishCopy = resolve;
+        }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save a copy" }));
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2));
+    const copy = mocks.save.mock.calls[1]?.[0] as StudioProject;
+    fireEvent.click(screen.getByRole("button", { name: "Reopen saved version" }));
+    const dialog = await screen.findByRole("dialog", { name: "Reopen the saved version?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reopen saved version" }));
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Film script" })).toHaveValue("Saved script"),
+    );
+    await act(async () => finishCopy(copy));
+    expect(screen.getByRole("textbox", { name: "Film script" })).toHaveValue("Saved script");
+    expect(screen.getByRole("textbox", { name: "Project name" })).toHaveValue("Concert");
+  });
+
   it("remounts the montage after reopening a saved revision", async () => {
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Montage" }));

@@ -975,6 +975,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 type="button"
                 className="btn btn-secondary"
                 onClick={() => {
+                  const request = ++openRequest.current;
+                  const version = epoch.current;
+                  const sourceId = project.id;
                   const copy = {
                     ...structuredClone(project),
                     id: crypto.randomUUID(),
@@ -984,8 +987,14 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                   };
                   void saveProject(copy, null)
                     .then(async (stored) => {
+                      if (
+                        request !== openRequest.current ||
+                        version !== epoch.current ||
+                        current.current?.id !== sourceId
+                      )
+                        return;
                       writer.current = undefined;
-                      await open(stored);
+                      await open(stored, request);
                     })
                     .catch(report);
                 }}
