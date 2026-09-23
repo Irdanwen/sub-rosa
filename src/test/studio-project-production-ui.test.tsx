@@ -350,7 +350,7 @@ describe("project production confirmation", () => {
     expect(project.document.artifactIds).toContain("rendered.mp4");
   });
 
-  it("appends selected takes to the latest montage after an edit during metadata loading", async () => {
+  it("appends selected takes after the latest picture edit even when audio runs longer", async () => {
     project.document.timeline.clips = [
       createEditorClip({
         id: "first",
@@ -358,6 +358,13 @@ describe("project production confirmation", () => {
         name: "First",
         duration: 30,
         artifactId: "first.mp4",
+      }),
+      createEditorClip({
+        id: "score",
+        trackId: "music",
+        name: "Score",
+        duration: 100,
+        artifactId: "score.mp3",
       }),
     ];
     project.document.shots[0].activeTakeId = "take.mp4";
@@ -385,9 +392,10 @@ describe("project production confirmation", () => {
     await waitFor(() => expect(mocks.mediaSeconds).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: "Trim existing clip" }));
     finishMetadata(5);
-    await waitFor(() => expect(project.document.timeline.clips).toHaveLength(2));
+    await waitFor(() => expect(project.document.timeline.clips).toHaveLength(3));
     expect(project.document.timeline.clips[0].duration).toBe(20);
-    expect(project.document.timeline.clips[1].start).toBe(20);
+    expect(project.document.timeline.clips[1].duration).toBe(100);
+    expect(project.document.timeline.clips[2].start).toBe(20);
   });
 
   it("reads an imported script through a project-owned note and keeps the returned cast", async () => {

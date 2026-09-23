@@ -777,7 +777,12 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       await edit((previous) => {
         const timeline = structuredClone(previous.document.timeline);
         const rate = fps(timeline);
-        let start = Math.max(0, ...timeline.clips.map((clip) => clip.start + clip.duration));
+        let start = Math.max(
+          0,
+          ...timeline.clips
+            .filter((clip) => clip.trackId === "picture")
+            .map((clip) => clip.start + clip.duration),
+        );
         for (const item of selected) {
           const duration = Math.max(1, Math.round(item.seconds * rate));
           timeline.clips.push(
