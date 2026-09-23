@@ -20,6 +20,7 @@ import {
   isLocked,
   removeClip,
   replaceClip,
+  resizeClip,
   setKeyframe,
   snapFrame,
   splitClip,
@@ -629,7 +630,7 @@ export function ProjectTimeline({ value, onChange, artifacts }: Props) {
                 label={t("Duration (frames)")}
                 value={selected.duration}
                 min={1}
-                onChange={(duration) => update({ ...selected, duration: Math.round(duration) })}
+                onChange={(duration) => commit(resizeClip(value, selected.id, duration))}
               />
               {selected.artifactId && (
                 <NumberField

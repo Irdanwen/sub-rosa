@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  clipFade,
   clipOpacity,
   createEditorClip,
   createEditorDocument,
   durationFrames,
   duplicateClip,
   removeClip,
+  resizeClip,
   setKeyframe,
   snapFrame,
   sourceFrame,
@@ -69,6 +71,26 @@ describe("editable montage document", () => {
       expect(clipOpacity(split.clips[0], frame)).toBeCloseTo(clipOpacity(original, frame), 8);
     for (let frame = 0; frame <= split.clips[1].duration; frame++)
       expect(clipOpacity(split.clips[1], frame)).toBeCloseTo(clipOpacity(original, frame + 30), 8);
+  });
+  it("matches edge trimming when duration is shortened numerically", () => {
+    const doc = cut();
+    doc.clips[0].fadeOut = 45;
+    doc.clips[0] = setKeyframe(doc.clips[0], "opacity", 90, 0.2);
+    doc.clips[0] = setKeyframe(doc.clips[0], "speed", 0, 1);
+    doc.clips[0] = setKeyframe(doc.clips[0], "speed", 90, 1.5);
+    const viaDuration = resizeClip(doc, "clip", 70);
+    const viaEdge = trimClip(doc, "clip", 0, 70);
+    expect(viaDuration).toEqual(viaEdge);
+    for (let frame = 0; frame <= 70; frame++)
+      expect(clipOpacity(viaDuration.clips[0], frame)).toBeCloseTo(
+        clipOpacity(doc.clips[0], frame),
+        8,
+      );
+    const extended = resizeClip(viaDuration, "clip", 90).clips[0];
+    expect(extended.fadeOutOffset).toBe(30);
+    expect(clipFade(extended, 90)).toBeCloseTo(clipFade(doc.clips[0], 90), 8);
+    expect(clipOpacity(extended, 90)).toBeCloseTo(clipOpacity(doc.clips[0], 90), 8);
+    expect(sourceFrame(extended, 90)).toBeCloseTo(sourceFrame(doc.clips[0], 90), 8);
   });
   it("respects locked tracks for split, trim, duplicate and delete", () => {
     const doc = cut();

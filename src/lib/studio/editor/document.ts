@@ -207,6 +207,9 @@ function slicedProperties(clip: EditorClip, from: number, until: number): Editor
           .filter((p) => p.frame > from && p.frame < until)
           .map((p) => ({ ...p, frame: p.frame - from })),
         { frame: until - from, value: valueAt(points, until, defaults[key as AnimatedProperty]) },
+        // Keep hidden future keys so extending the right edge can reveal the
+        // original animation and speed ramp without changing the visible cut.
+        ...points.filter((p) => p.frame > until).map((p) => ({ ...p, frame: p.frame - from })),
       ],
     ]),
   ) as EditorClip["properties"];
@@ -261,6 +264,20 @@ export function trimClip(
     properties: slicedProperties(clip, from, until),
     fadeInOffset: (clip.fadeInOffset ?? 0) + from,
     fadeOutOffset: (clip.fadeOutOffset ?? 0) + clip.duration - until,
+  });
+}
+/** Numeric duration edits use the same right-edge trim as dragging. Extending
+ * reveals source frames and consumes any fade-out offset from a prior trim. */
+export function resizeClip(doc: EditorDocument, id: string, duration: number): EditorDocument {
+  const clip = doc.clips.find((candidate) => candidate.id === id);
+  if (!clip || isLocked(doc, clip)) return doc;
+  const next = Math.max(1, Math.round(duration));
+  if (next === clip.duration) return doc;
+  if (next < clip.duration) return trimClip(doc, id, 0, next);
+  return replaceClip(doc, {
+    ...clip,
+    duration: next,
+    fadeOutOffset: Math.max(0, (clip.fadeOutOffset ?? 0) - (next - clip.duration)),
   });
 }
 export function removeClip(doc: EditorDocument, id: string, ripple = false): EditorDocument {

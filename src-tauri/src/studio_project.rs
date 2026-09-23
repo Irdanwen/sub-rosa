@@ -170,9 +170,58 @@ async fn save_project(
             .bind(request.id).bind(revision)
             .fetch_optional(pool).await.map_err(storage_error)?
     } else {
-        query("INSERT INTO studio_projects (id, name, archived, revision, updated_at, document) VALUES (?, ?, ?, 1, ?, ?) ON CONFLICT(id) DO NOTHING RETURNING *")
-            .bind(request.id).bind(name).bind(request.archived).bind(now).bind(document)
-            .fetch_optional(pool).await.map_err(storage_error)?
+        let artifact_ids = match request.document.get("artifactIds") {
+            None => vec![],
+            Some(Value::Array(ids)) => ids
+                .iter()
+                .map(|id| {
+                    let id = id.as_str().ok_or(INVALID_DOCUMENT)?;
+                    validate_id(id)?;
+                    Ok(id.to_owned())
+                })
+                .collect::<Result<Vec<_>, String>>()?,
+            _ => return Err(INVALID_DOCUMENT.into()),
+        };
+        let mut tx = pool.begin().await.map_err(storage_error)?;
+        let row = query("INSERT INTO studio_projects (id, name, archived, revision, updated_at, document) VALUES (?, ?, ?, 1, ?, ?) ON CONFLICT(id) DO NOTHING RETURNING *")
+            .bind(&request.id).bind(name).bind(request.archived).bind(now).bind(document)
+            .fetch_optional(&mut *tx).await.map_err(storage_error)?.ok_or(CONFLICT)?;
+        for artifact_id in artifact_ids {
+            let existing = query("SELECT project_ids FROM studio_artifact_metadata WHERE id = ?")
+                .bind(&artifact_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(storage_error)?;
+            let mut ids: Vec<String> = existing
+                .as_ref()
+                .map(|row| {
+                    row.try_get::<String, _>("project_ids")
+                        .map_err(storage_error)
+                })
+                .transpose()?
+                .as_deref()
+                .map(serde_json::from_str)
+                .transpose()
+                .map_err(storage_error)?
+                .unwrap_or_default();
+            if !ids.contains(&request.id) {
+                ids.push(request.id.clone());
+            }
+            ids.sort();
+            ids.dedup();
+            if ids.len() > 100 {
+                return Err(INVALID_DOCUMENT.into());
+            }
+            let json = serde_json::to_string(&ids).map_err(storage_error)?;
+            query("INSERT INTO studio_artifact_metadata (id, title, project_ids) VALUES (?, '', ?) ON CONFLICT(id) DO UPDATE SET project_ids = excluded.project_ids")
+                .bind(&artifact_id)
+                .bind(json)
+                .execute(&mut *tx)
+                .await
+                .map_err(storage_error)?;
+        }
+        tx.commit().await.map_err(storage_error)?;
+        Some(row)
     };
     record(&row.ok_or(CONFLICT)?)
 }
@@ -611,6 +660,75 @@ mod tests {
                 .unwrap()
                 .document["artifactIds"],
             json!(["clip.mp4"])
+        );
+    }
+
+    #[tokio::test]
+    async fn creating_a_copy_registers_its_media_without_replacing_provenance() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pool = open_database(&dir.path().join("studio.sqlite")).await;
+        save_artifact(
+            &pool,
+            SaveArtifactRequest {
+                id: "clip.mp4".into(),
+                title: Some("First take".into()),
+                project_ids: Some(vec!["original".into()]),
+                generation: Some(json!({"prompt":"A stage"})),
+            },
+        )
+        .await
+        .unwrap();
+        save_project(
+            &pool,
+            request(
+                None,
+                json!({"schemaVersion":1,"artifactIds":["clip.mp4","still.png"]}),
+            ),
+        )
+        .await
+        .unwrap();
+        let metadata = list_artifacts(&pool).await.unwrap();
+        assert_eq!(metadata[0].title, "First take");
+        assert_eq!(metadata[0].project_ids, vec!["film-one", "original"]);
+        assert_eq!(
+            metadata[0].generation.as_ref().unwrap()["prompt"],
+            "A stage"
+        );
+        assert_eq!(metadata[1].project_ids, vec!["film-one"]);
+    }
+
+    #[tokio::test]
+    async fn failed_membership_registration_rolls_back_project_creation() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pool = open_database(&dir.path().join("studio.sqlite")).await;
+        save_artifact(
+            &pool,
+            SaveArtifactRequest {
+                id: "clip.mp4".into(),
+                title: Some("First take".into()),
+                project_ids: Some(vec!["original".into()]),
+                generation: None,
+            },
+        )
+        .await
+        .unwrap();
+        query("CREATE TRIGGER reject_membership BEFORE UPDATE ON studio_artifact_metadata WHEN NEW.id = 'clip.mp4' BEGIN SELECT RAISE(ABORT, 'blocked'); END")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            save_project(
+                &pool,
+                request(None, json!({"schemaVersion":1,"artifactIds":["clip.mp4"]})),
+            )
+            .await
+            .unwrap_err(),
+            STORAGE_ERROR
+        );
+        assert!(get_project(&pool, "film-one").await.unwrap().is_none());
+        assert_eq!(
+            list_artifacts(&pool).await.unwrap()[0].project_ids,
+            vec!["original"]
         );
     }
 
