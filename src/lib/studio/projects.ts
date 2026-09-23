@@ -333,6 +333,11 @@ export async function importLegacyFilms(): Promise<void> {
     project.document.script = note?.editedContent ?? note?.generatedContent ?? "";
     project.document.shots = recovered;
     project.document.bible = copyProjectBible(referencedBible(recovered, bible), id);
+    project.document.artifactIds = [
+      ...new Set(
+        project.document.bible.flatMap((entry) => entry.refs.map((ref) => ref.artifactId)),
+      ),
+    ];
     await saveImportedProject(project);
   }
   await importLegacyProductions(bible);

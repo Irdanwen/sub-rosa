@@ -312,6 +312,7 @@ describe("migration recovery boundaries", () => {
     expect(copied?.originId).toBe("person");
     expect(copied?.id).not.toBe("person");
     expect(copied?.refs[0].entryId).toBe(copied?.id);
+    expect(saved?.document.artifactIds).toEqual(["face.png"]);
     if (!copied) throw new Error("Missing copied identity");
     copied.refs[0].label = "Changed in film";
     expect(bible[0].refs[0].label).toBe("Front");

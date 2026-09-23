@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 import { errorCode } from "../../lib/errors";
-import { t } from "../../lib/i18n";
+import { intlLocale, t } from "../../lib/i18n";
 import {
   buildShotList,
   createNote,
@@ -87,6 +87,9 @@ type ReadyQuote = {
   estimate: WorkflowCostEstimate;
   signatures: Record<string, string>;
 };
+
+const quoteCredits = (credits: number) =>
+  credits.toLocaleString(intlLocale(), { maximumFractionDigits: 2 });
 
 export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -1387,7 +1390,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 }
                 onClick={() => void produce(quote)}
               >
-                {t("Generate · {credits} credits", { credits: quote.estimate.credits })}
+                {t("Generate · {credits} credits", {
+                  credits: quoteCredits(quote.estimate.credits),
+                })}
               </button>
             </>
           }
@@ -1401,7 +1406,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                   <strong>
                     {node.credits === undefined
                       ? t("Price unavailable")
-                      : t("{credits} credits", { credits: node.credits })}
+                      : t("{credits} credits", { credits: quoteCredits(node.credits) })}
                   </strong>
                 </div>
               ))}

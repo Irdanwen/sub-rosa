@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { applyLocale, t } from "../lib/i18n";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -201,6 +202,42 @@ const mount = async () => {
 };
 
 describe("project production confirmation", () => {
+  it("formats quoted totals and steps in the app language", async () => {
+    applyLocale("fr");
+    try {
+      project.document.settings.budget = 2000;
+      mocks.quote.mockImplementation(async (workflow: Workflow) => ({
+        nodes: workflow.nodes
+          .filter((node) => node.type === "video")
+          .map((node) => ({
+            nodeId: node.id,
+            type: "video",
+            label: node.label,
+            kind: "flat",
+            credits: 1000.5,
+            quotable: false,
+          })),
+        credits: 1000.5,
+        metered: 0,
+        quotable: 0,
+      }));
+      await mount();
+      fireEvent.click(screen.getByRole("button", { name: "Generate shot" }));
+      const dialog = await screen.findByRole("dialog", { name: t("Review generation costs") });
+      const amount = (1000.5).toLocaleString("fr-FR", { maximumFractionDigits: 2 });
+      expect(
+        within(dialog).getByRole("button", {
+          name: t("Generate · {credits} credits", { credits: amount }),
+        }),
+      ).toBeInTheDocument();
+      expect(dialog.querySelector(".project-quote-row strong")?.textContent).toBe(
+        t("{credits} credits", { credits: amount }),
+      );
+    } finally {
+      applyLocale("en");
+    }
+  });
+
   it("files a rendered montage in the film and its gallery membership", async () => {
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Montage" }));
