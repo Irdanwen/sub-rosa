@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   budget: vi.fn(),
   mediaSeconds: vi.fn(),
   organize: vi.fn(),
+  deferredTimelineEdit: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => vi.fn()) }));
@@ -152,6 +153,27 @@ vi.mock("../components/studio/ProjectTimeline", () => ({
       </button>
       <button
         type="button"
+        onClick={() =>
+          mocks.deferredTimelineEdit.mockImplementation(() =>
+            onChange({
+              ...value,
+              clips: [
+                createEditorClip({
+                  id: "delayed-clip",
+                  trackId: "picture",
+                  name: "Delayed clip",
+                  duration: 30,
+                  artifactId: "old-take.mp4",
+                }),
+              ],
+            }),
+          )
+        }
+      >
+        Start delayed clip addition
+      </button>
+      <button
+        type="button"
         onClick={() => {
           const clip = createEditorClip({
             id: "large-lut",
@@ -250,6 +272,7 @@ beforeEach(() => {
   });
   mocks.budget.mockReturnValue(vi.fn());
   mocks.mediaSeconds.mockReset().mockResolvedValue(5);
+  mocks.deferredTimelineEdit.mockReset();
   mocks.quote.mockImplementation(async (workflow: Workflow) => ({
     nodes: workflow.nodes
       .filter((node) => node.type === "video")
@@ -874,6 +897,19 @@ describe("project production confirmation", () => {
     const dialog = await screen.findByRole("dialog", { name: "Reopen the saved version?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Reopen saved version" }));
     await waitFor(() => expect(screen.getByTestId("timeline-artifacts")).not.toBe(abandonedEditor));
+  });
+
+  it("ignores a delayed montage addition after opening another film", async () => {
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Montage" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start delayed clip addition" }));
+    fireEvent.click(screen.getByRole("button", { name: "All projects" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New project" }));
+    await screen.findByRole("textbox", { name: "Film script" });
+    const savesBeforeLateResponse = mocks.save.mock.calls.length;
+    await act(async () => mocks.deferredTimelineEdit());
+    expect(mocks.save).toHaveBeenCalledTimes(savesBeforeLateResponse);
+    expect(project.document.timeline.clips).toHaveLength(0);
   });
 
   it("shows the stored project name after discarding a conflicting rename", async () => {

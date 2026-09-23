@@ -957,6 +957,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       }}
     />
   );
+  const timelineEpoch = epoch.current;
   return (
     <div className="project-studio">
       {error ? (
@@ -1458,7 +1459,10 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               <ProjectTimeline
                 key={`${project.id}:${openSession}`}
                 value={project.document.timeline}
-                onChange={(timeline) => editDocument((document) => ({ ...document, timeline }))}
+                onChange={(timeline) => {
+                  if (current.current?.id !== project.id || epoch.current !== timelineEpoch) return;
+                  editDocument((document) => ({ ...document, timeline }));
+                }}
                 artifacts={montageArtifacts(project, media)}
                 onExportArtifact={async (artifact) => {
                   const version = epoch.current;
