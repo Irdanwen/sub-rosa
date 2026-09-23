@@ -240,19 +240,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     // detached gallery write was interrupted. Repair that membership only if
     // the project still owns the media; a deliberate removal stays removed.
     if (alreadyApplied && !current.current.document.artifactIds.includes(artifactId)) return;
-    resultWrites.current = resultWrites.current
-      .then(async () => {
-        const metadata = (await listArtifactMetadata()).find((item) => item.id === artifactId);
-        if (metadata?.projectIds.includes(projectId)) return;
-        await saveArtifactMetadata({
-          id: artifactId,
-          title: metadata?.title ?? "",
-          projectIds: [...new Set([...(metadata?.projectIds ?? []), projectId])],
-        });
-      })
-      .catch(report);
-    if (alreadyApplied) return;
-    editDocument((document) => {
+    const applyDocument = (document: ProjectDocument): ProjectDocument => {
       const savedRun = document.runs.find((item) => item.id === run.id);
       const signatures = { ...(savedRun?.shotSignatures ?? run.shotSignatures) };
       const completedIndex = document.shots.findIndex(
@@ -315,7 +303,26 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           return shot;
         }),
       };
-    });
+    };
+    const saved = alreadyApplied
+      ? Promise.resolve()
+      : edit((previous) => ({ ...previous, document: applyDocument(previous.document) }));
+    // The previous gallery write may still be pending when this save rejects.
+    void saved.catch(() => undefined);
+    resultWrites.current = resultWrites.current
+      .then(() => saved)
+      .then(async () => {
+        const owner = await getProject(projectId);
+        if (!owner?.document.artifactIds.includes(artifactId)) return;
+        const metadata = (await listArtifactMetadata()).find((item) => item.id === artifactId);
+        if (metadata?.projectIds.includes(projectId)) return;
+        await saveArtifactMetadata({
+          id: artifactId,
+          title: metadata?.title ?? "",
+          projectIds: [...new Set([...(metadata?.projectIds ?? []), projectId])],
+        });
+      })
+      .catch(report);
   };
   const restoreRun = async (
     run: ProjectRun,
@@ -1046,7 +1053,11 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                     id: crypto.randomUUID(),
                     revision: 0,
                     name: t("{name} copy", { name: project.name }),
-                    document: { ...structuredClone(project.document), runs: [] },
+                    document: {
+                      ...structuredClone(project.document),
+                      runs: [],
+                      readingNoteId: undefined,
+                    },
                   };
                   void saveProject(copy, null)
                     .then(async (stored) => {

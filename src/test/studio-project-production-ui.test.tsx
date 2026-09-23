@@ -1101,6 +1101,23 @@ describe("project production confirmation", () => {
     expect(screen.getByRole("textbox", { name: "Project name" })).toHaveValue("Concert");
   });
 
+  it("detaches an active script reading when saving a conflicted film as a copy", async () => {
+    project.document.readingNoteId = "project-reading";
+    mocks.invoke.mockImplementation(async (command) =>
+      command === "shot_list" ? { noteId: "project-reading", status: "pending" } : null,
+    );
+    mocks.save.mockRejectedValueOnce("studio_project_conflict");
+    await mount();
+    const name = screen.getByRole("textbox", { name: "Project name" });
+    fireEvent.change(name, { target: { value: "New title" } });
+    fireEvent.blur(name);
+    fireEvent.click(await screen.findByRole("button", { name: "Save a copy" }));
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2));
+    const copy = mocks.save.mock.calls[1]?.[0] as StudioProject;
+    expect(copy.document.readingNoteId).toBeUndefined();
+    expect(copy.document.runs).toEqual([]);
+  });
+
   it("remounts the montage after reopening a saved revision", async () => {
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Montage" }));
@@ -1238,6 +1255,26 @@ describe("project production confirmation", () => {
         projectIds: ["other-project", "project-1"],
       }),
     );
+  });
+
+  it("does not file generated media when saving its project result fails", async () => {
+    vi.mocked(listArtifactMetadata).mockResolvedValue([]);
+    mocks.run.mockImplementation(async (_workflow, options) => {
+      await options.onRunRecorded("run-1");
+      mocks.save.mockRejectedValueOnce(new Error("project save failed"));
+      options.onUpdate({
+        nodeId: "shot-s1",
+        status: "done",
+        output: { kind: "video", artifactId: "take.mp4" },
+      });
+      return new Map();
+    });
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Generate shot" }));
+    await screen.findByRole("dialog", { name: "Review generation costs" });
+    fireEvent.click(screen.getByRole("button", { name: /Generate · 10 credits/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("project save failed");
+    expect(saveArtifactMetadata).not.toHaveBeenCalled();
   });
 
   it.each(["in order", "out of order"])(

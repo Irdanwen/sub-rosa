@@ -170,6 +170,13 @@ export function ProjectTimeline({
     past: [],
     future: [],
   });
+  const lastValue = useRef(value);
+  const expectedValue = useRef<EditorDocument>();
+  if (value !== lastValue.current) {
+    if (value !== expectedValue.current) history.current = { past: [], future: [] };
+    lastValue.current = value;
+    expectedValue.current = undefined;
+  }
   const playhead = useRef(frame);
   playhead.current = frame;
   const current = useRef(value);
@@ -188,12 +195,14 @@ export function ProjectTimeline({
     if (history.current.past.length > 80) history.current.past.shift();
     history.current.future = [];
     setHistoryTick((n) => n + 1);
+    expectedValue.current = next;
     onChange(next);
   };
   const undo = () => {
     const previous = history.current.past.pop();
     if (previous) {
       history.current.future.push(value);
+      expectedValue.current = previous;
       onChange(previous);
       setHistoryTick((n) => n + 1);
     }
@@ -202,6 +211,7 @@ export function ProjectTimeline({
     const next = history.current.future.pop();
     if (next) {
       history.current.past.push(value);
+      expectedValue.current = next;
       onChange(next);
       setHistoryTick((n) => n + 1);
     }
