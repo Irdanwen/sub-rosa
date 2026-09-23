@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { applyLocale, t } from "../lib/i18n";
 import { ProjectShots } from "../components/studio/ProjectShots";
 import { ProjectBible } from "../components/studio/ProjectBible";
 import { ProjectMedia } from "../components/studio/ProjectMedia";
@@ -226,6 +227,37 @@ describe("shot editing", () => {
 });
 
 describe("project bible", () => {
+  it("formats reference credit costs in the selected app language", async () => {
+    applyLocale("fr");
+    try {
+      const expensiveCatalog = {
+        ...catalog,
+        models: catalog.models.map((item) =>
+          item.id === "portrait-image" ? { ...item, costCredits: 1000.5 } : item,
+        ),
+      };
+      render(
+        <ProjectBible
+          entries={[bibleEntry("character")]}
+          onChange={fixtures.onChange}
+          artifacts={[]}
+          catalog={expensiveCatalog}
+          onArtifact={vi.fn()}
+          onGenerate={vi.fn()}
+          busy={false}
+        />,
+      );
+      const amount = (1000.5).toLocaleString("fr-FR", { maximumFractionDigits: 2 });
+      expect(
+        screen.getByRole("button", {
+          name: t("Generate reference · {credits} credits", { credits: amount }),
+        }),
+      ).toBeInTheDocument();
+    } finally {
+      applyLocale("en");
+    }
+  });
+
   it("registers copied library references with the project", async () => {
     const source = {
       ...bibleEntry("character"),

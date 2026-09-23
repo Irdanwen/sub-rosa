@@ -1270,18 +1270,20 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                     document.bible.flatMap((entry) => {
                       const next = bible.find((item) => item.id === entry.id);
                       return next && next.name !== entry.name
-                        ? [[entry.name, next.name] as const]
+                        ? [[entry.name.trim().toLowerCase(), next.name] as const]
                         : [];
                     }),
                   );
+                  const renamedName = (name: string) =>
+                    renamed.get(name.trim().toLowerCase()) ?? name;
                   return {
                     ...document,
                     bible,
                     shots: document.shots.map((shot) => ({
                       ...shot,
-                      characters: shot.characters.map((name) => renamed.get(name) ?? name),
-                      location: renamed.get(shot.location) ?? shot.location,
-                      speaker: renamed.get(shot.speaker) ?? shot.speaker,
+                      characters: shot.characters.map(renamedName),
+                      location: renamedName(shot.location),
+                      speaker: renamedName(shot.speaker),
                     })),
                   };
                 })

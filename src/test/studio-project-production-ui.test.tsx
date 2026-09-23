@@ -69,7 +69,22 @@ vi.mock("../components/studio/MediaModelPicker", () => ({
   MediaModelPicker: () => null,
   mediaModelOption: (value: unknown) => value,
 }));
-vi.mock("../components/studio/ProjectBible", () => ({ ProjectBible: () => null }));
+vi.mock("../components/studio/ProjectBible", () => ({
+  ProjectBible: ({
+    entries,
+    onChange,
+  }: {
+    entries: StudioProject["document"]["bible"];
+    onChange: (entries: StudioProject["document"]["bible"]) => void;
+  }) => (
+    <button
+      type="button"
+      onClick={() => onChange(entries.map((entry) => ({ ...entry, name: "Morgan" })))}
+    >
+      Rename Bible entry
+    </button>
+  ),
+}));
 vi.mock("../components/studio/ProjectMedia", () => ({ ProjectMedia: () => null }));
 vi.mock("../components/studio/ProjectTimeline", () => ({
   ProjectTimeline: ({
@@ -202,6 +217,32 @@ const mount = async () => {
 };
 
 describe("project production confirmation", () => {
+  it("updates differently cased shot references when a bible entry is renamed", async () => {
+    project.document.bible = [
+      {
+        id: "person",
+        kind: "character",
+        name: "Alice",
+        traits: "Dark jacket",
+        note: "",
+        refs: [],
+        createdAt: "",
+        updatedAt: "",
+      },
+    ];
+    project.document.shots[0].characters = ["ALICE"];
+    project.document.shots[0].location = " alice ";
+    project.document.shots[0].speaker = "AlIcE";
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Bible" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rename Bible entry" }));
+    expect(project.document.shots[0]).toMatchObject({
+      characters: ["Morgan"],
+      location: "Morgan",
+      speaker: "Morgan",
+    });
+  });
+
   it("shows project dates in the selected app language", async () => {
     applyLocale("fr");
     try {

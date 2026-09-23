@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { t } from "../../lib/i18n";
+import { intlLocale, t } from "../../lib/i18n";
 import {
   BIBLE_KIND_LABELS,
   BIBLE_KINDS,
@@ -263,7 +263,9 @@ export function ProjectBible({
                 >
                   {cost === undefined
                     ? t("Price unavailable")
-                    : t("Generate reference · {credits} credits", { credits: cost })}
+                    : t("Generate reference · {credits} credits", {
+                        credits: cost.toLocaleString(intlLocale(), { maximumFractionDigits: 2 }),
+                      })}
                 </button>
               </>
             ) : null}
