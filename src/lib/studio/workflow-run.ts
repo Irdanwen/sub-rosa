@@ -431,6 +431,15 @@ async function persistNode(
   }
   if (result.status === "error") payload.error = result.error;
   await invoke("workflow_run_set_node", { request: payload });
+  if (result.status === "done" && payload.output) {
+    const jobId = pendingJobs.get(result.nodeId);
+    if (jobId) {
+      // The node now owns the durable artifact reference. A failed dismissal
+      // only leaves an extra row; it must not turn a completed node into an error.
+      await invoke("media_job_dismiss", { id: jobId }).catch(() => undefined);
+      pendingJobs.delete(result.nodeId);
+    }
+  }
 }
 
 interface DurableRunOptions {

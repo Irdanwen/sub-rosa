@@ -208,12 +208,42 @@ describe("runAndSaveWorkflow (durable)", () => {
 
     // Delivery filed and acknowledged; the run settled.
     expect(mocks.register).toHaveBeenCalledTimes(1);
-    expect(invokeCalls("media_job_dismiss")).toHaveLength(0);
+    expect(invokeCalls("media_job_dismiss")).toEqual([{ id: "q1" }]);
+    const savedNodeIndex = mocks.invoke.mock.calls.findIndex(
+      ([command, args]) =>
+        command === "workflow_run_set_node" &&
+        (args as { request: { nodeId: string; status: string } }).request.nodeId === "clip" &&
+        (args as { request: { status: string } }).request.status === "done",
+    );
+    const dismissedIndex = mocks.invoke.mock.calls.findIndex(
+      ([command]) => command === "media_job_dismiss",
+    );
+    expect(dismissedIndex).toBeGreaterThan(savedNodeIndex);
     const finished = invokeCalls("workflow_run_finish");
     expect(finished).toHaveLength(1);
     expect((finished[0].request as Record<string, unknown>).status).toBe("completed");
 
     expect(results.get("out")?.output).toMatchObject({ kind: "video", artifactId: "a.mp4" });
+  });
+
+  it("retains the paid job if its completed node cannot be recorded", async () => {
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "media_job_list") return [DELIVERED_JOB];
+      if (
+        command === "workflow_run_set_node" &&
+        (args as { request: { status: string } }).request.status === "done"
+      ) {
+        throw new Error("disk full");
+      }
+      return null;
+    });
+
+    await expect(
+      runAndSaveWorkflow(
+        workflow([node("clip", "video", { model: "m-t2v", prompt: "a shot" })], []),
+      ),
+    ).rejects.toThrow("disk full");
+    expect(invokeCalls("media_job_dismiss")).toHaveLength(0);
   });
 
   it("falls back to an in-webview run when the run row cannot be recorded", async () => {

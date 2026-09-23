@@ -9,6 +9,26 @@ import type { ArtifactFile, ArtifactKind, StudioArtifact } from "./types";
 
 const GALLERY_STORAGE_KEY = "os-june:studio-gallery";
 const MAX_GALLERY_ENTRIES = 200;
+/** Queue renders already have a gallery file. Hold only the small number of
+ * images currently being handed to consumers, then reuse that file when the
+ * consumer records its generation metadata. */
+const queuedImages = new Map<string, Array<{ file: ArtifactFile; jobId: string }>>();
+const MAX_QUEUED_IMAGES = 16;
+let queuedImageCount = 0;
+
+export function rememberQueuedImage(base64: string, file: ArtifactFile, jobId: string): void {
+  const files = queuedImages.get(base64) ?? [];
+  files.push({ file, jobId });
+  queuedImages.set(base64, files);
+  queuedImageCount += 1;
+  while (queuedImageCount > MAX_QUEUED_IMAGES) {
+    const oldest = queuedImages.keys().next().value as string;
+    const remaining = queuedImages.get(oldest);
+    remaining?.shift();
+    queuedImageCount -= 1;
+    if (!remaining?.length) queuedImages.delete(oldest);
+  }
+}
 
 export function artifactSrc(artifact: Pick<StudioArtifact, "path">): string {
   return convertFileSrc(artifact.path);
@@ -98,6 +118,15 @@ export async function saveArtifactFromBase64(
   extension: string,
   metadata: ArtifactMetadata,
 ): Promise<StudioArtifact> {
+  const files = queuedImages.get(base64);
+  const queued = files?.shift();
+  if (queued) {
+    queuedImageCount -= 1;
+    if (!files?.length) queuedImages.delete(base64);
+    const artifact = register(queued.file, metadata);
+    await invoke("media_job_dismiss", { id: queued.jobId }).catch(() => undefined);
+    return artifact;
+  }
   const file = await invoke<ArtifactFile>("carpe_diem_media_save_artifact", {
     request: { base64, extension },
   });

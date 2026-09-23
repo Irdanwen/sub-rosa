@@ -3,7 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => vi.fn()) }));
-vi.mock("../lib/studio/artifacts", () => ({ readArtifactBase64: vi.fn(async () => "QUEUED") }));
+vi.mock("../lib/studio/artifacts", () => ({
+  readArtifactBase64: vi.fn(async () => "QUEUED"),
+  rememberQueuedImage: vi.fn(),
+}));
 import type { MediaProxyResponse } from "../lib/studio/types";
 
 // Replace the media client so composeImages/editImage routing can be asserted
@@ -17,6 +20,7 @@ vi.mock("../lib/studio/client", async (importOriginal) => ({
 }));
 
 import { MediaError, mediaJson, mediaRaw } from "../lib/studio/client";
+import { rememberQueuedImage } from "../lib/studio/artifacts";
 import { composeImages, editImage, removeBackground } from "../lib/studio/edit-image";
 
 const mediaJsonMock = vi.mocked(mediaJson);
@@ -33,11 +37,17 @@ function rawImage(base64: string): MediaProxyResponse {
 beforeEach(() => {
   mediaJsonMock.mockReset();
   vi.mocked(invoke).mockReset();
-  vi.mocked(invoke).mockImplementation(async (_command, args) => ({
-    id: (args as { request: { jobId: string } }).request.jobId,
-    status: "completed",
-    artifactPath: "/gallery/result.png",
-  }));
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "media_job_list") return [];
+    return {
+      id: (args as { request: { jobId: string } }).request.jobId,
+      status: "completed",
+      artifactPath: "/gallery/result.png",
+      artifactFileName: "result.png",
+      artifactBytes: 6,
+    };
+  });
+  vi.mocked(rememberQueuedImage).mockReset();
   mediaRawMock.mockReset();
 });
 
@@ -63,12 +73,50 @@ describe("editImage", () => {
 
     const result = await editImage("seedream-v4-edit", "brighten it", IMG);
     expect(result).toBe("QUEUED");
+    expect(rememberQueuedImage).toHaveBeenCalledWith(
+      "QUEUED",
+      { path: "/gallery/result.png", fileName: "result.png", bytes: 6 },
+      expect.any(String),
+    );
     expect(invoke).toHaveBeenCalledWith(
       "media_job_queue",
       expect.objectContaining({
         request: expect.objectContaining({ queuePath: "/image/edit/queue" }),
       }),
     );
+  });
+
+  it("reconciles a completed native image after a frozen webview misses its event", async () => {
+    let jobId = "";
+    let completed = false;
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "media_job_queue") {
+        jobId = (args as { request: { jobId: string } }).request.jobId;
+        return { id: jobId, status: "processing" };
+      }
+      if (command === "media_job_list") {
+        return jobId
+          ? [
+              {
+                id: jobId,
+                status: completed ? "completed" : "processing",
+                artifactPath: "/gallery/result.png",
+                artifactFileName: "result.png",
+              },
+            ]
+          : [];
+      }
+      return null;
+    });
+    const pending = editImage("gpt-image-2", "brighten it", IMG);
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("media_job_list"));
+    completed = true;
+    document.dispatchEvent(new Event("visibilitychange"));
+    const result = await pending;
+    expect(result).toBe("QUEUED");
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "media_job_list"),
+    ).toHaveLength(2);
   });
 });
 

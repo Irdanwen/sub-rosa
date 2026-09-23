@@ -1,7 +1,7 @@
 import { t } from "../i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { readArtifactBase64 } from "./artifacts";
+import { readArtifactBase64, rememberQueuedImage } from "./artifacts";
 import { isAsyncRetrySignal, MediaError, mediaRaw } from "./client";
 import type { MediaProxyResponse } from "./types";
 
@@ -33,6 +33,8 @@ interface NativeImageJob {
   status: "queued" | "processing" | "completed" | "failed";
   error?: string;
   artifactPath?: string;
+  artifactFileName?: string;
+  artifactBytes?: number;
 }
 
 /** Native owns the request and durable polling. Subscribe before queueing so
@@ -54,6 +56,18 @@ export async function nativeQueuedImage(
   const unlisten = await listen<NativeImageJob>("june://media-job", (event) =>
     observe(event.payload),
   );
+  const reconcile = () => {
+    void invoke<NativeImageJob[] | null>("media_job_list")
+      .then((jobs) => {
+        const job = jobs?.find((entry) => entry.id === jobId);
+        if (job) observe(job);
+      })
+      .catch(() => undefined);
+  };
+  const onVisible = () => {
+    if (document.visibilityState === "visible") reconcile();
+  };
+  document.addEventListener("visibilitychange", onVisible);
   try {
     const submitted = await invoke<NativeImageJob>("media_job_queue", {
       request: {
@@ -70,12 +84,21 @@ export async function nativeQueuedImage(
       },
     });
     observe(submitted);
+    reconcile();
     const job = await done;
     if (job.status === "failed")
       throw new MediaError(job.error ?? "The edit failed.", { status: 0 });
     if (!job.artifactPath)
       throw new MediaError(t("The edit finished but its file is missing."), { status: 0 });
-    return readArtifactBase64({ path: job.artifactPath });
+    const base64 = await readArtifactBase64({ path: job.artifactPath });
+    if (job.artifactFileName) {
+      rememberQueuedImage(
+        base64,
+        { path: job.artifactPath, fileName: job.artifactFileName, bytes: job.artifactBytes ?? 0 },
+        job.id,
+      );
+    }
+    return base64;
   } catch (error) {
     if (
       !(error instanceof Error) &&
@@ -87,6 +110,7 @@ export async function nativeQueuedImage(
       throw new Error(t(error.message));
     throw error;
   } finally {
+    document.removeEventListener("visibilitychange", onVisible);
     unlisten();
   }
 }
