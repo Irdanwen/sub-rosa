@@ -2,6 +2,7 @@ import { t } from "../i18n";
 import { carpeDiemGetCredits } from "../tauri";
 import type { MediaCatalog } from "./types";
 import type { ProjectDocument, ProjectShot } from "./projects";
+import { bibleNameInUse } from "./projects";
 import { portraitPrompt } from "./bible/portrait";
 import type { BibleRole } from "./bible/types";
 import type { ProjectBibleEntry } from "./projects";
@@ -21,6 +22,8 @@ export function compileProjectWithNotes(
   catalog: MediaCatalog,
   onlyShotId?: string,
 ): { workflow: Workflow; notes: string[] } {
+  if (document.bible.some((entry) => bibleNameInUse(document.bible, entry.name, entry.id)))
+    throw new Error(t("Give each bible entry a different name."));
   const current = onlyShotId ? document.shots.find((shot) => shot.id === onlyShotId) : undefined;
   if (onlyShotId && !current) throw new Error(t("This shot no longer exists."));
   const previous = current ? document.shots[document.shots.indexOf(current) - 1] : undefined;

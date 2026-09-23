@@ -26,6 +26,26 @@ export interface ProjectBibleEntry extends BibleEntry {
   imageModelId?: string;
   imagePrompt?: string;
 }
+export function bibleNameInUse(
+  entries: readonly ProjectBibleEntry[],
+  name: string,
+  exceptId?: string,
+): boolean {
+  const normalized = name.trim().toLowerCase();
+  return entries.some(
+    (entry) => entry.id !== exceptId && entry.name.trim().toLowerCase() === normalized,
+  );
+}
+export function uniqueBibleName(entries: readonly ProjectBibleEntry[], base: string): string {
+  if (!bibleNameInUse(entries, base)) return base;
+  let number = 2;
+  let name: string;
+  do {
+    name = t("{name} ({number})", { name: base, number });
+    number += 1;
+  } while (bibleNameInUse(entries, name));
+  return name;
+}
 export interface ProjectRun {
   id: string;
   shotSignatures: Record<string, string>;

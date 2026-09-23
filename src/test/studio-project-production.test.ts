@@ -50,6 +50,27 @@ beforeEach(() => {
 });
 
 describe("isolated project takes", () => {
+  it("refuses an ambiguous project bible before any paid production", () => {
+    const project = newProject();
+    project.document.shots = [
+      { ...newShot(0), id: "target", action: "A pianist bows", modelId: "test-text-to-video" },
+    ];
+    const first = {
+      id: "first",
+      name: "Nera",
+      kind: "character" as const,
+      traits: "",
+      note: "",
+      refs: [],
+      createdAt: "",
+      updatedAt: "",
+    };
+    project.document.bible = [first, { ...first, id: "second", name: " nera " }];
+    expect(() => compileProject(project.name, project.document, catalog)).toThrow(
+      "Give each bible entry a different name.",
+    );
+  });
+
   it("keeps a substituted aspect ratio visible to the quote", () => {
     const project = newProject();
     project.document.settings.aspectRatio = "9:16";

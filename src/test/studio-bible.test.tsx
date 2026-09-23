@@ -1,8 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BibleStudio } from "../components/studio/BibleStudio";
+import { ProjectBible } from "../components/studio/ProjectBible";
 import { GalleryPicker } from "../components/studio/GalleryPicker";
 import type { BibleEntry } from "../lib/studio/bible";
+import type { ProjectBibleEntry } from "../lib/studio/projects";
 import type { MediaCatalog, StudioArtifact } from "../lib/studio/types";
 
 const hoisted = vi.hoisted(() => ({
@@ -180,6 +183,38 @@ describe("the bible panel", () => {
         expect.objectContaining({ request: expect.objectContaining({ name: "Nera" }) }),
       ),
     );
+  });
+});
+
+describe("a film's bible", () => {
+  it("names repeated additions distinctly and blocks a case-insensitive collision", async () => {
+    hoisted.invoke.mockImplementation(async (command: string) =>
+      command === "list_bible_entries" ? [] : undefined,
+    );
+    function FilmBible() {
+      const [entries, setEntries] = useState<ProjectBibleEntry[]>([]);
+      return (
+        <ProjectBible
+          entries={entries}
+          onChange={setEntries}
+          artifacts={[]}
+          catalog={catalog}
+          onArtifact={() => undefined}
+          onGenerate={() => undefined}
+          busy={false}
+        />
+      );
+    }
+    render(<FilmBible />);
+    fireEvent.click(screen.getByRole("button", { name: "Add an entry" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add an entry" }));
+    expect(screen.getByText("New character")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("New character (2)");
+    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
+      target: { value: " NEW CHARACTER " },
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("Give each bible entry a different name.");
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("New character (2)");
   });
 });
 

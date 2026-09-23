@@ -454,17 +454,11 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 .filter(
                   (member, index) =>
                     !previous.document.bible.some(
-                      (entry) =>
-                        entry.name.trim().toLowerCase() === member.name.toLowerCase() &&
-                        entry.kind === member.kind,
+                      (entry) => entry.name.trim().toLowerCase() === member.name.toLowerCase(),
                     ) &&
                     !cast
                       .slice(0, index)
-                      .some(
-                        (entry) =>
-                          entry.name.toLowerCase() === member.name.toLowerCase() &&
-                          entry.kind === member.kind,
-                      ),
+                      .some((entry) => entry.name.toLowerCase() === member.name.toLowerCase()),
                 )
                 .map((member) => ({
                   id: crypto.randomUUID(),

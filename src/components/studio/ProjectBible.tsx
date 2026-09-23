@@ -11,7 +11,7 @@ import {
 import { portraitPrompt } from "../../lib/studio/bible/portrait";
 import { estimateCostCredits, modelsOfType } from "../../lib/studio/catalog";
 import { artifactSrc } from "../../lib/studio/artifacts";
-import type { ProjectBibleEntry } from "../../lib/studio/projects";
+import { bibleNameInUse, uniqueBibleName, type ProjectBibleEntry } from "../../lib/studio/projects";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { GalleryPicker } from "./GalleryPicker";
 import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
@@ -37,6 +37,7 @@ export function ProjectBible({
   const [global, setGlobal] = useState<ProjectBibleEntry[]>([]);
   const [picker, setPicker] = useState(false);
   const [role, setRole] = useState<BibleRole>("portrait");
+  const [nameError, setNameError] = useState("");
   useEffect(() => {
     void listBibleEntries()
       .then(setGlobal)
@@ -51,6 +52,13 @@ export function ProjectBible({
     ? estimateCostCredits(model, { multiplier: catalog.priceMultiplier })
     : undefined;
   const update = (patch: Partial<ProjectBibleEntry>) => {
+    if (patch.name !== undefined && entry) {
+      if (bibleNameInUse(entries, patch.name, entry.id)) {
+        setNameError(t("Give each bible entry a different name."));
+        return;
+      }
+      setNameError("");
+    }
     if (entry)
       onChange(
         entries.map((item) =>
@@ -60,16 +68,18 @@ export function ProjectBible({
   };
   const add = (source?: ProjectBibleEntry) => {
     const id = crypto.randomUUID();
+    const name = uniqueBibleName(entries, source?.name ?? t("New character"));
     const next: ProjectBibleEntry = source
       ? {
           ...structuredClone(source),
           id,
+          name,
           originId: source.id,
           refs: source.refs.map((ref) => ({ ...ref, id: crypto.randomUUID(), entryId: id })),
         }
       : {
           id,
-          name: t("New character"),
+          name,
           kind: "character",
           traits: "",
           note: "",
@@ -83,6 +93,7 @@ export function ProjectBible({
         onArtifact(artifactId);
     }
     setSelected(id);
+    setNameError("");
     setRole(ROLES_BY_KIND[next.kind][0]);
   };
   return (
@@ -120,6 +131,7 @@ export function ProjectBible({
             aria-pressed={entry?.id === item.id}
             onClick={() => {
               setSelected(item.id);
+              setNameError("");
               setRole(ROLES_BY_KIND[item.kind][0]);
             }}
           >
@@ -135,9 +147,11 @@ export function ProjectBible({
               {t("Name")}
               <input
                 value={entry.name}
+                aria-invalid={!!nameError}
                 onChange={(event) => update({ name: event.target.value })}
               />
             </label>
+            {nameError && <p role="alert">{nameError}</p>}
             <label className="project-field">
               {t("Type")}
               <select

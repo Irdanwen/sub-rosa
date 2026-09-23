@@ -113,6 +113,22 @@ beforeEach(() => {
 });
 
 describe("runAndSaveWorkflow (durable)", () => {
+  it("discards a new run if its owner cannot record it before any node starts", async () => {
+    mocks.invoke.mockResolvedValue(null);
+    const definition = workflow([node("clip", "video", { model: "m-t2v", prompt: "a shot" })], []);
+    await expect(
+      runAndSaveWorkflow(definition, {
+        requireDurable: true,
+        onRunRecorded: async () => {
+          throw new Error("project save failed");
+        },
+      }),
+    ).rejects.toThrow("project save failed");
+    expect(invokeCalls("workflow_run_create")).toHaveLength(1);
+    expect(invokeCalls("workflow_run_dismiss")).toEqual([{ id: "q1" }]);
+    expect(invokeCalls("workflow_run_set_node")).toHaveLength(0);
+  });
+
   it("carries a native FLAC delivery into the persisted music output", async () => {
     mocks.invoke.mockImplementation(async (command: string) => {
       if (command === "carpe_diem_media_catalog") return { backend: "carpe-diem", models: [] };

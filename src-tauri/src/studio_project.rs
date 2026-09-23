@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{query::query, row::Row};
 use sqlx_sqlite::{SqlitePool, SqliteRow};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use tauri::AppHandle;
 
 const MAX_DOCUMENT_BYTES: usize = 8 * 1024 * 1024;
@@ -243,13 +243,50 @@ fn artifact_metadata(row: &SqliteRow) -> Result<ArtifactMetadata, String> {
 }
 
 async fn list_artifacts(pool: &SqlitePool) -> Result<Vec<ArtifactMetadata>, String> {
-    query("SELECT id, title, project_ids, generation FROM studio_artifact_metadata ORDER BY id")
-        .fetch_all(pool)
+    let mut tx = pool.begin().await.map_err(storage_error)?;
+    let mut artifacts: BTreeMap<String, ArtifactMetadata> = query(
+        "SELECT id, title, project_ids, generation FROM studio_artifact_metadata ORDER BY id",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(storage_error)?
+    .iter()
+    .map(artifact_metadata)
+    .map(|row| row.map(|metadata| (metadata.id.clone(), metadata)))
+    .collect::<Result<_, _>>()?;
+    // A project save and its detached gallery metadata write can be split by
+    // termination. Show the membership recorded in the project document so a
+    // later organize request can supply the correct optimistic snapshot.
+    for row in query("SELECT id, document FROM studio_projects")
+        .fetch_all(&mut *tx)
         .await
         .map_err(storage_error)?
-        .iter()
-        .map(artifact_metadata)
-        .collect()
+    {
+        let project_id: String = row.try_get("id").map_err(storage_error)?;
+        let source: String = row.try_get("document").map_err(storage_error)?;
+        let document: Value = serde_json::from_str(&source).map_err(storage_error)?;
+        if let Some(ids) = document["artifactIds"].as_array() {
+            for id in ids.iter().filter_map(Value::as_str) {
+                let metadata = artifacts
+                    .entry(id.to_owned())
+                    .or_insert_with(|| ArtifactMetadata {
+                        id: id.to_owned(),
+                        title: String::new(),
+                        project_ids: Vec::new(),
+                        generation: None,
+                    });
+                if !metadata.project_ids.contains(&project_id) {
+                    metadata.project_ids.push(project_id.clone());
+                }
+            }
+        }
+    }
+    for metadata in artifacts.values_mut() {
+        metadata.project_ids.sort();
+        metadata.project_ids.dedup();
+    }
+    tx.commit().await.map_err(storage_error)?;
+    Ok(artifacts.into_values().collect())
 }
 
 async fn save_artifact(
@@ -700,6 +737,66 @@ mod tests {
                 .unwrap()
                 .document["artifactIds"],
             json!(["clip.mp4"])
+        );
+    }
+
+    #[tokio::test]
+    async fn gallery_recovers_membership_from_a_project_when_metadata_write_was_interrupted() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pool = open_database(&dir.path().join("studio.sqlite")).await;
+        save_project(
+            &pool,
+            request(None, json!({"schemaVersion":1,"artifactIds":[]})),
+        )
+        .await
+        .unwrap();
+        save_artifact(
+            &pool,
+            SaveArtifactRequest {
+                id: "clip.mp4".into(),
+                title: Some("Original take".into()),
+                project_ids: Some(vec![]),
+                generation: None,
+            },
+        )
+        .await
+        .unwrap();
+        save_project(
+            &pool,
+            request(
+                Some(1),
+                json!({"schemaVersion":1,"artifactIds":["clip.mp4"]}),
+            ),
+        )
+        .await
+        .unwrap();
+        let listed = list_artifacts(&pool).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].title, "Original take");
+        assert_eq!(listed[0].project_ids, vec!["film-one"]);
+        let saved = organize_artifact(
+            &pool,
+            OrganizeArtifactRequest {
+                id: "clip.mp4".into(),
+                title: "Recovered take".into(),
+                project_ids: vec![],
+                expected_project_ids: listed[0].project_ids.clone(),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(saved.project_ids.is_empty());
+        assert_eq!(
+            list_artifacts(&pool).await.unwrap()[0].title,
+            "Recovered take"
+        );
+        assert_eq!(
+            get_project(&pool, "film-one")
+                .await
+                .unwrap()
+                .unwrap()
+                .document["artifactIds"],
+            json!([])
         );
     }
 

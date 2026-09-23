@@ -837,7 +837,14 @@ export async function runAndSaveWorkflow(
     if (options?.requireDurable) throw error;
     return runWorkflow(workflow, { storage: workflowStorage(), ...options });
   }
-  await options?.onRunRecorded?.(runId);
+  try {
+    await options?.onRunRecorded?.(runId);
+  } catch (error) {
+    // No node has started yet. If the owner cannot record this run, leaving
+    // its native row resumable would expose the paid graph outside that owner.
+    await invoke("workflow_run_dismiss", { id: runId }).catch(() => undefined);
+    throw error;
+  }
   return executeDurable(
     runId,
     workflow,
