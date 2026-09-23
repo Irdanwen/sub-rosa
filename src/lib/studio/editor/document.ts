@@ -2,6 +2,7 @@
  * project frames; media paths are resolved from the gallery only at playback. */
 import { t } from "../../i18n";
 import { DEFAULT_FRAME_RATE, type FrameRate, framesPerSecond } from "../timeline";
+import type { ArtifactKind } from "../types";
 
 export interface Keyframe {
   frame: number;
@@ -59,6 +60,16 @@ export interface EditorDocument {
   height: number;
   tracks: EditorTrack[];
   clips: EditorClip[];
+}
+/** Keep gallery audio on the lane matching its kind. A locked or hidden
+ * matching lane must be made usable before that media can be added. */
+export function insertionTrack(doc: EditorDocument, kind: ArtifactKind): EditorTrack | undefined {
+  if (kind === "video" || kind === "image")
+    return doc.tracks.find((track) => track.kind === "video" && !track.locked && !track.hidden);
+  const preferredId = kind === "music" ? "music" : kind === "sfx" ? "effects" : "dialogue";
+  const preferred = doc.tracks.find((track) => track.id === preferredId && track.kind === "audio");
+  if (preferred) return !preferred.locked && !preferred.hidden ? preferred : undefined;
+  return doc.tracks.find((track) => track.kind === "audio" && !track.locked && !track.hidden);
 }
 const defaults: Record<AnimatedProperty, number> = {
   x: 0,

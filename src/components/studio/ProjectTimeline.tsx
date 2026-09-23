@@ -17,6 +17,7 @@ import {
   duplicateClip,
   durationFrames,
   fps,
+  insertionTrack,
   isLocked,
   removeClip,
   replaceClip,
@@ -293,8 +294,7 @@ export function ProjectTimeline({ value, onChange, artifacts }: Props) {
     try {
       const seconds = await mediaDuration(artifact),
         doc = current.current;
-      const kind = artifact.kind === "video" || artifact.kind === "image" ? "video" : "audio";
-      const track = doc.tracks.find((track) => track.kind === kind && !track.locked);
+      const track = insertionTrack(doc, artifact.kind);
       if (!track) throw new Error(t("Unlock a matching track before adding media."));
       const clip = createEditorClip({
         trackId: track.id,

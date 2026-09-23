@@ -6,6 +6,7 @@ import {
   createEditorDocument,
   durationFrames,
   duplicateClip,
+  insertionTrack,
   removeClip,
   resizeClip,
   setKeyframe,
@@ -34,6 +35,16 @@ function cut() {
   return doc;
 }
 describe("editable montage document", () => {
+  it("inserts generated audio on its matching lane", () => {
+    const doc = createEditorDocument();
+    expect(insertionTrack(doc, "speech")?.id).toBe("dialogue");
+    expect(insertionTrack(doc, "sfx")?.id).toBe("effects");
+    expect(insertionTrack(doc, "music")?.id).toBe("music");
+    const music = doc.tracks.find((track) => track.id === "music");
+    if (music) music.locked = true;
+    expect(insertionTrack(doc, "music")).toBeUndefined();
+  });
+
   it("integrates a speed ramp, and preserves the source on both sides of a split", () => {
     const doc = cut();
     doc.clips[0] = setKeyframe(doc.clips[0], "speed", 100, 3);

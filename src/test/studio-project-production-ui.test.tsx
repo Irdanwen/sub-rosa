@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   run: vi.fn(),
   resume: vi.fn(),
   budget: vi.fn(),
+  mediaSeconds: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => vi.fn()) }));
@@ -32,6 +33,7 @@ vi.mock("../lib/studio/artifacts", () => ({
   listArtifacts: vi.fn(async () => []),
   artifactSrc: vi.fn(),
 }));
+vi.mock("../lib/studio/reference-media", () => ({ mediaSeconds: mocks.mediaSeconds }));
 vi.mock("../lib/studio/project-production", async (original) => ({
   ...(await original<typeof import("../lib/studio/project-production")>()),
   quoteProject: mocks.quote,
@@ -66,10 +68,33 @@ vi.mock("../components/studio/MediaModelPicker", () => ({
 vi.mock("../components/studio/ProjectBible", () => ({ ProjectBible: () => null }));
 vi.mock("../components/studio/ProjectMedia", () => ({ ProjectMedia: () => null }));
 vi.mock("../components/studio/ProjectTimeline", () => ({
-  ProjectTimeline: ({ artifacts }: { artifacts: Array<{ id: string }> }) => (
-    <output data-testid="timeline-artifacts">
-      {artifacts.map((artifact) => artifact.id).join(",")}
-    </output>
+  ProjectTimeline: ({
+    artifacts,
+    value,
+    onChange,
+  }: {
+    artifacts: Array<{ id: string }>;
+    value: StudioProject["document"]["timeline"];
+    onChange: (value: StudioProject["document"]["timeline"]) => void;
+  }) => (
+    <>
+      <output data-testid="timeline-artifacts">
+        {artifacts.map((artifact) => artifact.id).join(",")}
+      </output>
+      <button
+        type="button"
+        onClick={() =>
+          onChange({
+            ...value,
+            clips: value.clips.map((clip, index) =>
+              index === 0 ? { ...clip, duration: 20 } : clip,
+            ),
+          })
+        }
+      >
+        Trim existing clip
+      </button>
+    </>
   ),
 }));
 vi.mock("../components/studio/ProjectShots", () => ({
@@ -123,6 +148,7 @@ beforeEach(() => {
   });
   mocks.flush.mockResolvedValue(undefined);
   mocks.budget.mockReturnValue(vi.fn());
+  mocks.mediaSeconds.mockReset().mockResolvedValue(5);
   mocks.quote.mockImplementation(async (workflow: Workflow) => ({
     nodes: workflow.nodes
       .filter((node) => node.type === "video")
@@ -149,6 +175,46 @@ const mount = async () => {
 };
 
 describe("project production confirmation", () => {
+  it("appends selected takes to the latest montage after an edit during metadata loading", async () => {
+    project.document.timeline.clips = [
+      createEditorClip({
+        id: "first",
+        trackId: "picture",
+        name: "First",
+        duration: 30,
+        artifactId: "first.mp4",
+      }),
+    ];
+    project.document.shots[0].activeTakeId = "take.mp4";
+    vi.mocked(listArtifacts).mockResolvedValue([
+      {
+        id: "take.mp4",
+        kind: "video",
+        path: "/media/take.mp4",
+        fileName: "take.mp4",
+        bytes: 1,
+        model: "test",
+        prompt: "test",
+        createdAt: 0,
+      },
+    ]);
+    let finishMetadata: (seconds: number) => void = () => {};
+    mocks.mediaSeconds.mockReturnValue(
+      new Promise<number>((resolve) => {
+        finishMetadata = resolve;
+      }),
+    );
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Montage" }));
+    fireEvent.click(screen.getByRole("button", { name: "Append selected takes" }));
+    await waitFor(() => expect(mocks.mediaSeconds).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "Trim existing clip" }));
+    finishMetadata(5);
+    await waitFor(() => expect(project.document.timeline.clips).toHaveLength(2));
+    expect(project.document.timeline.clips[0].duration).toBe(20);
+    expect(project.document.timeline.clips[1].start).toBe(20);
+  });
+
   it("reads an imported script through a project-owned note and keeps the returned cast", async () => {
     project.document.noteId = "source-note";
     project.document.script = "A pianist enters the hall.";
