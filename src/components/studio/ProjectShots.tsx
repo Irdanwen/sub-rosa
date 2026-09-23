@@ -4,6 +4,7 @@ import { artifactSrc } from "../../lib/studio/artifacts";
 import { imageEditModels, requiresOpeningFrame, videoDirection } from "../../lib/studio/catalog";
 import { maxVideoReferences } from "../../lib/studio/seedance";
 import { effectiveVideoConstraints } from "../../lib/studio/model-constraints";
+import { familyStem, routeModels } from "../../lib/studio/workflow/compile";
 import {
   newShot,
   shotSignature,
@@ -73,9 +74,21 @@ export function ProjectShots({
       ["video", "imageToVideo", "referenceToVideo"].includes(model.mediaType) &&
       videoDirection(model) === (mode === "continuation" ? "image" : mode),
   );
-  const model = models.find(
-    (item) => item.id === (shot?.modelId || document.settings.videoModelId),
-  );
+  const preferredId = document.settings.videoModelId;
+  const routing = routeModels(catalog, preferredId);
+  const routed =
+    mode === "reference"
+      ? routing.reference
+      : mode === "image" || mode === "continuation"
+        ? routing.fromImage
+        : routing.text;
+  const model = shot?.modelId
+    ? models.find((item) => item.id === shot.modelId)
+    : models.find(
+        (item) =>
+          item.id === routed?.id &&
+          (!preferredId || familyStem(item.id) === familyStem(preferredId)),
+      );
   const constraints = model ? effectiveVideoConstraints(model) : undefined;
   const referenceLimit = maxVideoReferences(model);
   const addReference = (field: "imageReferenceIds" | "referenceArtifactIds", id: string) => {
@@ -397,7 +410,7 @@ export function ProjectShots({
                 </select>
               </label>
               <MediaModelPicker
-                value={shot.modelId || document.settings.videoModelId}
+                value={model?.id ?? shot.modelId ?? document.settings.videoModelId}
                 options={models.map(mediaModelOption)}
                 onChange={(modelId) => update({ modelId })}
                 ariaLabel={t("Video model")}

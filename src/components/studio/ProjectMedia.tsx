@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { t } from "../../lib/i18n";
 import { artifactSrc, exportArtifact } from "../../lib/studio/artifacts";
 import type { StudioArtifact } from "../../lib/studio/types";
-import { projectError, type ProjectSummary } from "../../lib/studio/projects";
+import { artifactError, type ProjectSummary } from "../../lib/studio/projects";
 
 export function ProjectMedia({
   artifacts,
@@ -49,7 +49,7 @@ export function ProjectMedia({
       setEditing(undefined);
       return true;
     } catch (cause) {
-      setError(projectError(cause));
+      setError(artifactError(cause));
       return false;
     } finally {
       setSaving(false);
@@ -180,7 +180,7 @@ export function ProjectMedia({
                     type="button"
                     className="btn btn-ghost"
                     onClick={() =>
-                      void exportArtifact(artifact).catch((cause) => setError(projectError(cause)))
+                      void exportArtifact(artifact).catch((cause) => setError(artifactError(cause)))
                     }
                   >
                     {t("Export")}

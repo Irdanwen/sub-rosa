@@ -3071,6 +3071,7 @@
   "This mandate has already been handed to the agent, so it can no longer be changed.": "Ce mandat a déjà été transmis à l'agent ; il ne peut donc plus être modifié.",
   "This mandate has been judged. It is what the reading answered.": "Ce mandat a été évalué. Il a servi de référence à la lecture du résultat.",
   "This mandate has no rendered instructions yet.": "Ce mandat n'a pas encore d'instructions rédigées.",
+  "This media changed in another window. Review its projects and save again.": "Ce média a été modifié dans une autre fenêtre. Vérifiez ses projets et enregistrez à nouveau.",
   "This media file has no readable duration.": "La durée de ce fichier média est illisible.",
   "this meeting note": "cette note de réunion",
   "This message is about {tokens} tokens, over {model}'s {limit} token context window.": "Ce message fait environ {tokens} jetons, au-delà de la fenêtre de contexte de {limit} jetons de {model}.",

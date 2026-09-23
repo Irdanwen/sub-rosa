@@ -69,6 +69,7 @@ pub struct OrganizeArtifactRequest {
     pub id: String,
     pub title: String,
     pub project_ids: Vec<String>,
+    pub expected_project_ids: Vec<String>,
 }
 
 fn storage_error(error: impl std::fmt::Display) -> String {
@@ -315,6 +316,14 @@ async fn organize_artifact(
     }
     request.project_ids.sort();
     request.project_ids.dedup();
+    if request.expected_project_ids.len() > 100 {
+        return Err(INVALID_DOCUMENT.into());
+    }
+    for id in &request.expected_project_ids {
+        validate_id(id)?;
+    }
+    request.expected_project_ids.sort();
+    request.expected_project_ids.dedup();
     let wanted: HashSet<&str> = request.project_ids.iter().map(String::as_str).collect();
     let ids = serde_json::to_string(&request.project_ids).map_err(storage_error)?;
     let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
@@ -323,6 +332,36 @@ async fn organize_artifact(
         .fetch_all(&mut *tx)
         .await
         .map_err(storage_error)?;
+    let stored: Option<String> =
+        query("SELECT project_ids FROM studio_artifact_metadata WHERE id = ?")
+            .bind(&request.id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(storage_error)?
+            .map(|row| row.try_get("project_ids").map_err(storage_error))
+            .transpose()?;
+    let mut actual: HashSet<String> = stored
+        .as_deref()
+        .map(serde_json::from_str::<Vec<String>>)
+        .transpose()
+        .map_err(storage_error)?
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    for row in &projects {
+        let project_id: String = row.try_get("id").map_err(storage_error)?;
+        let source: String = row.try_get("document").map_err(storage_error)?;
+        let document: Value = serde_json::from_str(&source).map_err(storage_error)?;
+        if document["artifactIds"]
+            .as_array()
+            .is_some_and(|ids| ids.iter().any(|id| id.as_str() == Some(&request.id)))
+        {
+            actual.insert(project_id);
+        }
+    }
+    if actual != request.expected_project_ids.iter().cloned().collect() {
+        return Err(CONFLICT.into());
+    }
     for row in projects {
         let project_id: String = row.try_get("id").map_err(storage_error)?;
         let revision: i64 = row.try_get("revision").map_err(storage_error)?;
@@ -638,6 +677,7 @@ mod tests {
                 id: "clip.mp4".into(),
                 title: "  New title  ".into(),
                 project_ids: vec!["film-two".into(), "film-two".into()],
+                expected_project_ids: vec!["film-one".into()],
             },
         )
         .await
@@ -661,6 +701,60 @@ mod tests {
                 .document["artifactIds"],
             json!(["clip.mp4"])
         );
+    }
+
+    #[tokio::test]
+    async fn stale_memberships_cannot_remove_a_new_attachment_during_a_rename() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pool = open_database(&dir.path().join("studio.sqlite")).await;
+        save_project(
+            &pool,
+            request(None, json!({"schemaVersion":1,"artifactIds":["clip.mp4"]})),
+        )
+        .await
+        .unwrap();
+        let mut second = request(None, json!({"schemaVersion":1,"artifactIds":[]}));
+        second.id = "film-two".into();
+        save_project(&pool, second).await.unwrap();
+        organize_artifact(
+            &pool,
+            OrganizeArtifactRequest {
+                id: "clip.mp4".into(),
+                title: "First title".into(),
+                project_ids: vec!["film-one".into(), "film-two".into()],
+                expected_project_ids: vec!["film-one".into()],
+            },
+        )
+        .await
+        .unwrap();
+        save_artifact(
+            &pool,
+            SaveArtifactRequest {
+                id: "clip.mp4".into(),
+                title: Some("Renamed".into()),
+                project_ids: None,
+                generation: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            organize_artifact(
+                &pool,
+                OrganizeArtifactRequest {
+                    id: "clip.mp4".into(),
+                    title: "Stale rename".into(),
+                    project_ids: vec!["film-one".into()],
+                    expected_project_ids: vec!["film-one".into()],
+                },
+            )
+            .await
+            .unwrap_err(),
+            CONFLICT
+        );
+        let metadata = list_artifacts(&pool).await.unwrap();
+        assert_eq!(metadata[0].title, "Renamed");
+        assert_eq!(metadata[0].project_ids, vec!["film-one", "film-two"]);
     }
 
     #[tokio::test]
@@ -768,6 +862,7 @@ mod tests {
                     id: "clip.mp4".into(),
                     title: "New title".into(),
                     project_ids: vec!["film-two".into()],
+                    expected_project_ids: vec!["film-one".into()],
                 },
             )
             .await

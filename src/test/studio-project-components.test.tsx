@@ -92,6 +92,7 @@ const catalog: MediaCatalog = {
     model("video-text", "video"),
     model("video-image", "imageToVideo"),
     model("video-reference", "referenceToVideo"),
+    model("kling-o3-pro-text-to-video", "video"),
     model("kling-o3-pro-reference-to-video", "referenceToVideo"),
     model("image-edit", "imageEdit"),
     model("portrait-image", "image"),
@@ -229,6 +230,15 @@ describe("shot editing", () => {
     fixtures.picked = "image-1";
     fireEvent.click(screen.getByRole("button", { name: "Choose gallery fixture" }));
     expect(fixtures.onChange.mock.lastCall?.[0][0].openingArtifactId).toBe("image-1");
+  });
+
+  it("shows the opening image controls when a reference shot inherits a Kling family", () => {
+    const document = shotDocument({ mode: "reference", modelId: undefined });
+    document.settings.videoModelId = "kling-o3-pro-text-to-video";
+    render(<Shots initial={document} />);
+    expect(screen.getByLabelText("Video model")).toHaveValue("kling-o3-pro-reference-to-video");
+    expect(screen.getByRole("heading", { name: "Opening image" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Choose opening image" })).toBeInTheDocument();
   });
 
   it("keeps over-limit legacy references visible and blocks their generation instead of truncating", () => {

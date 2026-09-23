@@ -98,27 +98,51 @@ vi.mock("../components/studio/ProjectMedia", () => ({
   }: {
     onMetadata: (artifact: StudioArtifact, title: string, projectIds: string[]) => Promise<void>;
   }) => (
-    <button
-      type="button"
-      onClick={() =>
-        void onMetadata(
-          {
-            id: "media-1",
-            kind: "image",
-            path: "/gallery/media-1.png",
-            fileName: "media-1.png",
-            bytes: 1,
-            model: "test",
-            prompt: "test",
-            createdAt: 0,
-          },
-          "Renamed media",
-          ["project-1"],
-        )
-      }
-    >
-      Save media metadata
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() =>
+          void onMetadata(
+            {
+              id: "media-1",
+              kind: "image",
+              path: "/gallery/media-1.png",
+              fileName: "media-1.png",
+              bytes: 1,
+              model: "test",
+              prompt: "test",
+              createdAt: 0,
+            },
+            "Renamed media",
+            ["project-1"],
+          )
+        }
+      >
+        Save media metadata
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          void onMetadata(
+            {
+              id: "media-1",
+              kind: "image",
+              path: "/gallery/media-1.png",
+              fileName: "media-1.png",
+              bytes: 1,
+              model: "test",
+              prompt: "test",
+              createdAt: 0,
+              projectIds: ["project-1"],
+            },
+            "New name",
+            ["project-1"],
+          )
+        }
+      >
+        Rename media only
+      </button>
+    </>
   ),
 }));
 vi.mock("../components/studio/ProjectTimeline", () => ({
@@ -424,6 +448,16 @@ describe("project production confirmation", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Script" })).toBeEnabled());
   });
 
+  it("renames media without replacing its project memberships", async () => {
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Media" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rename media only" }));
+    await waitFor(() =>
+      expect(saveArtifactMetadata).toHaveBeenCalledWith({ id: "media-1", title: "New name" }),
+    );
+    expect(mocks.organize).not.toHaveBeenCalled();
+  });
+
   it("does not apply a slowly loaded note to a different film", async () => {
     const second = newProject("Second film");
     second.id = "project-2";
@@ -546,6 +580,7 @@ describe("project production confirmation", () => {
         id: "rendered.mp4",
         title: "",
         projectIds: ["project-1"],
+        expectedProjectIds: [],
       }),
     );
     expect(project.document.artifactIds).toContain("rendered.mp4");

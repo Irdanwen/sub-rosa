@@ -20,7 +20,14 @@ import {
 import type { ArtifactKind, StudioArtifact } from "../../lib/studio/types";
 import { Spinner } from "../ui/Spinner";
 import { FrameCaptureDialog } from "./FrameCaptureDialog";
-import { listProjects, organizeArtifact, type ProjectSummary } from "../../lib/studio/projects";
+import {
+  listProjects,
+  organizeArtifact,
+  artifactError,
+  sameProjectMembership,
+  saveArtifactMetadata,
+  type ProjectSummary,
+} from "../../lib/studio/projects";
 import { STUDIO_IMAGE_RECOVERED_EVENT } from "../../lib/studio/image-job-recovery";
 import { Dialog } from "../ui/Dialog";
 
@@ -77,6 +84,7 @@ export function GalleryStrip({
     const entries = await listArtifacts(kind);
     setArtifacts(entries);
     onArtifactsChanged?.(entries);
+    return entries;
   }, [kind, onArtifactsChanged]);
 
   useEffect(() => {
@@ -165,12 +173,32 @@ export function GalleryStrip({
                 type="button"
                 className="btn btn-secondary"
                 onClick={() =>
-                  void organizeArtifact({ id: editing.id, title, projectIds: memberships })
+                  void (
+                    sameProjectMembership(memberships, editing.projectIds ?? [])
+                      ? saveArtifactMetadata({ id: editing.id, title })
+                      : organizeArtifact({
+                          id: editing.id,
+                          title,
+                          projectIds: memberships,
+                          expectedProjectIds: editing.projectIds ?? [],
+                        })
+                  )
                     .then(async () => {
                       await reload();
                       setEditing(undefined);
                     })
-                    .catch((error) => setMetadataError(messageFromError(error)))
+                    .catch(async (error) => {
+                      if (messageFromError(error).includes("studio_project_conflict")) {
+                        const latest = (await reload().catch(() => [] as StudioArtifact[])).find(
+                          (artifact) => artifact.id === editing.id,
+                        );
+                        if (latest) {
+                          setEditing(latest);
+                          setMemberships(latest.projectIds ?? []);
+                        }
+                      }
+                      setMetadataError(artifactError(error));
+                    })
                 }
               >
                 {t("Save")}

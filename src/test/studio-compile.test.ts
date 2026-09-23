@@ -648,6 +648,26 @@ describe("editable project shots", () => {
     expect(result.refusal).toContain("opening image");
   });
 
+  it("routes an inherited Kling text default to its reference arm", () => {
+    const text = model("kling-o3-pro-text-to-video", "video");
+    const reference = model("kling-o3-pro-reference-to-video", "referenceToVideo");
+    const input = {
+      name: "Film",
+      catalog: { ...catalog, models: [text, reference] },
+      videoModelId: text.id,
+      shots: [shot({ mode: "reference" as const, referenceArtifactIds: ["person.png"] })],
+    };
+    expect(compileShotList(input).refusal).toContain("opening image");
+    const result = compileShotList({
+      ...input,
+      shots: [{ ...input.shots[0], openingArtifactId: "opening.png" }],
+    });
+    expect(result.refusal).toBeUndefined();
+    expect(result.workflow?.nodes.find((node) => node.type === "video")?.params.model).toBe(
+      reference.id,
+    );
+  });
+
   it("feeds dialogue and score through text nodes so speech never receives empty input", () => {
     const result = compileShotList({
       name: "Concert",

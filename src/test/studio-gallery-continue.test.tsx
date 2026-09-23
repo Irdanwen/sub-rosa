@@ -18,11 +18,13 @@ const CLIP: StudioArtifact = {
 const IMAGE: StudioArtifact = { ...CLIP, id: "shot.png", kind: "image", fileName: "shot.png" };
 
 const artifacts = vi.hoisted(() => ({ list: vi.fn() }));
-const projects = vi.hoisted(() => ({ list: vi.fn(), save: vi.fn() }));
+const projects = vi.hoisted(() => ({ list: vi.fn(), save: vi.fn(), rename: vi.fn() }));
 
-vi.mock("../lib/studio/projects", () => ({
+vi.mock("../lib/studio/projects", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/studio/projects")>()),
   listProjects: projects.list,
   organizeArtifact: projects.save,
+  saveArtifactMetadata: projects.rename,
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save: vi.fn() }));
@@ -39,6 +41,7 @@ describe("continue a shot from the gallery", () => {
     artifacts.list.mockReset();
     projects.list.mockReset();
     projects.save.mockReset();
+    projects.rename.mockReset();
     projects.list.mockResolvedValue([]);
   });
 
@@ -105,11 +108,52 @@ describe("continue a shot from the gallery", () => {
         id: CLIP.id,
         title: "Final concert take",
         projectIds: ["film-1"],
+        expectedProjectIds: [],
       }),
     );
     await waitFor(() => expect(screen.getByText("Final concert take")).toBeVisible());
     await userEvent.selectOptions(screen.getByLabelText("Filter by project"), "film-1");
     expect(screen.getByText("Final concert take")).toBeVisible();
     expect(artifacts.list).toHaveBeenCalledWith("video");
+  });
+
+  it("renames a clip without sending an old membership snapshot", async () => {
+    artifacts.list.mockResolvedValue([{ ...CLIP, title: "First name", projectIds: ["film-1"] }]);
+    projects.rename.mockResolvedValue({ id: CLIP.id, title: "New name", projectIds: ["film-1"] });
+    render(<GalleryStrip kind="video" epoch={0} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Organize media" }));
+    const dialog = screen.getByRole("dialog", { name: "Organize media" });
+    await userEvent.clear(within(dialog).getByLabelText("Media name"));
+    await userEvent.type(within(dialog).getByLabelText("Media name"), "New name");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(projects.rename).toHaveBeenCalledWith({ id: CLIP.id, title: "New name" }),
+    );
+    expect(projects.save).not.toHaveBeenCalled();
+  });
+
+  it("refreshes project choices after a stale membership is rejected", async () => {
+    let entries = [{ ...CLIP, title: "First name", projectIds: [] as string[] }];
+    artifacts.list.mockImplementation(async () => entries);
+    projects.list.mockResolvedValue([
+      { id: "film-1", name: "Concert", archived: false, revision: 1, updatedAt: "" },
+      { id: "film-2", name: "Second film", archived: false, revision: 1, updatedAt: "" },
+    ]);
+    projects.save.mockImplementationOnce(async () => {
+      entries = [{ ...entries[0], projectIds: ["film-2"] }];
+      throw "studio_project_conflict";
+    });
+    render(<GalleryStrip kind="video" epoch={0} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Organize media" }));
+    const dialog = screen.getByRole("dialog", { name: "Organize media" });
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: "Concert" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(
+      await within(dialog).findByText(
+        "This media changed in another window. Review its projects and save again.",
+      ),
+    ).toBeVisible();
+    expect(within(dialog).getByRole("checkbox", { name: "Concert" })).not.toBeChecked();
+    expect(within(dialog).getByRole("checkbox", { name: "Second film" })).toBeChecked();
   });
 });

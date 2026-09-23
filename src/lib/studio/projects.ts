@@ -82,9 +82,15 @@ export const listArtifactMetadata = () => invoke<ArtifactMetadata[]>("studio_art
 export const saveArtifactMetadata = (
   request: Pick<ArtifactMetadata, "id"> & Partial<Omit<ArtifactMetadata, "id">>,
 ) => invoke<ArtifactMetadata>("studio_artifact_save", { request });
+export function sameProjectMembership(left: string[], right: string[]): boolean {
+  const ids = new Set(left);
+  return ids.size === new Set(right).size && right.every((id) => ids.has(id));
+}
 /** The native transaction updates project documents and gallery metadata together. */
 export function organizeArtifact(
-  request: Pick<ArtifactMetadata, "id" | "title" | "projectIds">,
+  request: Pick<ArtifactMetadata, "id" | "title" | "projectIds"> & {
+    expectedProjectIds: string[];
+  },
 ): Promise<ArtifactMetadata> {
   return invoke<ArtifactMetadata>("studio_artifact_organize", { request });
 }
@@ -192,6 +198,13 @@ export function projectError(error: unknown): string {
   if (message.includes("studio_project_"))
     return t("Your project could not be saved. Keep this window open and try again.");
   return message;
+}
+
+export function artifactError(error: unknown): string {
+  const message = messageFromError(error);
+  if (message.includes("studio_project_conflict"))
+    return t("This media changed in another window. Review its projects and save again.");
+  return projectError(error);
 }
 
 /** Serial writes always use the revision returned by the preceding write. */

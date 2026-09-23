@@ -44,6 +44,7 @@ import {
   ProjectWriter,
   saveArtifactMetadata,
   saveProject,
+  sameProjectMembership,
   shotSignature,
   type ProjectDocument,
   type ProjectRun,
@@ -940,7 +941,16 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         setMediaSaving(true);
         try {
           await writer.current?.flush();
-          await organizeArtifact({ id: artifact.id, title, projectIds });
+          if (sameProjectMembership(projectIds, artifact.projectIds ?? [])) {
+            await saveArtifactMetadata({ id: artifact.id, title });
+          } else {
+            await organizeArtifact({
+              id: artifact.id,
+              title,
+              projectIds,
+              expectedProjectIds: artifact.projectIds ?? [],
+            });
+          }
           if (projectId && current.current?.id === projectId && epoch.current === version) {
             const reloaded = await getProject(projectId);
             if (reloaded && current.current?.id === projectId && epoch.current === version) {
@@ -951,6 +961,10 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
             }
           }
           await refreshArtifacts();
+        } catch (cause) {
+          if (String(cause).includes("studio_project_conflict"))
+            await refreshArtifacts().catch(() => undefined);
+          throw cause;
         } finally {
           setMediaSaving(false);
         }
@@ -1471,15 +1485,14 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                   const metadata = (await listArtifactMetadata()).find(
                     (item) => item.id === artifact.id,
                   );
+                  const memberships = [
+                    ...new Set([...(metadata?.projectIds ?? []), ...(artifact.projectIds ?? [])]),
+                  ];
                   await organizeArtifact({
                     id: artifact.id,
                     title: metadata?.title ?? "",
-                    projectIds: [
-                      ...new Set([
-                        ...(metadata?.projectIds ?? artifact.projectIds ?? []),
-                        project.id,
-                      ]),
-                    ],
+                    expectedProjectIds: memberships,
+                    projectIds: [...new Set([...memberships, project.id])],
                   });
                   if (
                     current.current?.id === project.id &&

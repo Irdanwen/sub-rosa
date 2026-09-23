@@ -18,6 +18,7 @@ vi.mock("../lib/tauri", () => ({
 }));
 
 import {
+  artifactError,
   copyProjectBible,
   importLegacyFilms,
   montageArtifacts,
@@ -40,6 +41,11 @@ beforeEach(() => {
 });
 
 describe("project saves", () => {
+  it("explains a stale media membership without suggesting a film copy", () => {
+    expect(artifactError("studio_project_conflict")).toBe(
+      "This media changed in another window. Review its projects and save again.",
+    );
+  });
   it("rejects a LUT that would exceed the native document limit", () => {
     const project = newProject("Oversized LUT");
     const clip = createEditorClip({
@@ -64,10 +70,20 @@ describe("project saves", () => {
   it("organizes gallery and project membership in one native operation", async () => {
     native.invoke.mockResolvedValue({ id: "clip.mp4", title: "Clip", projectIds: ["film-1"] });
     await expect(
-      organizeArtifact({ id: "clip.mp4", title: "Clip", projectIds: ["film-1"] }),
+      organizeArtifact({
+        id: "clip.mp4",
+        title: "Clip",
+        projectIds: ["film-1"],
+        expectedProjectIds: ["film-1"],
+      }),
     ).resolves.toMatchObject({ projectIds: ["film-1"] });
     expect(native.invoke).toHaveBeenCalledExactlyOnceWith("studio_artifact_organize", {
-      request: { id: "clip.mp4", title: "Clip", projectIds: ["film-1"] },
+      request: {
+        id: "clip.mp4",
+        title: "Clip",
+        projectIds: ["film-1"],
+        expectedProjectIds: ["film-1"],
+      },
     });
   });
 
@@ -75,7 +91,12 @@ describe("project saves", () => {
     native.invoke.mockRejectedValue(new Error("studio_project_conflict"));
 
     await expect(
-      organizeArtifact({ id: "clip.mp4", title: "Clip", projectIds: ["film-1"] }),
+      organizeArtifact({
+        id: "clip.mp4",
+        title: "Clip",
+        projectIds: ["film-1"],
+        expectedProjectIds: ["film-1"],
+      }),
     ).rejects.toThrow("studio_project_conflict");
     expect(native.invoke).toHaveBeenCalledTimes(1);
   });
