@@ -249,54 +249,70 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       })
       .catch(report);
     if (alreadyApplied) return;
-    editDocument((document) => ({
-      ...document,
-      runs: document.runs.map((savedRun) =>
-        savedRun.id === run.id
-          ? {
-              ...savedRun,
-              appliedNodeIds: [...new Set([...(savedRun.appliedNodeIds ?? []), result.nodeId])],
-            }
-          : savedRun,
-      ),
-      artifactIds: [...new Set([...document.artifactIds, artifactId])],
-      bible: document.bible.map((entry) => {
-        const match = /^bible-(.+)-(portrait|profile|wide|medium|detail)$/.exec(result.nodeId);
-        if (
-          !match ||
-          match[1] !== entry.id ||
-          entry.refs.some((ref) => ref.artifactId === artifactId)
-        )
-          return entry;
-        const role = match[2] as BibleRole;
-        return {
-          ...entry,
-          refs: [
-            ...entry.refs,
-            {
-              id: crypto.randomUUID(),
-              entryId: entry.id,
-              artifactId,
-              role,
-              label: BIBLE_ROLE_LABELS[role],
-              ordinal: entry.refs.length,
-            },
-          ],
-        };
-      }),
-      shots: document.shots.map((shot) => {
-        if (result.nodeId === `shot-${shot.id}`)
+    editDocument((document) => {
+      const savedRun = document.runs.find((item) => item.id === run.id);
+      const signatures = { ...(savedRun?.shotSignatures ?? run.shotSignatures) };
+      const completedIndex = document.shots.findIndex(
+        (shot) => result.nodeId === `shot-${shot.id}`,
+      );
+      const successor = completedIndex >= 0 ? document.shots[completedIndex + 1] : undefined;
+      if (successor?.mode === "continuation")
+        signatures[successor.id] = shotSignature(successor, document, artifactId);
+      return {
+        ...document,
+        runs: document.runs.map((savedRun) =>
+          savedRun.id === run.id
+            ? {
+                ...savedRun,
+                shotSignatures: signatures,
+                appliedNodeIds: [...new Set([...(savedRun.appliedNodeIds ?? []), result.nodeId])],
+              }
+            : savedRun,
+        ),
+        artifactIds: [...new Set([...document.artifactIds, artifactId])],
+        bible: document.bible.map((entry) => {
+          const match = /^bible-(.+)-(portrait|profile|wide|medium|detail)$/.exec(result.nodeId);
+          if (
+            !match ||
+            match[1] !== entry.id ||
+            entry.refs.some((ref) => ref.artifactId === artifactId)
+          )
+            return entry;
+          const role = match[2] as BibleRole;
           return {
-            ...shot,
-            takeIds: [...new Set([...shot.takeIds, artifactId])],
-            activeTakeId: shot.activeTakeId ?? artifactId,
-            renderedSignature: run.shotSignatures?.[shot.id],
+            ...entry,
+            refs: [
+              ...entry.refs,
+              {
+                id: crypto.randomUUID(),
+                entryId: entry.id,
+                artifactId,
+                role,
+                label: BIBLE_ROLE_LABELS[role],
+                ordinal: entry.refs.length,
+              },
+            ],
           };
-        if (result.nodeId === `image-${shot.id}`)
-          return { ...shot, imageCandidates: [...new Set([...shot.imageCandidates, artifactId])] };
-        return shot;
-      }),
-    }));
+        }),
+        shots: document.shots.map((shot) => {
+          if (result.nodeId === `shot-${shot.id}`)
+            return {
+              ...shot,
+              takeIds: [...new Set([...shot.takeIds, artifactId])],
+              activeTakeId: shot.activeTakeId ?? artifactId,
+              renderedSignature: signatures[shot.id],
+            };
+          if (shot.id === successor?.id && savedRun?.appliedNodeIds?.includes(`shot-${shot.id}`))
+            return { ...shot, renderedSignature: signatures[shot.id] };
+          if (result.nodeId === `image-${shot.id}`)
+            return {
+              ...shot,
+              imageCandidates: [...new Set([...shot.imageCandidates, artifactId])],
+            };
+          return shot;
+        }),
+      };
+    });
   };
   const restoreRun = async (
     run: ProjectRun,

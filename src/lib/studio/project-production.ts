@@ -72,11 +72,22 @@ export function compileProjectWithNotes(
       targetPort: "video",
     });
   }
-  const wanted = new Set(
-    workflow.nodes
-      .filter((node) => node.type !== "assemble" && node.type !== "output")
-      .map((node) => node.id),
-  );
+  const wanted = onlyShotId
+    ? new Set([`shot-${onlyShotId}`])
+    : new Set(
+        workflow.nodes
+          .filter((node) => node.type !== "assemble" && node.type !== "output")
+          .map((node) => node.id),
+      );
+  if (onlyShotId) {
+    // An isolated take buys only the nodes feeding its picture. Dialogue and
+    // score feed the removed assembly node, so charging them here wastes work.
+    let size = -1;
+    while (size !== wanted.size) {
+      size = wanted.size;
+      for (const edge of workflow.edges) if (wanted.has(edge.target)) wanted.add(edge.source);
+    }
+  }
   const nodes = workflow.nodes.filter((node) => wanted.has(node.id));
   const edges = workflow.edges.filter((edge) => wanted.has(edge.source) && wanted.has(edge.target));
   const compiled = { ...workflow, id: crypto.randomUUID(), nodes, edges };

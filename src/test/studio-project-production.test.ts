@@ -149,6 +149,39 @@ describe("isolated project takes", () => {
     ]);
   });
 
+  it("does not buy unused dialogue speech for an isolated video take", () => {
+    const project = newProject();
+    project.document.shots = [
+      {
+        ...newShot(0),
+        id: "target",
+        action: "The pianist takes a bow",
+        dialogue: "Encore ?",
+        modelId: "test-text-to-video",
+      },
+    ];
+    const withSpeech: MediaCatalog = {
+      ...catalog,
+      models: [
+        ...catalog.models,
+        {
+          id: "tts-kokoro",
+          name: "Voice",
+          mediaType: "tts",
+          offline: false,
+          costCredits: 1,
+          voices: ["ash"],
+        },
+      ],
+    };
+    const full = compileProject(project.name, project.document, withSpeech);
+    expect(full.nodes.some((node) => node.type === "tts")).toBe(true);
+    const take = compileProject(project.name, project.document, withSpeech, "target");
+    expect(take.nodes.filter((node) => node.type === "video")).toHaveLength(1);
+    expect(take.nodes.some((node) => node.type === "tts")).toBe(false);
+    expect(take.nodes.some((node) => node.id === "dialogue-target")).toBe(false);
+  });
+
   it("continues from the selected previous take without generating that shot again", () => {
     const project = newProject();
     const previous = { ...newShot(0), id: "previous", activeTakeId: "paid.mp4" };

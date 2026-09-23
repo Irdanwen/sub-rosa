@@ -168,7 +168,11 @@ export function montageArtifacts(
     (artifact) => artifact.projectIds?.includes(project.id) || referenced.has(artifact.id),
   );
 }
-export function shotSignature(shot: ProjectShot, project: ProjectDocument): string {
+export function shotSignature(
+  shot: ProjectShot,
+  project: ProjectDocument,
+  predecessorTakeId?: string,
+): string {
   const {
     takeIds: _takes,
     activeTakeId: _active,
@@ -185,7 +189,12 @@ export function shotSignature(shot: ProjectShot, project: ProjectDocument): stri
     settings: project.settings,
     bible: project.bible,
     ...(shot.mode === "continuation"
-      ? { predecessor: { id: previous?.id, activeTakeId: previous?.activeTakeId } }
+      ? {
+          predecessor: {
+            id: previous?.id,
+            activeTakeId: predecessorTakeId ?? previous?.activeTakeId,
+          },
+        }
       : {}),
   });
 }

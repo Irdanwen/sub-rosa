@@ -252,6 +252,7 @@ import { createEditorClip } from "../lib/studio/editor/document";
 import {
   newProject,
   newShot,
+  shotSignature,
   listArtifactMetadata,
   saveArtifactMetadata,
   type StudioProject,
@@ -1058,6 +1059,59 @@ describe("project production confirmation", () => {
       }),
     );
   });
+
+  it.each(["in order", "out of order"])(
+    "records a continuation against the predecessor take generated in the same run, %s",
+    async (resultOrder) => {
+      project.document.shots.push({
+        ...newShot(1),
+        id: "s2",
+        action: "The pianist walks offstage",
+        mode: "continuation",
+        modelId: "test-image-to-video",
+      });
+      const withContinuation: MediaCatalog = {
+        ...catalog,
+        models: [
+          ...catalog.models,
+          {
+            id: "test-image-to-video",
+            name: "Test image video",
+            mediaType: "imageToVideo",
+            offline: false,
+            costCredits: 10,
+          },
+        ],
+      };
+      const before = shotSignature(project.document.shots[1], project.document);
+      mocks.run.mockImplementation(async (_workflow, options) => {
+        await options.onRunRecorded("run-chain");
+        const first = {
+          nodeId: "shot-s1",
+          status: "done" as const,
+          output: { kind: "video" as const, artifactId: "first.mp4" },
+        };
+        const second = {
+          nodeId: "shot-s2",
+          status: "done" as const,
+          output: { kind: "video" as const, artifactId: "second.mp4" },
+        };
+        for (const result of resultOrder === "in order" ? [first, second] : [second, first])
+          options.onUpdate(result);
+        return new Map();
+      });
+      render(<ProjectStudio catalog={withContinuation} />);
+      await screen.findByRole("button", { name: "Quote production" });
+      fireEvent.click(screen.getByRole("button", { name: "Quote production" }));
+      await screen.findByRole("dialog", { name: "Review generation costs" });
+      fireEvent.click(screen.getByRole("button", { name: /Generate · 10 credits/ }));
+      await waitFor(() => expect(project.document.shots[1].activeTakeId).toBe("second.mp4"));
+      const after = shotSignature(project.document.shots[1], project.document);
+      expect(after).not.toBe(before);
+      expect(project.document.shots[1].renderedSignature).toBe(after);
+      expect(project.document.runs[0].shotSignatures.s2).toBe(after);
+    },
+  );
 
   it("keeps a render failure visible when an earlier result save finishes later", async () => {
     let finishSave: (() => void) | undefined;
