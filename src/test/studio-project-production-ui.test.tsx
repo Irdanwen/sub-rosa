@@ -66,7 +66,9 @@ vi.mock("../components/studio/ProjectBible", () => ({ ProjectBible: () => null }
 vi.mock("../components/studio/ProjectMedia", () => ({ ProjectMedia: () => null }));
 vi.mock("../components/studio/ProjectTimeline", () => ({
   ProjectTimeline: ({ artifacts }: { artifacts: Array<{ id: string }> }) => (
-    <output data-testid="timeline-artifacts">{artifacts.map((artifact) => artifact.id).join(",")}</output>
+    <output data-testid="timeline-artifacts">
+      {artifacts.map((artifact) => artifact.id).join(",")}
+    </output>
   ),
 }));
 vi.mock("../components/studio/ProjectShots", () => ({
