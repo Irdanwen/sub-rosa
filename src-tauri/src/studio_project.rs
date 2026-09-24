@@ -44,6 +44,13 @@ pub struct SaveProjectRequest {
     pub document: Value,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteProjectRequest {
+    pub id: String,
+    pub expected_revision: i64,
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ArtifactMetadata {
@@ -226,6 +233,91 @@ async fn save_project(
         Some(row)
     };
     record(&row.ok_or(CONFLICT)?)
+}
+
+async fn delete_project(pool: &SqlitePool, request: DeleteProjectRequest) -> Result<(), String> {
+    validate_id(&request.id)?;
+    if !(1..MAX_REVISION).contains(&request.expected_revision) {
+        return Err(CONFLICT.into());
+    }
+    let mut tx = pool.begin().await.map_err(storage_error)?;
+    let row = query("SELECT revision, document FROM studio_projects WHERE id = ?")
+        .bind(&request.id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(storage_error)?
+        .ok_or(CONFLICT)?;
+    let revision: i64 = row.try_get("revision").map_err(storage_error)?;
+    if revision != request.expected_revision {
+        return Err(CONFLICT.into());
+    }
+    let source: String = row.try_get("document").map_err(storage_error)?;
+    let document: Value = serde_json::from_str(&source).map_err(storage_error)?;
+    if let Some(note_id) = document.get("readingNoteId").and_then(Value::as_str) {
+        let running = query(
+            "SELECT 1 FROM shot_lists WHERE note_id = ? AND status IN ('pending', 'running')",
+        )
+        .bind(note_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(storage_error)?;
+        if running.is_some() {
+            return Err("studio_project_active".into());
+        }
+    }
+    if let Some(runs) = document.get("runs").and_then(Value::as_array) {
+        for run in runs {
+            if let Some(id) = run.get("id").and_then(Value::as_str) {
+                let active = query("SELECT 1 FROM workflow_runs WHERE id = ? AND status IN ('running', 'awaitingGate')")
+                    .bind(id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(storage_error)?;
+                if active.is_some() {
+                    return Err("studio_project_active".into());
+                }
+            }
+        }
+    }
+    for row in query("SELECT id, project_ids FROM studio_artifact_metadata")
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(storage_error)?
+    {
+        let id: String = row.try_get("id").map_err(storage_error)?;
+        let raw: String = row.try_get("project_ids").map_err(storage_error)?;
+        let mut ids: Vec<String> = serde_json::from_str(&raw).map_err(storage_error)?;
+        let before = ids.len();
+        ids.retain(|id| id != &request.id);
+        if ids.len() != before {
+            query("UPDATE studio_artifact_metadata SET project_ids = ? WHERE id = ?")
+                .bind(serde_json::to_string(&ids).map_err(storage_error)?)
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .map_err(storage_error)?;
+        }
+    }
+    let deleted = query("DELETE FROM studio_projects WHERE id = ? AND revision = ?")
+        .bind(&request.id)
+        .bind(request.expected_revision)
+        .execute(&mut *tx)
+        .await
+        .map_err(storage_error)?;
+    if deleted.rows_affected() != 1 {
+        return Err(CONFLICT.into());
+    }
+    if let Some(note_id) = document.get("readingNoteId").and_then(Value::as_str) {
+        if document.get("noteId").and_then(Value::as_str) != Some(note_id) {
+            query("DELETE FROM notes WHERE id = ?")
+                .bind(note_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(storage_error)?;
+        }
+    }
+    tx.commit().await.map_err(storage_error)?;
+    Ok(())
 }
 
 fn artifact_metadata(row: &SqliteRow) -> Result<ArtifactMetadata, String> {
@@ -537,6 +629,14 @@ pub async fn studio_project_save(
 }
 
 #[tauri::command]
+pub async fn studio_project_delete(
+    app: AppHandle,
+    request: DeleteProjectRequest,
+) -> Result<(), String> {
+    delete_project(&pool(&app).await?, request).await
+}
+
+#[tauri::command]
 pub async fn studio_artifact_list(app: AppHandle) -> Result<Vec<ArtifactMetadata>, String> {
     list_artifacts(&pool(&app).await?).await
 }
@@ -589,6 +689,59 @@ mod tests {
             expected_revision: revision,
             document,
         }
+    }
+
+    #[tokio::test]
+    async fn deleting_a_project_preserves_media_and_other_memberships() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pool = open_database(&dir.path().join("studio.sqlite")).await;
+        save_project(
+            &pool,
+            request(None, json!({"schemaVersion":1,"artifactIds":["clip.mp4"]})),
+        )
+        .await
+        .expect("project");
+        save_artifact(
+            &pool,
+            SaveArtifactRequest {
+                id: "clip.mp4".into(),
+                title: Some("Final take".into()),
+                project_ids: Some(vec!["film-one".into(), "film-two".into()]),
+                generation: Some(json!({"model":"video-model"})),
+            },
+        )
+        .await
+        .expect("metadata");
+        assert_eq!(
+            delete_project(
+                &pool,
+                DeleteProjectRequest {
+                    id: "film-one".into(),
+                    expected_revision: 2
+                }
+            )
+            .await
+            .unwrap_err(),
+            CONFLICT
+        );
+        assert!(get_project(&pool, "film-one").await.unwrap().is_some());
+        delete_project(
+            &pool,
+            DeleteProjectRequest {
+                id: "film-one".into(),
+                expected_revision: 1,
+            },
+        )
+        .await
+        .expect("delete");
+        assert!(get_project(&pool, "film-one").await.unwrap().is_none());
+        let media = list_artifacts(&pool).await.expect("media");
+        assert_eq!(media[0].title, "Final take");
+        assert_eq!(media[0].project_ids, vec!["film-two"]);
+        assert_eq!(
+            media[0].generation.as_ref().unwrap()["model"],
+            "video-model"
+        );
     }
 
     #[tokio::test]

@@ -26,6 +26,7 @@ use crate::domain::types::{AppError, FilmListItemDto, ShotListDto};
 use crate::june_api;
 use prompts::SHOTLIST_PROMPT_VERSION;
 use serde::{Deserialize, Serialize};
+use sha2::Digest as _;
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard};
 use tauri::{AppHandle, Emitter};
@@ -167,6 +168,7 @@ pub struct ShotListPlan {
     pub breakable: bool,
     /// Why not, when `breakable` is false.
     pub reason: Option<String>,
+    pub script_hash: String,
 }
 
 /// The note's own words: what the user wrote wins over what was generated.
@@ -177,6 +179,13 @@ async fn script_of(repos: &Repositories, note_id: &str) -> Result<String, AppErr
         .filter(|text| !text.trim().is_empty())
         .or(note.generated_content)
         .unwrap_or_default())
+}
+
+fn script_hash(script: &str) -> String {
+    sha2::Sha256::digest(script.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 pub async fn plan(repos: &Repositories, note_id: &str) -> Result<ShotListPlan, AppError> {
@@ -209,11 +218,16 @@ pub async fn plan(repos: &Repositories, note_id: &str) -> Result<ShotListPlan, A
         model_calls: chunk_count as i64,
         breakable,
         reason,
+        script_hash: script_hash(&script),
     })
 }
 
 /// Start (or restart) the breakdown of a note.
-pub async fn start(app: &AppHandle, note_id: &str) -> Result<ShotListDto, AppError> {
+pub async fn start(
+    app: &AppHandle,
+    note_id: &str,
+    model_id: Option<String>,
+) -> Result<ShotListDto, AppError> {
     let repos = crate::commands::repositories(app).await?;
     let plan = plan(&repos, note_id).await?;
     if !plan.breakable {
@@ -231,13 +245,37 @@ pub async fn start(app: &AppHandle, note_id: &str) -> Result<ShotListDto, AppErr
             )
         });
     }
+    let model = match model_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+    {
+        Some(id) => {
+            if id.len() > 256 || id.chars().any(char::is_control) {
+                return Err(AppError::new(
+                    "shotlist_invalid_model",
+                    "Choose an available text model.",
+                ));
+            }
+            let available = june_api::list_models("text").await?;
+            if !available.iter().any(|candidate| candidate.id == id) {
+                return Err(AppError::new(
+                    "shotlist_invalid_model",
+                    "Choose an available text model.",
+                ));
+            }
+            id.to_string()
+        }
+        None => crate::providers::generation_model(),
+    };
     let row = repos
         .begin_shot_list(
             note_id,
             plan.script_chars,
             plan.chunk_count,
-            &crate::providers::generation_model(),
+            &model,
             SHOTLIST_PROMPT_VERSION,
+            &plan.script_hash,
         )
         .await?;
     emit(app, &row);
@@ -257,7 +295,10 @@ fn spawn_run(app: AppHandle, note_id: String) {
         if let Err(error) = result {
             tracing::warn!(note_id = %note_id, code = %error.code, "shot list failed");
             if let Ok(repos) = crate::commands::repositories(&app).await {
-                if let Ok(Some(row)) = repos.set_shot_list_failed(&note_id, &error.message).await {
+                if let Ok(Some(row)) = repos
+                    .set_shot_list_failed(&note_id, &error.code, &error.message)
+                    .await
+                {
                     emit(&app, &row);
                 }
             }
@@ -280,6 +321,18 @@ async fn run(app: &AppHandle, note_id: &str) -> Result<(), AppError> {
         |row: Option<&ShotListDto>| row.is_some_and(|row| row.created_at == started_at);
 
     let script = script_of(&repos, note_id).await?;
+    let row = repos
+        .shot_list(note_id)
+        .await?
+        .ok_or_else(|| AppError::new("shotlist_cancelled", "That breakdown was stopped."))?;
+    if row.prompt_version != SHOTLIST_PROMPT_VERSION
+        || row.script_hash.as_deref() != Some(script_hash(&script).as_str())
+    {
+        return Err(AppError::new(
+            "shotlist_source_changed",
+            "Your script changed. Start the breakdown again to use the latest version.",
+        ));
+    }
     let chunks = chunk::chunk_script(&script, chunk::CHUNK_BUDGET_CHARS);
     let chunk_count = chunks.len();
 
@@ -300,11 +353,13 @@ async fn run(app: &AppHandle, note_id: &str) -> Result<(), AppError> {
             continue;
         }
         let text = completion(
+            &row.model,
             prompts::MAP_SYSTEM,
             &prompts::map_user_message(index, chunk_count, chunk),
             "shotlist_map_failed",
         )
         .await?;
+        parse_reading_checked(&text)?;
         parts.push(text);
         let saved = repos.save_shot_list_parts(note_id, &parts).await?;
         if !still_ours(saved.as_ref()) {
@@ -332,8 +387,8 @@ async fn run(app: &AppHandle, note_id: &str) -> Result<(), AppError> {
     }
     if shots.is_empty() {
         return Err(AppError::new(
-            "shotlist_empty",
-            "Nothing in this note reads as something to film.",
+            "shotlist_no_shots",
+            "This model found no shots in your script. Try another text model or revise the script.",
         ));
     }
     let row = repos
@@ -366,18 +421,34 @@ pub fn parse_shots(raw: &str) -> Vec<Shot> {
 /// reading stored before the cast existed looks like. A reading with no cast
 /// is a reading, not a failure.
 pub fn parse_reading(raw: &str) -> Reading {
-    let object = slice_between(raw, '{', '}')
-        .and_then(|slice| serde_json::from_str::<Reading>(slice).ok())
-        .filter(|reading| !reading.shots.is_empty());
-    let mut reading = match object {
-        Some(reading) => reading,
-        None => Reading {
-            cast: Vec::new(),
-            shots: slice_between(raw, '[', ']')
-                .and_then(|slice| serde_json::from_str::<Vec<Shot>>(slice).ok())
-                .unwrap_or_default(),
-        },
+    parse_reading_checked(raw).unwrap_or_default()
+}
+
+fn parse_reading_checked(raw: &str) -> Result<Reading, AppError> {
+    let object = slice_between(raw, '{', '}').and_then(|slice| {
+        let value: serde_json::Value = serde_json::from_str(slice).ok()?;
+        value.get("shots")?.as_array()?;
+        serde_json::from_value::<Reading>(value).ok()
+    });
+    let bare = if raw
+        .find('[')
+        .is_some_and(|array| raw.find('{').is_none_or(|object| array < object))
+    {
+        slice_between(raw, '[', ']')
+            .and_then(|slice| serde_json::from_str::<Vec<Shot>>(slice).ok())
+            .map(|shots| Reading {
+                cast: Vec::new(),
+                shots,
+            })
+    } else {
+        None
     };
+    let mut reading = object
+        .or(bare)
+        .ok_or_else(|| AppError::new(
+            "shotlist_invalid_response",
+            "This model did not return a usable shot list. Choose another text model and try again.",
+        ))?;
 
     reading.shots.retain(|shot| !shot.action.trim().is_empty());
     for shot in &mut reading.shots {
@@ -392,7 +463,7 @@ pub fn parse_reading(raw: &str) -> Reading {
         // restated on every shot of every film.
         member.traits = member.traits.trim().chars().take(300).collect();
     }
-    reading
+    Ok(reading)
 }
 
 /// The outermost balanced-looking slice between two delimiters, or nothing.
@@ -405,8 +476,14 @@ fn slice_between(raw: &str, open: char, close: char) -> Option<&str> {
     Some(&raw[start..=end])
 }
 
-async fn completion(system: &str, user: &str, error_code: &str) -> Result<String, AppError> {
+async fn completion(
+    model: &str,
+    system: &str,
+    user: &str,
+    error_code: &str,
+) -> Result<String, AppError> {
     let response = june_api::proxy_agent_chat_completions(serde_json::json!({
+        "model": model,
         "messages": [
             { "role": "system", "content": system },
             { "role": "user", "content": user }
@@ -426,6 +503,16 @@ async fn completion(system: &str, user: &str, error_code: &str) -> Result<String
     let body = response.collect_body().await?;
     let value: serde_json::Value = serde_json::from_slice(&body)
         .map_err(|error| AppError::new(error_code, error.to_string()))?;
+    if value
+        .pointer("/choices/0/finish_reason")
+        .and_then(serde_json::Value::as_str)
+        == Some("length")
+    {
+        return Err(AppError::new(
+            "shotlist_truncated",
+            "This model stopped before finishing the shot list. Choose another text model and try again.",
+        ));
+    }
     june_api::extract_chat_completion_text(&value)
         .map(|text| text.trim().to_string())
         .filter(|text| !text.is_empty())
@@ -469,8 +556,12 @@ pub async fn shot_list_plan(app: AppHandle, note_id: String) -> Result<ShotListP
 }
 
 #[tauri::command]
-pub async fn build_shot_list(app: AppHandle, note_id: String) -> Result<ShotListDto, AppError> {
-    start(&app, &note_id).await
+pub async fn build_shot_list(
+    app: AppHandle,
+    note_id: String,
+    model_id: Option<String>,
+) -> Result<ShotListDto, AppError> {
+    start(&app, &note_id, model_id).await
 }
 
 #[tauri::command]
@@ -566,5 +657,23 @@ mod tests {
         assert!(parse_shots("[not json]").is_empty());
         assert!(parse_shots("").is_empty());
         assert!(parse_shots("][").is_empty());
+    }
+
+    #[test]
+    fn a_french_concert_script_has_filmable_shots_when_the_model_returns_them() {
+        let raw = r#"{"cast":[{"name":"Jean","kind":"character"}],"shots":[{"scene":"Salle de concert","action":"Jean paie l'ouvreuse puis regarde le violoniste rejoindre le pianiste.","dialogue":"Je vais devoir payer pour chaque modèle ?","speaker":"Jean","motion":"medium"}]}"#;
+        let reading = parse_reading_checked(raw).expect("valid reading");
+        assert_eq!(reading.shots.len(), 1);
+        assert_eq!(reading.shots[0].speaker, "Jean");
+    }
+
+    #[test]
+    fn malformed_model_output_is_not_treated_as_an_unfilmable_script() {
+        let error = parse_reading_checked("I cannot provide JSON").expect_err("invalid response");
+        assert_eq!(error.code, "shotlist_invalid_response");
+        assert!(parse_reading_checked("{\"cast\":[],\"shots\":[]}")
+            .expect("valid empty reading")
+            .shots
+            .is_empty());
     }
 }

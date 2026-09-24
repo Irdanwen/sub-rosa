@@ -28,7 +28,7 @@ async fn a_run_keeps_the_parts_already_paid_for() {
     let repos = repos().await;
     let note_id = note(&repos).await;
     repos
-        .begin_shot_list(&note_id, 4000, 3, "opus", "shotlist-v1")
+        .begin_shot_list(&note_id, 4000, 3, "opus", "shotlist-v1", "")
         .await
         .expect("begin");
     repos
@@ -37,7 +37,7 @@ async fn a_run_keeps_the_parts_already_paid_for() {
         .expect("parts");
 
     let resumed = repos
-        .begin_shot_list(&note_id, 4000, 3, "opus", "shotlist-v1")
+        .begin_shot_list(&note_id, 4000, 3, "opus", "shotlist-v1", "")
         .await
         .expect("resume");
     assert_eq!(resumed.status, "running");
@@ -45,11 +45,44 @@ async fn a_run_keeps_the_parts_already_paid_for() {
 }
 
 #[tokio::test]
+async fn paid_parts_are_reused_only_for_the_same_script_and_model() {
+    let repos = repos().await;
+    let note_id = note(&repos).await;
+    repos
+        .begin_shot_list(&note_id, 4000, 1, "model-a", "shotlist-v3", "hash-a")
+        .await
+        .expect("begin");
+    repos
+        .save_shot_list_parts(&note_id, &["completed".to_string()])
+        .await
+        .expect("parts");
+    let same = repos
+        .begin_shot_list(&note_id, 4000, 1, "model-a", "shotlist-v3", "hash-a")
+        .await
+        .expect("resume");
+    assert_eq!(same.parts_json.as_deref(), Some("[\"completed\"]"));
+    let changed_model = repos
+        .begin_shot_list(&note_id, 4000, 1, "model-b", "shotlist-v3", "hash-a")
+        .await
+        .expect("new model");
+    assert!(changed_model.parts_json.is_none());
+    repos
+        .save_shot_list_parts(&note_id, &["new completion".to_string()])
+        .await
+        .expect("parts");
+    let changed_script = repos
+        .begin_shot_list(&note_id, 4000, 1, "model-b", "shotlist-v3", "hash-b")
+        .await
+        .expect("new script");
+    assert!(changed_script.parts_json.is_none());
+}
+
+#[tokio::test]
 async fn an_edited_script_starts_over_rather_than_lining_up_against_the_wrong_text() {
     let repos = repos().await;
     let note_id = note(&repos).await;
     repos
-        .begin_shot_list(&note_id, 4000, 3, "opus", "shotlist-v1")
+        .begin_shot_list(&note_id, 4000, 3, "opus", "shotlist-v1", "")
         .await
         .expect("begin");
     repos
@@ -59,7 +92,7 @@ async fn an_edited_script_starts_over_rather_than_lining_up_against_the_wrong_te
 
     // A different chunk count means the indices would point at different text.
     let rechunked = repos
-        .begin_shot_list(&note_id, 9000, 5, "opus", "shotlist-v1")
+        .begin_shot_list(&note_id, 9000, 5, "opus", "shotlist-v1", "")
         .await
         .expect("rechunk");
     assert_eq!(rechunked.parts_json, None);
@@ -71,7 +104,7 @@ async fn a_new_prompt_version_starts_over_too() {
     let repos = repos().await;
     let note_id = note(&repos).await;
     repos
-        .begin_shot_list(&note_id, 4000, 3, "opus", "shotlist-v1")
+        .begin_shot_list(&note_id, 4000, 3, "opus", "shotlist-v1", "")
         .await
         .expect("begin");
     repos
@@ -79,7 +112,7 @@ async fn a_new_prompt_version_starts_over_too() {
         .await
         .expect("parts");
     let bumped = repos
-        .begin_shot_list(&note_id, 4000, 3, "opus", "shotlist-v2")
+        .begin_shot_list(&note_id, 4000, 3, "opus", "shotlist-v2", "")
         .await
         .expect("bumped");
     assert_eq!(bumped.parts_json, None);
@@ -90,16 +123,20 @@ async fn finishing_clears_the_error_and_stores_the_shots() {
     let repos = repos().await;
     let note_id = note(&repos).await;
     repos
-        .begin_shot_list(&note_id, 4000, 1, "opus", "shotlist-v1")
+        .begin_shot_list(&note_id, 4000, 1, "opus", "shotlist-v1", "")
         .await
         .expect("begin");
     repos
-        .set_shot_list_failed(&note_id, "the rail flapped")
+        .set_shot_list_failed(&note_id, "provider_unavailable", "the rail flapped")
         .await
         .expect("fail");
     let failed = repos.shot_list(&note_id).await.expect("read").expect("row");
     assert_eq!(failed.status, "failed");
     assert_eq!(failed.last_error.as_deref(), Some("the rail flapped"));
+    assert_eq!(
+        failed.last_error_code.as_deref(),
+        Some("provider_unavailable")
+    );
 
     let done = repos
         .finish_shot_list(&note_id, &[serde_json::json!({ "action": "Nera turns" })])
@@ -108,6 +145,7 @@ async fn finishing_clears_the_error_and_stores_the_shots() {
         .expect("row");
     assert_eq!(done.status, "ready");
     assert_eq!(done.last_error, None);
+    assert_eq!(done.last_error_code, None);
     assert!(done.shots_json.unwrap().contains("Nera turns"));
 }
 
@@ -117,11 +155,11 @@ async fn only_unfinished_rows_come_back_for_the_sweep() {
     let running = note(&repos).await;
     let ready = note(&repos).await;
     repos
-        .begin_shot_list(&running, 4000, 1, "opus", "shotlist-v1")
+        .begin_shot_list(&running, 4000, 1, "opus", "shotlist-v1", "")
         .await
         .expect("running");
     repos
-        .begin_shot_list(&ready, 4000, 1, "opus", "shotlist-v1")
+        .begin_shot_list(&ready, 4000, 1, "opus", "shotlist-v1", "")
         .await
         .expect("ready");
     repos
@@ -139,7 +177,7 @@ async fn deleting_the_row_is_the_cancel() {
     let repos = repos().await;
     let note_id = note(&repos).await;
     repos
-        .begin_shot_list(&note_id, 4000, 1, "opus", "shotlist-v1")
+        .begin_shot_list(&note_id, 4000, 1, "opus", "shotlist-v1", "")
         .await
         .expect("begin");
     repos.delete_shot_list(&note_id).await.expect("delete");
@@ -158,7 +196,7 @@ async fn a_film_is_a_note_that_has_been_read() {
         .await
         .expect("title");
     repos
-        .begin_shot_list(&read, 4000, 1, "opus", "shotlist-v2")
+        .begin_shot_list(&read, 4000, 1, "opus", "shotlist-v2", "")
         .await
         .expect("begin");
     repos
@@ -188,7 +226,7 @@ async fn a_reading_stored_before_the_cast_existed_still_counts_its_shots() {
     let repos = repos().await;
     let note_id = note(&repos).await;
     repos
-        .begin_shot_list(&note_id, 4000, 1, "opus", "shotlist-v1")
+        .begin_shot_list(&note_id, 4000, 1, "opus", "shotlist-v1", "")
         .await
         .expect("begin");
     repos
@@ -203,7 +241,7 @@ async fn a_film_still_being_read_is_listed_with_nothing_in_it_yet() {
     let repos = repos().await;
     let note_id = note(&repos).await;
     repos
-        .begin_shot_list(&note_id, 4000, 3, "opus", "shotlist-v2")
+        .begin_shot_list(&note_id, 4000, 3, "opus", "shotlist-v2", "")
         .await
         .expect("begin");
     let films = repos.list_films().await.expect("list");

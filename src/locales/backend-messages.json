@@ -303,6 +303,10 @@
   "This mandate has already been handed to the agent, so it can no longer be changed.",
   "This message was interrupted. Attach your files again and send a new message.",
   "This model is busy right now. Wait a few seconds and send again, or switch to another model.",
+  "Choose an available text model.",
+  "This model did not return a usable shot list. Choose another text model and try again.",
+  "This model found no shots in your script. Try another text model or revise the script.",
+  "This model stopped before finishing the shot list. Choose another text model and try again.",
   "This note has no transcript to summarize.",
   "This PDF has no readable text. Convert its scanned pages to text and add it again.",
   "This platform has no calendar or reminders to write to.",
@@ -332,5 +336,6 @@
   "Your Carpe Diem balance is too low, or your active payment rail is out of funds. Open Settings and check Carpe Diem (prepaid account and credits are billed separately).",
   "Your connection could not be verified.",
   "Your system credential store is unavailable.",
+  "Your script changed. Start the breakdown again to use the latest version.",
   "yt-dlp is not installed on this machine. Install it, or download the audio yourself and drop the file in."
 ]

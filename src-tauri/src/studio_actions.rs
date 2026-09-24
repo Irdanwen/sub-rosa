@@ -89,7 +89,15 @@ pub async fn dispatch(
             as_json(crate::shotlist::shot_list_plan(app, required_param(&params, "noteId")?).await?)
         }
         "shots.build" => as_json(
-            crate::shotlist::build_shot_list(app, required_param(&params, "noteId")?).await?,
+            crate::shotlist::build_shot_list(
+                app,
+                required_param(&params, "noteId")?,
+                params
+                    .get("modelId")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+            )
+            .await?,
         ),
         "shots.read" => {
             as_json(crate::shotlist::shot_list(app, required_param(&params, "noteId")?).await?)

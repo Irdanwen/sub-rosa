@@ -4211,7 +4211,7 @@ impl Repositories {
         note_id: &str,
     ) -> Result<Option<ShotListDto>, sqlx::error::Error> {
         let row = query(
-            "SELECT note_id, status, shots_json, parts_json, chunk_count, script_chars, model, prompt_version, last_error, created_at, updated_at FROM shot_lists WHERE note_id = ?",
+            "SELECT note_id, status, shots_json, parts_json, chunk_count, script_chars, model, prompt_version, script_hash, last_error, last_error_code, created_at, updated_at FROM shot_lists WHERE note_id = ?",
         )
         .bind(note_id)
         .fetch_optional(&self.pool)
@@ -4219,8 +4219,6 @@ impl Repositories {
         Ok(row.map(|row| shot_list_from_row(&row)))
     }
 
-    /// Claim the row for a fresh run, keeping the parts already paid for when
-    /// the script still chunks the same way.
     pub async fn begin_shot_list(
         &self,
         note_id: &str,
@@ -4228,26 +4226,30 @@ impl Repositories {
         chunk_count: i64,
         model: &str,
         prompt_version: &str,
+        script_hash: &str,
     ) -> Result<ShotListDto, sqlx::error::Error> {
         let now = timestamp();
         let reusable: Option<String> = query(
-            "SELECT parts_json FROM shot_lists WHERE note_id = ? AND chunk_count = ? AND prompt_version = ?",
+            "SELECT parts_json FROM shot_lists WHERE note_id = ? AND chunk_count = ? AND prompt_version = ? AND model = ? AND script_hash = ?",
         )
         .bind(note_id)
         .bind(chunk_count)
         .bind(prompt_version)
+        .bind(model)
+        .bind(script_hash)
         .fetch_optional(&self.pool)
         .await?
         .and_then(|row| row.get::<Option<String>, _>("parts_json"));
 
         query(
-            "INSERT INTO shot_lists (note_id, status, shots_json, parts_json, chunk_count, script_chars, model, prompt_version, last_error, created_at, updated_at)
-             VALUES (?, 'running', NULL, ?, ?, ?, ?, ?, NULL, ?, ?)
+            "INSERT INTO shot_lists (note_id, status, shots_json, parts_json, chunk_count, script_chars, model, prompt_version, script_hash, last_error, last_error_code, created_at, updated_at)
+             VALUES (?, 'running', NULL, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
              ON CONFLICT(note_id) DO UPDATE SET
                status = 'running', shots_json = NULL, parts_json = excluded.parts_json,
                chunk_count = excluded.chunk_count, script_chars = excluded.script_chars,
                model = excluded.model, prompt_version = excluded.prompt_version,
-               last_error = NULL, created_at = excluded.created_at, updated_at = excluded.updated_at",
+               script_hash = excluded.script_hash, last_error = NULL, last_error_code = NULL,
+               created_at = excluded.created_at, updated_at = excluded.updated_at",
         )
         .bind(note_id)
         .bind(&reusable)
@@ -4255,6 +4257,7 @@ impl Repositories {
         .bind(script_chars)
         .bind(model)
         .bind(prompt_version)
+        .bind(script_hash)
         .bind(&now)
         .bind(&now)
         .execute(&self.pool)
@@ -4279,18 +4282,14 @@ impl Repositories {
         self.shot_list(note_id).await
     }
 
-    /// Store the finished reading.
-    ///
-    /// Takes anything serializable rather than a slice: the reading grew from
-    /// an array of shots into an object carrying the cast too, and the column
-    /// holds whatever shape the current prompt version produces.
+    /// Store the finished reading, including its cast.
     pub async fn finish_shot_list<T: serde::Serialize + ?Sized>(
         &self,
         note_id: &str,
         reading: &T,
     ) -> Result<Option<ShotListDto>, sqlx::error::Error> {
         let json = serde_json::to_string(reading).unwrap_or_else(|_| "[]".to_string());
-        query("UPDATE shot_lists SET status = 'ready', shots_json = ?, last_error = NULL, updated_at = ? WHERE note_id = ?")
+        query("UPDATE shot_lists SET status = 'ready', shots_json = ?, last_error = NULL, last_error_code = NULL, updated_at = ? WHERE note_id = ?")
             .bind(json)
             .bind(timestamp())
             .bind(note_id)
@@ -4302,10 +4301,12 @@ impl Repositories {
     pub async fn set_shot_list_failed(
         &self,
         note_id: &str,
+        code: &str,
         message: &str,
     ) -> Result<Option<ShotListDto>, sqlx::error::Error> {
-        query("UPDATE shot_lists SET status = 'failed', last_error = ?, updated_at = ? WHERE note_id = ?")
+        query("UPDATE shot_lists SET status = 'failed', last_error = ?, last_error_code = ?, updated_at = ? WHERE note_id = ?")
             .bind(message)
+            .bind(code)
             .bind(timestamp())
             .bind(note_id)
             .execute(&self.pool)
@@ -4313,7 +4314,6 @@ impl Repositories {
         self.shot_list(note_id).await
     }
 
-    /// Deleting the row is the cancel: there is nothing else to stop.
     pub async fn delete_shot_list(&self, note_id: &str) -> Result<(), sqlx::error::Error> {
         query("DELETE FROM shot_lists WHERE note_id = ?")
             .bind(note_id)
@@ -4350,10 +4350,9 @@ impl Repositories {
             .collect())
     }
 
-    /// Rows a crash or a suspension left mid-run.
     pub async fn unfinished_shot_lists(&self) -> Result<Vec<ShotListDto>, sqlx::error::Error> {
         let rows = query(
-            "SELECT note_id, status, shots_json, parts_json, chunk_count, script_chars, model, prompt_version, last_error, created_at, updated_at FROM shot_lists WHERE status IN ('pending', 'running') ORDER BY created_at ASC",
+            "SELECT note_id, status, shots_json, parts_json, chunk_count, script_chars, model, prompt_version, script_hash, last_error, last_error_code, created_at, updated_at FROM shot_lists WHERE status IN ('pending', 'running') ORDER BY created_at ASC",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -5028,7 +5027,9 @@ fn shot_list_from_row(row: &sqlx_sqlite::SqliteRow) -> ShotListDto {
         script_chars: row.get("script_chars"),
         model: row.get("model"),
         prompt_version: row.get("prompt_version"),
+        script_hash: row.get("script_hash"),
         last_error: row.get("last_error"),
+        last_error_code: row.get("last_error_code"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
     }

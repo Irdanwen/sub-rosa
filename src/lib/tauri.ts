@@ -2581,7 +2581,9 @@ export type ShotListDto = {
   scriptChars: number;
   model: string;
   promptVersion: string;
+  scriptHash?: string | null;
   lastError?: string | null;
+  lastErrorCode?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -2609,7 +2611,6 @@ export async function listFilms() {
 }
 
 export const SHOT_LIST_EVENT = "june://shot-list";
-
 export async function shotList(noteId: string) {
   return invoke<ShotListDto | null>("shot_list", { noteId });
 }
@@ -2617,9 +2618,8 @@ export async function shotList(noteId: string) {
 export async function shotListPlan(noteId: string) {
   return invoke<ShotListPlanDto>("shot_list_plan", { noteId });
 }
-
-export async function buildShotList(noteId: string) {
-  return invoke<ShotListDto>("build_shot_list", { noteId });
+export async function buildShotList(noteId: string, modelId?: string) {
+  return invoke<ShotListDto>("build_shot_list", { noteId, modelId });
 }
 
 /** Deleting the row is the cancel: there is nothing else to stop. */

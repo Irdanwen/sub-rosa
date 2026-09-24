@@ -3531,5 +3531,17 @@
   "Zero data retention": "Aucune conservation des données",
   "Zoom": "Zoom",
   "Zoom in": "Zoom avant",
-  "Zoom out": "Zoom arrière"
+  "Zoom out": "Zoom arrière",
+  "App text model: {model}": "Modèle de texte de l'app : {model}",
+  "Choose an available text model.": "Choisissez un modèle de texte disponible.",
+  "Wait for this project's current work to finish before deleting it.": "Attendez la fin du travail en cours sur ce projet avant de le supprimer.",
+  "Retry loading text models": "Recharger les modèles de texte",
+  "Script breakdown model": "Modèle de découpage du scénario",
+  "This model did not return a usable shot list. Choose another text model and try again.": "Ce modèle n'a pas renvoyé de liste de plans exploitable. Choisissez un autre modèle de texte, puis réessayez.",
+  "This model found no shots in your script. Try another text model or revise the script.": "Ce modèle n'a trouvé aucun plan dans votre scénario. Essayez un autre modèle de texte ou modifiez le scénario.",
+  "This model stopped before finishing the shot list. Choose another text model and try again.": "Ce modèle s'est arrêté avant de terminer la liste des plans. Choisissez un autre modèle de texte, puis réessayez.",
+  "This project and its montage will be removed. Your media will stay in the library.": "Ce projet et son montage seront supprimés. Vos médias resteront dans la bibliothèque.",
+  "Unavailable model: {model}": "Modèle indisponible : {model}",
+  "Your script and completed reading steps are saved. You can try again with another model.": "Votre scénario et les étapes de lecture terminées sont enregistrés. Vous pouvez réessayer avec un autre modèle.",
+  "Your script changed. Start the breakdown again to use the latest version.": "Votre scénario a changé. Relancez le découpage pour utiliser la dernière version."
 }
