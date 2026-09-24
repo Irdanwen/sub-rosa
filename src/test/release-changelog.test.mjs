@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   findPreviousRelease,
+  findPreviousReleaseTag,
   formatChangelog,
   parseGitLogRecords,
   parsePreviousReleaseLine,
@@ -45,6 +46,14 @@ describe("findPreviousRelease", () => {
       hash: "older",
       version: "0.0.22",
     });
+  });
+});
+
+describe("findPreviousReleaseTag", () => {
+  it("uses the newest stable tag and ignores Android and prerelease tags", () => {
+    expect(findPreviousReleaseTag("android-v1.73.0-1\nv1.73.0-rc.1\nv1.72.0\nv1.71.0")).toBe(
+      "v1.72.0",
+    );
   });
 });
 

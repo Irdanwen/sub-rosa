@@ -4,10 +4,9 @@ import { resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-// Two subjects mark a release: upstream June's `release: vX.Y.Z` and this
-// fork's `chore(release): bump to X.Y.Z`. Both are the commit just before the
-// tag, so "changes since the previous release" is everything after the last
-// one of these, minus the bump commit at the head.
+// Tags mark published releases. Version bumps are usually merged through a PR,
+// so their subjects are not on the first-parent history used for release notes.
+// Recognize those subjects only as a fallback for a checkout without tags.
 const RELEASE_SUBJECT_RE =
   /^(?:release: v|chore\(release\): bump to v?)(\d+\.\d+\.\d+)(?:\b|[^0-9])/;
 // The trailer lines a commit body may carry; they are not release notes.
@@ -26,6 +25,13 @@ export function parsePreviousReleaseLine(line) {
 
 export function findPreviousRelease(log) {
   return log.split("\n").map(parsePreviousReleaseLine).find(Boolean);
+}
+
+export function findPreviousReleaseTag(tags) {
+  return tags
+    .split("\n")
+    .map((tag) => tag.trim())
+    .find((tag) => /^v\d+\.\d+\.\d+$/.test(tag));
 }
 
 export function parseGitLogRecords(log) {
@@ -92,6 +98,13 @@ function git(args) {
 }
 
 function previousRelease() {
+  // HEAD is the new bump commit (and, in CI, its release tag). Excluding it
+  // avoids selecting the release being built. Tags can point at merge commits,
+  // unlike bump subjects buried on the PR side of a merge.
+  const tag = findPreviousReleaseTag(git(["tag", "--merged", "HEAD^", "--sort=-version:refname"]));
+  if (tag) {
+    return { hash: git(["rev-list", "-n", "1", tag]).trim(), version: tag.slice(1) };
+  }
   const output = git(["log", "--first-parent", `--format=%H${FIELD_SEPARATOR}%s`, "HEAD"]);
   return findPreviousRelease(output);
 }
