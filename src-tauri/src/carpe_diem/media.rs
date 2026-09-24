@@ -860,13 +860,22 @@ pub async fn carpe_diem_media_delete_artifact(
         ));
     }
     match tokio::fs::remove_file(&path).await {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(AppError::new(
-            "media_artifact_delete_failed",
-            error.to_string(),
-        )),
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(AppError::new(
+                "media_artifact_delete_failed",
+                error.to_string(),
+            ));
+        }
     }
+    let id = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| AppError::new("media_artifact_invalid", "Invalid gallery file name."))?;
+    crate::studio_project::delete_gallery_artifact_metadata(&app, id)
+        .await
+        .map_err(|error| AppError::new("media_artifact_delete_failed", error))
 }
 
 /// Reads a gallery artifact back as base64, so a generated image can feed the

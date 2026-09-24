@@ -165,6 +165,17 @@ describe("what the app decides, and the model never does", () => {
     expect(planned[0].prompt).toContain("Nera: green coat.");
   });
 
+  it("matches a legacy bible name with surrounding spaces before a paid render", () => {
+    const { planned } = planShots(
+      [shot({ characters: ["Nera"] })],
+      [{ ...nera, name: " Nera " }],
+      catalog,
+      "16:9",
+    );
+    expect(planned[0].references).toEqual(["nera.png"]);
+    expect(planned[0].prompt).toContain("green coat");
+  });
+
   it("prefers continuing from a frame over holding a face", () => {
     // A shot that carries straight on has a frame to start from, and starting
     // from it is what makes the seam invisible.

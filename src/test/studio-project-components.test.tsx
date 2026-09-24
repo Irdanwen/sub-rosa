@@ -369,7 +369,8 @@ describe("project bible", () => {
       />,
     );
     await waitFor(() => expect(fixtures.invoke).toHaveBeenCalled());
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Baptiste" } });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: " Baptiste " } });
+    fireEvent.blur(screen.getByLabelText("Name"));
     expect(fixtures.onChange.mock.lastCall?.[0][0]).toMatchObject({
       id: "entry",
       name: "Baptiste",

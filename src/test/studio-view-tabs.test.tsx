@@ -59,6 +59,11 @@ describe("the studio's tabs", () => {
     render(<StudioView />);
     fireEvent.click(await screen.findByRole("button", { name: "make a film" }));
     await waitFor(() => expect(screen.getByText("project workspace")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Projects" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(window.localStorage.getItem("os-june:studio-tab")).toBe("projects");
   });
 
   it("still resolves the pre-audio name of the audio tab", async () => {

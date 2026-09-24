@@ -36,7 +36,6 @@ const WorkflowStudio = recoverableView(async () => {
 type StudioTab =
   | "projects"
   | "start"
-  | "film"
   | "image"
   | "video"
   | "audio"
@@ -56,7 +55,6 @@ function initialTab(): StudioTab {
     if (
       saved === "start" ||
       saved === "projects" ||
-      saved === "film" ||
       saved === "image" ||
       saved === "video" ||
       saved === "audio" ||
@@ -177,7 +175,7 @@ export function StudioView() {
             </button>
           }
         />
-      ) : tab === "projects" || tab === "film" ? (
+      ) : tab === "projects" ? (
         <ProjectStudio catalog={catalog} />
       ) : tab === "start" ? (
         <StudioStart catalog={catalog} onOpen={openWorkshop} />
@@ -188,7 +186,7 @@ export function StudioView() {
       ) : tab === "audio" ? (
         <AudioStudio catalog={catalog} requestedMode={audioMode} />
       ) : tab === "bible" ? (
-        <BibleStudio catalog={catalog} onMakeAFilm={() => setTab("film")} />
+        <BibleStudio catalog={catalog} onMakeAFilm={() => setTab("projects")} />
       ) : tab === "assemble" ? (
         <AssembleStudio
           pendingCuts={pendingCuts}

@@ -334,6 +334,64 @@ async fn save_artifact(
     artifact_metadata(&row)
 }
 
+/// Remove gallery metadata and project memberships together, so a deleted
+/// file cannot leave its prompt or a phantom project attachment behind.
+async fn delete_artifact_metadata(pool: &SqlitePool, id: &str) -> Result<(), String> {
+    validate_id(id)?;
+    let mut tx = pool.begin().await.map_err(storage_error)?;
+    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    for row in query("SELECT id, revision, document FROM studio_projects")
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(storage_error)?
+    {
+        let project_id: String = row.try_get("id").map_err(storage_error)?;
+        let revision: i64 = row.try_get("revision").map_err(storage_error)?;
+        if !(1..MAX_REVISION).contains(&revision) {
+            return Err(CONFLICT.into());
+        }
+        let source: String = row.try_get("document").map_err(storage_error)?;
+        let mut document: Value = serde_json::from_str(&source).map_err(storage_error)?;
+        let Some(artifacts) = document
+            .get_mut("artifactIds")
+            .and_then(Value::as_array_mut)
+        else {
+            continue;
+        };
+        let old_len = artifacts.len();
+        artifacts.retain(|artifact| artifact.as_str() != Some(id));
+        if artifacts.len() == old_len {
+            continue;
+        }
+        let json = bounded_json(&document, MAX_DOCUMENT_BYTES)?;
+        let updated = query("UPDATE studio_projects SET revision = revision + 1, updated_at = ?, document = ? WHERE id = ? AND revision = ?")
+            .bind(&now)
+            .bind(json)
+            .bind(&project_id)
+            .bind(revision)
+            .execute(&mut *tx)
+            .await
+            .map_err(storage_error)?;
+        if updated.rows_affected() != 1 {
+            return Err(CONFLICT.into());
+        }
+    }
+    query("DELETE FROM studio_artifact_metadata WHERE id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(storage_error)?;
+    tx.commit().await.map_err(storage_error)?;
+    Ok(())
+}
+
+pub(crate) async fn delete_gallery_artifact_metadata(
+    app: &AppHandle,
+    id: &str,
+) -> Result<(), String> {
+    delete_artifact_metadata(&pool(app).await?, id).await
+}
+
 /// Keep the gallery's membership index and every project document in one
 /// transaction. A failed write leaves both representations unchanged.
 async fn organize_artifact(
@@ -523,6 +581,36 @@ mod tests {
             expected_revision: revision,
             document,
         }
+    }
+
+    #[tokio::test]
+    async fn deleting_gallery_metadata_removes_prompt_and_project_memberships() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pool = open_database(&dir.path().join("studio.sqlite")).await;
+        save_project(
+            &pool,
+            request(None, json!({"schemaVersion":1,"artifactIds":["clip.mp4"]})),
+        )
+        .await
+        .unwrap();
+        save_artifact(
+            &pool,
+            SaveArtifactRequest {
+                id: "clip.mp4".into(),
+                title: Some("Take".into()),
+                project_ids: None,
+                generation: Some(json!({"prompt":"private scene"})),
+            },
+        )
+        .await
+        .unwrap();
+
+        delete_artifact_metadata(&pool, "clip.mp4").await.unwrap();
+        assert!(list_artifacts(&pool).await.unwrap().is_empty());
+        let project = get_project(&pool, "film-one").await.unwrap().unwrap();
+        assert_eq!(project.summary.revision, 2);
+        assert_eq!(project.document["artifactIds"], json!([]));
+        delete_artifact_metadata(&pool, "clip.mp4").await.unwrap();
     }
 
     #[tokio::test]

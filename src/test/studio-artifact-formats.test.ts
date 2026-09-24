@@ -68,6 +68,31 @@ it("fills a project membership stub with legacy generation metadata", async () =
   });
 });
 
+it("does not restore deleted prompts from the local cache after a crash", async () => {
+  localStorage.setItem(
+    "os-june:studio-gallery",
+    JSON.stringify([
+      {
+        id: "deleted.mp4",
+        fileName: "deleted.mp4",
+        path: "/gallery/deleted.mp4",
+        kind: "video",
+        model: "model",
+        prompt: "private scene",
+        createdAt: 1,
+      },
+    ]),
+  );
+  invoke.mockImplementation(async (command) => {
+    if (command === "carpe_diem_media_list_artifacts") return [];
+    if (command === "studio_artifact_list") return [];
+    throw new Error(`Unexpected command: ${command}`);
+  });
+
+  expect(await listArtifacts()).toEqual([]);
+  expect(invoke).not.toHaveBeenCalledWith("studio_artifact_save", expect.anything());
+});
+
 it("gives mobile FLAC playback a typed blob and model inputs a typed data URI", async () => {
   invoke.mockResolvedValue("ZkxhQw==");
   const create = vi.fn<(blob: Blob) => string>().mockReturnValue("blob:flac-playback");

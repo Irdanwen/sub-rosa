@@ -214,6 +214,8 @@ describe("a film's bible", () => {
       target: { value: " NEW CHARACTER " },
     });
     expect(screen.getByRole("alert")).toHaveTextContent("Give each bible entry a different name.");
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue(" NEW CHARACTER ");
+    fireEvent.blur(screen.getByRole("textbox", { name: "Name" }));
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("New character (2)");
 
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
@@ -227,6 +229,7 @@ describe("a film's bible", () => {
     });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Morgan");
+    fireEvent.blur(screen.getByRole("textbox", { name: "Name" }));
   });
 });
 

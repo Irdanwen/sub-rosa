@@ -394,7 +394,7 @@ export function planShots(
   const routing = routeModels(catalog, videoModelId);
   const errors: string[] = [];
   const notes: string[] = [];
-  const byName = new Map(bible.map((entry) => [entry.name.toLowerCase(), entry]));
+  const byName = new Map(bible.map((entry) => [entry.name.trim().toLowerCase(), entry]));
   const planned: PlannedShot[] = [];
 
   shots.forEach((shot, index) => {

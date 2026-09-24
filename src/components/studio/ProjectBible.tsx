@@ -132,6 +132,7 @@ export function ProjectBible({
             aria-pressed={entry?.id === item.id}
             onClick={() => {
               setSelected(item.id);
+              setNameDraft(undefined);
               setNameError("");
               setRole(ROLES_BY_KIND[item.kind][0]);
             }}
@@ -151,13 +152,22 @@ export function ProjectBible({
                 aria-invalid={!!nameError}
                 onChange={(event) => {
                   const name = event.target.value;
+                  setNameDraft({ entryId: entry.id, value: name });
                   if (!name.trim()) {
-                    setNameDraft({ entryId: entry.id, value: name });
                     setNameError(t("Give this one a name."));
                     return;
                   }
+                  setNameError(
+                    bibleNameInUse(entries, name, entry.id)
+                      ? t("Give each bible entry a different name.")
+                      : "",
+                  );
+                }}
+                onBlur={() => {
+                  if (nameDraft?.entryId !== entry.id) return;
+                  if (nameDraft.value.trim() && !bibleNameInUse(entries, nameDraft.value, entry.id))
+                    update({ name: nameDraft.value.trim() });
                   setNameDraft(undefined);
-                  update({ name });
                 }}
               />
             </label>

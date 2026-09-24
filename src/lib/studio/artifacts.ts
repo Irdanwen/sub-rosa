@@ -222,6 +222,13 @@ export async function saveArtifactFromResult(
  * itself is still there. */
 export async function listArtifacts(kind?: ArtifactKind): Promise<StudioArtifact[]> {
   const legacy = readIndex();
+  let files: DiskArtifact[] | undefined;
+  try {
+    files = await invoke<DiskArtifact[]>("carpe_diem_media_list_artifacts");
+  } catch {
+    // If the disk listing fails, trust the index rather than showing nothing.
+  }
+  const existingNames = files && new Set(files.map((file) => file.fileName));
   let durable: Array<{
     id: string;
     title: string;
@@ -232,6 +239,9 @@ export async function listArtifacts(kind?: ArtifactKind): Promise<StudioArtifact
     durable = (await invoke<typeof durable>("studio_artifact_list")) ?? [];
     const known = new Map(durable.map((entry, index) => [entry.id, index]));
     for (const artifact of legacy) {
+      // A crash after native deletion but before the local cache is updated
+      // must not recreate the deleted prompt in durable metadata.
+      if (existingNames && !existingNames.has(artifact.fileName)) continue;
       const index = known.get(artifact.id);
       const current = index === undefined ? undefined : durable[index];
       if (current?.generation) continue;
@@ -268,12 +278,6 @@ export async function listArtifacts(kind?: ArtifactKind): Promise<StudioArtifact
     } as StudioArtifact);
   }
   const index = [...entries.values()];
-  let files: DiskArtifact[] | undefined;
-  try {
-    files = await invoke<DiskArtifact[]>("carpe_diem_media_list_artifacts");
-  } catch {
-    // If the disk listing fails, trust the index rather than showing nothing.
-  }
   if (!files) {
     const sorted = [...index].sort((a, b) => b.createdAt - a.createdAt);
     return kind ? sorted.filter((entry) => entry.kind === kind) : sorted;
