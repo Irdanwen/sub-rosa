@@ -11,6 +11,7 @@ import {
   clipOpacity,
   durationFrames,
   fps,
+  hasAudioCandidates,
   sourceFrame,
   validateEditorDocument,
   valueAt,
@@ -263,6 +264,11 @@ export class EditorCompositor {
       }
   }
   async enableAudio(doc: EditorDocument, capture = false): Promise<MediaStream | undefined> {
+    if (!hasAudioCandidates(doc, this.artifacts)) {
+      this.audio?.dispose();
+      this.audio = undefined;
+      return undefined;
+    }
     if (!this.audio) this.audio = new EditorAudio();
     return this.audio.prepare(doc, this.artifacts, capture);
   }

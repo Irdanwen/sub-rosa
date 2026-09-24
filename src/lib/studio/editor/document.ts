@@ -2,7 +2,7 @@
  * project frames; media paths are resolved from the gallery only at playback. */
 import { t } from "../../i18n";
 import { DEFAULT_FRAME_RATE, type FrameRate, framesPerSecond } from "../timeline";
-import type { ArtifactKind } from "../types";
+import type { ArtifactKind, StudioArtifact } from "../types";
 
 export interface Keyframe {
   frame: number;
@@ -60,6 +60,20 @@ export interface EditorDocument {
   height: number;
   tracks: EditorTrack[];
   clips: EditorClip[];
+}
+/** A silent cut can record directly from the canvas without an AudioWorklet. */
+export function hasAudioCandidates(
+  doc: EditorDocument,
+  artifacts: readonly Pick<StudioArtifact, "id" | "kind">[],
+): boolean {
+  const audioIds = new Set(
+    artifacts.filter((item) => item.kind !== "image").map((item) => item.id),
+  );
+  return doc.clips.some((clip) => {
+    if (!audioIds.has(clip.artifactId ?? "")) return false;
+    const track = doc.tracks.find((item) => item.id === clip.trackId);
+    return track && !track.muted && !track.hidden;
+  });
 }
 /** Keep gallery audio on the lane matching its kind. A locked or hidden
  * matching lane must be made usable before that media can be added. */

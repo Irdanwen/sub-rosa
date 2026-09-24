@@ -5,6 +5,7 @@ import {
   createEditorClip,
   createEditorDocument,
   durationFrames,
+  hasAudioCandidates,
   duplicateClip,
   insertionTrack,
   removeClip,
@@ -36,6 +37,22 @@ function cut() {
   ];
   return doc;
 }
+
+describe("silent montage audio", () => {
+  it("needs no audio processor for images or muted and hidden media", () => {
+    const doc = cut();
+    const video = [{ id: "take.mp4", kind: "video" as const }];
+    expect(hasAudioCandidates(doc, video)).toBe(true);
+    expect(hasAudioCandidates(doc, [{ id: "take.mp4", kind: "image" }])).toBe(false);
+    const picture = doc.tracks.find((track) => track.id === "picture");
+    if (!picture) throw new Error("Picture track missing");
+    picture.muted = true;
+    expect(hasAudioCandidates(doc, video)).toBe(false);
+    picture.muted = false;
+    picture.hidden = true;
+    expect(hasAudioCandidates(doc, video)).toBe(false);
+  });
+});
 describe("editable montage document", () => {
   it("inserts generated audio on its matching lane", () => {
     const doc = createEditorDocument();
