@@ -138,6 +138,7 @@ pub async fn media_job_start(
         status: MediaJobStatus::Queued,
         error: None,
         error_status: None,
+        submission_confirmed: true,
         artifact_path: None,
         artifact_file_name: None,
         artifact_bytes: None,
@@ -166,6 +167,114 @@ pub async fn media_job_start(
         stored.clone(),
         request.retrieve_path,
         request.retrieve_body,
+        request.url_fields,
+    );
+    Ok(stored)
+}
+
+/// A queue submission is recorded before the paid POST. An interrupted submit
+/// remains failed/uncertain rather than being automatically purchased again.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueMediaJobRequest {
+    pub job_id: String,
+    pub kind: String,
+    pub model: String,
+    pub prompt: String,
+    pub extension: String,
+    pub queue_path: String,
+    pub queue_body: serde_json::Value,
+    pub retrieve_path: String,
+    pub url_fields: Vec<String>,
+    pub parent_artifact_id: Option<String>,
+    pub parent_handoff_seconds: Option<f64>,
+    pub cost_credits: Option<f64>,
+    pub source: Option<String>,
+}
+
+#[tauri::command]
+pub async fn media_job_queue(
+    app: AppHandle,
+    request: QueueMediaJobRequest,
+) -> Result<MediaJobDto, AppError> {
+    let valid_pair = matches!(
+        (request.queue_path.as_str(), request.retrieve_path.as_str()),
+        ("/image/edit/queue", "/image/edit/retrieve")
+            | ("/image/multi-edit/queue", "/image/multi-edit/retrieve")
+            | ("/image/generate/queue", "/image/generate/retrieve")
+            | ("/video/queue", "/video/retrieve")
+            | ("/audio/queue", "/audio/retrieve")
+            | ("/audio/music/queue", "/audio/music/retrieve")
+    );
+    if request.job_id.trim().is_empty()
+        || request.model.trim().is_empty()
+        || request.prompt.trim().is_empty()
+        || !valid_pair
+    {
+        return Err(AppError::new(
+            "media_job_invalid",
+            "Choose a model and enter a prompt before generating.",
+        ));
+    }
+    let repos = crate::commands::repositories(&app).await?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let uncertain = "The submission was interrupted. Check your provider history before starting another generation.";
+    // The unique local id is also the submission claim. Concurrent invocations
+    // with the same id return the existing record instead of paying twice.
+    let inserted = sqlx::query::query("INSERT OR IGNORE INTO media_jobs
+      (id, kind, model, prompt, extension, retrieve_path, retrieve_body, url_fields,
+       status, error, parent_artifact_id, parent_handoff_seconds, cost_credits, source, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, '{}', ?, 'failed', ?, ?, ?, ?, ?, ?, ?)")
+        .bind(&request.job_id).bind(&request.kind).bind(&request.model).bind(&request.prompt)
+        .bind(&request.extension).bind(&request.retrieve_path)
+        .bind(serde_json::json!(request.url_fields).to_string()).bind(uncertain)
+        .bind(&request.parent_artifact_id).bind(request.parent_handoff_seconds)
+        .bind(request.cost_credits).bind(&request.source).bind(&now).bind(&now)
+        .execute(&repos.pool).await?;
+    if inserted.rows_affected() == 0 {
+        return repos
+            .get_media_job(&request.job_id)
+            .await?
+            .ok_or_else(|| AppError::new("media_job_invalid", "The job could not be recorded."));
+    }
+    let _background = BackgroundTask::begin("media-submit");
+    // Keep the uncertain row on transport failure; never retry a paid POST.
+    let response =
+        super::media::send("POST", &request.queue_path, Some(&request.queue_body)).await?;
+    if !response.ok {
+        if definite_queue_rejection(response.status) {
+            let message = backend_error(&response);
+            fail(&app, &request.job_id, &message, Some(response.status)).await;
+            return Err(AppError::new("media_job_queue_failed", message));
+        }
+        // An edge or provider may answer after accepting the paid request.
+        // Keep the pre-submit row uncertain so neither the image surface nor
+        // a resumed film silently purchases the same work again.
+        return Err(AppError::new("media_job_submission_uncertain", uncertain));
+    }
+    let queue_id = response
+        .json
+        .as_ref()
+        .and_then(|json| json.get("queue_id").or_else(|| json.get("id")))
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            AppError::new("media_job_invalid", "The backend did not return a job id.")
+        })?;
+    let retrieve_body =
+        serde_json::json!({ "queue_id": queue_id, "id": queue_id, "model": request.model });
+    sqlx::query::query("UPDATE media_jobs SET retrieve_body = ?, status = 'queued', error = NULL, updated_at = ? WHERE id = ?")
+        .bind(retrieve_body.to_string()).bind(chrono::Utc::now().to_rfc3339())
+        .bind(&request.job_id).execute(&repos.pool).await?;
+    let stored = repos
+        .get_media_job(&request.job_id)
+        .await?
+        .ok_or_else(|| AppError::new("media_job_invalid", "The job could not be recorded."))?;
+    spawn_runner(
+        &app,
+        stored.clone(),
+        request.retrieve_path,
+        retrieve_body,
         request.url_fields,
     );
     Ok(stored)
@@ -541,9 +650,26 @@ fn backend_error(response: &super::media::MediaResponseDto) -> String {
         .unwrap_or_else(|| format!("The backend returned status {}.", response.status))
 }
 
+fn definite_queue_rejection(status: u16) -> bool {
+    matches!(
+        status,
+        400 | 401 | 402 | 403 | 404 | 410 | 413 | 415 | 422 | 429 | 451
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_explicit_queue_rejections_can_be_retried_after_a_new_quote() {
+        for status in [400, 401, 402, 403, 404, 410, 413, 415, 422, 429, 451] {
+            assert!(definite_queue_rejection(status), "{status}");
+        }
+        for status in [408, 499, 500, 502, 503, 504] {
+            assert!(!definite_queue_rejection(status), "{status}");
+        }
+    }
 
     #[test]
     fn normalizes_the_status_spellings_the_backends_use() {

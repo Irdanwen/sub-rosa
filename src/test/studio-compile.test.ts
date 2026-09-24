@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { applyLocale } from "../lib/i18n";
 import type { BibleEntry } from "../lib/studio/bible";
 import {
   compileShotList,
@@ -164,6 +165,17 @@ describe("what the app decides, and the model never does", () => {
     expect(planned[0].prompt).toContain("Nera: green coat.");
   });
 
+  it("matches a legacy bible name with surrounding spaces before a paid render", () => {
+    const { planned } = planShots(
+      [shot({ characters: ["Nera"] })],
+      [{ ...nera, name: " Nera " }],
+      catalog,
+      "16:9",
+    );
+    expect(planned[0].references).toEqual(["nera.png"]);
+    expect(planned[0].prompt).toContain("green coat");
+  });
+
   it("prefers continuing from a frame over holding a face", () => {
     // A shot that carries straight on has a frame to start from, and starting
     // from it is what makes the seam invisible.
@@ -195,6 +207,28 @@ describe("nearestOption", () => {
 });
 
 describe("compiling", () => {
+  it("localizes generated workflow labels while preserving custom names", () => {
+    applyLocale("fr");
+    try {
+      const result = compileShotList({
+        name: "Concert",
+        shots: [shot({ scene: "", dialogue: "Encore ?" })],
+        catalog,
+        withScore: true,
+        gateBeforeAssemble: true,
+      });
+      const labels = result.workflow?.nodes.map((entry) => entry.label) ?? [];
+      expect(labels).toContain("Plan 1");
+      expect(labels).toContain("Réplique 1");
+      expect(labels).toContain("Avant le montage");
+      expect(labels).toContain("Consigne musicale");
+      expect(labels).toContain("Musique");
+      expect(labels).toContain("Le film");
+    } finally {
+      applyLocale("en");
+    }
+  });
+
   it("builds a graph the existing validator accepts", () => {
     // The whole bet of this file: no second runtime. If the canvas will not
     // run it, it is a bug here, not a run to attempt.
@@ -516,5 +550,168 @@ describe("retaking a shot on another engine", () => {
     expect(
       retargetShotModel(workflow, assemble.id, catalog, "kling-v3-standard-text-to-video"),
     ).toBeUndefined();
+  });
+});
+
+describe("editable project shots", () => {
+  it("keeps identities and explicit settings when shots are reordered", () => {
+    const a = shot({
+      id: "a",
+      title: "Close-up",
+      prompt: "Exact camera instruction",
+      mode: "text",
+      modelId: catalog.models[0].id,
+      duration: 8,
+    });
+    const b = shot({ id: "b", mode: "text", modelId: catalog.models[0].id });
+    const result = compileShotList({ name: "Film", shots: [b, a], catalog });
+    const filmed = result.workflow?.nodes.find((entry) => entry.id === "shot-a");
+    expect(filmed?.label).toBe("Close-up");
+    expect(filmed?.params.prompt).toBe("Exact camera instruction");
+    expect(filmed?.params.duration).toBe("8s");
+  });
+
+  it("wires image mode to the opening frame and reference mode to references", () => {
+    const result = compileShotList({
+      name: "Film",
+      catalog,
+      shots: [
+        shot({
+          id: "itv",
+          mode: "image",
+          modelId: catalog.models[1].id,
+          openingArtifactId: "opening.png",
+        }),
+        shot({
+          id: "rtv",
+          mode: "reference",
+          modelId: catalog.models[2].id,
+          referenceArtifactIds: ["person.png", "place.png"],
+        }),
+      ],
+    });
+    expect(result.refusal).toBeUndefined();
+    if (!result.workflow) throw new Error("Expected workflow");
+    expect(validateWorkflow(result.workflow).ok).toBe(true);
+    expect(
+      result.workflow?.edges
+        .filter((entry) => entry.target === "shot-itv")
+        .map((entry) => entry.targetPort),
+    ).toEqual(["openingFrame"]);
+    expect(
+      result.workflow?.edges
+        .filter((entry) => entry.target === "shot-rtv")
+        .map((entry) => entry.targetPort),
+    ).toEqual(["references", "references"]);
+  });
+
+  it("refuses unsupported mode, missing images and duration instead of changing choices", () => {
+    for (const overrides of [
+      { mode: "image" as const, modelId: catalog.models[0].id, openingArtifactId: "a.png" },
+      { mode: "image" as const, modelId: catalog.models[1].id },
+      { mode: "reference" as const, modelId: catalog.models[2].id },
+      { mode: "text" as const, modelId: catalog.models[0].id, duration: 17 },
+      { mode: "continuation" as const, modelId: catalog.models[1].id },
+    ]) {
+      const result = compileShotList({ name: "Film", catalog, shots: [shot(overrides)] });
+      expect(result.workflow).toBeUndefined();
+      expect(result.refusal).toContain("Shot 1:");
+    }
+  });
+
+  it("requires and connects an opening frame for Kling reference video", () => {
+    const kling = model("kling-o3-pro-reference-to-video", "referenceToVideo");
+    const input = {
+      name: "Film",
+      catalog: { ...catalog, models: [...catalog.models, kling] },
+      shots: [
+        shot({
+          id: "rtv",
+          mode: "reference" as const,
+          modelId: kling.id,
+          referenceArtifactIds: ["person.png"],
+        }),
+      ],
+    };
+    expect(compileShotList(input).refusal).toContain("opening image");
+    const result = compileShotList({
+      ...input,
+      shots: [{ ...input.shots[0], openingArtifactId: "opening.png" }],
+    });
+    expect(result.refusal).toBeUndefined();
+    expect(result.workflow && validateWorkflow(result.workflow).ok).toBe(true);
+    expect(
+      result.workflow?.edges
+        .filter((edge) => edge.target === "shot-rtv")
+        .map((edge) => edge.targetPort),
+    ).toEqual(["openingFrame", "references"]);
+  });
+
+  it("refuses an automatically routed Kling reference shot without its required frame", () => {
+    const kling = model("kling-o3-pro-reference-to-video", "referenceToVideo");
+    const result = compileShotList({
+      name: "Film",
+      catalog: { ...catalog, models: [kling] },
+      bible: [nera],
+      shots: [shot({ characters: ["Nera"] })],
+    });
+    expect(result.workflow).toBeUndefined();
+    expect(result.refusal).toContain("opening image");
+  });
+
+  it("routes an inherited Kling text default to its reference arm", () => {
+    const text = model("kling-o3-pro-text-to-video", "video");
+    const reference = model("kling-o3-pro-reference-to-video", "referenceToVideo");
+    const input = {
+      name: "Film",
+      catalog: { ...catalog, models: [text, reference] },
+      videoModelId: text.id,
+      shots: [shot({ mode: "reference" as const, referenceArtifactIds: ["person.png"] })],
+    };
+    expect(compileShotList(input).refusal).toContain("opening image");
+    const result = compileShotList({
+      ...input,
+      shots: [{ ...input.shots[0], openingArtifactId: "opening.png" }],
+    });
+    expect(result.refusal).toBeUndefined();
+    expect(result.workflow?.nodes.find((node) => node.type === "video")?.params.model).toBe(
+      reference.id,
+    );
+  });
+
+  it("feeds dialogue and score through text nodes so speech never receives empty input", () => {
+    const result = compileShotList({
+      name: "Concert",
+      catalog,
+      withScore: true,
+      shots: [shot({ id: "payment", dialogue: "Encore ?", speaker: "Serveur" })],
+    });
+    const graph = result.workflow;
+    if (!graph) throw new Error("Expected workflow");
+    expect(graph.nodes.find((entry) => entry.id === "dialogue-payment")?.params.text).toBe(
+      "Encore ?",
+    );
+    expect(graph.edges).toContainEqual(
+      expect.objectContaining({
+        source: "dialogue-payment",
+        target: "line-payment",
+        targetPort: "text",
+      }),
+    );
+    expect(graph.edges).toContainEqual(
+      expect.objectContaining({ source: "score-prompt", target: "score", targetPort: "prompt" }),
+    );
+  });
+
+  it("distinguishes unpublished prices from a free production", () => {
+    const result = compileShotList({
+      name: "Film",
+      catalog: {
+        ...catalog,
+        models: catalog.models.map((entry) => ({ ...entry, costCredits: undefined })),
+      },
+      shots: [shot()],
+    });
+    expect(result.unknownPriceNodeIds).toContain("shot-1");
   });
 });

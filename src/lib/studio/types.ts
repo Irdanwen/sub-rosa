@@ -89,6 +89,8 @@ export type ArtifactKind = "image" | "video" | "music" | "speech" | "sfx";
 
 /** A gallery entry: the on-disk file plus the generation that produced it. */
 export interface StudioArtifact {
+  title?: string;
+  projectIds?: string[];
   id: string;
   kind: ArtifactKind;
   path: string;

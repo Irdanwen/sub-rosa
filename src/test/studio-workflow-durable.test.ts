@@ -96,6 +96,7 @@ const DELIVERED_JOB = {
 };
 
 beforeEach(() => {
+  vi.spyOn(crypto, "randomUUID").mockReturnValue("q1" as ReturnType<Crypto["randomUUID"]>);
   mocks.invoke.mockReset();
   mocks.register.mockReset();
   mediaJsonMock.mockReset();
@@ -112,6 +113,22 @@ beforeEach(() => {
 });
 
 describe("runAndSaveWorkflow (durable)", () => {
+  it("discards a new run if its owner cannot record it before any node starts", async () => {
+    mocks.invoke.mockResolvedValue(null);
+    const definition = workflow([node("clip", "video", { model: "m-t2v", prompt: "a shot" })], []);
+    await expect(
+      runAndSaveWorkflow(definition, {
+        requireDurable: true,
+        onRunRecorded: async () => {
+          throw new Error("project save failed");
+        },
+      }),
+    ).rejects.toThrow("project save failed");
+    expect(invokeCalls("workflow_run_create")).toHaveLength(1);
+    expect(invokeCalls("workflow_run_dismiss")).toEqual([{ id: "q1" }]);
+    expect(invokeCalls("workflow_run_set_node")).toHaveLength(0);
+  });
+
   it("carries a native FLAC delivery into the persisted music output", async () => {
     mocks.invoke.mockImplementation(async (command: string) => {
       if (command === "carpe_diem_media_catalog") return { backend: "carpe-diem", models: [] };
@@ -179,10 +196,10 @@ describe("runAndSaveWorkflow (durable)", () => {
     expect(createRequest.nodeIds).toEqual(["clip", "out"]);
 
     // The render was handed to Rust, tagged as the run's.
-    const started = invokeCalls("media_job_start");
+    const started = invokeCalls("media_job_queue");
     expect(started).toHaveLength(1);
     const startRequest = started[0].request as Record<string, unknown>;
-    expect(startRequest.queueId).toBe("q1");
+    expect(startRequest.jobId).toBe("q1");
     expect(startRequest.source).toBe("workflow");
 
     // The pending-job pointer went down before the wait, and the node
@@ -207,12 +224,42 @@ describe("runAndSaveWorkflow (durable)", () => {
 
     // Delivery filed and acknowledged; the run settled.
     expect(mocks.register).toHaveBeenCalledTimes(1);
-    expect(invokeCalls("media_job_dismiss")).toHaveLength(1);
+    expect(invokeCalls("media_job_dismiss")).toEqual([{ id: "q1" }]);
+    const savedNodeIndex = mocks.invoke.mock.calls.findIndex(
+      ([command, args]) =>
+        command === "workflow_run_set_node" &&
+        (args as { request: { nodeId: string; status: string } }).request.nodeId === "clip" &&
+        (args as { request: { status: string } }).request.status === "done",
+    );
+    const dismissedIndex = mocks.invoke.mock.calls.findIndex(
+      ([command]) => command === "media_job_dismiss",
+    );
+    expect(dismissedIndex).toBeGreaterThan(savedNodeIndex);
     const finished = invokeCalls("workflow_run_finish");
     expect(finished).toHaveLength(1);
     expect((finished[0].request as Record<string, unknown>).status).toBe("completed");
 
     expect(results.get("out")?.output).toMatchObject({ kind: "video", artifactId: "a.mp4" });
+  });
+
+  it("retains the paid job if its completed node cannot be recorded", async () => {
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "media_job_list") return [DELIVERED_JOB];
+      if (
+        command === "workflow_run_set_node" &&
+        (args as { request: { status: string } }).request.status === "done"
+      ) {
+        throw new Error("disk full");
+      }
+      return null;
+    });
+
+    await expect(
+      runAndSaveWorkflow(
+        workflow([node("clip", "video", { model: "m-t2v", prompt: "a shot" })], []),
+      ),
+    ).rejects.toThrow("disk full");
+    expect(invokeCalls("media_job_dismiss")).toHaveLength(0);
   });
 
   it("falls back to an in-webview run when the run row cannot be recorded", async () => {
@@ -596,4 +643,169 @@ describe("dismissWorkflowRun", () => {
     expect(invokeCalls("media_job_dismiss")).toHaveLength(1);
     expect(invokeCalls("workflow_run_dismiss")).toHaveLength(1);
   });
+});
+
+describe("paid output recovery", () => {
+  it("blocks a missing completed paid file instead of purchasing a replacement", async () => {
+    const definition = workflow([node("clip", "video", { model: "m-t2v", prompt: "a shot" })], []);
+    mocks.invoke.mockImplementation(async (command) =>
+      command === "workflow_run_get"
+        ? {
+            run: { id: "r1", definition: JSON.stringify(definition) },
+            nodes: [
+              {
+                nodeId: "clip",
+                status: "done",
+                output: JSON.stringify({ kind: "video", artifactId: "missing.mp4" }),
+              },
+            ],
+          }
+        : null,
+    );
+    await expect(resumeWorkflowRun("r1", { requireExistingOutputs: true })).rejects.toThrow(
+      "paid result is missing",
+    );
+    expect(invokeCalls("media_job_queue")).toHaveLength(0);
+  });
+
+  it("reattaches to a failed node's retained queue pointer", async () => {
+    const definition = workflow([node("clip", "video", { model: "m-t2v", prompt: "a shot" })], []);
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "workflow_run_get")
+        return {
+          run: { id: "r1", definition: JSON.stringify(definition) },
+          nodes: [
+            { nodeId: "clip", status: "error", output: JSON.stringify({ pendingJobId: "q1" }) },
+          ],
+        };
+      if (command === "media_job_list") return [DELIVERED_JOB];
+      return null;
+    });
+    await resumeWorkflowRun("r1", { requireExistingOutputs: true });
+    expect(invokeCalls("media_job_queue")).toHaveLength(0);
+    expect(mocks.register).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires a fresh decision for a definitive failed job, then replaces its pointer", async () => {
+    const definition = workflow([node("clip", "video", { model: "m-t2v", prompt: "a shot" })], []);
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "workflow_run_get")
+        return {
+          run: { id: "r1", definition: JSON.stringify(definition) },
+          nodes: [
+            { nodeId: "clip", status: "error", output: JSON.stringify({ pendingJobId: "q1" }) },
+          ],
+        };
+      if (command === "media_job_list")
+        return [
+          { ...DELIVERED_JOB, status: "failed", errorStatus: 422, error: "Rejected" },
+          { ...DELIVERED_JOB, id: "q2" },
+        ];
+      return null;
+    });
+    await expect(resumeWorkflowRun("r1", { requireExistingOutputs: true })).rejects.toThrow(
+      "Review a new quote",
+    );
+    expect(invokeCalls("media_job_queue")).toHaveLength(0);
+    expect(invokeCalls("media_job_dismiss")).toHaveLength(0);
+    vi.spyOn(crypto, "randomUUID").mockReturnValue("q2" as ReturnType<Crypto["randomUUID"]>);
+    await resumeWorkflowRun("r1", { requireExistingOutputs: true, redoNodeIds: ["clip"] });
+    expect((invokeCalls("media_job_queue")[0].request as { jobId: string }).jobId).toBe("q2");
+    expect(invokeCalls("media_job_dismiss")).toEqual([{ id: "q1" }, { id: "q2" }]);
+    const reset = mocks.invoke.mock.calls.findIndex(
+      ([command, args]) =>
+        command === "workflow_run_set_node" &&
+        (args as { request: { status: string; output?: unknown } }).request.status === "pending" &&
+        JSON.stringify((args as { request: { output?: unknown } }).request.output) === "{}",
+    );
+    const dismissed = mocks.invoke.mock.calls.findIndex(
+      ([command, args]) => command === "media_job_dismiss" && (args as { id: string }).id === "q1",
+    );
+    expect(reset).toBeGreaterThan(-1);
+    expect(dismissed).toBeGreaterThan(reset);
+  });
+
+  it("persists a queue pointer even when submission fails, and a resume cannot re-buy it", async () => {
+    const definition = workflow([node("clip", "video", { model: "m-t2v", prompt: "a shot" })], []);
+    let failedOutput: unknown;
+    mocks.invoke.mockImplementation(async (command, args) => {
+      if (command === "media_job_queue")
+        throw { code: "media_submit", message: "Interrupted submission" };
+      if (command === "workflow_run_set_node") {
+        const request = (args as { request: { status: string; output?: unknown } }).request;
+        if (request.status === "error") failedOutput = request.output;
+      }
+      return null;
+    });
+    await expect(runAndSaveWorkflow(definition, { requireDurable: true })).rejects.toThrow(
+      "Interrupted submission",
+    );
+    expect(failedOutput).toEqual({ pendingJobId: "q1" });
+    mocks.invoke.mockClear();
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "workflow_run_get")
+        return {
+          run: { id: "r1", definition: JSON.stringify(definition) },
+          nodes: [{ nodeId: "clip", status: "error", output: JSON.stringify(failedOutput) }],
+        };
+      if (command === "media_job_list")
+        return [{ ...DELIVERED_JOB, status: "failed", error: "Interrupted submission" }];
+      return null;
+    });
+    await expect(resumeWorkflowRun("r1", { requireExistingOutputs: true })).rejects.toThrow(
+      "Interrupted submission",
+    );
+    expect(invokeCalls("media_job_queue")).toHaveLength(0);
+  });
+});
+
+it("blocks an unresolved synchronous paid request after restart", async () => {
+  const definition = workflow([node("speech", "tts", { text: "Hello", model: "tts-kokoro" })], []);
+  mocks.invoke.mockImplementation(async (command) =>
+    command === "workflow_run_get"
+      ? {
+          run: { id: "r1", definition: JSON.stringify(definition) },
+          nodes: [
+            {
+              nodeId: "speech",
+              status: "error",
+              output: JSON.stringify({ submissionStarted: true }),
+            },
+          ],
+        }
+      : null,
+  );
+  await expect(resumeWorkflowRun("r1", { requireExistingOutputs: true })).rejects.toThrow(
+    "may already have been charged",
+  );
+  expect(invokeCalls("media_job_queue")).toHaveLength(0);
+  expect(mediaJsonMock).not.toHaveBeenCalled();
+});
+
+it("retries a synchronous paid request only after an explicit redo decision", async () => {
+  const definition = workflow(
+    [node("text", "chat", { model: "chat-model", prompt: "A line" })],
+    [],
+  );
+  mocks.invoke.mockImplementation(async (command) =>
+    command === "workflow_run_get"
+      ? {
+          run: { id: "r1", definition: JSON.stringify(definition) },
+          nodes: [
+            {
+              nodeId: "text",
+              status: "error",
+              output: JSON.stringify({ submissionStarted: true }),
+            },
+          ],
+        }
+      : null,
+  );
+  mediaJsonMock.mockResolvedValue({ choices: [{ message: { content: "Recovered" } }] });
+  const results = await resumeWorkflowRun("r1", {
+    requireExistingOutputs: true,
+    redoNodeIds: ["text"],
+  });
+  expect(results.get("text")?.output).toMatchObject({ kind: "text", text: "Recovered" });
+  expect(mediaJsonMock).toHaveBeenCalledTimes(1);
 });

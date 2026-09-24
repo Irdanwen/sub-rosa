@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 // Structural validation for Studio workflows. Errors block execution;
 // warnings surface in the UI but the run proceeds.
 //
@@ -135,6 +136,22 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
           message: `${schema.label}: missing required "${param.name}".`,
         });
       }
+    }
+
+    if (node.type === "tts" || node.type === "music") {
+      const inputName = node.type === "tts" ? "text" : "prompt";
+      const ownText =
+        typeof node.params[inputName] === "string" ? String(node.params[inputName]).trim() : "";
+      const hasText = incoming.some((edge) => resolvedPorts.get(edge.id)?.id === inputName);
+      if (!ownText && !hasText)
+        errors.push({
+          severity: "error",
+          nodeId: node.id,
+          message:
+            node.type === "tts"
+              ? t("Add dialogue before generating speech.")
+              : t("Add a music prompt before generating the score."),
+        });
     }
 
     if (schema.inputs.length === 0) {

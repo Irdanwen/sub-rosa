@@ -18,6 +18,7 @@ import type { Destination } from "../../lib/destinations";
 import type { IntentRequest } from "../../lib/intents";
 import { importSharedItem } from "../../lib/share-inbox";
 import { useAmbientActivity } from "./useAmbientActivity";
+import { observeStandaloneImageJobs } from "../../lib/studio/image-job-recovery";
 import { AgentScreen, AgentSessionScreen } from "../../components/mobile/screens/AgentScreen";
 import { DictationScreen } from "../../components/mobile/screens/DictationScreen";
 import { FolderScreen } from "../../components/mobile/screens/FoldersScreen";
@@ -125,6 +126,7 @@ function MobileErrorBanner({ error, onDismiss }: { error: string | null; onDismi
  * Desktop keeps `App`; `src/main.tsx` picks the shell per platform.
  */
 export function MobileApp() {
+  useEffect(() => observeStandaloneImageJobs(), []);
   const [state, dispatch] = useReducer(notesReducer, undefined, createInitialState);
   const [error, setError] = useState<string | null>(null);
   const { chatBusy, studioBusy } = useAmbientActivity();

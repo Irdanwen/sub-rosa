@@ -9,6 +9,58 @@ import type { ArtifactFile, ArtifactKind, StudioArtifact } from "./types";
 
 const GALLERY_STORAGE_KEY = "os-june:studio-gallery";
 const MAX_GALLERY_ENTRIES = 200;
+/** Queue renders already have a gallery file. Hold only the small number of
+ * images currently being handed to consumers, then reuse that file when the
+ * consumer records its generation metadata. */
+const queuedImages = new Map<
+  string,
+  Array<{ file: ArtifactFile; jobId: string; source: string }>
+>();
+const MAX_QUEUED_IMAGES = 16;
+let queuedImageCount = 0;
+const claimedImageJobs = new Set<string>();
+const attachingBibleJobs = new Map<string, string>();
+
+export function claimQueuedImageJob(jobId: string): void {
+  claimedImageJobs.add(jobId);
+}
+
+export function releaseQueuedImageJob(jobId: string): void {
+  claimedImageJobs.delete(jobId);
+}
+
+export function isQueuedImageJobClaimed(jobId: string): boolean {
+  return claimedImageJobs.has(jobId);
+}
+
+export function rememberQueuedImage(
+  base64: string,
+  file: ArtifactFile,
+  jobId: string,
+  source = "studio",
+): void {
+  const files = queuedImages.get(base64) ?? [];
+  files.push({ file, jobId, source });
+  queuedImages.set(base64, files);
+  queuedImageCount += 1;
+  while (queuedImageCount > MAX_QUEUED_IMAGES) {
+    const oldest = queuedImages.keys().next().value as string;
+    const remaining = queuedImages.get(oldest);
+    const evicted = remaining?.shift();
+    if (evicted) releaseQueuedImageJob(evicted.jobId);
+    queuedImageCount -= 1;
+    if (!remaining?.length) queuedImages.delete(oldest);
+  }
+}
+
+/** A bible job stays durable until its reference has also been attached. */
+export async function finishQueuedBibleImage(artifactId: string, attached: boolean): Promise<void> {
+  const jobId = attachingBibleJobs.get(artifactId);
+  if (!jobId) return;
+  attachingBibleJobs.delete(artifactId);
+  if (attached) await invoke("media_job_dismiss", { id: jobId }).catch(() => undefined);
+  releaseQueuedImageJob(jobId);
+}
 
 export function artifactSrc(artifact: Pick<StudioArtifact, "path">): string {
   return convertFileSrc(artifact.path);
@@ -59,7 +111,10 @@ interface ArtifactMetadata {
   costCredits?: number;
 }
 
-function register(file: ArtifactFile, metadata: ArtifactMetadata): StudioArtifact {
+function register(
+  file: ArtifactFile,
+  metadata: ArtifactMetadata,
+): { artifact: StudioArtifact; persisted: Promise<void> } {
   const artifact: StudioArtifact = {
     id: file.fileName,
     kind: metadata.kind,
@@ -76,7 +131,12 @@ function register(file: ArtifactFile, metadata: ArtifactMetadata): StudioArtifac
     costCredits: metadata.costCredits,
   };
   writeIndex([artifact, ...readIndex().filter((entry) => entry.id !== artifact.id)]);
-  return artifact;
+  const { path: _path, ...generation } = artifact;
+  const persisted = invoke("studio_artifact_save", {
+    request: { id: artifact.id, generation },
+  }).then(() => undefined);
+  void persisted.catch(() => undefined);
+  return { artifact, persisted };
 }
 
 /** Indexes a file that Rust already wrote into the gallery directory (the
@@ -85,7 +145,17 @@ export function registerDownloadedArtifact(
   file: ArtifactFile,
   metadata: ArtifactMetadata,
 ): StudioArtifact {
-  return register(file, metadata);
+  return register(file, metadata).artifact;
+}
+
+/** Keep a native job until its generation metadata has committed as well. */
+export async function registerDownloadedArtifactDurably(
+  file: ArtifactFile,
+  metadata: ArtifactMetadata,
+): Promise<StudioArtifact> {
+  const { artifact, persisted } = register(file, metadata);
+  await persisted;
+  return artifact;
 }
 
 /** Persists a base64 payload (sync image result, TTS audio) to the gallery. */
@@ -94,10 +164,30 @@ export async function saveArtifactFromBase64(
   extension: string,
   metadata: ArtifactMetadata,
 ): Promise<StudioArtifact> {
+  const files = queuedImages.get(base64);
+  const queued = files?.shift();
+  if (queued) {
+    queuedImageCount -= 1;
+    if (!files?.length) queuedImages.delete(base64);
+    const { artifact, persisted } = register(queued.file, metadata);
+    try {
+      await persisted;
+    } catch (error) {
+      releaseQueuedImageJob(queued.jobId);
+      throw error;
+    }
+    if (queued.source.startsWith("bible-ref:")) {
+      attachingBibleJobs.set(artifact.id, queued.jobId);
+    } else {
+      await invoke("media_job_dismiss", { id: queued.jobId }).catch(() => undefined);
+      releaseQueuedImageJob(queued.jobId);
+    }
+    return artifact;
+  }
   const file = await invoke<ArtifactFile>("carpe_diem_media_save_artifact", {
     request: { base64, extension },
   });
-  return register(file, metadata);
+  return register(file, metadata).artifact;
 }
 
 /** Downloads a generated file (video, music) into the gallery through Rust —
@@ -110,7 +200,7 @@ export async function saveArtifactFromUrl(
   const file = await invoke<ArtifactFile>("carpe_diem_media_fetch_artifact", {
     request: { url, extension },
   });
-  return register(file, metadata);
+  return register(file, metadata).artifact;
 }
 
 /** Saves a finished async job's file, whichever way the backend delivered
@@ -131,13 +221,63 @@ export async function saveArtifactFromResult(
  * reinstalls, so a persisted absolute path can go stale while the file
  * itself is still there. */
 export async function listArtifacts(kind?: ArtifactKind): Promise<StudioArtifact[]> {
-  const index = readIndex();
+  const legacy = readIndex();
   let files: DiskArtifact[] | undefined;
   try {
     files = await invoke<DiskArtifact[]>("carpe_diem_media_list_artifacts");
   } catch {
     // If the disk listing fails, trust the index rather than showing nothing.
   }
+  const existingNames = files && new Set(files.map((file) => file.fileName));
+  let durable: Array<{
+    id: string;
+    title: string;
+    projectIds: string[];
+    generation?: Partial<StudioArtifact>;
+  }> = [];
+  try {
+    durable = (await invoke<typeof durable>("studio_artifact_list")) ?? [];
+    const known = new Map(durable.map((entry, index) => [entry.id, index]));
+    for (const artifact of legacy) {
+      // A crash after native deletion but before the local cache is updated
+      // must not recreate the deleted prompt in durable metadata.
+      if (existingNames && !existingNames.has(artifact.fileName)) continue;
+      const index = known.get(artifact.id);
+      const current = index === undefined ? undefined : durable[index];
+      if (current?.generation) continue;
+      const { path: _path, ...generation } = artifact;
+      const migrated = await invoke<(typeof durable)[number]>("studio_artifact_save", {
+        request: {
+          id: artifact.id,
+          title: current?.title || artifact.title || "",
+          projectIds: current?.projectIds ?? artifact.projectIds ?? [],
+          generation,
+        },
+      });
+      if (index === undefined) {
+        known.set(artifact.id, durable.length);
+        durable.push(migrated);
+      } else {
+        durable[index] = migrated;
+      }
+    }
+  } catch {
+    /* Older shells retain the legacy gallery path. */
+  }
+  const entries = new Map(legacy.map((entry) => [entry.id, entry]));
+  for (const metadata of durable) {
+    const previous = entries.get(metadata.id);
+    if (!previous && !metadata.generation?.fileName) continue;
+    entries.set(metadata.id, {
+      ...previous,
+      ...metadata.generation,
+      id: metadata.id,
+      path: previous?.path ?? "",
+      title: metadata.title,
+      projectIds: metadata.projectIds,
+    } as StudioArtifact);
+  }
+  const index = [...entries.values()];
   if (!files) {
     const sorted = [...index].sort((a, b) => b.createdAt - a.createdAt);
     return kind ? sorted.filter((entry) => entry.kind === kind) : sorted;

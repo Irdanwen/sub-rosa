@@ -1,4 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => vi.fn()) }));
+vi.mock("../lib/studio/artifacts", () => ({
+  readArtifactBase64: vi.fn(async () => "QUEUED"),
+  rememberQueuedImage: vi.fn(),
+  claimQueuedImageJob: vi.fn(),
+  releaseQueuedImageJob: vi.fn(),
+}));
 import type { MediaProxyResponse } from "../lib/studio/types";
 
 // Replace the media client so composeImages/editImage routing can be asserted
@@ -12,7 +22,13 @@ vi.mock("../lib/studio/client", async (importOriginal) => ({
 }));
 
 import { MediaError, mediaJson, mediaRaw } from "../lib/studio/client";
-import { composeImages, editImage, removeBackground } from "../lib/studio/edit-image";
+import { rememberQueuedImage } from "../lib/studio/artifacts";
+import {
+  composeImages,
+  editImage,
+  nativeQueuedImage,
+  removeBackground,
+} from "../lib/studio/edit-image";
 
 const mediaJsonMock = vi.mocked(mediaJson);
 const mediaRawMock = vi.mocked(mediaRaw);
@@ -27,10 +43,79 @@ function rawImage(base64: string): MediaProxyResponse {
 
 beforeEach(() => {
   mediaJsonMock.mockReset();
+  vi.mocked(invoke).mockReset();
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "media_job_list") return [];
+    return {
+      id: (args as { request: { jobId: string } }).request.jobId,
+      status: "completed",
+      artifactPath: "/gallery/result.png",
+      artifactFileName: "result.png",
+      artifactBytes: 6,
+    };
+  });
+  vi.mocked(rememberQueuedImage).mockReset();
   mediaRawMock.mockReset();
 });
 
 describe("editImage", () => {
+  it.each(["webp", "jpeg"])(
+    "keeps the %s extension for a queued generated image",
+    async (format) => {
+      await nativeQueuedImage("/image/generate", {
+        model: "gpt-image-2",
+        prompt: "A portrait",
+        format,
+      });
+      expect(invoke).toHaveBeenCalledWith(
+        "media_job_queue",
+        expect.objectContaining({ request: expect.objectContaining({ extension: format }) }),
+      );
+    },
+  );
+
+  it("settles a provider-rejected queue submission without hiding an uncertain one", async () => {
+    let queuedId = "";
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "media_job_queue") {
+        queuedId = (args as { request: { jobId: string } }).request.jobId;
+        throw { code: "media_job_queue_failed", message: "Invalid image" };
+      }
+      if (command === "media_job_list") return [];
+      return undefined;
+    });
+    await expect(editImage("gpt-image-2", "brighten it", IMG)).rejects.toThrow("Invalid image");
+    expect(invoke).toHaveBeenCalledWith("media_job_dismiss", { id: queuedId });
+
+    vi.mocked(invoke).mockClear();
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "media_job_queue")
+        throw { code: "media_transport_failed", message: "Submission interrupted" };
+      if (command === "media_job_list") return [];
+      return undefined;
+    });
+    await expect(editImage("gpt-image-2", "brighten it", IMG)).rejects.toThrow(
+      "Submission interrupted",
+    );
+    expect(invoke).not.toHaveBeenCalledWith("media_job_dismiss", expect.anything());
+  });
+
+  it("acknowledges a failed native edit while reporting its error", async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "media_job_queue")
+        return {
+          id: (args as { request: { jobId: string } }).request.jobId,
+          status: "failed",
+          error: "Provider refused",
+        };
+      if (command === "media_job_list") return [];
+      return undefined;
+    });
+
+    await expect(editImage("gpt-image-2", "brighten it", IMG)).rejects.toThrow("Provider refused");
+    expect(invoke).toHaveBeenCalledWith("media_job_dismiss", { id: expect.any(String) });
+  });
+
   it("posts a single data URI to /image/edit and returns the image", async () => {
     mediaRawMock.mockResolvedValueOnce(rawImage("OUT"));
     const result = await editImage("seedream-v4-edit", "brighten it", IMG);
@@ -52,7 +137,51 @@ describe("editImage", () => {
 
     const result = await editImage("seedream-v4-edit", "brighten it", IMG);
     expect(result).toBe("QUEUED");
-    expect(mediaJsonMock).toHaveBeenCalledWith("/image/edit/queue", expect.any(Object));
+    expect(rememberQueuedImage).toHaveBeenCalledWith(
+      "QUEUED",
+      { path: "/gallery/result.png", fileName: "result.png", bytes: 6 },
+      expect.any(String),
+      "studio",
+    );
+    expect(invoke).toHaveBeenCalledWith(
+      "media_job_queue",
+      expect.objectContaining({
+        request: expect.objectContaining({ queuePath: "/image/edit/queue" }),
+      }),
+    );
+  });
+
+  it("reconciles a completed native image after a frozen webview misses its event", async () => {
+    let jobId = "";
+    let completed = false;
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "media_job_queue") {
+        jobId = (args as { request: { jobId: string } }).request.jobId;
+        return { id: jobId, status: "processing" };
+      }
+      if (command === "media_job_list") {
+        return jobId
+          ? [
+              {
+                id: jobId,
+                status: completed ? "completed" : "processing",
+                artifactPath: "/gallery/result.png",
+                artifactFileName: "result.png",
+              },
+            ]
+          : [];
+      }
+      return null;
+    });
+    const pending = editImage("gpt-image-2", "brighten it", IMG);
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("media_job_list"));
+    completed = true;
+    document.dispatchEvent(new Event("visibilitychange"));
+    const result = await pending;
+    expect(result).toBe("QUEUED");
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "media_job_list"),
+    ).toHaveLength(2);
   });
 });
 
@@ -70,32 +199,27 @@ describe("composeImages", () => {
     mediaRawMock.mockResolvedValueOnce(rawImage("COMPOSED"));
 
     const result = await composeImages("seedream-v4-edit", "put 1 into 2", [IMG, IMG2]);
-    expect(result).toBe("COMPOSED");
-    expect(mediaJsonMock).toHaveBeenCalledWith("/image/multi-edit/queue", {
-      model: "seedream-v4-edit",
-      prompt: "put 1 into 2",
-      images: [IMG, IMG2],
-      safe_mode: false,
+    expect(result).toBe("QUEUED");
+    expect(invoke).toHaveBeenCalledWith("media_job_queue", {
+      request: expect.objectContaining({
+        queuePath: "/image/multi-edit/queue",
+        queueBody: {
+          model: "seedream-v4-edit",
+          prompt: "put 1 into 2",
+          images: [IMG, IMG2],
+          safe_mode: false,
+        },
+      }),
     });
-    expect(mediaRawMock).toHaveBeenCalledWith("/image/multi-edit/retrieve", {
-      id: "q9",
-      queue_id: "q9",
-      model: "seedream-v4-edit",
-    });
+    expect(mediaRawMock).not.toHaveBeenCalled();
+    expect(listen).toHaveBeenCalledWith("june://media-job", expect.any(Function));
   });
 
-  it("caps the composition at three source images", async () => {
-    mediaJsonMock.mockResolvedValueOnce({ queue_id: "q", status: "pending" });
-    mediaRawMock.mockResolvedValueOnce(rawImage("OK"));
-
-    await composeImages("seedream-v4-edit", "merge", [
-      IMG,
-      IMG2,
-      IMG3,
-      "data:image/png;base64,DDDD",
-    ]);
-    const body = mediaJsonMock.mock.calls[0][1] as { images: string[] };
-    expect(body.images).toEqual([IMG, IMG2, IMG3]);
+  it("refuses more than three source images without silently dropping one", async () => {
+    await expect(
+      composeImages("seedream-v4-edit", "merge", [IMG, IMG2, IMG3, IMG]),
+    ).rejects.toThrow("at most three");
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   it("drops blank entries before deciding the route", async () => {

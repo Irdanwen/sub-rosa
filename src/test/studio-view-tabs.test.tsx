@@ -17,8 +17,8 @@ vi.mock("../components/studio/AudioStudio", () => ({ AudioStudio: () => <p>audio
 vi.mock("../components/studio/AssembleStudio", () => ({
   AssembleStudio: () => <p>assemble tab</p>,
 }));
-vi.mock("../components/studio/FilmStudio", () => ({
-  FilmStudio: () => <p>film tab</p>,
+vi.mock("../components/studio/ProjectStudio", () => ({
+  ProjectStudio: () => <p>project workspace</p>,
 }));
 vi.mock("../components/studio/BibleStudio", () => ({
   BibleStudio: ({ onMakeAFilm }: { onMakeAFilm?: () => void }) => (
@@ -36,21 +36,20 @@ vi.mock("../components/studio/WorkflowStudio", () => ({
 beforeEach(() => window.localStorage.clear());
 
 describe("the studio's tabs", () => {
-  it("opens the choice of creative outcomes for a first visit", () => {
+  it("opens projects first and keeps generation tools available", () => {
     render(<StudioView />);
     expect(screen.queryByText("Films")).not.toBeInTheDocument();
-    expect(screen.getByText("Film")).toBeInTheDocument();
+    expect(screen.getByText("Projects")).toBeInTheDocument();
     expect(screen.getByText("Bible")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "What will you make?" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Create an image/ })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Film" }));
-    expect(screen.getByText("film tab")).toBeInTheDocument();
+    expect(screen.getByText("project workspace")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Image" }));
+    expect(screen.getByText("image tab")).toBeInTheDocument();
   });
 
   it("lands somebody who was last on the old Films tab where films are made now", async () => {
     window.localStorage.setItem("os-june:studio-tab", "films");
     render(<StudioView />);
-    await waitFor(() => expect(screen.getByText("film tab")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("project workspace")).toBeInTheDocument());
   });
 
   it("carries somebody from the bible to where a film is made", async () => {
@@ -59,7 +58,12 @@ describe("the studio's tabs", () => {
     window.localStorage.setItem("os-june:studio-tab", "bible");
     render(<StudioView />);
     fireEvent.click(await screen.findByRole("button", { name: "make a film" }));
-    await waitFor(() => expect(screen.getByText("film tab")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("project workspace")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Projects" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(window.localStorage.getItem("os-june:studio-tab")).toBe("projects");
   });
 
   it("still resolves the pre-audio name of the audio tab", async () => {

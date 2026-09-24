@@ -3,6 +3,7 @@
 // on disk (see lib/studio/artifacts.ts) so everything here survives restarts.
 
 import { t } from "../../lib/i18n";
+import { messageFromError } from "../../lib/errors";
 import { IconArrowDownCircle } from "central-icons/IconArrowDownCircle";
 import { IconArrowRightCircle } from "central-icons/IconArrowRightCircle";
 import { IconCapture } from "central-icons/IconCapture";
@@ -19,6 +20,16 @@ import {
 import type { ArtifactKind, StudioArtifact } from "../../lib/studio/types";
 import { Spinner } from "../ui/Spinner";
 import { FrameCaptureDialog } from "./FrameCaptureDialog";
+import {
+  listProjects,
+  organizeArtifact,
+  artifactError,
+  sameProjectMembership,
+  saveArtifactMetadata,
+  type ProjectSummary,
+} from "../../lib/studio/projects";
+import { STUDIO_IMAGE_RECOVERED_EVENT } from "../../lib/studio/image-job-recovery";
+import { Dialog } from "../ui/Dialog";
 
 /** How long the "saved to the gallery" line stays up. Long enough to read
  * without hunting for it, short enough not to become furniture. */
@@ -55,16 +66,35 @@ export function GalleryStrip({
   // somewhere the user cannot see from here. Without a word, the capture reads
   // as having done nothing at all.
   const [captured, setCaptured] = useState(false);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [projectFilter, setProjectFilter] = useState("");
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState<StudioArtifact>();
+  const [title, setTitle] = useState("");
+  const [memberships, setMemberships] = useState<string[]>([]);
+  const [metadataError, setMetadataError] = useState("");
+  const [removing, setRemoving] = useState<StudioArtifact>();
+  useEffect(() => {
+    void listProjects()
+      .then(setProjects)
+      .catch(() => undefined);
+  }, []);
 
   const reload = useCallback(async () => {
     const entries = await listArtifacts(kind);
     setArtifacts(entries);
     onArtifactsChanged?.(entries);
+    return entries;
   }, [kind, onArtifactsChanged]);
 
   useEffect(() => {
     void reload();
   }, [reload, epoch]);
+  useEffect(() => {
+    const onRecovered = () => void reload();
+    window.addEventListener(STUDIO_IMAGE_RECOVERED_EVENT, onRecovered);
+    return () => window.removeEventListener(STUDIO_IMAGE_RECOVERED_EVENT, onRecovered);
+  }, [reload]);
 
   useEffect(() => {
     if (!captured) return;
@@ -88,12 +118,171 @@ export function GalleryStrip({
   );
 
   if (artifacts.length === 0) return <>{empty ?? null}</>;
+  const visible = artifacts.filter(
+    (artifact) =>
+      (!projectFilter || artifact.projectIds?.includes(projectFilter)) &&
+      `${artifact.title ?? ""} ${artifact.prompt} ${artifact.model}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+  );
+  const editMetadata = (artifact: StudioArtifact) => {
+    setEditing(artifact);
+    setTitle(artifact.title || artifact.fileName);
+    setMemberships(artifact.projectIds ?? []);
+    setMetadataError("");
+  };
+  const metadata = (
+    <>
+      <div className="studio-gallery-filter">
+        <input
+          className="studio-input"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          aria-label={t("Search media")}
+          placeholder={t("Search media")}
+        />
+        <select
+          className="studio-input"
+          aria-label={t("Filter by project")}
+          value={projectFilter}
+          onChange={(event) => setProjectFilter(event.target.value)}
+        >
+          <option value="">{t("All projects")}</option>
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {editing ? (
+        <Dialog
+          open
+          onClose={() => setEditing(undefined)}
+          title={t("Organize media")}
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setEditing(undefined)}
+              >
+                {t("Cancel")}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() =>
+                  void (
+                    sameProjectMembership(memberships, editing.projectIds ?? [])
+                      ? saveArtifactMetadata({ id: editing.id, title })
+                      : organizeArtifact({
+                          id: editing.id,
+                          title,
+                          projectIds: memberships,
+                          expectedProjectIds: editing.projectIds ?? [],
+                          expectedTitle: editing.title ?? "",
+                        })
+                  )
+                    .then(async () => {
+                      await reload();
+                      setEditing(undefined);
+                    })
+                    .catch(async (error) => {
+                      if (messageFromError(error).includes("studio_project_conflict")) {
+                        const latest = (await reload().catch(() => [] as StudioArtifact[])).find(
+                          (artifact) => artifact.id === editing.id,
+                        );
+                        if (latest) {
+                          setEditing(latest);
+                          setMemberships(latest.projectIds ?? []);
+                        }
+                      }
+                      setMetadataError(artifactError(error));
+                    })
+                }
+              >
+                {t("Save")}
+              </button>
+            </>
+          }
+        >
+          <div className="dialog-body">
+            <label className="studio-field">
+              {t("Media name")}
+              <input
+                className="studio-input"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+              />
+            </label>
+            <p>{t("Projects")}</p>
+            {projects.map((project) => (
+              <label className="studio-field" key={project.id}>
+                <input
+                  type="checkbox"
+                  checked={memberships.includes(project.id)}
+                  onChange={(event) =>
+                    setMemberships(
+                      event.target.checked
+                        ? [...memberships, project.id]
+                        : memberships.filter((id) => id !== project.id),
+                    )
+                  }
+                />
+                {project.name}
+              </label>
+            ))}
+            {metadataError ? <p role="alert">{metadataError}</p> : null}
+          </div>
+        </Dialog>
+      ) : null}
+      {removing ? (
+        <Dialog
+          open
+          onClose={() => setRemoving(undefined)}
+          title={t("Delete media file?")}
+          description={t(
+            "Projects that use this file will show a missing reference. Removing it from a project keeps the file available.",
+          )}
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setRemoving(undefined)}
+              >
+                {t("Cancel")}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() =>
+                  void onDelete(removing)
+                    .then(() => setRemoving(undefined))
+                    .catch((error) => setMetadataError(messageFromError(error)))
+                }
+              >
+                {t("Delete")}
+              </button>
+            </>
+          }
+        >
+          <div className="dialog-body">
+            <p>{removing.title || removing.fileName}</p>
+            {metadataError ? <p role="alert">{metadataError}</p> : null}
+          </div>
+        </Dialog>
+      ) : null}
+    </>
+  );
 
   if (kind === "image") {
     return (
       <>
+        {metadata}
         <div className="studio-image-grid">
-          {artifacts.map((artifact) => (
+          {visible.map((artifact) => (
             <figure key={artifact.id} className="studio-image-card">
               <button
                 type="button"
@@ -105,9 +294,18 @@ export function GalleryStrip({
               </button>
               <figcaption className="studio-card-meta">
                 <span className="studio-card-prompt" title={artifact.prompt}>
-                  {artifact.prompt || artifact.model}
+                  {artifact.title || artifact.prompt || artifact.model}
                 </span>
                 <span className="studio-card-actions">
+                  <button
+                    type="button"
+                    className="studio-icon-button"
+                    aria-label={t("Organize media")}
+                    title={t("Organize media")}
+                    onClick={() => editMetadata(artifact)}
+                  >
+                    <IconPencil size={14} />
+                  </button>
                   {onSendToEdit ? (
                     <button
                       type="button"
@@ -133,7 +331,7 @@ export function GalleryStrip({
                     className="studio-icon-button"
                     aria-label={t("Delete")}
                     title={t("Delete")}
-                    onClick={() => void onDelete(artifact)}
+                    onClick={() => setRemoving(artifact)}
                   >
                     <IconTrashCanSimple size={14} />
                   </button>
@@ -143,17 +341,16 @@ export function GalleryStrip({
           ))}
         </div>
         {lightbox ? (
-          <div
-            className="studio-lightbox"
-            role="dialog"
-            aria-label={t("Image preview")}
-            onClick={() => setLightbox(undefined)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") setLightbox(undefined);
-            }}
+          <Dialog
+            open
+            onClose={() => setLightbox(undefined)}
+            title={lightbox.title || t("Image preview")}
+            width="min(90vw, 1200px)"
           >
-            <img src={artifactSrc(lightbox)} alt={lightbox.prompt || t("Generated image")} />
-          </div>
+            <div className="studio-lightbox-image">
+              <img src={artifactSrc(lightbox)} alt={lightbox.prompt || t("Generated image")} />
+            </div>
+          </Dialog>
         ) : null}
       </>
     );
@@ -161,6 +358,7 @@ export function GalleryStrip({
 
   return (
     <>
+      {metadata}
       {capturing ? (
         <FrameCaptureDialog
           artifact={capturing}
@@ -173,21 +371,39 @@ export function GalleryStrip({
           {t("Saved to the image gallery.")}
         </p>
       ) : null}
-      <div className="studio-media-list">
-        {artifacts.map((artifact) => (
+      <div
+        className={
+          kind === "video" ? "studio-media-list studio-media-compact" : "studio-media-list"
+        }
+      >
+        {visible.map((artifact) => (
           <div key={artifact.id} className="studio-media-card">
             {kind === "video" ? (
               // biome-ignore lint/a11y/useMediaCaption: generated video has no track
-              <video controls src={artifactSrc(artifact)} className="studio-video-player" />
+              <video
+                controls
+                preload="metadata"
+                src={artifactSrc(artifact)}
+                className="studio-video-player"
+              />
             ) : (
               // biome-ignore lint/a11y/useMediaCaption: generated audio has no track
               <audio controls src={artifactSrc(artifact)} className="studio-audio-player" />
             )}
             <div className="studio-card-meta">
               <span className="studio-card-prompt" title={artifact.prompt}>
-                {artifact.prompt || artifact.model}
+                {artifact.title || artifact.prompt || artifact.model}
               </span>
               <span className="studio-card-actions">
+                <button
+                  type="button"
+                  className="studio-icon-button"
+                  aria-label={t("Organize media")}
+                  title={t("Organize media")}
+                  onClick={() => editMetadata(artifact)}
+                >
+                  <IconPencil size={14} />
+                </button>
                 {kind === "video" ? (
                   <button
                     type="button"
@@ -229,7 +445,7 @@ export function GalleryStrip({
                   className="studio-icon-button"
                   aria-label={t("Delete")}
                   title={t("Delete")}
-                  onClick={() => void onDelete(artifact)}
+                  onClick={() => setRemoving(artifact)}
                 >
                   <IconTrashCanSimple size={14} />
                 </button>

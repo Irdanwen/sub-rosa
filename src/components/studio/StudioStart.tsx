@@ -18,7 +18,7 @@ import type { AudioMode } from "./AudioStudio";
 import "../../styles/studio-start.css";
 
 export type StudioDestination = {
-  tab: "image" | "video" | "audio" | "film" | "workflows" | "bible" | "assemble";
+  tab: "image" | "video" | "audio" | "projects" | "workflows" | "bible" | "assemble";
   audioMode?: AudioMode;
 };
 
@@ -134,7 +134,7 @@ export function StudioStart({
           type="button"
           className="studio-start-card studio-start-film"
           disabled={!canPlanFilm}
-          onClick={() => onOpen({ tab: "film" })}
+          onClick={() => onOpen({ tab: "projects" })}
         >
           <span className="studio-start-card-top">
             <span className="studio-start-icon" aria-hidden="true">

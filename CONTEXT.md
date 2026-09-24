@@ -469,10 +469,16 @@ not on that list**: it is a Venice balance bucket the credits reader still
 parses, and the studio merely quoted its prices in it.
 
 **Film (the surface)**:
-The Studio tab where a film is made, first in the list and where the Studio
-opens. One screen and one order: describe, review, make, finish. It composes
-what the other tabs hold in detail and owns nothing of its own.
-_Avoid_: wizard, project.
+The Studio workspace where a film project is written, prepared, generated and
+edited. Its project sections are Script, Shots, Bible, Media and Montage.
+_Avoid_: wizard.
+
+**Film project**:
+The local, versioned editing document for one film: script, ordered shots,
+settings, project bible, media references, production links and montage. Saved
+in native SQLite with revision checks, independently of any one workflow run
+([ADR-0059](docs/adr/0059-film-projects-are-local-versioned-documents.md)).
+_Avoid_: workspace (unqualified, that is the agent working directory).
 
 **Reading**:
 One pass of a script, producing the **shot list** and the **cast**. Paid for,
@@ -490,7 +496,8 @@ _Avoid_: regenerate, rerun (both read as the whole thing).
 
 **Script**:
 A note the user wrote that a film is made from. Not a new kind of thing: the
-import doctrine again. _Avoid_: screenplay object, film project.
+import doctrine again. A film project also retains its editable script text and
+may retain the originating note id. _Avoid_: screenplay object.
 
 **Shot list**:
 One script read as the shots a film is made of - a derived row on that note,
@@ -501,13 +508,17 @@ _Avoid_: shotlist (one word, that was the remote studio's spelling), storyboard
 
 **Shot**:
 One continuous take of a few seconds. Carries a **motion class** (`low`,
-`medium`, `high`) and whether it **continues** the shot before it. Never a
-duration, a model or an aspect ratio - those are the app's to resolve.
+`medium`, `high`) and whether it **continues** the shot before it. A project
+shot has a stable id and can explicitly choose its generation mode, model and
+requested duration. Requested generation duration is distinct from the duration
+kept in the montage.
 _Avoid_: scene (a scene groups shots), clip (that is the rendered file).
 
 **Take**:
-One rendered attempt at a shot. Takes are branches of a shot chain
-([ADR-0019](docs/adr/0019-shot-chains-are-parent-links.md)), not rows.
+One rendered attempt at a shot, identified by its gallery artifact. The project
+retains alternatives and the active take. Continuation takes can form branches
+of a shot chain ([ADR-0019](docs/adr/0019-shot-chains-are-parent-links.md)).
+Changing the active take never silently changes a montage clip.
 
 **Compiling**:
 Turning a shot list into a workflow. Free, local, instant, and repeatable with
@@ -524,9 +535,11 @@ guarded an enqueue rather than the work).
 ### The bible (fork)
 
 **Bible**:
-the persistent identities of a production, kept on this install rather than on
-a project or a run: a character outlives every film it is in. Rows in
-`bible_entries` and `bible_refs` (migration 017), surfaced as Studio > Bible.
+the persistent identities kept on this install: a character outlives every film
+it is in. Global rows remain in `bible_entries` and `bible_refs` (migration 017).
+A **project bible** contains independent copies with origin ids and reference
+artifact ids. Editing a project copy changes no other film and no global entry
+([ADR-0059](docs/adr/0059-film-projects-are-local-versioned-documents.md)).
 _Avoid_: "cast" (a location is not cast), "asset pack" (that was the remote
 studio's server-side copy, and it is gone).
 
@@ -580,11 +593,19 @@ sounds.
 the integrated LUFS of the whole film, to ITU-R BS.1770. One normalisation gain
 is applied from it. Distinct from a clip's own level.
 
-**Timeline**:
+**Montage**:
+the project's editable cut: picture and audio tracks, placed clips, source
+ranges, keyframes and effects. Stored independently of the chosen takes, in
+integer frames at a rational frame rate
+([ADR-0061](docs/adr/0061-the-montage-document-is-independent-of-takes.md)).
+
+**Timeline export**:
 the interchange file another editor opens - FCPXML or Premiere xmeml - written
-into a self-contained **bundle** with copies of the media beside it. The
-finishing path. Distinct from the **cut list** (the internal structure) and from
-the **film export** (the real-time recorder capture, which is a preview).
+into a self-contained **bundle** with copies of the media beside it. The bundle
+can retain the editable montage as `studio-montage.json`. Distinct from the
+**montage** (the editable source), the legacy **cut list** and the **film export**
+(the real-time recorder capture). Unsupported interchange effects are declared,
+never silently omitted.
 
 ### Shot continuity (fork)
 
@@ -634,8 +655,9 @@ _Avoid_: ETA, progress (the backend reports none), percentage complete.
 ### Studio gallery (fork)
 
 **Gallery**:
-Every file the Studio produced, on disk, indexed in localStorage and reconciled
-against the disk on load. It is also the exchange format between Studio
+Every file the Studio produced, on disk, reconciled against the disk on load.
+The native metadata index retains display titles, project memberships and
+generation provenance; the older browser index remains an import source. It is also the exchange format between Studio
 surfaces: anything produced can be pulled into any image input, and anything
 worth keeping is written into it rather than held in a form's state. See
 [ADR-0020](docs/adr/0020-the-gallery-is-the-studio-exchange-format.md).

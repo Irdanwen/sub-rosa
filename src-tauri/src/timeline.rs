@@ -36,6 +36,9 @@ pub struct ExportTimelineRequest {
     pub extension: String,
     /// SubRip sidecar, when the cut has subtitles.
     pub subtitles: Option<String>,
+    /// Editable Sub Rosa montage, retained beside the interchange document.
+    #[serde(default)]
+    pub editor_document: Option<String>,
     /// Gallery files to copy into `media/`. Each must already be in the gallery.
     pub media: Vec<String>,
 }
@@ -149,6 +152,98 @@ fn extension_of(raw: &str) -> Result<String, AppError> {
     ))
 }
 
+/// Validate the optional editing sidecar before asking for a destination or
+/// creating files. The native layer keeps unknown editor fields intact.
+fn validate_editor_document(document: Option<&str>) -> Result<(), AppError> {
+    let Some(document) = document else {
+        return Ok(());
+    };
+    if document.len() > 8 * 1024 * 1024 {
+        return Err(AppError::new(
+            "timeline_invalid",
+            "The montage document is too large.",
+        ));
+    }
+    let value: serde_json::Value = serde_json::from_str(document)
+        .map_err(|_| AppError::new("timeline_invalid", "The montage document is invalid."))?;
+    if !value.is_object() {
+        return Err(AppError::new(
+            "timeline_invalid",
+            "The montage document is invalid.",
+        ));
+    }
+    Ok(())
+}
+
+/// Build out of sight and publish only after every file has been written.
+/// A failed copy must not leave a bundle that looks ready to open or consume
+/// the intended name on the next attempt.
+fn write_bundle_atomically(
+    parent: &Path,
+    stem: &str,
+    extension: &str,
+    request: &ExportTimelineRequest,
+    sources: &[PathBuf],
+) -> Result<ExportedTimelineDto, AppError> {
+    let staging = parent.join(format!(".{stem}.timeline-{}.partial", uuid::Uuid::new_v4()));
+    let write_error =
+        |error: std::io::Error| AppError::new("timeline_write_failed", error.to_string());
+    std::fs::create_dir(&staging).map_err(write_error)?;
+    let written = (|| -> Result<usize, AppError> {
+        std::fs::create_dir(staging.join(MEDIA_SUBDIR)).map_err(write_error)?;
+        std::fs::write(
+            staging.join(format!("{stem}.{extension}")),
+            request.document.as_bytes(),
+        )
+        .map_err(write_error)?;
+        if let Some(subtitles) = request.subtitles.as_ref().filter(|text| !text.is_empty()) {
+            std::fs::write(staging.join(format!("{stem}.srt")), subtitles.as_bytes())
+                .map_err(write_error)?;
+        }
+        if let Some(editor_document) = request.editor_document.as_ref() {
+            std::fs::write(
+                staging.join("studio-montage.json"),
+                editor_document.as_bytes(),
+            )
+            .map_err(write_error)?;
+        }
+        let mut copied = 0usize;
+        for source in sources {
+            let Some(file_name) = source.file_name() else {
+                continue;
+            };
+            let destination = staging.join(MEDIA_SUBDIR).join(file_name);
+            if destination.exists() {
+                continue;
+            }
+            std::fs::copy(source, &destination).map_err(write_error)?;
+            copied += 1;
+        }
+        Ok(copied)
+    })();
+    let copied = match written {
+        Ok(count) => count,
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(error);
+        }
+    };
+    let bundle = unique_bundle_dir(parent, stem);
+    if let Err(error) = std::fs::rename(&staging, &bundle) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(write_error(error));
+    }
+    Ok(ExportedTimelineDto {
+        directory: bundle.to_string_lossy().to_string(),
+        document_path: bundle
+            .join(format!("{stem}.{extension}"))
+            .to_string_lossy()
+            .to_string(),
+        media_count: copied,
+        cancelled: false,
+    })
+}
+
 /// Write a self-contained timeline bundle: the document, its subtitles, and a
 /// copy of every clip it references.
 #[tauri::command]
@@ -156,6 +251,7 @@ pub async fn export_timeline_bundle(
     app: AppHandle,
     request: ExportTimelineRequest,
 ) -> Result<ExportedTimelineDto, AppError> {
+    validate_editor_document(request.editor_document.as_deref())?;
     // The folder is picked here, not sent across IPC. A destination from the
     // webview would make this an arbitrary directory-write primitive: the
     // document and the subtitles are generated content, and a bundle folder
@@ -187,46 +283,26 @@ pub async fn export_timeline_bundle(
         }
     }
 
-    let bundle = unique_bundle_dir(&parent, &stem);
-    std::fs::create_dir_all(bundle.join(MEDIA_SUBDIR))
-        .map_err(|error| AppError::new("timeline_write_failed", error.to_string()))?;
-
-    let document_path = bundle.join(format!("{stem}.{extension}"));
-    std::fs::write(&document_path, request.document.as_bytes())
-        .map_err(|error| AppError::new("timeline_write_failed", error.to_string()))?;
-
-    if let Some(subtitles) = request.subtitles.as_ref().filter(|text| !text.is_empty()) {
-        std::fs::write(bundle.join(format!("{stem}.srt")), subtitles.as_bytes())
-            .map_err(|error| AppError::new("timeline_write_failed", error.to_string()))?;
-    }
-
-    let mut copied = 0usize;
-    for source in &sources {
-        let Some(file_name) = source.file_name() else {
-            continue;
-        };
-        let destination = bundle.join(MEDIA_SUBDIR).join(file_name);
-        // A cut can use one clip twice: the document references it once, and
-        // copying it twice is wasted bytes, not a second file.
-        if destination.exists() {
-            continue;
-        }
-        std::fs::copy(source, &destination)
-            .map_err(|error| AppError::new("timeline_write_failed", error.to_string()))?;
-        copied += 1;
-    }
-
-    Ok(ExportedTimelineDto {
-        directory: bundle.to_string_lossy().to_string(),
-        document_path: document_path.to_string_lossy().to_string(),
-        media_count: copied,
-        cancelled: false,
-    })
+    write_bundle_atomically(&parent, &stem, &extension, &request, &sources)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn optional_montage_sidecar_is_bounded_json_and_legacy_requests_still_work() {
+        assert!(validate_editor_document(None).is_ok());
+        assert!(validate_editor_document(Some(r#"{"version":1,"futureField":true}"#)).is_ok());
+        assert!(validate_editor_document(Some("[]")).is_err());
+        assert!(validate_editor_document(Some("not json")).is_err());
+        assert!(validate_editor_document(Some(&" ".repeat(8 * 1024 * 1024 + 1))).is_err());
+        let legacy: ExportTimelineRequest = serde_json::from_value(serde_json::json!({
+            "name": "Old montage", "document":"<xml />", "extension":"xml", "media":[]
+        }))
+        .expect("legacy request");
+        assert!(legacy.editor_document.is_none());
+    }
 
     #[test]
     fn a_bundle_name_keeps_what_a_path_can_carry_and_replaces_what_it_cannot() {
@@ -264,5 +340,39 @@ mod tests {
         std::fs::create_dir_all(&first).unwrap();
         let second = unique_bundle_dir(dir.path(), "Film");
         assert!(second.ends_with("Film 2.timeline"));
+    }
+
+    #[test]
+    fn a_failed_media_copy_leaves_no_incomplete_bundle_or_reserved_name() {
+        let destination = tempfile::tempdir().unwrap();
+        let gallery = tempfile::tempdir().unwrap();
+        let first = gallery.path().join("first.mp4");
+        std::fs::write(&first, b"video").unwrap();
+        let missing = gallery.path().join("missing.mp4");
+        let request = ExportTimelineRequest {
+            name: "Film".into(),
+            document: "<xml />".into(),
+            extension: "xml".into(),
+            subtitles: Some("1\n00:00:00,000 --> 00:00:01,000\nHi".into()),
+            editor_document: Some("{}".into()),
+            media: vec![],
+        };
+        assert!(write_bundle_atomically(
+            destination.path(),
+            "Film",
+            "xml",
+            &request,
+            &[first.clone(), missing],
+        )
+        .is_err());
+        assert_eq!(std::fs::read_dir(destination.path()).unwrap().count(), 0);
+        let exported =
+            write_bundle_atomically(destination.path(), "Film", "xml", &request, &[first]).unwrap();
+        assert!(exported.directory.ends_with("Film.timeline"));
+        assert_eq!(exported.media_count, 1);
+        assert!(Path::new(&exported.document_path).exists());
+        assert!(Path::new(&exported.directory)
+            .join("media/first.mp4")
+            .exists());
     }
 }

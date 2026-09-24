@@ -1,4 +1,5 @@
-import { isAsyncRetrySignal, MediaError, mediaJson, mediaRaw } from "./client";
+import { nativeQueuedImage } from "./edit-image";
+import { isAsyncRetrySignal, MediaError, mediaJson } from "./client";
 import type { MediaModel } from "./types";
 
 /** Models the backend refuses (409 MODEL_REQUIRES_ASYNC) or drops (the ~60 s
@@ -6,9 +7,6 @@ import type { MediaModel } from "./types";
  * missing here still lands on the queue via the fallback in
  * {@link generateImages}, at the cost of one wasted sync round-trip. */
 const HEAVY_IMAGE_MODELS = ["gpt-image", "nano-banana-pro", "recraft-v4-pro", "qwen-image-3-pro"];
-
-const IMAGE_QUEUE_POLL_MS = 3_000;
-const IMAGE_QUEUE_MAX_ATTEMPTS = 100;
 
 export function isHeavyImageModel(modelId: string): boolean {
   const id = modelId.toLowerCase();
@@ -33,29 +31,14 @@ function normalizeVariants(value: unknown): number {
 }
 
 /**
- * Submit one queue job and poll until it yields an image. `retrieve` returns
- * JSON while pending and raw image bytes once done.
+ * Submit a durable native image job. Rust retrieves and saves it even when
+ * the webview is suspended; the foreground observes its completion.
  */
+export type QueueImage = (body: Record<string, unknown>, signal?: AbortSignal) => Promise<string>;
+
 async function runQueueJob(body: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
-  const queued = await mediaJson<Record<string, unknown>>("/image/generate/queue", body, signal);
-  const queueId = queued.queue_id ?? queued.id;
-  if (typeof queueId !== "string" || !queueId) {
-    throw new MediaError("The backend did not return a job id.", { status: 200 });
-  }
-  for (let attempt = 0; attempt < IMAGE_QUEUE_MAX_ATTEMPTS; attempt += 1) {
-    const response = await mediaRaw("/image/generate/retrieve", { queue_id: queueId }, signal);
-    if (response.bodyBase64) return response.bodyBase64;
-    const json = response.json as Record<string, unknown> | undefined;
-    const status = typeof json?.status === "string" ? json.status.toLowerCase() : "";
-    if (status === "failed" || status === "error") {
-      const reason = typeof json?.error === "string" ? json.error : "The generation failed.";
-      throw new MediaError(reason, { status: 200 });
-    }
-    await new Promise((resolve) => setTimeout(resolve, IMAGE_QUEUE_POLL_MS));
-  }
-  throw new MediaError("The image is taking longer than expected. Try again later.", {
-    status: 0,
-  });
+  if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+  return nativeQueuedImage("/image/generate", body);
 }
 
 /**
@@ -70,17 +53,18 @@ async function runQueueJob(body: Record<string, unknown>, signal?: AbortSignal):
 async function generateViaQueue(
   body: Record<string, unknown>,
   signal?: AbortSignal,
+  queueImage: QueueImage = runQueueJob,
 ): Promise<string[]> {
   const variants = normalizeVariants(body.variants);
   if (variants <= 1) {
-    return [await runQueueJob(body, signal)];
+    return [await queueImage(body, signal)];
   }
   const seed = typeof body.seed === "number" && Number.isFinite(body.seed) ? body.seed : undefined;
   const settled = await Promise.allSettled(
     Array.from({ length: variants }, (_unused, index) => {
       const jobBody: Record<string, unknown> = { ...body, variants: 1 };
       if (seed !== undefined) jobBody.seed = seed + index;
-      return runQueueJob(jobBody, signal);
+      return queueImage(jobBody, signal);
     }),
   );
   const images = settled
@@ -152,15 +136,16 @@ export async function generateImages(
   modelId: string,
   body: Record<string, unknown>,
   signal?: AbortSignal,
+  queueImage?: QueueImage,
 ): Promise<string[]> {
   if (isHeavyImageModel(modelId)) {
-    return generateViaQueue(body, signal);
+    return generateViaQueue(body, signal, queueImage);
   }
   try {
     return imagesFromResponse(await mediaJson<GenerateResponse>("/image/generate", body, signal));
   } catch (syncError) {
     if (isAsyncRetrySignal(syncError)) {
-      return generateViaQueue(body, signal);
+      return generateViaQueue(body, signal, queueImage);
     }
     throw syncError;
   }

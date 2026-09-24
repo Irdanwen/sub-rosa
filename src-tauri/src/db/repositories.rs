@@ -3637,14 +3637,12 @@ impl Repositories {
         Ok(())
     }
 
-    /// Every job the UI should know about: the ones still running plus the
-    /// finished ones it has not acknowledged yet (a generation that landed
-    /// while the app was closed is only "delivered" once the gallery has it).
+    /// Undismissed jobs, including deliveries that landed while the app was closed.
     pub async fn list_media_jobs(&self) -> Result<Vec<MediaJobDto>, sqlx::error::Error> {
         let rows = query(
             "SELECT id, kind, model, prompt, extension, status, error, error_status, artifact_path,
                     artifact_file_name, artifact_bytes, parent_artifact_id,
-                    parent_handoff_seconds, cost_credits, source, created_at, updated_at
+                    parent_handoff_seconds, cost_credits, source, created_at, updated_at, retrieve_body != '{}' AS submission_confirmed
              FROM media_jobs ORDER BY created_at DESC",
         )
         .fetch_all(&self.pool)
@@ -3662,7 +3660,7 @@ impl Repositories {
             "SELECT id, kind, model, prompt, extension, status, error, error_status, artifact_path,
                     artifact_file_name, artifact_bytes, parent_artifact_id,
                     parent_handoff_seconds, cost_credits, source, created_at, updated_at,
-                    retrieve_path, retrieve_body, url_fields
+                    retrieve_path, retrieve_body, url_fields, retrieve_body != '{}' AS submission_confirmed
              FROM media_jobs WHERE status IN ('queued', 'processing')
              ORDER BY created_at ASC",
         )
@@ -3737,7 +3735,7 @@ impl Repositories {
         let row = query(
             "SELECT id, kind, model, prompt, extension, status, error, error_status, artifact_path,
                     artifact_file_name, artifact_bytes, parent_artifact_id,
-                    parent_handoff_seconds, cost_credits, source, created_at, updated_at
+                    parent_handoff_seconds, cost_credits, source, created_at, updated_at, retrieve_body != '{}' AS submission_confirmed
              FROM media_jobs WHERE id = ?",
         )
         .bind(id)
@@ -4387,6 +4385,7 @@ fn media_job_from_row(row: sqlx_sqlite::SqliteRow) -> MediaJobDto {
         status: MediaJobStatus::from(row.get::<String, _>("status").as_str()),
         error: row.get("error"),
         error_status: row.get("error_status"),
+        submission_confirmed: row.get("submission_confirmed"),
         artifact_path: row.get("artifact_path"),
         artifact_file_name: row.get("artifact_file_name"),
         artifact_bytes: row.get("artifact_bytes"),

@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 /**
  * A shot list, compiled into a workflow.
  *
@@ -32,13 +33,31 @@ import {
   shotPrompt,
   voiceReference,
 } from "../bible";
-import { estimateCostCredits, humanizeModelId, isSeedanceModel, modelsOfType } from "../catalog";
+import {
+  estimateCostCredits,
+  humanizeModelId,
+  isSeedanceModel,
+  modelsOfType,
+  requiresOpeningFrame,
+  videoDirection,
+} from "../catalog";
+import { maxVideoReferences } from "../seedance";
 import { effectiveVideoConstraints } from "../model-constraints";
 import type { MediaCatalog, MediaModel } from "../types";
 import { defaultParams, type Workflow, type WorkflowEdge, type WorkflowNode } from "./schema";
 
 /** One shot, exactly as `src-tauri/src/shotlist` produces it. */
 export interface Shot {
+  id?: string;
+  title?: string;
+  prompt?: string;
+  modelId?: string;
+  duration?: number | string;
+  resolution?: string;
+  mode?: "text" | "image" | "reference" | "continuation";
+  openingArtifactId?: string;
+  endingArtifactId?: string;
+  referenceArtifactIds?: string[];
   scene: string;
   action: string;
   camera: string;
@@ -112,6 +131,8 @@ export interface CompileResult {
   warnings: string[];
   /** Sum of the flat prices this account publishes. Metered nodes count zero. */
   estimateCredits: number;
+  /** Paid nodes whose price has not been published. */
+  unknownPriceNodeIds?: string[];
   /** Why nothing was built. */
   refusal?: string;
   /** Choices made on the user's behalf, said out loud. */
@@ -256,7 +277,7 @@ export function retargetShotModel(
   familyId: string,
 ): Workflow | undefined {
   const target = workflow.nodes.find((entry) => entry.id === nodeId);
-  if (!target || target.type !== "video") return undefined;
+  if (target?.type !== "video") return undefined;
   const inputs = workflow.edges.filter((entry) => entry.target === nodeId);
   const routing = routeModels(catalog, familyId);
   const model = inputs.some((entry) => entry.targetPort === "references")
@@ -369,10 +390,11 @@ export function planShots(
   catalog: MediaCatalog,
   aspectRatio: string,
   videoModelId?: string,
-): { planned: PlannedShot[]; notes: string[] } {
+): { planned: PlannedShot[]; notes: string[]; errors: string[] } {
   const routing = routeModels(catalog, videoModelId);
+  const errors: string[] = [];
   const notes: string[] = [];
-  const byName = new Map(bible.map((entry) => [entry.name.toLowerCase(), entry]));
+  const byName = new Map(bible.map((entry) => [entry.name.trim().toLowerCase(), entry]));
   const planned: PlannedShot[] = [];
 
   shots.forEach((shot, index) => {
@@ -380,24 +402,106 @@ export function planShots(
       .map((name) => byName.get(name.trim().toLowerCase()))
       .filter((entry): entry is BibleEntry => entry !== undefined);
     const location = byName.get(shot.location.trim().toLowerCase());
-    const chained = shot.continues && index > 0;
+    const chained = shot.mode ? shot.mode === "continuation" : shot.continues && index > 0;
     const stack = chained ? [] : referenceStack({ characters, location });
 
-    const model =
-      (chained ? routing.fromImage : stack.length > 0 ? routing.reference : routing.text) ??
-      routing.text;
-    if (!model) return;
+    const explicit = shot.mode !== undefined || shot.modelId !== undefined;
+    const mode = shot.mode ?? (chained ? "continuation" : stack.length ? "reference" : "text");
+    const direction = mode === "continuation" ? "image" : mode;
+    const videoModels = catalog.models.filter((candidate) =>
+      ["video", "imageToVideo", "referenceToVideo"].includes(candidate.mediaType),
+    );
+    const routed =
+      direction === "image"
+        ? routing.fromImage
+        : direction === "reference"
+          ? routing.reference
+          : routing.text;
+    const model = explicit
+      ? shot.modelId
+        ? videoModels.find((candidate) => candidate.id === shot.modelId && !candidate.offline)
+        : routed && (!videoModelId || familyStem(routed.id) === familyStem(videoModelId))
+          ? routed
+          : undefined
+      : ((chained ? routing.fromImage : stack.length > 0 ? routing.reference : routing.text) ??
+        routing.text);
+    const refuse = (reason: string) =>
+      errors.push(t("Shot {number}: {reason}", { number: index + 1, reason }));
+    if (!model) {
+      if (explicit) refuse(t("Choose an available model for this mode."));
+      return;
+    }
+    if (explicit && videoDirection(model) !== direction) {
+      refuse(t("The selected model does not support this generation mode."));
+      return;
+    }
+    if (mode === "continuation" && index === 0) {
+      refuse(t("A continuation needs a preceding shot."));
+      return;
+    }
+    if (mode === "image" && !shot.openingArtifactId) {
+      refuse(t("Select an opening image before generating video."));
+      return;
+    }
+    const references =
+      mode === "reference"
+        ? (shot.referenceArtifactIds ?? stack.map((reference) => reference.artifactId))
+        : [];
+    if (explicit && mode === "reference" && references.length === 0) {
+      refuse(t("Select at least one reference image."));
+      return;
+    }
+    if (mode === "reference" && requiresOpeningFrame(model.id) && !shot.openingArtifactId) {
+      refuse(t("Select an opening image for this model before generating video."));
+      return;
+    }
+    if (explicit && references.length > maxVideoReferences(model)) {
+      refuse(t("This model cannot accept all the selected reference images."));
+      return;
+    }
+    if (explicit && shot.endingArtifactId && direction !== "image") {
+      refuse(t("An ending image requires image-to-video mode."));
+      return;
+    }
 
     const constraints = effectiveVideoConstraints(model);
-    const wanted = SECONDS_BY_MOTION[shot.motion] ?? SECONDS_BY_MOTION.medium;
-    const duration = nearestOption(constraints.durations, wanted);
+    const wanted =
+      shot.duration === undefined
+        ? (SECONDS_BY_MOTION[shot.motion] ?? SECONDS_BY_MOTION.medium)
+        : Number.parseFloat(String(shot.duration));
+    const duration =
+      shot.duration !== undefined && constraints.durations === undefined
+        ? String(shot.duration)
+        : nearestOption(constraints.durations, wanted);
+    if (
+      shot.duration !== undefined &&
+      (!Number.isFinite(wanted) ||
+        wanted <= 0 ||
+        (constraints.durations && Number.parseFloat(duration) !== wanted))
+    ) {
+      refuse(t("Choose a duration supported by this model."));
+      return;
+    }
+    if (
+      shot.resolution &&
+      constraints.resolutions &&
+      !constraints.resolutions.includes(shot.resolution)
+    ) {
+      refuse(t("Choose a resolution supported by this model."));
+      return;
+    }
     const ratio =
       constraints.aspect_ratios && !constraints.aspect_ratios.includes(aspectRatio)
         ? (nearestOptionExact(constraints.aspect_ratios, aspectRatio) ?? "")
         : aspectRatio;
     if (ratio !== aspectRatio && ratio) {
       notes.push(
-        `Shot ${index + 1} renders at ${ratio}: ${model.name} does not offer ${aspectRatio}.`,
+        t("Shot {number} renders at {ratio}: {model} does not offer {requested}.", {
+          number: index + 1,
+          ratio,
+          model: model.name,
+          requested: aspectRatio,
+        }),
       );
     }
 
@@ -410,21 +514,23 @@ export function planShots(
       shot,
       model,
       chained,
-      references: stack.map((reference) => reference.artifactId),
-      prompt: shotPrompt({
-        subject: shot.scene ? `${shot.scene}.` : "",
-        action: shot.action,
-        camera: shot.camera,
-        invariants,
-        stack,
-        model,
-      }).prompt,
+      references,
+      prompt:
+        shot.prompt?.trim() ||
+        shotPrompt({
+          subject: shot.scene ? `${shot.scene}.` : "",
+          action: shot.action,
+          camera: shot.camera,
+          invariants,
+          stack: mode === "reference" ? stack : [],
+          model,
+        }).prompt,
       duration,
       aspectRatio: ratio,
     });
   });
 
-  return { planned, notes };
+  return { planned, notes, errors };
 }
 
 /**
@@ -486,7 +592,15 @@ function nearestOptionExact(options: readonly string[], wanted: string): string 
 export function compileShotList(input: CompileInput): CompileResult {
   const notes: string[] = [];
   const warnings: string[] = [];
-  const shots = input.shots.filter((shot) => shot.action.trim().length > 0);
+  if (input.shots.some((shot) => shot.id && !shot.action.trim() && !shot.prompt?.trim())) {
+    return {
+      estimateCredits: 0,
+      notes,
+      warnings,
+      refusal: t("Add an action or prompt to every shot before generating."),
+    };
+  }
+  const shots = input.shots.filter((shot) => shot.action.trim().length > 0 || shot.prompt?.trim());
   if (shots.length === 0) {
     return { estimateCredits: 0, notes, warnings, refusal: "There are no shots to film." };
   }
@@ -500,14 +614,16 @@ export function compileShotList(input: CompileInput): CompileResult {
   }
 
   const aspectRatio = input.aspectRatio ?? "16:9";
-  const { planned, notes: routingNotes } = planShots(
-    shots,
-    input.bible ?? [],
-    input.catalog,
-    aspectRatio,
-    input.videoModelId,
-  );
+  const {
+    planned,
+    notes: routingNotes,
+    errors,
+  } = planShots(shots, input.bible ?? [], input.catalog, aspectRatio, input.videoModelId);
   notes.push(...routingNotes);
+  const shotIds = shots.map((shot, index) => shot.id ?? String(index + 1));
+  if (new Set(shotIds).size !== shotIds.length)
+    errors.push(t("Each shot needs a unique identifier."));
+  if (errors.length) return { estimateCredits: 0, notes, warnings, refusal: errors.join("\n") };
 
   // A family that cannot hold a face does not lose the bible - the router
   // sends those shots to a family that can. What it loses is the one look:
@@ -518,9 +634,14 @@ export function compileShotList(input: CompileInput): CompileResult {
     const elsewhere = routeModels(input.catalog, input.videoModelId).reference;
     if (family && !family.holdsFaces && withFaces > 0 && elsewhere) {
       warnings.push(
-        `${family.label} cannot carry a face from one shot to the next, so the ${withFaces} shot${
-          withFaces === 1 ? "" : "s"
-        } with someone from your bible are made on ${elsewhere.name} instead. The film will change look partway. A family that holds faces keeps it in one.`,
+        t(
+          "{family} cannot carry a face from one shot to the next, so {count} bible shots use {model} instead. The film will change look partway. Choose a family that holds faces to keep one look.",
+          {
+            family: family.label,
+            count: withFaces,
+            model: elsewhere.name,
+          },
+        ),
       );
     }
   }
@@ -553,15 +674,16 @@ export function compileShotList(input: CompileInput): CompileResult {
 
   planned.forEach((entry, index) => {
     const level = 1 + index * 2;
-    const videoId = `shot-${index + 1}`;
+    const stableId = entry.shot.id ?? String(index + 1);
+    const videoId = `shot-${stableId}`;
 
     if (entry.chained && previousVideoId) {
       // The seam: a still taken shortly before the end of the previous shot,
       // which the assemble node then trims the parent's tail to. Recording
       // where it was taken is what keeps the cut on movement (ADR-0019).
-      const frameId = `handoff-${index + 1}`;
+      const frameId = `handoff-${stableId}`;
       nodes.push(
-        node(frameId, "lastFrame", `Handoff ${index}`, level - 1, index, {
+        node(frameId, "lastFrame", t("Handoff {number}", { number: index }), level - 1, index, {
           position: "handoff",
         }),
       );
@@ -569,18 +691,37 @@ export function compileShotList(input: CompileInput): CompileResult {
       edges.push(edge(frameId, videoId, "openingFrame"));
     }
 
+    if (
+      !entry.chained &&
+      entry.shot.openingArtifactId &&
+      (entry.shot.mode === "image" || requiresOpeningFrame(entry.model.id))
+    ) {
+      edges.push(edge(assetNode(entry.shot.openingArtifactId, index), videoId, "openingFrame"));
+    }
+    if (entry.shot.endingArtifactId) {
+      edges.push(edge(assetNode(entry.shot.endingArtifactId, index), videoId, "endFrame"));
+    }
     for (const [order, artifactId] of entry.references.entries()) {
       const assetId = assetNode(artifactId, index * 2 + order);
       edges.push(edge(assetId, videoId, "references"));
     }
 
     nodes.push(
-      node(videoId, "video", entry.shot.scene || `Shot ${index + 1}`, level, index, {
-        model: entry.model.id,
-        prompt: entry.prompt,
-        duration: entry.duration,
-        aspectRatio: entry.aspectRatio,
-      }),
+      node(
+        videoId,
+        "video",
+        entry.shot.title || entry.shot.scene || t("Shot {number}", { number: index + 1 }),
+        level,
+        index,
+        {
+          model: entry.model.id,
+          modelDirection: videoDirection(entry.model),
+          resolution: entry.shot.resolution ?? "",
+          prompt: entry.prompt,
+          duration: entry.duration,
+          aspectRatio: entry.aspectRatio,
+        },
+      ),
     );
     videoIds.push(videoId);
     previousVideoId = videoId;
@@ -593,16 +734,32 @@ export function compileShotList(input: CompileInput): CompileResult {
         (candidate) => candidate.name.toLowerCase() === entry.shot.speaker.trim().toLowerCase(),
       );
       const donor = voiceReference(speaker);
-      const ttsId = `line-${index + 1}`;
+      const ttsId = `line-${stableId}`;
+      const textId = `dialogue-${stableId}`;
       nodes.push(
-        node(ttsId, "tts", `${entry.shot.speaker || "Line"} ${index + 1}`, level, index + 0.5, {
-          model: tts.id,
+        node(textId, "textInput", entry.shot.speaker || t("Dialogue"), level - 1, index + 0.5, {
           text: entry.shot.dialogue.trim(),
-          voice: donor?.label ?? "",
-          // Just inside the shot rather than exactly on the cut: a line that
-          // starts on the frame the shot does reads as a mistake.
-          startAt: (shotStartSeconds + DIALOGUE_LEAD_IN_SECONDS).toFixed(2),
         }),
+      );
+      edges.push(edge(textId, ttsId, "text"));
+      nodes.push(
+        node(
+          ttsId,
+          "tts",
+          entry.shot.speaker
+            ? `${entry.shot.speaker} ${index + 1}`
+            : t("Line {number}", { number: index + 1 }),
+          level,
+          index + 0.5,
+          {
+            model: tts.id,
+            text: entry.shot.dialogue.trim(),
+            voice: donor?.label ?? "",
+            // Just inside the shot rather than exactly on the cut: a line that
+            // starts on the frame the shot does reads as a mistake.
+            startAt: (shotStartSeconds + DIALOGUE_LEAD_IN_SECONDS).toFixed(2),
+          },
+        ),
       );
       ttsIds.push(ttsId);
     }
@@ -619,8 +776,8 @@ export function compileShotList(input: CompileInput): CompileResult {
   if (input.gateBeforeAssemble) {
     const gateId = "gate-cut";
     nodes.push(
-      node(gateId, "gate", "Before the cut", finalLevel - 1, 0, {
-        note: "Look over the shots before they are cut together.",
+      node(gateId, "gate", t("Before the cut"), finalLevel - 1, 0, {
+        note: t("Look over the shots before they are cut together."),
       }),
     );
     for (const videoId of videoIds) edges.push(edge(videoId, gateId));
@@ -639,37 +796,43 @@ export function compileShotList(input: CompileInput): CompileResult {
     if (music) {
       const musicId = "score";
       nodes.push(
-        node(musicId, "music", "Score", finalLevel - 1, 1, {
+        node("score-prompt", "textInput", t("Score prompt"), finalLevel - 2, 1, {
+          text: `Score for ${input.name}.`,
+        }),
+      );
+      edges.push(edge("score-prompt", musicId, "prompt"));
+      nodes.push(
+        node(musicId, "music", t("Score"), finalLevel - 1, 1, {
           model: music.id,
           prompt: `Score for ${input.name}.`,
         }),
       );
       edges.push(edge(musicId, assembleId, "music"));
     } else {
-      notes.push("No music model on this account, so the film has no score.");
+      notes.push(t("No music model on this account, so the film has no score."));
     }
   }
 
   const outputId = "output";
-  nodes.push(node(outputId, "output", "The film", finalLevel + 1, 0));
+  nodes.push(node(outputId, "output", t("The film"), finalLevel + 1, 0));
   edges.push(edge(assembleId, outputId));
 
   // Flat published prices only. A metered node counts zero, which is why the
   // figure is always "at least" - the same honesty the cost panel already
   // shows for a hand-built graph.
   const byId = new Map(input.catalog.models.map((model) => [model.id, model]));
+  const unknownPriceNodeIds: string[] = [];
   const estimateCredits = nodes.reduce((sum, entry) => {
     const modelId = typeof entry.params.model === "string" ? entry.params.model : "";
     const model = modelId ? byId.get(modelId) : undefined;
     if (!model) return sum;
     const durationSeconds = Number.parseFloat(String(entry.params.duration ?? "")) || undefined;
-    return (
-      sum +
-      (estimateCostCredits(model, {
-        durationSeconds,
-        multiplier: input.catalog.priceMultiplier,
-      }) ?? 0)
-    );
+    const price = estimateCostCredits(model, {
+      durationSeconds,
+      multiplier: input.catalog.priceMultiplier,
+    });
+    if (price === undefined) unknownPriceNodeIds.push(entry.id);
+    return sum + (price ?? 0);
   }, 0);
 
   if (input.envelopeCredits !== undefined && estimateCredits > input.envelopeCredits) {
@@ -691,7 +854,10 @@ export function compileShotList(input: CompileInput): CompileResult {
 
   if (ttsIds.length > 0) {
     notes.push(
-      `${ttsIds.length} spoken line${ttsIds.length === 1 ? "" : "s"}, placed on the shots they belong to. Move one on the canvas if it lands wrong.`,
+      t(
+        "{count} spoken lines are placed with their shots. Adjust their timing in Assemble if needed.",
+        { count: ttsIds.length },
+      ),
     );
   }
 
@@ -706,6 +872,7 @@ export function compileShotList(input: CompileInput): CompileResult {
       edges,
     },
     estimateCredits,
+    unknownPriceNodeIds,
     notes,
   };
 }

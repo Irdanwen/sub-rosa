@@ -9,7 +9,10 @@ const hoisted = vi.hoisted(() => ({
 }));
 
 vi.mock("../lib/studio/generate-image", () => ({ generateImages: hoisted.generateImages }));
-vi.mock("../lib/studio/artifacts", () => ({ saveArtifactFromBase64: hoisted.saveArtifact }));
+vi.mock("../lib/studio/artifacts", () => ({
+  saveArtifactFromBase64: hoisted.saveArtifact,
+  finishQueuedBibleImage: vi.fn(async () => undefined),
+}));
 vi.mock("../lib/studio/bible/index", () => ({ addBibleRef: hoisted.addRef }));
 
 import {
@@ -116,6 +119,26 @@ describe("generating a reference", () => {
     expect(hoisted.addRef).toHaveBeenCalledWith(
       expect.objectContaining({ entryId: "e1", artifactId: "nera.png", role: "portrait" }),
     );
+  });
+
+  it("uses the chosen model and prompt without changing the global bible", async () => {
+    const chosen = catalog.models.find((candidate) => candidate.id !== "cheap");
+    if (!chosen) throw new Error("Missing second model fixture");
+    const made = await generateReference(entry(), "portrait", catalog, {
+      modelId: chosen.id,
+      prompt: "A photographic portrait in evening light",
+      attach: false,
+    });
+    expect(made.model).toBe(chosen.id);
+    expect(made.prompt).toBe("A photographic portrait in evening light");
+    expect(hoisted.addRef).not.toHaveBeenCalled();
+  });
+
+  it("does not substitute another model when the chosen model is absent", async () => {
+    await expect(
+      generateReference(entry(), "portrait", catalog, { modelId: "gone" }),
+    ).rejects.toThrow();
+    expect(hoisted.generateImages).not.toHaveBeenCalled();
   });
 
   it("frames a face square and a place wide", async () => {

@@ -28,6 +28,10 @@ const hoisted = vi.hoisted(() => ({
   extractFrameAt: vi.fn(),
 }));
 
+vi.mock("../lib/studio/projects", async (original) => ({
+  ...(await original<typeof import("../lib/studio/projects")>()),
+  listProjects: vi.fn(async () => []),
+}));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: hoisted.invoke }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save: vi.fn(), open: vi.fn() }));
 vi.mock("../lib/studio/client", () => ({

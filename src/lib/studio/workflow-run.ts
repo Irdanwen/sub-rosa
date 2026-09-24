@@ -17,6 +17,7 @@
 //   `completed` cache instead of re-spending.
 
 import { invoke } from "@tauri-apps/api/core";
+import { t } from "../i18n";
 import { artifactDataUrl } from "../artifact-media";
 import { isMobilePlatform } from "../mobile";
 import { ensureNotificationPermission } from "../notifications";
@@ -29,8 +30,6 @@ import {
   saveArtifactFromBase64,
   saveArtifactFromUrl,
 } from "./artifacts";
-import { MediaError, mediaJson } from "./client";
-import { retrieveBody } from "./paths";
 import type { ArtifactFile, StudioArtifact } from "./types";
 import {
   awaitingGateIds,
@@ -287,6 +286,8 @@ interface MediaJobRow {
   prompt: string;
   status: "queued" | "processing" | "completed" | "failed";
   error?: string;
+  errorStatus?: number | null;
+  submissionConfirmed?: boolean;
   artifactPath?: string;
   artifactFileName?: string;
   artifactBytes?: number;
@@ -343,32 +344,37 @@ function durableMediaRunner(
   return async (nodeId, request: DurableRenderRequest, signal) => {
     let jobId = pendingJobs.get(nodeId);
     if (!jobId) {
-      const queued = await mediaJson<Record<string, unknown>>(
-        request.queuePath,
-        request.queueBody,
-        signal,
-      );
-      const id = queued.queue_id ?? queued.id;
-      if (typeof id !== "string" || !id) {
-        throw new MediaError("The backend did not return a job id.", { status: 200 });
-      }
-      jobId = id;
+      jobId = crypto.randomUUID();
+      await invoke("workflow_run_set_node", {
+        request: { runId, nodeId, status: "running", output: { pendingJobId: jobId } },
+      });
+      pendingJobs.set(nodeId, jobId);
       void ensureNotificationPermission("studio");
-      await invoke("media_job_start", {
+      await invoke("media_job_queue", {
         request: {
-          queueId: jobId,
+          jobId,
+          queuePath: request.queuePath,
+          queueBody: request.queueBody,
           kind: request.kind,
           model: request.model,
           prompt: request.prompt,
           extension: request.extension,
           retrievePath: request.retrievePath,
-          retrieveBody: retrieveBody(jobId, request.model),
           urlFields: request.urlFields,
           parentArtifactId: request.parentArtifactId,
           parentHandoffSeconds: request.parentHandoffSeconds,
           costCredits: request.costCredits,
           source: "workflow",
         },
+      }).catch((error: unknown) => {
+        if (
+          error &&
+          typeof error === "object" &&
+          "message" in error &&
+          typeof error.message === "string"
+        )
+          throw new Error(t(error.message));
+        throw error;
       });
       // The pointer goes down before we wait: it is what lets the next
       // session find this render instead of buying it twice.
@@ -390,15 +396,15 @@ function durableMediaRunner(
       bytes: job.artifactBytes ?? 0,
     };
     const artifact = registerDownloadedArtifact(file, {
-      kind: request.kind === "video" ? "video" : "music",
+      kind: request.kind,
       model: request.model,
       prompt: request.prompt,
       parentId: request.parentArtifactId,
       parentHandoffSeconds: request.parentHandoffSeconds,
       costCredits: request.costCredits,
     });
-    await invoke("media_job_dismiss", { id: jobId }).catch(() => undefined);
-    pendingJobs.delete(nodeId);
+    // Keep the completed job until its consumer has durably stored the output.
+    // A crash between delivery and that write must reattach, never repurchase.
     return {
       artifactId: artifact.id,
       src: await decodableSrc(artifact),
@@ -407,30 +413,41 @@ function durableMediaRunner(
   };
 }
 
-/** Persist a node transition, fire-and-forget: the row must never make a run
- * slower, and a lost write only costs a re-run of that node. */
-function persistNode(runId: string, result: NodeRunResult): void {
-  // "pending" only happens on cancellation (the engine resets aborted nodes),
-  // and progress ticks re-assert "running" with no output. Persisting either
-  // would clobber a pending-job pointer the media runner wrote — the one
-  // thing that lets a resume re-attach to a paid render.
-  if (result.status === "pending") return;
-  if (result.status === "running" && result.progress !== undefined) return;
-  // "awaiting" rows are what an approval reads back (which gates to decide).
-  const payload: Record<string, unknown> = {
-    runId,
-    nodeId: result.nodeId,
-    status: result.status,
-  };
+/** Serialize terminal writes before downstream spending or finishing the run.
+ * Every nonterminal paid job retains its queue pointer, including failures. */
+async function persistNode(
+  runId: string,
+  result: NodeRunResult,
+  pendingJobs: Map<string, string>,
+  submitted: Set<string>,
+): Promise<void> {
+  if (result.status === "pending" || result.status === "running") return;
+  const payload: Record<string, unknown> = { runId, nodeId: result.nodeId, status: result.status };
   if (result.status === "done" && result.output) {
     const stored = dehydrate(result.output);
     if (stored) payload.output = stored;
+  } else if (pendingJobs.has(result.nodeId)) {
+    payload.output = { pendingJobId: pendingJobs.get(result.nodeId) };
+  } else if (submitted.has(result.nodeId)) {
+    payload.output = { submissionStarted: true };
   }
   if (result.status === "error") payload.error = result.error;
-  void invoke("workflow_run_set_node", { request: payload }).catch(() => undefined);
+  await invoke("workflow_run_set_node", { request: payload });
+  if (result.status === "done" && payload.output) {
+    const jobId = pendingJobs.get(result.nodeId);
+    if (jobId) {
+      // The node now owns the durable artifact reference. A failed dismissal
+      // only leaves an extra row; it must not turn a completed node into an error.
+      await invoke("media_job_dismiss", { id: jobId }).catch(() => undefined);
+      pendingJobs.delete(result.nodeId);
+    }
+  }
 }
 
 interface DurableRunOptions {
+  /** Fail closed when a finished paid output is missing instead of buying it again. */
+  requireExistingOutputs?: boolean;
+  beforeNode?: RunWorkflowOptions["beforeNode"];
   signal?: AbortSignal;
   onUpdate?: (result: NodeRunResult) => void;
   nodeCosts?: Record<string, number>;
@@ -438,7 +455,7 @@ interface DurableRunOptions {
   approvedGates?: Map<string, string | undefined>;
   /** Hands back the run id as soon as the row exists, so the caller can
    * approve this run's gates later without re-listing. */
-  onRunRecorded?: (runId: string) => void;
+  onRunRecorded?: (runId: string) => void | Promise<void>;
   /**
    * Nodes to make again, with everything that was built from them.
    *
@@ -497,6 +514,8 @@ async function executeDurable(
   pendingJobs: Map<string, string>,
 ): Promise<Map<string, NodeRunResult>> {
   liveRuns.set(runId, workflow.name);
+  let writes: Promise<void> = Promise.resolve();
+  const submitted = new Set<string>();
   try {
     const results = await runWorkflow(workflow, {
       signal: options.signal,
@@ -505,19 +524,38 @@ async function executeDurable(
       completed,
       approvedGates: options.approvedGates,
       durableMedia: durableMediaRunner(runId, pendingJobs),
+      beforeNode: async (node) => {
+        await writes;
+        if (!pendingJobs.has(node.id)) {
+          await options.beforeNode?.(node);
+          await invoke("workflow_run_set_node", {
+            request: {
+              runId,
+              nodeId: node.id,
+              status: "running",
+              output: { submissionStarted: true },
+            },
+          });
+          submitted.add(node.id);
+        }
+      },
       onUpdate: (result) => {
-        persistNode(runId, result);
+        writes = writes.then(() => persistNode(runId, result, pendingJobs, submitted));
+        // The chain is awaited before the next paid node and at completion.
+        void writes.catch(() => undefined);
         options.onUpdate?.(result);
       },
     });
     // A run held at a gate is paused, not finished: the row says so (and the
     // user gets told — they may be in another app by now).
+    await writes;
     const held = awaitingGateIds(results).length > 0;
     await invoke("workflow_run_finish", {
       request: { id: runId, status: held ? "awaitingGate" : "completed" },
     }).catch(() => undefined);
     return results;
   } catch (error) {
+    await writes.catch(() => undefined);
     const cancelled = error instanceof DOMException && error.name === "AbortError";
     await invoke("workflow_run_finish", {
       request: {
@@ -595,8 +633,8 @@ export function runDefinition(run: WorkflowRunSummary): Workflow | undefined {
 /**
  * Pick an interrupted run back up: finished nodes replay from their stored
  * outputs, a node that was waiting on a render re-attaches to its job, and
- * everything else executes as usual. An unreadable stored output just drops
- * the node from the cache — it re-runs rather than blocking the resume.
+ * everything else executes as usual. Project callers require existing paid
+ * outputs so a missing result cannot silently buy a replacement.
  */
 export async function resumeWorkflowRun(
   runId: string,
@@ -617,24 +655,97 @@ export async function resumeWorkflowRun(
   const stale = options.redoNodeIds?.length
     ? descendantsOf(workflow, options.redoNodeIds)
     : undefined;
+  // An explicitly quoted replacement no longer needs a definitive failed
+  // queue row. Clear its pointer durably before dismissing it, so a restart
+  // between this decision and the new queue can still resume the new attempt.
+  if (stale) {
+    const replaced = detail.nodes.flatMap((node) => {
+      if (!stale.has(node.nodeId) || node.status !== "error" || !node.output) return [];
+      try {
+        const pending = (JSON.parse(node.output) as { pendingJobId?: unknown }).pendingJobId;
+        return typeof pending === "string" ? [{ nodeId: node.nodeId, jobId: pending }] : [];
+      } catch {
+        return [];
+      }
+    });
+    if (replaced.length) {
+      const jobs = (await invoke<MediaJobRow[]>("media_job_list")) ?? [];
+      for (const { nodeId, jobId } of replaced) {
+        const job = jobs.find((candidate) => candidate.id === jobId);
+        if (
+          job?.status !== "failed" ||
+          (job.errorStatus == null && job.submissionConfirmed !== true)
+        )
+          continue;
+        await invoke("workflow_run_set_node", {
+          request: { runId, nodeId, status: "pending", output: {} },
+        });
+        await invoke("media_job_dismiss", { id: jobId }).catch(() => undefined);
+      }
+    }
+  }
   for (const node of detail.nodes) {
     if (stale?.has(node.nodeId)) continue;
-    if (!node.output) continue;
+    const paid = workflow.nodes.some(
+      (candidate) =>
+        candidate.id === node.nodeId &&
+        ["image", "imageEdit", "tts", "music", "video", "chat"].includes(candidate.type),
+    );
+    const missingPaidOutput = () =>
+      new Error(t("A paid result is missing. Restore its file or explicitly request a new take."));
+    if (!node.output) {
+      if (options.requireExistingOutputs && paid && node.status === "done")
+        throw missingPaidOutput();
+      continue;
+    }
     let stored: unknown;
     try {
       stored = JSON.parse(node.output);
     } catch {
+      if (options.requireExistingOutputs && paid && node.status === "done")
+        throw missingPaidOutput();
       continue;
+    }
+    if (
+      options.requireExistingOutputs &&
+      paid &&
+      node.status !== "done" &&
+      stored &&
+      typeof stored === "object" &&
+      "submissionStarted" in stored &&
+      stored.submissionStarted === true
+    ) {
+      throw new Error(
+        t(
+          "A previous request may already have been charged. Check its result before requesting another take.",
+        ),
+      );
     }
     if (node.status === "done") {
       try {
         completed.set(node.nodeId, await rehydrate(stored as StoredOutput, storage));
       } catch {
-        // The artifact is gone; the node re-runs.
+        if (options.requireExistingOutputs && paid) throw missingPaidOutput();
+        // Legacy callers may explicitly keep the historical re-render behavior.
       }
-    } else if (node.status === "running") {
-      const pending = (stored as { pendingJobId?: unknown }).pendingJobId;
-      if (typeof pending === "string" && pending) pendingJobs.set(node.nodeId, pending);
+    } else {
+      const pending =
+        stored && typeof stored === "object"
+          ? (stored as { pendingJobId?: unknown }).pendingJobId
+          : undefined;
+      if (typeof pending === "string" && pending) {
+        if (options.requireExistingOutputs && node.status === "error") {
+          const jobs = (await invoke<MediaJobRow[]>("media_job_list")) ?? [];
+          const job = jobs.find((entry) => entry.id === pending);
+          if (
+            job?.status === "failed" &&
+            (job.errorStatus != null || job.submissionConfirmed === true)
+          ) {
+            throw new Error(t("This generation failed. Review a new quote to make another take."));
+          }
+        }
+        pendingJobs.set(node.nodeId, pending);
+      }
     }
   }
   const costs = detail.run.nodeCosts ? JSON.parse(detail.run.nodeCosts) : undefined;
@@ -669,7 +780,7 @@ export async function dismissWorkflowRun(runId: string): Promise<void> {
     );
     const jobs = await invoke<MediaJobRow[]>("media_job_list").catch(() => [] as MediaJobRow[]);
     for (const node of detail.nodes) {
-      if (node.status !== "running" || !node.output) continue;
+      if (!node.output) continue;
       let pending: string | undefined;
       try {
         const parsed = JSON.parse(node.output) as { pendingJobId?: unknown };
@@ -684,7 +795,7 @@ export async function dismissWorkflowRun(runId: string): Promise<void> {
         registerDownloadedArtifact(
           { path: job.artifactPath, fileName: job.artifactFileName, bytes: job.artifactBytes ?? 0 },
           {
-            kind: job.kind === "music" ? "music" : "video",
+            kind: job.kind === "image" ? "image" : job.kind === "music" ? "music" : "video",
             model: job.model,
             prompt: job.prompt,
             parentId: job.parentArtifactId,
@@ -714,15 +825,26 @@ export async function dismissWorkflowRun(runId: string): Promise<void> {
  * (same shape `runWorkflow` returns; a gate hold shows as "awaiting"). */
 export async function runAndSaveWorkflow(
   workflow: Workflow,
-  options?: RunWorkflowOptions & { onRunRecorded?: (runId: string) => void },
+  options?: RunWorkflowOptions & {
+    onRunRecorded?: (runId: string) => void | Promise<void>;
+    requireDurable?: boolean;
+  },
 ): Promise<Map<string, NodeRunResult>> {
   const runId = crypto.randomUUID();
   try {
     await createRunRow(runId, workflow, options?.nodeCosts);
-  } catch {
+  } catch (error) {
+    if (options?.requireDurable) throw error;
     return runWorkflow(workflow, { storage: workflowStorage(), ...options });
   }
-  options?.onRunRecorded?.(runId);
+  try {
+    await options?.onRunRecorded?.(runId);
+  } catch (error) {
+    // No node has started yet. If the owner cannot record this run, leaving
+    // its native row resumable would expose the paid graph outside that owner.
+    await invoke("workflow_run_dismiss", { id: runId }).catch(() => undefined);
+    throw error;
+  }
   return executeDurable(
     runId,
     workflow,
@@ -730,6 +852,7 @@ export async function runAndSaveWorkflow(
       signal: options?.signal,
       onUpdate: options?.onUpdate,
       nodeCosts: options?.nodeCosts,
+      beforeNode: options?.beforeNode,
       approvedGates: options?.approvedGates,
     },
     new Map(),

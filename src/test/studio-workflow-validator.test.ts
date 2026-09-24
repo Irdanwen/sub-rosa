@@ -140,7 +140,8 @@ describe("validateWorkflow", () => {
     const unconnected = validateWorkflow(
       workflow([node("speech", "tts", { model: "tts-kokoro" })], []),
     );
-    expect(unconnected.ok).toBe(true);
+    expect(unconnected.ok).toBe(false);
+    expect(unconnected.errors[0].message).toContain("Add dialogue");
     expect(
       unconnected.warnings.some(
         (issue) => issue.nodeId === "speech" && issue.message.includes("no upstream input"),

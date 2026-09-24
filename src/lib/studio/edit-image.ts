@@ -1,8 +1,15 @@
-import { isAsyncRetrySignal, MediaError, mediaJson, mediaRaw } from "./client";
+import { t } from "../i18n";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { errorCode } from "../errors";
+import {
+  claimQueuedImageJob,
+  readArtifactBase64,
+  releaseQueuedImageJob,
+  rememberQueuedImage,
+} from "./artifacts";
+import { isAsyncRetrySignal, MediaError, mediaRaw } from "./client";
 import type { MediaProxyResponse } from "./types";
-
-const EDIT_QUEUE_POLL_MS = 3_000;
-const EDIT_QUEUE_MAX_ATTEMPTS = 100;
 
 /** Carpe Diem's multi-edit endpoint composes 1 to 3 source images. */
 export const MAX_COMPOSE_IMAGES = 3;
@@ -27,34 +34,113 @@ function imageFromEditResponse(response: MediaProxyResponse): string | undefined
   return undefined;
 }
 
-/** Queue an edit/compose job and poll it to a rendered image. `base` is the
- * endpoint stem: `/image/edit` for a single-image edit, `/image/multi-edit`
- * for a composition — both share the queue/retrieve/response shape. */
-async function editViaQueue(base: string, body: Record<string, unknown>): Promise<string> {
-  const queued = await mediaJson<Record<string, unknown>>(`${base}/queue`, body);
-  const queueId = queued.queue_id ?? queued.id;
-  if (typeof queueId !== "string" || !queueId) {
-    throw new MediaError("The backend did not return a job id.", { status: 200 });
-  }
-  for (let attempt = 0; attempt < EDIT_QUEUE_MAX_ATTEMPTS; attempt += 1) {
-    const response = await mediaRaw(`${base}/retrieve`, {
-      id: queueId,
-      queue_id: queueId,
-      model: body.model,
-    });
-    const json = response.json as Record<string, unknown> | undefined;
-    const status = typeof json?.status === "string" ? json.status.toLowerCase() : "";
-    if (status === "failed" || status === "error") {
-      const reason = typeof json?.error === "string" ? json.error : "The edit failed.";
-      throw new MediaError(reason, { status: 200 });
-    }
-    const image = imageFromEditResponse(response);
-    if (image) return image;
-    await new Promise((resolve) => setTimeout(resolve, EDIT_QUEUE_POLL_MS));
-  }
-  throw new MediaError("The edit is taking longer than expected. Try again later.", {
-    status: 0,
+interface NativeImageJob {
+  id: string;
+  status: "queued" | "processing" | "completed" | "failed";
+  error?: string;
+  artifactPath?: string;
+  artifactFileName?: string;
+  artifactBytes?: number;
+}
+
+/** Native owns the request and durable polling. Subscribe before queueing so
+ * an immediate completion cannot race the listener. On restart the ordinary
+ * gallery job reconciliation recovers results without queueing a second edit. */
+export async function nativeQueuedImage(
+  base: string,
+  body: Record<string, unknown>,
+  source = "studio",
+): Promise<string> {
+  const jobId = crypto.randomUUID();
+  claimQueuedImageJob(jobId);
+  let handedOff = false;
+  let resolveJob: (job: NativeImageJob) => void = () => {};
+  const done = new Promise<NativeImageJob>((resolve) => {
+    resolveJob = resolve;
   });
+  const observe = (job: NativeImageJob) => {
+    if (job.id === jobId && (job.status === "completed" || job.status === "failed"))
+      resolveJob(job);
+  };
+  const unlisten = await listen<NativeImageJob>("june://media-job", (event) =>
+    observe(event.payload),
+  );
+  const reconcile = () => {
+    void invoke<NativeImageJob[] | null>("media_job_list")
+      .then((jobs) => {
+        const job = jobs?.find((entry) => entry.id === jobId);
+        if (job) observe(job);
+      })
+      .catch(() => undefined);
+  };
+  const onVisible = () => {
+    if (document.visibilityState === "visible") reconcile();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+  try {
+    let submitted: NativeImageJob;
+    try {
+      submitted = await invoke<NativeImageJob>("media_job_queue", {
+        request: {
+          jobId,
+          kind: "image",
+          model: body.model,
+          prompt: body.prompt,
+          extension:
+            base === "/image/generate" &&
+            (body.format === "webp" || body.format === "jpeg" || body.format === "jpg")
+              ? body.format
+              : "png",
+          queuePath: `${base}/queue`,
+          queueBody: body,
+          retrievePath: `${base}/retrieve`,
+          urlFields: ["image_url", "url"],
+          source,
+        },
+      });
+    } catch (error) {
+      // The provider explicitly refused this submission. Rust emitted the
+      // failed row while our claim was active, so no other observer owns it.
+      // Leave uncertain transport failures durable for provider-history review.
+      if (errorCode(error) === "media_job_queue_failed")
+        await invoke("media_job_dismiss", { id: jobId }).catch(() => undefined);
+      throw error;
+    }
+    observe(submitted);
+    reconcile();
+    const job = await done;
+    if (job.status === "failed") {
+      await invoke("media_job_dismiss", { id: job.id }).catch(() => undefined);
+      throw new MediaError(job.error ?? "The edit failed.", { status: 0 });
+    }
+    if (!job.artifactPath)
+      throw new MediaError(t("The edit finished but its file is missing."), { status: 0 });
+    if (!job.artifactFileName)
+      throw new MediaError(t("The edit finished but its file is missing."), { status: 0 });
+    const base64 = await readArtifactBase64({ path: job.artifactPath });
+    rememberQueuedImage(
+      base64,
+      { path: job.artifactPath, fileName: job.artifactFileName, bytes: job.artifactBytes ?? 0 },
+      job.id,
+      source,
+    );
+    handedOff = true;
+    return base64;
+  } catch (error) {
+    if (
+      !(error instanceof Error) &&
+      error &&
+      typeof error === "object" &&
+      "message" in error &&
+      typeof error.message === "string"
+    )
+      throw new Error(t(error.message));
+    throw error;
+  } finally {
+    if (!handedOff) releaseQueuedImageJob(jobId);
+    document.removeEventListener("visibilitychange", onVisible);
+    unlisten();
+  }
 }
 
 /**
@@ -74,7 +160,7 @@ export async function editImage(
     safe_mode: false,
   };
   if (isHeavyEditModel(modelId)) {
-    return editViaQueue("/image/edit", body);
+    return nativeQueuedImage("/image/edit", body);
   }
   try {
     const response = await mediaRaw("/image/edit", body);
@@ -85,7 +171,7 @@ export async function editImage(
     return image;
   } catch (syncError) {
     if (isAsyncRetrySignal(syncError)) {
-      return editViaQueue("/image/edit", body);
+      return nativeQueuedImage("/image/edit", body);
     }
     throw syncError;
   }
@@ -102,14 +188,21 @@ export async function composeImages(
   prompt: string,
   imageDataUris: string[],
 ): Promise<string> {
-  const images = imageDataUris.filter((uri) => uri.trim()).slice(0, MAX_COMPOSE_IMAGES);
+  const images = imageDataUris.filter((uri) => uri.trim());
+  if (images.length > MAX_COMPOSE_IMAGES)
+    throw new MediaError(t("Choose at most three reference images."), { status: 0 });
   if (images.length === 0) {
     throw new MediaError("Add at least one image to compose.", { status: 0 });
   }
   if (images.length === 1) {
     return editImage(modelId, prompt, images[0]);
   }
-  return editViaQueue("/image/multi-edit", { model: modelId, prompt, images, safe_mode: false });
+  return nativeQueuedImage("/image/multi-edit", {
+    model: modelId,
+    prompt,
+    images,
+    safe_mode: false,
+  });
 }
 
 /**
