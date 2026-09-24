@@ -430,10 +430,10 @@ fn parse_reading_checked(raw: &str) -> Result<Reading, AppError> {
         value.get("shots")?.as_array()?;
         serde_json::from_value::<Reading>(value).ok()
     });
-    let bare = if raw
-        .find('[')
-        .is_some_and(|array| raw.find('{').is_none_or(|object| array < object))
-    {
+    let bare = if raw.find('[').is_some_and(|array| match raw.find('{') {
+        Some(object) => array < object,
+        None => true,
+    }) {
         slice_between(raw, '[', ']')
             .and_then(|slice| serde_json::from_str::<Vec<Shot>>(slice).ok())
             .map(|shots| Reading {
