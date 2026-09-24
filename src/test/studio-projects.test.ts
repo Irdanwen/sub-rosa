@@ -75,6 +75,7 @@ describe("project saves", () => {
         title: "Clip",
         projectIds: ["film-1"],
         expectedProjectIds: ["film-1"],
+        expectedTitle: "Clip",
       }),
     ).resolves.toMatchObject({ projectIds: ["film-1"] });
     expect(native.invoke).toHaveBeenCalledExactlyOnceWith("studio_artifact_organize", {
@@ -83,6 +84,7 @@ describe("project saves", () => {
         title: "Clip",
         projectIds: ["film-1"],
         expectedProjectIds: ["film-1"],
+        expectedTitle: "Clip",
       },
     });
   });
@@ -96,6 +98,7 @@ describe("project saves", () => {
         title: "Clip",
         projectIds: ["film-1"],
         expectedProjectIds: ["film-1"],
+        expectedTitle: "Clip",
       }),
     ).rejects.toThrow("studio_project_conflict");
     expect(native.invoke).toHaveBeenCalledTimes(1);

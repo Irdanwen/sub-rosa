@@ -110,6 +110,7 @@ export function sameProjectMembership(left: string[], right: string[]): boolean 
 export function organizeArtifact(
   request: Pick<ArtifactMetadata, "id" | "title" | "projectIds"> & {
     expectedProjectIds: string[];
+    expectedTitle: string;
   },
 ): Promise<ArtifactMetadata> {
   return invoke<ArtifactMetadata>("studio_artifact_organize", { request });

@@ -181,6 +181,7 @@ export function GalleryStrip({
                           title,
                           projectIds: memberships,
                           expectedProjectIds: editing.projectIds ?? [],
+                          expectedTitle: editing.title ?? "",
                         })
                   )
                     .then(async () => {

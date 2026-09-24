@@ -488,6 +488,30 @@ describe("project production confirmation", () => {
     expect(localStorage.getItem(STUDIO_FILM_NOTE_KEY)).toBeNull();
   });
 
+  it("does not create a note-linked project after another project was opened", async () => {
+    localStorage.setItem(STUDIO_FILM_NOTE_KEY, "selected-note");
+    let finishNote: (note: { id: string; title: string; editedContent: string }) => void = () => {};
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "get_note")
+        return new Promise((resolve) => {
+          finishNote = resolve;
+        });
+      return null;
+    });
+
+    render(<ProjectStudio catalog={catalog} />);
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("get_note", expect.anything()));
+    fireEvent.click(screen.getByRole("button", { name: /Concert/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Project name" })).toHaveValue("Concert"),
+    );
+    await act(async () =>
+      finishNote({ id: "selected-note", title: "Stale film", editedContent: "Older script" }),
+    );
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(localStorage.getItem(STUDIO_FILM_NOTE_KEY)).toBeNull();
+  });
+
   it("locks project navigation while media organization is being saved", async () => {
     let finishOrganization: (value: { id: string }) => void = () => {};
     mocks.organize.mockReturnValue(
@@ -667,6 +691,7 @@ describe("project production confirmation", () => {
         title: "",
         projectIds: ["project-1"],
         expectedProjectIds: [],
+        expectedTitle: "",
       }),
     );
     expect(project.document.artifactIds).toContain("rendered.mp4");

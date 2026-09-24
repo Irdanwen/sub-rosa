@@ -70,6 +70,7 @@ pub struct OrganizeArtifactRequest {
     pub title: String,
     pub project_ids: Vec<String>,
     pub expected_project_ids: Vec<String>,
+    pub expected_title: String,
 }
 
 fn storage_error(error: impl std::fmt::Display) -> String {
@@ -427,15 +428,22 @@ async fn organize_artifact(
         .fetch_all(&mut *tx)
         .await
         .map_err(storage_error)?;
-    let stored: Option<String> =
-        query("SELECT project_ids FROM studio_artifact_metadata WHERE id = ?")
-            .bind(&request.id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(storage_error)?
-            .map(|row| row.try_get("project_ids").map_err(storage_error))
-            .transpose()?;
-    let mut actual: HashSet<String> = stored
+    let stored = query("SELECT project_ids, title FROM studio_artifact_metadata WHERE id = ?")
+        .bind(&request.id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(storage_error)?;
+    if let Some(row) = &stored {
+        let title: String = row.try_get("title").map_err(storage_error)?;
+        if title != request.expected_title {
+            return Err(CONFLICT.into());
+        }
+    }
+    let stored_ids: Option<String> = stored
+        .as_ref()
+        .map(|row| row.try_get("project_ids").map_err(storage_error))
+        .transpose()?;
+    let mut actual: HashSet<String> = stored_ids
         .as_deref()
         .map(serde_json::from_str::<Vec<String>>)
         .transpose()
@@ -803,6 +811,7 @@ mod tests {
                 title: "  New title  ".into(),
                 project_ids: vec!["film-two".into(), "film-two".into()],
                 expected_project_ids: vec!["film-one".into()],
+                expected_title: "Old title".into(),
             },
         )
         .await
@@ -869,6 +878,7 @@ mod tests {
                 title: "Recovered take".into(),
                 project_ids: vec![],
                 expected_project_ids: listed[0].project_ids.clone(),
+                expected_title: "Original take".into(),
             },
         )
         .await
@@ -908,6 +918,7 @@ mod tests {
                 title: "First title".into(),
                 project_ids: vec!["film-one".into(), "film-two".into()],
                 expected_project_ids: vec!["film-one".into()],
+                expected_title: "".into(),
             },
         )
         .await
@@ -928,9 +939,25 @@ mod tests {
                 &pool,
                 OrganizeArtifactRequest {
                     id: "clip.mp4".into(),
+                    title: "First title".into(),
+                    project_ids: vec!["film-one".into(), "film-two".into()],
+                    expected_project_ids: vec!["film-one".into(), "film-two".into()],
+                    expected_title: "First title".into(),
+                },
+            )
+            .await
+            .unwrap_err(),
+            CONFLICT
+        );
+        assert_eq!(
+            organize_artifact(
+                &pool,
+                OrganizeArtifactRequest {
+                    id: "clip.mp4".into(),
                     title: "Stale rename".into(),
                     project_ids: vec!["film-one".into()],
                     expected_project_ids: vec!["film-one".into()],
+                    expected_title: "First title".into(),
                 },
             )
             .await
@@ -1048,6 +1075,7 @@ mod tests {
                     title: "New title".into(),
                     project_ids: vec!["film-two".into()],
                     expected_project_ids: vec!["film-one".into()],
+                    expected_title: "Old title".into(),
                 },
             )
             .await

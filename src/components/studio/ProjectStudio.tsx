@@ -379,6 +379,11 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           const linked = newProject(note.title || t("Untitled project"));
           linked.document.noteId = asked;
           linked.document.script = note.editedContent ?? note.generatedContent ?? "";
+          if (request !== openRequest.current) {
+            if (window.localStorage.getItem(STUDIO_FILM_NOTE_KEY) === asked)
+              window.localStorage.removeItem(STUDIO_FILM_NOTE_KEY);
+            return;
+          }
           const stored = await saveProject(linked, null);
           if (cancelled) return;
           setProjects(await listProjects());
@@ -1009,6 +1014,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               title,
               projectIds,
               expectedProjectIds: artifact.projectIds ?? [],
+              expectedTitle: artifact.title ?? "",
             });
           }
           if (projectId && current.current?.id === projectId && epoch.current === version) {
@@ -1615,6 +1621,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                     id: artifact.id,
                     title: metadata?.title ?? "",
                     expectedProjectIds: memberships,
+                    expectedTitle: metadata?.title ?? "",
                     projectIds: [...new Set([...memberships, project.id])],
                   });
                   if (
