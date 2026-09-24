@@ -109,6 +109,7 @@ describe("continue a shot from the gallery", () => {
         title: "Final concert take",
         projectIds: ["film-1"],
         expectedProjectIds: [],
+        expectedTitle: "First name",
       }),
     );
     await waitFor(() => expect(screen.getByText("Final concert take")).toBeVisible());
