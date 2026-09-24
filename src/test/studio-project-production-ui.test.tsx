@@ -53,14 +53,17 @@ vi.mock("../lib/studio/workflow-run", () => ({
 vi.mock("../components/ui/Dialog", () => ({
   Dialog: ({
     title,
+    description,
     children,
     footer,
   }: {
     title: string;
+    description?: string;
     children: ReactNode;
     footer: ReactNode;
   }) => (
     <section role="dialog" aria-label={title}>
+      {description ? <p>{description}</p> : null}
       {children}
       {footer}
     </section>
@@ -383,6 +386,55 @@ const mount = async () => {
 };
 
 describe("project production confirmation", () => {
+  it("deletes a project only after confirmation and keeps its media", async () => {
+    localStorage.removeItem("os-june:studio-project");
+    project.revision = 1;
+    mocks.listProjects.mockResolvedValueOnce([project]).mockResolvedValueOnce([]);
+    render(<ProjectStudio catalog={catalog} />);
+    await screen.findByText("Concert");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(mocks.invoke).not.toHaveBeenCalledWith("studio_project_delete", expect.anything());
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(mocks.invoke).not.toHaveBeenCalledWith("studio_project_delete", expect.anything());
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(screen.getByRole("dialog", { name: "Delete Concert?" })).toHaveTextContent(
+      "Your media will stay in the library.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete project" }));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("studio_project_delete", {
+        request: { id: "project-1", expectedRevision: 1 },
+      }),
+    );
+    expect(mocks.invoke).not.toHaveBeenCalledWith("studio_artifact_delete", expect.anything());
+  });
+
+  it("saves the script reader model per project and passes it to the reading", async () => {
+    project.document.shots = [];
+    project.document.script = "Jean watches a pianist play.";
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "list_venice_models")
+        return { models: [{ id: "reader-a", name: "Reader A" }] };
+      if (command === "provider_model_settings")
+        return { settings: { generationModel: "app-default" } };
+      if (command === "create_note") return { id: "project-reading" };
+      if (command === "build_shot_list") return { noteId: "project-reading", status: "pending" };
+      return null;
+    });
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Script" }));
+    const picker = screen.getByRole("combobox", { name: "Script breakdown model" });
+    await waitFor(() => expect(picker).toHaveTextContent("Reader A"));
+    fireEvent.change(picker, { target: { value: "reader-a" } });
+    await waitFor(() => expect(project.document.settings.readingModelId).toBe("reader-a"));
+    fireEvent.click(screen.getByRole("button", { name: "Break into shots" }));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("build_shot_list", {
+        noteId: "project-reading",
+        modelId: "reader-a",
+      }),
+    );
+  });
   it("keeps the last chosen film when an earlier project read finishes later", async () => {
     localStorage.removeItem("os-june:studio-project");
     const second = newProject("Second film");
@@ -999,26 +1051,21 @@ describe("project production confirmation", () => {
   it.each([
     ["failed", "The reader failed", "The reader failed"],
     ["ready", undefined, "The script could not be read."],
-  ])(
-    "keeps the reading error visible after cleaning up a %s result",
-    async (status, lastError, message) => {
-      project.document.shots = [];
-      project.document.script = "A pianist enters the hall.";
-      mocks.invoke.mockImplementation(async (command) => {
-        if (command === "create_note") return { id: "project-reading" };
-        if (command === "build_shot_list") return { noteId: "project-reading", status, lastError };
-        return null;
-      });
-      await mount();
-      fireEvent.click(screen.getByRole("button", { name: "Script" }));
-      fireEvent.click(screen.getByRole("button", { name: "Break into shots" }));
-      await waitFor(() => expect(project.document.readingNoteId).toBeUndefined());
-      expect(await screen.findByRole("alert")).toHaveTextContent(message);
-      expect(mocks.invoke).toHaveBeenCalledWith("delete_notes", {
-        request: { noteIds: ["project-reading"] },
-      });
-    },
-  );
+  ])("keeps the reading error visible after a %s result", async (status, lastError, message) => {
+    project.document.shots = [];
+    project.document.script = "A pianist enters the hall.";
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "create_note") return { id: "project-reading" };
+      if (command === "build_shot_list") return { noteId: "project-reading", status, lastError };
+      return null;
+    });
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Script" }));
+    fireEvent.click(screen.getByRole("button", { name: "Break into shots" }));
+    await waitFor(() => expect(project.document.readingNoteId).toBe("project-reading"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(mocks.invoke).not.toHaveBeenCalledWith("delete_notes", expect.anything());
+  });
 
   it("keeps a failed note update owned by its project and reuses it on retry", async () => {
     project.document.shots = [];

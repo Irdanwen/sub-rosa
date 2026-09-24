@@ -9,7 +9,7 @@
 
 /// Bumped whenever the prompt or the shape changes, so a stored list says
 /// which reading produced it.
-pub const SHOTLIST_PROMPT_VERSION: &str = "shotlist-v2";
+pub const SHOTLIST_PROMPT_VERSION: &str = "shotlist-v3";
 
 pub const MAP_SYSTEM: &str = "You break a script into the shots a short film is made of.
 
@@ -46,7 +46,9 @@ Rules, all of them binding:
 - One shot is one continuous take of a few seconds. Break a long paragraph into several.
 - dialogue is what is actually spoken, with no character name prefix and no stage direction.
 - Never output a duration, a timestamp, a model name, a resolution or an aspect ratio. They are not yours to choose.
-- If a part of the script is not filmable (a title, a note to the reader), skip it rather than inventing a shot.";
+- If a part of the script is not filmable (a title, a note to the reader), skip it rather than inventing a shot.
+- The script may be in French or another language. Keep names and dialogue in the script's language. A payment exchange, a musician entering, and a character reacting are filmable actions.
+- If no action can be filmed, return {\"cast\":[],\"shots\":[]}.";
 
 pub fn map_user_message(part_index: usize, part_count: usize, text: &str) -> String {
     if part_count <= 1 {

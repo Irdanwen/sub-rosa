@@ -435,7 +435,9 @@ pub struct ShotListDto {
     pub script_chars: i64,
     pub model: String,
     pub prompt_version: String,
+    pub script_hash: Option<String>,
     pub last_error: Option<String>,
+    pub last_error_code: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

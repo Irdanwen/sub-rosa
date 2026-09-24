@@ -3531,5 +3531,17 @@
   "Zero data retention": "Zero data retention",
   "Zoom": "Zoom",
   "Zoom in": "Zoom in",
-  "Zoom out": "Zoom out"
+  "Zoom out": "Zoom out",
+  "App text model: {model}": "App text model: {model}",
+  "Choose an available text model.": "Choose an available text model.",
+  "Wait for this project's current work to finish before deleting it.": "Wait for this project's current work to finish before deleting it.",
+  "Retry loading text models": "Retry loading text models",
+  "Script breakdown model": "Script breakdown model",
+  "This model did not return a usable shot list. Choose another text model and try again.": "This model did not return a usable shot list. Choose another text model and try again.",
+  "This model found no shots in your script. Try another text model or revise the script.": "This model found no shots in your script. Try another text model or revise the script.",
+  "This model stopped before finishing the shot list. Choose another text model and try again.": "This model stopped before finishing the shot list. Choose another text model and try again.",
+  "This project and its montage will be removed. Your media will stay in the library.": "This project and its montage will be removed. Your media will stay in the library.",
+  "Unavailable model: {model}": "Unavailable model: {model}",
+  "Your script and completed reading steps are saved. You can try again with another model.": "Your script and completed reading steps are saved. You can try again with another model.",
+  "Your script changed. Start the breakdown again to use the latest version.": "Your script changed. Start the breakdown again to use the latest version."
 }

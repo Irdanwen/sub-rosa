@@ -71,6 +71,7 @@ export interface ProjectDocument {
     musicModelId: string;
     budget: number;
     withScore: boolean;
+    readingModelId?: string;
   };
   timeline: EditorDocument;
 }
@@ -98,6 +99,8 @@ export interface ArtifactMetadata {
 export const listProjects = () => invoke<ProjectSummary[]>("studio_project_list");
 export const getProject = (id: string) =>
   invoke<StudioProject | null>("studio_project_get", { id });
+export const deleteProject = (id: string, expectedRevision: number) =>
+  invoke<void>("studio_project_delete", { request: { id, expectedRevision } });
 export const listArtifactMetadata = () => invoke<ArtifactMetadata[]>("studio_artifact_list");
 export const saveArtifactMetadata = (
   request: Pick<ArtifactMetadata, "id"> & Partial<Omit<ArtifactMetadata, "id">>,
@@ -226,7 +229,9 @@ export function projectError(error: unknown): string {
       "This project changed in another window. Your edits are kept here. Save a copy or reopen the project.",
     );
   if (message.includes("studio_project_"))
-    return t("Your project could not be saved. Keep this window open and try again.");
+    return message.includes("studio_project_active")
+      ? t("Wait for this project's current work to finish before deleting it.")
+      : t("Your project could not be saved. Keep this window open and try again.");
   return message;
 }
 

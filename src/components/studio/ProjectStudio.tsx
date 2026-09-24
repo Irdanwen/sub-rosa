@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { errorCode } from "../../lib/errors";
 import { intlLocale, t } from "../../lib/i18n";
 import {
@@ -7,10 +7,13 @@ import {
   createNote,
   deleteNotes,
   getNote,
+  listVeniceModels,
+  providerModelSettings,
   shotList,
   SHOT_LIST_EVENT,
   updateNote,
   type ShotListDto,
+  type VeniceModelDto,
 } from "../../lib/tauri";
 import { listArtifacts } from "../../lib/studio/artifacts";
 import {
@@ -37,6 +40,7 @@ import {
 } from "../../lib/studio/project-production";
 import {
   getProject,
+  deleteProject,
   importLegacyFilms,
   listProjects,
   listArtifactMetadata,
@@ -119,6 +123,11 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const [archived, setArchived] = useState(false);
   const [search, setSearch] = useState("");
   const [notePicker, setNotePicker] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ProjectSummary>();
+  const [deleting, setDeleting] = useState(false);
+  const [readingModels, setReadingModels] = useState<VeniceModelDto[]>([]);
+  const [defaultReadingModel, setDefaultReadingModel] = useState("");
+  const [readingModelsError, setReadingModelsError] = useState(false);
   const [mediaSaving, setMediaSaving] = useState(false);
   const [openSession, setOpenSession] = useState(0);
   const [reopenConfirm, setReopenConfirm] = useState(false);
@@ -136,6 +145,22 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setErrorState(message);
   };
   const report = (cause: unknown) => setError(projectError(cause));
+  const loadReadingModels = useCallback(async () => {
+    try {
+      const [models, settings] = await Promise.all([
+        listVeniceModels("generation"),
+        providerModelSettings(),
+      ]);
+      setReadingModels(models.models);
+      setDefaultReadingModel(settings.settings.generationModel);
+      setReadingModelsError(false);
+    } catch {
+      setReadingModelsError(true);
+    }
+  }, []);
+  useEffect(() => {
+    void loadReadingModels();
+  }, [loadReadingModels]);
   const refreshArtifacts = async () => {
     const items = await listArtifacts();
     setArtifacts(items);
@@ -416,14 +441,27 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     finishingReadings.current.add(row.noteId);
     try {
       if (row.status === "failed") {
-        const failure = row.lastError || t("The script could not be read.");
-        await finishReadingNote(row.noteId, active.id);
+        const failure =
+          row.lastErrorCode === "shotlist_invalid_response"
+            ? t(
+                "This model did not return a usable shot list. Choose another text model and try again.",
+              )
+            : row.lastErrorCode === "shotlist_no_shots"
+              ? t(
+                  "This model found no shots in your script. Try another text model or revise the script.",
+                )
+              : row.lastErrorCode === "shotlist_truncated"
+                ? t(
+                    "This model stopped before finishing the shot list. Choose another text model and try again.",
+                  )
+                : row.lastErrorCode === "shotlist_source_changed"
+                  ? t("Your script changed. Start the breakdown again to use the latest version.")
+                  : t(row.lastError || "The script could not be read.");
         if (current.current?.id === active.id) setError(failure);
         return;
       }
       if (row.status !== "ready") return;
       if (!row.shotsJson) {
-        await finishReadingNote(row.noteId, active.id);
         if (current.current?.id === active.id) setError(t("The script could not be read."));
         return;
       }
@@ -975,7 +1013,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         title: active.name,
         editedContent: active.document.script,
       });
-      await acceptReading(await buildShotList(noteId));
+      await acceptReading(await buildShotList(noteId, active.document.settings.readingModelId));
     } catch (cause) {
       report(cause);
     } finally {
@@ -1208,6 +1246,13 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                       >
                         {item.archived ? t("Restore") : t("Archive")}
                       </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => setDeleteTarget(item)}
+                      >
+                        {t("Delete")}
+                      </button>
                     </div>
                   </article>
                 ))}
@@ -1353,6 +1398,13 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                     {reading ? t("Reading your script...") : t("Break into shots")}
                   </button>
                 </div>
+                {project.document.readingNoteId && !reading ? (
+                  <p className="project-muted">
+                    {t(
+                      "Your script and completed reading steps are saved. You can try again with another model.",
+                    )}
+                  </p>
+                ) : null}
                 {project.document.shots.length ? (
                   <p className="project-muted">
                     {t(
@@ -1363,6 +1415,48 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               </section>
               <aside className="project-panel">
                 <h2>{t("Project settings")}</h2>
+                <label className="project-field">
+                  {t("Script breakdown model")}
+                  <select
+                    aria-label={t("Script breakdown model")}
+                    value={project.document.settings.readingModelId ?? ""}
+                    disabled={reading || busy}
+                    onChange={(event) =>
+                      editDocument((document) => ({
+                        ...document,
+                        settings: { ...document.settings, readingModelId: event.target.value },
+                      }))
+                    }
+                  >
+                    <option value="">
+                      {t("App text model: {model}", { model: defaultReadingModel || t("Default") })}
+                    </option>
+                    {project.document.settings.readingModelId &&
+                    !readingModels.some(
+                      (model) => model.id === project.document.settings.readingModelId,
+                    ) ? (
+                      <option value={project.document.settings.readingModelId}>
+                        {t("Unavailable model: {model}", {
+                          model: project.document.settings.readingModelId,
+                        })}
+                      </option>
+                    ) : null}
+                    {readingModels.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {readingModelsError ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => void loadReadingModels()}
+                  >
+                    {t("Retry loading text models")}
+                  </button>
+                ) : null}
                 <label className="project-field">
                   {t("Aspect ratio")}
                   <select
@@ -1672,6 +1766,51 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               });
           }}
         />
+      ) : null}
+      {deleteTarget ? (
+        <Dialog
+          open
+          onClose={() => !deleting && setDeleteTarget(undefined)}
+          title={t("Delete {name}?", { name: deleteTarget.name })}
+          description={t(
+            "This project and its montage will be removed. Your media will stay in the library.",
+          )}
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={deleting}
+                onClick={() => setDeleteTarget(undefined)}
+              >
+                {t("Cancel")}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={deleting}
+                onClick={() => {
+                  setDeleting(true);
+                  void deleteProject(deleteTarget.id, deleteTarget.revision)
+                    .then(async () => {
+                      if (window.localStorage.getItem(LAST_PROJECT) === deleteTarget.id)
+                        window.localStorage.removeItem(LAST_PROJECT);
+                      setProjects(await listProjects());
+                      await refreshArtifacts();
+                      setDeleteTarget(undefined);
+                      setError("");
+                    })
+                    .catch(report)
+                    .finally(() => setDeleting(false));
+                }}
+              >
+                {t("Delete project")}
+              </button>
+            </>
+          }
+        >
+          {null}
+        </Dialog>
       ) : null}
       {quote ? (
         <Dialog
