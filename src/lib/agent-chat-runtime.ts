@@ -1310,8 +1310,8 @@ export const HERMES_LIVE_EVENT_LIMIT = 200;
 
 /**
  * Append a live gateway event to the bounded per-session tail, compacting a run
- * of `message.delta` frames for the same message into a single accumulated
- * event first.
+ * of streamed deltas for the same message into a single accumulated event
+ * first.
  *
  * A long streamed assistant reply emits hundreds of `message.delta` frames.
  * Storing each one and then keeping only the last `HERMES_LIVE_EVENT_LIMIT`
@@ -1321,33 +1321,58 @@ export const HERMES_LIVE_EVENT_LIMIT = 200;
  * the whole streamed message as one event that can never evict itself. Frames of
  * a different kind (a tool step, thinking) break the run, matching the renderer,
  * which only concatenates consecutive deltas onto the current assistant turn.
+ * Reasoning deltas are folded the same way, for the same reason.
+ *
+ * The runtime this app ships (Hermes 0.19, `_stream` in `tui_gateway/server.py`)
+ * sends `{ text }` plus an optional `rendered` preview and NO message id, so
+ * two deltas merge when they carry the same id or when neither carries one. A
+ * frame that names its message never merges with one that does not. The merged
+ * frame keeps the key the renderer reads first and drops `rendered`: nothing
+ * reads it, and on a merged frame it would describe only the last chunk.
  */
 export function appendLiveHermesEvent(
   events: LiveHermesEvent[],
   event: LiveHermesEvent,
 ): LiveHermesEvent[] {
   const previous = events.at(-1);
-  const messageId = liveEventMessageId(event);
   if (
     previous &&
-    previous.type === "message.delta" &&
-    event.type === "message.delta" &&
+    isCompactableDelta(event) &&
+    previous.type === event.type &&
     previous.session_id === event.session_id &&
-    messageId !== undefined &&
-    liveEventMessageId(previous) === messageId
+    liveEventMessageId(previous) === liveEventMessageId(event)
   ) {
+    const {
+      text: _text,
+      delta: _delta,
+      message: _message,
+      content: _content,
+      rendered: _rendered,
+      ...rest
+    } = (event.payload ?? {}) as Record<string, unknown>;
+    const key = hasStringText(previous) ? "text" : "delta";
     const merged: LiveHermesEvent = {
       ...event,
-      payload: {
-        ...(event.payload as Record<string, unknown>),
-        delta: deltaEventText(previous) + deltaEventText(event),
-      },
+      payload: { ...rest, [key]: deltaEventText(previous) + deltaEventText(event) },
       // Keep the opening frame's timestamp so the turn's start time is stable.
       receivedAt: previous.receivedAt,
     };
     return [...events.slice(0, -1), merged];
   }
   return [...events, event].slice(-HERMES_LIVE_EVENT_LIMIT);
+}
+
+function isCompactableDelta(event: HermesGatewayEvent) {
+  return (
+    event.type === "message.delta" ||
+    event.type === "thinking.delta" ||
+    event.type === "reasoning.delta"
+  );
+}
+
+function hasStringText(event: HermesGatewayEvent) {
+  const payload = event.payload as Record<string, unknown> | undefined;
+  return typeof payload?.text === "string";
 }
 
 function messageTimestamp(message: HermesSessionMessage) {
