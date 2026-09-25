@@ -60,11 +60,13 @@ impl IntoResponse for ApiError {
 }
 type Result<T> = std::result::Result<T, ApiError>;
 mod pairing;
+mod passkeys;
 
 pub fn router(service: Service) -> Router {
     let state = Arc::new(service);
     let api = Router::new()
         .merge(pairing::routes())
+        .merge(passkeys::routes())
         .route("/api/v1/me", get(me).delete(delete_me))
         .route("/api/v1/session/refresh", post(refresh_session))
         .route("/api/v1/session/renew", post(renew_session))
@@ -153,7 +155,11 @@ async fn guard(State(s): State<Arc<Service>>, request: Request, next: Next) -> R
     let path = request.uri().path().to_owned();
     if path != "/livez" && path != "/readyz" {
         let peer = client_address(&s, &request);
-        let limit = if path.starts_with("/auth/") || path == "/api/v1/device-login" {
+        let limit = if path.starts_with("/auth/")
+            || path == "/api/v1/device-login"
+            || path == "/api/v1/passkeys"
+            || path.starts_with("/api/v1/passkeys/")
+        {
             30
         } else {
             600

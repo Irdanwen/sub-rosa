@@ -2,6 +2,9 @@
 # These .invalid hosts intentionally cannot be used as a deployed environment.
 bind = "0.0.0.0:8088"
 public_url = "https://account.example.invalid"
+# The direct Android release signing certificate. Add the Play App Signing
+# certificate too when distributing via Play, and publish both in assetlinks.json.
+passkey_android_cert_fingerprints = ["13:B7:E7:F8:0D:99:67:A0:02:53:C9:23:0F:89:54:B4:39:12:B2:BE:81:7D:9B:B9:F5:F7:B5:18:AD:D6:DC:49"]
 development = false
 # Supply the authenticated URL through SUBROSA_CLOUD_DATABASE_URL from the secret manager.
 database_url = "postgres://subrosa@database.example.invalid/subrosa?sslmode=verify-full"

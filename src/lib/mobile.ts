@@ -11,6 +11,14 @@ export function isIosPlatform(): boolean {
   }
 }
 
+export function supportsNativePasskeys(): boolean {
+  try {
+    return ["android", "ios", "macos"].includes(platform());
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Whether the app is running inside the mobile (iOS/Android) shell.
  *

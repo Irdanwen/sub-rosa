@@ -19,12 +19,14 @@ export function accountSyncError(code: string): string {
         "Some content exceeds the sync size limit and remains on this device. Reduce its size to sync it.",
       );
     case "account_network":
+    case "account_offline":
     case "sync_timeout":
     case "sync_blob_request_failed":
       return t(
         "The sync service is unavailable or did not respond in time. Your changes will retry automatically.",
       );
     case "account_not_connected":
+    case "account_revoked":
     case "sync_authentication_failed":
       return t("Sign in again to resume synchronization.");
     case "vault_locked":
@@ -34,7 +36,9 @@ export function accountSyncError(code: string): string {
         "A file could not be read on this device. Check that it is available, then try again.",
       );
     case "sync_file_changed":
-      return t("A file changed while it was being sent. It will be sent again on its own.");
+      return t(
+        "A file changed while it was being sent. Wait for it to finish changing, then retry.",
+      );
     case "sync_file_type_unsupported":
       return t("This kind of file is not synchronized. It stays on this device.");
     case "sync_local_work_active":
@@ -49,6 +53,10 @@ export function accountSyncError(code: string): string {
     case "sync_format_invalid":
       return t(
         "Some content did not match what this version understands, and was left alone. Update your apps, then try again.",
+      );
+    case "sync_local_object_invalid":
+      return t(
+        "An item on this device could not be prepared for sync. Other items will continue to sync.",
       );
     default:
       return t("Synchronization could not finish. Your local copies are preserved. Try again.");

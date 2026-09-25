@@ -26,6 +26,208 @@ fn account(row: &sqlx::postgres::PgRow) -> Account {
     }
 }
 impl Repository {
+    pub async fn passkey_summaries(
+        &self,
+        owner: Uuid,
+    ) -> Result<Vec<(Vec<u8>, DateTime<Utc>, Option<DateTime<Utc>>)>> {
+        let rows = sqlx::query("SELECT credential_id,created_at,last_used_at FROM passkeys WHERE account_id=$1 ORDER BY created_at DESC")
+            .bind(owner)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get("credential_id"),
+                    row.get("created_at"),
+                    row.get("last_used_at"),
+                )
+            })
+            .collect())
+    }
+    pub async fn passkeys_for_account(&self, owner: Uuid) -> Result<Vec<serde_json::Value>> {
+        sqlx::query_scalar(
+            "SELECT credential FROM passkeys WHERE account_id=$1 ORDER BY created_at",
+        )
+        .bind(owner)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)
+    }
+    pub async fn passkey_by_id(
+        &self,
+        owner: Uuid,
+        credential_id: &[u8],
+    ) -> Result<serde_json::Value> {
+        sqlx::query_scalar(
+            "SELECT credential FROM passkeys WHERE account_id=$1 AND credential_id=$2",
+        )
+        .bind(owner)
+        .bind(credential_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?
+        .ok_or(Error::Unauthorized)
+    }
+    pub async fn save_passkey(
+        &self,
+        owner: Uuid,
+        credential_id: &[u8],
+        credential: &serde_json::Value,
+    ) -> Result<()> {
+        let inserted = sqlx::query("INSERT INTO passkeys(credential_id,account_id,credential) VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
+            .bind(credential_id)
+            .bind(owner)
+            .bind(credential)
+            .execute(&self.pool)
+            .await
+            .map_err(db)?
+            .rows_affected();
+        if inserted == 1 {
+            Ok(())
+        } else {
+            Err(Error::Conflict)
+        }
+    }
+    pub async fn delete_passkey(&self, owner: Uuid, credential_id: &[u8]) -> Result<()> {
+        let removed = sqlx::query("DELETE FROM passkeys WHERE account_id=$1 AND credential_id=$2")
+            .bind(owner)
+            .bind(credential_id)
+            .execute(&self.pool)
+            .await
+            .map_err(db)?
+            .rows_affected();
+        if removed == 1 {
+            Ok(())
+        } else {
+            Err(Error::NotFound)
+        }
+    }
+    pub async fn update_passkey(
+        &self,
+        owner: Uuid,
+        credential_id: &[u8],
+        old: &serde_json::Value,
+        new: &serde_json::Value,
+    ) -> Result<()> {
+        // A concurrent assertion must not overwrite a newer signature counter.
+        let updated = sqlx::query("UPDATE passkeys SET credential=$1,last_used_at=now() WHERE account_id=$2 AND credential_id=$3 AND credential=$4")
+            .bind(new)
+            .bind(owner)
+            .bind(credential_id)
+            .bind(old)
+            .execute(&self.pool)
+            .await
+            .map_err(db)?
+            .rows_affected();
+        if updated == 1 {
+            Ok(())
+        } else {
+            Err(Error::Unauthorized)
+        }
+    }
+    pub async fn save_passkey_attempt(
+        &self,
+        id: Uuid,
+        kind: &str,
+        state: &serde_json::Value,
+        owner: Option<Uuid>,
+        browser_token_hash: Option<&[u8]>,
+        device_request_id: Option<Uuid>,
+    ) -> Result<()> {
+        sqlx::query("DELETE FROM passkey_attempts WHERE expires_at<=now()")
+            .execute(&self.pool)
+            .await
+            .map_err(db)?;
+        sqlx::query("INSERT INTO passkey_attempts(id,kind,state,account_id,browser_token_hash,device_request_id) VALUES($1,$2,$3,$4,$5,$6)")
+            .bind(id)
+            .bind(kind)
+            .bind(state)
+            .bind(owner)
+            .bind(browser_token_hash)
+            .bind(device_request_id)
+            .execute(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(())
+    }
+    pub async fn consume_passkey_attempt(
+        &self,
+        id: Uuid,
+        kind: &str,
+    ) -> Result<(
+        serde_json::Value,
+        Option<Uuid>,
+        Option<Vec<u8>>,
+        Option<Uuid>,
+    )> {
+        let row = sqlx::query("DELETE FROM passkey_attempts WHERE id=$1 AND kind=$2 AND expires_at>now() RETURNING state,account_id,browser_token_hash,device_request_id")
+            .bind(id)
+            .bind(kind)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db)?
+            .ok_or(Error::Unauthorized)?;
+        Ok((
+            row.get("state"),
+            row.get("account_id"),
+            row.get("browser_token_hash"),
+            row.get("device_request_id"),
+        ))
+    }
+    pub async fn browser_session_for_account(&self, owner: Uuid, token_hash: &[u8]) -> Result<()> {
+        sqlx::query("INSERT INTO sessions(token_hash,account_id,browser,authenticated_at,expires_at) VALUES($1,$2,true,now(),now()+interval '12 hours')")
+            .bind(token_hash)
+            .bind(owner)
+            .execute(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(())
+    }
+    pub async fn native_request_for_passkey(
+        &self,
+        request_id: Uuid,
+        challenge: &[u8],
+    ) -> Result<()> {
+        let stored: Vec<u8> = sqlx::query_scalar("SELECT challenge FROM device_requests WHERE id=$1 AND start_hash IS NOT NULL AND account_id IS NULL AND NOT consumed AND expires_at>now()")
+            .bind(request_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db)?
+            .ok_or(Error::Unauthorized)?;
+        if bool::from(stored.as_slice().ct_eq(challenge)) {
+            Ok(())
+        } else {
+            Err(Error::Unauthorized)
+        }
+    }
+    pub async fn approve_native_passkey(
+        &self,
+        owner: Uuid,
+        request_id: Uuid,
+        return_hash: &[u8],
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        let updated = sqlx::query("UPDATE device_requests SET account_id=$1,authenticated_at=now(),return_hash=$2 WHERE id=$3 AND account_id IS NULL AND NOT consumed AND start_hash IS NOT NULL AND expires_at>now()")
+            .bind(owner)
+            .bind(return_hash)
+            .bind(request_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?
+            .rows_affected();
+        if updated != 1 {
+            return Err(Error::Unauthorized);
+        }
+        sqlx::query("UPDATE device_requests SET rebind_device_id=NULL WHERE id=$1 AND rebind_device_id IS NOT NULL AND rebind_device_id NOT IN (SELECT id FROM devices WHERE account_id=$2 AND revoked_at IS NULL)")
+            .bind(request_id)
+            .bind(owner)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        tx.commit().await.map_err(db)
+    }
     pub async fn connect(url: &str) -> Result<Self> {
         Ok(Self {
             pool: sqlx::postgres::PgPoolOptions::new()

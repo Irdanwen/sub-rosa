@@ -6,7 +6,7 @@ The seven-crate workspace enforces the dependency boundary: domain contracts, ty
 
 ## Run and verify
 
-Rust 1.95.0 and PostgreSQL are required. Production also needs an OIDC provider with verified email, passkeys configured at that provider, and private S3-compatible storage.
+Rust 1.95.0 and PostgreSQL are required. Production also needs an OIDC provider with verified email and private S3-compatible storage. OIDC remains the initial enrolment and recovery route; first-party passkeys are registered on the account website after that sign-in.
 
 ```sh
 cargo fmt --all --check
@@ -16,7 +16,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 The test runner creates and removes an isolated loopback PostgreSQL cluster. Override `SUBROSA_TEST_PORT` if 55439 is busy, or set `SUBROSA_TEST_DATABASE_URL` to a dedicated test PostgreSQL admin URL. Each integration fixture creates an independent database; never point this at a production database. The test suite does not silently skip when PostgreSQL is unavailable. Unit tests have no external I/O.
 
-For browser QA against the real website, first start PostgreSQL on port 55439 and the website on `http://127.0.0.1:1430` with `/api` and `/auth` proxied to port 8088:
+For browser QA against the real website, first start PostgreSQL on port 55439 and the website on `http://localhost:1430` with `/api` and `/auth` proxied to port 8088. WebAuthn requires the domain hostname rather than a numeric loopback address:
 
 ```sh
 cargo run -p subrosa-api --example local_identity
@@ -49,12 +49,12 @@ The native test creates two on-disk SQLite stores and checks encrypted synchroni
 Copy `config.example.toml` to a secret-managed configuration file mounted read-only; replace every `.invalid` hostname and sample value. Variables prefixed `SUBROSA_CLOUD_` override fields, with `__` for nesting, e.g. `SUBROSA_CLOUD_OIDC__CLIENT_ID`. No secret is mutated into the environment or passed to child processes by the service. Secret types redact `Debug` and erase owned buffers on drop. SQL credentials and OIDC client secrets belong to the deployment secret manager, never the website bundle.
 
 1. Provision private PostgreSQL in the chosen region, with TLS verification, PITR and separately protected backups. Create a least-privilege runtime role; use a separate migration credential in the deployment job.
-2. Register a confidential OIDC client with exact callback `PUBLIC_URL/auth/callback`, authorization code, `client_secret_basic`, PKCE S256, signed RS256/ES256 ID tokens and scopes `openid email`. Require verified email. Enable passkeys and recovery in the identity provider. Discovery must return its exact configured issuer. `max_age=0` requests fresh authentication and the provider must return `auth_time`.
+2. Register a confidential OIDC client with exact callback `PUBLIC_URL/auth/callback`, authorization code, `client_secret_basic`, PKCE S256, signed RS256/ES256 ID tokens and scopes `openid email`. Require verified email and recovery in the identity provider. Discovery must return its exact configured issuer. `max_age=0` requests fresh authentication and the provider must return `auth_time`.
 3. Provision a private S3 bucket and a separate protected deletion-ledger bucket. Give the service only object get/put/delete permissions for that bucket, preferably through workload identity. Turn off public ACLs and anonymous reads. Verify conditional create support on a compatible provider before launch. Configure encryption at rest, access logging with restricted retention, and explicit version-lifecycle deletion policy.
 4. Run `subrosa-cloud migrate` once with migration credentials, then `subrosa-cloud serve` with runtime credentials. Production validation requires HTTPS origins and S3 storage. The binary fails closed if OIDC discovery or identity validation fails. It does not provide a fake production login.
-5. Put the API behind the same account origin as the website using `deploy/Caddyfile.example`. Keep the public marketing origin separate when deployed. Native apps can call the account API with bearer sessions. Do not enable wildcard credentialed CORS.
+5. Put the API behind the same account origin as the website using `deploy/Caddyfile.example`. Serve both `/.well-known` association files directly as JSON, without the SPA fallback. Set `public_url=https://subrosa.furetier.com` for the production relying party and keep `passkey_android_cert_fingerprints` aligned with `assetlinks.json`. If Play App Signing uses another certificate, add its SHA-256 to both before offering passkeys in that build. Enable Apple's associated-domain capability for the signed app. Native apps can call the account API with bearer sessions. Do not enable wildcard credentialed CORS.
 6. Apply ingress request limits by actual client IP and request size. The API deliberately ignores untrusted forwarding headers. Its own counters are durable per connection peer, which may be your reverse proxy: configure an authenticated ingress limit appropriate to traffic before horizontal scaling. The API also bounds concurrent buffered requests to 16 and total request time to 30 seconds.
-7. Run a migration, login, pair, revoke, two-device offline conflict, quota and restore rehearsal in staging. Validate live IdP passkeys and live S3 semantics before opening registration. No domain, identity tenant, storage account or deployment is provisioned by this directory.
+7. Run a migration, login, first-party passkey enrolment and sign-in, pair, revoke, two-device offline conflict, quota and restore rehearsal in staging. Check the association files over HTTPS and exercise native passkey pickers on signed iPhone and Android builds. Validate live S3 semantics before opening registration. No domain, identity tenant, storage account or deployment is provisioned by this directory.
 
 Build from this directory with `docker build -t subrosa-cloud .`. The runtime is non-root, contains no toolchain, and does not contain test OIDC fixtures. The database migrations are embedded in the binary. Docker builds require a Docker runtime; the Rust service and real PostgreSQL suite can be validated without one.
 

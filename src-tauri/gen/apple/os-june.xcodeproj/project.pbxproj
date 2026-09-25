@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0C87E8FED8ED89E797C30DCB /* AuthenticationServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5E9ED45186C17460B20E51CC /* AuthenticationServices.framework */; };
 		066500FF616993CCFDE476BB /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 17B0E9718B06C2BD5260AEE7 /* main.mm */; };
 		0684520B1B4C61CF90C01866 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7B3AC24A3C5224C51308B453 /* CoreGraphics.framework */; };
 		1497683D8B32F79EA95481EC /* AppShortcuts.strings in Resources */ = {isa = PBXBuildFile; fileRef = C5E93880D3771FDFEF176DCB /* AppShortcuts.strings */; };
@@ -124,6 +125,7 @@
 		59ABBFE135C8E075DD25648D /* prompts.rs */ = {isa = PBXFileReference; path = prompts.rs; sourceTree = "<group>"; };
 		5D6E4B6DD7327C074D36DD08 /* hermes_image_fit.rs */ = {isa = PBXFileReference; path = hermes_image_fit.rs; sourceTree = "<group>"; };
 		5E526E944FF07CA716D4A475 /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
+		5E9ED45186C17460B20E51CC /* AuthenticationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AuthenticationServices.framework; path = System/Library/Frameworks/AuthenticationServices.framework; sourceTree = SDKROOT; };
 		623943008B4D38B81A82741A /* ios_background.rs */ = {isa = PBXFileReference; path = ios_background.rs; sourceTree = "<group>"; };
 		62D8EAC90835C00D60BFDD2A /* bible.rs */ = {isa = PBXFileReference; path = bible.rs; sourceTree = "<group>"; };
 		65995B35A7751DEC79A79B77 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
@@ -238,6 +240,7 @@
 			files = (
 				FCE47DB9823A42DE4721DE10 /* libapp.a in Frameworks */,
 				F4602FB838D573A90EF45C4C /* BackgroundTasks.framework in Frameworks */,
+				0C87E8FED8ED89E797C30DCB /* AuthenticationServices.framework in Frameworks */,
 				0684520B1B4C61CF90C01866 /* CoreGraphics.framework in Frameworks */,
 				F1A2E3E180D3FE38E0121CCD /* Metal.framework in Frameworks */,
 				AD9E89DDEBE7AC249FBEAB57 /* MetalKit.framework in Frameworks */,
@@ -575,6 +578,7 @@
 			isa = PBXGroup;
 			children = (
 				F9B7826369C81C24B0CFC0FF /* AppIntents.framework */,
+				5E9ED45186C17460B20E51CC /* AuthenticationServices.framework */,
 				B76EEEBB63C88177C2EFC897 /* BackgroundTasks.framework */,
 				7B3AC24A3C5224C51308B453 /* CoreGraphics.framework */,
 				7A4BF3FD0A0A8FDD5B5A3124 /* libapp.a */,

@@ -24,6 +24,14 @@ export type AccountStatus = {
   conflicts: number;
   last_synced_at: string | null;
   last_sync_error?: string | null;
+  sync_issue_count?: number;
+  sync_issues?: Array<{
+    lane: "outbox" | "upload" | "download";
+    item_id: string;
+    code: string;
+    created_at: string;
+    label?: string | null;
+  }>;
 };
 export type AccountLogin = {
   request_id: string;
@@ -86,6 +94,8 @@ export const accountConfigure = (serverUrl: string) =>
   statusCommand("account_configure", { serverUrl });
 export const accountLoginOpen = (deviceName: string) =>
   invoke<AccountNativeLogin>("account_login_open", { deviceName });
+export const accountLoginPasskey = (deviceName: string) =>
+  invoke<void>("account_login_passkey", { deviceName });
 export const accountLoginPending = () => invoke<AccountNativeLogin | null>("account_login_pending");
 export const accountLoginCancel = () => invoke<void>("account_login_cancel");
 /** The fallback flow, kept for when the page cannot hand the app back. */
@@ -104,6 +114,7 @@ export const accountVaultUnlock = (recoveryKey: string) =>
 export const accountSyncSetEnabled = (enabled: boolean) =>
   statusCommand("account_sync_set_enabled", { enabled });
 export const accountSyncNow = () => statusCommand("account_sync_now");
+export const accountSyncRetryIssues = () => statusCommand("account_sync_retry_issues");
 export const accountSyncConflicts = () => invoke<AccountConflict[]>("account_sync_conflicts");
 export const accountSyncRestoreConflict = (conflictId: string) =>
   statusCommand("account_sync_restore_conflict", { conflictId });

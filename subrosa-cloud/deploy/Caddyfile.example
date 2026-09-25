@@ -16,6 +16,12 @@ account.example.invalid {
     handle @service {
         reverse_proxy subrosa-cloud:8088
     }
+    @association path /.well-known/apple-app-site-association /.well-known/assetlinks.json
+    handle @association {
+        root * /srv/website
+        header Content-Type application/json
+        file_server
+    }
     handle {
         root * /srv/website
         try_files {path} /index.html

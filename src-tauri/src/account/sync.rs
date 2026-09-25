@@ -6,6 +6,109 @@ use sqlx_sqlite::SqliteConnection;
 use tauri::Emitter;
 
 pub const CREDENTIAL_ID: &str = "00000000-0000-4000-8000-000000000001";
+#[derive(Serialize)]
+pub struct SyncIssue {
+    pub lane: String,
+    pub item_id: String,
+    pub code: String,
+    pub created_at: String,
+    pub label: Option<String>,
+}
+
+pub(super) async fn issues(pool: &SqlitePool) -> Result<Vec<SyncIssue>, AppError> {
+    reconcile_issues(pool).await?;
+    let rows = query(
+        "SELECT lane,item_id,code,created_at FROM account_sync_issues ORDER BY created_at LIMIT 50",
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut items = Vec::with_capacity(rows.len());
+    for row in rows {
+        let lane: String = row.get("lane");
+        let item_id: String = row.get("item_id");
+        let label = match lane.as_str() {
+            "outbox" => query("SELECT n.title AS label FROM account_sync_outbox o JOIN notes n ON n.id=o.object_id WHERE o.operation_id=?")
+                .bind(&item_id).fetch_optional(pool).await?
+                .map(|row| row.get::<String, _>("label")),
+            "upload" => query("SELECT file_name AS label FROM account_studio_files WHERE id=?")
+                .bind(&item_id).fetch_optional(pool).await?
+                .map(|row| row.get::<String, _>("label")),
+            _ => None,
+        };
+        items.push(SyncIssue {
+            lane,
+            item_id,
+            code: row.get("code"),
+            created_at: row.get("created_at"),
+            label,
+        });
+    }
+    Ok(items)
+}
+
+pub(super) async fn issue_count(pool: &SqlitePool) -> Result<i64, AppError> {
+    reconcile_issues(pool).await?;
+    Ok(query("SELECT count(*) AS n FROM account_sync_issues")
+        .fetch_one(pool)
+        .await?
+        .get("n"))
+}
+
+async fn reconcile_issues(pool: &SqlitePool) -> Result<(), AppError> {
+    query("DELETE FROM account_sync_issues WHERE (lane='outbox' AND NOT EXISTS(SELECT 1 FROM account_sync_outbox o WHERE o.operation_id=item_id)) OR (lane='upload' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=item_id AND u.completed=0) AND NOT EXISTS(SELECT 1 FROM audio_artifacts a WHERE a.id=item_id AND a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id))) OR (lane='download' AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.id=item_id))")
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub(super) async fn record_issue(
+    pool: &SqlitePool,
+    lane: &str,
+    item_id: &str,
+    code: &str,
+) -> Result<(), AppError> {
+    query("INSERT INTO account_sync_issues(lane,item_id,code,created_at) VALUES(?,?,?,?) ON CONFLICT(lane,item_id) DO UPDATE SET code=excluded.code")
+        .bind(lane)
+        .bind(item_id)
+        .bind(code)
+        .bind(chrono::Utc::now().to_rfc3339())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub(super) async fn retry_issues(pool: &SqlitePool) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+    // These validations happen before HTTP. A newer snapshot of the same
+    // local object supersedes one that never left this device.
+    query("DELETE FROM account_sync_outbox WHERE operation_id IN (SELECT i.item_id FROM account_sync_issues i JOIN account_sync_outbox old ON old.operation_id=i.item_id WHERE i.lane='outbox' AND i.code IN ('sync_object_too_large','sync_local_object_invalid') AND EXISTS(SELECT 1 FROM account_sync_outbox newer WHERE newer.object_id=old.object_id AND newer.sequence>old.sequence))")
+        .execute(&mut *tx)
+        .await?;
+    // A changed file needs a new manifest and fresh immutable chunk ids.
+    query("DELETE FROM account_file_uploads WHERE artifact_id IN (SELECT item_id FROM account_sync_issues WHERE lane='upload' AND code='sync_file_changed')")
+        .execute(&mut *tx)
+        .await?;
+    query("DELETE FROM account_sync_issues")
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub(super) fn isolatable_outbox_error(code: &str) -> bool {
+    matches!(code, "sync_object_too_large" | "sync_local_object_invalid")
+}
+
+pub(super) fn isolatable_file_error(code: &str) -> bool {
+    matches!(
+        code,
+        "sync_file_unavailable"
+            | "sync_file_changed"
+            | "sync_file_too_large"
+            | "sync_file_type_unsupported"
+            | "sync_blob_invalid"
+    )
+}
 struct Table {
     name: &'static str,
     kind: &'static str,
@@ -487,8 +590,17 @@ pub(super) async fn synchronize(
     // Push before pulling: a local edit is either acknowledged, or preserved as
     // a sibling by the server. Incoming changes cannot race this run's lock.
     for _ in 0..100 {
-        if !push_one(pool, s, key, None).await? {
+        let Some(row) = next_outbox(pool, None).await? else {
             break;
+        };
+        let operation: String = row.get("operation_id");
+        match push_one(pool, s, key, None).await {
+            Ok(true) => {}
+            Ok(false) => break,
+            Err(failure) if isolatable_outbox_error(&failure.code) => {
+                record_issue(pool, "outbox", &operation, &failure.code).await?;
+            }
+            Err(failure) => return Err(failure),
         }
     }
     for _ in 0..10 {
@@ -564,25 +676,109 @@ pub(super) async fn synchronize(
         }
     }
     replay_pending(pool, s, key).await?;
+    auto_merge_note_conflicts(pool, s, key).await;
     Ok(())
 }
+
+async fn auto_merge_note_conflicts(pool: &SqlitePool, s: &Session, key: &[u8; 32]) {
+    let rows = match query("SELECT id FROM account_sync_conflicts WHERE kind='note' AND resolved=0 ORDER BY created_at LIMIT 20")
+        .fetch_all(pool)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(failure) => {
+            tracing::warn!(%failure,"note merge scan deferred");
+            return;
+        }
+    };
+    for row in rows {
+        let id: String = row.get("id");
+        if let Err(failure) = resolve_in_store(pool, s, key, &id, "merge").await {
+            if failure.code != "sync_conflict_requires_review"
+                && failure.code != "sync_pending_changes"
+                && failure.code != "sync_dependencies_pending"
+            {
+                tracing::warn!(code=%failure.code,"note merge deferred");
+            }
+        }
+    }
+}
+
+fn merge_note_body(base: &Value, local: &Value, remote: &Value) -> Option<Value> {
+    if [base, local, remote]
+        .iter()
+        .any(|body| body["table"] != "notes")
+    {
+        return None;
+    }
+    let (base_row, local_row, remote_row) = (
+        base["row"].as_object()?,
+        local["row"].as_object()?,
+        remote["row"].as_object()?,
+    );
+    if base_row.len() != local_row.len() || base_row.len() != remote_row.len() {
+        return None;
+    }
+    let mut merged = remote.clone();
+    let result = merged["row"].as_object_mut()?;
+    for (field, ancestor) in base_row {
+        let ours = local_row.get(field)?;
+        let theirs = remote_row.get(field)?;
+        let value = if ours == theirs {
+            ours.clone()
+        } else if ours == ancestor {
+            theirs.clone()
+        } else if theirs == ancestor {
+            ours.clone()
+        } else if field == "updated_at" {
+            json!(chrono::Utc::now().to_rfc3339())
+        } else if field == "edited_content" {
+            json!(diffy::merge(ancestor.as_str()?, ours.as_str()?, theirs.as_str()?).ok()?)
+        } else {
+            return None;
+        };
+        result.insert(field.clone(), value);
+    }
+    if result.len() != base_row.len() {
+        return None;
+    }
+    let (base_summary, local_summary, remote_summary) =
+        (&base["summary"], &local["summary"], &remote["summary"]);
+    merged["summary"] = if local_summary == remote_summary {
+        local_summary.clone()
+    } else if local_summary == base_summary {
+        remote_summary.clone()
+    } else if remote_summary == base_summary {
+        local_summary.clone()
+    } else {
+        return None;
+    };
+    Some(merged)
+}
+async fn next_outbox(
+    pool: &SqlitePool,
+    object_filter: Option<&str>,
+) -> Result<Option<sqlx_sqlite::SqliteRow>, AppError> {
+    Ok(query("SELECT o.* FROM account_sync_outbox o WHERE (?1 IS NULL OR o.object_id=?1) AND NOT EXISTS(SELECT 1 FROM account_sync_outbox earlier WHERE earlier.object_id=o.object_id AND earlier.sequence<o.sequence) AND NOT EXISTS(SELECT 1 FROM account_sync_issues issue WHERE issue.lane='outbox' AND issue.item_id=o.operation_id) ORDER BY o.sequence LIMIT 1")
+        .bind(object_filter)
+        .fetch_optional(pool)
+        .await?)
+}
+
 async fn push_one(
     pool: &SqlitePool,
     s: &Session,
     key: &[u8; 32],
     object_filter: Option<&str>,
 ) -> Result<bool, AppError> {
-    let row = query("SELECT * FROM account_sync_outbox WHERE (?1 IS NULL OR object_id=?1) ORDER BY sequence LIMIT 1")
-        .bind(object_filter)
-        .fetch_optional(pool)
-        .await?;
+    let row = next_outbox(pool, object_filter).await?;
     let Some(row) = row else {
         return Ok(false);
     };
     let sequence: i64 = row.get("sequence");
     let resolved_revisions: Vec<String> =
         serde_json::from_str(&row.get::<String, _>("resolved_revisions"))
-            .map_err(|_| error("sync_format_invalid"))?;
+            .map_err(|_| error("sync_local_object_invalid"))?;
     let operation_id: String = row.get("operation_id");
     let id: String = row.get("object_id");
     let kind: String = row.get("kind");
@@ -598,14 +794,15 @@ async fn push_one(
             .await?
             .map(|r| r.get::<String, _>("revision"));
         let mut body: Value = serde_json::from_str(&row.get::<String, _>("body"))
-            .map_err(|_| error("sync_format_invalid"))?;
+            .map_err(|_| error("sync_local_object_invalid"))?;
         body["v"] = json!(1);
         body["operation_id"] = json!(operation_id);
         body["parent_revision"] = json!(parent);
         body["deleted"] = json!(deleted);
         body["resolved_revisions"] = json!(resolved_revisions);
-        let clear =
-            Zeroizing::new(serde_json::to_vec(&body).map_err(|_| error("sync_format_invalid"))?);
+        let clear = Zeroizing::new(
+            serde_json::to_vec(&body).map_err(|_| error("sync_local_object_invalid"))?,
+        );
         let ciphertext = crypto::seal(key, &aad(s, &kind, &id), &clear)?;
         query("UPDATE account_sync_outbox SET ciphertext=?,parent_revision=? WHERE sequence=?")
             .bind(&ciphertext)
@@ -1020,7 +1217,7 @@ pub async fn resolve_conflict(app: &AppHandle, id: &str, resolution: &str) -> Re
     if resolution == "copy" {
         return restore_conflict(app, id).await;
     }
-    if !matches!(resolution, "keep_local" | "use_remote") {
+    if !matches!(resolution, "keep_local" | "use_remote" | "merge") {
         return Err(error("sync_resolution_invalid"));
     }
     let _guard = SESSION_LOCK.lock().await;
@@ -1072,7 +1269,59 @@ pub(super) async fn resolve_in_store(
     let name = remote["table"]
         .as_str()
         .ok_or_else(|| error("sync_format_invalid"))?;
-    if resolution == "keep_local" {
+    if resolution == "merge" {
+        if name != "notes" || c.deleted {
+            return Err(error("sync_conflict_requires_review"));
+        }
+        let base_revision = c
+            .parent_revision
+            .as_deref()
+            .ok_or_else(|| error("sync_conflict_requires_review"))?;
+        let local_head = parent
+            .as_deref()
+            .ok_or_else(|| error("sync_conflict_requires_review"))?;
+        let head_parent: Option<String> = query(
+            "SELECT parent_revision FROM account_sync_inbox WHERE revision=? AND object_id=?",
+        )
+        .bind(local_head)
+        .bind(&c.object_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .and_then(|row| row.get("parent_revision"));
+        if head_parent.as_deref() != Some(base_revision) {
+            return Err(error("sync_conflict_requires_review"));
+        }
+        let ancestor = query("SELECT ciphertext FROM account_sync_inbox WHERE revision=? AND object_id=? AND kind='note'")
+            .bind(base_revision)
+            .bind(&c.object_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| error("sync_conflict_requires_review"))?;
+        let clear = crypto::open(
+            key,
+            &aad(s, "note", &c.object_id),
+            &ancestor.get::<String, _>("ciphertext"),
+        )?;
+        let base: Value =
+            serde_json::from_slice(&clear).map_err(|_| error("sync_format_invalid"))?;
+        let notes = table("notes")?;
+        let local = query(&format!(
+            "SELECT {} AS body FROM notes WHERE id=?",
+            snapshot_body(notes, "notes.")
+        ))
+        .bind(&c.object_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| error("sync_conflict_requires_review"))?;
+        let local: Value = serde_json::from_str(&local.get::<String, _>("body"))
+            .map_err(|_| error("sync_format_invalid"))?;
+        chosen = merge_note_body(&base, &local, &remote)
+            .ok_or_else(|| error("sync_conflict_requires_review"))?;
+        if !apply(&mut tx, &c, &chosen).await? {
+            return Err(error("sync_dependencies_pending"));
+        }
+        deleted = false;
+    } else if resolution == "keep_local" {
         if name == "carpe_diem_settings" {
             let local=query("SELECT i.* FROM account_sync_inbox i JOIN account_sync_heads h ON h.revision=i.revision WHERE h.object_id=?").bind(&c.object_id).fetch_optional(&mut *tx).await?.ok_or_else(||error("sync_conflict_requires_review"))?;
             let clear = crypto::open(
@@ -1317,442 +1566,5 @@ async fn capture_balance(pool: &SqlitePool) -> Result<(), AppError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use sqlx_sqlite::SqlitePoolOptions;
-
-    async fn database() -> SqlitePool {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .unwrap();
-        crate::db::migrations::run_migrations(&pool).await.unwrap();
-        query("UPDATE account_sync_control SET account_id='account-one' WHERE id=1")
-            .execute(&pool)
-            .await
-            .unwrap();
-        pool
-    }
-    async fn insert_note(conn: &mut SqliteConnection, id: &str, title: &str) {
-        query("INSERT INTO notes(id,title,created_at,updated_at) VALUES(?,?,?,?)")
-            .bind(id)
-            .bind(title)
-            .bind("2026-09-14T12:00:00Z")
-            .bind("2026-09-14T12:00:00Z")
-            .execute(conn)
-            .await
-            .unwrap();
-    }
-    fn session_fixture() -> Session {
-        Session {
-            base: "https://example.test".into(),
-            account: Account {
-                id: "account-one".into(),
-                email: "one@example.test".into(),
-                created_at: "now".into(),
-            },
-            token: Redacted::new("opaque-test-session".into()),
-        }
-    }
-    fn change(s: &Session, key: &[u8; 32], id: &str, parent: Option<String>, row: Value) -> Change {
-        let op = uuid::Uuid::new_v4().to_string();
-        let body = json!({"v":1,"operation_id":op,"parent_revision":parent,"deleted":false,"table":"notes","row":row});
-        Change {
-            sequence: 1,
-            resolved_revisions: Vec::new(),
-            object_id: id.into(),
-            revision: uuid::Uuid::new_v4().to_string(),
-            parent_revision: parent,
-            kind: "note".into(),
-            ciphertext: crypto::seal(
-                key,
-                &aad(s, "note", id),
-                &serde_json::to_vec(&body).unwrap(),
-            )
-            .unwrap(),
-            deleted: false,
-            operation_id: Some(op),
-        }
-    }
-    #[tokio::test]
-    async fn portable_assistant_snapshot_is_journaled_and_applied_without_execution() {
-        let pool = database().await;
-        let definition = crate::assistants::save(
-            &pool,
-            crate::assistants::AssistantDefinition {
-                name: "Writer".into(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let task = uuid::Uuid::new_v4().to_string();
-        query("INSERT INTO agent_tasks(id,title,prompt,status,safety_profile,created_at,updated_at) VALUES(?,'Writer','Hello','running','custom_assistant','now','now')").bind(&task).execute(&pool).await.unwrap();
-        let reference_id = uuid::Uuid::new_v4().to_string();
-        let snapshot = json!({"definition":definition,"references":[{"id":reference_id,"assistant_id":definition.id,"name":"Cover","format":"png","text":"","status":"ready","error":null,"note_id":null,"file_name":format!("{reference_id}.png"),"created_at":"now","updated_at":"now"}]});
-        query("INSERT INTO assistant_conversations(task_id,assistant_id,snapshot_json,created_at) VALUES(?,?,?,'now')").bind(&task).bind(&definition.id).bind(snapshot.to_string()).execute(&pool).await.unwrap();
-        let body: String = query(
-            "SELECT body FROM account_sync_outbox WHERE object_id=? ORDER BY rowid DESC LIMIT 1",
-        )
-        .bind(&task)
-        .fetch_one(&pool)
-        .await
-        .unwrap()
-        .get("body");
-        let body: Value = serde_json::from_str(&body).unwrap();
-        assert_eq!(
-            body["table"], "assistant_conversations",
-            "old clients must reject this unknown codec rather than drop permissions"
-        );
-        assert_eq!(body["assistant_snapshot"], snapshot);
-        let destination = database().await;
-        let c = Change {
-            sequence: 1,
-            resolved_revisions: vec![],
-            object_id: task.clone(),
-            revision: uuid::Uuid::new_v4().to_string(),
-            parent_revision: None,
-            kind: "conversation".into(),
-            ciphertext: String::new(),
-            deleted: false,
-            operation_id: Some(uuid::Uuid::new_v4().to_string()),
-        };
-        let mut tx = destination.begin().await.unwrap();
-        assert!(apply(&mut tx, &c, &body).await.unwrap());
-        tx.commit().await.unwrap();
-        let actual = crate::assistants::runtime::snapshot_for_task(&destination, &task)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(!actual.definition.allow_notes && !actual.definition.allow_memory);
-        assert_eq!(actual.definition.name, "Writer");
-        let row = query("SELECT status,safety_profile FROM agent_tasks WHERE id=?")
-            .bind(task)
-            .fetch_one(&destination)
-            .await
-            .unwrap();
-        assert_eq!(row.get::<String, _>("status"), "completed");
-        assert_eq!(row.get::<String, _>("safety_profile"), "custom_assistant");
-        // A conversation's images still transfer after deleting its original
-        // profile: the snapshot itself owns the authenticated file dependency.
-        let manifest_id = uuid::Uuid::new_v4().to_string();
-        let manifest = Change {
-            object_id: manifest_id.clone(),
-            kind: "artifact".into(),
-            ..c
-        };
-        let body = json!({"table":"account_file_manifests","row":{"id":manifest_id,"artifact_id":reference_id,"bytes":10,"format":"png","chunks_json":"[]","created_at":"now","source_kind":"assistant"}});
-        let mut tx = destination.begin().await.unwrap();
-        assert!(apply(&mut tx, &manifest, &body).await.unwrap());
-        tx.commit().await.unwrap();
-        assert_eq!(
-            query("SELECT count(*) AS n FROM account_sync_outbox")
-                .fetch_one(&destination)
-                .await
-                .unwrap()
-                .get::<i64, _>("n"),
-            0
-        );
-    }
-    #[tokio::test]
-    async fn oversized_object_is_retained_and_reported_before_network() {
-        let pool = database().await;
-        let id = uuid::Uuid::new_v4().to_string();
-        query("INSERT INTO notes(id,title,created_at,updated_at) VALUES(?,?,'now','now')")
-            .bind(&id)
-            .bind("x".repeat(800_000))
-            .execute(&pool)
-            .await
-            .unwrap();
-        let error = push_one(&pool, &session_fixture(), &[3; 32], None)
-            .await
-            .unwrap_err();
-        assert_eq!(error.code, "sync_object_too_large");
-        let row = query("SELECT ciphertext FROM account_sync_outbox WHERE object_id=?")
-            .bind(id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert!(row.get::<String, _>("ciphertext").len() > 1024 * 1024);
-    }
-
-    #[tokio::test]
-    async fn edit_and_outbox_are_atomic_and_disabled_sync_retains_edits() {
-        let pool = database().await;
-        let id = uuid::Uuid::new_v4().to_string();
-        let mut tx = pool.begin().await.unwrap();
-        insert_note(&mut tx, &id, "Local draft").await;
-        tx.rollback().await.unwrap();
-        assert_eq!(
-            query("SELECT count(*) AS n FROM account_sync_outbox")
-                .fetch_one(&pool)
-                .await
-                .unwrap()
-                .get::<i64, _>("n"),
-            0
-        );
-        let mut conn = pool.acquire().await.unwrap();
-        insert_note(&mut conn, &id, "Private draft").await;
-        drop(conn);
-        let r = query("SELECT object_id,body,ciphertext FROM account_sync_outbox")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(r.get::<String, _>("object_id"), id);
-        assert!(r.get::<String, _>("body").contains("Private draft"));
-        assert!(r.get::<Option<String>, _>("ciphertext").is_none());
-        query("UPDATE notes SET title='Changed while offline' WHERE id=?")
-            .bind(&id)
-            .execute(&pool)
-            .await
-            .unwrap();
-        assert_eq!(
-            query("SELECT count(*) AS n FROM account_sync_outbox")
-                .fetch_one(&pool)
-                .await
-                .unwrap()
-                .get::<i64, _>("n"),
-            2
-        );
-    }
-    #[tokio::test]
-    async fn inbound_apply_does_not_echo_and_never_starts_processing() {
-        let pool = database().await;
-        let s = session_fixture();
-        let key = crypto::random_key();
-        let id = uuid::Uuid::new_v4().to_string();
-        let c = change(
-            &s,
-            &key,
-            &id,
-            None,
-            json!({"id":id,"title":"Remote work","processing_status":"transcribing","created_at":"now","updated_at":"now"}),
-        );
-        let body = verify(&s, &key, &c).unwrap();
-        let mut tx = pool.begin().await.unwrap();
-        assert!(apply(&mut tx, &c, &body).await.unwrap());
-        tx.commit().await.unwrap();
-        let r = query("SELECT title,processing_status FROM notes WHERE id=?")
-            .bind(&id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(r.get::<String, _>("title"), "Remote work");
-        assert_eq!(r.get::<String, _>("processing_status"), "ready");
-        assert_eq!(
-            query("SELECT count(*) AS n FROM account_sync_outbox")
-                .fetch_one(&pool)
-                .await
-                .unwrap()
-                .get::<i64, _>("n"),
-            0
-        );
-    }
-    #[test]
-    fn ciphertext_authenticates_account_object_kind_and_operation_metadata() {
-        let s = session_fixture();
-        let key = crypto::random_key();
-        let id = uuid::Uuid::new_v4().to_string();
-        let mut c = change(&s, &key, &id, None, json!({"id":id}));
-        assert!(verify(&s, &key, &c).is_ok());
-        c.parent_revision = Some(uuid::Uuid::new_v4().to_string());
-        assert!(verify(&s, &key, &c).is_err());
-        c.parent_revision = None;
-        c.operation_id = Some(uuid::Uuid::new_v4().to_string());
-        assert!(verify(&s, &key, &c).is_err());
-        c.kind = "memory".into();
-        assert!(verify(&s, &key, &c).is_err());
-    }
-    #[tokio::test]
-    async fn sibling_conflicts_are_preserved_without_replacing_local_content() {
-        let pool = database().await;
-        let s = session_fixture();
-        let key = crypto::random_key();
-        let id = uuid::Uuid::new_v4().to_string();
-        let mut conn = pool.acquire().await.unwrap();
-        insert_note(&mut conn, &id, "Local variant").await;
-        drop(conn);
-        let c = change(
-            &s,
-            &key,
-            &id,
-            None,
-            json!({"id":id,"title":"Remote variant"}),
-        );
-        let mut tx = pool.begin().await.unwrap();
-        preserve(&mut tx, &c).await.unwrap();
-        preserve(&mut tx, &c).await.unwrap();
-        tx.commit().await.unwrap();
-        assert_eq!(
-            query("SELECT count(*) AS n FROM account_sync_conflicts")
-                .fetch_one(&pool)
-                .await
-                .unwrap()
-                .get::<i64, _>("n"),
-            1
-        );
-        assert_eq!(
-            query("SELECT title FROM notes WHERE id=?")
-                .bind(id)
-                .fetch_one(&pool)
-                .await
-                .unwrap()
-                .get::<String, _>("title"),
-            "Local variant"
-        );
-        let stored: String = query("SELECT ciphertext FROM account_sync_conflicts")
-            .fetch_one(&pool)
-            .await
-            .unwrap()
-            .get("ciphertext");
-        assert!(!stored.contains("Remote variant"));
-    }
-    #[tokio::test]
-    async fn rolled_back_inbound_apply_cannot_suppress_future_local_edits() {
-        let pool = database().await;
-        let id = uuid::Uuid::new_v4().to_string();
-        let mut tx = pool.begin().await.unwrap();
-        query("UPDATE account_sync_control SET applying=1 WHERE id=1")
-            .execute(&mut *tx)
-            .await
-            .unwrap();
-        tx.rollback().await.unwrap();
-        let mut conn = pool.acquire().await.unwrap();
-        insert_note(&mut conn, &id, "Survives interruption").await;
-        drop(conn);
-        assert_eq!(
-            query("SELECT count(*) AS n FROM account_sync_outbox")
-                .fetch_one(&pool)
-                .await
-                .unwrap()
-                .get::<i64, _>("n"),
-            1
-        );
-    }
-    #[tokio::test]
-    async fn imported_unfinished_conversation_is_history_not_paid_work() {
-        let pool = database().await;
-        let s = session_fixture();
-        let key = crypto::random_key();
-        let id = uuid::Uuid::new_v4().to_string();
-        let op = uuid::Uuid::new_v4().to_string();
-        let body = json!({"v":1,"operation_id":op,"parent_revision":null,"deleted":false,"table":"agent_tasks","row":{"id":id,"title":"Conversation","prompt":"Continue","status":"running","safety_profile":"balanced","created_at":"now","updated_at":"now"}});
-        let c = Change {
-            sequence: 1,
-            resolved_revisions: Vec::new(),
-            object_id: id.clone(),
-            revision: uuid::Uuid::new_v4().to_string(),
-            parent_revision: None,
-            kind: "conversation".into(),
-            ciphertext: crypto::seal(
-                &key,
-                &aad(&s, "conversation", &id),
-                &serde_json::to_vec(&body).unwrap(),
-            )
-            .unwrap(),
-            deleted: false,
-            operation_id: Some(op),
-        };
-        let mut tx = pool.begin().await.unwrap();
-        assert!(apply(&mut tx, &c, &verify(&s, &key, &c).unwrap())
-            .await
-            .unwrap());
-        tx.commit().await.unwrap();
-        query("INSERT INTO agent_messages(id,task_id,role,content,created_at) VALUES(?,?,'user','Waiting for paid reply','now')").bind(uuid::Uuid::new_v4().to_string()).bind(&id).execute(&pool).await.unwrap();
-        let repos = crate::db::repositories::Repositories::new(pool);
-        assert!(repos.agent_tasks_awaiting_reply().await.unwrap().is_empty());
-    }
-    #[tokio::test]
-    async fn keeping_local_note_preserves_its_own_summary_in_encrypted_merge() {
-        let pool = database().await;
-        let s = session_fixture();
-        let key = crypto::random_key();
-        let id = uuid::Uuid::new_v4().to_string();
-        let mut conn = pool.acquire().await.unwrap();
-        insert_note(&mut conn, &id, "Local title").await;
-        drop(conn);
-        query("INSERT INTO note_summaries(note_id,status,short_summary,model,prompt_version,created_at,updated_at) VALUES(?,'ready','Local summary','model','v1','now','now')").bind(&id).execute(&pool).await.unwrap();
-        query("DELETE FROM account_sync_outbox")
-            .execute(&pool)
-            .await
-            .unwrap();
-        query("INSERT INTO account_sync_heads(object_id,revision,kind) VALUES(?,?,'note')")
-            .bind(&id)
-            .bind(uuid::Uuid::new_v4().to_string())
-            .execute(&pool)
-            .await
-            .unwrap();
-        let mut c = change(
-            &s,
-            &key,
-            &id,
-            None,
-            json!({"id":id,"title":"Remote title","created_at":"now","updated_at":"now"}),
-        );
-        let mut body = verify(&s, &key, &c).unwrap();
-        body["summary"] = json!({"short_summary":"Remote summary"});
-        c.ciphertext = crypto::seal(
-            &key,
-            &aad(&s, "note", &id),
-            &serde_json::to_vec(&body).unwrap(),
-        )
-        .unwrap();
-        let mut tx = pool.begin().await.unwrap();
-        preserve(&mut tx, &c).await.unwrap();
-        tx.commit().await.unwrap();
-        resolve_in_store(&pool, &s, &key, &c.revision, "keep_local")
-            .await
-            .unwrap();
-        let encrypted: String =
-            query("SELECT ciphertext FROM account_sync_outbox WHERE object_id=?")
-                .bind(&id)
-                .fetch_one(&pool)
-                .await
-                .unwrap()
-                .get("ciphertext");
-        let clear = crypto::open(&key, &aad(&s, "note", &id), &encrypted).unwrap();
-        let merged: Value = serde_json::from_slice(&clear).unwrap();
-        assert_eq!(merged["row"]["title"], "Local title");
-        assert_eq!(merged["summary"]["short_summary"], "Local summary");
-        assert_eq!(merged["resolved_revisions"], json!([c.revision]));
-    }
-    #[tokio::test]
-    async fn usage_ignores_account_network_and_counts_only_inference_attempts() {
-        let pool = database().await;
-        query("UPDATE account_sync_control SET device_id='device-one' WHERE id=1")
-            .execute(&pool)
-            .await
-            .unwrap();
-        for (purpose, method) in [
-            ("account sync", "POST"),
-            ("models", "GET"),
-            ("chat", "POST"),
-        ] {
-            query("INSERT INTO egress_ledger(at,host,purpose,method,request_bytes,response_bytes) VALUES('2026-09-14T12:00:00Z','carpe-diem.xyz',?,?,20,30)").bind(purpose).bind(method).execute(&pool).await.unwrap();
-        }
-        let row = query("SELECT request_count,request_bytes FROM account_usage")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(row.get::<i64, _>("request_count"), 1);
-        assert_eq!(row.get::<i64, _>("request_bytes"), 20);
-    }
-    #[tokio::test]
-    async fn encrypted_input_cannot_write_unknown_columns_or_tables() {
-        let pool = database().await;
-        let s = session_fixture();
-        let key = crypto::random_key();
-        let id = uuid::Uuid::new_v4().to_string();
-        let c = change(
-            &s,
-            &key,
-            &id,
-            None,
-            json!({"id":id,"title":"x","created_at":"now","updated_at":"now","malicious_column":"x"}),
-        );
-        let body = verify(&s, &key, &c).unwrap();
-        let mut tx = pool.begin().await.unwrap();
-        assert!(apply(&mut tx, &c, &body).await.is_err());
-    }
-}
+#[path = "sync_tests.rs"]
+mod tests;

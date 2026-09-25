@@ -434,6 +434,12 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
         include_str!("../../migrations/033_shot_list_retries.sql"),
     )
     .await?;
+    replay(
+        _pool,
+        "034_account_sync_issues.sql",
+        include_str!("../../migrations/034_account_sync_issues.sql"),
+    )
+    .await?;
     crate::account::sync::install(_pool).await?;
     crate::diagnostics::mark("migrations");
 

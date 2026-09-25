@@ -49,6 +49,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (
     !accountScope &&
     !(path === "/api/v1/me" && (!init.method || init.method === "GET")) &&
+    path !== "/api/v1/passkeys/authenticate/start" &&
+    path !== "/api/v1/passkeys/authenticate/finish" &&
     path !== "/auth/logout"
   )
     throw new ApiError("account_not_loaded", "Load the account before accessing its data.", 401);

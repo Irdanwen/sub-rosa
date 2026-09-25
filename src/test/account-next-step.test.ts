@@ -6,6 +6,7 @@ const connected = {
   vaultExists: true,
   vaultUnlocked: true,
   recoveryConfirmed: true,
+  syncEnabled: true,
   hasLocalKey: true,
 };
 
@@ -38,6 +39,12 @@ describe("the next account step", () => {
     expect(accountNextStep(connected).id).toBe("done");
   });
 
+  it("asks for explicit sync consent before restoring a provider key", () => {
+    expect(accountNextStep({ ...connected, syncEnabled: false, hasLocalKey: false }).id).toBe(
+      "enable-sync",
+    );
+  });
+
   it("numbers the steps in order and never past the total", () => {
     const order: string[] = [];
     let state = { ...connected, signedIn: false, vaultExists: false as boolean | null };
@@ -53,7 +60,10 @@ describe("the next account step", () => {
         state = { ...state, vaultUnlocked: true, recoveryConfirmed: false };
       },
       () => {
-        state = { ...state, recoveryConfirmed: true, hasLocalKey: false };
+        state = { ...state, recoveryConfirmed: true, syncEnabled: false, hasLocalKey: false };
+      },
+      () => {
+        state = { ...state, syncEnabled: true };
       },
     ]) {
       const step = accountNextStep(state);
@@ -61,8 +71,14 @@ describe("the next account step", () => {
       seen.push(step.index);
       relax();
     }
-    expect(order).toEqual(["sign-in", "create-vault", "open-vault", "confirm-recovery"]);
-    expect(seen).toEqual([1, 2, 2, 3]);
+    expect(order).toEqual([
+      "sign-in",
+      "create-vault",
+      "open-vault",
+      "confirm-recovery",
+      "enable-sync",
+    ]);
+    expect(seen).toEqual([1, 2, 2, 3, 4]);
     expect(seen.every((n) => n <= ACCOUNT_STEP_TOTAL)).toBe(true);
   });
 });

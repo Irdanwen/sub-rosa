@@ -13,6 +13,7 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.os_june"
         android:usesCleartextTraffic="${usesCleartextTraffic}">
+        <meta-data android:name="asset_statements" android:resource="@string/asset_statements" />
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:launchMode="singleTask"

@@ -128,13 +128,13 @@ async fn token(
 async fn main() -> Result<()> {
     let settings: Settings = Figment::from(Serialized::defaults(Settings {
         database_url: "postgres://postgres@127.0.0.1:55439/postgres".into(),
-        public_url: "http://127.0.0.1:1430".into(),
+        public_url: "http://localhost:1430".into(),
     }))
     .merge(Env::prefixed("SUBROSA_TEST_"))
     .extract()?;
     let public = url::Url::parse(&settings.public_url)?;
     anyhow::ensure!(
-        public.scheme() == "http" && public.host_str() == Some("127.0.0.1"),
+        public.scheme() == "http" && matches!(public.host_str(), Some("127.0.0.1" | "localhost")),
         "QA fixture must remain on loopback"
     );
     let issuer = Issuer {
@@ -190,6 +190,7 @@ async fn main() -> Result<()> {
         },
         account_quota_bytes: 1024 * 1024 * 1024,
         trusted_proxies: Vec::new(),
+        passkey_android_cert_fingerprints: Vec::new(),
     };
     config.validate().map_err(anyhow::Error::msg)?;
     let storage = Arc::new(StorageProvider::new(&config)?);

@@ -89,6 +89,17 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("Account settings", () => {
+  it("keeps a renewable device signed in while it reconnects", async () => {
+    state = { ...connected, connection: "renewable", sync_enabled: true };
+    render(<AccountSettingsSection />);
+    expect(
+      await screen.findByText(
+        "This device will reconnect automatically when the account service is available.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sign in or create an account" })).toBeNull();
+  });
+
   it("opens public registration without setup or enabling sync for a new library", async () => {
     state = { ...local, server_url: null };
     handlers.account_login_open = () => ({
@@ -167,6 +178,32 @@ describe("Account settings", () => {
     expect(pause).not.toBeDisabled();
     await userEvent.click(pause);
     expect(mocks.invoke).toHaveBeenCalledWith("account_sync_set_enabled", { enabled: false });
+  });
+
+  it("shows isolated items and lets the person retry them", async () => {
+    state = {
+      ...connected,
+      sync_enabled: true,
+      sync_issue_count: 1,
+      sync_issues: [
+        {
+          lane: "upload",
+          item_id: "artifact-1",
+          code: "sync_file_unavailable",
+          created_at: "2026-09-14T09:00:00Z",
+          label: "Meeting recording.m4a",
+        },
+      ],
+    };
+    handlers.account_sync_retry_issues = () => ({ ...state, sync_issue_count: 0, sync_issues: [] });
+    render(<AccountSettingsSection />);
+    expect(
+      await screen.findByText("Some items could not sync. Your local copies are preserved."),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/A file could not be read/)).toBeInTheDocument();
+    expect(screen.getByText("Meeting recording.m4a")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Retry blocked items" }));
+    expect(mocks.invoke).toHaveBeenCalledWith("account_sync_retry_issues");
   });
 
   it("keeps account setup optional and asks the native process to open the sign-in page", async () => {

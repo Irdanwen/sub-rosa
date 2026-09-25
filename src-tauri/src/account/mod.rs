@@ -67,6 +67,8 @@ pub struct AccountStatus {
     pub conflicts: i64,
     pub last_synced_at: Option<String>,
     pub last_sync_error: Option<String>,
+    pub sync_issue_count: i64,
+    pub sync_issues: Vec<sync::SyncIssue>,
 }
 #[derive(Serialize, Deserialize)]
 pub struct DeviceLogin {
@@ -308,13 +310,19 @@ async fn renew(
     .await;
     let next = match next {
         Ok(next) => next,
-        Err(failure) if failure.code == "account_network" => return Err(error("account_offline")),
-        Err(_) => {
+        Err(failure) if failure.code == "account_not_connected" => {
             // The proof was refused: this device was signed out or revoked from
             // somewhere else. Access goes, the vault key stays where it is.
             let _ = remove_secret(base, &account.id, DEVICE);
             let _ = remove_secret(base, &account.id, "session");
             return Err(error("account_revoked"));
+        }
+        Err(failure) => {
+            // Only an explicit authentication rejection proves revocation.
+            // Rate limits, service errors and malformed responses must retain
+            // this device's way back for a later retry.
+            tracing::warn!(code=%failure.code,"account renewal deferred");
+            return Err(error("account_offline"));
         }
     };
     if next["account"]["id"] != account.id || next["device_id"].as_str() != Some(device) {
@@ -644,6 +652,8 @@ pub async fn account_status(app: AppHandle) -> Result<AccountStatus, AppError> {
             .get("n"),
         last_synced_at: row.get("last_synced_at"),
         last_sync_error: row.get("last_sync_error"),
+        sync_issue_count: sync::issue_count(&pool).await?,
+        sync_issues: sync::issues(&pool).await?,
     })
 }
 #[tauri::command]
@@ -681,12 +691,25 @@ pub async fn account_login_start(
     let base = login_server(&pool).await?;
     let verifier = crypto::encode(&*crypto::random_key());
     let challenge = crypto::encode(&Sha256::digest(verifier.as_bytes()));
+    let row = query("SELECT device_id,account_id FROM account_sync_control WHERE id=1")
+        .fetch_one(&pool)
+        .await?;
+    let mut body = json!({"device_name":device_name,"challenge":challenge});
+    if let (Some(device), Some(account)) = (
+        row.get::<Option<String>, _>("device_id"),
+        row.get::<Option<String>, _>("account_id"),
+    ) {
+        if let Ok(Some(secret)) = get_secret(&base, &account, DEVICE) {
+            body["device_id"] = json!(device);
+            body["device_secret"] = json!(secret.expose_str());
+        }
+    }
     let result = request(
         &base,
         None,
         reqwest::Method::POST,
         "/api/v1/device-login",
-        Some(json!({"device_name":device_name,"challenge":challenge})),
+        Some(body),
     )
     .await?;
     let login: DeviceLogin =
@@ -1070,6 +1093,15 @@ pub async fn account_sync_set_enabled(
 }
 #[tauri::command]
 pub async fn account_sync_now(app: AppHandle) -> Result<AccountStatus, AppError> {
+    sync::run(&app).await?;
+    account_status(app).await
+}
+#[tauri::command]
+pub async fn account_sync_retry_issues(app: AppHandle) -> Result<AccountStatus, AppError> {
+    let guard = SESSION_LOCK.lock().await;
+    let pool = pool(&app).await?;
+    sync::retry_issues(&pool).await?;
+    drop(guard);
     sync::run(&app).await?;
     account_status(app).await
 }

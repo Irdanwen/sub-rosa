@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 1430 --strictPort",
+    "dev": "vite --host localhost --port 1430 --strictPort",
     "build": "tsc --noEmit && vite build && node scripts/prerender.mjs",
     "build:preview": "VITE_PREVIEW_ONLY=1 pnpm build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@simplewebauthn/browser": "13.3.0",
     "@subrosa/design": "workspace:*",
     "qrcode.react": "4.2.0",
     "react": "^18.3.1",

@@ -37,6 +37,12 @@ export function AccountNextStep({
       title: t("Confirm your recovery key"),
       detail: t("Type it back below, so a lost device never costs you your notes."),
     },
+    "enable-sync": {
+      title: t("Choose what to sync"),
+      detail: t(
+        "Review the consent below. Your existing work stays on this device until you enable encrypted sync.",
+      ),
+    },
     "restore-key": {
       title: t("Bring your Carpe Diem key to this device"),
       detail: t("It is restored from your vault; nothing is typed again."),

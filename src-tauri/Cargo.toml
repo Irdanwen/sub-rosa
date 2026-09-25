@@ -1,6 +1,6 @@
 [package]
 name = "os-june"
-version = "1.73.1"
+version = "1.74.0"
 publish = false
 description = "Sub Rosa"
 authors = ["Open Software Network"]
@@ -41,6 +41,7 @@ print_stdout = "warn"
 
 [build-dependencies]
 tauri-build = { version = "2.4.0", features = [] }
+cc = "1"
 
 [dependencies]
 anyhow = "1.0"
@@ -53,6 +54,7 @@ age = { version = "0.12", default-features = false }
 chrono = { version = "0.4", features = ["serde"] }
 cpal = "0.15"
 dotenvy = "0.15"
+diffy = "0.4"
 hound = "3.5"
 # Re-encodes an attached image down to what the request can carry (see
 # `hermes_image_fit`). Decoders for the formats the bridge accepts, plus the

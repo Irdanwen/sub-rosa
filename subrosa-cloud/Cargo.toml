@@ -45,6 +45,7 @@ uuid = { version = "1", features = ["v4", "v7", "serde"] }
 anyhow = "1"
 wiremock = "0.6"
 zeroize = { version = "1", features = ["derive"] }
+webauthn-rs = { version = "0.5.5", features = ["conditional-ui", "danger-allow-state-serialisation"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

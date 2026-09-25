@@ -13,6 +13,8 @@ pub mod android;
 #[cfg(target_os = "android")]
 pub mod android_exports;
 pub mod app_paths;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod apple_passkey;
 pub mod archive;
 pub mod ask;
 pub mod assistants;
@@ -523,6 +525,7 @@ pub fn run() {
             account::account_login_start,
             account::account_login_exchange,
             account::login::account_login_open,
+            account::login::account_login_passkey,
             account::login::account_login_cancel,
             account::login::account_login_pending,
             account::account_devices,
@@ -535,6 +538,7 @@ pub fn run() {
             account::account_vault_confirm_recovery,
             account::account_sync_set_enabled,
             account::account_sync_now,
+            account::account_sync_retry_issues,
             account::account_sync_conflicts,
             account::account_sync_restore_conflict,
             account::account_sync_resolve_conflict,
@@ -781,6 +785,7 @@ pub fn run() {
         account::account_login_start,
         account::account_login_exchange,
         account::login::account_login_open,
+        account::login::account_login_passkey,
         account::login::account_login_cancel,
         account::login::account_login_pending,
         account::account_devices,
@@ -793,6 +798,7 @@ pub fn run() {
         account::account_vault_confirm_recovery,
         account::account_sync_set_enabled,
         account::account_sync_now,
+        account::account_sync_retry_issues,
         account::account_sync_conflicts,
         account::account_sync_restore_conflict,
         account::account_sync_resolve_conflict,

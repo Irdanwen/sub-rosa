@@ -101,11 +101,13 @@ targets:
         # ships - but they must not contradict the plist either, or a reader
         # (and a regeneration) inherits a version from another era. A test
         # pins the two files to each other; keep them equal.
-        CFBundleShortVersionString: 1.73.1
-        CFBundleVersion: "1.73.1"
+        CFBundleShortVersionString: 1.74.0
+        CFBundleVersion: "1.74.0"
     entitlements:
       path: os-june_iOS/os-june_iOS.entitlements
       properties:
+        com.apple.developer.associated-domains:
+          - webcredentials:subrosa.furetier.com
         com.apple.security.application-groups:
           - group.xyz.carpediem.subrosa
     scheme:
@@ -137,6 +139,9 @@ targets:
       # BGTaskScheduler is looked up dynamically from Rust, which only finds
       # the class if the framework is actually linked into the process.
       - sdk: BackgroundTasks.framework
+      # The native passkey bridge uses AuthenticationServices symbols from
+      # Rust's static library, which Xcode must link into the app target.
+      - sdk: AuthenticationServices.framework
       - sdk: CoreGraphics.framework
       - sdk: Metal.framework
       - sdk: MetalKit.framework
@@ -170,8 +175,8 @@ targets:
       path: ShareExtension/Info.plist
       properties:
         CFBundleDisplayName: Sub Rosa
-        CFBundleShortVersionString: 1.73.1
-        CFBundleVersion: "1.73.1"
+        CFBundleShortVersionString: 1.74.0
+        CFBundleVersion: "1.74.0"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController

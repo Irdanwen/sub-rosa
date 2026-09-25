@@ -11,11 +11,13 @@ import {
   type VaultRecord,
 } from "../lib/api";
 import { date, number, t } from "../lib/i18n";
+import { registerPasskey, signInWithPasskey } from "../lib/passkeys";
 import { decryptObject, prepareObject, prepareVault, sendObject, unlockVault } from "../lib/vault";
 import { Library } from "./library";
 import { PairApproval, PairReceiver } from "./pairing";
 
 type Key = Uint8Array<ArrayBuffer>;
+type PasskeySummary = { id: string; created_at: string; last_used_at: string | null };
 const SETTINGS_ID = "00000000-0000-4000-8000-000000000001";
 function useLifetime() {
   const active = useRef(new AbortController());
@@ -26,6 +28,11 @@ function useLifetime() {
   return active;
 }
 function errorMessage(error: unknown) {
+  if (error instanceof DOMException && error.name === "NotAllowedError")
+    return t(
+      "No passkey was selected. Try again or use another sign-in method.",
+      "Aucune passkey n’a été sélectionnée. Réessayez ou choisissez une autre méthode de connexion.",
+    );
   if (error instanceof ApiError && error.status === 401)
     return t(
       "Your session has expired. Sign in again.",
@@ -52,6 +59,7 @@ export function AccountPage({ path }: { path: string }) {
   const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [vaultKey, setVaultKey] = useState<Key | null>(null);
   const keyRef = useRef<Key | null>(null);
   const lock = useCallback(() => {
@@ -162,8 +170,22 @@ export function AccountPage({ path }: { path: string }) {
             </p>
           )}
           <div className="actions">
-            <a
+            <button
               className="button primary"
+              type="button"
+              disabled={passkeyBusy}
+              onClick={() => {
+                setPasskeyBusy(true);
+                void signInWithPasskey()
+                  .then(() => window.location.reload())
+                  .catch((err) => setError(errorMessage(err)))
+                  .finally(() => setPasskeyBusy(false));
+              }}
+            >
+              {t("Sign in with a passkey", "Se connecter avec une passkey")}
+            </button>
+            <a
+              className="button"
               href={`/auth/login?intent=signin&return_to=${encodeURIComponent(path.startsWith("/account/devices/verify") || path.startsWith("/account/top-up") ? path : "/account")}`}
             >
               {t("Sign in", "Se connecter")}
@@ -1213,6 +1235,46 @@ function Security({
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [passkeys, setPasskeys] = useState<PasskeySummary[] | null>(null);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const [passkeyError, setPasskeyError] = useState("");
+  const [passkeyNeedsSignIn, setPasskeyNeedsSignIn] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    api<{ credentials: PasskeySummary[] }>("/api/v1/passkeys", { signal: controller.signal })
+      .then((result) => setPasskeys(result.credentials))
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
+  const addPasskey = async () => {
+    setPasskeyBusy(true);
+    setPasskeyError("");
+    setPasskeyNeedsSignIn(false);
+    try {
+      await registerPasskey();
+      const result = await api<{ credentials: PasskeySummary[] }>("/api/v1/passkeys");
+      setPasskeys(result.credentials);
+    } catch (err) {
+      setPasskeyError(errorMessage(err));
+      setPasskeyNeedsSignIn(err instanceof ApiError && err.code === "recent_auth_required");
+    } finally {
+      setPasskeyBusy(false);
+    }
+  };
+  const removePasskey = async (id: string) => {
+    setPasskeyBusy(true);
+    setPasskeyError("");
+    setPasskeyNeedsSignIn(false);
+    try {
+      await api(`/api/v1/passkeys/${encodeURIComponent(id)}`, { method: "DELETE" });
+      setPasskeys((current) => current?.filter((key) => key.id !== id) ?? null);
+    } catch (err) {
+      setPasskeyError(errorMessage(err));
+      setPasskeyNeedsSignIn(err instanceof ApiError && err.code === "recent_auth_required");
+    } finally {
+      setPasskeyBusy(false);
+    }
+  };
   const remove = async (e: FormEvent) => {
     e.preventDefault();
     if (confirmation !== account.email) return;
@@ -1228,6 +1290,48 @@ function Security({
   };
   return (
     <>
+      <article className="card">
+        <h2>{t("Passkeys", "Passkeys")}</h2>
+        <p>
+          {t(
+            "Add a passkey after signing in. You can then sign in to this account from the site or a supported device. Your recovery key is still needed to unlock encrypted data.",
+            "Ajoutez une passkey après votre connexion. Vous pourrez ensuite accéder à ce compte depuis le site ou un appareil compatible. Votre clé de récupération reste nécessaire pour déverrouiller les données chiffrées.",
+          )}
+        </p>
+        {passkeys?.map((key) => (
+          <div className="row" key={key.id}>
+            <span>
+              {t("Added {date}", "Ajoutée le {date}").replace("{date}", date(key.created_at))}
+            </span>
+            <button
+              className="button"
+              type="button"
+              disabled={passkeyBusy}
+              onClick={() => void removePasskey(key.id)}
+            >
+              {t("Remove passkey", "Supprimer la passkey")}
+            </button>
+          </div>
+        ))}
+        {passkeyError && (
+          <p className="error" role="alert">
+            {passkeyError}
+          </p>
+        )}
+        {passkeyNeedsSignIn && (
+          <a className="button" href="/auth/login?intent=signin&return_to=%2Faccount%2Fsecurity">
+            {t("Sign in again", "Se reconnecter")}
+          </a>
+        )}
+        <button
+          className="button"
+          type="button"
+          disabled={passkeyBusy}
+          onClick={() => void addPasskey()}
+        >
+          {t("Add a passkey", "Ajouter une passkey")}
+        </button>
+      </article>
       <article className="card">
         <h2>{t("Your recovery kit", "Votre kit de récupération")}</h2>
         <p>

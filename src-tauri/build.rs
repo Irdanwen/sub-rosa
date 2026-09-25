@@ -34,6 +34,12 @@ fn main() {
     // resolve if the framework is linked.
     if matches!(target_os.as_deref(), Some("ios") | Some("macos")) {
         println!("cargo:rustc-link-lib=framework=EventKit");
+        println!("cargo:rustc-link-lib=framework=AuthenticationServices");
+        println!("cargo:rerun-if-changed=native/apple-passkey/Passkey.m");
+        cc::Build::new()
+            .file("native/apple-passkey/Passkey.m")
+            .flag("-fobjc-arc")
+            .compile("subrosa_apple_passkey");
     }
     tauri_build::build();
 }

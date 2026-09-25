@@ -17,7 +17,24 @@ JSON field names are snake_case. Successful JSON responses are `{ "data": T }`; 
 | `POST /api/v1/devices/{id}/name` | Renames a device you own. A browser session and CSRF, but no step-up: a label change alters nothing the device may do, and a name you cannot correct is how the list became unreadable. `{ name }`, at most 80 characters, no control characters. |
 | `DELETE /api/v1/devices/{id}` | Requires authentication within five minutes. Revokes the device's sessions/refresh families and pairing requests. Returns `{ revoked: true }`. Past downloaded data and provider credentials cannot be remotely erased. |
 
-The server uses confidential-client OIDC, exact registered callback, `client_secret_basic`, `openid email`, PKCE S256 and `max_age=0`. ID tokens must use RS256 or ES256 with a matching trusted discovery JWKS key. The OIDC client secret exists only at the service. Passkeys are supplied by the production identity provider and do not implicitly decrypt the vault.
+The server uses confidential-client OIDC, exact registered callback, `client_secret_basic`, `openid email`, PKCE S256 and `max_age=0`. ID tokens must use RS256 or ES256 with a matching trusted discovery JWKS key. The OIDC client secret exists only at the service. Existing identity-provider passkeys remain valid for its OIDC sign-in; new Sub Rosa passkeys belong to the account origin and must be enrolled separately. Neither decrypts the vault.
+
+## First-party passkeys
+
+The relying-party ID is the host of `public_url`, `subrosa.furetier.com` in production. The website serves `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json` as JSON without the SPA fallback. The Apple Team ID and bundle ID are `H6N5V777LL.xyz.carpediem.subrosa`; the Android package is `xyz.carpediem.subrosa`. The direct Android release certificate SHA-256 is `13:B7:E7:F8:0D:99:67:A0:02:53:C9:23:0F:89:54:B4:39:12:B2:BE:81:7D:9B:B9:F5:F7:B5:18:AD:D6:DC:49`. An additional Play App Signing certificate needs its own assetlinks entry and allowed native origin.
+
+| Method and route | Contract |
+| --- | --- |
+| `GET /api/v1/passkeys` | Current account's credential IDs and creation/last-use times. |
+| `POST /api/v1/passkeys` | Recent browser session + CSRF. Starts discoverable, user-verified registration and returns `{ attempt_id, options }`. |
+| `POST /api/v1/passkeys/register/finish` | Same account and same browser session, `{ attempt_id, credential }`. Stores the verified public credential under the internal account UUID. |
+| `POST /api/v1/passkeys/authenticate/start` | No session. Returns a one-use discoverable challenge. |
+| `POST /api/v1/passkeys/authenticate/finish` | Exact browser Origin, `{ attempt_id, credential }`. Verifies the assertion and issues the ordinary browser cookies for the credential's account. |
+| `POST /api/v1/passkeys/native/start` | `{ request_id, verifier }` for a pending native PKCE request. Returns `{ attempt_id, options }`; the verifier hash must match that request. |
+| `POST /api/v1/passkeys/native/finish` | `{ attempt_id, credential }`. Verifies the assertion and returns `{ request_id, return_code }` for that same request. The app still calls the ordinary device exchange with its verifier. |
+| `DELETE /api/v1/passkeys/{id}` | Recent browser session + CSRF. Removes only a credential of that account. |
+
+Challenge rows expire after five minutes and are consumed even when verification fails. Registration binds the attempt to the current browser token and account ID. A native assertion cannot directly mint a token or cookie. The service accepts the account HTTPS origin and only configured `android:apk-key-hash` origins matching published signing certificates. A passkey proves identity, not possession of the vault key; the receiving device still pairs or uses the recovery secret. See [ADR-0062](adr/0062-passkeys-belong-to-the-account-origin.md).
 
 Browser sessions last twelve hours. Production session cookie: `__Host-subrosa_session`, `Secure`, `HttpOnly`, `Path=/`, `SameSite=Lax`, no Domain attribute. The readable host-only `subrosa_csrf` cookie is bound to that session token. Every authenticated browser mutation must include the exact configured `Origin` and an `x-csrf-token` header equal to both its cookie and the server's derived value. A token for native bearer authentication cannot authenticate as a browser cookie or vice versa. No durable browser bearer token belongs in localStorage.
 
@@ -70,6 +87,8 @@ A device authorisation does not expire. Refresh families still expire absolutely
 The result is `{ results: [{ operation_id, revision, sequence, conflict }] }`. The server assigns a revision UUID and per-account monotonic sequence. The entire batch is atomic. An identical retry of `(account, operation_id)` returns its original result; changing its authenticated body/ciphertext under that ID returns 409. Freeze the encrypted payload, nonce, parent and operation ID durably before first transmission.
 
 Parents and explicit `resolved_revisions` must belong to this account and object. An operation retires only its parent and explicitly acknowledged revisions. A stale edit creates a sibling head; it never overwrites another head. `conflict` is true if any current head was not acknowledged. A user-approved resolution acknowledges all heads they actually reviewed; an unseen concurrent head survives. An omitted/empty resolution array preserves the original operation-hash serialization for retries from earlier clients.
+
+Native clients may merge note siblings with one authenticated common ancestor when row fields and edited-content lines change independently. They append a new encrypted resolution revision; they never rewrite an accepted revision. Overlapping edits, deletions and missing ancestors stay visible for review. This changes no service request or response shape.
 
 `GET /api/v1/sync?after=0&limit=100&kind=settings` returns:
 

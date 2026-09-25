@@ -17,6 +17,7 @@ import {
   accountLoginStart,
   accountLoginExchange,
   accountLoginOpen,
+  accountLoginPasskey,
   accountLoginPending,
   accountLoginCancel,
   accountLogout,
@@ -31,10 +32,11 @@ import {
   accountVaultRestoreCarpeDiem,
   accountSyncSetEnabled,
   accountSyncNow,
+  accountSyncRetryIssues,
   accountSyncConflicts,
 } from "../../lib/account";
 import { errorCode } from "../../lib/errors";
-import { isMobilePlatform } from "../../lib/mobile";
+import { isMobilePlatform, supportsNativePasskeys } from "../../lib/mobile";
 import { t, intlLocale } from "../../lib/i18n";
 import { carpeDiemGetSettings, openExternalUrl } from "../../lib/tauri";
 import { InlineNotice } from "../ui/InlineNotice";
@@ -233,6 +235,8 @@ export function AccountSettingsSection() {
   function chosenDeviceName() {
     return deviceName.trim() || (isMobilePlatform() ? t("My iPhone") : t("My computer"));
   }
+  const nativePasskey =
+    serverUrl.trim() === "https://subrosa.furetier.com" && supportsNativePasskeys();
 
   /** The ordinary way in: the real page opens, and it hands the app back. */
   async function startLogin() {
@@ -242,6 +246,18 @@ export function AccountSettingsSection() {
     const opened = await openExternalUrl(next.start_url);
     if (!opened && mounted.current) {
       setNotice(t("Your browser did not open. Open this address yourself to continue."));
+    }
+  }
+
+  async function startPasskeyLogin() {
+    await accountConfigure(serverUrl.trim());
+    try {
+      await accountLoginPasskey(chosenDeviceName());
+    } catch (cause) {
+      // The PKCE verifier was stored before the system picker appeared. Its
+      // browser fallback remains usable if the picker was cancelled or failed.
+      if (mounted.current) setNative(await accountLoginPending());
+      throw cause;
     }
   }
 
@@ -315,9 +331,11 @@ export function AccountSettingsSection() {
         <div className="settings-card account-card">
           <h3 className="settings-row-title">{t("Sign in to Sub Rosa")}</h3>
           <p className="settings-row-description">
-            {t(
-              "The page opens in your browser. Enter your address and password there, and it brings you straight back here.",
-            )}
+            {nativePasskey
+              ? t("Use a passkey on this device, or continue in your browser to create an account.")
+              : t(
+                  "The page opens in your browser. Enter your address and password there, and it brings you straight back here.",
+                )}
           </p>
           {native ? (
             <div className="account-form">
@@ -354,9 +372,19 @@ export function AccountSettingsSection() {
                 void run(startLogin);
               }}
             >
+              {nativePasskey && (
+                <button
+                  type="button"
+                  className="primary-action primary-solid"
+                  disabled={busy || !serverUrl.trim()}
+                  onClick={() => void run(startPasskeyLogin)}
+                >
+                  {t("Sign in with a passkey")}
+                </button>
+              )}
               <button
                 type="submit"
-                className="primary-action primary-solid"
+                className={nativePasskey ? "btn btn-secondary" : "primary-action primary-solid"}
                 disabled={busy || !serverUrl.trim()}
               >
                 {busy ? t("Opening…") : t("Sign in or create an account")}
@@ -457,6 +485,7 @@ export function AccountSettingsSection() {
               vaultExists: status.vault_exists,
               vaultUnlocked: status.vault_unlocked,
               recoveryConfirmed: status.recovery_confirmed,
+              syncEnabled: status.sync_enabled,
               hasLocalKey,
             })}
             busy={busy}
@@ -468,6 +497,13 @@ export function AccountSettingsSection() {
               <strong>{status.account.email}</strong>
             </div>
             <p className="settings-row-description">{status.server_url}</p>
+            {status.connection === "renewable" ? (
+              <p role="status" className="settings-row-description">
+                {t(
+                  "This device will reconnect automatically when the account service is available.",
+                )}
+              </p>
+            ) : null}
             <div className="account-actions">
               <button
                 type="button"
@@ -638,7 +674,7 @@ export function AccountSettingsSection() {
           <AccountCard title={t("Sync your work")}>
             <p role="status" className="settings-row-description">
               {status.sync_enabled
-                ? status.last_sync_error
+                ? status.last_sync_error || status.sync_issue_count || status.sync_issues?.length
                   ? t("Some items could not sync. Your local copies are preserved.")
                   : status.pending_changes > 0
                     ? t("{count} changes waiting to sync", { count: status.pending_changes })
@@ -649,6 +685,31 @@ export function AccountSettingsSection() {
             </p>
             {status.sync_enabled && status.last_sync_error ? (
               <InlineNotice body={accountSyncError(status.last_sync_error)} />
+            ) : null}
+            {status.sync_enabled && status.sync_issues?.length ? (
+              <div className="account-form">
+                <p className="settings-row-description">
+                  {t("{count} items need your attention. Other changes continue to sync.", {
+                    count: String(status.sync_issue_count ?? status.sync_issues.length),
+                  })}
+                </p>
+                {status.sync_issues.map((issue) => (
+                  <div key={`${issue.lane}:${issue.item_id}`}>
+                    <strong>
+                      {issue.label || t("Item {id}", { id: issue.item_id.slice(0, 8) })}
+                    </strong>
+                    <InlineNotice body={accountSyncError(issue.code)} />
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={busy}
+                  onClick={() => void run(accountSyncRetryIssues)}
+                >
+                  {t("Retry blocked items")}
+                </button>
+              </div>
             ) : null}
             {!status.sync_enabled ? (
               <label className="account-consent">
@@ -937,6 +998,9 @@ export function accountError(cause: unknown): string {
       return t("This sign-in request expired. Start again to get a new code.");
     case "account_login_unsolicited":
       return t("A sign-in finished that this app did not start. Nothing was connected.");
+    case "account_passkey_unavailable":
+    case "passkey_unavailable":
+      return t("The passkey could not be used. Try again or continue in your browser.");
     case "account_offline":
       return t("Your account service could not be reached. Your work is safe and will sync later.");
     case "account_revoked":
