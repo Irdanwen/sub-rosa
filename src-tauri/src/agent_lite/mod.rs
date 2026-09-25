@@ -556,7 +556,12 @@ async fn run_turn(
         // whichever shape actually came back rather than trusting the request.
         let streamed = !stream_withheld && response.content_type.contains("event-stream");
         let message = if streamed {
-            let reply = collect_stream(app, task_id, response).await?;
+            let mut response = response;
+            let mut reply = StreamedReply::default();
+            collect_stream(&mut response, &mut reply, |text| {
+                emit_delta(app, task_id, text);
+            })
+            .await?;
             if reply.is_empty() {
                 // Nothing usable came out of the stream. Replay this same
                 // iteration buffered before giving up on the turn.
@@ -938,14 +943,10 @@ impl StreamedReply {
         message
     }
 
-    /// Applies one SSE line: the delta of a `data:` frame, if it has one.
-    fn apply_frame(&mut self, line: &str) {
-        if let Some(delta) = crate::sse_lines::data_frame(line).and_then(|mut frame| {
-            frame
-                .pointer_mut("/choices/0/delta")
-                .map(serde_json::Value::take)
-        }) {
-            self.apply(&delta);
+    /// Applies one frame of the stream: its delta, if it has one.
+    fn apply_frame(&mut self, frame: &serde_json::Value) {
+        if let Some(delta) = frame.pointer("/choices/0/delta") {
+            self.apply(delta);
         }
     }
 
@@ -1006,41 +1007,53 @@ impl StreamedReply {
     }
 }
 
-/// Read a server-sent completion stream to the end, emitting the reply text to
-/// the webview as it arrives.
+/// Read a server-sent completion stream to the end into `reply`, handing the
+/// reply text to `on_text` as it arrives.
 ///
-/// Batched one emit per network chunk rather than per token: a chunk already
+/// Batched one call per network chunk rather than per token: a chunk already
 /// groups whatever arrived together, and an event per token would spend more
 /// time crossing the IPC boundary than rendering.
+///
+/// Fails if the body broke, or if it ended holding something before the
+/// completion said it was finished: a fragment of a reply, or a tool call
+/// whose arguments were cut, must never be taken for the whole. An empty
+/// unfinished stream is left to the caller, which replays it buffered.
 async fn collect_stream(
-    app: &AppHandle,
-    task_id: &str,
-    mut response: june_api::AgentChatCompletionsResponse,
-) -> Result<StreamedReply, AppError> {
-    let mut reply = StreamedReply::default();
+    source: &mut impl crate::sse_lines::ChunkSource,
+    reply: &mut StreamedReply,
+    mut on_text: impl FnMut(&str),
+) -> Result<(), AppError> {
     // Frames are newline-delimited and a chunk may end mid-line, or
-    // mid-character: the splitter keeps the tail as bytes until the next
-    // chunk completes it.
-    let mut lines = crate::sse_lines::SseLines::default();
-    while let Some(chunk) = response.chunk().await? {
+    // mid-character: the reader keeps the tail as bytes until the next chunk
+    // completes it.
+    let mut frames = crate::sse_lines::CompletionFrames::default();
+    while let Some(chunk) = source.next_chunk().await? {
         let before = reply.content.len();
-        for line in lines.push(&chunk) {
-            reply.apply_frame(&line);
+        for frame in frames.push(&chunk) {
+            reply.apply_frame(&frame);
         }
         if reply.content.len() > before {
-            let _ = app.emit(
-                AGENT_LITE_DELTA_EVENT,
-                serde_json::json!({
-                    "taskId": task_id,
-                    "text": &reply.content[before..],
-                }),
-            );
+            on_text(&reply.content[before..]);
         }
     }
-    if let Some(line) = lines.finish() {
-        reply.apply_frame(&line);
+    if let Some(frame) = frames.finish() {
+        let before = reply.content.len();
+        reply.apply_frame(&frame);
+        if reply.content.len() > before {
+            on_text(&reply.content[before..]);
+        }
     }
-    Ok(reply)
+    if !frames.is_finished() && !reply.is_empty() {
+        return Err(crate::sse_lines::cut_off_reply());
+    }
+    Ok(())
+}
+
+fn emit_delta(app: &AppHandle, task_id: &str, text: &str) {
+    let _ = app.emit(
+        AGENT_LITE_DELTA_EVENT,
+        serde_json::json!({ "taskId": task_id, "text": text }),
+    );
 }
 
 async fn execute_tool(

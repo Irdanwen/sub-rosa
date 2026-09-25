@@ -215,14 +215,83 @@ fn a_character_cut_between_two_chunks_reaches_the_reply_whole() {
         .position(|pair| pair == "\u{e9}".as_bytes())
         .expect("the accented character")
         + 1;
-    let mut lines = crate::sse_lines::SseLines::default();
+    let mut frames = crate::sse_lines::CompletionFrames::default();
     let mut reply = StreamedReply::default();
     for chunk in [&body[..cut], &body[cut..]] {
-        for line in lines.push(chunk) {
-            reply.apply_frame(&line);
+        for frame in frames.push(chunk) {
+            reply.apply_frame(&frame);
         }
     }
     assert_eq!(reply.content, "Voil\u{e0} caf\u{e9}");
+}
+
+/// A stream that stops mid tool call must not hand the loop a call to run:
+/// its arguments are a fragment, and the loop would run it with `{}` or a
+/// half-written query. The same stream, finished, is a call.
+#[tokio::test]
+async fn a_tool_call_cut_before_the_stream_finished_is_never_run() {
+    let call = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"web_search\",\"arguments\":\"{\\\"query\\\": \\\"lis\"}}]}}]}\n\n";
+    let mut reply = StreamedReply::default();
+    let error = collect_stream(
+        &mut crate::sse_lines::ScriptedChunks::of(&[call]),
+        &mut reply,
+        |_| {},
+    )
+    .await
+    .expect_err("an unfinished stream holding a call is cut off");
+    assert_eq!(error.code, "reply_cut_off");
+
+    let mut reply = StreamedReply::default();
+    collect_stream(
+        &mut crate::sse_lines::ScriptedChunks::of(&[
+            call,
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"bon\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+        ]),
+        &mut reply,
+        |_| {},
+    )
+    .await
+    .expect("a finished stream");
+    let message = reply.into_message();
+    assert_eq!(
+        message["tool_calls"][0]["function"]["arguments"],
+        "{\"query\": \"lisbon\"}"
+    );
+}
+
+/// An empty stream that never finished is not an error here: the turn replays
+/// it buffered, as it does for any route that streamed nothing usable.
+#[tokio::test]
+async fn an_empty_unfinished_stream_is_left_to_the_buffered_replay() {
+    let mut reply = StreamedReply::default();
+    collect_stream(
+        &mut crate::sse_lines::ScriptedChunks::of(&[": keep-alive\n\n"]),
+        &mut reply,
+        |_| {},
+    )
+    .await
+    .expect("nothing to mistake for a reply");
+    assert!(reply.is_empty());
+}
+
+/// A body that broke is an error, whatever it held.
+#[tokio::test]
+async fn a_broken_stream_is_an_error() {
+    let mut reply = StreamedReply::default();
+    let error = collect_stream(
+        &mut crate::sse_lines::ScriptedChunks::broken(&[
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Lis\"}}]}\n\n",
+        ]),
+        &mut reply,
+        |_| {},
+    )
+    .await
+    .expect_err("the body broke");
+    assert_eq!(error.code, "june_request_failed");
+    assert_eq!(
+        reply.content, "Lis",
+        "what arrived is kept for the retraction"
+    );
 }
 
 #[test]
