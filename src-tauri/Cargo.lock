@@ -4288,6 +4288,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "block2",
+ "cc",
  "chrono",
  "cpal",
  "diffy",

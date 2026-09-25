@@ -94,6 +94,8 @@ export const accountConfigure = (serverUrl: string) =>
   statusCommand("account_configure", { serverUrl });
 export const accountLoginOpen = (deviceName: string) =>
   invoke<AccountNativeLogin>("account_login_open", { deviceName });
+export const accountLoginPasskey = (deviceName: string) =>
+  invoke<void>("account_login_passkey", { deviceName });
 export const accountLoginPending = () => invoke<AccountNativeLogin | null>("account_login_pending");
 export const accountLoginCancel = () => invoke<void>("account_login_cancel");
 /** The fallback flow, kept for when the page cannot hand the app back. */

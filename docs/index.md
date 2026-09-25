@@ -70,6 +70,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0059](adr/0059-film-projects-are-local-versioned-documents.md) — local film project documents, atomic save revisions, project-owned bible copies and durable gallery metadata
 - [adr/0060](adr/0060-a-shortcuts-action-speaks-through-the-app-group.md) — iPhone Shortcuts actions (App Intents) hand over through the app group; only a manifest may send a message, an address may only pre-fill one.
 - [adr/0061](adr/0061-the-montage-document-is-independent-of-takes.md) — a separately editable montage, artifact-bound clips, frame-based timing and honest export compatibility
+- [adr/0062](adr/0062-passkeys-belong-to-the-account-origin.md) — first-party passkeys on the account origin authenticate the website or approve a PKCE-bound native request; pairing and recovery still guard the vault
 
 ## Enforceable rules (spec/)
 

@@ -23,6 +23,8 @@ subtle.workspace = true
 tokio.workspace = true
 tower-http.workspace = true
 uuid.workspace = true
+url.workspace = true
+webauthn-rs.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
@@ -37,3 +39,4 @@ subrosa-providers.workspace = true
 tower.workspace = true
 url.workspace = true
 wiremock.workspace = true
+webauthn-authenticator-rs = { version = "0.5.5", features = ["softpasskey"] }

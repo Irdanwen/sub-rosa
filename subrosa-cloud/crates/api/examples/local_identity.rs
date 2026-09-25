@@ -128,7 +128,7 @@ async fn token(
 async fn main() -> Result<()> {
     let settings: Settings = Figment::from(Serialized::defaults(Settings {
         database_url: "postgres://postgres@127.0.0.1:55439/postgres".into(),
-        public_url: "http://127.0.0.1:1430".into(),
+        public_url: "http://localhost:1430".into(),
     }))
     .merge(Env::prefixed("SUBROSA_TEST_"))
     .extract()?;
@@ -190,6 +190,7 @@ async fn main() -> Result<()> {
         },
         account_quota_bytes: 1024 * 1024 * 1024,
         trusted_proxies: Vec::new(),
+        passkey_android_cert_fingerprints: Vec::new(),
     };
     config.validate().map_err(anyhow::Error::msg)?;
     let storage = Arc::new(StorageProvider::new(&config)?);

@@ -53,6 +53,15 @@ signature que celle des APK directs, ces deux canaux ne peuvent pas se mettre
 à jour mutuellement. Choisir la clé Play avant la première distribution sur
 ce canal. Voir la [documentation Android sur la signature](https://developer.android.com/studio/publish/app-signing).
 
+La clé des APK directs publiés (v1.71.0, build 212231020) a pour empreinte
+SHA-256 `13:B7:E7:F8:0D:99:67:A0:02:53:C9:23:0F:89:54:B4:39:12:B2:BE:81:7D:9B:B9:F5:F7:B5:18:AD:D6:DC:49`.
+Elle est déclarée dans `website/public/.well-known/assetlinks.json` pour
+`subrosa.furetier.com`. Le workflow compare chaque nouvel APK signé à cette
+valeur avant sa distribution. Si Play signe les installations avec un autre
+certificat, ajouter aussi l'empreinte du **certificat de signature de l'app**
+affichée dans Play Console avant de proposer les passkeys sur ce canal ;
+l'empreinte de la clé d'envoi AAB ne suffit pas.
+
 ## Construire et récupérer une version
 
 Dans Actions, sélectionner **Android release**, **Run workflow**, puis la

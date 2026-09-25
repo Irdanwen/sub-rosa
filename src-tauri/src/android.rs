@@ -58,6 +58,29 @@ pub fn invoke<T: DeserializeOwned>(command: &str, payload: impl Serialize) -> Re
 }
 
 #[derive(Deserialize)]
+struct PasskeyResponse {
+    credential: String,
+}
+
+/// Credential Manager supplies WebAuthn JSON. The server verifies the origin,
+/// RP id, signature and single-use challenge; Android never authenticates us
+/// merely because a biometric prompt succeeded.
+pub fn passkey_get(options: &serde_json::Value) -> Result<serde_json::Value, AppError> {
+    let response: PasskeyResponse = invoke(
+        "passkeyGet",
+        serde_json::json!({
+            "options": options.to_string(),
+        }),
+    )?;
+    serde_json::from_str(&response.credential).map_err(|_| {
+        AppError::new(
+            "passkey_response_invalid",
+            "The passkey response is invalid.",
+        )
+    })
+}
+
+#[derive(Deserialize)]
 struct PermissionResponse {
     state: String,
 }

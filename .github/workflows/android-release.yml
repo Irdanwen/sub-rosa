@@ -129,6 +129,16 @@ jobs:
           fi
           build_tools="$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS_VERSION"
           "$build_tools/apksigner" verify --verbose --print-certs "${apks[0]}"
+          # The published passkey association must match the APK users install.
+          # A changed signing key must update the domain before this release.
+          signing_fingerprint=$("$build_tools/apksigner" verify --print-certs "${apks[0]}" |
+            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+          expected_fingerprint=$(jq -r '.[0].target.sha256_cert_fingerprints[0] | gsub(":"; "") | ascii_downcase' \
+            website/public/.well-known/assetlinks.json)
+          if [[ -z "$signing_fingerprint" || "${signing_fingerprint,,}" != "$expected_fingerprint" ]]; then
+            echo "The Android signing certificate does not match the published passkey association." >&2
+            exit 1
+          fi
           "$build_tools/zipalign" -c -P 16 4 "${apks[0]}"
           LC_ALL=C jarsigner -verify "${aabs[0]}" > "$RUNNER_TEMP/aab-verification.txt"
           cat "$RUNNER_TEMP/aab-verification.txt"

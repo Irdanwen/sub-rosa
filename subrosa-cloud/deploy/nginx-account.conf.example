@@ -56,6 +56,17 @@ server {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_read_timeout 60s;
 
+    # Association documents must answer at their exact path as JSON. The SPA
+    # fallback would otherwise return index.html with status 200 to OS verifiers.
+    location = /.well-known/apple-app-site-association {
+        default_type application/json;
+        try_files $uri =404;
+    }
+    location = /.well-known/assetlinks.json {
+        default_type application/json;
+        try_files $uri =404;
+    }
+
     # Account service (loopback only; PROXY_TRUSTED_ADDRESSES names this proxy).
     location ~ ^/(api|auth)/ {
         limit_req zone=subrosa_account burst=30 nodelay;

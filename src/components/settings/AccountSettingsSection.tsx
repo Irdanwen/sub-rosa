@@ -17,6 +17,7 @@ import {
   accountLoginStart,
   accountLoginExchange,
   accountLoginOpen,
+  accountLoginPasskey,
   accountLoginPending,
   accountLoginCancel,
   accountLogout,
@@ -35,7 +36,7 @@ import {
   accountSyncConflicts,
 } from "../../lib/account";
 import { errorCode } from "../../lib/errors";
-import { isMobilePlatform } from "../../lib/mobile";
+import { isMobilePlatform, supportsNativePasskeys } from "../../lib/mobile";
 import { t, intlLocale } from "../../lib/i18n";
 import { carpeDiemGetSettings, openExternalUrl } from "../../lib/tauri";
 import { InlineNotice } from "../ui/InlineNotice";
@@ -234,6 +235,8 @@ export function AccountSettingsSection() {
   function chosenDeviceName() {
     return deviceName.trim() || (isMobilePlatform() ? t("My iPhone") : t("My computer"));
   }
+  const nativePasskey =
+    serverUrl.trim() === "https://subrosa.furetier.com" && supportsNativePasskeys();
 
   /** The ordinary way in: the real page opens, and it hands the app back. */
   async function startLogin() {
@@ -243,6 +246,18 @@ export function AccountSettingsSection() {
     const opened = await openExternalUrl(next.start_url);
     if (!opened && mounted.current) {
       setNotice(t("Your browser did not open. Open this address yourself to continue."));
+    }
+  }
+
+  async function startPasskeyLogin() {
+    await accountConfigure(serverUrl.trim());
+    try {
+      await accountLoginPasskey(chosenDeviceName());
+    } catch (cause) {
+      // The PKCE verifier was stored before the system picker appeared. Its
+      // browser fallback remains usable if the picker was cancelled or failed.
+      if (mounted.current) setNative(await accountLoginPending());
+      throw cause;
     }
   }
 
@@ -316,9 +331,11 @@ export function AccountSettingsSection() {
         <div className="settings-card account-card">
           <h3 className="settings-row-title">{t("Sign in to Sub Rosa")}</h3>
           <p className="settings-row-description">
-            {t(
-              "The page opens in your browser. Enter your address and password there, and it brings you straight back here.",
-            )}
+            {nativePasskey
+              ? t("Use a passkey on this device, or continue in your browser to create an account.")
+              : t(
+                  "The page opens in your browser. Enter your address and password there, and it brings you straight back here.",
+                )}
           </p>
           {native ? (
             <div className="account-form">
@@ -355,9 +372,19 @@ export function AccountSettingsSection() {
                 void run(startLogin);
               }}
             >
+              {nativePasskey && (
+                <button
+                  type="button"
+                  className="primary-action primary-solid"
+                  disabled={busy || !serverUrl.trim()}
+                  onClick={() => void run(startPasskeyLogin)}
+                >
+                  {t("Sign in with a passkey")}
+                </button>
+              )}
               <button
                 type="submit"
-                className="primary-action primary-solid"
+                className={nativePasskey ? "btn btn-secondary" : "primary-action primary-solid"}
                 disabled={busy || !serverUrl.trim()}
               >
                 {busy ? t("Opening…") : t("Sign in or create an account")}
@@ -971,6 +998,9 @@ export function accountError(cause: unknown): string {
       return t("This sign-in request expired. Start again to get a new code.");
     case "account_login_unsolicited":
       return t("A sign-in finished that this app did not start. Nothing was connected.");
+    case "account_passkey_unavailable":
+    case "passkey_unavailable":
+      return t("The passkey could not be used. Try again or continue in your browser.");
     case "account_offline":
       return t("Your account service could not be reached. Your work is safe and will sync later.");
     case "account_revoked":

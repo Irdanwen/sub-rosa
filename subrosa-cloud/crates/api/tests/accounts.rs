@@ -25,6 +25,8 @@ use subrosa_services::{Service, hash};
 use tower::ServiceExt;
 use url::Url;
 use uuid::Uuid;
+use webauthn_authenticator_rs::{prelude::WebauthnAuthenticator, softpasskey::SoftPasskey};
+use webauthn_rs::prelude::{CreationChallengeResponse, RequestChallengeResponse};
 use wiremock::{
     Mock, MockServer, ResponseTemplate,
     matchers::{method, path},
@@ -77,7 +79,7 @@ impl Fixture {
         Mock::given(method("GET")).and(path("/.well-known/openid-configuration")).respond_with(ResponseTemplate::new(200).set_body_json(json!({"issuer":idp.uri(),"authorization_endpoint":format!("{}/authorize",idp.uri()),"token_endpoint":format!("{}/token",idp.uri()),"jwks_uri":format!("{}/jwks",idp.uri())}))).mount(&idp).await;
         let config = Config {
             bind: "127.0.0.1:0".into(),
-            public_url: "http://127.0.0.1:8787".into(),
+            public_url: "http://localhost:8787".into(),
             development: true,
             database_url: Secret(url.to_string()),
             oidc: Oidc {
@@ -101,6 +103,9 @@ impl Fixture {
             },
             account_quota_bytes: 1024 * 1024,
             trusted_proxies: Vec::new(),
+            passkey_android_cert_fingerprints: vec![
+                "13:B7:E7:F8:0D:99:67:A0:02:53:C9:23:0F:89:54:B4:39:12:B2:BE:81:7D:9B:B9:F5:F7:B5:18:AD:D6:DC:49".into(),
+            ],
         };
         config.validate().map_err(anyhow::Error::msg)?;
         let provider = Arc::new(OidcProvider::discover(config.clone()).await?);
@@ -312,7 +317,7 @@ impl Fixture {
                     .method(method)
                     .uri(path)
                     .header(header::COOKIE, &browser.cookie)
-                    .header(header::ORIGIN, "http://127.0.0.1:8787")
+                    .header(header::ORIGIN, "http://localhost:8787")
                     .header("x-csrf-token", &browser.csrf)
                     .header(header::CONTENT_TYPE, "application/json")
                     .body(Body::from(serde_json::to_vec(&body)?))?,
@@ -364,7 +369,7 @@ async fn oidc_csrf_device_pkce_and_revocation() -> Result<()> {
                 .method("POST")
                 .uri("/auth/logout")
                 .header(header::COOKIE, &browser.cookie)
-                .header(header::ORIGIN, "http://127.0.0.1:8787")
+                .header(header::ORIGIN, "http://localhost:8787")
                 .body(Body::empty())?,
         )
         .await?;
@@ -597,7 +602,7 @@ async fn immutable_blobs_quota_and_durable_cleanup() -> Result<()> {
                     .method("PUT")
                     .uri(&path)
                     .header(header::COOKIE, &alice.cookie)
-                    .header(header::ORIGIN, "http://127.0.0.1:8787")
+                    .header(header::ORIGIN, "http://localhost:8787")
                     .header("x-csrf-token", &alice.csrf)
                     .header(header::CONTENT_TYPE, "application/octet-stream")
                     .body(Body::from(data))?,
@@ -1116,7 +1121,7 @@ async fn independent_signed_ledger_reapplies_erasure_after_database_restore() ->
                 .method("DELETE")
                 .uri("/api/v1/me")
                 .header(header::COOKIE, &alice.cookie)
-                .header(header::ORIGIN, "http://127.0.0.1:8787")
+                .header(header::ORIGIN, "http://localhost:8787")
                 .header("x-csrf-token", &alice.csrf)
                 .body(Body::empty())?,
         )
@@ -1254,7 +1259,7 @@ async fn account_context_header_prevents_cross_tab_vault_contamination() -> Resu
                 .method("PUT")
                 .uri("/api/v1/vault")
                 .header(header::COOKIE, &bob.cookie)
-                .header(header::ORIGIN, "http://127.0.0.1:8787")
+                .header(header::ORIGIN, "http://localhost:8787")
                 .header("x-csrf-token", &bob.csrf)
                 .header("x-subrosa-account-id", alice_id)
                 .header(header::CONTENT_TYPE, "application/json")
@@ -1322,7 +1327,7 @@ async fn a_share_reads_without_a_session_expires_and_gives_its_bytes_back() -> R
                 .method("PUT")
                 .uri(format!("/api/v1/blobs/{id}"))
                 .header(header::COOKIE, &browser.cookie)
-                .header(header::ORIGIN, "http://127.0.0.1:8787")
+                .header(header::ORIGIN, "http://localhost:8787")
                 .header("x-csrf-token", &browser.csrf)
                 .header(header::CONTENT_TYPE, "application/octet-stream")
                 .body(Body::from(data))?,
@@ -1896,6 +1901,126 @@ async fn signing_in_again_on_the_same_machine_reuses_its_device_row() -> Result<
         f.public("/api/v1/device-login", body).await?.0,
         StatusCode::UNAUTHORIZED
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn passkey_challenges_are_recent_account_bound_and_pkce_bound() -> Result<()> {
+    let f = Fixture::new().await?;
+    assert_eq!(
+        f.public("/api/v1/passkeys", json!({})).await?.0,
+        StatusCode::UNAUTHORIZED
+    );
+    let alice = f.login("alice").await?;
+    let (_, me) = f.json("GET", "/api/v1/me", &alice, json!({})).await?;
+    let owner = Uuid::parse_str(me["data"]["id"].as_str().context("account id")?)?;
+    let (status, registration) = f
+        .json("POST", "/api/v1/passkeys", &alice, json!({}))
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        registration["data"]["options"]["publicKey"]["authenticatorSelection"]["residentKey"],
+        "required"
+    );
+    let origin = Url::parse("http://localhost:8787")?;
+    let mut authenticator = WebauthnAuthenticator::new(SoftPasskey::new(true));
+    // SoftPasskey cannot store resident keys; relax only its local test input.
+    // The server's actual registration response above must still require one.
+    let mut test_options = registration["data"]["options"].clone();
+    test_options["publicKey"]["authenticatorSelection"]["residentKey"] = json!("discouraged");
+    test_options["publicKey"]["authenticatorSelection"]["requireResidentKey"] = json!(false);
+    let challenge: CreationChallengeResponse = serde_json::from_value(test_options)?;
+    let credential = authenticator.do_registration(origin.clone(), challenge)?;
+    let (status, _) = f
+        .json(
+            "POST",
+            "/api/v1/passkeys/register/finish",
+            &alice,
+            json!({"attempt_id":registration["data"]["attempt_id"],"credential":credential}),
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    let (status, authentication) = f
+        .public("/api/v1/passkeys/authenticate/start", json!({}))
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    // The test authenticator omits userHandle; supply the account handle that
+    // a resident authenticator would return, while it signs the challenge.
+    let mut test_options = authentication["data"]["options"].clone();
+    test_options["publicKey"]["allowCredentials"] =
+        json!([{"type":"public-key","id":credential.id}]);
+    let challenge: RequestChallengeResponse = serde_json::from_value(test_options)?;
+    let mut credential = authenticator.do_authentication(origin.clone(), challenge)?;
+    credential.response.user_handle = Some(owner.as_bytes().to_vec().into());
+    let response = f
+        .call(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/passkeys/authenticate/finish")
+                .header(header::ORIGIN, "http://localhost:8787")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(serde_json::to_vec(&json!({
+                    "attempt_id":authentication["data"]["attempt_id"],"credential":credential,
+                }))?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .any(|value| value
+                .to_str()
+                .is_ok_and(|s| s.starts_with("subrosa_session=")))
+    );
+    let verifier = "p".repeat(43);
+    let (_, device) = f
+        .public("/api/v1/device-login", native_start(&verifier, "Phone"))
+        .await?;
+    let request_id = device["data"]["request_id"].clone();
+    assert_eq!(
+        f.public(
+            "/api/v1/passkeys/native/start",
+            json!({"request_id":request_id,"verifier":"q".repeat(43)})
+        )
+        .await?
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (status, assertion) = f
+        .public(
+            "/api/v1/passkeys/native/start",
+            json!({"request_id":request_id,"verifier":verifier}),
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        assertion["data"]["options"]["publicKey"]["rpId"],
+        "localhost"
+    );
+    let mut test_options = assertion["data"]["options"].clone();
+    test_options["publicKey"]["allowCredentials"] =
+        json!([{"type":"public-key","id":credential.id}]);
+    let challenge: RequestChallengeResponse = serde_json::from_value(test_options)?;
+    // The software browser authenticator insists on an HTTPS/localhost origin.
+    // Native Android's apk-key-hash origin needs a signed-device integration run.
+    let mut proof = authenticator.do_authentication(origin, challenge)?;
+    proof.response.user_handle = Some(owner.as_bytes().to_vec().into());
+    let (status, approved) = f
+        .public(
+            "/api/v1/passkeys/native/finish",
+            json!({"attempt_id":assertion["data"]["attempt_id"],"credential":proof}),
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(approved["data"]["request_id"], request_id);
+    let (status, admitted) = f.public(
+        "/api/v1/device-login/exchange",
+        json!({"request_id":request_id,"verifier":verifier,"return_code":approved["data"]["return_code"]}),
+    ).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(admitted["data"]["account"]["id"], owner.to_string());
     Ok(())
 }
 

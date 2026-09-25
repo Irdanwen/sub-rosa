@@ -1,4 +1,5 @@
 User-agent: *
+Allow: /.well-known/
 Disallow: /account
 Disallow: /auth/
 Disallow: /api/

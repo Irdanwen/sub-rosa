@@ -122,6 +122,85 @@ pub async fn account_login_open(
     Ok(login)
 }
 
+/// Authenticate within the platform's passkey picker and complete the ordinary
+/// PKCE-bound device exchange. The request is durable before any system UI is
+/// shown, so an interrupted prompt leaves a recoverable browser fallback.
+#[tauri::command]
+pub async fn account_login_passkey(app: AppHandle, device_name: String) -> Result<(), AppError> {
+    #[cfg(not(any(
+        target_os = "android",
+        target_os = "ios",
+        target_os = "macos"
+    )))]
+    {
+        let _ = (app, device_name);
+        return Err(error("account_passkey_unavailable"));
+    }
+    #[cfg(any(
+        target_os = "android",
+        target_os = "ios",
+        target_os = "macos"
+    ))]
+    {
+        let login = account_login_open(app.clone(), device_name).await?;
+        let pool = pool(&app).await?;
+        let base = login_server(&pool).await?;
+        let pending = read_pending(&base).ok_or_else(unsolicited)?;
+        let challenge = request(
+            &base,
+            None,
+            reqwest::Method::POST,
+            "/api/v1/passkeys/native/start",
+            Some(json!({
+                "request_id": login.request_id,
+                "verifier": pending.verifier,
+            })),
+        )
+        .await?;
+        let attempt_id = challenge
+            .get("attempt_id")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| error("account_response_invalid"))?;
+        let options = challenge
+            .get("options")
+            .and_then(|value| value.get("publicKey"))
+            .ok_or_else(|| error("account_response_invalid"))?
+            .clone();
+        let credential = tauri::async_runtime::spawn_blocking(move || {
+            #[cfg(target_os = "android")]
+            {
+                crate::android::passkey_get(&options)
+            }
+            #[cfg(any(target_os = "ios", target_os = "macos"))]
+            {
+                crate::apple_passkey::get(&options)
+            }
+        })
+        .await
+        .map_err(|_| error("account_passkey_unavailable"))??;
+        let answer = request(
+            &base,
+            None,
+            reqwest::Method::POST,
+            "/api/v1/passkeys/native/finish",
+            Some(json!({"attempt_id": attempt_id, "credential": credential})),
+        )
+        .await?;
+        let request_id = answer
+            .get("request_id")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| error("account_response_invalid"))?;
+        let return_code = answer
+            .get("return_code")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| error("account_response_invalid"))?;
+        if request_id != login.request_id || return_code.len() != 43 {
+            return Err(error("account_response_invalid"));
+        }
+        finish(&app, request_id, return_code).await
+    }
+}
+
 /// Lets the screen pick a sign-in back up after a restart, with the same link,
 /// instead of showing a fresh one that would strand the request in flight.
 #[tauri::command]

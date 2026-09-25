@@ -30,6 +30,26 @@ pub struct Config {
     /// nothing.
     #[serde(default)]
     pub trusted_proxies: Vec<std::net::IpAddr>,
+    /// Release certificate fingerprints for Android Credential Manager origins.
+    /// Keep this aligned with the domain's assetlinks.json. Add a separate
+    /// Play signing certificate here if Play re-signs the installable app.
+    #[serde(default = "android_certificates")]
+    pub passkey_android_cert_fingerprints: Vec<String>,
+}
+fn android_certificates() -> Vec<String> {
+    vec!["13:B7:E7:F8:0D:99:67:A0:02:53:C9:23:0F:89:54:B4:39:12:B2:BE:81:7D:9B:B9:F5:F7:B5:18:AD:D6:DC:49".into()]
+}
+pub fn fingerprint_bytes(value: &str) -> Option<[u8; 32]> {
+    let mut bytes = [0u8; 32];
+    let mut parts = value.split(':');
+    for byte in &mut bytes {
+        let part = parts.next()?;
+        if part.len() != 2 {
+            return None;
+        }
+        *byte = u8::from_str_radix(part, 16).ok()?;
+    }
+    parts.next().is_none().then_some(bytes)
 }
 fn quota() -> i64 {
     5 * 1024 * 1024 * 1024
@@ -120,6 +140,13 @@ impl Config {
             .any(std::net::IpAddr::is_unspecified)
         {
             return Err("a trusted proxy must be a specific address");
+        }
+        if self
+            .passkey_android_cert_fingerprints
+            .iter()
+            .any(|value| fingerprint_bytes(value).is_none())
+        {
+            return Err("Android passkey certificate fingerprint must be SHA-256 hex bytes");
         }
         if self.storage.kind != "s3" && !(self.development && self.storage.kind == "local") {
             return Err("production requires S3 storage");
@@ -217,6 +244,7 @@ mod tests {
             deletion_ledger: None,
             account_quota_bytes: 1024 * 1024,
             trusted_proxies: Vec::new(),
+            passkey_android_cert_fingerprints: android_certificates(),
         }
     }
 

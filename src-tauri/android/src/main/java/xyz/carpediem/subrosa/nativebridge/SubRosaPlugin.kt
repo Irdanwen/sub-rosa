@@ -3,6 +3,10 @@ package xyz.carpediem.subrosa.nativebridge
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.GetPublicKeyCredentialOption
+import androidx.credentials.PublicKeyCredential
 import androidx.core.content.ContextCompat
 import app.tauri.PermissionState
 import app.tauri.annotation.Command
@@ -13,6 +17,9 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 @InvokeArg
 class CredentialArgs {
@@ -20,10 +27,43 @@ class CredentialArgs {
     var secret: String? = null
 }
 
+@InvokeArg
+class PasskeyArgs {
+    lateinit var options: String
+}
+
 @TauriPlugin(permissions = [Permission(strings = [Manifest.permission.RECORD_AUDIO], alias = "microphone")])
 class SubRosaPlugin(private val activity: Activity) : Plugin(activity) {
     private val credentials by lazy { CredentialStore(activity.applicationContext) }
     private var recordings = 0
+
+    @Command
+    fun passkeyGet(invoke: Invoke) {
+        val options = try {
+            invoke.parseArgs(PasskeyArgs::class.java).options
+        } catch (_: Exception) {
+            invoke.reject("The passkey request is invalid.", "passkey_request_invalid")
+            return
+        }
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                val request = GetCredentialRequest(
+                    listOf(GetPublicKeyCredentialOption(requestJson = options))
+                )
+                val result = CredentialManager.create(activity).getCredential(
+                    context = activity, request = request
+                )
+                val credential = result.credential as? PublicKeyCredential
+                if (credential == null) {
+                    invoke.reject("Choose a passkey to continue.", "passkey_unavailable")
+                } else {
+                    invoke.resolve(JSObject().put("credential", credential.authenticationResponseJson))
+                }
+            } catch (_: Exception) {
+                invoke.reject("The passkey could not be used.", "passkey_unavailable")
+            }
+        }
+    }
 
     @Command
     fun credentialSet(invoke: Invoke) {
