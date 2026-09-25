@@ -3723,7 +3723,9 @@ export function AgentWorkspace({
       // clean completion resend anything still pending as a follow-up.
       // `registered` tracks whether Hermes accepted the steer, so a
       // tool.complete only clears ones a tool could actually have drained.
-      dropFinishedLiveTurns(steerSessionId, true);
+      if (dropFinishedLiveTurns(steerSessionId, true)) {
+        void refreshHermesSession(steerSessionId, { keepLiveFrames: true });
+      }
       const steerEntry = { text: message, accepted: false, toolDrained: false };
       pendingSteerBySessionIdRef.current = {
         ...pendingSteerBySessionIdRef.current,

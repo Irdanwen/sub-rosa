@@ -5096,6 +5096,66 @@ describe("AgentWorkspace", () => {
     await flushDeferredSessionWork();
   });
 
+  it("fetches the stored copy of a finished turn a steer clears away", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      mocks.listHermesSessionMessages.mockResolvedValue([]);
+      render(<AgentWorkspace initialSession={existingSession} />);
+      await sendFirstTurn(user, "run the benchmark");
+      const askedAt = new Date(Date.now() - 2000).toISOString();
+      // Every post-turn fetch comes back before the reply is stored.
+      mocks.listHermesSessionMessages.mockResolvedValue([
+        { id: "m1", role: "user", content: "run the benchmark", timestamp: askedAt },
+      ]);
+      streamReply("Started it in the background.");
+      await waitFor(() => expect(screen.queryByLabelText("Stop Sub Rosa")).toBeNull());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000);
+      });
+
+      // The gateway chains a turn that opens on a tool call, and the user
+      // steers it. By now the store has caught up.
+      emitGatewayEvent({
+        type: "tool.start",
+        session_id: "runtime-session-1",
+        payload: { name: "terminal", tool_id: "tool-1" },
+      });
+      await waitFor(() => expect(screen.getByLabelText("Stop Sub Rosa")).toBeInTheDocument());
+      mocks.listHermesSessionMessages.mockResolvedValue([
+        { id: "m1", role: "user", content: "run the benchmark", timestamp: askedAt },
+        {
+          id: "m2",
+          role: "assistant",
+          content: "Started it in the background.",
+          timestamp: askedAt,
+        },
+      ]);
+      // While a turn runs the send button is Stop; Enter steers.
+      await user.type(screen.getByRole("textbox"), "also report the memory use");
+      await user.keyboard("{Enter}");
+      await waitFor(() =>
+        expect(mocks.gatewayRequest).toHaveBeenCalledWith(
+          "session.steer",
+          expect.objectContaining({ text: "also report the memory use" }),
+        ),
+      );
+
+      // The steer drops the finished turn's frames; its stored copy replaces
+      // them right away, not at the next working poll.
+      await waitFor(
+        () =>
+          expect(within(timelineOf()).getAllByText("Started it in the background.")).toHaveLength(
+            1,
+          ),
+        { timeout: 1000 },
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+    await flushDeferredSessionWork();
+  }, 15000);
+
   it("keeps the opening of a reply streamed in more frames than the live buffer holds", async () => {
     const user = userEvent.setup();
     mocks.listHermesSessionMessages.mockResolvedValue([]);
