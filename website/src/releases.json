@@ -23,12 +23,12 @@
     }
   ],
   "android": {
-    "version": "v1.71.0",
-    "build": 212231020,
-    "published_at": "2026-09-22T09:20:53Z",
-    "release_url": "https://github.com/Irdanwen/sub-rosa-releases/releases/tag/android-v1.71.0-212231020",
-    "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/android-v1.71.0-212231020/subrosa-1.71.0-212231020-arm64.apk",
-    "bytes": 61848794,
-    "sha256": "ef4a4e09c234c6cebc374c1eef171f4146365fe69387823ad47e7c7f173d0fc6"
+    "version": "v1.74.0",
+    "build": 212492224,
+    "published_at": "2026-09-25T09:48:15Z",
+    "release_url": "https://github.com/Irdanwen/sub-rosa-releases/releases/tag/android-v1.74.0-212492224",
+    "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/android-v1.74.0-212492224/subrosa-1.74.0-212492224-arm64.apk",
+    "bytes": 63829027,
+    "sha256": "cfce32b71c67acd838eb6c52b3ea6750099896504ea48e0da2de4a60c77c676a"
   }
 }
