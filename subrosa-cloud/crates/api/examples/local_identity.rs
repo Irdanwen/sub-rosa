@@ -134,7 +134,7 @@ async fn main() -> Result<()> {
     .extract()?;
     let public = url::Url::parse(&settings.public_url)?;
     anyhow::ensure!(
-        public.scheme() == "http" && public.host_str() == Some("127.0.0.1"),
+        public.scheme() == "http" && matches!(public.host_str(), Some("127.0.0.1" | "localhost")),
         "QA fixture must remain on loopback"
     );
     let issuer = Issuer {

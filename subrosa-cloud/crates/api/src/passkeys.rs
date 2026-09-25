@@ -1,6 +1,10 @@
-//! First-party WebAuthn on the account origin. OIDC remains the migration and
+//! First-party `WebAuthn` on the account origin. OIDC remains the migration and
 //! recovery route; a credential is linked only to an authenticated account UUID.
-use super::*;
+use super::{
+    Arc, Deserialize, Engine, Error, HeaderMap, IntoResponse, Json, Path, Response, Result, Router,
+    Service, State, URL_SAFE_NO_PAD, Uuid, Value, csrf_for, get, hash, header, json, ok, post,
+    session, set_cookie,
+};
 use axum::routing::delete;
 use webauthn_rs::prelude::{
     DiscoverableAuthentication, DiscoverableKey, Passkey, PasskeyRegistration, PublicKeyCredential,
@@ -161,7 +165,7 @@ async fn verify_auth(s: &Service, state: Value, credential: &PublicKeyCredential
     let result = webauthn
         .finish_discoverable_authentication(credential, state, &[DiscoverableKey::from(&key)])
         .map_err(|_| Error::Unauthorized)?;
-    if !result.user_verified() || !key.update_credential(&result).is_some() {
+    if !result.user_verified() || key.update_credential(&result).is_none() {
         return Err(Error::Unauthorized.into());
     }
     let updated = serde_json::to_value(key).map_err(|_| Error::Unavailable)?;

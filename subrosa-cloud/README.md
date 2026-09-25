@@ -16,7 +16,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 The test runner creates and removes an isolated loopback PostgreSQL cluster. Override `SUBROSA_TEST_PORT` if 55439 is busy, or set `SUBROSA_TEST_DATABASE_URL` to a dedicated test PostgreSQL admin URL. Each integration fixture creates an independent database; never point this at a production database. The test suite does not silently skip when PostgreSQL is unavailable. Unit tests have no external I/O.
 
-For browser QA against the real website, first start PostgreSQL on port 55439 and the website on `http://127.0.0.1:1430` with `/api` and `/auth` proxied to port 8088:
+For browser QA against the real website, first start PostgreSQL on port 55439 and the website on `http://localhost:1430` with `/api` and `/auth` proxied to port 8088. WebAuthn requires the domain hostname rather than a numeric loopback address:
 
 ```sh
 cargo run -p subrosa-api --example local_identity
