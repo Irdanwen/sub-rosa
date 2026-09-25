@@ -4971,6 +4971,51 @@ describe("AgentWorkspace", () => {
     }
   }, 15000);
 
+  it.each([
+    ["the gateway is not connected", () => new Error("Hermes gateway is not connected.")],
+    ["the session is busy", () => new HermesGatewayError("session busy", 4009)],
+  ])(
+    "keeps the previous turn's failure when the next send is rejected because %s",
+    async (_reason, failure) => {
+      const user = userEvent.setup();
+      const providerFailed = /The model provider could not answer this message/;
+      let rejectSubmit = false;
+      mocks.listHermesSessionMessages.mockResolvedValue([]);
+      mocks.gatewayRequest.mockImplementation((method: string) => {
+        if (method === "session.resume")
+          return Promise.resolve({ session_id: "runtime-session-1" });
+        if (method === "prompt.submit" && rejectSubmit) return Promise.reject(failure());
+        return Promise.resolve({});
+      });
+
+      render(<AgentWorkspace initialSession={existingSession} />);
+      await sendFirstTurn(user, "first question");
+      // Hermes never stores a provider failure: this frame is its only record.
+      emitGatewayEvent({
+        type: "error",
+        session_id: "runtime-session-1",
+        payload: { message: "upstream_provider_failed" },
+      });
+      expect(await screen.findByText(providerFailed)).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByLabelText("Stop Sub Rosa")).toBeNull());
+
+      rejectSubmit = true;
+      await user.type(screen.getByRole("textbox"), "second question");
+      await user.click(screen.getByRole("button", { name: "Send message" }));
+      await waitFor(() =>
+        expect(mocks.gatewayRequest).toHaveBeenCalledWith("prompt.submit", {
+          session_id: "runtime-session-1",
+          text: "second question",
+        }),
+      );
+      // The rejected prompt never entered the session, so its bubble goes...
+      await waitFor(() => expect(within(timelineOf()).queryByText("second question")).toBeNull());
+      // ...and the failure it was sent after is still there to act on.
+      expect(within(timelineOf()).getByText(providerFailed)).toBeInTheDocument();
+      await flushDeferredSessionWork();
+    },
+  );
+
   it("keeps the opening of a reply streamed in more frames than the live buffer holds", async () => {
     const user = userEvent.setup();
     mocks.listHermesSessionMessages.mockResolvedValue([]);

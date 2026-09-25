@@ -340,6 +340,7 @@ import {
   isProcessNoticeTurn,
   isTerminalHermesEvent,
   liveEventsForNewTurn,
+  withRestoredLiveEvents,
   repairContractionSpacing,
   stringValue,
   textFromHermesContent,
@@ -5002,6 +5003,8 @@ export function AgentWorkspace({
     const turnInProgress =
       workingSessionIdsRef.current.has(storedSessionId) ||
       waitingSessionIdsRef.current.has(storedSessionId);
+    // Hermes never stores a failure: kept aside for a rejected send to put back.
+    const liveErrorsBeforeSend = liveErrorsOfCurrentTurn(storedSessionId);
     // The reply those frames showed may not be stored yet: fetch it now, not at the next poll.
     if (dropFinishedLiveTurns(storedSessionId, turnInProgress)) {
       void refreshHermesSession(storedSessionId);
@@ -5143,6 +5146,14 @@ export function AgentWorkspace({
         pendingHermesMessagesRef.current = next;
         return next;
       });
+      liveEventsRef.current = {
+        ...liveEventsRef.current,
+        [storedSessionId]: withRestoredLiveEvents(
+          liveEventsRef.current[storedSessionId] ?? [],
+          liveErrorsBeforeSend,
+        ),
+      };
+      liveEventsPublisher.flush();
       if (isSessionBusyError(err)) {
         // The gateway rejected this prompt because the previous turn is still
         // running — the session itself is healthy, so keep the listener and
@@ -5517,11 +5528,7 @@ export function AgentWorkspace({
   function settleSessionRun(sessionId: string, summary: string, reason: string) {
     const activityCounts = clearSessionActivity(sessionId);
     // Only this turn's failure counts: an error the user has sent past is over.
-    const turnFailed =
-      currentTurnLiveErrors(liveEventsRef.current[sessionId] ?? [], [
-        ...(hermesSessionMessagesRef.current[sessionId] ?? []),
-        ...(pendingHermesMessagesRef.current[sessionId] ?? []),
-      ]).length > 0;
+    const turnFailed = liveErrorsOfCurrentTurn(sessionId).length > 0;
     // Which authority ended this run is the first question to ask when a chat
     // looks stuck (or looks finished while it is not), and the answer used to
     // exist nowhere. Recorded next to the gateway frames it sits between.
@@ -5972,6 +5979,13 @@ export function AgentWorkspace({
     liveEventsRef.current = { ...liveEventsRef.current, [sessionId]: kept };
     liveEventsPublisher.flush();
     return true;
+  }
+
+  function liveErrorsOfCurrentTurn(sessionId: string) {
+    return currentTurnLiveErrors(liveEventsRef.current[sessionId] ?? [], [
+      ...(hermesSessionMessagesRef.current[sessionId] ?? []),
+      ...(pendingHermesMessagesRef.current[sessionId] ?? []),
+    ]);
   }
 
   function pushLiveEvent(key: string, event: HermesGatewayEvent) {

@@ -1454,6 +1454,17 @@ export function currentTurnLiveErrors(
   });
 }
 
+/** Puts frames back in front of a session's buffer, skipping any it still
+ * holds. A send clears the finished turn's failure; when the send is rejected,
+ * that failure is the latest turn's again and has no other record. */
+export function withRestoredLiveEvents(
+  events: LiveHermesEvent[],
+  restored: LiveHermesEvent[],
+): LiveHermesEvent[] {
+  const missing = restored.filter((event) => !events.includes(event));
+  return missing.length ? [...missing, ...events] : events;
+}
+
 function latestUserMessageTimeMs(messages: HermesSessionMessage[]) {
   let latest: number | undefined;
   for (const message of messages) {
