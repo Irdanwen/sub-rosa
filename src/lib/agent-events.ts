@@ -51,8 +51,10 @@ export type AgentSessionsChangedDetail = {
 // tell a real change from the same status re-announced per frame.
 const lastAnnouncedStatus = new Map<string, string>();
 
+// Everything a listener shows: a conversation named mid-run must reach the
+// menu bar even though its status and summary did not move.
 function statusSignature(detail: AgentSessionStatusDetail) {
-  return `${detail.status}\u0000${detail.summary ?? ""}`;
+  return [detail.status, detail.summary ?? "", detail.title ?? ""].join("\u0000");
 }
 
 /** True when `detail` would re-announce exactly what was last announced for its
