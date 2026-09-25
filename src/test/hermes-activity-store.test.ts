@@ -229,6 +229,30 @@ describe("createHermesActivityStore", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  it("does not notify subscribers for streamed frames that change nothing a reader sees", () => {
+    const store = createHermesActivityStore();
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.record(classified("message.start", "s1"), "sandboxed");
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // A reply streams one frame per token; the row stays "running".
+    for (let index = 0; index < 50; index += 1) {
+      store.record(classified("message.delta", "s1", { text: `${index} ` }), "sandboxed");
+    }
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // Its age still moves, at most once a second.
+    advance(1000);
+    store.record(classified("message.delta", "s1", { text: "more" }), "sandboxed");
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(store.getRecord("s1")?.lastEventAt).toBe(now);
+
+    // And a visible change is announced at once.
+    store.record(classified("tool.start", "s1", { tool_name: "read_file" }), "sandboxed");
+    expect(listener).toHaveBeenCalledTimes(3);
+  });
+
   it("ignores events without a session id (nothing to attribute)", () => {
     const store = createHermesActivityStore();
     // reasoning with no session id classifies to sessionId "" — unattributable.

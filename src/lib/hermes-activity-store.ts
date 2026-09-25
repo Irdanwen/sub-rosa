@@ -175,7 +175,9 @@ export function createHermesActivityStore(
       currentTool: undefined,
       subagents: new Map<string, BackgroundHermesActivity>(),
       lastEventAt: Date.now(),
+      emittedAt: Number.NEGATIVE_INFINITY,
     };
+    const before = existing ? visibleState(existing) : undefined;
 
     // The mode can sharpen over a session's life (a sandboxed session opting
     // into unrestricted) but never downgrade: `mode` defaults to `sandboxed`
@@ -189,8 +191,22 @@ export function createHermesActivityStore(
     // Re-key so this becomes the most-recently-touched entry for eviction.
     bySession.delete(sessionId);
     bySession.set(sessionId, row);
-    evict();
-    emit();
+    const evicted = evict();
+    // A streamed reply feeds this store one frame per token, and every emit
+    // re-renders each subscriber. Only announce what a reader can see change:
+    // the row itself, a subagent frame (it upserts the sub-list), an eviction,
+    // or an age that moved by at least a second (the drawer shows "just now"
+    // for the first 45).
+    if (
+      before === undefined ||
+      evicted ||
+      event.kind === "background_activity" ||
+      visibleState(row) !== before ||
+      row.lastEventAt - row.emittedAt >= AGE_EMIT_GRANULARITY_MS
+    ) {
+      row.emittedAt = row.lastEventAt;
+      emit();
+    }
   }
 
   function clearSession(sessionId: string): void {
@@ -226,12 +242,15 @@ export function createHermesActivityStore(
   }
 
   /** Keep the map within the cap by dropping the oldest (least recently active). */
-  function evict(): void {
+  function evict(): boolean {
+    let evicted = false;
     while (bySession.size > ACTIVITY_SESSIONS_CAP) {
       const oldest = bySession.keys().next().value;
       if (oldest === undefined) break;
       bySession.delete(oldest);
+      evicted = true;
     }
+    return evicted;
   }
 
   // Project an internal row into the public, count-resolved record. The pending
@@ -287,7 +306,19 @@ type InternalRecord = {
   currentTool?: string;
   subagents: Map<string, BackgroundHermesActivity>;
   lastEventAt: number;
+  /** `lastEventAt` as of the last emit, so an age-only change emits at most
+   * once per {@link AGE_EMIT_GRANULARITY_MS}. */
+  emittedAt: number;
 };
+
+/** How far a row's last-event time may move before an otherwise unchanged row
+ * is announced again. */
+const AGE_EMIT_GRANULARITY_MS = 1000;
+
+/** The row fields a reader renders, apart from its age and its subagents. */
+function visibleState(row: InternalRecord): string {
+  return `${row.phase}\u0000${row.currentTool ?? ""}\u0000${row.mode}\u0000${row.title ?? ""}`;
+}
 
 /**
  * Fold one event into a session's row. This is the SINGLE place phase is
