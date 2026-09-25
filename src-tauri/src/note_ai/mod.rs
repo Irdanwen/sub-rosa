@@ -264,7 +264,10 @@ async fn stream_rewrite(
     }
 
     let mut collected = String::new();
-    let mut buffer = String::new();
+    // Frames are newline-delimited and a chunk may end mid-line, or
+    // mid-character: the splitter keeps the tail as bytes until the next
+    // chunk completes it.
+    let mut lines = crate::sse_lines::SseLines::default();
     let stopped = claim.stop.notified();
     tokio::pin!(stopped);
     loop {
@@ -278,21 +281,9 @@ async fn stream_rewrite(
             chunk = response.chunk() => chunk?,
         };
         let Some(chunk) = chunk else { break };
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
         let before = collected.len();
-        // Frames are newline-delimited; the tail may be a partial line that the
-        // next chunk completes.
-        while let Some(newline) = buffer.find('\n') {
-            let line = buffer[..newline].trim().to_string();
-            buffer.drain(..newline + 1);
-            let Some(data) = line.strip_prefix("data:") else {
-                continue;
-            };
-            let data = data.trim();
-            if data.is_empty() || data == "[DONE]" {
-                continue;
-            }
-            let Ok(frame) = serde_json::from_str::<serde_json::Value>(data) else {
+        for line in lines.push(&chunk) {
+            let Some(frame) = crate::sse_lines::data_frame(&line) else {
                 continue;
             };
             if let Some(delta) = frame

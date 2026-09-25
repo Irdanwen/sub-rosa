@@ -191,7 +191,8 @@ async fn collect_answer(
         return Ok(june_api::extract_chat_completion_text(&value).unwrap_or_default());
     }
     let mut collected = String::new();
-    let mut buffer = String::new();
+    // Split on bytes, decode whole lines: a chunk may end mid-character.
+    let mut lines = crate::sse_lines::SseLines::default();
     let stop = claim.map(|claim| Arc::clone(&claim.stop));
     loop {
         let chunk = match &stop {
@@ -210,19 +211,9 @@ async fn collect_answer(
             None => response.chunk().await?,
         };
         let Some(chunk) = chunk else { break };
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
         let before = collected.len();
-        while let Some(newline) = buffer.find('\n') {
-            let line = buffer[..newline].trim().to_string();
-            buffer.drain(..newline + 1);
-            let Some(data) = line.strip_prefix("data:") else {
-                continue;
-            };
-            let data = data.trim();
-            if data.is_empty() || data == "[DONE]" {
-                continue;
-            }
-            let Ok(frame) = serde_json::from_str::<serde_json::Value>(data) else {
+        for line in lines.push(&chunk) {
+            let Some(frame) = crate::sse_lines::data_frame(&line) else {
                 continue;
             };
             if let Some(delta) = frame

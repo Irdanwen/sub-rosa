@@ -890,6 +890,11 @@ fn truncate(text: String, limit: usize) -> String {
 /// write notes through that one module.
 pub use crate::agent_notes::NOTES_CHANGED_EVENT as AGENT_LITE_NOTES_CHANGED_EVENT;
 
+/// The most tool calls one streamed reply may address. Well above anything a
+/// model sends in one turn; it exists so a delta's `index` cannot size an
+/// arbitrarily large vector.
+const MAX_STREAMED_TOOL_CALLS: usize = 64;
+
 /// An assistant message rebuilt from a stream of deltas.
 #[derive(Default)]
 struct StreamedReply {
@@ -933,6 +938,17 @@ impl StreamedReply {
         message
     }
 
+    /// Applies one SSE line: the delta of a `data:` frame, if it has one.
+    fn apply_frame(&mut self, line: &str) {
+        if let Some(delta) = crate::sse_lines::data_frame(line).and_then(|mut frame| {
+            frame
+                .pointer_mut("/choices/0/delta")
+                .map(serde_json::Value::take)
+        }) {
+            self.apply(&delta);
+        }
+    }
+
     fn apply(&mut self, delta: &serde_json::Value) {
         if let Some(text) = delta.get("content").and_then(serde_json::Value::as_str) {
             self.content.push_str(text);
@@ -949,7 +965,19 @@ impl StreamedReply {
             let index = call
                 .get("index")
                 .and_then(serde_json::Value::as_u64)
-                .unwrap_or(0) as usize;
+                .unwrap_or(0);
+            // The index sizes a vector, so a hostile or corrupt frame must not
+            // be able to ask for billions of slots. No real turn comes close.
+            let Some(index) = usize::try_from(index)
+                .ok()
+                .filter(|index| *index < MAX_STREAMED_TOOL_CALLS)
+            else {
+                tracing::warn!(
+                    index,
+                    "agent-lite: ignoring a tool call with an out-of-range index"
+                );
+                continue;
+            };
             if self.calls.len() <= index {
                 self.calls
                     .resize(index + 1, (String::new(), String::new(), String::new()));
@@ -990,28 +1018,14 @@ async fn collect_stream(
     mut response: june_api::AgentChatCompletionsResponse,
 ) -> Result<StreamedReply, AppError> {
     let mut reply = StreamedReply::default();
-    let mut buffer = String::new();
+    // Frames are newline-delimited and a chunk may end mid-line, or
+    // mid-character: the splitter keeps the tail as bytes until the next
+    // chunk completes it.
+    let mut lines = crate::sse_lines::SseLines::default();
     while let Some(chunk) = response.chunk().await? {
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
         let before = reply.content.len();
-        // Frames are newline-delimited; keep the tail, which may be a partial
-        // line that the next chunk completes.
-        while let Some(newline) = buffer.find('\n') {
-            let line = buffer[..newline].trim().to_string();
-            buffer.drain(..newline + 1);
-            let Some(data) = line.strip_prefix("data:") else {
-                continue;
-            };
-            let data = data.trim();
-            if data.is_empty() || data == "[DONE]" {
-                continue;
-            }
-            let Ok(frame) = serde_json::from_str::<serde_json::Value>(data) else {
-                continue;
-            };
-            if let Some(delta) = frame.pointer("/choices/0/delta") {
-                reply.apply(delta);
-            }
+        for line in lines.push(&chunk) {
+            reply.apply_frame(&line);
         }
         if reply.content.len() > before {
             let _ = app.emit(
@@ -1022,6 +1036,9 @@ async fn collect_stream(
                 }),
             );
         }
+    }
+    if let Some(line) = lines.finish() {
+        reply.apply_frame(&line);
     }
     Ok(reply)
 }

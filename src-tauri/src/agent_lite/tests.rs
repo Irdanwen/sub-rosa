@@ -203,6 +203,45 @@ fn a_tool_call_without_a_name_is_dropped_rather_than_sent_nameless() {
     assert!(reply.into_message().get("tool_calls").is_none());
 }
 
+/// The sidecar now relays the upstream stream as it is generated, so chunk
+/// boundaries fall wherever the network puts them, including inside a
+/// two-byte character. It must reach the reply whole, not as `\u{FFFD}`.
+#[test]
+fn a_character_cut_between_two_chunks_reaches_the_reply_whole() {
+    let body = "data: {\"choices\":[{\"delta\":{\"content\":\"Voil\u{e0} caf\u{e9}\"}}]}\n\ndata: [DONE]\n\n"
+        .as_bytes();
+    let cut = body
+        .windows(2)
+        .position(|pair| pair == "\u{e9}".as_bytes())
+        .expect("the accented character")
+        + 1;
+    let mut lines = crate::sse_lines::SseLines::default();
+    let mut reply = StreamedReply::default();
+    for chunk in [&body[..cut], &body[cut..]] {
+        for line in lines.push(chunk) {
+            reply.apply_frame(&line);
+        }
+    }
+    assert_eq!(reply.content, "Voil\u{e0} caf\u{e9}");
+}
+
+#[test]
+fn a_tool_call_with_an_absurd_index_is_ignored_without_panicking() {
+    let mut reply = StreamedReply::default();
+    reply.apply(&serde_json::json!({
+        "tool_calls": [
+            { "index": u64::MAX, "id": "x", "function": { "name": "web_search", "arguments": "{}" } },
+            { "index": 4_000_000_000_u64, "id": "y", "function": { "name": "web_search", "arguments": "{}" } },
+            { "index": 0, "id": "a", "function": { "name": "read_note", "arguments": "{}" } }
+        ]
+    }));
+    assert_eq!(reply.calls.len(), 1);
+    let message = reply.into_message();
+    let calls = message["tool_calls"].as_array().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["id"], "a");
+}
+
 #[test]
 fn web_snippets_lose_their_markup_and_duplicate_paragraph() {
     // Exactly the shape the provider returns: highlight tags, then the
