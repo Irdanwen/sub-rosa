@@ -139,6 +139,9 @@ targets:
       # BGTaskScheduler is looked up dynamically from Rust, which only finds
       # the class if the framework is actually linked into the process.
       - sdk: BackgroundTasks.framework
+      # The native passkey bridge uses AuthenticationServices symbols from
+      # Rust's static library, which Xcode must link into the app target.
+      - sdk: AuthenticationServices.framework
       - sdk: CoreGraphics.framework
       - sdk: Metal.framework
       - sdk: MetalKit.framework
