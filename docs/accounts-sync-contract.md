@@ -71,6 +71,8 @@ The result is `{ results: [{ operation_id, revision, sequence, conflict }] }`. T
 
 Parents and explicit `resolved_revisions` must belong to this account and object. An operation retires only its parent and explicitly acknowledged revisions. A stale edit creates a sibling head; it never overwrites another head. `conflict` is true if any current head was not acknowledged. A user-approved resolution acknowledges all heads they actually reviewed; an unseen concurrent head survives. An omitted/empty resolution array preserves the original operation-hash serialization for retries from earlier clients.
 
+Native clients may merge note siblings with one authenticated common ancestor when row fields and edited-content lines change independently. They append a new encrypted resolution revision; they never rewrite an accepted revision. Overlapping edits, deletions and missing ancestors stay visible for review. This changes no service request or response shape.
+
 `GET /api/v1/sync?after=0&limit=100&kind=settings` returns:
 
 ```json

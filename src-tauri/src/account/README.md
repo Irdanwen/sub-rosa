@@ -41,7 +41,7 @@ must be HTTPS (debug builds also accept exact loopback HTTP), and redirects are
 disabled.
 
 `account_status` answers from SQLite and the keyring, never the network, and
-reports `connection` as `none`, `connected`, `renewable` or `expired`. A lapsed
+reports `connection` as `none`, `connected` or `renewable`. A lapsed
 session and a locked vault are different things: the vault key lives in the
 keyring with no auto-lock, so a device whose session ran out is still unlocked.
 
@@ -106,6 +106,21 @@ Concurrent branches are retained for review; explicit resolution acknowledges al
 known heads. A new concurrent branch remains a conflict. Resolution can keep the
 current version, use the received version, or copy a note; finished note summaries
 follow the selected note. A received deletion requires explicit review.
+
+A durable `account_sync_issues` row isolates a rejected local object or file so
+other objects keep moving. Later operations for the same object wait behind its
+blocked revision. The account panel shows the outstanding count and lets the
+person retry after correcting the content or file. A newer snapshot can replace
+an oversized operation only when that operation was rejected locally before
+HTTP. Transport failures and unauthenticated incoming revisions still stop the
+run; silently skipping remote ciphertext would lose data or hide tampering.
+
+For two note heads with one authenticated common parent, the native client tries
+a three-way merge of independent row fields and non-overlapping edited-content
+lines. It records the result as a new revision resolving the remote head. An
+overlap, missing ancestor, concurrent edit to the same non-text field, deletion,
+or pending local operation remains a conflict for review. Existing explicit
+resolution choices remain available.
 
 `files.rs` stores an immutable ciphertext chunk before uploading it. Chunks are
 1 MiB, each with a random UUID, AES-GCM AAD `subrosa:blob:v1:<account>:<chunk_id>`,

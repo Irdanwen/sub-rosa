@@ -31,6 +31,7 @@ import {
   accountVaultRestoreCarpeDiem,
   accountSyncSetEnabled,
   accountSyncNow,
+  accountSyncRetryIssues,
   accountSyncConflicts,
 } from "../../lib/account";
 import { errorCode } from "../../lib/errors";
@@ -457,6 +458,7 @@ export function AccountSettingsSection() {
               vaultExists: status.vault_exists,
               vaultUnlocked: status.vault_unlocked,
               recoveryConfirmed: status.recovery_confirmed,
+              syncEnabled: status.sync_enabled,
               hasLocalKey,
             })}
             busy={busy}
@@ -468,6 +470,13 @@ export function AccountSettingsSection() {
               <strong>{status.account.email}</strong>
             </div>
             <p className="settings-row-description">{status.server_url}</p>
+            {status.connection === "renewable" ? (
+              <p role="status" className="settings-row-description">
+                {t(
+                  "This device will reconnect automatically when the account service is available.",
+                )}
+              </p>
+            ) : null}
             <div className="account-actions">
               <button
                 type="button"
@@ -638,7 +647,7 @@ export function AccountSettingsSection() {
           <AccountCard title={t("Sync your work")}>
             <p role="status" className="settings-row-description">
               {status.sync_enabled
-                ? status.last_sync_error
+                ? status.last_sync_error || status.sync_issue_count || status.sync_issues?.length
                   ? t("Some items could not sync. Your local copies are preserved.")
                   : status.pending_changes > 0
                     ? t("{count} changes waiting to sync", { count: status.pending_changes })
@@ -649,6 +658,31 @@ export function AccountSettingsSection() {
             </p>
             {status.sync_enabled && status.last_sync_error ? (
               <InlineNotice body={accountSyncError(status.last_sync_error)} />
+            ) : null}
+            {status.sync_enabled && status.sync_issues?.length ? (
+              <div className="account-form">
+                <p className="settings-row-description">
+                  {t("{count} items need your attention. Other changes continue to sync.", {
+                    count: String(status.sync_issue_count ?? status.sync_issues.length),
+                  })}
+                </p>
+                {status.sync_issues.map((issue) => (
+                  <div key={`${issue.lane}:${issue.item_id}`}>
+                    <strong>
+                      {issue.label || t("Item {id}", { id: issue.item_id.slice(0, 8) })}
+                    </strong>
+                    <InlineNotice body={accountSyncError(issue.code)} />
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={busy}
+                  onClick={() => void run(accountSyncRetryIssues)}
+                >
+                  {t("Retry blocked items")}
+                </button>
+              </div>
             ) : null}
             {!status.sync_enabled ? (
               <label className="account-consent">

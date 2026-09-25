@@ -104,16 +104,20 @@ pub(super) async fn step(
     query("DELETE FROM account_file_uploads WHERE source_kind='audio' AND NOT EXISTS(SELECT 1 FROM audio_artifacts a WHERE a.id=artifact_id)").execute(pool).await?;
     // Existing remote metadata has an empty path. A local valid artifact is an
     // immutable finalized recording, never the file currently being recorded.
-    let rows=query("SELECT a.id,a.path FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) LIMIT 20").fetch_all(pool).await?;
-    let mut oversized = false;
+    let rows=query("SELECT a.id,a.path FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) LIMIT 20").fetch_all(pool).await?;
     for row in rows {
+        let artifact: String = row.get("id");
         let path: String = row.get("path");
         let Ok(path) = paths.contained_recording_file(&path) else {
+            sync::record_issue(pool, "upload", &artifact, "sync_file_unavailable").await?;
             continue;
         };
-        let meta = tokio::fs::metadata(&path).await.map_err(|_| file_error())?;
+        let Ok(meta) = tokio::fs::metadata(&path).await else {
+            sync::record_issue(pool, "upload", &artifact, "sync_file_unavailable").await?;
+            continue;
+        };
         if meta.len() > MAX_FILE_BYTES {
-            oversized = true;
+            sync::record_issue(pool, "upload", &artifact, "sync_file_too_large").await?;
             continue;
         }
         if meta.len() == 0 {
@@ -127,12 +131,27 @@ pub(super) async fn step(
     let references = crate::assistants::references_dir(app)?;
     stage_assistant_files(pool, &references).await?;
     let inventory = super::studio::inventory(app, pool, &gallery).await;
-    upload_one(pool, s, key, &paths, &gallery).await?;
-    download_one(pool, s, key, &root, &gallery).await?;
-    inventory?;
-    if oversized {
-        return Err(error("sync_file_too_large"));
+    if let Some(row) = next_upload(pool).await? {
+        let artifact: String = row.get("artifact_id");
+        if let Err(failure) = upload_one(pool, s, key, &paths, &gallery).await {
+            if sync::isolatable_file_error(&failure.code) {
+                sync::record_issue(pool, "upload", &artifact, &failure.code).await?;
+            } else {
+                return Err(failure);
+            }
+        }
     }
+    if let Some(row) = next_download(pool).await? {
+        let manifest: String = row.get("id");
+        if let Err(failure) = download_one(pool, s, key, &root, &gallery).await {
+            if sync::isolatable_file_error(&failure.code) {
+                sync::record_issue(pool, "download", &manifest, &failure.code).await?;
+            } else {
+                return Err(failure);
+            }
+        }
+    }
+    inventory?;
     Ok(())
 }
 // Keep the scan budget independent of the upload budget: remote metadata can
@@ -208,11 +227,11 @@ pub(super) async fn pending_transfers(pool: &SqlitePool) -> Result<i64, AppError
 }
 
 async fn next_upload(pool: &SqlitePool) -> Result<Option<sqlx_sqlite::SqliteRow>, AppError> {
-    Ok(query(&format!("{ASSISTANT_OWNERS} SELECT u.*,COALESCE(a.path,u.source_path) AS path,COALESCE(a.format,u.source_format) AS format FROM account_file_uploads u LEFT JOIN audio_artifacts a ON a.id=u.artifact_id WHERE u.completed=0 AND (a.id IS NOT NULL OR u.source_kind IN ('studio','assistant')) AND {ASSISTANT_UPLOAD_ELIGIBLE} ORDER BY u.rowid LIMIT 1"))
+    Ok(query(&format!("{ASSISTANT_OWNERS} SELECT u.*,COALESCE(a.path,u.source_path) AS path,COALESCE(a.format,u.source_format) AS format FROM account_file_uploads u LEFT JOIN audio_artifacts a ON a.id=u.artifact_id WHERE u.completed=0 AND (a.id IS NOT NULL OR u.source_kind IN ('studio','assistant')) AND {ASSISTANT_UPLOAD_ELIGIBLE} AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=u.artifact_id) ORDER BY u.rowid LIMIT 1"))
         .fetch_optional(pool).await?)
 }
 async fn next_download(pool: &SqlitePool) -> Result<Option<sqlx_sqlite::SqliteRow>, AppError> {
-    Ok(query(&format!("{ASSISTANT_OWNERS} SELECT m.*,COALESCE(d.next_chunk,0) AS next_chunk FROM account_file_manifests m LEFT JOIN audio_artifacts a ON a.id=m.artifact_id LEFT JOIN account_file_downloads d ON d.manifest_id=m.id WHERE ((m.source_kind='audio' AND a.path='') OR (m.source_kind IN ('studio','assistant') AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=m.artifact_id))) AND COALESCE(d.completed,0)=0 AND {ASSISTANT_DOWNLOAD_ELIGIBLE} ORDER BY m.rowid LIMIT 1"))
+    Ok(query(&format!("{ASSISTANT_OWNERS} SELECT m.*,COALESCE(d.next_chunk,0) AS next_chunk FROM account_file_manifests m LEFT JOIN audio_artifacts a ON a.id=m.artifact_id LEFT JOIN account_file_downloads d ON d.manifest_id=m.id WHERE ((m.source_kind='audio' AND a.path='') OR (m.source_kind IN ('studio','assistant') AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=m.artifact_id))) AND COALESCE(d.completed,0)=0 AND {ASSISTANT_DOWNLOAD_ELIGIBLE} AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='download' AND i.item_id=m.id) ORDER BY m.rowid LIMIT 1"))
         .fetch_optional(pool).await?)
 }
 
@@ -464,6 +483,28 @@ fn ensure_contained(dir: &std::path::Path, path: &PathBuf) -> Result<(), AppErro
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn blocked_file_transfer_does_not_hold_up_other_files() {
+        let pool = sqlx_sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        crate::db::migrations::run_migrations(&pool).await.unwrap();
+        for id in ["missing", "available"] {
+            query("INSERT INTO account_file_uploads(artifact_id,manifest_id,bytes,modified,source_kind,source_path,source_format) VALUES(?,?,1,'now','studio','file.mp4','mp4')")
+                .bind(id).bind(format!("manifest-{id}")).execute(&pool).await.unwrap();
+        }
+        sync::record_issue(&pool, "upload", "missing", "sync_file_unavailable")
+            .await
+            .unwrap();
+        let next = next_upload(&pool).await.unwrap().unwrap();
+        assert_eq!(next.get::<String, _>("artifact_id"), "available");
+        sync::retry_issues(&pool).await.unwrap();
+        let next = next_upload(&pool).await.unwrap().unwrap();
+        assert_eq!(next.get::<String, _>("artifact_id"), "missing");
+    }
+
     #[tokio::test]
     async fn missing_assistant_files_do_not_starve_later_uploads() {
         let directory = tempfile::tempdir().unwrap();
