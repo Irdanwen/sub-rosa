@@ -29,4 +29,5 @@ tracing.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true
+tracing-subscriber.workspace = true
 wiremock.workspace = true

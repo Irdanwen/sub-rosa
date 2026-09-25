@@ -140,15 +140,20 @@ impl<S> MeteredRelay<S> {
         (relay, usage)
     }
 
-    fn report(&mut self, _ending: Ending) {
+    fn report(&mut self, ending: Ending) {
         let Some(report) = self.report.take() else {
             return;
         };
         let usage = self.scanner.finish().unwrap_or_else(|| {
-            tracing::warn!(
-                model = %self.model,
-                "venice: streamed agent chat carried no usage frame, metering as zero"
-            );
+            // Only a stream that ran to its end should have carried the
+            // billing frame. A broken one is already logged as an error, and
+            // an abandoned one (the person tapped Stop) is expected to lack it.
+            if ending == Ending::Complete {
+                tracing::warn!(
+                    model = %self.model,
+                    "venice: streamed agent chat carried no usage frame, metering as zero"
+                );
+            }
             TokenUsage::default()
         });
         // The receiver is gone only if nobody is settling this turn.
@@ -216,6 +221,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use std::collections::VecDeque;
     use std::pin::Pin;
+    use std::sync::{Arc, Mutex};
     use std::task::{Context, Poll};
 
     /// An upstream that yields the items it was given, then ends.
@@ -237,9 +243,61 @@ mod tests {
         )
     }
 
+    /// Runs `work` with every log line at or above INFO written to a buffer,
+    /// and returns what was written.
+    fn logs_of(work: impl FnOnce()) -> String {
+        #[derive(Clone, Default)]
+        struct Buffer(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Buffer {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().expect("log buffer").extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let buffer = Buffer::default();
+        let writer = buffer.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .finish();
+        tracing::subscriber::with_default(subscriber, work);
+        let bytes = buffer.0.lock().expect("log buffer").clone();
+        String::from_utf8(bytes).expect("utf8 logs")
+    }
+
     fn poll_once<S: Stream + Unpin>(stream: &mut S) -> Poll<Option<S::Item>> {
         let mut context = Context::from_waker(std::task::Waker::noop());
         Pin::new(stream).poll_next(&mut context)
+    }
+
+    /// Stopping a reply on purpose is not an anomaly: the billing frame had
+    /// not arrived yet, and saying so at warning level would bury the real
+    /// "the upstream stopped metering" signal under every Stop tap.
+    #[test]
+    fn an_abandoned_stream_does_not_warn_about_its_missing_usage() {
+        let logs = logs_of(|| {
+            let (mut relay, _usage) =
+                MeteredRelay::new(scripted([Ok("data: {\"choices\":[]}\n\n")]), "m");
+            assert!(matches!(poll_once(&mut relay), Poll::Ready(Some(Ok(_)))));
+            drop(relay);
+        });
+        assert!(logs.contains("dropped before its end"), "logs: {logs}");
+        assert!(!logs.contains("WARN"), "logs: {logs}");
+    }
+
+    /// A stream that ran to its end without a usage frame is the case worth a
+    /// warning: the upstream stopped reporting what it charged.
+    #[test]
+    fn a_complete_stream_without_usage_warns() {
+        let logs = logs_of(|| {
+            let (mut relay, _usage) = MeteredRelay::new(scripted([Ok("data: [DONE]\n\n")]), "m");
+            while let Poll::Ready(Some(_)) = poll_once(&mut relay) {}
+        });
+        assert!(logs.contains("WARN"), "logs: {logs}");
     }
 
     /// A read failure is yielded once, as the last item, and the usage seen
