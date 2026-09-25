@@ -1768,6 +1768,15 @@ input:focus-visible,
   color: var(--muted-foreground);
 }
 
+/* A message (or the whole transcript) that failed to render: one quiet line in
+ * its place, so the rest of the conversation stays readable. */
+.agent-render-error {
+  margin: 0;
+  padding: var(--sp-1) 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
 .agent-hermes-message {
   width: 100%;
   padding: var(--sp-1) var(--sp-2);

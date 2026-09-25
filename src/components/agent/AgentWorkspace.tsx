@@ -371,6 +371,7 @@ import {
   stabilizeLists,
   stabilizeTurns,
 } from "../../lib/agent-chat-transcript";
+import { TranscriptErrorBoundary } from "./TranscriptErrorBoundary";
 
 const POLLED_STATUSES = new Set<AgentTaskStatus>(["queued", "running", "waitingForUser"]);
 const AGENT_TITLE_TIMEOUT_MS = 2500;
@@ -7807,25 +7808,28 @@ export function AgentWorkspace({
         sessionId={rawTraceSession}
         onClose={() => setRawTraceSession(undefined)}
       />
-      {hermesTurns.map((turn) => (
-        <AgentChatTurnRow
-          key={turn.id}
-          turn={turn}
-          activeThinkingKey={activeThinkingKey}
-          artifacts={turnArtifacts.get(turn.id)}
-          approvalSubmitting={approvalSubmitting}
-          clarifySubmitting={clarifySubmitting}
-          sudoSubmitting={sudoSubmitting}
-          secretSubmitting={secretSubmitting}
-          cliAccess={cliAccessCard}
-          thinkingOpen={thinkingOpen}
-          onThinkingOpenChange={setThinkingOpen}
-          {...hermesRowHandlers}
-          onTopUp={handleTopUp}
-          topUpLabel={topUpLabel}
-          branchingMessageId={branchingMessageId}
-        />
-      ))}
+      <TranscriptErrorBoundary scope="conversation" resetKey={hermesTurns}>
+        {hermesTurns.map((turn) => (
+          <TranscriptErrorBoundary key={turn.id} scope="message" resetKey={turn}>
+            <AgentChatTurnRow
+              turn={turn}
+              activeThinkingKey={activeThinkingKey}
+              artifacts={turnArtifacts.get(turn.id)}
+              approvalSubmitting={approvalSubmitting}
+              clarifySubmitting={clarifySubmitting}
+              sudoSubmitting={sudoSubmitting}
+              secretSubmitting={secretSubmitting}
+              cliAccess={cliAccessCard}
+              thinkingOpen={thinkingOpen}
+              onThinkingOpenChange={setThinkingOpen}
+              {...hermesRowHandlers}
+              onTopUp={handleTopUp}
+              topUpLabel={topUpLabel}
+              branchingMessageId={branchingMessageId}
+            />
+          </TranscriptErrorBoundary>
+        ))}
+      </TranscriptErrorBoundary>
       {workingSessionIds.has(selectedHermesSessionId) && hermesTurns.at(-1)?.role === "user" ? (
         <AgentThinking />
       ) : null}
